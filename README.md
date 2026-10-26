@@ -32,7 +32,16 @@ the sibling directories below. Nothing here is code to run.
 
 Earlier archives (run1 handoff, external-v1 handoff, pilot r1/r2, pgm backup tarballs) and the frozen prior-phase repos (pgm, qgrid) were
 deleted on 26 October 2026 after confirming their evidence is contained in the two archives above or preserved as prose in
-`current/historical/v4`.
+`current/historical/v4`. Later the same evening, at the user's direction, the three strongcompact repositories and both evidence archives
+were deleted as well: the prose record (this directory) is the research record going forward. The identities above are kept so that any
+copy that resurfaces can be recognised; none exists on this machine.
+
+## Lab reports bundle (added 26 Oct 2026, evening)
+
+`lab-reports-2026-10-26/` (and `archives/lab-reports-2026-10-26.zip`) holds byte-for-byte copies of every result report, ledger, manifest, source
+lock, results table and accounting record from the lab, exported before the lab was deleted; `lab-reports-2026-10-26/INDEX.md` lists each
+file with repo, commit, bytes and SHA-256, and records the identities of the two deleted evidence archives. It answers the handoff's
+`current/reports/REQUEST_MISSING_REPORTS.md`.
 
 ## Open item recorded by the handoff
 
