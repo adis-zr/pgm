@@ -9,9 +9,11 @@ Two parts:
   - `docs/lab-reports/` — byte-for-byte copies (183 files, with `INDEX.md` giving repo, commit, bytes, SHA-256) of every result report,
     closeout/audit document, ledger, manifest, source lock, results table and accounting record produced by the H4 lab (run1 → external
     benchmark → moment audit → closeout → centering pilot). This answers the handoff's `reports/REQUEST_MISSING_REPORTS.md`.
-  - `docs/archives/` — the original ZIP bytes of the handoff (v5.2) and of the lab-reports bundle, for identity checks.
 - `code/` — empty. The previous implementation (the `strongcompact` repositories and their evidence archives) was deleted on 26 Oct 2026;
   any new implementation starts here, built from the specifications in `docs/`.
 
-Procedure for a new handoff version: copy its ZIP into `docs/archives/`, re-extract into `docs/handoff/`, commit; `git diff` then shows what
-changed between versions.
+Procedure for a new handoff version: re-extract it over `docs/handoff/`, verify its `CHECKSUMS.txt`, record the ZIP's SHA-256 in the commit
+message, commit; `git diff` then shows what changed between versions.
+
+Identities for the record: handoff v5.2 ZIP SHA-256 `237babe7042184d5d49f42ce58340d06dc8ddc7c912989bbe1da27c70aac708b` (1,044,412 bytes);
+the extracted tree's own `CHECKSUMS.txt` verifies 187/187 files.
