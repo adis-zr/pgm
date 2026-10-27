@@ -16,4 +16,4 @@ def bound(P, n=2 ** 16):
 if __name__ == "__main__":
     for P in (96, 144):
         r = bound(P); print(r); assert r["ceiling_dominates"]
-    print("OK: inc <= 26.3 eps and s_n <= 48 n eps for n <= 2^16, P >= 96")
+    print("OK: inc <= 26.36 eps and s_n <= 48 n eps for n <= 2^16, P >= 96")

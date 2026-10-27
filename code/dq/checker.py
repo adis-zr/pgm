@@ -50,8 +50,12 @@ def cos_sin_box(lo: Fr, hi: Fr, bits: int = 256):
     dn = gmpy2.context(precision=bits, round=gmpy2.RoundDown); up = gmpy2.context(precision=bits, round=gmpy2.RoundUp)
     def box(q): return gmpy2.mpfr(mpq(q.numerator, q.denominator), bits, dn), gmpy2.mpfr(mpq(q.numerator, q.denominator), bits, up)
     L, H = box(lo), box(hi)
-    cl = min(dn.cos(L[0]), dn.cos(H[0])); ch = max(up.cos(L[1]), up.cos(H[1])); sl = min(dn.sin(L[0]), dn.sin(H[0])); sh = max(up.sin(L[1]), up.sin(H[1]))
-    m0 = (2 * lo / PI_UPPER).numerator // (2 * lo / PI_UPPER).denominator - 1; m1 = -((-2 * hi / PI_LOWER).numerator // (2 * hi / PI_LOWER).denominator) + 1
+    # cos/sin are not monotone, so each endpoint's value must be enclosed from BOTH of its directed roundings (amendment 4; the previous
+    # version used one rounding per direction and failed for non-dyadic endpoints)
+    pts = [L[0], L[1], H[0], H[1]]
+    cl = min(dn.cos(t) for t in pts); ch = max(up.cos(t) for t in pts); sl = min(dn.sin(t) for t in pts); sh = max(up.sin(t) for t in pts)
+    def _floor(q): return q.numerator // q.denominator
+    m0 = min(_floor(2 * lo / PI_UPPER), _floor(2 * lo / PI_LOWER)) - 1; m1 = max(-_floor(-2 * hi / PI_LOWER), -_floor(-2 * hi / PI_UPPER)) + 1
     crit = []
     for mm in range(m0, m1 + 1):
         a1 = mm * (PI_LOWER if mm >= 0 else PI_UPPER) / 2; a2 = mm * (PI_UPPER if mm >= 0 else PI_LOWER) / 2        # exact rational bounds on m pi/2
@@ -82,6 +86,10 @@ def check_arm(arm: str, input_path: str, witness: dict, out_dir: str, journal, d
     except Exception as e:  # noqa: BLE001
         C["checks"]["input_regenerates"] = False; C["reason"] = f"input does not regenerate: {e!r}"; C["verdict"] = "REJECTED"; return C
     C["checks"]["input_regenerates"] = True
+    # amendment 4: both native kernels compute the marginal of SITE 0 only; any other query label (even if input and witness agree) is refused before numerical work
+    C["checks"]["query_is_site_0"] = (m.query == 0 and witness.get("query") == 0)
+    if not C["checks"]["query_is_site_0"]:
+        C["failed_checks"] = ["query_is_site_0"]; C["verdict"] = "REJECTED"; C["reason"] = f"kernels compute site 0; input/witness query = {m.query}/{witness.get('query')}"; C["phases"].append(pc.stop()); return C
     h = hashlib.sha256(open(input_path, "rb").read()).hexdigest()
     C["checks"]["input_hash_matches_witness"] = (h == witness.get("input_sha256"))
     C["checks"]["query_and_evidence_match"] = (m.query == witness.get("query") and {str(k): v for k, v in m.evidence.items()} == witness.get("evidence", {}))
@@ -123,7 +131,9 @@ def check_arm(arm: str, input_path: str, witness: dict, out_dir: str, journal, d
     gridJ = witness["fourier"]["J"] if arm == "F" else 0
     gridh = witness["fourier"]["h"] if arm == "F" else "1"
     kernel_out = os.path.join(out_dir, "checker_kernel.json")
-    native_deadline = max(0.5, deadline_s - (time.monotonic() - t0))        # amendment 3: Python check time already spent is subtracted
+    native_deadline = deadline_s - (time.monotonic() - t0)                 # amendment 3/4: Python check time already spent is subtracted; an expired deadline refuses the kernel
+    if native_deadline <= 0:
+        C["verdict"] = "CHECKER_INCOMPLETE"; C["reason"] = "checker deadline expired before the kernel"; C["phases"].append(pc.stop()); return C
     rec = run_native([DQCHECK, input_path, kernel_out, "--center", cstr, "--fbits", str(fbits), "--freq-h", gridh, "--J", str(gridJ), "--progress", progress_path or os.path.join(out_dir, "checker_progress.txt")],
                      out_dir, journal, native_deadline, rss_cap, {"phase": "checker_kernel", "arm": arm, "fbits": fbits}, progress_path=progress_path or os.path.join(out_dir, "checker_progress.txt"), monitor=monitor)
     C["kernel"] = {k: rec.get(k) for k in ("exit_code", "kill_reason", "wall_s", "cpu_s", "cpu_over_wall", "peak_rss_bytes")}

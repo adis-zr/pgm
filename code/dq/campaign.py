@@ -31,7 +31,7 @@ from dq.gate import response_gate, weighted_count_state_estimate, log_weight_per
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
-TOTAL_CAP_S = 1200.0; ARM_CAP_S = 90.0; D_SCREEN_S = 30.0; RSS_CAP = 4 << 30; N = 32768
+TOTAL_CAP_S = 1200.0; ARM_CAP_S = 90.0; D_SCREEN_S = 30.0; RSS_CAP = 4 << 30; N = 32768; REPORT_CAP_S = 60.0
 # RECORDED PRE-LAUNCH DEVIATION from the frozen eligibility rule (decided before any timed stage; see lock.json["eligibility_deviation"]):
 # /usr/sbin/BTLEServer (root system daemon) has been pinned at ~100 % of one of the 11 cores continuously for ~4.5 days, including through the
 # two earlier closed campaigns on this workstation.  The user toggled Bluetooth without effect and chose not to kill a system daemon.  Under the
@@ -101,7 +101,7 @@ class Campaign:
         elig = {"foreign_cpu_violations": c["violations"], "contention_samples": c["samples"], "exempt_daemon_busy_samples": c["exempt_processes_seen_busy"], "numerical_phase_cpu_s": cpu, "numerical_phase_wall_s": wall, "numerical_phase_cpu_over_wall": ratio,
                 "eligible": (not c["violations"]) and (ratio is not None and ratio >= 0.90), "reasons": ([f"foreign process >=50% CPU for 5 s: {[v['name'] for v in c['violations']]}"] if c["violations"] else []) + ([f"numerical-phase CPU/wall {ratio:.3f} < 0.90"] if (ratio is None or ratio < 0.90) else [])}
         row = {"cell": tag, "arm": arm, "case": case, "pair": pair, "order_idx": order_idx, "mode": mode, "status": R["status"], "guarantee": R.get("guarantee"), "width": R.get("width"), "width_ok": R.get("width_ok"), "published": R.get("published"),
-               "complete_wall_s": R["complete_wall_s"], "phases": R["phases"], "attempts": R["attempts"], "residual_overhead_s": R["residual_overhead_s"], "peak_rss_bytes": max([a.get("peak_rss_bytes") or 0 for a in R["attempts"] if a.get("kind") == "producer"] + [(a.get("kernel") or {}).get("peak_rss_bytes") or 0 for a in R["attempts"] if a.get("kind") == "checker"] + [0]),
+               "complete_wall_s": R.get("durable_complete_wall_s", R["complete_wall_s"]), "standalone_wall_s_pre_durable": R["complete_wall_s"], "phases": R["phases"], "attempts": R["attempts"], "residual_overhead_s": R["residual_overhead_s"], "peak_rss_bytes": max([a.get("peak_rss_bytes") or 0 for a in R["attempts"] if a.get("kind") == "producer"] + [(a.get("kernel") or {}).get("peak_rss_bytes") or 0 for a in R["attempts"] if a.get("kind") == "checker"] + [0]),
                "eligibility": elig, "load_before": load0, "load_after": os.getloadavg(), "result_path": os.path.relpath(os.path.join(cdir, "result.json"), self.run_dir), "declined_reason": R.get("declined_reason")}
         self.state["cells"].append(row); self.attempts.write({"kind": "cell", **{k: v for k, v in row.items() if k not in ("phases", "attempts", "published")}}); self.save()
         self.events.write({"kind": "cell_end", "cell": tag, "status": R["status"], "complete_wall_s": R["complete_wall_s"], "eligible": elig["eligible"]})
@@ -115,13 +115,13 @@ class Campaign:
         mon = ContentionMonitor(self.resources, exempt=self.exempt); mon.start(); time.sleep(1.2); load0 = os.getloadavg(); t0 = time.monotonic()
         self.events.write({"kind": "cell_start", "cell": tag, "arm": "AUTO", "case": "CONTROL", "pair": pair, "order_idx": order_idx})
         RD = run_arm("D", "CONTROL", N, os.path.join(cdir, "gate"), deadline_s=min(ARM_CAP_S, max(1.0, self.remaining() - 65.0)), rss_cap=RSS_CAP, monitor=mon, pair_tag=pair)
-        gate_wall = RD["complete_wall_s"]
+        gate_wall = RD.get("durable_complete_wall_s", RD["complete_wall_s"])
         if RD["status"] != "CERTIFICATE_DECLINED":
             c = mon.finish(); row = {"cell": tag, "arm": "AUTO", "case": "CONTROL", "pair": pair, "order_idx": order_idx, "status": "GATE_DID_NOT_DECLINE:" + RD["status"], "complete_wall_s": time.monotonic() - t0, "eligibility": {"eligible": False, "reasons": ["gate mismatch"]}}
             self.state["cells"].append(row); self.save(); self.stop("CONTROL_GATE_DID_NOT_DECLINE"); return row
         remaining_arm = max(1.0, min(ARM_CAP_S - gate_wall, self.remaining() - 65.0))
         RF = run_arm("F", "CONTROL", N, os.path.join(cdir, "fallback"), deadline_s=remaining_arm, rss_cap=RSS_CAP, monitor=mon, pair_tag=pair, reuse_input=os.path.join(cdir, "gate", "input.txt"), reuse_gate=RD["gate"])   # amendment 3: reuse the declined gate's structural record
-        c = mon.finish(); total = time.monotonic() - t0
+        c = mon.finish(); total = time.monotonic() - t0                       # AUTO's complete time already spans both arms' durable writes
         num = [a for a in RF["attempts"] if a.get("kind") == "producer"] + [a["kernel"] for a in RF["attempts"] if a.get("kind") == "checker" and a.get("kernel")]
         cpu = sum(a.get("cpu_s") or 0 for a in num); wall = sum(a.get("wall_s") or 0 for a in num); ratio = cpu / wall if wall > 0 else None
         elig = {"foreign_cpu_violations": c["violations"], "contention_samples": c["samples"], "exempt_daemon_busy_samples": c["exempt_processes_seen_busy"], "numerical_phase_cpu_s": cpu, "numerical_phase_wall_s": wall, "numerical_phase_cpu_over_wall": ratio, "eligible": (not c["violations"]) and (ratio is not None and ratio >= 0.90),
@@ -193,11 +193,11 @@ def main(argv=None):
 def finish(C, rd):
     C.state["elapsed_total_s"] = C.elapsed(); C.state["within_total_cap"] = C.elapsed() <= TOTAL_CAP_S; C.save()
     t = time.monotonic()
-    from dq.report import write_report
     try:
-        write_report(rd)
-    except Exception as e:  # noqa: BLE001
-        import traceback; C.events.write({"kind": "report_error", "error": repr(e), "tb": traceback.format_exc()[-2000:]})
+        r = subprocess.run([PY, "-c", "import sys; sys.path.insert(0, %r); from dq.report import write_report; print(write_report(%r))" % (ROOT, rd)], capture_output=True, text=True, timeout=REPORT_CAP_S)   # amendment 4: reporting cap enforced by termination
+        if r.returncode != 0: C.events.write({"kind": "report_error", "stderr": r.stderr[-2000:]})
+    except subprocess.TimeoutExpired:
+        C.events.write({"kind": "report_timeout", "cap_s": REPORT_CAP_S}); C.state["stops"].append({"reason": "REPORT_CAP_REACHED", "elapsed_s": C.elapsed()})
     C.state["report_wall_s"] = time.monotonic() - t; C.state["elapsed_total_s"] = C.elapsed(); C.save(); C.events.write({"kind": "campaign_end", "elapsed_s": C.elapsed(), "report_wall_s": C.state["report_wall_s"]})
     print(f"campaign finished in {C.elapsed():.1f}s (report {C.state['report_wall_s']:.1f}s); stops: {[s['reason'] for s in C.state['stops']]}", flush=True)
     return 0

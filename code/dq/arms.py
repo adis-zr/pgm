@@ -87,6 +87,7 @@ def run_arm(arm: str, case: str, n: int, out_dir: str, deadline_s: float = 90.0,
     else:
         m = Model(n, case, evidence); input_sha = m.write(inp); parse_canonical(inp)       # self-verification of the written bytes against the formulas
     R["input_sha256"] = input_sha; R["input_bytes"] = os.path.getsize(inp); R["phases"].append(pc.stop()); J.write({"kind": "phase", **R["phases"][-1], "input_sha256": input_sha})
+    if m.query != 0: return finish("QUERY_NOT_SUPPORTED", reason="the native kernels compute the marginal of site 0 only")
     # --- input-only structural gate (both arms run it: D needs it for admission; F records it and uses V_bar for the analytic radius check)
     cur["phase"] = "structural_gate"; pc = PhaseClock("structural_gate")
     if reuse_gate is not None and reuse_gate.get("input_sha256_bound") == input_sha:          # automatic fallback: reuse the declined gate's structural record (bound to the same input hash)
