@@ -47,9 +47,13 @@ class MP:
         with self.U: hi = max(a[0]*b[0], a[0]*b[1], a[1]*b[0], a[1]*b[1])
         return (lo, hi)
     def div_pos(self, a, b):
-        assert b[0] > 0
-        with self.D: lo = a[0] / b[1]
-        with self.U: hi = a[1] / b[0]
+        """a / b with a of ANY sign and b strictly positive. The numerator sign case-split is mandatory: with a
+        negative numerator the extreme quotients come from the OPPOSITE divisor endpoints. Omitting it returns an
+        inverted interval that can exclude the true value (review finding 3)."""
+        if not b[0] > 0: raise ValueError("div_pos requires a strictly positive divisor")
+        with self.D: lo = (a[0] / b[1]) if a[0] >= 0 else (a[0] / b[0])
+        with self.U: hi = (a[1] / b[0]) if a[1] >= 0 else (a[1] / b[1])
+        if not lo <= hi: raise ValueError("div_pos produced an inverted interval")
         return (lo, hi)
     def exp(self, a):
         with self.D: lo = gmpy2.exp(a[0])
@@ -60,9 +64,17 @@ class MP:
         with self.D: lo = gmpy2.sqrt(a[0])
         with self.U: hi = gmpy2.sqrt(a[1])
         return (lo, hi)
-    def scale2(self, a, e):          # exact power-of-two scaling
-        return (gmpy2.mul_2exp(a[0], e) if e >= 0 else gmpy2.div_2exp(a[0], -e),
-                gmpy2.mul_2exp(a[1], e) if e >= 0 else gmpy2.div_2exp(a[1], -e))
+    def scale2(self, a, e):
+        """Exact power-of-two scaling of both endpoints, done on the EXACT rational values and converted back in the
+        endpoint's own direction. gmpy2.mul_2exp/div_2exp operate at the ambient context precision, which collapsed the
+        interval to a point and silently destroyed the enclosure; this routine cannot do that. A power-of-two shift of a
+        binary float is exact in-range, so the reconversion is exact and the width scales by exactly 2^e."""
+        lo_q = fr(a[0]) * (Fr(2) ** e); hi_q = fr(a[1]) * (Fr(2) ** e)
+        with self.D: lo = mpfr(mpq(lo_q.numerator, lo_q.denominator))
+        with self.U: hi = mpfr(mpq(hi_q.numerator, hi_q.denominator))
+        if fr(lo) != lo_q or fr(hi) != hi_q: raise ValueError("power-of-two scaling was not exact (exponent range)")
+        if not lo <= hi: raise ValueError("scaling produced an inverted interval")
+        return (lo, hi)
     def cos_sin(self, a):
         """outward rectangle for (cos, sin) over the interval a, including interior extrema (cos at k*pi, sin at pi/2+k*pi)"""
         from h4a.grid import PI_LO, PI_HI

@@ -101,9 +101,10 @@ def producer_tables(prob, prec=256):
                 for c, w in wts:
                     q = M.div_pos(w, s); encs.append((fr(q[0]), fr(q[1]))); idxs.append(0 if c < 0 else 1)
                 ints, l1 = store_row(encs, idxs, 2)
-                per_ctx[(a, b)] = (ints, l1)
+                per_ctx[(a, b)] = (ints, l1, {idxs[j]: encs[j] for j in range(len(idxs))})
         rows.append(per_ctx)
-    return {"M": M, "v": v, "F": F, "exps": exps, "rows": rows, "terminal": (term_ints, term_l1), "prec": prec}
+    return {"M": M, "v": v, "F": F, "exps": exps, "rows": rows,
+            "terminal": (term_ints, term_l1, {term_idx[j]: term_enc[j] for j in range(len(term_idx))}), "prec": prec}
 
 def checker_tables(prob, prec=320):
     """opposite direction: suffix arrays B_i, forward conditional rows t_i (i=2..n-1), initial-pair law s(a,b)"""
@@ -147,7 +148,7 @@ def checker_tables(prob, prec=320):
                 for c, w in wts:
                     q = M.div_pos(w, s); encs.append((fr(q[0]), fr(q[1]))); idxs.append(0 if c < 0 else 1)
                 ints, l1 = store_row(encs, idxs, 2)
-                per_ctx[(a, b)] = (ints, l1)
+                per_ctx[(a, b)] = (ints, l1, {idxs[j]: encs[j] for j in range(len(idxs))})
         rows[i] = per_ctx
     # initial pair law s(a,b) at the common B_1 scale
     wts = {}
@@ -163,4 +164,5 @@ def checker_tables(prob, prec=320):
         if k not in wts: continue
         q = M.div_pos(wts[k], s); encs.append((fr(q[0]), fr(q[1]))); idxs.append(idx)
     init_ints, init_l1 = store_row(encs, idxs, 4)
-    return {"M": M, "v": v, "B": B, "exps": exps, "rows": rows, "initial": (init_ints, init_l1), "prec": prec, "init_weights": wts}
+    return {"M": M, "v": v, "B": B, "exps": exps, "rows": rows,
+            "initial": (init_ints, init_l1, {idxs[j]: encs[j] for j in range(len(idxs))}), "prec": prec, "init_weights": wts}

@@ -19,6 +19,19 @@ def fb(h: str) -> Fr: return Fr(struct.unpack(">d", bytes.fromhex(h))[0])
 def fx(s: str) -> Fr:
     m, e = s.split("*2^"); return Fr(int(m)) * (Fr(2) ** int(e))
 
+def response_publication(prod_path, arm):
+    """the arm's published response interval per marker, used as I_pub in eq. (17)"""
+    P = json.load(open(prod_path)); out = {}
+    if arm == "C":
+        for d in P["response"]:
+            iv = (fx(d["iv"][0]), fx(d["iv"][1])); mid = (iv[0] + iv[1]) / 2
+            out[d["marker"]] = (mid - E_PUB, mid + E_PUB)
+    else:
+        for d in P["response"]:
+            v = fb(d["bits"]); out[d["marker"]] = (v - E_PUB, v + E_PUB)
+    return out
+
+
 def verify_node(arm, prod_path, chk_path, cprod, cchk, grid, prob):
     P = json.load(open(prod_path)); C = json.load(open(chk_path))
     checks = {}; detail = {}
@@ -27,6 +40,13 @@ def verify_node(arm, prod_path, chk_path, cprod, cchk, grid, prob):
         checks[name] = bool(ok); detail.update({f"{name}.{k}": v for k, v in kw.items()})
     try:
         ck("frequency_count_exact", P["nfreq"] == nrep and C["nfreq"] == nrep, got=(P["nfreq"], C["nfreq"]), want=nrep)
+        # the ORDERED list itself, on BOTH sides: every (frequency index, marker) exactly once, no extras, no omissions
+        want = {(ki, mk) for ki in range(nrep) for mk in (-1, 1)}
+        pk = [(d["k"], d["marker"]) for d in P["channels"]]; ckk = [(d["k"], d["marker"]) for d in C["channels"]]
+        ck("producer_channel_key_set_exact", set(pk) == want and len(pk) == len(want), n=len(pk), want=len(want))
+        ck("checker_channel_key_set_exact", set(ckk) == want and len(ckk) == len(want), n=len(ckk), want=len(want))
+        ck("producer_channel_order_is_frozen", pk == sorted(pk, key=lambda t: (t[0], t[1])) or len(set(pk)) == len(pk))
+        ck("both_responses_present", {d["marker"] for d in P["response"]} == {-1, 1} and {d["marker"] for d in C["response"]} == {-1, 1})
         ck("n_and_query_bound", P["n"] == C["n"] == prob.m.n and P["q"] == C["q"] == prob.q)
         # --- collect producer publications and checker inner intervals
         if arm == "C":
@@ -78,6 +98,7 @@ def verify_node(arm, prod_path, chk_path, cprod, cchk, grid, prob):
             pub = pub_ch[((k, mk), comp)] if arm != "C" else pub_ch[((k, mk), comp)]
             if not (pub[0] <= iv[0] and iv[1] <= pub[1]): bad.append((k, mk, comp))
         ck("every_channel_inner_contained_in_publication", not bad, violations=len(bad), first=bad[:4], channels_checked=len(inner_ch))
+        ck("containment_tests_cover_every_channel_component", len(inner_ch) == 4 * nrep, got=len(inner_ch), want=4 * nrep)
         badr = [mk for mk, iv in inner_res.items() if not (pub_res[mk][0] <= iv[0] and iv[1] <= pub_res[mk][1])]
         ck("both_responses_contained_in_publication", not badr, violations=badr)
         # --- zero-frequency sanity: markers sum to one within the arithmetic allowance

@@ -10,6 +10,7 @@ from h4a.grid import Grid
 from h4a.emit import Cache, write_point_witness, write_rect_witness, f64_value
 from h4a.build import producer_tables, checker_tables
 from h4a.tables import MESH, EPS_P, EPS_PHI, EPS_LAM
+from h4a.masses import marker_masses, publish_relative, node_weight, accepted_count, verify_masses
 from h4a import certs
 
 BUILD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build")
@@ -68,10 +69,10 @@ def main():
         hb(HB, phase="node_start", node=key)
         # producer: sign-specific tables (always rebuilt) + witness + kernel
         t = time.monotonic(); P = producer_tables(prob, 256); t_tab = time.monotonic()-t
-        worst_row = max([P["terminal"][1]] + [l1 for pc in P["rows"] for (_, l1) in pc.values()])
+        worst_row = max([P["terminal"][1]] + [l1 for pc in P["rows"] for (_, l1, _e) in pc.values()])
         assert worst_row <= EPS_P, f"producer row L1 {worst_row} exceeds 2^-48"
         if a.arm == "C":
-            t = time.monotonic(); write_rect_witness(f"{nd_dir}/prod.txt", prob, grids[sgn], cprod, P, 256); t_w = time.monotonic()-t
+            t = time.monotonic(); write_rect_witness(f"{nd_dir}/prod.txt", prob, grids[sgn], cprod, P, 256, "producer"); t_w = time.monotonic()-t
             k = run_kernel("h4rect", ["--in", f"{nd_dir}/prod.txt", "--out", f"{nd_dir}/prod.json", "--prec", "256", "--expect-freq", "265", "--progress", HB], HB, f"{key}:producer")
         else:
             t = time.monotonic(); write_point_witness(f"{nd_dir}/prod.txt", prob, grids[sgn], cprod, P, "producer"); t_w = time.monotonic()-t
@@ -83,20 +84,54 @@ def main():
         # checker: own tables at 320 + own witness + own kernel
         if a.arm == "PP":
             t = time.monotonic(); CK = checker_tables(prob, 320); t_ctab = time.monotonic()-t
-            worst_c = max([CK["initial"][1]] + [l1 for pc in CK["rows"].values() for (_, l1) in pc.values()])
+            worst_c = max([CK["initial"][1]] + [l1 for pc in CK["rows"].values() for (_, l1, _e) in pc.values()])
             assert worst_c <= EPS_P, f"checker row L1 {worst_c} exceeds 2^-48"
             t = time.monotonic(); write_point_witness(f"{nd_dir}/chk.txt", prob, grids[sgn], cchk, CK, "checker"); t_cw = time.monotonic()-t
             kc = run_kernel("h4pcheck", ["--in", f"{nd_dir}/chk.txt", "--out", f"{nd_dir}/chk.json", "--expect-freq", "265", "--progress", HB], HB, f"{key}:checker")
         else:
-            t = time.monotonic(); CKp = producer_tables(prob, 320); t_ctab = time.monotonic()-t
-            worst_c = max([CKp["terminal"][1]] + [l1 for pc in CKp["rows"] for (_, l1) in pc.values()])
+            # review finding 1b: the C/PI interval checker is the INDEPENDENT opposite-direction construction run
+            # through the rectangular kernel, not the producer routine at higher precision.
+            t = time.monotonic(); CKi = checker_tables(prob, 320); t_ctab = time.monotonic()-t
+            worst_c = max([CKi["initial"][1]] + [l1 for pc in CKi["rows"].values() for (_, l1, _e) in pc.values()])
             assert worst_c <= EPS_P, f"checker row L1 {worst_c} exceeds 2^-48"
-            t = time.monotonic(); write_rect_witness(f"{nd_dir}/chk.txt", prob, grids[sgn], cchk, CKp, 320); t_cw = time.monotonic()-t
-            kc = run_kernel("h4rect", ["--in", f"{nd_dir}/chk.txt", "--out", f"{nd_dir}/chk.json", "--prec", "320", "--expect-freq", "265", "--progress", HB], HB, f"{key}:checker")
+            t = time.monotonic(); write_rect_witness(f"{nd_dir}/chk.txt", prob, grids[sgn], cchk, CKi, 320, "checker"); t_cw = time.monotonic()-t
+            kc = run_kernel("h4rect", ["--in", f"{nd_dir}/chk.txt", "--out", f"{nd_dir}/chk.json", "--prec", "320", "--forward", "--expect-freq", "265", "--progress", HB], HB, f"{key}:checker")
         assert kc["rc"] == 0, f"checker kernel failed: {kc['stderr']}"
         nrec["phases"] += [{"phase": "checker_tables", "wall_s": t_ctab, "worst_row_L1": str(worst_c)},
                            {"phase": "checker_witness", "wall_s": t_cw}, {"phase": "checker_kernel", **kc}]
         chk_wall += t_ctab + t_cw + kc["wall_s"]
+        # ---- §5 positive marker masses, Gaussian node weight, accepted counts (required of every arm, charged)
+        t = time.monotonic(); Zp, ep = marker_masses(prob, 256); t_mass_p = time.monotonic()-t
+        t = time.monotonic(); Zc, ec = marker_masses(prob, 320, reverse=True); t_mass_c = time.monotonic()-t
+        t = time.monotonic()
+        pubm = {sg: publish_relative(Zp[sg]) for sg in (-1, 1)}
+        total_raw = (Zp[-1][0] + Zp[1][0], Zp[-1][1] + Zp[1][1]); pubt = publish_relative(total_raw)
+        wv, wexp = node_weight(prob.node, 256); wc, _ = node_weight(prob.node, 320)
+        pubw = {**publish_relative(wv), "exponent": wexp}
+        mprod = {"markers": pubm, "total": pubt, "node_weight": pubw}
+        mchk = {"markers": Zc, "node_weight": wc, "node_weight_exponent": wexp}
+        mverdict = verify_masses(mprod, mchk)
+        delta = Fr(json.load(open(os.path.join(a.packet, "inputs", "FROZEN_NODES.json")))["analytic_delta_comp_exact"])
+        Ipub = certs.response_publication(f"{nd_dir}/prod.json", a.arm)
+        counts = {sg: accepted_count(pubt["pub"], Ipub[sg], pubm[sg]["pub"][1], delta) for sg in (-1, 1)}
+        t_agg = time.monotonic()-t
+        json.dump({"marker_masses_published": {str(sg): [str(x) for x in pubm[sg]["pub"]] for sg in (-1, 1)},
+                   "marker_masses_midpoint": {str(sg): str(pubm[sg]["midpoint"]) for sg in (-1, 1)},
+                   "checker_unpadded": {str(sg): [str(x) for x in Zc[sg]] for sg in (-1, 1)},
+                   "total_published": [str(x) for x in pubt["pub"]],
+                   "node_weight_published": [str(x) for x in pubw["pub"]], "node_weight_exponent": str(wexp),
+                   "node_weight_checker_unpadded": [str(x) for x in wc],
+                   "accepted_counts": {str(sg): [str(x) for x in counts[sg]] for sg in (-1, 1)},
+                   "delta_comp": str(delta), "scale_exponents": {"producer": ep, "checker": ec},
+                   "verdict": mverdict, "all_ok": all(mverdict.values())},
+                  open(f"{nd_dir}/masses.json", "w"), indent=1, default=str)
+        nrec["phases"] += [{"phase": "producer_masses", "wall_s": t_mass_p}, {"phase": "checker_masses", "wall_s": t_mass_c},
+                           {"phase": "mass_publication_and_counts", "wall_s": t_agg, "all_ok": all(mverdict.values())}]
+        prod_wall += t_mass_p + t_agg / 2; chk_wall += t_mass_c + t_agg / 2
+        if not all(mverdict.values()):
+            nrec["verdict"] = "REJECTED"; nrec["mass_failed"] = [k for k, v in mverdict.items() if not v]
+            rec["nodes"].append(nrec); rec["stop"] = {"code": "VALIDITY_FAILURE", "node": key, "failed": nrec["mass_failed"]}
+            break
         # ---- publication + containment verdict (charged)
         t = time.monotonic()
         v = certs.verify_node(a.arm, f"{nd_dir}/prod.json", f"{nd_dir}/chk.json", cprod, cchk, grids[sgn], prob)

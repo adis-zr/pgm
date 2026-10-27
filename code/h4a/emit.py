@@ -23,6 +23,14 @@ def dyadic_str(x: Fr) -> str:
     e = -(d.bit_length() - 1)
     return f"{n}*2^{e}"
 
+DY = 1 << 320
+def out_dy(x: Fr, up: bool = False) -> str:
+    """outward dyadic representative of an exact rational on the 2^-320 grid: floor for a lower endpoint, ceil for an
+    upper endpoint, so the emitted interval always contains the true enclosure"""
+    y = x * DY
+    n = (-((-y.numerator) // y.denominator)) if up else (y.numerator // y.denominator)
+    return f"{n}*2^-320"
+
 def f64_bits(x: Fr) -> str:
     """nearest binary64 of an exact rational, as 16 hex digits (ties to even via Python float round-trip of the fraction)"""
     v = float(x)
@@ -40,22 +48,23 @@ class Cache:
         self.model = model; self.grid = grid; self.prec = prec
         M = MP(prec); self.M = M; n = model.n
         s2n = M.sqrt(M.q(Fr(2, n)))                           # sqrt(2/n), enclosed
-        self.site = {}; self.site_err = Fr(0); self.worst_phase_err = Fr(0)
+        self.site = {}; self.site_iv = {}; self.site_err = Fr(0); self.worst_phase_err = Fr(0)
         h2, h3 = grid.h[0], grid.h[1]
         for ki, (k2, k3, mult) in enumerate(grid.reps):
             for i in range(n):
                 r_pos = h2 * k2 * model.u[i][2] + h3 * k3 * model.u[i][3]     # exact rational
                 for x in (-1, 1):
                     if k2 == 0 and k3 == 0:
-                        p, err = exact_phase_one()
+                        p, err = exact_phase_one(); civ = (Fr(1), Fr(1)); siv = (Fr(0), Fr(0))
                     else:
                         ang = M.mul(s2n, M.q(Fr(x) * r_pos))
                         c, s = M.cos_sin(ang)
-                        p, err = store_phase((fr(c[0]), fr(c[1])), (fr(s[0]), fr(s[1])))
-                    self.site[(ki, i, x)] = p
+                        civ = (fr(c[0]), fr(c[1])); siv = (fr(s[0]), fr(s[1]))
+                        p, err = store_phase(civ, siv)
+                    self.site[(ki, i, x)] = p; self.site_iv[(ki, i, x)] = (civ, siv)
                     if err > self.worst_phase_err: self.worst_phase_err = err
         # combined boundary-pair phases, certified from the SUMMED angle (never a product of stored phases)
-        self.pair = {}
+        self.pair = {}; self.pair_iv = {}
         for which, (ia, ib) in (("term", (n - 2, n - 1)), ("init", (0, 1))):
             for ki, (k2, k3, mult) in enumerate(grid.reps):
                 ra = h2 * k2 * model.u[ia][2] + h3 * k3 * model.u[ia][3]
@@ -63,12 +72,13 @@ class Cache:
                 for xa in (-1, 1):
                     for xb in (-1, 1):
                         if k2 == 0 and k3 == 0:
-                            p, err = exact_phase_one()
+                            p, err = exact_phase_one(); civ = (Fr(1), Fr(1)); siv = (Fr(0), Fr(0))
                         else:
                             ang = M.mul(s2n, M.q(Fr(xa) * ra + Fr(xb) * rb))
                             c, s = M.cos_sin(ang)
-                            p, err = store_phase((fr(c[0]), fr(c[1])), (fr(s[0]), fr(s[1])))
-                        self.pair[(which, ki, xa, xb)] = p
+                            civ = (fr(c[0]), fr(c[1])); siv = (fr(s[0]), fr(s[1]))
+                            p, err = store_phase(civ, siv)
+                        self.pair[(which, ki, xa, xb)] = p; self.pair_iv[(which, ki, xa, xb)] = (civ, siv)
                         if err > self.worst_phase_err: self.worst_phase_err = err
         # Fourier weights: nearest binary64; exact enclosure for the error predicate
         self.lam_bits = []; self.lam_iv = []
@@ -117,8 +127,8 @@ def write_point_witness(path, prob, grid, cache: Cache, tabs, kind="producer"):
                 for ib, b in enumerate(nb):
                     rec = per_ctx.get((a, b))
                     if rec is None: continue
-                    ints, l1 = rec; lines.append(f"ROW {i} {ia} {ib} {ints[0]} {ints[1]}")
-        ti, tl1 = tabs["terminal"]; lines.append("TERM %d %d %d %d" % tuple(ti))
+                    ints, l1 = rec[0], rec[1]; lines.append(f"ROW {i} {ia} {ib} {ints[0]} {ints[1]}")
+        ti, tl1 = tabs["terminal"][0], tabs["terminal"][1]; lines.append("TERM %d %d %d %d" % tuple(ti))
     else:
         for i in range(2, n):
             per_ctx = tabs["rows"].get(i, {})
@@ -127,8 +137,8 @@ def write_point_witness(path, prob, grid, cache: Cache, tabs, kind="producer"):
                 for ib, b in enumerate(nb):
                     rec = per_ctx.get((a, b))
                     if rec is None: continue
-                    ints, l1 = rec; lines.append(f"ROW {i} {ia} {ib} {ints[0]} {ints[1]}")
-        ii, il1 = tabs["initial"]; lines.append("TERM %d %d %d %d" % tuple(ii))   # ABSOLUTE 4-slot order (--),(-+),(+-),(++)
+                    ints, l1 = rec[0], rec[1]; lines.append(f"ROW {i} {ia} {ib} {ints[0]} {ints[1]}")
+        ii, il1 = tabs["initial"][0], tabs["initial"][1]; lines.append("TERM %d %d %d %d" % tuple(ii))   # ABSOLUTE 4-slot order (--),(-+),(+-),(++)
     for ki in range(len(reps)):
         for i in range(n):
             for xi, x in enumerate((-1, 1)):
@@ -146,36 +156,57 @@ def write_point_witness(path, prob, grid, cache: Cache, tabs, kind="producer"):
     open(path, "w").write("\n".join(lines) + "\n")
     return len("\n".join(lines)) + 1
 
-def write_rect_witness(path, prob, grid, cache: Cache, tabs, prec):
-    """interval arm: the same rows/phases/weights as exact dyadic ENDPOINT pairs (stored values are exact, so lo==hi)"""
+def write_rect_witness(path, prob, grid, cache: Cache, tabs, prec, kind="producer"):
+    """Interval arm (C's producer and the C/PI interval checker): emits the TRUE directed-MPFR enclosures produced by
+    the table construction — row probability intervals, phase rectangles and Fourier-weight intervals — NOT the
+    quantized point values the point kernels consume. Feeding C degenerate intervals around the quantized values would
+    make it an enclosure of the rounded surrogate and would understate its cost (review finding 1).
+
+    kind='producer' uses the backward factorization (rows i=0..n-3 + terminal pair); kind='checker' uses the
+    INDEPENDENT opposite-direction construction (forward rows i=2..n-1 + initial pair), so the C/PI checker is a
+    separate implementation rather than the producer at higher precision (review finding 1b)."""
     n = prob.m.n; reps = grid.reps; lines = [f"H4RECT-V1 {n} {prob.q} {len(reps)} {prec} 2"]
     for i in range(n):
         al = prob.allowed[i]; lines.append("ALLOWED %d %d %s" % (i, len(al), " ".join(str(s) for s in al)))
-    for i, per_ctx in enumerate(tabs["rows"]):
-        na = prob.allowed[i + 1]; nb = prob.allowed[i + 2]
-        for ia, a in enumerate(na):
-            for ib, b in enumerate(nb):
-                rec = per_ctx.get((a, b))
-                if rec is None: continue
-                ints, l1 = rec
-                p0 = dyadic_str(Fr(ints[0], MESH)); p1 = dyadic_str(Fr(ints[1], MESH))
-                lines.append(f"ROW {i} {ia} {ib} {p0} {p0} {p1} {p1}")
-    ti, _ = tabs["terminal"]
-    lines.append("TERM " + " ".join(f"{dyadic_str(Fr(v, MESH))} {dyadic_str(Fr(v, MESH))}" for v in ti))
+    if kind == "producer":
+        for i, per_ctx in enumerate(tabs["rows"]):
+            na = prob.allowed[i + 1]; nb = prob.allowed[i + 2]
+            for ia, a in enumerate(na):
+                for ib, b in enumerate(nb):
+                    rec = per_ctx.get((a, b))
+                    if rec is None: continue
+                    enc = rec[2]
+                    e0 = enc.get(0, (Fr(0), Fr(0))); e1 = enc.get(1, (Fr(0), Fr(0)))
+                    lines.append(f"ROW {i} {ia} {ib} {out_dy(e0[0])} {out_dy(e0[1], up=True)} {out_dy(e1[0])} {out_dy(e1[1], up=True)}")
+        bkey = "terminal"; which = "term"
+    else:
+        for i in range(2, n):
+            per_ctx = tabs["rows"].get(i, {})
+            na = prob.allowed[i - 2]; nb = prob.allowed[i - 1]
+            for ia, a in enumerate(na):
+                for ib, b in enumerate(nb):
+                    rec = per_ctx.get((a, b))
+                    if rec is None: continue
+                    enc = rec[2]
+                    e0 = enc.get(0, (Fr(0), Fr(0))); e1 = enc.get(1, (Fr(0), Fr(0)))
+                    lines.append(f"ROW {i} {ia} {ib} {out_dy(e0[0])} {out_dy(e0[1], up=True)} {out_dy(e1[0])} {out_dy(e1[1], up=True)}")
+        bkey = "initial"; which = "init"
+    benc = tabs[bkey][2]
+    parts = []
+    for sl in range(4):
+        iv = benc.get(sl, (Fr(0), Fr(0))); parts.append(f"{out_dy(iv[0])} {out_dy(iv[1], up=True)}")
+    lines.append("TERM " + " ".join(parts))
     for ki in range(len(reps)):
         for i in range(n):
             for xi, x in enumerate((-1, 1)):
-                cr, ci = cache.site[(ki, i, x)]
-                a = dyadic_str(Fr(cr, MESH)); b = dyadic_str(Fr(ci, MESH))
-                lines.append(f"PH {ki} {i} {xi} {a} {a} {b} {b}")
+                cre, cim = cache.site_iv[(ki, i, x)]
+                lines.append(f"PH {ki} {i} {xi} {out_dy(cre[0])} {out_dy(cre[1], up=True)} {out_dy(cim[0])} {out_dy(cim[1], up=True)}")
     for ki in range(len(reps)):
         for ja, xa in enumerate((-1, 1)):
             for jb, xb in enumerate((-1, 1)):
-                cr, ci = cache.pair[("term", ki, xa, xb)]
-                a = dyadic_str(Fr(cr, MESH)); b = dyadic_str(Fr(ci, MESH))
-                lines.append(f"PHT {ki} {ja} {jb} {a} {a} {b} {b}")
+                cre, cim = cache.pair_iv[(which, ki, xa, xb)]
+                lines.append(f"PHT {ki} {ja} {jb} {out_dy(cre[0])} {out_dy(cre[1], up=True)} {out_dy(cim[0])} {out_dy(cim[1], up=True)}")
     for ki, (lo, hi) in enumerate(cache.lam_iv):
-        v = f64_value(cache.lam_bits[ki]); d = dyadic_str(v)
-        lines.append(f"LAM {ki} {d} {d}")
+        lines.append(f"LAM {ki} {out_dy(lo)} {out_dy(hi, up=True)}")
     open(path, "w").write("\n".join(lines) + "\n")
     return len("\n".join(lines)) + 1

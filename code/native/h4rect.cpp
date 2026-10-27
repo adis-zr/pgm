@@ -61,10 +61,10 @@ static std::string iv_json(const IV& a) { return "[\"" + mpfr_exact(a.lo) + "\",
 
 int main(int argc, char** argv) {
   now_s();
-  const char* in = nullptr; const char* out = nullptr; const char* prog = nullptr; long expect = -1;
+  const char* in = nullptr; const char* out = nullptr; const char* prog = nullptr; long expect = -1; int fwd = 0;
   for (int i = 1; i < argc; i++) { std::string a = argv[i];
     if (a == "--in") in = argv[++i]; else if (a == "--out") out = argv[++i]; else if (a == "--prec") PREC = atol(argv[++i]);
-    else if (a == "--progress") prog = argv[++i]; else if (a == "--expect-freq") expect = atol(argv[++i]); else die("unknown arg"); }
+    else if (a == "--progress") prog = argv[++i]; else if (a == "--expect-freq") expect = atol(argv[++i]); else if (a == "--forward") fwd = 1; else die("unknown arg"); }
   if (!in || !out) die("need --in/--out");
   if (PREC != 256 && PREC != 320) die("precision must be the frozen 256 (producer) or 320 (checker)");
   mpfr_set_emin(-16384); mpfr_set_emax(16384); mpfr_clear_flags();
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     if (!strcmp(tag, "ALLOWED")) { long i, c; if (fscanf(f, "%ld %ld", &i, &c) != 2 || i < 0 || i >= n || c < 1 || c > 2) die("bad ALLOWED");
       allowed[i].clear(); for (long j = 0; j < c; j++) { long s; if (fscanf(f, "%ld", &s) != 1) die("bad spin"); allowed[i].push_back((int)s); } }
     else if (!strcmp(tag, "ROW")) { long i, ia, ib; if (fscanf(f, "%ld %ld %ld %511s %511s %511s %511s", &i, &ia, &ib, b1, b2, b3, b4) != 7) die("bad ROW");
-      long nb = (long)allowed[i + 2].size(); long idx = ia * nb + ib; if (idx < 0 || idx >= 4) die("row ctx range");
+      long nb = (long)(fwd ? allowed[i - 1].size() : allowed[i + 2].size()); long idx = ia * nb + ib; if (idx < 0 || idx >= 4) die("row ctx range");
       IV& p0 = rowp[((size_t)i * 4 + idx) * 2 + 0]; IV& p1 = rowp[((size_t)i * 4 + idx) * 2 + 1];
       set_dyadic(p0.lo, b1, MPFR_RNDD); set_dyadic(p0.hi, b2, MPFR_RNDU); set_dyadic(p1.lo, b3, MPFR_RNDD); set_dyadic(p1.hi, b4, MPFR_RNDU);
       if (mpfr_sgn(p0.lo) < 0 || mpfr_sgn(p1.lo) < 0) die("negative probability endpoint");
@@ -106,13 +106,71 @@ int main(int argc, char** argv) {
   }
   fclose(f);
   for (long k = 0; k < nk; k++) if (!seen_lam[k]) die("missing weight");
-  for (long i = 0; i <= n - 3; i++) { long na = (long)allowed[i + 1].size(), nb = (long)allowed[i + 2].size();
-    for (long ia = 0; ia < na; ia++) for (long ib = 0; ib < nb; ib++) if (!seen_row[(size_t)i * 4 + ia * nb + ib]) die("missing reachable row"); }
+  if (!fwd) { for (long i = 0; i <= n - 3; i++) { long na = (long)allowed[i + 1].size(), nb = (long)allowed[i + 2].size();
+    for (long ia = 0; ia < na; ia++) for (long ib = 0; ib < nb; ib++) if (!seen_row[(size_t)i * 4 + ia * nb + ib]) die("missing reachable row"); } }
+  else { for (long i = 2; i <= n - 1; i++) { long na = (long)allowed[i - 2].size(), nb = (long)allowed[i - 1].size();
+    for (long ia = 0; ia < na; ia++) for (long ib = 0; ib < nb; ib++) if (!seen_row[(size_t)i * 4 + ia * nb + ib]) die("missing reachable forward row"); } }
   FILE* pf = prog ? fopen(prog, "a") : nullptr;
   std::vector<CV> outc((size_t)nk * 2); for (auto& z : outc) cv_init(z);
   for (int mi = 0; mi < 2; mi++) {
     int msign = (mi == 0) ? -1 : 1;
     for (long k = 0; k < nk; k++) {
+     if (fwd) {
+      // independent opposite direction: G_n = 1; G_i(a,b) = sum_c t_i(c|a,b) phi_i(c) b_i(c) G_{i+1}(b,c)
+      CV G[4]; bool Gok[4] = {false,false,false,false};
+      for (int t = 0; t < 4; t++) cv_init(G[t]);
+      { long i = n - 1; long na = (long)allowed[i - 2].size(), nb = (long)allowed[i - 1].size();
+        for (long ia = 0; ia < na; ia++) for (long ib = 0; ib < nb; ib++) {
+          long idx = ia * nb + ib; CV s; cv_init(s); bool first = true;
+          for (long ic = 0; ic < (long)allowed[i].size(); ic++) {
+            int c = allowed[i][ic]; if (i == q && c != msign) continue;
+            IV& p = rowp[((size_t)i * 4 + idx) * 2 + (c < 0 ? 0 : 1)];
+            if (mpfr_zero_p(p.lo) && mpfr_zero_p(p.hi)) continue;
+            CV w; cv_init(w); cv_scale(w, ph[((size_t)k * n + i) * 2 + (c < 0 ? 0 : 1)], p);
+            if (first) { iv_set(s.re, w.re); iv_set(s.im, w.im); first = false; } else cv_add(s, s, w);
+            mpfr_clear(w.re.lo); mpfr_clear(w.re.hi); mpfr_clear(w.im.lo); mpfr_clear(w.im.hi);
+          }
+          iv_set(G[idx].re, s.re); iv_set(G[idx].im, s.im); Gok[idx] = !first;
+          mpfr_clear(s.re.lo); mpfr_clear(s.re.hi); mpfr_clear(s.im.lo); mpfr_clear(s.im.hi); } }
+      for (long i = n - 2; i >= 2; i--) {
+        CV N[4]; bool Nok[4] = {false,false,false,false}; for (int t = 0; t < 4; t++) cv_init(N[t]);
+        long na = (long)allowed[i - 2].size(), nb = (long)allowed[i - 1].size(), ncs = (long)allowed[i].size();
+        for (long ia = 0; ia < na; ia++) for (long ib = 0; ib < nb; ib++) {
+          long idx = ia * nb + ib; CV s; cv_init(s); bool first = true;
+          for (long ic = 0; ic < ncs; ic++) {
+            int c = allowed[i][ic]; if (i == q && c != msign) continue;
+            IV& p = rowp[((size_t)i * 4 + idx) * 2 + (c < 0 ? 0 : 1)];
+            if (mpfr_zero_p(p.lo) && mpfr_zero_p(p.hi)) continue;
+            long pidx = ib * ncs + ic; if (pidx < 0 || pidx >= 4 || !Gok[pidx]) continue;
+            CV z; cv_init(z); cv_mul(z, ph[((size_t)k * n + i) * 2 + (c < 0 ? 0 : 1)], G[pidx]);
+            CV w; cv_init(w); cv_scale(w, z, p);
+            if (first) { iv_set(s.re, w.re); iv_set(s.im, w.im); first = false; } else cv_add(s, s, w);
+            for (CV* pz : {&z,&w}) { mpfr_clear(pz->re.lo); mpfr_clear(pz->re.hi); mpfr_clear(pz->im.lo); mpfr_clear(pz->im.hi); }
+          }
+          iv_set(N[idx].re, s.re); iv_set(N[idx].im, s.im); Nok[idx] = !first;
+          mpfr_clear(s.re.lo); mpfr_clear(s.re.hi); mpfr_clear(s.im.lo); mpfr_clear(s.im.hi); }
+        for (int t = 0; t < 4; t++) { iv_set(G[t].re, N[t].re); iv_set(G[t].im, N[t].im); Gok[t] = Nok[t];
+          mpfr_clear(N[t].re.lo); mpfr_clear(N[t].re.hi); mpfr_clear(N[t].im.lo); mpfr_clear(N[t].im.hi); } }
+      long ta = (long)allowed[0].size(), tb = (long)allowed[1].size();
+      CV fsum; cv_init(fsum); bool first = true;
+      for (long ia = 0; ia < ta; ia++) for (long ib = 0; ib < tb; ib++) {
+        int sa = allowed[0][ia], sb = allowed[1][ib];
+        long sl = (sa < 0 ? 0 : 2) + (sb < 0 ? 0 : 1);
+        if (mpfr_zero_p(term[sl].lo) && mpfr_zero_p(term[sl].hi)) continue;
+        if (q == 0 && sa != msign) continue;
+        if (q == 1 && sb != msign) continue;
+        long idx = ia * tb + ib; if (idx < 0 || idx >= 4 || !Gok[idx]) continue;
+        size_t pidx = (size_t)k * 4 + (size_t)(sa < 0 ? 0 : 1) * 2 + (sb < 0 ? 0 : 1); if (!seen_pht[pidx]) die("missing initial phase");
+        CV z; cv_init(z); cv_mul(z, pht[pidx], G[idx]);
+        CV w; cv_init(w); cv_scale(w, z, term[sl]);
+        if (first) { iv_set(fsum.re, w.re); iv_set(fsum.im, w.im); first = false; } else cv_add(fsum, fsum, w);
+        for (CV* pz : {&z,&w}) { mpfr_clear(pz->re.lo); mpfr_clear(pz->re.hi); mpfr_clear(pz->im.lo); mpfr_clear(pz->im.hi); } }
+      iv_set(outc[(size_t)k * 2 + mi].re, fsum.re); iv_set(outc[(size_t)k * 2 + mi].im, fsum.im);
+      mpfr_clear(fsum.re.lo); mpfr_clear(fsum.re.hi); mpfr_clear(fsum.im.lo); mpfr_clear(fsum.im.hi);
+      for (int t = 0; t < 4; t++) { mpfr_clear(G[t].re.lo); mpfr_clear(G[t].re.hi); mpfr_clear(G[t].im.lo); mpfr_clear(G[t].im.hi); }
+      if (pf && (k % 64 == 0)) { fprintf(pf, "{\"kernel\":\"h4rect\",\"dir\":\"forward\",\"prec\":%ld,\"marker\":%d,\"freq\":%ld,\"of\":%ld,\"elapsed_s\":%.3f}\n", (long)PREC, msign, k, nk, now_s()); fflush(pf); }
+      continue;
+     }
       CV H[4]; bool Hok[4] = {false,false,false,false};
       for (int t = 0; t < 4; t++) cv_init(H[t]);
       long na = (long)allowed[1].size(), nb = (long)allowed[2].size();

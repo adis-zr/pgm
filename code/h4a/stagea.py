@@ -245,7 +245,7 @@ def negative_controls(packet, out_dir):
     out["understated_phase_allowance_rejected"] = {"rejected": not (cp.worst_phase_err <= Fr(1, 1 << 60)), "reason_matched": True,
         "expected_substring": "declared allowance below the independently recomputed bound",
         "stderr": f"recomputed worst phase L1 {float(cp.worst_phase_err):.3e} > claimed 2^-60"}
-    out["understated_row_allowance_rejected"] = {"rejected": not (max([P['terminal'][1]] + [l1 for pc in P['rows'] for (_, l1) in pc.values()]) <= Fr(1, 1 << 60)),
+    out["understated_row_allowance_rejected"] = {"rejected": not (max([P['terminal'][1]] + [l1 for pc in P['rows'] for (_, l1, _e) in pc.values()]) <= Fr(1, 1 << 60)),
         "reason_matched": True, "expected_substring": "declared allowance below the independently recomputed bound",
         "stderr": "recomputed worst row L1 exceeds a claimed 2^-60"}
     # 5. cache identity: a different mathematical identity must not be reusable
