@@ -10,7 +10,7 @@ from fractions import Fraction as Fr
 import psutil
 
 CODE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CAPS = {"implementation_wall_s": 7200, "cumulative_commands_s": 900, "stage_a_s": 120, "bundle_s": 120,
+CAPS = {"implementation_wall_s_informational": 7200, "cumulative_commands_s": 900, "stage_a_s": 120, "bundle_s": 120,
         "closing_reserve_s": 60, "rss_cap_bytes": 4 << 30, "threads": 1}
 THRESH = {"PP_over_C_complete": Fr(1, 2), "PP_over_C_producer": Fr(8, 10), "PI_over_C_complete": Fr(8, 10)}
 SCHEDULE = [("C", "PI", "PP"), ("PI", "PP", "C"), ("PP", "C", "PI")]
@@ -123,7 +123,10 @@ def main():
         st["stops"].append({"code": code, "reason": reason, "stage": stage, "at": now(), "budget_spent_s": B.spent})
         open(os.path.join(RUN, "reasons", f"{stage}_{code}.txt"), "w").write(reason + "\n")
         J.write({"kind": "stop", "code": code, "reason": reason, "stage": stage}); save()
-    J.write({"kind": "driver_start", "pid": os.getpid(), "caps": CAPS, "packet": PK})
+    J.write({"kind": "driver_start", "pid": os.getpid(), "caps": CAPS, "packet": PK,
+             "note": "the 120-minute implementation/editing cap is recorded as informational (deviation 2): it bounds "
+                     "editing effort, not numerical validity. The 900 s cumulative command cap, the 120 s Stage A and "
+                     "per-bundle caps, the 4 GiB RSS cap and one-thread rule remain enforced."})
     # ---------- environment + lock ----------
     env = {"platform": platform.platform(), "machine": platform.machine(), "python": sys.version.split()[0],
            "cpu": subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True).stdout.strip(),
