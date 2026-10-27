@@ -38,3 +38,11 @@ gradient updates with step 2/5 from c = 0, rounded to the 2^-64 grid; a separate
 The checker binds the residual requirement to the frozen 1/8 and requires complete frequency arrays k = 1..J on both sides (amendment 2).
 Gate and checker verify the frozen declared constants (K = 99/46, V̄ = 2079/1472, L = 15/32, E_0 = 3/800; CONTROL K = 63/17, L = 1/4) against
 input-derived exact quantities (alternating closed form for K, exact M, (1 − x/8)^8 floor, RoundUp influence sum) before use.
+
+## Normalization-free certificate clearance diagnostic (26/27 Oct 2026) — `nf/`, `native/nfchain.cpp`, `native/nfcheck.cpp`
+
+Fresh positive-real implementation of `docs/normalization-free-diagnostic-v1/CLAUDE_CODE_SPEC.md` (bounded diagnostic; not a campaign). `nf/model.py`
+(exact generator, fixtures, geometry verification), `nf/certs.py` (frozen formulas, exact rational bounds), `nf/check.py` (independent binding
+checks), `nf/validate.py` + `tests/test_nf_small.py` (fixtures vs 256-bit enumeration, rejection suite), `nf/run.py` (driver: stages A/B/C, external
+deadlines, durable records), `nf/report.py`, `nf/replay.py`, `nf/closeout.py`. Outcome in `runs/nf_diag_2026-10-26/REPORT.md`:
+**OLD_CHEAP_ALREADY_SUFFICIENT** (both cheap certificates pass at width 1/100; Stage C not run). Reproduce: `runs/nf_diag_2026-10-26/REPRODUCE.md`.

@@ -12,6 +12,8 @@ Two parts:
 - `code/` — the direct chain-query certificate pilot (26 Oct 2026): `code/README.md`, `code/dq/`, `code/native/`, `code/tests/`, and the
   durable campaign records under `code/runs/dq_pilot_2026-10-26/` (REPORT.md leads with the decision). The earlier `strongcompact`
   implementation was deleted on 26 Oct 2026 and exists only as prose in `docs/`.
+- `docs/normalization-free-diagnostic-v1/` — the frozen spec packet for the normalization-free certificate clearance diagnostic (26/27 Oct 2026; code under
+  `code/nf/`, records under `code/runs/nf_diag_2026-10-26/`, ledger entry `docs/LEDGER_ADDITIONS_nf_diagnostic_2026-10-26.md`: OLD_CHEAP_ALREADY_SUFFICIENT).
 - `docs/direct-query-theory-pass-2026-10-26/` — the theory pass packet that specified the pilot (proofs, witness, Fourier baseline, frozen spec);
   `docs/LEDGER_ADDITIONS_direct_query_pilot_2026-10-26.md` — the pilot's scoped empirical entry (E-DQ-01).
 
