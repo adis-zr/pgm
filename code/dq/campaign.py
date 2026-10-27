@@ -73,7 +73,7 @@ def source_hashes():
 
 class Campaign:
     def __init__(self, run_dir):
-        self.run_dir = run_dir; os.makedirs(run_dir, exist_ok=True)
+        self.run_dir = run_dir = os.path.abspath(run_dir); os.makedirs(run_dir, exist_ok=True)
         self.events = Journal(os.path.join(run_dir, "events.jsonl")); self.resources = Journal(os.path.join(run_dir, "resources.jsonl")); self.attempts = Journal(os.path.join(run_dir, "attempts.jsonl"))
         self.t0 = time.monotonic(); self.state = {"stages": {}, "cells": [], "stops": []}; self.exempt = exempt_daemons()
     def elapsed(self): return time.monotonic() - self.t0
@@ -137,7 +137,7 @@ class Campaign:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument("--run-dir", required=True); ap.add_argument("--skip-timed", action="store_true"); a = ap.parse_args(argv)
-    C = Campaign(a.run_dir); rd = a.run_dir
+    C = Campaign(a.run_dir); rd = C.run_dir
     env = environment(); src = source_hashes()
     json.dump({"environment": env, "sources": src, "frozen": {"n": N, "arm_cap_s": ARM_CAP_S, "d_screen_s": D_SCREEN_S, "total_cap_s": TOTAL_CAP_S, "rss_cap_bytes": RSS_CAP, "steps": 17, "step": "2/5", "grid_MAIN": {"h": "1", "J": 3, "delta": "113/100000"}, "grid_CONTROL": {"h": "3/4", "J": 4, "delta": "1/1400"}, "fbits_ladder": [80, 128], "check_ladder": [128, 192]},
                "eligibility_deviation": {"exempt": {str(k): v for k, v in C.exempt.items()}, "decided": "before any timed stage (pre-launch)", "rule_kept": "any OTHER foreign process >= 50% of a core for 5 consecutive seconds -> ineligible; numerical-phase worker CPU/wall >= 0.90 required", "reason": "the user toggled Bluetooth without effect and declined to kill a system daemon; the daemon has been pinned on one of 11 cores for days, identically in every cell of both arms and throughout the earlier closed campaigns"}, "spec_sha256": {"CLAUDE_CODE_SPEC.md": sha_file(os.path.join(ROOT, "..", "docs", "direct-query-theory-pass-2026-10-26", "CLAUDE_CODE_SPEC.md")), "AUDIT.md": sha_file(os.path.join(ROOT, "..", "docs", "direct-query-theory-pass-2026-10-26", "AUDIT.md"))}, "analytic_facts_recorded": ANALYTIC},

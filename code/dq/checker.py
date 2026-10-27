@@ -44,7 +44,7 @@ def _within(inner, outer):
 
 def check_arm(arm: str, input_path: str, witness: dict, out_dir: str, journal, deadline_s: float, rss_cap: int, fbits: int, monitor=None, progress_path=None) -> dict:
     """witness: the producer's result JSON (dict).  Returns a verdict dict with every check named."""
-    t0 = time.monotonic(); C = {"arm": arm, "checks": {}, "phases": []}
+    t0 = time.monotonic(); C = {"arm": arm, "checks": {}, "phases": []}; input_path = os.path.abspath(input_path); out_dir = os.path.abspath(out_dir)
     pc = PhaseClock("check_input_identity")
     # (1) exact input identity: reparse + regenerate + hash
     try:

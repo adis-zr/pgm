@@ -55,6 +55,8 @@ def _producer_contracts(P: dict, arm: str) -> list:
 
 def run_arm(arm: str, case: str, n: int, out_dir: str, deadline_s: float = 90.0, rss_cap: int = 4 << 30, evidence=None, monitor=None, fbits_ladder=(80, 128), check_ladder=(128, 192), pair_tag=None, reuse_input: str | None = None) -> dict:
     """Complete standalone arm: input construction + hash, gate, producer (precision ladder), publication, independent checker (ladder)."""
+    out_dir = os.path.abspath(out_dir)        # native subprocesses run with cwd = their attempt directory: every path they receive must be absolute
+    if reuse_input: reuse_input = os.path.abspath(reuse_input)
     os.makedirs(out_dir, exist_ok=True)
     J = Journal(os.path.join(out_dir, "events.jsonl")); T0 = time.monotonic()
     R = {"arm": arm, "case": case, "n": n, "pair_tag": pair_tag, "deadline_s": deadline_s, "phases": [], "attempts": [], "status": None}
