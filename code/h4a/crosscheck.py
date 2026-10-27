@@ -4,7 +4,7 @@ import sys, os, json, argparse
 sys.set_int_max_str_digits(0)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fractions import Fraction as Fr
-from h4a.certs import fb, fx, E_PUB, E_CH, E_INT
+from h4a.certs import fb, fx, E_PUB, E_CH, E_INT, load_strict
 
 ap = argparse.ArgumentParser(); ap.add_argument("--run-dir", required=True); ap.add_argument("--out", required=True)
 a = ap.parse_args(); os.makedirs(a.out, exist_ok=True)
@@ -14,11 +14,11 @@ for rep in (1, 2, 3):
     for nd in sorted(os.listdir(os.path.join(RUN, "bundles", f"rep{rep}_C"))):
         p = os.path.join(RUN, "bundles", f"rep{rep}_C", nd)
         if not os.path.isdir(p): continue
-        C = json.load(open(os.path.join(p, "prod.json")))          # 256-bit rect producer
-        Cc = json.load(open(os.path.join(p, "chk.json")))          # 320-bit rect checker
-        PI = json.load(open(os.path.join(RUN, "bundles", f"rep{rep}_PI", nd, "prod.json")))
-        PP = json.load(open(os.path.join(RUN, "bundles", f"rep{rep}_PP", nd, "prod.json")))
-        PPc = json.load(open(os.path.join(RUN, "bundles", f"rep{rep}_PP", nd, "chk.json")))
+        C = load_strict(os.path.join(p, "prod.json"))          # 256-bit rect producer
+        Cc = load_strict(os.path.join(p, "chk.json"))          # 320-bit rect checker
+        PI = load_strict(os.path.join(RUN, "bundles", f"rep{rep}_PI", nd, "prod.json"))
+        PP = load_strict(os.path.join(RUN, "bundles", f"rep{rep}_PP", nd, "prod.json"))
+        PPc = load_strict(os.path.join(RUN, "bundles", f"rep{rep}_PP", nd, "chk.json"))
         cint = {(d["k"], d["marker"]): ((fx(d["re"][0]), fx(d["re"][1])), (fx(d["im"][0]), fx(d["im"][1]))) for d in Cc["channels"]}
         pub = {}
         for d in C["channels"]:
@@ -37,16 +37,27 @@ for rep in (1, 2, 3):
                     q = pub[(k, mk, comp, nm)]
                     if not (q[0] <= iv[0] and iv[1] <= q[1]): bad[nm] += 1
         # agreement of the three producers' values within the channel ceiling
-        cmid = {(d["k"], d["marker"]): (fx(d["re"][0]) + fx(d["re"][1])) / 2 for d in C["channels"]}
-        pim = {(d["k"], d["marker"]): fb(d["re"]) for d in PI["channels"]}
-        ppm = {(d["k"], d["marker"]): fb(d["re"]) for d in PP["channels"]}
-        worst = max(max(abs(cmid[k] - pim[k]), abs(cmid[k] - ppm[k]), abs(pim[k] - ppm[k])) for k in cmid)
+        # BOTH complex coordinates and BOTH responses (addendum §5; the old code compared real channels only)
+        worst = Fr(0); bitwise = True
+        for comp in ("re", "im"):
+            cmid = {(d["k"], d["marker"]): (fx(d[comp][0]) + fx(d[comp][1])) / 2 for d in C["channels"]}
+            pim = {(d["k"], d["marker"]): fb(d[comp]) for d in PI["channels"]}
+            ppm = {(d["k"], d["marker"]): fb(d[comp]) for d in PP["channels"]}
+            worst = max([worst] + [max(abs(cmid[k] - pim[k]), abs(cmid[k] - ppm[k]), abs(pim[k] - ppm[k])) for k in cmid])
+            bitwise = bitwise and all(pim[k] == ppm[k] for k in pim)
+        cresp = {d["marker"]: (fx(d["iv"][0]) + fx(d["iv"][1])) / 2 for d in C["response"]}
+        piresp = {d["marker"]: fb(d["bits"]) for d in PI["response"]}
+        ppresp = {d["marker"]: fb(d["bits"]) for d in PP["response"]}
+        worst_resp = max(max(abs(cresp[m] - piresp[m]), abs(cresp[m] - ppresp[m]), abs(piresp[m] - ppresp[m])) for m in cresp)
+        bitwise = bitwise and all(piresp[m] == ppresp[m] for m in piresp)
         rr["nodes"].append({"node": nd, "C_checker_in_C_pub_violations": bad["C"], "C_checker_in_PI_pub_violations": bad["PI"],
                             "C_checker_in_PP_pub_violations": bad["PP"], "channels": len(cint) * 2,
                             "worst_cross_arm_channel_gap": str(worst), "within_2E_ch": worst <= 2 * E_CH,
-                            "PI_equals_PP_bitwise": all(pim[k] == ppm[k] for k in pim)})
+                            "worst_cross_arm_response_gap": str(worst_resp), "response_within_2E_int": worst_resp <= 2 * E_INT,
+                            "PI_equals_PP_bitwise_both_coordinates_and_responses": bitwise})
     rr["all_ok"] = all(n["C_checker_in_C_pub_violations"] == 0 and n["C_checker_in_PI_pub_violations"] == 0
-                       and n["C_checker_in_PP_pub_violations"] == 0 and n["within_2E_ch"] and n["PI_equals_PP_bitwise"] for n in rr["nodes"]) and len(rr["nodes"]) == 6
+                       and n["C_checker_in_PP_pub_violations"] == 0 and n["within_2E_ch"] and n["response_within_2E_int"]
+                       and n["PI_equals_PP_bitwise_both_coordinates_and_responses"] for n in rr["nodes"]) and len(rr["nodes"]) == 6
     res["repetitions"].append(rr)
 res["all_ok"] = all(r["all_ok"] for r in res["repetitions"])
 f = open(os.path.join(a.out, "crosscheck.json"), "w"); json.dump(res, f, indent=1, default=str); f.flush(); os.fsync(f.fileno()); f.close()

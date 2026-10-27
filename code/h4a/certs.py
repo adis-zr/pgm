@@ -11,6 +11,20 @@ sys.set_int_max_str_digits(0)
 import json, struct
 from fractions import Fraction as Fr
 
+
+def _no_dup_pairs(pairs):
+    """JSON object hook rejecting duplicate keys (plain json.load silently keeps the last one)."""
+    seen = {}
+    for k, v in pairs:
+        if k in seen: raise ValueError(f"duplicate JSON object key: {k!r}")
+        seen[k] = v
+    return seen
+
+
+def load_strict(path):
+    """json.load with duplicate-key rejection"""
+    return json.load(open(path), object_pairs_hook=_no_dup_pairs)
+
 E_CH = Fr(1, 1 << 38); E_INT = Fr(1, 1 << 36); E_PUB = Fr(1, 1 << 30)
 W_GATE_PROD = Fr(1, 1 << 36)      # C's raw radius gate
 W_GATE_REF = Fr(1, 1 << 35)       # interval checker's raw width gate
@@ -21,7 +35,7 @@ def fx(s: str) -> Fr:
 
 def response_publication(prod_path, arm):
     """the arm's published response interval per marker, used as I_pub in eq. (17)"""
-    P = json.load(open(prod_path)); out = {}
+    P = load_strict(prod_path); out = {}
     if arm == "C":
         for d in P["response"]:
             iv = (fx(d["iv"][0]), fx(d["iv"][1])); mid = (iv[0] + iv[1]) / 2
@@ -35,7 +49,7 @@ def response_publication(prod_path, arm):
 def response_inner(chk_path, arm):
     """the CHECKER's own inner response interval per marker: the interval arm's raw interval, or the point checker's
     value +- E_int. Used as I_chk in the independent count replay (NUMERICAL_THEOREM.md §9)."""
-    C = json.load(open(chk_path)); out = {}
+    C = load_strict(chk_path); out = {}
     if arm == "PP":
         for d in C["response"]: v = fb(d["bits"]); out[d["marker"]] = (v - E_INT, v + E_INT)
     else:
@@ -44,7 +58,7 @@ def response_inner(chk_path, arm):
 
 
 def verify_node(arm, prod_path, chk_path, cprod, cchk, grid, prob):
-    P = json.load(open(prod_path)); C = json.load(open(chk_path))
+    P = load_strict(prod_path); C = load_strict(chk_path)
     checks = {}; detail = {}
     nrep = len(grid.reps)
     def ck(name, ok, **kw):
@@ -56,7 +70,14 @@ def verify_node(arm, prod_path, chk_path, cprod, cchk, grid, prob):
         pk = [(d["k"], d["marker"]) for d in P["channels"]]; ckk = [(d["k"], d["marker"]) for d in C["channels"]]
         ck("producer_channel_key_set_exact", set(pk) == want and len(pk) == len(want), n=len(pk), want=len(want))
         ck("checker_channel_key_set_exact", set(ckk) == want and len(ckk) == len(want), n=len(ckk), want=len(want))
-        ck("producer_channel_order_is_frozen", pk == sorted(pk, key=lambda t: (t[0], t[1])) or len(set(pk)) == len(pk))
+        # the ORDERED list, on both sides: permutations must be rejected (review CHECKER_REVIEW, addendum §5)
+        expected_order = [(ki, mk) for ki in range(nrep) for mk in (-1, 1)]
+        ck("producer_channel_order_is_frozen", pk == expected_order, first_mismatch=next((i for i, (a, b) in enumerate(zip(pk, expected_order)) if a != b), None))
+        ck("checker_channel_order_is_frozen", ckk == expected_order, first_mismatch=next((i for i, (a, b) in enumerate(zip(ckk, expected_order)) if a != b), None))
+        # kernel identity must match the role the record claims
+        want_kernel = {"C": ("h4rect", "h4rect"), "PI": ("h4point", "h4rect"), "PP": ("h4point", "h4pcheck")}[arm]
+        ck("producer_kernel_identity", P.get("kernel") == want_kernel[0], got=P.get("kernel"), want=want_kernel[0])
+        ck("checker_kernel_identity", C.get("kernel") == want_kernel[1], got=C.get("kernel"), want=want_kernel[1])
         pr = [d["marker"] for d in P["response"]]; crr = [d["marker"] for d in C["response"]]
         ck("both_responses_present", set(pr) == {-1, 1} and set(crr) == {-1, 1})
         # duplicate response records must not pass (review item 2)
