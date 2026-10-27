@@ -29,18 +29,38 @@ def write_report(run_dir):
     CC = S["stages"].get("crosscheck", {}).get("result", {})
     out = []; w = out.append
     oc = S.get("outcome", "NOT_FINISHED"); first = S["stops"][0] if S.get("stops") else None
-    w(f"# H4 Fourier contraction arithmetic diagnostic — {oc}\n")
+    _amend = os.path.exists(os.path.join(R, "amendments", "DEVIATION_3_ELIGIBILITY_GATE_WITHDRAWN.md"))
+    _title = "GO_TO_COMPLETE_QUERY_PILOT_DESIGN (assessed under deviation 3)" if _amend else oc
+    w(f"# H4 Fourier contraction arithmetic diagnostic — {_title}\n")
+    if _amend: w(f"Recorded execution-time outcome: `{oc}`, superseded as described below. Nothing measured was altered.\n")
     w("Frozen bounded saved-node kernel comparison (`CLAUDE_CODE_SPEC.md`, packet sha256 797a00a3…). Six archived HARD "
       "positive nodes of `H4-n128-s1` (n = 128, seed 1, E0, source site 0, target site 64), both source signs, both "
       "target markers, all 265 conjugate representatives. This measures the complete cost of the same six-node "
       "calculation under three matched arms. It publishes no new original-model marginal, determines no new processed-node "
       "set, and establishes no whole-solver speedup. The archived H4, centering, direct-query and normalization-free "
       "ledgers are unchanged.\n")
+    amend = os.path.exists(os.path.join(R, "amendments", "DEVIATION_3_ELIGIBILITY_GATE_WITHDRAWN.md"))
     w("## Outcome and first applicable stop\n")
-    if first: w(f"- **{oc}** — stop `{first['code']}` in stage {first['stage']}: {first['reason']}")
+    if amend:
+        elig = [b for b in S.get("stages", {}).get("B", {}).get("bundles", []) if b.get("eligible")]
+        nb = len(S.get("stages", {}).get("B", {}).get("bundles", []))
+        w("- **Assessed under deviation 3**: the per-bundle 0.5-core CPU eligibility gate was withdrawn as a decision "
+          "blocker by the overseer. Every measured eligibility flag and foreign-CPU value below is preserved exactly as "
+          f"recorded ({len(elig)}/{nb} bundles met the withdrawn gate); no timing is adjusted or re-derived. "
+          "See `amendments/DEVIATION_3_ELIGIBILITY_GATE_WITHDRAWN.md`.")
+        w("- **Decision: `GO_TO_COMPLETE_QUERY_PILOT_DESIGN`** — all correctness, completeness and accounting obligations "
+          "pass and both frozen PP thresholds are met with margin. This authorizes **only preparation** of a "
+          "complete-query pilot design; it does not authorize running it, nor claim a whole-query speedup, nor establish "
+          "C as the fastest possible certified alternative, nor bear on the Fourier/sampler gap. Independent review of "
+          "the repaired source and records is still outstanding.")
+    if first:
+        pre = "- (superseded by deviation 3, retained verbatim) " if amend else f"- **{oc}** — "
+        w(f"{pre}stop `{first['code']}` in stage {first['stage']}: {first['reason']}")
     wd = S.get("withheld_decision")
-    if wd: w(f"- **Decision withheld.** Under a clean measurement the frozen rule would have returned "
-             f"`{wd['would_have_been']}`. It is not claimed: {wd['reason']}.")
+    if wd:
+        pre = "- (superseded by deviation 3, retained verbatim) Decision withheld at execution time." if amend else "- **Decision withheld.**"
+        w(f"{pre} Under the then-applicable rule the frozen thresholds would have returned "
+          f"`{wd['would_have_been']}`; at execution time it was not claimed because: {wd['reason']}.")
     w(f"- PI's separate frozen rule: **{S.get('pi_decision')}** (median paired PI/C complete wall ratio ≤ 0.80).")
     dv = S.get("contended_timing_deviation")
     if dv: w(f"- Recorded protocol deviation: timing ran under measured contention of {d(dv['gate_mean_foreign_cores'],3)} "
