@@ -32,6 +32,22 @@ from dq.gate import response_gate, weighted_count_state_estimate, log_weight_per
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
 TOTAL_CAP_S = 1200.0; ARM_CAP_S = 90.0; D_SCREEN_S = 30.0; RSS_CAP = 4 << 30; N = 32768
+# RECORDED PRE-LAUNCH DEVIATION from the frozen eligibility rule (decided before any timed stage; see lock.json["eligibility_deviation"]):
+# /usr/sbin/BTLEServer (root system daemon) has been pinned at ~100 % of one of the 11 cores continuously for ~4.5 days, including through the
+# two earlier closed campaigns on this workstation.  The user toggled Bluetooth without effect and chose not to kill a system daemon.  Under the
+# literal rule every timed cell would be INCONCLUSIVE.  The exemption applies to that single pre-existing pid only; any other foreign process
+# >= 50 % for 5 s still marks the cell ineligible, and the worker-side rule (numerical-phase CPU/wall >= 0.90) is unchanged.
+def exempt_daemons():
+    ex = {}
+    for p in psutil.process_iter(["pid", "name", "create_time", "username"]):
+        try:
+            if p.info["name"] == "BTLEServer" and (time.time() - p.info["create_time"]) > 24 * 3600:
+                ex[p.pid] = f"pre-existing system daemon {p.info['name']} (user {p.info['username']}, running {((time.time() - p.info['create_time']) / 86400):.1f} days, pinned at one core)"
+        except psutil.Error:
+            pass
+    return ex
+
+
 ANALYTIC = {"main_query_range": ["0.5216", "0.7733"], "residual_only_minus_full_lower": "0.0236", "source": "docs/direct-query-theory-pass-2026-10-26/witness_response.md section 5 (analytical; not re-evaluated here)"}
 
 
@@ -59,7 +75,7 @@ class Campaign:
     def __init__(self, run_dir):
         self.run_dir = run_dir; os.makedirs(run_dir, exist_ok=True)
         self.events = Journal(os.path.join(run_dir, "events.jsonl")); self.resources = Journal(os.path.join(run_dir, "resources.jsonl")); self.attempts = Journal(os.path.join(run_dir, "attempts.jsonl"))
-        self.t0 = time.monotonic(); self.state = {"stages": {}, "cells": [], "stops": []}
+        self.t0 = time.monotonic(); self.state = {"stages": {}, "cells": [], "stops": []}; self.exempt = exempt_daemons()
     def elapsed(self): return time.monotonic() - self.t0
     def remaining(self): return TOTAL_CAP_S - self.elapsed()
     def save(self):
@@ -73,7 +89,7 @@ class Campaign:
         """One timed cell = one standalone arm (fresh process-level accounting inside run_arm) under contention monitoring."""
         if self.remaining() < 5: self.stop("TOTAL_CAP_REACHED_BEFORE_CELL", cell=tag); return None
         cdir = os.path.join(self.run_dir, "cells", tag); os.makedirs(cdir, exist_ok=True)
-        mon = ContentionMonitor(self.resources); mon.start(); time.sleep(1.2)
+        mon = ContentionMonitor(self.resources, exempt=self.exempt); mon.start(); time.sleep(1.2)
         load0 = os.getloadavg()
         self.events.write({"kind": "cell_start", "cell": tag, "arm": arm, "case": case, "pair": pair, "order_idx": order_idx, "load_avg": load0})
         R = run_arm(arm, case, N, cdir, deadline_s=min(ARM_CAP_S, max(1.0, self.remaining() - 65.0)), rss_cap=RSS_CAP, monitor=mon, pair_tag=pair)
@@ -82,7 +98,7 @@ class Campaign:
         num = [a for a in R["attempts"] if a.get("kind") == "producer"] + [a["kernel"] for a in R["attempts"] if a.get("kind") == "checker" and a.get("kernel")]
         cpu = sum(a.get("cpu_s") or 0 for a in num); wall = sum(a.get("wall_s") or 0 for a in num)
         ratio = cpu / wall if wall > 0 else None
-        elig = {"foreign_cpu_violations": c["violations"], "contention_samples": c["samples"], "numerical_phase_cpu_s": cpu, "numerical_phase_wall_s": wall, "numerical_phase_cpu_over_wall": ratio,
+        elig = {"foreign_cpu_violations": c["violations"], "contention_samples": c["samples"], "exempt_daemon_busy_samples": c["exempt_processes_seen_busy"], "numerical_phase_cpu_s": cpu, "numerical_phase_wall_s": wall, "numerical_phase_cpu_over_wall": ratio,
                 "eligible": (not c["violations"]) and (ratio is not None and ratio >= 0.90), "reasons": ([f"foreign process >=50% CPU for 5 s: {[v['name'] for v in c['violations']]}"] if c["violations"] else []) + ([f"numerical-phase CPU/wall {ratio:.3f} < 0.90"] if (ratio is None or ratio < 0.90) else [])}
         row = {"cell": tag, "arm": arm, "case": case, "pair": pair, "order_idx": order_idx, "mode": mode, "status": R["status"], "guarantee": R.get("guarantee"), "width": R.get("width"), "width_ok": R.get("width_ok"), "published": R.get("published"),
                "complete_wall_s": R["complete_wall_s"], "phases": R["phases"], "attempts": R["attempts"], "residual_overhead_s": R["residual_overhead_s"], "peak_rss_bytes": max([a.get("peak_rss_bytes") or 0 for a in R["attempts"] if a.get("kind") == "producer"] + [(a.get("kernel") or {}).get("peak_rss_bytes") or 0 for a in R["attempts"] if a.get("kind") == "checker"] + [0]),
@@ -96,7 +112,7 @@ class Campaign:
         """CONTROL automatic arm: gate (declines) then fallback F, charged together as one complete cell; fallback reuses the gate's input bytes."""
         if self.remaining() < 5: self.stop("TOTAL_CAP_REACHED_BEFORE_CELL", cell=tag); return None
         cdir = os.path.join(self.run_dir, "cells", tag); os.makedirs(cdir, exist_ok=True)
-        mon = ContentionMonitor(self.resources); mon.start(); time.sleep(1.2); load0 = os.getloadavg(); t0 = time.monotonic()
+        mon = ContentionMonitor(self.resources, exempt=self.exempt); mon.start(); time.sleep(1.2); load0 = os.getloadavg(); t0 = time.monotonic()
         self.events.write({"kind": "cell_start", "cell": tag, "arm": "AUTO", "case": "CONTROL", "pair": pair, "order_idx": order_idx})
         RD = run_arm("D", "CONTROL", N, os.path.join(cdir, "gate"), deadline_s=min(ARM_CAP_S, max(1.0, self.remaining() - 65.0)), rss_cap=RSS_CAP, monitor=mon, pair_tag=pair)
         gate_wall = RD["complete_wall_s"]
@@ -108,7 +124,7 @@ class Campaign:
         c = mon.finish(); total = time.monotonic() - t0
         num = [a for a in RF["attempts"] if a.get("kind") == "producer"] + [a["kernel"] for a in RF["attempts"] if a.get("kind") == "checker" and a.get("kernel")]
         cpu = sum(a.get("cpu_s") or 0 for a in num); wall = sum(a.get("wall_s") or 0 for a in num); ratio = cpu / wall if wall > 0 else None
-        elig = {"foreign_cpu_violations": c["violations"], "contention_samples": c["samples"], "numerical_phase_cpu_s": cpu, "numerical_phase_wall_s": wall, "numerical_phase_cpu_over_wall": ratio, "eligible": (not c["violations"]) and (ratio is not None and ratio >= 0.90),
+        elig = {"foreign_cpu_violations": c["violations"], "contention_samples": c["samples"], "exempt_daemon_busy_samples": c["exempt_processes_seen_busy"], "numerical_phase_cpu_s": cpu, "numerical_phase_wall_s": wall, "numerical_phase_cpu_over_wall": ratio, "eligible": (not c["violations"]) and (ratio is not None and ratio >= 0.90),
                 "reasons": ([f"foreign process >=50% CPU for 5 s: {[v['name'] for v in c['violations']]}"] if c["violations"] else []) + ([f"numerical-phase CPU/wall {ratio:.3f} < 0.90"] if (ratio is None or ratio < 0.90) else [])}
         row = {"cell": tag, "arm": "AUTO", "case": "CONTROL", "pair": pair, "order_idx": order_idx, "mode": "gate_then_fallback", "status": RF["status"], "guarantee": RF.get("guarantee"), "width": RF.get("width"), "width_ok": RF.get("width_ok"), "published": RF.get("published"),
                "gate_wall_s": gate_wall, "gate_phases": RD["phases"], "gate_declined_reason": RD.get("declined_reason"), "fallback_wall_s": RF["complete_wall_s"], "fallback_phases": RF["phases"], "fallback_attempts": RF["attempts"], "fallback_reused_input": True,
@@ -124,7 +140,7 @@ def main(argv=None):
     C = Campaign(a.run_dir); rd = a.run_dir
     env = environment(); src = source_hashes()
     json.dump({"environment": env, "sources": src, "frozen": {"n": N, "arm_cap_s": ARM_CAP_S, "d_screen_s": D_SCREEN_S, "total_cap_s": TOTAL_CAP_S, "rss_cap_bytes": RSS_CAP, "steps": 17, "step": "2/5", "grid_MAIN": {"h": "1", "J": 3, "delta": "113/100000"}, "grid_CONTROL": {"h": "3/4", "J": 4, "delta": "1/1400"}, "fbits_ladder": [80, 128], "check_ladder": [128, 192]},
-               "spec_sha256": {"CLAUDE_CODE_SPEC.md": sha_file(os.path.join(ROOT, "..", "docs", "direct-query-theory-pass-2026-10-26", "CLAUDE_CODE_SPEC.md")), "AUDIT.md": sha_file(os.path.join(ROOT, "..", "docs", "direct-query-theory-pass-2026-10-26", "AUDIT.md"))}, "analytic_facts_recorded": ANALYTIC},
+               "eligibility_deviation": {"exempt": {str(k): v for k, v in C.exempt.items()}, "decided": "before any timed stage (pre-launch)", "rule_kept": "any OTHER foreign process >= 50% of a core for 5 consecutive seconds -> ineligible; numerical-phase worker CPU/wall >= 0.90 required", "reason": "the user toggled Bluetooth without effect and declined to kill a system daemon; the daemon has been pinned on one of 11 cores for days, identically in every cell of both arms and throughout the earlier closed campaigns"}, "spec_sha256": {"CLAUDE_CODE_SPEC.md": sha_file(os.path.join(ROOT, "..", "docs", "direct-query-theory-pass-2026-10-26", "CLAUDE_CODE_SPEC.md")), "AUDIT.md": sha_file(os.path.join(ROOT, "..", "docs", "direct-query-theory-pass-2026-10-26", "AUDIT.md"))}, "analytic_facts_recorded": ANALYTIC},
               open(os.path.join(rd, "lock.json"), "w"), indent=1, default=str)
     C.events.write({"kind": "campaign_start", "git_head": env["git_head"], "git_dirty": env["git_dirty"], "load_avg": env["load_avg"]})
     # ---------------- Stage 1: tiny validation + input-only gates

@@ -67,8 +67,9 @@ def _last_progress(path):
 
 class ContentionMonitor:
     """Background sampler of foreign CPU use.  foreign = any pid not in `own` (the supervisor and the worker trees it launched)."""
-    def __init__(self, journal: Journal, threshold_pct=50.0, consecutive=5):
-        self.j = journal; self.thr = threshold_pct; self.k = consecutive; self.own = {os.getpid()}; self.lock = threading.Lock()
+    def __init__(self, journal: Journal, threshold_pct=50.0, consecutive=5, exempt=None):
+        """exempt: {pid: reason} — RECORDED pre-launch deviation; exempt processes are still logged in every sample but do not mark the cell ineligible."""
+        self.j = journal; self.thr = threshold_pct; self.k = consecutive; self.own = {os.getpid()}; self.lock = threading.Lock(); self.exempt = dict(exempt or {}); self.exempt_seen = {}
         self.streak = {}; self.violations = []; self.samples = 0; self.stop = threading.Event(); self.thread = None
     def add_tree(self, root_pid):
         with self.lock:
@@ -94,6 +95,8 @@ class ContentionMonitor:
             self.samples += 1
             seen = set()
             for pid, name, c in busy:
+                if pid in self.exempt:
+                    self.exempt_seen[pid] = self.exempt_seen.get(pid, 0) + 1; continue
                 seen.add(pid); self.streak[pid] = self.streak.get(pid, 0) + 1
                 if self.streak[pid] == self.k:
                     v = {"pid": pid, "name": name, "cpu_percent": c, "consecutive_s": self.k, "at": now_iso()}; self.violations.append(v)
@@ -107,7 +110,7 @@ class ContentionMonitor:
     def finish(self):
         self.stop.set()
         if self.thread: self.thread.join(timeout=3)
-        return {"samples": self.samples, "violations": self.violations, "eligible_by_foreign_cpu": not self.violations}
+        return {"samples": self.samples, "violations": self.violations, "eligible_by_foreign_cpu": not self.violations, "exempt_processes_seen_busy": {str(k): {"samples_busy": v, "reason": self.exempt[k]} for k, v in self.exempt_seen.items()}}
 
 
 def run_native(cmd, cwd, journal: Journal, deadline_s: float, rss_cap_bytes: int, meta: dict, progress_path=None, monitor: ContentionMonitor | None = None, env=None):
