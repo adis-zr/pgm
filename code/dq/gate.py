@@ -95,7 +95,9 @@ def structural_constants(m: Model, bits: int = 128) -> dict:
     if m.query == 0 and not m.evidence:
         # standard field-uniform single-site Dobrushin row sum at site 0: tanh|J_01| + sum_{j>=2} tanh|J_0j| with J_01 = (log f_0)/2 (+ no negative), J_0j = -a_0 a_j
         # recorded as a LOWER bound via tanh z >= (2/3) z for z in [0,1] and tanh(log(f)/2) = (f-1)/(f+1) exactly
-        row = contraction_two_state(m.f[0]) + sum((Fr(2, 3) * m.a[0] * m.a[j] for j in range(2, n)), Fr(0)) + Fr(2, 3) * m.a[0] * m.a[1]
+        # J_01 = (log f_0)/2 - a_0 a_1 (residual edge PLUS the negative collective coupling); tanh is 1-Lipschitz, tanh((log f)/2) = (f-1)/(f+1)
+        # exactly, so tanh|J_01| >= (f_0-1)/(f_0+1) - a_0 a_1; non-neighbours: tanh(a_0 a_j) >= (2/3) a_0 a_j for 0 <= a_0 a_j <= 1
+        row = (contraction_two_state(m.f[0]) - m.a[0] * m.a[1]) + sum((Fr(2, 3) * m.a[0] * m.a[j] for j in range(2, n)), Fr(0))
         dob_row0 = row
     return {"n": n, "free_sites": len(free), "taus": [str(t) for t in taus], "tau_edge0": str(tau[0]), "tau_edge1": str(tau[1]) if n > 2 else None,
             "K_rowsum_upper": str(K), "K_rowsum_upper_float": float(K), "K_infinite_chain_closed_form": str(K_closed) if K_closed is not None else None,

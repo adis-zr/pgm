@@ -89,9 +89,9 @@ static void gradient(Chain& C, const mpfr_t c, const std::vector<IV>& m, IV& g) 
 // Recursion (D = diag(v_+, v_-), v_x = u_x e^{i w a_i x}, M = [[f,1],[1,f]], all nonnegative moduli):
 //   e_i = 2^-e [ fl(D^ M^ g^) - D^ M^ g^ ] + 2^-e [ (D^ M^ - D M) g^ ] + 2^-e D M e_{i-1}
 //   |D M e_{i-1}| <= s_{i-1} |D| M alpha_{i-1} = s_{i-1} 2^e alpha_i ;  |g^| <= (1+s_{i-1}) alpha_{i-1} ;
-//   |D^ - D| <= dD |D| with dD = du (1+de) + de, du = relative half-width of the u-interval, de = angle half-width + 2^(1-PREC) (cos, sin rounded);
-//   |M^ - M| <= df M with df = relative half-width of the f-interval;  local rounding <= cr 2^-PREC |D^||M^||g^| with cr = 8
-//   (two real mults for f*g, two adds, four mults + two adds for the complex product, each a relative 2^-PREC perturbation; 8 is generous).
+//   |D^ - D| <= dD |D| with dD = [du + eps(1+du)] + [2(hw_ang + eps|ang|) + 2 eps] + 2 eps (1+du)(1+eps)   (amendment 1: midpoint, trig and product roundings);
+//   |M^ - M| <= dM M with dM = df + eps(1+df);  local rounding <= cr 2^-PREC |D^||M^||g^| with cr = 16 (proved <= 13 in amendment 1, sec. 3)
+//   (two real mults for f*g, two adds, four mults + two adds for the complex product; see amendments/NUMERICAL_PROOF_REPAIR.md).
 //   => s_i = s_{i-1} + (1+s_{i-1}) [ df(1+dD) + dD + cr 2^-PREC (1+dD)(1+df) ]   (RoundUp)
 // Final: phi = (sum_x gamma(x))/T with |sum_x e(x)| <= s T_hi; returned as a rigorous rectangle.
 static void complex_pass(Chain& C, const std::vector<IV>& up, const std::vector<IV>& um, const std::vector<long>& sexp, const IV& T, const IV& w, CV& phip, CV& phim, long freq_idx, const char* phase, mpfr_t s_out) {
@@ -109,7 +109,7 @@ static void complex_pass(Chain& C, const std::vector<IV>& up, const std::vector<
   auto relhw = [&](mpfr_t out, const IV& x) { mpfr_sub(out, x.hi, x.lo, MPFR_RNDU); mpfr_div_2ui(out, out, 1, MPFR_RNDU); mpfr_div(out, out, x.lo, MPFR_RNDU); };   // (hi-lo)/(2 lo), x.lo > 0
   auto mid = [&](mpfr_t out, const IV& x) { mpfr_add(out, x.lo, x.hi, MPFR_RNDN); mpfr_div_2ui(out, out, 1, MPFR_RNDN); };
   auto site_setup = [&](long i) {
-    // point unaries, point factor, point rotation; and the local perturbation bound inc
+    // point unaries, point factor, point rotation; and the local perturbation bound inc (amendments/NUMERICAL_PROOF_REPAIR.md eqs 1,2,4)
     mid(ubar_p, up[i]); mid(ubar_m, um[i]); if (i > 0) mid(fbar, C.f[i - 1]);
     iv_mul(angI, w, C.a[i]); mid(ang, angI); mpfr_cos(cs, ang, MPFR_RNDN); mpfr_sin(sn, ang, MPFR_RNDN);
     mpfr_mul(vp_re, ubar_p, cs, MPFR_RNDN); mpfr_mul(vp_im, ubar_p, sn, MPFR_RNDN); mpfr_mul(vm_re, ubar_m, cs, MPFR_RNDN); mpfr_mul(vm_im, ubar_m, sn, MPFR_RNDN); mpfr_neg(vm_im, vm_im, MPFR_RNDN);
@@ -117,15 +117,21 @@ static void complex_pass(Chain& C, const std::vector<IV>& up, const std::vector<
     mpfr_set_ui(du, 0, MPFR_RNDU);
     if (mpfr_sgn(up[i].lo) > 0) { relhw(tmpu, up[i]); mpfr_max(du, du, tmpu, MPFR_RNDU); }
     if (mpfr_sgn(um[i].lo) > 0) { relhw(tmpu, um[i]); mpfr_max(du, du, tmpu, MPFR_RNDU); }
-    // de = angle half-width + 2^(1-PREC)
-    mpfr_sub(de, angI.hi, angI.lo, MPFR_RNDU); mpfr_div_2ui(de, de, 1, MPFR_RNDU); mpfr_mul_2ui(tmpu, eps, 1, MPFR_RNDU); mpfr_add(de, de, tmpu, MPFR_RNDU);
-    // dD = du(1+de) + de
-    mpfr_add_ui(tmpu, de, 1, MPFR_RNDU); mpfr_mul(dD, du, tmpu, MPFR_RNDU); mpfr_add(dD, dD, de, MPFR_RNDU);
-    // df
-    if (i > 0) relhw(df, C.f[i - 1]); else mpfr_set_ui(df, 0, MPFR_RNDU);
-    // inc = df(1+dD) + dD + 8 eps (1+dD)(1+df)
+    // term A = du + eps(1+du)            (midpoint of u and its rounding)
+    mpfr_t A, B, Cc; mpfr_init2(A, PREC); mpfr_init2(B, PREC); mpfr_init2(Cc, PREC);
+    mpfr_add_ui(tmpu, du, 1, MPFR_RNDU); mpfr_mul(A, tmpu, eps, MPFR_RNDU); mpfr_add(A, A, du, MPFR_RNDU);
+    // term B = 2 (hw_ang + eps |ang_mid|) + 2 eps   (angle midpoint + its rounding, propagated through cos/sin with Lipschitz 1; cos/sin roundings)
+    mpfr_sub(de, angI.hi, angI.lo, MPFR_RNDU); mpfr_div_2ui(de, de, 1, MPFR_RNDU); mpfr_abs(tmpu, ang, MPFR_RNDU); mpfr_mul(tmpu, tmpu, eps, MPFR_RNDU); mpfr_add(de, de, tmpu, MPFR_RNDU);
+    mpfr_mul_2ui(B, de, 1, MPFR_RNDU); mpfr_mul_2ui(tmpu, eps, 1, MPFR_RNDU); mpfr_add(B, B, tmpu, MPFR_RNDU);
+    // term C = 2 eps (1+du)(1+eps)       (the two products u_bar * cos, u_bar * sin)
+    mpfr_add_ui(tmpu, du, 1, MPFR_RNDU); mpfr_mul(Cc, tmpu, eps, MPFR_RNDU); mpfr_mul_2ui(Cc, Cc, 1, MPFR_RNDU); mpfr_add_ui(tmpu, eps, 1, MPFR_RNDU); mpfr_mul(Cc, Cc, tmpu, MPFR_RNDU);
+    mpfr_add(dD, A, B, MPFR_RNDU); mpfr_add(dD, dD, Cc, MPFR_RNDU);
+    // dM = df + eps(1+df)
+    if (i > 0) { relhw(df, C.f[i - 1]); mpfr_add_ui(tmpu, df, 1, MPFR_RNDU); mpfr_mul(tmpu, tmpu, eps, MPFR_RNDU); mpfr_add(df, df, tmpu, MPFR_RNDU); } else mpfr_set_ui(df, 0, MPFR_RNDU);
+    // inc = dM(1+dD) + dD + 16 eps (1+dD)(1+dM)
     mpfr_add_ui(tmpu, dD, 1, MPFR_RNDU); mpfr_mul(inc, df, tmpu, MPFR_RNDU); mpfr_add(inc, inc, dD, MPFR_RNDU);
-    mpfr_add_ui(one_s, df, 1, MPFR_RNDU); mpfr_mul(one_s, one_s, tmpu, MPFR_RNDU); mpfr_mul_ui(one_s, one_s, 8, MPFR_RNDU); mpfr_mul(one_s, one_s, eps, MPFR_RNDU); mpfr_add(inc, inc, one_s, MPFR_RNDU);
+    mpfr_add_ui(one_s, df, 1, MPFR_RNDU); mpfr_mul(one_s, one_s, tmpu, MPFR_RNDU); mpfr_mul_ui(one_s, one_s, 16, MPFR_RNDU); mpfr_mul(one_s, one_s, eps, MPFR_RNDU); mpfr_add(inc, inc, one_s, MPFR_RNDU);
+    mpfr_clear(A); mpfr_clear(B); mpfr_clear(Cc);
   };
   auto cmul = [&](mpfr_t rre, mpfr_t rim, mpfr_t are, mpfr_t aim, mpfr_t bre, mpfr_t bim) {   // (a)(b), round to nearest
     mpfr_mul(t1, are, bre, MPFR_RNDN); mpfr_mul(t2, aim, bim, MPFR_RNDN); mpfr_mul(t3, are, bim, MPFR_RNDN); mpfr_mul(t4, aim, bre, MPFR_RNDN);

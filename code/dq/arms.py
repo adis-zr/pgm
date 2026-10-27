@@ -53,22 +53,34 @@ def _producer_contracts(P: dict, arm: str) -> list:
     return bad
 
 
-def run_arm(arm: str, case: str, n: int, out_dir: str, deadline_s: float = 90.0, rss_cap: int = 4 << 30, evidence=None, monitor=None, fbits_ladder=(80, 128), check_ladder=(128, 192), pair_tag=None, reuse_input: str | None = None) -> dict:
+def run_arm(arm: str, case: str, n: int, out_dir: str, deadline_s: float = 90.0, rss_cap: int = 4 << 30, evidence=None, monitor=None, fbits_ladder=(80, 128), check_ladder=(128, 192), pair_tag=None, reuse_input: str | None = None, reuse_gate: dict | None = None) -> dict:
     """Complete standalone arm: input construction + hash, gate, producer (precision ladder), publication, independent checker (ladder)."""
     out_dir = os.path.abspath(out_dir)        # native subprocesses run with cwd = their attempt directory: every path they receive must be absolute
     if reuse_input: reuse_input = os.path.abspath(reuse_input)
     os.makedirs(out_dir, exist_ok=True)
     J = Journal(os.path.join(out_dir, "events.jsonl")); T0 = time.monotonic()
     R = {"arm": arm, "case": case, "n": n, "pair_tag": pair_tag, "deadline_s": deadline_s, "phases": [], "attempts": [], "status": None}
+    import threading, resource as _res
+    cur = {"phase": "start"}; stop_hb = threading.Event()
+    def _hb():                                   # amendment 3: heartbeat during long Python phases too (>= 1 Hz), independent of native subcall heartbeats
+        while not stop_hb.wait(1.0):
+            J.write({"kind": "python_heartbeat", "phase": cur["phase"], "elapsed_s": time.monotonic() - T0})
+    threading.Thread(target=_hb, daemon=True).start()
     def remaining(): return deadline_s - (time.monotonic() - T0)
     def finish(status, **k):
-        R["status"] = status; R.update(k); R["complete_wall_s"] = time.monotonic() - T0
+        R["status"] = status; R.update(k); R["complete_wall_s"] = time.monotonic() - T0          # standalone wall: start -> terminal decision (before the durable writes below)
         R["phase_sum_s"] = sum(p["wall_s"] for p in R["phases"]) + sum(a.get("wall_s", 0.0) for a in R["attempts"])
         R["residual_overhead_s"] = R["complete_wall_s"] - R["phase_sum_s"]
-        J.write({"kind": "arm_terminal", "status": status, "complete_wall_s": R["complete_wall_s"]}); J.close(); _write(os.path.join(out_dir, "result.json"), R); return R
+        R["driver_ru_maxrss_bytes"] = _res.getrusage(_res.RUSAGE_SELF).ru_maxrss          # Python driver peak (macOS: bytes); native peaks are per attempt
+        R["memory_coverage"] = "native worker trees sampled at 0.1 s (per attempt) + Python driver ru_maxrss; not a single process-tree peak"
+        J.write({"kind": "arm_terminal", "status": status, "complete_wall_s": R["complete_wall_s"]})
+        _write(os.path.join(out_dir, "result.json"), R)
+        R["durable_complete_wall_s"] = time.monotonic() - T0                                   # amendment 3: end-to-end incl. the durable terminal writes
+        _write(os.path.join(out_dir, "timing_end.json"), {"durable_complete_wall_s": R["durable_complete_wall_s"], "complete_wall_s": R["complete_wall_s"]})
+        J.write({"kind": "arm_durable_end", "durable_complete_wall_s": R["durable_complete_wall_s"]}); stop_hb.set(); J.close(); return R
     J.write({"kind": "arm_start", "arm": arm, "case": case, "n": n})
     # --- input construction and canonical bytes (charged)
-    pc = PhaseClock("input_construction")
+    cur["phase"] = "input_construction"; pc = PhaseClock("input_construction")
     inp = os.path.join(out_dir, "input.txt")
     if reuse_input:                           # automatic fallback: reuse the already-verified canonical bytes from the declined gate (charged there)
         import shutil; shutil.copy(reuse_input, inp); m = parse_canonical(inp); input_sha = m.sha256(); R["input_reused_from"] = reuse_input
@@ -76,14 +88,19 @@ def run_arm(arm: str, case: str, n: int, out_dir: str, deadline_s: float = 90.0,
         m = Model(n, case, evidence); input_sha = m.write(inp); parse_canonical(inp)       # self-verification of the written bytes against the formulas
     R["input_sha256"] = input_sha; R["input_bytes"] = os.path.getsize(inp); R["phases"].append(pc.stop()); J.write({"kind": "phase", **R["phases"][-1], "input_sha256": input_sha})
     # --- input-only structural gate (both arms run it: D needs it for admission; F records it and uses V_bar for the analytic radius check)
-    pc = PhaseClock("structural_gate"); G = response_gate(m, bits=128); R["gate"] = G; R["phases"].append(pc.stop()); J.write({"kind": "phase", **R["phases"][-1], "gate_decision": G["decision"], "E0_upper": G["E0_upper"]})
+    cur["phase"] = "structural_gate"; pc = PhaseClock("structural_gate")
+    if reuse_gate is not None and reuse_gate.get("input_sha256_bound") == input_sha:          # automatic fallback: reuse the declined gate's structural record (bound to the same input hash)
+        G = dict(reuse_gate); G["reused_from_declined_gate"] = True
+    else:
+        G = response_gate(m, bits=128); G["input_sha256_bound"] = input_sha
+    R["gate"] = G; R["phases"].append(pc.stop()); J.write({"kind": "phase", **R["phases"][-1], "gate_decision": G["decision"], "E0_upper": G["E0_upper"], "reused": G.get("reused_from_declined_gate", False)})
     if arm == "D" and G["decision"] != "ADMITTED":
         return finish("CERTIFICATE_DECLINED", declined_reason=G["failed_bound"], fallback="F")
     # --- producer with precision ladder
     P = None; grid = GRIDS[case] if arm == "F" else None
     for fbits in fbits_ladder:
         if remaining() <= 1: return finish("DEADLINE_BEFORE_PRODUCER")
-        adir = os.path.join(out_dir, f"producer_fb{fbits}"); os.makedirs(adir, exist_ok=True); prog = os.path.join(adir, "progress.txt"); outp = os.path.join(adir, "producer.json")
+        cur["phase"] = f"producer_fb{fbits}"; adir = os.path.join(out_dir, f"producer_fb{fbits}"); os.makedirs(adir, exist_ok=True); prog = os.path.join(adir, "progress.txt"); outp = os.path.join(adir, "producer.json")
         cmd = [DQCHAIN, inp, outp, "--mode", arm, "--fbits", str(fbits), "--steps", str(STEPS), "--step", STEP, "--progress", prog]
         if arm == "F": cmd += ["--freq-h", str(grid["h"]), "--J", str(grid["J"])]
         rec = run_native(cmd, adir, J, remaining(), rss_cap, {"phase": "producer", "arm": arm, "fbits": fbits}, progress_path=prog, monitor=monitor)
@@ -98,7 +115,7 @@ def run_arm(arm: str, case: str, n: int, out_dir: str, deadline_s: float = 90.0,
         if not bad: P = Pc; R["producer_fbits"] = fbits; R["producer_path"] = outp; break
     if P is None: return finish("NUMERIC_CONTRACT_FAILED")
     # --- publication (exact, charged)
-    pc = PhaseClock("publication")
+    cur["phase"] = "publication"; pc = PhaseClock("publication")
     q = (fx(P["final"]["q0"][0]), fx(P["final"]["q0"][1])); rabs = fx(P["final"]["residual_abs"][1])
     W = {"n": n, "query": m.query, "evidence": {str(k): v for k, v in m.evidence.items()}, "input_sha256": input_sha, "case": case, "arm": arm, "gate": G,
          "center": {"c": P["center"]["c"], "grid": "2^-64", "steps": STEPS, "step": STEP, "fbits": R["producer_fbits"], "mpfr_prec": P["mpfr_prec"], "iterations": P["center"]["iterations"]},
@@ -122,7 +139,7 @@ def run_arm(arm: str, case: str, n: int, out_dir: str, deadline_s: float = 90.0,
     verdict = None
     for cb in check_ladder:
         if remaining() <= 1: return finish("DEADLINE_BEFORE_CHECK", published=pub)
-        cdir = os.path.join(out_dir, f"checker_fb{cb}"); os.makedirs(cdir, exist_ok=True)
+        cur["phase"] = f"checker_fb{cb}"; cdir = os.path.join(out_dir, f"checker_fb{cb}"); os.makedirs(cdir, exist_ok=True)
         t = time.monotonic()
         try:
             V = check_arm(arm, inp, W, cdir, J, remaining(), rss_cap, cb, monitor=monitor, progress_path=os.path.join(cdir, "checker_progress.txt"))

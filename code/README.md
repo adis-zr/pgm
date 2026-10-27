@@ -25,7 +25,11 @@ producer_fb*/producer.json,checker_fb*/{verdict.json,checker_kernel.json}}`.
 Two-state chain; unary weights exp(±(h_i − a_i c)) as directed MPFR intervals; forward/backward messages scaled by exact powers of two
 (interval normalisation by dependent sums overflows after ~100 sites). Real passes are full interval arithmetic. Complex passes propagate
 point messages with one rigorously propagated relative-error scalar against the exact real chain (rectangle arithmetic wraps and overflows on
-signed quantities): the producer sweeps forward from the marker, the checker sweeps backward and applies the marker at site 0. Centre: 17
+signed quantities): the producer sweeps forward from the marker, the checker sweeps backward and applies the marker at site 0. The per-site
+error coefficient and the closed-form ceiling S_max = 48·n·2^-P under the enforced proof domain are derived in
+`runs/dq_pilot_2026-10-26/amendments/NUMERICAL_PROOF_REPAIR.md` (amendment 1, 27 Oct 2026); the checker treats the ceiling as the binding
+allowance and rejects any input/witness outside the domain. Centre: 17
 gradient updates with step 2/5 from c = 0, rounded to the 2^-64 grid; a separate final real pass certifies the residual |c − E_Q AX| and q_0.
+The checker binds the residual requirement to the frozen 1/8 and requires complete frequency arrays k = 1..J on both sides (amendment 2).
 Gate and checker verify the frozen declared constants (K = 99/46, V̄ = 2079/1472, L = 15/32, E_0 = 3/800; CONTROL K = 63/17, L = 1/4) against
 input-derived exact quantities (alternating closed form for K, exact M, (1 − x/8)^8 floor, RoundUp influence sum) before use.

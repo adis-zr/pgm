@@ -4,7 +4,7 @@
 //   * real pass: BACKWARD messages beta first (stored), then a forward sweep that forms every marginal from alpha_i beta_i on the fly;
 //     scaling by exact powers of two chosen from the beta messages (not the producer's alpha exponents);
 //   * complex pass: BACKWARD complex messages from site n-1 to 0, marker applied at site 0:  phi_s(w) = v_0(s) [M c_1]_s / T_real;
-//     point messages with ONE rigorously propagated relative error scalar against the exact backward real chain (same theorem, different code path).
+//     point messages with ONE rigorously propagated relative error scalar against the exact backward real chain (amendments/NUMERICAL_PROOF_REPAIR.md; c_r = 16).
 // Inputs: canonical input, exact centre "m*2^e", frequency spacing h (rational) and J.  Output: its own enclosures of q0, residual, phi_k.
 // Usage: dqcheck INPUT OUT.json --center STR --fbits F [--freq-h p/q --J J --progress PATH]
 #include "mpiv.hpp"
@@ -86,27 +86,32 @@ int main(int argc, char** argv) {
       IV angI; iv_init(angI);
       auto relhw = [&](mpfr_t out, const IV& x) { mpfr_sub(out, x.hi, x.lo, MPFR_RNDU); mpfr_div_2ui(out, out, 1, MPFR_RNDU); mpfr_div(out, out, x.lo, MPFR_RNDU); };
       auto mid = [&](mpfr_t out, const IV& x) { mpfr_add(out, x.lo, x.hi, MPFR_RNDN); mpfr_div_2ui(out, out, 1, MPFR_RNDN); };
-      auto setup = [&](long i) {   // v_i(x) = w_i(x) e^{i w a_i x} point values and the local perturbation bound inc at site i (factor f_{i-1} used when stepping from i to i-1 is handled by caller)
+      auto setup = [&](long i) {   // v_i(x) point values and the local perturbation bound dD (amendment 1, eq. 1); dM handled by caller per edge
         mid(ubp, wp[i]); mid(ubm, wm[i]); iv_mul(angI, w, a[i]); mid(ang, angI); mpfr_cos(cs, ang, MPFR_RNDN); mpfr_sin(sn, ang, MPFR_RNDN);
         mpfr_mul(vp_re, ubp, cs, MPFR_RNDN); mpfr_mul(vp_im, ubp, sn, MPFR_RNDN); mpfr_mul(vm_re, ubm, cs, MPFR_RNDN); mpfr_mul(vm_im, ubm, sn, MPFR_RNDN); mpfr_neg(vm_im, vm_im, MPFR_RNDN);
         mpfr_set_ui(du, 0, MPFR_RNDU); if (mpfr_sgn(wp[i].lo) > 0) { relhw(tmp, wp[i]); mpfr_max(du, du, tmp, MPFR_RNDU); } if (mpfr_sgn(wm[i].lo) > 0) { relhw(tmp, wm[i]); mpfr_max(du, du, tmp, MPFR_RNDU); }
-        mpfr_sub(de, angI.hi, angI.lo, MPFR_RNDU); mpfr_div_2ui(de, de, 1, MPFR_RNDU); mpfr_mul_2ui(tmp, eps, 1, MPFR_RNDU); mpfr_add(de, de, tmp, MPFR_RNDU);
-        mpfr_add_ui(tmp, de, 1, MPFR_RNDU); mpfr_mul(dD, du, tmp, MPFR_RNDU); mpfr_add(dD, dD, de, MPFR_RNDU);
+        mpfr_t A, B, Cc; mpfr_init2(A, PREC); mpfr_init2(B, PREC); mpfr_init2(Cc, PREC);
+        mpfr_add_ui(tmp, du, 1, MPFR_RNDU); mpfr_mul(A, tmp, eps, MPFR_RNDU); mpfr_add(A, A, du, MPFR_RNDU);
+        mpfr_sub(de, angI.hi, angI.lo, MPFR_RNDU); mpfr_div_2ui(de, de, 1, MPFR_RNDU); mpfr_abs(tmp, ang, MPFR_RNDU); mpfr_mul(tmp, tmp, eps, MPFR_RNDU); mpfr_add(de, de, tmp, MPFR_RNDU);
+        mpfr_mul_2ui(B, de, 1, MPFR_RNDU); mpfr_mul_2ui(tmp, eps, 1, MPFR_RNDU); mpfr_add(B, B, tmp, MPFR_RNDU);
+        mpfr_add_ui(tmp, du, 1, MPFR_RNDU); mpfr_mul(Cc, tmp, eps, MPFR_RNDU); mpfr_mul_2ui(Cc, Cc, 1, MPFR_RNDU); mpfr_add_ui(tmp, eps, 1, MPFR_RNDU); mpfr_mul(Cc, Cc, tmp, MPFR_RNDU);
+        mpfr_add(dD, A, B, MPFR_RNDU); mpfr_add(dD, dD, Cc, MPFR_RNDU);
+        mpfr_clear(A); mpfr_clear(B); mpfr_clear(Cc);
       };
       auto cmul = [&](mpfr_t rre, mpfr_t rim, mpfr_t are, mpfr_t aim, mpfr_t bre, mpfr_t bim) { mpfr_mul(x1, are, bre, MPFR_RNDN); mpfr_mul(x2, aim, bim, MPFR_RNDN); mpfr_mul(x3, are, bim, MPFR_RNDN); mpfr_mul(x4, aim, bre, MPFR_RNDN); mpfr_sub(rre, x1, x2, MPFR_RNDN); mpfr_add(rim, x3, x4, MPFR_RNDN); };
       // d_{n-1} = 1 (no unary at the last site in the backward recursion: it is applied when stepping)
       mpfr_set_ui(dp_re, 1, MPFR_RNDN); mpfr_set_ui(dp_im, 0, MPFR_RNDN); mpfr_set_ui(dm_re, 1, MPFR_RNDN); mpfr_set_ui(dm_im, 0, MPFR_RNDN); mpfr_set_ui(s, 0, MPFR_RNDU);
       for (long i = n - 2; i >= 0; i--) {
-        setup(i + 1); mid(fbar, f[i]); relhw(df, f[i]);
+        setup(i + 1); mid(fbar, f[i]); relhw(df, f[i]); mpfr_add_ui(tmp, df, 1, MPFR_RNDU); mpfr_mul(tmp, tmp, eps, MPFR_RNDU); mpfr_add(df, df, tmp, MPFR_RNDU);     // dM = df + eps(1+df)
         // y(x') = v_{i+1}(x') d_{i+1}(x') ; d_i(+) = f y(+) + y(-) ; d_i(-) = y(+) + f y(-)
         cmul(np_re, np_im, vp_re, vp_im, dp_re, dp_im);        // y(+)
         cmul(nm_re, nm_im, vm_re, vm_im, dm_re, dm_im);        // y(-)
         mpfr_mul(x1, fbar, np_re, MPFR_RNDN); mpfr_add(dp_re, x1, nm_re, MPFR_RNDN); mpfr_mul(x1, fbar, np_im, MPFR_RNDN); mpfr_add(dp_im, x1, nm_im, MPFR_RNDN);
         mpfr_mul(x1, fbar, nm_re, MPFR_RNDN); mpfr_add(dm_re, np_re, x1, MPFR_RNDN); mpfr_mul(x1, fbar, nm_im, MPFR_RNDN); mpfr_add(dm_im, np_im, x1, MPFR_RNDN);
         mpfr_mul_2si(dp_re, dp_re, -gexp[i], MPFR_RNDN); mpfr_mul_2si(dp_im, dp_im, -gexp[i], MPFR_RNDN); mpfr_mul_2si(dm_re, dm_re, -gexp[i], MPFR_RNDN); mpfr_mul_2si(dm_im, dm_im, -gexp[i], MPFR_RNDN);
-        // s_i = s + (1+s)[ df(1+dD) + dD + 8 eps (1+dD)(1+df) ]
+        // s_i = s + (1+s)[ dM(1+dD) + dD + 16 eps (1+dD)(1+dM) ]   (amendment 1, eq. 4; c_r = 16)
         mpfr_add_ui(tmp, dD, 1, MPFR_RNDU); mpfr_mul(inc, df, tmp, MPFR_RNDU); mpfr_add(inc, inc, dD, MPFR_RNDU);
-        mpfr_add_ui(one_s, df, 1, MPFR_RNDU); mpfr_mul(one_s, one_s, tmp, MPFR_RNDU); mpfr_mul_ui(one_s, one_s, 8, MPFR_RNDU); mpfr_mul(one_s, one_s, eps, MPFR_RNDU); mpfr_add(inc, inc, one_s, MPFR_RNDU);
+        mpfr_add_ui(one_s, df, 1, MPFR_RNDU); mpfr_mul(one_s, one_s, tmp, MPFR_RNDU); mpfr_mul_ui(one_s, one_s, 16, MPFR_RNDU); mpfr_mul(one_s, one_s, eps, MPFR_RNDU); mpfr_add(inc, inc, one_s, MPFR_RNDU);
         mpfr_add_ui(one_s, s, 1, MPFR_RNDU); mpfr_mul(one_s, one_s, inc, MPFR_RNDU); mpfr_add(s, s, one_s, MPFR_RNDU);
         if ((i & 4095) == 0) PROG.line("check_complex", i, PASS_NO, PASSES_TOTAL, -1, k, "bwd");
       }

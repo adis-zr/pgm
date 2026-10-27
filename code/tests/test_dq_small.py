@@ -92,3 +92,54 @@ def test_tamper_center_residual_and_fourier_radius(tmp_path):
 
 def test_validation_within_cap():
     assert time.monotonic() - T_START < 60, "small validation exceeded the 60 s cap"
+
+
+# ---------------------------------------------------------------------------------------------------------- amendment 2 rejection tests
+def _recheck(W, inp, tag, tmp_path):
+    cdir = str(tmp_path / tag); os.makedirs(cdir); J = Journal(os.path.join(cdir, "events.jsonl"))
+    V = check_arm(W["arm"], inp, W, cdir, J, 60, 4 << 30, 128); J.close(); return V
+
+
+@pytest.fixture(scope="module")
+def saved_main_F():
+    d = os.path.join(ROOT, "runs", "dq_pilot_2026-10-26", "cells", "MAIN_pair1_F")
+    if not os.path.exists(os.path.join(d, "witness.json")): pytest.skip("saved pilot records not present")
+    return d, json.load(open(os.path.join(d, "witness.json")))
+
+
+def test_residual_requirement_bound_to_frozen_eighth(saved_main_F, tmp_path):
+    d, W = saved_main_F
+    V0 = _recheck(W, os.path.join(d, "input.txt"), "clean", tmp_path); assert V0["verdict"] == "VERIFIED"
+    W1 = json.loads(json.dumps(W)); W1["final"]["residual_witness"] = "1/2"; W1["gate"]["residual_requirement"] = "1/2"     # enlarged requirement in BOTH mutable fields
+    V1 = _recheck(W1, os.path.join(d, "input.txt"), "t_res", tmp_path)
+    assert V1["verdict"] == "REJECTED" and "residual_witness_is_frozen_1/8" in V1["failed_checks"]
+
+
+def test_frequency_array_completeness(saved_main_F, tmp_path):
+    d, W = saved_main_F
+    for name, mut in (("empty", lambda L: []), ("truncated", lambda L: L[:2]), ("permuted", lambda L: [L[1], L[0], L[2]]), ("duplicate", lambda L: [L[0], L[0], L[2]])):
+        W1 = json.loads(json.dumps(W)); W1["fourier"]["frequencies"] = mut(W1["fourier"]["frequencies"])
+        V1 = _recheck(W1, os.path.join(d, "input.txt"), f"t_freq_{name}", tmp_path)
+        assert V1["verdict"] == "REJECTED" and "frequency_arrays_complete_1..J" in V1["failed_checks"], name
+
+
+def test_phase_enclosure_handles_interior_extremum():
+    from dq.checker import cos_sin_box
+    from dq.constants import PI_LOWER, PI_UPPER
+    # interval straddling pi/2: sin must reach 1, cos must cross 0
+    (cl, ch), (sl, sh), crit = cos_sin_box(Fr(3, 2), Fr(17, 10)); assert crit == [1] and float(sh) == 1.0 and float(cl) < 0 < float(ch)
+    (cl, ch), (sl, sh), crit = cos_sin_box(Fr(31, 10), Fr(32, 10)); assert crit == [2] and float(cl) == -1.0
+    (cl, ch), (sl, sh), crit = cos_sin_box(Fr(1, 10), Fr(1, 10)); assert crit == [] and float(cl) <= 0.9950041652780258 <= float(ch)
+    assert PI_LOWER < Fr(355, 113) and Fr(333, 106) < PI_UPPER
+
+
+def test_numerical_domain_enforced(saved_main_F, tmp_path):
+    from dq.checker import in_domain, S_max
+    from dq.model import Model
+    m8 = Model(8, "MAIN"); assert not in_domain(m8, Fr(1), 96, Fr(3))["a_in_(0,1/128]"]        # tiny models lie OUTSIDE the proved domain (a_i up to 3/8): by design their F verdict is REJECTED on numerical_proof_domain
+    m = Model(32768, "MAIN"); assert all(in_domain(m, Fr(25), 96, Fr(3)).values())
+    assert not in_domain(m, Fr(100), 96, Fr(3))["c_abs_le_64"] and not in_domain(m, Fr(25), 64, Fr(3))["P_ge_96"] and not in_domain(m, Fr(25), 96, Fr(5))["w_abs_le_4"]
+    assert S_max(32768, 96) == Fr(48 * 32768, 2 ** 96)
+    d, W = saved_main_F
+    W1 = json.loads(json.dumps(W)); W1["fourier"]["frequencies"][0]["propagated_relative_error_s"] = "1*2^-10"      # claimed s above the ceiling
+    V1 = _recheck(W1, os.path.join(d, "input.txt"), "t_ceiling", tmp_path); assert V1["verdict"] == "REJECTED" and "producer_propagated_s_le_ceiling" in V1["failed_checks"]

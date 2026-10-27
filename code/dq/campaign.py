@@ -120,7 +120,7 @@ class Campaign:
             c = mon.finish(); row = {"cell": tag, "arm": "AUTO", "case": "CONTROL", "pair": pair, "order_idx": order_idx, "status": "GATE_DID_NOT_DECLINE:" + RD["status"], "complete_wall_s": time.monotonic() - t0, "eligibility": {"eligible": False, "reasons": ["gate mismatch"]}}
             self.state["cells"].append(row); self.save(); self.stop("CONTROL_GATE_DID_NOT_DECLINE"); return row
         remaining_arm = max(1.0, min(ARM_CAP_S - gate_wall, self.remaining() - 65.0))
-        RF = run_arm("F", "CONTROL", N, os.path.join(cdir, "fallback"), deadline_s=remaining_arm, rss_cap=RSS_CAP, monitor=mon, pair_tag=pair, reuse_input=os.path.join(cdir, "gate", "input.txt"))
+        RF = run_arm("F", "CONTROL", N, os.path.join(cdir, "fallback"), deadline_s=remaining_arm, rss_cap=RSS_CAP, monitor=mon, pair_tag=pair, reuse_input=os.path.join(cdir, "gate", "input.txt"), reuse_gate=RD["gate"])   # amendment 3: reuse the declined gate's structural record
         c = mon.finish(); total = time.monotonic() - t0
         num = [a for a in RF["attempts"] if a.get("kind") == "producer"] + [a["kernel"] for a in RF["attempts"] if a.get("kind") == "checker" and a.get("kernel")]
         cpu = sum(a.get("cpu_s") or 0 for a in num); wall = sum(a.get("wall_s") or 0 for a in num); ratio = cpu / wall if wall > 0 else None
@@ -145,7 +145,11 @@ def main(argv=None):
     C.events.write({"kind": "campaign_start", "git_head": env["git_head"], "git_dirty": env["git_dirty"], "load_avg": env["load_avg"]})
     # ---------------- Stage 1: tiny validation + input-only gates
     t = time.monotonic()
-    r = subprocess.run([PY, "-m", "pytest", "-q", "-p", "no:cacheprovider", os.path.join(ROOT, "tests", "test_dq_small.py")], cwd=ROOT, capture_output=True, text=True, timeout=120)
+    try:
+        r = subprocess.run([PY, "-m", "pytest", "-q", "-p", "no:cacheprovider", os.path.join(ROOT, "tests", "test_dq_small.py")], cwd=ROOT, capture_output=True, text=True, timeout=60)   # amendment 3: 60 s cap enforced by termination
+    except subprocess.TimeoutExpired as e:
+        class _R: returncode = 124; stdout = (e.stdout or b"").decode() if isinstance(e.stdout, bytes) else (e.stdout or ""); stderr = "VALIDATION TIMEOUT 60 s"
+        r = _R()
     val = {"returncode": r.returncode, "wall_s": time.monotonic() - t, "summary": [l for l in r.stdout.splitlines() if "passed" in l or "failed" in l][-1:], "output_path": "validation_pytest.txt"}
     open(os.path.join(rd, "validation_pytest.txt"), "w").write(r.stdout + r.stderr)
     C.state["stages"]["1_validation"] = val; C.events.write({"kind": "stage", "stage": "1_validation", **val})
@@ -171,6 +175,14 @@ def main(argv=None):
     # ---------------- Stage 3: two more MAIN pairs F,D then D,F
     C.cell("MAIN_pair2_F", "F", "MAIN", 3, "pair2"); C.cell("MAIN_pair2_D", "D", "MAIN", 4, "pair2")
     C.cell("MAIN_pair3_D", "D", "MAIN", 5, "pair3"); C.cell("MAIN_pair3_F", "F", "MAIN", 6, "pair3")
+    # amendment 3 (frozen stop rule): if the MAIN cost comparison already failed, CONTROL timing is skipped; the stage-1 input-only decline is retained
+    import statistics as _st
+    pr = []
+    for p_ in ("pair1", "pair2", "pair3"):
+        d_ = next((c for c in C.state["cells"] if c["pair"] == p_ and c["arm"] == "D"), None); f_ = next((c for c in C.state["cells"] if c["pair"] == p_ and c["arm"] == "F"), None)
+        if d_ and f_ and d_["status"] == "VERIFIED" and f_["status"] == "VERIFIED" and d_["eligibility"]["eligible"] and f_["eligibility"]["eligible"]: pr.append(d_["complete_wall_s"] / f_["complete_wall_s"])
+    if len(pr) < 3 or _st.median(pr) > 0.80 or sum(1 for r_ in pr if r_ < 1) < 2:
+        C.stop("MAIN_COST_COMPARISON_FAILED_SKIP_CONTROL_TIMING", detail={"paired_ratios": pr, "eligible_pairs": len(pr)}); return finish(C, rd)
     # ---------------- Stage 4: CONTROL pairs F vs automatic (gate-then-F): F,auto / auto,F / F,auto
     C.cell("CONTROL_pair1_F", "F", "CONTROL", 7, "cpair1"); C.auto_cell("CONTROL_pair1_AUTO", 8, "cpair1")
     C.auto_cell("CONTROL_pair2_AUTO", 9, "cpair2"); C.cell("CONTROL_pair2_F", "F", "CONTROL", 10, "cpair2")
