@@ -1,0 +1,6 @@
+code/.venv/
+code/build/
+__pycache__/
+*.pyc
+.pytest_cache/
+code/runs/*/attempts/*/tmp/
