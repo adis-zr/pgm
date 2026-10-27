@@ -1,4 +1,4 @@
-"""Driver for the bounded normalization-free certificate clearance diagnostic (CLAUDE_CODE_SPEC.md v1). Stages A → B → (C), first applicable
+"""Driver v2 (closeout amendment 1; v1 = the version hashed in runs/nf_diag_2026-10-26/lock.json executed the recorded run) for the bounded normalization-free certificate clearance diagnostic (CLAUDE_CODE_SPEC.md v1). Stages A → B → (C), first applicable
 stop, external deadlines, durable records. Usage: python -m nf.run --run-dir <abs path>  (the run dir may already hold the TASK_START record)."""
 from __future__ import annotations
 import sys
@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dq.supervisor import Journal, ContentionMonitor, run_native, PhaseClock, now_iso
 from nf.model import main_walsh5, verify_main_geometry
 from nf import certs
-from nf.check import verify_stage_b, verify_stage_c
+from nf.check import verify_stage_b, verify_stage_c, independent_V
 from nf.validate import round_grid, STEP
 from nf.ivpy import fx
 
@@ -31,7 +31,13 @@ class Clock:
     def __init__(self): self.t0 = time.monotonic(); self.commands_s = 0.0; self.validation_s = 0.0
     def elapsed(self): return time.monotonic() - self.t0
 
+class AggregateCapExceeded(Exception): pass
+
 def run_sub(J, clk, cmd, cwd, deadline, meta, progress=None, monitor=None):
+    # closeout amendment 1 (driver v2): the 600 s cumulative cap is enforced BEFORE every launch and bounds each child's deadline; v1 only reported it post hoc
+    remaining_total = CAPS["all_commands_cumulative_s"] - clk.commands_s
+    if remaining_total <= 0: J.write({"kind": "cap_crossed", "cap": "all_commands_cumulative_s", "charged_s": clk.commands_s, **meta}); raise AggregateCapExceeded(meta.get("phase"))
+    deadline = min(deadline, remaining_total)
     rec = run_native(cmd, cwd, J, deadline, CAPS["rss_cap_bytes"], meta, progress_path=progress, monitor=monitor, env={**os.environ, "OMP_NUM_THREADS": "1"}); clk.commands_s += rec["wall_s"]; return rec
 
 def main():
@@ -123,7 +129,7 @@ def main():
     if os.path.exists(cdp): os.remove(cdp)
     B["checker_run"] = {"exit": rec["exit_code"], "kill": rec["kill_reason"], "wall_s": rec["wall_s"], "cpu_s": rec["cpu_s"], "cpu_over_wall": rec["cpu_over_wall"], "peak_rss": rec["peak_rss_bytes"], "regenerated_input_sha256": chk_hash}
     if rec["exit_code"] != 0: stop("CHECKER_FAILURE", f"checker kernel failed/killed ({rec['kill_reason']})", "B"); B["status"] = "FAILED"; state["outcome"] = "INCONCLUSIVE" if rec["kill_reason"] else "VALIDITY_OR_IMPLEMENTATION_FAILURE"; state["inconclusive_reason"] = rec["kill_reason"] or "checker_kernel_error"; save(); return finish(J, clk, state, RUN, monitor)
-    CK = json.load(open(cko)); pc = PhaseClock("checker_python"); verdict = verify_stage_b(lock, wit, CK, chk_hash, pins_expected=[]); ph = pc.stop(); clk.commands_s += ph["wall_s"]; verdict["python_phase"] = ph; dump(os.path.join(sb, "checker_verdict.json"), verdict)
+    CK = json.load(open(cko)); pc = PhaseClock("checker_python"); Vind, _ = independent_V(M); verdict = verify_stage_b(lock, wit, CK, chk_hash, pins_expected=[], V_independent=Vind); ph = pc.stop(); clk.commands_s += ph["wall_s"]; verdict["python_phase"] = ph; dump(os.path.join(sb, "checker_verdict.json"), verdict)
     ok = verdict["verdict"] == "VERIFIED"
     for nm, R in (("old", Ro), ("new", Rn)): cert[nm] = certs.classify(R[0], R[1], ok, contract_ok)
     B["certificates"] = {nm: {k: (list(map(str, v)) if isinstance(v, tuple) else str(v)) for k, v in cert[nm].items()} for nm in cert}; B["checker_verdict"] = verdict["verdict"]; B["checker_failed_checks"] = verdict["failed_checks"]
@@ -169,6 +175,8 @@ def finish(J, clk, state, RUN, monitor):
 if __name__ == "__main__":
     try: main()
     except SystemExit: raise
+    except AggregateCapExceeded as e:
+        rd = [os.path.abspath(sys.argv[i + 1]) for i, x in enumerate(sys.argv) if x == "--run-dir"][0]; st = json.load(open(os.path.join(rd, "state.json"))); st["stops"] = st.get("stops", []) + [{"code": "ALL_COMMANDS_CUMULATIVE_CAP", "reason": f"600 s cumulative cap reached before launching {e}", "stage": "driver", "at": now_iso()}]; st["outcome"] = "INCONCLUSIVE"; st["inconclusive_reason"] = "all_commands_cumulative_cap"; st["ended"] = now_iso(); dump(os.path.join(rd, "state.json"), st); sys.exit(3)
     except BaseException as e:
         import traceback; rd = None
         for i, x in enumerate(sys.argv):

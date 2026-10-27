@@ -9,7 +9,7 @@ from .model import fixture_signed, fixture_zero_loading, fixture_unbalanced, FIX
 from .reference import enumerate_laws
 from .ivpy import fx
 from . import certs
-from .check import verify_stage_b, verify_stage_c
+from .check import verify_stage_b, verify_stage_c, independent_V
 
 FIXTURES = {"FIX_SIGNED": lambda: fixture_signed(False), "FIX_SIGNED_EVIDENCE": lambda: fixture_signed(True), "FIX_ZERO_LOADING": fixture_zero_loading, "FIX_UNBALANCED": fixture_unbalanced}
 
@@ -70,17 +70,17 @@ def run_fixture(name, build_dir, out_dir, prec_prod=128, prec_chk=192, prec_ref=
 
 def _fixture_lock_and_witness(fix_res, M: Model, J_prod, J_chk):
     """small lock/witness/checker records from a fixture run for the rejection suite (frozen constants as MAIN; V replaced by the fixture's own exact V = K tr(AA^T))"""
-    K = Fr(99, 46); V = K * sum(sum(M.A[l][i] ** 2 for i in range(M.n) if not M.pin[i]) for l in range(M.r))
-    lock = {"input": {"case_id": M.case_id, "n": M.n, "rank": M.r, "query_index": M.query, "requested_event": "X[query_index] == +1", "canonical_sha256": M.sha256(), "pins": [[i, M.pin[i]] for i in range(M.n) if M.pin[i]]},
+    V, K = independent_V(M)
+    lock = {"input": {"case_id": M.case_id, "n": M.n, "rank": M.r, "query_index": M.query, "requested_event": "X[query_index] == +1", "requested_unclipped_interval_width": "1/100", "canonical_sha256": M.sha256(), "pins": [[i, M.pin[i]] for i in range(M.n) if M.pin[i]]},
             "frozen": {"producer_prec": 128, "checker_prec": 192, "residual_sq_max": "1/256", "delta_num": "1/16000", "delta_pub": "1/16000", "width_target": "1/100", "moment_guard": "1/100000000", "moment_width_max": "1/1000000"},
-            "constants": {"V": str(V)}}
+            "constants": {"V": str(V), "K": str(K)}}
     g = [(fx(a), fx(b)) for a, b in J_prod["gradient"]]; rsq = certs.residual_sq_upper(g); ql, qh = fx(J_prod["q_query"][0]), fx(J_prod["q_query"][1]); qhat = (ql + qh) / 2
     slo, shi = fx(J_prod["s_query"][0]), fx(J_prod["s_query"][1]); alo, ahi = fx(J_prod["alpha_query"][0]), fx(J_prod["alpha_query"][1]); Mu = V + rsq
     pubs = {}
     for nm, R in (("old", certs.R_old_range(ql, qh, slo, shi, V, Mu)[1]), ("new", certs.R_new_range(alo, ahi, Mu, Mu)[1])):
-        p = certs.publication(qhat, R); pubs[nm] = {"unclipped": [str(p["unclipped"][0]), str(p["unclipped"][1])], "unclipped_width": str(p["unclipped_width"])}
+        p = certs.publication(qhat, R); pubs[nm] = {"unclipped": [str(p["unclipped"][0]), str(p["unclipped"][1])], "clipped": [str(p["clipped"][0]), str(p["clipped"][1])], "unclipped_width": str(p["unclipped_width"]), "R_upper": str(R), "R_lower": str(R)}
     wit = {"case_id": M.case_id, "n": M.n, "rank": M.r, "query_index": M.query, "requested_event": "X[query_index] == +1", "producer_prec": 128, "producer_generator_hash": M.sha256(), "pins": lock["input"]["pins"], "producer_flags_clean": True,
-           "center": J_prod["center"], "q_query": J_prod["q_query"], "qhat": str(qhat), "residual_sq_upper": str(rsq), "residual_sq_threshold": "1/256", "M_uniform": str(Mu), "publication": pubs}
+           "center": J_prod["center"], "q_query": J_prod["q_query"], "gradient": J_prod["gradient"], "qhat": str(qhat), "residual_sq_upper": str(rsq), "residual_sq_threshold": "1/256", "M_uniform": str(Mu), "publication": pubs}
     return lock, wit
 
 def round_grid(x: Fr, bits=64) -> Fr:
@@ -105,20 +105,30 @@ def rejection_suite(build_dir, out_dir):
     for k, prec in (("nfchain", 128), ("nfcheck", 192)):
         o = os.path.join(out_dir, f"{k}.json"); r, _ = run_kernel(os.path.join(build_dir, k), ["--prec", str(prec), "--file", path, "--center", ",".join(str(x) for x in c), "--out", o], out_dir); assert r.returncode == 0, r.stderr; recs[k] = json.load(open(o))
     fix = {}; lock, wit = _fixture_lock_and_witness(fix, M, recs["nfchain"], recs["nfcheck"]); chk = recs["nfcheck"]; gh = M.sha256()
-    results = {"positive_control": verify_stage_b(lock, wit, chk, gh), "center_used": [str(x) for x in c], "center_history": hist}
+    Vind, _ = independent_V(M)
+    results = {"positive_control": verify_stage_b(lock, wit, chk, gh, V_independent=Vind), "center_used": [str(x) for x in c], "center_history": hist}
     cases = {}
     L2 = copy.deepcopy(lock); L2["input"]["canonical_sha256"] = hashlib.sha256(b"tampered").hexdigest(); cases["changed_generator_hash"] = (L2, wit, chk, gh, ["generator_hash_matches_lock", "producer_dump_hash_matches_lock"])
     W2 = copy.deepcopy(wit); W2["query_index"] = 4; cases["wrong_query_binding"] = (lock, W2, chk, gh, ["query_index_bound"])
     W3 = copy.deepcopy(wit); W3["requested_event"] = "X[query_index] == -1"; cases["wrong_event_binding"] = (lock, W3, chk, gh, ["event_bound"])
     L4 = copy.deepcopy(lock); L4["frozen"]["residual_sq_max"] = "1/4"; W4 = copy.deepcopy(wit); W4["residual_sq_threshold"] = "1/4"; cases["altered_residual_threshold"] = (L4, W4, chk, gh, ["residual_threshold_frozen"])
-    W5 = copy.deepcopy(wit); W5["M_uniform"] = str(Fr(lock["constants"]["V"]) / 2); cases["falsely_narrowed_M_bound"] = (lock, W5, chk, gh, ["producer_M_uniform_not_narrower_than_V+r_prod^2", "producer_M_uniform_ge_V"])
+    W5 = copy.deepcopy(wit); W5["M_uniform"] = str(Fr(lock["constants"]["V"]) / 2); cases["falsely_narrowed_M_bound"] = (lock, W5, chk, gh, ["producer_M_uniform_not_narrower_than_V+r_prod^2", "producer_M_uniform_ge_V", "witness_M_uniform_equals_V_plus_residual"])
     C6 = copy.deepcopy(chk); C6["q_query"] = ["nan", "1*2^-1"]; cases["malformed_interval_nan"] = (lock, wit, C6, gh, ["record_well_formed"])
     C6b = copy.deepcopy(chk); C6b["gradient"][0] = [C6b["gradient"][0][1], C6b["gradient"][0][0]]; cases["malformed_interval_reversed_endpoints"] = (lock, wit, C6b, gh, ["record_well_formed"])
     W7 = copy.deepcopy(wit); W7["pins"] = [[0, 1], [11, 1]]; cases["omitted_evidence_pin"] = (lock, W7, chk, gh, ["evidence_pins_bound"])
     W8 = copy.deepcopy(wit); W8["pins"] = [[0, 1], [7, 1], [11, 1]]; cases["changed_evidence_pin"] = (lock, W8, chk, gh, ["evidence_pins_bound"])
     W9 = copy.deepcopy(wit); W9["center"] = [str(Fr(300)), "0", "0"]; cases["center_outside_domain"] = (lock, W9, chk, gh, ["center_norm_le_257", "center_identical_in_checker_run"])
+    # --- amendment-1 hardening cases (reviewer: these previously returned VERIFIED)
+    L10 = copy.deepcopy(lock); L10["constants"]["V"] = "0"; cases["V_zero_in_lock"] = (L10, wit, chk, gh, ["V_independently_recomputed_equals_lock", "witness_M_uniform_equals_V_plus_residual"])
+    C11 = copy.deepcopy(chk); C11["gradient"] = []; cases["empty_checker_gradient"] = (lock, C11, None, gh, ["checker_gradient_has_rank_components", "record_well_formed"])
+    W12 = copy.deepcopy(wit); W12["gradient"] = []; cases["empty_witness_gradient"] = (lock, W12, chk, gh, ["witness_gradient_has_rank_components", "witness_residual_sq_equals_own_gradient_bound"])
+    L13 = copy.deepcopy(lock); L13["frozen"]["producer_prec"] = 64; L13["frozen"]["checker_prec"] = 64; W13 = copy.deepcopy(wit); W13["producer_prec"] = 64; C13 = copy.deepcopy(chk); C13["prec"] = 64; cases["altered_precision_everywhere"] = (L13, W13, C13, gh, ["precision_frozen_128_192"])
+    W14 = copy.deepcopy(wit); W14["residual_sq_upper"] = "0"; cases["witness_residual_zeroed"] = (lock, W14, chk, gh, ["witness_residual_sq_equals_own_gradient_bound", "witness_M_uniform_equals_V_plus_residual", "producer_M_uniform_not_narrower_than_V+r_prod^2"])
+    L15 = copy.deepcopy(lock); L15["input"]["requested_unclipped_interval_width"] = "1/10"; cases["requested_width_altered"] = (L15, wit, chk, gh, ["requested_width_frozen_1/100"])
+    W16 = copy.deepcopy(wit); W16["publication"]["old"]["unclipped"][1] = str(Fr(W16["publication"]["old"]["unclipped"][1]) + Fr(1, 1000)); cases["publication_not_qhat_pm_R"] = (lock, W16, chk, gh, ["old_publication_is_qhat_pm_R_pm_pads", "old_publication_width_consistent"])
     for name, (l, w, ck, g, expected) in cases.items():
-        v = verify_stage_b(l, w, ck, g); results[name] = {"verdict": v["verdict"], "failed_checks": v["failed_checks"], "expected_reason_present": any(e in v["failed_checks"] for e in expected), "expected": expected}
+        if ck is None: ck, w = w, wit          # (lock, mutated checker, None) form
+        v = verify_stage_b(l, w, ck, g, V_independent=Vind); results[name] = {"verdict": v["verdict"], "failed_checks": v["failed_checks"], "expected_reason_present": any(e in v["failed_checks"] for e in expected), "expected": expected}
     # Stage C checker: positive control + width miss + containment failure
     Mp = recs["nfchain"]; Mc = recs["nfcheck"]
     # re-run with --moments for the records
