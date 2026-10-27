@@ -10,7 +10,8 @@ from h4a.grid import Grid
 from h4a.emit import Cache, write_point_witness, write_rect_witness, f64_value
 from h4a.build import producer_tables, checker_tables
 from h4a.tables import MESH, EPS_P, EPS_PHI, EPS_LAM
-from h4a.masses import marker_masses, publish_relative, node_weight, accepted_count, verify_masses
+from h4a.masses import (marker_masses, publish_relative, node_weight, accepted_count, verify_masses,
+                        weighted_count, replay_counts, verify_counts)
 from h4a import certs
 
 BUILD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build")
@@ -113,21 +114,34 @@ def main():
         mverdict = verify_masses(mprod, mchk)
         delta = Fr(json.load(open(os.path.join(a.packet, "inputs", "FROZEN_NODES.json")))["analytic_delta_comp_exact"])
         Ipub = certs.response_publication(f"{nd_dir}/prod.json", a.arm)
-        counts = {sg: accepted_count(pubt["pub"], Ipub[sg], pubm[sg]["pub"][1], delta) for sg in (-1, 1)}
+        counts = {sg: {"accepted": accepted_count(pubt["pub"], Ipub[sg], pubm[sg]["pub"][1], delta)} for sg in (-1, 1)}
+        for sg in (-1, 1): counts[sg]["weighted"] = weighted_count(counts[sg]["accepted"], pubw["pub"])
         t_agg = time.monotonic()-t
+        # INDEPENDENT count replay from the checker's own quantities, inside the timed path (review item 1)
+        t = time.monotonic()
+        Ichk = certs.response_inner(f"{nd_dir}/chk.json", a.arm)
+        Tchk = (Zc[-1][0] + Zc[1][0], Zc[-1][1] + Zc[1][1])
+        creplay = {sg: replay_counts(Tchk, Ichk[sg], Zc[sg][1], delta, wc) for sg in (-1, 1)}
+        cverdict = verify_counts(counts, creplay)
+        t_creplay = time.monotonic()-t
+        mverdict = {**mverdict, **cverdict}
         json.dump({"marker_masses_published": {str(sg): [str(x) for x in pubm[sg]["pub"]] for sg in (-1, 1)},
                    "marker_masses_midpoint": {str(sg): str(pubm[sg]["midpoint"]) for sg in (-1, 1)},
                    "checker_unpadded": {str(sg): [str(x) for x in Zc[sg]] for sg in (-1, 1)},
                    "total_published": [str(x) for x in pubt["pub"]],
                    "node_weight_published": [str(x) for x in pubw["pub"]], "node_weight_exponent": str(wexp),
                    "node_weight_checker_unpadded": [str(x) for x in wc],
-                   "accepted_counts": {str(sg): [str(x) for x in counts[sg]] for sg in (-1, 1)},
+                   "accepted_counts": {str(sg): [str(x) for x in counts[sg]["accepted"]] for sg in (-1, 1)},
+                   "weighted_counts": {str(sg): [str(x) for x in counts[sg]["weighted"]] for sg in (-1, 1)},
+                   "checker_replayed_accepted": {str(sg): [str(x) for x in creplay[sg]["accepted"]] for sg in (-1, 1)},
+                   "checker_replayed_weighted": {str(sg): [str(x) for x in creplay[sg]["weighted"]] for sg in (-1, 1)},
                    "delta_comp": str(delta), "scale_exponents": {"producer": ep, "checker": ec},
                    "verdict": mverdict, "all_ok": all(mverdict.values())},
                   open(f"{nd_dir}/masses.json", "w"), indent=1, default=str)
         nrec["phases"] += [{"phase": "producer_masses", "wall_s": t_mass_p}, {"phase": "checker_masses", "wall_s": t_mass_c},
-                           {"phase": "mass_publication_and_counts", "wall_s": t_agg, "all_ok": all(mverdict.values())}]
-        prod_wall += t_mass_p + t_agg / 2; chk_wall += t_mass_c + t_agg / 2
+                           {"phase": "mass_publication_and_counts", "wall_s": t_agg},
+                           {"phase": "checker_count_replay", "wall_s": t_creplay, "all_ok": all(mverdict.values())}]
+        prod_wall += t_mass_p + t_agg; chk_wall += t_mass_c + t_creplay
         if not all(mverdict.values()):
             nrec["verdict"] = "REJECTED"; nrec["mass_failed"] = [k for k, v in mverdict.items() if not v]
             rec["nodes"].append(nrec); rec["stop"] = {"code": "VALIDITY_FAILURE", "node": key, "failed": nrec["mass_failed"]}

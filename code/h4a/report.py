@@ -154,7 +154,16 @@ def write_report(run_dir):
       "All seven probes pass in both point kernels.\n")
     w("## Complete accounting\n")
     ac = S["accounting"]
-    w(f"- Cumulative executed commands **{d(ac['cumulative_commands_s'],1)} s of the 900 s cap** (includes compilation, "
+    ov = os.path.join(R, "amendments", "ACCOUNTING_OVERRUN.json")
+    if os.path.exists(ov):
+        O = json.load(open(ov))
+        w(f"- **This invocation charged {d(ac['cumulative_commands_s'],1)} s.** The 900 s cumulative cap is across the WHOLE "
+          f"diagnostic, not per invocation: retained charges total at least **{O['total_at_least_s']} s** "
+          f"({O['supervised_subtotal_s']} s supervised + {O['development_arm_bundles_s']} s development bundles), i.e. "
+          f"**{O['ratio_to_cap']}x the unchanged cap, an overrun of {O['overrun_s']} s**, excluding ad-hoc verification "
+          "scripts, archive builds and report regenerations. The cap bounds spending, not validity. See "
+          "`amendments/ACCOUNTING_OVERRUN.json` and `amendments/REVIEW_FINDINGS_2.md` item 4.")
+    w(f"- Per-invocation charge {d(ac['cumulative_commands_s'],1)} s (includes compilation, "
       f"probes, Stage A, the environment observations, all nine bundles, the cross-check and failed attempts). "
       f"Children CPU {d(ac['children_cpu_s'],1)} s; driver CPU {d(ac['driver_cpu_s'],1)} s.")
     w(f"- Load average {S.get('loadavg_end')} at end. The first campaign attempt stopped at the environment gate "

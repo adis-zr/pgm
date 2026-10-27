@@ -32,6 +32,17 @@ def response_publication(prod_path, arm):
     return out
 
 
+def response_inner(chk_path, arm):
+    """the CHECKER's own inner response interval per marker: the interval arm's raw interval, or the point checker's
+    value +- E_int. Used as I_chk in the independent count replay (NUMERICAL_THEOREM.md §9)."""
+    C = json.load(open(chk_path)); out = {}
+    if arm == "PP":
+        for d in C["response"]: v = fb(d["bits"]); out[d["marker"]] = (v - E_INT, v + E_INT)
+    else:
+        for d in C["response"]: out[d["marker"]] = (fx(d["iv"][0]), fx(d["iv"][1]))
+    return out
+
+
 def verify_node(arm, prod_path, chk_path, cprod, cchk, grid, prob):
     P = json.load(open(prod_path)); C = json.load(open(chk_path))
     checks = {}; detail = {}
@@ -46,7 +57,13 @@ def verify_node(arm, prod_path, chk_path, cprod, cchk, grid, prob):
         ck("producer_channel_key_set_exact", set(pk) == want and len(pk) == len(want), n=len(pk), want=len(want))
         ck("checker_channel_key_set_exact", set(ckk) == want and len(ckk) == len(want), n=len(ckk), want=len(want))
         ck("producer_channel_order_is_frozen", pk == sorted(pk, key=lambda t: (t[0], t[1])) or len(set(pk)) == len(pk))
-        ck("both_responses_present", {d["marker"] for d in P["response"]} == {-1, 1} and {d["marker"] for d in C["response"]} == {-1, 1})
+        pr = [d["marker"] for d in P["response"]]; crr = [d["marker"] for d in C["response"]]
+        ck("both_responses_present", set(pr) == {-1, 1} and set(crr) == {-1, 1})
+        # duplicate response records must not pass (review item 2)
+        ck("no_duplicate_response_records", len(pr) == 2 and len(crr) == 2, producer=len(pr), checker=len(crr))
+        # the kernels' self-reported environment flag is not evidence on its own, but a FALSE one is a rejection
+        ck("producer_probe_flag_not_false", P.get("probes_ok", True) is not False)
+        ck("checker_probe_flag_not_false", C.get("probes_ok", True) is not False)
         ck("n_and_query_bound", P["n"] == C["n"] == prob.m.n and P["q"] == C["q"] == prob.q)
         # --- collect producer publications and checker inner intervals
         if arm == "C":
@@ -110,8 +127,14 @@ def verify_node(arm, prod_path, chk_path, cprod, cchk, grid, prob):
         ck("zero_frequency_markers_sum_to_one", abs(z - 1) <= 2 * E_CH, sum=str(z))
         # --- cache identities differ (producer vs checker objects) and weight/phase certificates pass
         ck("caches_separately_constructed", cprod.identity != cchk.identity)
-        ck("producer_cache_certificates", all(v is True for k, v in cprod.checks.items() if isinstance(v, bool)))
-        ck("checker_cache_certificates", all(v is True for k, v in cchk.checks.items() if isinstance(v, bool)))
+        # an EMPTY or boolean-free certificate dictionary must not vacuously pass all() (review item 2)
+        REQUIRED_CERTS = {"phase_unit_disk_and_L1_le_2^-48", "weights_nonnegative", "true_weight_total_le_2",
+                          "stored_weight_total_le_2", "weight_total_L1_le_2^-48", "zero_frequency_phase_exact"}
+        for nm, cc_ in (("producer", cprod.checks), ("checker", cchk.checks)):
+            bools = {k: v for k, v in cc_.items() if isinstance(v, bool)}
+            ck(f"{nm}_cache_certificates_present", REQUIRED_CERTS.issubset(set(bools)), missing=sorted(REQUIRED_CERTS - set(bools)))
+            ck(f"{nm}_cache_certificates", bool(bools) and all(bools.values()), n=len(bools))
+            ck(f"{nm}_cache_representatives_match", cc_.get("representatives") == nrep, got=cc_.get("representatives"), want=nrep)
         detail["publication_radius"] = "2^-30"
     except Exception as e:
         checks["record_well_formed"] = False; detail["error"] = f"{type(e).__name__}: {e}"

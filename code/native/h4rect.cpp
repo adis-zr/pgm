@@ -172,7 +172,7 @@ int main(int argc, char** argv) {
       continue;
      }
       CV H[4]; bool Hok[4] = {false,false,false,false};
-      for (int t = 0; t < 4; t++) cv_init(H[t]);
+      for (int t = 0; t < 4; t++) cv_init(H[t]);   // cv_init zeroes both components; Hok guards use (review item 3)
       long na = (long)allowed[1].size(), nb = (long)allowed[2].size();
       for (long ia = 0; ia < na; ia++) for (long ib = 0; ib < nb; ib++) {
         long idx = ia * nb + ib; CV s; cv_init(s); bool first = true;

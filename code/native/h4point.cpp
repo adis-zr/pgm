@@ -198,7 +198,10 @@ int main(int argc, char** argv) {
     int msign = (mi == 0) ? -1 : 1;
     for (long k = 0; k < nk; k++) {
       // H over contexts of sites (i+1, i+2)
+      // every one of the four slots must be initialised: with a pinned boundary site the allowed-list loops below
+      // cover fewer than four, and an uninitialised slot could be read through Hok[pidx] (review item 3).
       double Hre[4], Him[4]; bool Hok[4];
+      for (int t = 0; t < 4; t++) { Hre[t] = 0.0; Him[t] = 0.0; Hok[t] = false; }
       // i = 0: H_0(a,b) = sum_c p_0(c|a,b) phi_0(k,c) b_0(c) * 1
       long na = (long)T.allowed[1].size(), nb = (long)T.allowed[2].size();
       for (long ia = 0; ia < na; ia++) for (long ib = 0; ib < nb; ib++) {
@@ -221,6 +224,7 @@ int main(int argc, char** argv) {
       // i = 1 .. n-3
       for (long i = 1; i <= T.n - 3; i++) {
         double Nre[4], Nim[4]; bool Nok[4];
+        for (int t = 0; t < 4; t++) { Nre[t] = 0.0; Nim[t] = 0.0; Nok[t] = false; }
         long nna = (long)T.allowed[i + 1].size(), nnb = (long)T.allowed[i + 2].size();
         long pna = (long)T.allowed[i].size(), pnb = (long)T.allowed[i + 1].size();
         for (long ia = 0; ia < nna; ia++) for (long ib = 0; ib < nnb; ib++) {

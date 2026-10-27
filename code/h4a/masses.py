@@ -108,6 +108,33 @@ def accepted_count(T_pub, I_pub, Zsig_pub_hi, delta):
     lo -= delta * Zsig_pub_hi; hi += delta * Zsig_pub_hi
     return (max(Fr(0), lo), min(Zsig_pub_hi, hi))
 
+def weighted_count(count_iv, w_pub):
+    """weighted node count = accepted-count interval times the published Gaussian node-weight interval, full outward
+    product (both are nonnegative here, but the product is taken over all four endpoint pairs regardless)"""
+    prods = [count_iv[0] * w_pub[0], count_iv[0] * w_pub[1], count_iv[1] * w_pub[0], count_iv[1] * w_pub[1]]
+    return (min(prods), max(prods))
+
+
+def replay_counts(T_chk, I_chk, Zsig_chk_hi, delta, w_chk):
+    """INDEPENDENT count replay from the CHECKER's own quantities (NUMERICAL_THEOREM.md §9 'For count replay'):
+    its unpadded total mass, its inner response interval, its own marker-mass upper endpoint and its independently
+    certified analytic error. Returns the accepted and weighted intervals the checker would publish."""
+    acc = accepted_count(T_chk, I_chk, Zsig_chk_hi, delta)
+    return {"accepted": acc, "weighted": weighted_count(acc, w_chk)}
+
+
+def verify_counts(prod_counts, chk_counts):
+    """the producer's published count intervals must contain the checker's independently replayed ones"""
+    out = {}
+    for sg in (-1, 1):
+        p = prod_counts[sg]["accepted"]; c = chk_counts[sg]["accepted"]
+        out[f"accepted_count_{sg}_checker_replay_contained"] = p[0] <= c[0] and c[1] <= p[1]
+        pw = prod_counts[sg]["weighted"]; cw = chk_counts[sg]["weighted"]
+        out[f"weighted_count_{sg}_checker_replay_contained"] = pw[0] <= cw[0] and cw[1] <= pw[1]
+        out[f"accepted_count_{sg}_within_[0,Zhi]"] = p[0] >= 0 and p[0] <= p[1]
+    return out
+
+
 def verify_masses(prod, chk):
     """checker's UNPADDED intervals must be contained in the producer's relative publications"""
     out = {}
