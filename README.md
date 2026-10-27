@@ -9,8 +9,11 @@ Two parts:
   - `docs/lab-reports/` — byte-for-byte copies (183 files, with `INDEX.md` giving repo, commit, bytes, SHA-256) of every result report,
     closeout/audit document, ledger, manifest, source lock, results table and accounting record produced by the H4 lab (run1 → external
     benchmark → moment audit → closeout → centering pilot). This answers the handoff's `reports/REQUEST_MISSING_REPORTS.md`.
-- `code/` — empty. The previous implementation (the `strongcompact` repositories and their evidence archives) was deleted on 26 Oct 2026;
-  any new implementation starts here, built from the specifications in `docs/`.
+- `code/` — the direct chain-query certificate pilot (26 Oct 2026): `code/README.md`, `code/dq/`, `code/native/`, `code/tests/`, and the
+  durable campaign records under `code/runs/dq_pilot_2026-10-26/` (REPORT.md leads with the decision). The earlier `strongcompact`
+  implementation was deleted on 26 Oct 2026 and exists only as prose in `docs/`.
+- `docs/direct-query-theory-pass-2026-10-26/` — the theory pass packet that specified the pilot (proofs, witness, Fourier baseline, frozen spec);
+  `docs/LEDGER_ADDITIONS_direct_query_pilot_2026-10-26.md` — the pilot's scoped empirical entry (E-DQ-01).
 
 Procedure for a new handoff version: re-extract it over `docs/handoff/`, verify its `CHECKSUMS.txt`, record the ZIP's SHA-256 in the commit
 message, commit; `git diff` then shows what changed between versions.
