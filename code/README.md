@@ -10,11 +10,16 @@ tests), `runs/<run>/` durable campaign records.
 ## Build and run
 
     /opt/homebrew/bin/python3.12 -m venv .venv && .venv/bin/pip install gmpy2 psutil pytest
-    export I=-I/opt/homebrew/opt/gmp/include\ -I/opt/homebrew/opt/mpfr/include L="-L/opt/homebrew/opt/gmp/lib -L/opt/homebrew/opt/mpfr/lib -lmpfr -lgmp"
-    c++ -O2 -std=c++17 -fno-fast-math $I native/dqchain.cpp -o build/dqchain $L
-    c++ -O2 -std=c++17 -fno-fast-math $I native/dqcheck.cpp -o build/dqcheck $L
-    .venv/bin/python -m pytest -q tests/test_dq_small.py          # tiny validation (< 60 s)
+    mkdir -p build
+    c++ -O2 -std=c++17 -fno-fast-math -I/opt/homebrew/opt/gmp/include -I/opt/homebrew/opt/mpfr/include native/dqchain.cpp -o build/dqchain -L/opt/homebrew/opt/gmp/lib -L/opt/homebrew/opt/mpfr/lib -lmpfr -lgmp
+    c++ -O2 -std=c++17 -fno-fast-math -I/opt/homebrew/opt/gmp/include -I/opt/homebrew/opt/mpfr/include native/dqcheck.cpp -o build/dqcheck -L/opt/homebrew/opt/gmp/lib -L/opt/homebrew/opt/mpfr/lib -lmpfr -lgmp
+    .venv/bin/python -m pytest -q tests/                          # 24 tests (< 60 s); 7 need build/dqchain and build/dqcheck
     .venv/bin/python -m dq.campaign --run-dir runs/dq_pilot_<tag>  # stages 1-4, 1,200 s cap
+
+`build/` and `.venv/` are untracked and are not shipped in the handoff archives: the build step must precede the tests and the campaign
+(without it the 7 kernel-dependent tests fail with FileNotFoundError). The compiler flags are written out in full because zsh, the
+default shell on the recorded machine, does not word-split an unquoted `$I`, so the earlier `export I=...; ... $I ...` form fails with
+`mpfr.h file not found`.
 
 Inspect: `runs/<run>/REPORT.md`, `tables.json`, `campaign_state.json`, `events.jsonl`, `resources.jsonl` (heartbeats + contention samples),
 `attempts.jsonl`, `lock.json` (environment, source and binary hashes, frozen constants), `cells/<cell>/{result.json,witness.json,input.txt,
