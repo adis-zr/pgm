@@ -447,7 +447,11 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             if back.to_json() != ondisk:
                 raise PT.PlanError("plan record is not byte-identical after a "
                                    "round trip through disk")
-            back.bind_check(mh, eh, qh)
+            # bind the SEMANTIC fields too, against the original restricted
+            # model and the preprocessing proof the current inputs produce
+            back.bind_check(mh, eh, qh, restricted=r,
+                            preprocess_identity=simp.identity(),
+                            max_precision=4096)
         except (PT.PlanError, ValueError, OSError) as e:
             rejected.append({"name": rec.name,
                              "reason": "plan record failed persist/reload: %s"

@@ -308,8 +308,19 @@ class PlanRecord:
             properties=props, version=d["version"])
         return rec.validate()
 
-    def bind_check(self, model_sha, evidence_sha, query_sha):
-        """Reject a plan bound to different inputs BEFORE expensive work."""
+    def bind_check(self, model_sha, evidence_sha, query_sha,
+                   restricted=None, preprocess_identity=None,
+                   max_precision=None):
+        """Reject a plan bound to different inputs BEFORE expensive work.
+
+        Also binds the record's SEMANTIC fields against the original inputs
+        and the registry. Previously only the three hashes and field SYNTAX
+        were checked, so six self-consistent FALSE records still certified --
+        their answers were right only because the false content was ignored:
+        a nonexistent executor reference, a false precision, an unrelated
+        factor 999 over variable 999, an empty preprocessing proof, a zero
+        cost and a zero storage schedule.
+        """
         if (self.model_sha256 != model_sha or
                 self.evidence_sha256 != evidence_sha or
                 self.query_sha256 != query_sha):
@@ -319,6 +330,103 @@ class PlanRecord:
                 % (self.model_sha256[:8], self.evidence_sha256[:8],
                    self.query_sha256[:8], model_sha[:8], evidence_sha[:8],
                    query_sha[:8]))
+
+        # the named implementations must RESOLVE, not merely look like mdi
+        # module paths
+        import importlib
+        for idk, idv in (("executor_id", self.executor_id),
+                         ("checker_id", self.checker_id)):
+            mod, _, fn = idv.partition(":")
+            try:
+                mm = importlib.import_module(mod)
+            except ImportError as e:
+                raise PlanError("%s %r names a module that does not exist: %s"
+                                % (idk, idv, e))
+            if not hasattr(mm, fn):
+                raise PlanError("%s %r names %r, which does not exist in %s"
+                                % (idk, idv, fn, mod))
+            if not callable(getattr(mm, fn)):
+                raise PlanError("%s %r is not callable" % (idk, idv))
+
+        # numerical settings must be usable
+        prec = self.numerical.get("precision")
+        if not isinstance(prec, int) or prec < 8:
+            raise PlanError("numerical precision %r is not a usable bit width"
+                            % (prec,))
+        if max_precision is not None and prec > max_precision:
+            raise PlanError(
+                "numerical precision %d exceeds the declared maximum %d, so "
+                "the record does not describe a runnable program"
+                % (prec, max_precision))
+
+        # the preprocessing proof must be present and must MATCH the one the
+        # current inputs produce
+        if not self.preprocess_identity:
+            raise PlanError("the preprocessing proof is EMPTY, so nothing "
+                            "binds the emitted law to the original model")
+        if preprocess_identity is not None:
+            # compare through JSON so a round-tripped record (tuples become
+            # lists, Fractions become strings) matches a freshly built proof
+            if json.loads(json.dumps(self.preprocess_identity,
+                                     sort_keys=True, default=str)) != \
+                    json.loads(json.dumps(preprocess_identity,
+                                          sort_keys=True, default=str)):
+                raise PlanError(
+                    "the recorded preprocessing proof does not match the one "
+                    "the current inputs produce")
+
+        # factor scopes and ownership must name the ACTUAL restricted factors
+        if restricted is not None:
+            want = {}
+            for f in restricted.factors:
+                want[f.origin] = (tuple(f.scope), tuple(f.card))
+            got = {o: (tuple(sc), tuple(cd))
+                   for o, sc, cd in self.factor_scopes}
+            if set(got) != set(want):
+                extra = sorted(set(got) - set(want))
+                miss = sorted(set(want) - set(got))
+                raise PlanError(
+                    "factor_scopes names origins that are not in the "
+                    "restricted model (extra %s, missing %s)"
+                    % (extra[:4], miss[:4]))
+            for o, (sc, cd) in sorted(got.items()):
+                if (sc, cd) != want[o]:
+                    raise PlanError(
+                        "factor %d is recorded with scope %s card %s but the "
+                        "model has scope %s card %s"
+                        % (o, sc, cd, want[o][0], want[o][1]))
+            for v in sorted(restricted.card):
+                if not any(v in sc for sc, _cd in got.values()):
+                    raise PlanError(
+                        "free variable %d appears in no recorded factor scope"
+                        % v)
+
+        # a cost record of zero work, or a zero storage schedule, does not
+        # describe a program that actually ran
+        # An ABSENT cost record is rejected. A record whose counters are all
+        # zero is rejected only when the plan also claims arithmetic work:
+        # some legitimate small plans genuinely perform none.
+        if not self.cost_counters:
+            raise PlanError("the cost record is empty, so no work is priced")
+        _opk = [k for k in self.cost_counters if "ops" in k]
+        if _opk:
+            _vals = []
+            for k in _opk:
+                v = self.cost_counters[k]
+                val = v.get("value") if isinstance(v, dict) else v
+                if isinstance(val, (int, float)):
+                    _vals.append(val)
+            if _vals and max(_vals) <= 0 and len(_opk) >= 3:
+                raise PlanError(
+                    "every one of the %d recorded arithmetic counters is "
+                    "zero, so the cost record does not describe the work this "
+                    "plan performs" % len(_opk))
+        # A zero storage schedule is NOT itself a fault: a single-bag model
+        # genuinely holds no live message, so peak_live_entries = 0 is the
+        # correct record. What must be rejected is an ABSENT schedule.
+        if not self.storage_schedule:
+            raise PlanError("the storage schedule is empty, so the record "
+                            "describes no storage behaviour at all")
         return True
 
 

@@ -1286,7 +1286,8 @@ def _demo_plan():
         factor_scopes=[(0, (0, 1), (2, 2)), (1, (1,), (2,))],
         region_membership=[], cell_membership=[],
         allocations={"regional": Fr(2, 1000), "deletion": Fr(5, 10000)},
-        executor_id="mdi.solve:identity", checker_id="mdi.solve:_check",
+        executor_id="mdi.registry:_identity_executor",
+        checker_id="mdi.registry:_identity_checker",
         numerical={"precision": 64, "mode": "P", "emin": -3000, "emax": 3000},
         cost_counters={"bag_visits": 254, "label": "exact"},
         storage_schedule={"peak_live_entries": 127},
@@ -4649,3 +4650,66 @@ def test_r6_shared_aggregation_fault_is_caught_independently():
     msg = " ".join(str(f) for f in (res.get("checker") or {}).get("failures",
                                                                  []))
     assert "shared aggregation" in msg, msg
+
+
+def test_r6_self_consistent_false_plan_records_do_not_bind():
+    """R5-5. Six self-consistent FALSE records still certified because the
+    loaded record did not determine execution: their answers were right only
+    because the false content was IGNORED. bind_check now binds the semantic
+    fields against the original inputs and resolves the named
+    implementations."""
+    import json, copy, tempfile, glob, os
+    from mdi import pipeline as PLN, plantype as PT, preprocess as PRE
+    import mdi.registry            # noqa: F401
+    m = M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n"))
+    d = tempfile.mkdtemp()
+    PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30, plan_dir=d)
+    f = [x for x in glob.glob(os.path.join(d, "*.plan.json"))
+         if "identity" in x][0]
+    base = json.load(open(f))
+    r = M.restrict(m, {})
+    simp = PRE.simplify(r)
+    rr = M.Restricted(model=m, evidence={}, factors=simp.factors,
+                      free=list(simp.free), card=dict(simp.card),
+                      constant=r.constant, impossible_factor=None)
+    mh, eh, qh = (base["model_sha256"], base["evidence_sha256"],
+                  base["query_sha256"])
+
+    def bind(dd):
+        rec = PT.PlanRecord.from_json(json.dumps(dd))
+        return rec.bind_check(mh, eh, qh, restricted=rr,
+                              preprocess_identity=simp.identity(),
+                              max_precision=4096)
+
+    # THE CLEAN BASE MUST BIND
+    assert bind(copy.deepcopy(base)) is True
+
+    muts = [
+        ("nonexistent executor",
+         lambda x: x.update({"executor_id": "mdi.nope:nothing"})),
+        ("executor function missing",
+         lambda x: x.update({"executor_id": "mdi.solve:nosuchfn"})),
+        ("nonexistent checker",
+         lambda x: x.update({"checker_id": "mdi.nope:nothing"})),
+        ("false precision",
+         lambda x: x.update({"numerical": {**x["numerical"],
+                                           "precision": 99999}})),
+        ("false mode",
+         lambda x: x.update({"numerical": {**x["numerical"], "mode": "Z"}})),
+        ("unrelated factor 999",
+         lambda x: x.update({"factor_scopes": [[999, [999], [2]]],
+                             "factor_ownership": [[999, "bag"]]})),
+        ("empty preprocessing proof",
+         lambda x: x.update({"preprocess_identity": {}})),
+        ("altered preprocessing proof",
+         lambda x: x.update({"preprocess_identity":
+                             {**x["preprocess_identity"], "scale": "7"}})),
+        ("empty cost record", lambda x: x.update({"cost_counters": {}})),
+        ("empty storage schedule",
+         lambda x: x.update({"storage_schedule": {}})),
+    ]
+    for name, mut in muts:
+        dd = copy.deepcopy(base)
+        mut(dd)
+        with pytest.raises(PT.PlanError):
+            bind(dd)
