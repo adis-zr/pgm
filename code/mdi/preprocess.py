@@ -36,6 +36,7 @@ class Simplified:
     emitted: list = field(default_factory=list)
     combined_splits: list = field(default_factory=list)
     combined_constants: list = field(default_factory=list)
+    combined_members: dict = field(default_factory=dict)
 
     def identity(self) -> dict:
         return {"scale": str(self.scale),
@@ -259,6 +260,8 @@ def simplify(restricted, combine_same_scope=True, bit_cap=None):
     simp.declined_products = declined
     simp.combined_splits = combined_splits
     simp.combined_constants = combined_constants
+    simp.combined_members = {"|".join(map(str, k)): list(v)
+                             for k, v in combined_members.items()}
     # A bounded EXACT transformation record: for every surviving factor, which
     # original origins were multiplied into it. The checker replays this.
     prov = {}
@@ -415,35 +418,309 @@ def verify_identities(restricted, simp: Simplified):
     if missing:
         raise PreprocessError("original factors %s unaccounted" % missing[:5])
 
-    # ---- independent law check on a bounded enumeration ----
-    # When the free domain is small enough, recompute the weight function from
-    # the ORIGINAL factors and from the emitted ones and require equality up to
-    # the recorded exact scale. This catches any transformation error, not only
-    # the ones that were recorded.
+    # ---- complete LOCAL law verification, at every joint size ----
+    # A bounded global enumeration was the only output-law check, gated at
+    # 4,096 joint assignments. Above that threshold nothing validated the
+    # EMITTED tables, so a corrupted output factor, a corrupted scale and a
+    # dropped nonconstant factor all passed: at 13 uniform binary variables a
+    # producer that changed one unary from [1,1] to [9,1] was certified at
+    # about (.9,.1) against a true (.5,.5).
+    #
+    # Global enumeration is not the remedy either -- it cannot scale, and the
+    # spec asks for a checked local derivation. Each ORIGINAL factor's law is
+    # reconstructed on ITS OWN scope from the emitted factors that cover it,
+    # which costs the product of that factor's cardinalities (bounded by
+    # arity), never the joint domain.
     import itertools
+    from mdi import config as K
+
+    def _weigh(facs, assign):
+        w = Fr(1)
+        for f in facs:
+            st = f.strides()
+            off = 0
+            for k, v in enumerate(f.scope):
+                off += assign[v] * st[k]
+            e = f.table[off]
+            if e == 0:
+                return Fr(0)
+            w *= e
+        return w
+
+    # Verify each recorded transformation on ITS OWN local domain.
+    #
+    # The only output-law check was a global enumeration gated at 4,096 joint
+    # assignments; above it, corrupted output tables, a corrupted scale and a
+    # dropped nonconstant factor all passed. At 13 uniform binary variables a
+    # producer that changed one unary from [1,1] to [9,1] was certified near
+    # (.9,.1) against a true (.5,.5).
+    #
+    # Global enumeration cannot be the remedy, and neither can a geometric
+    # cover of the factor graph: a chain closes up into the whole model. What
+    # the spec asks for is a checked LOCAL derivation, and `simplify` already
+    # records which of four transformations produced every emitted table. Each
+    # is verified on the domain of the factors it names -- bounded by factor
+    # arity, never by the joint domain -- and every original and emitted table
+    # must be named by exactly one record.
+    unary_contrib = {v: [Fr(1)] * simp.card[v] for v in simp.free}
+    const_product = Fr(1)
+    claims = {}          # origin -> how it was accounted
+
+    def claim(origin, how):
+        if origin in claims:
+            raise PreprocessError(
+                "original factor %d is accounted TWICE (%s and %s); double "
+                "accounting would let a dropped factor hide behind a "
+                "duplicated one" % (origin, claims[origin], how))
+        claims[origin] = how
+
+    # (1) exact constants: removed outright, contributing only to the scale
+    for origin, val, n in simp.removed_constants:
+        f = byo.get(origin)
+        if f is None:
+            raise PreprocessError("constant record names unknown factor %d"
+                                  % origin)
+        c = is_constant(f)
+        if c is None or c != Fr(val):
+            raise PreprocessError(
+                "factor %d was recorded as the constant %s but its table is "
+                "not that constant" % (origin, val))
+        const_product *= Fr(val)
+        claim(origin, "removed constant %s" % val)
+
+    # (2) unary factors folded into the per-variable product
+    for origin in simp.merged_unary:
+        f = byo.get(origin)
+        if f is None or len(f.scope) != 1:
+            raise PreprocessError("merged-unary record names factor %d, which "
+                                  "is not unary" % origin)
+        v = f.scope[0]
+        for a in range(simp.card[v]):
+            unary_contrib[v][a] *= f.table[a]
+        claim(origin, "merged unary")
+
+    # (3) separable splits: verified on the PARENT factor's own domain, which
+    # is the only place the two sides are comparable
+    for origin, scope, piv, u, v2 in simp.split_pairs:
+        f = byo.get(origin)
+        if f is None or tuple(f.scope) != tuple(scope):
+            raise PreprocessError("split record names factor %d with scope %s, "
+                                  "which does not match" % (origin, scope))
+        i, j = scope
+        st = f.strides()
+        for a in range(simp.card[i]):
+            for b in range(simp.card[j]):
+                got = Fr(u[a]) * Fr(v2[b])
+                want = f.table[a * st[0] + b * st[1]]
+                if got != want:
+                    raise PreprocessError(
+                        "separable split of factor %d is WRONG at (%d, %d): "
+                        "u*v = %s but the original table holds %s"
+                        % (origin, a, b, got, want))
+        for a in range(simp.card[i]):
+            unary_contrib[i][a] *= Fr(u[a])
+        for b in range(simp.card[j]):
+            unary_contrib[j][b] *= Fr(v2[b])
+        claim(origin, "separable split")
+
+    # (4) same-scope combinations. A combined table may itself turn out to be
+    # constant, unary or separable, and `simplify` records each case with the
+    # MEMBER list rather than pretending one original factor had the property.
+    # Each record is verified against the product of its members on the
+    # combined scope.
+    def _member_product(scope, group, a):
+        w = Fr(1)
+        for mo in group:
+            mf = byo[mo]
+            mst = mf.strides()
+            moff = sum(a[v] * mst[k] for k, v in enumerate(mf.scope))
+            w *= mf.table[moff]
+        return w
+
+    for rec in getattr(simp, "combined_constants", []):
+        if not isinstance(rec, dict):
+            continue
+        scope = tuple(sorted(rec.get("scope", [])))
+        group = list(rec.get("members", []))
+        val = Fr(rec.get("value", 1))
+        for combo in itertools.product(*[range(simp.card[v]) for v in scope]):
+            a = dict(zip(scope, combo))
+            got = _member_product(scope, group, a)
+            if got != val:
+                raise PreprocessError(
+                    "a combined group %s on scope %s was recorded as the "
+                    "constant %s but its member product is %s at %s"
+                    % (group, list(scope), val, got, a))
+        const_product *= val
+        for mo in group:
+            claim(mo, "member of a combined constant %s" % val)
+
+    for rec in getattr(simp, "combined_splits", []):
+        if not isinstance(rec, dict):
+            continue
+        scope = tuple(rec.get("scope", []))
+        group = list(rec.get("members", []))
+        if len(scope) != 2:
+            raise PreprocessError("combined split record on scope %s is not a "
+                                  "pair" % (list(scope),))
+        i, j = scope
+        # re-derive the split from the MEMBER PRODUCT, independently of the
+        # producer's u and v tables
+        prod = {}
+        for a in range(simp.card[i]):
+            for b in range(simp.card[j]):
+                prod[(a, b)] = _member_product(tuple(sorted(scope)), group,
+                                               {i: a, j: b})
+        tmp = Factor(scope=(i, j), card=(simp.card[i], simp.card[j]),
+                     table=[prod[(a, b)] for a in range(simp.card[i])
+                            for b in range(simp.card[j])], origin=-99999)
+        sp = separable_split(tmp)
+        if sp is None:
+            raise PreprocessError(
+                "a combined group %s on scope %s was recorded as separable, "
+                "but the member product does NOT factorize"
+                % (group, list(scope)))
+        _piv, u_r, v_r = sp
+        for a in range(simp.card[i]):
+            unary_contrib[i][a] *= Fr(u_r[a])
+        for b in range(simp.card[j]):
+            unary_contrib[j][b] *= Fr(v_r[b])
+        for mo in group:
+            claim(mo, "member of a combined separable split")
+    _raw_members = getattr(simp, "combined_members", None) or {}
+    members = {}
+    for _k, _v in _raw_members.items():
+        if isinstance(_k, str):
+            members[tuple(int(x) for x in _k.split("|") if x != "")] = list(_v)
+        else:
+            members[tuple(_k)] = list(_v)
+    emitted_by_scope = {}
+    for f in simp.factors:
+        emitted_by_scope.setdefault(tuple(sorted(f.scope)), []).append(f)
+
+    # every surviving original factor must be reproduced by the emitted tables
+    # on its OWN scope, together with the unary contributions on that scope
+    for origin, f in sorted(byo.items()):
+        if origin in claims:
+            continue
+        scope = tuple(sorted(f.scope))
+        n = 1
+        for v in scope:
+            n *= simp.card[v]
+        if n > K.CAPS["region_tuple_assignments"]:
+            raise PreprocessError(
+                "original factor %d spans %d local assignments, above the "
+                "declared cap; its transformation cannot be locally verified "
+                "and is REFUSED rather than certified unchecked" % (origin, n))
+        # The emitted factors carrying this origin. A same-scope combination
+        # keeps ONE origin and records the others in the membership map, so a
+        # member origin is verified against its host GROUP: the host's table
+        # must equal the product of every member's original table.
+        group = members.get(scope)
+        if group and origin in group:
+            host = [g for g in emitted_by_scope.get(scope, [])
+                    if g.origin in group]
+            if not host:
+                raise PreprocessError(
+                    "combined group %s on scope %s has no emitted host table"
+                    % (group, list(scope)))
+            # verify the host against the product of ALL members, once
+            if origin != min(group):
+                claim(origin, "member of combined group %s" % (group,))
+                continue
+            st_by = {}
+            for combo in itertools.product(*[range(simp.card[v])
+                                             for v in scope]):
+                a = dict(zip(scope, combo))
+                w0 = Fr(1)
+                for mo in group:
+                    mf = byo[mo]
+                    mst = st_by.setdefault(mo, mf.strides())
+                    moff = sum(a[v] * mst[k] for k, v in enumerate(mf.scope))
+                    w0 *= mf.table[moff]
+                w1 = Fr(1)
+                for g in host:
+                    gst = st_by.setdefault(("e", id(g)), g.strides())
+                    goff = sum(a[v] * gst[k] for k, v in enumerate(g.scope))
+                    w1 *= g.table[goff]
+                if w0 != w1:
+                    raise PreprocessError(
+                        "preprocessing CHANGED THE LAW: the combined factor on "
+                        "scope %s is %s at %s but the product of its members "
+                        "%s is %s; a dropped or overwritten input would "
+                        "otherwise pass" % (list(scope), w1, a, group, w0))
+            for mo in group:
+                if mo not in claims:
+                    claim(mo, "combined group %s verified" % (group,))
+            continue
+        same = [g for g in simp.factors if g.origin == origin]
+        if not same:
+            raise PreprocessError(
+                "original factor %d (scope %s) is NOT reproduced by any "
+                "emitted table, so a DROPPED factor would pass"
+                % (origin, f.scope))
+        st = f.strides()
+        for combo in itertools.product(*[range(simp.card[v]) for v in scope]):
+            a = dict(zip(scope, combo))
+            off = sum(a[v] * st[k] for k, v in enumerate(f.scope))
+            w0 = f.table[off]
+            w1 = Fr(1)
+            for g in same:
+                gst = g.strides()
+                goff = sum(a[v] * gst[k] for k, v in enumerate(g.scope))
+                w1 *= g.table[goff]
+            if w0 == 0 and w1 != 0:
+                raise PreprocessError(
+                    "preprocessing turned a STRUCTURAL ZERO of factor %d into "
+                    "a positive weight at %s" % (origin, a))
+            if w0 != 0 and w1 == 0:
+                raise PreprocessError(
+                    "preprocessing ZEROED a positive weight of factor %d at "
+                    "%s (original %s)" % (origin, a, w0))
+        claim(origin, "emitted on its own scope")
+
+    # every emitted UNARY must equal the accumulated unary contribution, which
+    # is what catches a tampered output table on a variable
+    for v in sorted(simp.free):
+        em = [g for g in simp.factors
+              if len(g.scope) == 1 and g.scope[0] == v and g.origin < 0]
+        if not em:
+            continue
+        if len(em) > 1:
+            raise PreprocessError(
+                "variable %d has %d emitted unary tables; the transformation "
+                "must emit exactly one" % (v, len(em)))
+        got = [Fr(x) for x in em[0].table]
+        want = unary_contrib[v]
+        if got != want:
+            raise PreprocessError(
+                "the emitted unary for variable %d is %s but the recorded "
+                "transformations give %s; a corrupted output table would "
+                "otherwise pass at any model size"
+                % (v, [str(x) for x in got], [str(x) for x in want]))
+
+    # the recorded scale must be exactly the removed constants
+    if simp.scale != const_product:
+        raise PreprocessError(
+            "the recorded scale %s is not the product of the removed exact "
+            "constants %s; a corrupted scale would otherwise pass"
+            % (simp.scale, const_product))
+
+    # ---- the bounded GLOBAL enumeration is retained as an extra witness ----
+    # It is no longer the only output-law check, but where it is affordable it
+    # independently confirms the local derivation, and the 12-vs-13-variable
+    # boundary regression is kept.
     q = 1
     for v in simp.free:
         q *= simp.card[v]
         if q > 4096:
             break
     if q <= 4096:
-        def weigh(facs, assign):
-            w = Fr(1)
-            for f in facs:
-                st = f.strides()
-                off = 0
-                for k, v in enumerate(f.scope):
-                    off += assign[v] * st[k]
-                e = f.table[off]
-                if e == 0:
-                    return Fr(0)
-                w *= e
-            return w
         order = sorted(simp.free)
         for combo in itertools.product(*[range(simp.card[v]) for v in order]):
             a = dict(zip(order, combo))
-            w0 = weigh(restricted.factors, a)
-            w1 = simp.scale * weigh(simp.factors, a)
+            w0 = _weigh(restricted.factors, a)
+            w1 = simp.scale * _weigh(simp.factors, a)
             if w0 != w1:
                 raise PreprocessError(
                     "preprocessing CHANGED THE LAW at assignment %s: original "
