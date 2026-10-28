@@ -296,14 +296,24 @@ def check_composed_publication(restricted, regions, coarse, rds, queries,
                                       queries, rho_cap, region_of, coarse[i])
         rebuilt.append(cr)
         problems.extend("region %d: %s" % (i, p) for p in probs)
-    # complete ownership: every requested variable must belong to exactly one
-    # region, or its publication is unsupported
-    for v in sorted(queries):
+    # A DISJOINT EXACT COVER OF EVERY FREE VARIABLE, not only the requested
+    # ones: a hidden unowned variable drops its factors from the coarse law.
+    for v in sorted(restricted.card):
         owners = [i for i, reg in enumerate(regions) if v in reg]
         if len(owners) != 1:
-            problems.append("requested variable %d is owned by %d regions; the "
-                            "partition is incomplete or overlapping"
-                            % (v, len(owners)))
+            problems.append(
+                "free variable %d is owned by %d regions; the partition is "
+                "incomplete or overlapping%s"
+                % (v, len(owners), "" if v in queries
+                   else " (hidden variable, not requested)"))
+    for fi, f in enumerate(restricted.factors):
+        unowned = [v for v in f.scope
+                   if not any(v in reg for reg in regions)]
+        if unowned:
+            problems.append(
+                "factor %d on scope %s has variables %s in no region and "
+                "would be DROPPED from the coarse law"
+                % (getattr(f, "origin", fi), tuple(f.scope), unowned[:4]))
     if problems:
         return False, problems, {"certificate_rejected": True}
     Rlevel = R.level_distortion(rebuilt)

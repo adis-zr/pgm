@@ -153,7 +153,14 @@ def parent_region_data(parent, coarse, crossings, queries, deadline=None):
                 w *= pc.value(cell_of)
         if w == 0:
             continue
-        b = tuple(dig[bpos[c]] for c in boundary_children)
+        # `dig` is indexed over ALL children, so a boundary child's cell must
+        # be read at its CHILD position (cpos), not at its position within the
+        # boundary list (bpos). With children 0..11 and child 11 the sole
+        # boundary, bpos[11] = 0 read child 0's cell instead: the 13-site
+        # control returned P(X11=1) = 3585/7168 against a true 11/14, an error
+        # of about 0.285575 versus the 0.002 allowance. The last site stayed
+        # correct, which is why a test checking only that marginal passed.
+        b = tuple(dig[cpos[c]] for c in boundary_children)
         A[b] = A.get(b, Fr(0)) + w
         # RECOMPUTE each marker: replace the owning child's M by its N
         for c, (v, s) in want:

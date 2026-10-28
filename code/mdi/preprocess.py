@@ -383,10 +383,29 @@ def verify_identities(restricted, simp: Simplified):
             claim(origin, "combined then re-simplified")
     # emitted factors: a synthetic unary carries origin -1-v; everything else
     # must trace to an original origin, and a same-scope product names its first
-    synth = {-1 - v for v in simp.free}
+    # A synthetic origin is -1-v for free variable v. Exempting that origin
+    # BEFORE proving the factor really is the expected unary on variable v let
+    # an unrecorded PAIR interaction take the origin and escape accounting
+    # entirely: pair weights [1,1,1,9] under a synthetic origin certified
+    # about (1/6, 5/6) where the original law is (.5, .5).
+    synth = {-1 - v: v for v in simp.free}
     emitted_origins = []
     for f in simp.factors:
-        if f.origin in synth or f.origin == -1:
+        if f.origin in synth:
+            want_v = synth[f.origin]
+            if len(f.scope) != 1 or f.scope[0] != want_v:
+                raise PreprocessError(
+                    "a factor with SYNTHETIC origin %d has scope %s, but that "
+                    "origin is reserved for the unary on variable %d; a "
+                    "substituted interaction would otherwise escape local "
+                    "accounting" % (f.origin, tuple(f.scope), want_v))
+            if len(f.table) != simp.card[want_v]:
+                raise PreprocessError(
+                    "synthetic unary for variable %d has %d entries, "
+                    "cardinality is %d"
+                    % (want_v, len(f.table), simp.card[want_v]))
+            continue
+        if f.origin == -1:
             continue
         emitted_origins.append(f.origin)
     for origin in emitted_origins:
@@ -669,14 +688,32 @@ def verify_identities(restricted, simp: Simplified):
                 gst = g.strides()
                 goff = sum(a[v] * gst[k] for k, v in enumerate(g.scope))
                 w1 *= g.table[goff]
-            if w0 == 0 and w1 != 0:
+            # EQUALITY of every value, not merely matching zero support. The
+            # support-only test left a bit-cap-declined factor's positive
+            # entries unchecked: changing 3B to 30B on a retained factor
+            # certified about 61/63 where the truth is 7/9.
+            if w0 != w1:
                 raise PreprocessError(
-                    "preprocessing turned a STRUCTURAL ZERO of factor %d into "
-                    "a positive weight at %s" % (origin, a))
-            if w0 != 0 and w1 == 0:
+                    "preprocessing CHANGED THE LAW of factor %d at %s: "
+                    "original weight %s, emitted product %s. An emitted table "
+                    "must reproduce its original EXACTLY, not merely share its "
+                    "zero support." % (origin, a, w0, w1))
+        # scope and cardinality must agree too
+        for g in same:
+            if tuple(sorted(g.scope)) != scope:
                 raise PreprocessError(
-                    "preprocessing ZEROED a positive weight of factor %d at "
-                    "%s (original %s)" % (origin, a, w0))
+                    "emitted factor for origin %d has scope %s, not %s"
+                    % (origin, tuple(sorted(g.scope)), scope))
+            for k, v in enumerate(g.scope):
+                if g.card[k] != simp.card[v]:
+                    raise PreprocessError(
+                        "emitted factor for origin %d declares cardinality %d "
+                        "for variable %d, model says %d"
+                        % (origin, g.card[k], v, simp.card[v]))
+            if len(g.table) != n:
+                raise PreprocessError(
+                    "emitted factor for origin %d has %d entries, scope %s "
+                    "needs %d" % (origin, len(g.table), scope, n))
         claim(origin, "emitted on its own scope")
 
     # every emitted UNARY must equal the accumulated unary contribution, which
@@ -685,7 +722,17 @@ def verify_identities(restricted, simp: Simplified):
         em = [g for g in simp.factors
               if len(g.scope) == 1 and g.scope[0] == v and g.origin < 0]
         if not em:
-            continue
+            # `continue` here skipped the check whenever the output was
+            # ABSENT, so a DROPPED required unary passed at every size above
+            # the bounded global enumeration: it rejected at 12 binary
+            # variables but certified .5 against a truth of (1/3, 2/3) at 13,
+            # 16 and 20. simplify() emits exactly one synthetic unary per free
+            # variable, so its absence is a dropped table.
+            raise PreprocessError(
+                "variable %d has NO emitted unary table, but the "
+                "transformation accumulated the contribution %s for it; a "
+                "DROPPED required unary would otherwise pass at any model "
+                "size" % (v, [str(x) for x in unary_contrib[v]]))
         if len(em) > 1:
             raise PreprocessError(
                 "variable %d has %d emitted unary tables; the transformation "

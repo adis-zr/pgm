@@ -32,6 +32,42 @@ def _strides(card):
 
 def run(plan, factors, card, cand, Q, queries, ctx: A.Ctx, deadline=None,
         cap_states=None):
+    """Contract the residual, handling DISCONNECTED components.
+
+    A retained hard constraint can split the residual graph. Refusing outright
+    made the composed route decline whenever its retained factors disconnected
+    the model, so the constraint was effectively unusable. Independent
+    components multiply: Z = prod Z_c, and a marker in component c scales by
+    the other components' totals.
+    """
+    roots = [b.idx for b in plan.bags if b.parent == -1]
+    if len(roots) <= 1:
+        return _run_component(plan, factors, card, cand, Q, queries, ctx,
+                              deadline=deadline, cap_states=cap_states)
+    # A DISCONNECTED residual graph cannot be contracted component by
+    # component here. Independent components would multiply only if the law
+    # factorized across them, but the collective statistic
+    #     S = sum_i f_i(z_i)
+    # sums over EVERY variable, and exp(-gamma S^2 / 2) couples all of them
+    # regardless of which residual factors remain. Multiplying per-component
+    # totals would therefore drop the cross terms of S^2: on four binary
+    # variables with a ternary constraint it published X3 at 0.5 against a
+    # true 0.3556.
+    #
+    # The sound options are a joint contraction over the whole variable set
+    # (which this DP's single-component schedule does not express) or an
+    # explicit decline. Declining is correct and cheap.
+    raise Declined(
+        "the residual graph has %d disconnected components, but the "
+        "collective statistic couples every variable through exp(-gamma "
+        "S^2/2), so per-component contraction would drop the cross terms of "
+        "S^2; this candidate DECLINES rather than publishing a product of "
+        "independent totals" % len(roots))
+
+
+def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
+                   deadline=None,
+        cap_states=None):
     """Contract the residual on `plan`, carrying integer statistics.
 
     Returns (Z_interval, marker_intervals, meta). Masses stay NONNEGATIVE; the
@@ -204,10 +240,18 @@ def run(plan, factors, card, cand, Q, queries, ctx: A.Ctx, deadline=None,
         marks[(b, bags[b].parent)] = mk
     root_msg, root_marks = send(roots[0], None)
 
-    missing = [v for v in sorted(card) if v not in inserted]
+    # Every variable THIS component owns must have had its statistic inserted
+    # exactly once. Checking against the whole model's variable set made a
+    # disconnected component fail on the other components' variables.
+    own_vars = sorted({v for b in bags for v in b.vars})
+    missing = [v for v in own_vars if v not in inserted]
     if missing:
         raise Declined("variables %s never had their statistic inserted"
                        % missing[:5])
+    extra = [v for v in sorted(inserted) if v not in own_vars]
+    if extra:
+        raise Declined("variables %s had a statistic inserted but are not in "
+                       "this component" % extra[:5])
 
     # apply the signed quadratic exponential at the ROOT only
     s_k, g_k = cand.signs[0], cand.gammas[0]

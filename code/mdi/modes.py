@@ -545,12 +545,46 @@ def build_residual(free, factors, card, cand: ModeCandidate, ctx: A.Ctx,
         res_unary[v] = row
         nu += worst
 
-    kept = [fi for fi, f in enumerate(factors)
-            if len(f.scope) > 2 or any(t == 0 for t in f.table)]
+    # RETAINED factors must be MUTUALLY EXCLUSIVE with what res_unary and
+    # res_pairs already absorbed. A zero-bearing UNARY is already multiplied
+    # into res_unary, so listing it here too gave it duplicate ownership:
+    # consuming both would square unary [0, 2, 3] into [0, 4, 9], turning
+    # (0, 2/5, 3/5) into (0, 4/13, 9/13).
+    #
+    # The retained set is therefore: factors of arity > 2 (which no residual
+    # table can represent), and zero-bearing factors of arity exactly 2 whose
+    # zeros are hard constraints rather than absorbed pair structure. Unary
+    # factors are NEVER retained: res_unary owns them.
+    kept = []
+    for fi, f in enumerate(factors):
+        if len(f.scope) == 1:
+            continue                       # owned by res_unary
+        if len(f.scope) > 2:
+            kept.append(fi)
+            continue
+        if any(t == 0 for t in f.table):
+            key = tuple(sorted(f.scope))
+            if key in res_pairs or key in consts:
+                # already represented; retaining it would double-count
+                continue
+            kept.append(fi)
+    # a retained factor must not also be represented as a residual pair
+    for fi in kept:
+        key = tuple(sorted(factors[fi].scope))
+        if key in res_pairs:
+            raise AssertionError(
+                "factor %d on scope %s is BOTH retained and a residual pair: "
+                "factor ownership must be mutually exclusive" % (fi, key))
     const_log = Fr(0)
     for (i, j), c in consts.items():
         lo, hi = _log_enclose(c, ctx)
         const_log += (lo + hi) / 2
+    detail = dict(detail)
+    detail["kept_indices"] = list(kept)
+    detail["kept_scopes"] = [tuple(factors[fi].scope) for fi in kept]
+    detail["unary_owned"] = sorted(res_unary)
+    detail["pair_owned"] = [list(k) for k in sorted(res_pairs)]
+    detail["ownership_exclusive"] = True
     return Residual(unary=res_unary, pairs=res_pairs, kept=kept, nu=nu,
                     const_log=const_log, detail=detail)
 

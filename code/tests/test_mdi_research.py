@@ -2263,9 +2263,16 @@ def test_general_dp_refuses_double_insertion():
     """The statistic-once invariant must be enforced, not assumed."""
     from mdi import gendp as G
     import inspect
-    src = inspect.getsource(G.run)
+    # the invariant lives in the per-component contraction; G.run is now the
+    # dispatcher that either delegates to it or declines a disconnected graph
+    src = inspect.getsource(G._run_component)
     assert "inserted twice" in src
     assert "never had their statistic inserted" in src
+    # and a disconnected residual must DECLINE rather than multiply
+    # per-component totals, since the collective statistic couples every
+    # variable through exp(-gamma S^2/2)
+    dsrc = inspect.getsource(G.run)
+    assert "disconnected components" in dsrc
 
 
 # ===== review 4: false verified marginals (the most serious defect) =====

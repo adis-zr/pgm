@@ -326,18 +326,37 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
     # carrying X1 and so never built an enclosure for it, and the rejection it
     # did emit was about a DIFFERENT variable's padding.
     schema = []
-    for v in sorted(queries):
+    # A DISJOINT EXACT COVER OF EVERY FREE VARIABLE, not only the requested
+    # ones. Query selection changes which markers are needed; it does NOT
+    # remove hidden variables or their factors from the law. Covering only the
+    # requested variables let an unowned X1 drop its crossing factor
+    # silently: with pair table [1,2,3,4] and query {0} the checker accepted
+    # [.499, .501] for both X0 states where the truth is (.3, .7).
+    free_all = sorted(restricted.card)
+    for v in free_all:
         owners = [i for i, reg in enumerate(regions) if v in reg]
         if len(owners) == 0:
             schema.append(
-                "requested variable %d is in NO region: the partition is "
-                "incomplete, so no enclosure exists for it and its "
-                "publication is unsupported" % v)
+                "free variable %d is in NO region: the partition does not "
+                "cover the model, so the reduced law omits it and every "
+                "factor on its scope%s" % (v, " (REQUESTED)" if v in queries
+                                           else " (hidden, not requested)"))
         elif len(owners) > 1:
             schema.append(
-                "requested variable %d is in %d regions %s: the partition "
-                "overlaps, so its markers would be counted more than once"
+                "free variable %d is in %d regions %s: the partition "
+                "overlaps, so its mass would be counted more than once"
                 % (v, len(owners), owners[:4]))
+    # EVERY original factor must be classified, with its whole scope owned.
+    # A factor only partly inside the partition was silently skipped.
+    for fi, f in enumerate(restricted.factors):
+        unowned = [v for v in f.scope
+                   if not any(v in reg for reg in regions)]
+        if unowned:
+            schema.append(
+                "factor %d on scope %s has variables %s in no region, so it "
+                "can be classified neither local nor crossing and would be "
+                "DROPPED from the reduced law"
+                % (getattr(f, "origin", fi), tuple(f.scope), unowned[:4]))
     # every region variable must be a real model variable, and regions must not
     # overlap at all
     seen_vars = {}

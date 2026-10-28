@@ -251,21 +251,44 @@ def _evaluate(restricted, regions, coarse, rds, queries, ctx, eps,
             facs.append(M.Factor(scope=(i, j),
                                  card=(rc.card[i], rc.card[j]),
                                  table=[Fr(x) for x in tbl], origin=-2000))
-        # every RETAINED residual factor, including higher arity and zero
-        # constraints, or the candidate declines
-        for kf in kept:
-            sc = tuple(getattr(kf, "scope", ()))
+        # Every RETAINED residual factor, resolved from its INDEX into the
+        # coarse factor list. res.kept holds integer indices; treating them as
+        # Factor objects made `getattr(kf, "scope", ())` return () for an int,
+        # so `if not sc: continue` SKIPPED every retained factor. On four
+        # binary variables with a ternary constraint forcing X0 = 1 the
+        # producer published X0 = 0 in [.01727, .01732] although its true
+        # probability is exactly ZERO, and all eight intervals missed.
+        #
+        # Ownership is exclusive by construction in build_residual (a
+        # zero-bearing unary is owned by res_unary and is NOT retained), so
+        # consuming these cannot double-count.
+        for ki, kf in enumerate(kept):
+            if isinstance(kf, int):
+                if not (0 <= kf < len(rc.factors)):
+                    raise Declined(
+                        "retained residual factor index %d is out of range "
+                        "for %d coarse factors" % (kf, len(rc.factors)))
+                kfac = rc.factors[kf]
+            elif hasattr(kf, "scope") and hasattr(kf, "table"):
+                kfac = kf
+            else:
+                raise Declined(
+                    "retained residual entry %d has type %s, which is neither "
+                    "a factor index nor a factor; the candidate DECLINES "
+                    "rather than silently dropping it"
+                    % (ki, type(kf).__name__))
+            sc = tuple(kfac.scope)
             if not sc:
-                continue
-            if len(sc) > 2 and len(sc) > 3:
+                raise Declined("a retained residual factor has an empty scope")
+            if len(sc) > 3:
                 raise Declined(
                     "a retained residual factor over %d variables cannot be "
                     "consumed by this evaluator; the candidate DECLINES rather "
                     "than dropping it" % len(sc))
             facs.append(M.Factor(scope=sc,
                                  card=tuple(rc.card[v] for v in sc),
-                                 table=[Fr(x) for x in kf.table],
-                                 origin=-3000))
+                                 table=[Fr(x) for x in kfac.table],
+                                 origin=-3000 - ki))
         rm = M.Model(nvars=cm.nvars, card=list(cm.card), factors=facs)
         rm.validate()
         rr = M.restrict(rm, {})
@@ -274,9 +297,14 @@ def _evaluate(restricted, regions, coarse, rds, queries, ctx, eps,
         if sel["chosen"] is None:
             raise Declined("no ordering fits the coarse residual graph")
         rpl, _rest = sel["chosen"]
-        (Zlo, Zhi), cell_mk, _gm = G.run(rpl, rr.factors, rr.card, cand,
-                                         chosen_Q, set(rc.free), ctx,
-                                         deadline=deadline)
+        try:
+            (Zlo, Zhi), cell_mk, _gm = G.run(rpl, rr.factors, rr.card, cand,
+                                             chosen_Q, set(rc.free), ctx,
+                                             deadline=deadline)
+        except G.Declined as e:
+            # the general-residual DP's own refusal is this candidate's
+            # refusal: never fall through to a path that drops its factors
+            raise Declined("general-residual evaluation declined: %s" % e)
         acc = {0: Fr(1)}
         evaluator = "general_residual_dp"
     if Zlo <= 0:
