@@ -34,6 +34,8 @@ class Simplified:
     card: dict
     declined_products: list = field(default_factory=list)
     emitted: list = field(default_factory=list)
+    combined_splits: list = field(default_factory=list)
+    combined_constants: list = field(default_factory=list)
 
     def identity(self) -> dict:
         return {"scale": str(self.scale),
@@ -157,6 +159,8 @@ def simplify(restricted, combine_same_scope=True, bit_cap=None):
         # truth. The law must be preserved or the combination declined; it may
         # never be altered.
         combined = {}          # scope key -> the single accumulated factor
+        combined_members = {}  # scope key -> the original origins multiplied in
+        combined_splits, combined_constants = [], []
         order = []
         uncombined = []        # factors kept separate because the cap declined
         declined = []
@@ -165,6 +169,7 @@ def simplify(restricted, combine_same_scope=True, bit_cap=None):
             g = combined.get(key)
             if g is None:
                 combined[key] = f
+                combined_members[key] = [f.origin]
                 order.append(key)
                 continue
             if g.scope == f.scope:
@@ -191,9 +196,55 @@ def simplify(restricted, combine_same_scope=True, bit_cap=None):
                 continue
             combined[key] = Factor(scope=g.scope, card=g.card, table=tbl,
                                    origin=g.origin)
-        keep = [combined[k] for k in order] + uncombined
+            combined_members.setdefault(key, [g.origin]).append(f.origin)
+        # Re-simplify: multiplication can CREATE a constant or exactly
+        # separable factor, which the single pass left as a spurious graph
+        # dependency.
+        resimplified = []
+        for key in order:
+            f = combined[key]
+            # A factor here may be a PRODUCT of several originals, so any
+            # identity found now belongs to the combined table, not to one
+            # original factor. Record it separately with the combined table so
+            # the checker can re-derive it without being told that an original
+            # factor was separable when it was not.
+            members = combined_members.get(key, [f.origin])
+            c = is_constant(f)
+            if c is not None:
+                scale *= c
+                if len(members) > 1:
+                    combined_constants.append(
+                        {"scope": list(f.scope), "members": list(members),
+                         "value": str(c), "entries": len(f.table)})
+                else:
+                    removed.append((f.origin, c, len(f.table)))
+                continue
+            if len(f.scope) == 1:
+                v = f.scope[0]
+                for a in range(card[v]):
+                    unary[v][a] *= f.table[a]
+                merged.append(f.origin)
+                continue
+            sp2 = separable_split(f)
+            if sp2 is not None:
+                piv, u2, v2 = sp2
+                i, j = f.scope
+                for a in range(card[i]):
+                    unary[i][a] *= u2[a]
+                for b in range(card[j]):
+                    unary[j][b] *= v2[b]
+                if len(members) > 1:
+                    combined_splits.append(
+                        {"scope": list(f.scope), "members": list(members),
+                         "pivot": list(piv)})
+                else:
+                    splits.append((f.origin, f.scope, piv, u2, v2))
+                continue
+            resimplified.append(f)
+        keep = resimplified + uncombined
     else:
         declined = []
+        combined_splits, combined_constants, combined_members = [], [], {}
 
     out = list(keep)
     for v in sorted(free):
@@ -206,6 +257,8 @@ def simplify(restricted, combine_same_scope=True, bit_cap=None):
                       split_pairs=splits, merged_unary=merged,
                       impossible=impossible, free=free, card=card)
     simp.declined_products = declined
+    simp.combined_splits = combined_splits
+    simp.combined_constants = combined_constants
     # A bounded EXACT transformation record: for every surviving factor, which
     # original origins were multiplied into it. The checker replays this.
     prov = {}
@@ -263,6 +316,44 @@ def verify_identities(restricted, simp: Simplified):
         if f is None or len(f.scope) != 1:
             raise PreprocessError("unary record %d invalid" % origin)
 
+    # ---- combined identities: rebuild the product from the ORIGINALS ----
+    for recd in getattr(simp, "combined_splits", []) + \
+                getattr(simp, "combined_constants", []):
+        members = recd["members"]
+        facs = [byo.get(o) for o in members]
+        if any(x is None for x in facs):
+            raise PreprocessError("combined record names an unknown factor "
+                                  "among %s" % members)
+        base = facs[0]
+        tbl = list(base.table)
+        for g in facs[1:]:
+            if tuple(g.scope) == tuple(base.scope):
+                tbl = [a * b for a, b in zip(tbl, g.table)]
+            else:
+                perm = [g.scope.index(v) for v in base.scope]
+                bst = base.strides(); gst = g.strides()
+                nt = []
+                for flat in range(len(tbl)):
+                    rem, dig = flat, []
+                    for k in range(len(base.card)):
+                        dig.append(rem // bst[k]); rem %= bst[k]
+                    off = sum(dig[k] * gst[perm[k]] for k in range(len(base.card)))
+                    nt.append(tbl[flat] * g.table[off])
+                tbl = nt
+        prod = Factor(scope=base.scope, card=base.card, table=tbl,
+                      origin=base.origin)
+        if "pivot" in recd:
+            if separable_split(prod) is None:
+                raise PreprocessError(
+                    "the COMBINED factor over originals %s is not exactly "
+                    "separable, so the recorded re-simplification is invalid"
+                    % members)
+        else:
+            if is_constant(prod) is None:
+                raise PreprocessError(
+                    "the COMBINED factor over originals %s is not constant"
+                    % members)
+
     # ---- independent ownership and multiplicity accounting ----
     # Every original factor must be accounted for EXACTLY ONCE: removed as a
     # constant, split, merged as a unary, folded into a same-scope product, or
@@ -283,6 +374,10 @@ def verify_identities(restricted, simp: Simplified):
         claim(origin, "separable split")
     for origin in simp.merged_unary:
         claim(origin, "unary merge")
+    for recd in (getattr(simp, "combined_splits", []) +
+                 getattr(simp, "combined_constants", [])):
+        for origin in recd["members"]:
+            claim(origin, "combined then re-simplified")
     # emitted factors: a synthetic unary carries origin -1-v; everything else
     # must trace to an original origin, and a same-scope product names its first
     synth = {-1 - v for v in simp.free}

@@ -2921,3 +2921,79 @@ def test_r4_reduced_graph_checker_preserves_the_factorization():
             qm = cm.get((v, s), Fr(0)) / Zm
             qe = ce.get((v, s), Fr(0)) / Ze
             assert abs(qm - qe) < Fr(1, 10 ** 12), (v, s, float(qm), float(qe))
+
+
+# ===== review 4 priority 5: introduced and retained waste =====
+
+def test_r4_point_kernel_uses_mpfr_traps_not_exact_recomputation():
+    """Review 4: the overflow repair recomputed every operation in exact
+    rationals, costing 23.7x per operation inside the numerical kernel. MPFR's
+    own overflow and underflow traps enforce the range natively."""
+    import time as _t
+    ctx = A.Ctx(64)
+    a = ctx.down(Fr(1, 3))
+    b = ctx.down(Fr(1, 7))
+    N = 20000
+    t0 = _t.monotonic()
+    for _ in range(N):
+        ctx.mul_d(a, b)
+    rate = N / max(1e-9, _t.monotonic() - t0)
+    assert rate > 1e6, "the point kernel must exceed 1e6 ops/s; got %.0f" % rate
+    # the range guard must STILL refuse at the boundaries
+    r = A.Ctx(64, emin=-100, emax=100)
+    for fn in (lambda: r.down(Fr(2) ** 200),
+               lambda: r.down(Fr(1, 2 ** 200)),
+               lambda: r.mul_d(r.down(Fr(2) ** 60), r.down(Fr(2) ** 60))):
+        with pytest.raises(A.NumericalRefusal):
+            fn()
+    # exact arithmetic remains available as an INDEPENDENT reference
+    for k in range(1, 200):
+        q = Fr(k, 197)
+        x = ctx.down(q)
+        assert A.exact_fr(x) <= q
+        assert ctx.verify_exact(x, q, "down")
+
+
+def test_r4_combined_factors_are_resimplified():
+    """G: multiplication can CREATE a constant or separable factor, which the
+    single pass left as a spurious graph dependency. Neither input here is
+    separable, but their product is."""
+    from mdi import preprocess as PRE
+    txt = ("MARKOV\n2\n2 2\n3\n1 0\n2 0 1\n2 0 1\n2\n1 1\n"
+           "4\n1 2 3 1\n4\n3 1 1 2\n")
+    m = M.read_uai(w(txt))
+    r = M.restrict(m, {})
+    pairs_in = [f for f in r.factors if len(f.scope) == 2]
+    assert len(pairs_in) == 2
+    for f in pairs_in:
+        assert PRE.separable_split(f) is None, "neither input is separable"
+    Z, p = O.exact_all_marginals(r)
+    simp = PRE.simplify(r)
+    assert not [f for f in simp.factors if len(f.scope) == 2], \
+        "the re-simplified product must leave no pair dependency"
+    assert simp.combined_splits, "the combined identity must be recorded"
+    r2 = M.Restricted(model=m, evidence={}, factors=simp.factors,
+                      free=list(r.free), card=dict(r.card), constant=Fr(1),
+                      impossible_factor=None)
+    Z2, p2 = O.exact_all_marginals(r2)
+    for v in r.free:
+        assert p[v] == p2[v], v
+    # the checker rebuilds the product from the ORIGINALS and re-derives it
+    assert PRE.verify_identities(r, simp)
+
+
+def test_r4_combined_identity_record_is_verified_not_trusted():
+    """A combined record naming the wrong originals must be rejected."""
+    from mdi import preprocess as PRE
+    import copy
+    txt = ("MARKOV\n3\n2 2 2\n4\n1 0\n2 0 1\n2 0 1\n1 2\n2\n1 1\n"
+           "4\n1 2 3 1\n4\n3 1 1 2\n2\n1 3\n")
+    m = M.read_uai(w(txt))
+    r = M.restrict(m, {})
+    simp = PRE.simplify(r)
+    assert PRE.verify_identities(r, simp)
+    if simp.combined_splits:
+        bad = copy.deepcopy(simp)
+        bad.combined_splits[0]["members"] = [0]      # a single, non-separable
+        with pytest.raises(PRE.PreprocessError):
+            PRE.verify_identities(r, bad)

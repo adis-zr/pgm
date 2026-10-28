@@ -82,10 +82,19 @@ class Ctx:
     # range EXPLICITLY against the context bounds.
     def __init__(self, p: int, emin: int | None = None, emax: int | None = None):
         self.p = p
+        # MPFR's own overflow/underflow TRAPS enforce the exponent range
+        # natively. The previous repair recomputed every operation in exact
+        # rationals to detect saturation, which cost 23.7x per operation and
+        # added decimal formatting and logarithms inside the numerical kernel.
+        # Traps catch mpfr(2)**200, an overflowing product and an underflowing
+        # conversion directly, so exact arithmetic stays an independent
+        # reference rather than compulsory work on every point operation.
         self.D = gmpy2.context(precision=p, round=RNDD,
-                               trap_divzero=True, trap_invalid=True)
+                               trap_divzero=True, trap_invalid=True,
+                               trap_overflow=True, trap_underflow=True)
         self.U = gmpy2.context(precision=p, round=RNDU,
-                               trap_divzero=True, trap_invalid=True)
+                               trap_divzero=True, trap_invalid=True,
+                               trap_overflow=True, trap_underflow=True)
         if emin is not None:
             self.D.emin = emin; self.U.emin = emin
         if emax is not None:
@@ -102,9 +111,13 @@ class Ctx:
             raise ValueError("negative value in a nonnegative circuit")
         if q == 0:
             return mpfr(0)
-        with self.D:
-            x = mpfr(mpq(q.numerator, q.denominator))
-        self._check(x, q, exact=(q, q, "down"))
+        try:
+            with self.D:
+                x = mpfr(mpq(q.numerator, q.denominator))
+        except (gmpy2.OverflowResultError, gmpy2.UnderflowResultError) as e:
+            raise NumericalRefusal("exponent range exhausted converting %s: %s"
+                                   % (q, type(e).__name__))
+        self._check(x, q)
         return x
 
     def up(self, q) -> mpfr:
@@ -113,75 +126,64 @@ class Ctx:
             raise ValueError("negative value in a nonnegative circuit")
         if q == 0:
             return mpfr(0)
-        with self.U:
-            x = mpfr(mpq(q.numerator, q.denominator))
-        self._check(x, q, exact=(q, q, "up"))
+        try:
+            with self.U:
+                x = mpfr(mpq(q.numerator, q.denominator))
+        except (gmpy2.OverflowResultError, gmpy2.UnderflowResultError) as e:
+            raise NumericalRefusal("exponent range exhausted converting %s: %s"
+                                   % (q, type(e).__name__))
+        self._check(x, q)
         return x
 
-    def _in_range(self, x) -> bool:
-        """Is x strictly inside the declared exponent range?
-
-        A value AT the saturation boundary is treated as out of range, because
-        MPFR produces exactly that when it clamps, and we cannot distinguish a
-        clamped result from a legitimate one.
-        """
-        if x == 0:
-            return True
-        e = x.as_integer_ratio()
-        try:
-            ex = gmpy2.mpfr(x).__format__("")
-        except Exception:
-            pass
-        # exponent of x in the MPFR sense: 2^(e-1) <= |x| < 2^e
-        ee = int(gmpy2.log2(abs(x))) + 1
-        return (self.emin + 1) < ee < (self.emax - 1)
-
     def _check(self, x, src=None, exact=None):
+        """Cheap finiteness guard. Range violations are caught by MPFR traps.
+
+        `exact` is accepted for compatibility but is only used by the
+        independent reference path, never on the production hot loop.
+        """
         if gmpy2.is_nan(x):
             raise NumericalRefusal("NaN produced (source %s)" % (src,))
         if gmpy2.is_infinite(x):
             raise NumericalRefusal("infinity produced: exponent range exhausted "
                                    "(source %s)" % (src,))
-        if x == 0 and src is not None and Fr(src) != 0:
+        if x == 0 and src is not None and src != 0:
             raise NumericalRefusal("underflow to zero: exponent range exhausted "
                                    "(source %s)" % (src,))
-        if x != 0 and not self._in_range(x):
-            raise NumericalRefusal(
-                "value %s is at or beyond the declared exponent range "
-                "[%d, %d]: MPFR SATURATES rather than returning an infinity, so "
-                "a finite result here is not a valid bound (source %s)"
-                % (x, self.emin, self.emax, src))
-        if exact is not None:
-            # directed-rounding sanity: a downward result must not exceed the
-            # exact value, an upward result must not fall below it
-            xv = Fr(gmpy2.mpq(x))
-            lo, hi, want = exact
-            if want == "down" and xv > Fr(lo):
-                raise NumericalRefusal("RNDD returned %s above the exact value "
-                                       "%s: range saturation" % (xv, lo))
-            if want == "up" and xv < Fr(hi):
-                raise NumericalRefusal("RNDU returned %s below the exact value "
-                                       "%s: range saturation" % (xv, hi))
+
+    def verify_exact(self, x, exact, want):
+        """INDEPENDENT reference check, not called from the hot loop.
+
+        Recomputes the directed-rounding relation in exact rationals. Used by
+        the reference arithmetic path and by controls at range boundaries.
+        """
+        xv = Fr(gmpy2.mpq(x))
+        if want == "down" and xv > Fr(exact):
+            raise NumericalRefusal("RNDD returned %s above the exact value %s"
+                                   % (xv, exact))
+        if want == "up" and xv < Fr(exact):
+            raise NumericalRefusal("RNDU returned %s below the exact value %s"
+                                   % (xv, exact))
+        return True
 
     # ---- rounded nonnegative operations (point mode, RNDD) ----
     def add_d(self, a, b):
-        with self.D:
-            r = a + b
-        ex = Fr(gmpy2.mpq(a)) + Fr(gmpy2.mpq(b))
-        self._check(r, "sum", exact=(ex, ex, "down"))
+        try:
+            with self.D:
+                r = a + b
+        except (gmpy2.OverflowResultError, gmpy2.UnderflowResultError) as e:
+            raise NumericalRefusal("exponent range exhausted in a sum: %s"
+                                   % type(e).__name__)
         return r
 
     def mul_d(self, a, b):
-        with self.D:
-            r = a * b
-        if gmpy2.is_nan(r) or gmpy2.is_infinite(r):
-            raise NumericalRefusal("non-finite product")
+        try:
+            with self.D:
+                r = a * b
+        except (gmpy2.OverflowResultError, gmpy2.UnderflowResultError) as e:
+            raise NumericalRefusal("exponent range exhausted in a product: %s"
+                                   % type(e).__name__)
         if r == 0 and a != 0 and b != 0:
-            raise NumericalRefusal("product underflowed to zero: exponent range exhausted")
-        # the exact product is available as rationals, so the directed bound can
-        # be asserted rather than assumed
-        ex = Fr(gmpy2.mpq(a)) * Fr(gmpy2.mpq(b))
-        self._check(r, "product", exact=(ex, ex, "down"))
+            raise NumericalRefusal("product underflowed to zero")
         return r
 
     # ---- interval mode (outward) ----
