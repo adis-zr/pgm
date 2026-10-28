@@ -89,179 +89,39 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None):
             _write(rec, rundir, label); prog.close()
             return rec
 
-        # ---------------- plan pricing ----------------
+        # ---------------- the CONNECTED public pipeline ----------------
+        # Everything from here runs through mdi.pipeline: independently
+        # verified common exact preprocessing, candidate discovery, persisted
+        # and reloaded plan records, complete-cost pricing, dispatcher-based
+        # execution with compact crossings and direct readout, and independent
+        # checking. The old ratio-only selection and the Cartesian coarse
+        # executor are gone.
+        from mdi import pipeline as PLN
         ts = time.time()
-        bpe = 64
-        cands = [PL.price_identity(r.free, r.card, r.factors, bpe, cap)]
-        prog("plan", "identity priced: %s" % (cands[0].forecast.get("plan"),))
-        if research:
-            budget_left = wall - (time.time() - t0)
-            dwall = min(K.CAPS["discovery_wall_s"], max(1.0, budget_left * 0.25))
-            cands += PL.price_regional(r.free, r.card, r.factors, set(r.free), 1,
-                                       bpe, cap, dwall, log=prog)
-            ctx = A.Ctx(128)
-            mwall = min(K.CAPS["discovery_wall_s"], max(1.0, (wall - (time.time() - t0)) * 0.25))
-            cands += PL.price_modes(r.free, r.factors, r.card, set(r.free), ctx,
-                                    mwall, log=prog)
-        sel = PL.select(cands, log=prog)
-        rec["stages"]["planning_s"] = time.time() - ts
-        rec["plan_selection"] = {
-            "chosen": sel["chosen"].name if sel["chosen"] else None,
-            "chosen_kind": sel["chosen"].kind if sel["chosen"] else None,
-            "why": sel["why"],
-            "radius_charged": str(sel["chosen"].radius) if sel["chosen"] else "0"}
-        rec["rejected_plans"] = sel["rejected"]
-        rec["all_candidates"] = [
-            {"name": c.name, "kind": c.kind, "admitted": c.admitted,
-             "radius": str(c.radius), "reason": c.reason,
-             "forecast": _jsonable(c.forecast)} for c in sel["all"]]
-
-        if sel["chosen"] is None or not sel["chosen"].admitted:
-            best = cands[0]
-            rec["outcome"] = "RESOURCE_STOP"
-            rec["reason"] = ("no admitted plan; identity forecast %s"
-                             % _jsonable(best.forecast))
-            rec["elapsed_s"] = time.time() - t0
-            _write(rec, rundir, label); prog.close()
-            return rec
-
-        chosen = sel["chosen"]
-        d = chosen.radius
-        rec["transformation_radius"] = str(d)
-        # width available to the numerical stage
-        num_budget = eps - 2 * d - K.PUBLICATION_RESERVE
-        rec["numerical_width_budget"] = str(num_budget)
-        if num_budget <= 0:
-            rec["outcome"] = "NUMERICAL_REFUSAL"
-            rec["reason"] = "transformation radius consumes the whole contract"
-            rec["elapsed_s"] = time.time() - t0
-            _write(rec, rundir, label); prog.close()
-            return rec
-
-        # ---------------- execute ----------------
-        prog("execute", "plan=%s kind=%s" % (chosen.name, chosen.kind))
-        rec["research_executed"] = False
-        if chosen.kind == "regional":
-            # Execute the COARSE model and restore original markers (mdi.coarse).
-            from mdi import coarse as CZ
-            ts = time.time()
-            pay = chosen.payload
-            try:
-                cres = CZ.solve_coarse_with_markers(
-                    r.free, r.card, r.factors, pay["partition"]["regions"],
-                    pay["coarse"], pay["regions_data"], set(r.free),
-                    eps=num_budget, mode="P", cap_bytes=cap,
-                    deadline_s=max(1.0, wall - (time.time() - t0)))
-            except Exception as e:
-                cres = {"outcome": "IMPLEMENTATION_INCOMPLETE",
-                        "reason": "%s: %s" % (type(e).__name__, e)}
-            rec["stages"]["coarse_solve_s"] = time.time() - ts
-            rec["coarse"] = {k: _jsonable(v) for k, v in cres.items()
-                             if k != "intervals"}
-            if cres.get("outcome") == "PRODUCER_COMPLETE_UNCHECKED":
-                # A coarse producer finished but NO independent check exists for
-                # it. This cannot be labelled CERTIFIED_RESEARCH_ROUTE.
-                rec["research_executed"] = True
-                rec["research_checked"] = False
-                iv = cres["intervals"]
-                for v, st in ev.items():
-                    iv[v] = [(Fr(1), Fr(1)) if sx == st else (Fr(0), Fr(0))
-                             for sx in range(m.card[v])]
-                pub, worst = {}, Fr(0)
-                for v in sorted(iv):
-                    rows = []
-                    for (lo, hi) in iv[v]:
-                        lo2, hi2 = Fr(lo), Fr(hi)
-                        if not (lo2 == hi2 and (lo2 == 0 or lo2 == 1)):
-                            lo2 = max(Fr(0), lo2 - d); hi2 = min(Fr(1), hi2 + d)
-                        if hi2 - lo2 > worst:
-                            worst = hi2 - lo2
-                        rows.append((lo2, hi2))
-                    pub[v] = rows
-                rec["final_max_width"] = str(worst)
-                rec["contract_met"] = bool(worst <= eps)
-                rec["outcome"] = ("RESEARCH_ROUTE_UNCHECKED" if worst <= eps
-                                  else "NUMERICAL_REFUSAL")
-                rec["outcome_note"] = (
-                    "the coarse producer met the width contract, but spec 11's "
-                    "independent check of a coarse publication is NOT "
-                    "implemented, so this is not CERTIFIED_RESEARCH_ROUTE")
-                if worst > eps:
-                    rec["reason"] = "final width %s exceeds %s" % (worst, eps)
-                else:
-                    _write_intervals(pub, m, rundir, label)
-                    _write_point_vector(pub, m, ev, rundir, label)
-                rec["elapsed_s"] = time.time() - t0
-                rec["peak_rss_bytes"] = S._rss_bytes()
-                _write(rec, rundir, label)
-                prog("done", "%s in %.1fs" % (rec["outcome"], rec["elapsed_s"]))
-                prog.close()
-                return rec
-            rec["research_note"] = (
-                "the admitted regional transformation was constructed and "
-                "certified, but its coarse contraction did not complete: %s. "
-                "Falling back to the generic runtime and charging both."
-                % cres.get("reason", cres.get("outcome")))
-            d = Fr(0)                      # fallback publishes without the radius
-            rec["transformation_radius_charged_but_unused"] = str(chosen.radius)
-            num_budget = eps - K.PUBLICATION_RESERVE
-        ts = time.time()
-        remaining = wall - (time.time() - t0)
-        res = S.solve(m, ev, eps=num_budget + 2 * d if d == 0 else num_budget,
-                      mode="P", cap_bytes=cap, deadline_s=max(1.0, remaining),
-                      progress=lambda ph, info="": prog(ph, info))
-        rec["stages"]["solve_s"] = time.time() - ts
-        rec["solve"] = {k: _jsonable(v) for k, v in res.items()
-                        if k not in ("intervals", "raw_intervals", "per_var")}
-        out = res.get("outcome")
-        if out == "VERIFIED_ALL_MARGINALS":
-            iv = res["intervals"]
-            # outward expansion by the certified transformation radius
-            pub = {}
-            worst = Fr(0)
-            for v in sorted(iv):
-                rows = []
-                for (lo, hi) in iv[v]:
-                    lo2, hi2 = Fr(lo), Fr(hi)
-                    if not (lo2 == hi2 and (lo2 == 0 or lo2 == 1)):
-                        lo2 = max(Fr(0), lo2 - d)
-                        hi2 = min(Fr(1), hi2 + d)
-                    wdt = hi2 - lo2
-                    if wdt > worst:
-                        worst = wdt
-                    rows.append((lo2, hi2))
-                pub[v] = rows
+        res = PLN.solve(m, ev, queries=set(r.free), max_width=eps,
+                        wall_s=max(1.0, wall - (time.time() - t0)),
+                        cap_bytes=cap, research_enabled=research,
+                        plan_dir=os.path.join(rundir, "plans_%s" % label),
+                        progress=lambda ph, info="": prog(ph, info))
+        rec["stages"]["pipeline_s"] = time.time() - ts
+        rec["pipeline"] = {
+            "status": res.status, "reason": res.reason, "plan": res.plan,
+            "preprocess": res.preprocess, "checker": res.checker,
+            "properties": res.properties, "stages": res.stages,
+            "budget": res.budget, "rejected": res.rejected,
+            "prices": res.prices}
+        rec["outcome"] = res.status
+        rec["reason"] = res.reason
+        rec["producer_complete"] = bool(res.properties.get("producer_complete"))
+        rec["independently_verified"] = bool(
+            res.properties.get("independently_verified"))
+        if res.intervals:
+            worst = max((Fr(hi) - Fr(lo)) for rows in res.intervals.values()
+                        for lo, hi in rows)
             rec["final_max_width"] = str(worst)
             rec["contract_met"] = bool(worst <= eps)
-            if not rec["contract_met"]:
-                rec["outcome"] = "NUMERICAL_REFUSAL"
-                rec["reason"] = "final width %s exceeds %s" % (worst, eps)
-            else:
-                if chosen.kind != "identity" and rec.get("research_executed"):
-                    # reachable only if a research route were independently
-                    # checked, which no implemented path currently does
-                    rec["outcome"] = ("CERTIFIED_RESEARCH_ROUTE"
-                                      if rec.get("research_checked")
-                                      else "RESEARCH_ROUTE_UNCHECKED")
-                else:
-                    rec["outcome"] = "CERTIFIED_FALLBACK_ONLY"
-            rec["checker"] = res.get("checker")
-            _write_intervals(pub, m, rundir, label)
-            _write_point_vector(pub, m, ev, rundir, label)
-        else:
-            # A producer-only result is NOT certified, and a checker that did
-            # not finish has verified no named subset. The old mapping turned
-            # both into CERTIFIED_PARTIAL.
-            rec["outcome"] = {"TIMEOUT": "TIMEOUT", "MEMORY_STOP": "MEMORY_STOP",
-                              "RESOURCE_BOUND": "RESOURCE_STOP",
-                              "RESOURCE_STOP": "RESOURCE_STOP",
-                              "NUMERICAL_REFUSAL": "NUMERICAL_REFUSAL",
-                              "ZERO_EVIDENCE_PROVED": "ZERO_EVIDENCE_PROVED",
-                              "PRODUCER_COMPLETE_UNCHECKED": "RESOURCE_STOP",
-                              "VERIFIED_PARTIAL": "RESOURCE_STOP"}.get(out, out)
-            rec["producer_complete"] = bool(res.get("producer_complete"))
-            rec["independently_verified"] = bool(res.get("independently_verified"))
-            rec["reason"] = res.get("reason", "")
+            _write_intervals(res.intervals, m, rundir, label)
+            _write_point_vector(res.intervals, m, ev, rundir, label)
     except Exception as e:
         import traceback
         rec["outcome"] = "IMPLEMENTATION_INCOMPLETE"

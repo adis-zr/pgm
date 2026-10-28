@@ -2634,3 +2634,156 @@ def test_r4_lattice_still_declines_the_pedigree_mode():
     with pytest.raises(CO.Declined) as e:
         CO.gf_lattice(Fr(8721203, 1000000), Fr(467709, 50000), Fr(1, 1000))
     assert "cannot meet delta" in str(e.value) or "exceeds" in str(e.value)
+
+
+# ===== review 4 priority 3: the connected public pipeline =====
+
+TINY = ("MARKOV\n3\n2 3 2\n3\n1 1\n2 0 1\n3 0 1 2\n"
+        "3\n2 5 11\n6\n1 7 2 13 3 5\n12\n2 1 3 1 5 1 7 1 11 1 13 1\n")
+
+
+def test_r4_public_pipeline_runs_every_stage():
+    """One real route: parse/restrict, independently verified COMMON exact
+    preprocessing, discovery, persisted and reloaded plan records, complete-cost
+    pricing, dispatcher execution, independent checking, publication."""
+    from mdi import pipeline as PLN
+    import tempfile as _tf
+    m = M.read_uai(w(TINY))
+    r = M.restrict(m, {})
+    Z, p = O.exact_all_marginals(r)
+    d = _tf.mkdtemp()
+    res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30, plan_dir=d)
+    assert res.status in ("CERTIFIED_RESEARCH_ROUTE",
+                          "CERTIFIED_FALLBACK_ONLY"), (res.status, res.reason)
+    for key in ("parse_s", "preprocess_s", "discover_s", "persist_s",
+                "select_s", "execute_s", "check_s"):
+        assert key in res.stages, key
+    assert res.checker["status"] == "VERIFIED"
+    assert res.properties["independently_verified"]
+    assert res.properties["publication_contract_met"]
+    # plan records were persisted and are reloadable
+    files = [x for x in os.listdir(d) if x.endswith(".plan.json")]
+    assert files, "plan records must be persisted"
+    from mdi import plantype as PT
+    for fn in files:
+        back = PT.PlanRecord.from_json(open(os.path.join(d, fn)).read())
+        assert back.validate()
+    # and the published intervals contain the truth
+    for v in r.free:
+        for s in range(r.card[v]):
+            lo, hi = res.intervals[v][s]
+            assert lo <= p[v][s] <= hi, (v, s)
+
+
+def test_r4_pipeline_rejects_an_intentionally_faulty_producer():
+    """The critical soundness case: a producer that publishes shifted intervals
+    must be REJECTED by the independent checker, so a common bug cannot pass
+    both sides."""
+    from mdi import pipeline as PLN
+    import mdi.pipeline as PP
+    m = M.read_uai(w(TINY))
+    orig = PP._regional_execute
+
+    def faulty(rr, payload, queries, eps, bg):
+        out = orig(rr, payload, queries, eps, bg)
+        return {v: [(max(Fr(0), Fr(lo) + Fr(1, 10)),
+                     min(Fr(1), Fr(hi) + Fr(1, 10))) for lo, hi in rows]
+                for v, rows in out.items()}
+
+    PP._regional_execute = faulty
+    try:
+        res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+        assert res.status == "NUMERICAL_REFUSAL", res.status
+        assert "REJECTED" in res.reason
+        assert res.checker["status"] == "FAILED"
+    finally:
+        PP._regional_execute = orig
+    # and the correct producer still passes
+    good = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    assert good.checker["status"] == "VERIFIED"
+
+
+def test_r4_pipeline_preprocesses_before_planning():
+    """C: preprocessing must happen BEFORE discovery and planning, identically
+    in every arm."""
+    from mdi import pipeline as PLN
+    txt = ("MARKOV\n3\n2 2 2\n4\n1 0\n2 0 1\n2 1 2\n1 2\n"
+           "2\n1.5 2.5\n4\n2 6 3 9\n4\n1 1 1 1\n2\n0.5 4\n")
+    m = M.read_uai(w(txt))
+    res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    assert res.preprocess, "the preprocessing identity must be recorded"
+    assert res.preprocess["removed_constants"], "the constant factor"
+    assert res.preprocess["split_pairs"], "the separable pair"
+    # discovery ran AFTER preprocessing
+    assert res.stages["preprocess_s"] is not None
+    assert "discover_s" in res.stages
+
+
+def test_r4_pipeline_selection_is_priced_not_ratio():
+    from mdi import pipeline as PLN
+    m = M.read_uai(w(TINY))
+    res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    assert "cell-count ratio is never used" in res.plan["why"]
+    assert res.prices, "every candidate must carry a complete price"
+    for pr in res.prices:
+        assert pr["counters"], pr["name"]
+        for key, c in pr["counters"].items():
+            assert c["label"] in ("exact", "upper_bound", "lower_bound",
+                                 "measured_calibration", "forecast"), (key, c)
+
+
+def test_r4_plan_loader_rejects_fourteen_malformed_mutations():
+    """The loader must be strict and SEMANTIC: types, booleans, the complete
+    prerequisite graph, nonnegative bounded allocations, valid precision and
+    range, exact scopes. A claim flag is never evidence a proof was checked."""
+    import json
+    from mdi import plantype as PT
+    rec = PT.PlanRecord(
+        kind="identity", name="x", model_sha256="a" * 64,
+        evidence_sha256="b" * 64, query_sha256="c" * 64,
+        preprocess_identity={"scale": "1"}, factor_ownership=[(0, "b")],
+        factor_scopes=[(0, (0, 1), (2, 2))], region_membership=[],
+        cell_membership=[], allocations={"t": Fr(1, 1000)},
+        executor_id="e", checker_id="k",
+        numerical={"precision": 64, "mode": "P", "emin": -10, "emax": 10},
+        cost_counters={"a": 1}, storage_schedule={"b": 2},
+        rejected_alternatives=[]).validate()
+    muts = [
+        ("negative allocation", lambda d: d.update(allocations={"t": "-1/1000"})),
+        ("allocation > 1", lambda d: d.update(allocations={"t": "3/2"})),
+        ("non-boolean property", lambda d: d["properties"].update(selected=1)),
+        ("inconsistent flags",
+         lambda d: d["properties"].update(independently_verified=True)),
+        ("incomplete properties", lambda d: d["properties"].pop("selected")),
+        ("bad precision",
+         lambda d: d.update(numerical={"precision": 1, "mode": "P"})),
+        ("bad mode",
+         lambda d: d.update(numerical={"precision": 64, "mode": "Q"})),
+        ("emin>=emax", lambda d: d.update(
+            numerical={"precision": 64, "mode": "P", "emin": 10, "emax": -10})),
+        ("empty executor", lambda d: d.update(executor_id="")),
+        ("dup scope var", lambda d: d.update(factor_scopes=[[0, [1, 1], [2, 2]]])),
+        ("zero cardinality",
+         lambda d: d.update(factor_scopes=[[0, [0, 1], [0, 2]]])),
+        ("scope/card mismatch",
+         lambda d: d.update(factor_scopes=[[0, [0, 1], [2]]])),
+        ("float allocation", lambda d: d.update(allocations={"t": 0.001})),
+        ("bad hash", lambda d: d.update(query_sha256="zz")),
+    ]
+    for name, mut in muts:
+        d = json.loads(rec.to_json())
+        mut(d)
+        with pytest.raises(PT.PlanError):
+            PT.PlanRecord.from_json(json.dumps(d))
+
+
+def test_r4_arm_driver_uses_the_pipeline():
+    """The production arm must route its work through the pipeline, not the old
+    ratio-only path with the Cartesian coarse executor."""
+    import inspect
+    from mdi import arm as AR
+    src = inspect.getsource(AR.run_arm)
+    assert "pipeline as PLN" in src
+    assert "PLN.solve" in src
+    assert "price_regional" not in src, "the legacy selection must be gone"
+    assert "solve_coarse_with_markers" not in src, "the Cartesian executor"

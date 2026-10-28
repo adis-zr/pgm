@@ -120,8 +120,42 @@ class PlanRecord:
         if not isinstance(self.allocations, dict):
             raise PlanError("allocations must be a mapping")
         _exact_allocations({k: v for k, v in self.allocations.items()})
-        if not self.executor_id or not self.checker_id:
-            raise PlanError("plan must name its executor and checker")
+        if not isinstance(self.executor_id, str) or not self.executor_id:
+            raise PlanError("plan must name its executor")
+        if not isinstance(self.checker_id, str) or not self.checker_id:
+            raise PlanError("plan must name its checker")
+        for k, v in self.allocations.items():
+            q = Fr(v)
+            if q < 0:
+                raise PlanError("allocation %r is NEGATIVE (%s)" % (k, q))
+            if q > 1:
+                raise PlanError("allocation %r exceeds 1 (%s): a radius larger "
+                                "than the whole probability range" % (k, q))
+        num = self.numerical
+        if not isinstance(num, dict):
+            raise PlanError("numerical block must be a mapping")
+        prec = num.get("precision")
+        if prec is not None:
+            if not isinstance(prec, int) or prec < 2 or prec > 1 << 20:
+                raise PlanError("invalid precision %r" % (prec,))
+        for key in ("emin", "emax"):
+            if key in num and not isinstance(num[key], int):
+                raise PlanError("numerical %s must be an integer" % key)
+        if "emin" in num and "emax" in num and num["emin"] >= num["emax"]:
+            raise PlanError("numerical emin >= emax")
+        mode = num.get("mode")
+        if mode is not None and mode not in ("P", "I"):
+            raise PlanError("invalid arithmetic mode %r" % (mode,))
+        for origin, scope, cardt in self.factor_scopes:
+            if len(scope) != len(cardt):
+                raise PlanError("factor %s scope/card length mismatch" % (origin,))
+            if len(set(scope)) != len(scope):
+                raise PlanError("factor %s has a duplicate scope variable"
+                                % (origin,))
+            for c in cardt:
+                if not isinstance(c, int) or c < 1:
+                    raise PlanError("factor %s has cardinality %r"
+                                    % (origin, c))
         if self.properties.selected:
             miss = self.properties.may_execute_as_certified_route()
             if "selected" in miss:
@@ -170,10 +204,28 @@ class PlanRecord:
         if d["version"] != 1:
             raise PlanError("stale plan record version %r" % d["version"])
         props = PlanProperties()
-        for k, v in d["properties"].items():
+        raw_props = d["properties"]
+        if not isinstance(raw_props, dict):
+            raise PlanError("properties must be a mapping")
+        missing = [p for p in PROPERTIES if p not in raw_props]
+        if missing:
+            raise PlanError("properties block is incomplete: missing %s" % missing)
+        for k, v in raw_props.items():
             if k not in PROPERTIES:
                 raise PlanError("unknown property %r in record" % k)
-            setattr(props, k, bool(v))
+            if not isinstance(v, bool):
+                raise PlanError("property %r must be a BOOLEAN, got %r"
+                                % (k, type(v).__name__))
+            setattr(props, k, v)
+        # the prerequisite graph must be satisfied by the loaded flags: a claim
+        # flag is never evidence that a proof was checked
+        for name in PROPERTIES:
+            if getattr(props, name):
+                unmet = [q for q in PREREQS[name] if not getattr(props, q)]
+                if unmet:
+                    raise PlanError(
+                        "property %s is set but its prerequisites %s are not: "
+                        "an inconsistent verification flag" % (name, unmet))
         rec = PlanRecord(
             kind=d["kind"], name=d["name"], model_sha256=d["model_sha256"],
             evidence_sha256=d["evidence_sha256"], query_sha256=d["query_sha256"],
