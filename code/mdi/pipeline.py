@@ -224,6 +224,36 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                  "reason": "discovery budget exhausted"})
                 continue
             regs = c["regions"]
+            # ADMISSION-TIME cover validation, BEFORE any local construction.
+            # A faulty proposal that omitted a hidden variable previously ran
+            # the whole route and reached CERTIFIED_RESEARCH_ROUTE with both
+            # probabilities near .5 against a truth of (.3, .7); the
+            # independent checker catches it, but a candidate that cannot be
+            # sound should never be priced or executed at all.
+            cover = {}
+            for i, rr_ in enumerate(regs):
+                for v in rr_:
+                    cover.setdefault(v, []).append(i)
+            miss = [v for v in sorted(r.card) if v not in cover]
+            dup = [v for v, owners in sorted(cover.items()) if len(owners) > 1]
+            alien = [v for v in sorted(cover) if v not in r.card]
+            if miss or dup or alien:
+                rejected.append({
+                    "name": "regional:" + c["mode"],
+                    "reason": "the proposed partition is not a disjoint exact "
+                              "cover of the free variables: uncovered %s, "
+                              "duplicated %s, unknown %s"
+                              % (miss[:4], dup[:4], alien[:4])})
+                continue
+            badf = [getattr(f, "origin", fi) for fi, f in enumerate(r.factors)
+                    if any(v not in cover for v in f.scope)]
+            if badf:
+                rejected.append({
+                    "name": "regional:" + c["mode"],
+                    "reason": "factors %s have variables outside the proposed "
+                              "partition, so they could be classified neither "
+                              "local nor crossing" % badf[:4]})
+                continue
             rho_cap = K.region_distortion_budget(t_level, len(regs))
             region_of = {v: i for i, rr in enumerate(regs) for v in rr}
             rds, crs, skipped = [], [], 0

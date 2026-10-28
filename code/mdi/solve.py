@@ -10,6 +10,7 @@ from fractions import Fraction as Fr
 import gmpy2
 from gmpy2 import mpfr
 from mdi import model as M, plan as P, arith as A, contract as C
+from mdi import config as K
 
 
 def PRE_MOD():
@@ -665,6 +666,44 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
     cmissing = [v for v in r.free if v not in cread]
     if cmissing:
         raise A.NumericalRefusal("checker readout missed %d variables" % len(cmissing))
+    # INDEPENDENT CROSS-CHECK of the aggregation itself. The checker runs the
+    # producer's C.Engine, so a defect in Engine.send/read_marginal would be
+    # invisible to it: fresh values through the same aggregate implementation
+    # are not the specified independence. Where the free domain is small
+    # enough, recompute every marginal by DIRECT exact enumeration of the
+    # preprocessed factors -- a different implementation with no shared
+    # aggregation -- and require the engine's intervals to contain it.
+    _indep = None
+    _q = 1
+    for v in r.free:
+        _q *= r.card[v]
+        if _q > K.CAPS["region_tuple_assignments"]:
+            _q = None
+            break
+    if _q is not None:
+        import itertools as _it
+        order = sorted(r.free)
+        _Z = Fr(0)
+        _cnt = {}
+        for combo in _it.product(*[range(r.card[v]) for v in order]):
+            a = dict(zip(order, combo))
+            wt = Fr(1)
+            for f in r.factors:
+                st = f.strides()
+                off = sum(a[vv] * st[k] for k, vv in enumerate(f.scope))
+                e = f.table[off]
+                if e == 0:
+                    wt = Fr(0)
+                    break
+                wt *= e
+            if wt == 0:
+                continue
+            _Z += wt
+            for vv in order:
+                _cnt[(vv, a[vv])] = _cnt.get((vv, a[vv]), Fr(0)) + wt
+        if _Z > 0:
+            _indep = (_Z, _cnt)
+
     fails, nchk = [], 0
     for v in r.free:
         dl()
@@ -695,6 +734,16 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
                 chi = Fr(1)
             if clo > chi:
                 raise A.NumericalRefusal("checker produced an inverted interval")
+            if _indep is not None:
+                _Z, _cnt = _indep
+                _q_exact = _cnt.get((v, a), Fr(0)) / _Z
+                if not (clo <= _q_exact <= chi):
+                    fails.append({
+                        "var": v, "state": a,
+                        "reason": "the engine's enclosure [%s, %s] does NOT "
+                                  "contain the independently enumerated exact "
+                                  "probability %s; the shared aggregation is "
+                                  "wrong" % (clo, chi, _q_exact)})
             plo, phi = iv[v][a]
             nchk += 1
             # the published interval must contain the checker's enclosure

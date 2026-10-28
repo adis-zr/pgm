@@ -4573,3 +4573,79 @@ def test_r6_negative_fourier_has_its_own_oscillatory_lattice():
     with pytest.raises(CO.Declined):
         CO.gf_lattice(Fr(1), Fr(10), Fr(1, 1000),
                       second_derivative_bound=Fr(227, 5))
+
+
+def test_r6_faulty_partition_proposal_is_rejected_at_admission():
+    """R5-2. A faulty proposal omitting a hidden variable previously ran the
+    whole route and reached CERTIFIED_RESEARCH_ROUTE with both probabilities
+    near .5 against a truth of (.3,.7). A candidate that cannot be sound must
+    be rejected BEFORE any local construction."""
+    from mdi import pipeline as PLN, regions as RG
+    import mdi.registry            # noqa: F401
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    orig = RG.propose_partitions
+
+    def faulty(*a, **k):
+        out = orig(*a, **k)
+        bad = []
+        for c in out:
+            c2 = dict(c)
+            c2["regions"] = [reg for reg in
+                             [tuple(v for v in rr if v == 0)
+                              for rr in c["regions"]] if reg]
+            bad.append(c2)
+        return bad
+
+    RG.propose_partitions = faulty
+    try:
+        res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30, queries={0})
+    finally:
+        RG.propose_partitions = orig
+    assert res.status != "CERTIFIED_RESEARCH_ROUTE", res.status
+    reasons = " ".join(str(x["reason"]) for x in (res.rejected or []))
+    assert "disjoint exact cover" in reasons, reasons
+    # the fallback answer must still contain the truth
+    if res.intervals:
+        for s in range(2):
+            lo, hi = res.intervals[0][s]
+            assert lo <= pt[0][s] <= hi, (s, float(lo), float(hi))
+
+
+def test_r6_shared_aggregation_fault_is_caught_independently():
+    """R5-3 independence. The checker runs the producer's C.Engine, so a
+    defect in Engine.read_marginal would be invisible to it: fresh values
+    through the same aggregate implementation are not independence."""
+    from mdi import contract as C
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    clean = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                    deadline_s=30)
+    assert clean["outcome"] == "VERIFIED_ALL_MARGINALS", clean["outcome"]
+    orig = C.Engine.read_marginal
+
+    def faulty(self, var):
+        counts, seen, depth = orig(self, var)
+        if var == 0 and seen[0]:
+            if self.mode == "P":
+                counts[0] = counts[0] * 3
+            else:
+                counts[0] = (counts[0][0] * 3, counts[0][1] * 3)
+        return counts, seen, depth
+
+    C.Engine.read_marginal = faulty
+    try:
+        res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                      deadline_s=30)
+    finally:
+        C.Engine.read_marginal = orig
+    assert res["outcome"] != "VERIFIED_ALL_MARGINALS", res["outcome"]
+    msg = " ".join(str(f) for f in (res.get("checker") or {}).get("failures",
+                                                                 []))
+    assert "shared aggregation" in msg, msg
