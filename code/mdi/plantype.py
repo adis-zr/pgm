@@ -37,6 +37,24 @@ class PlanError(ValueError):
     pass
 
 
+def _exact_allocations(raw):
+    """Parse allocations as EXACT rationals, raising PlanError (not a bare
+    ValueError) so a caller catching plan errors cannot miss a malformed one."""
+    if not isinstance(raw, dict):
+        raise PlanError("allocations must be a mapping, got %s" % type(raw))
+    out = {}
+    for k, v in raw.items():
+        if isinstance(v, float):
+            raise PlanError("allocation %r is a float; allocations must be "
+                            "exact rationals, never inferred binary64" % k)
+        try:
+            out[k] = Fr(v)
+        except (ValueError, TypeError, ZeroDivisionError) as e:
+            raise PlanError("allocation %r is not an exact rational: %r (%s)"
+                            % (k, v, e))
+    return out
+
+
 @dataclass
 class PlanProperties:
     mathematically_certified: bool = False
@@ -101,8 +119,7 @@ class PlanRecord:
                 raise PlanError("plan must bind 64-hex input hashes; got %r" % (h,))
         if not isinstance(self.allocations, dict):
             raise PlanError("allocations must be a mapping")
-        for k, v in self.allocations.items():
-            Fr(v)                       # must parse exactly; no float bounds
+        _exact_allocations({k: v for k, v in self.allocations.items()})
         if not self.executor_id or not self.checker_id:
             raise PlanError("plan must name its executor and checker")
         if self.properties.selected:
@@ -168,7 +185,7 @@ class PlanRecord:
                                for i, vs in d.get("region_membership", [])],
             cell_membership=[(int(r), int(c), [tuple(x) for x in mem])
                              for r, c, mem in d.get("cell_membership", [])],
-            allocations={k: Fr(v) for k, v in d["allocations"].items()},
+            allocations=_exact_allocations(d["allocations"]),
             executor_id=d["executor_id"], checker_id=d["checker_id"],
             numerical=d["numerical"], cost_counters=d["cost_counters"],
             storage_schedule=d["storage_schedule"],
