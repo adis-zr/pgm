@@ -1692,12 +1692,14 @@ def test_independent_regional_checker_verifies_and_rejects():
     from mdi import regional_check as RC
     m, r, regs, crs, rds, _ = _ring_coarse()
     t1 = K.level_radius(1)
-    Z, counts = RC.independent_contract(r, regs, crs, rds, set(r.free))
-    assert Z > 0
+    (Zlo, Zhi), (clo_m, chi_m) = RC.independent_contract(
+        r, regs, crs, rds, set(r.free))
+    assert Zlo > 0
     # A publication must CONTAIN the checker's enclosure, so it has to be at
-    # least as wide as the charged transformation radius. A degenerate point
-    # interval is correctly REJECTED.
-    point = {v: [(counts.get((v, s), Fr(0)) / Z,) * 2 for s in range(2)]
+    # least as wide as the charged transformation radius AND the reduced
+    # contraction's own numerical error. A degenerate point interval is
+    # correctly REJECTED.
+    point = {v: [(clo_m.get((v, s), Fr(0)) / Zhi,) * 2 for s in range(2)]
              for v in sorted(r.free)}
     ok0, f0, _ = RC.verify_regional_publication(
         r, regs, crs, rds, set(r.free), point, t1, Fr(1, 100))
@@ -1707,8 +1709,9 @@ def test_independent_regional_checker_verifies_and_rejects():
     for v in sorted(r.free):
         rows = []
         for s in range(2):
-            q = counts.get((v, s), Fr(0)) / Z
-            rows.append((max(Fr(0), q - t1), min(Fr(1), q + t1)))
+            qlo = clo_m.get((v, s), Fr(0)) / Zhi
+            qhi = chi_m.get((v, s), Fr(0)) / Zlo
+            rows.append((max(Fr(0), qlo - t1), min(Fr(1), qhi + t1)))
         pub[v] = rows
     ok, fails, meta = RC.verify_regional_publication(
         r, regs, crs, rds, set(r.free), pub, t1, Fr(1, 100))
@@ -2373,7 +2376,8 @@ def test_r4_regional_checker_requires_containment_not_widening():
     from mdi import regional_check as RC
     m, r, regs, crs, rds, _ = _ring_coarse()
     t1 = K.level_radius(1)
-    Z, counts = RC.independent_contract(r, regs, crs, rds, set(r.free))
+    (Z, _Zhi), (counts, _chi) = RC.independent_contract(
+        r, regs, crs, rds, set(r.free))
     # a publication shifted by 0.131, which the old direction accepted
     bad = {}
     for v in sorted(r.free):
@@ -2423,13 +2427,17 @@ def test_r4_regional_checker_rebuilds_its_own_boundary_order():
     import copy
     m, r, regs, crs, rds, _ = _ring_coarse()
     t1 = K.level_radius(1)
-    Z, counts = RC.independent_contract(r, regs, crs, rds, set(r.free))
+    (Zlo, Zhi), (clo_m, chi_m) = RC.independent_contract(
+        r, regs, crs, rds, set(r.free))
     pub = {}
     for v in sorted(r.free):
         rows = []
         for s in range(2):
-            q = counts.get((v, s), Fr(0)) / Z
-            rows.append((max(Fr(0), q - t1), min(Fr(1), q + t1)))
+            # the publication must contain the checker's ENCLOSURE, which now
+            # charges the point DAG's own rounding error as well as t
+            qlo = clo_m.get((v, s), Fr(0)) / Zhi
+            qhi = chi_m.get((v, s), Fr(0)) / Zlo
+            rows.append((max(Fr(0), qlo - t1), min(Fr(1), qhi + t1)))
         pub[v] = rows
     ok, _, _ = RC.verify_regional_publication(
         r, regs, crs, rds, set(r.free), pub, t1, Fr(1, 100))
@@ -2923,9 +2931,10 @@ def test_r4_reduced_graph_checker_preserves_the_factorization():
     assignment. The two contractions must agree where both are affordable."""
     from mdi import regional_check as RC
     m, r, regs, crs, rds, _ = _ring_coarse()
-    Zm, cm = RC._reduced_message_passing(r, regs, crs, rds, set(r.free))
-    Ze, ce = RC.independent_contract(r, regs, crs, rds, set(r.free),
-                                     allow_enumeration=True)
+    (Zm, _Zmh), (cm, _cmh) = RC._reduced_message_passing(
+        r, regs, crs, rds, set(r.free))
+    (Ze, _Zeh), (ce, _ceh) = RC.independent_contract(
+        r, regs, crs, rds, set(r.free), allow_enumeration=True)
     assert Zm > 0 and Ze > 0
     for v in sorted(r.free):
         for s in range(2):

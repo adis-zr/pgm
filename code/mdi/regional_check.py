@@ -133,7 +133,10 @@ def independent_contract(restricted, regions, coarse, rds, queries,
                 counts[key] = counts.get(key, Fr(0)) + w / Mc * Nc
     if Z <= 0:
         raise RegionalCheckError("reduced model has nonpositive total weight")
-    return Z, counts
+    # This path is EXACT rational arithmetic throughout, so its enclosure is a
+    # point. The same (lo, hi) shape is returned so callers cannot accidentally
+    # treat a rounded result as exact.
+    return (Z, Z), (counts, dict(counts))
 
 
 def _reduced_message_passing(restricted, regions, coarse, rds, queries,
@@ -264,13 +267,24 @@ def _reduced_message_passing(restricted, regions, coarse, rds, queries,
     if ref_total is None or ref_total <= 0:
         raise RegionalCheckError("no positive calibrated total")
     Z = ref_total
-    counts = {}
+    # The point DAG's outputs are ROUNDED, so converting them with exact_fr
+    # yields an exact representation of a rounded number, NOT the true value.
+    # The N1 contract gives (1-E*u)^1 v <= v_hat <= v per table, so each
+    # calibrated mass lies in [v_hat, v_hat/lambda] with lambda = 1 - E*u.
+    # Treating v_hat as exact let the checker accept a zero-width wrong point
+    # at t = 0: on a small rational-table example the error was about 1.4e-39.
+    counts_lo, counts_hi = {}, {}
+    max_depth = 0
     for i in range(len(regions)):
         vals, seen, depth = collected[i]
+        max_depth = max(max_depth, int(depth))
+        lamb = AA.lam(int(depth), 128)
         for ci in range(ncell[i]):
             if not seen[ci]:
                 continue
-            pc_mass = AA.exact_fr(vals[ci])
+            pc_hat = AA.exact_fr(vals[ci])
+            pc_lo = pc_hat
+            pc_hi = pc_hat / lamb
             Mc = Fr(coarse[i].M[ci])
             if Mc <= 0:
                 continue
@@ -280,8 +294,12 @@ def _reduced_message_passing(restricted, regions, coarse, rds, queries,
                 Nc = Fr(col[ci])
                 if Nc == 0:
                     continue
-                counts[key] = counts.get(key, Fr(0)) + pc_mass * Nc / Mc
-    return Z, counts
+                counts_lo[key] = counts_lo.get(key, Fr(0)) + pc_lo * Nc / Mc
+                counts_hi[key] = counts_hi.get(key, Fr(0)) + pc_hi * Nc / Mc
+    # Z was taken from the same rounded marginals, so it carries the same
+    # error; widen it in the OPPOSITE direction for each quotient bound.
+    lam_z = AA.lam(max_depth, 128)
+    return (Z, Z / lam_z), (counts_lo, counts_hi)
 
 
 def verify_regional_publication(restricted, regions, coarse, rds, queries,
@@ -301,6 +319,44 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
     missing = [v for v in sorted(queries) if v not in published]
     if missing:
         return False, ["variables %s have no published row" % missing[:8]], None
+    # ---- COMPLETE PARTITION / QUERY / OUTPUT validation, before any
+    # numerical work. An incomplete partition covering only X0 of two
+    # independent variables let both X1 state intervals [0, .002] be accepted
+    # although the truth is (.25, .75): the checker simply had no region
+    # carrying X1 and so never built an enclosure for it, and the rejection it
+    # did emit was about a DIFFERENT variable's padding.
+    schema = []
+    for v in sorted(queries):
+        owners = [i for i, reg in enumerate(regions) if v in reg]
+        if len(owners) == 0:
+            schema.append(
+                "requested variable %d is in NO region: the partition is "
+                "incomplete, so no enclosure exists for it and its "
+                "publication is unsupported" % v)
+        elif len(owners) > 1:
+            schema.append(
+                "requested variable %d is in %d regions %s: the partition "
+                "overlaps, so its markers would be counted more than once"
+                % (v, len(owners), owners[:4]))
+    # every region variable must be a real model variable, and regions must not
+    # overlap at all
+    seen_vars = {}
+    for i, reg in enumerate(regions):
+        for v in reg:
+            if v in seen_vars:
+                schema.append("variable %d appears in regions %d and %d"
+                              % (v, seen_vars[v], i))
+            seen_vars[v] = i
+            if v not in restricted.card:
+                schema.append("region %d names variable %d, which is not a "
+                              "free variable of the restricted model" % (i, v))
+    # unknown output keys must reject rather than be silently ignored
+    extra = sorted(k for k in published if k not in queries)
+    if extra:
+        schema.append("publication carries output keys %s that were not "
+                      "requested" % extra[:8])
+    if schema:
+        return False, schema, {"schema_rejected": True}
     region_of = {}
     for i, reg in enumerate(regions):
         for v in reg:
@@ -333,8 +389,8 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
     Rlevel = R.level_distortion(rebuilt)
     if not K.certify_R_against_t(Rlevel, t_level):
         return False, ["R_level %s is not certified at t=%s" % (Rlevel, t_level)], None
-    Z, counts = independent_contract(restricted, regions, rebuilt, rds, queries,
-                                     deadline=deadline)
+    (Zlo, Zhi), (counts_lo, counts_hi) = independent_contract(
+        restricted, regions, rebuilt, rds, queries, deadline=deadline)
     fails = []
     # Build the checker's OWN original-model enclosure, then require the
     # publication to CONTAIN it.
@@ -378,9 +434,12 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
                 continue
             # the checker's independent coarse answer, widened OUTWARD by every
             # charged error, is a rigorous enclosure of the ORIGINAL probability
-            q = counts.get((v, s), Fr(0)) / Z
-            clo = max(Fr(0), q - t_level)
-            chi = min(Fr(1), q + t_level)
+            # the quotient enclosure: smallest numerator over largest
+            # denominator, and conversely
+            qlo = counts_lo.get((v, s), Fr(0)) / Zhi
+            qhi = counts_hi.get((v, s), Fr(0)) / Zlo
+            clo = max(Fr(0), qlo - t_level)
+            chi = min(Fr(1), qhi + t_level)
             # the publication must CONTAIN that enclosure
             if not (lo <= clo and chi <= hi):
                 fails.append(
@@ -390,7 +449,9 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
             if hi - lo > Fr(eps):
                 fails.append("variable %d state %d: published width exceeds eps"
                              % (v, s))
-    return (not fails), fails, {"Z": Z, "R_level": Rlevel,
+    return (not fails), fails, {"Z": Zlo, "Z_enclosure": (str(Zlo), str(Zhi)),
+                                "numerical_error_charged": True,
+                                "R_level": Rlevel,
                                 "regions_rebuilt": len(rebuilt),
                                 "independent_enclosure": True,
                                 "direction": "publication must CONTAIN the "

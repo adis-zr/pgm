@@ -311,8 +311,9 @@ def check_composed_publication(restricted, regions, coarse, rds, queries,
         return False, ["R_level %s is not certified at the claimed radius %s"
                        % (Rlevel, own_radius)], None
     coarse, rds = rebuilt, own_rds
-    Z, counts = RC.independent_contract(restricted, regions, coarse, rds,
-                                        queries)
+    (Zlo, Zhi), (counts_lo, counts_hi) = RC.independent_contract(
+        restricted, regions, coarse, rds, queries)
+    Z = Zlo
     if Z <= 0:
         raise CollectiveCheckError("independent reduced total is nonpositive")
     fails = []
@@ -323,10 +324,13 @@ def check_composed_publication(restricted, regions, coarse, rds, queries,
             continue
         for s in range(card[v]):
             lo, hi = Fr(rows[s][0]), Fr(rows[s][1])
-            q = counts.get((v, s), Fr(0)) / Z
+            # the quotient enclosure, charging the reduced contraction's own
+            # numerical error, then the radius the checker can justify
+            qlo = counts_lo.get((v, s), Fr(0)) / Zhi
+            qhi = counts_hi.get((v, s), Fr(0)) / Zlo
             own = own_radius
-            clo = max(Fr(0), q - own)
-            chi = min(Fr(1), q + own)
+            clo = max(Fr(0), qlo - own)
+            chi = min(Fr(1), qhi + own)
             if not (lo <= clo and chi <= hi):
                 fails.append("variable %d state %d: publication [%s, %s] does "
                              "NOT contain [%s, %s]" % (v, s, lo, hi, clo, chi))

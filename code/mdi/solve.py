@@ -637,11 +637,23 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
         tl, th = sum(los), sum(his)
         if th <= 0:
             raise A.NumericalRefusal("checker: zero total at variable %d" % v)
+        # STRUCTURAL support, from the boolean flags rather than the numbers:
+        # a state whose support is False contributes exactly zero, and if only
+        # ONE state has support its probability is exactly 1. Deriving this
+        # numerically gave [1 - 2^-85, 1] for a unary [0, 1/3], so the
+        # producer's exact [1, 1] failed containment and a structurally
+        # certain answer was refused.
+        sup_states = [a for a in range(len(los)) if seen[a] and his[a] > 0]
         for a in range(len(los)):
-            other_lo = tl - los[a]
-            clo = los[a] / th if los[a] > 0 else Fr(0)
-            den = his[a] + other_lo
-            chi = (his[a] / den) if den > 0 else Fr(0)
+            if not (seen[a] and his[a] > 0):
+                clo = chi = Fr(0)          # structural zero, exactly
+            elif len(sup_states) == 1:
+                clo = chi = Fr(1)          # structural one, exactly
+            else:
+                other_lo = tl - los[a]
+                clo = los[a] / th if los[a] > 0 else Fr(0)
+                den = his[a] + other_lo
+                chi = (his[a] / den) if den > 0 else Fr(0)
             if chi > 1:
                 chi = Fr(1)
             if clo > chi:
