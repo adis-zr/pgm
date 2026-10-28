@@ -2590,3 +2590,47 @@ def test_r4_general_dp_negative_sign_on_a_star():
         for a in range(2):
             lo, hi = mk.get((v, a), (Fr(0), Fr(0)))
             assert lo >= 0 and hi >= lo, "weights must stay nonnegative"
+
+
+def test_r4_exact_exp_bounds_bracket_a_high_precision_reference():
+    """The lattice's certificate constants are exact rational bounds, not
+    binary64. Validated against a 2000-bit MPFR reference; a 400-bit reference
+    is itself less accurate than the 64-term series, which is why the bracket
+    must be checked at high precision."""
+    import gmpy2
+    ctx = gmpy2.context(precision=2000)
+    with ctx:
+        for x in (Fr(0), Fr(1, 10), Fr(-1, 10), Fr(1, 2), Fr(3), Fr(-2),
+                  Fr(-7, 3)):
+            lo = CO._exp_lower(x)
+            up = CO._exp_upper(x)
+            assert lo <= up, x
+            ref = Fr(gmpy2.mpq(gmpy2.exp(
+                gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))))
+            assert lo <= ref <= up, (x, float(lo), float(ref), float(up))
+
+
+def test_r4_lattice_admission_is_exact_on_the_returned_bound():
+    """Review 4: a 1e-18 target returned a bound of 2e-15 and admitted, because
+    the tail term was never compared and the constants were binary64."""
+    # tight targets must either meet their bound exactly or decline
+    for d in (Fr(1, 10 ** 18), Fr(1, 10 ** 15), Fr(1, 10 ** 4), Fr(1, 1000)):
+        try:
+            lat = CO.gf_lattice(Fr(1, 20), Fr(6), d)
+        except CO.Declined:
+            continue
+        assert lat["exact_admission"]
+        total = Fr(lat["total_bound"])
+        assert total <= d, (str(d), float(total))
+        # the returned total must be the sum of its two parts
+        assert total == Fr(lat["tail_bound"]) + Fr(lat["discretization_bound"])
+        # and the constants must be exact rationals, not floats
+        for key in ("M_upper", "tail_bound", "discretization_bound",
+                    "total_bound", "a_squared"):
+            assert isinstance(lat[key], Fr), key
+
+
+def test_r4_lattice_still_declines_the_pedigree_mode():
+    with pytest.raises(CO.Declined) as e:
+        CO.gf_lattice(Fr(8721203, 1000000), Fr(467709, 50000), Fr(1, 1000))
+    assert "cannot meet delta" in str(e.value) or "exceeds" in str(e.value)

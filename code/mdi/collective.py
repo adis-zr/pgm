@@ -176,48 +176,130 @@ def gf_lattice(gamma: Fr, R: Fr, delta: Fr):
         raise Declined("gf_lattice needs gamma>0 and R>=0")
     if d <= 0:
         raise Declined("gf_lattice needs a positive delta")
-    af = math.sqrt(float(g)) * float(Rr)
-    M = math.exp(0.5 * af * af) / math.sqrt(2 * math.pi)
-    half = float(d) / 2
 
-    # tail: 2 M exp(-(T-a)^2/2) <= delta/2, integer search on T
-    T = max(1, int(math.ceil(af)) + 1)
+    # All certificate constants are EXACT RATIONAL UPPER bounds. The previous
+    # version computed M and the tail with binary64 math.* and then compared a
+    # float-derived total against the target, which admitted a 1e-18 request
+    # whose returned bound was 2e-15.
+    a2 = g * Rr * Rr                      # a^2 = gamma * R^2, exact
+    # M = e^{a^2/2} / sqrt(2 pi) <= e^{a^2/2} * (2/5), since 1/sqrt(2pi) < 0.4
+    M_up = _exp_upper(a2 / 2) * Fr(2, 5)
+
+    half = d / 2
+
+    # tail: 2 M e^{-(T-a)^2/2} <= delta/2, with an EXACT comparison.
+    # a <= ceil(sqrt(a2)) is an integer upper bound on a.
+    a_up = _isqrt_ceil(a2)
+    T = a_up + 1
+    tail_up = None
     while T < 4096:
-        tail = 2.0 * M * math.exp(-0.5 * (T - af) ** 2)
-        if tail <= half:
+        dd = T - a_up                     # <= T - a, so the bound is conservative
+        tail_up = 2 * M_up * _exp_upper(-Fr(dd * dd, 2))
+        if tail_up <= half:
             break
         T += 1
     else:
-        raise Declined("no truncation radius below 4096 meets delta")
+        raise Declined("no truncation radius below 4096 meets delta=%s "
+                       "(M upper bound %s)" % (d, M_up))
 
-    # discretization: (2T) h^2 M / 12 <= delta/2  =>  h <= sqrt(6 delta / (2 T M))
-    hmax = math.sqrt(max(6.0 * float(d) / (2.0 * T * M), 1e-300))
-    bits = max(1, int(math.ceil(-math.log2(min(hmax, 0.5)))))
+    # discretization: (2T) h^2 M / 12 <= delta/2, solved EXACTLY over dyadic h
     MAX_BITS = 40
-    capped = bits > MAX_BITS
-    bits = min(bits, MAX_BITS)
-    hq = Fr(1, 1 << bits)
-    nodes = int(2 * T / float(hq)) + 1
-    disc = (2.0 * T) * float(hq) ** 2 * M / 12.0
-    if capped or disc > half:
-        # The step needed to meet `delta` is finer than the representable cap, so
-        # the advertised lattice does NOT satisfy its own error bound. Previously
-        # the cap was applied and the failed test ignored, advertising 1.23e14
-        # nodes whose actual bound was 1.57e+142 against a 1e-3 target.
+    bits = 1
+    hq = Fr(1, 2)
+    disc_up = None
+    while bits <= MAX_BITS:
+        hq = Fr(1, 1 << bits)
+        disc_up = Fr(2 * T) * hq * hq * M_up / 12
+        if disc_up <= half:
+            break
+        bits += 1
+    if disc_up is None or disc_up > half:
         raise Declined(
-            "lattice cannot meet delta=%s: required step 2^-%d exceeds the 2^-%d "
-            "cap; discretization bound %.3e > %.3e with M=%.3e, T=%d"
-            % (d, int(math.ceil(-math.log2(min(hmax, 0.5)))), MAX_BITS,
-               disc, half, M, T))
+            "lattice cannot meet delta=%s: even a 2^-%d step leaves a "
+            "discretization bound %s above %s with M upper bound %s and T=%d"
+            % (d, MAX_BITS, disc_up, half, M_up, T))
+
+    nodes = int(2 * T / hq) + 1
+    total = tail_up + disc_up
+    # the FINAL admission comparison is on the RETURNED bound, exactly
+    if total > d:
+        raise Declined(
+            "lattice total bound %s exceeds the requested delta %s "
+            "(tail %s + discretization %s); nodes would be %d"
+            % (total, d, tail_up, disc_up, nodes))
     return {"T": T, "h": hq, "nodes": nodes,
-            "a_shift": Fr(round(af * 10 ** 9), 10 ** 9),
-            "M_bound": Fr(round(M * 10 ** 9), 10 ** 9),
-            "tail_bound": Fr(round(tail * 10 ** 15) + 1, 10 ** 15),
-            "discretization_bound": Fr(round(disc * 10 ** 15) + 1, 10 ** 15),
-            "total_bound": Fr(round((tail + disc) * 10 ** 15) + 2, 10 ** 15),
+            "a_squared": a2,
+            "a_upper": a_up,
+            "M_upper": M_up,
+            "tail_bound": tail_up,
+            "discretization_bound": disc_up,
+            "total_bound": total,
+            "exact_admission": True,
             "derivation": "shifted-Gaussian: phi(z)e^{az}=e^{a^2/2}phi(z-a); "
-                          "|F|,|F''| <= M=e^{a^2/2}/sqrt(2pi); trapezoid "
-                          "(2T)h^2 M/12; tails 2M exp(-(T-a)^2/2)"}
+                          "|F|,|F''| <= M=e^{a^2/2}/sqrt(2pi) <= e^{a^2/2}*2/5; "
+                          "trapezoid (2T)h^2 M/12; tails 2M exp(-(T-a)^2/2). "
+                          "All constants are exact rational UPPER bounds and the "
+                          "final comparison is exact on the returned total."}
+
+
+def _exp_upper(x: Fr, terms=64) -> Fr:
+    """An exact rational UPPER bound on exp(x) for any rational x.
+
+    For x >= 0 a truncated series underestimates, so we use
+    exp(x) <= sum_{k<n} x^k/k! + x^n/n! * 1/(1 - x/n) when x < n, which bounds
+    the tail by a geometric series. For x < 0, exp(x) = 1/exp(-x) and a LOWER
+    bound on exp(-x) gives an upper bound on exp(x).
+    """
+    x = Fr(x)
+    if x == 0:
+        return Fr(1)
+    if x < 0:
+        lo = _exp_lower(-x, terms)
+        if lo <= 0:
+            raise Declined("exp lower bound nonpositive")
+        return Fr(1) / lo
+    n = terms
+    while Fr(n) <= x:
+        n *= 2
+        if n > 1 << 20:
+            raise Declined("exp argument %s too large to bound" % x)
+    s = Fr(0)
+    term = Fr(1)
+    for k in range(n):
+        if k:
+            term = term * x / k
+        s += term
+    tail = term * x / n / (Fr(1) - x / n)
+    return s + tail
+
+
+def _exp_lower(x: Fr, terms=64) -> Fr:
+    """An exact rational LOWER bound on exp(x) for x >= 0: a truncated series."""
+    x = Fr(x)
+    if x < 0:
+        up = _exp_upper(-x, terms)
+        return Fr(1) / up
+    s = Fr(0)
+    term = Fr(1)
+    for k in range(terms):
+        if k:
+            term = term * x / k
+        s += term
+    return s
+
+
+def _isqrt_ceil(q: Fr) -> int:
+    """Smallest integer n with n >= sqrt(q), exactly."""
+    import math
+    q = Fr(q)
+    if q <= 0:
+        return 0
+    n = math.isqrt(q.numerator // max(1, q.denominator)) + 1
+    while Fr(n * n) < q:
+        n += 1
+    while n > 0 and Fr((n - 1) * (n - 1)) >= q:
+        n -= 1
+    return n
 
 
 def negative_response_bound(cand) -> Fr:
