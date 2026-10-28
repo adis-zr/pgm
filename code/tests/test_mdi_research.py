@@ -1934,3 +1934,139 @@ def test_conversion_cache_is_keyed_by_context_and_per_arm():
     # the cached value equals a direct conversion
     for v in [Fr(1, 7), Fr(5, 7)]:
         assert cc.down(v) == ctx.down(v)
+
+
+# ===== contract H: behavioural controls through the real driver =====
+
+def test_H_higher_arity_and_nonbinary_through_the_driver():
+    """Higher-arity factors and non-binary free states must go through the real
+    public solve path, not a helper."""
+    txt = ("MARKOV\n4\n2 3 2 3\n4\n4 0 1 2 3\n2 1 3\n1 0\n1 2\n"
+           "36\n" + " ".join(str(1 + (k % 7)) for k in range(36)) + "\n"
+           "9\n1 2 3 4 5 6 7 8 9\n2\n1 2\n2\n3 1\n")
+    m = M.read_uai(w(txt))
+    r = M.restrict(m, {})
+    assert max(len(f.scope) for f in r.factors) == 4
+    assert any(r.card[v] == 3 for v in r.free)
+    res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                  deadline_s=60)
+    assert res["outcome"] == "VERIFIED_ALL_MARGINALS", res["outcome"]
+    Z, p = O.exact_all_marginals(r)
+    for v in r.free:
+        for s in range(r.card[v]):
+            lo, hi = res["intervals"][v][s]
+            assert lo <= p[v][s] <= hi, (v, s)
+
+
+def test_H_aggregation_shows_zero_masking_and_positive_cancellation():
+    """Contract H: actual aggregation must show BOTH effects.
+
+    Zero masking: a zero in a grouped constituent makes two differing masks
+    agree. Positive cancellation: two rows whose ratios differ per factor become
+    exactly proportional in the product.
+    """
+    # zero masking (the reviewer's counterexample)
+    rb, rr = (Fr(0), Fr(2)), (Fr(1), Fr(3))
+    with pytest.raises(R.Declined):
+        R.ratio_extrema(rb, rr)
+    z = (Fr(0), Fr(7))
+    ab = tuple(a * c for a, c in zip(rb, z))
+    ar = tuple(a * c for a, c in zip(rr, z))
+    L, U = R.ratio_extrema(ab, ar)
+    assert L == U, "aggregated rows must be exactly proportional"
+    assert U / L == 1
+    # positive cancellation: per-factor ratios 1/2 and 2/1 multiply to 1
+    f1b, f1r = (Fr(1), Fr(2)), (Fr(2), Fr(4))      # ratio 1/2 everywhere
+    f2b, f2r = (Fr(4), Fr(2)), (Fr(2), Fr(1))      # ratio 2 everywhere
+    L1, U1 = R.ratio_extrema(f1b, f1r)
+    L2, U2 = R.ratio_extrema(f2b, f2r)
+    assert (U1 / L1, U2 / L2) == (1, 1)
+    pb = tuple(a * b for a, b in zip(f1b, f2b))
+    pr = tuple(a * b for a, b in zip(f1r, f2r))
+    Lp, Up = R.ratio_extrema(pb, pr)
+    assert Lp == Up == Fr(1), (Lp, Up)
+
+
+def test_H_categorical_mode_fitting_declines_with_a_reason():
+    """Categorical fitting is NOT implemented. It must decline with a recorded
+    reason, never silently produce a binary-only answer."""
+    txt = ("MARKOV\n3\n3 3 2\n3\n2 0 1\n1 2\n2 1 2\n"
+           "9\n2 1 1 1 2 1 1 1 2\n2\n1 1\n6\n1 2 1 2 1 2\n")
+    m = M.read_uai(w(txt))
+    r = M.restrict(m, {})
+    assert any(r.card[v] == 3 for v in r.free)
+    cands, info = MD.propose_modes(r.free, r.factors, r.card)
+    assert cands == [], "a non-binary model must not yield a binary mode"
+    assert "declined" in info, info
+    assert "categorical" in info["declined"].lower()
+
+
+def test_H_bounded_fallback_is_a_recorded_selection():
+    """A route with no executor must not fall through; fallback is a separate,
+    recorded, charged selection."""
+    from mdi import plantype as PT, registry as RG, pricing as PR
+    for kind in ("fourier", "composed"):
+        with pytest.raises(PT.PlanError):
+            PT.dispatch(kind)
+    # the fallback must be priced as its own record, with identity eligible
+    ident = PR.CostRecord(kind="identity", name="identity:fallback")
+    ident.put("producer_upward_ops", 10 ** 6, PR.UPPER)
+    ident.bytes_producer = PR.Counter(1 << 20, PR.FORECAST)
+    unimpl = PR.CostRecord(kind="fourier", name="fourier", eligible=False,
+                           ineligible_reason=RG.UNIMPLEMENTED["fourier"])
+    unimpl.put("producer_upward_ops", 1, PR.UPPER)
+    unimpl.bytes_producer = PR.Counter(1, PR.FORECAST)
+    cmp = PR.compare([ident, unimpl], cap_bytes=1 << 30)
+    assert cmp["chosen"]["name"] == "identity:fallback"
+    row = next(x for x in cmp["all"] if x["kind"] == "fourier")
+    assert not row["eligible"] and row["ineligible_reason"]
+
+
+def test_H_no_verified_status_when_checking_is_disabled_or_incomplete():
+    """The central status obligation, through the real driver."""
+    txt = ("MARKOV\n3\n2 3 2\n3\n1 1\n2 0 1\n3 0 1 2\n"
+           "3\n2 5 11\n6\n1 7 2 13 3 5\n12\n2 1 3 1 5 1 7 1 11 1 13 1\n")
+    m = M.read_uai(w(txt))
+    on = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                 deadline_s=60, run_checker=True)
+    assert on["outcome"] == "VERIFIED_ALL_MARGINALS"
+    assert on["independently_verified"] is True
+    off = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                  deadline_s=60, run_checker=False)
+    assert off["outcome"] == "PRODUCER_COMPLETE_UNCHECKED"
+    assert off["independently_verified"] is False
+    assert off["checker"]["status"] == "NOT_RUN"
+    assert off["checker"]["verified_coordinates"] == 0
+
+
+def test_H_expired_deadline_control():
+    """A tiny deadline must stop with a resource outcome, not a wrong answer."""
+    p = "/tmp/tep/three_external_problems/inputs/Promedus_12"
+    if not os.path.exists(p + ".uai"):
+        pytest.skip("external inputs not extracted")
+    m = M.read_uai(p + ".uai")
+    ev = M.read_evidence(p + ".uai.evid", m)
+    res = S.solve(m, ev, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
+                  deadline_s=2.0, run_checker=False)
+    assert res["outcome"] in ("TIMEOUT", "RESOURCE_BOUND"), res["outcome"]
+    assert "intervals" not in res or not res.get("intervals")
+
+
+def test_H_constant_and_separable_preprocessing_through_the_driver():
+    """C: preprocessing must run inside the real solve path and preserve the
+    original outputs."""
+    txt = ("MARKOV\n3\n2 2 2\n4\n1 0\n2 0 1\n2 1 2\n1 2\n"
+           "2\n1.5 2.5\n4\n2 6 3 9\n4\n1 1 1 1\n2\n0.5 4\n")
+    m = M.read_uai(w(txt))
+    r = M.restrict(m, {})
+    Z, p = O.exact_all_marginals(r)
+    res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                  deadline_s=60)
+    assert res["outcome"] == "VERIFIED_ALL_MARGINALS"
+    assert res["preprocess"] is not None, "preprocessing must be recorded"
+    assert res["preprocess"]["removed_constants"], "the constant factor"
+    assert res["preprocess"]["split_pairs"], "the separable pair"
+    for v in r.free:
+        for s in range(r.card[v]):
+            lo, hi = res["intervals"][v][s]
+            assert lo <= p[v][s] <= hi, (v, s)
