@@ -1246,3 +1246,106 @@ def test_checker_rejects_malformed_output_schema():
     bad3[v0] = [(Fr(9, 10), Fr(1, 10))] + list(bad3[v0][1:])
     ok3, _ = S.verify_publication(m, {}, bad3, eps=Fr(1, 100), mode="I")
     assert not ok3, "inverted endpoints must be rejected"
+
+
+# ===== contract A: truthful plan properties, persisted records, dispatcher =====
+
+def test_plan_properties_enforce_prerequisites():
+    """None of the eight properties implies another, and a property with unmet
+    prerequisites must be refusable, not a judgement call."""
+    from mdi import plantype as PT
+    p = PT.PlanProperties()
+    with pytest.raises(PT.PlanError):
+        p.set("selected")
+    p.set("mathematically_certified")
+    p.set("executor_supported")
+    p.set("complete_cost_priced")
+    p.set("selected")
+    assert p.selected
+    # a checker is still missing, so this is NOT a certified route
+    assert p.may_execute_as_certified_route() == ["checker_supported"]
+    with pytest.raises(PT.PlanError):
+        p.set("independently_verified")       # no producer_complete yet
+    p.set("producer_complete")
+    with pytest.raises(PT.PlanError):
+        p.set("independently_verified")       # still no checker_supported
+    p.set("checker_supported")
+    p.set("independently_verified")
+    p.set("publication_contract_met")
+    assert p.may_execute_as_certified_route() == []
+
+
+def _demo_plan():
+    from mdi import plantype as PT
+    return PT.PlanRecord(
+        kind="identity", name="identity",
+        model_sha256="a" * 64, evidence_sha256="b" * 64, query_sha256="c" * 64,
+        preprocess_identity={"scale": "1", "removed_constants": [],
+                             "split_pairs": []},
+        factor_ownership=[(0, "bag0"), (1, "bag1")],
+        factor_scopes=[(0, (0, 1), (2, 2)), (1, (1,), (2,))],
+        region_membership=[], cell_membership=[],
+        allocations={"regional": Fr(2, 1000), "deletion": Fr(5, 10000)},
+        executor_id="mdi.solve:identity", checker_id="mdi.solve:_check",
+        numerical={"precision": 64, "mode": "P", "emin": -3000, "emax": 3000},
+        cost_counters={"bag_visits": 254, "label": "exact"},
+        storage_schedule={"peak_live_entries": 127},
+        rejected_alternatives=[{"name": "regional:x", "reason": "skipped regions"}])
+
+
+def test_plan_record_round_trips_byte_identically():
+    from mdi import plantype as PT
+    rec = _demo_plan().validate()
+    back = PT.round_trip(rec)
+    assert back.allocations["regional"] == Fr(2, 1000)
+    assert back.to_json() == rec.to_json()
+
+
+def test_plan_record_rejects_wrong_binding_and_damage():
+    from mdi import plantype as PT
+    import json
+    rec = _demo_plan().validate()
+    with pytest.raises(PT.PlanError):
+        rec.bind_check("z" * 64, "b" * 64, "c" * 64)
+    assert rec.bind_check("a" * 64, "b" * 64, "c" * 64)
+    for mutate, why in [
+        (lambda d: d.pop("cost_counters"), "truncated"),
+        (lambda d: d.update(version=99), "stale"),
+        (lambda d: d.update(factor_ownership=[[0, "b0"], [0, "b1"]]), "dup owner"),
+        (lambda d: d.update(allocations={"regional": "not-a-rational"}), "bad rational"),
+        (lambda d: d.update(kind="nonsense"), "unknown kind"),
+        (lambda d: d.update(model_sha256="short"), "bad hash"),
+    ]:
+        d = json.loads(rec.to_json())
+        mutate(d)
+        with pytest.raises(PT.PlanError):
+            PT.PlanRecord.from_json(json.dumps(d))
+
+
+def test_dispatcher_refuses_unimplemented_kinds():
+    """A recognized-but-unimplemented kind must never fall through to the
+    original-model solver."""
+    from mdi import plantype as PT
+    from mdi import registry as RG          # registers what exists
+    for kind in ("fourier", "composed"):
+        with pytest.raises(PT.PlanError) as e:
+            PT.dispatch(kind)
+        assert "no executor" in str(e.value)
+    ex, ck = PT.dispatch("identity")
+    assert ex is not None and ck is not None
+    # regional has an executor but NO checker, so it is not a certified route
+    ex2, ck2 = PT.dispatch("regional")
+    assert ex2 is not None and ck2 is None
+
+
+def test_support_table_is_factual():
+    from mdi import registry as RG
+    rows = {r["kind"]: r for r in RG.status_table()}
+    assert rows["identity"]["executor_supported"]
+    assert rows["identity"]["checker_supported"]
+    assert rows["regional"]["executor_supported"]
+    assert not rows["regional"]["checker_supported"]
+    assert not rows["fourier"]["executor_supported"]
+    assert not rows["composed"]["executor_supported"]
+    for k in ("regional", "statistic", "gaussian"):
+        assert rows[k]["checker_note"], "a missing checker must say why"
