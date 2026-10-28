@@ -89,12 +89,34 @@ PT.register_executor("composed", _composed_executor)
 
 UNIMPLEMENTED = {}
 
-MISSING_CHECKERS = {
-    "statistic": "no independent statistic-DP checker",
-    "gaussian": "no independent quadrature checker",
-    "fourier": "no independent complex-quadrature checker",
-    "composed": "no independent checker for a composed publication",
-}
+def _statistic_checker(free, card, unary, cand, Q, queries, published, eps,
+                       ctx, **kw):
+    from mdi import collective_check as CC
+    return CC.check_statistic_publication(free, card, unary, cand, Q, queries,
+                                          published, eps, ctx, **kw)
+
+
+def _quadrature_checker(free, card, unary, cand, queries, published, eps, ctx,
+                        delta, **kw):
+    from mdi import collective_check as CC
+    return CC.check_quadrature_publication(free, card, unary, cand, queries,
+                                           published, eps, ctx, delta, **kw)
+
+
+def _composed_checker(restricted, regions, coarse, rds, queries, published,
+                      eps, total_radius, regional_radius=None, **kw):
+    from mdi import collective_check as CC
+    return CC.check_composed_publication(restricted, regions, coarse, rds,
+                                         queries, published, eps, total_radius,
+                                         regional_radius=regional_radius)
+
+
+PT.register_checker("statistic", _statistic_checker)
+PT.register_checker("gaussian", _quadrature_checker)
+PT.register_checker("fourier", _quadrature_checker)
+PT.register_checker("composed", _composed_checker)
+
+MISSING_CHECKERS = {}
 
 
 def status_table():

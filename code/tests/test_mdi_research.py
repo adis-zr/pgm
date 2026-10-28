@@ -1335,10 +1335,10 @@ def test_dispatcher_refuses_unimplemented_kinds():
     # regional now has BOTH (contract D.7 checker implemented)
     ex2, ck2 = PT.dispatch("regional")
     assert ex2 is not None and ck2 is not None
-    # statistic and gaussian still have executors but no checker
-    for kind in ("statistic", "gaussian"):
+    # every other kind now has both as well
+    for kind in ("statistic", "gaussian", "fourier", "composed"):
         ex3, ck3 = PT.dispatch(kind)
-        assert ex3 is not None and ck3 is None
+        assert ex3 is not None and ck3 is not None
 
 
 def test_support_table_is_factual():
@@ -1351,9 +1351,9 @@ def test_support_table_is_factual():
     # every kind now HAS an executor (E.6 fourier, E.7 composed)
     assert rows["fourier"]["executor_supported"]
     assert rows["composed"]["executor_supported"]
+    # every route now has a checker as well (the largest blocker, closed)
     for k in ("statistic", "gaussian", "fourier", "composed"):
-        assert not rows[k]["checker_supported"]
-        assert rows[k]["checker_note"], "a missing checker must say why"
+        assert rows[k]["checker_supported"], k
 
 
 # ===== contract D: compact projected crossings and direct marker readout =====
@@ -2068,12 +2068,12 @@ def test_H_bounded_fallback_is_a_recorded_selection():
         PT.dispatch("nonsense")
     for kind in ("statistic", "gaussian", "fourier", "composed"):
         ex, ck = PT.dispatch(kind)
-        assert ex is not None and ck is None
+        assert ex is not None and ck is not None
     # the fallback must be priced as its own record, with identity eligible
     ident = _complete_price(PR, "identity", "identity:fallback", 10 ** 6,
                             1 << 20)
     unimpl = _complete_price(PR, "fourier", "fourier", 1, 1, eligible=False,
-                             ineligible_reason=RG.MISSING_CHECKERS["fourier"])
+                             ineligible_reason="ineligible for this comparison")
     cmp = PR.compare([ident, unimpl], cap_bytes=1 << 30)
     assert cmp["chosen"]["name"] == "identity:fallback"
     row = next(x for x in cmp["all"] if x["kind"] == "fourier")
@@ -3079,8 +3079,7 @@ def test_r4_fourier_evaluator_exists_and_refuses_a_positive_mode():
     """E.6: the complex-phase evaluator is implemented and registered."""
     from mdi import registry as RG, plantype as PT
     ex, ck = PT.dispatch("fourier")
-    assert ex is not None
-    assert ck is None, "no independent complex-quadrature checker yet"
+    assert ex is not None and ck is not None
     assert "fourier" not in RG.UNIMPLEMENTED
     ctx = A.Ctx(120)
 
@@ -3126,12 +3125,8 @@ def test_r4_every_kind_has_a_registered_executor():
     rows = {x["kind"]: x for x in RG.status_table()}
     for kind in PT.KINDS:
         assert rows[kind]["executor_supported"], kind
-    # checkers remain the honest gap
-    assert rows["identity"]["checker_supported"]
-    assert rows["regional"]["checker_supported"]
-    for kind in ("statistic", "gaussian", "fourier", "composed"):
-        assert not rows[kind]["checker_supported"]
-        assert rows[kind]["checker_note"]
+    for kind in PT.KINDS:
+        assert rows[kind]["checker_supported"], kind
 
 
 # ===== review 4 priority 7: behavioural and independent acceptance evidence =====
@@ -3296,3 +3291,91 @@ def test_r4_missing_and_duplicate_ownership_rejected():
     miss.combined_constants = []
     with pytest.raises(PRE.PreprocessError):
         PRE.verify_identities(r, miss)
+
+
+# ===== closing the largest blocker: checkers for every route =====
+
+def test_r4_statistic_checker_verifies_and_rejects():
+    """An independent statistic-DP checker. It enumerates configurations
+    directly, a DIFFERENT implementation from the statistic convolution, so a
+    bug in the convolution cannot pass both sides."""
+    from mdi import collective_check as CC
+    ctx = A.Ctx(160)
+    n = 6
+    unary = {v: [Fr(10 + v, 10), Fr(10 + (3 * v) % 7, 10)] for v in range(n)}
+
+    class Cand:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 10)]
+        features = [{v: [Fr(-1), Fr(1)] for v in range(n)}]
+
+    acc, marks, _ = CO.statistic_dp(list(range(n)), {v: 2 for v in range(n)},
+                                    unary, {}, [], Cand(), 1, set(range(n)))
+    (Zlo, Zhi), mk = CO.dp_root_combine(acc, marks, Cand(), 1, ctx)
+    pub = {v: [(mk[(v, a)][0] / Zhi, mk[(v, a)][1] / Zlo) for a in range(2)]
+           for v in range(n)}
+    ok, fails, meta = CC.check_statistic_publication(
+        list(range(n)), {v: 2 for v in range(n)}, unary, Cand(), 1,
+        set(range(n)), pub, Fr(1, 100), ctx)
+    assert ok, fails[:3]
+    assert meta["independent_enclosure"]
+    # a wrong publication must be rejected
+    bad = {v: [(Fr(0), Fr(0))] * 2 for v in range(n)}
+    ok2, fails2, _ = CC.check_statistic_publication(
+        list(range(n)), {v: 2 for v in range(n)}, unary, Cand(), 1,
+        set(range(n)), bad, Fr(1, 100), ctx)
+    assert not ok2 and len(fails2) >= n
+
+
+def test_r4_statistic_checker_refuses_rather_than_running_away():
+    """An oversized independent enumeration is a RESOURCE refusal, not a pass."""
+    from mdi import collective_check as CC
+    ctx = A.Ctx(80)
+    n = 40
+    unary = {v: [Fr(1), Fr(2)] for v in range(n)}
+
+    class Cand:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 10)]
+        features = [{v: [Fr(-1), Fr(1)] for v in range(n)}]
+
+    with pytest.raises(CC.CollectiveCheckError) as e:
+        CC.check_statistic_publication(list(range(n)), {v: 2 for v in range(n)},
+                                       unary, Cand(), 1, set(range(n)), {},
+                                       Fr(1, 100), ctx)
+    assert "RESOURCE refusal" in str(e.value)
+
+
+def test_r4_composed_checker_verifies_and_rejects():
+    from mdi import composed as CM, collective_check as CC
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    ctx = A.Ctx(180)
+    out, meta = CM.run(r, regs, crs, rds, set(r.free), ctx, Fr(1, 100))
+    ok, fails, cmeta = CC.check_composed_publication(
+        r, regs, crs, rds, set(r.free), out, Fr(1, 100),
+        Fr(meta["total_radius"]),
+        regional_radius=Fr(meta["regional_radius"]))
+    assert ok, fails[:3]
+    assert cmeta["independent_enclosure"]
+    bad = {v: [(Fr(0), Fr(0))] * 2 for v in sorted(r.free)}
+    ok2, fails2, _ = CC.check_composed_publication(
+        r, regs, crs, rds, set(r.free), bad, Fr(1, 100),
+        Fr(meta["total_radius"]),
+        regional_radius=Fr(meta["regional_radius"]))
+    assert not ok2 and fails2
+
+
+def test_r4_every_route_now_has_an_executor_and_a_checker():
+    """The largest named blocker: four routes had executors but no checker, so
+    they were ineligible for selection and could not be certified."""
+    from mdi import registry as RG, plantype as PT
+    rows = {x["kind"]: x for x in RG.status_table()}
+    for kind in PT.KINDS:
+        assert rows[kind]["executor_supported"], kind
+        assert rows[kind]["checker_supported"], kind
+        ex, ck = PT.dispatch(kind)
+        assert ex is not None and ck is not None, kind
+    assert RG.MISSING_CHECKERS == {}
+    assert RG.UNIMPLEMENTED == {}

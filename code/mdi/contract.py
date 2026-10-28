@@ -265,10 +265,17 @@ class Engine:
     def downward(self, root, on_calibrated=None):
         """Depth-first downward pass.
 
-        Immediately after a bag has both its incoming messages, `on_calibrated`
-        is invoked so the driver can read out that bag's variables; the bag's
-        messages can then be released. This keeps live memory near the planner's
-        peak-live estimate instead of retaining every message.
+        `on_calibrated(x)` is invoked once bag x HAS its incoming message from
+        its parent, i.e. after the parent sent to it, so x is genuinely
+        calibrated. The root is calibrated as soon as the upward pass completes.
+
+        Previously the hook fired at the top of phase 0, BEFORE the parent's
+        message to x existed. Only the root was then truly calibrated, and a
+        caller reading other bags saw uncalibrated beliefs: on a 4-cell reduced
+        graph the per-variable totals came out 1.2e4 and 6.1e6 against a
+        partition function of 1.02e11. The main solve path was unaffected
+        because it reads each variable at its home bag and the independent
+        checker re-derives everything, but the hook's contract was wrong.
         """
         bags = self.plan.bags
         n = 0
@@ -277,11 +284,14 @@ class Engine:
         while stack:
             x, phase = stack.pop()
             if phase == 0:
-                if on_calibrated is not None:
-                    on_calibrated(x)
+                if on_calibrated is not None and bags[x].parent < 0:
+                    on_calibrated(x)          # the root, calibrated upward
                 kids = list(bags[x].children)
                 for c in kids:
                     self.send(x, c)
+                    if on_calibrated is not None:
+                        # c now has its parent message, so it IS calibrated
+                        on_calibrated(c)
                     n += 1
                     self._note_live()
                     if n % 64 == 0:
@@ -369,11 +379,23 @@ class Engine:
         bcard = tuple(self.card[v] for v in bvars)
         bst = _strides(bcard)
         bpos = {v: k for k, v in enumerate(bvars)}
+        # A calibrated belief needs EVERY incident message. Silently skipping a
+        # missing one returned an uncalibrated belief: on a 4-cell reduced graph
+        # the per-variable totals came out 1.2e4 and 6.1e6 against a partition
+        # function of 1.02e11, and the caller had no way to tell.
         inc = []
+        missing = []
         for nb in ([B.parent] if B.parent >= 0 else []) + list(B.children):
             t = self.msg.get((nb, bi))
-            if t is not None:
+            if t is None:
+                missing.append(nb)
+            else:
                 inc.append(t)
+        if missing:
+            raise A.NumericalRefusal(
+                "read_marginal(%d) at bag %d is missing messages from %s, so "
+                "the belief is NOT calibrated and its marginal would be wrong"
+                % (var, bi, missing))
         own = [self.factors[fi] for fi in B.factors]
         fproj = [[(bpos[v], f.strides()[k]) for k, v in enumerate(f.scope)] for f in own]
         iproj = [[(bpos[v], t.strides()[k]) for k, v in enumerate(t.vars)] for t in inc]

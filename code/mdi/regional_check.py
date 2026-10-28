@@ -197,18 +197,75 @@ def _reduced_message_passing(restricted, regions, coarse, rds, queries,
     if Z <= 0:
         raise RegionalCheckError("reduced model total is nonpositive")
     # cell marginals, then original markers via the payloads
+    # Read each cell variable at its HOME bag, as the main solve path does, and
+    # only once that bag is calibrated. Reading every variable of every bag as
+    # it was visited collected UNCALIBRATED beliefs for non-home bags, which
+    # produced per-variable totals of 1.2e4 and 6.1e6 against a partition
+    # function of 1.02e11.
     collected = {}
+    home_vars = {}
+    for vv in rc.free:
+        home_vars.setdefault(pl.var_home[vv], []).append(vv)
 
     def on_cal(bag):
-        for vv in pl.bags[bag].vars:
+        for vv in home_vars.get(bag, ()):
             if vv not in collected:
                 collected[vv] = eng.read_marginal(vv)
 
     eng.downward(roots[0], on_calibrated=on_cal)
-    counts = {}
+    # Each cell variable's marginal has its own total, and for a calibrated
+    # junction tree every one of those totals equals the partition function. Any
+    # discrepancy is a defect, not something to paper over by rescaling: an
+    # earlier version returned region 0's total for every count, which made other
+    # regions' marginals wrong by orders of magnitude (3.8e-08 against an exact
+    # 0.1367), and a rescaling "fix" merely moved the error.
+    totals = {}
     for i in range(len(regions)):
         if i not in collected:
             raise RegionalCheckError("cell variable %d was never read" % i)
+        vals, seen, depth = collected[i]
+        t = Fr(0)
+        for ci in range(ncell[i]):
+            if seen[ci]:
+                t += AA.exact_fr(vals[ci])
+        if t <= 0:
+            raise RegionalCheckError("cell variable %d has a nonpositive total"
+                                     % i)
+        totals[i] = t
+    # Calibration consistency: every CALIBRATED cell marginal must share one
+    # total, which is the partition function. `root_value` is NOT that number:
+    # it contracts the root bag after the upward pass only, so it omits the
+    # downward contributions. The shared total is taken from the calibrated
+    # marginals themselves, and disagreement among them is the real defect
+    # signal.
+    # Directed rounding means two calibrated totals agree only up to the
+    # arithmetic's own error, so exact equality is the wrong test: the observed
+    # spread here is 1.7e-39 relative, which is rounding noise, not a
+    # calibration defect. A LOOSE relative tolerance still catches the real
+    # failure mode, which was totals differing by factors of 1e7.
+    ref_total = None
+    tol = Fr(1, 10 ** 12)
+    for i in sorted(totals):
+        t = totals[i]
+        if ref_total is None:
+            ref_total = t
+            continue
+        if ref_total <= 0:
+            raise RegionalCheckError("nonpositive calibrated total")
+        rel = abs(t - ref_total) / ref_total
+        if rel > tol:
+            raise RegionalCheckError(
+                "cell variables disagree on the total by a relative %s: "
+                "variable %d gives %s while another gives %s, so the reduced "
+                "contraction is NOT calibrated and its marginals cannot be "
+                "trusted" % (float(rel), i, t, ref_total))
+        if t < ref_total:
+            ref_total = t          # the smallest total, conservatively
+    if ref_total is None or ref_total <= 0:
+        raise RegionalCheckError("no positive calibrated total")
+    Z = ref_total
+    counts = {}
+    for i in range(len(regions)):
         vals, seen, depth = collected[i]
         for ci in range(ncell[i]):
             if not seen[ci]:
@@ -224,11 +281,7 @@ def _reduced_message_passing(restricted, regions, coarse, rds, queries,
                 if Nc == 0:
                     continue
                 counts[key] = counts.get(key, Fr(0)) + pc_mass * Nc / Mc
-    tot = sum(AA.exact_fr(collected[0][0][ci])
-              for ci in range(ncell[0]) if collected[0][1][ci])
-    if tot <= 0:
-        raise RegionalCheckError("reduced cell marginal total is nonpositive")
-    return tot, counts
+    return Z, counts
 
 
 def verify_regional_publication(restricted, regions, coarse, rds, queries,
