@@ -1349,3 +1349,130 @@ def test_support_table_is_factual():
     assert not rows["composed"]["executor_supported"]
     for k in ("regional", "statistic", "gaussian"):
         assert rows[k]["checker_note"], "a missing checker must say why"
+
+
+# ===== contract D: compact projected crossings and direct marker readout =====
+
+def _ring_coarse(NB=4, BS=3):
+    """Build the ring control's regions, cells and region map."""
+    txt, n, NB_, BS_ = ring_of_blocks(NB, BS)
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    regs = tuple(tuple(range(b * BS, (b + 1) * BS)) for b in range(NB))
+    tl = K.level_radius(1)
+    cap = K.region_distortion_budget(tl, len(regs))
+    region_of = {v: i for i, rr in enumerate(regs) for v in rr}
+    rds, crs = [], []
+    for reg in regs:
+        rd = R.region_data(reg, r.card, r.factors, set(r.free))
+        cr = R.merge_region(rd, r.factors, r.card, cap, set(r.free),
+                            region_of=region_of, aggregate=True)
+        rds.append(rd); crs.append(cr)
+    return m, r, regs, crs, rds, region_of
+
+
+def test_compact_projection_equals_cartesian_exactly():
+    """The compact form must give the SAME value as the Cartesian table for
+    every cell assignment, since it is the same mathematics stored differently."""
+    from mdi import compact as CP, coarse as CZ
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    pc, _ = CP.project_crossings(r, regs, crs, rds)
+    assert pc, "the control must have crossing factors"
+    cm, cross, _ = CZ.build_coarse_model(r.free, r.card, r.factors, regs, crs, rds)
+    cfacs = {tuple(f.scope): f for f in cm.factors if len(f.scope) > 1}
+    ncell = [len(c.cells) for c in crs]
+    for tup in itertools.product(*[range(k) for k in ncell]):
+        cell_of = {i: tup[i] for i in range(len(regs))}
+        comp = Fr(1)
+        for x in pc:
+            comp *= x.value(cell_of)
+        cart = Fr(1)
+        for scope, f in cfacs.items():
+            st = f.strides()
+            off = sum(tup[v] * st[k] for k, v in enumerate(scope))
+            cart *= f.table[off]
+        assert comp == cart, (tup, comp, cart)
+
+
+def test_compact_projection_avoids_cartesian_blowup_at_scale():
+    """On a real instance the compact form must be far smaller. The Cartesian
+    builder would have materialized ~5.3e7 entries on Promedus."""
+    from mdi import compact as CP
+    p = "/tmp/tep/three_external_problems/inputs/Promedus_12"
+    if not os.path.exists(p + ".uai"):
+        pytest.skip("external inputs not extracted")
+    m = M.read_uai(p + ".uai")
+    ev = M.read_evidence(p + ".uai.evid", m)
+    r = M.restrict(m, ev)
+    c0 = next(x for x in R.propose_partitions(r.free, r.card, r.factors)
+              if x["mode"] == "ascending_id")
+    regs = c0["regions"]
+    tl = K.level_radius(1)
+    cap = K.region_distortion_budget(tl, len(regs))
+    region_of = {v: i for i, rr in enumerate(regs) for v in rr}
+    rds, crs = [], []
+    for reg in regs:
+        rd = R.region_data(reg, r.card, r.factors, set(r.free))
+        cr = R.merge_region(rd, r.factors, r.card, cap, set(r.free),
+                            region_of=region_of, aggregate=True)
+        rds.append(rd); crs.append(cr)
+    pc, _ = CP.project_crossings(r, regs, crs, rds)
+    avoided = CP.cartesian_entries_avoided(pc, crs)
+    compact = CP.compact_entries(pc)["total"]
+    assert avoided > 10 ** 7, avoided
+    assert compact * 100 < avoided, (compact, avoided)
+
+
+def test_missing_projection_is_an_error_not_a_one():
+    """A region with no assigned cell must raise, never silently contribute 1."""
+    from mdi import compact as CP
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    pc, _ = CP.project_crossings(r, regs, crs, rds)
+    x = pc[0]
+    partial = {ri: 0 for ri in x.regions[:-1]}      # omit the last region
+    with pytest.raises(CP.CompactError) as e:
+        x.value(partial)
+    assert "never be treated as the value 1" in str(e.value)
+
+
+def test_direct_readout_pads_once_not_per_cell():
+    """A state present in two cells accumulated two eps-wide paddings, giving
+    width 0.02 for an eps=0.01 request. The direct readout accumulates counts
+    exactly and pads once."""
+    from mdi import compact as CP
+    eps = Fr(1, 100)
+    # the old path: each coarse CELL interval already padded to eps, combined
+    cells = [(Fr(0), eps), (Fr(0), eps)]
+    g_both = [Fr(1), Fr(1)]
+    lo = sum(Fr(c[0]) * g_both[i] for i, c in enumerate(cells))
+    hi = sum(Fr(c[1]) * g_both[i] for i, c in enumerate(cells))
+    assert hi - lo == 2 * eps, (hi - lo, eps)        # the 0.02 defect
+    # the direct path: one pad on the final original-state interval
+    lo2, hi2 = CP.normalize_once(Fr(37), Fr(63), eps / 4, eps)
+    assert hi2 - lo2 <= eps / 2, (hi2 - lo2)
+
+
+def test_direct_query_counts_use_exclusion_not_division():
+    """A and C come from H*N and H*(M-N); the complement is never 1 minus a
+    rounded probability."""
+    from mdi import compact as CP
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    cr = crs[0]
+    cavity = {ci: Fr(1) for ci in range(len(cr.cells))}
+    v = regs[0][0]
+    A, C = CP.query_counts(0, crs, rds, v, 0, cavity)
+    A1, C1 = CP.query_counts(0, crs, rds, v, 1, cavity)
+    # with a unit cavity the totals must reconstruct the region's mass
+    total = sum(Fr(x) for x in cr.M)
+    assert A + C == total, (A, C, total)
+    assert A1 + C1 == total
+    assert A + A1 == total, "the two states must partition the mass"
+
+
+def test_tilted_marked_keeps_g_as_the_observable():
+    from mdi import compact as CP
+    for U, g in [(Fr(7, 2), Fr(3, 10)), (Fr(1), Fr(0)), (Fr(5), Fr(1))]:
+        a, b = CP.tilted_marked(U, g)
+        assert a + b == U
+        assert a == U * g
+    with pytest.raises(CP.CompactError):
+        CP.tilted_marked(Fr(1), Fr(3, 2))
