@@ -631,4 +631,9 @@ def test_exact_preprocessing_shrinks_pedigree_interval_mode():
     assert pl.induced_width == 20, pl.induced_width
     assert pl.largest_bag_entries == 2097152
     assert pl.sum_bag_entries == 5922542
-    assert est["estimate_bytes"] < (1 << 30), est["estimate_bytes"]
+    # Review 4 corrected this figure: 0.762 GiB in interval mode, from
+    # 5,341,332 peak live entries under the EXECUTED schedule. My earlier 0.566
+    # came from the pre-fix simulation. Entry-based forecast, excluding MPFR
+    # object and limb overhead, allocator overhead, input tables and buffers.
+    assert est["peak_live_entries"] == 5341332, est["peak_live_entries"]
+    assert 0.70 < est["estimate_bytes"] / (1 << 30) < 0.80, est["estimate_bytes"]
