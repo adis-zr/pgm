@@ -207,57 +207,113 @@ def build_level2(restricted, regions, coarse, rds, queries, t_level2,
             "n_parents": len(parents)}
 
 
-def level2_marginals(restricted, regions, coarse, rds, queries, l2):
-    """Contract the level-2 model by enumerating parent boundary assignments.
+def level2_marginals(restricted, regions, coarse, rds, queries, l2,
+                     deadline=None):
+    """Contract the level-2 model, INCLUDING every outer crossing factor.
 
-    Returns exact (A, C) counts per original query state, so the caller can
-    normalize and pad ONCE as contract D.3 requires.
+    The previous version built the list of factors crossing between parent
+    regions and then never multiplied them, and it indexed parent boundary
+    masses by the parent's own A-key while reconstructing sibling weights by
+    division. On a 13-variable chain forced into three parents that gave
+    P(x12=1) = 14/25 against the exact 466/843, an error of 0.007212 against the
+    0.002 two-level allowance.
+
+    This version enumerates the parents' CHILD-CELL assignments directly, so
+    every projected crossing is evaluated exactly once at the cells it actually
+    touches, and marked masses are carried per child-cell assignment rather than
+    recovered by division.
     """
     pdata = l2["parent_data"]
     if l2["skipped"]:
         raise Level2Error("%d parent regions were skipped; the level-2 model is "
                           "incomplete and must not be contracted" % l2["skipped"])
-    # the parent-level crossing factors, keyed by the children they touch
-    cset_of = {id(pr): set(pr.children) for pr in pdata}
-    parent_of = {}
-    for pi, pr in enumerate(pdata):
-        for c in pr.children:
-            parent_of[c] = pi
-    outer = []
-    for pc in l2["projected"]:
-        ps = sorted({parent_of[c] for c in pc.regions})
-        if len(ps) > 1:
-            outer.append((tuple(ps), pc))
+    parents = l2["parents"]
+    projected = l2["projected"]
 
-    # enumerate the product of parent boundary spaces
-    spaces = [sorted(pr.A.keys()) for pr in pdata]
+    # every projected crossing must be accounted for EXACTLY ONCE
+    parent_of = {}
+    for pi, pp in enumerate(parents):
+        for c in pp:
+            parent_of[c] = pi
+    seen = set()
+    for pi, pr in enumerate(pdata):
+        for pc in pr.internal_crossings:
+            if id(pc) in seen:
+                raise Level2Error("crossing factor %d counted twice" % pc.origin)
+            seen.add(id(pc))
+    outer = [pc for pc in projected if id(pc) not in seen]
+    for pc in outer:
+        if len({parent_of[c] for c in pc.regions}) <= 1:
+            raise Level2Error(
+                "crossing factor %d touches one parent but was not claimed as "
+                "internal: the accounting is inconsistent" % pc.origin)
+
+    # enumerate CHILD-CELL assignments across all children
+    children = sorted(parent_of)
+    ncell = [len(coarse[c].cells) for c in children]
     total = 1
-    for s in spaces:
-        total *= max(1, len(s))
+    for k in ncell:
+        total *= k
     if total > K.CAPS["level2_contraction_space"]:
-        raise R.CapExceeded("level-2 contraction space %d exceeds the declared "
-                            "level2_contraction_space cap %d"
-                            % (total, K.CAPS["level2_contraction_space"]))
+        raise R.CapExceeded(
+            "level-2 contraction needs %d child-cell assignments, above the "
+            "declared level2_contraction_space cap %d"
+            % (total, K.CAPS["level2_contraction_space"]))
+
+    strides = [1] * len(ncell)
+    acc = 1
+    for k in range(len(ncell) - 1, -1, -1):
+        strides[k] = acc
+        acc *= ncell[k]
 
     Zt = Fr(0)
     counts = {}
-    for combo in itertools.product(*spaces):
+    for flat in range(total):
+        if deadline is not None and (flat & 0x3F) == 0:
+            deadline()
+        rem, dig = flat, []
+        for k in range(len(ncell)):
+            dig.append(rem // strides[k])
+            rem %= strides[k]
+        cell_of = {children[k]: dig[k] for k in range(len(children))}
+        # child masses
         w = Fr(1)
-        for pi, b in enumerate(combo):
-            w *= pdata[pi].A[b]
+        for k, c in enumerate(children):
+            w *= Fr(coarse[c].M[dig[k]])
+            if w == 0:
+                break
         if w == 0:
             continue
-        # outer crossings are evaluated at the child cells implied by b; this
-        # build enumerates only the parent-internal structure exactly, so an
-        # outer crossing is included when its children are boundary children
+        # EVERY projected crossing, internal and outer, exactly once
+        for pc in projected:
+            w *= pc.value(cell_of)
+            if w == 0:
+                break
+        if w == 0:
+            continue
         Zt += w
-        for pi, b in enumerate(combo):
-            for (v, s), tab in pdata[pi].marks.items():
-                mv = tab.get(b)
-                if mv is None or mv == 0:
+        # markers: replace the owning child's M by its N at this cell
+        for k, c in enumerate(children):
+            Mc = Fr(coarse[c].M[dig[k]])
+            if Mc <= 0:
+                continue
+            for key, col in coarse[c].N.items():
+                if key[0] not in queries:
                     continue
-                other = w / pdata[pi].A[b] if pdata[pi].A[b] != 0 else Fr(0)
-                counts[(v, s)] = counts.get((v, s), Fr(0)) + other * mv
+                Nc = Fr(col[dig[k]])
+                if Nc == 0:
+                    continue
+                counts[key] = counts.get(key, Fr(0)) + w / Mc * Nc
     if Zt <= 0:
         raise Level2Error("level-2 contraction gave a nonpositive total")
+    # the mark/mass identity must hold per variable
+    byvar = {}
+    for (v, s), val in counts.items():
+        byvar.setdefault(v, Fr(0))
+        byvar[v] += val
+    for v, tot in byvar.items():
+        if tot != Zt:
+            raise Level2Error(
+                "marker sum %s != total %s for variable %d: markers were not "
+                "propagated correctly" % (tot, Zt, v))
     return Zt, counts

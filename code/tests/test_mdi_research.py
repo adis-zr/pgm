@@ -2401,3 +2401,192 @@ def test_r4_regional_checker_rebuilds_its_own_boundary_order():
         r, regs, crs, bad_rds, set(r.free), pub, t1, Fr(1, 100))
     assert not ok2, "a corrupted producer boundary order must be detected"
     assert any("boundary order" in x for x in fails2), fails2[:2]
+
+
+# ===== review 4 defect 3: level two and the general DP =====
+
+def _asym_chain(n=13, tail=2, pair="3 1 1 2"):
+    sc = [(v,) for v in range(n)] + [(i, i + 1) for i in range(n - 1)]
+    L = ["MARKOV", str(n), " ".join(["2"] * n), str(len(sc))]
+    for s_ in sc:
+        L.append("%d %s" % (len(s_), " ".join(map(str, s_))))
+    for v in range(n):
+        L.extend(["2", "1 %d" % (tail if v == n - 1 else 1)])
+    for _ in range(n - 1):
+        L.extend(["4", pair])
+    return "\n".join(L) + "\n"
+
+
+def test_r4_level2_multiplies_every_outer_crossing():
+    """Review 4 defect 3: level two built the list of factors crossing between
+    parent regions and never multiplied them. On a 13-variable chain forced into
+    three parents that gave P(x12=1) = 14/25 against the exact 466/843, an error
+    of 0.007212 against the 0.002 two-level allowance.
+
+    MULTIPLE parents are essential: with one parent every crossing is internal
+    and the defect is invisible, which is why the earlier control missed it.
+    """
+    from mdi import level2 as L2, compact as CP
+    n = 13
+    m = M.read_uai(w(_asym_chain(n)))
+    r = M.restrict(m, {})
+    Z, p = O.exact_all_marginals(r)
+    BS = 3
+    regs = tuple(tuple(range(i, min(i + BS, n))) for i in range(0, n, BS))
+    t1 = K.level_radius(2)
+    cap = K.region_distortion_budget(t1, len(regs))
+    region_of = {v: i for i, rr in enumerate(regs) for v in rr}
+    rds, crs = [], []
+    for reg in regs:
+        rd = R.region_data(reg, r.card, r.factors, set(r.free))
+        cr = R.merge_region(rd, r.factors, r.card, cap, set(r.free),
+                            region_of=region_of, aggregate=True)
+        rds.append(rd); crs.append(cr)
+    proj, _ = CP.project_crossings(r, regs, crs, rds)
+    cc = {i: len(crs[i].cells) for i in range(len(regs))}
+    for cap_assign, want_multi in ((8, True), (4096, False)):
+        parents = L2.group_children(len(regs), proj,
+                                    cap_assignments=cap_assign, cell_counts=cc)
+        if want_multi:
+            assert len(parents) > 1, "this control needs MULTIPLE parents"
+        l2 = {"parents": parents, "parent_data": [], "skipped": 0,
+              "rho_cap": K.region_distortion_budget(t1, len(parents)),
+              "projected": proj, "n_parents": len(parents)}
+        for parent in parents:
+            l2["parent_data"].append(
+                L2.parent_region_data(parent, crs, proj, set(r.free)))
+        Zt, counts = L2.level2_marginals(r, regs, crs, rds, set(r.free), l2)
+        q = counts.get((n - 1, 1), Fr(0)) / Zt
+        err = abs(q - p[n - 1][1])
+        assert err <= 2 * t1, (len(parents), float(q), float(p[n - 1][1]),
+                               float(err))
+        # the mark/mass identity must hold per variable
+        for v in sorted(r.free):
+            tot = sum(counts.get((v, s), Fr(0)) for s in range(r.card[v]))
+            assert tot == Zt, (v, tot, Zt)
+
+
+def test_r4_level2_accounts_for_every_crossing_once():
+    from mdi import level2 as L2, compact as CP
+    n = 9
+    m = M.read_uai(w(_asym_chain(n)))
+    r = M.restrict(m, {})
+    regs = tuple(tuple(range(i, min(i + 3, n))) for i in range(0, n, 3))
+    t1 = K.level_radius(2)
+    cap = K.region_distortion_budget(t1, len(regs))
+    region_of = {v: i for i, rr in enumerate(regs) for v in rr}
+    rds, crs = [], []
+    for reg in regs:
+        rd = R.region_data(reg, r.card, r.factors, set(r.free))
+        cr = R.merge_region(rd, r.factors, r.card, cap, set(r.free),
+                            region_of=region_of, aggregate=True)
+        rds.append(rd); crs.append(cr)
+    proj, _ = CP.project_crossings(r, regs, crs, rds)
+    cc = {i: len(crs[i].cells) for i in range(len(regs))}
+    parents = L2.group_children(len(regs), proj, cap_assignments=8,
+                               cell_counts=cc)
+    l2 = {"parents": parents, "parent_data": [], "skipped": 0,
+          "rho_cap": K.region_distortion_budget(t1, len(parents)),
+          "projected": proj, "n_parents": len(parents)}
+    for parent in parents:
+        l2["parent_data"].append(
+            L2.parent_region_data(parent, crs, proj, set(r.free)))
+    # duplicating a crossing in a parent's internal list must be caught
+    if len(l2["parent_data"][0].internal_crossings) >= 1:
+        l2["parent_data"][0].internal_crossings.append(
+            l2["parent_data"][0].internal_crossings[0])
+        with pytest.raises(L2.Level2Error) as e:
+            L2.level2_marginals(r, regs, crs, rds, set(r.free), l2)
+        assert "twice" in str(e.value)
+
+
+def test_r4_general_dp_marked_join_keeps_sibling_contributions():
+    """Review 4: the DP's partition function was right but its marked masses
+    dropped every sibling's contribution. On a star with three leaves the marked
+    masses summed to 7 instead of 91. A chain control cannot expose this because
+    no bag has two children."""
+    import gmpy2
+    from mdi import gendp as G
+    n = 4
+    sc = [(v,) for v in range(n)] + [(0, 1), (0, 2), (0, 3)]
+    L = ["MARKOV", str(n), " ".join(["2"] * n), str(len(sc))]
+    for s_ in sc:
+        L.append("%d %s" % (len(s_), " ".join(map(str, s_))))
+    for v in range(n):
+        L.extend(["2", "1 1"])
+    for _ in range(3):
+        L.extend(["4", "2 1 1 3"])
+    m = M.read_uai(w("\n".join(L) + "\n"))
+    r = M.restrict(m, {})
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
+    pl, est = sel["chosen"]
+    # the plan must actually branch, or the control proves nothing
+    assert any(len(b.children) >= 2 for b in pl.bags), "need a join"
+    ctx = A.Ctx(160)
+
+    class Cand:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(0)]
+        features = [{v: [Fr(0), Fr(0)] for v in range(n)}]
+
+    (Zlo, Zhi), mk, meta = G.run(pl, r.factors, r.card, Cand(), 1,
+                                 set(r.free), ctx)
+    Rz = Fr(0)
+    rmk = {(v, a): Fr(0) for v in range(n) for a in range(2)}
+    for combo in itertools.product(*[range(2)] * n):
+        a_ = {v: combo[v] for v in range(n)}
+        wt = Fr(1)
+        for f in r.factors:
+            st = f.strides()
+            off = sum(a_[v] * st[k] for k, v in enumerate(f.scope))
+            wt *= f.table[off]
+        if wt == 0:
+            continue
+        Rz += wt
+        for v in range(n):
+            rmk[(v, combo[v])] += wt
+    assert Zlo <= Rz <= Zhi, (Zlo, Rz, Zhi)
+    for v in range(n):
+        tot = sum(mk.get((v, a), (Fr(0), Fr(0)))[0] for a in range(2))
+        assert tot == Rz, ("marked masses must sum to the unmarked mass", v,
+                           tot, Rz)
+        for a in range(2):
+            lo, hi = mk.get((v, a), (Fr(0), Fr(0)))
+            assert lo / Zhi <= rmk[(v, a)] / Rz <= hi / Zlo, (v, a)
+
+
+def test_r4_general_dp_negative_sign_on_a_star():
+    """A different family member: the same join with a negative mode."""
+    from mdi import gendp as G
+    n = 4
+    sc = [(v,) for v in range(n)] + [(0, 1), (0, 2), (0, 3)]
+    L = ["MARKOV", str(n), " ".join(["2"] * n), str(len(sc))]
+    for s_ in sc:
+        L.append("%d %s" % (len(s_), " ".join(map(str, s_))))
+    for v in range(n):
+        L.extend(["2", "1 2"])
+    for _ in range(3):
+        L.extend(["4", "2 1 1 3"])
+    m = M.read_uai(w("\n".join(L) + "\n"))
+    r = M.restrict(m, {})
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
+    pl, est = sel["chosen"]
+    ctx = A.Ctx(180)
+
+    class Cand:
+        rank = 1
+        signs = [-1]
+        gammas = [Fr(1, 10)]
+        features = [{v: [Fr(-1), Fr(1)] for v in range(n)}]
+
+    (Zlo, Zhi), mk, meta = G.run(pl, r.factors, r.card, Cand(), 1,
+                                 set(r.free), ctx)
+    assert Zlo > 0 and Zhi >= Zlo
+    for v in range(n):
+        lo_tot = sum(mk.get((v, a), (Fr(0), Fr(0)))[0] for a in range(2))
+        hi_tot = sum(mk.get((v, a), (Fr(0), Fr(0)))[1] for a in range(2))
+        assert lo_tot <= Zhi and hi_tot >= Zlo, (v, lo_tot, hi_tot)
+        for a in range(2):
+            lo, hi = mk.get((v, a), (Fr(0), Fr(0)))
+            assert lo >= 0 and hi >= lo, "weights must stay nonnegative"

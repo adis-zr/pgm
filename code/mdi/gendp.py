@@ -110,60 +110,82 @@ def run(plan, factors, card, cand, Q, queries, ctx: A.Ctx, deadline=None,
                 w *= e
             if dead:
                 continue
-            # this bag's own forgotten statistics, inserted ONCE here
             local_stat = 0
             for v in forget:
                 local_stat += kq[v][digits[bpos[v]]]
             soff = 0
             for k, v in enumerate(sep):
                 soff += digits[bpos[v]] * sst[k]
-            # join the children: convolve their DISJOINT statistics exactly
-            partials = [((), Fr(1), 0)]
+
+            # ---- the child offsets at this bag assignment ----
+            coffs = []
             for (c, tab) in inc:
                 cb = bags[c]
                 cst = _strides(tuple(card[v] for v in cb.separator))
-                coff = 0
+                o = 0
                 for k, v in enumerate(cb.separator):
-                    coff += digits[bpos[v]] * cst[k]
+                    o += digits[bpos[v]] * cst[k]
+                coffs.append(o)
+
+            # ---- ORDINARY join: convolve every child's unmarked distribution
+            partials = [(Fr(1), 0)]
+            for ci, (c, tab) in enumerate(inc):
                 nxt = []
-                for (_, pw, ps) in partials:
+                for (pw, ps) in partials:
                     for (ck, cs), cw in tab.items():
-                        if ck != coff:
+                        if ck != coffs[ci]:
                             continue
-                        nxt.append(((), pw * cw, ps + cs))
+                        nxt.append((pw * cw, ps + cs))
                 partials = nxt
                 if not partials:
                     break
-            for (_, pw, ps) in partials:
+            for (pw, ps) in partials:
                 key = (soff, ps + local_stat)
-                val = w * pw
-                out[key] = out.get(key, Fr(0)) + val
-            # markers: a variable forgotten here, or carried from a child
+                out[key] = out.get(key, Fr(0)) + w * pw
+
+            # ---- MARKED join: exactly ONE child supplies its marked
+            # distribution and EVERY OTHER child supplies its ordinary one.
+            #
+            # The previous code multiplied a child's marked mass by `w` alone,
+            # dropping every sibling's contribution. On a star with three
+            # leaves that made the marked masses sum to 7 instead of the
+            # correct 91, while the partition function stayed right.
             for v in forget:
                 if v not in queries:
                     continue
                 st = digits[bpos[v]]
-                for (_, pw, ps) in partials:
+                for (pw, ps) in partials:
                     key = (soff, ps + local_stat)
                     mk = out_marks.setdefault((v, st), {})
                     mk[key] = mk.get(key, Fr(0)) + w * pw
-            for (c, tab) in inc:
-                cmk = marks.get((c, src), {})
-                cb = bags[c]
-                cst = _strides(tuple(card[v] for v in cb.separator))
-                coff = 0
-                for k, v in enumerate(cb.separator):
-                    coff += digits[bpos[v]] * cst[k]
+            for mi, (mc, mtab) in enumerate(inc):
+                cmk = marks.get((mc, src), {})
+                if not cmk:
+                    continue
+                # the product of the OTHER children's ordinary distributions
+                others = [(Fr(1), 0)]
+                for ci, (c, tab) in enumerate(inc):
+                    if ci == mi:
+                        continue
+                    nxt = []
+                    for (pw, ps) in others:
+                        for (ck, cs), cw in tab.items():
+                            if ck != coffs[ci]:
+                                continue
+                            nxt.append((pw * cw, ps + cs))
+                    others = nxt
+                    if not others:
+                        break
+                if not others:
+                    continue
                 for (v, st), tabm in cmk.items():
+                    mk = out_marks.setdefault((v, st), {})
                     for (ck, cs), cw in tabm.items():
-                        if ck != coff:
+                        if ck != coffs[mi]:
                             continue
-                        # the sibling weights that accompany this marker
-                        for (_, pw, ps) in partials:
-                            pass
-                        key = (soff, cs + local_stat)
-                        mk = out_marks.setdefault((v, st), {})
-                        mk[key] = mk.get(key, Fr(0)) + w * cw
+                        for (ow, os) in others:
+                            key = (soff, cs + os + local_stat)
+                            mk[key] = mk.get(key, Fr(0)) + w * cw * ow
             if len(out) > cap:
                 raise Declined("message support %d exceeded the %d cap"
                                % (len(out), cap))
