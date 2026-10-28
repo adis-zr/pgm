@@ -260,8 +260,12 @@ def check_composed_publication(restricted, regions, coarse, rds, queries,
     # --- SCHEMA first. `for s in range(len(rows))` silently passes an EMPTY
     # row: zero iterations, zero failures, accepted. Every requested variable
     # must publish a complete, well-formed, in-range row.
+    # `restricted.card` is a DICT keyed by ORIGINAL variable id, and those ids
+    # are not dense after conditioning: pinning X0 leaves free = [1, 2], so
+    # `v < len(restricted.card)` rejected a valid query for X2 against a
+    # length of 2. Test MEMBERSHIP, never an index range.
     card = {v: restricted.card[v] for v in sorted(queries)
-            if v < len(restricted.card)}
+            if v in restricted.card}
     schema = validate_published_rows(published, card, queries)
     if schema:
         return False, schema, {"schema_rejected": True}

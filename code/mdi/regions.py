@@ -205,6 +205,13 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
     icards = [card[v] for v in interior]
     _seen = 0
     _ops = 0          # MEASURED exact-rational arithmetic
+    # The deadline must be tested in the INTERIOR loop as well. A CLOSED
+    # region has no boundary variables, so the outer loop runs exactly once
+    # and an outer-only check fired zero times while 4,096 interior
+    # assignments executed: the callback was never invoked even when already
+    # expired.
+    if deadline is not None:
+        deadline()
     for bcombo in itertools.product(*[range(c) for c in bcards]):
         if deadline is not None:
             _seen += 1
@@ -213,7 +220,12 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
         b = tuple(bcombo)
         tot = Fr(0)
         mk = {key: Fr(0) for key in want}
+        _iseen = 0
         for icombo in itertools.product(*[range(c) for c in icards]):
+            if deadline is not None:
+                _iseen += 1
+                if (_iseen & 0xFF) == 0:
+                    deadline()
             a = dict(zip(boundary, bcombo))
             a.update(dict(zip(interior, icombo)))
             w = Fr(1)
@@ -246,6 +258,11 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
                 "individual terms passing the cap is not sufficient"
                 % K.CAPS["rational_bit_length"])
         A[b] = tot
+        if budget is not None:
+            # charge the DECLARED shared allocation counter for each stored
+            # mass and marker entry; the counters existed but were never used,
+            # so a local_mass_entries limit of 1 did not stop construction
+            budget.charge("local_mass_entries", 1, "region_data mass")
         for key in want:
             if mk[key] != 0:
                 if not bitlen_ok(mk[key]):
@@ -253,6 +270,9 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
                         "ACCUMULATED marked mass exceeded the %d-bit rational "
                         "cap" % K.CAPS["rational_bit_length"])
                 marks[key][b] = mk[key]
+                if budget is not None:
+                    budget.charge("local_mass_entries", 1,
+                                  "region_data marker")
     removed = nb - len(A)
     # sum_a N_{i,a}(b) == A(b) for every boundary assignment (checked invariant)
     for v in region:

@@ -270,8 +270,13 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                                       "lower bound (inconclusive, NOT impossibility)" % rt,
                             "elapsed_s": time.time() - t0})
                 return out
-        # total evidence weight interval (product over components x exact constant)
-        Zlo, Zhi = Fr(r.constant), Fr(r.constant)
+        # Total evidence weight: the product over components, times the exact
+        # pinned constant, TIMES the exact scale that preprocessing removed.
+        # `pre_scale` was recorded but never applied, so unary [2,2] reported
+        # an original weight near 2 where the truth is 4. Marginals were
+        # unaffected because the scale cancels in a ratio, but the published
+        # normalizer was wrong by exactly that factor.
+        Zlo, Zhi = Fr(r.constant) * Fr(pre_scale), Fr(r.constant) * Fr(pre_scale)
         for rt, t in comp_weights:
             L = A.lam(t.depth, p)
             if mode == "P":

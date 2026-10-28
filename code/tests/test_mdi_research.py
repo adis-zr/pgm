@@ -2807,49 +2807,101 @@ def test_r4_pipeline_selection_is_priced_not_ratio():
                                  "measured_calibration", "forecast"), (key, c)
 
 
-def test_r4_plan_loader_rejects_fourteen_malformed_mutations():
-    """The loader must be strict and SEMANTIC: types, booleans, the complete
-    prerequisite graph, nonnegative bounded allocations, valid precision and
-    range, exact scopes. A claim flag is never evidence a proof was checked."""
+def test_r6_plan_loader_accepts_a_clean_base_then_rejects_each_mutation():
+    """Each rejection control must FIRST accept its valid clean base, then
+    change ONE thing and assert the NAMED reason.
+
+    The previous version's base record was already invalid (name "x" against
+    kind "identity", executor_id "e" with no module reference), so all
+    fourteen mutations rejected on the same unrelated name/kind predicate and
+    the test validated nothing about the fields it named.
+    """
     import json
     from mdi import plantype as PT
-    rec = PT.PlanRecord(
-        kind="identity", name="x", model_sha256="a" * 64,
-        evidence_sha256="b" * 64, query_sha256="c" * 64,
-        preprocess_identity={"scale": "1"}, factor_ownership=[(0, "b")],
-        factor_scopes=[(0, (0, 1), (2, 2))], region_membership=[],
-        cell_membership=[], allocations={"t": Fr(1, 1000)},
-        executor_id="e", checker_id="k",
-        numerical={"precision": 64, "mode": "P", "emin": -10, "emax": 10},
-        cost_counters={"a": 1}, storage_schedule={"b": 2},
-        rejected_alternatives=[]).validate()
+
+    def base():
+        return PT.PlanRecord(
+            kind="identity", name="identity", model_sha256="a" * 64,
+            evidence_sha256="b" * 64, query_sha256="c" * 64,
+            preprocess_identity={"scale": "1"},
+            factor_ownership=[(0, "bag")],
+            factor_scopes=[(0, (0, 1), (2, 2))], region_membership=[],
+            cell_membership=[], allocations={"t": Fr(1, 1000)},
+            executor_id="mdi.registry:_identity_executor",
+            checker_id="mdi.registry:_identity_checker",
+            numerical={"precision": 64, "mode": "P", "emin": -10, "emax": 10},
+            cost_counters={"producer_upward_ops": 1},
+            storage_schedule={"peak_live_entries": 2},
+            rejected_alternatives=[]).validate()
+
+    # THE CLEAN BASE MUST LOAD, and round-trip byte-identically
+    rec = base()
+    txt = rec.to_json()
+    back = PT.PlanRecord.from_json(txt)
+    assert back.to_json() == txt, "the clean base must round-trip"
+
     muts = [
-        ("negative allocation", lambda d: d.update(allocations={"t": "-1/1000"})),
-        ("allocation > 1", lambda d: d.update(allocations={"t": "3/2"})),
-        ("non-boolean property", lambda d: d["properties"].update(selected=1)),
+        ("negative allocation", lambda d: d.update(allocations={"t": "-1/1000"}),
+         ("alloc", "negative", "range")),
+        ("allocation > 1", lambda d: d.update(allocations={"t": "3/2"}),
+         ("alloc", "range", "1")),
+        ("non-boolean property", lambda d: d["properties"].update(selected=1),
+         ("BOOLEAN", "boolean")),
         ("inconsistent flags",
-         lambda d: d["properties"].update(independently_verified=True)),
-        ("incomplete properties", lambda d: d["properties"].pop("selected")),
+         lambda d: d["properties"].update(independently_verified=True),
+         ("prerequisite",)),
+        ("incomplete properties", lambda d: d["properties"].pop("selected"),
+         ("incomplete",)),
         ("bad precision",
-         lambda d: d.update(numerical={"precision": 1, "mode": "P"})),
+         lambda d: d.update(numerical={"precision": 1, "mode": "P"}),
+         ("precision",)),
         ("bad mode",
-         lambda d: d.update(numerical={"precision": 64, "mode": "Q"})),
+         lambda d: d.update(numerical={"precision": 64, "mode": "Q"}),
+         ("mode",)),
         ("emin>=emax", lambda d: d.update(
-            numerical={"precision": 64, "mode": "P", "emin": 10, "emax": -10})),
-        ("empty executor", lambda d: d.update(executor_id="")),
-        ("dup scope var", lambda d: d.update(factor_scopes=[[0, [1, 1], [2, 2]]])),
+            numerical={"precision": 64, "mode": "P", "emin": 10,
+                       "emax": -10}), ("emin", "emax", "range")),
+        ("empty executor", lambda d: d.update(executor_id=""),
+         ("executor_id",)),
+        ("unknown executor module",
+         lambda d: d.update(executor_id="nonexistent:thing"),
+         ("executor_id", "mdi")),
+        ("dup scope var",
+         lambda d: d.update(factor_scopes=[[0, [1, 1], [2, 2]]]),
+         ("scope", "twice", "duplicate", "repeat")),
         ("zero cardinality",
-         lambda d: d.update(factor_scopes=[[0, [0, 1], [0, 2]]])),
+         lambda d: d.update(factor_scopes=[[0, [0, 1], [0, 2]]]),
+         ("cardinal",)),
         ("scope/card mismatch",
-         lambda d: d.update(factor_scopes=[[0, [0, 1], [2]]])),
-        ("float allocation", lambda d: d.update(allocations={"t": 0.001})),
-        ("bad hash", lambda d: d.update(query_sha256="zz")),
+         lambda d: d.update(factor_scopes=[[0, [0, 1], [2]]]),
+         ("scope", "card", "length")),
+        ("float allocation", lambda d: d.update(allocations={"t": 0.001}),
+         ("alloc", "exact", "rational", "float")),
+        ("bad hash", lambda d: d.update(query_sha256="zz"),
+         ("hex", "digest", "sha")),
+        ("unknown field", lambda d: d.update(surprise=1), ("unknown field",)),
+        ("kind/name disagree", lambda d: d.update(name="regional:x"),
+         ("kind", "name")),
+        ("empty ownership", lambda d: d.update(factor_ownership=[]),
+         ("ownership", "empty")),
+        ("ownership/scope disagree",
+         lambda d: d.update(factor_ownership=[[7, "bag"]]),
+         ("ownership", "scopes", "same")),
+        ("empty cost counters", lambda d: d.update(cost_counters={}),
+         ("cost_counters", "empty")),
+        ("empty storage", lambda d: d.update(storage_schedule={}),
+         ("storage_schedule", "empty")),
+        ("empty numerical", lambda d: d.update(numerical={}),
+         ("numerical", "empty")),
     ]
-    for name, mut in muts:
-        d = json.loads(rec.to_json())
+    for name, mut, expect in muts:
+        d = json.loads(base().to_json())
         mut(d)
-        with pytest.raises(PT.PlanError):
+        with pytest.raises(PT.PlanError) as e:
             PT.PlanRecord.from_json(json.dumps(d))
+        msg = str(e.value).lower()
+        assert any(k.lower() in msg for k in expect), \
+            "%s rejected for an UNRELATED reason: %s" % (name, e.value)
 
 
 def test_r4_arm_driver_uses_the_pipeline():
@@ -4087,3 +4139,437 @@ def test_r5_point_vector_is_feasible_and_checked_on_readback():
     with pytest.raises(ValueError):
         AR._write_point_vector({0: [(Fr(9, 10), Fr(1)), (Fr(9, 10), Fr(1))]},
                                Mdl2(), {}, tempfile.mkdtemp(), "bad")
+
+
+# ===== r5 review: ownership, cover, soundness and accounting regressions =====
+
+def test_r6_preprocessing_rejects_a_missing_synthetic_unary_at_every_size():
+    """R5-1a. `if not em: continue` skipped the check when the output was
+    ABSENT, so a dropped required unary rejected at 12 binary variables but
+    PASSED at 13, 16 and 20."""
+    import copy
+    from mdi import preprocess as PRE
+    for n in (12, 13, 16, 20):
+        facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(2)],
+                         origin=0)]
+        for v in range(1, n):
+            facs.append(M.Factor(scope=(v,), card=(2,),
+                                 table=[Fr(1), Fr(1)], origin=v))
+        m = M.Model(nvars=n, card=[2] * n, factors=facs)
+        m.validate()
+        r = M.restrict(m, {})
+        simp = PRE.simplify(r)
+        assert PRE.verify_identities(r, simp), "the clean base must verify"
+        bad = copy.deepcopy(simp)
+        bad.factors = [f for f in bad.factors
+                       if not (len(f.scope) == 1 and f.scope[0] == 0
+                               and f.origin < 0)]
+        with pytest.raises(PRE.PreprocessError) as e:
+            PRE.verify_identities(r, bad)
+        assert "NO emitted unary" in str(e.value), str(e.value)
+
+
+def test_r6_declined_factor_positive_values_must_be_equal():
+    """R5-1b. An unchanged/declined emitted factor was compared only on ZERO
+    SUPPORT, so changing 3B to 30B certified about 61/63 against a true
+    7/9."""
+    import copy
+    from mdi import preprocess as PRE
+    B = Fr(2) ** 32768
+    facs = [M.Factor(scope=(0, 1), card=(2, 2), table=[B, B, B, 2 * B],
+                     origin=0),
+            M.Factor(scope=(0, 1), card=(2, 2), table=[B, B, B, 3 * B],
+                     origin=1)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    simp = PRE.simplify(r)
+    assert simp.declined_products, "the bit cap must decline this product"
+    assert PRE.verify_identities(r, simp)
+    bad = copy.deepcopy(simp)
+    for f in bad.factors:
+        if f.origin == 1:
+            f.table = [B, B, B, 30 * B]
+            break
+    with pytest.raises(PRE.PreprocessError) as e:
+        PRE.verify_identities(r, bad)
+    assert "CHANGED THE LAW" in str(e.value)
+
+
+def test_r6_synthetic_origin_must_be_the_expected_unary():
+    """R5-1c. A synthetic origin was exempted BEFORE proving the factor is the
+    expected unary on the expected variable, so a pair interaction could take
+    that origin and escape accounting."""
+    import copy
+    from mdi import preprocess as PRE
+    n = 13
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)], origin=v)
+            for v in range(n)]
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    simp = PRE.simplify(r)
+    assert PRE.verify_identities(r, simp)
+    bad = copy.deepcopy(simp)
+    for i, f in enumerate(bad.factors):
+        if len(f.scope) == 1 and f.scope[0] == 0 and f.origin < 0:
+            bad.factors[i] = M.Factor(scope=(0, 1), card=(2, 2),
+                                      table=[Fr(1), Fr(1), Fr(1), Fr(9)],
+                                      origin=f.origin)
+            break
+    with pytest.raises(PRE.PreprocessError) as e:
+        PRE.verify_identities(r, bad)
+    assert "SYNTHETIC origin" in str(e.value)
+
+
+def test_r6_checkers_require_a_cover_of_every_free_variable():
+    """R5-2. The cover checked only REQUESTED variables. With pair table
+    [1,2,3,4] and query {0}, X1 was unowned, its crossing factor was silently
+    skipped, and both checkers accepted [.499,.501] against a truth of
+    (.3,.7)."""
+    from mdi import regional_check as RC, collective_check as CC, regions as R
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    # the exact truth for X0 is (3/10, 7/10)
+    regs = [(0,)]
+    rds = [R.region_data(regs[0], r.card, r.factors, {0})]
+    crs = [R.merge_region(rds[0], r.factors, r.card, Fr(1), {0},
+                          region_of={0: 0}, aggregate=True)]
+    pub = {0: [(Fr(499, 1000), Fr(501, 1000)),
+               (Fr(499, 1000), Fr(501, 1000))]}
+    ok, fails, _ = RC.verify_regional_publication(
+        r, regs, crs, rds, {0}, pub, Fr(0), Fr(1, 100))
+    assert not ok, "0.5 cannot verify a law whose truth is (.3,.7)"
+    assert any("NO region" in x for x in fails), fails
+    ok2, f2, _ = CC.check_composed_publication(
+        r, regs, crs, rds, {0}, pub, Fr(1, 100), Fr(0),
+        regional_radius=Fr(0))
+    assert not ok2
+    assert any("owned by 0 regions" in x for x in f2), f2
+
+
+def test_r6_level2_parent_boundary_uses_child_positions():
+    """R5-3. `dig` runs over ALL children but was indexed with bpos, the
+    position within the BOUNDARY list; it must be cpos. The reviewer's
+    arithmetic: 11/14 - 3585/7168 = 2047/7168 = 0.285575. The LAST site stayed
+    correct, which is why a test checking only the final marginal passed."""
+    from mdi import level2 as L2, regions as R
+    n = 13
+    facs = []
+    for i in range(n - 1):
+        facs.append(M.Factor(scope=(i, i + 1), card=(2, 2),
+                             table=[Fr(2), Fr(1), Fr(1), Fr(2)],
+                             origin=len(facs)))
+    for i in range(n):
+        facs.append(M.Factor(scope=(i,), card=(2,),
+                             table=[Fr(1), Fr(1 + i % 3)], origin=len(facs)))
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Zt, pt = O.exact_all_marginals(r)
+    regs = [(i,) for i in range(n)]
+    rds = [R.region_data(g, r.card, r.factors, set(range(n))) for g in regs]
+    ro = {v: i for i, g in enumerate(regs) for v in g}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), set(range(n)),
+                          region_of=ro, aggregate=True) for i in range(n)]
+    t2 = K.level_radius(2)
+    l2 = L2.build_level2(r, regs, crs, rds, set(range(n)), t2)
+    # the first parent must genuinely have a non-initial boundary child
+    assert len(l2["parents"][0]) > 1
+    Zl, cnt = L2.level2_marginals(r, regs, crs, rds, set(range(n)), l2)
+    # EVERY marker, not just the last site
+    for v in range(n):
+        for s in range(2):
+            q = cnt.get((v, s), Fr(0)) / Zl
+            assert abs(q - pt[v][s]) <= 2 * t2, \
+                (v, s, float(q), float(pt[v][s]))
+
+
+def test_r6_retained_factors_have_exclusive_ownership():
+    """R5-4. res.kept held integer INDICES while composed treated them as
+    Factor objects, so every retained factor was skipped. Dereferencing alone
+    would be wrong: a zero-bearing UNARY was in BOTH res_unary and res.kept,
+    and consuming both squares [0,2,3] into [0,4,9]."""
+    from mdi import modes as MD
+    facs = [M.Factor(scope=(0,), card=(3,), table=[Fr(0), Fr(2), Fr(3)],
+                     origin=0),
+            M.Factor(scope=(0, 1), card=(3, 2),
+                     table=[Fr(1), Fr(2), Fr(2), Fr(1), Fr(1), Fr(1)],
+                     origin=1),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1), Fr(1)], origin=2)]
+    m = M.Model(nvars=2, card=[3, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    ctx = A.Ctx(128)
+    cands, info = MD.propose_modes(r.free, r.factors, r.card)
+    assert cands, info
+    res = MD.build_residual(r.free, r.factors, r.card, cands[0], ctx)
+    # a UNARY is never retained: res_unary owns it
+    for fi in res.kept:
+        assert len(r.factors[fi].scope) > 1, \
+            "unary factor %d retained despite res_unary owning it" % fi
+    assert res.detail.get("ownership_exclusive") is True
+
+
+def test_r6_disconnected_residual_declines_instead_of_multiplying():
+    """R5-4. Per-component contraction is UNSOUND: the collective statistic S
+    sums over every variable, so exp(-gamma S^2/2) couples all of them and
+    multiplying per-component totals drops the cross terms of S^2."""
+    import inspect
+    from mdi import gendp as G
+    src = inspect.getsource(G.run)
+    assert "disconnected components" in src
+    assert "cross terms" in src
+
+
+def test_r6_composed_declines_rather_than_publishing_an_impossible_state():
+    """R5-4. With a ternary constraint forcing X0 = 1, r5 published X0 = 0 in
+    [.01727, .01732] although its true probability is exactly ZERO."""
+    import itertools
+    from mdi import composed as CX, regions as R
+    ctx = A.Ctx(160)
+    n = 4
+    facs = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            facs.append(M.Factor(scope=(i, j), card=(2, 2),
+                                 table=[Fr(3), Fr(2), Fr(2), Fr(3)],
+                                 origin=len(facs)))
+    tab = [Fr(1) if a == 1 else Fr(0)
+           for a in range(2) for b in range(2) for c in range(2)]
+    facs.append(M.Factor(scope=(0, 1, 2), card=(2, 2, 2), table=tab,
+                         origin=len(facs)))
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z = Fr(0)
+    ct = {}
+    for combo in itertools.product(range(2), repeat=n):
+        w = Fr(1)
+        for f in r.factors:
+            off = 0
+            for k, v in enumerate(f.scope):
+                off = off * f.card[k] + combo[v]
+            w *= f.table[off]
+        if w == 0:
+            continue
+        Z += w
+        for v in range(n):
+            ct[(v, combo[v])] = ct.get((v, combo[v]), Fr(0)) + w
+    assert ct.get((0, 0), Fr(0)) == 0, "X0=0 must be impossible"
+    regs = [(i,) for i in range(n)]
+    rds = [R.region_data(g, r.card, r.factors, set(range(n))) for g in regs]
+    ro = {v: i for i, g in enumerate(regs) for v in g}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), set(range(n)),
+                          region_of=ro, aggregate=True) for i in range(n)]
+    try:
+        out, meta = CX.run(r, regs, crs, rds, set(range(n)), ctx, Fr(1, 100))
+    except CX.Declined:
+        return                      # a bounded decline is correct
+    # if it DOES publish, every original probability must be enclosed
+    for v in sorted(out):
+        for s, (lo, hi) in enumerate(out[v]):
+            t = ct.get((v, s), Fr(0)) / Z
+            assert lo <= t <= hi, (v, s, float(lo), float(t), float(hi))
+
+
+def test_r6_trig_enclosures_are_exact_not_float_validated():
+    """R5-5. gmpy2.mpfr(mpq(...)) rounds the ARGUMENT, and argument and
+    function were rounded in the SAME direction: on a decreasing branch that
+    composition does not bound the exact-argument value. sin(197658/49435) at
+    160 bits returned an upper bound 9.42e-50 BELOW a rigorous reference.
+
+    This test compares EXACT RATIONALS with no float tolerance, because
+    binary64 conversion is exactly what hid the original defect."""
+    import gmpy2
+    from mdi import collective as CO
+
+    def reference(q, which, extra=512):
+        mq = gmpy2.mpq(q.numerator, q.denominator)
+        fn = gmpy2.sin if which == "sin" else gmpy2.cos
+        cd = gmpy2.context(precision=extra, round=gmpy2.RoundDown)
+        cu = gmpy2.context(precision=extra, round=gmpy2.RoundUp)
+        with cd:
+            ad = gmpy2.mpfr(mq)
+        with cu:
+            au = gmpy2.mpfr(mq)
+        da = max(abs(q - A.exact_fr(ad)), abs(A.exact_fr(au) - q))
+        with cd:
+            lo = min(fn(ad), fn(au))
+        with cu:
+            hi = max(fn(ad), fn(au))
+        return A.exact_fr(lo) - da, A.exact_fr(hi) + da
+
+    q = Fr(197658, 49435)
+    for p in (24, 64, 128, 160):
+        ctx = A.Ctx(p)
+        for which, enc in (("sin", CO._sin_enclose),
+                           ("cos", CO._cos_enclose)):
+            elo, ehi = enc(q, q, ctx)
+            rlo, rhi = reference(q, which)
+            assert elo <= rlo and rhi <= ehi, (p, which, str(elo), str(rlo))
+    # the two r4 extrema intervals, compared EXACTLY
+    ctx = A.Ctx(160)
+    clo, _ = CO._cos_enclose(Fr(-314159266, 100000000),
+                             Fr(-62831853, 20000000), ctx)
+    assert clo <= Fr(-1), str(clo)
+    slo, _ = CO._sin_enclose(Fr(-1570796327, 1000000000),
+                             Fr(-785398163, 500000000), ctx)
+    assert slo <= Fr(-1), str(slo)
+
+
+def test_r6_identity_price_is_a_true_upper_bound():
+    """R5-6. Readout was priced once per BAG but executed once per FREE
+    VARIABLE, each a full sweep of its home bag. The two-variable control
+    priced 35 producer operations and executed 45."""
+    from mdi import pricing as PR
+    cases = [
+        "MARKOV\n2\n2 2\n3\n1 0\n1 1\n2 0 1\n2\n1 3\n2\n1 1\n4\n2 1 1 2\n",
+        ("MARKOV\n3\n2 2 2\n5\n1 0\n1 1\n1 2\n2 0 1\n2 1 2\n"
+         "2\n1 3\n2\n1 2\n2\n1 1\n4\n2 1 1 2\n4\n2 1 1 2\n"),
+        ("MARKOV\n4\n2 2 2 2\n7\n1 0\n1 1\n1 2\n1 3\n2 0 1\n2 1 2\n2 2 3\n"
+         "2\n1 3\n2\n1 2\n2\n1 1\n2\n1 2\n"
+         "4\n2 1 1 2\n4\n2 1 1 2\n4\n2 1 1 2\n"),
+    ]
+    for txt in cases:
+        m = M.read_uai(w(txt))
+        r = M.restrict(m, {})
+        sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                            K.RESOURCES["arm_rss_bytes"])
+        pl, est = sel["chosen"]
+        rec = PR.price_identity_plan(pl, est, len(r.free), 64)
+        priced = sum(int(rec.counters[k].value)
+                     for k in ("producer_upward_ops",
+                               "producer_downward_ops", "readout_ops"))
+        res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                      deadline_s=30, run_checker=False)
+        executed = res["ops"]["mul"] + res["ops"]["add"]
+        assert priced >= executed, (priced, executed, txt[:24])
+
+
+def test_r6_closed_region_checks_its_interior_deadline():
+    """R5-7. A CLOSED region has no boundary variables, so the outer loop runs
+    once and an outer-only deadline check fired ZERO times while 4,096
+    interior assignments executed."""
+    from mdi import regions as R
+    calls = [0]
+
+    def expired():
+        calls[0] += 1
+        raise RuntimeError("EXPIRED")
+
+    n = 12
+    facs = []
+    for i in range(n):
+        j = (i + 1) % n
+        facs.append(M.Factor(scope=(min(i, j), max(i, j)), card=(2, 2),
+                             table=[Fr(3), Fr(1), Fr(1), Fr(3)],
+                             origin=len(facs)))
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    with pytest.raises(RuntimeError):
+        R.region_data(list(range(n)), r.card, r.factors, set(range(n)),
+                      deadline=expired)
+    assert calls[0] >= 1
+
+
+def test_r6_shared_local_mass_counter_is_charged():
+    """R5-7. The declared allocation counters existed but were never used: a
+    local_mass_entries limit of 1 did not stop construction and `used` stayed
+    empty."""
+    from mdi import regions as R, budget as B
+    bg = B.Budget(wall_s=60.0, limits={"local_mass_entries": 1})
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    with pytest.raises(B.BudgetExceeded):
+        R.region_data([0, 1], r.card, r.factors, {0, 1}, budget=bg)
+    assert bg.used.get("local_mass_entries", 0) >= 1
+
+
+def test_r6_expired_preprocessing_returns_a_typed_refusal():
+    """R5-7. The exception path referenced `rejected` before initialization,
+    so an expired preprocessing deadline raised UnboundLocalError instead of a
+    typed refusal."""
+    import time as _t
+    from mdi import pipeline as PLN
+    import mdi.preprocess as PRE
+    import mdi.registry            # noqa: F401
+    m = M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n"))
+    orig = PRE.simplify
+
+    def slow(*a, **k):
+        _t.sleep(0.020)
+        return orig(*a, **k)
+
+    PRE.simplify = slow
+    try:
+        res = PLN.solve(m, {}, wall_s=0.010, cap_bytes=1 << 30)
+    finally:
+        PRE.simplify = orig
+    assert res.status == "RESOURCE_STOP", res.status
+
+
+def test_r6_normalizer_includes_the_preprocessing_scale():
+    """R5 closeout. `pre_scale` was recorded but never applied, so unary
+    [2,2] reported an original evidence weight near 2 where the truth is 4."""
+    for tab, want in (([Fr(2), Fr(2)], Fr(4)),
+                      ([Fr(1), Fr(3)], Fr(4)),
+                      ([Fr(3), Fr(3), Fr(3)], Fr(9))):
+        facs = [M.Factor(scope=(0,), card=(len(tab),), table=tab, origin=0)]
+        m = M.Model(nvars=1, card=[len(tab)], factors=facs)
+        m.validate()
+        res = S.solve(m, {}, eps=Fr(1, 100), mode="I", cap_bytes=1 << 30,
+                      deadline_s=30)
+        lo, hi = res["evidence_weight_interval"]
+        assert lo <= want <= hi, (str(lo), str(want), str(hi))
+
+
+def test_r6_conditional_query_with_non_dense_ids_is_not_refused():
+    """R5 closeout. `v < len(restricted.card)` treated a DICT keyed by
+    original id as an index range, so after pinning X0 a valid query for X2
+    was refused against a length of 2."""
+    from mdi import collective_check as CC, regions as R
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(1)], origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1), Fr(2)], origin=1),
+            M.Factor(scope=(2,), card=(2,), table=[Fr(1), Fr(3)], origin=2)]
+    m = M.Model(nvars=3, card=[2, 2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {0: 0})
+    assert r.free == [1, 2]
+    regs = [(v,) for v in r.free]
+    rds = [R.region_data(g, r.card, r.factors, {2}) for g in regs]
+    ro = {v: i for i, g in enumerate(regs) for v in g}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {2},
+                          region_of=ro, aggregate=True)
+           for i in range(len(regs))]
+    pub = {2: [(Fr(2495, 10000), Fr(2505, 10000)),
+               (Fr(7495, 10000), Fr(7505, 10000))]}
+    ok, fails, _ = CC.check_composed_publication(
+        r, regs, crs, rds, {2}, pub, Fr(1, 100), Fr(0),
+        regional_radius=Fr(0))
+    assert ok, fails
+
+
+def test_r6_negative_fourier_has_its_own_oscillatory_lattice():
+    """R5-8. Negative Fourier inherited the positive-mode exp(gamma R^2/2)
+    magnitude factor and shifted tail. At g=1, R=10, delta=1e-3 the old
+    construction REFUSED even at a 2^-40 step, because e^50 multiplies every
+    bound. A unit-modulus phase needs neither."""
+    from mdi import collective as CO
+    lat = CO.fourier_lattice(Fr(1), Fr(10), Fr(1, 1000))
+    assert lat["total_bound"] <= Fr(1, 1000), lat
+    assert lat["nodes"] > 1
+    # my derivative bound matches the reviewer's 227/5 exactly
+    assert CO.fourier_second_derivative_bound(Fr(1), Fr(10)) == Fr(227, 5)
+    # the positive-mode construction still refuses this case, which is why a
+    # dedicated oscillatory lattice was needed
+    with pytest.raises(CO.Declined):
+        CO.gf_lattice(Fr(1), Fr(10), Fr(1, 1000),
+                      second_derivative_bound=Fr(227, 5))

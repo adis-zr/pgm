@@ -70,6 +70,10 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                           "local_mass_entries": K.CAPS["local_mass_entries"]},
                   rss_fn=S._rss_bytes, rss_limit=cap_bytes)
     stages = {}
+    # `rejected` is referenced by every stage's RESOURCE_STOP path, so it must
+    # exist before the first stage can fail. An expired preprocessing deadline
+    # raised UnboundLocalError instead of a typed refusal.
+    rejected = []
     out = Outcome(status="INIT")
 
     # ---------------- stage 1: parse and restrict ----------------

@@ -517,6 +517,77 @@ def _scale_interval(lo: Fr, hi: Fr, wl: Fr, wu: Fr):
     return min(c), max(c)
 
 
+def fourier_lattice(gamma: Fr, R: Fr, delta: Fr):
+    """Lattice and certified error for the OSCILLATORY (negative-mode) average
+
+        exp(-g S^2 / 2) = E_Z exp(i sqrt(g) Z S),   |S| <= R.
+
+    The integrand is phi(z) times a product of UNIT-MODULUS phases, so
+
+        |F(z)| <= phi(z) <= 1/sqrt(2 pi) < 2/5
+
+    with NO exp(a^2/2) growth factor and NO shifted mean. The positive-mode
+    construction bounds |F| by e^{a^2/2}/sqrt(2 pi) with a = sqrt(g) R and
+    truncates around a shifted centre, because there the per-variable sums
+    grow like e^{sqrt(g) z R}. Forcing those constants onto the oscillatory
+    integrand made the lattice unaffordable: at g = 1, R = 10, delta = 1e-3 it
+    refused even at a 2^-40 step, since e^{50} multiplies every bound.
+
+    Tails: the two tails beyond |z| > T are at most 2 * phi-tail, and for
+    T >= 1, int_{|z|>T} phi <= 2 phi(T)/T <= (4/5) e^{-T^2/2} / T.
+
+    Discretization: trapezoid error on [-T, T] with step h is at most
+    (2T) h^2 M2 / 12 where M2 bounds the SECOND DERIVATIVE of the oscillatory
+    integrand (fourier_second_derivative_bound).
+
+    delta is split equally between tail and discretization, solved exactly.
+    """
+    g, Rr, d = Fr(gamma), Fr(R), Fr(delta)
+    if g <= 0 or Rr < 0:
+        raise Declined("fourier_lattice needs gamma>0 and R>=0")
+    if d <= 0:
+        raise Declined("fourier_lattice needs a positive delta")
+    half = d / 2
+    M2 = fourier_second_derivative_bound(g, Rr)
+
+    # tail: (4/5) e^{-T^2/2} / T <= delta/2, exact comparison
+    T = 1
+    tail_up = None
+    while T < 4096:
+        tail_up = Fr(4, 5) * _exp_upper(-Fr(T * T, 2)) / Fr(T)
+        if tail_up <= half:
+            break
+        T += 1
+    else:
+        raise Declined("no oscillatory truncation radius below 4096 meets "
+                       "delta=%s" % d)
+
+    # discretization: (2T) h^2 M2 / 12 <= delta/2 over dyadic h
+    MAX_BITS = 40
+    bits, hq, disc_up = 1, Fr(1, 2), None
+    while bits <= MAX_BITS:
+        hq = Fr(1, 1 << bits)
+        disc_up = Fr(2 * T) * hq * hq * M2 / 12
+        if disc_up <= half:
+            break
+        bits += 1
+    if disc_up is None or disc_up > half:
+        raise Declined(
+            "oscillatory lattice cannot meet delta=%s: even a 2^-%d step "
+            "leaves %s against %s" % (d, MAX_BITS, disc_up, half))
+
+    total = tail_up + disc_up
+    if total > d:
+        raise Declined("oscillatory lattice total bound %s exceeds delta %s"
+                       % (total, d))
+    nodes = 2 * int(Fr(T) / hq) + 1
+    return {"T": T, "h": hq, "nodes": nodes,
+            "tail_bound": tail_up, "discretization_bound": disc_up,
+            "total_bound": total, "second_derivative_bound": M2,
+            "derivation": "unit-modulus oscillatory integrand: |F| <= phi, no "
+                          "exp(gamma R^2/2) factor and no shifted centre"}
+
+
 def fourier_second_derivative_bound(g: Fr, Rk: Fr) -> Fr:
     """A rigorous bound on |d^2/dz^2 [ phi(z) * exp(i sqrt(g) z S) ]| for
     |S| <= Rk, used for the lattice discretization error.
@@ -581,7 +652,9 @@ def fourier_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
         Rk += max(abs(Fr(x)) for x in f)
     # the OSCILLATORY discretization bound, not the positive-Gaussian constant
     m2 = fourier_second_derivative_bound(g, Rk)
-    lat = gf_lattice(g, Rk, delta, second_derivative_bound=m2)
+    # the OSCILLATORY lattice: a unit-modulus phase needs neither the
+    # positive-mode exp(gamma R^2 / 2) magnitude factor nor a shifted tail
+    lat = fourier_lattice(g, Rk, delta)
     nodes = lat["nodes"]
     if cap_nodes and nodes > cap_nodes:
         raise Declined("fourier lattice needs %d nodes, cap %d"
