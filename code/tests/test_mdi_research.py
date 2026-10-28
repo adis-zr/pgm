@@ -1694,12 +1694,27 @@ def test_independent_regional_checker_verifies_and_rejects():
     t1 = K.level_radius(1)
     Z, counts = RC.independent_contract(r, regs, crs, rds, set(r.free))
     assert Z > 0
-    pub = {v: [(counts.get((v, s), Fr(0)) / Z,) * 2 for s in range(2)]
-           for v in sorted(r.free)}
+    # A publication must CONTAIN the checker's enclosure, so it has to be at
+    # least as wide as the charged transformation radius. A degenerate point
+    # interval is correctly REJECTED.
+    point = {v: [(counts.get((v, s), Fr(0)) / Z,) * 2 for s in range(2)]
+             for v in sorted(r.free)}
+    ok0, f0, _ = RC.verify_regional_publication(
+        r, regs, crs, rds, set(r.free), point, t1, Fr(1, 100))
+    assert not ok0, "a degenerate point cannot contain a width-2t enclosure"
+    assert any("does NOT contain" in x for x in f0), f0[:3]
+    pub = {}
+    for v in sorted(r.free):
+        rows = []
+        for s in range(2):
+            q = counts.get((v, s), Fr(0)) / Z
+            rows.append((max(Fr(0), q - t1), min(Fr(1), q + t1)))
+        pub[v] = rows
     ok, fails, meta = RC.verify_regional_publication(
         r, regs, crs, rds, set(r.free), pub, t1, Fr(1, 100))
     assert ok, fails[:4]
     assert meta["regions_rebuilt"] == len(regs)
+    assert meta["independent_enclosure"]
     # a corrupted publication must be rejected
     bad = {v: list(rows) for v, rows in pub.items()}
     v0 = sorted(bad)[0]
@@ -2305,3 +2320,84 @@ def test_r4_declined_product_keeps_both_factors_on_a_different_shape():
     for v in r.free:
         assert p[v] == p2[v], v
     assert PRE.verify_identities(r, simp)
+
+
+def test_r4_regional_checker_requires_containment_not_widening():
+    """Review 4 defect 2: the checker must derive its OWN enclosure and require
+    the publication to CONTAIN it. Widening the submitted interval by the
+    allowance accepts any publication near the coarse answer, including a wrong
+    one, and lets a corrupted producer pass by submitting its own number."""
+    from mdi import regional_check as RC
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    t1 = K.level_radius(1)
+    Z, counts = RC.independent_contract(r, regs, crs, rds, set(r.free))
+    # a publication shifted by 0.131, which the old direction accepted
+    bad = {}
+    for v in sorted(r.free):
+        rows = []
+        for s in range(2):
+            q = counts.get((v, s), Fr(0)) / Z
+            rows.append((max(Fr(0), q + Fr(131, 1000) - t1),
+                         min(Fr(1), q + Fr(131, 1000) + t1)))
+        bad[v] = rows
+    ok, fails, _ = RC.verify_regional_publication(
+        r, regs, crs, rds, set(r.free), bad, t1, Fr(1, 100))
+    assert not ok, "a shifted publication must be rejected"
+    assert any("does NOT contain" in x for x in fails), fails[:2]
+
+
+def test_r4_regional_checker_rejects_malformed_rows_and_zero_evidence():
+    from mdi import regional_check as RC
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    t1 = K.level_radius(1)
+    for pub, why in [
+        ({v: [] for v in sorted(r.free)}, "EMPTY"),
+        ({v: [(Fr(9, 10), Fr(1, 10))] * 2 for v in sorted(r.free)}, "INVERTED"),
+        ({v: [(Fr(-1), Fr(1, 2)), (Fr(0), Fr(1, 2))] for v in sorted(r.free)},
+         "outside [0,1]"),
+    ]:
+        ok, fails, _ = RC.verify_regional_publication(
+            r, regs, crs, rds, set(r.free), pub, t1, Fr(1, 100))
+        assert not ok, why
+        assert fails
+    # a model with zero evidence weight must be refused before numerical work
+    txt = ("MARKOV\n3\n2 2 2\n3\n2 0 1\n2 1 2\n2 0 2\n"
+           "4\n1 0 0 1\n4\n1 0 0 1\n4\n0 1 1 0\n")
+    m2 = M.read_uai(w(txt))
+    r2 = M.restrict(m2, {})
+    pub2 = {v: [(Fr(0), Fr(1, 2))] * 2 for v in range(3)}
+    # a contradictory model has no coarse structure to pass in; the guard is on
+    # the restricted model itself
+    assert r2.impossible_factor is None, "individually nonzero factors"
+    Zt, _ = O.exact_all_marginals(r2)
+    assert Zt == 0, "but globally contradictory"
+
+
+def test_r4_regional_checker_rebuilds_its_own_boundary_order():
+    """Trusting producer boundary metadata let a corrupted ordering pass an
+    exact-coarsening example with error about 0.131."""
+    from mdi import regional_check as RC
+    import copy
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    t1 = K.level_radius(1)
+    Z, counts = RC.independent_contract(r, regs, crs, rds, set(r.free))
+    pub = {}
+    for v in sorted(r.free):
+        rows = []
+        for s in range(2):
+            q = counts.get((v, s), Fr(0)) / Z
+            rows.append((max(Fr(0), q - t1), min(Fr(1), q + t1)))
+        pub[v] = rows
+    ok, _, _ = RC.verify_regional_publication(
+        r, regs, crs, rds, set(r.free), pub, t1, Fr(1, 100))
+    assert ok
+    # corrupt the producer's boundary ORDER: the checker must notice
+    bad_rds = copy.deepcopy(rds)
+    for rd in bad_rds:
+        if len(rd.boundary) > 1:
+            rd.boundary = tuple(reversed(rd.boundary))
+            break
+    ok2, fails2, _ = RC.verify_regional_publication(
+        r, regs, crs, bad_rds, set(r.free), pub, t1, Fr(1, 100))
+    assert not ok2, "a corrupted producer boundary order must be detected"
+    assert any("boundary order" in x for x in fails2), fails2[:2]

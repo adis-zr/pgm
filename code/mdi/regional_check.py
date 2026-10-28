@@ -128,7 +128,20 @@ def independent_contract(restricted, regions, coarse, rds, queries,
 def verify_regional_publication(restricted, regions, coarse, rds, queries,
                                 published, t_level, eps, deadline=None):
     """Full §D.7 check: rebuild every region, independently contract the reduced
-    model, and require the published intervals to contain the result."""
+    model, and require the publication to CONTAIN the checker's enclosure."""
+    # original model and evidence validation BEFORE any numerical work
+    if restricted.impossible_factor is not None:
+        return False, ["a restricted factor is identically zero: the "
+                       "conditioning event has probability zero, so no "
+                       "conditional distribution exists"], None
+    if restricted.constant == 0:
+        return False, ["a fully pinned factor is exactly zero: zero evidence "
+                       "weight"], None
+    if not queries:
+        return False, ["no queries requested"], None
+    missing = [v for v in sorted(queries) if v not in published]
+    if missing:
+        return False, ["variables %s have no published row" % missing[:8]], None
     region_of = {}
     for i, reg in enumerate(regions):
         for v in reg:
@@ -136,7 +149,19 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
     rho_cap = K.region_distortion_budget(t_level, len(regions))
     problems = []
     rebuilt = []
+    own_rds = []
     for i, reg in enumerate(regions):
+        # Rebuild the region's own RegionData, including its BOUNDARY ORDER, and
+        # use that rather than the producer's rds. Trusting producer boundary
+        # metadata after discarding our own let a corrupted boundary ordering
+        # pass an exact-coarsening example with error about 0.131.
+        rd_own = R.region_data(reg, restricted.card, restricted.factors,
+                               queries, deadline=deadline)
+        own_rds.append(rd_own)
+        if tuple(rd_own.boundary) != tuple(rds[i].boundary):
+            problems.append("region %d: producer boundary order %s differs from "
+                            "the independently rebuilt %s"
+                            % (i, rds[i].boundary, rd_own.boundary))
         cr, probs = recheck_region(reg, restricted, restricted.card, queries,
                                    rho_cap, region_of, coarse[i],
                                    deadline=deadline)
@@ -145,28 +170,70 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
             problems.append("region %d: %s" % (i, p))
     if problems:
         return False, problems, None
+    rds = own_rds
     Rlevel = R.level_distortion(rebuilt)
     if not K.certify_R_against_t(Rlevel, t_level):
         return False, ["R_level %s is not certified at t=%s" % (Rlevel, t_level)], None
     Z, counts = independent_contract(restricted, regions, rebuilt, rds, queries,
                                      deadline=deadline)
     fails = []
+    # Build the checker's OWN original-model enclosure, then require the
+    # publication to CONTAIN it.
+    #
+    # The previous direction was backwards: it widened the SUBMITTED interval by
+    # t_level and asked whether the coarse point fitted inside. That accepts any
+    # publication within t of the coarse answer, including one that is wrong
+    # about the original model, and it lets a corrupted producer pass by
+    # submitting its own (wrong) number.
     for v in sorted(queries):
         rows = published.get(v)
         if rows is None:
             fails.append("variable %d has no published row" % v)
             continue
+        if not rows:
+            fails.append("variable %d has an EMPTY state row" % v)
+            continue
+        nst = None
+        for i, reg in enumerate(regions):
+            if v in reg:
+                nst = len({k[1] for k in coarse[i].N if k[0] == v})
+                break
+        if nst and len(rows) != nst:
+            fails.append("variable %d publishes %d states, the region holds %d"
+                         % (v, len(rows), nst))
+            continue
         for s in range(len(rows)):
+            try:
+                lo, hi = Fr(rows[s][0]), Fr(rows[s][1])
+            except (TypeError, ValueError, IndexError):
+                fails.append("variable %d state %d: endpoints are not exact "
+                             "rationals" % (v, s))
+                continue
+            if lo > hi:
+                fails.append("variable %d state %d: INVERTED endpoints "
+                             "[%s, %s]" % (v, s, lo, hi))
+                continue
+            if lo < 0 or hi > 1:
+                fails.append("variable %d state %d: endpoints outside [0,1]"
+                             % (v, s))
+                continue
+            # the checker's independent coarse answer, widened OUTWARD by every
+            # charged error, is a rigorous enclosure of the ORIGINAL probability
             q = counts.get((v, s), Fr(0)) / Z
-            lo, hi = Fr(rows[s][0]), Fr(rows[s][1])
-            plo = max(Fr(0), lo - t_level)
-            phi = min(Fr(1), hi + t_level)
-            if not (plo <= q <= phi):
-                fails.append("variable %d state %d: independent %s outside "
-                             "published [%s, %s] widened by t" % (v, s, q, lo, hi))
+            clo = max(Fr(0), q - t_level)
+            chi = min(Fr(1), q + t_level)
+            # the publication must CONTAIN that enclosure
+            if not (lo <= clo and chi <= hi):
+                fails.append(
+                    "variable %d state %d: publication [%s, %s] does NOT "
+                    "contain the independent enclosure [%s, %s]"
+                    % (v, s, lo, hi, clo, chi))
             if hi - lo > Fr(eps):
                 fails.append("variable %d state %d: published width exceeds eps"
                              % (v, s))
     return (not fails), fails, {"Z": Z, "R_level": Rlevel,
                                 "regions_rebuilt": len(rebuilt),
-                                "cell_assignments": None}
+                                "independent_enclosure": True,
+                                "direction": "publication must CONTAIN the "
+                                             "checker's enclosure, not the "
+                                             "reverse"}
