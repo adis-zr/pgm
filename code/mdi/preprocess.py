@@ -32,6 +32,8 @@ class Simplified:
     impossible: int | None         # origin of an identically zero factor
     free: list
     card: dict
+    declined_products: list = field(default_factory=list)
+    emitted: list = field(default_factory=list)
 
     def identity(self) -> dict:
         return {"scale": str(self.scale),
@@ -143,35 +145,55 @@ def simplify(restricted, combine_same_scope=True, bit_cap=None):
         keep.append(f)
 
     if combine_same_scope:
-        by_scope = {}
+        # Same-scope multiplication. When the product would exceed the bit cap
+        # the factors must BOTH be retained unchanged.
+        #
+        # The previous version set a dead local `keep_sep` flag, fell through to
+        # `by_scope[key] = f`, and so OVERWROTE the first factor with the second
+        # while `order` already held the key. One input factor was silently
+        # dropped and the other effectively duplicated. With pair tables
+        # [B,B,B,2B] and [B,B,B,3B] at B = 2^32768 that changed the law from
+        # 7/9 to 5/6 and the engine then certified an interval excluding the
+        # truth. The law must be preserved or the combination declined; it may
+        # never be altered.
+        combined = {}          # scope key -> the single accumulated factor
         order = []
+        uncombined = []        # factors kept separate because the cap declined
+        declined = []
         for f in keep:
             key = tuple(sorted(f.scope))
-            if key in by_scope:
-                g = by_scope[key]
-                if g.scope == f.scope:
-                    tbl = [a * b for a, b in zip(g.table, f.table)]
-                else:
-                    perm = [f.scope.index(v) for v in g.scope]
-                    gst = g.strides(); fst = f.strides()
-                    n = len(g.table)
-                    tbl = [None] * n
-                    for flat in range(n):
-                        rem, dig = flat, []
-                        for k in range(len(g.card)):
-                            dig.append(rem // gst[k]); rem %= gst[k]
-                        off = sum(dig[k] * fst[perm[k]] for k in range(len(g.card)))
-                        tbl[flat] = g.table[flat] * f.table[off]
-                if any(x.numerator.bit_length() > cap or
-                       x.denominator.bit_length() > cap for x in tbl):
-                    keep_sep = True
-                else:
-                    by_scope[key] = Factor(scope=g.scope, card=g.card, table=tbl,
-                                           origin=g.origin)
-                    continue
-            by_scope[key] = f
-            order.append(key)
-        keep = [by_scope[k] for k in order]
+            g = combined.get(key)
+            if g is None:
+                combined[key] = f
+                order.append(key)
+                continue
+            if g.scope == f.scope:
+                tbl = [a * b for a, b in zip(g.table, f.table)]
+            else:
+                perm = [f.scope.index(v) for v in g.scope]
+                gst = g.strides(); fst = f.strides()
+                n = len(g.table)
+                tbl = [None] * n
+                for flat in range(n):
+                    rem, dig = flat, []
+                    for k in range(len(g.card)):
+                        dig.append(rem // gst[k]); rem %= gst[k]
+                    off = sum(dig[k] * fst[perm[k]] for k in range(len(g.card)))
+                    tbl[flat] = g.table[flat] * f.table[off]
+            if any(x.numerator.bit_length() > cap or
+                   x.denominator.bit_length() > cap for x in tbl):
+                # DECLINE the combination and keep BOTH factors as they are
+                uncombined.append(f)
+                declined.append({"scope": list(key),
+                                 "origins": [g.origin, f.origin],
+                                 "reason": "product exceeds the %d-bit cap; both "
+                                           "factors retained unchanged" % cap})
+                continue
+            combined[key] = Factor(scope=g.scope, card=g.card, table=tbl,
+                                   origin=g.origin)
+        keep = [combined[k] for k in order] + uncombined
+    else:
+        declined = []
 
     out = list(keep)
     for v in sorted(free):
@@ -180,16 +202,33 @@ def simplify(restricted, combine_same_scope=True, bit_cap=None):
     for v in free:
         if not any(v in f.scope for f in out):
             raise PreprocessError("variable %d lost its factor" % v)
-    return Simplified(factors=out, scale=scale, removed_constants=removed,
+    simp = Simplified(factors=out, scale=scale, removed_constants=removed,
                       split_pairs=splits, merged_unary=merged,
                       impossible=impossible, free=free, card=card)
+    simp.declined_products = declined
+    # A bounded EXACT transformation record: for every surviving factor, which
+    # original origins were multiplied into it. The checker replays this.
+    prov = {}
+    for f in out:
+        prov.setdefault(id(f), [])
+    simp.emitted = [{"scope": list(f.scope), "card": list(f.card),
+                     "origin": f.origin, "entries": len(f.table)}
+                    for f in out]
+    return simp
 
 
 def verify_identities(restricted, simp: Simplified):
     """Rederive every claimed identity from the ORIGINAL factors (checker side).
 
     Does not consult the producer's output tables; it re-tests each recorded
-    constant and split against the original bytes.
+    constant and split against the original bytes, AND independently verifies
+    that the emitted factor list reproduces the original weight function.
+
+    The identity-by-identity checks alone were insufficient: a same-scope
+    combination that dropped one factor and duplicated another satisfied every
+    recorded identity while changing the law from 7/9 to 5/6. Ownership and
+    multiplicity must be checked, not just the transformations that were
+    recorded.
     """
     byo = {f.origin: f for f in restricted.factors}
     for origin, val, n in simp.removed_constants:
@@ -223,4 +262,96 @@ def verify_identities(restricted, simp: Simplified):
         f = byo.get(origin)
         if f is None or len(f.scope) != 1:
             raise PreprocessError("unary record %d invalid" % origin)
+
+    # ---- independent ownership and multiplicity accounting ----
+    # Every original factor must be accounted for EXACTLY ONCE: removed as a
+    # constant, split, merged as a unary, folded into a same-scope product, or
+    # emitted unchanged. No factor may be dropped and none duplicated.
+    accounted = {}
+
+    def claim(origin, how):
+        if origin in accounted:
+            raise PreprocessError(
+                "original factor %d is accounted for twice (%s and %s): a "
+                "dropped-and-duplicated factor changes the law while satisfying "
+                "every recorded identity" % (origin, accounted[origin], how))
+        accounted[origin] = how
+
+    for origin, _, _ in simp.removed_constants:
+        claim(origin, "constant")
+    for origin, _, _, _, _ in simp.split_pairs:
+        claim(origin, "separable split")
+    for origin in simp.merged_unary:
+        claim(origin, "unary merge")
+    # emitted factors: a synthetic unary carries origin -1-v; everything else
+    # must trace to an original origin, and a same-scope product names its first
+    synth = {-1 - v for v in simp.free}
+    emitted_origins = []
+    for f in simp.factors:
+        if f.origin in synth or f.origin == -1:
+            continue
+        emitted_origins.append(f.origin)
+    for origin in emitted_origins:
+        if origin not in byo:
+            raise PreprocessError("emitted factor claims unknown origin %d" % origin)
+        claim(origin, "emitted")
+    # a declined product keeps BOTH factors, so its second origin is also emitted
+    for d in getattr(simp, "declined_products", []):
+        for origin in d["origins"]:
+            if origin not in accounted:
+                claim(origin, "declined product (retained)")
+    # anything still unaccounted was folded into a same-scope product
+    for origin, f in byo.items():
+        if origin in accounted:
+            continue
+        key = tuple(sorted(f.scope))
+        host = None
+        for g in simp.factors:
+            if tuple(sorted(g.scope)) == key and g.origin in accounted:
+                host = g
+                break
+        if host is None:
+            raise PreprocessError(
+                "original factor %d (scope %s) is NOT accounted for: it was "
+                "neither removed, split, merged, emitted nor folded into a "
+                "surviving same-scope factor" % (origin, f.scope))
+        accounted[origin] = "folded into origin %d" % host.origin
+    missing = [o for o in byo if o not in accounted]
+    if missing:
+        raise PreprocessError("original factors %s unaccounted" % missing[:5])
+
+    # ---- independent law check on a bounded enumeration ----
+    # When the free domain is small enough, recompute the weight function from
+    # the ORIGINAL factors and from the emitted ones and require equality up to
+    # the recorded exact scale. This catches any transformation error, not only
+    # the ones that were recorded.
+    import itertools
+    q = 1
+    for v in simp.free:
+        q *= simp.card[v]
+        if q > 4096:
+            break
+    if q <= 4096:
+        def weigh(facs, assign):
+            w = Fr(1)
+            for f in facs:
+                st = f.strides()
+                off = 0
+                for k, v in enumerate(f.scope):
+                    off += assign[v] * st[k]
+                e = f.table[off]
+                if e == 0:
+                    return Fr(0)
+                w *= e
+            return w
+        order = sorted(simp.free)
+        for combo in itertools.product(*[range(simp.card[v]) for v in order]):
+            a = dict(zip(order, combo))
+            w0 = weigh(restricted.factors, a)
+            w1 = simp.scale * weigh(simp.factors, a)
+            if w0 != w1:
+                raise PreprocessError(
+                    "preprocessing CHANGED THE LAW at assignment %s: original "
+                    "weight %s, simplified weight %s (scale %s)"
+                    % (a, w0, w1, simp.scale))
     return True

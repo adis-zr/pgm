@@ -2205,3 +2205,103 @@ def test_general_dp_refuses_double_insertion():
     src = inspect.getsource(G.run)
     assert "inserted twice" in src
     assert "never had their statistic inserted" in src
+
+
+# ===== review 4: false verified marginals (the most serious defect) =====
+
+def test_r4_same_scope_cap_must_not_alter_the_law():
+    """Review 4 witness, UNCHANGED production defaults.
+
+    Pair tables [B,B,B,2B] and [B,B,B,3B] on one scope with B = 2^32768. Each
+    entry fits the 65,536-bit cap; their product does not. The old code set a
+    dead flag, overwrote the first factor with the second, and so dropped one
+    input and duplicated the other. That changed the law from 7/9 to 5/6 and the
+    engine then returned VERIFIED_ALL_MARGINALS with an interval EXCLUDING the
+    truth.
+    """
+    from mdi import preprocess as PRE
+    B = Fr(2) ** 32768
+    t1 = [B, B, B, 2 * B]
+    t2 = [B, B, B, 3 * B]
+    lines = ["MARKOV", "2", "2 2", "3", "1 0", "2 0 1", "2 0 1", "2", "1 1",
+             "4", " ".join(str(x.numerator) for x in t1),
+             "4", " ".join(str(x.numerator) for x in t2)]
+    m = M.read_uai(w("\n".join(lines) + "\n"))
+    r = M.restrict(m, {})
+    Z, p = O.exact_all_marginals(r)
+    assert p[0][1] == Fr(7, 9), p[0][1]
+    simp = PRE.simplify(r)
+    # the combination must be DECLINED, with both factors retained
+    assert simp.declined_products, "the over-cap product must be declined"
+    r2 = M.Restricted(model=m, evidence={}, factors=simp.factors,
+                      free=list(r.free), card=dict(r.card), constant=Fr(1),
+                      impossible_factor=None)
+    Z2, p2 = O.exact_all_marginals(r2)
+    assert p2[0] == p[0], "the law must be preserved exactly"
+    assert PRE.verify_identities(r, simp)
+    # and the published interval must contain the truth
+    res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                  deadline_s=120)
+    assert res["outcome"] == "VERIFIED_ALL_MARGINALS", res["outcome"]
+    lo, hi = res["intervals"][0][1]
+    assert lo <= Fr(7, 9) <= hi, (float(lo), float(hi))
+
+
+def test_r4_checker_rejects_a_deliberately_faulty_producer():
+    """A faulty transform must be REJECTED, so a common bug cannot pass both
+    sides. Identity-by-identity checks alone were insufficient."""
+    from mdi import preprocess as PRE
+    import copy
+    B = Fr(2) ** 32768
+    lines = ["MARKOV", "2", "2 2", "3", "1 0", "2 0 1", "2 0 1", "2", "1 1",
+             "4", " ".join(str(x.numerator) for x in [B, B, B, 2 * B]),
+             "4", " ".join(str(x.numerator) for x in [B, B, B, 3 * B])]
+    m = M.read_uai(w("\n".join(lines) + "\n"))
+    r = M.restrict(m, {})
+    simp = PRE.simplify(r)
+    assert PRE.verify_identities(r, simp)
+    # fault 1: drop one factor and duplicate the other (the original defect)
+    bad = copy.deepcopy(simp)
+    pairs = [f for f in bad.factors if len(f.scope) == 2]
+    bad.factors = ([f for f in bad.factors if len(f.scope) != 2]
+                   + [pairs[1], pairs[1]])
+    bad.declined_products = []
+    with pytest.raises(PRE.PreprocessError) as e:
+        PRE.verify_identities(r, bad)
+    assert "accounted for twice" in str(e.value)
+    # fault 2: corrupt an emitted table entry
+    bad2 = copy.deepcopy(simp)
+    for f in bad2.factors:
+        if len(f.scope) == 2:
+            f.table[0] = f.table[0] * 2
+            break
+    with pytest.raises(PRE.PreprocessError) as e2:
+        PRE.verify_identities(r, bad2)
+    assert "CHANGED THE LAW" in str(e2.value)
+    # fault 3: a wrong exact scale
+    bad3 = copy.deepcopy(simp)
+    bad3.scale = bad3.scale * 3
+    with pytest.raises(PRE.PreprocessError):
+        PRE.verify_identities(r, bad3)
+
+
+def test_r4_declined_product_keeps_both_factors_on_a_different_shape():
+    """A different family member: a 2x3 scope whose product overflows."""
+    from mdi import preprocess as PRE
+    B = Fr(2) ** 40000
+    t = [B, B, B, B, B, 2 * B]
+    lines = ["MARKOV", "2", "2 3", "3", "1 0", "2 0 1", "2 0 1", "2", "1 1",
+             "6", " ".join(str(x.numerator) for x in t),
+             "6", " ".join(str(x.numerator) for x in t)]
+    m = M.read_uai(w("\n".join(lines) + "\n"))
+    r = M.restrict(m, {})
+    Z, p = O.exact_all_marginals(r)
+    simp = PRE.simplify(r)
+    assert simp.declined_products
+    r2 = M.Restricted(model=m, evidence={}, factors=simp.factors,
+                      free=list(r.free), card=dict(r.card), constant=Fr(1),
+                      impossible_factor=None)
+    Z2, p2 = O.exact_all_marginals(r2)
+    for v in r.free:
+        assert p[v] == p2[v], v
+    assert PRE.verify_identities(r, simp)
