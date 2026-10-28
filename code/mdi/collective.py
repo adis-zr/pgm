@@ -711,6 +711,48 @@ def _modulus_upper(re_lo: Fr, re_hi: Fr, im_lo: Fr, im_hi: Fr) -> Fr:
     return rm + im
 
 
+def _trig_point_enclose(q: Fr, ctx: A.Ctx, which: str):
+    """Rigorous enclosure of sin(q) or cos(q) at an EXACT RATIONAL q.
+
+    `gmpy2.mpfr(mpq(...))` rounds the ARGUMENT, and the previous code rounded
+    the argument and the function in the SAME direction. On a decreasing
+    branch that composition does not bound the value at the exact rational
+    argument: for sin(197658/49435) at precision 160 the returned upper bound
+    fell 9.42e-50 BELOW a rigorously enclosed reference, and at 24 bits the
+    discrepancy exceeded 2.38e-9.
+
+    Both |sin'| <= 1 and |cos'| <= 1, so an argument perturbation of at most
+    `da` moves the value by at most `da`. We therefore:
+      * evaluate at EXTRA precision in both directions, bounding the
+        function's own rounding, and
+      * add the exact argument-conversion error as a Lipschitz allowance.
+    The result is a valid enclosure of the exact-argument value.
+    """
+    import gmpy2
+    p = ctx.p
+    extra = 2 * p + 64
+    fn = gmpy2.sin if which == "sin" else gmpy2.cos
+    # the exact rational argument, converted at EXTRA precision both ways, so
+    # the conversion error itself is bounded exactly
+    cd = gmpy2.context(precision=extra, round=gmpy2.RoundDown)
+    cu = gmpy2.context(precision=extra, round=gmpy2.RoundUp)
+    mq = gmpy2.mpq(q.numerator, q.denominator)
+    with cd:
+        a_d = gmpy2.mpfr(mq)
+    with cu:
+        a_u = gmpy2.mpfr(mq)
+    # exact argument-conversion error in each direction
+    da = max(abs(q - A.exact_fr(a_d)), abs(A.exact_fr(a_u) - q))
+    with cd:
+        v_lo = min(fn(a_d), fn(a_u))
+    with cu:
+        v_hi = max(fn(a_d), fn(a_u))
+    lo = A.exact_fr(v_lo) - da
+    hi = A.exact_fr(v_hi) + da
+    # the function's own value is in [-1, 1] regardless
+    return max(Fr(-1), lo), min(Fr(1), hi)
+
+
 def _cos_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
     """Directed enclosure of cos over [lo, hi], INCLUDING interior extrema."""
     import gmpy2
@@ -721,14 +763,9 @@ def _cos_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
     pi_up = Fr(31416, 10000)
     if width >= 2 * pi_up:
         return Fr(-1), Fr(1)
-    with ctx.D:
-        c1 = gmpy2.cos(gmpy2.mpfr(gmpy2.mpq(lo.numerator, lo.denominator)))
-        c2 = gmpy2.cos(gmpy2.mpfr(gmpy2.mpq(hi.numerator, hi.denominator)))
-    with ctx.U:
-        c1u = gmpy2.cos(gmpy2.mpfr(gmpy2.mpq(lo.numerator, lo.denominator)))
-        c2u = gmpy2.cos(gmpy2.mpfr(gmpy2.mpq(hi.numerator, hi.denominator)))
-    vals = [A.exact_fr(c1), A.exact_fr(c2), A.exact_fr(c1u), A.exact_fr(c2u)]
-    out_lo, out_hi = min(vals), max(vals)
+    l1, h1 = _trig_point_enclose(lo, ctx, "cos")
+    l2, h2 = _trig_point_enclose(hi, ctx, "cos")
+    out_lo, out_hi = min(l1, l2), max(h1, h2)
     # an interior extremum of cos sits at a multiple of pi. If the interval can
     # contain one, widen conservatively.
     pi_lo = Fr(314159, 100000)
@@ -761,14 +798,9 @@ def _sin_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
     pi_up = Fr(31416, 10000)
     if hi - lo >= 2 * pi_up:
         return Fr(-1), Fr(1)
-    with ctx.D:
-        s1 = gmpy2.sin(gmpy2.mpfr(gmpy2.mpq(lo.numerator, lo.denominator)))
-        s2 = gmpy2.sin(gmpy2.mpfr(gmpy2.mpq(hi.numerator, hi.denominator)))
-    with ctx.U:
-        s1u = gmpy2.sin(gmpy2.mpfr(gmpy2.mpq(lo.numerator, lo.denominator)))
-        s2u = gmpy2.sin(gmpy2.mpfr(gmpy2.mpq(hi.numerator, hi.denominator)))
-    vals = [A.exact_fr(s1), A.exact_fr(s2), A.exact_fr(s1u), A.exact_fr(s2u)]
-    out_lo, out_hi = min(vals), max(vals)
+    l1, h1 = _trig_point_enclose(lo, ctx, "sin")
+    l2, h2 = _trig_point_enclose(hi, ctx, "sin")
+    out_lo, out_hi = min(l1, l2), max(h1, h2)
     pi_lo = Fr(314159, 100000)
     half_lo, half_up = pi_lo / 2, pi_up / 2
     # same negative-k bracket ordering and floor-division fix as in cos

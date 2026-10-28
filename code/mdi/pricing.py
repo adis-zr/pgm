@@ -128,9 +128,14 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
             nin = n_children + n_parent
             per = dom * (own + max(0, nin - 1)) + max(0, dom - sd)
             down += per * n_children
-        # readout: one full sweep over the calibrated bag
+        # Readout: `solve` calls read_marginal once per FREE VARIABLE, and
+        # each call is a FULL sweep of that variable's home bag. Charging one
+        # sweep per BAG undercounted every bag that is home to more than one
+        # variable: the two-variable control priced 35 producer operations and
+        # executed 45.
         nin_all = n_children + n_parent
-        ro += dom * (own + nin_all) + dom
+        n_home = sum(1 for v, h in plan.var_home.items() if h == b.idx)
+        ro += n_home * (dom * (own + nin_all) + dom)
     rec.put("weighted_bag_visits", weighted_bag, UPPER,
             "bag domain times owned factors plus every incident message")
     rec.put("weighted_separator_entries", weighted_sep, EXACT)

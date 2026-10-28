@@ -628,17 +628,49 @@ def _regional_execute(r, payload, queries, eps, bg):
     rds = payload["rds"]
     proj = payload["proj"]
     dl = bg.deadline_fn("regional-execute")
-    # cavity per region: the product of everything outside it, by enumerating
-    # the other regions' cells
     import itertools
     ncell = [len(c.cells) for c in coarse]
+    # FACTORIZED contraction first, by elimination over the reduced graph.
+    # Enumerating the product of all cell cardinalities is what the price does
+    # NOT describe: a 20-variable width-one chain was priced for elimination
+    # at 2,937 operations and then refused 1,048,576 joint assignments against
+    # the 4,096 cap. Pricing and execution must describe the same program, so
+    # the producer now runs the same reduced-graph elimination the price
+    # assumes, and falls back to enumeration only when elimination is
+    # unavailable AND the joint space is within the declared cap.
+    from mdi import regional_check as RC
+    try:
+        (Zlo, Zhi), (clo, chi) = RC._reduced_message_passing(
+            r, regions, coarse, rds, queries, deadline=dl)
+        # the producer publishes a point-valued count set; take the enclosure's
+        # lower end for Z and upper for counts so the readout stays outward
+        rows = {}
+        for v in sorted(queries):
+            nst = None
+            for i, reg in enumerate(regions):
+                if v in reg:
+                    nst = len({k[1] for k in coarse[i].N if k[0] == v})
+                    break
+            if not nst:
+                continue
+            rr = []
+            for sx in range(nst):
+                lo = clo.get((v, sx), Fr(0)) / Zhi if Zhi > 0 else Fr(0)
+                hi = chi.get((v, sx), Fr(0)) / Zlo if Zlo > 0 else Fr(1)
+                rr.append((max(Fr(0), lo), min(Fr(1), hi)))
+            rows[v] = rr
+        if rows:
+            return rows
+    except (RC.RegionalCheckError, B.BudgetExceeded):
+        pass
     total = 1
     for k in ncell:
         total *= k
     if total > K.CAPS["checker_contraction_space"]:
         raise B.BudgetExceeded("regional_assignments", total,
                                K.CAPS["checker_contraction_space"],
-                               "regional execute")
+                               "regional execute (elimination unavailable, "
+                               "and the joint cell space exceeds the cap)")
     Z = Fr(0)
     counts = {}
     for tup in itertools.product(*[range(k) for k in ncell]):
