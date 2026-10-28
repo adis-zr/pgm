@@ -289,6 +289,32 @@ def register_checker(kind, fn):
     CHECKERS[kind] = fn
 
 
+class ExecutorRefusal(Exception):
+    """An executor declining with a status and a reason."""
+
+    def __init__(self, status, reason=""):
+        super().__init__("%s: %s" % (status, reason))
+        self.status = status
+        self.reason = reason
+
+
+_PIPELINE_EXECUTORS = {}
+
+
+def register_pipeline_executor(kind, fn):
+    _PIPELINE_EXECUTORS[kind] = fn
+
+
+def dispatch_pipeline(kind):
+    """The executor the PUBLIC PIPELINE must invoke for this plan kind."""
+    fn = _PIPELINE_EXECUTORS.get(kind)
+    if fn is None:
+        raise PlanError(
+            "no pipeline executor is registered for kind %r, so this plan "
+            "cannot be executed through the public path" % (kind,))
+    return fn
+
+
 def dispatch(kind):
     """Return (executor, checker) for a kind, or raise.
 

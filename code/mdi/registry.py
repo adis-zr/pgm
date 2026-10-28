@@ -46,6 +46,43 @@ def _gaussian_executor(free, card, residual_unary, cand, queries, ctx, delta,
                                 delta, **kw)
 
 
+# ---- pipeline executors ----
+# The public pipeline must INVOKE the executor bound by the validated selected
+# plan. It previously looked one up via dispatch() and then branched on
+# crec.kind, calling a different path entirely: replacing the identity
+# executor with a raising sentinel still produced a certified result with zero
+# executor calls. These adapters give every route one uniform signature so the
+# dispatched object is the thing that actually runs.
+
+def pipeline_identity_executor(ctx):
+    """ctx carries model, evidence, eps, cap_bytes, remaining()."""
+    from mdi import solve as S
+    res = S.solve(ctx["model"], ctx["evidence"], eps=ctx["eps"], mode="P",
+                  cap_bytes=ctx["cap_bytes"],
+                  deadline_s=max(0.001, ctx["remaining"]()),
+                  run_checker=False, preprocess=True)
+    if res["outcome"] != "PRODUCER_COMPLETE_UNCHECKED":
+        raise PT.ExecutorRefusal(res["outcome"], res.get("reason", ""))
+    return res["intervals"]
+
+
+def pipeline_regional_executor(ctx):
+    return ctx["regional_execute"](ctx["restricted"], ctx["payload"],
+                                   ctx["queries"], ctx["eps"], ctx["budget"])
+
+
+def pipeline_composed_executor(ctx):
+    pay = ctx["payload"].get("composed")
+    if pay is None:
+        raise PT.ExecutorRefusal("NUMERICAL_REFUSAL",
+                                 "the composed payload is absent")
+    return pay
+
+
+PT.register_pipeline_executor("identity", pipeline_identity_executor)
+PT.register_pipeline_executor("regional", pipeline_regional_executor)
+PT.register_pipeline_executor("composed", pipeline_composed_executor)
+
 # ---- what exists ----
 PT.register_executor("identity", _identity_executor)
 PT.register_checker("identity", _identity_checker)

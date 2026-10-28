@@ -10,7 +10,7 @@ A route whose executor or checker is unregistered is ineligible, and nothing is
 silently routed into the original-model solver.
 """
 from __future__ import annotations
-import sys, time, json, hashlib, os
+import sys, time, json, hashlib, os, tempfile
 sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
 from dataclasses import dataclass, field
@@ -323,23 +323,38 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     # ---------------- stage 4: persist, reload, validate ----------------
     bg.enter("persist")
     t = time.monotonic()
+    # The record must be WRITTEN first and then read back FROM DISK, so the
+    # on-disk bytes are the authority for everything downstream. Reloading
+    # from an in-memory string before writing meant a corrupted written plan
+    # still produced a certified result: the file was never read again.
+    if not plan_dir:
+        plan_dir = tempfile.mkdtemp(prefix="mdi_plans_")
+    os.makedirs(plan_dir, exist_ok=True)
     reloaded = []
     for rec, price, payload in records:
+        path = os.path.join(plan_dir, "%s.plan.json"
+                            % rec.name.replace(":", "_"))
         try:
             txt = rec.to_json()
-            back = PT.PlanRecord.from_json(txt)
-            if back.to_json() != txt:
-                raise PT.PlanError("plan record is not byte-identical")
-            back.bind_check(mh, eh, qh)
-        except PT.PlanError as e:
-            rejected.append({"name": rec.name,
-                             "reason": "plan record failed reload: %s" % e})
-            continue
-        if plan_dir:
-            os.makedirs(plan_dir, exist_ok=True)
-            with open(os.path.join(plan_dir, "%s.plan.json"
-                                   % rec.name.replace(":", "_")), "w") as fh:
+            with open(path, "w") as fh:
                 fh.write(txt)
+            # read the bytes BACK from the filesystem
+            with open(path, "r") as fh:
+                ondisk = fh.read()
+            if ondisk != txt:
+                raise PT.PlanError("the persisted plan does not match what "
+                                   "was written")
+            back = PT.PlanRecord.from_json(ondisk)
+            if back.to_json() != ondisk:
+                raise PT.PlanError("plan record is not byte-identical after a "
+                                   "round trip through disk")
+            back.bind_check(mh, eh, qh)
+        except (PT.PlanError, ValueError, OSError) as e:
+            rejected.append({"name": rec.name,
+                             "reason": "plan record failed persist/reload: %s"
+                                       % e})
+            continue
+        back.source_path = path
         reloaded.append((back, price, payload))
     stages["persist_s"] = time.monotonic() - t
     if not reloaded:
@@ -398,25 +413,32 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        reason="the charged radius consumes the whole contract",
                        prices=out.prices, stages=stages, budget=bg.report())
     try:
-        if crec.kind == "identity":
-            res = S.solve(model, evidence, eps=num_eps, mode="P",
-                          cap_bytes=cap_bytes,
-                          deadline_s=max(0.001, bg.remaining()),
-                          run_checker=False, preprocess=True)
-            if res["outcome"] != "PRODUCER_COMPLETE_UNCHECKED":
-                return Outcome(status=res["outcome"],
-                               reason=res.get("reason", ""), prices=out.prices,
-                               rejected=rejected, stages=stages,
-                               budget=bg.report())
-            raw = res["intervals"]
-        elif crec.kind == "composed":
-            # already executed during discovery; its publication is the
-            # original-variable enclosure with every radius added
-            raw = cpayload["composed"]
-        else:
-            # regional: use the COMPACT projected crossings and the direct
-            # original-query readout, normalizing and padding ONCE
-            raw = _regional_execute(r, cpayload, queries, num_eps, bg)
+        # INVOKE the executor bound by the validated selected plan. The
+        # previous code called PT.dispatch() and then branched on crec.kind,
+        # so the dispatched executor was never used: swapping in a raising
+        # sentinel still produced a certified result with zero executor calls.
+        pexec = PT.dispatch_pipeline(crec.kind)
+        if crec.executor_id and not crec.executor_id.endswith(crec.kind) \
+                and crec.kind not in crec.executor_id:
+            return Outcome(status="RESOURCE_STOP",
+                           reason="the persisted executor id %r does not name "
+                                  "the plan kind %r"
+                                  % (crec.executor_id, crec.kind),
+                           prices=out.prices, rejected=rejected,
+                           stages=stages, budget=bg.report())
+        raw = pexec({"model": model, "evidence": evidence, "eps": num_eps,
+                     "cap_bytes": cap_bytes, "remaining": bg.remaining,
+                     "restricted": r, "payload": cpayload,
+                     "queries": queries, "budget": bg,
+                     "regional_execute": _regional_execute})
+    except PT.ExecutorRefusal as e:
+        return Outcome(status=e.status, reason=e.reason, prices=out.prices,
+                       rejected=rejected, stages=stages, budget=bg.report())
+    except PT.PlanError as e:
+        return Outcome(status="RESOURCE_STOP",
+                       reason="pipeline dispatch refused: %s" % e,
+                       prices=out.prices, rejected=rejected, stages=stages,
+                       budget=bg.report())
     except B.BudgetExceeded as e:
         return Outcome(status="RESOURCE_STOP", reason=str(e),
                        prices=out.prices, rejected=rejected, stages=stages,

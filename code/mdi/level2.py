@@ -248,62 +248,102 @@ def level2_marginals(restricted, regions, coarse, rds, queries, l2,
                 "crossing factor %d touches one parent but was not claimed as "
                 "internal: the accounting is inconsistent" % pc.origin)
 
-    # enumerate CHILD-CELL assignments across all children
-    children = sorted(parent_of)
-    ncell = [len(coarse[c].cells) for c in children]
-    total = 1
-    for k in ncell:
-        total *= k
-    if total > K.CAPS["level2_contraction_space"]:
-        raise R.CapExceeded(
-            "level-2 contraction needs %d child-cell assignments, above the "
-            "declared level2_contraction_space cap %d"
-            % (total, K.CAPS["level2_contraction_space"]))
+    # ---- contract the PARENT representation ----
+    # The previous version enumerated every child-cell assignment directly and
+    # ignored the parents entirely: clearing all parent A and marks left the
+    # answer unchanged, so the numerical example it fixed proved nothing about
+    # the component it was meant to establish. Direct child enumeration belongs
+    # in the tiny reference oracle, not in a function claiming second-level
+    # execution.
+    #
+    # The real second level contracts over PARENT BOUNDARY assignments, using
+    # each parent's own A (local mass) and marks (marked mass), with the OUTER
+    # crossings evaluated once on the child cells those boundary assignments
+    # name.
+    for pi, pr in enumerate(pdata):
+        if not pr.A:
+            raise Level2Error(
+                "parent region %d has an EMPTY mass table, so there is no "
+                "second-level representation to contract; a parent-based "
+                "calculation cannot proceed from it" % pi)
 
-    strides = [1] * len(ncell)
+    # the parent-level variables are the parents' boundary assignments
+    pkeys = [sorted(pr.A.keys()) for pr in pdata]
+    pcard = [len(k) for k in pkeys]
+    ptotal = 1
+    for k in pcard:
+        ptotal *= k
+    if ptotal > K.CAPS["level2_contraction_space"]:
+        raise R.CapExceeded(
+            "level-2 contraction needs %d parent boundary assignments, above "
+            "the declared level2_contraction_space cap %d"
+            % (ptotal, K.CAPS["level2_contraction_space"]))
+
+    pstr = [1] * len(pcard)
     acc = 1
-    for k in range(len(ncell) - 1, -1, -1):
-        strides[k] = acc
-        acc *= ncell[k]
+    for k in range(len(pcard) - 1, -1, -1):
+        pstr[k] = acc
+        acc *= pcard[k]
+
+    # For an OUTER crossing we need the child cell each parent boundary
+    # assignment pins. A parent boundary assignment names the cell of every
+    # boundary child, which is exactly the set the outer crossings touch.
+    # Verify that before relying on it.
+    outer_children = {c for pc in outer for c in pc.regions}
+    for pi, pr in enumerate(pdata):
+        pbset = set(pr.boundary_children)
+        for c in pr.children:
+            if c in outer_children and c not in pbset:
+                raise Level2Error(
+                    "child %d carries an OUTER crossing but is not a boundary "
+                    "child of parent %d, so its cell is not determined by the "
+                    "parent boundary assignment and the second-level "
+                    "contraction would be unsound" % (c, pi))
 
     Zt = Fr(0)
     counts = {}
-    for flat in range(total):
+    for flat in range(ptotal):
         if deadline is not None and (flat & 0x3F) == 0:
             deadline()
         rem, dig = flat, []
-        for k in range(len(ncell)):
-            dig.append(rem // strides[k])
-            rem %= strides[k]
-        cell_of = {children[k]: dig[k] for k in range(len(children))}
-        # child masses
+        for k in range(len(pcard)):
+            dig.append(rem // pstr[k])
+            rem %= pstr[k]
+        # the parent boundary assignment chosen in each parent
+        bsel = [pkeys[k][dig[k]] for k in range(len(pdata))]
+        # the product of PARENT masses: this is the second-level law
         w = Fr(1)
-        for k, c in enumerate(children):
-            w *= Fr(coarse[c].M[dig[k]])
+        for k, pr in enumerate(pdata):
+            w *= Fr(pr.A[bsel[k]])
             if w == 0:
                 break
         if w == 0:
             continue
-        # EVERY projected crossing, internal and outer, exactly once
-        for pc in projected:
+        # the cell of every boundary child, read off the parent assignments
+        cell_of = {}
+        for k, pr in enumerate(pdata):
+            for j, c in enumerate(pr.boundary_children):
+                cell_of[c] = bsel[k][j]
+        # OUTER crossings only: the internal ones are already inside A
+        for pc in outer:
             w *= pc.value(cell_of)
             if w == 0:
                 break
         if w == 0:
             continue
         Zt += w
-        # markers: replace the owning child's M by its N at this cell
-        for k, c in enumerate(children):
-            Mc = Fr(coarse[c].M[dig[k]])
-            if Mc <= 0:
+        # ORIGINAL markers, restored from the PARENT marked masses
+        for k, pr in enumerate(pdata):
+            Ab = Fr(pr.A[bsel[k]])
+            if Ab <= 0:
                 continue
-            for key, col in coarse[c].N.items():
+            for key, col in pr.marks.items():
                 if key[0] not in queries:
                     continue
-                Nc = Fr(col[dig[k]])
-                if Nc == 0:
+                Nb = Fr(col.get(bsel[k], Fr(0)))
+                if Nb == 0:
                     continue
-                counts[key] = counts.get(key, Fr(0)) + w / Mc * Nc
+                counts[key] = counts.get(key, Fr(0)) + w / Ab * Nb
     if Zt <= 0:
         raise Level2Error("level-2 contraction gave a nonpositive total")
     # the mark/mass identity must hold per variable
