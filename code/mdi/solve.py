@@ -445,7 +445,7 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
             raise A.NumericalRefusal("checker found no home bag for variable %d" % v)
     cp = max(80, p + 16)
     ctx = A.Ctx(cp)
-    dl = _mk_deadline(t_end, cap_bytes)
+    dl = _mk_deadline(t_end, cap_bytes, _rss_bytes())
     eng = C.Engine(pl2, r.factors, ctx, mode="I", deadline=dl,
                    progress=lambda ph, n: prog("check-" + ph, "%d" % n))
     roots = [b.idx for b in pl2.bags if b.parent == -1]

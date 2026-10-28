@@ -162,7 +162,7 @@ class Engine:
         # stream every bag assignment
         digits = [0] * len(bvars)
         for flat in range(bsize):
-            if self.deadline is not None and (flat & 0xFFFF) == 0:
+            if self.deadline is not None and (flat & 0xFFF) == 0:
                 self.deadline()
             # decode once
             rem = flat
@@ -323,7 +323,7 @@ class Engine:
         acc, any_sup = self._zero(), False
         digits = [0] * len(bvars)
         for flat in range(inner):
-            if self.deadline is not None and (flat & 0xFFFF) == 0:
+            if self.deadline is not None and (flat & 0xFFF) == 0:
                 self.deadline()
             rem = flat
             for k in range(len(bvars)):
@@ -380,7 +380,7 @@ class Engine:
         seen = [False] * cv
         digits = [0] * len(bvars)
         for flat in range(inner):
-            if self.deadline is not None and (flat & 0xFFFF) == 0:
+            if self.deadline is not None and (flat & 0xFFF) == 0:
                 self.deadline()
             rem = flat
             for k in range(len(bvars)):
