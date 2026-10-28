@@ -74,11 +74,19 @@ def pipeline_regional_executor(ctx):
 
 
 def pipeline_composed_executor(ctx):
-    pay = ctx["payload"].get("composed")
-    if pay is None:
+    """Evaluate the composed law AFTER selection, from the bounded admission
+    computed during discovery. Discovery used to run the whole inference."""
+    from mdi import composed as CM, arith as A
+    adm = ctx["payload"].get("composed_admission")
+    if adm is None:
         raise PT.ExecutorRefusal("NUMERICAL_REFUSAL",
-                                 "the composed payload is absent")
-    return pay
+                                 "the composed admission record is absent")
+    pay = ctx["payload"]
+    out, meta = CM.run(ctx["restricted"], pay["regions"], pay["coarse"],
+                       pay["rds"], ctx["queries"], A.Ctx(160), ctx["eps"],
+                       admission=adm)
+    pay["composed_meta"] = {**pay.get("composed_meta", {}), **meta}
+    return out
 
 
 PT.register_pipeline_executor("identity", pipeline_identity_executor)

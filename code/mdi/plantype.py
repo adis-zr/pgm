@@ -33,6 +33,11 @@ PREREQS = {
 KINDS = ("identity", "regional", "statistic", "gaussian", "fourier", "composed")
 
 
+DECLARED_KINDS = ("identity", "regional", "composed", "statistic",
+                  "general_statistic", "gaussian", "fourier", "deletion",
+                  "level2")
+
+
 class PlanError(ValueError):
     pass
 
@@ -201,8 +206,66 @@ class PlanRecord:
         miss = [k for k in need if k not in d]
         if miss:
             raise PlanError("plan record is truncated: missing %s" % miss)
+        # ---- EXACT field set. An unknown field is a different record format,
+        # not a compatible superset: seven of the original fourteen malformed
+        # mutations loaded because only the REQUIRED keys were examined.
+        allowed = set(need) | {"region_membership", "cell_membership",
+                               "rejected_alternatives"}
+        extra = sorted(set(d) - allowed)
+        if extra:
+            raise PlanError("plan record carries unknown fields %s" % extra)
         if d["version"] != 1:
             raise PlanError("stale plan record version %r" % d["version"])
+        # ---- kind and name
+        # The kind must be one the contract declares. Registration is checked
+        # where it binds (dispatch), since the registry may not be imported in
+        # a pure record round trip.
+        if d["kind"] not in DECLARED_KINDS:
+            raise PlanError("unknown plan kind %r" % (d["kind"],))
+        if not isinstance(d["name"], str) or not d["name"].strip():
+            raise PlanError("plan record has an empty name")
+        if not d["name"].split(":")[0] == d["kind"]:
+            raise PlanError("plan name %r does not begin with its kind %r"
+                            % (d["name"], d["kind"]))
+        # ---- hash syntax: 64 lowercase hex digits
+        import re as _re
+        for hk in ("model_sha256", "evidence_sha256", "query_sha256"):
+            hv = d[hk]
+            if not isinstance(hv, str) or not _re.fullmatch(r"[0-9a-f]{64}",
+                                                            hv):
+                raise PlanError("%s is not a 64-digit lowercase hex digest: %r"
+                                % (hk, hv))
+        # ---- executor and checker must name REGISTERED implementations
+        for idk, what in (("executor_id", "executor"),
+                          ("checker_id", "checker")):
+            idv = d[idk]
+            if not isinstance(idv, str) or not idv.strip():
+                raise PlanError("%s is empty" % idk)
+            if ":" not in idv:
+                raise PlanError("%s %r is not a module:function reference"
+                                % (idk, idv))
+            mod, _, fn = idv.partition(":")
+            if not mod.startswith("mdi.") or not fn:
+                raise PlanError("%s %r does not reference an mdi "
+                                "implementation" % (idk, idv))
+        # ---- ownership, scopes and the non-empty blocks
+        for bk in ("factor_ownership", "factor_scopes"):
+            if not isinstance(d[bk], list) or not d[bk]:
+                raise PlanError("%s is empty: a plan with no factor record "
+                                "cannot be bound to a model" % bk)
+        for bk in ("numerical", "cost_counters", "storage_schedule"):
+            if not isinstance(d[bk], dict) or not d[bk]:
+                raise PlanError("%s is empty: the record would carry no %s"
+                                % (bk, bk.replace("_", " ")))
+        own = [int(o) for o, _w in d["factor_ownership"]]
+        scp = [int(o) for o, _sc, _cd in d["factor_scopes"]]
+        if sorted(own) != sorted(set(own)):
+            raise PlanError("factor_ownership lists an origin twice")
+        if sorted(own) != sorted(scp):
+            raise PlanError(
+                "factor_ownership covers origins %s but factor_scopes covers "
+                "%s; ownership and scopes must name the same factors"
+                % (sorted(own)[:6], sorted(scp)[:6]))
         props = PlanProperties()
         raw_props = d["properties"]
         if not isinstance(raw_props, dict):

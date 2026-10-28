@@ -303,17 +303,37 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             prices.append(rprice)
 
             # ---- the COMPOSED route on this partition's categorical cells ----
+            # ADMISSION ONLY. The full composed inference ran here just to
+            # find out whether the candidate was usable, so an UNSELECTED
+            # candidate incurred its entire inference cost. Admission
+            # recognizes the mode, fits the residual and chooses Q with its
+            # rounding energy charged -- all bounded by the coarse model's
+            # local structure -- and the expensive evaluation happens after
+            # selection, inside the registered executor.
             try:
                 from mdi import composed as CM
                 cctx = A.Ctx(160)
-                cm_out, cm_meta = CM.run(r, regs, crs, rds, queries, cctx, eps,
-                                         t_level=t_level,
-                                         deadline=bg.deadline_fn("composed"))
+                cm_adm = CM.admit(r, regs, crs, rds, queries, cctx, eps,
+                                  t_level=t_level,
+                                  deadline=bg.deadline_fn("composed"))
+                cm_out = True              # admitted, not yet evaluated
+                cm_meta = {"Q": cm_adm["Q"],
+                           "rounding_tv_charged": str(cm_adm["rounding_tv"]),
+                           "fit_tv": str(cm_adm["fit_tv"]),
+                           "residual_tv": str(cm_adm["total_fit_tv"]),
+                           "regional_radius": str(cm_adm["t_level"]),
+                           "total_radius": str(cm_adm["t_level"]
+                                               + cm_adm["total_fit_tv"]),
+                           "mode_kind": cm_adm["cand"].kind,
+                           "mode_sign": cm_adm["cand"].signs[0],
+                           "statistic_support": 0,
+                           "admission_only": True}
             except Exception as e:
                 rejected.append({"name": "composed:" + c["mode"],
                                  "reason": "composed route declined: %s: %s"
                                            % (type(e).__name__, e)})
                 cm_out = None
+                cm_adm = None
             if cm_out is not None:
                 ccons = sum(int(getattr(rd, "construction_ops", 0))
                             for rd in rds)
@@ -354,7 +374,8 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                 records.append((crec2, cprice,
                                 {"regions": regs, "coarse": crs, "rds": rds,
                                  "proj": proj, "t_level": t_level,
-                                 "composed": cm_out, "composed_meta": cm_meta}))
+                                 "composed_admission": cm_adm,
+                                 "composed_meta": cm_meta}))
                 prices.append(cprice)
     stages["discover_s"] = time.monotonic() - t
     out.rejected = rejected

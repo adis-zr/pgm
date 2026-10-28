@@ -56,13 +56,98 @@ def coarse_cell_model(restricted, regions, coarse, rds):
     return cm, projected
 
 
+def admit(restricted, regions, coarse, rds, queries, ctx: A.Ctx, eps,
+          t_level=None, deadline=None):
+    """BOUNDED admission: recognize a mode, fit the residual, choose Q and
+    charge its rounding energy -- WITHOUT evaluating the law.
+
+    The pipeline ran the full composed inference during discovery just to find
+    out whether the candidate was usable, so an UNSELECTED candidate incurred
+    its entire inference cost. Everything here is bounded by the coarse model's
+    local structure; the expensive contraction happens only after selection.
+
+    Returns a dict the executor consumes, or raises Declined.
+    """
+    t_level = t_level if t_level is not None else K.level_radius(1)
+    cm, projected = coarse_cell_model(restricted, regions, coarse, rds)
+    rc = M.restrict(cm, {})
+    cands, info = MD.propose_modes(rc.free, rc.factors, rc.card)
+    if not cands:
+        raise Declined("no collective mode on the coarse cells: %s"
+                       % info.get("declined", info))
+    cand = cands[0]
+    res = MD.build_residual(rc.free, rc.factors, rc.card, cand, ctx)
+    allow = K.RADII["collective_fit_and_rounding"]
+    fit_tv = MD.tv_from_nu(res.nu)
+    if fit_tv > allow:
+        raise Declined("coarse mode fit TV %s exceeds the %s allowance"
+                       % (fit_tv, allow))
+    can = RS.canonicalize(res.unary, res.pairs, rc.card, ctx,
+                          2 * (allow - fit_tv))
+    total_fit_tv = RS.tv_from_total_nu(res.nu, can.nu_extra)
+    if total_fit_tv > allow:
+        raise Declined("coarse residual TV %s exceeds the allowance"
+                       % total_fit_tv)
+    remaining = allow - total_fit_tv
+    if remaining <= 0:
+        raise Declined("the coarse fit has already consumed the %s collective "
+                       "allowance; no rounding budget remains" % allow)
+    tries = K.CAPS["dyadic_Q_tries"]
+    qchoices = [1 << (16 * j) for j in range(tries)]
+    chosen_Q, rounding_tv, attempts = None, None, []
+    for Q in qchoices:
+        kq = CO.round_features(cand, rc.free, Q)
+        D = CO.rounding_energy_bound(cand, rc.free, kq, Q)
+        tv = D if D < 1 else Fr(1)
+        attempts.append({"Q": Q, "rounding_energy": str(D), "tv": str(tv),
+                         "admissible": bool(tv <= remaining)})
+        if tv <= remaining:
+            chosen_Q, rounding_tv = Q, tv
+            break
+    if chosen_Q is None:
+        raise Declined(
+            "no Q in the declared menu %s meets the remaining rounding "
+            "allowance %s; the smallest rounding energy was %s. This candidate "
+            "is DECLINED rather than published with an uncharged error."
+            % (qchoices, remaining, attempts[-1]["rounding_energy"]
+               if attempts else "n/a"))
+    kept = list(getattr(res, "kept", ()) or ())
+    return {"cm": cm, "projected": projected, "rc": rc, "cand": cand,
+            "res": res, "can": can, "kept": kept, "Q": chosen_Q,
+            "rounding_tv": rounding_tv, "fit_tv": fit_tv,
+            "total_fit_tv": total_fit_tv + rounding_tv,
+            "t_level": t_level, "Q_menu": qchoices, "Q_attempts": attempts,
+            "admission_only": True}
+
+
 def run(restricted, regions, coarse, rds, queries, ctx: A.Ctx, eps,
-        t_level=None, deadline=None):
+        t_level=None, deadline=None, admission=None):
     """Coarsen, fit a CATEGORICAL mode on the cells, evaluate, restore markers.
 
     Returns (intervals, meta) where the intervals are ORIGINAL-variable
     enclosures with every transformation error added.
     """
+    if admission is not None:
+        # reuse the BOUNDED admission already paid for during discovery, so
+        # the expensive evaluation below happens exactly once, after selection
+        cm = admission["cm"]
+        rc = admission["rc"]
+        cand = admission["cand"]
+        res = admission["res"]
+        can = admission["can"]
+        kept = admission["kept"]
+        chosen_Q = admission["Q"]
+        rounding_tv = admission["rounding_tv"]
+        fit_tv = admission["fit_tv"]
+        total_fit_tv = admission["total_fit_tv"]
+        t_level = admission["t_level"]
+        qchoices = admission["Q_menu"]
+        attempts = admission["Q_attempts"]
+        allow = K.RADII["collective_fit_and_rounding"]
+        return _evaluate(restricted, regions, coarse, rds, queries, ctx, eps,
+                         cm, rc, cand, res, can, kept, chosen_Q, rounding_tv,
+                         fit_tv, total_fit_tv, t_level, qchoices, attempts,
+                         deadline)
     t_level = t_level if t_level is not None else K.level_radius(1)
     cm, projected = coarse_cell_model(restricted, regions, coarse, rds)
     rc = M.restrict(cm, {})
@@ -126,8 +211,20 @@ def run(restricted, regions, coarse, rds, queries, ctx: A.Ctx, eps,
             "is DECLINED rather than published with an uncharged error."
             % (qchoices, remaining, attempts[-1]["rounding_energy"]
                if attempts else "n/a"))
-    total_fit_tv = total_fit_tv + rounding_tv
+    kept = list(getattr(res, "kept", ()) or ())
+    return _evaluate(restricted, regions, coarse, rds, queries, ctx, eps,
+                     cm, rc, cand, res, can, kept, chosen_Q, rounding_tv,
+                     fit_tv, total_fit_tv + rounding_tv, t_level, qchoices,
+                     attempts, deadline)
 
+
+def _evaluate(restricted, regions, coarse, rds, queries, ctx, eps,
+              cm, rc, cand, res, can, kept, chosen_Q, rounding_tv, fit_tv,
+              total_fit_tv, t_level, qchoices, attempts, deadline):
+    """The expensive half: evaluate the coarse law and restore markers.
+
+    Separated from admission so an UNSELECTED candidate never pays for it.
+    """
     # Evaluate the coarse law. A PRODUCT residual goes to the product DP; a
     # residual that retains interacting pairs goes to the GENERAL-residual DP on
     # a validated elimination schedule, which is exactly the case E.5 exists
@@ -137,7 +234,6 @@ def run(restricted, regions, coarse, rds, queries, ctx: A.Ctx, eps,
     # res.kept is carried into BOTH branches. It was dropped entirely before,
     # and it can hold zero constraints and higher-arity interactions whose
     # omission silently changes the law.
-    kept = list(getattr(res, "kept", ()) or ())
     if can.is_product() and not kept:
         acc, marks, _ = CO.statistic_dp(list(rc.free), rc.card, can.unary, {},
                                         [], cand, chosen_Q, set(rc.free))
