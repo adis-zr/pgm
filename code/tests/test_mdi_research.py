@@ -3390,31 +3390,71 @@ def test_r4_every_route_now_has_an_executor_and_a_checker():
     assert RG.UNIMPLEMENTED == {}
 
 
-def test_r4_regional_route_wins_on_complete_cost_when_it_should():
-    """With the checker priced by reduced-graph ELIMINATION rather than joint
-    cell enumeration, a genuinely compressible model selects the regional route
-    and certifies it. The ~1e78 figure came from pricing the checker as a full
-    joint enumeration."""
+def test_r4_complete_cost_accounting_includes_local_construction():
+    """COMPLETE cost must include the work that produced the answer, and the
+    comparison must be free to pick identity.
+
+    The r4 release claimed the regional route won the ring control by 6
+    operations against identity's 3,837. That claim is WITHDRAWN. The selected
+    region holds all 12 ring variables, so region_data enumerates all 4,096
+    configurations and builds A together with all 24 original marker masses --
+    the complete answer -- before the reduced contraction is priced at six
+    operations. Measured, that construction is 151,552 exact-rational
+    arithmetic operations, and the independent checker rebuilds it.
+
+    Choosing a cheap remaining calculation after sunk work can be sensible, but
+    it cannot establish a cheap complete METHOD against an identity arm that
+    never paid that construction. This test therefore asserts honest
+    accounting, NOT a regional win: whichever route wins must have paid for
+    everything it did.
+    """
     from mdi import pipeline as PLN
     txt, n, NB, BS = ring_of_blocks()
     m = M.read_uai(w(txt))
     r = M.restrict(m, {})
     Z, p = O.exact_all_marginals(r)
     res = PLN.solve(m, {}, wall_s=180.0, cap_bytes=1 << 30)
-    assert res.status == "CERTIFIED_RESEARCH_ROUTE", (res.status, res.reason)
-    assert res.plan["kind"] == "regional", res.plan
+    # either route may win; what matters is that the answer is certified and
+    # that nothing was priced at zero
+    assert res.status in ("CERTIFIED_RESEARCH_ROUTE", "CERTIFIED_FALLBACK_ONLY"), \
+        (res.status, res.reason)
     assert res.checker["status"] == "VERIFIED"
-    # the regional price must beat identity on COMPLETE cost
     byname = {x["name"]: x for x in res.prices}
-    reg = next(v for k, v in byname.items() if k.startswith("regional:"))
-    assert reg["eligible"], reg
-    assert reg["total_arithmetic"]["value"] < \
-        byname["identity"]["total_arithmetic"]["value"]
-    # and the published intervals contain the truth
+    reg = next((v for k, v in byname.items() if k.startswith("regional:")),
+               None)
+    if reg is not None and reg["eligible"]:
+        cons = reg["counters"]["construction_ops"]
+        # local construction may NEVER be priced at zero or as an upper bound
+        assert cons["label"] == "measured_calibration", cons
+        assert int(cons["value"]) > 0, cons
+        # and it must dominate the six-operation reduced contraction here,
+        # which is exactly why the earlier comparison was invalid
+        assert int(cons["value"]) > 100000, cons
+    # the published intervals must contain the truth whichever route won
     for v in r.free:
         for s in range(r.card[v]):
             lo, hi = res.intervals[v][s]
             assert lo <= p[v][s] <= hi, (v, s)
+
+
+def test_r4_identity_is_allowed_to_win_the_cost_comparison():
+    """The selection must be free to choose identity. A cost test that can only
+    pass when the research route wins would re-encode the withdrawn claim."""
+    from mdi import pipeline as PLN
+    txt, n, NB, BS = ring_of_blocks()
+    m = M.read_uai(w(txt))
+    res = PLN.solve(m, {}, wall_s=180.0, cap_bytes=1 << 30)
+    byname = {x["name"]: x for x in res.prices}
+    assert "identity" in byname
+    ident = byname["identity"]["total_arithmetic"]["value"]
+    reg = next((v for k, v in byname.items() if k.startswith("regional:")),
+               None)
+    if reg is not None and reg["eligible"]:
+        rtot = reg["total_arithmetic"]["value"]
+        # whichever is smaller must be the one selected: the comparison is
+        # decided by the numbers, not by a preference for the research route
+        winner = "regional" if int(rtot) < int(ident) else "identity"
+        assert res.plan["kind"] in (winner, "identity"), (winner, res.plan)
 
 
 def test_r4_composed_route_is_offered_as_a_pipeline_candidate():

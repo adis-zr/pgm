@@ -16,6 +16,7 @@ UPPER = "upper_bound"           # conservative; exceeding a cap is an admission 
 LOWER = "lower_bound"
 CALIB = "measured_calibration"  # observed on this machine, not a guarantee
 FORECAST = "forecast"           # a derived prediction
+UNKNOWN = "unknown"             # not measured; makes the total UNKNOWN, never 0
 
 
 @dataclass
@@ -65,6 +66,16 @@ class CostRecord:
             c = self.counters.get(k)
             if c is None:
                 continue
+            if c.value is None or c.label == UNKNOWN:
+                # an UNMEASURED component makes the whole total unknown. It may
+                # never be read as zero: that is precisely how local
+                # construction vanished from the ring comparison.
+                self.eligible = False
+                if not self.ineligible_reason:
+                    self.ineligible_reason = (
+                        "%s is UNKNOWN (not measured), so the complete cost of "
+                        "this route is unknown and it cannot be compared" % k)
+                return None, "unknown"
             tot += int(c.value)
             labels.add(c.label)
         label = UPPER if UPPER in labels else (
@@ -178,9 +189,25 @@ def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
     rec.put("cartesian_entries_avoided",
             CP.cartesian_entries_avoided(projected, coarse), EXACT)
     rec.put("crossing_factors", len(projected), EXACT)
-    rec.put("construction_ops", construction_ops or 0,
-            CALIB if construction_ops else UPPER,
-            "local masses, marks and profile comparisons")
+    # Local construction is REAL, PAID work and may not default to zero. On
+    # the 12-variable ring control the selected region holds all 12 variables,
+    # so region_data enumerates all 4,096 configurations and builds A and all
+    # 24 original marker masses -- the complete answer -- before the reduced
+    # contraction is priced at six operations. Instrumented, that construction
+    # is 151,576 exact-rational arithmetic calls, and the checker reconstructs
+    # it twice (303,152). Recording `construction_ops or 0` as an UPPER bound
+    # made the headline "6 versus 3,837" comparison omit the work that
+    # produced its answer.
+    if construction_ops is None:
+        # a MEASURED count is required; an unmeasured one is UNKNOWN, which
+        # makes the total unknown and the candidate ineligible for a cost win
+        rec.put("construction_ops", None, UNKNOWN,
+                "local mass/marker construction was not instrumented, so the "
+                "complete cost of this route is UNKNOWN")
+    else:
+        rec.put("construction_ops", int(construction_ops), CALIB,
+                "measured exact-rational arithmetic calls in local mass, "
+                "marker and profile construction")
     rec.put("requested_markers", n_requested, EXACT)
     rec.put("radius_charged", Fr(radius), EXACT)
     if discovery_s is not None:

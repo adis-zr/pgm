@@ -220,8 +220,16 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                 rejected.append({"name": "regional:" + c["mode"],
                                  "reason": "projection failed: %s" % e})
                 continue
+            # MEASURED local construction, plus the checker's own
+            # reconstruction. The checker rebuilds every region's masses and
+            # markers independently (that is the point of it), so the complete
+            # cost carries that work too -- it is paid, not free.
+            cons = sum(int(getattr(rd, "construction_ops", 0)) for rd in rds)
+            checker_cons = 2 * cons     # recheck_region + its own region_data
             rprice = PR.price_regional_plan("regional:" + c["mode"], regs, crs,
-                                            rds, proj, nq, t_level)
+                                            rds, proj, nq, t_level,
+                                            construction_ops=cons
+                                            + checker_cons)
             rsup = PT.supported("regional")
             rprops = PT.PlanProperties()
             rprops.set("mathematically_certified")
@@ -268,8 +276,11 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                            % (type(e).__name__, e)})
                 cm_out = None
             if cm_out is not None:
+                ccons = sum(int(getattr(rd, "construction_ops", 0))
+                            for rd in rds)
                 cprice = PR.price_regional_plan("composed:" + c["mode"], regs,
-                                                crs, rds, proj, nq, t_level)
+                                                crs, rds, proj, nq, t_level,
+                                                construction_ops=3 * ccons)
                 cprice.kind = "composed"
                 cprice.put("collective_statistic_support",
                            cm_meta.get("statistic_support", 0), PR.EXACT)

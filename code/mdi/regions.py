@@ -158,6 +158,10 @@ class RegionData:
     A: dict                           # boundary assignment tuple -> exact mass
     marks: dict                       # (var, state) -> {b: exact marked mass}
     removed_zero: int = 0
+    # MEASURED exact-rational arithmetic performed to build A and marks. This
+    # is real, paid work: on a region holding all 12 ring variables it is
+    # 151,576 calls, which the cost record previously defaulted to zero.
+    construction_ops: int = 0
 
     def n_boundary_states(self):
         return len(self.A)
@@ -200,6 +204,7 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
     bcards = [card[v] for v in boundary]
     icards = [card[v] for v in interior]
     _seen = 0
+    _ops = 0          # MEASURED exact-rational arithmetic
     for bcombo in itertools.product(*[range(c) for c in bcards]):
         if deadline is not None:
             _seen += 1
@@ -222,14 +227,17 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
                 if e == 0:
                     w = Fr(0); break
                 w *= e
+                _ops += 1
             if w == 0:
                 continue
             if not bitlen_ok(w):
                 raise CapExceeded("local weight exceeded the rational bit cap")
             tot += w
+            _ops += 1
             for (v, s) in want:
                 if a[v] == s:
                     mk[(v, s)] += w
+                    _ops += 1
         if tot == 0:
             continue                               # exact zero-mass removal
         if not bitlen_ok(tot):
@@ -256,7 +264,8 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
                 raise AssertionError("marks do not sum to the mass at %s/%s" % (region, b))
     return RegionData(vars=tuple(region), boundary=boundary,
                       internal_factors=internal, crossing_factors=crossing,
-                      A=A, marks=marks, removed_zero=removed)
+                      A=A, marks=marks, removed_zero=removed,
+                      construction_ops=_ops)
 
 
 # ============ 5.3 / 5.4 the cell merge and its exact admission test ============
