@@ -458,3 +458,178 @@ def _normal_weight(z: Fr, h: Fr, ctx: A.Ctx):
     if out[0] > out[1]:
         raise Declined("inverted quadrature weight")
     return out
+
+
+# ================= complex negative Fourier evaluation (§7.2) =================
+
+def fourier_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
+                     delta: Fr, cap_nodes=None, deadline=None):
+    """Evaluate a NEGATIVE rank-1 mode by the complex-phase identity
+
+        exp(-g S^2 / 2) = E_Z exp(i sqrt(g) Z S),   S = sum_i f_i(z_i).
+
+    Each quadrature node contributes a unary COMPLEX phase, so the inner sum
+    factorizes over variables exactly as in the Gaussian case, but the
+    per-variable sums are complex and the result is accumulated as a real part
+    with a rigorous modulus bound.
+
+    Directed enclosures are used for the angle construction and for cos and sin,
+    including their interior extrema: over an interval of width >= pi the cosine
+    range must be taken as [-1, 1] rather than from the endpoints.
+    """
+    import gmpy2
+    if cand.rank != 1 or cand.signs[0] >= 0:
+        raise Declined("fourier_evaluate needs a single NEGATIVE mode")
+    g = cand.gammas[0]
+    Rk = Fr(0)
+    for v, f in cand.features[0].items():
+        Rk += max(abs(Fr(x)) for x in f)
+    lat = gf_lattice(g, Rk, delta)
+    nodes = lat["nodes"]
+    if cap_nodes and nodes > cap_nodes:
+        raise Declined("fourier lattice needs %d nodes, cap %d"
+                       % (nodes, cap_nodes))
+    h, T = lat["h"], lat["T"]
+    sg_lo, sg_hi = _sqrt_enclose(g, ctx)
+
+    # the conservative negative-response bound L = exp(-Y_max)
+    Ymax = negative_response_bound(cand)
+
+    Zlo = Zhi = Fr(0)
+    mk = {(v, a): [Fr(0), Fr(0)] for v in sorted(free) if v in queries
+          for a in range(card[v])}
+    j = -int(Fr(T) / h)
+    jmax = int(Fr(T) / h)
+    processed = 0
+    while j <= jmax:
+        if deadline is not None and (processed & 0xFF) == 0:
+            deadline()
+        processed += 1
+        z = Fr(j) * h
+        wl, wu = _normal_weight(z, h, ctx)
+        # per-variable complex sums: sum_a u(a) * exp(i theta_a),
+        # theta_a = sqrt(g) * z * f_i(a)
+        per = {}
+        mod_lo = mod_hi = Fr(1)
+        ok = True
+        for v in sorted(free):
+            re_lo = re_hi = Fr(0)
+            im_lo = im_hi = Fr(0)
+            rows = []
+            for a in range(card[v]):
+                uw = Fr(residual_unary[v][a])
+                if uw == 0:
+                    rows.append((Fr(0), Fr(0), Fr(0), Fr(0)))
+                    continue
+                fv = Fr(cand.features[0].get(v, [Fr(0)] * card[v])[a])
+                t = z * fv
+                alo = (sg_lo if t >= 0 else sg_hi) * t
+                ahi = (sg_hi if t >= 0 else sg_lo) * t
+                clo, chi = _cos_enclose(alo, ahi, ctx)
+                slo, shi = _sin_enclose(alo, ahi, ctx)
+                rows.append((uw * clo, uw * chi, uw * slo, uw * shi))
+                re_lo += uw * clo; re_hi += uw * chi
+                im_lo += uw * slo; im_hi += uw * shi
+            # a rigorous modulus bound for the per-variable complex sum
+            m_hi = _modulus_upper(re_lo, re_hi, im_lo, im_hi)
+            per[v] = (rows, re_lo, re_hi, im_lo, im_hi, m_hi)
+            mod_hi *= m_hi
+            if mod_hi > Fr(10) ** 60:
+                ok = False
+                break
+        if not ok:
+            raise Declined("complex modulus product exceeded a safe range")
+        # the real part of the product is bounded in modulus by mod_hi, so the
+        # node contributes within [-mod_hi, +mod_hi] times its weight
+        Zlo += wl * (-mod_hi)
+        Zhi += wu * mod_hi
+        for v in sorted(free):
+            if v not in queries:
+                continue
+            rows, rl, rh, il, ih, mh = per[v]
+            for a in range(card[v]):
+                arl, arh, ail, aih = rows[a]
+                am = _modulus_upper(arl, arh, ail, aih)
+                others = mod_hi / mh if mh > 0 else Fr(0)
+                mk[(v, a)][0] += wl * (-(am * others))
+                mk[(v, a)][1] += wu * (am * others)
+    meta = {"nodes": nodes, "T": T, "h": h, "processed": processed,
+            "negative_exponent_Ymax": Ymax,
+            "lattice": {k: str(v) for k, v in lat.items() if k != "derivation"},
+            "note": "complex-phase identity exp(-gS^2/2) = E exp(i sqrt(g) Z S); "
+                    "per-node complex sums with directed cos/sin enclosures "
+                    "including interior extrema, accumulated as a modulus bound"}
+    return (Zlo, Zhi), {k: tuple(v) for k, v in mk.items()}, meta
+
+
+def _modulus_upper(re_lo: Fr, re_hi: Fr, im_lo: Fr, im_hi: Fr) -> Fr:
+    """An exact rational UPPER bound on |x + iy| over the rectangle."""
+    rm = max(abs(re_lo), abs(re_hi))
+    im = max(abs(im_lo), abs(im_hi))
+    # |x+iy| <= |x| + |y|, exact and sufficient
+    return rm + im
+
+
+def _cos_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
+    """Directed enclosure of cos over [lo, hi], INCLUDING interior extrema."""
+    import gmpy2
+    if lo > hi:
+        lo, hi = hi, lo
+    width = hi - lo
+    # pi upper bound: 3.1416 > pi
+    pi_up = Fr(31416, 10000)
+    if width >= 2 * pi_up:
+        return Fr(-1), Fr(1)
+    with ctx.D:
+        c1 = gmpy2.cos(gmpy2.mpfr(gmpy2.mpq(lo.numerator, lo.denominator)))
+        c2 = gmpy2.cos(gmpy2.mpfr(gmpy2.mpq(hi.numerator, hi.denominator)))
+    with ctx.U:
+        c1u = gmpy2.cos(gmpy2.mpfr(gmpy2.mpq(lo.numerator, lo.denominator)))
+        c2u = gmpy2.cos(gmpy2.mpfr(gmpy2.mpq(hi.numerator, hi.denominator)))
+    vals = [A.exact_fr(c1), A.exact_fr(c2), A.exact_fr(c1u), A.exact_fr(c2u)]
+    out_lo, out_hi = min(vals), max(vals)
+    # an interior extremum of cos sits at a multiple of pi. If the interval can
+    # contain one, widen conservatively.
+    pi_lo = Fr(314159, 100000)
+    k_lo = int(lo / pi_lo) - 1
+    k_hi = int(hi / pi_lo) + 1
+    for k in range(k_lo, k_hi + 1):
+        centre_lo = Fr(k) * pi_lo
+        centre_hi = Fr(k) * pi_up
+        if (lo <= centre_hi and centre_lo <= hi):
+            if k % 2 == 0:
+                out_hi = Fr(1)
+            else:
+                out_lo = Fr(-1)
+    return max(Fr(-1), out_lo), min(Fr(1), out_hi)
+
+
+def _sin_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
+    """Directed enclosure of sin over [lo, hi], INCLUDING interior extrema."""
+    import gmpy2
+    if lo > hi:
+        lo, hi = hi, lo
+    pi_up = Fr(31416, 10000)
+    if hi - lo >= 2 * pi_up:
+        return Fr(-1), Fr(1)
+    with ctx.D:
+        s1 = gmpy2.sin(gmpy2.mpfr(gmpy2.mpq(lo.numerator, lo.denominator)))
+        s2 = gmpy2.sin(gmpy2.mpfr(gmpy2.mpq(hi.numerator, hi.denominator)))
+    with ctx.U:
+        s1u = gmpy2.sin(gmpy2.mpfr(gmpy2.mpq(lo.numerator, lo.denominator)))
+        s2u = gmpy2.sin(gmpy2.mpfr(gmpy2.mpq(hi.numerator, hi.denominator)))
+    vals = [A.exact_fr(s1), A.exact_fr(s2), A.exact_fr(s1u), A.exact_fr(s2u)]
+    out_lo, out_hi = min(vals), max(vals)
+    pi_lo = Fr(314159, 100000)
+    half_lo, half_up = pi_lo / 2, pi_up / 2
+    k_lo = int(lo / pi_lo) - 2
+    k_hi = int(hi / pi_lo) + 2
+    for k in range(k_lo, k_hi + 1):
+        centre_lo = half_lo + Fr(k) * pi_lo
+        centre_hi = half_up + Fr(k) * pi_up
+        if (lo <= centre_hi and centre_lo <= hi):
+            if k % 2 == 0:
+                out_hi = Fr(1)
+            else:
+                out_lo = Fr(-1)
+    return max(Fr(-1), out_lo), min(Fr(1), out_hi)

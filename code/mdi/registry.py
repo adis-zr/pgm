@@ -69,18 +69,31 @@ GENERAL_STATISTIC = _general_statistic_executor
 PT.register_executor("gaussian", _gaussian_executor)
 # NO gaussian checker yet.
 
-# 'fourier' and 'composed' have NO executor: both refuse at dispatch.
+def _fourier_executor(free, card, residual_unary, cand, queries, ctx, delta,
+                      **kw):
+    from mdi import collective as CO
+    return CO.fourier_evaluate(free, card, residual_unary, cand, queries, ctx,
+                               delta, **kw)
 
-UNIMPLEMENTED = {
-    "fourier": "no complex-phase tensor evaluator exists; negative modes run "
-               "through the exact statistic DP instead",
-    "composed": "coarsening followed by a collective evaluator is not "
-                "connected; categorical mode fitting is missing",
-}
+
+def _composed_executor(restricted, regions, coarse, rds, queries, ctx, eps,
+                       **kw):
+    """Coarsen, then run a verified collective evaluator on the CATEGORICAL
+    cells (contract E.7)."""
+    from mdi import composed as CM
+    return CM.run(restricted, regions, coarse, rds, queries, ctx, eps, **kw)
+
+
+PT.register_executor("fourier", _fourier_executor)
+PT.register_executor("composed", _composed_executor)
+
+UNIMPLEMENTED = {}
 
 MISSING_CHECKERS = {
     "statistic": "no independent statistic-DP checker",
     "gaussian": "no independent quadrature checker",
+    "fourier": "no independent complex-quadrature checker",
+    "composed": "no independent checker for a composed publication",
 }
 
 

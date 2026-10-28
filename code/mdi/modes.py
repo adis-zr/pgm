@@ -163,8 +163,12 @@ def propose_modes(free, factors, card, max_rank=None):
     info = {"pairs_with_zero_excluded": len(zero_pairs),
             "gauge_removed_pairs": len(Hs), "binary": binary}
     if not binary:
-        return [], {**info, "declined": "categorical mode fitting not implemented "
-                                        "in this build; residual keeps all factors"}
+        # FINITE CATEGORICAL fitting by reference-state contrasts. With fixed
+        # reference state 0 the gauge-removed table H has H(a,0)=H(0,b)=1, so
+        # the contrasts log H(a,b) for a,b >= 1 carry the whole interaction. The
+        # number of contrasts is sum_i (d_i - 1), which the cap bounds.
+        return _propose_categorical(free, card, Hs, consts, zero_pairs, info,
+                                    max_rank)
     if not Hs:
         return [], {**info, "declined": "no strictly positive pair factors"}
 
@@ -270,6 +274,80 @@ def propose_modes(free, factors, card, max_rank=None):
     return cands, info
 
 
+def _propose_categorical(free, card, Hs, consts, zero_pairs, info, max_rank):
+    """Rank-one categorical proposal from reference-state contrasts.
+
+    For each variable a state-indexed feature f_i(a) is sought with
+    log H_ij(a,b) ~ s*gamma*f_i(a)*f_j(b) and f_i(0) = 0, which the gauge
+    removal already enforces. A rank-one fit is obtained by alternating least
+    squares on the contrast tensor, then rounded to explicit rationals; the
+    certificate is the residual check in build_residual, never this fit.
+    """
+    dim = sum(card[v] - 1 for v in sorted(free))
+    if dim > K.CAPS["feature_contrast_dim"]:
+        return [], {**info, "declined": "contrast dimension %d exceeds the %d cap"
+                                        % (dim, K.CAPS["feature_contrast_dim"])}
+    if not Hs:
+        return [], {**info, "declined": "no strictly positive pair factors"}
+    # contrast values per pair, as floats for the PROPOSAL only
+    contrasts = {}
+    for (i, j), H in Hs.items():
+        rows = {}
+        for a in range(1, card[i]):
+            for b in range(1, card[j]):
+                h = float(H[a][b])
+                if h <= 0:
+                    rows = None
+                    break
+                rows[(a, b)] = math.log(h)
+            if rows is None:
+                break
+        if rows:
+            contrasts[(i, j)] = rows
+    if not contrasts:
+        return [], {**info, "declined": "every categorical contrast is trivial"}
+    # alternating least squares for f with log H(a,b) ~ lam * f_i(a) * f_j(b)
+    f = {v: [0.0] + [1.0] * (card[v] - 1) for v in sorted(free)}
+    lam = 1.0
+    for _ in range(min(K.CAPS["mode_fit_iterations"], 40)):
+        for v in sorted(free):
+            num = [0.0] * card[v]
+            den = [0.0] * card[v]
+            for (i, j), rows in contrasts.items():
+                if v == i:
+                    for (a, b), val in rows.items():
+                        num[a] += val * f[j][b]
+                        den[a] += f[j][b] * f[j][b]
+                elif v == j:
+                    for (a, b), val in rows.items():
+                        num[b] += val * f[i][a]
+                        den[b] += f[i][a] * f[i][a]
+            for a in range(1, card[v]):
+                if den[a] > 1e-300:
+                    f[v][a] = num[a] / den[a]
+        # a scale for lam
+        nsum = dsum = 0.0
+        for (i, j), rows in contrasts.items():
+            for (a, b), val in rows.items():
+                nsum += val * f[i][a] * f[j][b]
+                dsum += (f[i][a] * f[j][b]) ** 2
+        if dsum > 1e-300:
+            lam = nsum / dsum
+    if abs(lam) < 1e-12:
+        return [], {**info, "declined": "categorical fit is numerically trivial"}
+    sign = 1 if lam > 0 else -1
+    D = 10 ** 6
+    mx = max(abs(f[v][a]) for v in sorted(free) for a in range(card[v])) or 1.0
+    feat = {}
+    for v in sorted(free):
+        feat[v] = [Fr(round(f[v][a] / mx * D), D) for a in range(card[v])]
+    gq = Fr(max(1, round(abs(lam) * mx * mx * D)), D)
+    cand = ModeCandidate(signs=[sign], gammas=[gq], features=[feat],
+                         kind="categorical_rank1")
+    return [cand], {**info, "categorical": True, "contrast_dim": dim,
+                    "fit_lambda": round(lam, 9)}
+
+
 def _power_fits(Jm, n, kmax, iters=None):
     """Deterministic power iteration with a FREE diagonal. Proposal only.
 
@@ -354,9 +432,13 @@ def build_residual(free, factors, card, cand: ModeCandidate, ctx: A.Ctx,
     common support.
     """
     Hs, absorb, consts, zero_pairs = _pair_matrix(free, factors, card)
-    binary = all(card[v] == 2 for v in free)
-    if not binary:
-        raise Declined("residual construction implemented for binary variables here")
+    # non-binary is now supported: G and D are indexed by state, so the only
+    # requirement is that every feature vector covers its variable's domain
+    for k in range(cand.rank):
+        for v, fv in cand.features[k].items():
+            if len(fv) != card[v]:
+                raise Declined("feature for variable %d has %d states, the "
+                               "model has %d" % (v, len(fv), card[v]))
 
     # G_ij(a,b) and D_i(a) induced by the modes
     def G(i, j, a, b):

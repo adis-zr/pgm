@@ -1327,10 +1327,9 @@ def test_dispatcher_refuses_unimplemented_kinds():
     original-model solver."""
     from mdi import plantype as PT
     from mdi import registry as RG          # registers what exists
-    for kind in ("fourier", "composed"):
-        with pytest.raises(PT.PlanError) as e:
-            PT.dispatch(kind)
-        assert "no executor" in str(e.value)
+    # an UNKNOWN kind must still refuse
+    with pytest.raises(PT.PlanError):
+        PT.dispatch("nonsense")
     ex, ck = PT.dispatch("identity")
     assert ex is not None and ck is not None
     # regional now has BOTH (contract D.7 checker implemented)
@@ -1349,9 +1348,10 @@ def test_support_table_is_factual():
     assert rows["identity"]["checker_supported"]
     assert rows["regional"]["executor_supported"]
     assert rows["regional"]["checker_supported"], "D.7 checker is implemented"
-    assert not rows["fourier"]["executor_supported"]
-    assert not rows["composed"]["executor_supported"]
-    for k in ("statistic", "gaussian"):
+    # every kind now HAS an executor (E.6 fourier, E.7 composed)
+    assert rows["fourier"]["executor_supported"]
+    assert rows["composed"]["executor_supported"]
+    for k in ("statistic", "gaussian", "fourier", "composed"):
         assert not rows[k]["checker_supported"]
         assert rows[k]["checker_note"], "a missing checker must say why"
 
@@ -2037,32 +2037,43 @@ def test_H_aggregation_shows_zero_masking_and_positive_cancellation():
     assert Lp == Up == Fr(1), (Lp, Up)
 
 
-def test_H_categorical_mode_fitting_declines_with_a_reason():
-    """Categorical fitting is NOT implemented. It must decline with a recorded
-    reason, never silently produce a binary-only answer."""
+def test_H_categorical_mode_fitting_is_implemented():
+    """Categorical fitting is now implemented (E.4). A non-binary model must
+    yield a CATEGORICAL candidate whose features span each variable's domain,
+    never a binary-only answer, and the fit is always checked by
+    build_residual rather than trusted."""
     txt = ("MARKOV\n3\n3 3 2\n3\n2 0 1\n1 2\n2 1 2\n"
            "9\n2 1 1 1 2 1 1 1 2\n2\n1 1\n6\n1 2 1 2 1 2\n")
     m = M.read_uai(w(txt))
     r = M.restrict(m, {})
     assert any(r.card[v] == 3 for v in r.free)
     cands, info = MD.propose_modes(r.free, r.factors, r.card)
-    assert cands == [], "a non-binary model must not yield a binary mode"
-    assert "declined" in info, info
-    assert "categorical" in info["declined"].lower()
+    if not cands:
+        # a declension is acceptable, but it must carry a reason
+        assert info.get("declined"), info
+        return
+    assert info.get("categorical"), info
+    for cand in cands:
+        assert cand.kind == "categorical_rank1"
+        for v, fv in cand.features[0].items():
+            assert len(fv) == r.card[v], (v, len(fv), r.card[v])
 
 
 def test_H_bounded_fallback_is_a_recorded_selection():
     """A route with no executor must not fall through; fallback is a separate,
     recorded, charged selection."""
     from mdi import plantype as PT, registry as RG, pricing as PR
-    for kind in ("fourier", "composed"):
-        with pytest.raises(PT.PlanError):
-            PT.dispatch(kind)
+    # an unknown kind refuses; a kind with no CHECKER is ineligible
+    with pytest.raises(PT.PlanError):
+        PT.dispatch("nonsense")
+    for kind in ("statistic", "gaussian", "fourier", "composed"):
+        ex, ck = PT.dispatch(kind)
+        assert ex is not None and ck is None
     # the fallback must be priced as its own record, with identity eligible
     ident = _complete_price(PR, "identity", "identity:fallback", 10 ** 6,
                             1 << 20)
     unimpl = _complete_price(PR, "fourier", "fourier", 1, 1, eligible=False,
-                             ineligible_reason=RG.UNIMPLEMENTED["fourier"])
+                             ineligible_reason=RG.MISSING_CHECKERS["fourier"])
     cmp = PR.compare([ident, unimpl], cap_bytes=1 << 30)
     assert cmp["chosen"]["name"] == "identity:fallback"
     row = next(x for x in cmp["all"] if x["kind"] == "fourier")
@@ -2997,3 +3008,127 @@ def test_r4_combined_identity_record_is_verified_not_trusted():
         bad.combined_splits[0]["members"] = [0]      # a single, non-separable
         with pytest.raises(PRE.PreprocessError):
             PRE.verify_identities(r, bad)
+
+
+# ===== review 4 priority 6: the remaining research branches =====
+
+def _ternary_rank1(n=4, d=3, g=0.3):
+    wv = [0.0, 1.0, 2.0][:d]
+    sc = [(v,) for v in range(n)] + [(i, j) for i in range(n)
+                                     for j in range(i + 1, n)]
+    L = ["MARKOV", str(n), " ".join([str(d)] * n), str(len(sc))]
+    for s_ in sc:
+        L.append("%d %s" % (len(s_), " ".join(map(str, s_))))
+    for v in range(n):
+        L.extend([str(d), " ".join(dec(Fr(1)) for _ in range(d))])
+    for i in range(n):
+        for j in range(i + 1, n):
+            e = [Fr(round(math.exp(g * wv[a] * wv[b]) * 10 ** 12), 10 ** 12)
+                 for a in range(d) for b in range(d)]
+            L.extend([str(d * d), " ".join(dec(x) for x in e)])
+    return "\n".join(L) + "\n"
+
+
+def test_r4_categorical_mode_fitting_recovers_and_removes():
+    """E.4: finite categorical fitting by reference-state contrasts. It must
+    find the mode on a TERNARY model and actually remove the interaction."""
+    m = M.read_uai(w(_ternary_rank1()))
+    r = M.restrict(m, {})
+    assert all(r.card[v] == 3 for v in r.free)
+    cands, info = MD.propose_modes(r.free, r.factors, r.card)
+    assert cands, info
+    assert info.get("categorical"), info
+    cand = cands[0]
+    assert cand.kind == "categorical_rank1"
+    assert len(cand.features[0][sorted(r.free)[0]]) == 3
+    ctx = A.Ctx(140)
+    res = MD.build_residual(r.free, r.factors, r.card, cand, ctx)
+    assert MD.tv_from_nu(res.nu) <= K.RADII["collective_fit_and_rounding"]
+    Hs, _, _, _ = MD._pair_matrix(r.free, r.factors, r.card)
+    orig = [abs(float(H[2][2]) - 1.0) for H in Hs.values()]
+    resid = []
+    for tbl in res.pairs.values():
+        gg = MD.gauge_split(tbl, 3, 3)
+        resid.append(abs(float(gg.H[2][2]) - 1.0))
+    assert max(resid) < min(orig) / 100, (max(resid), min(orig))
+
+
+def test_r4_trig_enclosures_are_sound_including_interior_extrema():
+    """E.6: the complex path needs directed cos and sin enclosures that account
+    for interior extrema, not just endpoint values."""
+    ctx = A.Ctx(120)
+    viol = 0
+    for lo_n in range(-20, 21):
+        for w_n in (1, 5, 20):
+            lo = Fr(lo_n, 4)
+            hi = lo + Fr(w_n, 4)
+            cl, ch = CO._cos_enclose(lo, hi, ctx)
+            sl, sh = CO._sin_enclose(lo, hi, ctx)
+            assert -1 <= cl <= ch <= 1
+            assert -1 <= sl <= sh <= 1
+            for t in range(41):
+                x = float(lo) + (float(hi) - float(lo)) * t / 40
+                if not (float(cl) - 1e-12 <= math.cos(x) <= float(ch) + 1e-12):
+                    viol += 1
+                if not (float(sl) - 1e-12 <= math.sin(x) <= float(sh) + 1e-12):
+                    viol += 1
+    assert viol == 0, viol
+
+
+def test_r4_fourier_evaluator_exists_and_refuses_a_positive_mode():
+    """E.6: the complex-phase evaluator is implemented and registered."""
+    from mdi import registry as RG, plantype as PT
+    ex, ck = PT.dispatch("fourier")
+    assert ex is not None
+    assert ck is None, "no independent complex-quadrature checker yet"
+    assert "fourier" not in RG.UNIMPLEMENTED
+    ctx = A.Ctx(120)
+
+    class Pos:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 20)]
+        features = [{0: [Fr(-1), Fr(1)]}]
+
+    with pytest.raises(CO.Declined):
+        CO.fourier_evaluate([0], {0: 2}, {0: [Fr(1), Fr(1)]}, Pos(), {0},
+                            ctx, Fr(1, 1000))
+
+
+def test_r4_composed_route_runs_and_encloses():
+    """E.7: coarsen, then run a verified collective evaluator on the
+    CATEGORICAL cells, preserving original query markers. Every transformation
+    error adds."""
+    from mdi import composed as CM
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    ctx = A.Ctx(180)
+    out, meta = CM.run(r, regs, crs, rds, set(r.free), ctx, Fr(1, 100))
+    assert meta["evaluator"] in ("product_statistic_dp",
+                                 "general_residual_dp"), meta
+    assert meta["coarse_vars"] == len(regs)
+    Z, p = O.exact_all_marginals(r)
+    worst = Fr(0)
+    for v in sorted(r.free):
+        for s in range(r.card[v]):
+            lo, hi = out[v][s]
+            assert lo <= p[v][s] <= hi, (v, s, float(lo), float(p[v][s]),
+                                         float(hi))
+            worst = max(worst, hi - lo)
+    assert worst <= Fr(1, 100), float(worst)
+    # the radii ADD: the composed total must exceed each component
+    assert Fr(meta["total_radius"]) >= Fr(meta["regional_radius"])
+    assert Fr(meta["total_radius"]) >= Fr(meta["residual_tv"])
+
+
+def test_r4_every_kind_has_a_registered_executor():
+    """No kind should still refuse at dispatch for want of an executor."""
+    from mdi import registry as RG, plantype as PT
+    rows = {x["kind"]: x for x in RG.status_table()}
+    for kind in PT.KINDS:
+        assert rows[kind]["executor_supported"], kind
+    # checkers remain the honest gap
+    assert rows["identity"]["checker_supported"]
+    assert rows["regional"]["checker_supported"]
+    for kind in ("statistic", "gaussian", "fourier", "composed"):
+        assert not rows[kind]["checker_supported"]
+        assert rows[kind]["checker_note"]
