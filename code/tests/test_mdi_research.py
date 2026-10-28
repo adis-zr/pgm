@@ -1103,3 +1103,146 @@ def test_corrected_mode_actually_removes_the_interaction():
         "the residual must be far closer to non-interacting than the original: "
         "max residual %.3e vs min original %.3e" % (max(resid), min(orig)))
     assert MD.tv_from_nu(res.nu) <= K.RADII["collective_fit_and_rounding"]
+
+
+# ===== contract B: remaining certificate and schema defects =====
+
+def test_reversed_rectangular_scope_transposes_entrywise():
+    """A pair written (j,i) with unequal cardinalities must normalize to (i,j)
+    ENTRYWISE. The previous comprehension iterated the wrong extents and got 4
+    of 6 entries wrong on a 3x2 reversed scope."""
+    for txt, desc in [
+        ("MARKOV\n2\n2 3\n2\n2 1 0\n1 1\n6\n1 2 3 4 5 6\n3\n1 1 1\n", "3x2 rev"),
+        ("MARKOV\n2\n3 2\n2\n2 1 0\n1 1\n6\n1 2 3 4 5 6\n2\n1 1\n", "2x3 rev"),
+        ("MARKOV\n2\n2 3\n2\n2 0 1\n1 1\n6\n1 2 3 4 5 6\n3\n1 1 1\n", "2x3 fwd"),
+    ]:
+        m = M.read_uai(w(txt)); r = M.restrict(m, {})
+        f = next(x for x in r.factors if len(x.scope) == 2)
+        orig = {}
+        for a in range(f.card[0]):
+            for b in range(f.card[1]):
+                orig[(f.scope[0], a), (f.scope[1], b)] = f.table[a * f.card[1] + b]
+        Hs, ab, cs, zp = MD._pair_matrix(r.free, r.factors, r.card)
+        k = list(Hs.keys())[0]
+        i, j = k
+        for a in range(r.card[i]):
+            for b in range(r.card[j]):
+                recon = cs[k] * ab[i][a] * ab[j][b] * Hs[k][a][b]
+                want = orig.get(((i, a), (j, b))) or orig.get(((j, b), (i, a)))
+                assert recon == want, (desc, i, a, j, b, recon, want)
+
+
+def test_rndd_saturation_is_refused():
+    """MPFR saturates at the exponent range instead of returning an infinity, so
+    a finite RNDD result there is not a lower bound. down(2^200) with emax=100
+    silently returned 2^100, breaking the N1 invariant."""
+    ctx = A.Ctx(64, emin=-100, emax=100)
+    with pytest.raises(A.NumericalRefusal):
+        ctx.down(Fr(2) ** 200)
+    with pytest.raises(A.NumericalRefusal):
+        ctx.down(Fr(1, 2 ** 200))
+    a = ctx.down(Fr(2) ** 60)
+    b = ctx.down(Fr(2) ** 60)
+    with pytest.raises(A.NumericalRefusal):
+        ctx.mul_d(a, b)
+    # ordinary arithmetic is unaffected
+    c2 = A.Ctx(64)
+    assert A.exact_fr(c2.down(Fr(1, 3))) < Fr(1, 3)
+    assert A.exact_fr(c2.mul_d(c2.down(Fr(1, 3)), c2.down(Fr(1, 7)))) <= Fr(1, 21)
+
+
+def test_lowrank_induces_the_correct_coupling():
+    """B.5: the iteration must not mutate the diagonal while accumulating its
+    own Rayleigh quotient, and gamma must not double-count the eigenvector
+    normalization (which reported |J|*n instead of |J|)."""
+    for J in (0.30, -0.25):
+        n = 6
+        fields = [0.1 * (k + 1) * (1 if k % 2 == 0 else -1) for k in range(n)]
+        m = M.read_uai(w(mean_field(n, J, fields)))
+        r = M.restrict(m, {})
+        cands, _ = MD.propose_modes(r.free, r.factors, r.card)
+        for c in cands:
+            f = c.features[0]
+            induced = float(c.signs[0] * c.gammas[0] * f[0][1] * f[1][1])
+            assert abs(induced - J) < 1e-5, (c.kind, induced, J)
+
+
+def test_lowrank_recovers_unequal_loadings():
+    """A rank-one coupling J_ij = g*w_i*w_j must recover the pattern w."""
+    n = 6
+    wts = [1.0, 0.8, 1.2, 0.6, 1.4, 0.9]
+    g = 0.25
+    scopes = [(v,) for v in range(n)] + [(i, j) for i in range(n)
+                                         for j in range(i + 1, n)]
+    lines = ["MARKOV", str(n), " ".join(["2"] * n), str(len(scopes))]
+    for sc in scopes:
+        lines.append("%d %s" % (len(sc), " ".join(map(str, sc))))
+    for v in range(n):
+        lines.extend(["2", "1.000000000000 1.000000000000"])
+    for i in range(n):
+        for j in range(i + 1, n):
+            J = g * wts[i] * wts[j]
+            e = [Fr(round(math.exp(J * a * b) * 10 ** 12), 10 ** 12)
+                 for a in (-1, 1) for b in (-1, 1)]
+            lines.extend(["4", " ".join(dec(x) for x in e)])
+    m = M.read_uai(w("\n".join(lines) + "\n"))
+    r = M.restrict(m, {})
+    cands, _ = MD.propose_modes(r.free, r.factors, r.card)
+    assert cands
+    f = cands[0].features[0]
+    rel = [float(f[v][1]) for v in range(n)]
+    base = rel[0] / wts[0]
+    for k in range(n):
+        assert abs(rel[k] / wts[k] / base - 1.0) < 0.05, (k, rel[k], wts[k])
+
+
+def test_exact_preprocessing_identities_and_law():
+    """Constants, separable pairs (including with zeros), ternary and reversed
+    scopes must all preserve Z exactly (with the scale) and the marginals."""
+    from mdi import preprocess as PRE
+    cases = [
+        "MARKOV\n3\n2 2 2\n4\n1 0\n2 0 1\n2 1 2\n1 2\n2\n1.5 2.5\n4\n2 6 3 9\n4\n1 1 1 1\n2\n0.5 4\n",
+        "MARKOV\n2\n2 2\n2\n1 0\n2 0 1\n2\n1 2\n4\n0 0 3 9\n",
+        "MARKOV\n2\n2 2\n2\n1 0\n2 0 1\n2\n1 2\n4\n1 2 3 9\n",
+        "MARKOV\n2\n3 2\n2\n1 0\n2 0 1\n3\n1 2 3\n6\n2 4 3 6 5 10\n",
+        "MARKOV\n2\n2 3\n2\n2 1 0\n1 1\n6\n2 4 3 6 5 10\n3\n1 1 1\n",
+    ]
+    for txt in cases:
+        m = M.read_uai(w(txt)); r = M.restrict(m, {})
+        Z0, p0 = O.exact_all_marginals(r)
+        simp = PRE.simplify(r)
+        assert PRE.verify_identities(r, simp)
+        r2 = M.Restricted(model=m, evidence={}, factors=simp.factors,
+                          free=list(r.free), card=dict(r.card),
+                          constant=Fr(1), impossible_factor=None)
+        Z1, p1 = O.exact_all_marginals(r2)
+        assert Z0 == simp.scale * Z1, (Z0, simp.scale, Z1)
+        assert p0 == p1
+
+
+def test_checker_rejects_malformed_output_schema():
+    """Both verification entry points must validate the output schema before
+    numerical work: wrong row count, wrong row length, unordered or
+    out-of-range endpoints."""
+    asym = ("MARKOV\n3\n2 3 2\n3\n1 1\n2 0 1\n3 0 1 2\n"
+            "3\n2 5 11\n6\n1 7 2 13 3 5\n12\n2 1 3 1 5 1 7 1 11 1 13 1\n")
+    m = M.read_uai(w(asym))
+    good = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                   deadline_s=60)
+    assert good["outcome"] == "VERIFIED_ALL_MARGINALS"
+    iv = {v: [tuple(x) for x in rows] for v, rows in good["intervals"].items()}
+    # missing a variable
+    bad = dict(iv); bad.pop(sorted(bad)[0])
+    ok, fails = S.verify_publication(m, {}, bad, eps=Fr(1, 100), mode="I")
+    assert not ok, "a missing output row must be rejected"
+    # wrong row length
+    bad2 = {v: list(rows) for v, rows in iv.items()}
+    bad2[sorted(bad2)[0]] = bad2[sorted(bad2)[0]][:-1]
+    ok2, _ = S.verify_publication(m, {}, bad2, eps=Fr(1, 100), mode="I")
+    assert not ok2, "a short output row must be rejected"
+    # inverted endpoints
+    bad3 = {v: list(rows) for v, rows in iv.items()}
+    v0 = sorted(bad3)[0]
+    bad3[v0] = [(Fr(9, 10), Fr(1, 10))] + list(bad3[v0][1:])
+    ok3, _ = S.verify_publication(m, {}, bad3, eps=Fr(1, 100), mode="I")
+    assert not ok3, "inverted endpoints must be rejected"

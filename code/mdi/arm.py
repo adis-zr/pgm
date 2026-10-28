@@ -249,11 +249,18 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None):
             _write_intervals(pub, m, rundir, label)
             _write_point_vector(pub, m, ev, rundir, label)
         else:
+            # A producer-only result is NOT certified, and a checker that did
+            # not finish has verified no named subset. The old mapping turned
+            # both into CERTIFIED_PARTIAL.
             rec["outcome"] = {"TIMEOUT": "TIMEOUT", "MEMORY_STOP": "MEMORY_STOP",
                               "RESOURCE_BOUND": "RESOURCE_STOP",
+                              "RESOURCE_STOP": "RESOURCE_STOP",
                               "NUMERICAL_REFUSAL": "NUMERICAL_REFUSAL",
                               "ZERO_EVIDENCE_PROVED": "ZERO_EVIDENCE_PROVED",
-                              "VERIFIED_PARTIAL": "CERTIFIED_PARTIAL"}.get(out, out)
+                              "PRODUCER_COMPLETE_UNCHECKED": "RESOURCE_STOP",
+                              "VERIFIED_PARTIAL": "RESOURCE_STOP"}.get(out, out)
+            rec["producer_complete"] = bool(res.get("producer_complete"))
+            rec["independently_verified"] = bool(res.get("independently_verified"))
             rec["reason"] = res.get("reason", "")
     except Exception as e:
         import traceback

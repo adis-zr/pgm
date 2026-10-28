@@ -362,12 +362,38 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                 return out
         except (Deadline, MemoryStop) as e:
             stages["checking_s"] = time.time() - ts
-            out["checker"] = {"status": "INCOMPLETE", "reason": str(e)}
-            out.update({"outcome": "VERIFIED_PARTIAL",
-                        "reason": "producer completed but the checker could not finish: %s" % e,
+            # A checker that stopped before establishing containment has
+            # verified NOTHING. Naming it VERIFIED_PARTIAL implied a verified
+            # subset that no record identified.
+            out["checker"] = {"status": "VERIFICATION_INCOMPLETE",
+                              "reason": str(e),
+                              "verified_coordinates": 0,
+                              "verified_subset": None,
+                              "note": "stopped before containment; no coordinate "
+                                      "was independently verified"}
+            out.update({"outcome": "RESOURCE_STOP",
+                        "reason": "producer completed all requested enclosures "
+                                  "but independent verification did not finish: "
+                                  "%s" % e,
+                        "producer_complete": True,
+                        "independently_verified": False,
                         "elapsed_s": time.time() - t0})
             return out
-    out.update({"outcome": "VERIFIED_ALL_MARGINALS", "elapsed_s": time.time() - t0,
+    else:
+        # Checking was DISABLED. The producer's own enclosures are not a
+        # verification, so this must not be labelled verified.
+        out["checker"] = {"status": "NOT_RUN",
+                          "reason": "run_checker=False",
+                          "verified_coordinates": 0}
+        out.update({"outcome": "PRODUCER_COMPLETE_UNCHECKED",
+                    "producer_complete": True,
+                    "independently_verified": False,
+                    "elapsed_s": time.time() - t0,
+                    "peak_rss_bytes": _rss_bytes()})
+        return out
+    out.update({"outcome": "VERIFIED_ALL_MARGINALS", "producer_complete": True,
+                "independently_verified": True,
+                "elapsed_s": time.time() - t0,
                 "peak_rss_bytes": _rss_bytes()})
     return out
 
@@ -461,6 +487,68 @@ def _exponent_bounds(r):
     return B, Q, T
 
 
+def validate_output_schema(model, evidence, iv, eps):
+    """Contract B.1: validate the complete output schema BEFORE numerical work.
+
+    Exact variable/state key sets, ordered finite rational endpoints inside
+    [0,1], widths within eps, and full original-query coverage. Previously a
+    missing row surfaced as a KeyError from deep inside the contraction, and a
+    malformed row was only noticed after the expensive work had been done.
+    """
+    problems = []
+    if not isinstance(iv, dict):
+        return ["output is not a mapping from variable to interval rows"]
+    want = set(range(model.nvars))
+    got = set(iv)
+    missing = sorted(want - got)
+    extra = sorted(got - want)
+    if missing:
+        problems.append("missing output rows for variables %s" % missing[:8])
+    if extra:
+        problems.append("output rows for unknown variables %s" % extra[:8])
+    for v in sorted(want & got):
+        rows = iv[v]
+        try:
+            n = len(rows)
+        except TypeError:
+            problems.append("variable %d: output row is not a sequence" % v)
+            continue
+        if n != model.card[v]:
+            problems.append("variable %d: %d states, model says %d"
+                            % (v, n, model.card[v]))
+            continue
+        for a, pair in enumerate(rows):
+            try:
+                lo, hi = pair
+            except (TypeError, ValueError):
+                problems.append("variable %d state %d: not an endpoint pair" % (v, a))
+                continue
+            try:
+                lo = Fr(lo); hi = Fr(hi)
+            except (TypeError, ValueError):
+                problems.append("variable %d state %d: endpoints are not exact "
+                                "rationals" % (v, a))
+                continue
+            if lo > hi:
+                problems.append("variable %d state %d: inverted endpoints "
+                                "[%s, %s]" % (v, a, lo, hi))
+            if lo < 0 or hi > 1:
+                problems.append("variable %d state %d: endpoints outside [0,1] "
+                                "[%s, %s]" % (v, a, lo, hi))
+            if hi - lo > Fr(eps):
+                problems.append("variable %d state %d: width %s exceeds eps %s"
+                                % (v, a, hi - lo, eps))
+        if v in evidence:
+            st = evidence[v]
+            for a, pair in enumerate(rows):
+                lo, hi = Fr(pair[0]), Fr(pair[1])
+                want_pt = Fr(1) if a == st else Fr(0)
+                if lo != want_pt or hi != want_pt:
+                    problems.append("variable %d state %d: observed variable not "
+                                    "restored as an exact point mass" % (v, a))
+    return problems
+
+
 def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
     """Independent interval contraction, rebuilt from the ORIGINAL model.
 
@@ -468,6 +556,9 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
     rebuilds messages, support, counts and normalization independently, and
     never consumes producer values.
     """
+    schema = validate_output_schema(model, evidence, iv, eps)
+    if schema:
+        raise A.NumericalRefusal("output schema invalid: %s" % "; ".join(schema[:4]))
     r = M.restrict(model, evidence)
     # the checker applies the SAME exact preprocessing and rederives its
     # identities from the original factors (never from the producer's output)
@@ -583,6 +674,9 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
 
 def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I"):
     """Standalone checker entry point (used by the rejection tests)."""
+    schema = validate_output_schema(model, evidence, iv, eps)
+    if schema:
+        return False, [{"reason": "output schema invalid", "problems": schema[:8]}]
     r = M.restrict(model, evidence)
     if r.impossible_factor is not None or r.constant == 0:
         return False, [{"reason": "zero evidence weight: no conditional "

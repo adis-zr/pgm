@@ -85,7 +85,11 @@ def solve_coarse_with_markers(free, card, factors, regions, coarse, rds,
     # The coarse model's own singleton marginals over CELL variables.
     res = S.solve(cmodel, {}, eps=eps, mode=mode, cap_bytes=cap_bytes,
                   deadline_s=deadline_s, p_min=p_min, run_checker=False)
-    if res["outcome"] != "VERIFIED_ALL_MARGINALS":
+    # solve() with run_checker=False now reports PRODUCER_COMPLETE_UNCHECKED,
+    # which is the honest status: the coarse contraction finished but nothing
+    # independently verified it.
+    if res["outcome"] not in ("VERIFIED_ALL_MARGINALS",
+                              "PRODUCER_COMPLETE_UNCHECKED"):
         return {"outcome": res["outcome"], "reason": res.get("reason"),
                 "coarse_model": {"nvars": cmodel.nvars,
                                  "card": cmodel.card,

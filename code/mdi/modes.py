@@ -108,11 +108,17 @@ def _pair_matrix(free, factors, card):
         if i not in absorb or j not in absorb:
             continue
         if i > j:
-            # normalize the scope order and transpose, so (j,i) combines with (i,j)
-            tb = [f.table[a * card[j] + b] for b in range(card[i])
-                  for a in range(card[j])]
-            f = Factor(scope=(j, i), card=(card[j], card[i]), table=tb,
-                       origin=f.origin)
+            # Normalize the scope order so (j,i) combines with (i,j). The source
+            # table is indexed table[a*card[j] + b] with a over variable i and b
+            # over variable j; the target must be indexed [b*card[i] + a]. The
+            # previous comprehension iterated the wrong extents and produced 4 of
+            # 6 entries wrong on a 3x2 reversed scope.
+            di, dj = card[i], card[j]          # i is FIRST in the source scope
+            tb = [None] * (di * dj)
+            for a in range(di):
+                for b in range(dj):
+                    tb[b * di + a] = f.table[a * dj + b]
+            f = Factor(scope=(j, i), card=(dj, di), table=tb, origin=f.origin)
             i, j = j, i
         di, dj = card[i], card[j]
         if any(t == 0 for t in f.table):
@@ -229,17 +235,30 @@ def propose_modes(free, factors, card, max_rank=None):
             continue
         if s < 0 and nneg >= K.CAPS["mode_rank_negative"]:
             continue
-        g = abs(lamb)      # gamma = |lambda|; see the uniform-coupling note above
+        g = abs(lamb)
         if g <= 0:
             continue
-        # round features and strength to explicit rationals
+        # The eigenvector w is UNIT normalized, so lambda already absorbs the
+        # feature scale: for a uniform coupling J the fixed point is lambda = J*n
+        # with w_k = 1/sqrt(n). Rounding the features to +-1 while keeping
+        # |lambda| as gamma therefore double-counted the normalization and
+        # reported gamma = |J|*n instead of |J| (1.8000 for J=0.30, n=6).
+        #
+        # Keep the eigenvector's own scale in the features instead: with
+        # f_k = w_k * sqrt(gamma_raw) the induced coupling is
+        # gamma * f_i * f_j = lambda * w_i * w_j, which is the fitted matrix
+        # entry. We therefore set gamma = 1 in units of the scaled features.
         D = 10 ** 6
-        gq = Fr(max(1, round(g * D)), D)
+        import math as _m
+        scale = _m.sqrt(g)
         feat = {}
         inv = {k: v for v, k in idx.items()}
+        mx = max(abs(w[k]) for k in range(n)) or 1.0
         for k in range(n):
-            c = Fr(round(w[k] * D), D)
-            feat[inv[k]] = [-c, c]              # binary +-1 feature
+            c = Fr(round(w[k] * scale / mx * D), D)
+            feat[inv[k]] = [-c, c]
+        # gamma restores the normalization removed by dividing out mx
+        gq = Fr(max(1, round(mx * mx * D)), D)
         cands.append(ModeCandidate(signs=[s], gammas=[gq], features=[feat],
                                    kind="lowrank_rank1"))
         if s > 0:
@@ -252,9 +271,14 @@ def propose_modes(free, factors, card, max_rank=None):
 
 
 def _power_fits(Jm, n, kmax, iters=None):
-    """Deterministic power iteration on the symmetric coupling matrix with a
-    FREE diagonal: the diagonal is completed to the current rank-1 estimate
-    rather than forced to zero. Proposal only."""
+    """Deterministic power iteration with a FREE diagonal. Proposal only.
+
+    B.5: the previous loop mutated `lam` while accumulating the Rayleigh
+    quotient that defines it, so the matrix changed underneath its own quadratic
+    form and the iteration did not converge to the completion it claimed. The
+    diagonal completion is now FIXED from the previous iterate while the new
+    Rayleigh quantity is evaluated, then updated once per sweep.
+    """
     iters = iters or K.CAPS["mode_fit_iterations"]
     Mx = [row[:] for row in Jm]
     out = []
@@ -262,23 +286,26 @@ def _power_fits(Jm, n, kmax, iters=None):
         v = [1.0 / math.sqrt(n)] * n
         lam = 0.0
         for _ in range(iters):
-            # complete the diagonal with the current estimate
+            lam_fixed = lam              # frozen for this whole sweep
             w = []
             for a in range(n):
                 acc = 0.0
                 for b in range(n):
-                    m = Mx[a][b] if a != b else lam * v[a] * v[a]
+                    m = Mx[a][b] if a != b else lam_fixed * v[a] * v[a]
                     acc += m * v[b]
                 w.append(acc)
             nrm = math.sqrt(sum(x * x for x in w))
             if nrm <= 1e-300:
                 return out
-            v = [x / nrm for x in w]
-            lam = 0.0
+            vn = [x / nrm for x in w]
+            # Rayleigh quotient with the SAME fixed diagonal completion and the
+            # NEW vector; nothing is mutated while it is accumulated
+            num = 0.0
             for a in range(n):
                 for b in range(n):
-                    m = Mx[a][b] if a != b else lam * v[a] * v[a]
-                    lam += v[a] * m * v[b]
+                    m = Mx[a][b] if a != b else lam_fixed * vn[a] * vn[a]
+                    num += vn[a] * m * vn[b]
+            v, lam = vn, num
         if abs(lam) < 1e-12:
             break
         out.append((lam, v[:]))
