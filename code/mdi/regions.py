@@ -189,9 +189,10 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
     ni = 1
     for v in interior:
         ni *= card[v]
-    if nb * ni > K.CAPS["region_tuple_assignments"] * 64:
-        raise CapExceeded("region %s local space %d exceeds the enumeration cap"
-                          % (region, nb * ni))
+    if nb * ni > K.CAPS["region_local_enumeration"]:
+        raise CapExceeded("region %s local space %d exceeds the declared "
+                          "region_local_enumeration cap %d"
+                          % (region, nb * ni, K.CAPS["region_local_enumeration"]))
 
     want = [(v, s) for v in region if v in queries for s in range(card[v])]
     A, marks = {}, {(v, s): {} for (v, s) in want}
@@ -231,9 +232,18 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
                     mk[(v, s)] += w
         if tot == 0:
             continue                               # exact zero-mass removal
+        if not bitlen_ok(tot):
+            raise CapExceeded(
+                "ACCUMULATED region mass exceeded the %d-bit rational cap; "
+                "individual terms passing the cap is not sufficient"
+                % K.CAPS["rational_bit_length"])
         A[b] = tot
         for key in want:
             if mk[key] != 0:
+                if not bitlen_ok(mk[key]):
+                    raise CapExceeded(
+                        "ACCUMULATED marked mass exceeded the %d-bit rational "
+                        "cap" % K.CAPS["rational_bit_length"])
                 marks[key][b] = mk[key]
     removed = nb - len(A)
     # sum_a N_{i,a}(b) == A(b) for every boundary assignment (checked invariant)
@@ -326,7 +336,7 @@ def aggregate_crossings(rd, factors, card, region_of, deadline=None,
     factor list is preserved in `detail` for the ownership record: aggregation
     changes only how responses are PROFILED, never who owns a factor.
     """
-    cap = cap_entries or (K.CAPS["region_tuple_assignments"] * 64)
+    cap = cap_entries or K.CAPS["aggregated_kernel_entries"]
     rset = set(rd.vars)
     me = region_of[rd.vars[0]]
     groups = {}
@@ -575,6 +585,9 @@ def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
         m = Fr(0)
         for (b, al) in cell.members:
             m += al * rd.A[b]
+        if not bitlen_ok(m):
+            raise CapExceeded("ACCUMULATED cell mass exceeded the %d-bit cap"
+                              % K.CAPS["rational_bit_length"])
         M.append(m)
         for key in rd.marks:
             n = Fr(0)

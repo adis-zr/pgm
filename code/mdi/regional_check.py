@@ -81,7 +81,7 @@ def independent_contract(restricted, regions, coarse, rds, queries,
     producer's message passing, and it never touches the original uncoarsened
     model's elimination.
     """
-    cap = cap_assignments or (K.CAPS["region_tuple_assignments"] * 64)
+    cap = cap_assignments or K.CAPS["checker_contraction_space"]
     projected, _ = CP.project_crossings(restricted, regions, coarse, rds)
     ncell = [len(c.cells) for c in coarse]
     total = 1

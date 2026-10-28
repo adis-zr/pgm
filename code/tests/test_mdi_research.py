@@ -1852,3 +1852,85 @@ def test_upper_bound_over_cap_is_an_admission_refusal():
     cmp = PR.compare([big], cap_bytes=8 * (1 << 30))
     assert cmp["chosen"] is None
     assert "admission refusal" in cmp["all"][0]["admission_refusal"]
+
+
+# ===== contract G: one shared budget, declared caps, conversion caching =====
+
+def test_shared_budget_enforces_counters_and_never_clamps():
+    """G/F.7: one monotonic deadline and shared counters. A stop is an OUTCOME;
+    `remaining` may go negative and must not be clamped into more work."""
+    import time as _t
+    from mdi import budget as B
+    bg = B.Budget(wall_s=0.5, limits={"profile_comparisons": 10})
+    bg.enter("discovery")
+    with pytest.raises(B.BudgetExceeded) as e:
+        for _ in range(100):
+            bg.charge("profile_comparisons", 1)
+    assert "discovery" in str(e.value)
+    assert bg.report()["stops"], "a stop must be recorded"
+    bg2 = B.Budget(wall_s=0.05)
+    _t.sleep(0.1)
+    assert bg2.remaining() < 0, "remaining must be allowed to go negative"
+    with pytest.raises(B.BudgetExceeded):
+        bg2.check("loop")
+
+
+def test_budget_refuses_before_allocating():
+    from mdi import budget as B
+    bg = B.Budget(wall_s=10, limits={"assignments": 4096})
+    assert bg.would_exceed("assignments", 5000)
+    with pytest.raises(B.BudgetExceeded):
+        bg.require("assignments", 5000)
+    assert bg.used.get("assignments", 0) == 0, "a refused allocation must not charge"
+    assert bg.require("assignments", 100)
+
+
+def test_declared_caps_are_not_silently_enlarged():
+    """F.7: the 4,096 region-assignment cap is 4,096. Four call sites
+    previously multiplied it by 64 inline."""
+    import inspect
+    from mdi import regions as RR, level2 as L2, regional_check as RC
+    for mod in (RR, L2, RC):
+        src = inspect.getsource(mod)
+        assert 'region_tuple_assignments"] * 64' not in src, mod.__name__
+        assert '"region_tuple_assignments"] * 64' not in src, mod.__name__
+    # each distinct space has its OWN declared cap
+    for key in ("region_local_enumeration", "aggregated_kernel_entries",
+                "level2_contraction_space", "checker_contraction_space"):
+        assert key in K.CAPS, key
+        assert K.CAPS[key] > 0
+
+
+def test_accumulated_rational_sizes_are_bounded():
+    """F.7: ACCUMULATED masses and marks must be checked, not only individual
+    terms."""
+    import inspect
+    from mdi import regions as RR
+    src = inspect.getsource(RR.region_data)
+    assert "ACCUMULATED region mass" in src
+    assert "ACCUMULATED marked mass" in src
+    src2 = inspect.getsource(RR.merge_region)
+    assert "ACCUMULATED cell mass" in src2
+
+
+def test_conversion_cache_is_keyed_by_context_and_per_arm():
+    """G: cache each exact entry's enclosure per precision, rounding and
+    exponent range. Producer and checker build SEPARATE caches."""
+    from mdi import budget as B
+    ctx = A.Ctx(64)
+    cc = B.ConversionCache(ctx, "producer")
+    vals = [Fr(k, 7) for k in range(1, 6)] * 200
+    for v in vals:
+        cc.down(v)
+    st = cc.stats()
+    assert st["distinct_down"] == 5
+    assert st["hits"] == len(vals) - 5
+    assert st["hit_rate"] > 0.99
+    # a DIFFERENT precision must not reuse the cached values
+    ctx2 = A.Ctx(128)
+    cc2 = B.ConversionCache(ctx2, "checker")
+    assert cc2.key != cc.key
+    assert cc2.stats()["hits"] == 0
+    # the cached value equals a direct conversion
+    for v in [Fr(1, 7), Fr(5, 7)]:
+        assert cc.down(v) == ctx.down(v)

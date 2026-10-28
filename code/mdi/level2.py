@@ -234,8 +234,10 @@ def level2_marginals(restricted, regions, coarse, rds, queries, l2):
     total = 1
     for s in spaces:
         total *= max(1, len(s))
-    if total > K.CAPS["region_tuple_assignments"] * 64:
-        raise R.CapExceeded("level-2 contraction space %d too large" % total)
+    if total > K.CAPS["level2_contraction_space"]:
+        raise R.CapExceeded("level-2 contraction space %d exceeds the declared "
+                            "level2_contraction_space cap %d"
+                            % (total, K.CAPS["level2_contraction_space"]))
 
     Zt = Fr(0)
     counts = {}
