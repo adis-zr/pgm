@@ -254,6 +254,58 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                             {"regions": regs, "coarse": crs, "rds": rds,
                              "proj": proj, "t_level": t_level}))
             prices.append(rprice)
+
+            # ---- the COMPOSED route on this partition's categorical cells ----
+            try:
+                from mdi import composed as CM
+                cctx = A.Ctx(160)
+                cm_out, cm_meta = CM.run(r, regs, crs, rds, queries, cctx, eps,
+                                         t_level=t_level,
+                                         deadline=bg.deadline_fn("composed"))
+            except Exception as e:
+                rejected.append({"name": "composed:" + c["mode"],
+                                 "reason": "composed route declined: %s: %s"
+                                           % (type(e).__name__, e)})
+                cm_out = None
+            if cm_out is not None:
+                cprice = PR.price_regional_plan("composed:" + c["mode"], regs,
+                                                crs, rds, proj, nq, t_level)
+                cprice.kind = "composed"
+                cprice.put("collective_statistic_support",
+                           cm_meta.get("statistic_support", 0), PR.EXACT)
+                csup = PT.supported("composed")
+                cprops = PT.PlanProperties()
+                cprops.set("mathematically_certified")
+                if csup["executor_supported"]:
+                    cprops.set("executor_supported")
+                if csup["checker_supported"]:
+                    cprops.set("checker_supported")
+                cprops.set("complete_cost_priced")
+                crec2 = PT.PlanRecord(
+                    kind="composed", name="composed:" + c["mode"],
+                    model_sha256=mh, evidence_sha256=eh, query_sha256=qh,
+                    preprocess_identity=simp.identity(),
+                    factor_ownership=[(f.origin, "region") for f in r.factors],
+                    factor_scopes=[(f.origin, tuple(f.scope), tuple(f.card))
+                                   for f in r.factors],
+                    region_membership=[(i, tuple(reg))
+                                       for i, reg in enumerate(regs)],
+                    cell_membership=[],
+                    allocations={"regional_level1": t_level,
+                                 "collective_total":
+                                     Fr(cm_meta["total_radius"])},
+                    executor_id="mdi.registry:_composed_executor",
+                    checker_id="mdi.registry:_composed_checker",
+                    numerical={"precision": 160, "mode": "P"},
+                    cost_counters={k: cc.as_dict()
+                                   for k, cc in cprice.counters.items()},
+                    storage_schedule={"cells": sum(len(x.cells) for x in crs)},
+                    rejected_alternatives=[], properties=cprops)
+                records.append((crec2, cprice,
+                                {"regions": regs, "coarse": crs, "rds": rds,
+                                 "proj": proj, "t_level": t_level,
+                                 "composed": cm_out, "composed_meta": cm_meta}))
+                prices.append(cprice)
     stages["discover_s"] = time.monotonic() - t
     out.rejected = rejected
 
@@ -346,6 +398,10 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                rejected=rejected, stages=stages,
                                budget=bg.report())
             raw = res["intervals"]
+        elif crec.kind == "composed":
+            # already executed during discovery; its publication is the
+            # original-variable enclosure with every radius added
+            raw = cpayload["composed"]
         else:
             # regional: use the COMPACT projected crossings and the direct
             # original-query readout, normalizing and padding ONCE
@@ -359,11 +415,13 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
 
     # outward expansion by the certified radius, once
     pub, worst = {}, Fr(0)
+    already_widened = (crec.kind == "composed")
     for v in sorted(raw):
         rows = []
         for (lo, hi) in raw[v]:
             lo2, hi2 = Fr(lo), Fr(hi)
-            if not (lo2 == hi2 and (lo2 == 0 or lo2 == 1)):
+            if not already_widened and not (lo2 == hi2 and
+                                            (lo2 == 0 or lo2 == 1)):
                 lo2 = max(Fr(0), lo2 - radius)
                 hi2 = min(Fr(1), hi2 + radius)
             if hi2 - lo2 > worst:
@@ -381,6 +439,12 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
         if crec.kind == "identity":
             ok, fails = checker(model, evidence, pub, eps)
             meta = {"kind": "identity"}
+        elif crec.kind == "composed":
+            ok, fails, meta = checker(
+                r, cpayload["regions"], cpayload["coarse"], cpayload["rds"],
+                queries, pub, eps,
+                Fr(cpayload["composed_meta"]["total_radius"]),
+                regional_radius=Fr(cpayload["composed_meta"]["regional_radius"]))
         else:
             ok, fails, meta = checker(r, cpayload["regions"],
                                       cpayload["coarse"], cpayload["rds"],
@@ -416,6 +480,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
         crec.properties.set("publication_contract_met")
     status = ("CERTIFIED_RESEARCH_ROUTE" if crec.kind != "identity"
               else "CERTIFIED_FALLBACK_ONLY")
+    out.plan["executed_kind"] = crec.kind
     if worst > eps:
         status = "NUMERICAL_REFUSAL"
     return Outcome(status=status, intervals=pub, plan=out.plan,

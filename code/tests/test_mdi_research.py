@@ -3379,3 +3379,45 @@ def test_r4_every_route_now_has_an_executor_and_a_checker():
         assert ex is not None and ck is not None, kind
     assert RG.MISSING_CHECKERS == {}
     assert RG.UNIMPLEMENTED == {}
+
+
+def test_r4_regional_route_wins_on_complete_cost_when_it_should():
+    """With the checker priced by reduced-graph ELIMINATION rather than joint
+    cell enumeration, a genuinely compressible model selects the regional route
+    and certifies it. The ~1e78 figure came from pricing the checker as a full
+    joint enumeration."""
+    from mdi import pipeline as PLN
+    txt, n, NB, BS = ring_of_blocks()
+    m = M.read_uai(w(txt))
+    r = M.restrict(m, {})
+    Z, p = O.exact_all_marginals(r)
+    res = PLN.solve(m, {}, wall_s=180.0, cap_bytes=1 << 30)
+    assert res.status == "CERTIFIED_RESEARCH_ROUTE", (res.status, res.reason)
+    assert res.plan["kind"] == "regional", res.plan
+    assert res.checker["status"] == "VERIFIED"
+    # the regional price must beat identity on COMPLETE cost
+    byname = {x["name"]: x for x in res.prices}
+    reg = next(v for k, v in byname.items() if k.startswith("regional:"))
+    assert reg["eligible"], reg
+    assert reg["total_arithmetic"]["value"] < \
+        byname["identity"]["total_arithmetic"]["value"]
+    # and the published intervals contain the truth
+    for v in r.free:
+        for s in range(r.card[v]):
+            lo, hi = res.intervals[v][s]
+            assert lo <= p[v][s] <= hi, (v, s)
+
+
+def test_r4_composed_route_is_offered_as_a_pipeline_candidate():
+    """E.7 must be reachable through the public pipeline, not only by a direct
+    call. When it declines, the reason must be recorded."""
+    import inspect
+    from mdi import pipeline as PLN
+    src = inspect.getsource(PLN.solve)
+    assert "composed:" in src, "the pipeline must offer the composed route"
+    assert "composed route declined" in src, "a declension must be recorded"
+    txt, n, NB, BS = ring_of_blocks()
+    m = M.read_uai(w(txt))
+    res = PLN.solve(m, {}, wall_s=180.0, cap_bytes=1 << 30)
+    names = [x["name"] for x in res.prices] + [x["name"] for x in res.rejected]
+    assert any(x.startswith("composed:") for x in names), names

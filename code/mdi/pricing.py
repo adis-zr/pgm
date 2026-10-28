@@ -185,9 +185,71 @@ def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
     rec.put("radius_charged", Fr(radius), EXACT)
     if discovery_s is not None:
         rec.put("discovery_seconds", Fr(round(discovery_s * 1000), 1000), CALIB)
-    # the independent checker repeats the reduced contraction
-    rec.put("checker_ops", 2 * total_assign * max(1, len(projected)), UPPER,
-            "independent reduced-model contraction, interval mode")
+    # The reduced model's own producer cost: the checker now uses a
+    # message-passing contraction over the reduced graph, so pricing it as a
+    # full joint enumeration (which gave ~1e78 on the external cases) overstates
+    # it by the factorization. Price both from the reduced graph's elimination
+    # where it is available, and fall back to the enumeration bound otherwise.
+    reduced_ops = None
+    try:
+        from mdi import model as MM, plan as PP, compact as CPX
+        facs = []
+        for i in range(len(regions)):
+            facs.append(MM.Factor(scope=(i,), card=(ncell[i],),
+                                  table=[Fr(x) for x in coarse[i].M],
+                                  origin=-(i + 1)))
+        for pc in projected:
+            rs = tuple(pc.regions)
+            cards = tuple(ncell[i] for i in rs)
+            n = 1
+            for cc2 in cards:
+                n *= cc2
+            if n > 4096:
+                raise ValueError("kernel too large to price exactly")
+            facs.append(MM.Factor(scope=rs, card=cards,
+                                  table=[Fr(1)] * n, origin=-1000))
+        cmdl = MM.Model(nvars=len(regions), card=list(ncell), factors=facs)
+        cmdl.validate()
+        rcm = MM.restrict(cmdl, {})
+        sel2 = PP.choose_plan(rcm.free, rcm.card, rcm.factors, 64, 1 << 40)
+        if sel2["chosen"] is not None:
+            rpl, rest = sel2["chosen"]
+            sub = price_identity_plan(rpl, rest, n_requested, 64)
+            reduced_ops = {
+                "up": int(sub.counters["producer_upward_ops"].value),
+                "down": int(sub.counters["producer_downward_ops"].value),
+                "ro": int(sub.counters["readout_ops"].value),
+                "width": rpl.induced_width,
+                "largest_bag": rpl.largest_bag_entries}
+    except Exception:
+        reduced_ops = None
+    if reduced_ops is not None:
+        rec.put("producer_upward_ops", reduced_ops["up"], UPPER,
+                "reduced-graph elimination, not joint enumeration")
+        rec.put("producer_downward_ops", reduced_ops["down"], UPPER)
+        rec.put("readout_ops", reduced_ops["ro"], UPPER)
+        rec.put("checker_ops", 2 * (reduced_ops["up"] + reduced_ops["down"] +
+                                    reduced_ops["ro"]), UPPER,
+                "independent reduced-graph message passing, interval mode")
+        rec.put("reduced_induced_width", reduced_ops["width"], EXACT)
+        rec.put("reduced_largest_bag", reduced_ops["largest_bag"], EXACT)
+        rec.bytes_producer = Counter(reduced_ops["largest_bag"] * 64, FORECAST,
+                                     "reduced-graph entry counts; excludes "
+                                     "object and allocator overhead")
+        rec.bytes_checker = Counter(reduced_ops["largest_bag"] * 128, FORECAST,
+                                    "interval mode on the reduced graph")
+    else:
+        rec.put("producer_upward_ops", total_assign, UPPER,
+                "joint enumeration fallback: the reduced graph could not be "
+                "priced by elimination")
+        rec.put("producer_downward_ops", total_assign, UPPER)
+        rec.put("readout_ops", total_assign, UPPER)
+        rec.put("checker_ops", 2 * total_assign * max(1, len(projected)), UPPER,
+                "joint-enumeration fallback bound")
+        rec.bytes_producer = Counter(total_assign * 64, FORECAST,
+                                     "joint-enumeration fallback")
+        rec.bytes_checker = Counter(total_assign * 128, FORECAST,
+                                    "joint-enumeration fallback")
     return rec
 
 
