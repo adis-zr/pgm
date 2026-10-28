@@ -42,11 +42,17 @@ def price_identity(free, card, factors, bytes_per_entry, cap_bytes):
 
 def price_regional(free, card, factors, queries, levels, bytes_per_entry,
                    cap_bytes, wall_s, log=None):
+    # NOTE: argument order here is (free, card, factors) while price_modes takes
+    # (free, factors, card), matching each callee. A mismatch between a pricing
+    # wrapper and its call site silently became "mode proposal failed" in the
+    # first six invocations, so both signatures are now asserted on entry.
     """Discover partitions, merge, and price the resulting coarse model.
 
     Returns the best admitted regional candidate, plus every rejected one.
     """
     out, t0 = [], time.time()
+    assert isinstance(card, dict), ("price_regional expects (free, card, factors) "
+                                    "with card a mapping; got %s" % type(card))
     cands = R.propose_partitions(free, card, factors)
     t_level = K.level_radius(levels)
     for c in cands:
@@ -102,9 +108,12 @@ def price_regional(free, card, factors, queries, levels, bytes_per_entry,
     return out
 
 
-def price_modes(free, card, factors, queries, ctx, wall_s, log=None):
+def price_modes(free, factors, card, queries, ctx, wall_s, log=None):
     """Propose and verify collective modes; price the statistic and GF routes."""
     out, t0 = [], time.time()
+    assert isinstance(card, dict), ("price_modes expects (free, factors, card) "
+                                    "with card a mapping; got %s" % type(card))
+    assert not isinstance(factors, dict), "factors must be a sequence, not a mapping"
     try:
         cands, info = MD.propose_modes(free, factors, card)
     except Exception as e:
