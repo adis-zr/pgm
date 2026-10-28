@@ -796,3 +796,78 @@ def test_mutation_missing_hierarchy_ownership_detected():
     # mutate: drop a region, leaving an unowned query
     partial = {v: i for v, i in owner.items() if i != 0}
     assert set(partial) != set(r.free)
+
+
+# =============== control 5b: the COMPOSED route actually executes ===============
+
+def test_control5_coarse_model_executes_and_restores_markers():
+    """A small fixture must actually coarsen and then contract the COARSE model,
+    preserving original query markers, with enumeration checking the composed
+    allowance."""
+    from mdi import coarse as CZ
+    txt, n, NB, BS = ring_of_blocks()
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    regs = tuple(tuple(range(b * BS, (b + 1) * BS)) for b in range(NB))
+    queries = set(r.free)
+    rds, crs, t_level = _coarsen(m, r, regs, 1, queries)
+    states = sum(rd.n_boundary_states() for rd in rds)
+    cells = sum(len(c.cells) for c in crs)
+    assert cells < states, "the control must actually compress"
+    res = CZ.solve_coarse_with_markers(r.free, r.card, r.factors, regs, crs, rds,
+                                       queries, eps=Fr(1, 1000), mode="P",
+                                       cap_bytes=1 << 30, deadline_s=120)
+    assert res["outcome"] == "VERIFIED_ALL_MARGINALS", res
+    # the coarse model is genuinely smaller than the original
+    assert res["coarse_model"]["nvars"] == NB
+    assert max(res["coarse_model"]["card"]) <= 2 ** BS
+    # original markers restored within the numerical + transformation allowance
+    Ztrue, ptrue = O.exact_all_marginals(r)
+    worst = Fr(0)
+    for v in sorted(queries):
+        for a in range(r.card[v]):
+            lo, hi = res["intervals"][v][a]
+            lo2 = max(Fr(0), Fr(lo) - t_level)
+            hi2 = min(Fr(1), Fr(hi) + t_level)
+            assert lo2 <= ptrue[v][a] <= hi2, (v, a, float(lo2),
+                                               float(ptrue[v][a]), float(hi2))
+            if hi2 - lo2 > worst:
+                worst = hi2 - lo2
+    assert worst <= K.MAX_WIDTH, float(worst)
+
+
+def test_control5_coarse_payload_sums_to_one():
+    """g_{i,a}(C) = N/M must sum to 1 over states in every cell."""
+    txt, n, NB, BS = ring_of_blocks()
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    regs = tuple(tuple(range(b * BS, (b + 1) * BS)) for b in range(NB))
+    rds, crs, _ = _coarsen(m, r, regs, 1, set(r.free))
+    for i, cr in enumerate(crs):
+        for ci in range(len(cr.cells)):
+            for v in regs[i]:
+                g = sum(Fr(cr.N[(v, s)][ci]) / Fr(cr.M[ci])
+                        for s in range(r.card[v]))
+                assert g == 1, (i, ci, v, g)
+
+
+# =============== query-subset control: unrequested marker work is omitted ===============
+
+def test_query_subset_omits_unrequested_marker_work():
+    """Queries must determine payload work: asking for fewer variables must
+    compute fewer marks. An all-singleton experiment alone cannot show this."""
+    txt, n, NB, BS = ring_of_blocks()
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    regs = tuple(tuple(range(b * BS, (b + 1) * BS)) for b in range(NB))
+    full = set(r.free)
+    subset = {regs[0][0], regs[2][0]}          # two variables only
+    rd_full = R.region_data(regs[0], r.card, r.factors, full)
+    rd_sub = R.region_data(regs[0], r.card, r.factors, subset)
+    # the full request marks every variable in the region; the subset marks one
+    assert len(rd_full.marks) == BS * 2, len(rd_full.marks)
+    assert len(rd_sub.marks) == 2, len(rd_sub.marks)
+    assert len(rd_sub.marks) < len(rd_full.marks), "unrequested marks must be omitted"
+    # masses are identical either way: only payload work changes
+    assert rd_full.A == rd_sub.A
+    # and a region with no requested variable marks nothing
+    rd_none = R.region_data(regs[1], r.card, r.factors, subset)
+    assert rd_none.marks == {}, rd_none.marks
+    assert rd_none.A, "masses are still computed"
