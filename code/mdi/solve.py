@@ -45,7 +45,8 @@ def rss_scale():
     return _RSS_SCALE
 
 
-def _mk_deadline(t_end, cap_bytes, baseline=None):
+def _mk_deadline(t_end, cap_bytes, baseline=None,
+                 allow_oversized=False):
     """Outer deadline plus a memory cap measured on the WHOLE process RSS.
 
     `baseline` is the RSS already in use when the solve began (interpreter,
@@ -55,9 +56,19 @@ def _mk_deadline(t_end, cap_bytes, baseline=None):
     states which applied.
     """
     base = _rss_bytes() if baseline is None else baseline
+    # A declared cap is a LIMIT, never a starting point to be raised. Enlarging
+    # it when the process already exceeds it meant an oversized process was
+    # granted extra headroom precisely when it should have refused.
     eff = cap_bytes
-    if cap_bytes and cap_bytes <= base:
-        eff = base + max(cap_bytes // 8, 1 << 24)
+    if cap_bytes and cap_bytes <= base and allow_oversized:
+        # the caller will refuse after reporting its estimate; keep the
+        # DECLARED cap so nothing is silently granted extra headroom
+        eff = cap_bytes
+    elif cap_bytes and cap_bytes <= base:
+        raise MemoryStop(
+            "the process already holds %d bytes, at or above the declared cap "
+            "%d, so no work may begin; a declared cap is never enlarged "
+            "because the current process is oversized" % (base, cap_bytes))
 
     def check():
         if time.time() > t_end:
@@ -81,11 +92,17 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     prog = progress or (lambda *a, **k: None)
     t_end = t0 + deadline_s
     rss_baseline = _rss_bytes()
-    dl = _mk_deadline(t_end, cap_bytes, rss_baseline)
-
-    # ---------- stage: input conversion ----------
     out = {"mode": mode, "eps": str(eps), "nvars": model.nvars,
            "evidence_vars": len(evidence), "stages": stages}
+    # A declared cap at or below the process baseline is a refusal, but the
+    # caller is owed the CONCRETE planning estimate that justifies it, so the
+    # refusal is deferred until after planning rather than raised here. The
+    # cap itself is never enlarged.
+    _baseline_over_cap = bool(cap_bytes and cap_bytes <= rss_baseline)
+    dl = _mk_deadline(t_end, cap_bytes, rss_baseline,
+                      allow_oversized=True)
+
+    # ---------- stage: input conversion ----------
     ts = time.time()
     model.validate()
     r = M.restrict(model, evidence)
@@ -155,6 +172,21 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                     "reason": "no generic ordering fits the byte cap",
                     "best_candidate": best[0], "best_estimate": best[1],
                     "cap_bytes": cap_bytes, "elapsed_s": time.time() - t0})
+        return out
+    if _baseline_over_cap:
+        # the declared cap is at or below what the process already holds. The
+        # cap is NEVER enlarged for that; refuse, with the concrete estimate.
+        best = sel["candidates"][0]
+        out.update({"outcome": "RESOURCE_BOUND",
+                    "reason": "the process already holds %d bytes, at or above "
+                              "the declared cap %d, so no work may begin; a "
+                              "declared cap is never enlarged because the "
+                              "current process is oversized"
+                              % (rss_baseline, cap_bytes),
+                    "best_candidate": best[0], "best_estimate": best[1],
+                    "cap_bytes": cap_bytes,
+                    "baseline_rss_bytes": rss_baseline,
+                    "elapsed_s": time.time() - t0})
         return out
     pl, est = sel["chosen"]
     out["plan"] = pl.stats()
@@ -689,8 +721,14 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
     return (not fails), fails, meta
 
 
-def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I"):
-    """Standalone checker entry point (used by the rejection tests)."""
+def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
+                       deadline_s=None, cap_bytes=None):
+    """Standalone checker entry point (used by the rejection tests).
+
+    `deadline_s` and `cap_bytes` carry the SHARED budget. They were hard-wired
+    to a 300-second horizon and a 2 GiB cap, so identity checking ran outside
+    the caller's budget entirely: an 80 ms checker under a 20 ms complete
+    deadline still certified."""
     schema = validate_output_schema(model, evidence, iv, eps)
     if schema:
         return False, [{"reason": "output schema invalid", "problems": schema[:8]}]
@@ -717,8 +755,11 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I"):
     pl = P.build_plan("min_fill", P.order_min_fill(rr.free, rr.card, adj),
                       rr.free, rr.card, rr.factors)
     try:
-        ok, fails, _ = _check(model, evidence, iv, eps, pl, 64, 1 << 31,
-                              time.time() + 300, lambda *a: None)
+        _cap = cap_bytes if cap_bytes is not None else (1 << 31)
+        _end = (time.time() + float(deadline_s)) if deadline_s is not None \
+            else (time.time() + 300)
+        ok, fails, _ = _check(model, evidence, iv, eps, pl, 64, _cap,
+                              _end, lambda *a: None)
     except A.NumericalRefusal as e:
         # A refusal is a REJECTION of the publication, reported as such. Letting
         # it propagate made a caller see an exception rather than "not verified",

@@ -104,6 +104,17 @@ class Budget:
         return True
 
     def enter(self, phase):
+        """Begin a stage. Every stage boundary is a hard enforcement point:
+        the shared deadline and RSS cap are tested BEFORE the stage runs, so a
+        run that is already over budget cannot start more work. Previously
+        `check` existed but was never called from the pipeline, so a mocked
+        2 GiB RSS under a 1 GiB cap certified with ZERO shared-budget checks,
+        and an 80 ms checker under a 20 ms deadline certified with a negative
+        remaining time."""
+        self._enter_raw(phase)
+        self.check("enter:" + phase)
+
+    def _enter_raw(self, phase):
         self.phase = phase
         return self
 

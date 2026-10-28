@@ -3470,3 +3470,613 @@ def test_r4_composed_route_is_offered_as_a_pipeline_candidate():
     res = PLN.solve(m, {}, wall_s=180.0, cap_bytes=1 << 30)
     names = [x["name"] for x in res.prices] + [x["name"] for x in res.rejected]
     assert any(x.startswith("composed:") for x in names), names
+
+
+# ===== r4 review: adversarial checker regressions =====
+
+def test_r5_quadrature_checker_verifies_the_unrounded_law():
+    """R4-01. check_quadrature_publication delegated with Q=1, quantizing the
+    features away: [0, 1/4] became [0, 0], so it checked a law with both
+    weights equal to 1 (probability exactly 1/2) against a true
+    exp(1/32)/(1+exp(1/32)) = 0.5078118642792046."""
+    import math
+    from mdi import collective_check as CC, collective as CO
+    ctx = A.Ctx(160)
+
+    class Cand:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1)]
+        features = [{0: [Fr(0), Fr(1, 4)]}]
+
+    unary = {0: [Fr(1), Fr(1)]}
+    # the checker must enclose the UNROUNDED weight exp(1/32), not 1
+    lo1, hi1 = CC._enclose_weight(unary, {0: 2}, [0], (1,), Cand(), None, ctx)
+    assert lo1 > Fr(103, 100), lo1
+    assert abs(float(lo1) - math.exp(1 / 32)) < 1e-12
+    # the wrong publication centred on 1/2 must be REJECTED
+    bad = {0: [(Fr(4999, 10000), Fr(5001, 10000)),
+               (Fr(4999, 10000), Fr(5001, 10000))]}
+    ok, fails, _ = CC.check_quadrature_publication(
+        [0], {0: 2}, unary, Cand(), {0}, bad, Fr(1, 100), ctx, Fr(1, 1000))
+    assert not ok, "a publication near 1/2 cannot verify a 0.50781 law"
+    # and a CORRECT publication must still be accepted
+    rad = Fr(CO.gf_lattice(Fr(1), Fr(1, 4), Fr(1, 1000))["total_bound"])
+    c = Fr(5078118642792046, 10 ** 16)
+    pad = rad + Fr(1, 10 ** 6)
+    good = {0: [(max(Fr(0), 1 - c - pad), min(Fr(1), 1 - c + pad)),
+                (max(Fr(0), c - pad), min(Fr(1), c + pad))]}
+    ok2, f2, meta = CC.check_quadrature_publication(
+        [0], {0: 2}, unary, Cand(), {0}, good, Fr(1, 100), ctx, Fr(1, 1000))
+    assert ok2, f2
+    assert meta["law"] == "original unrounded rational features"
+
+
+def test_r5_statistic_checker_uses_exact_rational_quantization():
+    """R4-02. round(float(f)*Q) is binary64: for f = 1/2 + 2^-54 and Q = 1 it
+    gives 0 where the exact declared rule gives 1, so checker and producer
+    quantized differently."""
+    from mdi import collective_check as CC, collective as CO
+    f = Fr(1, 2) + Fr(1, 2 ** 54)
+    assert round(float(f) * 1) == 0, "the float path really does give 0"
+    assert CC._exact_quantize(f, 1) == 1
+    assert CO.exact_round_half_up(f * 1) == 1
+    # producer and checker must agree, including on exact ties
+    assert CO.exact_round_half_up(Fr(1, 2)) == 1
+    assert CC._exact_quantize(Fr(1, 2), 1) == 1
+    ctx = A.Ctx(160)
+
+    class C2:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1)]
+        features = [{0: [Fr(0), f]}]
+
+    bad = {0: [(Fr(4999, 10000), Fr(5001, 10000)),
+               (Fr(4999, 10000), Fr(5001, 10000))]}
+    ok, _, _ = CC.check_statistic_publication(
+        [0], {0: 2}, {0: [Fr(1), Fr(1)]}, C2(), 1, {0}, bad, Fr(1, 100), ctx)
+    assert not ok, "the quantized law has probability ~0.6225, not 0.5"
+
+
+def test_r5_every_verifier_entry_point_rejects_malformed_rows():
+    """R4-01/R4-03. Empty, truncated, inverted, out-of-range and unrequested
+    rows must reject AT EVERY entry point. check_composed_publication accepted
+    an empty row for every requested variable with no failures, because
+    `for s in range(len(rows))` iterates zero times."""
+    from mdi import collective_check as CC
+    ctx = A.Ctx(128)
+
+    class Cand:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1)]
+        features = [{0: [Fr(0), Fr(1, 4)]}]
+
+    cases = {
+        "empty": {0: []},
+        "truncated": {0: [(Fr(0), Fr(1))]},
+        "inverted": {0: [(Fr(1), Fr(0)), (Fr(0), Fr(1))]},
+        "out_of_range": {0: [(Fr(-1, 2), Fr(1)), (Fr(0), Fr(1))]},
+        "extra_key": {0: [(Fr(0), Fr(1)), (Fr(0), Fr(1))],
+                      7: [(Fr(0), Fr(1))]},
+    }
+    for name, pub in cases.items():
+        ok, fails, _ = CC.check_statistic_publication(
+            [0], {0: 2}, {0: [Fr(1), Fr(1)]}, Cand(), 1, {0}, pub,
+            Fr(1, 100), ctx)
+        assert not ok, name
+        assert fails, name
+
+
+def test_r5_composed_checker_rejects_empty_and_validates_the_certificate():
+    """R4-03. The composed checker consumed the producer's masses, maps and
+    radius without validating schema, the regional certificate or ownership."""
+    from mdi import collective_check as CC, regions as R
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)], origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1), Fr(1)], origin=1)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    regs = [(0,), (1,)]
+    rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+    ro = {0: 0, 1: 1}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                          region_of=ro, aggregate=True) for i in range(2)]
+    empty = {0: [], 1: []}
+    ok, fails, _ = CC.check_composed_publication(
+        r, regs, crs, rds, {0, 1}, empty, Fr(1, 100), Fr(0),
+        regional_radius=Fr(0))
+    assert not ok, "an empty row must never verify"
+    assert any("EMPTY" in x for x in fails), fails
+    # an INCOMPLETE partition must reject for the missing ownership
+    good = {0: [(Fr(2495, 10000), Fr(2505, 10000)),
+                (Fr(7495, 10000), Fr(7505, 10000))],
+            1: [(Fr(4995, 10000), Fr(5005, 10000)),
+                (Fr(4995, 10000), Fr(5005, 10000))]}
+    ok2, f2, _ = CC.check_composed_publication(
+        r, [(0,)], [crs[0]], [rds[0]], {0, 1}, good, Fr(1, 100), Fr(0),
+        regional_radius=Fr(0))
+    assert not ok2
+    assert any("owned by 0 regions" in x for x in f2), f2
+    # the correct publication on the complete partition still verifies
+    ok3, f3, _ = CC.check_composed_publication(
+        r, regs, crs, rds, {0, 1}, good, Fr(1, 100), Fr(0),
+        regional_radius=Fr(0))
+    assert ok3, f3
+
+
+def test_r5_composed_charges_rounding_energy_and_picks_Q():
+    """R4-03. composed.run fixed Q=1 and never charged
+    rounding_energy_bound. On three ternary variables with features
+    [0, 1/2, 1] the energy at Q=1 is 27/4 = 6.75, yet the publication claimed
+    a 7.84e-13 radius and all nine intervals missed the truth."""
+    import math, itertools
+    from mdi import composed as CX, regions as R, collective as CO
+    ctx = A.Ctx(160)
+    g, fv = Fr(6, 5), [Fr(0), Fr(1, 2), Fr(1)]
+
+    class C:
+        rank = 1
+        signs = [-1]
+        gammas = [g]
+        features = [{v: list(fv) for v in range(3)}]
+
+    # the energy at Q=1 must be the large charge r4 omitted
+    kq1 = CO.round_features(C(), [0, 1, 2], 1)
+    assert CO.rounding_energy_bound(C(), [0, 1, 2], kq1, 1) == Fr(27, 4)
+
+    def ent(a, b):
+        return Fr(int(round(math.exp(float(g * fv[a] * fv[b])) * 10 ** 6)),
+                  10 ** 6)
+
+    facs = [M.Factor(scope=(v,), card=(3,), table=[Fr(1)] * 3, origin=v)
+            for v in range(3)]
+    for i in range(3):
+        for j in range(i + 1, 3):
+            facs.append(M.Factor(scope=(i, j), card=(3, 3),
+                                 table=[ent(a, b) for a in range(3)
+                                        for b in range(3)],
+                                 origin=100 + i * 10 + j))
+    m = M.Model(nvars=3, card=[3] * 3, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Zt = Fr(0)
+    ct = {}
+    for combo in itertools.product(range(3), repeat=3):
+        w = Fr(1)
+        for f in r.factors:
+            off = 0
+            for k, v in enumerate(f.scope):
+                off = off * f.card[k] + combo[v]
+            w *= f.table[off]
+        if w == 0:
+            continue
+        Zt += w
+        for v in range(3):
+            ct[(v, combo[v])] = ct.get((v, combo[v]), Fr(0)) + w
+    regs = [(0,), (1,), (2,)]
+    rds = [R.region_data(gg, r.card, r.factors, set(range(3))) for gg in regs]
+    ro = {v: i for i, gg in enumerate(regs) for v in gg}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), set(range(3)),
+                          region_of=ro, aggregate=True) for i in range(3)]
+    try:
+        out, meta = CX.run(r, regs, crs, rds, set(range(3)), ctx, Fr(1, 100))
+    except CX.Declined:
+        return          # a bounded decline is an acceptable outcome
+    assert meta["Q"] != 1 or Fr(meta["rounding_tv_charged"]) > 0, meta
+    for v in sorted(out):
+        for s, (lo, hi) in enumerate(out[v]):
+            t = ct.get((v, s), Fr(0)) / Zt
+            assert lo <= t <= hi, (v, s, float(lo), float(t), float(hi))
+
+
+def test_r5_negative_fourier_evaluation_terminates_and_encloses():
+    """R4-04. fourier_evaluate never incremented its lattice index: a declared
+    33-node lattice re-evaluated node z = -4 indefinitely. It also accumulated
+    symmetric modulus bounds, discarding the phase."""
+    import math
+    from mdi import collective as CO
+    ctx = A.Ctx(160)
+
+    class C:
+        rank = 1
+        signs = [-1]
+        gammas = [Fr(1, 2)]
+        features = [{0: [Fr(0), Fr(1)], 1: [Fr(0), Fr(1)]}]
+
+    unary = {0: [Fr(1), Fr(2)], 1: [Fr(1), Fr(1)]}
+    Z = 0.0
+    cnt = {}
+    for a in range(2):
+        for b in range(2):
+            w = (float(unary[0][a]) * float(unary[1][b])
+                 * math.exp(-0.5 * float(C.gammas[0]) * (a + b) ** 2))
+            Z += w
+            cnt[(0, a)] = cnt.get((0, a), 0.0) + w
+            cnt[(1, b)] = cnt.get((1, b), 0.0) + w
+    calls = [0]
+
+    def watchdog():
+        calls[0] += 1
+        if calls[0] > 200000:
+            raise AssertionError("fourier_evaluate did not terminate")
+
+    (Zlo, Zhi), mk, meta = CO.fourier_evaluate(
+        [0, 1], {0: 2, 1: 2}, unary, C(), {0, 1}, ctx, Fr(1, 1000),
+        deadline=watchdog)
+    # it processed EXACTLY the declared node set
+    assert meta["processed"] == meta["expected_nodes"] > 1, meta
+    assert float(Zlo) <= Z <= float(Zhi), (float(Zlo), Z, float(Zhi))
+    # the imaginary enclosure must straddle zero
+    ilo, ihi = Fr(meta["imaginary_enclosure"][0]), \
+        Fr(meta["imaginary_enclosure"][1])
+    assert ilo <= 0 <= ihi
+    for v in (0, 1):
+        for s in (0, 1):
+            lo, hi = mk[(v, s)]
+            qlo = max(0.0, float(lo) / float(Zhi))
+            qhi = min(1.0, float(hi) / float(Zlo))
+            t = cnt[(v, s)] / Z
+            assert qlo <= t <= qhi, (v, s, qlo, t, qhi)
+    # a POSITIVE mode is still refused
+    class P:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 2)]
+        features = [{0: [Fr(0), Fr(1)]}]
+
+    with pytest.raises(CO.Declined):
+        CO.fourier_evaluate([0], {0: 2}, {0: [Fr(1), Fr(1)]}, P(), {0}, ctx,
+                            Fr(1, 1000))
+
+
+def test_r5_negative_trig_extrema_are_enclosed():
+    """R4-04. For k < 0 the bracket [k*pi_lo, k*pi_up] is INVERTED, so negative
+    critical points were tested against a reversed bracket and k = -2 was
+    unreachable."""
+    import math
+    from mdi import collective as CO
+    ctx = A.Ctx(128)
+
+    def true_range(fn, a, b, n=3000):
+        vs = [fn(a + (b - a) * i / n) for i in range(n + 1)]
+        return min(vs), max(vs)
+
+    checked = 0
+    for name, enc, fn in (("cos", CO._cos_enclose, math.cos),
+                          ("sin", CO._sin_enclose, math.sin)):
+        for k in range(-6, 1):
+            base = k * math.pi if name == "cos" else (math.pi / 2
+                                                      + k * math.pi)
+            for width in (0.02, 0.2, 1.0, 2.5):
+                a, b = base - width / 2, base + width / 2
+                lo = Fr(a).limit_denominator(10 ** 9)
+                hi = Fr(b).limit_denominator(10 ** 9)
+                elo, ehi = enc(lo, hi, ctx)
+                tlo, thi = true_range(fn, float(lo), float(hi))
+                assert float(elo) <= tlo + 1e-12, (name, k, width, float(elo),
+                                                   tlo)
+                assert float(ehi) >= thi - 1e-12, (name, k, width, float(ehi),
+                                                   thi)
+                checked += 1
+    assert checked >= 50
+    # the exact critical point must be reached at every negative k
+    for k in range(-6, 1):
+        lo = Fr(k) * Fr(314159, 100000) - Fr(1, 1000)
+        hi = Fr(k) * Fr(31416, 10000) + Fr(1, 1000)
+        elo, ehi = CO._cos_enclose(min(lo, hi), max(lo, hi), ctx)
+        if k % 2:
+            assert elo <= Fr(-1), k
+        else:
+            assert ehi >= Fr(1), k
+
+
+# ===== r4 review: verification, accounting and enforcement regressions =====
+
+def test_r5_faulty_producer_rejected_above_the_enumeration_threshold():
+    """R4-05. The output-law check was gated at 4,096 joint assignments. At 13
+    uniform binary variables a producer changing one unary from [1,1] to [9,1]
+    was certified near (.9,.1) against a true (.5,.5)."""
+    import copy
+    from mdi import preprocess as PRE
+    for n in (12, 13, 16, 20):
+        facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)],
+                         origin=v) for v in range(n)]
+        for i in range(n - 1):
+            facs.append(M.Factor(scope=(i, i + 1), card=(2, 2),
+                                 table=[Fr(1)] * 4, origin=100 + i))
+        m = M.Model(nvars=n, card=[2] * n, factors=facs)
+        m.validate()
+        r = M.restrict(m, {})
+        simp = PRE.simplify(r)
+        assert PRE.verify_identities(r, simp)
+        bad = copy.deepcopy(simp)
+        for f in bad.factors:
+            if len(f.scope) == 1 and f.scope[0] == 0 and f.origin < 0:
+                f.table = [Fr(9), Fr(1)]
+                break
+        with pytest.raises(PRE.PreprocessError):
+            PRE.verify_identities(r, bad)
+
+
+def test_r5_all_mutation_classes_reject_at_thirteen_variables():
+    """R4-05. A corrupted output table, a corrupted scale and a dropped
+    nonconstant factor must all reject above the old 4,096 threshold."""
+    import copy
+    from mdi import preprocess as PRE
+    n = 13
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(2)], origin=v)
+            for v in range(n)]
+    for i in range(n - 1):
+        facs.append(M.Factor(scope=(i, i + 1), card=(2, 2),
+                             table=[Fr(2), Fr(1), Fr(1), Fr(3)],
+                             origin=100 + i))
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    simp = PRE.simplify(r)
+    assert PRE.verify_identities(r, simp)
+
+    b1 = copy.deepcopy(simp)
+    for f in b1.factors:
+        if len(f.scope) == 2:
+            f.table[0] = f.table[0] * 7
+            break
+    b2 = copy.deepcopy(simp)
+    b2.scale = b2.scale * Fr(3, 2)
+    b3 = copy.deepcopy(simp)
+    b3.factors = [f for f in b3.factors
+                  if not (len(f.scope) == 2 and f.origin == 100)]
+    for bad in (b1, b2, b3):
+        with pytest.raises(PRE.PreprocessError):
+            PRE.verify_identities(r, bad)
+
+
+def test_r5_regional_checker_charges_its_numerical_error():
+    """R4-06. The checker ran the engine in 128-bit POINT mode and converted
+    the rounded outputs with exact_fr, treating an exact representation of a
+    rounded number as the true quantity."""
+    from mdi import regional_check as RC, regions as R
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1, 3), Fr(1, 7)],
+                     origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1, 11), Fr(1, 13)],
+                     origin=1),
+            M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1, 17), Fr(1, 19), Fr(1, 23), Fr(1, 29)],
+                     origin=2)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    regs = [(0,), (1,)]
+    rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+    ro = {0: 0, 1: 1}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                          region_of=ro, aggregate=True) for i in range(2)]
+    (Zlo, Zhi), (clo, chi) = RC.independent_contract(r, regs, crs, rds, {0, 1})
+    # the enclosure must have POSITIVE width: a point would be a false claim
+    assert Zhi > Zlo, (Zlo, Zhi)
+    Zt = Fr(0)
+    ct = {}
+    for a in range(2):
+        for b in range(2):
+            w = (facs[0].table[a] * facs[1].table[b]
+                 * facs[2].table[a * 2 + b])
+            Zt += w
+            ct[(0, a)] = ct.get((0, a), Fr(0)) + w
+            ct[(1, b)] = ct.get((1, b), Fr(0)) + w
+    for v in (0, 1):
+        for s in (0, 1):
+            qlo = clo.get((v, s), Fr(0)) / Zhi
+            qhi = chi.get((v, s), Fr(0)) / Zlo
+            t = ct[(v, s)] / Zt
+            assert qlo <= t <= qhi, (v, s, float(qlo), float(t), float(qhi))
+
+
+def test_r5_regional_checker_rejects_an_incomplete_partition():
+    """R4-06. An incomplete partition covering only X0 of two independent
+    variables let both X1 intervals [0, .002] be accepted, with a truth of
+    (.25, .75): no region carried X1, so no enclosure was ever built."""
+    from mdi import regional_check as RC, regions as R
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(1)], origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1), Fr(3)], origin=1)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    rds = [R.region_data((0,), r.card, r.factors, {0, 1})]
+    crs = [R.merge_region(rds[0], r.factors, r.card, Fr(1), {0, 1},
+                          region_of={0: 0}, aggregate=True)]
+    pub = {0: [(Fr(0), Fr(2, 1000)), (Fr(0), Fr(2, 1000))],
+           1: [(Fr(0), Fr(2, 1000)), (Fr(0), Fr(2, 1000))]}
+    ok, fails, _ = RC.verify_regional_publication(
+        r, [(0,)], crs, rds, {0, 1}, pub, Fr(0), Fr(1, 100))
+    assert not ok
+    assert any("in NO region" in x for x in fails), fails
+
+
+def test_r5_structural_certainty_is_exact():
+    """R4-06. A unary [0, 1/3] gave the checker [1 - 2^-85, 1] for a state
+    whose probability is exactly 1, so the producer's exact [1,1] failed
+    containment and a structurally certain answer was refused."""
+    for tab, want in (([Fr(0), Fr(1, 3)], [(Fr(0), Fr(0)), (Fr(1), Fr(1))]),
+                      ([Fr(0), Fr(0), Fr(5)],
+                       [(Fr(0), Fr(0)), (Fr(0), Fr(0)), (Fr(1), Fr(1))])):
+        facs = [M.Factor(scope=(0,), card=(len(tab),), table=tab, origin=0)]
+        m = M.Model(nvars=1, card=[len(tab)], factors=facs)
+        m.validate()
+        res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                      deadline_s=30)
+        assert res["outcome"] == "VERIFIED_ALL_MARGINALS", res
+        assert [tuple(x) for x in res["intervals"][0]] == want, res["intervals"]
+
+
+def test_r5_pipeline_invokes_the_registered_executor():
+    """R4-09. The pipeline looked up an executor via dispatch() and then
+    branched on crec.kind, so replacing the identity executor with a raising
+    sentinel still produced a certified result with ZERO executor calls."""
+    from mdi import pipeline as PLN, plantype as PT
+    import mdi.registry            # noqa: F401  (registers the executors)
+    m = M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n"))
+    calls = [0]
+
+    def sentinel(ctx):
+        calls[0] += 1
+        raise RuntimeError("SENTINEL")
+
+    orig = PT._PIPELINE_EXECUTORS["identity"]
+    PT._PIPELINE_EXECUTORS["identity"] = sentinel
+    try:
+        try:
+            res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+            certified = res.status.startswith("CERTIFIED")
+        except RuntimeError:
+            certified = False
+        assert calls[0] >= 1, "the registered executor was never invoked"
+        assert not certified, "certified without running the executor"
+    finally:
+        PT._PIPELINE_EXECUTORS["identity"] = orig
+
+
+def test_r5_corrupted_on_disk_plan_stops_execution():
+    """R4-09. The plan was reloaded from an IN-MEMORY string before being
+    written, so corrupting the written file still certified."""
+    import builtins, io, tempfile
+    from mdi import pipeline as PLN
+    import mdi.registry            # noqa: F401
+    m = M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n"))
+    real_open = builtins.open
+
+    def fake_open(path, mode="r", *a, **k):
+        if isinstance(path, str) and path.endswith(".plan.json") \
+                and "r" in mode and "w" not in mode:
+            return io.StringIO("{ not valid json")
+        return real_open(path, mode, *a, **k)
+
+    builtins.open = fake_open
+    try:
+        res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30,
+                        plan_dir=tempfile.mkdtemp())
+    finally:
+        builtins.open = real_open
+    assert not res.status.startswith("CERTIFIED"), res.status
+    assert res.status == "RESOURCE_STOP", res.status
+
+
+def test_r5_level2_consumes_its_parent_representation():
+    """R4-10. level2_marginals enumerated child cells and ignored the parents:
+    clearing all parent A and marks left the answer unchanged."""
+    import copy
+    from mdi import level2 as L2
+    m, r, regs, crs, rds, region_of = _ring_coarse(NB=4, BS=2)
+    t1 = K.level_radius(2)
+    l2 = L2.build_level2(r, regs, crs, rds, set(r.free), t1)
+    Zt, counts = L2.level2_marginals(r, regs, crs, rds, set(r.free), l2)
+    assert Zt > 0
+    Ztrue, ptrue = O.exact_all_marginals(r)
+    for v in sorted(r.free):
+        for s in range(2):
+            q = counts.get((v, s), Fr(0)) / Zt
+            assert abs(q - ptrue[v][s]) <= 2 * t1
+    # CLEARING the parent payload must change the outcome, not be ignored
+    cleared = copy.deepcopy(l2)
+    for pr in cleared["parent_data"]:
+        pr.A = {kk: Fr(0) for kk in pr.A}
+        pr.marks = {kk: {} for kk in pr.marks}
+    with pytest.raises((L2.Level2Error, ZeroDivisionError)):
+        L2.level2_marginals(r, regs, crs, rds, set(r.free), cleared)
+    # MUTATING one parent mass must be detected
+    mutated = copy.deepcopy(l2)
+    k0 = sorted(mutated["parent_data"][0].A.keys())[0]
+    mutated["parent_data"][0].A[k0] *= 7
+    with pytest.raises(L2.Level2Error):
+        L2.level2_marginals(r, regs, crs, rds, set(r.free), mutated)
+
+
+def test_r5_shared_budget_is_enforced_on_actual_work():
+    """R4-10. A mocked 2 GiB RSS under a 1 GiB cap certified with ZERO
+    shared-budget checks, and an 80 ms checker under a 20 ms complete deadline
+    certified with a NEGATIVE remaining time."""
+    import time as _t
+    from mdi import pipeline as PLN
+    import mdi.registry            # noqa: F401
+    m = M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n"))
+    orig_rss = S._rss_bytes
+    S._rss_bytes = lambda: 2 * (1 << 30)
+    try:
+        res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    finally:
+        S._rss_bytes = orig_rss
+    assert not res.status.startswith("CERTIFIED"), res.status
+    assert (res.budget or {}).get("checks", 0) >= 1, res.budget
+
+    orig_vp = S.verify_publication
+
+    def slow(*a, **k):
+        _t.sleep(0.080)
+        return orig_vp(*a, **k)
+
+    S.verify_publication = slow
+    try:
+        res2 = PLN.solve(m, {}, wall_s=0.020, cap_bytes=1 << 30)
+    finally:
+        S.verify_publication = orig_vp
+    assert not res2.status.startswith("CERTIFIED"), res2.status
+    assert (res2.budget or {}).get("checks", 0) >= 1, res2.budget
+
+
+def test_r5_invalid_requested_variables_reject():
+    """R4-09. Requesting {999} on a two-variable model priced zero requested
+    markers and still returned certified outputs for variables 0 and 1."""
+    from mdi import pipeline as PLN
+    import mdi.registry            # noqa: F401
+    m = M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n"))
+    res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30, queries={999})
+    assert res.status == "INVALID_INPUT", res.status
+    assert not res.intervals, res.intervals
+
+
+def test_r5_declared_cap_is_never_enlarged():
+    """R4-10. The deadline factory raised a declared cap when the process
+    already exceeded it, granting extra headroom exactly when it should
+    refuse."""
+    res = S.solve(M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n"
+                               "2\n1 1\n")),
+                  {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 12,
+                  deadline_s=30, run_checker=False)
+    assert res["outcome"] == "RESOURCE_BOUND", res["outcome"]
+    assert "never enlarged" in res["reason"], res["reason"]
+
+
+def test_r5_point_vector_is_feasible_and_checked_on_readback():
+    """R4-10. normalize/clip/normalize moved a fixed coordinate out of its
+    interval: feasible rows [.195,.2], [.295,.3], [.5,.5] produced a third
+    coordinate of .501259, outside its fixed [.5,.5]."""
+    import tempfile
+    from mdi import arm as AR
+    rows = [(Fr(195, 1000), Fr(2, 10)), (Fr(295, 1000), Fr(3, 10)),
+            (Fr(1, 2), Fr(1, 2))]
+    vec = AR._feasible_simplex_point(rows)
+    assert vec is not None
+    assert sum(vec) == 1
+    for x, (lo, hi) in zip(vec, rows):
+        assert Fr(lo) <= x <= Fr(hi), (x, lo, hi)
+
+    class Mdl:
+        nvars = 1
+        card = [3]
+
+    path = AR._write_point_vector({0: rows}, Mdl(), {}, tempfile.mkdtemp(),
+                                  "ctl")
+    tok = open(path).read().split()
+    assert tok[0] == "MAR"
+    vals = [Fr(x) for x in tok[3:6]]
+    for x, (lo, hi) in zip(vals, rows):
+        assert Fr(lo) - Fr(1, 10 ** 6) <= x <= Fr(hi) + Fr(1, 10 ** 6)
+    # an INFEASIBLE interval set must refuse, not emit a vector
+    class Mdl2:
+        nvars = 1
+        card = [2]
+
+    with pytest.raises(ValueError):
+        AR._write_point_vector({0: [(Fr(9, 10), Fr(1)), (Fr(9, 10), Fr(1))]},
+                               Mdl2(), {}, tempfile.mkdtemp(), "bad")

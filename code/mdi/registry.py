@@ -13,9 +13,11 @@ def _identity_executor(model, evidence, **kw):
     return S.solve(model, evidence, **kw)
 
 
-def _identity_checker(model, evidence, iv, eps, **kw):
+def _identity_checker(model, evidence, iv, eps, deadline_s=None,
+                      cap_bytes=None, **kw):
     from mdi import solve as S
-    return S.verify_publication(model, evidence, iv, eps=eps)
+    return S.verify_publication(model, evidence, iv, eps=eps,
+                                deadline_s=deadline_s, cap_bytes=cap_bytes)
 
 
 def _regional_executor(restricted, regions, coarse, rds, queries, **kw):

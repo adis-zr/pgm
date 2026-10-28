@@ -73,7 +73,15 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     out = Outcome(status="INIT")
 
     # ---------------- stage 1: parse and restrict ----------------
-    bg.enter("parse")
+    try:
+        bg.enter("parse")
+    except B.BudgetExceeded as e:
+        # the process is ALREADY over budget before any work: refuse cleanly
+        # rather than starting and rather than raising at the caller
+        return Outcome(status="RESOURCE_STOP",
+                       reason="the shared budget was already exhausted before "
+                              "the first stage: %s" % e,
+                       budget=bg.report())
     t = time.monotonic()
     try:
         model.validate()
@@ -86,7 +94,29 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     r0 = M.restrict(model, evidence)
     if queries is None:
         queries = set(r0.free)
-    queries = {v for v in queries if v in set(r0.free)}
+    else:
+        # A requested variable outside the model, or pinned by evidence, is an
+        # INVALID request. Silently filtering it priced zero requested markers
+        # and still returned certified outputs for other variables: asking for
+        # {999} on a two-variable model certified variables 0 and 1 instead.
+        queries = set(queries)
+        unknown = sorted(v for v in queries
+                         if not (isinstance(v, int) and 0 <= v < model.nvars))
+        if unknown:
+            return Outcome(status="INVALID_INPUT",
+                           reason="requested variables %s are not variables of "
+                                  "this model" % unknown[:8])
+        pinned = sorted(v for v in queries if v in evidence)
+        if pinned:
+            return Outcome(status="INVALID_INPUT",
+                           reason="requested variables %s are pinned by the "
+                                  "evidence, so they have no free marginal"
+                                  % pinned[:8])
+        notfree = sorted(v for v in queries if v not in set(r0.free))
+        if notfree:
+            return Outcome(status="INVALID_INPUT",
+                           reason="requested variables %s are not free in the "
+                                  "restricted model" % notfree[:8])
     stages["parse_s"] = time.monotonic() - t
     if r0.impossible_factor is not None or r0.constant == 0:
         return Outcome(status="ZERO_EVIDENCE_PROVED",
@@ -97,7 +127,11 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     mh, eh, qh = model_hashes(model, evidence, queries)
 
     # ---------------- stage 2: common exact preprocessing ----------------
-    bg.enter("preprocess")
+    try:
+        bg.enter("preprocess")
+    except B.BudgetExceeded as e:
+        return Outcome(status="RESOURCE_STOP", reason=str(e), stages=stages,
+                       budget=bg.report())
     t = time.monotonic()
     try:
         simp = PRE.simplify(r0)
@@ -122,7 +156,12 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     nq = sum(r.card[v] for v in sorted(queries))
 
     # ---------------- stage 3: discovery and plan records ----------------
-    bg.enter("discover")
+    try:
+        bg.enter("discover")
+    except B.BudgetExceeded as e:
+        return Outcome(status="RESOURCE_STOP", reason=str(e),
+                       prices=out.prices, rejected=rejected, stages=stages,
+                       budget=bg.report())
     t = time.monotonic()
     records, prices = [], []
     rejected = []
@@ -321,7 +360,12 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     out.rejected = rejected
 
     # ---------------- stage 4: persist, reload, validate ----------------
-    bg.enter("persist")
+    try:
+        bg.enter("persist")
+    except B.BudgetExceeded as e:
+        return Outcome(status="RESOURCE_STOP", reason=str(e),
+                       prices=out.prices, rejected=rejected, stages=stages,
+                       budget=bg.report())
     t = time.monotonic()
     # The record must be WRITTEN first and then read back FROM DISK, so the
     # on-disk bytes are the authority for everything downstream. Reloading
@@ -363,7 +407,12 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        rejected=rejected, stages=stages, budget=bg.report())
 
     # ---------------- stage 5: price and select ----------------
-    bg.enter("select")
+    try:
+        bg.enter("select")
+    except B.BudgetExceeded as e:
+        return Outcome(status="RESOURCE_STOP", reason=str(e),
+                       prices=out.prices, rejected=rejected, stages=stages,
+                       budget=bg.report())
     t = time.monotonic()
     for rec, price, payload in reloaded:
         miss = rec.properties.may_execute_as_certified_route()
@@ -397,7 +446,12 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     prog("select", "%s (%s)" % (chosen_name, crec.kind))
 
     # ---------------- stage 6: execute through the dispatcher ----------------
-    bg.enter("execute")
+    try:
+        bg.enter("execute")
+    except B.BudgetExceeded as e:
+        return Outcome(status="RESOURCE_STOP", reason=str(e),
+                       prices=out.prices, rejected=rejected, stages=stages,
+                       budget=bg.report())
     t = time.monotonic()
     try:
         executor, checker = PT.dispatch(crec.kind)
@@ -466,12 +520,23 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                   for s in range(model.card[v])]
 
     # ---------------- stage 7: independent check ----------------
-    bg.enter("check")
+    try:
+        bg.enter("check")
+    except B.BudgetExceeded as e:
+        return Outcome(status="RESOURCE_STOP", reason=str(e),
+                       prices=out.prices, rejected=rejected, stages=stages,
+                       budget=bg.report())
+    # the independent checker receives the SHARED deadline, so its own work is
+    # bounded by the same budget as the producer's
+    check_dl = bg.deadline_fn("check")
     t = time.monotonic()
     try:
         if crec.kind == "identity":
-            ok, fails = checker(model, evidence, pub, eps)
+            ok, fails = checker(model, evidence, pub, eps,
+                                deadline_s=bg.remaining(),
+                                cap_bytes=cap_bytes)
             meta = {"kind": "identity"}
+            bg.check("after-identity-check")
         elif crec.kind == "composed":
             ok, fails, meta = checker(
                 r, cpayload["regions"], cpayload["coarse"], cpayload["rds"],
@@ -507,6 +572,18 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                 "failures": [str(x)[:200] for x in fails[:6]]},
                        prices=out.prices, rejected=rejected, stages=stages,
                        budget=bg.report(),
+                       properties=crec.properties.as_dict())
+    # the LAST enforcement point: a run that exceeded its budget may not
+    # publish, even if every stage individually completed
+    try:
+        bg.check("publish")
+    except B.BudgetExceeded as e:
+        return Outcome(status="RESOURCE_STOP",
+                       reason="verification completed but the shared budget "
+                              "was exhausted before publication: %s" % e,
+                       intervals=pub, prices=out.prices, rejected=rejected,
+                       stages=stages, budget=bg.report(),
+                       checker={"status": "VERIFIED_BUT_UNPUBLISHED"},
                        properties=crec.properties.as_dict())
     crec.properties.set("independently_verified")
     if worst <= eps:

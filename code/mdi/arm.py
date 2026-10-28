@@ -160,40 +160,169 @@ def _write_intervals(pub, m, rundir, label):
         json.dump(rows, fh)
 
 
+def _feasible_simplex_point(rows):
+    """A point inside EVERY interval that also sums to exactly 1, or None.
+
+    The old rule took midpoints, renormalized, CLIPPED back into the intervals
+    and then renormalized AGAIN. That second renormalization can move a
+    coordinate out of its interval: on the feasible rows [.195,.2], [.295,.3],
+    [.5,.5] it produced a third coordinate of .501259, outside its fixed
+    [.5,.5]. A clip followed by a rescale is not a projection onto the
+    intersection of the box and the simplex.
+
+    This instead solves the problem exactly in rationals. Writing
+    x_i = lo_i + s_i with 0 <= s_i <= hi_i - lo_i, feasibility requires
+    sum(lo) <= 1 <= sum(hi), and then the slack 1 - sum(lo) is distributed
+    greedily within each coordinate's own width. Every x_i stays in its
+    interval BY CONSTRUCTION and the sum is exactly 1.
+    """
+    los = [Fr(lo) for lo, _ in rows]
+    his = [Fr(hi) for _, hi in rows]
+    slo, shi = sum(los), sum(his)
+    if slo > 1 or shi < 1:
+        return None                      # the rows admit no coherent vector
+    need = Fr(1) - slo
+    vec = list(los)
+    for i in range(len(rows)):
+        if need <= 0:
+            break
+        room = his[i] - los[i]
+        take = room if room < need else need
+        vec[i] += take
+        need -= take
+    if need != 0:
+        return None
+    for x, lo, hi in zip(vec, los, his):
+        if not (lo <= x <= hi):
+            return None
+    if sum(vec) != 1:
+        return None
+    return vec
+
+
 def _write_point_vector(pub, m, ev, rundir, label):
     """A declared coherent probability vector for MAR scoring, chosen WITHOUT
-    reference answers and lying inside the reported intervals.
+    reference answers and PROVED to lie inside the reported intervals.
 
-    Rule: take each interval's midpoint, then renormalize per variable. The
-    midpoint of a valid enclosure lies inside it; renormalizing a vector of
-    midpoints can leave the interval only if an interval is extremely narrow
-    relative to the renormalization shift, so the result is clipped back into
-    the interval and renormalized once more.
+    The serialized bytes are read back and re-checked, so the published file
+    is what was verified, not merely what was computed.
     """
     from mdi import model as MM
-    out = []
+    DEC = 6
+    out, problems = [], []
     for v in range(m.nvars):
         rows = pub.get(v)
         if rows is None:
-            out.append([1.0 / m.card[v]] * m.card[v]); continue
-        mid = [(Fr(lo) + Fr(hi)) / 2 for lo, hi in rows]
-        tot = sum(mid)
-        if tot <= 0:
-            vec = [Fr(1, len(rows))] * len(rows)
-        else:
-            vec = [x / tot for x in mid]
-            vec = [min(max(x, Fr(lo)), Fr(hi)) for x, (lo, hi) in zip(vec, rows)]
-            t2 = sum(vec)
-            if t2 > 0:
-                vec = [x / t2 for x in vec]
-        out.append([float(x) for x in vec])
-    with open(os.path.join(rundir, "point_%s.MAR" % label), "w") as fh:
-        body = [str(len(out))]
-        for rr in out:
-            body.append(str(len(rr)))
-            for x in rr:
-                body.append("%.6f" % x)
+            k = m.card[v]
+            out.append([Fr(1, k)] * k)
+            continue
+        vec = _feasible_simplex_point(rows)
+        if vec is None:
+            problems.append(
+                "variable %d: the published intervals admit NO coherent "
+                "probability vector (sum of lower bounds %s, of upper bounds "
+                "%s), so no point can be declared"
+                % (v, sum(Fr(lo) for lo, _ in rows),
+                   sum(Fr(hi) for _, hi in rows)))
+            out.append(None)
+            continue
+        out.append(vec)
+    if problems:
+        raise ValueError("; ".join(problems[:4]))
+
+    # ---- serialize at DEC decimals, then verify the ROUNDED values ----
+    # Rounding to six decimals can itself leave an interval or break the sum,
+    # so the rounded vector is repaired within the intervals and re-checked.
+    ser = []
+    for v, vec in enumerate(out):
+        q = Fr(10) ** DEC
+        rows = pub.get(v)
+        if rows is None:
+            ser.append([Fr(round(float(x) * 10 ** DEC)), ] for x in vec)
+            ser[-1] = [Fr(int(x * q)) / q for x in vec]
+            continue
+        # Truncate, then pull each coordinate back INTO its own interval at
+        # the grid. An interval can be narrower than one decimal step, in
+        # which case no grid point lies inside it and the serialization cannot
+        # represent a feasible vector at this precision; that is reported, not
+        # papered over.
+        r = []
+        for a, x in enumerate(vec):
+            lo, hi = Fr(rows[a][0]), Fr(rows[a][1])
+            g = Fr(int(x * q)) / q
+            if g < lo:
+                g = Fr(-(-(lo * q) // 1)) / q        # ceil onto the grid
+            if g > hi:
+                g = Fr(hi * q // 1) / q              # floor onto the grid
+            if not (lo <= g <= hi):
+                raise ValueError(
+                    "variable %d state %d: the published interval [%s, %s] is "
+                    "narrower than one %d-decimal step, so NO serialized value "
+                    "can lie inside it" % (v, a, lo, hi, DEC))
+            r.append(g)
+        # restore the unit sum using slack that stays inside each interval
+        resid = Fr(1) - sum(r)
+        step = Fr(1) / q
+        i = 0
+        guard = 0
+        while resid != 0 and guard < 10 * len(r) + 64:
+            guard += 1
+            lo, hi = Fr(rows[i][0]), Fr(rows[i][1])
+            if resid > 0 and r[i] + step <= hi:
+                r[i] += step
+                resid -= step
+            elif resid < 0 and r[i] - step >= lo:
+                r[i] -= step
+                resid += step
+            i = (i + 1) % len(r)
+        if resid != 0:
+            raise ValueError(
+                "variable %d: a %d-decimal serialization cannot be made "
+                "coherent inside the published intervals" % (v, DEC))
+        for a, (x, (lo, hi)) in enumerate(zip(r, rows)):
+            if not (Fr(lo) <= x <= Fr(hi)):
+                raise ValueError(
+                    "variable %d state %d: the serialized value %s lies "
+                    "OUTSIDE its published interval [%s, %s]"
+                    % (v, a, x, lo, hi))
+        ser.append(r)
+
+    path = os.path.join(rundir, "point_%s.MAR" % label)
+    body = [str(len(ser))]
+    for rr in ser:
+        body.append(str(len(rr)))
+        for x in rr:
+            body.append(("%." + str(DEC) + "f") % float(x))
+    with open(path, "w") as fh:
         fh.write("MAR\n" + " ".join(body) + "\n")
+
+    # ---- read the written bytes back and CHECK them ----
+    with open(path, "r") as fh:
+        tok = fh.read().split()
+    if not tok or tok[0] != "MAR":
+        raise ValueError("the written point vector is not a MAR file")
+    idx, nv = 1, int(tok[1])
+    idx = 2
+    for v in range(nv):
+        k = int(tok[idx]); idx += 1
+        vals = [Fr(tok[idx + a]) for a in range(k)]
+        idx += k
+        rows = pub.get(v)
+        if rows is None:
+            continue
+        tot = sum(vals)
+        if abs(tot - 1) > Fr(k, 10 ** DEC):
+            raise ValueError(
+                "variable %d: the PARSED point vector sums to %s, not 1"
+                % (v, tot))
+        for a, x in enumerate(vals):
+            lo, hi = Fr(rows[a][0]), Fr(rows[a][1])
+            tolr = Fr(1, 10 ** DEC)
+            if not (lo - tolr <= x <= hi + tolr):
+                raise ValueError(
+                    "variable %d state %d: the PARSED value %s lies outside "
+                    "its published interval [%s, %s]" % (v, a, x, lo, hi))
+    return path
 
 
 if __name__ == "__main__":
