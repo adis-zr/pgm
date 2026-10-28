@@ -134,12 +134,15 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         return out
     out["precision_bits"] = p
     # exponent range from input-derived bounds
-    B, Q = _exponent_bounds(r)
+    B, Q, T = _exponent_bounds(r)
     out["exponent_bounds"] = {"B_sum_neg_log2_min_positive": B,
-                              "Q_free_domain_log2": Q}
-    guard = 64
+                              "Q_free_domain_log2": Q,
+                              "T_sum_log2_max_entry": T,
+                              "note": "lower side 2^-(B+Q), upper side 2^(T+Q); "
+                                      "both are needed, and a guard is added"}
+    guard = 256
     emin = -(B + Q + guard)
-    emax = (B + Q + guard)
+    emax = (T + Q + guard)
     try:
         ctx = A.Ctx(p, emin=emin, emax=emax)
     except Exception:
@@ -383,21 +386,35 @@ def _compiled_depth_bound(pl, r):
 
 
 def _exponent_bounds(r):
-    """B = sum over factors of B_f with mu_f >= 2^-B_f; Q = log2 of free domain."""
+    """Input-derived exponent bounds for the compiled schedule.
+
+    B bounds a nonzero partial product/sum from BELOW by 2^-B: with mu_f the
+    smallest strictly positive entry of factor f and mu_f >= 2^-B_f, correct
+    ownership gives prod >= 2^-sum(B_f).
+
+    A partial product can also be LARGE, so the upper side needs its own bound:
+    with nu_f the largest entry and nu_f <= 2^T_f, a product over all factors is
+    at most 2^sum(T_f), and summing over at most Q assignments multiplies by Q.
+    Using only the lower bound (as a first version did) clamps emax far too
+    tightly and makes a dense model refuse spuriously.
+    """
     B = 0
+    T = 0
     for f in r.factors:
         pos = [t for t in f.table if t > 0]
         if not pos:
             continue
-        mu = min(pos)
-        # smallest integer B_f with mu >= 2^-B_f
+        mu, nu = min(pos), max(pos)
         bf = 0
         x = Fr(mu)
-        while x < 1:
+        while x < 1 and bf <= (1 << 20):
             x *= 2; bf += 1
-            if bf > 1 << 20:
-                break
         B += bf
+        tf = 0
+        y = Fr(nu)
+        while y > 1 and tf <= (1 << 20):
+            y /= 2; tf += 1
+        T += tf
     Q = 0
     for v in r.free:
         c = r.card[v]
@@ -405,7 +422,7 @@ def _exponent_bounds(r):
         while (1 << k) < c:
             k += 1
         Q += k
-    return B, Q
+    return B, Q, T
 
 
 def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
