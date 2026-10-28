@@ -1333,9 +1333,13 @@ def test_dispatcher_refuses_unimplemented_kinds():
         assert "no executor" in str(e.value)
     ex, ck = PT.dispatch("identity")
     assert ex is not None and ck is not None
-    # regional has an executor but NO checker, so it is not a certified route
+    # regional now has BOTH (contract D.7 checker implemented)
     ex2, ck2 = PT.dispatch("regional")
-    assert ex2 is not None and ck2 is None
+    assert ex2 is not None and ck2 is not None
+    # statistic and gaussian still have executors but no checker
+    for kind in ("statistic", "gaussian"):
+        ex3, ck3 = PT.dispatch(kind)
+        assert ex3 is not None and ck3 is None
 
 
 def test_support_table_is_factual():
@@ -1344,10 +1348,11 @@ def test_support_table_is_factual():
     assert rows["identity"]["executor_supported"]
     assert rows["identity"]["checker_supported"]
     assert rows["regional"]["executor_supported"]
-    assert not rows["regional"]["checker_supported"]
+    assert rows["regional"]["checker_supported"], "D.7 checker is implemented"
     assert not rows["fourier"]["executor_supported"]
     assert not rows["composed"]["executor_supported"]
-    for k in ("regional", "statistic", "gaussian"):
+    for k in ("statistic", "gaussian"):
+        assert not rows[k]["checker_supported"]
         assert rows[k]["checker_note"], "a missing checker must say why"
 
 
@@ -1605,3 +1610,107 @@ def test_residual_transfers_separable_pairs_with_zero_error():
     assert can.is_product(), can.detail
     assert can.nu_extra == 0, "an exact transfer must charge nothing"
     assert len(can.transferred_pairs) == 1
+
+
+# ===== contract D.5-D.7: second level, applied deletion, regional checker =====
+
+def test_second_coarsening_level_executes_and_restores_markers():
+    """D.5: parent regions over CHILD CELLS, with parent markers RECOMPUTED by
+    substituting the owned child marked factor. A level-one surrogate does not
+    satisfy this."""
+    from mdi import level2 as L2
+    m, r, regs, crs, rds, region_of = _ring_coarse(NB=4, BS=2)
+    t1 = K.level_radius(2)                   # two levels, split equally
+    l2 = L2.build_level2(r, regs, crs, rds, set(r.free), t1)
+    assert l2["skipped"] == 0, l2
+    assert l2["parent_data"], "a parent region must be built"
+    for pr in l2["parent_data"]:
+        assert pr.A, "parent masses must be computed"
+        assert pr.assignments() == 1 or pr.assignments() > 1
+    Zt, counts = L2.level2_marginals(r, regs, crs, rds, set(r.free), l2)
+    assert Zt > 0
+    Ztrue, ptrue = O.exact_all_marginals(r)
+    worst = Fr(0)
+    for v in sorted(r.free):
+        for s in range(2):
+            q = counts.get((v, s), Fr(0)) / Zt
+            d = abs(q - ptrue[v][s])
+            if d > worst:
+                worst = d
+    assert worst <= 2 * t1, (float(worst), float(2 * t1))
+
+
+def test_level2_rejects_an_incomplete_parent_set():
+    """A skipped parent means the level-2 model is incomplete; contracting it
+    must refuse."""
+    from mdi import level2 as L2
+    m, r, regs, crs, rds, _ = _ring_coarse(NB=4, BS=2)
+    t1 = K.level_radius(2)
+    l2 = L2.build_level2(r, regs, crs, rds, set(r.free), t1)
+    l2["skipped"] = 1
+    with pytest.raises(L2.Level2Error):
+        L2.level2_marginals(r, regs, crs, rds, set(r.free), l2)
+
+
+def test_deletion_is_applied_and_recorded_in_production():
+    """D.6: a certified deletion must change the region and carry a record,
+    not merely be proposed by a helper."""
+    txt = ("MARKOV\n3\n2 2 2\n3\n1 0\n2 0 1\n1 1\n2\n1.0 0.0000001\n"
+           "4\n1.0 1.0 1.0 1.0\n2\n1.0 1.0\n")
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    rd = R.region_data((0,), r.card, r.factors, set(r.free))
+    before = len(rd.A)
+    rd2, rec = R.apply_deletion(rd, r.factors, r.card, Fr(1, 10000))
+    assert rec is not None, "a negligible state must be deleted"
+    assert len(rd2.A) == before - 1
+    assert rec.prob_bound <= Fr(1, 10000)
+    assert rec.retained_states == len(rd2.A)
+    assert rec.positive_denominator
+    # the mark/mass identity survives on the retained support
+    for v in rd2.vars:
+        keys = [k for k in rd2.marks if k[0] == v]
+        if not keys:
+            continue
+        for b in rd2.A:
+            assert sum(rd2.marks[k].get(b, Fr(0)) for k in keys) == rd2.A[b]
+
+
+def test_unjustified_deletion_changes_nothing():
+    txt = ("MARKOV\n3\n2 2 2\n3\n1 0\n2 0 1\n1 1\n2\n1.0 0.5\n"
+           "4\n1.0 1.0 1.0 1.0\n2\n1.0 1.0\n")
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    rd = R.region_data((0,), r.card, r.factors, set(r.free))
+    rd2, rec = R.apply_deletion(rd, r.factors, r.card, Fr(1, 100000))
+    assert rec is None
+    assert len(rd2.A) == len(rd.A)
+
+
+def test_independent_regional_checker_verifies_and_rejects():
+    """D.7: rebuild masses, marks, aggregation, extrema, alpha/rho and ownership
+    from the ORIGINAL factors, then independently contract the REDUCED model.
+    It must not solve the uncoarsened original."""
+    from mdi import regional_check as RC
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    t1 = K.level_radius(1)
+    Z, counts = RC.independent_contract(r, regs, crs, rds, set(r.free))
+    assert Z > 0
+    pub = {v: [(counts.get((v, s), Fr(0)) / Z,) * 2 for s in range(2)]
+           for v in sorted(r.free)}
+    ok, fails, meta = RC.verify_regional_publication(
+        r, regs, crs, rds, set(r.free), pub, t1, Fr(1, 100))
+    assert ok, fails[:4]
+    assert meta["regions_rebuilt"] == len(regs)
+    # a corrupted publication must be rejected
+    bad = {v: list(rows) for v, rows in pub.items()}
+    v0 = sorted(bad)[0]
+    bad[v0] = [(Fr(0), Fr(0)), (Fr(0), Fr(0))]
+    ok2, f2, _ = RC.verify_regional_publication(
+        r, regs, crs, rds, set(r.free), bad, t1, Fr(1, 100))
+    assert not ok2 and f2
+
+
+def test_regional_checker_is_now_registered():
+    from mdi import registry as RG
+    rows = {x["kind"]: x for x in RG.status_table()}
+    assert rows["regional"]["executor_supported"]
+    assert rows["regional"]["checker_supported"], "D.7 checker must be registered"

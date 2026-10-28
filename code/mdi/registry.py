@@ -44,10 +44,15 @@ def _gaussian_executor(free, card, residual_unary, cand, queries, ctx, delta,
 PT.register_executor("identity", _identity_executor)
 PT.register_checker("identity", _identity_checker)
 
+def _regional_checker(restricted, regions, coarse, rds, queries, published,
+                      t_level, eps, **kw):
+    from mdi import regional_check as RC
+    return RC.verify_regional_publication(restricted, regions, coarse, rds,
+                                          queries, published, t_level, eps, **kw)
+
+
 PT.register_executor("regional", _regional_executor)
-# NO regional checker: spec 11 requires local certificates plus the reduced
-# contraction, which is not implemented. Leaving it unregistered is what makes
-# a regional route ineligible for a certified label.
+PT.register_checker("regional", _regional_checker)
 
 PT.register_executor("statistic", _statistic_executor)
 # NO statistic checker yet.
@@ -65,8 +70,6 @@ UNIMPLEMENTED = {
 }
 
 MISSING_CHECKERS = {
-    "regional": "spec 11 requires local certificates plus an independent "
-                "reduced-model contraction; not implemented",
     "statistic": "no independent statistic-DP checker",
     "gaussian": "no independent quadrature checker",
 }

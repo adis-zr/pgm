@@ -637,6 +637,61 @@ def deletion_bounds(rd: RegionData, factors, card, D):
     return U, L, U / (U + L)
 
 
+@dataclass
+class DeletionRecord:
+    """An APPLIED positive-state deletion with its certificate (contract D.6)."""
+    region: tuple
+    deleted: list                 # boundary assignments removed
+    U: Fr
+    L: Fr
+    prob_bound: Fr                # U/(U+L), uniform over exterior configurations
+    radius_charged: Fr
+    retained_states: int
+    positive_denominator: bool
+
+
+def apply_deletion(rd: RegionData, factors, card, radius: Fr, max_tests=None):
+    """Propose, verify, APPLY and record a deletion in the production path.
+
+    Returns (RegionData, DeletionRecord | None). The retained-support and
+    positive-denominator obligations are checked here, not left to a caller: a
+    deletion that would empty the region, or leave a nonpositive retained mass,
+    is refused.
+    """
+    best = propose_deletions(rd, factors, card, radius, max_tests)
+    if best is None:
+        return rd, None
+    dead = set(best["deleted"])
+    retained = {b: a for b, a in rd.A.items() if b not in dead}
+    if not retained:
+        raise Declined("deletion would remove every boundary state")
+    if sum(retained.values()) <= 0:
+        raise Declined("deletion would leave a nonpositive retained mass")
+    marks = {}
+    for key, tab in rd.marks.items():
+        marks[key] = {b: v for b, v in tab.items() if b not in dead}
+    rd2 = RegionData(vars=rd.vars, boundary=rd.boundary,
+                     internal_factors=rd.internal_factors,
+                     crossing_factors=rd.crossing_factors,
+                     A=retained, marks=marks, removed_zero=rd.removed_zero)
+    # the mark/mass identity must still hold on the retained support
+    for v in rd.vars:
+        keys = [k for k in marks if k[0] == v]
+        if not keys:
+            continue
+        for b in retained:
+            tot = sum(marks[k].get(b, Fr(0)) for k in keys)
+            if tot != retained[b]:
+                raise Declined("deletion broke the mark/mass identity")
+    rec = DeletionRecord(region=rd.vars, deleted=list(best["deleted"]),
+                         U=best["U"], L=best["L"],
+                         prob_bound=best["prob_bound"],
+                         radius_charged=best["prob_bound"],
+                         retained_states=len(retained),
+                         positive_denominator=True)
+    return rd2, rec
+
+
 def propose_deletions(rd: RegionData, factors, card, radius: Fr, max_tests=None):
     """Test at most eight geometrically spaced prefix sizes of the SMALLEST
     local boundary masses. Returns the largest certified deletion, or None."""
