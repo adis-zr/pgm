@@ -2104,8 +2104,12 @@ def test_all_regional_candidates_are_priced():
     """F.5: every regional candidate must have a cost record built from ACTUAL
     cells and projected scopes, with no full Cartesian construction."""
     import json
-    p = "runs/mdi_2026-10-28/regional_candidates_priced.json"
-    if not os.path.exists(p):
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cands = [os.path.join(here, "runs/mdi_2026-10-28/regional_candidates_priced.json"),
+             os.path.join(os.path.dirname(here), "runs/regional_candidates_priced.json"),
+             "runs/mdi_2026-10-28/regional_candidates_priced.json"]
+    p = next((x for x in cands if os.path.exists(x)), None)
+    if p is None:
         pytest.skip("priced-candidate record not present")
     d = json.load(open(p))
     assert set(d) == {"Pedigree_11", "Promedus_12"}, list(d)
