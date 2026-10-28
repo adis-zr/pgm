@@ -322,6 +322,25 @@ class CoarseRegion:
     declines: dict
 
 
+def _profile_signature(b, profiles, bpos):
+    """The exact tuple of crossing-factor response rows at boundary assignment b.
+
+    Two assignments with the SAME signature have U=L=1 on every crossing factor,
+    hence rho=1 and alpha=1: they merge exactly and unconditionally. Grouping by
+    this key is O(states) instead of the O(states^2) pairwise scan, and it loses
+    nothing, because exact-equality merges are precisely the ones a greedy
+    pairwise scan would always accept.
+    """
+    sig = []
+    for (fi, in_vars, nout, tbl) in profiles:
+        sig.append(tbl[tuple(b[bpos[v]] for v in in_vars)])
+    return tuple(sig)
+
+
+def _zero_mask(sig):
+    return tuple(tuple(e == 0 for e in row) for row in sig)
+
+
 def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
                  comparison_budget=None):
     """Greedy cell merge with the exact admission test of spec 5.3/5.4.
@@ -349,44 +368,99 @@ def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
 
     cells, cell_of = [], {}
     comparisons = 0
-    declines = {"zero_mask": 0, "rho": 0, "budget": 0}
+    declines = {"zero_mask": 0, "rho": 0, "budget": 0, "exact_group": 0}
 
+    # ---- phase 1: exact signature bucketing (linear, lossless) ----
+    # Assignments sharing an identical crossing-response signature have
+    # U = L = 1 everywhere, so alpha = 1 and rho = 1: an unconditional exact
+    # merge. This collapses the dominant cost without weakening the certificate.
+    sig_of, buckets = {}, {}
     for b in order:
-        placed = False
+        sig = _profile_signature(b, profiles, bpos)
+        comparisons += sum(len(row) for row in sig)
+        if comparisons > budget:
+            declines["budget"] += 1
+            raise CapExceeded("signature budget exhausted while bucketing")
+        sig_of[b] = sig
+        buckets.setdefault(sig, []).append(b)
+    for sig, members in sorted(buckets.items(), key=lambda kv: (-rd.A[kv[1][0]], kv[1][0])):
+        rep = members[0]
+        cell = Cell(rep=rep, members=[(mb, Fr(1)) for mb in members], rho_max=Fr(1))
+        cells.append(cell)
+        for mb in members:
+            cell_of[mb] = len(cells) - 1
+        if len(members) > 1:
+            declines["exact_group"] += len(members) - 1
+
+    # ---- phase 2: bounded approximate refinement across distinct signatures ----
+    # Only representatives are compared, and only within equal zero masks. The
+    # pass is skipped once the comparison budget is spent; a cap NEVER authorizes
+    # a merge, it only stops further merging.
+    if len(cells) > 1:
+        by_mask = {}
         for ci, cell in enumerate(cells):
-            r = cell.rep
-            try:
-                alpha, rho = Fr(1), Fr(1)
-                for (fi, in_vars, nout, tbl) in profiles:
-                    rb, rr = tbl[proj(b, in_vars)], tbl[proj(r, in_vars)]
-                    comparisons += len(rb)
-                    if comparisons > budget:
-                        declines["budget"] += 1
-                        raise CapExceeded("profile comparison budget exhausted")
-                    L, U = ratio_extrema(rb, rr)
-                    if L <= 0:
-                        raise Declined("nonpositive ratio lower bound")
-                    alpha *= L
-                    rho *= U / L
-                    if rho > rho_cap:
-                        raise Declined("rho exceeds the allocated regional cap")
-                if not bitlen_ok(alpha) or not bitlen_ok(rho):
-                    raise Declined("merge certificate exceeded the rational bit cap")
-            except Declined as e:
-                if "zero mask" in str(e):
-                    declines["zero_mask"] += 1
-                else:
-                    declines["rho"] += 1
-                continue
-            cell.members.append((b, alpha))
-            if rho > cell.rho_max:
-                cell.rho_max = rho
-            cell_of[b] = ci
-            placed = True
-            break
-        if not placed:
-            cells.append(Cell(rep=b, members=[(b, Fr(1))], rho_max=Fr(1)))
-            cell_of[b] = len(cells) - 1
+            by_mask.setdefault(_zero_mask(sig_of[cell.rep]), []).append(ci)
+        merged_into = {}
+        for mask, idxs in sorted(by_mask.items(), key=lambda kv: kv[1]):
+            keep = []
+            for ci in idxs:
+                if comparisons > budget:
+                    declines["budget"] += 1
+                    break
+                placed = False
+                for kj in keep:
+                    try:
+                        alpha, rho = Fr(1), Fr(1)
+                        sb, sr = sig_of[cells[ci].rep], sig_of[cells[kj].rep]
+                        for rb, rr in zip(sb, sr):
+                            comparisons += len(rb)
+                            if comparisons > budget:
+                                declines["budget"] += 1
+                                raise CapExceeded("refinement budget exhausted")
+                            L, U = ratio_extrema(rb, rr)
+                            if L <= 0:
+                                raise Declined("nonpositive ratio lower bound")
+                            alpha *= L
+                            rho *= U / L
+                            if rho > rho_cap:
+                                raise Declined("rho exceeds the allocated cap")
+                        if not bitlen_ok(alpha) or not bitlen_ok(rho):
+                            raise Declined("certificate exceeded the rational bit cap")
+                    except Declined as e:
+                        if "zero mask" in str(e):
+                            declines["zero_mask"] += 1
+                        else:
+                            declines["rho"] += 1
+                        continue
+                    except CapExceeded:
+                        break
+                    merged_into[ci] = (kj, alpha, rho)
+                    placed = True
+                    break
+                if not placed:
+                    keep.append(ci)
+        if merged_into:
+            # rebuild the cell list, folding merged cells into their targets
+            newcells, remap = [], {}
+            for ci, cell in enumerate(cells):
+                if ci in merged_into:
+                    continue
+                remap[ci] = len(newcells)
+                newcells.append(Cell(rep=cell.rep, members=list(cell.members),
+                                     rho_max=cell.rho_max))
+            for ci, (kj, alpha, rho) in merged_into.items():
+                tgt = remap.get(kj)
+                if tgt is None:
+                    continue
+                for (mb, al) in cells[ci].members:
+                    newcells[tgt].members.append((mb, al * alpha))
+                if rho > newcells[tgt].rho_max:
+                    newcells[tgt].rho_max = rho
+            cells = newcells
+            cell_of = {}
+            for ci, cell in enumerate(cells):
+                for (mb, _) in cell.members:
+                    cell_of[mb] = ci
 
     # cell masses and marks use the SAME alpha
     M = []
