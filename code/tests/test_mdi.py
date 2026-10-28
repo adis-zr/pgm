@@ -583,15 +583,52 @@ def test_messages_are_actually_freed():
 
 def test_resource_bound_reports_concrete_estimate():
     """A plan that cannot fit must refuse with its table and byte estimate,
-    not return an unsupported-model verdict."""
-    p = "/tmp/tep/three_external_problems/inputs/Pedigree_11"
-    if not os.path.exists(p + ".uai"):
-        pytest.skip("external inputs not extracted")
-    m = M.read_uai(p + ".uai")
-    ev = M.read_evidence(p + ".uai.evid", m)
-    res = S.solve(m, ev, eps=Fr(1, 100), mode="I", cap_bytes=1 << 30,
+    not an unsupported-model verdict. Exercised on a synthetic model, because
+    exact preprocessing now makes Pedigree_11 fit comfortably."""
+    n = 26
+    scopes = [(v,) for v in range(n)] + [(i, j) for i in range(n)
+                                         for j in range(i + 1, n)]
+    lines = ["MARKOV", str(n), " ".join(["2"] * n), str(len(scopes))]
+    for sc in scopes:
+        lines.append("%d %s" % (len(sc), " ".join(map(str, sc))))
+    for v in range(n):
+        lines.extend(["2", "1.0 1.%d" % (v % 7 + 1)])
+    k = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            k += 1
+            lines.extend(["4", "1.%d 1.%d 1.%d 1.%d"
+                          % (k % 5 + 1, k % 7 + 1, k % 3 + 1, k % 9 + 1)])
+    m = M.read_uai(w("\n".join(lines) + "\n"))
+    res = S.solve(m, {}, eps=Fr(1, 100), mode="I", cap_bytes=1 << 20,
                   deadline_s=30, run_checker=False)
     assert res["outcome"] == "RESOURCE_BOUND", res["outcome"]
     assert res["best_candidate"]["largest_bag_entries"] > 0
     assert res["best_estimate"]["estimate_bytes"] > res["cap_bytes"]
     assert "UNSUPPORTED" not in res["outcome"]
+
+
+def test_exact_preprocessing_shrinks_pedigree_interval_mode():
+    """Exact preprocessing takes Pedigree_11's interval-mode estimate from
+    8.29 GiB (no ordering fits) to 0.566 GiB. The earlier RESOURCE_BOUND was an
+    artifact of not simplifying, not a property of the instance."""
+    p = "/tmp/tep/three_external_problems/inputs/Pedigree_11"
+    if not os.path.exists(p + ".uai"):
+        pytest.skip("external inputs not extracted")
+    from mdi import preprocess as PRE
+    m = M.read_uai(p + ".uai")
+    ev = M.read_evidence(p + ".uai.evid", m)
+    r = M.restrict(m, ev)
+    before = P.choose_plan(r.free, r.card, r.factors, 128, 8 * (1 << 30))
+    assert before["chosen"] is None, "unsimplified interval mode should not fit"
+    simp = PRE.simplify(r)
+    assert PRE.verify_identities(r, simp)
+    assert len(simp.removed_constants) == 22
+    assert len(simp.split_pairs) == 13
+    after = P.choose_plan(r.free, r.card, simp.factors, 128, 8 * (1 << 30))
+    assert after["chosen"] is not None, "simplified interval mode should fit"
+    pl, est = after["chosen"]
+    assert pl.induced_width == 20, pl.induced_width
+    assert pl.largest_bag_entries == 2097152
+    assert pl.sum_bag_entries == 5922542
+    assert est["estimate_bytes"] < (1 << 30), est["estimate_bytes"]

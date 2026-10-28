@@ -69,7 +69,7 @@ def _mk_deadline(t_end, cap_bytes, baseline=None):
 
 def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
           deadline_s=600.0, p_min=64, progress=None, run_checker=True,
-          plan_bytes_per_entry=None):
+          plan_bytes_per_entry=None, preprocess=True):
     """Compute every singleton marginal under `evidence` with certified intervals."""
     t0 = time.time()
     stages = {}
@@ -79,16 +79,52 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     dl = _mk_deadline(t_end, cap_bytes, rss_baseline)
 
     # ---------- stage: input conversion ----------
+    out = {"mode": mode, "eps": str(eps), "nvars": model.nvars,
+           "evidence_vars": len(evidence), "stages": stages}
     ts = time.time()
     model.validate()
     r = M.restrict(model, evidence)
     stages["input_conversion_s"] = time.time() - ts
+
+    # ---------- stage: common exact preprocessing (contract C) ----------
+    # Identical in every arm, so it improves the baseline the research routes
+    # must beat. Zero approximation error; the checker rederives each identity
+    # from the original bytes. On Pedigree_11 this removes 22 positive constants
+    # and splits 13 exactly separable pairs, taking min_fill from width 24 to 20
+    # and the largest bag from 33,554,432 to 2,097,152.
+    ts = time.time()
+    pre_scale = Fr(1)
+    pre_identity = None
+    if preprocess:
+        from mdi import preprocess as PRE
+        try:
+            simp = PRE.simplify(r)
+            PRE.verify_identities(r, simp)
+            if simp.impossible is not None:
+                out.update({"outcome": "ZERO_EVIDENCE_PROVED",
+                            "reason": "factor %d is identically zero" % simp.impossible,
+                            "elapsed_s": time.time() - t0})
+                return out
+            r = M.Restricted(model=model, evidence=dict(evidence),
+                             factors=simp.factors, free=list(simp.free),
+                             card=dict(simp.card), constant=r.constant,
+                             impossible_factor=None)
+            pre_scale = simp.scale
+            pre_identity = simp.identity()
+        except PRE.PreprocessError as e:
+            out.update({"outcome": "NUMERICAL_REFUSAL",
+                        "reason": "exact preprocessing failed its own identity "
+                                  "check: %s" % e,
+                        "elapsed_s": time.time() - t0})
+            return out
+    stages["preprocess_s"] = time.time() - ts
+    out["preprocess"] = pre_identity
+    out["preprocess_scale"] = str(pre_scale)
     prog("input", "%d free vars" % len(r.free))
 
-    out = {"mode": mode, "eps": str(eps), "nvars": model.nvars,
-           "free_vars": len(r.free), "evidence_vars": len(evidence),
-           "stages": stages, "zeros_after_evidence":
-               sum(1 for f in r.factors for t in f.table if t == 0)}
+    out["free_vars"] = len(r.free)
+    out["zeros_after_evidence"] = sum(1 for f in r.factors for t in f.table
+                                      if t == 0)
 
     # an all-zero restricted factor proves zero evidence weight immediately
     if r.impossible_factor is not None:
@@ -433,6 +469,20 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
     never consumes producer values.
     """
     r = M.restrict(model, evidence)
+    # the checker applies the SAME exact preprocessing and rederives its
+    # identities from the original factors (never from the producer's output)
+    try:
+        from mdi import preprocess as PRE
+        _simp = PRE.simplify(r)
+        PRE.verify_identities(r, _simp)
+        if _simp.impossible is None:
+            r = M.Restricted(model=model, evidence=dict(evidence),
+                             factors=_simp.factors, free=list(_simp.free),
+                             card=dict(_simp.card), constant=r.constant,
+                             impossible_factor=None)
+    except Exception as e:
+        raise A.NumericalRefusal("checker could not reproduce the exact "
+                                 "preprocessing identities: %s" % e)
     # EXPLICIT zero-evidence check. Previously this relied on a numerical
     # positivity side effect, so a publication whose conditioning event has
     # probability zero could be accepted when that side effect did not fire.
