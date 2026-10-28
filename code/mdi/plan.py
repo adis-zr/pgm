@@ -354,38 +354,36 @@ def simulate_executed_schedule(plan):
 
     # ---- downward pass: depth-first, releasing a bag's incoming messages only
     # after its subtree completes, exactly as Engine.downward does
-    def walk(x):
-        """Mirror Engine.downward exactly: a bag sends to ALL its children, then
-        every child subtree is walked, then the bag releases what fed it.
-
-        The engine pushes (x,1) and then the children onto a stack it pops from
-        the end, so all child subtrees complete before x's release. The engine's
-        own counter is sampled AFTER each send, so a newly created message is
-        included; this simulation does the same.
-        """
-        nonlocal cur, peak
-        kids = list(bags[x].children)
-        for c in kids:
-            e = bags[c].sep_domain(card)
-            live[(x, c)] = e
-            cur += e
-            if cur > peak:
-                peak = cur
-            trace.append(("down", c, cur))
-        # Engine.downward pushes (x,1) and THEN the children, and pops from the
-        # end, so every child subtree completes BEFORE x releases its inputs.
-        for c in kids:
-            walk(c)
-        freed = 0
-        if bags[x].parent >= 0:
-            freed += live.pop((bags[x].parent, x), 0)
-        for c in kids:
-            freed += live.pop((c, x), 0)
-        cur -= freed
-        trace.append(("free", x, cur))
-
+    # ITERATIVE traversal with the engine's own explicit stack discipline. A
+    # recursive walk raised RecursionError on a narrow chain of a few thousand
+    # bags, which is exactly the shape that most needs a memory forecast.
     for rt in roots:
-        walk(rt)
+        stack = [(rt, 0)]
+        while stack:
+            x, phase = stack.pop()
+            if phase == 0:
+                kids = list(bags[x].children)
+                for c in kids:
+                    e = bags[c].sep_domain(card)
+                    live[(x, c)] = e
+                    cur += e
+                    if cur > peak:
+                        peak = cur
+                    trace.append(("down", c, cur))
+                # Engine.downward pushes (x,1) and THEN the children onto a
+                # stack it pops from the end, so every child subtree completes
+                # before x releases its inputs.
+                stack.append((x, 1))
+                for c in reversed(kids):
+                    stack.append((c, 0))
+            else:
+                freed = 0
+                if bags[x].parent >= 0:
+                    freed += live.pop((bags[x].parent, x), 0)
+                for c in bags[x].children:
+                    freed += live.pop((c, x), 0)
+                cur -= freed
+                trace.append(("free", x, cur))
     return {"peak_live_entries": peak, "trace_len": len(trace),
             "residual_live": cur, "trace": trace}
 

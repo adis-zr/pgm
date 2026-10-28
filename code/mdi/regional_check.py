@@ -73,14 +73,25 @@ def recheck_region(region, restricted, card, queries, rho_cap, region_of,
 
 
 def independent_contract(restricted, regions, coarse, rds, queries,
-                         deadline=None, cap_assignments=None):
+                         deadline=None, cap_assignments=None,
+                         allow_enumeration=True):
     """Contract the REDUCED model with the checker's own code.
 
-    Enumerates cell assignments and evaluates the compact projected crossings
-    directly. This is deliberately a different implementation from the
-    producer's message passing, and it never touches the original uncoarsened
-    model's elimination.
+    Prefers an independent MESSAGE-PASSING contraction over the reduced graph,
+    which preserves the factorization. Enumerating every joint cell assignment
+    costs the product of all cell cardinalities and so priced the regional route
+    at ~1e78 purely because of the checker: a 50-variable binary chain has 2^50
+    joint assignments but elimination width one and a largest bag of four.
+
+    Exhaustive enumeration is retained only for bounded controls, and only when
+    the reduced graph's own elimination is unavailable.
     """
+    try:
+        return _reduced_message_passing(restricted, regions, coarse, rds,
+                                        queries, deadline=deadline)
+    except RegionalCheckError:
+        if not allow_enumeration:
+            raise
     cap = cap_assignments or K.CAPS["checker_contraction_space"]
     projected, _ = CP.project_crossings(restricted, regions, coarse, rds)
     ncell = [len(c.cells) for c in coarse]
@@ -123,6 +134,101 @@ def independent_contract(restricted, regions, coarse, rds, queries,
     if Z <= 0:
         raise RegionalCheckError("reduced model has nonpositive total weight")
     return Z, counts
+
+
+def _reduced_message_passing(restricted, regions, coarse, rds, queries,
+                             deadline=None):
+    """Independent contraction of the REDUCED graph by elimination.
+
+    Builds a factor graph over CELL variables using the compact projected
+    crossings, then runs the generic engine on it. This is the checker's own
+    code path: it shares the validated primitives the spec permits but not the
+    producer's aggregation or readout.
+    """
+    from mdi import model as MM, plan as PP, arith as AA, contract as CC
+    ncell = [len(c.cells) for c in coarse]
+    projected, _ = CP.project_crossings(restricted, regions, coarse, rds)
+    facs = []
+    for i in range(len(regions)):
+        facs.append(MM.Factor(scope=(i,), card=(ncell[i],),
+                              table=[Fr(x) for x in coarse[i].M],
+                              origin=-(i + 1)))
+    for pc in projected:
+        rs = tuple(pc.regions)
+        cards = tuple(ncell[i] for i in rs)
+        n = 1
+        for c in cards:
+            n *= c
+        if n > K.CAPS["aggregated_kernel_entries"]:
+            raise RegionalCheckError(
+                "a reduced crossing factor over regions %s needs %d entries, "
+                "above the declared cap" % (rs, n))
+        st = [1] * len(cards)
+        acc = 1
+        for k in range(len(cards) - 1, -1, -1):
+            st[k] = acc
+            acc *= cards[k]
+        tab = []
+        for flat in range(n):
+            rem, dig = flat, []
+            for k in range(len(cards)):
+                dig.append(rem // st[k])
+                rem %= st[k]
+            tab.append(pc.value({rs[k]: dig[k] for k in range(len(rs))}))
+        facs.append(MM.Factor(scope=rs, card=cards, table=tab, origin=-1000))
+    cm = MM.Model(nvars=len(regions), card=list(ncell), factors=facs)
+    cm.validate()
+    rc = MM.restrict(cm, {})
+    sel = PP.choose_plan(rc.free, rc.card, rc.factors, 128,
+                         K.RESOURCES["arm_rss_bytes"])
+    if sel["chosen"] is None:
+        raise RegionalCheckError("no ordering fits for the reduced graph")
+    pl, est = sel["chosen"]
+    ctx = AA.Ctx(128)
+    eng = CC.Engine(pl, rc.factors, ctx, mode="P", deadline=deadline)
+    roots = [b.idx for b in pl.bags if b.parent == -1]
+    if len(roots) != 1:
+        raise RegionalCheckError("reduced graph is disconnected")
+    eng.upward(roots[0])
+    rootv = eng.root_value(roots[0])
+    if not rootv.support[0]:
+        raise RegionalCheckError("reduced model has zero weight")
+    Z = AA.exact_fr(rootv.vals[0])
+    if Z <= 0:
+        raise RegionalCheckError("reduced model total is nonpositive")
+    # cell marginals, then original markers via the payloads
+    collected = {}
+
+    def on_cal(bag):
+        for vv in pl.bags[bag].vars:
+            if vv not in collected:
+                collected[vv] = eng.read_marginal(vv)
+
+    eng.downward(roots[0], on_calibrated=on_cal)
+    counts = {}
+    for i in range(len(regions)):
+        if i not in collected:
+            raise RegionalCheckError("cell variable %d was never read" % i)
+        vals, seen, depth = collected[i]
+        for ci in range(ncell[i]):
+            if not seen[ci]:
+                continue
+            pc_mass = AA.exact_fr(vals[ci])
+            Mc = Fr(coarse[i].M[ci])
+            if Mc <= 0:
+                continue
+            for key, col in coarse[i].N.items():
+                if key[0] not in queries:
+                    continue
+                Nc = Fr(col[ci])
+                if Nc == 0:
+                    continue
+                counts[key] = counts.get(key, Fr(0)) + pc_mass * Nc / Mc
+    tot = sum(AA.exact_fr(collected[0][0][ci])
+              for ci in range(ncell[0]) if collected[0][1][ci])
+    if tot <= 0:
+        raise RegionalCheckError("reduced cell marginal total is nonpositive")
+    return tot, counts
 
 
 def verify_regional_publication(restricted, regions, coarse, rds, queries,

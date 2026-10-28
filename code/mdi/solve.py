@@ -12,6 +12,11 @@ from gmpy2 import mpfr
 from mdi import model as M, plan as P, arith as A, contract as C
 
 
+def PRE_MOD():
+    from mdi import preprocess as PRE
+    return PRE
+
+
 class Deadline(Exception):
     pass
 
@@ -682,9 +687,23 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I"):
         return False, [{"reason": "zero evidence weight: no conditional "
                                   "distribution exists, so any published "
                                   "conditional marginal is invalid"}]
-    adj = P.primal_graph(r.free, r.card, r.factors)
-    pl = P.build_plan("min_fill", P.order_min_fill(r.free, r.card, adj),
-                      r.free, r.card, r.factors)
+    # Build the reference plan on the SAME factor list `_check` will rebuild on,
+    # i.e. after the common exact preprocessing. Building it on the raw factors
+    # made the shapes differ and `_check` refused with "rebuilt a different
+    # decomposition" on any model that preprocessing simplifies.
+    try:
+        _simp = PRE_MOD().simplify(r)
+        PRE_MOD().verify_identities(r, _simp)
+        rr = M.Restricted(model=model, evidence=dict(evidence),
+                          factors=_simp.factors, free=list(_simp.free),
+                          card=dict(_simp.card), constant=r.constant,
+                          impossible_factor=None)
+    except Exception as e:
+        return False, [{"reason": "checker could not reproduce the exact "
+                                  "preprocessing identities: %s" % e}]
+    adj = P.primal_graph(rr.free, rr.card, rr.factors)
+    pl = P.build_plan("min_fill", P.order_min_fill(rr.free, rr.card, adj),
+                      rr.free, rr.card, rr.factors)
     try:
         ok, fails, _ = _check(model, evidence, iv, eps, pl, 64, 1 << 31,
                               time.time() + 300, lambda *a: None)

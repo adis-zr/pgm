@@ -28,15 +28,19 @@ CAPS = {
     "deletion_prefix_tests": 8,                # geometrically spaced prefix sizes
     "dyadic_Q_tries": 3,                       # statistic rounding denominators
 
-    # Contract F.7: the 4,096 region-assignment cap is 4,096, not 4,096*64.
-    # Four call sites previously multiplied it by 64 inline, which silently
-    # enlarged a declared cap. Each distinct space now has its OWN declared
-    # limit, so a number that needs to be larger says so here.
-    "region_local_enumeration": 262_144,       # boundary x interior, one region
-    "aggregated_kernel_entries": 262_144,      # one product kernel
-    "level2_contraction_space": 262_144,       # parent boundary product
-    "checker_contraction_space": 262_144,      # independent reduced contraction
+    # Contract F.7, as amended by review 4: the 4,096 region-assignment cap is
+    # 4,096. Renaming 262,144 is not restoration, so every derived space is now
+    # tied to that figure and any genuinely larger need must be an explicit
+    # overseer amendment recorded in AMENDMENTS below.
+    "region_local_enumeration": 4_096,         # boundary x interior, one region
+    "aggregated_kernel_entries": 4_096,        # one product kernel
+    "level2_contraction_space": 4_096,         # parent boundary product
+    "checker_contraction_space": 4_096,        # independent reduced contraction
 }
+
+# Any cap change must be listed here with its reason, so a silent enlargement is
+# impossible. An empty list means every cap is at its specified value.
+AMENDMENTS = []
 
 # ---------------- section 13: resource contract ----------------
 RESOURCES = {

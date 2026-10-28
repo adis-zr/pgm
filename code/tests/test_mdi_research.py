@@ -1799,7 +1799,9 @@ def test_pricing_labels_every_counter():
     assert d["total_arithmetic"]["label"] in (PR.UPPER, PR.EXACT, PR.FORECAST)
     assert d["bytes_producer"]["label"] == PR.FORECAST
     # the forecast must disclose what it excludes
-    assert "overhead excluded" in d["bytes_producer"]["note"]
+    note = d["bytes_producer"]["note"].lower()
+    assert "overhead" in note and "excludes" in note, note
+    assert "not measured whole-process memory" in note
 
 
 def test_pricing_prefers_identity_for_a_priced_reason():
@@ -1845,25 +1847,58 @@ def test_pricing_prefers_identity_for_a_priced_reason():
     assert "cell-count ratio is never used" in cmp["rule"]
 
 
+def _complete_price(PR, kind, name, ops, by, bc=None, **kw):
+    """A fully priced record: a MISSING required counter is now UNKNOWN, not
+    zero, so a partial record is correctly ineligible."""
+    rec = PR.CostRecord(kind=kind, name=name, **kw)
+    rec.put("producer_upward_ops", ops, PR.UPPER)
+    rec.put("producer_downward_ops", ops, PR.UPPER)
+    rec.put("readout_ops", ops, PR.UPPER)
+    rec.put("checker_ops", 2 * ops, PR.UPPER)
+    rec.bytes_producer = PR.Counter(by, PR.FORECAST)
+    rec.bytes_checker = PR.Counter(bc if bc is not None else by, PR.FORECAST)
+    return rec
+
+
 def test_ineligible_route_is_never_selected():
     from mdi import pricing as PR
-    good = PR.CostRecord(kind="identity", name="identity")
-    good.put("producer_upward_ops", 10 ** 9, PR.UPPER)
-    good.bytes_producer = PR.Counter(1 << 20, PR.FORECAST)
-    bad = PR.CostRecord(kind="statistic", name="statistic:cheap",
-                        eligible=False,
-                        ineligible_reason="no independent checker")
-    bad.put("producer_upward_ops", 1, PR.UPPER)
-    bad.bytes_producer = PR.Counter(1, PR.FORECAST)
+    good = _complete_price(PR, "identity", "identity", 10 ** 9, 1 << 20)
+    bad = _complete_price(PR, "statistic", "statistic:cheap", 1, 1,
+                          eligible=False,
+                          ineligible_reason="no independent checker")
     cmp = PR.compare([good, bad], cap_bytes=1 << 30)
     assert cmp["chosen"]["name"] == "identity", "an ineligible route must not win"
 
 
+def test_unpriced_work_is_unknown_not_zero():
+    """F.4: a missing required counter must make the route ineligible, since an
+    absent price is not a cheap price."""
+    from mdi import pricing as PR
+    partial = PR.CostRecord(kind="identity", name="partial")
+    partial.put("producer_upward_ops", 1, PR.UPPER)
+    partial.bytes_producer = PR.Counter(1, PR.FORECAST)
+    tot, lab = partial.total_arithmetic()
+    assert tot is None and lab == "unknown"
+    assert not partial.eligible
+    assert "UNKNOWN, not zero" in partial.ineligible_reason
+    cmp = PR.compare([partial], cap_bytes=1 << 30)
+    assert cmp["chosen"] is None
+
+
+def test_checker_memory_is_enforced_too():
+    """F.4: selection previously ignored checker memory."""
+    from mdi import pricing as PR
+    r = _complete_price(PR, "identity", "big-checker", 10, 1 << 20,
+                        bc=100 * (1 << 30))
+    cmp = PR.compare([r], cap_bytes=8 * (1 << 30))
+    assert cmp["chosen"] is None
+    assert "CHECKER forecast" in cmp["all"][0]["admission_refusal"]
+
+
 def test_upper_bound_over_cap_is_an_admission_refusal():
     from mdi import pricing as PR
-    big = PR.CostRecord(kind="identity", name="identity")
-    big.put("producer_upward_ops", 10 ** 6, PR.UPPER)
-    big.bytes_producer = PR.Counter(100 * (1 << 30), PR.FORECAST)
+    big = _complete_price(PR, "identity", "identity", 10 ** 6,
+                          100 * (1 << 30))
     cmp = PR.compare([big], cap_bytes=8 * (1 << 30))
     assert cmp["chosen"] is None
     assert "admission refusal" in cmp["all"][0]["admission_refusal"]
@@ -2024,13 +2059,10 @@ def test_H_bounded_fallback_is_a_recorded_selection():
         with pytest.raises(PT.PlanError):
             PT.dispatch(kind)
     # the fallback must be priced as its own record, with identity eligible
-    ident = PR.CostRecord(kind="identity", name="identity:fallback")
-    ident.put("producer_upward_ops", 10 ** 6, PR.UPPER)
-    ident.bytes_producer = PR.Counter(1 << 20, PR.FORECAST)
-    unimpl = PR.CostRecord(kind="fourier", name="fourier", eligible=False,
-                           ineligible_reason=RG.UNIMPLEMENTED["fourier"])
-    unimpl.put("producer_upward_ops", 1, PR.UPPER)
-    unimpl.bytes_producer = PR.Counter(1, PR.FORECAST)
+    ident = _complete_price(PR, "identity", "identity:fallback", 10 ** 6,
+                            1 << 20)
+    unimpl = _complete_price(PR, "fourier", "fourier", 1, 1, eligible=False,
+                             ineligible_reason=RG.UNIMPLEMENTED["fourier"])
     cmp = PR.compare([ident, unimpl], cap_bytes=1 << 30)
     assert cmp["chosen"]["name"] == "identity:fallback"
     row = next(x for x in cmp["all"] if x["kind"] == "fourier")
@@ -2675,32 +2707,49 @@ def test_r4_public_pipeline_runs_every_stage():
             assert lo <= p[v][s] <= hi, (v, s)
 
 
-def test_r4_pipeline_rejects_an_intentionally_faulty_producer():
+@pytest.mark.parametrize("model_txt", [TINY, ring_of_blocks()[0]])
+def test_r4_pipeline_rejects_an_intentionally_faulty_producer(model_txt):
     """The critical soundness case: a producer that publishes shifted intervals
     must be REJECTED by the independent checker, so a common bug cannot pass
-    both sides."""
+    both sides. The fault is injected on WHICHEVER route the planner picks."""
     from mdi import pipeline as PLN
     import mdi.pipeline as PP
-    m = M.read_uai(w(TINY))
-    orig = PP._regional_execute
+    from mdi import solve as SS
+    m = M.read_uai(w(model_txt))
+    good = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30)
+    assert good.checker["status"] == "VERIFIED", good.reason
+    kind = good.plan["kind"]
 
-    def faulty(rr, payload, queries, eps, bg):
-        out = orig(rr, payload, queries, eps, bg)
-        return {v: [(max(Fr(0), Fr(lo) + Fr(1, 10)),
-                     min(Fr(1), Fr(hi) + Fr(1, 10))) for lo, hi in rows]
-                for v, rows in out.items()}
+    def shift(rows):
+        return [(max(Fr(0), Fr(lo) + Fr(1, 10)), min(Fr(1), Fr(hi) + Fr(1, 10)))
+                for lo, hi in rows]
 
-    PP._regional_execute = faulty
+    if kind == "regional":
+        orig = PP._regional_execute
+
+        def faulty(rr, payload, queries, eps, bg):
+            return {v: shift(rows)
+                    for v, rows in orig(rr, payload, queries, eps, bg).items()}
+        PP._regional_execute = faulty
+        restore = lambda: setattr(PP, "_regional_execute", orig)
+    else:
+        orig = SS.solve
+
+        def faulty(*a, **kw):
+            res = orig(*a, **kw)
+            if isinstance(res, dict) and res.get("intervals"):
+                res["intervals"] = {v: shift(rows)
+                                    for v, rows in res["intervals"].items()}
+            return res
+        SS.solve = faulty
+        restore = lambda: setattr(SS, "solve", orig)
     try:
-        res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
-        assert res.status == "NUMERICAL_REFUSAL", res.status
+        res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30)
+        assert res.status == "NUMERICAL_REFUSAL", (kind, res.status)
         assert "REJECTED" in res.reason
         assert res.checker["status"] == "FAILED"
     finally:
-        PP._regional_execute = orig
-    # and the correct producer still passes
-    good = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
-    assert good.checker["status"] == "VERIFIED"
+        restore()
 
 
 def test_r4_pipeline_preprocesses_before_planning():
@@ -2787,3 +2836,88 @@ def test_r4_arm_driver_uses_the_pipeline():
     assert "PLN.solve" in src
     assert "price_regional" not in src, "the legacy selection must be gone"
     assert "solve_coarse_with_markers" not in src, "the Cartesian executor"
+
+
+# ===== review 4 priority 4: cost and resource accounting =====
+
+def test_r4_operation_bounds_actually_bound_the_execution():
+    """Review 4: a tiny solve was priced at 28 producer operations but executed
+    45, so the 'upper bound' was not one. The counts must mirror what
+    Engine.send actually does per assignment."""
+    from mdi import pricing as PR, contract as C
+    for n in (3, 4, 6, 8):
+        scopes = [(v,) for v in range(n)] + [(i, i + 1) for i in range(n - 1)]
+        lines = ["MARKOV", str(n), " ".join(["2"] * n), str(len(scopes))]
+        for sc in scopes:
+            lines.append("%d %s" % (len(sc), " ".join(map(str, sc))))
+        for v in range(n):
+            lines.extend(["2", "1 2"])
+        for _ in range(n - 1):
+            lines.extend(["4", "2 1 1 3"])
+        m = M.read_uai(w("\n".join(lines) + "\n"))
+        r = M.restrict(m, {})
+        sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
+        pl, est = sel["chosen"]
+        price = PR.price_identity_plan(pl, est,
+                                       sum(r.card[v] for v in r.free), 64)
+        pu = int(price.counters["producer_upward_ops"].value)
+        pd = int(price.counters["producer_downward_ops"].value)
+        ctx = A.Ctx(64)
+        eng = C.Engine(pl, r.factors, ctx, mode="P")
+        roots = [b.idx for b in pl.bags if b.parent == -1]
+        for rt in roots:
+            eng.upward(rt)
+        actual_up = eng.ops["mul"] + eng.ops["add"]
+        for rt in roots:
+            eng.downward(rt)
+        actual_tot = eng.ops["mul"] + eng.ops["add"]
+        assert pu >= actual_up, ("upward bound must hold", n, pu, actual_up)
+        assert pu + pd >= actual_tot, ("producer bound", n, pu + pd, actual_tot)
+
+
+def test_r4_declared_assignment_cap_is_4096():
+    """Renaming 262,144 is not restoration."""
+    for key in ("region_tuple_assignments", "region_local_enumeration",
+                "aggregated_kernel_entries", "level2_contraction_space",
+                "checker_contraction_space"):
+        assert K.CAPS[key] == 4096, (key, K.CAPS[key])
+    assert K.AMENDMENTS == [], "a cap change must be a recorded amendment"
+
+
+def test_r4_schedule_simulation_is_iterative():
+    """A narrow long chain is exactly the shape that most needs a memory
+    forecast, and a recursive walk raised RecursionError on it."""
+    n = 3000
+    scopes = [(v,) for v in range(n)] + [(i, i + 1) for i in range(n - 1)]
+    lines = ["MARKOV", str(n), " ".join(["2"] * n), str(len(scopes))]
+    for sc in scopes:
+        lines.append("%d %s" % (len(sc), " ".join(map(str, sc))))
+    for v in range(n):
+        lines.extend(["2", "1 2"])
+    for _ in range(n - 1):
+        lines.extend(["4", "2 1 1 3"])
+    m = M.read_uai(w("\n".join(lines) + "\n"))
+    r = M.restrict(m, {})
+    adj = P.primal_graph(r.free, r.card, r.factors)
+    pl = P.build_plan("ascending_ids", P.order_ascending(r.free, r.card, adj),
+                      r.free, r.card, r.factors)
+    assert len(pl.bags) == n
+    assert sys.getrecursionlimit() < n, "the chain must exceed the limit"
+    sim = P.simulate_executed_schedule(pl)       # must not raise
+    assert sim["peak_live_entries"] > 0
+
+
+def test_r4_reduced_graph_checker_preserves_the_factorization():
+    """F.4: independent checking must not require enumerating every joint cell
+    assignment. The two contractions must agree where both are affordable."""
+    from mdi import regional_check as RC
+    m, r, regs, crs, rds, _ = _ring_coarse()
+    Zm, cm = RC._reduced_message_passing(r, regs, crs, rds, set(r.free))
+    Ze, ce = RC.independent_contract(r, regs, crs, rds, set(r.free),
+                                     allow_enumeration=True)
+    assert Zm > 0 and Ze > 0
+    for v in sorted(r.free):
+        for s in range(2):
+            qm = cm.get((v, s), Fr(0)) / Zm
+            qe = ce.get((v, s), Fr(0)) / Ze
+            assert abs(qm - qe) < Fr(1, 10 ** 12), (v, s, float(qm), float(qe))

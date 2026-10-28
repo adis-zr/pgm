@@ -44,11 +44,21 @@ class CostRecord:
         self.counters[key] = Counter(value, label, note)
         return self
 
+    REQUIRED = ("producer_upward_ops", "producer_downward_ops", "readout_ops",
+                "checker_ops")
+
     def total_arithmetic(self):
-        """Sum the arithmetic counters only; conversions are reported apart."""
-        keys = ("producer_upward_ops", "producer_downward_ops", "readout_ops",
-                "checker_ops", "construction_ops", "statistic_join_ops",
-                "grid_ops")
+        """Sum the arithmetic counters. A MISSING required counter makes the
+        total UNKNOWN, never zero: an absent price is not a cheap price."""
+        keys = self.REQUIRED + ("construction_ops", "statistic_join_ops",
+                                "grid_ops")
+        missing = [k for k in self.REQUIRED if k not in self.counters]
+        if missing:
+            self.eligible = False
+            if not self.ineligible_reason:
+                self.ineligible_reason = ("unpriced work %s: missing cost is "
+                                          "UNKNOWN, not zero" % missing)
+            return None, "unknown"
         tot = 0
         labels = set()
         for k in keys:
@@ -57,7 +67,8 @@ class CostRecord:
                 continue
             tot += int(c.value)
             labels.add(c.label)
-        label = UPPER if UPPER in labels else (EXACT if labels == {EXACT} else FORECAST)
+        label = UPPER if UPPER in labels else (
+            EXACT if labels == {EXACT} else FORECAST)
         return tot, label
 
     def as_dict(self):
@@ -74,7 +85,16 @@ class CostRecord:
 
 
 def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=None):
-    """Price the identity route from its compiled schedule."""
+    """Price the identity route from its compiled schedule.
+
+    The counts mirror what `Engine.send` ACTUALLY executes per assignment:
+    one multiplication per owned factor and per incoming message, plus at most
+    one addition per assignment beyond the first that lands in a given
+    separator slot. The previous formula used (own + max(0, nin - 1))
+    multiplications and no additions, which UNDERSHOT: a 3-variable solve was
+    priced at 20 upward operations but executed 24, so the figure was not an
+    upper bound at all.
+    """
     rec = CostRecord(kind="identity", name="identity")
     up = down = ro = 0
     conv = 0
@@ -82,26 +102,37 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
     for b in plan.bags:
         dom = b.domain(plan.card)
         sd = b.sep_domain(plan.card)
-        nin = (1 if b.parent >= 0 else 0) + len(b.children)
         own = len(b.factors)
-        weighted_bag += dom * (own + nin)
+        n_children = len(b.children)
+        n_parent = 1 if b.parent >= 0 else 0
+        weighted_bag += dom * (own + n_children + n_parent)
         weighted_sep += sd
-        conv += dom * own                    # one factor-entry conversion per visit
+        conv += dom * own
         if b.parent >= 0:
-            up += dom * (own + max(0, nin - 1))
+            # upward: owned factors plus the children's messages
+            up += dom * (own + n_children) + max(0, dom - sd)
         if b.children:
-            down += dom * (own + nin) * len(b.children)
-        ro += dom * (own + nin)
+            # downward: one message per child, each a full bag sweep over the
+            # owned factors plus every incoming message except that child
+            nin = n_children + n_parent
+            per = dom * (own + max(0, nin - 1)) + max(0, dom - sd)
+            down += per * n_children
+        # readout: one full sweep over the calibrated bag
+        nin_all = n_children + n_parent
+        ro += dom * (own + nin_all) + dom
     rec.put("weighted_bag_visits", weighted_bag, UPPER,
-            "bag domain times owned factors plus incoming messages")
+            "bag domain times owned factors plus every incident message")
     rec.put("weighted_separator_entries", weighted_sep, EXACT)
-    rec.put("producer_upward_ops", up, UPPER)
+    rec.put("producer_upward_ops", up, UPPER,
+            "per assignment: one multiply per owned factor and per child "
+            "message, plus at most one add per assignment past the first in a "
+            "separator slot")
     rec.put("producer_downward_ops", down, UPPER)
     rec.put("readout_ops", ro, UPPER)
     rec.put("checker_ops", 2 * (up + down + ro), UPPER,
             "interval mode carries two endpoints")
     rec.put("factor_entry_conversions", conv, UPPER,
-            "reduced by the per-entry conversion cache; see G")
+            "reduced by the per-entry conversion cache")
     rec.put("requested_markers", n_requested, EXACT)
     rec.put("precision_bits", precision, EXACT)
     rec.put("largest_bag_entries", plan.largest_bag_entries, EXACT)
@@ -112,11 +143,14 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
         rec.put("preprocess_pairs_split",
                 preprocess_counts.get("splits", 0), EXACT)
     rec.bytes_producer = Counter(est["estimate_bytes"], FORECAST,
-                                 "executed-schedule simulation; entry counts "
-                                 "only, object and precision overhead excluded")
+                                 "executed-schedule simulation; ENTRY COUNTS "
+                                 "only. Excludes MPFR object and limb overhead, "
+                                 "allocator overhead, input tables and output "
+                                 "buffers. NOT measured whole-process memory.")
     rec.bytes_checker = Counter(est["peak_live_entries"] * 128 +
                                 est["largest_sep_entries"] * 128, FORECAST,
-                                "interval mode, two endpoints per entry")
+                                "interval mode, two endpoints per entry; same "
+                                "exclusions as the producer figure")
     return rec
 
 
@@ -168,18 +202,27 @@ def compare(records, cap_bytes=None):
     for r in records:
         tot, lab = r.total_arithmetic()
         by = int(r.bytes_producer.value) if r.bytes_producer else 0
+        bc = int(r.bytes_checker.value) if r.bytes_checker else 0
         refused = None
-        if cap_bytes and by > cap_bytes:
-            refused = ("conservative admission refusal: forecast %d bytes "
-                       "exceeds the %d cap" % (by, cap_bytes))
+        if tot is None:
+            refused = r.ineligible_reason or "unpriced work"
+        elif cap_bytes and by > cap_bytes:
+            refused = ("conservative admission refusal: PRODUCER forecast %d "
+                       "bytes exceeds the %d cap" % (by, cap_bytes))
+        elif cap_bytes and bc > cap_bytes:
+            # producer and checker run sequentially, so the binding constraint
+            # is the larger of the two, and the checker was previously ignored
+            refused = ("conservative admission refusal: CHECKER forecast %d "
+                       "bytes exceeds the %d cap" % (bc, cap_bytes))
         rows.append({"name": r.name, "kind": r.kind, "eligible": r.eligible,
                      "ineligible_reason": r.ineligible_reason,
                      "total_arithmetic": tot, "arithmetic_label": lab,
-                     "bytes_producer": by, "admission_refusal": refused,
-                     "record": r})
+                     "bytes_producer": by, "bytes_checker": bc,
+                     "admission_refusal": refused, "record": r})
     usable = [x for x in rows
               if x["eligible"] and x["admission_refusal"] is None]
-    usable.sort(key=lambda x: (x["total_arithmetic"], x["bytes_producer"]))
+    usable.sort(key=lambda x: (x["total_arithmetic"],
+                               max(x["bytes_producer"], x["bytes_checker"])))
     return {"ranked": usable, "all": rows,
             "chosen": usable[0] if usable else None,
             "rule": "lowest total arithmetic among ELIGIBLE routes whose "
