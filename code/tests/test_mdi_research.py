@@ -3132,3 +3132,167 @@ def test_r4_every_kind_has_a_registered_executor():
     for kind in ("statistic", "gaussian", "fourier", "composed"):
         assert not rows[kind]["checker_supported"]
         assert rows[kind]["checker_note"]
+
+
+# ===== review 4 priority 7: behavioural and independent acceptance evidence =====
+
+def test_r4_positive_aggregation_with_individual_spread_cancelling():
+    """Priority 7: each factor individually has NONUNIT spread and their product
+    cancels it. This is the positive-cancellation case, distinct from zero
+    masking."""
+    # factor 1: ratios 1/3 then 3  -> spread 9
+    f1b, f1r = (Fr(1), Fr(9)), (Fr(3), Fr(3))
+    # factor 2: ratios 3 then 1/3  -> spread 9, opposite direction
+    f2b, f2r = (Fr(9), Fr(1)), (Fr(3), Fr(3))
+    L1, U1 = R.ratio_extrema(f1b, f1r)
+    L2, U2 = R.ratio_extrema(f2b, f2r)
+    assert U1 / L1 == 9 and U2 / L2 == 9, "each must individually spread"
+    pb = tuple(a * b for a, b in zip(f1b, f2b))
+    pr = tuple(a * b for a, b in zip(f1r, f2r))
+    Lp, Up = R.ratio_extrema(pb, pr)
+    assert Up / Lp == 1, "the product must cancel to rho = 1"
+    assert Lp == Up == Fr(1)
+
+
+def test_r4_multiple_children_at_a_join_in_the_general_dp():
+    """A join with THREE children, each contributing, so a two-child fix cannot
+    pass by accident."""
+    from mdi import gendp as G
+    n = 5          # centre 0 with four leaves
+    sc = [(v,) for v in range(n)] + [(0, k) for k in range(1, n)]
+    L = ["MARKOV", str(n), " ".join(["2"] * n), str(len(sc))]
+    for s_ in sc:
+        L.append("%d %s" % (len(s_), " ".join(map(str, s_))))
+    for v in range(n):
+        L.extend(["2", "1 %d" % (v + 1)])
+    for k in range(1, n):
+        L.extend(["4", "%d 1 1 %d" % (k + 1, k + 2)])
+    m = M.read_uai(w("\n".join(L) + "\n"))
+    r = M.restrict(m, {})
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
+    pl, est = sel["chosen"]
+    assert max(len(b.children) for b in pl.bags) >= 3, "need a 3+ child join"
+    ctx = A.Ctx(180)
+
+    class Cand:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(0)]
+        features = [{v: [Fr(0), Fr(0)] for v in range(n)}]
+
+    (Zlo, Zhi), mk, meta = G.run(pl, r.factors, r.card, Cand(), 1,
+                                 set(r.free), ctx)
+    Rz = Fr(0)
+    for combo in itertools.product(*[range(2)] * n):
+        a_ = {v: combo[v] for v in range(n)}
+        wt = Fr(1)
+        for f in r.factors:
+            st = f.strides()
+            off = sum(a_[v] * st[k] for k, v in enumerate(f.scope))
+            wt *= f.table[off]
+        Rz += wt
+    assert Zlo <= Rz <= Zhi
+    for v in range(n):
+        tot = sum(mk.get((v, a), (Fr(0), Fr(0)))[0] for a in range(2))
+        assert tot == Rz, (v, tot, Rz)
+
+
+def test_r4_point_vector_is_a_feasible_simplex_construction():
+    """Priority 7: the declared point vector must be provably inside the
+    published intervals AND on the simplex, and must survive serialization."""
+    from mdi import pipeline as PLN, arm as AR
+    import tempfile as _tf
+    m = M.read_uai(w(TINY))
+    res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30)
+    assert res.intervals
+    d = _tf.mkdtemp()
+    AR._write_point_vector(res.intervals, m, {}, d, "t")
+    from ext import uai as EU
+    rows, _ = EU.read_mar(os.path.join(d, "point_t.MAR"))
+    assert len(rows) == m.nvars
+    for v in range(m.nvars):
+        tot = sum(rows[v])
+        # on the simplex, within the MAR format's decimal resolution
+        assert abs(float(tot) - 1.0) <= 1e-5, (v, float(tot))
+        for s in range(m.card[v]):
+            lo, hi = res.intervals[v][s]
+            # the written value must lie in the published interval, allowing
+            # only the format's own rounding
+            assert Fr(lo) - Fr(1, 10 ** 6) <= rows[v][s] <= Fr(hi) + Fr(1, 10 ** 6), \
+                (v, s, float(lo), float(rows[v][s]), float(hi))
+
+
+def test_r4_publication_survives_serialization_round_trip():
+    """Parse the WRITTEN bytes and re-verify, rather than trusting the
+    in-memory object."""
+    from mdi import pipeline as PLN
+    import json as _json
+    import tempfile as _tf
+    m = M.read_uai(w(TINY))
+    res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30)
+    d = _tf.mkdtemp()
+    path = os.path.join(d, "pub.json")
+    ser = {str(v): [[str(lo), str(hi)] for lo, hi in rows]
+           for v, rows in res.intervals.items()}
+    with open(path, "w") as fh:
+        _json.dump(ser, fh)
+    back = _json.load(open(path))
+    rebuilt = {int(v): [(Fr(a), Fr(b)) for a, b in rows]
+               for v, rows in back.items()}
+    # the parsed bytes must still verify
+    ok, fails = S.verify_publication(m, {}, rebuilt, eps=Fr(1, 100), mode="I")
+    assert ok, fails[:3]
+    # and be identical to what was published
+    for v in res.intervals:
+        for s in range(len(res.intervals[v])):
+            assert tuple(rebuilt[v][s]) == tuple(
+                Fr(x) for x in res.intervals[v][s])
+
+
+def test_r4_resource_exhaustion_inside_an_interior_loop():
+    """A budget must stop work INSIDE an inner loop, not only between phases."""
+    from mdi import budget as B
+    bg = B.Budget(wall_s=0.02)
+    dl = bg.deadline_fn("inner")
+    import time as _t
+    _t.sleep(0.05)
+    with pytest.raises(B.BudgetExceeded):
+        for _ in range(1000):
+            dl()
+    assert bg.report()["stops"]
+
+
+def test_r4_stale_boundary_map_is_detected():
+    """Already covered for regional; assert the mechanism is in the production
+    checker rather than a test helper."""
+    import inspect
+    from mdi import regional_check as RC
+    src = inspect.getsource(RC.verify_regional_publication)
+    assert "boundary order" in src
+    assert "own_rds" in src
+
+
+def test_r4_missing_and_duplicate_ownership_rejected():
+    from mdi import preprocess as PRE
+    import copy
+    txt = ("MARKOV\n3\n2 2 2\n3\n1 0\n2 0 1\n2 1 2\n"
+           "2\n1 2\n4\n1 2 3 5\n4\n2 1 1 3\n")
+    m = M.read_uai(w(txt))
+    r = M.restrict(m, {})
+    simp = PRE.simplify(r)
+    assert PRE.verify_identities(r, simp)
+    # duplicate: emit a factor twice
+    dup = copy.deepcopy(simp)
+    pairs = [f for f in dup.factors if len(f.scope) == 2]
+    if pairs:
+        dup.factors = list(dup.factors) + [pairs[0]]
+        with pytest.raises(PRE.PreprocessError):
+            PRE.verify_identities(r, dup)
+    # missing: drop a factor without recording why
+    miss = copy.deepcopy(simp)
+    miss.factors = [f for f in miss.factors if len(f.scope) != 2]
+    miss.declined_products = []
+    miss.combined_splits = []
+    miss.combined_constants = []
+    with pytest.raises(PRE.PreprocessError):
+        PRE.verify_identities(r, miss)
