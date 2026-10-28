@@ -433,6 +433,18 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
     never consumes producer values.
     """
     r = M.restrict(model, evidence)
+    # EXPLICIT zero-evidence check. Previously this relied on a numerical
+    # positivity side effect, so a publication whose conditioning event has
+    # probability zero could be accepted when that side effect did not fire.
+    if r.impossible_factor is not None:
+        raise A.NumericalRefusal(
+            "checker refuses: restricted factor %d is identically zero, so the "
+            "conditioning event has probability zero and no conditional "
+            "distribution exists" % r.impossible_factor)
+    if r.constant == 0:
+        raise A.NumericalRefusal(
+            "checker refuses: a fully pinned factor evaluates to exactly zero, "
+            "so the conditioning event has probability zero")
     # independent re-derivation of the bag tree from the same order
     adj = P.primal_graph(r.free, r.card, r.factors)
     pl2 = P.build_plan(pl.name, list(pl.order), r.free, r.card, r.factors)
@@ -522,9 +534,20 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
 def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I"):
     """Standalone checker entry point (used by the rejection tests)."""
     r = M.restrict(model, evidence)
+    if r.impossible_factor is not None or r.constant == 0:
+        return False, [{"reason": "zero evidence weight: no conditional "
+                                  "distribution exists, so any published "
+                                  "conditional marginal is invalid"}]
     adj = P.primal_graph(r.free, r.card, r.factors)
     pl = P.build_plan("min_fill", P.order_min_fill(r.free, r.card, adj),
                       r.free, r.card, r.factors)
-    ok, fails, _ = _check(model, evidence, iv, eps, pl, 64, 1 << 31,
-                          time.time() + 300, lambda *a: None)
+    try:
+        ok, fails, _ = _check(model, evidence, iv, eps, pl, 64, 1 << 31,
+                              time.time() + 300, lambda *a: None)
+    except A.NumericalRefusal as e:
+        # A refusal is a REJECTION of the publication, reported as such. Letting
+        # it propagate made a caller see an exception rather than "not verified",
+        # which is how a globally contradictory model (every factor individually
+        # nonzero, Z = 0) escaped this entry point.
+        return False, [{"reason": "checker refused: %s" % e}]
     return ok, fails

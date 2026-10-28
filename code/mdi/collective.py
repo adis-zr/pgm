@@ -69,6 +69,13 @@ def statistic_dp(free, card, residual_unary, residual_pairs, kept_factors,
     if kept_factors:
         raise Declined("statistic DP here requires a pure product residual; "
                        "%d retained factors present" % len(kept_factors))
+    if residual_pairs:
+        # This DP multiplies ONLY unary tables; it has no mechanism for a pair
+        # factor. Accepting them silently produced wrong answers (a single
+        # [1,1,1,9] pair gave 1/2 where the truth is 5/6). Refuse instead.
+        raise Declined("statistic DP cannot consume %d residual PAIR factors; "
+                       "it multiplies unary tables only. A general-residual DP "
+                       "is not implemented." % len(residual_pairs))
     if cand.rank != 1:
         raise Declined("statistic DP implemented for rank 1 in this build")
     cap = cap_support or K.CAPS["local_mass_entries"]
@@ -186,10 +193,22 @@ def gf_lattice(gamma: Fr, R: Fr, delta: Fr):
     # discretization: (2T) h^2 M / 12 <= delta/2  =>  h <= sqrt(6 delta / (2 T M))
     hmax = math.sqrt(max(6.0 * float(d) / (2.0 * T * M), 1e-300))
     bits = max(1, int(math.ceil(-math.log2(min(hmax, 0.5)))))
-    bits = min(bits, 40)
+    MAX_BITS = 40
+    capped = bits > MAX_BITS
+    bits = min(bits, MAX_BITS)
     hq = Fr(1, 1 << bits)
     nodes = int(2 * T / float(hq)) + 1
     disc = (2.0 * T) * float(hq) ** 2 * M / 12.0
+    if capped or disc > half:
+        # The step needed to meet `delta` is finer than the representable cap, so
+        # the advertised lattice does NOT satisfy its own error bound. Previously
+        # the cap was applied and the failed test ignored, advertising 1.23e14
+        # nodes whose actual bound was 1.57e+142 against a 1e-3 target.
+        raise Declined(
+            "lattice cannot meet delta=%s: required step 2^-%d exceeds the 2^-%d "
+            "cap; discretization bound %.3e > %.3e with M=%.3e, T=%d"
+            % (d, int(math.ceil(-math.log2(min(hmax, 0.5)))), MAX_BITS,
+               disc, half, M, T))
     return {"T": T, "h": hq, "nodes": nodes,
             "a_shift": Fr(round(af * 10 ** 9), 10 ** 9),
             "M_bound": Fr(round(M * 10 ** 9), 10 ** 9),
@@ -331,14 +350,29 @@ def _exp_enclose(t: Fr, sg_lo: Fr, sg_hi: Fr, ctx: A.Ctx):
 
 
 def _normal_weight(z: Fr, h: Fr, ctx: A.Ctx):
-    """Enclose the quadrature weight h * phi(z) with phi the standard normal pdf."""
+    """Enclose the quadrature weight h * phi(z), phi the standard normal pdf.
+
+    The constant 1/sqrt(2 pi) is a QUOTIENT, so its endpoints need opposite
+    rounding on numerator and denominator: a lower bound divides by an UPWARD
+    -rounded sqrt(2 pi), an upper bound by a DOWNWARD-rounded one. Rounding the
+    denominator in the same direction as the result (the previous code) makes
+    the "lower" endpoint too large, and at p=24 that inverted 35 of 81 nodes.
+    """
     import gmpy2
     x = -(z * z) / 2
     with ctx.D:
         lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
-        c_lo = gmpy2.mpfr(1) / gmpy2.sqrt(2 * gmpy2.const_pi())
     with ctx.U:
         hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
-        c_hi = gmpy2.mpfr(1) / gmpy2.sqrt(2 * gmpy2.const_pi())
-    return (h * A.exact_fr(lo) * A.exact_fr(c_lo),
-            h * A.exact_fr(hi) * A.exact_fr(c_hi))
+    with ctx.U:
+        den_hi = gmpy2.sqrt(2 * gmpy2.const_pi())      # over-estimate
+    with ctx.D:
+        den_lo = gmpy2.sqrt(2 * gmpy2.const_pi())      # under-estimate
+    c_lo = Fr(1) / A.exact_fr(den_hi)                  # smallest 1/sqrt(2pi)
+    c_hi = Fr(1) / A.exact_fr(den_lo)                  # largest
+    if not (0 < c_lo <= c_hi):
+        raise Declined("normal-weight constant enclosure is invalid")
+    out = (h * A.exact_fr(lo) * c_lo, h * A.exact_fr(hi) * c_hi)
+    if out[0] > out[1]:
+        raise Declined("inverted quadrature weight")
+    return out

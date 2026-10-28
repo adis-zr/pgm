@@ -158,8 +158,11 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None):
             rec["stages"]["coarse_solve_s"] = time.time() - ts
             rec["coarse"] = {k: _jsonable(v) for k, v in cres.items()
                              if k != "intervals"}
-            if cres.get("outcome") == "VERIFIED_ALL_MARGINALS":
+            if cres.get("outcome") == "PRODUCER_COMPLETE_UNCHECKED":
+                # A coarse producer finished but NO independent check exists for
+                # it. This cannot be labelled CERTIFIED_RESEARCH_ROUTE.
                 rec["research_executed"] = True
+                rec["research_checked"] = False
                 iv = cres["intervals"]
                 for v, st in ev.items():
                     iv[v] = [(Fr(1), Fr(1)) if sx == st else (Fr(0), Fr(0))
@@ -177,8 +180,12 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None):
                     pub[v] = rows
                 rec["final_max_width"] = str(worst)
                 rec["contract_met"] = bool(worst <= eps)
-                rec["outcome"] = ("CERTIFIED_RESEARCH_ROUTE" if worst <= eps
+                rec["outcome"] = ("RESEARCH_ROUTE_UNCHECKED" if worst <= eps
                                   else "NUMERICAL_REFUSAL")
+                rec["outcome_note"] = (
+                    "the coarse producer met the width contract, but spec 11's "
+                    "independent check of a coarse publication is NOT "
+                    "implemented, so this is not CERTIFIED_RESEARCH_ROUTE")
                 if worst > eps:
                     rec["reason"] = "final width %s exceeds %s" % (worst, eps)
                 else:
@@ -231,7 +238,11 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None):
                 rec["reason"] = "final width %s exceeds %s" % (worst, eps)
             else:
                 if chosen.kind != "identity" and rec.get("research_executed"):
-                    rec["outcome"] = "CERTIFIED_RESEARCH_ROUTE"
+                    # reachable only if a research route were independently
+                    # checked, which no implemented path currently does
+                    rec["outcome"] = ("CERTIFIED_RESEARCH_ROUTE"
+                                      if rec.get("research_checked")
+                                      else "RESEARCH_ROUTE_UNCHECKED")
                 else:
                     rec["outcome"] = "CERTIFIED_FALLBACK_ONLY"
             rec["checker"] = res.get("checker")

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 import math
 from mdi import config as K
 from mdi import arith as A
+from mdi.model import Factor
 
 
 class Declined(Exception):
@@ -98,6 +99,7 @@ def _pair_matrix(free, factors, card):
     the residual unchanged.
     """
     Hs, consts, zero_pairs = {}, {}, set()
+    raw = {}                    # scope -> PRODUCT of every factor on that scope
     absorb = {v: [Fr(1)] * card[v] for v in free}
     for f in factors:
         if len(f.scope) != 2:
@@ -105,11 +107,33 @@ def _pair_matrix(free, factors, card):
         i, j = f.scope
         if i not in absorb or j not in absorb:
             continue
+        if i > j:
+            # normalize the scope order and transpose, so (j,i) combines with (i,j)
+            tb = [f.table[a * card[j] + b] for b in range(card[i])
+                  for a in range(card[j])]
+            f = Factor(scope=(j, i), card=(card[j], card[i]), table=tb,
+                       origin=f.origin)
+            i, j = j, i
         di, dj = card[i], card[j]
         if any(t == 0 for t in f.table):
             zero_pairs.add((i, j))
             continue
-        g = gauge_split(f.table, di, dj)
+        key = (i, j)
+        if key in raw:
+            # REPEATED pair factor on the same scope: the model's interaction is
+            # the PRODUCT of all such factors. A dict assignment here silently
+            # discarded every factor after the first, so nu certified a model
+            # that was not the input (two [1,1,1,4] factors became one, moving a
+            # marginal from 17/19 to 5/7).
+            raw[key] = [a * b for a, b in zip(raw[key], f.table)]
+        else:
+            raw[key] = list(f.table)
+    for (i, j), tbl in sorted(raw.items()):
+        di, dj = card[i], card[j]
+        if any(t == 0 for t in tbl):
+            zero_pairs.add((i, j))
+            continue
+        g = gauge_split(tbl, di, dj)
         Hs[(i, j)] = g.H
         consts[(i, j)] = g.C
         for a in range(di):
@@ -171,7 +195,10 @@ def propose_modes(free, factors, card, max_rank=None):
         # f_i = 1 on every variable in the support of those edges
         Jc = Fr(round(Jmax * 10 ** 12), 10 ** 12)
         s = 1 if Jc > 0 else -1
-        gam = abs(Jc) * 2            # (1/2)*gamma*(sum f)^2 with f=+-1 features
+        # (gamma/2)(sum_i f_i)^2 = (gamma/2)*sum f_i^2 + gamma*sum_{i<j} f_i f_j,
+        # so a uniform pair coupling J needs gamma = |J|. Using 2|J| doubled the
+        # coupling and made the residual retain an OPPOSING interaction.
+        gam = abs(Jc)
         if gam > 0:
             vs = sorted({v for (i, j), _ in present for v in (i, j)})
             feat = {v: [Fr(-1), Fr(1)] if v in vs else [Fr(0), Fr(0)] for v in free}
@@ -202,7 +229,7 @@ def propose_modes(free, factors, card, max_rank=None):
             continue
         if s < 0 and nneg >= K.CAPS["mode_rank_negative"]:
             continue
-        g = abs(lamb) * 2.0
+        g = abs(lamb)      # gamma = |lambda|; see the uniform-coupling note above
         if g <= 0:
             continue
         # round features and strength to explicit rationals

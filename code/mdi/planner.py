@@ -112,11 +112,15 @@ def price_regional(free, card, factors, queries, levels, bytes_per_entry,
                       "profile_comparisons": comps,
                       "discovery_s": time.time() - t0},
             payload={"partition": c, "coarse": crs, "regions_data": rds},
-            admitted=certified and ta < tb,
-            reason="" if (certified and ta < tb) else
-                   ("R_level %s not certified at t=%s" % (Rlevel, t_level)
-                    if not certified else
-                    "no state reduction (%d -> %d)" % (tb, ta)))
+            admitted=certified and ta < tb and skipped == 0,
+            reason="" if (certified and ta < tb and skipped == 0) else
+                   ("%d of %d regions were skipped (capped or declined), so the "
+                    "partition is INCOMPLETE and its ratio covers only the "
+                    "regions that succeeded" % (skipped, len(regs))
+                    if skipped else
+                    ("R_level %s not certified at t=%s" % (Rlevel, t_level)
+                     if not certified else
+                     "no state reduction (%d -> %d)" % (tb, ta))))
         out.append(cand)
         if log:
             log("regional", "%s regions=%d states %d->%d certified=%s"

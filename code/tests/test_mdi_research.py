@@ -3,7 +3,7 @@
 All controls enter through the external model API; no branch on their names.
 Bytes/generators are fixed in this file.
 """
-import os, sys, math, itertools, tempfile
+import os, sys, math, itertools, tempfile, inspect
 from fractions import Fraction as Fr
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
@@ -384,8 +384,11 @@ def test_control4_recognizes_mode_sign_from_tables(J, want):
     cands, info = MD.propose_modes(r.free, r.factors, r.card)
     assert cands, info
     assert cands[0].signs[0] == want, (cands[0].signs, want)
-    # gamma = 2|J| for the +-1 feature parameterization
-    assert abs(float(cands[0].gammas[0]) - 2 * abs(J)) < 1e-4, cands[0].gammas
+    # (gamma/2)(sum_i f_i)^2 = (gamma/2)sum f_i^2 + gamma*sum_{i<j} f_i f_j, so a
+    # uniform pair coupling J needs gamma = |J|. The earlier assertion demanded
+    # 2|J|, i.e. it asserted the implementation's own doubling and could never
+    # have detected it.
+    assert abs(float(cands[0].gammas[0]) - abs(J)) < 1e-4, cands[0].gammas
 
 
 def test_control4_recognition_survives_gauge_change():
@@ -816,7 +819,11 @@ def test_control5_coarse_model_executes_and_restores_markers():
     res = CZ.solve_coarse_with_markers(r.free, r.card, r.factors, regs, crs, rds,
                                        queries, eps=Fr(1, 1000), mode="P",
                                        cap_bytes=1 << 30, deadline_s=120)
-    assert res["outcome"] == "VERIFIED_ALL_MARGINALS", res
+    # The coarse contraction runs with run_checker=False, so its result is NOT
+    # verified. It must say so rather than returning VERIFIED_ALL_MARGINALS,
+    # which the arm previously mapped to CERTIFIED_RESEARCH_ROUTE.
+    assert res["outcome"] == "PRODUCER_COMPLETE_UNCHECKED", res["outcome"]
+    assert res["checker"]["status"] == "NOT_RUN"
     # the coarse model is genuinely smaller than the original
     assert res["coarse_model"]["nvars"] == NB
     assert max(res["coarse_model"]["card"]) <= 2 ** BS
@@ -969,3 +976,130 @@ def test_deletion_bound_is_uniform_over_exterior_configurations():
             if q > worst:
                 worst = q
     assert worst <= p, (float(worst), float(p))
+
+
+# ===== review-2 defect regressions, each failing before its fix =====
+
+def test_repeated_pair_factors_multiply_not_overwrite():
+    """Two factors on the same scope define their PRODUCT. Overwriting made nu
+    certify a model that was not the input (marginal 17/19 vs 5/7)."""
+    txt = "MARKOV\n2\n2 2\n3\n1 0\n2 0 1\n2 0 1\n2\n1 1\n4\n1 1 1 4\n4\n1 1 1 4\n"
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    Hs, absorb, consts, zp = MD._pair_matrix(r.free, r.factors, r.card)
+    assert Hs[(0, 1)][1][1] == 16, Hs[(0, 1)]
+    Z, p = O.exact_all_marginals(r)
+    assert p[0] == [Fr(2, 19), Fr(17, 19)], p[0]
+
+
+def test_transposed_duplicate_scope_also_combines():
+    """A pair written (1,0) must combine with (0,1), not be treated separately."""
+    txt = "MARKOV\n2\n2 2\n3\n1 0\n2 0 1\n2 1 0\n2\n1 1\n4\n1 1 1 4\n4\n1 1 1 4\n"
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    Hs, absorb, consts, zp = MD._pair_matrix(r.free, r.factors, r.card)
+    assert list(Hs.keys()) == [(0, 1)], list(Hs.keys())
+    assert Hs[(0, 1)][1][1] == 16, Hs[(0, 1)]
+
+
+def test_uniform_coupling_gamma_equals_J_not_twice():
+    """Exhaustive algebra: (g/2)(sum x)^2 = (g/2)n + g*sum_{i<j} x_i x_j."""
+    for n in (3, 4, 5):
+        for g in (Fr(1, 2), Fr(3, 10)):
+            for combo in itertools.product([-1, 1], repeat=n):
+                S = sum(combo)
+                pairs = sum(combo[i] * combo[j]
+                            for i in range(n) for j in range(i + 1, n))
+                assert g * Fr(S * S, 2) == g * Fr(n, 2) + g * pairs
+
+
+def test_statistic_dp_refuses_residual_pairs():
+    """It multiplies unary tables only; accepting pairs gave 1/2 vs exact 5/6."""
+    with pytest.raises(CO.Declined) as e:
+        CO.statistic_dp([0, 1], {0: 2, 1: 2},
+                        {0: [Fr(1), Fr(1)], 1: [Fr(1), Fr(1)]},
+                        {(0, 1): [Fr(1), Fr(1), Fr(1), Fr(9)]}, [], None, 1,
+                        {0, 1})
+    assert "PAIR" in str(e.value)
+
+
+def test_normal_weight_never_inverts():
+    """The 1/sqrt(2pi) quotient needs opposite rounding on its denominator;
+    same-direction rounding inverted 35 of 81 nodes at p=24."""
+    ctx = A.Ctx(24)
+    for j in range(-40, 41):
+        lo, hi = CO._normal_weight(Fr(j, 8), Fr(1, 8), ctx)
+        assert 0 < lo <= hi, (j, float(lo), float(hi))
+
+
+def test_lattice_rejects_when_it_cannot_meet_delta():
+    """Capping the step without rejecting advertised 1.23e14 nodes whose true
+    bound was 1.57e+142 against a 1e-3 target."""
+    with pytest.raises(CO.Declined) as e:
+        CO.gf_lattice(Fr(8721203, 1000000), Fr(467709, 50000), Fr(1, 1000))
+    assert "cannot meet delta" in str(e.value)
+    # a legitimate lattice still admits, with its bound inside the target
+    lat = CO.gf_lattice(Fr(1, 20), Fr(6), Fr(1, 10000))
+    assert lat["nodes"] < 100000
+    assert lat["total_bound"] <= 2 * Fr(1, 10000)
+
+
+def test_checker_refuses_zero_evidence_explicitly():
+    """Both entry points must test the conditioning event, not rely on a
+    numerical positivity side effect."""
+    txt = """MARKOV
+3
+2 2 2
+3
+2 0 1
+2 1 2
+2 0 2
+4
+1 0 0 1
+4
+1 0 0 1
+4
+0 1 1 0
+"""
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    Z, _ = O.exact_all_marginals(r)
+    assert Z == 0
+    iv = {v: [(Fr(1, 2), Fr(1, 2))] * 2 for v in range(3)}
+    ok, fails = S.verify_publication(m, {}, iv, eps=Fr(1, 100), mode="I")
+    assert not ok and fails, "a zero-probability conditioning event must be refused"
+
+
+def test_incomplete_partition_is_not_admitted():
+    """A partition with skipped regions covers only part of the model; its ratio
+    is not comparable and it must not be admitted."""
+    src = inspect.getsource(PL.price_regional)
+    assert "skipped == 0" in src, "admission must require zero skipped regions"
+
+
+def test_corrected_mode_actually_removes_the_interaction():
+    """With gamma = |J| the residual interaction is annihilated; with the old
+    2|J| it was replaced by an OPPOSING interaction of similar size.
+
+    This is the test the review asked for: recognition is only meaningful if the
+    intended interaction is actually removed.
+    """
+    n, J = 8, 0.30
+    fields = [0.1 * (k + 1) * (1 if k % 2 == 0 else -1) for k in range(n)]
+    m = M.read_uai(w(mean_field(n, J, fields)))
+    r = M.restrict(m, {})
+    ctx = A.Ctx(140)
+    cands, _ = MD.propose_modes(r.free, r.factors, r.card)
+    assert cands and abs(float(cands[0].gammas[0]) - abs(J)) < 1e-4
+    res = MD.build_residual(r.free, r.factors, r.card, cands[0], ctx)
+    assert not res.kept, res.kept
+    # original interaction strength
+    Hs, _, _, _ = MD._pair_matrix(r.free, r.factors, r.card)
+    orig = [abs(float(H[1][1]) - 1.0) for H in Hs.values()]
+    # residual interaction strength
+    resid = []
+    for tbl in res.pairs.values():
+        g = MD.gauge_split(tbl, 2, 2)
+        resid.append(abs(float(g.H[1][1]) - 1.0))
+    assert orig and resid
+    assert max(resid) < min(orig) / 1000, (
+        "the residual must be far closer to non-interacting than the original: "
+        "max residual %.3e vs min original %.3e" % (max(resid), min(orig)))
+    assert MD.tv_from_nu(res.nu) <= K.RADII["collective_fit_and_rounding"]

@@ -121,7 +121,15 @@ def solve_coarse_with_markers(free, card, factors, regions, coarse, rds,
                 h += Fr(phi) * g
             acc.append((min(l, Fr(1)), min(h, Fr(1))))
         out[v] = acc
-    return {"outcome": "VERIFIED_ALL_MARGINALS", "intervals": out,
+    # The coarse contraction ran with run_checker=False, so NOTHING here has
+    # been independently verified. Returning VERIFIED_ALL_MARGINALS let the arm
+    # publish CERTIFIED_RESEARCH_ROUTE with no independent check at all. The
+    # honest status is UNCHECKED; a caller must not treat it as certified.
+    return {"outcome": "PRODUCER_COMPLETE_UNCHECKED", "intervals": out,
+            "checker": {"status": "NOT_RUN",
+                        "reason": "no independent checker exists for a coarse "
+                                  "publication; spec 11 requires local "
+                                  "certificates plus the smaller contraction"},
             "coarse_model": {"nvars": cmodel.nvars, "card": cmodel.card,
                              "factors": len(cmodel.factors),
                              "crossing_factors": len(crossing)},
