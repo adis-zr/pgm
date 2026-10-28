@@ -85,15 +85,64 @@ def run(restricted, regions, coarse, rds, queries, ctx: A.Ctx, eps,
     if total_fit_tv > allow:
         raise Declined("coarse residual TV %s exceeds the allowance"
                        % total_fit_tv)
+    # ---- choose Q from the DECLARED bounded menu and CHARGE its rounding
+    # energy. Q was hard-wired to 1, which on features [0, 1/2, 1] collapses
+    # the middle value to 0: the middle-state probability came out
+    # 0.125633960799 against an exact 0.253500354120, while the publication
+    # claimed a radius of about 7.84e-13 and all nine intervals missed the
+    # truth. The rounding energy on that candidate is 6.75 and was never
+    # charged. A valid response is to DECLINE when no admissible Q meets the
+    # remaining allowance; forcing a pass is not.
+    remaining = allow - total_fit_tv
+    if remaining <= 0:
+        raise Declined("the coarse fit has already consumed the %s collective "
+                       "allowance; no rounding budget remains" % allow)
+    # The declared cap bounds the NUMBER of rounding denominators tried, not
+    # their values. A menu of 1, 2, 4 spans only the coarsest dyadic grids and
+    # cannot represent a feature whose rounding energy must fall below a
+    # ~1e-10 allowance, so the candidate declined for want of resolution
+    # rather than on its merits. The menu stays at `dyadic_Q_tries` entries
+    # and is chosen geometrically so the finest grid is actually reachable.
+    tries = K.CAPS["dyadic_Q_tries"]
+    qchoices = [1 << (16 * j) for j in range(tries)]      # 1, 2^16, 2^32
+    chosen_Q = None
+    rounding_tv = None
+    attempts = []
+    for Q in qchoices:
+        kq = CO.round_features(cand, rc.free, Q)
+        D = CO.rounding_energy_bound(cand, rc.free, kq, Q)
+        # an energy bound D on the log-weight gives a TV bound 1 - exp(-D),
+        # itself bounded above by D
+        tv = D if D < 1 else Fr(1)
+        attempts.append({"Q": Q, "rounding_energy": str(D), "tv": str(tv),
+                         "admissible": bool(tv <= remaining)})
+        if tv <= remaining:
+            chosen_Q, rounding_tv = Q, tv
+            break
+    if chosen_Q is None:
+        raise Declined(
+            "no Q in the declared menu %s meets the remaining rounding "
+            "allowance %s; the smallest rounding energy was %s. This candidate "
+            "is DECLINED rather than published with an uncharged error."
+            % (qchoices, remaining, attempts[-1]["rounding_energy"]
+               if attempts else "n/a"))
+    total_fit_tv = total_fit_tv + rounding_tv
+
     # Evaluate the coarse law. A PRODUCT residual goes to the product DP; a
     # residual that retains interacting pairs goes to the GENERAL-residual DP on
     # a validated elimination schedule, which is exactly the case E.5 exists
     # for. Declining here would make the composed route unreachable whenever
     # the coarse interactions are not fully removable.
-    if can.is_product():
+    #
+    # res.kept is carried into BOTH branches. It was dropped entirely before,
+    # and it can hold zero constraints and higher-arity interactions whose
+    # omission silently changes the law.
+    kept = list(getattr(res, "kept", ()) or ())
+    if can.is_product() and not kept:
         acc, marks, _ = CO.statistic_dp(list(rc.free), rc.card, can.unary, {},
-                                        [], cand, 1, set(rc.free))
-        (Zlo, Zhi), cell_mk = CO.dp_root_combine(acc, marks, cand, 1, ctx)
+                                        [], cand, chosen_Q, set(rc.free))
+        (Zlo, Zhi), cell_mk = CO.dp_root_combine(acc, marks, cand, chosen_Q,
+                                                 ctx)
         evaluator = "product_statistic_dp"
     else:
         from mdi import plan as PP, gendp as G
@@ -106,6 +155,21 @@ def run(restricted, regions, coarse, rds, queries, ctx: A.Ctx, eps,
             facs.append(M.Factor(scope=(i, j),
                                  card=(rc.card[i], rc.card[j]),
                                  table=[Fr(x) for x in tbl], origin=-2000))
+        # every RETAINED residual factor, including higher arity and zero
+        # constraints, or the candidate declines
+        for kf in kept:
+            sc = tuple(getattr(kf, "scope", ()))
+            if not sc:
+                continue
+            if len(sc) > 2 and len(sc) > 3:
+                raise Declined(
+                    "a retained residual factor over %d variables cannot be "
+                    "consumed by this evaluator; the candidate DECLINES rather "
+                    "than dropping it" % len(sc))
+            facs.append(M.Factor(scope=sc,
+                                 card=tuple(rc.card[v] for v in sc),
+                                 table=[Fr(x) for x in kf.table],
+                                 origin=-3000))
         rm = M.Model(nvars=cm.nvars, card=list(cm.card), factors=facs)
         rm.validate()
         rr = M.restrict(rm, {})
@@ -114,8 +178,9 @@ def run(restricted, regions, coarse, rds, queries, ctx: A.Ctx, eps,
         if sel["chosen"] is None:
             raise Declined("no ordering fits the coarse residual graph")
         rpl, _rest = sel["chosen"]
-        (Zlo, Zhi), cell_mk, _gm = G.run(rpl, rr.factors, rr.card, cand, 1,
-                                         set(rc.free), ctx, deadline=deadline)
+        (Zlo, Zhi), cell_mk, _gm = G.run(rpl, rr.factors, rr.card, cand,
+                                         chosen_Q, set(rc.free), ctx,
+                                         deadline=deadline)
         acc = {0: Fr(1)}
         evaluator = "general_residual_dp"
     if Zlo <= 0:
@@ -147,6 +212,9 @@ def run(restricted, regions, coarse, rds, queries, ctx: A.Ctx, eps,
             rows.append((max(Fr(0), qlo - total), min(Fr(1), qhi + total)))
         out[v] = rows
     meta = {"coarse_vars": cm.nvars, "coarse_cards": list(cm.card),
+            "Q": chosen_Q, "Q_menu": qchoices, "Q_attempts": attempts,
+            "rounding_tv_charged": str(rounding_tv),
+            "retained_residual_factors": len(kept),
             "mode_kind": cand.kind, "mode_sign": cand.signs[0],
             "fit_tv": str(fit_tv), "residual_tv": str(total_fit_tv),
             "regional_radius": str(t_level),

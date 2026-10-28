@@ -17,30 +17,116 @@ class CollectiveCheckError(ValueError):
     pass
 
 
-def _enclose_weight(unary, card, free, combo, cand, Q, ctx):
-    """One configuration's weight under the represented law, as an enclosure.
+def _exact_quantize(fv: Fr, Q: int) -> Fr:
+    """Exact rational quantization, round-half-UP, matching the producer.
 
-    Deliberately independent of the DP: it evaluates the product and the signed
-    exponential directly for a single configuration.
+    `round(float(fv) * Q)` was used here. Binary64 is not a permissible
+    replacement for the declared exact semantics: for fv = 1/2 + 2^-54 and Q = 1
+    the float path rounds the input to 0.5 and then banker's-rounds to 0, while
+    the exact declared quantization is 1. The checker then verified a different
+    law from the producer's, and accepted a publication near 1/2 for a quantized
+    law whose true state-1 probability is about 0.6224593312018546.
+    """
+    if Q is None:
+        raise CollectiveCheckError("quantization requires an explicit Q")
+    scaled = fv * Q
+    fl = scaled.numerator // scaled.denominator
+    frac = scaled - fl
+    return Fr(fl + 1 if frac >= Fr(1, 2) else fl, Q)
+
+
+def _enclose_weight(unary, card, free, combo, cand, Q, ctx):
+    """One configuration's weight under the law the checker CLAIMS to verify.
+
+    `Q=None` means evaluate the ORIGINAL unrounded rational features, which is
+    what the Gaussian/Fourier collective identity represents. An integer `Q`
+    means reproduce the declared exact quantized law. Passing Q=1 to check an
+    unrounded law silently replaced the law: features [0, 1/4] quantize to
+    [0, 0], so the checker enclosed a law with both weights equal to 1 and a
+    state probability of exactly 1/2, against a true 0.5078118642792046.
+
+    EVERY signed mode is included. Only mode 0 was read before, so a rank > 1
+    candidate had its remaining modes silently dropped.
     """
     import gmpy2
     w = Fr(1)
-    stat = 0
+    if cand.rank != len(cand.signs) or cand.rank != len(cand.gammas) \
+            or cand.rank != len(cand.features):
+        raise CollectiveCheckError(
+            "candidate rank %s disagrees with %d signs / %d gammas / %d feature "
+            "maps; the checker will not guess which modes the law contains"
+            % (cand.rank, len(cand.signs), len(cand.gammas),
+               len(cand.features)))
     for k, v in enumerate(sorted(free)):
         a = combo[k]
         uw = Fr(unary[v][a])
         if uw == 0:
             return Fr(0), Fr(0)
         w *= uw
-        fv = Fr(cand.features[0].get(v, [Fr(0)] * card[v])[a])
-        stat += int(round(float(fv) * Q))
-    S = Fr(stat, Q)
-    x = Fr(cand.signs[0]) * cand.gammas[0] * S * S / 2
+    # the signed exponent, summed over all modes
+    x = Fr(0)
+    for mi in range(cand.rank):
+        S = Fr(0)
+        for k, v in enumerate(sorted(free)):
+            a = combo[k]
+            fv = Fr(cand.features[mi].get(v, [Fr(0)] * card[v])[a])
+            S += fv if Q is None else _exact_quantize(fv, Q)
+        x += Fr(cand.signs[mi]) * cand.gammas[mi] * S * S / 2
     with ctx.D:
         lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     with ctx.U:
         hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     return w * A.exact_fr(lo), w * A.exact_fr(hi)
+
+
+def validate_published_rows(published, card, queries):
+    """Schema validation applied at EVERY verifier entry point.
+
+    Rejects missing, empty, truncated, over-long, inverted, non-rational and
+    out-of-range rows, and any output key that is not a requested query
+    variable. `check_composed_publication` accepted an empty row for every
+    requested variable and reported no failures, because it validated nothing
+    before consuming the producer's masses.
+    """
+    fails = []
+    for v in sorted(queries):
+        if v not in card:
+            fails.append("requested variable %d is not in the model" % v)
+            continue
+        rows = published.get(v)
+        if rows is None:
+            fails.append("variable %d has no published row" % v)
+            continue
+        try:
+            n = len(rows)
+        except TypeError:
+            fails.append("variable %d publishes a non-sequence row" % v)
+            continue
+        if n == 0:
+            fails.append("variable %d publishes an EMPTY state row" % v)
+            continue
+        if n != card[v]:
+            fails.append("variable %d publishes %d states, the model declares "
+                         "%d" % (v, n, card[v]))
+            continue
+        for a in range(n):
+            try:
+                lo, hi = Fr(rows[a][0]), Fr(rows[a][1])
+            except (TypeError, ValueError, IndexError, ZeroDivisionError):
+                fails.append("variable %d state %d: endpoints are not exact "
+                             "rationals" % (v, a))
+                continue
+            if lo > hi:
+                fails.append("variable %d state %d: INVERTED endpoints "
+                             "[%s, %s]" % (v, a, lo, hi))
+            elif lo < 0 or hi > 1:
+                fails.append("variable %d state %d: endpoints [%s, %s] outside "
+                             "[0, 1]" % (v, a, lo, hi))
+    extra = sorted(k for k in published if k not in queries)
+    if extra:
+        fails.append("publication carries unrequested output keys %s"
+                     % extra[:8])
+    return fails
 
 
 def check_statistic_publication(free, card, unary, cand, Q, queries, published,
@@ -50,6 +136,12 @@ def check_statistic_publication(free, card, unary, cand, Q, queries, published,
     Enumerates configurations directly, which is a DIFFERENT implementation from
     the DP's statistic convolution. Bounded: it refuses rather than running away.
     """
+    if Q is not None and (not isinstance(Q, int) or Q < 1):
+        raise CollectiveCheckError("a quantized statistic law needs a positive "
+                                   "integer Q, got %r" % (Q,))
+    # the RESOURCE refusal is decided before anything else: an oversized
+    # verification must refuse rather than report a verdict, including a
+    # schema verdict it could not have backed with a check
     cap = cap_configs or K.CAPS["region_tuple_assignments"]
     total = 1
     for v in sorted(free):
@@ -58,6 +150,9 @@ def check_statistic_publication(free, card, unary, cand, Q, queries, published,
         raise CollectiveCheckError(
             "independent enumeration needs %d configurations, above the %d cap; "
             "this is a RESOURCE refusal, not a verification" % (total, cap))
+    schema = validate_published_rows(published, card, queries)
+    if schema:
+        return False, schema, {"schema_rejected": True}
     Zlo = Zhi = Fr(0)
     mk = {(v, a): [Fr(0), Fr(0)] for v in sorted(free) if v in queries
           for a in range(card[v])}
@@ -111,20 +206,34 @@ def check_quadrature_publication(free, card, unary, cand, queries, published,
                                  cap_configs=None):
     """Independent check of a Gaussian or Fourier publication.
 
-    Does NOT redo the quadrature. It evaluates the represented law directly,
-    which is what the quadrature identity is supposed to compute, and requires
-    containment after the quadrature radius is charged.
+    Evaluates the ORIGINAL UNROUNDED rational features, which is the law the
+    Gaussian/Fourier identity represents, and charges the certified quadrature
+    radius for every mode.
+
+    This previously delegated with Q=1, which quantized the features away: for
+    features [0, 1/4] it checked a law with both weights equal to 1, i.e. a
+    state probability of exactly 1/2, against a true
+    exp(1/32)/(1+exp(1/32)) = 0.5078118642792046. A publication centred on 1/2
+    was then accepted for a law whose probability is 0.5078. Rounding is a
+    property of the statistic DP, not of the quadrature identity, so the
+    quadrature checker must never apply it.
     """
+    # the quadrature radius is charged PER MODE, from each mode's own feature
+    # radius, rather than from mode 0 alone
+    qrad = Fr(0)
+    for mi in range(cand.rank):
+        Rk = Fr(0)
+        for f in cand.features[mi].values():
+            Rk += max(abs(Fr(x)) for x in f)
+        qrad += Fr(CO.gf_lattice(cand.gammas[mi], Rk, delta)["total_bound"])
     ok, fails, meta = check_statistic_publication(
-        free, card, unary, cand, 1, queries, published, eps, ctx,
-        radius=radius + CO.gf_lattice(cand.gammas[0],
-                                      sum(max(abs(Fr(x)) for x in f)
-                                          for f in cand.features[0].values()),
-                                      delta)["total_bound"],
-        cap_configs=cap_configs)
-    meta["method"] = ("direct evaluation of the represented law; the quadrature "
-                      "identity is not re-run, and its certified radius is "
-                      "charged into the enclosure")
+        free, card, unary, cand, None, queries, published, eps, ctx,
+        radius=radius + qrad, cap_configs=cap_configs)
+    meta["method"] = ("direct evaluation of the represented UNROUNDED law; the "
+                      "quadrature identity is not re-run, and each mode's "
+                      "certified radius is charged into the enclosure")
+    meta["quadrature_radius_charged"] = str(qrad)
+    meta["law"] = "original unrounded rational features"
     return ok, fails, meta
 
 
@@ -147,6 +256,61 @@ def check_composed_publication(restricted, regions, coarse, rds, queries,
     rejected correct publications.
     """
     from mdi import regional_check as RC
+    from mdi import regions as R, config as K
+    # --- SCHEMA first. `for s in range(len(rows))` silently passes an EMPTY
+    # row: zero iterations, zero failures, accepted. Every requested variable
+    # must publish a complete, well-formed, in-range row.
+    card = {v: restricted.card[v] for v in sorted(queries)
+            if v < len(restricted.card)}
+    schema = validate_published_rows(published, card, queries)
+    if schema:
+        return False, schema, {"schema_rejected": True}
+
+    # --- the REGIONAL CERTIFICATE, independently. The composed publication
+    # inherits the coarsening error, so the checker must re-derive each
+    # region's cells, masses, markers and rho from the ORIGINAL factors and
+    # confirm the level distortion is certified at the claimed radius. This
+    # previously consumed the producer's `coarse` and `rds` unchecked, so a
+    # corrupted certificate passed.
+    if restricted.impossible_factor is not None:
+        return False, ["a restricted factor is identically zero"], None
+    if restricted.constant == 0:
+        return False, ["a fully pinned factor is exactly zero"], None
+    own_radius = Fr(regional_radius) if regional_radius is not None \
+        else Fr(total_radius)
+    region_of = {}
+    for i, reg in enumerate(regions):
+        for v in reg:
+            region_of[v] = i
+    rho_cap = K.region_distortion_budget(own_radius, len(regions))
+    problems, rebuilt, own_rds = [], [], []
+    for i, reg in enumerate(regions):
+        rd_own = R.region_data(reg, restricted.card, restricted.factors,
+                               queries)
+        own_rds.append(rd_own)
+        if tuple(rd_own.boundary) != tuple(rds[i].boundary):
+            problems.append("region %d: producer boundary order %s differs "
+                            "from the rebuilt %s"
+                            % (i, rds[i].boundary, rd_own.boundary))
+        cr, probs = RC.recheck_region(reg, restricted, restricted.card,
+                                      queries, rho_cap, region_of, coarse[i])
+        rebuilt.append(cr)
+        problems.extend("region %d: %s" % (i, p) for p in probs)
+    # complete ownership: every requested variable must belong to exactly one
+    # region, or its publication is unsupported
+    for v in sorted(queries):
+        owners = [i for i, reg in enumerate(regions) if v in reg]
+        if len(owners) != 1:
+            problems.append("requested variable %d is owned by %d regions; the "
+                            "partition is incomplete or overlapping"
+                            % (v, len(owners)))
+    if problems:
+        return False, problems, {"certificate_rejected": True}
+    Rlevel = R.level_distortion(rebuilt)
+    if not K.certify_R_against_t(Rlevel, own_radius):
+        return False, ["R_level %s is not certified at the claimed radius %s"
+                       % (Rlevel, own_radius)], None
+    coarse, rds = rebuilt, own_rds
     Z, counts = RC.independent_contract(restricted, regions, coarse, rds,
                                         queries)
     if Z <= 0:
@@ -157,12 +321,10 @@ def check_composed_publication(restricted, regions, coarse, rds, queries,
         if rows is None:
             fails.append("variable %d has no published row" % v)
             continue
-        for s in range(len(rows)):
+        for s in range(card[v]):
             lo, hi = Fr(rows[s][0]), Fr(rows[s][1])
             q = counts.get((v, s), Fr(0)) / Z
-            # the radius the CHECKER can justify from its own computation
-            own = Fr(regional_radius) if regional_radius is not None \
-                else Fr(total_radius)
+            own = own_radius
             clo = max(Fr(0), q - own)
             chi = min(Fr(1), q + own)
             if not (lo <= clo and chi <= hi):

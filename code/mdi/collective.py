@@ -23,8 +23,18 @@ class Declined(Exception):
 
 # ======================= 7.1 owned-statistic DP =======================
 
+def exact_round_half_up(x: Fr) -> int:
+    """Exact round-half-UP on a rational. `round()` on a Fraction is BANKER'S
+    rounding, so round(Fr(1,2)) == 0 and round(Fr(3,2)) == 2; the declared
+    quantization semantics are half-up and must not depend on float conversion
+    or on tie-to-even. The independent checker implements the same rule, so a
+    mismatch here is a producer/checker law disagreement."""
+    fl = x.numerator // x.denominator
+    return fl + 1 if (x - fl) >= Fr(1, 2) else fl
+
+
 def round_features(cand, free, Q: int):
-    """Round each local feature ONCE to k_ki/Q, exactly."""
+    """Round each local feature ONCE to k_ki/Q, exactly (round-half-up)."""
     out = []
     for k in range(cand.rank):
         row = {}
@@ -33,7 +43,7 @@ def round_features(cand, free, Q: int):
             if f is None:
                 row[v] = [0] * 2
                 continue
-            row[v] = [int(round(Fr(x) * Q)) for x in f]
+            row[v] = [exact_round_half_up(Fr(x) * Q) for x in f]
         out.append(row)
     return out
 
@@ -146,7 +156,7 @@ def dp_root_combine(acc, marks, cand, Q: int, ctx: A.Ctx):
 
 # ======================= 7.2 Gaussian / Fourier =======================
 
-def gf_lattice(gamma: Fr, R: Fr, delta: Fr):
+def gf_lattice(gamma: Fr, R: Fr, delta: Fr, second_derivative_bound=None):
     """Rational lattice and certified error for a scalar standard-normal average.
 
     exp(+g S^2/2) = E_Z exp(sqrt(g) Z S) with |S| <= R. The quantity actually
@@ -202,14 +212,24 @@ def gf_lattice(gamma: Fr, R: Fr, delta: Fr):
         raise Declined("no truncation radius below 4096 meets delta=%s "
                        "(M upper bound %s)" % (d, M_up))
 
-    # discretization: (2T) h^2 M / 12 <= delta/2, solved EXACTLY over dyadic h
+    # discretization: (2T) h^2 M2 / 12 <= delta/2, solved EXACTLY over dyadic h.
+    # M2 is a bound on the SECOND DERIVATIVE of the integrand. For a positive
+    # mode the shifted-Gaussian argument gives M2 <= M_up. For an OSCILLATORY
+    # (Fourier) integrand the caller supplies its own larger bound: the phase
+    # contributes g*S^2 and a cross term, so the positive-mode constant is not
+    # valid and using it understated the truncation error.
+    M2 = Fr(second_derivative_bound) if second_derivative_bound is not None \
+        else M_up
+    if M2 < M_up and second_derivative_bound is not None:
+        # never silently accept a WEAKER bound than the Gaussian magnitude one
+        M2 = M_up
     MAX_BITS = 40
     bits = 1
     hq = Fr(1, 2)
     disc_up = None
     while bits <= MAX_BITS:
         hq = Fr(1, 1 << bits)
-        disc_up = Fr(2 * T) * hq * hq * M_up / 12
+        disc_up = Fr(2 * T) * hq * hq * M2 / 12
         if disc_up <= half:
             break
         bits += 1
@@ -462,6 +482,80 @@ def _normal_weight(z: Fr, h: Fr, ctx: A.Ctx):
 
 # ================= complex negative Fourier evaluation (§7.2) =================
 
+def _cmul(a, b):
+    """Interval complex multiplication on rectangles.
+
+    a = (re_lo, re_hi, im_lo, im_hi), likewise b. Returns the rectangular hull
+    of the product. Each real part of the product is a sum/difference of two
+    real interval products, so every endpoint combination is taken.
+
+    The previous code multiplied only MODULUS upper bounds, which discards the
+    phase entirely and so cannot represent an oscillatory cancellation: the
+    accumulated node contribution was the symmetric [-|z|, +|z|] regardless of
+    the actual complex value, which is never informative. It also multiplied a
+    negative lower contribution by the LOWER positive weight, the wrong endpoint
+    direction for a signed product.
+    """
+    arl, arh, ail, aih = a
+    brl, brh, bil, bih = b
+    def prod(xl, xh, yl, yh):
+        c = (xl * yl, xl * yh, xh * yl, xh * yh)
+        return min(c), max(c)
+    rr_lo, rr_hi = prod(arl, arh, brl, brh)      # Re*Re
+    ii_lo, ii_hi = prod(ail, aih, bil, bih)      # Im*Im
+    ri_lo, ri_hi = prod(arl, arh, bil, bih)      # Re*Im
+    ir_lo, ir_hi = prod(ail, aih, brl, brh)      # Im*Re
+    # Re(ab) = Re*Re - Im*Im ; Im(ab) = Re*Im + Im*Re
+    return (rr_lo - ii_hi, rr_hi - ii_lo, ri_lo + ir_lo, ri_hi + ir_hi)
+
+
+def _scale_interval(lo: Fr, hi: Fr, wl: Fr, wu: Fr):
+    """Multiply the interval [lo,hi] by a NONNEGATIVE weight interval [wl,wu],
+    taking the correct endpoint direction for each sign. Scaling a negative
+    lower bound by the lower weight understates the magnitude."""
+    c = (lo * wl, lo * wu, hi * wl, hi * wu)
+    return min(c), max(c)
+
+
+def fourier_second_derivative_bound(g: Fr, Rk: Fr) -> Fr:
+    """A rigorous bound on |d^2/dz^2 [ phi(z) * exp(i sqrt(g) z S) ]| for
+    |S| <= Rk, used for the lattice discretization error.
+
+    The integrand is the Gaussian density times an OSCILLATORY phase, so the
+    positive-Gaussian constant is NOT valid here: differentiating the phase
+    twice contributes g*S^2 and the cross term contributes 2*sqrt(g)*|S*z|.
+    With phi(z) <= 1/sqrt(2 pi) < 2/5 and |z phi(z)| <= 1/sqrt(2 pi e) < 1/4
+    and |(z^2-1) phi(z)| <= 2/5:
+
+        |f''| <= 2/5 + 2*sqrt(g)*Rk*(1/4) + g*Rk^2*(2/5)
+
+    The code previously reused the positive-mode constant 0.4205084385504096,
+    which is smaller than a rigorous lower bound 0.43883650844157596 on the
+    relevant second-derivative magnitude, so the truncation bound it produced
+    was not valid for the oscillatory integrand.
+    """
+    sg_hi = _isqrt_ceil_fr(g)
+    return Fr(2, 5) + 2 * sg_hi * Rk * Fr(1, 4) + g * Rk * Rk * Fr(2, 5)
+
+
+def _isqrt_ceil_fr(x: Fr) -> Fr:
+    """A rational UPPER bound on sqrt(x) for x >= 0."""
+    if x <= 0:
+        return Fr(0)
+    num = _isqrt_ceil(x.numerator * 10 ** 12)
+    den = _isqrt_floor(x.denominator * 10 ** 12)
+    if den == 0:
+        den = 1
+    return Fr(num, den)
+
+
+def _isqrt_floor(n: int) -> int:
+    import math as _m
+    if n <= 0:
+        return 0
+    return _m.isqrt(n)
+
+
 def fourier_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
                      delta: Fr, cap_nodes=None, deadline=None):
     """Evaluate a NEGATIVE rank-1 mode by the complex-phase identity
@@ -469,13 +563,14 @@ def fourier_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
         exp(-g S^2 / 2) = E_Z exp(i sqrt(g) Z S),   S = sum_i f_i(z_i).
 
     Each quadrature node contributes a unary COMPLEX phase, so the inner sum
-    factorizes over variables exactly as in the Gaussian case, but the
-    per-variable sums are complex and the result is accumulated as a real part
-    with a rigorous modulus bound.
+    factorizes over variables exactly as in the Gaussian case. The per-variable
+    complex sums are multiplied as interval RECTANGLES, preserving the phase,
+    and the node's real part is accumulated with its correct sign. The
+    imaginary part of the exact integral is zero by symmetry and is tracked only
+    as a consistency witness.
 
     Directed enclosures are used for the angle construction and for cos and sin,
-    including their interior extrema: over an interval of width >= pi the cosine
-    range must be taken as [-1, 1] rather than from the endpoints.
+    including interior extrema at both signs.
     """
     import gmpy2
     if cand.rank != 1 or cand.signs[0] >= 0:
@@ -484,7 +579,9 @@ def fourier_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
     Rk = Fr(0)
     for v, f in cand.features[0].items():
         Rk += max(abs(Fr(x)) for x in f)
-    lat = gf_lattice(g, Rk, delta)
+    # the OSCILLATORY discretization bound, not the positive-Gaussian constant
+    m2 = fourier_second_derivative_bound(g, Rk)
+    lat = gf_lattice(g, Rk, delta, second_derivative_bound=m2)
     nodes = lat["nodes"]
     if cap_nodes and nodes > cap_nodes:
         raise Declined("fourier lattice needs %d nodes, cap %d"
@@ -492,15 +589,17 @@ def fourier_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
     h, T = lat["h"], lat["T"]
     sg_lo, sg_hi = _sqrt_enclose(g, ctx)
 
-    # the conservative negative-response bound L = exp(-Y_max)
     Ymax = negative_response_bound(cand)
 
     Zlo = Zhi = Fr(0)
+    Imlo = Imhi = Fr(0)
     mk = {(v, a): [Fr(0), Fr(0)] for v in sorted(free) if v in queries
           for a in range(card[v])}
-    j = -int(Fr(T) / h)
+    jmin = -int(Fr(T) / h)
     jmax = int(Fr(T) / h)
+    j = jmin
     processed = 0
+    expected = jmax - jmin + 1
     while j <= jmax:
         if deadline is not None and (processed & 0xFF) == 0:
             deadline()
@@ -510,8 +609,8 @@ def fourier_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
         # per-variable complex sums: sum_a u(a) * exp(i theta_a),
         # theta_a = sqrt(g) * z * f_i(a)
         per = {}
-        mod_lo = mod_hi = Fr(1)
-        ok = True
+        # the running complex product over variables, as a rectangle
+        prod = (Fr(1), Fr(1), Fr(0), Fr(0))
         for v in sorted(free):
             re_lo = re_hi = Fr(0)
             im_lo = im_hi = Fr(0)
@@ -530,35 +629,77 @@ def fourier_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
                 rows.append((uw * clo, uw * chi, uw * slo, uw * shi))
                 re_lo += uw * clo; re_hi += uw * chi
                 im_lo += uw * slo; im_hi += uw * shi
-            # a rigorous modulus bound for the per-variable complex sum
-            m_hi = _modulus_upper(re_lo, re_hi, im_lo, im_hi)
-            per[v] = (rows, re_lo, re_hi, im_lo, im_hi, m_hi)
-            mod_hi *= m_hi
-            if mod_hi > Fr(10) ** 60:
-                ok = False
-                break
-        if not ok:
-            raise Declined("complex modulus product exceeded a safe range")
-        # the real part of the product is bounded in modulus by mod_hi, so the
-        # node contributes within [-mod_hi, +mod_hi] times its weight
-        Zlo += wl * (-mod_hi)
-        Zhi += wu * mod_hi
+            per[v] = (rows, re_lo, re_hi, im_lo, im_hi)
+            prod = _cmul(prod, (re_lo, re_hi, im_lo, im_hi))
+            if max(abs(prod[0]), abs(prod[1])) > Fr(10) ** 60:
+                raise Declined("complex product exceeded a safe range")
+        # the node contributes its REAL part, scaled by the nonnegative weight
+        nlo, nhi = _scale_interval(prod[0], prod[1], wl, wu)
+        Zlo += nlo
+        Zhi += nhi
+        ilo, ihi = _scale_interval(prod[2], prod[3], wl, wu)
+        Imlo += ilo
+        Imhi += ihi
+        # marked response: divide out one variable's factor by recomputing the
+        # product over the OTHERS, so no division of intervals is needed
         for v in sorted(free):
             if v not in queries:
                 continue
-            rows, rl, rh, il, ih, mh = per[v]
+            rows = per[v][0]
+            others = (Fr(1), Fr(1), Fr(0), Fr(0))
+            for u in sorted(free):
+                if u == v:
+                    continue
+                _r, rl, rh, il, ih = per[u]
+                others = _cmul(others, (rl, rh, il, ih))
             for a in range(card[v]):
                 arl, arh, ail, aih = rows[a]
-                am = _modulus_upper(arl, arh, ail, aih)
-                others = mod_hi / mh if mh > 0 else Fr(0)
-                mk[(v, a)][0] += wl * (-(am * others))
-                mk[(v, a)][1] += wu * (am * others)
+                if arl == arh == ail == aih == 0:
+                    continue
+                cp = _cmul((arl, arh, ail, aih), others)
+                clo_, chi_ = _scale_interval(cp[0], cp[1], wl, wu)
+                mk[(v, a)][0] += clo_
+                mk[(v, a)][1] += chi_
+        j += 1          # <-- the lattice index. Its absence made this loop
+                        #     never terminate: a declared 33-node lattice
+                        #     re-evaluated node z = -4 indefinitely.
+    if processed != expected:
+        raise Declined("fourier lattice processed %d of %d declared nodes"
+                       % (processed, expected))
+    # The lattice sum approximates the integral; its CERTIFIED truncation and
+    # discretization error must widen the returned enclosure, or the result is
+    # a point that excludes the true value. The accumulated interval tracked
+    # only the per-node arithmetic rounding.
+    qerr = Fr(lat["total_bound"])
+    # the error is on the normalized average; scale by the total unary mass,
+    # which bounds the modulus of the per-variable product sum
+    mass = Fr(1)
+    for v in sorted(free):
+        mass *= sum(abs(Fr(x)) for x in residual_unary[v])
+    wid = qerr * mass
+    Zlo -= wid
+    Zhi += wid
+    for key in mk:
+        mk[key][0] -= wid
+        mk[key][1] += wid
+    # the exact integral is real; a nonzero-excluding imaginary enclosure is a
+    # defect witness, not something to discard
+    if Imlo > 0 or Imhi < 0:
+        raise Declined(
+            "the accumulated imaginary part [%s, %s] excludes zero, so the "
+            "complex contraction is inconsistent with a real integral"
+            % (Imlo, Imhi))
     meta = {"nodes": nodes, "T": T, "h": h, "processed": processed,
+            "expected_nodes": expected,
             "negative_exponent_Ymax": Ymax,
+            "second_derivative_bound": str(m2),
+            "imaginary_enclosure": (str(Imlo), str(Imhi)),
             "lattice": {k: str(v) for k, v in lat.items() if k != "derivation"},
             "note": "complex-phase identity exp(-gS^2/2) = E exp(i sqrt(g) Z S); "
-                    "per-node complex sums with directed cos/sin enclosures "
-                    "including interior extrema, accumulated as a modulus bound"}
+                    "per-variable complex sums multiplied as interval "
+                    "rectangles preserving phase, real part accumulated with "
+                    "signed endpoint direction, oscillatory discretization "
+                    "bound"}
     return (Zlo, Zhi), {k: tuple(v) for k, v in mk.items()}, meta
 
 
@@ -591,11 +732,19 @@ def _cos_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
     # an interior extremum of cos sits at a multiple of pi. If the interval can
     # contain one, widen conservatively.
     pi_lo = Fr(314159, 100000)
-    k_lo = int(lo / pi_lo) - 1
-    k_hi = int(hi / pi_lo) + 1
+    # k*pi is bracketed by the two pi bounds, but for NEGATIVE k the product
+    # with the LARGER pi bound is the SMALLER number, so the bracket must be
+    # ordered explicitly. Using [k*pi_lo, k*pi_up] unordered made every
+    # negative-k bracket inverted, so `centre_lo <= hi` tested a bracket whose
+    # endpoints were the wrong way round and k = -2 was unreachable entirely.
+    # Floor division is also required: int() truncates toward zero, which skips
+    # a critical point just below a negative interval's lower end.
+    import math as _m
+    k_lo = _m.floor(lo / pi_up) - 1
+    k_hi = _m.ceil(hi / pi_lo) + 1
     for k in range(k_lo, k_hi + 1):
-        centre_lo = Fr(k) * pi_lo
-        centre_hi = Fr(k) * pi_up
+        a, b = Fr(k) * pi_lo, Fr(k) * pi_up
+        centre_lo, centre_hi = (a, b) if a <= b else (b, a)
         if (lo <= centre_hi and centre_lo <= hi):
             if k % 2 == 0:
                 out_hi = Fr(1)
@@ -622,11 +771,14 @@ def _sin_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
     out_lo, out_hi = min(vals), max(vals)
     pi_lo = Fr(314159, 100000)
     half_lo, half_up = pi_lo / 2, pi_up / 2
-    k_lo = int(lo / pi_lo) - 2
-    k_hi = int(hi / pi_lo) + 2
+    # same negative-k bracket ordering and floor-division fix as in cos
+    import math as _m
+    k_lo = _m.floor((lo - half_up) / pi_up) - 2
+    k_hi = _m.ceil((hi - half_lo) / pi_lo) + 2
     for k in range(k_lo, k_hi + 1):
-        centre_lo = half_lo + Fr(k) * pi_lo
-        centre_hi = half_up + Fr(k) * pi_up
+        a = half_lo + Fr(k) * pi_lo
+        b = half_up + Fr(k) * pi_up
+        centre_lo, centre_hi = (a, b) if a <= b else (b, a)
         if (lo <= centre_hi and centre_lo <= hi):
             if k % 2 == 0:
                 out_hi = Fr(1)
