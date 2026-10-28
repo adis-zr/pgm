@@ -871,3 +871,101 @@ def test_query_subset_omits_unrequested_marker_work():
     rd_none = R.region_data(regs[1], r.card, r.factors, subset)
     assert rd_none.marks == {}, rd_none.marks
     assert rd_none.A, "masses are still computed"
+
+
+# =============== deletion: a CERTIFIED execution, not only refusals ===============
+
+def test_deletion_actually_certifies_and_bounds_the_event():
+    """Positive-state deletion must EXECUTE on a case where it is sound, and its
+    certificate must be the U_R/(U_R+L_R) bound, not a mass threshold.
+
+    Existing controls cover the two refusals (hard zeros forcing L_R = 0, and a
+    rare state amplified by exterior factors). This one covers the accepting
+    branch, which no other control exercised.
+    """
+    txt = """MARKOV
+3
+2 2 2
+3
+1 0
+2 0 1
+1 1
+2
+1.0 0.0000001
+4
+1.0 1.0 1.0 1.0
+2
+1.0 1.0
+"""
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    rd = R.region_data((0,), r.card, r.factors, set(r.free))
+    assert len(rd.A) == 2, rd.A
+    best = R.propose_deletions(rd, r.factors, r.card, Fr(1, 10000))
+    assert best is not None, "deletion must certify on a genuinely negligible state"
+    assert best["deleted"] == [(1,)], best["deleted"]
+    assert best["prob_bound"] <= Fr(1, 10000), float(best["prob_bound"])
+    # the bound is exactly U/(U+L) recomputed independently
+    U, L, p = R.deletion_bounds(rd, r.factors, r.card, best["deleted"])
+    assert L > 0 and U >= 0
+    assert p == U / (U + L)
+    assert p == best["prob_bound"]
+
+
+def test_deletion_respects_its_allocated_radius():
+    """A deletion whose bound exceeds the allocated radius must NOT be taken."""
+    txt = """MARKOV
+3
+2 2 2
+3
+1 0
+2 0 1
+1 1
+2
+1.0 0.5
+4
+1.0 1.0 1.0 1.0
+2
+1.0 1.0
+"""
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    rd = R.region_data((0,), r.card, r.factors, set(r.free))
+    # the "rare" state holds a third of the mass: no tiny radius can justify it
+    best = R.propose_deletions(rd, r.factors, r.card, Fr(1, 100000))
+    assert best is None, best
+    U, L, p = R.deletion_bounds(rd, r.factors, r.card, [(1,)])
+    assert p > Fr(1, 100000), float(p)
+
+
+def test_deletion_bound_is_uniform_over_exterior_configurations():
+    """The certificate must hold for EVERY exterior configuration of positive
+    weight: U uses the per-state MAXIMUM response and L the MINIMUM, so a
+    stronger exterior cannot invalidate it."""
+    txt = """MARKOV
+3
+2 2 2
+3
+1 0
+2 0 2
+1 2
+2
+1.0 0.001
+4
+1.0 1.0 1.0 100.0
+2
+1.0 1.0
+"""
+    m = M.read_uai(w(txt)); r = M.restrict(m, {})
+    rd = R.region_data((0,), r.card, r.factors, set(r.free))
+    U, L, p = R.deletion_bounds(rd, r.factors, r.card, [(1,)])
+    # exhaustive check against every exterior assignment of variable 2
+    f = next(x for x in r.factors if tuple(sorted(x.scope)) == (0, 2))
+    st = f.strides()
+    worst = Fr(0)
+    for y in range(r.card[2]):
+        num = rd.A[(1,)] * f.table[1 * st[0] + y * st[1]]
+        den = num + rd.A[(0,)] * f.table[0 * st[0] + y * st[1]]
+        if den > 0:
+            q = num / den
+            if q > worst:
+                worst = q
+    assert worst <= p, (float(worst), float(p))
