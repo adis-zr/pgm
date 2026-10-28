@@ -1476,3 +1476,132 @@ def test_tilted_marked_keeps_g_as_the_observable():
         assert a == U * g
     with pytest.raises(CP.CompactError):
         CP.tilted_marked(Fr(1), Fr(3, 2))
+
+
+# ===== contract E: recognition connected to a smaller certified calculation =====
+
+def _mean_field_pipeline(n, J, fields, gauge_shift=False):
+    """Original tables -> recognition -> residual canonicalization -> statistic
+    DP -> enclosure of every ORIGINAL state probability."""
+    from mdi import residual as RS
+    m = M.read_uai(w(mean_field(n, J, fields)))
+    if gauge_shift:
+        # move every unary table into the pair tables, preserving the law
+        unary = {f.scope[0]: list(f.table) for f in m.factors if len(f.scope) == 1}
+        facs, used = [], set()
+        for f in m.factors:
+            if len(f.scope) == 1:
+                facs.append(M.Factor(scope=f.scope, card=f.card,
+                                     table=[Fr(1), Fr(1)], origin=f.origin))
+                continue
+            i, j = f.scope
+            tbl = list(f.table)
+            for who, pos in ((i, 0), (j, 1)):
+                if who in used:
+                    continue
+                u = unary[who]; used.add(who)
+                tbl = [tbl[a * 2 + b] * (u[a] if pos == 0 else u[b])
+                       for a in range(2) for b in range(2)]
+            facs.append(M.Factor(scope=f.scope, card=f.card, table=tbl,
+                                 origin=f.origin))
+        m = M.Model(nvars=n, card=[2] * n, factors=facs).validate()
+    r = M.restrict(m, {})
+    ctx = A.Ctx(200)
+    cands, _ = MD.propose_modes(r.free, r.factors, r.card)
+    assert cands, "recognition must find a mode"
+    cand = cands[0]
+    res = MD.build_residual(r.free, r.factors, r.card, cand, ctx)
+    allow = K.RADII["collective_fit_and_rounding"]
+    fit_tv = MD.tv_from_nu(res.nu)
+    assert fit_tv <= allow, (fit_tv, allow)
+    can = RS.canonicalize(res.unary, res.pairs, r.card, ctx,
+                          2 * (allow - fit_tv))
+    total_tv = RS.tv_from_total_nu(res.nu, can.nu_extra)
+    assert total_tv <= allow, (total_tv, allow)
+    assert can.is_product(), can.detail
+    acc, marks, _ = CO.statistic_dp(list(r.free), r.card, can.unary, {}, [],
+                                    cand, 1, set(r.free))
+    (Zlo, Zhi), mk = CO.dp_root_combine(acc, marks, cand, 1, ctx)
+    Ztrue, ptrue = O.exact_all_marginals(r)
+    widths = []
+    for v in sorted(r.free):
+        for a in range(2):
+            lo, hi = mk[(v, a)]
+            qlo = Fr(lo) / Fr(Zhi)
+            qhi = Fr(hi) / Fr(Zlo)
+            plo = max(Fr(0), qlo - total_tv)
+            phi = min(Fr(1), qhi + total_tv)
+            assert plo <= ptrue[v][a] <= phi, (v, a, float(plo),
+                                               float(ptrue[v][a]), float(phi))
+            widths.append(phi - plo)
+    return {"support": len(acc), "configurations": 2 ** n,
+            "total_tv": total_tv, "max_width": max(widths),
+            "dropped": len(can.dropped_pairs), "detail": can.detail}
+
+
+def test_control_E3_mean_field_runs_end_to_end_positive():
+    """The review's 8-site control: original tables through recognition,
+    residual simplification, executor and enclosure of all 16 original
+    probabilities. Calibration: support 9, width about 2.02e-10."""
+    n = 8
+    fields = [0.1 * (k + 1) * (1 if k % 2 == 0 else -1) for k in range(n)]
+    out = _mean_field_pipeline(n, 0.30, fields)
+    assert out["support"] == 9, out["support"]
+    assert out["support"] < out["configurations"] / 25
+    assert out["dropped"] == 28, out["dropped"]
+    assert out["max_width"] < Fr(1, 10 ** 8), float(out["max_width"])
+
+
+def test_control_E3_mean_field_negative_sign():
+    n = 8
+    fields = [0.05 * (k + 1) * (1 if k % 3 else -1) for k in range(n)]
+    out = _mean_field_pipeline(n, -0.22, fields)
+    assert out["support"] == 9
+    assert out["max_width"] < Fr(1, 10 ** 6), float(out["max_width"])
+
+
+def test_control_E3_survives_exact_gauge_redistribution():
+    """Moving every unary into the pair tables preserves the law; the whole
+    pipeline must still work and still enclose the originals."""
+    n = 6
+    fields = [0.1, -0.2, 0.15, -0.05, 0.08, -0.12]
+    out = _mean_field_pipeline(n, 0.28, fields, gauge_shift=True)
+    assert out["support"] == 7, out["support"]
+    assert out["max_width"] < Fr(1, 10 ** 6), float(out["max_width"])
+
+
+def test_residual_drop_charges_its_error_and_never_resets():
+    """Dropping an interaction must charge a uniform log bound into the SAME
+    allowance, and a budget that cannot cover an edge must keep it."""
+    from mdi import residual as RS
+    ctx = A.Ctx(140)
+    card = {0: 2, 1: 2}
+    unary = {0: [Fr(1), Fr(1)], 1: [Fr(1), Fr(1)]}
+    # a genuinely interacting pair
+    pairs = {(0, 1): [Fr(1), Fr(1), Fr(1), Fr(2)]}
+    # with no budget it must be KEPT, not dropped
+    can0 = RS.canonicalize(unary, pairs, card, ctx, Fr(0))
+    assert not can0.is_product()
+    assert can0.kept_pairs, can0.detail
+    assert can0.nu_extra == 0
+    # with a generous budget it is dropped and the error is charged
+    can1 = RS.canonicalize(unary, pairs, card, ctx, Fr(1))
+    assert can1.is_product()
+    assert can1.nu_extra > 0, "dropping must charge a positive radius"
+    assert len(can1.dropped_pairs) == 1
+    # the combined TV adds; it does not reset
+    tv = RS.tv_from_total_nu(Fr(1, 1000), can1.nu_extra)
+    assert tv >= can1.nu_extra / 2
+
+
+def test_residual_transfers_separable_pairs_with_zero_error():
+    """An exactly separable residual pair must be absorbed with NO charge."""
+    from mdi import residual as RS
+    ctx = A.Ctx(140)
+    card = {0: 2, 1: 2}
+    unary = {0: [Fr(1), Fr(1)], 1: [Fr(1), Fr(1)]}
+    pairs = {(0, 1): [Fr(2), Fr(6), Fr(3), Fr(9)]}     # = (1,1.5) x (2,6)
+    can = RS.canonicalize(unary, pairs, card, ctx, Fr(0))
+    assert can.is_product(), can.detail
+    assert can.nu_extra == 0, "an exact transfer must charge nothing"
+    assert len(can.transferred_pairs) == 1
