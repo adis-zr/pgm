@@ -2119,3 +2119,85 @@ def test_all_regional_candidates_are_priced():
             assert x["cells"] > 0
             assert int(x["reduced_assignments"]) > 0
             assert x["compact_entries"] < x["cartesian_avoided"], (case, x["mode"])
+
+
+def test_general_residual_dp_handles_retained_factors():
+    """E.5: a residual WITH retained pair factors is admissible on a validated
+    elimination schedule. Each variable's statistic is inserted exactly once at
+    the bag that forgets it, and joins convolve disjoint statistics exactly."""
+    import gmpy2
+    from mdi import gendp as G
+    n = 6
+    scopes = [(v,) for v in range(n)] + [(i, i + 1) for i in range(n - 1)]
+    lines = ["MARKOV", str(n), " ".join(["2"] * n), str(len(scopes))]
+    for sc in scopes:
+        lines.append("%d %s" % (len(sc), " ".join(map(str, sc))))
+    for v in range(n):
+        lines.extend(["2", "1.0 1.%d" % (v % 5 + 1)])
+    for k in range(n - 1):
+        lines.extend(["4", "1.%d 1.1 1.1 1.%d" % (k % 3 + 1, k % 4 + 1)])
+    m = M.read_uai(w("\n".join(lines) + "\n"))
+    r = M.restrict(m, {})
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
+    pl, est = sel["chosen"]
+    ctx = A.Ctx(160)
+
+    class Cand:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 10)]
+        features = [{v: [Fr(-1), Fr(1)] for v in range(n)}]
+
+    # the PRODUCT dp refuses this residual
+    pairs = {tuple(f.scope): list(f.table) for f in r.factors
+             if len(f.scope) == 2}
+    assert pairs, "the control must retain pair factors"
+    with pytest.raises(CO.Declined):
+        CO.statistic_dp(list(r.free), r.card,
+                        {v: [Fr(1), Fr(1)] for v in r.free}, pairs, [],
+                        Cand(), 1, set(r.free))
+    # the GENERAL dp accepts it
+    (Zlo, Zhi), mk, meta = G.run(pl, r.factors, r.card, Cand(), 1,
+                                 set(r.free), ctx)
+    assert meta["statistics_inserted"] == n
+    assert meta["root_support"] <= n + 1
+    # reference by full enumeration with the SAME enclosure arithmetic
+    Rlo = Rhi = Fr(0)
+    rmk = {(v, a): [Fr(0), Fr(0)] for v in range(n) for a in range(2)}
+    for combo in itertools.product(*[range(2)] * n):
+        wt = Fr(1)
+        a_ = {v: combo[v] for v in range(n)}
+        for f in r.factors:
+            st = f.strides()
+            off = sum(a_[v] * st[k] for k, v in enumerate(f.scope))
+            wt *= f.table[off]
+        if wt == 0:
+            continue
+        S = sum(1 if combo[v] == 1 else -1 for v in range(n))
+        x = Cand().gammas[0] * Fr(S * S, 2)
+        with ctx.D:
+            lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        with ctx.U:
+            hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        l, h = wt * A.exact_fr(lo), wt * A.exact_fr(hi)
+        Rlo += l; Rhi += h
+        for v in range(n):
+            rmk[(v, combo[v])][0] += l
+            rmk[(v, combo[v])][1] += h
+    assert max(Zlo, Rlo) <= min(Zhi, Rhi), (float(Zlo), float(Rlo))
+    for v in range(n):
+        for a in range(2):
+            dl, dh = mk.get((v, a), (Fr(0), Fr(0)))
+            rl, rh = rmk[(v, a)]
+            pd = (dl / Zhi, dh / Zlo)
+            pr = (rl / Rhi, rh / Rlo)
+            assert max(pd[0], pr[0]) <= min(pd[1], pr[1]), (v, a)
+
+
+def test_general_dp_refuses_double_insertion():
+    """The statistic-once invariant must be enforced, not assumed."""
+    from mdi import gendp as G
+    import inspect
+    src = inspect.getsource(G.run)
+    assert "inserted twice" in src
+    assert "never had their statistic inserted" in src

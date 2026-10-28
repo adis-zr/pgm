@@ -33,6 +33,12 @@ def _statistic_executor(free, card, residual_unary, residual_pairs,
     return acc, marks, kq
 
 
+def _general_statistic_executor(plan, factors, card, cand, Q, queries, ctx,
+                                **kw):
+    from mdi import gendp as G
+    return G.run(plan, factors, card, cand, Q, queries, ctx, **kw)
+
+
 def _gaussian_executor(free, card, residual_unary, cand, queries, ctx, delta,
                        **kw):
     from mdi import collective as CO
@@ -55,6 +61,9 @@ PT.register_executor("regional", _regional_executor)
 PT.register_checker("regional", _regional_checker)
 
 PT.register_executor("statistic", _statistic_executor)
+# The GENERAL-residual variant runs on a validated elimination schedule, so a
+# residual with retained pair or higher-arity factors is admissible.
+GENERAL_STATISTIC = _general_statistic_executor
 # NO statistic checker yet.
 
 PT.register_executor("gaussian", _gaussian_executor)
