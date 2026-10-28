@@ -1714,3 +1714,141 @@ def test_regional_checker_is_now_registered():
     rows = {x["kind"]: x for x in RG.status_table()}
     assert rows["regional"]["executor_supported"]
     assert rows["regional"]["checker_supported"], "D.7 checker must be registered"
+
+
+# ===== contract F: complete-cost pricing and the executed memory schedule =====
+
+def test_memory_forecast_simulates_the_executed_schedule():
+    """F.3: the forecast must simulate what the ENGINE RUNS, and must never be
+    optimistic. Forecasting the wrong schedule understated peak live entries by
+    1.36x and 1.51x against our own measurements."""
+    for name, actual in [("Pedigree_11", 71859260), ("Promedus_12", 51052384)]:
+        p = "/tmp/tep/three_external_problems/inputs/" + name
+        if not os.path.exists(p + ".uai"):
+            pytest.skip("external inputs not extracted")
+        m = M.read_uai(p + ".uai")
+        ev = M.read_evidence(p + ".uai.evid", m)
+        r = M.restrict(m, ev)
+        sel = P.choose_plan(r.free, r.card, r.factors, 64, 8 * (1 << 30))
+        pl, est = sel["chosen"]
+        assert est["peak_live_entries"] == actual, (name,
+                                                    est["peak_live_entries"],
+                                                    actual)
+        assert est["executed_schedule"]
+
+
+def test_memory_forecast_is_never_optimistic_on_small_trees():
+    """Validated against COUNTED live entries: the simulation may be
+    conservative but must never undershoot."""
+    for n in (6, 8, 10, 12):
+        scopes = [(v,) for v in range(n)] + [(i, i + 1) for i in range(n - 1)]
+        lines = ["MARKOV", str(n), " ".join(["2"] * n), str(len(scopes))]
+        for sc in scopes:
+            lines.append("%d %s" % (len(sc), " ".join(map(str, sc))))
+        for v in range(n):
+            lines.extend(["2", "1.0 1.%d" % (v % 7 + 1)])
+        for k in range(n - 1):
+            lines.extend(["4", "1.%d 1.1 1.1 1.%d" % (k % 5 + 1, k % 3 + 1)])
+        m = M.read_uai(w("\n".join(lines) + "\n"))
+        res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                      deadline_s=60, run_checker=False)
+        measured = res["peak_live_message_entries"]
+        r = M.restrict(m, {})
+        pn = res["plan"]["name"]
+        adj = P.primal_graph(r.free, r.card, r.factors)
+        pl = P.build_plan(pn, dict(P.PORTFOLIO)[pn](r.free, r.card, adj),
+                          r.free, r.card, r.factors)
+        sim = P.simulate_executed_schedule(pl)["peak_live_entries"]
+        assert sim >= measured, (n, sim, measured)
+
+
+def test_pricing_labels_every_counter():
+    """F.2: an exact count, an upper bound, a calibration and a forecast must
+    never be compared as if they were the same kind of number."""
+    from mdi import pricing as PR
+    p = "/tmp/tep/three_external_problems/inputs/Promedus_12"
+    if not os.path.exists(p + ".uai"):
+        pytest.skip("external inputs not extracted")
+    m = M.read_uai(p + ".uai")
+    ev = M.read_evidence(p + ".uai.evid", m)
+    r = M.restrict(m, ev)
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 8 * (1 << 30))
+    pl, est = sel["chosen"]
+    nq = sum(r.card[v] for v in r.free)
+    rec = PR.price_identity_plan(pl, est, nq, 64)
+    d = rec.as_dict()
+    assert d["counters"], "a price must have counters"
+    for key, c in d["counters"].items():
+        assert c["label"] in (PR.EXACT, PR.UPPER, PR.LOWER, PR.CALIB,
+                              PR.FORECAST), (key, c)
+    assert d["total_arithmetic"]["label"] in (PR.UPPER, PR.EXACT, PR.FORECAST)
+    assert d["bytes_producer"]["label"] == PR.FORECAST
+    # the forecast must disclose what it excludes
+    assert "overhead excluded" in d["bytes_producer"]["note"]
+
+
+def test_pricing_prefers_identity_for_a_priced_reason():
+    """F.1/F.4: selection compares complete work, not a cell-count ratio. The
+    regional route's reduced cell-assignment count is the binding cost and was
+    entirely hidden by the ratio."""
+    from mdi import pricing as PR, preprocess as PRE, compact as CP
+    p = "/tmp/tep/three_external_problems/inputs/Promedus_12"
+    if not os.path.exists(p + ".uai"):
+        pytest.skip("external inputs not extracted")
+    m = M.read_uai(p + ".uai")
+    ev = M.read_evidence(p + ".uai.evid", m)
+    r0 = M.restrict(m, ev)
+    simp = PRE.simplify(r0)
+    r = M.Restricted(model=m, evidence=ev, factors=simp.factors,
+                     free=list(r0.free), card=dict(r0.card),
+                     constant=r0.constant, impossible_factor=None)
+    nq = sum(r.card[v] for v in r.free)
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 8 * (1 << 30))
+    pl, est = sel["chosen"]
+    ident = PR.price_identity_plan(pl, est, nq, 64)
+    c0 = next(x for x in R.propose_partitions(r.free, r.card, r.factors)
+              if x["mode"] == "ascending_id")
+    regs = c0["regions"]
+    t1 = K.level_radius(1)
+    cap = K.region_distortion_budget(t1, len(regs))
+    region_of = {v: i for i, rr in enumerate(regs) for v in rr}
+    rds, crs = [], []
+    for reg in regs:
+        rd = R.region_data(reg, r.card, r.factors, set(r.free))
+        cr = R.merge_region(rd, r.factors, r.card, cap, set(r.free),
+                            region_of=region_of, aggregate=True)
+        rds.append(rd); crs.append(cr)
+    pc, _ = CP.project_crossings(r, regs, crs, rds)
+    reg_rec = PR.price_regional_plan("regional:ascending_id", regs, crs, rds,
+                                     pc, nq, t1)
+    cmp = PR.compare([ident, reg_rec], cap_bytes=8 * (1 << 30))
+    assert cmp["chosen"]["name"] == "identity", cmp["chosen"]
+    # the regional route's binding cost is its reduced assignment count
+    assert int(reg_rec.counters["reduced_cell_assignments"].value) > 10 ** 20
+    assert reg_rec.counters["reduced_cell_assignments"].label == PR.UPPER
+    # and the ratio is NOT what decided it
+    assert "cell-count ratio is never used" in cmp["rule"]
+
+
+def test_ineligible_route_is_never_selected():
+    from mdi import pricing as PR
+    good = PR.CostRecord(kind="identity", name="identity")
+    good.put("producer_upward_ops", 10 ** 9, PR.UPPER)
+    good.bytes_producer = PR.Counter(1 << 20, PR.FORECAST)
+    bad = PR.CostRecord(kind="statistic", name="statistic:cheap",
+                        eligible=False,
+                        ineligible_reason="no independent checker")
+    bad.put("producer_upward_ops", 1, PR.UPPER)
+    bad.bytes_producer = PR.Counter(1, PR.FORECAST)
+    cmp = PR.compare([good, bad], cap_bytes=1 << 30)
+    assert cmp["chosen"]["name"] == "identity", "an ineligible route must not win"
+
+
+def test_upper_bound_over_cap_is_an_admission_refusal():
+    from mdi import pricing as PR
+    big = PR.CostRecord(kind="identity", name="identity")
+    big.put("producer_upward_ops", 10 ** 6, PR.UPPER)
+    big.bytes_producer = PR.Counter(100 * (1 << 30), PR.FORECAST)
+    cmp = PR.compare([big], cap_bytes=8 * (1 << 30))
+    assert cmp["chosen"] is None
+    assert "admission refusal" in cmp["all"][0]["admission_refusal"]

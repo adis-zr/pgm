@@ -316,29 +316,94 @@ def peak_live_upward(plan):
     return peak
 
 
-def peak_live_downward(plan):
-    """Peak live entries during the downward pass.
+def simulate_executed_schedule(plan):
+    """Simulate the schedule the ENGINE ACTUALLY RUNS (contract F.3).
 
-    Going root-to-leaf, a parent's outgoing message to a child must be live
-    while that child is processed. A simple bound is the largest root-to-leaf
-    path's separator total plus the sibling messages pending at each level.
-    We simulate a depth-first schedule, which is what the engine executes.
+    The previous forecast freed a child's upward message as soon as its parent
+    was processed. `Engine.downward` instead releases a bag's incoming messages
+    only after its whole subtree has been walked (its phase-1 marker), and the
+    downward pass runs AFTER the upward pass, so upward messages stay resident
+    into it. Forecasting the wrong schedule understated peak live entries by
+    1.36x on Pedigree_11 and 1.51x on Promedus_12 against our own measurement.
+
+    Returns the peak simultaneously-live separator entries under the executed
+    order, plus the trace needed to validate it on small trees.
     """
     card = plan.card
     bags = plan.bags
+    roots = [b.idx for b in bags if b.parent == -1]
+
+    # ---- upward pass: post-order, nothing released (the downward pass needs it)
+    seq, stack = [], list(roots)
+    while stack:
+        x = stack.pop()
+        seq.append(x)
+        stack.extend(bags[x].children)
+    post = list(reversed(seq))
+    live = {}
     peak, cur = 0, 0
-    # depth-first: at any time the live downward messages are those on the
-    # current root-to-node path plus the pending siblings at each level
-    def walk(x, acc):
-        nonlocal peak
-        pend = [bags[c].sep_domain(card) for c in bags[x].children]
-        tot = acc + sum(pend)
-        peak = max(peak, tot)
-        for c in bags[x].children:
-            walk(c, acc + bags[c].sep_domain(card))
-    for rt in [b.idx for b in bags if b.parent == -1]:
-        walk(rt, 0)
-    return peak
+    trace = []
+    for b in post:
+        if bags[b].parent >= 0:
+            e = bags[b].sep_domain(card)
+            live[(b, bags[b].parent)] = e
+            cur += e
+            if cur > peak:
+                peak = cur
+            trace.append(("up", b, cur))
+
+    # ---- downward pass: depth-first, releasing a bag's incoming messages only
+    # after its subtree completes, exactly as Engine.downward does
+    def walk(x):
+        """Mirror Engine.downward exactly: a bag sends to ALL its children, then
+        every child subtree is walked, then the bag releases what fed it.
+
+        The engine pushes (x,1) and then the children onto a stack it pops from
+        the end, so all child subtrees complete before x's release. The engine's
+        own counter is sampled AFTER each send, so a newly created message is
+        included; this simulation does the same.
+        """
+        nonlocal cur, peak
+        kids = list(bags[x].children)
+        for c in kids:
+            e = bags[c].sep_domain(card)
+            live[(x, c)] = e
+            cur += e
+            if cur > peak:
+                peak = cur
+            trace.append(("down", c, cur))
+        # Engine.downward pushes (x,1) and THEN the children, and pops from the
+        # end, so every child subtree completes BEFORE x releases its inputs.
+        for c in kids:
+            walk(c)
+        freed = 0
+        if bags[x].parent >= 0:
+            freed += live.pop((bags[x].parent, x), 0)
+        for c in kids:
+            freed += live.pop((c, x), 0)
+        cur -= freed
+        trace.append(("free", x, cur))
+
+    for rt in roots:
+        walk(rt)
+    return {"peak_live_entries": peak, "trace_len": len(trace),
+            "residual_live": cur, "trace": trace}
+
+
+def peak_live_upward(plan):
+    """Peak live upward entries under the executed order (nothing released
+    during the upward pass, because the downward pass consumes them)."""
+    card = plan.card
+    bags = plan.bags
+    return sum(b.sep_domain(card) for b in bags if b.parent >= 0)
+
+
+def peak_live_downward(plan):
+    """Additional live entries contributed by the downward pass under the
+    executed depth-first schedule."""
+    sim = simulate_executed_schedule(plan)
+    up = peak_live_upward(plan)
+    return max(0, sim["peak_live_entries"] - up)
 
 
 def byte_estimate(plan, bytes_per_entry, both_directions=True):
@@ -353,11 +418,11 @@ def byte_estimate(plan, bytes_per_entry, both_directions=True):
     card = plan.card
     per = [b.sep_domain(card) for b in plan.bags]
     total_sep = sum(per)
+    sim = simulate_executed_schedule(plan)
     up = peak_live_upward(plan)
-    dn = peak_live_downward(plan) if both_directions else 0
-    # the readout holds one calibrated bag's incoming messages, already counted
-    # in `dn`; add the largest single separator as working room.
-    live = max(up, up + dn) if both_directions else up
+    dn = max(0, sim["peak_live_entries"] - up)
+    # the EXECUTED schedule's peak, not an idealized one
+    live = sim["peak_live_entries"] if both_directions else up
     largest = max(per) if per else 1
     est = (live + largest) * bytes_per_entry
     return {"bytes_per_entry": bytes_per_entry,
@@ -370,9 +435,14 @@ def byte_estimate(plan, bytes_per_entry, both_directions=True):
             "peak_live_entries": live,
             "sum_all_messages_bytes": (2 if both_directions else 1) * total_sep * bytes_per_entry,
             "estimate_bytes": est,
-            "note": "peak simultaneously-live separator entries from a simulated "
-                    "schedule, plus one largest-separator working table; bag "
-                    "assignments are streamed so no full clique belief is stored."}
+            "executed_schedule": True,
+            "note": "peak simultaneously-live separator entries from a simulation "
+                    "of the schedule the engine ACTUALLY runs (upward messages "
+                    "retained into the downward pass; a bag's incoming messages "
+                    "released only after its subtree), plus one largest-separator "
+                    "working table. Bag assignments are streamed, so no full "
+                    "clique belief is stored. Object and precision overhead are "
+                    "NOT included: these are entry counts, not an RSS bound."}
 
 
 def choose_plan(free, card, factors, bytes_per_entry, cap_bytes, charge=None):
