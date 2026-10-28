@@ -20,9 +20,24 @@ class MemoryStop(Exception):
     pass
 
 
-def _rss_bytes():
+# ru_maxrss units differ by platform: bytes on darwin, KiB on linux. Probe once
+# against the OS rather than guessing from the magnitude of the value.
+def _probe_rss_scale():
     r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    return r if r > 1 << 40 else r * 1024      # darwin reports bytes, linux KiB
+    if sys.platform == "darwin":
+        return 1
+    return 1024
+
+_RSS_SCALE = _probe_rss_scale()
+
+
+def _rss_bytes():
+    """Peak resident set of THIS process, in bytes (a high-water mark)."""
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * _RSS_SCALE
+
+
+def rss_scale():
+    return _RSS_SCALE
 
 
 def _mk_deadline(t_end, cap_bytes, baseline=None):
