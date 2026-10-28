@@ -50,7 +50,7 @@ class Engine:
     """mode 'P' = certified point (RNDD + depth labels); 'I' = directed interval."""
 
     def __init__(self, plan, factors, ctx, mode="P", progress=None,
-                 cap_bytes=None, deadline=None):
+                 cap_bytes=None, deadline=None, conv_cache=None):
         self.plan = plan
         self.factors = factors
         self.ctx = ctx
@@ -63,6 +63,15 @@ class Engine:
         self.ops = {"mul": 0, "add": 0, "readout": 0}
         self.peak_entries = 0
         self.peak_live_entries = 0
+        # Contract G: cache each exact factor entry's enclosure. The same entry
+        # is re-converted once per bag visit otherwise, which on these models is
+        # the dominant repeated work. Keyed by precision and exponent range, so a
+        # changed context cannot reuse a stale value. Producer and checker pass
+        # SEPARATE caches.
+        if conv_cache is None:
+            from mdi.budget import ConversionCache
+            conv_cache = ConversionCache(ctx, label=mode)
+        self.conv = conv_cache
         self._bytes_per = 64 if mode == "P" else 128
 
     # ---------- element helpers ----------
@@ -74,7 +83,9 @@ class Engine:
         return mpfr(0) if self.mode == "P" else (mpfr(0), mpfr(0))
 
     def _enc(self, q):
-        return self.ctx.down(q) if self.mode == "P" else self.ctx.ienc(q)
+        if self.mode == "P":
+            return self.conv.down(q)
+        return (self.conv.down(q), self.conv.up(q))
 
     def _mul(self, a, b):
         self.ops["mul"] += 1

@@ -2070,3 +2070,52 @@ def test_H_constant_and_separable_preprocessing_through_the_driver():
         for s in range(r.card[v]):
             lo, hi = res["intervals"][v][s]
             assert lo <= p[v][s] <= hi, (v, s)
+
+
+def test_conversion_cache_is_wired_into_the_contraction():
+    """G: the cache must be in the EXECUTED path, not just available. The same
+    factor entry is otherwise re-converted once per bag visit."""
+    from mdi import contract as C, budget as B
+    n = 12
+    scopes = ([(v,) for v in range(n)] + [(i, i + 1) for i in range(n - 1)]
+              + [(i, i + 2) for i in range(n - 2)])
+    lines = ["MARKOV", str(n), " ".join(["2"] * n), str(len(scopes))]
+    for sc in scopes:
+        lines.append("%d %s" % (len(sc), " ".join(map(str, sc))))
+    for v in range(n):
+        lines.extend(["2", "1.0 1.%d" % (v % 7 + 1)])
+    for k in range(len(scopes) - n):
+        lines.extend(["4", "1.%d 1.1 1.1 1.%d" % (k % 5 + 1, k % 3 + 1)])
+    m = M.read_uai(w("\n".join(lines) + "\n"))
+    r = M.restrict(m, {})
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
+    pl, est = sel["chosen"]
+    ctx = A.Ctx(64)
+    eng = C.Engine(pl, r.factors, ctx, mode="P")
+    for rt in [b.idx for b in pl.bags if b.parent == -1]:
+        eng.upward(rt)
+    st = eng.conv.stats()
+    assert st["hits"] > 0, "the cache must actually be used by the contraction"
+    assert st["hits"] > st["misses"], st
+    assert st["hit_rate"] > 0.5, st
+
+
+def test_all_regional_candidates_are_priced():
+    """F.5: every regional candidate must have a cost record built from ACTUAL
+    cells and projected scopes, with no full Cartesian construction."""
+    import json
+    p = "runs/mdi_2026-10-28/regional_candidates_priced.json"
+    if not os.path.exists(p):
+        pytest.skip("priced-candidate record not present")
+    d = json.load(open(p))
+    assert set(d) == {"Pedigree_11", "Promedus_12"}, list(d)
+    for case, rows in d.items():
+        assert rows, case
+        for x in rows:
+            if not x["eligible"]:
+                assert x["reason"], "an ineligible candidate must say why"
+                continue
+            assert x["regions"] > 0
+            assert x["cells"] > 0
+            assert int(x["reduced_assignments"]) > 0
+            assert x["compact_entries"] < x["cartesian_avoided"], (case, x["mode"])
