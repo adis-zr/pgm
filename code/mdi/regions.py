@@ -164,7 +164,7 @@ class RegionData:
 
 
 def region_data(region, card, factors, queries, assign_crossing_to=None,
-                budget=None):
+                budget=None, deadline=None):
     """Compute A_R(b) and A_{R,i,a}(b) in ONE bounded local enumeration.
 
     Factors wholly inside R form w_R. Others are crossing factors. Zero internal
@@ -198,7 +198,12 @@ def region_data(region, card, factors, queries, assign_crossing_to=None,
 
     bcards = [card[v] for v in boundary]
     icards = [card[v] for v in interior]
+    _seen = 0
     for bcombo in itertools.product(*[range(c) for c in bcards]):
+        if deadline is not None:
+            _seen += 1
+            if (_seen & 0x3F) == 0:
+                deadline()
         b = tuple(bcombo)
         tot = Fr(0)
         mk = {key: Fr(0) for key in want}
@@ -342,7 +347,7 @@ def _zero_mask(sig):
 
 
 def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
-                 comparison_budget=None):
+                 comparison_budget=None, deadline=None):
     """Greedy cell merge with the exact admission test of spec 5.3/5.4.
 
     Candidates are ordered by DECREASING A_R(b), then lexicographically.
@@ -375,7 +380,12 @@ def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
     # U = L = 1 everywhere, so alpha = 1 and rho = 1: an unconditional exact
     # merge. This collapses the dominant cost without weakening the certificate.
     sig_of, buckets = {}, {}
+    _n = 0
     for b in order:
+        if deadline is not None:
+            _n += 1
+            if (_n & 0x3F) == 0:
+                deadline()
         sig = _profile_signature(b, profiles, bpos)
         comparisons += sum(len(row) for row in sig)
         if comparisons > budget:
@@ -404,6 +414,8 @@ def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
         for mask, idxs in sorted(by_mask.items(), key=lambda kv: kv[1]):
             keep = []
             for ci in idxs:
+                if deadline is not None:
+                    deadline()
                 if comparisons > budget:
                     declines["budget"] += 1
                     break

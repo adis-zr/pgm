@@ -40,6 +40,10 @@ def price_identity(free, card, factors, bytes_per_entry, cap_bytes):
         reason="" if sel["fits"] else "no generic ordering fits the byte cap")
 
 
+class DiscoveryWall(Exception):
+    """The discovery wall was reached INSIDE a region, not only between them."""
+
+
 def price_regional(free, card, factors, queries, levels, bytes_per_entry,
                    cap_bytes, wall_s, log=None):
     # NOTE: argument order here is (free, card, factors) while price_modes takes
@@ -63,13 +67,21 @@ def price_regional(free, card, factors, queries, levels, bytes_per_entry,
         tb = ta = comps = 0
         crs, rds, skipped = [], [], 0
         aborted = None
+        def _dl():
+            if time.time() - t0 > wall_s:
+                raise DiscoveryWall("discovery wall %.0fs" % wall_s)
+
         for reg in regs:
             if time.time() - t0 > wall_s:
                 aborted = "discovery wall %.0fs" % wall_s
                 break
             try:
-                rd = R.region_data(reg, card, factors, queries)
-                cr = R.merge_region(rd, factors, card, rho_cap, queries)
+                rd = R.region_data(reg, card, factors, queries, deadline=_dl)
+                cr = R.merge_region(rd, factors, card, rho_cap, queries,
+                                    deadline=_dl)
+            except DiscoveryWall as e:
+                aborted = str(e)
+                break
             except (R.CapExceeded, R.Declined) as e:
                 skipped += 1
                 continue
