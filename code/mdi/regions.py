@@ -307,6 +307,90 @@ def ratio_extrema(row_b, row_r):
     return L, U
 
 
+
+def aggregate_crossings(rd, factors, card, region_of, deadline=None,
+                        cap_entries=None):
+    """Spec 5.3: combine crossing factors with the SAME incident-region scope
+    into their exact product kernel, before any profiling.
+
+    This is NOT a cosmetic regrouping. A strictly positive multiplier preserves
+    a zero-mask disagreement, but a nonnegative multiplier CONTAINING A ZERO can
+    remove it: rows (0,2) and (1,3) disagree, yet multiplied by (0,7) they
+    become (0,14) and (0,21), which share support and are proportional, so they
+    merge with rho exactly 1. Profiling per factor therefore refuses merges that
+    the permitted aggregation admits.
+
+    Returns (profiles, detail). Each profile is (key, in_vars, n_out, table) in
+    the same shape `crossing_profile` returns, so merge_region is agnostic to
+    whether a profile is a single factor or a product kernel. The constituent
+    factor list is preserved in `detail` for the ownership record: aggregation
+    changes only how responses are PROFILED, never who owns a factor.
+    """
+    cap = cap_entries or (K.CAPS["region_tuple_assignments"] * 64)
+    rset = set(rd.vars)
+    me = region_of[rd.vars[0]]
+    groups = {}
+    for fi in rd.crossing_factors:
+        f = factors[fi]
+        key = tuple(sorted({region_of[v] for v in f.scope
+                            if v in region_of and region_of[v] != me}))
+        groups.setdefault(key, []).append(fi)
+    profiles, detail = [], []
+    for key, fis in sorted(groups.items()):
+        if len(fis) == 1:
+            f = factors[fis[0]]
+            iv, nout, tbl = crossing_profile(f, rd.vars, card)
+            profiles.append((fis[0], iv, nout, tbl))
+            detail.append({"scope": key, "factors": fis, "aggregated": False})
+            continue
+        scope = sorted({v for fi in fis for v in factors[fi].scope})
+        inside = [v for v in scope if v in rset]
+        outside = [v for v in scope if v not in rset]
+        nin = 1
+        for v in inside:
+            nin *= card[v]
+        nout = 1
+        for v in outside:
+            nout *= card[v]
+        if nin * nout > cap:
+            for fi in fis:
+                f = factors[fi]
+                iv, no, tbl = crossing_profile(f, rd.vars, card)
+                profiles.append((fi, iv, no, tbl))
+            detail.append({"scope": key, "factors": fis, "aggregated": False,
+                           "declined": "product kernel %d entries exceeds the "
+                                       "cap %d" % (nin * nout, cap)})
+            continue
+        tbl, nz = {}, 0
+        for ic in itertools.product(*[range(card[v]) for v in inside]):
+            if deadline is not None:
+                deadline()
+            row = []
+            for oc in itertools.product(*[range(card[v]) for v in outside]):
+                a = dict(zip(inside, ic)); a.update(dict(zip(outside, oc)))
+                w = Fr(1)
+                for fi in fis:
+                    f = factors[fi]
+                    st = f.strides(); off = 0
+                    for k, v in enumerate(f.scope):
+                        off += a[v] * st[k]
+                    e = f.table[off]
+                    if e == 0:
+                        w = Fr(0); break
+                    w *= e
+                if w == 0:
+                    nz += 1
+                if not bitlen_ok(w):
+                    raise CapExceeded("aggregated kernel exceeded the bit cap")
+                row.append(w)
+            tbl[tuple(ic)] = tuple(row)
+        profiles.append((("agg",) + tuple(fis), inside, nout, tbl))
+        detail.append({"scope": key, "factors": fis, "aggregated": True,
+                       "in_states": nin, "out_states": nout,
+                       "zeros_in_product": nz})
+    return profiles, detail
+
+
 @dataclass
 class Cell:
     rep: tuple                        # representative boundary assignment
@@ -325,6 +409,7 @@ class CoarseRegion:
     rho_region: Fr                    # max_b rho(b, rep)
     comparisons: int
     declines: dict
+    aggregation: object = None        # per-group aggregation record, or None
 
 
 def _profile_signature(b, profiles, bpos):
@@ -347,7 +432,8 @@ def _zero_mask(sig):
 
 
 def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
-                 comparison_budget=None, deadline=None):
+                 comparison_budget=None, deadline=None, region_of=None,
+                 aggregate=True):
     """Greedy cell merge with the exact admission test of spec 5.3/5.4.
 
     Candidates are ordered by DECREASING A_R(b), then lexicographically.
@@ -358,12 +444,20 @@ def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
     budget = comparison_budget if comparison_budget is not None \
         else K.CAPS["profile_entry_comparisons"]
 
-    # precompute each crossing factor's in-region profile
-    profiles = []
-    for fi in rd.crossing_factors:
-        f = factors[fi]
-        in_vars, nout, tbl = crossing_profile(f, rd.vars, card)
-        profiles.append((fi, in_vars, nout, tbl))
+    # Precompute in-region response profiles. When `region_of` is supplied and
+    # aggregation is enabled, crossing factors sharing an incident-region scope
+    # are first combined into their exact product kernel (spec 5.3), which can
+    # TURN A ZERO-MASK REFUSAL INTO AN EXACT MERGE.
+    agg_detail = None
+    if aggregate and region_of is not None:
+        profiles, agg_detail = aggregate_crossings(rd, factors, card, region_of,
+                                                   deadline=deadline)
+    else:
+        profiles = []
+        for fi in rd.crossing_factors:
+            f = factors[fi]
+            in_vars, nout, tbl = crossing_profile(f, rd.vars, card)
+            profiles.append((fi, in_vars, nout, tbl))
 
     order = sorted(rd.A.keys(), key=lambda b: (-rd.A[b], b))
     bpos = {v: k for k, v in enumerate(rd.boundary)}
@@ -488,9 +582,11 @@ def merge_region(rd: RegionData, factors, card, rho_cap: Fr, queries,
                 n += al * rd.marks[key].get(b, Fr(0))
             N[key].append(n)
     rho_region = max((c.rho_max for c in cells), default=Fr(1))
-    return CoarseRegion(region=rd.vars, boundary=rd.boundary, cells=cells, M=M,
-                        N=N, cell_of=cell_of, rho_region=rho_region,
-                        comparisons=comparisons, declines=declines)
+    cr = CoarseRegion(region=rd.vars, boundary=rd.boundary, cells=cells, M=M,
+                      N=N, cell_of=cell_of, rho_region=rho_region,
+                      comparisons=comparisons, declines=declines)
+    cr.aggregation = agg_detail
+    return cr
 
 
 def level_distortion(coarse_regions) -> Fr:

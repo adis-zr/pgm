@@ -71,6 +71,10 @@ def price_regional(free, card, factors, queries, levels, bytes_per_entry,
             if time.time() - t0 > wall_s:
                 raise DiscoveryWall("discovery wall %.0fs" % wall_s)
 
+        region_of = {}
+        for i, rr in enumerate(regs):
+            for v in rr:
+                region_of[v] = i
         for reg in regs:
             if time.time() - t0 > wall_s:
                 aborted = "discovery wall %.0fs" % wall_s
@@ -78,7 +82,7 @@ def price_regional(free, card, factors, queries, levels, bytes_per_entry,
             try:
                 rd = R.region_data(reg, card, factors, queries, deadline=_dl)
                 cr = R.merge_region(rd, factors, card, rho_cap, queries,
-                                    deadline=_dl)
+                                    deadline=_dl, region_of=region_of)
             except DiscoveryWall as e:
                 aborted = str(e)
                 break
