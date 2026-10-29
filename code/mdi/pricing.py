@@ -177,10 +177,19 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
         n_fac = sum(len(b.factors) for b in plan.bags)
         rec.put("independent_enumeration_assignments", joint, EXACT,
                 "the bounded independent aggregation check actually runs")
-        rec.put("independent_enumeration_ops", joint * (n_fac + nvars), UPPER,
-                "exact Fraction multiplies and marker adds in the "
-                "independent aggregation enumeration")
-        chk += joint * (n_fac + nvars)
+        # Per assignment: one multiply per factor entry, one add per variable
+        # marker, AND one add accumulating the weight into Z. Then one
+        # division per (variable, state) coordinate to normalize. The previous
+        # joint*(n_fac+nvars) omitted the Z addition and the divisions: 12
+        # positive binary unaries perform 102,400 multiply/add calls plus 24
+        # marginal divisions, where the record said 98,304.
+        ncoord = sum(plan.card[v] for v in sorted(plan.card))
+        enum_ops = joint * (n_fac + nvars + 1) + ncoord
+        rec.put("independent_enumeration_ops", enum_ops, UPPER,
+                "per assignment: one multiply per factor entry, one add per "
+                "variable marker and one add into Z; plus one division per "
+                "published coordinate")
+        chk += enum_ops
     else:
         rec.put("independent_enumeration_assignments", 0, EXACT,
                 "above the declared cap, so the independent aggregation "
@@ -298,13 +307,40 @@ def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
     except Exception:
         reduced_ops = None
     if reduced_ops is not None:
-        rec.put("producer_upward_ops", reduced_ops["up"], UPPER,
-                "reduced-graph elimination, not joint enumeration")
-        rec.put("producer_downward_ops", reduced_ops["down"], UPPER)
-        rec.put("readout_ops", reduced_ops["ro"], UPPER)
-        rec.put("checker_ops", 2 * (reduced_ops["up"] + reduced_ops["down"] +
-                                    reduced_ops["ro"]), UPPER,
-                "independent reduced-graph message passing, interval mode")
+        # The PRODUCER forms the joint product over the compact projected
+        # crossings and marginalizes (its own contraction, independent of the
+        # checker). Pricing it as reduced-graph elimination described a
+        # DIFFERENT program: on a two-unary control the price said 54 while
+        # the executed producer plus checker performed 110 exact Fraction
+        # operations after discovery. Price the branch that RUNS.
+        #
+        # Joint-product cost: each table multiplied into a running joint of at
+        # most `total_assign` entries, one multiply and one add per pair, plus
+        # a marginalization sweep per region and the marker division per
+        # requested state.
+        n_tables = len(regions) + len(projected)
+        prod_pairs = n_tables * max(1, total_assign)
+        marg = len(regions) * max(1, total_assign)
+        readout = max(1, total_assign) + n_requested * 2
+        rec.put("producer_upward_ops", prod_pairs, UPPER,
+                "joint product over the compact projected crossings: one "
+                "multiply and one add per (joint entry, table) pair -- this "
+                "is the producer's OWN contraction, which is what executes")
+        rec.put("producer_downward_ops", marg, UPPER,
+                "marginalization sweep per region over the joint")
+        rec.put("readout_ops", readout, UPPER,
+                "per-cell marker accumulation and the normalizing division "
+                "per requested state")
+        # the CHECKER runs its own reduced-graph message passing in interval
+        # mode AND rebuilds every region's local data; both are charged
+        chk_mp = 2 * (reduced_ops["up"] + reduced_ops["down"] +
+                      reduced_ops["ro"])
+        chk_local = 2 * sum(int(getattr(rd, "construction_ops", 0))
+                            for rd in rds)
+        rec.put("checker_ops", chk_mp + chk_local + marg, UPPER,
+                "independent reduced-graph message passing in interval mode, "
+                "PLUS the checker's own local region reconstruction and its "
+                "containment sweep")
         rec.put("reduced_induced_width", reduced_ops["width"], EXACT)
         rec.put("reduced_largest_bag", reduced_ops["largest_bag"], EXACT)
         rec.bytes_producer = Counter(reduced_ops["largest_bag"] * 64, FORECAST,

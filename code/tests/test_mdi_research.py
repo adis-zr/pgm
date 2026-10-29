@@ -5075,8 +5075,15 @@ def test_r7_independent_enumeration_is_priced():
     rec = PR.price_identity_plan(pl, est, len(r.free), 64)
     assert int(rec.counters["independent_enumeration_assignments"].value) \
         == 4096
-    assert int(rec.counters["independent_enumeration_ops"].value) > 50000
-    assert int(rec.counters["checker_ops"].value) > 50000
+    # test the claimed UPPER BOUND against the COUNTED execution, not an
+    # arbitrary lower threshold. The loop performs one multiply per factor
+    # entry, one marker add per variable and one add into Z per assignment,
+    # then one division per published coordinate:
+    #     4096 * (12 + 12 + 1) + 24 = 102,424
+    counted = 4096 * (12 + 12 + 1) + 24
+    priced = int(rec.counters["independent_enumeration_ops"].value)
+    assert priced >= counted, (priced, counted)
+    assert int(rec.counters["checker_ops"].value) >= counted
 
 
 def test_r7_production_path_charges_the_allocation_counters():
@@ -5133,6 +5140,16 @@ def test_r8_regional_producer_is_independent_of_its_checker():
     Z, pt = O.exact_all_marginals(r)
     clean = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
     assert clean.status.startswith("CERTIFIED"), clean.reason
+    # The faulty shared contraction must be caught WHEREVER regional is
+    # exercised. Honest pricing of the executed branch may make identity win
+    # this control, so force the regional candidate to be the selected one by
+    # exercising the checker path directly as well.
+    from mdi import regions as R2
+    regs2 = [(0,), (1,)]
+    rds2 = [R2.region_data(g, r.card, r.factors, {0, 1}) for g in regs2]
+    ro2 = {0: 0, 1: 1}
+    crs2 = [R2.merge_region(rds2[i], r.factors, r.card, Fr(1), {0, 1},
+                            region_of=ro2, aggregate=True) for i in range(2)]
     orig = RC._reduced_message_passing
 
     def faulty(restricted, regions, coarse, rds, queries, deadline=None):
@@ -5145,11 +5162,33 @@ def test_r8_regional_producer_is_independent_of_its_checker():
     RC._reduced_message_passing = faulty
     try:
         res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+        # the regional CHECKER, driven directly, must reject the producer's
+        # correct publication only because ITS OWN contraction is faulty --
+        # i.e. the two sides are genuinely different implementations
+        import mdi.pipeline as PP2
+        (Zp, _zh), (clp, _ch) = PP2._producer_reduced_contract(
+            r, regs2, crs2, rds2, {0, 1})
+        pub = {}
+        for v in (0, 1):
+            pub[v] = [(max(Fr(0), clp.get((v, sx), Fr(0)) / Zp - Fr(1, 500)),
+                       min(Fr(1), clp.get((v, sx), Fr(0)) / Zp + Fr(1, 500)))
+                      for sx in range(2)]
+        ok, fails, _m = RC.verify_regional_publication(
+            r, regs2, crs2, rds2, {0, 1}, pub, Fr(1, 500), Fr(1, 100))
+        assert not ok, "the faulty shared contraction was not detected"
     finally:
         RC._reduced_message_passing = orig
-    assert not res.status.startswith("CERTIFIED"), res.status
-    props = res.properties or {}
-    assert not props.get("independently_verified"), props
+    # if regional was selected under the fault, it must not be certified
+    if res.plan.get("kind") == "regional":
+        assert not res.status.startswith("CERTIFIED"), res.status
+        props = res.properties or {}
+        assert not props.get("independently_verified"), props
+    # and the published answer must contain the truth whichever route ran
+    if res.intervals:
+        for v in (0, 1):
+            for sx in range(2):
+                lo, hi = res.intervals[v][sx]
+                assert lo <= pt[v][sx] <= hi, (v, sx, float(lo), float(hi))
 
 
 def test_r8_combined_members_cannot_double_consume():
