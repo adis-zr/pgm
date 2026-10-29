@@ -6672,3 +6672,121 @@ def test_r13_profile_product_bounds_temporaries_and_checks_deadline():
         RC._own_profile_product([0], r2.factors, r2.card, (0,), [0], 64,
                                 "factor", deadline=expired)
     assert calls[0] >= 1
+
+
+# ===== r13 review: checker-owned row selection, tightened proof price =====
+
+def test_r14_profile_rows_are_selected_by_the_checker():
+    """R13-1 (inherited common-mode dependence, also in r12). The checker
+    verified every profile table's contents and then called the PRODUCER's
+    _profile_signature to pick which rows to compare. A shared projector that
+    returned the zero row for every assignment collapsed pair [1,2,3,8] to one
+    cell per region and certified four intervals near 1/2 against truths
+    (3/14,11/14) and (2/7,5/7), with every table value, id and layout correct
+    and valid padding."""
+    from mdi import regions as R
+    t1 = K.level_radius(1)
+    res = K.PUBLICATION_RESERVE
+    pair = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(8)], origin=0)]
+    # the CLEAN fixture passes under these rules
+    ok0, f0, _m0 = _r13_verify(pair, 2, [2, 2], [(0,), (1,)], {0: 0, 1: 1})
+    assert ok0, f0
+    orig = R._profile_signature
+    R._profile_signature = lambda b, pr, bp: tuple(
+        tbl[tuple(0 for _ in iv)] for (fi, iv, no, tbl) in pr)
+    try:
+        wrong = {v: [(Fr(1, 2) - t1 - res, Fr(1, 2) + t1 + res)] * 2
+                 for v in (0, 1)}
+        ok, fails, _m = _r13_verify(pair, 2, [2, 2], [(0,), (1,)],
+                                    {0: 0, 1: 1}, pub_override=wrong)
+    finally:
+        R._profile_signature = orig
+    assert not ok, "the producer's row selection fed the checker's extrema"
+    # rejected for an unjustified merge/alpha obligation, not a padding margin
+    assert any("own profile extrema" in str(x) or "distortion" in str(x)
+               for x in fails), fails[:3]
+
+
+def test_r14_row_selection_on_nonsymmetric_categorical_axes():
+    """R13-1 acceptance: member and representative row mapping must be right
+    on nonsymmetric categorical tables with reversed axes, where a wrong key
+    would pick a different-valued row."""
+    facs = [M.Factor(scope=(2, 0), card=(2, 3),
+                     table=[Fr(i + 1) for i in range(6)], origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1), Fr(2)], origin=1)]
+    ok, fails, _m = _r13_verify(facs, 3, [3, 2, 2], [(0, 1), (2,)],
+                                {0: 0, 1: 0, 2: 1})
+    assert ok, fails
+
+
+def test_r14_profile_proof_price_tracks_the_actual_representation():
+    """R13-2. The proof term charged 2*4096 per crossing occurrence regardless
+    of size: 16,384 priced for 16 observed operations on a binary pair. With k
+    factors and N kernel entries the proof performs at most (k+1)N operations,
+    and N follows from scopes and domains alone. The bound must still cover the
+    counted work."""
+    import fractions
+    from mdi import regions as R, regional_check as RC, pricing as PR, \
+        compact as CP
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(8)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    regs = [(0,), (1,)]
+    rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+    ro = {0: 0, 1: 1}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                          region_of=ro, aggregate=True) for i in range(2)]
+    proj, _p = CP.project_crossings(r, regs, crs, rds)
+    rec = PR.price_regional_plan("r", regs, crs, rds, proj, 2, Fr(1, 500),
+                                 construction_ops=1, restricted=r)
+    priced = int(rec.counters["checker_profile_proof_ops"].value)
+    assert priced < 1000, priced          # no longer 16,384
+    # count the proof work actually performed on one region's profile
+    saved = {nm: getattr(fractions.Fraction, nm)
+             for nm in ("__mul__", "__rmul__", "__eq__")}
+    counts = {"n": 0}
+
+    def wrap(fn):
+        def w(self, other, *a):
+            counts["n"] += 1
+            return fn(self, other, *a)
+        return w
+
+    prof, _d = R.aggregate_crossings(rds[0], r.factors, r.card, ro)
+    for nm, fn in saved.items():
+        setattr(fractions.Fraction, nm, wrap(fn))
+    try:
+        counts["n"] = 0
+        own = RC._own_profile_product([0], r.factors, r.card, (0,),
+                                      prof[0][1], prof[0][2], "factor")
+        RC._profiles_agree(prof[0][3], own)
+        counted_one_region = counts["n"]
+    finally:
+        for nm, fn in saved.items():
+            setattr(fractions.Fraction, nm, fn)
+    assert priced >= counted_one_region, (priced, counted_one_region)
+
+
+def test_r14_profile_product_checks_deadline_inside_factor_loops():
+    """R13-2. A four-entry product of 128 constituent factors performed 512
+    reads after simulated expiry before the completion check caught it. Work
+    is now counted per factor read, with an entry check."""
+    from mdi import regional_check as RC
+    facs = [M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(1)] * 4, origin=i)
+            for i in range(128)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    calls = [0]
+
+    def expired():
+        calls[0] += 1
+        raise RuntimeError("EXPIRED")
+
+    with pytest.raises(RuntimeError):
+        RC._own_profile_product(list(range(128)), r.factors, r.card, (0,),
+                                [0], 2, "sorted", deadline=expired)
+    assert calls[0] == 1, "must stop at the entry check, not after 512 reads"

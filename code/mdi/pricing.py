@@ -229,8 +229,15 @@ def _proj_entries(pc, coarse):
 
 
 def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
-                        radius, discovery_s=None, construction_ops=None):
-    """Price the regional route from ACTUAL cells and projected scopes."""
+                        radius, discovery_s=None, construction_ops=None,
+                        restricted=None):
+    """Price the regional route from ACTUAL cells and projected scopes.
+
+    `restricted` lets the checker's profile-proof term be priced from the real
+    factor scopes and domains; without it that term falls back to the coarse
+    per-occurrence cap bound."""
+    restricted_factors = restricted.factors if restricted is not None else None
+    card_of = dict(restricted.card) if restricted is not None else {}
     from mdi import compact as CP
     rec = CostRecord(kind="regional", name=name)
     ncell = [len(c.cells) for c in coarse]
@@ -369,20 +376,51 @@ def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
         # added this work without pricing it; an unchanged padded bound may or
         # may not have covered it, and that is a relation to prove, not to
         # assume from source unchangedness.
+        # Price the groups and layouts the checker ACTUALLY verifies, from
+        # scopes and domains alone -- no numerical inference is needed to know
+        # a kernel's entry count. With k constituent factors and N kernel
+        # entries the proof performs at most (k+1)N operations: one multiply
+        # per factor per entry plus one exact comparison per entry. The
+        # previous term charged 2*4096 per crossing occurrence regardless of
+        # size: 16,384 priced for 16 observed operations on a binary pair,
+        # 1,024x the counted work, loose enough to reverse an internal ranking
+        # between manually supplied candidates.
         chk_profile = 0
-        for rd in rds:
+        for i, rd in enumerate(rds):
+            rset = set(regions[i])
             cross = list(getattr(rd, "crossing_factors", []) or [])
-            # the kernel over a group's variables is bounded by the declared
-            # aggregate entry cap; price one multiply per factor per entry plus
-            # one exact comparison per entry
-            # per-region upper bound: every crossing factor's own kernel, each
-            # at most the aggregate entry cap
-            chk_profile += len(cross) * (K.CAPS["aggregated_kernel_entries"]
-                                         * 2)
+            # mirror the aggregator's grouping by incident-region scope so the
+            # priced representation is the one that executes
+            grp = {}
+            for fi in cross:
+                f = restricted_factors[fi] if restricted_factors else None
+                if f is None:
+                    grp.setdefault(("_", fi), []).append(fi)
+                    continue
+                key = tuple(sorted(v for v in f.scope if v not in rset))
+                grp.setdefault(key, []).append(fi)
+            for key, fis in grp.items():
+                if restricted_factors is None:
+                    chk_profile += 2 * K.CAPS["aggregated_kernel_entries"]
+                    continue
+                scope = sorted({v for fi in fis
+                                for v in restricted_factors[fi].scope})
+                n_ent = 1
+                for v in scope:
+                    n_ent *= card_of[v]
+                if len(fis) > 1 and n_ent <= K.CAPS["aggregated_kernel_entries"]:
+                    chk_profile += (len(fis) + 1) * n_ent      # one aggregate
+                else:
+                    for fi in fis:                              # fallback
+                        ne = 1
+                        for v in restricted_factors[fi].scope:
+                            ne *= card_of[v]
+                        chk_profile += 2 * ne
         rec.put("checker_profile_proof_ops", chk_profile, UPPER,
-                "per crossing-factor group: one exact multiply per constituent "
-                "factor per kernel entry plus one exact comparison per entry, "
-                "bounded by the declared aggregate entry cap")
+                "sum over the ACTUAL emitted representation of (k+1)*N per "
+                "profile: one exact multiply per constituent factor per kernel "
+                "entry plus one exact comparison per entry, from scopes and "
+                "domains alone")
         rec.put("checker_ops", chk_mp + chk_local + chk_profile + marg, UPPER,
                 "independent reduced-graph message passing in interval mode, "
                 "PLUS the checker's own local region reconstruction, PLUS its "

@@ -164,19 +164,25 @@ def _own_profile_product(fis, factors, card, region, in_vars, nout, layout,
         f = factors[fi]
         pre.append((f, f.strides(), list(enumerate(f.scope))))
     bitcap = _K.CAPS["rational_bit_length"]
+    # ENTRY check, then bounded checks on actual inner work. A four-entry
+    # product of 128 factors performed 512 reads after simulated expiry before
+    # the completion check caught it: counting kernel entries alone misses
+    # long constituent-factor loops. Work is counted per factor read.
+    if deadline is not None:
+        deadline()
     out = {}
-    seen = 0
+    work = 0
     for ic in _it.product(*[range(card[v]) for v in inside]):
         row = []
         a_in = dict(zip(inside, ic))
         for oc in _it.product(*[range(card[v]) for v in outside]):
-            seen += 1
-            if deadline is not None and (seen & 0x3F) == 0:
-                deadline()
             a = dict(a_in)
             a.update(zip(outside, oc))
             w = Fr(1)
             for f, st, sc in pre:
+                work += 1
+                if deadline is not None and (work & 0x3F) == 0:
+                    deadline()
                 off = 0
                 for k, v in sc:
                     off += a[v] * st[k]
@@ -213,6 +219,50 @@ def _profiles_agree(submitted, own):
         if any(Fr(a) != Fr(b) for a, b in zip(srow, orow)):
             return False
     return True
+
+
+def _own_profile_rows(b, profiles, bpos, card):
+    """Select each verified profile's row for boundary assignment `b` with the
+    CHECKER's own position maps.
+
+    r13 verified every profile table's contents and then called the PRODUCER's
+    R._profile_signature -- its coarsening merge-key computation -- to pick
+    which rows to compare. Table equality does not prove the later
+    assignment-to-row mapping: a shared projector that returned the zero row
+    for every assignment collapsed pair [1,2,3,8] to one cell per region and
+    certified four intervals near 1/2 against truths (3/14, 11/14) and
+    (2/7, 5/7), with every table value, id and layout correct.
+
+    Here the key is derived from the checker's checked boundary order and the
+    validated profile's own inside axes, and every selected row is confirmed
+    to exist with the declared outside width. Hoisted position maps are
+    reused across members.
+    """
+    rows = []
+    for (fid, in_vars, nout, tbl) in profiles:
+        key = []
+        for v in in_vars:
+            if v not in bpos:
+                raise RegionalCheckError(
+                    "profile %r indexes inside variable %d, which is not in "
+                    "the checker's boundary order" % (fid, v))
+            st = b[bpos[v]]
+            if not (0 <= st < card[v]):
+                raise RegionalCheckError(
+                    "boundary assignment %s puts variable %d at state %d, "
+                    "outside its cardinality %d" % (b, v, st, card[v]))
+            key.append(st)
+        key = tuple(key)
+        if key not in tbl:
+            raise RegionalCheckError(
+                "profile %r has no row for inside key %s" % (fid, key))
+        row = tbl[key]
+        if len(row) != nout:
+            raise RegionalCheckError(
+                "profile %r row %s has %d entries, declared outside width %d"
+                % (fid, key, len(row), nout))
+        rows.append(row)
+    return tuple(rows)
 
 
 def _own_ratio_extrema(row_b, row_r):
@@ -480,8 +530,8 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                             % (ci, b, al))
                     continue
                 try:
-                    sb = R._profile_signature(b, profiles, bpos)
-                    sr = R._profile_signature(rep, profiles, bpos)
+                    sb = _own_profile_rows(b, profiles, bpos, card)
+                    sr = _own_profile_rows(rep, profiles, bpos, card)
                 except Exception as e:
                     problems.append("cell %d: profile rebuild failed: %s"
                                     % (ci, e))

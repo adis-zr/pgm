@@ -330,7 +330,8 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             cons = sum(int(getattr(rd, "construction_ops", 0)) for rd in rds)
             rprice = PR.price_regional_plan("regional:" + c["mode"], regs, crs,
                                             rds, proj, nq, t_level,
-                                            construction_ops=cons)
+                                            construction_ops=cons,
+                                            restricted=r)
             rsup = PT.supported("regional")
             rprops = PT.PlanProperties()
             rprops.set("mathematically_certified")
@@ -401,7 +402,8 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                             for rd in rds)      # producer side only
                 cprice = PR.price_regional_plan("composed:" + c["mode"], regs,
                                                 crs, rds, proj, nq, t_level,
-                                                construction_ops=ccons)
+                                                construction_ops=ccons,
+                                                restricted=r)
                 cprice.kind = "composed"
                 cprice.put("collective_statistic_support",
                            cm_meta.get("statistic_support", 0), PR.EXACT)
