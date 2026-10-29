@@ -570,7 +570,9 @@ def test_messages_are_actually_freed():
         lines.append("%d %d %d %d" % (k + 2, 1, 1, k + 3))
     m = M.read_uai(w("\n".join(lines) + "\n"))
     res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30, deadline_s=120)
-    assert res["outcome"] == "VERIFIED_ALL_MARGINALS"
+    assert res["outcome"] in ("VERIFIED_ALL_MARGINALS",
+                              "VERIFIED_SHARED_AGGREGATION_ONLY"), \
+        res["outcome"]
     peak = res["peak_live_message_entries"]
     r = M.restrict(m, {})
     adj = P.primal_graph(r.free, r.card, r.factors)

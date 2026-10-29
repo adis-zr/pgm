@@ -434,10 +434,34 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                     "elapsed_s": time.time() - t0,
                     "peak_rss_bytes": _rss_bytes()})
         return out
-    out.update({"outcome": "VERIFIED_ALL_MARGINALS", "producer_complete": True,
-                "independently_verified": True,
-                "elapsed_s": time.time() - t0,
-                "peak_rss_bytes": _rss_bytes()})
+    # `independently_verified` means the AGGREGATION itself was checked by a
+    # second implementation. When the free joint space exceeded the declared
+    # enumeration cap, producer and checker shared C.Engine's aggregate logic,
+    # so a common-mode fault was undetectable -- and the run still returned
+    # VERIFIED_ALL_MARGINALS with independently_verified=True. The label now
+    # follows what actually ran.
+    _agg_ok = bool((out.get("checker") or {}).get(
+        "independent_aggregation_checked"))
+    if _agg_ok:
+        out.update({"outcome": "VERIFIED_ALL_MARGINALS",
+                    "producer_complete": True,
+                    "independently_verified": True,
+                    "elapsed_s": time.time() - t0,
+                    "peak_rss_bytes": _rss_bytes()})
+    else:
+        out.update({
+            "outcome": "VERIFIED_SHARED_AGGREGATION_ONLY",
+            "reason": "every coordinate passed interval containment, but the "
+                      "independent AGGREGATION check could not run: the free "
+                      "joint space exceeds the declared enumeration cap, so "
+                      "producer and checker share one aggregate "
+                      "implementation and a common-mode aggregation fault "
+                      "would not be detected. This is NOT the contract's "
+                      "complete independently verified status.",
+            "producer_complete": True,
+            "independently_verified": False,
+            "elapsed_s": time.time() - t0,
+            "peak_rss_bytes": _rss_bytes()})
     return out
 
 
@@ -767,10 +791,24 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
     for v in range(model.nvars):
         if v not in iv or len(iv[v]) != model.card[v]:
             fails.append({"var": v, "reason": "missing or wrong-length output row"})
+    # The independent AGGREGATION cross-check only runs below the declared
+    # enumeration cap. Above it, producer and checker share C.Engine's
+    # aggregate logic, so a common-mode fault is invisible: the same injected
+    # readout fault rejected at 12 binary variables and CERTIFIED (.75, .25)
+    # at 13 against a uniform truth. The caller must be told, so this is
+    # reported as a FACT about the check that ran, not left implicit.
     meta = {"checker_precision_bits": cp, "coordinates_checked": nchk,
             "independent_plan_rebuilt": True, "mode": "I",
             "shares": "validated decomposition + MPFR primitives",
-            "borrows_producer_values": False}
+            "borrows_producer_values": False,
+            "independent_aggregation_checked": _indep is not None,
+            "independent_aggregation_scope":
+                ("direct exact enumeration of every free assignment"
+                 if _indep is not None else
+                 "NOT RUN: the free joint space exceeds the declared "
+                 "enumeration cap, so producer and checker share the same "
+                 "aggregate implementation and a common-mode aggregation "
+                 "fault would not be detected")}
     del eng
     return (not fails), fails, meta
 

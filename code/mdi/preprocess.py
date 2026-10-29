@@ -405,8 +405,15 @@ def verify_identities(restricted, simp: Simplified):
                     "cardinality is %d"
                     % (want_v, len(f.table), simp.card[want_v]))
             continue
-        if f.origin == -1:
-            continue
+        # There is NO unchecked origin exemption. `if f.origin == -1: continue`
+        # was unconditional, and -1 is the synthetic origin of variable 0
+        # ONLY while variable 0 is free (synthetic origins are -1-v). Once X0
+        # is observed, -1 is reserved for nothing, so the skip hid an
+        # arbitrary extra factor: appending a pair on (1,2) with table
+        # [1,1,1,9] and origin -1 to a conditioned uniform model certified
+        # near (1/6, 5/6) against a true (.5, .5) at 13, 16 and 20 free
+        # variables. It rejected at 12 only because the bounded global
+        # enumeration caught the altered law.
         emitted_origins.append(f.origin)
     for origin in emitted_origins:
         if origin not in byo:

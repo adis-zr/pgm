@@ -644,14 +644,43 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        stages=stages, budget=bg.report(),
                        checker={"status": "VERIFIED_BUT_UNPUBLISHED"},
                        properties=crec.properties.as_dict())
-    crec.properties.set("independently_verified")
-    if worst <= eps:
-        crec.properties.set("publication_contract_met")
-    status = ("CERTIFIED_RESEARCH_ROUTE" if crec.kind != "identity"
-              else "CERTIFIED_FALLBACK_ONLY")
+    # The CERTIFIED statuses and the independently_verified property require
+    # that the checking method the route depends on actually RAN. For identity
+    # that includes the independent AGGREGATION cross-check; above its
+    # enumeration cap producer and checker share one aggregate
+    # implementation, so a common-mode fault is undetectable and the complete
+    # status must not be claimed.
+    _agg = (meta or {}).get("independent_aggregation_checked")
+    _agg_required = (crec.kind == "identity")
+    _agg_ok = (not _agg_required) or bool(_agg)
     out.plan["executed_kind"] = crec.kind
     if worst > eps:
-        status = "NUMERICAL_REFUSAL"
+        return Outcome(status="NUMERICAL_REFUSAL",
+                       reason="the published width exceeds the contract",
+                       intervals=pub, plan=out.plan, prices=out.prices,
+                       rejected=rejected, stages=stages, budget=bg.report(),
+                       preprocess=out.preprocess,
+                       checker={"status": "VERIFIED", **(meta or {})},
+                       properties=crec.properties.as_dict())
+    if not _agg_ok:
+        return Outcome(
+            status="VERIFIED_SHARED_AGGREGATION_ONLY",
+            reason="every coordinate passed independent containment, but the "
+                   "independent AGGREGATION check could not run on this "
+                   "input: the free joint space exceeds the declared "
+                   "enumeration cap, so producer and checker share one "
+                   "aggregate implementation. The contract's complete "
+                   "independently verified status is NOT claimed.",
+            intervals=pub, plan=out.plan, prices=out.prices,
+            rejected=rejected, stages=stages, budget=bg.report(),
+            preprocess=out.preprocess,
+            checker={"status": "VERIFIED_WITHOUT_INDEPENDENT_AGGREGATION",
+                     **(meta or {})},
+            properties=crec.properties.as_dict())
+    crec.properties.set("independently_verified")
+    crec.properties.set("publication_contract_met")
+    status = ("CERTIFIED_RESEARCH_ROUTE" if crec.kind != "identity"
+              else "CERTIFIED_FALLBACK_ONLY")
     return Outcome(status=status, intervals=pub, plan=out.plan,
                    prices=out.prices, rejected=rejected, stages=stages,
                    budget=bg.report(), preprocess=out.preprocess,
