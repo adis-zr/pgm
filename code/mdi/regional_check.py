@@ -115,6 +115,168 @@ def _independent_region_local(region, card, factors, queries, deadline=None,
     return boundary, interior, internal, crossing, A, marks
 
 
+def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
+                               iA, imarks, rho_cap, deadline=None,
+                               region_of_for_profiles=None):
+    """Verify the SUBMITTED coarsening witness from checker-owned quantities.
+
+    r9 verified the raw local weights A_R(b) and A_{R,i,a}(b) independently,
+    but then built its reference cell representation by calling the
+    PRODUCER's merge_region. Correct input to a shared faulty transformation
+    is not independent verification of its output: changing only the shared
+    merger's cell markers to 0.9 and 0.1 times the unchanged cell mass -- and
+    leaving cells, raw sums, alpha, rho and the mark-sum identity intact --
+    certified all eight intervals near .9/.1 on four uniform binary variables
+    whose every true probability is 1/2. A second control corrupting only the
+    shared profile-ratio routine admitted a false R = 1 and probabilities near
+    1/2 against X0 = (3/14, 11/14).
+
+    So the witness is CHECKED, not recomputed by the same code:
+      * cell membership partitions the supported boundary states exactly once;
+      * every member weight alpha is re-derived from the ORIGINAL factors via
+        this checker's own profile extrema;
+      * the per-cell distortion rho and the claimed cap are re-derived;
+      * M_c      = sum_{b in c} alpha_b A_R(b)
+        N_{c,i,a}= sum_{b in c} alpha_b A_{R,i,a}(b)
+        are recomputed from the checker's OWN raw arrays and compared exactly.
+    The mark-sum-equals-mass identity is necessary but verifies no individual
+    marker, so it is not used as evidence here.
+    """
+    pc = producer_coarse
+    problems = []
+
+    # ---- membership is an exact partition of the checker's own support
+    seen = {}
+    for ci, cell in enumerate(pc.cells):
+        for mb, al in cell.members:
+            b = tuple(mb)
+            if b in seen:
+                problems.append(
+                    "boundary state %s appears in cells %d and %d; the cell "
+                    "map is not a partition" % (b, seen[b], ci))
+            seen[b] = ci
+            if b not in iA:
+                problems.append(
+                    "cell %d claims boundary state %s, which has NO support "
+                    "in the checker's own local enumeration" % (ci, b))
+    missing = [b for b in iA if b not in seen]
+    if missing:
+        problems.append(
+            "boundary states %s carry checker-computed support but belong to "
+            "no cell, so their mass is dropped" % (sorted(missing)[:4],))
+    if problems:
+        return problems
+
+    # ---- re-derive each member's alpha and the cell distortion from the
+    # ORIGINAL factors, using this checker's own profile construction
+    # Build the response profiles the certificate depends on, from the
+    # ORIGINAL factors, with the checker's own call into the validated
+    # structural primitives (crossing_profile / aggregate_crossings are
+    # permitted shared structure; the decisive extrema and the alpha/rho
+    # derivation below are the checker's own).
+    rd_sig = R.region_data(region, card, factors, queries, deadline=deadline)
+    bpos = {v: k for k, v in enumerate(rd_sig.boundary)}
+    try:
+        if region_of_for_profiles is not None:
+            profiles, _ad = R.aggregate_crossings(
+                rd_sig, factors, card, region_of_for_profiles,
+                deadline=deadline)
+        else:
+            profiles = []
+            for fi in rd_sig.crossing_factors:
+                f = factors[fi]
+                in_vars, nout, tbl = R.crossing_profile(f, rd_sig.vars, card)
+                profiles.append((fi, in_vars, nout, tbl))
+    except Exception:
+        profiles, bpos = None, None
+    if profiles is not None:
+        for ci, cell in enumerate(pc.cells):
+            rep = tuple(cell.rep)
+            rho_cell = Fr(1)
+            for mb, al in cell.members:
+                b = tuple(mb)
+                if b == rep:
+                    if Fr(al) != Fr(1):
+                        problems.append(
+                            "cell %d representative %s has alpha %s, not 1"
+                            % (ci, b, al))
+                    continue
+                try:
+                    sb = R._profile_signature(b, profiles, bpos)
+                    sr = R._profile_signature(rep, profiles, bpos)
+                except Exception as e:
+                    problems.append("cell %d: profile rebuild failed: %s"
+                                    % (ci, e))
+                    continue
+                alpha = Fr(1)
+                rho = Fr(1)
+                bad = False
+                for rb, rr in zip(sb, sr):
+                    try:
+                        L, U = R.ratio_extrema(rb, rr)
+                    except Exception as e:
+                        problems.append(
+                            "cell %d member %s: the checker's own profile "
+                            "extrema refuse (%s), so this merge is not "
+                            "justified" % (ci, b, e))
+                        bad = True
+                        break
+                    if L <= 0:
+                        problems.append(
+                            "cell %d member %s: nonpositive profile lower "
+                            "bound" % (ci, b))
+                        bad = True
+                        break
+                    alpha *= L
+                    rho *= U / L
+                if bad:
+                    continue
+                if Fr(al) != alpha:
+                    problems.append(
+                        "cell %d member %s has alpha %s, but the checker's own "
+                        "profile extrema give %s" % (ci, b, al, alpha))
+                if rho > rho_cell:
+                    rho_cell = rho
+                if rho > Fr(rho_cap):
+                    problems.append(
+                        "cell %d member %s has distortion %s, above the "
+                        "allocated cap %s" % (ci, b, rho, rho_cap))
+            if Fr(pc.rho_region) < rho_cell:
+                problems.append(
+                    "the region's claimed rho %s is BELOW the checker's own "
+                    "worst cell distortion %s" % (pc.rho_region, rho_cell))
+
+    # ---- recompute M and every N from the CHECKER's own raw arrays
+    for ci, cell in enumerate(pc.cells):
+        mexp = Fr(0)
+        for mb, al in cell.members:
+            mexp += Fr(al) * Fr(iA[tuple(mb)])
+        if Fr(pc.M[ci]) != mexp:
+            problems.append(
+                "cell %d mass is %s, but sum_b alpha_b A_R(b) over the "
+                "checker's own raw weights is %s"
+                % (ci, pc.M[ci], mexp))
+    for key, col in sorted(pc.N.items()):
+        if key[0] not in queries:
+            continue
+        own = imarks.get(key)
+        if own is None:
+            problems.append("marker %s is published but the checker computed "
+                            "no raw marked mass for it" % (key,))
+            continue
+        for ci, cell in enumerate(pc.cells):
+            nexp = Fr(0)
+            for mb, al in cell.members:
+                nexp += Fr(al) * Fr(own.get(tuple(mb), Fr(0)))
+            if Fr(col[ci]) != nexp:
+                problems.append(
+                    "marker %s cell %d is %s, but sum_b alpha_b "
+                    "A_{R,i,a}(b) over the checker's own raw weights is %s"
+                    % (key, ci, col[ci], nexp))
+                break
+    return problems
+
+
 def recheck_region(region, restricted, card, queries, rho_cap, region_of,
                    producer_coarse, deadline=None, budget=None):
     """Independently rebuild one region's cells and compare STRUCTURE only.
@@ -169,6 +331,15 @@ def recheck_region(region, restricted, card, queries, rho_cap, region_of,
             if problems:
                 break
     if problems:
+        return cr, problems
+    # ---- verify the SUBMITTED coarsening witness from checker-owned
+    # quantities. Comparing against another call to the same merger is not
+    # independent verification of the transformation.
+    wp = _verify_coarsening_witness(
+        region, card, restricted.factors, queries, pc, iA, imarks, rho_cap,
+        deadline=deadline, region_of_for_profiles=region_of)
+    if wp:
+        problems.extend(wp)
         return cr, problems
     if len(cr.cells) != len(pc.cells):
         problems.append("cell count %d != producer %d" % (len(cr.cells),

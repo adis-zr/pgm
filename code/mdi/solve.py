@@ -256,10 +256,41 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         stages["evidence_weight_s"] = time.time() - ts
         zero_comp = [rt for rt, t in comp_weights if not t.support[0]]
         if zero_comp:
-            out.update({"outcome": "ZERO_EVIDENCE_PROVED",
-                        "reason": "component rooted at bag %d has exact false root support"
-                                  % zero_comp[0],
-                        "components": len(roots), "elapsed_s": time.time() - t0})
+            # A DEFINITIVE NEGATIVE RESULT needs a checked witness, exactly as
+            # a marginal enclosure does. This returned ZERO_EVIDENCE_PROVED on
+            # the producer's own root support with ZERO checker calls:
+            # corrupting only that producer result made unary [1,2] -- whose Z
+            # is exactly 3 and whose marginals are (1/3, 2/3) -- claim a
+            # mathematical impossibility.
+            #
+            # The witness is verified INDEPENDENTLY from the original
+            # restricted model by Boolean support elimination over the
+            # preprocessed factors: the model has zero weight only if every
+            # free assignment is killed by some factor's structural zero. A
+            # resource refusal and a mathematical impossibility proof are
+            # different results, so when the proof cannot be checked the
+            # outcome is named unchecked rather than proved.
+            proved, why = _verify_zero_support(r, deadline=dl)
+            if proved:
+                out.update({
+                    "outcome": "ZERO_EVIDENCE_PROVED",
+                    "reason": "component rooted at bag %d has exact false "
+                              "root support, INDEPENDENTLY verified: %s"
+                              % (zero_comp[0], why),
+                    "zero_support_independently_verified": True,
+                    "components": len(roots),
+                    "elapsed_s": time.time() - t0})
+            else:
+                out.update({
+                    "outcome": "ZERO_SUPPORT_UNCHECKED",
+                    "reason": "the producer reported false root support at bag "
+                              "%d, but that claim could NOT be independently "
+                              "verified (%s). A mathematical impossibility is "
+                              "not claimed."
+                              % (zero_comp[0], why),
+                    "zero_support_independently_verified": False,
+                    "components": len(roots),
+                    "elapsed_s": time.time() - t0})
             return out
         # numeric positivity of every component
         for rt, t in comp_weights:
@@ -463,6 +494,73 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
             "elapsed_s": time.time() - t0,
             "peak_rss_bytes": _rss_bytes()})
     return out
+
+
+def _verify_zero_support(r, deadline=None):
+    """Independently verify that the restricted model has ZERO total weight.
+
+    Boolean support elimination over the ORIGINAL preprocessed factors, with
+    its own loop: an assignment survives only if every factor entry it selects
+    is nonzero. The model is impossible exactly when no assignment survives.
+
+    Bounded: where the free joint space is small enough the check is exact by
+    enumeration; otherwise a structural sufficient condition is tried (a
+    factor that is identically zero, or a variable with no supported state).
+    When neither applies the claim is reported UNVERIFIED rather than proved.
+    """
+    from mdi import config as _K
+    import itertools as _it
+    # (a) an identically zero factor is a complete witness at any size
+    for f in r.factors:
+        if all(Fr(t) == 0 for t in f.table):
+            return True, ("original factor %d on scope %s is identically zero"
+                          % (getattr(f, "origin", -1), tuple(f.scope)))
+    # (b) a variable with no supported state is a complete witness
+    for v in sorted(r.card):
+        alive = False
+        for st in range(r.card[v]):
+            ok = True
+            for f in r.factors:
+                if len(f.scope) != 1 or f.scope[0] != v:
+                    continue
+                if Fr(f.table[st]) == 0:
+                    ok = False
+                    break
+            if ok:
+                alive = True
+                break
+        if not alive:
+            return True, ("variable %d has no supported state in any unary "
+                          "factor" % v)
+    # (c) bounded exact enumeration of the support
+    joint = 1
+    for v in sorted(r.card):
+        joint *= r.card[v]
+        if joint > _K.CAPS["region_tuple_assignments"]:
+            return False, ("the free joint space exceeds the %d-assignment "
+                           "independent-enumeration cap, and no structural "
+                           "witness applies"
+                           % _K.CAPS["region_tuple_assignments"])
+    order = sorted(r.card)
+    seen = 0
+    for combo in _it.product(*[range(r.card[v]) for v in order]):
+        seen += 1
+        if deadline is not None and (seen & 0xFF) == 0:
+            deadline()
+        a = dict(zip(order, combo))
+        alive = True
+        for f in r.factors:
+            st = f.strides()
+            off = sum(a[v] * st[k] for k, v in enumerate(f.scope))
+            if Fr(f.table[off]) == 0:
+                alive = False
+                break
+        if alive:
+            return False, ("assignment %s has strictly positive weight, so "
+                           "the model is NOT impossible"
+                           % {k: a[k] for k in order[:6]})
+    return True, ("exhaustive support elimination over %d free assignments "
+                  "found no surviving assignment" % joint)
 
 
 def _compiled_depth_bound(pl, r):

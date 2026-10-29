@@ -5817,3 +5817,129 @@ def test_r9_connected_joins_bound_during_construction():
     (zl, zh), mk, meta = G.run(pl, r.factors, r.card, C(), 1, set(range(3)),
                                ctx)
     assert zl > 0
+
+
+# ===== r9 review: coarsening witness and definitive negative results =====
+
+def test_r10_shared_merge_marker_fault_is_caught():
+    """R9-2. r9 verified the raw local weights independently but then built
+    its reference cells by calling the PRODUCER's merge_region. Changing only
+    that merger's cell markers to 0.9 and 0.1 times the UNCHANGED cell mass --
+    leaving cells, raw sums, alpha, rho and the mark-sum identity intact --
+    certified all eight intervals near .9/.1 on four uniform binary variables
+    whose every true probability is 1/2, with regional selected naturally at
+    224 vs identity 236."""
+    from mdi import pipeline as PLN, regions as R
+    import mdi.registry            # noqa: F401
+    n = 4
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)], origin=v)
+            for v in range(n)]
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    clean = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    assert clean.status.startswith("CERTIFIED"), clean.reason
+    orig = R.merge_region
+
+    def faulty(rd, factors, card, rho_cap, queries, **kw):
+        cr = orig(rd, factors, card, rho_cap, queries, **kw)
+        for key in list(cr.N):
+            _v, st = key
+            cr.N[key] = [Fr(cr.M[ci]) * (Fr(9, 10) if st == 0 else Fr(1, 10))
+                         for ci in range(len(cr.cells))]
+        return cr
+
+    R.merge_region = faulty
+    try:
+        res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    finally:
+        R.merge_region = orig
+    assert not res.status.startswith("CERTIFIED"), res.status
+    props = res.properties or {}
+    assert not props.get("independently_verified"), props
+
+
+def test_r10_false_distortion_certificate_is_caught():
+    """R9-2. Changing only the shared profile-extrema routine to return
+    (1,1) admitted a false R = 1 and probabilities near 1/2, where the pair
+    table [1,2,3,8] has X0 = (3/14, 11/14) and X1 = (2/7, 5/7). Recomputing
+    M and N while trusting the same corrupted distortion calculation would not
+    close this."""
+    from mdi import regions as R, regional_check as RC
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(8)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    assert pt[0][0] == Fr(3, 14) and pt[1][0] == Fr(2, 7)
+    t1 = K.level_radius(1)
+    orig = R.ratio_extrema
+
+    def faulty(rb, rr):
+        return Fr(1), Fr(1)
+
+    R.ratio_extrema = faulty
+    try:
+        regs = [(0,), (1,)]
+        rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+        ro = {0: 0, 1: 1}
+        crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                              region_of=ro, aggregate=True) for i in range(2)]
+        pub = {v: [(Fr(1, 2) - t1, Fr(1, 2) + t1),
+                   (Fr(1, 2) - t1, Fr(1, 2) + t1)] for v in (0, 1)}
+        ok, fails, _m = RC.verify_regional_publication(
+            r, regs, crs, rds, {0, 1}, pub, t1, Fr(1, 100))
+    finally:
+        R.ratio_extrema = orig
+    assert not ok, "a false distortion certificate was accepted"
+
+
+def test_r10_zero_evidence_needs_an_independent_witness():
+    """R9-3. ZERO_EVIDENCE_PROVED was returned on the producer's own root
+    support with ZERO checker calls: corrupting only that result made unary
+    [1,2] -- whose Z is exactly 3 and whose marginals are (1/3, 2/3) -- claim
+    a mathematical impossibility."""
+    from mdi import contract as C
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(2)], origin=0)]
+    m = M.Model(nvars=1, card=[2], factors=facs)
+    m.validate()
+    clean = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                    deadline_s=30)
+    assert clean["outcome"] == "VERIFIED_ALL_MARGINALS", clean["outcome"]
+    orig = C.Engine.root_value
+
+    def faulty(self, root):
+        t = orig(self, root)
+        if self.mode == "P":
+            return C.Table(vars=(), card=(), vals=[self._zero()], depth=0,
+                           support=[False])
+        return t
+
+    C.Engine.root_value = faulty
+    try:
+        res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                      deadline_s=30)
+    finally:
+        C.Engine.root_value = orig
+    assert res["outcome"] != "ZERO_EVIDENCE_PROVED", res["outcome"]
+    assert res.get("zero_support_independently_verified") is False, res
+
+    # GENUINE impossibilities must still be PROVED
+    f0 = [M.Factor(scope=(0,), card=(2,), table=[Fr(0), Fr(0)], origin=0)]
+    m0 = M.Model(nvars=1, card=[2], factors=f0)
+    m0.validate()
+    r0 = S.solve(m0, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                 deadline_s=30)
+    assert r0["outcome"] == "ZERO_EVIDENCE_PROVED", r0["outcome"]
+    # a globally contradictory model built from individually NONZERO factors
+    f1 = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(1)], origin=0),
+          M.Factor(scope=(0, 1), card=(2, 2),
+                   table=[Fr(1), Fr(0), Fr(0), Fr(0)], origin=1),
+          M.Factor(scope=(1,), card=(2,), table=[Fr(0), Fr(1)], origin=2)]
+    m1 = M.Model(nvars=2, card=[2, 2], factors=f1)
+    m1.validate()
+    r1 = S.solve(m1, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                 deadline_s=30)
+    assert r1["outcome"] == "ZERO_EVIDENCE_PROVED", r1["outcome"]
