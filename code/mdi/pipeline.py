@@ -954,8 +954,17 @@ def _regional_execute(r, payload, queries, eps, bg):
             rows[v] = rr
         if rows:
             return rows
-    except (RC.RegionalCheckError, B.BudgetExceeded):
+    except RC.RegionalCheckError:
+        # elimination is UNAVAILABLE for structural reasons; a bounded
+        # enumeration fallback is admitted below and charged there
         pass
+    except B.BudgetExceeded:
+        # A SHARED EXHAUSTED WORK CAP must stop. Catching it here and
+        # continuing through enumeration meant the executor charged four
+        # entries against a declared limit of 1, recorded exhaustion, and
+        # still returned all four coordinates. A candidate-specific refusal
+        # may permit a charged fallback; an exhausted shared budget may not.
+        raise
     total = 1
     for k in ncell:
         total *= k

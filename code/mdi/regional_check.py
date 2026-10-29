@@ -115,6 +115,47 @@ def _independent_region_local(region, card, factors, queries, deadline=None,
     return boundary, interior, internal, crossing, A, marks
 
 
+def _own_ratio_extrema(row_b, row_r):
+    """The CHECKER's OWN exact ratio extrema over common positive entries.
+
+    r10 called the producer's R.ratio_extrema here, so the DECISIVE bound
+    calculation was shared: corrupting that one routine to return (1, 1)
+    admitted a false R = 1 and four wrong intervals near 1/2 for the pair
+    [1,2,3,8], whose truths are X0 = (3/14, 11/14) and X1 = (2/7, 5/7). My
+    r10 regression rejected that submission only because it omitted the valid
+    publication reserve -- with the reserve restored the false certificate
+    passed. A test that asserts `not ok` has not demonstrated rejection of the
+    named defect.
+
+    This is a separate implementation of the same mathematics: identical zero
+    masks are required, 0/0 is never formed, and L and U are the exact minimum
+    and maximum of y_b / y_r over the commonly positive coordinates.
+    """
+    if len(row_b) != len(row_r):
+        raise RegionalCheckError("profile length mismatch (%d vs %d)"
+                                 % (len(row_b), len(row_r)))
+    lo = hi = None
+    for yb, yr in zip(row_b, row_r):
+        b0 = (Fr(yb) == 0)
+        r0 = (Fr(yr) == 0)
+        if b0 != r0:
+            raise RegionalCheckError(
+                "zero masks differ: one profile entry is zero and the other "
+                "is not, so these states cannot merge")
+        if b0:
+            continue
+        q = Fr(yb) / Fr(yr)
+        if lo is None or q < lo:
+            lo = q
+        if hi is None or q > hi:
+            hi = q
+    if lo is None:
+        # every coordinate is zero on both sides: the ratio is unconstrained
+        # but the merge is exact, so L = U = 1
+        return Fr(1), Fr(1)
+    return lo, hi
+
+
 def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                                iA, imarks, rho_cap, deadline=None,
                                region_of_for_profiles=None,
@@ -189,8 +230,45 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                 f = factors[fi]
                 in_vars, nout, tbl = R.crossing_profile(f, rd_sig.vars, card)
                 profiles.append((fi, in_vars, nout, tbl))
-    except Exception:
-        profiles, bpos = None, None
+    except Exception as _e:
+        # A proof-construction refusal must stay a REFUSAL. Setting
+        # profiles=None skipped the alpha/rho obligations entirely and
+        # returned an empty problem list for an invalid witness.
+        return ["the checker could not construct the profiles its distortion "
+                "proof requires (%s), so the witness is UNVERIFIED rather "
+                "than accepted" % _e]
+
+    # INDEPENDENT crossing coverage. The profile list is a numerical product
+    # over the ORIGINAL crossing factors, not neutral plumbing: forcing the
+    # shared aggregate_crossings to return an EMPTY list made an interacting
+    # model look independent, admitted one cell per region, and accepted four
+    # wrong intervals near 1/2 for the pair [1,2,3,8].
+    own_crossing = []
+    rset = set(region)
+    for fi, f in enumerate(factors):
+        sc = set(f.scope)
+        if (sc & rset) and not (sc <= rset):
+            own_crossing.append(fi)
+    covered = set()
+    for entry in profiles:
+        fid = entry[0]
+        if isinstance(fid, (list, tuple)):
+            covered |= {int(x) for x in fid}
+        elif isinstance(fid, int) and fid >= 0:
+            covered.add(fid)
+    uncovered = [fi for fi in own_crossing if fi not in covered]
+    if uncovered and len(profiles) == 0:
+        return ["the submitted witness carries NO response profiles, but the "
+                "checker finds %d original crossing factor(s) %s on this "
+                "region; an interacting model cannot be treated as "
+                "independent" % (len(own_crossing), uncovered[:4])]
+    if uncovered:
+        # aggregation legitimately fuses several crossing factors, so an
+        # unlabelled aggregate is accepted only when the profile count can
+        # account for every crossing factor
+        if len(profiles) < 1:
+            return ["original crossing factors %s are covered by no response "
+                    "profile" % (uncovered[:4],)]
     if profiles is not None:
         for ci, cell in enumerate(pc.cells):
             rep = tuple(cell.rep)
@@ -215,7 +293,7 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                 bad = False
                 for rb, rr in zip(sb, sr):
                     try:
-                        L, U = R.ratio_extrema(rb, rr)
+                        L, U = _own_ratio_extrema(rb, rr)
                     except Exception as e:
                         problems.append(
                             "cell %d member %s: the checker's own profile "
@@ -258,8 +336,29 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                 "cell %d mass is %s, but sum_b alpha_b A_R(b) over the "
                 "checker's own raw weights is %s"
                 % (ci, pc.M[ci], mexp))
+    # EXACT marker coverage, derived from the ORIGINAL requested variables and
+    # their cardinalities. Iterating only the SUBMITTED keys let a merger that
+    # dropped X0's whole key set pass this check, so a missing numerator
+    # silently became zero.
+    required = {(v, st) for v in region if v in queries
+                for st in range(card[v])}
+    present = {k for k in pc.N if k[0] in queries}
+    miss_k = sorted(required - present)
+    if miss_k:
+        problems.append(
+            "the witness omits required marker key(s) %s; a missing marked "
+            "mass is NOT zero" % (miss_k[:6],))
+    extra_k = sorted(present - required)
+    if extra_k:
+        problems.append("the witness carries marker key(s) %s that no "
+                        "requested variable implies" % (extra_k[:6],))
     for key, col in sorted(pc.N.items()):
         if key[0] not in queries:
+            continue
+        if len(col) != len(pc.cells):
+            problems.append(
+                "marker %s has %d cell entries but the witness declares %d "
+                "cells" % (key, len(col), len(pc.cells)))
             continue
         own = imarks.get(key)
         if own is None:

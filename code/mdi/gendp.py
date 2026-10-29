@@ -127,7 +127,20 @@ def run(plan, factors, card, cand, Q, queries, ctx: A.Ctx, deadline=None,
                         "%d cap during construction (after %d products), so "
                         "this candidate is refused before completing it"
                         % (cap, done))
-                out[k] = out.get(k, Fr(0)) + wa * wb
+                nv = out.get(k, Fr(0)) + wa * wb
+                # the DISCONNECTED convolution needs the same bit bound as the
+                # connected accumulators: 40,001-bit input ratios returned
+                # 80,130-bit masses against the declared 65,536-bit cap
+                if (nv.numerator.bit_length() > K.CAPS["rational_bit_length"]
+                        or nv.denominator.bit_length()
+                        > K.CAPS["rational_bit_length"]):
+                    raise Declined(
+                        "a convolved statistic weight reached %d bits, above "
+                        "the declared %d-bit cap"
+                        % (max(nv.numerator.bit_length(),
+                               nv.denominator.bit_length()),
+                           K.CAPS["rational_bit_length"]))
+                out[k] = nv
                 done += 1
                 if deadline is not None and (done & 0xFF) == 0:
                     deadline()
@@ -171,6 +184,16 @@ def run(plan, factors, card, cand, Q, queries, ctx: A.Ctx, deadline=None,
         lo, hi = cache[stat]
         Zlo += wv * lo
         Zhi += wv * hi
+        for _b in (Zlo, Zhi):
+            if (_b.numerator.bit_length() > K.CAPS["rational_bit_length"]
+                    or _b.denominator.bit_length()
+                    > K.CAPS["rational_bit_length"]):
+                raise Declined(
+                    "the weighted total reached %d bits, above the declared "
+                    "%d-bit cap"
+                    % (max(_b.numerator.bit_length(),
+                           _b.denominator.bit_length()),
+                       K.CAPS["rational_bit_length"]))
     if Zhi <= 0:
         raise Declined("the convolved total has nonpositive weight")
     out_marks = {}

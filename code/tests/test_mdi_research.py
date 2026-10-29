@@ -6089,3 +6089,292 @@ def test_r10_production_regional_call_charges_its_budget():
     import mdi.pipeline as PP
     src = inspect.getsource(PP._regional_execute)
     assert "budget=bg" in src, "the production call omits budget=bg"
+
+
+# ===== r10 review: named-obligation regressions =====
+
+def test_r11_false_distortion_rejects_WITH_valid_publication_padding():
+    """R10-1. My r10 regression asserted `not ok` but rejected only because
+    its publication omitted the valid 2e-6 reserve: with the reserve restored
+    the false certificate PASSED, accepting four wrong intervals near 1/2 for
+    the pair [1,2,3,8] whose truths are X0=(3/14,11/14), X1=(2/7,5/7).
+
+    The cause was that _verify_coarsening_witness called the PRODUCER's
+    ratio_extrema, so the decisive bound calculation was shared. This test
+    uses the valid padding and asserts the NAMED obligation."""
+    from mdi import regions as R, regional_check as RC
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(8)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    assert pt[0][0] == Fr(3, 14) and pt[1][0] == Fr(2, 7)
+    t1 = K.level_radius(1)
+    res = K.PUBLICATION_RESERVE
+
+    def build():
+        regs = [(0,), (1,)]
+        rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+        ro = {0: 0, 1: 1}
+        crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                              region_of=ro, aggregate=True)
+               for i in range(2)]
+        return regs, rds, crs
+
+    # the CLEAN witness must pass under exactly these publication rules
+    regs, rds, crs = build()
+    good = {v: [(max(Fr(0), pt[v][s] - t1 - res),
+                 min(Fr(1), pt[v][s] + t1 + res)) for s in range(2)]
+            for v in (0, 1)}
+    ok0, f0, _m0 = RC.verify_regional_publication(
+        r, regs, crs, rds, {0, 1}, good, t1, Fr(1, 100))
+    assert ok0, f0
+
+    orig = R.ratio_extrema
+    R.ratio_extrema = lambda rb, rr: (Fr(1), Fr(1))
+    try:
+        regs, rds, crs = build()
+        # VALID padding, so a rejection cannot come from a narrow publication
+        pub = {v: [(Fr(1, 2) - t1 - res, Fr(1, 2) + t1 + res),
+                   (Fr(1, 2) - t1 - res, Fr(1, 2) + t1 + res)]
+               for v in (0, 1)}
+        ok, fails, _m = RC.verify_regional_publication(
+            r, regs, crs, rds, {0, 1}, pub, t1, Fr(1, 100))
+    finally:
+        R.ratio_extrema = orig
+    assert not ok, "the false distortion certificate was accepted"
+    # it must reject on the NAMED obligation, not on containment margin
+    named = [x for x in fails
+             if "own profile extrema" in str(x) or "distortion" in str(x)]
+    assert named, fails[:3]
+
+
+def test_r11_omitted_crossing_profiles_reject():
+    """R10-2. Forcing the shared aggregate_crossings to return an EMPTY list
+    made an interacting model look independent and accepted four wrong
+    intervals near 1/2."""
+    from mdi import regions as R, regional_check as RC
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(8)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    t1 = K.level_radius(1)
+    res = K.PUBLICATION_RESERVE
+    orig = R.aggregate_crossings
+    R.aggregate_crossings = lambda rd, f, c, ro, **kw: ([], {"omitted": True})
+    try:
+        regs = [(0,), (1,)]
+        rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+        ro = {0: 0, 1: 1}
+        crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                              region_of=ro, aggregate=True)
+               for i in range(2)]
+        pub = {v: [(Fr(1, 2) - t1 - res, Fr(1, 2) + t1 + res)] * 2
+               for v in (0, 1)}
+        ok, fails, _m = RC.verify_regional_publication(
+            r, regs, crs, rds, {0, 1}, pub, t1, Fr(1, 100))
+    finally:
+        R.aggregate_crossings = orig
+    assert not ok
+    assert any("crossing factor" in str(x) for x in fails), fails[:3]
+
+
+def test_r11_missing_marker_keys_reject_by_coverage():
+    """R10-3. The witness verifier looped over SUBMITTED keys, so dropping
+    X0's entire marker-key set let the direct verifier accept [0,0] for both
+    X0 states of a uniform pair, whose truths are 1/2. A missing marked mass
+    is not zero."""
+    from mdi import regions as R, regional_check as RC
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(1), Fr(1), Fr(1)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    t1 = K.level_radius(1)
+    orig = R.merge_region
+
+    def drop(rd, factors, card, rho_cap, queries, **kw):
+        cr = orig(rd, factors, card, rho_cap, queries, **kw)
+        for key in [k for k in cr.N if k[0] == 0]:
+            del cr.N[key]
+        return cr
+
+    R.merge_region = drop
+    try:
+        regs = [(0,), (1,)]
+        rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+        ro = {0: 0, 1: 1}
+        crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                              region_of=ro, aggregate=True)
+               for i in range(2)]
+        pub = {0: [(Fr(0), Fr(0)), (Fr(0), Fr(0))],
+               1: [(Fr(1, 2) - t1, Fr(1, 2) + t1)] * 2}
+        ok, fails, _m = RC.verify_regional_publication(
+            r, regs, crs, rds, {0, 1}, pub, t1, Fr(1, 100))
+    finally:
+        R.merge_region = orig
+    assert not ok
+    assert any("marker key" in str(x) for x in fails), fails[:3]
+
+
+def test_r11_zero_proof_operands_come_from_the_original_model():
+    """R10-4. The helper received the same mutable Factor objects the
+    producer's Engine retains, so zeroing one WORKING table inside
+    Engine.upward made unary [1,2] -- still [1,2] in the original model, Z=3 --
+    return ZERO_EVIDENCE_PROVED with
+    zero_support_independently_verified=True."""
+    from mdi import contract as C
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(2)], origin=0)]
+    m = M.Model(nvars=1, card=[2], factors=facs)
+    m.validate()
+    orig = C.Engine.upward
+
+    def faulty(self, root, keep=None):
+        for f in self.factors:
+            f.table = [Fr(0)] * len(f.table)
+        return orig(self, root, keep=keep)
+
+    C.Engine.upward = faulty
+    try:
+        res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                      deadline_s=30)
+    finally:
+        C.Engine.upward = orig
+    assert res["outcome"] != "ZERO_EVIDENCE_PROVED", res["outcome"]
+    # the original model must be untouched
+    assert [Fr(x) for x in m.factors[0].table] == [Fr(1), Fr(2)]
+    # and the r9 root-result-only fault must still reject
+    o2 = C.Engine.root_value
+
+    def f2(self, root):
+        t = o2(self, root)
+        if self.mode == "P":
+            return C.Table(vars=(), card=(), vals=[self._zero()], depth=0,
+                           support=[False])
+        return t
+
+    C.Engine.root_value = f2
+    try:
+        r2 = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                     deadline_s=30)
+    finally:
+        C.Engine.root_value = o2
+    assert r2["outcome"] != "ZERO_EVIDENCE_PROVED", r2["outcome"]
+    # genuine impossibilities still proved
+    f0 = [M.Factor(scope=(0,), card=(2,), table=[Fr(0), Fr(0)], origin=0)]
+    m0 = M.Model(nvars=1, card=[2], factors=f0)
+    m0.validate()
+    assert S.solve(m0, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                   deadline_s=30)["outcome"] == "ZERO_EVIDENCE_PROVED"
+
+
+def test_r11_disconnected_dp_bounds_its_bit_growth():
+    """R10-5. The ORIGINAL disconnected control still returned 80,130-bit
+    masses against the 65,536-bit cap; the r10 test substituted a CONNECTED
+    model, which exercises a different guarded accumulator."""
+    from mdi import gendp as G
+    ctx = A.Ctx(128)
+    B = Fr(2) ** 40000
+    for extra in ([],
+                  [M.Factor(scope=(0, 1), card=(2, 2),
+                            table=[Fr(1)] * 4, origin=2)]):
+        facs = [M.Factor(scope=(0,), card=(2,), table=[B, B + 1], origin=0),
+                M.Factor(scope=(1,), card=(2,), table=[B, B + 1],
+                         origin=1)] + extra
+        m = M.Model(nvars=2, card=[2, 2], factors=facs)
+        m.validate()
+        r = M.restrict(m, {})
+
+        class C:
+            rank = 1
+            signs = [1]
+            gammas = [Fr(1, 1000)]
+            features = [{0: [Fr(0), Fr(1)], 1: [Fr(0), Fr(1)]}]
+
+        sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                            K.RESOURCES["arm_rss_bytes"])
+        pl, _est = sel["chosen"]
+        with pytest.raises(G.Declined) as e:
+            G.run(pl, r.factors, r.card, C(), 1, set(range(2)), ctx)
+        assert "bit" in str(e.value).lower(), str(e.value)
+
+
+def test_r11_regional_executor_stops_on_budget_exhaustion():
+    """R10-5. _regional_execute passed budget=bg but CAUGHT BudgetExceeded
+    and continued through enumeration: it charged four entries against a
+    declared limit of 1, recorded exhaustion, and still returned all four
+    coordinates. My r10 regression only searched the source for the text
+    `budget=bg`; this one tests enforcement."""
+    from mdi import budget as B, regions as R, compact as CP
+    import mdi.pipeline as PP
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)], origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1), Fr(1)], origin=1)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    regs = [(0,), (1,)]
+    rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+    ro = {0: 0, 1: 1}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                          region_of=ro, aggregate=True) for i in range(2)]
+    proj, _p = CP.project_crossings(r, regs, crs, rds)
+    bg = B.Budget(wall_s=60.0, limits={"local_mass_entries": 1})
+    payload = {"regions": regs, "coarse": crs, "rds": rds, "proj": proj,
+               "t_level": Fr(1, 500)}
+    with pytest.raises(B.BudgetExceeded):
+        PP._regional_execute(r, payload, {0, 1}, Fr(1, 100), bg)
+    # the attempted work remains charged
+    assert bg.used.get("local_mass_entries", 0) >= 1, bg.used
+
+
+def test_r11_reconstruction_count_is_honest():
+    """R10-6. My r10 closeout claimed "4 enumerations for 4 regions instead
+    of 12". The honest count is EIGHT: four producer-style region_data calls
+    AND four independent raw enumerations. The r10 test counted only the first
+    implementation."""
+    from mdi import regions as R, regional_check as RC
+    counts = {"rd": 0, "own": 0}
+    o_rd = R.region_data
+    o_own = RC._independent_region_local
+
+    def c_rd(*a, **k):
+        counts["rd"] += 1
+        return o_rd(*a, **k)
+
+    def c_own(*a, **k):
+        counts["own"] += 1
+        return o_own(*a, **k)
+
+    n = 4
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)], origin=v)
+            for v in range(n)]
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    regs = [(v,) for v in range(n)]
+    rds = [R.region_data(g, r.card, r.factors, set(range(n))) for g in regs]
+    ro = {v: i for i, g in enumerate(regs) for v in g}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), set(range(n)),
+                          region_of=ro, aggregate=True) for i in range(n)]
+    t1 = K.level_radius(1)
+    res = K.PUBLICATION_RESERVE
+    pub = {v: [(max(Fr(0), pt[v][s] - t1 - res),
+                min(Fr(1), pt[v][s] + t1 + res)) for s in range(2)]
+           for v in range(n)}
+    R.region_data = c_rd
+    RC._independent_region_local = c_own
+    try:
+        ok, fails, _m = RC.verify_regional_publication(
+            r, regs, crs, rds, set(range(n)), pub, t1, Fr(1, 100))
+    finally:
+        R.region_data = o_rd
+        RC._independent_region_local = o_own
+    assert ok, fails
+    total = counts["rd"] + counts["own"]
+    # BOTH implementations are counted: one of each per region
+    assert counts["rd"] == n, counts
+    assert counts["own"] == n, counts
+    assert total == 2 * n, (total, counts)

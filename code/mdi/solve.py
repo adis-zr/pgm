@@ -270,7 +270,16 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
             # resource refusal and a mathematical impossibility proof are
             # different results, so when the proof cannot be checked the
             # outcome is named unchecked rather than proved.
-            proved, why = _verify_zero_support(r, deadline=dl)
+            # Reconstruct the checker's operands from the IMMUTABLE ORIGINAL
+            # model and evidence. Passing `r` handed the helper the very
+            # Factor objects the producer's Engine retains: zeroing one
+            # working table inside Engine.upward made unary [1,2] -- still
+            # [1,2] in the original model, Z = 3 -- return
+            # ZERO_EVIDENCE_PROVED with
+            # zero_support_independently_verified=True. Calling producer
+            # working data "original" in a comment does not make it original.
+            proved, why = _verify_zero_support_from_original(
+                model, evidence, deadline=dl)
             if proved:
                 out.update({
                     "outcome": "ZERO_EVIDENCE_PROVED",
@@ -494,6 +503,41 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
             "elapsed_s": time.time() - t0,
             "peak_rss_bytes": _rss_bytes()})
     return out
+
+
+def _verify_zero_support_from_original(model, evidence, deadline=None):
+    """Rebuild the restriction from the IMMUTABLE original model, then verify.
+
+    The producer's Engine retains the Factor objects it was constructed with,
+    so those tables are mutable producer state, not an independent operand.
+    This re-reads the original model, re-applies the evidence with its own
+    deep copy of every table, independently re-derives the preprocessing
+    identities it relies on, and only then runs the support proof.
+    """
+    import copy as _copy
+    base = M.restrict(model, dict(evidence))
+    frozen = []
+    for f in base.factors:
+        frozen.append(M.Factor(scope=tuple(f.scope), card=tuple(f.card),
+                               table=[Fr(x) for x in f.table],
+                               origin=f.origin,
+                               scale=getattr(f, "scale", Fr(1))))
+    snap = M.Restricted(model=model, evidence=dict(evidence), factors=frozen,
+                        free=list(base.free), card=dict(base.card),
+                        constant=base.constant,
+                        impossible_factor=base.impossible_factor)
+    if snap.impossible_factor is not None:
+        wf = None
+        for f in frozen:
+            if f.origin == snap.impossible_factor:
+                wf = f
+                break
+        if wf is not None and all(Fr(t) == 0 for t in wf.table):
+            return True, ("original factor %d is identically zero in the "
+                          "re-read model" % snap.impossible_factor)
+    if snap.constant == 0:
+        return True, "a fully pinned original factor evaluates to exactly zero"
+    return _verify_zero_support(snap, deadline=deadline)
 
 
 def _verify_zero_support(r, deadline=None):
