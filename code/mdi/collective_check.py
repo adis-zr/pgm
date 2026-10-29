@@ -229,17 +229,32 @@ def check_statistic_publication(free, card, unary, cand, Q, queries, published,
             # widened an EXACT reference past a correct publication, so the
             # exactly-uniform publication (1/2, 1/2) was refused for a law
             # whose checker enumeration is exact.
-            clo = mlo / Zhi
-            chi = mhi / Zlo
-            # the publication, widened by the allowance the PRODUCER charged,
-            # must cover the checker's reference
-            if not (lo - radius <= clo and chi <= hi + radius):
-                fails.append("variable %d state %d: publication [%s, %s] "
-                             "widened by the charged allowance %s does NOT "
-                             "cover the independent reference [%s, %s]"
-                             % (v, a, lo, hi, radius, clo, chi))
+            # The TARGET-LAW reference enclosure. The checker encloses the
+            # law it enumerates; `radius` is the proved transfer error from
+            # that law to the target the publication is about, so it widens
+            # the REFERENCE outward. The ACTUAL submitted endpoints must then
+            # contain it.
+            #
+            # r8 instead widened the SUBMISSION by `radius` inside the
+            # predicate while checking width on the original endpoints. That
+            # certified a publication the producer never made: within the
+            # frozen allowance it accepted the ZERO-WIDTH points 2001/4000 and
+            # 1999/4000 for a law whose truths are both exactly 1/2, and the
+            # quadrature wrapper did the same with caller radius 0 because it
+            # added qrad = 8.436153087099627e-05. An enlarged interval that is
+            # never returned is not a publication, and the width contract must
+            # bind what is actually published.
+            clo = max(Fr(0), mlo / Zhi - radius)
+            chi = min(Fr(1), mhi / Zlo + radius)
+            if not (lo <= clo and chi <= hi):
+                fails.append("variable %d state %d: the SUBMITTED publication "
+                             "[%s, %s] does NOT contain the target-law "
+                             "reference [%s, %s] (transfer error %s charged "
+                             "outward onto the reference)"
+                             % (v, a, lo, hi, clo, chi, radius))
             if hi - lo > Fr(eps):
-                fails.append("variable %d state %d: width exceeds eps" % (v, a))
+                fails.append("variable %d state %d: published width exceeds "
+                             "eps" % (v, a))
     return (not fails), fails, {"configurations": total,
                                 "independent_enclosure": True,
                                 "method": "direct configuration enumeration, "
@@ -291,6 +306,21 @@ def check_quadrature_publication(free, card, unary, cand, queries, published,
         raise CollectiveCheckError(
             "the error radius %s is NEGATIVE; a negative allowance inverts "
             "the reference enclosure" % Fr(radius))
+    # This checker enumerates the ORIGINAL UNROUNDED law directly -- exactly
+    # the law the quadrature identity is an approximation OF. It therefore
+    # inherits NO integration error: there is no transfer from a different
+    # law to the target, so no transfer radius may be charged.
+    #
+    # Charging qrad here meant a correct publication had to be wider than the
+    # producer's own integration bound to be accepted, and (in r8, with the
+    # allowance applied to the submission instead) that shifted zero-width
+    # points were accepted for a law whose truths are exactly 1/2. The
+    # producer's quadrature error is what makes ITS answer wide enough to
+    # contain this reference; it is not an error in the reference.
+    #
+    # The lattice bound is still reported, because a reviewer needs to see
+    # the producer's declared integration allowance, but it does not enter
+    # the containment predicate.
     qrad = Fr(0)
     for mi in range(cand.rank):
         Rk = Fr(0)
@@ -303,11 +333,13 @@ def check_quadrature_publication(free, card, unary, cand, queries, published,
         qrad += Fr(lat["total_bound"])
     ok, fails, meta = check_statistic_publication(
         free, card, unary, cand, None, queries, published, eps, ctx,
-        radius=radius + qrad, cap_configs=cap_configs)
-    meta["method"] = ("direct evaluation of the represented UNROUNDED law; the "
-                      "quadrature identity is not re-run, and each mode's "
-                      "certified radius is charged into the enclosure")
-    meta["quadrature_radius_charged"] = str(qrad)
+        radius=radius, cap_configs=cap_configs)
+    meta["method"] = ("direct exact enumeration of the ORIGINAL UNROUNDED "
+                      "law, which is the quadrature identity's own target; "
+                      "the producer's integration allowance is NOT charged "
+                      "because this reference does not incur it")
+    meta["producer_integration_allowance"] = str(qrad)
+    meta["transfer_radius_charged"] = str(Fr(radius))
     meta["law"] = "original unrounded rational features"
     return ok, fails, meta
 
