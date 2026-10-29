@@ -16,6 +16,8 @@ def _identity_executor(model, evidence, **kw):
 def _identity_checker(model, evidence, iv, eps, deadline_s=None,
                       cap_bytes=None, **kw):
     from mdi import solve as S
+    # forward the TYPED result, including whether the independent aggregation
+    # check actually ran; the pipeline gates its status on it
     return S.verify_publication(model, evidence, iv, eps=eps,
                                 deadline_s=deadline_s, cap_bytes=cap_bytes)
 

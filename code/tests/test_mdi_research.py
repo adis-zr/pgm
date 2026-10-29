@@ -1063,7 +1063,7 @@ def test_checker_refuses_zero_evidence_explicitly():
     Z, _ = O.exact_all_marginals(r)
     assert Z == 0
     iv = {v: [(Fr(1, 2), Fr(1, 2))] * 2 for v in range(3)}
-    ok, fails = S.verify_publication(m, {}, iv, eps=Fr(1, 100), mode="I")
+    ok, fails, _vm = S.verify_publication(m, {}, iv, eps=Fr(1, 100), mode="I")
     assert not ok and fails, "a zero-probability conditioning event must be refused"
 
 
@@ -1233,18 +1233,18 @@ def test_checker_rejects_malformed_output_schema():
     iv = {v: [tuple(x) for x in rows] for v, rows in good["intervals"].items()}
     # missing a variable
     bad = dict(iv); bad.pop(sorted(bad)[0])
-    ok, fails = S.verify_publication(m, {}, bad, eps=Fr(1, 100), mode="I")
+    ok, fails, _vm = S.verify_publication(m, {}, bad, eps=Fr(1, 100), mode="I")
     assert not ok, "a missing output row must be rejected"
     # wrong row length
     bad2 = {v: list(rows) for v, rows in iv.items()}
     bad2[sorted(bad2)[0]] = bad2[sorted(bad2)[0]][:-1]
-    ok2, _ = S.verify_publication(m, {}, bad2, eps=Fr(1, 100), mode="I")
+    ok2, _f2, _vm2 = S.verify_publication(m, {}, bad2, eps=Fr(1, 100), mode="I")
     assert not ok2, "a short output row must be rejected"
     # inverted endpoints
     bad3 = {v: list(rows) for v, rows in iv.items()}
     v0 = sorted(bad3)[0]
     bad3[v0] = [(Fr(9, 10), Fr(1, 10))] + list(bad3[v0][1:])
-    ok3, _ = S.verify_publication(m, {}, bad3, eps=Fr(1, 100), mode="I")
+    ok3, _f3, _vm3 = S.verify_publication(m, {}, bad3, eps=Fr(1, 100), mode="I")
     assert not ok3, "inverted endpoints must be rejected"
 
 
@@ -3307,7 +3307,7 @@ def test_r4_publication_survives_serialization_round_trip():
     rebuilt = {int(v): [(Fr(a), Fr(b)) for a, b in rows]
                for v, rows in back.items()}
     # the parsed bytes must still verify
-    ok, fails = S.verify_publication(m, {}, rebuilt, eps=Fr(1, 100), mode="I")
+    ok, fails, _vm = S.verify_publication(m, {}, rebuilt, eps=Fr(1, 100), mode="I")
     assert ok, fails[:3]
     # and be identical to what was published
     for v in res.intervals:

@@ -597,10 +597,15 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     t = time.monotonic()
     try:
         if crec.kind == "identity":
-            ok, fails = checker(model, evidence, pub, eps,
-                                deadline_s=bg.remaining(),
-                                cap_bytes=cap_bytes)
-            meta = {"kind": "identity"}
+            # consume the checker's OWN metadata. Replacing it with
+            # {"kind": "identity"} discarded independent_aggregation_checked,
+            # so a result whose exact independent check HAD run and passed was
+            # downgraded anyway.
+            ok, fails, meta = checker(model, evidence, pub, eps,
+                                      deadline_s=bg.remaining(),
+                                      cap_bytes=cap_bytes)
+            meta = dict(meta or {})
+            meta["kind"] = "identity"
             bg.check("after-identity-check")
         elif crec.kind == "composed":
             ok, fails, meta = checker(
@@ -695,6 +700,112 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                    properties=crec.properties.as_dict())
 
 
+def _producer_reduced_contract(r, regions, coarse, rds, queries,
+                               deadline=None):
+    """The PRODUCER's own contraction of the reduced cell model.
+
+    Independent of regional_check._reduced_message_passing: it eliminates
+    cell variables one at a time against the compact projected crossings,
+    accumulating exact rational factors, and reads each requested marker off
+    the cell marginals. Sharing is limited to the validated structural data
+    (regions, cells, projections) and exact rational arithmetic.
+    """
+    from mdi import compact as CP
+    ncell = [len(c.cells) for c in coarse]
+    projected, _ = CP.project_crossings(r, regions, coarse, rds)
+    nreg = len(regions)
+
+    # tables over cell-variable tuples, as {scope_tuple: {assignment: value}}
+    tables = []
+    for i in range(nreg):
+        tables.append(((i,), {(ci,): Fr(coarse[i].M[ci])
+                              for ci in range(ncell[i])}))
+    for pc in projected:
+        rs = tuple(pc.regions)
+        ent = {}
+        import itertools as _it
+        for tup in _it.product(*[range(ncell[i]) for i in rs]):
+            if deadline is not None:
+                deadline()
+            v = pc.value({rs[k]: tup[k] for k in range(len(rs))})
+            if v != 0:
+                ent[tup] = v
+        tables.append((rs, ent))
+
+    def multiply(t1, t2):
+        sc1, e1 = t1
+        sc2, e2 = t2
+        out_sc = tuple(sorted(set(sc1) | set(sc2)))
+        pos = {v: k for k, v in enumerate(out_sc)}
+        out = {}
+        for a1, v1 in e1.items():
+            m1 = {sc1[k]: a1[k] for k in range(len(sc1))}
+            for a2, v2 in e2.items():
+                if deadline is not None:
+                    deadline()
+                m2 = {sc2[k]: a2[k] for k in range(len(sc2))}
+                ok = all(m1[v] == m2[v] for v in set(sc1) & set(sc2))
+                if not ok:
+                    continue
+                key = [0] * len(out_sc)
+                for v, av in list(m1.items()) + list(m2.items()):
+                    key[pos[v]] = av
+                k = tuple(key)
+                out[k] = out.get(k, Fr(0)) + v1 * v2
+        return (out_sc, out)
+
+    def marginalize(t, var):
+        sc, e = t
+        if var not in sc:
+            return t
+        k = sc.index(var)
+        out_sc = tuple(v for v in sc if v != var)
+        out = {}
+        for a, v in e.items():
+            key = tuple(a[j] for j in range(len(sc)) if j != k)
+            out[key] = out.get(key, Fr(0)) + v
+        return (out_sc, out)
+
+    # Form the JOINT product ONCE, then marginalize to each target. Building
+    # a fresh product per target multiplied every table repeatedly, squaring
+    # the factors: on a 2-block ring that gave X0 = 83000/650567 against a
+    # true 17023052/133265423.
+    joint = ((), {(): Fr(1)})
+    for t in tables:
+        joint = multiply(joint, t)
+        if deadline is not None:
+            deadline()
+        if len(joint[1]) > K.CAPS["checker_contraction_space"]:
+            raise RuntimeError(
+                "the producer's reduced contraction reached %d entries, above "
+                "the declared cap" % len(joint[1]))
+
+    jsc, jent = joint
+    Ztot = sum(jent.values())
+    if Ztot <= 0:
+        raise RuntimeError("the reduced model has no positive total")
+    counts = {}
+    for i in range(nreg):
+        if i not in jsc:
+            continue
+        k = jsc.index(i)
+        per_cell = {}
+        for a, w in jent.items():
+            per_cell[a[k]] = per_cell.get(a[k], Fr(0)) + w
+        for ci, w in per_cell.items():
+            Mc = Fr(coarse[i].M[ci])
+            if Mc <= 0:
+                continue
+            for key, col in coarse[i].N.items():
+                if key[0] not in queries:
+                    continue
+                Nc = Fr(col[ci])
+                if Nc == 0:
+                    continue
+                counts[key] = counts.get(key, Fr(0)) + w * Nc / Mc
+    return (Ztot, Ztot), (counts, dict(counts))
+
+
 def _regional_execute(r, payload, queries, eps, bg):
     """Execute the regional route with compact crossings and direct readout."""
     regions = payload["regions"]
@@ -712,10 +823,26 @@ def _regional_execute(r, payload, queries, eps, bg):
     # the producer now runs the same reduced-graph elimination the price
     # assumes, and falls back to enumeration only when elimination is
     # unavailable AND the joint space is within the declared cap.
-    from mdi import regional_check as RC
+    # The PRODUCER must not call the checker's contractor. Both calling
+    # regional_check._reduced_message_passing made them common-mode: a fault
+    # in that one function returning total 4 with state masses 18/5 and 2/5
+    # yielded CERTIFIED_RESEARCH_ROUTE with independently_verified=True and
+    # intervals [.898, .902] excluding the true 1/2 on every coordinate.
+    #
+    # This is the producer's OWN reduced contraction over the compact
+    # projected crossings: it eliminates cell variables in a fixed order,
+    # sharing only the validated structural data and the exact rational
+    # primitives the contract permits.
     try:
-        (Zlo, Zhi), (clo, chi) = RC._reduced_message_passing(
+        (Zlo, Zhi), (clo, chi) = _producer_reduced_contract(
             r, regions, coarse, rds, queries, deadline=dl)
+        # The INDEPENDENT checker runs its own 128-bit point contraction and
+        # charges that arithmetic's N1 error, so its enclosure is wider than
+        # an exact-rational producer point by about 5e-39 on each side. The
+        # publication must leave room for the checker's own error or it can
+        # never contain the checker's enclosure. This allowance is charged
+        # from the declared publication reserve, not invented.
+        _chk_slack = K.PUBLICATION_RESERVE
         # the producer publishes a point-valued count set; take the enclosure's
         # lower end for Z and upper for counts so the readout stays outward
         rows = {}
@@ -731,7 +858,8 @@ def _regional_execute(r, payload, queries, eps, bg):
             for sx in range(nst):
                 lo = clo.get((v, sx), Fr(0)) / Zhi if Zhi > 0 else Fr(0)
                 hi = chi.get((v, sx), Fr(0)) / Zlo if Zlo > 0 else Fr(1)
-                rr.append((max(Fr(0), lo), min(Fr(1), hi)))
+                rr.append((max(Fr(0), lo - _chk_slack),
+                           min(Fr(1), hi + _chk_slack)))
             rows[v] = rr
         if rows:
             return rows

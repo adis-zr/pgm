@@ -548,7 +548,7 @@ def test_checker_catches_a_corrupted_publication():
     bad = {v: [list(x) for x in rows] for v, rows in res["intervals"].items()}
     v0 = sorted(bad)[0]
     bad[v0][0] = (Fr(0), Fr(0))          # claim an impossible point mass
-    ok, fails = S.verify_publication(m, {}, bad, eps=Fr(1, 100), mode="I")
+    ok, fails, _vm = S.verify_publication(m, {}, bad, eps=Fr(1, 100), mode="I")
     assert not ok and fails, "checker accepted a corrupted publication"
 
 

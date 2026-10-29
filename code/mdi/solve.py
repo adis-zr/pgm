@@ -832,12 +832,17 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
     deadline still certified."""
     schema = validate_output_schema(model, evidence, iv, eps)
     if schema:
-        return False, [{"reason": "output schema invalid", "problems": schema[:8]}]
+        return False, [{"reason": "output schema invalid",
+                        "problems": schema[:8]}], {
+            "independent_aggregation_checked": False,
+            "rejected_before_checking": "output schema invalid"}
     r = M.restrict(model, evidence)
     if r.impossible_factor is not None or r.constant == 0:
         return False, [{"reason": "zero evidence weight: no conditional "
                                   "distribution exists, so any published "
-                                  "conditional marginal is invalid"}]
+                                  "conditional marginal is invalid"}], {
+            "independent_aggregation_checked": False,
+            "rejected_before_checking": "zero evidence weight"}
     # Build the reference plan on the SAME factor list `_check` will rebuild on,
     # i.e. after the common exact preprocessing. Building it on the raw factors
     # made the shapes differ and `_check` refused with "rebuilt a different
@@ -851,7 +856,9 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
                           impossible_factor=None)
     except Exception as e:
         return False, [{"reason": "checker could not reproduce the exact "
-                                  "preprocessing identities: %s" % e}]
+                                  "preprocessing identities: %s" % e}], {
+            "independent_aggregation_checked": False,
+            "rejected_before_checking": "preprocessing identities"}
     adj = P.primal_graph(rr.free, rr.card, rr.factors)
     pl = P.build_plan("min_fill", P.order_min_fill(rr.free, rr.card, adj),
                       rr.free, rr.card, rr.factors)
@@ -859,12 +866,29 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
         _cap = cap_bytes if cap_bytes is not None else (1 << 31)
         _end = (time.time() + float(deadline_s)) if deadline_s is not None \
             else (time.time() + 300)
-        ok, fails, _ = _check(model, evidence, iv, eps, pl, 64, _cap,
-                              _end, lambda *a: None)
+        ok, fails, cmeta = _check(model, evidence, iv, eps, pl, 64, _cap,
+                                  _end, lambda *a: None)
     except A.NumericalRefusal as e:
         # A refusal is a REJECTION of the publication, reported as such. Letting
         # it propagate made a caller see an exception rather than "not verified",
         # which is how a globally contradictory model (every factor individually
         # nonzero, Z = 0) escaped this entry point.
-        return False, [{"reason": "checker refused: %s" % e}]
-    return ok, fails
+        return False, [{"reason": "checker refused: %s" % e}], {
+            "independent_aggregation_checked": False,
+            "refused": str(e)}
+    # The checker's metadata is RETURNED, not discarded. `ok, fails, _` threw
+    # away `independent_aggregation_checked`, so every caller had to guess
+    # whether the independent check had actually run -- and the pipeline then
+    # substituted {"kind": "identity"} and downgraded results whose exact
+    # independent check HAD run and passed.
+    #
+    # A standalone success must also not be unqualified when the required
+    # independent path was skipped.
+    if ok and not cmeta.get("independent_aggregation_checked"):
+        fails = list(fails) + [{
+            "reason": "every coordinate passed interval containment, but the "
+                      "independent AGGREGATION check did not run on this "
+                      "input, so this is NOT an independently verified result",
+            "independent_aggregation_checked": False}]
+        ok = False
+    return ok, fails, cmeta
