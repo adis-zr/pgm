@@ -221,6 +221,13 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
     return rec
 
 
+def _proj_entries(pc, coarse):
+    n = 1
+    for i in pc.regions:
+        n *= len(coarse[i].cells)
+    return n
+
+
 def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
                         radius, discovery_s=None, construction_ops=None):
     """Price the regional route from ACTUAL cells and projected scopes."""
@@ -318,19 +325,37 @@ def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
         # most `total_assign` entries, one multiply and one add per pair, plus
         # a marginalization sweep per region and the marker division per
         # requested state.
+        # The producer runs ELIMINATION over the reduced cell graph, once per
+        # queried region. Each elimination step multiplies the tables touching
+        # a variable and sums it out; the binding size is the largest
+        # intermediate scope, which the reduced plan's largest bag bounds.
+        #
+        # Count BOTH the multiply and the add at every step: the previous
+        # formula counted one operation where the code performs two, so the
+        # bound failed at small sizes (44 > 32, 110 > 84, 260 > 208).
         n_tables = len(regions) + len(projected)
-        prod_pairs = n_tables * max(1, total_assign)
-        marg = len(regions) * max(1, total_assign)
-        readout = max(1, total_assign) + n_requested * 2
-        rec.put("producer_upward_ops", prod_pairs, UPPER,
-                "joint product over the compact projected crossings: one "
-                "multiply and one add per (joint entry, table) pair -- this "
-                "is the producer's OWN contraction, which is what executes")
+        bag = max(1, reduced_ops["largest_bag"])
+        nq_regions = max(1, sum(
+            1 for i in range(len(regions))
+            if any(k[0] in range(10 ** 9) for k in coarse[i].N)))
+        # per elimination: at most n_tables combines, each over `bag` entries,
+        # with one multiply AND one add per entry, plus the marginalizing add
+        per_elim = 2 * n_tables * bag + bag
+        prod_pairs = 2 * nq_regions * per_elim
+        # projected crossings are materialized once, one value call each
+        build = sum(max(1, _proj_entries(pc, coarse)) for pc in projected) \
+            if projected else 0
+        marg = 2 * nq_regions * bag
+        readout = 2 * nq_regions * bag + 4 * n_requested
+        rec.put("producer_upward_ops", prod_pairs + build, UPPER,
+                "reduced-graph ELIMINATION once per queried region: one "
+                "multiply AND one add per intermediate entry per combine, "
+                "plus the projected-crossing construction")
         rec.put("producer_downward_ops", marg, UPPER,
-                "marginalization sweep per region over the joint")
+                "marginalizing sums over the surviving scope")
         rec.put("readout_ops", readout, UPPER,
                 "per-cell marker accumulation and the normalizing division "
-                "per requested state")
+                "per requested state, both multiply and divide counted")
         # the CHECKER runs its own reduced-graph message passing in interval
         # mode AND rebuilds every region's local data; both are charged
         chk_mp = 2 * (reduced_ops["up"] + reduced_ops["down"] +

@@ -302,22 +302,31 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
             partials = {0: Fr(1)}
             for ci, (c, tab) in enumerate(inc):
                 nxt = {}
+                done = 0
                 for ps, pw in partials.items():
                     for (ck, cs), cw in tab.items():
                         if ck != coffs[ci]:
                             continue
                         k2 = ps + cs
+                        # Check BEFORE inserting a new key, and check the
+                        # deadline inside the pair loop. Testing
+                        # `len(partials) > cap` only after the whole child
+                        # product meant a [2,16,16] model under a cap of 20
+                        # built all 256 keys and performed all 256
+                        # multiply-adds before refusing, with no interior
+                        # callback.
+                        if k2 not in nxt and len(nxt) >= cap:
+                            raise Declined(
+                                "the ordinary join reached the declared %d "
+                                "statistic cap during construction (after %d "
+                                "products at child %d)" % (cap, done, ci))
                         nxt[k2] = nxt.get(k2, Fr(0)) + pw * cw
+                        done += 1
+                        if deadline is not None and (done & 0xFF) == 0:
+                            deadline()
                 partials = nxt
                 if not partials:
                     break
-                # bound the work DURING construction, not after
-                if len(partials) > cap:
-                    raise Declined(
-                        "an intermediate statistic support reached %d after "
-                        "child %d, above the %d cap" % (len(partials), ci, cap))
-                if deadline is not None:
-                    deadline()
             for ps, pw in partials.items():
                 key = (soff, ps + local_stat)
                 out[key] = out.get(key, Fr(0)) + w * pw
@@ -348,21 +357,25 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
                     if ci == mi:
                         continue
                     nxt = {}
+                    done = 0
                     for ps, pw in others.items():
                         for (ck, cs), cw in tab.items():
                             if ck != coffs[ci]:
                                 continue
                             k2 = ps + cs
+                            # same bounded insertion for the MARKED join
+                            if k2 not in nxt and len(nxt) >= cap:
+                                raise Declined(
+                                    "the marked join reached the declared %d "
+                                    "statistic cap during construction (after "
+                                    "%d products)" % (cap, done))
                             nxt[k2] = nxt.get(k2, Fr(0)) + pw * cw
+                            done += 1
+                            if deadline is not None and (done & 0xFF) == 0:
+                                deadline()
                     others = nxt
                     if not others:
                         break
-                    if len(others) > cap:
-                        raise Declined(
-                            "an intermediate marked statistic support reached "
-                            "%d, above the %d cap" % (len(others), cap))
-                    if deadline is not None:
-                        deadline()
                 if not others:
                     continue
                 for (v, st), tabm in cmk.items():

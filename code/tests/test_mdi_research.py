@@ -5470,3 +5470,350 @@ def test_r8_composed_reports_its_real_statistic_support():
         return
     if meta.get("evaluator") == "general_residual_dp":
         assert meta.get("statistic_support", 0) > 1, meta
+
+
+# ===== r8 review: containment, factorization, local independence, order =====
+
+def test_r9_containment_binds_the_submitted_publication():
+    """R8-1 (MY r8 regression). The predicate widened the SUBMISSION by
+    `radius` while checking width on the original endpoints, so it certified
+    a publication the producer never made: within the frozen allowance it
+    accepted the ZERO-WIDTH points 2001/4000 and 1999/4000 for a law whose
+    truths are both exactly 1/2."""
+    from mdi import collective_check as CC, collective as CO
+    ctx = A.Ctx(160)
+
+    class C:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1)]
+        features = [{0: [Fr(0), Fr(0)]}]
+
+    unary = {0: [Fr(1), Fr(1)]}
+    # The VALID base accepts first. With a transfer radius of 1/2000 the
+    # reference spans 1/2 +/- 1/2000, so a CORRECT publication must be at
+    # least that wide -- a zero-width point could not contain it, which is
+    # precisely the property r8 lost.
+    good_wide = {0: [(Fr(1, 2) - Fr(1, 2000), Fr(1, 2) + Fr(1, 2000)),
+                     (Fr(1, 2) - Fr(1, 2000), Fr(1, 2) + Fr(1, 2000))]}
+    ok, fails, _ = CC.check_statistic_publication(
+        [0], {0: 2}, unary, C(), 1, {0}, good_wide, Fr(1, 100), ctx,
+        radius=Fr(1, 2000))
+    assert ok, fails
+    # with NO transfer error the exact point publication is correct
+    good = {0: [(Fr(1, 2), Fr(1, 2)), (Fr(1, 2), Fr(1, 2))]}
+    ok0, f0, _ = CC.check_statistic_publication(
+        [0], {0: 2}, unary, C(), 1, {0}, good, Fr(1, 100), ctx,
+        radius=Fr(0))
+    assert ok0, f0
+    # the faulty zero-width points must REJECT
+    bad = {0: [(Fr(2001, 4000), Fr(2001, 4000)),
+               (Fr(1999, 4000), Fr(1999, 4000))]}
+    ok2, _f2, _m2 = CC.check_statistic_publication(
+        [0], {0: 2}, unary, C(), 1, {0}, bad, Fr(1, 100), ctx,
+        radius=Fr(1, 2000))
+    assert not ok2, "a zero-width interval excluding the truth was certified"
+    # the quadrature wrapper, even with caller radius 0
+    qrad = Fr(CO.gf_lattice(Fr(1), Fr(0), Fr(1, 2000))["total_bound"])
+    half = qrad / 2
+    bad3 = {0: [(Fr(1, 2) + half, Fr(1, 2) + half),
+                (Fr(1, 2) - half, Fr(1, 2) - half)]}
+    ok3, _f3, _m3 = CC.check_quadrature_publication(
+        [0], {0: 2}, unary, C(), {0}, bad3, Fr(1, 100), ctx, Fr(1, 2000),
+        radius=Fr(0))
+    assert not ok3
+    # preserved positive capability
+    ok4, f4, m4 = CC.check_quadrature_publication(
+        [0], {0: 2}, unary, C(), {0}, good, Fr(1, 100), ctx, Fr(1, 2000))
+    assert ok4, f4
+    # the checker enumerates the ORIGINAL law, so it charges no integration
+    # error of its own; the producer's allowance is reported, not applied
+    assert "producer_integration_allowance" in m4
+    # a too-wide publication still rejects on eps
+    wide = {0: [(Fr(0), Fr(1)), (Fr(0), Fr(1))]}
+    ok5, _f5, _m5 = CC.check_quadrature_publication(
+        [0], {0: 2}, unary, C(), {0}, wide, Fr(1, 100), ctx, Fr(1, 2000))
+    assert not ok5
+
+
+def test_r9_regional_producer_keeps_its_factorization():
+    """R8-2 (MY r8 regression). The separate producer formed a GLOBAL JOINT
+    and never called its own `marginalize`, so a 20-variable width-one chain
+    that completed under r7 allocated 8,192 entries and refused. Even a
+    13-variable equality chain with only two feasible configurations failed.
+    Independence and factorization are simultaneous requirements."""
+    import mdi.pipeline as PP
+    from mdi import regions as R
+
+    def build(n, equality):
+        facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(2)],
+                         origin=v) for v in range(n)]
+        for i in range(n - 1):
+            tab = ([Fr(1), Fr(0), Fr(0), Fr(1)] if equality
+                   else [Fr(2), Fr(1), Fr(1), Fr(2)])
+            facs.append(M.Factor(scope=(i, i + 1), card=(2, 2), table=tab,
+                                 origin=100 + i))
+        m = M.Model(nvars=n, card=[2] * n, factors=facs)
+        m.validate()
+        return m
+
+    for n, equality in ((20, False), (13, True)):
+        m = build(n, equality)
+        r = M.restrict(m, {})
+        Z, pt = O.exact_all_marginals(r)
+        regs = [(v,) for v in range(n)]
+        rds = [R.region_data(g, r.card, r.factors, set(range(n)))
+               for g in regs]
+        ro = {v: i for i, g in enumerate(regs) for v in g}
+        crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1),
+                              set(range(n)), region_of=ro, aggregate=True)
+               for i in range(n)]
+        (Zl, _Zh), (cl, _ch) = PP._producer_reduced_contract(
+            r, regs, crs, rds, set(range(n)))
+        assert Zl > 0
+        for v in range(n):
+            for s in range(2):
+                q = cl.get((v, s), Fr(0)) / Zl
+                assert abs(q - pt[v][s]) <= Fr(1, 100), (n, v, s, float(q))
+    # the producer must also use its own elimination helper
+    import inspect
+    src = inspect.getsource(PP._producer_reduced_contract)
+    assert src.count("marginalize(") > 1, "marginalize is never called"
+
+
+def test_r9_producer_admits_projections_before_materializing():
+    """R8-2. Seven tiny pair tables over two seven-variable regions have a
+    compact representation of 1,820 entries, but r8 expanded seven 128x128
+    crossings (114,688 value calls) and built a 16,384-entry joint before
+    refusing."""
+    import mdi.pipeline as PP
+    from mdi import regions as R
+    n = 14
+    facs = []
+    for i in range(7):
+        facs.append(M.Factor(scope=(i, i + 7), card=(2, 2),
+                             table=[Fr(2), Fr(1), Fr(1), Fr(3)], origin=i))
+    for v in range(n):
+        facs.append(M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)],
+                             origin=100 + v))
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    regs = [tuple(range(7)), tuple(range(7, 14))]
+    rds = [R.region_data(g, r.card, r.factors, set(range(n))) for g in regs]
+    ro = {v: i for i, g in enumerate(regs) for v in g}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), set(range(n)),
+                          region_of=ro, aggregate=True) for i in range(2)]
+    with pytest.raises(RuntimeError) as e:
+        PP._producer_reduced_contract(r, regs, crs, rds, set(range(n)))
+    assert "BEFORE materializing" in str(e.value), str(e.value)
+
+
+def test_r9_producer_bounds_exact_rational_growth():
+    """R8-2. Two legal inputs with 40,001-bit entries returned an 80,003-bit
+    mass despite the declared 65,536-bit cap: entry-count bounds do not bound
+    exact arithmetic."""
+    import mdi.pipeline as PP
+    from mdi import regions as R
+    B = Fr(2) ** 40000
+    facs = [M.Factor(scope=(0,), card=(2,), table=[B, B + 1], origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[B, B + 1], origin=1)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    regs = [(0,), (1,)]
+    rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+    ro = {0: 0, 1: 1}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                          region_of=ro, aggregate=True) for i in range(2)]
+    with pytest.raises(RuntimeError) as e:
+        PP._producer_reduced_contract(r, regs, crs, rds, {0, 1})
+    assert "bit" in str(e.value).lower()
+
+
+def test_r9_shared_local_marker_fault_is_caught():
+    """R8-3. Local mass/marker reconstruction still called the same
+    region_data on both sides. Skewing its markers to 9/10 and 1/10 of the
+    true mass -- preserving the mark/mass identity, so no invariant fired --
+    made four uniform binary variables publish [.897998,.902002] under
+    CERTIFIED_RESEARCH_ROUTE with both flags true, all eight intervals
+    excluding 1/2."""
+    from mdi import pipeline as PLN, regions as R
+    import mdi.registry            # noqa: F401
+    n = 4
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)], origin=v)
+            for v in range(n)]
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    clean = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    assert clean.status.startswith("CERTIFIED"), clean.reason
+    orig = R.region_data
+
+    def faulty(region, card, factors, queries, **kw):
+        rd = orig(region, card, factors, queries, **kw)
+        for v in region:
+            keys = [k for k in rd.marks if k[0] == v]
+            if len(keys) != 2:
+                continue
+            for b in list(rd.A):
+                tot = rd.A[b]
+                rd.marks[(v, 0)][b] = tot * Fr(9, 10)
+                rd.marks[(v, 1)][b] = tot * Fr(1, 10)
+        return rd
+
+    R.region_data = faulty
+    try:
+        res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    finally:
+        R.region_data = orig
+    assert not res.status.startswith("CERTIFIED"), res.status
+    props = res.properties or {}
+    assert not props.get("independently_verified"), props
+
+
+def test_r9_ownership_proof_is_order_independent():
+    """R8-4. `origin != min(group)` skipped the group's product proof whenever
+    the smallest member was already claimed. With the unary at origin 0 and
+    the pair at origin 1, NO group equality or reuse check ran, and the law
+    F*U^2 was accepted above the enumeration cap -- (3/19,16/19) became
+    (3/35,32/35)."""
+    import copy
+    from mdi import preprocess as PRE
+    for order in ("pair_first", "unary_first"):
+        for n in (12, 13, 16, 20):
+            if order == "pair_first":
+                facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                                 table=[Fr(1), Fr(2), Fr(3), Fr(5)],
+                                 origin=0),
+                        M.Factor(scope=(0,), card=(2,),
+                                 table=[Fr(1), Fr(2)], origin=1)]
+                pair_origin = 0
+            else:
+                facs = [M.Factor(scope=(0,), card=(2,),
+                                 table=[Fr(1), Fr(2)], origin=0),
+                        M.Factor(scope=(0, 1), card=(2, 2),
+                                 table=[Fr(1), Fr(2), Fr(3), Fr(5)],
+                                 origin=1)]
+                pair_origin = 1
+            for v in range(2, n):
+                facs.append(M.Factor(scope=(v,), card=(2,),
+                                     table=[Fr(1), Fr(1)], origin=v))
+            m = M.Model(nvars=n, card=[2] * n, factors=facs)
+            m.validate()
+            r = M.restrict(m, {})
+            simp = PRE.simplify(r)
+            assert PRE.verify_identities(r, simp), (order, len(r.free))
+            bad = copy.deepcopy(simp)
+            nf = []
+            for f in bad.factors:
+                if tuple(sorted(f.scope)) == (0, 1):
+                    nf.append(M.Factor(scope=(0, 1), card=(2, 2),
+                                       table=[Fr(1), Fr(2), Fr(6), Fr(10)],
+                                       origin=pair_origin))
+                else:
+                    nf.append(f)
+            bad.factors = nf
+            bad.combined_members = {"0|1": [0, 1]}
+            with pytest.raises(PRE.PreprocessError):
+                PRE.verify_identities(r, bad)
+
+
+def test_r9_regional_price_bounds_the_elimination_it_runs():
+    """R8-5. The producer bounds undercounted even its own core arithmetic
+    (44>32, 110>84, 260>208), because the formula counted one operation where
+    the code performs both a multiply and an add. The checker's local
+    reconstruction was also charged twice: the pipeline passed cons+2*cons as
+    construction while pricing added 2*cons again."""
+    import fractions
+    from mdi import pricing as PR, regions as R, compact as CP
+    import mdi.pipeline as PP
+    counts = {"n": 0}
+    saved = {}
+    for nm in ("__mul__", "__rmul__", "__add__", "__radd__", "__truediv__",
+               "__rtruediv__", "__sub__", "__rsub__"):
+        saved[nm] = getattr(fractions.Fraction, nm)
+
+    def wrap(fn):
+        def w(self, other, *a):
+            counts["n"] += 1
+            return fn(self, other, *a)
+        return w
+
+    for n in (2, 3, 4, 6, 8):
+        facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(2)],
+                         origin=v) for v in range(n)]
+        for i in range(n - 1):
+            facs.append(M.Factor(scope=(i, i + 1), card=(2, 2),
+                                 table=[Fr(2), Fr(1), Fr(1), Fr(2)],
+                                 origin=100 + i))
+        m = M.Model(nvars=n, card=[2] * n, factors=facs)
+        m.validate()
+        r = M.restrict(m, {})
+        regs = [(v,) for v in range(n)]
+        rds = [R.region_data(g, r.card, r.factors, set(range(n)))
+               for g in regs]
+        ro = {v: i for i, g in enumerate(regs) for v in g}
+        crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1),
+                              set(range(n)), region_of=ro, aggregate=True)
+               for i in range(n)]
+        proj, _p = CP.project_crossings(r, regs, crs, rds)
+        rec = PR.price_regional_plan(
+            "r", regs, crs, rds, proj, n, Fr(1, 500),
+            construction_ops=sum(int(getattr(rd, "construction_ops", 0))
+                                 for rd in rds))
+        priced = sum(int(rec.counters[k].value)
+                     for k in ("producer_upward_ops",
+                               "producer_downward_ops", "readout_ops"))
+        for nm, fn in saved.items():
+            setattr(fractions.Fraction, nm, wrap(fn))
+        counts["n"] = 0
+        try:
+            PP._producer_reduced_contract(r, regs, crs, rds, set(range(n)))
+        finally:
+            for nm, fn in saved.items():
+                setattr(fractions.Fraction, nm, fn)
+        assert priced >= counts["n"], (n, priced, counts["n"])
+
+
+def test_r9_connected_joins_bound_during_construction():
+    """R8-6. Connected ordinary and marked joins constructed the entire child
+    Cartesian product before testing its size: a [2,16,16] model under a cap
+    of 20 built all 256 keys with no interior callback."""
+    import inspect
+    from mdi import gendp as G
+    src = inspect.getsource(G._run_component)
+    assert "the ordinary join reached the declared" in src
+    assert "the marked join reached the declared" in src
+    assert src.count("(done & 0xFF)") >= 2, "no interior deadline checks"
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(1)], origin=0),
+            M.Factor(scope=(1,), card=(16,), table=[Fr(1)] * 16, origin=1),
+            M.Factor(scope=(2,), card=(16,), table=[Fr(1)] * 16, origin=2),
+            M.Factor(scope=(0, 1), card=(2, 16), table=[Fr(1)] * 32,
+                     origin=3),
+            M.Factor(scope=(0, 2), card=(2, 16), table=[Fr(1)] * 32,
+                     origin=4)]
+    m = M.Model(nvars=3, card=[2, 16, 16], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+
+    class C:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 100000)]
+        features = [{0: [Fr(0), Fr(0)],
+                     1: [Fr(i) for i in range(16)],
+                     2: [Fr(16 * i) for i in range(16)]}]
+
+    sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                        K.RESOURCES["arm_rss_bytes"])
+    pl, _est = sel["chosen"]
+    ctx = A.Ctx(128)
+    with pytest.raises(G.Declined):
+        G.run(pl, r.factors, r.card, C(), 1, set(range(3)), ctx,
+              cap_states=20)
+    # the default cap must still complete
+    (zl, zh), mk, meta = G.run(pl, r.factors, r.card, C(), 1, set(range(3)),
+                               ctx)
+    assert zl > 0

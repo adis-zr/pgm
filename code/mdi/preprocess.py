@@ -509,6 +509,7 @@ def verify_identities(restricted, simp: Simplified):
                 "proof" % (simp.impossible, tuple(wf.scope), len(nz),
                            len(wf.table), nz[0], wf.table[nz[0]]))
 
+    verified_groups = set()
     unary_contrib = {v: [Fr(1)] * simp.card[v] for v in simp.free}
     const_product = Fr(1)
     claims = {}          # origin -> how it was accounted
@@ -693,10 +694,21 @@ def verify_identities(restricted, simp: Simplified):
                 raise PreprocessError(
                     "combined group %s on scope %s has no emitted host table"
                     % (group, list(scope)))
-            # verify the host against the product of ALL members, once
-            if origin != min(group):
-                claim(origin, "member of combined group %s" % (group,))
+            # Verify each actual GROUP exactly once, keyed by the group, not
+            # by whichever numeric member happens to be smallest. The
+            # `origin != min(group)` shortcut skipped the group's product
+            # proof whenever the smallest member had already been claimed
+            # elsewhere: with the unary at origin 0 and the pair at origin 1,
+            # origin 0 was skipped as already-claimed and origin 1 then took
+            # this branch, so NO group equality or reuse check ran at all.
+            # The law F*U^2 was accepted above the enumeration cap, turning
+            # (3/19, 16/19) into (3/35, 32/35).
+            gkey = (scope, tuple(sorted(group)))
+            if gkey in verified_groups:
+                claim(origin, "member of already-verified group %s"
+                      % (group,))
                 continue
+            verified_groups.add(gkey)
             st_by = {}
             for combo in itertools.product(*[range(simp.card[v])
                                              for v in scope]):

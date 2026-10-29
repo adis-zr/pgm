@@ -303,12 +303,16 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             # reconstruction. The checker rebuilds every region's masses and
             # markers independently (that is the point of it), so the complete
             # cost carries that work too -- it is paid, not free.
+            # `construction_ops` is the PRODUCER's local construction only.
+            # Passing cons + 2*cons here while price_regional_plan ALSO added
+            # 2*cons into the checker field charged the checker's
+            # reconstruction twice: on the ring, cons = 151,552 produced
+            # 454,656 construction plus another 303,104 inside checker_ops.
+            # Each phase is counted exactly once.
             cons = sum(int(getattr(rd, "construction_ops", 0)) for rd in rds)
-            checker_cons = 2 * cons     # recheck_region + its own region_data
             rprice = PR.price_regional_plan("regional:" + c["mode"], regs, crs,
                                             rds, proj, nq, t_level,
-                                            construction_ops=cons
-                                            + checker_cons)
+                                            construction_ops=cons)
             rsup = PT.supported("regional")
             rprops = PT.PlanProperties()
             rprops.set("mathematically_certified")
@@ -376,10 +380,10 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                 cm_adm = None
             if cm_out is not None:
                 ccons = sum(int(getattr(rd, "construction_ops", 0))
-                            for rd in rds)
+                            for rd in rds)      # producer side only
                 cprice = PR.price_regional_plan("composed:" + c["mode"], regs,
                                                 crs, rds, proj, nq, t_level,
-                                                construction_ops=3 * ccons)
+                                                construction_ops=ccons)
                 cprice.kind = "composed"
                 cprice.put("collective_statistic_support",
                            cm_meta.get("statistic_support", 0), PR.EXACT)
@@ -701,35 +705,64 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
 
 
 def _producer_reduced_contract(r, regions, coarse, rds, queries,
-                               deadline=None):
-    """The PRODUCER's own contraction of the reduced cell model.
+                               deadline=None, budget=None):
+    """The PRODUCER's own contraction of the reduced cell model, BY ELIMINATION.
 
-    Independent of regional_check._reduced_message_passing: it eliminates
-    cell variables one at a time against the compact projected crossings,
-    accumulating exact rational factors, and reads each requested marker off
-    the cell marginals. Sharing is limited to the validated structural data
-    (regions, cells, projections) and exact rational arithmetic.
+    Independent of regional_check._reduced_message_passing: it owns its
+    factors, eliminates cell variables in a min-degree order, and reads each
+    requested marker from its own cell marginals. Sharing is limited to the
+    validated structural data (regions, cells, compact projections) and exact
+    rational arithmetic.
+
+    r8 formed a GLOBAL JOINT instead -- it multiplied every table into one
+    table and never called its own `marginalize` helper -- which destroyed the
+    factorization r7 had. A 20-variable width-one chain that completed under
+    r7 allocated 8,192 joint entries and refused; even a 13-variable equality
+    chain with only two feasible configurations failed. Independence and
+    factorized execution are SIMULTANEOUS requirements: separating the two
+    whole-model contractions must not cost the structure that makes the
+    computation affordable.
     """
-    from mdi import compact as CP
+    from mdi import compact as CP, config as KK
     ncell = [len(c.cells) for c in coarse]
     projected, _ = CP.project_crossings(r, regions, coarse, rds)
     nreg = len(regions)
+    cap = KK.CAPS["checker_contraction_space"]
 
-    # tables over cell-variable tuples, as {scope_tuple: {assignment: value}}
+    def _charge(n_entries, where):
+        if budget is not None:
+            budget.charge("local_mass_entries", max(1, n_entries), where)
+
+    # ---- factors over CELL variables, as (scope tuple, {assignment: value})
+    # Each is admitted BEFORE it is materialized, so an oversized projection
+    # refuses rather than being built first.
     tables = []
     for i in range(nreg):
-        tables.append(((i,), {(ci,): Fr(coarse[i].M[ci])
-                              for ci in range(ncell[i])}))
+        ent = {}
+        for ci in range(ncell[i]):
+            mv = Fr(coarse[i].M[ci])
+            if mv != 0:
+                ent[(ci,)] = mv
+        tables.append(((i,), ent))
     for pc in projected:
         rs = tuple(pc.regions)
-        ent = {}
+        want = 1
+        for i in rs:
+            want *= ncell[i]
+        if want > cap:
+            raise RuntimeError(
+                "a projected crossing over regions %s would need %d entries, "
+                "above the %d cap; admitted BEFORE materializing it"
+                % (rs, want, cap))
         import itertools as _it
+        ent = {}
         for tup in _it.product(*[range(ncell[i]) for i in rs]):
             if deadline is not None:
                 deadline()
             v = pc.value({rs[k]: tup[k] for k in range(len(rs))})
             if v != 0:
                 ent[tup] = v
+        _charge(len(ent), "producer projected crossing")
         tables.append((rs, ent))
 
     def multiply(t1, t2):
@@ -737,21 +770,46 @@ def _producer_reduced_contract(r, regions, coarse, rds, queries,
         sc2, e2 = t2
         out_sc = tuple(sorted(set(sc1) | set(sc2)))
         pos = {v: k for k, v in enumerate(out_sc)}
+        shared = sorted(set(sc1) & set(sc2))
+        # index the smaller table by its shared-variable key
+        idx = {}
+        for a2, v2 in e2.items():
+            m2 = {sc2[k]: a2[k] for k in range(len(sc2))}
+            key = tuple(m2[v] for v in shared)
+            idx.setdefault(key, []).append((a2, v2))
         out = {}
         for a1, v1 in e1.items():
             m1 = {sc1[k]: a1[k] for k in range(len(sc1))}
-            for a2, v2 in e2.items():
+            key = tuple(m1[v] for v in shared)
+            for a2, v2 in idx.get(key, ()):
                 if deadline is not None:
                     deadline()
                 m2 = {sc2[k]: a2[k] for k in range(len(sc2))}
-                ok = all(m1[v] == m2[v] for v in set(sc1) & set(sc2))
-                if not ok:
-                    continue
-                key = [0] * len(out_sc)
+                kk = [0] * len(out_sc)
                 for v, av in list(m1.items()) + list(m2.items()):
-                    key[pos[v]] = av
-                k = tuple(key)
-                out[k] = out.get(k, Fr(0)) + v1 * v2
+                    kk[pos[v]] = av
+                k = tuple(kk)
+                if k not in out and len(out) >= cap:
+                    raise RuntimeError(
+                        "the producer's elimination reached the %d-entry cap "
+                        "while combining scopes %s and %s" % (cap, sc1, sc2))
+                nv = out.get(k, Fr(0)) + v1 * v2
+                # EXACT rational growth is bounded. Two legal inputs with
+                # 40001-bit entries produced an 80003-bit mass despite the
+                # declared 65536-bit cap, because exact multiplication was
+                # never checked. A resource contract that only bounds entry
+                # COUNTS does not bound exact arithmetic.
+                if (nv.numerator.bit_length() > KK.CAPS["rational_bit_length"]
+                        or nv.denominator.bit_length()
+                        > KK.CAPS["rational_bit_length"]):
+                    raise RuntimeError(
+                        "the producer's elimination produced a %d-bit "
+                        "rational while combining scopes %s and %s, above the "
+                        "declared %d-bit cap"
+                        % (max(nv.numerator.bit_length(),
+                               nv.denominator.bit_length()), sc1, sc2,
+                           KK.CAPS["rational_bit_length"]))
+                out[k] = nv
         return (out_sc, out)
 
     def marginalize(t, var):
@@ -766,33 +824,61 @@ def _producer_reduced_contract(r, regions, coarse, rds, queries,
             out[key] = out.get(key, Fr(0)) + v
         return (out_sc, out)
 
-    # Form the JOINT product ONCE, then marginalize to each target. Building
-    # a fresh product per target multiplied every table repeatedly, squaring
-    # the factors: on a 2-block ring that gave X0 = 83000/650567 against a
-    # true 17023052/133265423.
-    joint = ((), {(): Fr(1)})
-    for t in tables:
-        joint = multiply(joint, t)
-        if deadline is not None:
-            deadline()
-        if len(joint[1]) > K.CAPS["checker_contraction_space"]:
-            raise RuntimeError(
-                "the producer's reduced contraction reached %d entries, above "
-                "the declared cap" % len(joint[1]))
+    def eliminate(tabs, keep):
+        """Sum out every cell variable except `keep`, min-degree order."""
+        tabs = list(tabs)
+        remaining = sorted({v for sc, _e in tabs for v in sc} - {keep})
+        while remaining:
+            # choose the variable whose combined scope is smallest
+            best, best_cost = None, None
+            for v in remaining:
+                touch = [t for t in tabs if v in t[0]]
+                sc = set()
+                for t in touch:
+                    sc |= set(t[0])
+                cost = 1
+                for u in sc:
+                    cost *= ncell[u]
+                if best_cost is None or cost < best_cost:
+                    best, best_cost = v, cost
+            v = best
+            touch = [t for t in tabs if v in t[0]]
+            rest = [t for t in tabs if v not in t[0]]
+            acc = touch[0]
+            for t in touch[1:]:
+                acc = multiply(acc, t)
+            acc = marginalize(acc, v)
+            _charge(len(acc[1]), "producer elimination")
+            tabs = rest + [acc]
+            remaining.remove(v)
+        acc = ((), {(): Fr(1)})
+        for t in tabs:
+            acc = multiply(acc, t)
+        return acc
 
-    jsc, jent = joint
-    Ztot = sum(jent.values())
-    if Ztot <= 0:
-        raise RuntimeError("the reduced model has no positive total")
+    # eliminate down to each queried region in turn, reusing the factor list
+    Ztot = None
     counts = {}
     for i in range(nreg):
-        if i not in jsc:
+        has_q = any(k[0] in queries for k in coarse[i].N)
+        if not has_q:
             continue
-        k = jsc.index(i)
-        per_cell = {}
-        for a, w in jent.items():
-            per_cell[a[k]] = per_cell.get(a[k], Fr(0)) + w
-        for ci, w in per_cell.items():
+        sc, ent = eliminate(tables, i)
+        tot = sum(ent.values())
+        if tot <= 0:
+            raise RuntimeError("cell variable %d has nonpositive total" % i)
+        if Ztot is None:
+            Ztot = tot
+        elif tot != Ztot:
+            # every calibrated cell marginal must share one total
+            if abs(tot - Ztot) * 10 ** 12 > Ztot:
+                raise RuntimeError(
+                    "cell marginals disagree on the total (%s vs %s)"
+                    % (tot, Ztot))
+            Ztot = min(Ztot, tot)
+        k = sc.index(i) if i in sc else None
+        for a, w in ent.items():
+            ci = a[k] if k is not None else 0
             Mc = Fr(coarse[i].M[ci])
             if Mc <= 0:
                 continue
@@ -803,6 +889,8 @@ def _producer_reduced_contract(r, regions, coarse, rds, queries,
                 if Nc == 0:
                     continue
                 counts[key] = counts.get(key, Fr(0)) + w * Nc / Mc
+    if Ztot is None or Ztot <= 0:
+        raise RuntimeError("the reduced model has no positive total")
     return (Ztot, Ztot), (counts, dict(counts))
 
 

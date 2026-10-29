@@ -20,6 +20,101 @@ class RegionalCheckError(ValueError):
     pass
 
 
+def _independent_region_local(region, card, factors, queries, deadline=None,
+                              budget=None):
+    """The CHECKER's own local masses and marked masses for one region.
+
+    Independent of regions.region_data: it enumerates the region's boundary
+    and interior directly and accumulates A_R(b) and A_{R,i,a}(b) with its own
+    loop and its own ownership bookkeeping.
+
+    Calling the producer's region_data left local reconstruction common-mode:
+    skewing its markers to 9/10 and 1/10 of the true mass -- while preserving
+    the mark/mass identity, so no invariant fired -- made four uniform binary
+    variables publish [.897998, .902002] and [.097998, .102002] under
+    CERTIFIED_RESEARCH_ROUTE with both verification flags true, every one of
+    the eight intervals excluding 1/2.
+    """
+    import itertools as _it
+    from mdi import config as _K
+    rset = set(region)
+    internal, crossing = [], []
+    for fi, f in enumerate(factors):
+        sc = set(f.scope)
+        if sc <= rset:
+            internal.append(fi)
+        elif sc & rset:
+            crossing.append(fi)
+    boundary = tuple(sorted({v for fi in crossing for v in factors[fi].scope
+                             if v in rset}))
+    interior = tuple(v for v in region if v not in boundary)
+    nb = 1
+    for v in boundary:
+        nb *= card[v]
+    ni = 1
+    for v in interior:
+        ni *= card[v]
+    if nb * ni > _K.CAPS["region_local_enumeration"]:
+        raise RegionalCheckError(
+            "the checker's own local enumeration for region %s needs %d "
+            "assignments, above the declared cap" % (tuple(region), nb * ni))
+    want = [(v, st) for v in region if v in queries
+            for st in range(card[v])]
+    A, marks = {}, {k: {} for k in want}
+    if deadline is not None:
+        deadline()
+    seen = 0
+    for bc in _it.product(*[range(card[v]) for v in boundary]):
+        b = tuple(bc)
+        tot = Fr(0)
+        mk = {k: Fr(0) for k in want}
+        for ic in _it.product(*[range(card[v]) for v in interior]):
+            seen += 1
+            if deadline is not None and (seen & 0xFF) == 0:
+                deadline()
+            a = dict(zip(boundary, bc))
+            a.update(dict(zip(interior, ic)))
+            w = Fr(1)
+            for fi in internal:
+                f = factors[fi]
+                st = f.strides()
+                off = sum(a[v] * st[k] for k, v in enumerate(f.scope))
+                e = f.table[off]
+                if e == 0:
+                    w = Fr(0)
+                    break
+                w *= e
+            if w == 0:
+                continue
+            tot += w
+            for (v, stt) in want:
+                if a[v] == stt:
+                    mk[(v, stt)] += w
+        if tot == 0:
+            continue
+        A[b] = tot
+        if budget is not None:
+            budget.charge("local_mass_entries", 1, "checker local mass")
+        for k in want:
+            if mk[k] != 0:
+                marks[k][b] = mk[k]
+                if budget is not None:
+                    budget.charge("local_mass_entries", 1,
+                                  "checker local marker")
+    # the checker's OWN mark/mass identity
+    for v in region:
+        if v not in queries:
+            continue
+        for b in A:
+            tot = sum(marks[(v, st)].get(b, Fr(0))
+                      for st in range(card[v]))
+            if tot != A[b]:
+                raise RegionalCheckError(
+                    "the checker's own marks do not sum to its own mass at "
+                    "region %s assignment %s" % (tuple(region), b))
+    return boundary, interior, internal, crossing, A, marks
+
+
 def recheck_region(region, restricted, card, queries, rho_cap, region_of,
                    producer_coarse, deadline=None, budget=None):
     """Independently rebuild one region's cells and compare STRUCTURE only.
@@ -34,6 +129,47 @@ def recheck_region(region, restricted, card, queries, rho_cap, region_of,
                         deadline=deadline, region_of=region_of, aggregate=True)
     pc = producer_coarse
     problems = []
+    # ---- the CHECKER's OWN local masses and markers, from a distinct
+    # implementation, compared against the ones the merge was built from.
+    # Structural utilities may be shared; the local aggregate may not.
+    try:
+        ib, ii, iint, icr, iA, imarks = _independent_region_local(
+            region, card, restricted.factors, queries, deadline=deadline,
+            budget=budget)
+    except RegionalCheckError as e:
+        problems.append("independent local reconstruction refused: %s" % e)
+        return cr, problems
+    if tuple(ib) != tuple(rd.boundary):
+        problems.append("independent boundary %s != producer %s"
+                        % (tuple(ib), tuple(rd.boundary)))
+    if sorted(iint) != sorted(rd.internal_factors):
+        problems.append("independent internal factor set differs")
+    if sorted(icr) != sorted(rd.crossing_factors):
+        problems.append("independent crossing factor set differs")
+    if set(iA) != set(rd.A):
+        problems.append("independent boundary support differs (%d vs %d "
+                        "assignments)" % (len(iA), len(rd.A)))
+    else:
+        for b in iA:
+            if Fr(iA[b]) != Fr(rd.A[b]):
+                problems.append("independent local mass at %s is %s, the "
+                                "producer's is %s" % (b, iA[b], rd.A[b]))
+                break
+    if set(imarks) != set(rd.marks):
+        problems.append("independent marker key set differs")
+    else:
+        for k in sorted(imarks):
+            for b in imarks[k]:
+                if Fr(imarks[k][b]) != Fr(rd.marks[k].get(b, Fr(0))):
+                    problems.append(
+                        "independent marked mass %s at %s is %s, the "
+                        "producer's is %s"
+                        % (k, b, imarks[k][b], rd.marks[k].get(b, Fr(0))))
+                    break
+            if problems:
+                break
+    if problems:
+        return cr, problems
     if len(cr.cells) != len(pc.cells):
         problems.append("cell count %d != producer %d" % (len(cr.cells),
                                                           len(pc.cells)))
