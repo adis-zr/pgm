@@ -488,6 +488,27 @@ def verify_identities(restricted, simp: Simplified):
     # is verified on the domain of the factors it names -- bounded by factor
     # arity, never by the joint domain -- and every original and emitted table
     # must be named by exactly one record.
+    # VALIDATE the `impossible` proof exit. It is a claim that a named factor
+    # is identically zero, and nothing checked it: setting it to 0 or to a
+    # nonexistent origin 999 passed, and both public solvers then returned
+    # ZERO_EVIDENCE_PROVED for unary [1,2] whose Z is 3 and whose marginals
+    # are (1/3, 2/3). A field is not a proof.
+    if simp.impossible is not None:
+        wf = byo.get(simp.impossible)
+        if wf is None:
+            raise PreprocessError(
+                "the `impossible` proof names origin %r, which is not an "
+                "original factor of the restricted model; a zero-weight "
+                "proof needs a real witness" % (simp.impossible,))
+        if not all(Fr(t) == 0 for t in wf.table):
+            nz = [i for i, t in enumerate(wf.table) if Fr(t) != 0]
+            raise PreprocessError(
+                "the `impossible` proof names origin %d on scope %s, but that "
+                "factor is NOT identically zero (%d of %d entries are "
+                "positive, e.g. index %d = %s); this is a FALSE zero-evidence "
+                "proof" % (simp.impossible, tuple(wf.scope), len(nz),
+                           len(wf.table), nz[0], wf.table[nz[0]]))
+
     unary_contrib = {v: [Fr(1)] * simp.card[v] for v in simp.free}
     const_product = Fr(1)
     claims = {}          # origin -> how it was accounted
@@ -644,6 +665,28 @@ def verify_identities(restricted, simp: Simplified):
         # must equal the product of every member's original table.
         group = members.get(scope)
         if group and origin in group:
+            # Validate the group BEFORE touching any table: a member that is
+            # not an original factor, or whose scope reaches outside the
+            # group, previously raised KeyError instead of a typed refusal.
+            for mo in group:
+                mf_chk = byo.get(mo)
+                if mf_chk is None:
+                    raise PreprocessError(
+                        "combined group %s on scope %s names origin %r, which "
+                        "is not an original factor"
+                        % (group, list(scope), mo))
+                if not set(mf_chk.scope) <= set(scope):
+                    raise PreprocessError(
+                        "combined group on scope %s names member origin %d "
+                        "whose scope %s reaches OUTSIDE the group, so the "
+                        "product is not comparable on that domain"
+                        % (list(scope), mo, tuple(mf_chk.scope)))
+            if len(set(group)) != len(group):
+                dup = sorted({x for x in group if group.count(x) > 1})
+                raise PreprocessError(
+                    "combined group %s on scope %s lists origin(s) %s more "
+                    "than once; an original factor cannot contribute twice "
+                    "to one product" % (group, list(scope), dup))
             host = [g for g in emitted_by_scope.get(scope, [])
                     if g.origin in group]
             if not host:
@@ -675,9 +718,26 @@ def verify_identities(restricted, simp: Simplified):
                         "scope %s is %s at %s but the product of its members "
                         "%s is %s; a dropped or overwritten input would "
                         "otherwise pass" % (list(scope), w1, a, group, w0))
+            # `if mo not in claims: claim(...)` SILENTLY SKIPPED an
+            # already-claimed member, so a member consumed elsewhere (merged
+            # as a unary, split, or in another group) could be counted a
+            # SECOND time inside this product. With pair F=[1,2,3,5] and
+            # unary U=[1,2], emitting F*U while also retaining U as the
+            # synthetic unary and recording both as members yields the law
+            # F*U^2: P(X0) becomes (3/35,32/35) against a true (3/19,16/19).
+            # Every local equality passed; only the bounded global
+            # enumeration caught it, and only at 12 free variables.
+            #
+            # Each original factor OCCURRENCE is consumed exactly once, so a
+            # member already claimed is a DOUBLE CONSUMPTION, not a no-op.
             for mo in group:
-                if mo not in claims:
-                    claim(mo, "combined group %s verified" % (group,))
+                if mo in claims:
+                    raise PreprocessError(
+                        "origin %d is a member of the combined group %s on "
+                        "scope %s but was ALREADY accounted as '%s'; each "
+                        "original factor occurrence is consumed exactly once"
+                        % (mo, group, list(scope), claims[mo]))
+                claim(mo, "combined group %s verified" % (group,))
             continue
         same = [g for g in simp.factors if g.origin == origin]
         if not same:

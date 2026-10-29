@@ -106,7 +106,14 @@ def run(plan, factors, card, cand, Q, queries, ctx: A.Ctx, deadline=None,
         per.append((acc, macc))
 
     def convolve(a, b):
+        # The cap is enforced DURING construction and the deadline is checked
+        # inside the loop. Testing `len(out) > cap` only after the full double
+        # loop meant two 16-state components under a cap of 20 allocated all
+        # 31 keys and performed 256 multiply/add pairs before refusing, with
+        # no interior callback -- a correct result is not a resource-bounded
+        # implementation.
         out = {}
+        done = 0
         for sa, wa in a.items():
             if wa == 0:
                 continue
@@ -114,11 +121,16 @@ def run(plan, factors, card, cand, Q, queries, ctx: A.Ctx, deadline=None,
                 if wb == 0:
                     continue
                 k = sa + sb
+                if k not in out and len(out) >= cap:
+                    raise Declined(
+                        "the convolved statistic support reached the declared "
+                        "%d cap during construction (after %d products), so "
+                        "this candidate is refused before completing it"
+                        % (cap, done))
                 out[k] = out.get(k, Fr(0)) + wa * wb
-        if len(out) > cap:
-            raise Declined(
-                "the convolved statistic support is %d, above the declared "
-                "%d cap" % (len(out), cap))
+                done += 1
+                if deadline is not None and (done & 0xFF) == 0:
+                    deadline()
         return out
 
     # the TOTAL statistic distribution
@@ -277,19 +289,36 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
                     o += digits[bpos[v]] * cst[k]
                 coffs.append(o)
 
-            # ---- ORDINARY join: convolve every child's unmarked distribution
-            partials = [(Fr(1), 0)]
+            # ---- ORDINARY join: convolve every child's unmarked
+            # distribution, AGGREGATING BY STATISTIC after each child.
+            #
+            # This was a LIST of (weight, statistic) pairs extended per child
+            # and merged only at the end, so a 14-leaf binary star built
+            # 16,384 simultaneous histories (65,532 appends) to represent just
+            # 15 distinct statistic values -- exponential intermediate work
+            # that directly defeats the statistic compression the
+            # representation exists for. A dict keyed by the running
+            # statistic keeps the state at the true support size.
+            partials = {0: Fr(1)}
             for ci, (c, tab) in enumerate(inc):
-                nxt = []
-                for (pw, ps) in partials:
+                nxt = {}
+                for ps, pw in partials.items():
                     for (ck, cs), cw in tab.items():
                         if ck != coffs[ci]:
                             continue
-                        nxt.append((pw * cw, ps + cs))
+                        k2 = ps + cs
+                        nxt[k2] = nxt.get(k2, Fr(0)) + pw * cw
                 partials = nxt
                 if not partials:
                     break
-            for (pw, ps) in partials:
+                # bound the work DURING construction, not after
+                if len(partials) > cap:
+                    raise Declined(
+                        "an intermediate statistic support reached %d after "
+                        "child %d, above the %d cap" % (len(partials), ci, cap))
+                if deadline is not None:
+                    deadline()
+            for ps, pw in partials.items():
                 key = (soff, ps + local_stat)
                 out[key] = out.get(key, Fr(0)) + w * pw
 
@@ -304,7 +333,7 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
                 if v not in queries:
                     continue
                 st = digits[bpos[v]]
-                for (pw, ps) in partials:
+                for ps, pw in partials.items():
                     key = (soff, ps + local_stat)
                     mk = out_marks.setdefault((v, st), {})
                     mk[key] = mk.get(key, Fr(0)) + w * pw
@@ -313,19 +342,27 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
                 if not cmk:
                     continue
                 # the product of the OTHER children's ordinary distributions
-                others = [(Fr(1), 0)]
+                # same aggregation for the OTHER children's product
+                others = {0: Fr(1)}
                 for ci, (c, tab) in enumerate(inc):
                     if ci == mi:
                         continue
-                    nxt = []
-                    for (pw, ps) in others:
+                    nxt = {}
+                    for ps, pw in others.items():
                         for (ck, cs), cw in tab.items():
                             if ck != coffs[ci]:
                                 continue
-                            nxt.append((pw * cw, ps + cs))
+                            k2 = ps + cs
+                            nxt[k2] = nxt.get(k2, Fr(0)) + pw * cw
                     others = nxt
                     if not others:
                         break
+                    if len(others) > cap:
+                        raise Declined(
+                            "an intermediate marked statistic support reached "
+                            "%d, above the %d cap" % (len(others), cap))
+                    if deadline is not None:
+                        deadline()
                 if not others:
                     continue
                 for (v, st), tabm in cmk.items():
@@ -333,7 +370,7 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
                     for (ck, cs), cw in tabm.items():
                         if ck != coffs[mi]:
                             continue
-                        for (ow, os) in others:
+                        for os, ow in others.items():
                             key = (soff, cs + os + local_stat)
                             mk[key] = mk.get(key, Fr(0)) + w * cw * ow
             if len(out) > cap:

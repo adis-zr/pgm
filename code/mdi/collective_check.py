@@ -139,6 +139,42 @@ def check_statistic_publication(free, card, unary, cand, Q, queries, published,
     if Q is not None and (not isinstance(Q, int) or Q < 1):
         raise CollectiveCheckError("a quantized statistic law needs a positive "
                                    "integer Q, got %r" % (Q,))
+    # VALIDATE the proof parameters before using them. A NEGATIVE radius
+    # inverts the reference enclosure -- the "widened" interval becomes
+    # narrower than the truth -- so the containment predicate then accepted
+    # wrong probabilities: radius = -1/10 certified point rows (3/5, 2/5) for
+    # a genuinely uniform one-variable law.
+    try:
+        rad = Fr(radius)
+    except (TypeError, ValueError):
+        raise CollectiveCheckError("the error radius %r is not an exact "
+                                   "rational" % (radius,))
+    if rad < 0:
+        raise CollectiveCheckError(
+            "the error radius %s is NEGATIVE; a negative allowance inverts "
+            "the reference enclosure and cannot be used as a proof "
+            "parameter" % rad)
+    if rad > 1:
+        raise CollectiveCheckError(
+            "the error radius %s exceeds 1, so it carries no information "
+            "about a probability" % rad)
+    try:
+        epsv = Fr(eps)
+    except (TypeError, ValueError):
+        raise CollectiveCheckError("eps %r is not an exact rational" % (eps,))
+    if epsv <= 0 or epsv > 1:
+        raise CollectiveCheckError("eps %s is outside (0, 1]" % epsv)
+    if cand.rank < 1:
+        raise CollectiveCheckError("candidate rank %r is not positive"
+                                   % (cand.rank,))
+    for mi in range(cand.rank):
+        if cand.signs[mi] not in (1, -1):
+            raise CollectiveCheckError("mode %d has sign %r, which is neither "
+                                       "+1 nor -1" % (mi, cand.signs[mi]))
+        if Fr(cand.gammas[mi]) <= 0:
+            raise CollectiveCheckError("mode %d has gamma %s, which is not "
+                                       "positive" % (mi, cand.gammas[mi]))
+    radius = rad
     # the RESOURCE refusal is decided before anything else: an oversized
     # verification must refuse rather than report a verdict, including a
     # schema verdict it could not have backed with a check
@@ -186,12 +222,22 @@ def check_statistic_publication(free, card, unary, cand, Q, queries, published,
                 fails.append("variable %d state %d: invalid endpoints" % (v, a))
                 continue
             mlo, mhi = mk[(v, a)]
-            clo = max(Fr(0), mlo / Zhi - radius)
-            chi = min(Fr(1), mhi / Zlo + radius)
-            if not (lo <= clo and chi <= hi):
-                fails.append("variable %d state %d: publication [%s, %s] does "
-                             "NOT contain the independent enclosure [%s, %s]"
-                             % (v, a, lo, hi, clo, chi))
+            # The checker's OWN reference enclosure, carrying only the
+            # checker's own numerical error (the exact enumeration's directed
+            # rounding). The PRODUCER's approximation allowance belongs on the
+            # publication side, not inside this reference: adding it here
+            # widened an EXACT reference past a correct publication, so the
+            # exactly-uniform publication (1/2, 1/2) was refused for a law
+            # whose checker enumeration is exact.
+            clo = mlo / Zhi
+            chi = mhi / Zlo
+            # the publication, widened by the allowance the PRODUCER charged,
+            # must cover the checker's reference
+            if not (lo - radius <= clo and chi <= hi + radius):
+                fails.append("variable %d state %d: publication [%s, %s] "
+                             "widened by the charged allowance %s does NOT "
+                             "cover the independent reference [%s, %s]"
+                             % (v, a, lo, hi, radius, clo, chi))
             if hi - lo > Fr(eps):
                 fails.append("variable %d state %d: width exceeds eps" % (v, a))
     return (not fails), fails, {"configurations": total,
@@ -233,6 +279,18 @@ def check_quadrature_publication(free, card, unary, cand, queries, published,
     # unary [1,1], features [0,10], gamma 1 evaluates in 2,049 nodes with
     # widths about .002137 and .001082, yet the checker refused before its
     # two-configuration check.
+    try:
+        dlt = Fr(delta)
+    except (TypeError, ValueError):
+        raise CollectiveCheckError("delta %r is not an exact rational"
+                                   % (delta,))
+    if dlt <= 0:
+        raise CollectiveCheckError("the quadrature delta %s is not positive"
+                                   % dlt)
+    if Fr(radius) < 0:
+        raise CollectiveCheckError(
+            "the error radius %s is NEGATIVE; a negative allowance inverts "
+            "the reference enclosure" % Fr(radius))
     qrad = Fr(0)
     for mi in range(cand.rank):
         Rk = Fr(0)

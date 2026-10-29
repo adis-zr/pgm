@@ -5089,3 +5089,345 @@ def test_r7_production_path_charges_the_allocation_counters():
     res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
     used = (res.budget or {}).get("used") or {}
     assert used.get("local_mass_entries", 0) > 0, used
+
+
+# ===== r7 review: status metadata, conservation, parameters, DP work =====
+
+def test_r8_checker_metadata_propagates_and_the_ring_certifies():
+    """R7-1 false downgrade. verify_publication discarded _check's metadata
+    with `ok, fails, _`, and the pipeline substituted {"kind": "identity"}, so
+    the flag the gate reads never arrived. The shipped ring has twelve BINARY
+    variables: 2^12 = 4,096, EXACTLY the cap, not above it. Its independent
+    aggregation RAN and checked 24 coordinates."""
+    from mdi import pipeline as PLN
+    import mdi.registry            # noqa: F401
+    m, r, regs, crs, rds, ro = _ring_coarse()
+    joint = 1
+    for v in r.free:
+        joint *= r.card[v]
+    assert joint == K.CAPS["region_tuple_assignments"], joint
+    direct = S.solve(r.model, {}, eps=Fr(1, 100), mode="P",
+                     cap_bytes=1 << 30, deadline_s=120)
+    assert direct["outcome"] == "VERIFIED_ALL_MARGINALS", direct["outcome"]
+    assert direct["checker"]["independent_aggregation_checked"] is True
+    # and the PUBLIC pipeline must not lose that fact
+    res = PLN.solve(r.model, {}, wall_s=180.0, cap_bytes=1 << 30)
+    assert res.checker.get("independent_aggregation_checked") is True, \
+        res.checker
+    assert res.status.startswith("CERTIFIED"), (res.status, res.reason)
+
+
+def test_r8_regional_producer_is_independent_of_its_checker():
+    """R7-1 false certification. Regional was exempt from the gate while its
+    producer and checker BOTH called _reduced_message_passing. A fault in that
+    one shared function returning total 4 with masses 18/5 and 2/5 yielded
+    CERTIFIED_RESEARCH_ROUTE with independently_verified=True, publishing
+    [.898,.902] where the truth is 1/2."""
+    from mdi import pipeline as PLN, regional_check as RC
+    import mdi.registry            # noqa: F401
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(1)], origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1), Fr(1)], origin=1)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    clean = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    assert clean.status.startswith("CERTIFIED"), clean.reason
+    orig = RC._reduced_message_passing
+
+    def faulty(restricted, regions, coarse, rds, queries, deadline=None):
+        cl, ch = {}, {}
+        for v in sorted(restricted.card):
+            cl[(v, 0)] = ch[(v, 0)] = Fr(18, 5)
+            cl[(v, 1)] = ch[(v, 1)] = Fr(2, 5)
+        return (Fr(4), Fr(4)), (cl, ch)
+
+    RC._reduced_message_passing = faulty
+    try:
+        res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    finally:
+        RC._reduced_message_passing = orig
+    assert not res.status.startswith("CERTIFIED"), res.status
+    props = res.properties or {}
+    assert not props.get("independently_verified"), props
+
+
+def test_r8_combined_members_cannot_double_consume():
+    """R7-2. `if mo not in claims: claim(...)` SILENTLY SKIPPED an
+    already-claimed member, so an original consumed elsewhere could be counted
+    a second time: emitting F*U while retaining U as the synthetic unary gives
+    the law F*U^2, turning (3/19,16/19) into (3/35,32/35)."""
+    import copy
+    from mdi import preprocess as PRE
+    for n in (12, 13, 16, 20):
+        facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                         table=[Fr(1), Fr(2), Fr(3), Fr(5)], origin=0),
+                M.Factor(scope=(1, 2), card=(2, 2),
+                         table=[Fr(1), Fr(2), Fr(3), Fr(5)], origin=1)]
+        for v in range(3, n):
+            facs.append(M.Factor(scope=(v,), card=(2,),
+                                 table=[Fr(1), Fr(1)], origin=v))
+        m = M.Model(nvars=n, card=[2] * n, factors=facs)
+        m.validate()
+        r = M.restrict(m, {})
+        simp = PRE.simplify(r)
+        assert PRE.verify_identities(r, simp), len(r.free)
+        for mem in ({"0|1": [0, 1], "1|2": [1]},      # reuse across groups
+                    {"0|1": [0, 0]},                   # duplicate in group
+                    {"0|1": [0, 777]}):                # nonexistent member
+            bad = copy.deepcopy(simp)
+            bad.combined_members = mem
+            with pytest.raises(PRE.PreprocessError):
+                PRE.verify_identities(r, bad)
+
+
+def test_r8_impossible_proof_needs_a_validated_witness():
+    """R7-2. Simplified.impossible was unverified: setting it to 0 or to a
+    nonexistent origin 999 passed, and both public solvers then returned
+    ZERO_EVIDENCE_PROVED for unary [1,2] whose Z is 3."""
+    import copy
+    from mdi import preprocess as PRE
+    facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(2)], origin=0)]
+    m = M.Model(nvars=1, card=[2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    simp = PRE.simplify(r)
+    assert PRE.verify_identities(r, simp)
+    for val in (0, 999):
+        bad = copy.deepcopy(simp)
+        bad.impossible = val
+        with pytest.raises(PRE.PreprocessError):
+            PRE.verify_identities(r, bad)
+    # a GENUINE zero factor must still prove zero evidence
+    f2 = [M.Factor(scope=(0,), card=(2,), table=[Fr(0), Fr(0)], origin=0)]
+    m2 = M.Model(nvars=1, card=[2], factors=f2)
+    m2.validate()
+    r2 = M.restrict(m2, {})
+    s2 = PRE.simplify(r2)
+    assert PRE.verify_identities(r2, s2)
+    res = S.solve(m2, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                  deadline_s=30)
+    assert res["outcome"] == "ZERO_EVIDENCE_PROVED", res["outcome"]
+
+
+def test_r8_collective_checkers_validate_their_proof_parameters():
+    """R7-5. A NEGATIVE radius inverts the reference enclosure, so the
+    containment predicate accepted wrong probabilities: radius = -1/10
+    certified point rows (3/5,2/5) for a genuinely uniform law."""
+    from mdi import collective_check as CC
+    ctx = A.Ctx(160)
+
+    class C:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1)]
+        features = [{0: [Fr(0), Fr(0)]}]
+
+    unary = {0: [Fr(1), Fr(1)]}
+    bad = {0: [(Fr(3, 5), Fr(3, 5)), (Fr(2, 5), Fr(2, 5))]}
+    for rad in (Fr(-1, 10), Fr(2)):
+        with pytest.raises(CC.CollectiveCheckError):
+            CC.check_statistic_publication([0], {0: 2}, unary, C(), 1, {0},
+                                           bad, Fr(1, 100), ctx, radius=rad)
+    with pytest.raises(CC.CollectiveCheckError):
+        CC.check_quadrature_publication([0], {0: 2}, unary, C(), {0}, bad,
+                                        Fr(1, 100), ctx, Fr(1, 1000),
+                                        radius=Fr(-1, 10))
+    # a correct EXACT publication must be ACCEPTED: the checker's own
+    # enumeration of this law is exact, so the producer's integration
+    # allowance must not widen the reference past it
+    good = {0: [(Fr(1, 2), Fr(1, 2)), (Fr(1, 2), Fr(1, 2))]}
+    ok, fails, _ = CC.check_quadrature_publication(
+        [0], {0: 2}, unary, C(), {0}, good, Fr(1, 100), ctx, Fr(1, 1000))
+    assert ok, fails
+
+
+def test_r8_statistic_dp_aggregates_after_each_child():
+    """R7-4. `partials` and `others` were LISTS of (weight, statistic) pairs
+    extended per child and merged only at the end, so a 14-leaf binary star
+    built 16,384 simultaneous histories for just 15 statistic values. The
+    result is verified against an exact 512-bit reference, not a float
+    tolerance."""
+    import itertools, gmpy2, inspect
+    from mdi import gendp as G
+    src = inspect.getsource(G._run_component)
+    assert "partials = {0: Fr(1)}" in src, "partials must be statistic-keyed"
+    assert "others = {0: Fr(1)}" in src, "others must be statistic-keyed"
+
+    def ref_exp(x, p=512):
+        mq = gmpy2.mpq(x.numerator, x.denominator)
+        with gmpy2.context(precision=p, round=gmpy2.RoundDown):
+            lo = gmpy2.exp(gmpy2.mpfr(mq))
+        with gmpy2.context(precision=p, round=gmpy2.RoundUp):
+            hi = gmpy2.exp(gmpy2.mpfr(mq))
+        return A.exact_fr(lo), A.exact_fr(hi)
+
+    ctx = A.Ctx(128)
+    for leaves in (3, 4, 5):
+        nn = leaves + 1
+        facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(2)],
+                         origin=v) for v in range(nn)]
+        for v in range(1, nn):
+            facs.append(M.Factor(scope=(0, v), card=(2, 2),
+                                 table=[Fr(2), Fr(1), Fr(1), Fr(2)],
+                                 origin=100 + v))
+        m = M.Model(nvars=nn, card=[2] * nn, factors=facs)
+        m.validate()
+        r = M.restrict(m, {})
+
+        class C:
+            rank = 1
+            signs = [1]
+            gammas = [Fr(1, 1000)]
+            features = [{v: [Fr(0), Fr(1)] for v in range(nn)}]
+
+        sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                            K.RESOURCES["arm_rss_bytes"])
+        pl, _est = sel["chosen"]
+        (zl, zh), mk, _m = G.run(pl, r.factors, r.card, C(), 1,
+                                 set(range(nn)), ctx)
+        Zl = Zh = Fr(0)
+        cl, ch = {}, {}
+        for combo in itertools.product(range(2), repeat=nn):
+            Ssum = sum(combo)
+            wt = Fr(1)
+            for f in r.factors:
+                off = 0
+                for k, v in enumerate(f.scope):
+                    off = off * f.card[k] + combo[v]
+                wt *= f.table[off]
+            el, eh = ref_exp(Fr(Ssum * Ssum, 2000))
+            Zl += wt * el
+            Zh += wt * eh
+            for v in range(nn):
+                cl[(v, combo[v])] = cl.get((v, combo[v]), Fr(0)) + wt * el
+                ch[(v, combo[v])] = ch.get((v, combo[v]), Fr(0)) + wt * eh
+        assert zl <= Zl and Zh <= zh, (leaves, float(zl), float(zh))
+        for v in range(nn):
+            for a in range(2):
+                lo, hi = mk[(v, a)]
+                assert lo <= cl[(v, a)] and ch[(v, a)] <= hi, (leaves, v, a)
+    # a 14-leaf star must complete at all
+    nn = 15
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(2)], origin=v)
+            for v in range(nn)]
+    for v in range(1, nn):
+        facs.append(M.Factor(scope=(0, v), card=(2, 2),
+                             table=[Fr(2), Fr(1), Fr(1), Fr(2)],
+                             origin=100 + v))
+    m = M.Model(nvars=nn, card=[2] * nn, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+
+    class C14:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 1000)]
+        features = [{v: [Fr(0), Fr(1)] for v in range(nn)}]
+
+    sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                        K.RESOURCES["arm_rss_bytes"])
+    pl, _est = sel["chosen"]
+    (zl, zh), mk, _m = G.run(pl, r.factors, r.card, C14(), 1, set(range(nn)),
+                             ctx)
+    assert zl > 0 and len(mk) == 2 * nn
+
+
+def test_r8_convolution_caps_during_construction():
+    """R7-4. The disconnected convolution tested its cap only AFTER the full
+    double loop, so two 16-state components under a cap of 20 allocated all 31
+    keys and performed 256 multiply/add pairs before refusing."""
+    import inspect
+    from mdi import gendp as G
+    src = inspect.getsource(G.run)
+    assert "during construction" in src
+    n = 10
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(2)], origin=v)
+            for v in range(n)]
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+
+    class C:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 1000)]
+        features = [{v: [Fr(0), Fr(v + 1)] for v in range(n)}]
+
+    sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                        K.RESOURCES["arm_rss_bytes"])
+    pl, _est = sel["chosen"]
+    ctx = A.Ctx(128)
+    with pytest.raises(G.Declined) as e:
+        G.run(pl, r.factors, r.card, C(), 1, set(range(n)), ctx,
+              cap_states=20)
+    assert "during construction" in str(e.value)
+    # the default cap must still complete
+    (zl, zh), mk, meta = G.run(pl, r.factors, r.card, C(), 1, set(range(n)),
+                               ctx)
+    assert zl > 0 and meta.get("total_statistic_support", 0) > 20
+
+
+def test_r8_pi_bounds_are_cached_by_precision():
+    """R7-5. The 513-node Fourier control made 8,208 calls to const_pi at 640
+    bits through the pi-bound helper, although the bounds depend only on the
+    precision."""
+    import gmpy2
+    from mdi import collective as CO
+    ctx = A.Ctx(160)
+    calls = [0]
+    orig = gmpy2.const_pi
+
+    def counted(*a, **k):
+        calls[0] += 1
+        return orig(*a, **k)
+
+    gmpy2.const_pi = counted
+    CO._PI_CACHE.clear()
+    try:
+        class C:
+            rank = 1
+            signs = [-1]
+            gammas = [Fr(1, 2)]
+            features = [{0: [Fr(0), Fr(1)], 1: [Fr(0), Fr(1)]}]
+
+        unary = {0: [Fr(1), Fr(2)], 1: [Fr(1), Fr(1)]}
+        (Zlo, Zhi), mk, meta = CO.fourier_evaluate(
+            [0, 1], {0: 2, 1: 2}, unary, C(), {0, 1}, ctx, Fr(1, 1000))
+    finally:
+        gmpy2.const_pi = orig
+    assert meta["nodes"] == 513, meta["nodes"]
+    # far below the 8,208 the uncached helper made for this control
+    assert calls[0] < 3000, calls[0]
+
+
+def test_r8_composed_reports_its_real_statistic_support():
+    """R7-6. Composed execution discarded the general DP's metadata,
+    substituted acc={0:1} and reported statistic_support=1 where the real
+    support is larger; that false count fed pricing and admission."""
+    from mdi import composed as CX, regions as R
+    ctx = A.Ctx(160)
+    n = 4
+    facs = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            facs.append(M.Factor(scope=(i, j), card=(2, 2),
+                                 table=[Fr(3), Fr(2), Fr(2), Fr(3)],
+                                 origin=len(facs)))
+    facs.append(M.Factor(scope=(0, 1), card=(2, 2),
+                         table=[Fr(0), Fr(0), Fr(1), Fr(1)],
+                         origin=len(facs)))
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    regs = [(i,) for i in range(n)]
+    rds = [R.region_data(g, r.card, r.factors, set(range(n))) for g in regs]
+    ro = {v: i for i, g in enumerate(regs) for v in g}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), set(range(n)),
+                          region_of=ro, aggregate=True) for i in range(n)]
+    try:
+        out, meta = CX.run(r, regs, crs, rds, set(range(n)), ctx, Fr(1, 100))
+    except CX.Declined:
+        return
+    if meta.get("evaluator") == "general_residual_dp":
+        assert meta.get("statistic_support", 0) > 1, meta

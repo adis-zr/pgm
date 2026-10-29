@@ -796,6 +796,9 @@ def _modulus_upper(re_lo: Fr, re_hi: Fr, im_lo: Fr, im_hi: Fr) -> Fr:
     return rm + im
 
 
+_PI_CACHE = {}
+
+
 def _pi_bounds(ctx: A.Ctx = None):
     """Rigorous rational bounds on pi, at high precision.
 
@@ -808,10 +811,19 @@ def _pi_bounds(ctx: A.Ctx = None):
     """
     import gmpy2
     p = 512 if ctx is None else max(512, 4 * ctx.p)
+    # CACHE by precision. The 513-node Fourier control made 8,208 calls to
+    # const_pi at 640 bits through this helper, once per endpoint of every
+    # trig enclosure, although the bounds depend only on the precision. MPFR
+    # may cache the constant internally; this removes the API calls either
+    # way. The construction cost is charged once per precision.
+    hit = _PI_CACHE.get(p)
+    if hit is not None:
+        return hit
     with gmpy2.context(precision=p, round=gmpy2.RoundDown):
         lo = A.exact_fr(gmpy2.const_pi())
     with gmpy2.context(precision=p, round=gmpy2.RoundUp):
         hi = A.exact_fr(gmpy2.const_pi())
+    _PI_CACHE[p] = (lo, hi)
     return lo, hi
 
 

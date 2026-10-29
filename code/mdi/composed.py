@@ -305,7 +305,16 @@ def _evaluate(restricted, regions, coarse, rds, queries, ctx, eps,
             # the general-residual DP's own refusal is this candidate's
             # refusal: never fall through to a path that drops its factors
             raise Declined("general-residual evaluation declined: %s" % e)
-        acc = {0: Fr(1)}
+        # Report the ACTUAL statistic support from the DP's metadata. A dummy
+        # acc = {0: Fr(1)} reported statistic_support = 1 where the real
+        # support on the repaired four-variable control is 8, and that false
+        # count fed pricing and admission.
+        _sup = None
+        if isinstance(_gm, dict):
+            _sup = (_gm.get("total_statistic_support")
+                    or _gm.get("distinct_statistics")
+                    or _gm.get("support"))
+        acc = {k: Fr(1) for k in range(int(_sup))} if _sup else {0: Fr(1)}
         evaluator = "general_residual_dp"
     if Zlo <= 0:
         raise Declined("coarse collective evaluation gave a nonpositive total")
