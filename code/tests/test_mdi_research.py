@@ -6508,3 +6508,167 @@ def test_r12_discovery_stops_on_shared_budget_exhaustion():
     # the attempted work remains charged
     used = (res.budget or {}).get("used") or {}
     assert used.get("local_mass_entries", 0) >= 1, used
+
+
+# ===== r12 review: one explicit profile relation; clean regressions restored =====
+
+def _r13_verify(facs, nvars, cards, regions, ro, pub_override=None,
+                mutate=None):
+    """Shared driver: clean and mutated cases use IDENTICAL publication rules
+    (coarsening radius plus the valid 2e-6 reserve)."""
+    from mdi import regions as R, regional_check as RC
+    t1 = K.level_radius(1)
+    res = K.PUBLICATION_RESERVE
+    m = M.Model(nvars=nvars, card=cards, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    q = set(range(nvars))
+    orig = R.aggregate_crossings
+    if mutate is not None:
+        def patched(rd, fa, c, r_, **kw):
+            pr, d = orig(rd, fa, c, r_, **kw)
+            return mutate(pr), d
+        R.aggregate_crossings = patched
+    try:
+        rds = [R.region_data(g, r.card, r.factors, q) for g in regions]
+        crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), q,
+                              region_of=ro, aggregate=True)
+               for i in range(len(regions))]
+        pub = pub_override or {
+            v: [(max(Fr(0), pt[v][s] - t1 - res),
+                 min(Fr(1), pt[v][s] + t1 + res)) for s in range(cards[v])]
+            for v in range(nvars)}
+        return RC.verify_regional_publication(r, regions, crs, rds, q, pub,
+                                              t1, Fr(1, 100))
+    finally:
+        R.aggregate_crossings = orig
+
+
+def test_r13_extra_and_duplicate_profiles_reject_before_lookup():
+    """R12-2 (retained gap, also present in r11). The detail record's factor
+    multiset was checked, but by_id silently overwrote duplicate ids and the
+    extrema loop consumed every emitted profile including ones nobody
+    verified. On a uniform pair (all truths 1/2) an appended unowned profile
+    id 37 with rows [1,1]/[9,9], or a duplicate id 0 with a bad table first,
+    certified four intervals near .1/.9 with valid padding."""
+    t1 = K.level_radius(1)
+    res = K.PUBLICATION_RESERVE
+    uni = [M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(1)] * 4, origin=0)]
+    bad = {(0,): (Fr(1), Fr(1)), (1,): (Fr(9), Fr(9))}
+    wrong = {v: [(Fr(1, 10) - t1 - res, Fr(1, 10) + t1 + res),
+                 (Fr(9, 10) - t1 - res, Fr(9, 10) + t1 + res)]
+             for v in (0, 1)}
+    # the CLEAN pair passes under these rules
+    ok0, f0, _m0 = _r13_verify(uni, 2, [2, 2], [(0,), (1,)], {0: 0, 1: 1})
+    assert ok0, f0
+    for mut in (lambda pr: list(pr) + [(37, pr[0][1], pr[0][2], bad)],
+                lambda pr: [(0, pr[0][1], pr[0][2], bad)] + list(pr)):
+        ok, fails, _m = _r13_verify(uni, 2, [2, 2], [(0,), (1,)],
+                                    {0: 0, 1: 1}, pub_override=wrong,
+                                    mutate=mut)
+        assert not ok, "an unverified profile fed the extrema calculation"
+        assert any("one-to-one" in str(x) for x in fails), fails[:3]
+
+
+def test_r13_reversed_factor_axes_verify():
+    """R12-3A (a CLEAN r12 regression I introduced). crossing_profile keeps
+    the factor's own scope order; _own_profile_product sorted the union, so a
+    legal factor listing an outside variable before an inside one was compared
+    against a differently ordered table and REJECTED. UAI scope order is part
+    of the indexing contract, not bad input. r10 and r11 accepted this."""
+    facs = [M.Factor(scope=(2, 0), card=(2, 3),
+                     table=[Fr(i + 1) for i in range(6)], origin=0),
+            M.Factor(scope=(1,), card=(2,), table=[Fr(1), Fr(2)], origin=1)]
+    ok, fails, _m = _r13_verify(facs, 3, [3, 2, 2], [(0, 1), (2,)],
+                                {0: 0, 1: 0, 2: 1})
+    assert ok, fails
+
+
+def test_r13_over_cap_aggregation_fallback_verifies():
+    """R12-3B (a CLEAN r12 regression I introduced). Seven separable pairs
+    [1,2,3,6] across regions of 6 and 7 variables have an 8,192-entry joint
+    product, over the unchanged 4,096 kernel cap, so the aggregator correctly
+    emits seven individual profiles. r12 assumed any multi-factor group needed
+    a tagged profile and rejected this legal representation. The cap is NOT
+    raised to pass this test."""
+    from mdi import regions as R
+    facs = []
+    for i in range(6):
+        facs.append(M.Factor(scope=(i, i + 6), card=(2, 2),
+                             table=[Fr(1), Fr(2), Fr(3), Fr(6)], origin=i))
+    facs.append(M.Factor(scope=(5, 12), card=(2, 2),
+                         table=[Fr(1), Fr(2), Fr(3), Fr(6)], origin=6))
+    for v in range(13):
+        facs.append(M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)],
+                             origin=100 + v))
+    regs = [tuple(range(6)), tuple(range(6, 13))]
+    ro = {v: (0 if v < 6 else 1) for v in range(13)}
+    # the producer really does fall back to individual profiles here
+    m = M.Model(nvars=13, card=[2] * 13, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    rd0 = R.region_data(regs[0], r.card, r.factors, set(range(13)))
+    prof, det = R.aggregate_crossings(rd0, r.factors, r.card, ro)
+    assert len(prof) == 7 and det[0].get("declined"), (len(prof), det)
+    assert K.CAPS["aggregated_kernel_entries"] == 4096, "cap must be unchanged"
+    ok, fails, _m = _r13_verify(facs, 13, [2] * 13, regs, ro)
+    assert ok, fails
+
+
+def test_r13_two_distinct_aggregate_groups_verify():
+    """R12-3C. For each group, r12 selected ALL tuple-tagged profiles and so
+    compared one group's correct table against the other group's correct
+    product, rejecting both. Each emitted profile must be checked against ITS
+    OWN group only. r10 accepted this; r11 crashed on the tag parser."""
+    facs = [M.Factor(scope=(0, 2), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(8)], origin=0),
+            M.Factor(scope=(1, 2), card=(2, 2),
+                     table=[Fr(2), Fr(1), Fr(1), Fr(2)], origin=1),
+            M.Factor(scope=(0, 3), card=(2, 2),
+                     table=[Fr(1), Fr(3), Fr(2), Fr(1)], origin=2),
+            M.Factor(scope=(1, 3), card=(2, 2),
+                     table=[Fr(2), Fr(2), Fr(1), Fr(3)], origin=3)]
+    ok, fails, _m = _r13_verify(facs, 4, [2] * 4, [(0, 1), (2,), (3,)],
+                                {0: 0, 1: 0, 2: 1, 3: 2})
+    assert ok, fails
+
+
+def test_r13_profile_product_bounds_temporaries_and_checks_deadline():
+    """R12-4. _own_profile_product built an 80,001-bit TEMPORARY from legal
+    40,001-bit inputs under the 65,536-bit cap before cancelling it to 1, and
+    checked the deadline only at the start of each inside row, so a
+    4,096-entry kernel finished 2,048 outside reads after expiry."""
+    from mdi import regions as R, regional_check as RC
+    q = (Fr(2) ** 40000 + 1) / Fr(2) ** 40000
+    facs = [M.Factor(scope=(0, 1), card=(2, 2), table=[q] * 4, origin=0),
+            M.Factor(scope=(0, 1), card=(2, 2), table=[q] * 4, origin=1),
+            M.Factor(scope=(0, 1), card=(2, 2), table=[1 / q] * 4, origin=2),
+            M.Factor(scope=(0, 1), card=(2, 2), table=[1 / q] * 4, origin=3)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    rd = R.region_data((0,), r.card, r.factors, {0, 1})
+    prof, _d = R.aggregate_crossings(rd, r.factors, r.card, {0: 0, 1: 1})
+    # the final product is exactly one, so only the TEMPORARY can trip it
+    assert all(Fr(x) == 1 for row in prof[0][3].values() for x in row)
+    with pytest.raises(RC.RegionalCheckError) as e:
+        RC._own_profile_product([0, 1, 2, 3], r.factors, r.card, (0,),
+                                prof[0][1], prof[0][2], "sorted")
+    assert "bit" in str(e.value).lower()
+    # interior deadline: a 64x64 kernel must stop inside the row
+    f2 = [M.Factor(scope=(0, 1), card=(64, 64), table=[Fr(1)] * 4096,
+                   origin=0)]
+    m2 = M.Model(nvars=2, card=[64, 64], factors=f2)
+    m2.validate()
+    r2 = M.restrict(m2, {})
+    calls = [0]
+
+    def expired():
+        calls[0] += 1
+        raise RuntimeError("EXPIRED")
+
+    with pytest.raises(RuntimeError):
+        RC._own_profile_product([0], r2.factors, r2.card, (0,), [0], 64,
+                                "factor", deadline=expired)
+    assert calls[0] >= 1

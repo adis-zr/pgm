@@ -115,15 +115,37 @@ def _independent_region_local(region, card, factors, queries, deadline=None,
     return boundary, interior, internal, crossing, A, marks
 
 
-def _own_profile_product(fis, factors, card, region, in_vars, nout,
-                         deadline=None):
-    """The CHECKER's own product kernel for the given original factors."""
+def _own_profile_product(fis, factors, card, region, in_vars, nout, layout,
+                         deadline=None, budget=None):
+    """The CHECKER's own product kernel for one verified group, in the layout
+    the emitted profile is REQUIRED to have.
+
+    `layout` is "factor" for a bare single-factor profile (crossing_profile
+    keeps the factor's own scope order for both inside and outside axes) or
+    "sorted" for a tagged aggregate kernel (aggregate_crossings sorts the
+    union). r12 sorted the union unconditionally, so a legal factor whose
+    scope lists an outside variable before an inside one -- ordinary UAI
+    input -- was compared against a differently ordered table and REJECTED.
+    UAI scope order is part of the table indexing contract, not bad input.
+
+    Returns None when the kernel exceeds the declared entry cap. Temporary
+    products are bit-bounded (a legal two-variable control built an
+    80,001-bit intermediate under the 65,536-bit cap before cancelling it),
+    strides are hoisted, and the deadline is checked inside the outside loop.
+    """
     import itertools as _it
     from mdi import config as _K
     rset = set(region)
-    scope = sorted({v for fi in fis for v in factors[fi].scope})
-    inside = [v for v in scope if v in rset]
-    outside = [v for v in scope if v not in rset]
+    if layout == "factor":
+        if len(fis) != 1:
+            return {"__layout__": "factor layout needs exactly one factor"}
+        f = factors[fis[0]]
+        inside = [v for v in f.scope if v in rset]
+        outside = [v for v in f.scope if v not in rset]
+    else:
+        scope = sorted({v for fi in fis for v in factors[fi].scope})
+        inside = [v for v in scope if v in rset]
+        outside = [v for v in scope if v not in rset]
     nin = non = 1
     for v in inside:
         nin *= card[v]
@@ -131,28 +153,50 @@ def _own_profile_product(fis, factors, card, region, in_vars, nout,
         non *= card[v]
     if nin * non > _K.CAPS["aggregated_kernel_entries"]:
         return None
-    if tuple(inside) != tuple(in_vars) or non != nout:
-        return {"__layout__": (tuple(inside), non)}
+    if list(inside) != list(in_vars) or non != nout:
+        return {"__layout__": (tuple(inside), non, tuple(in_vars), nout)}
+    if budget is not None:
+        budget.charge("local_mass_entries", max(1, nin * non),
+                      "checker profile product")
+    # hoist strides and scope positions once per group
+    pre = []
+    for fi in fis:
+        f = factors[fi]
+        pre.append((f, f.strides(), list(enumerate(f.scope))))
+    bitcap = _K.CAPS["rational_bit_length"]
     out = {}
+    seen = 0
     for ic in _it.product(*[range(card[v]) for v in inside]):
-        if deadline is not None:
-            deadline()
         row = []
+        a_in = dict(zip(inside, ic))
         for oc in _it.product(*[range(card[v]) for v in outside]):
-            a = dict(zip(inside, ic))
-            a.update(dict(zip(outside, oc)))
+            seen += 1
+            if deadline is not None and (seen & 0x3F) == 0:
+                deadline()
+            a = dict(a_in)
+            a.update(zip(outside, oc))
             w = Fr(1)
-            for fi in fis:
-                f = factors[fi]
-                st = f.strides()
-                off = sum(a[v] * st[k] for k, v in enumerate(f.scope))
+            for f, st, sc in pre:
+                off = 0
+                for k, v in sc:
+                    off += a[v] * st[k]
                 e = Fr(f.table[off])
                 if e == 0:
                     w = Fr(0)
                     break
                 w *= e
+                # bound the TEMPORARY, not only the returned value
+                if (w.numerator.bit_length() > bitcap
+                        or w.denominator.bit_length() > bitcap):
+                    raise RegionalCheckError(
+                        "the checker's profile product reached %d bits, "
+                        "above the declared %d-bit cap"
+                        % (max(w.numerator.bit_length(),
+                               w.denominator.bit_length()), bitcap))
             row.append(w)
         out[tuple(ic)] = row
+    if deadline is not None:
+        deadline()
     return out
 
 
@@ -215,7 +259,7 @@ def _own_ratio_extrema(row_b, row_r):
 def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                                iA, imarks, rho_cap, deadline=None,
                                region_of_for_profiles=None,
-                               prebuilt_rd=None):
+                               prebuilt_rd=None, budget=None):
     """Verify the SUBMITTED coarsening witness from checker-owned quantities.
 
     r9 verified the raw local weights A_R(b) and A_{R,i,a}(b) independently,
@@ -317,8 +361,30 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
         if (sc & rset) and not (sc <= rset):
             own_crossing.append(fi)
 
+    # ---- ONE explicit relation:
+    #   original crossing OCCURRENCES -> represented GROUPS -> expected
+    #   EMITTED profiles (with identity and layout) -> verified tables.
+    #
+    # r12 checked the detail record's factor multiset and some products, but
+    # never bound every CONSUMED profile to a verified group. by_id silently
+    # overwrote duplicate ids, a singleton group verified only the profile
+    # selected by its id, and the extrema loop then consumed the whole list
+    # including profiles nobody checked. On a uniform pair an appended
+    # unowned profile (id 37, rows [1,1]/[9,9]) or a duplicate id 0 with a bad
+    # table first certified four intervals near .1/.9 for truths of 1/2.
+    #
+    # The expected emitted set is derived from the detail record and the
+    # aggregator's actual schema:
+    #   aggregated group  -> exactly one profile tagged ("agg", *fis), sorted
+    #                        axis layout;
+    #   singleton group or DECLINED aggregate (product over the entry cap)
+    #                     -> one bare-id profile per factor, factor-scope
+    #                        axis layout.
+    # r12 assumed any multi-factor group needed a tagged profile, so the
+    # ordinary over-cap fallback to individual profiles -- a legal
+    # representation under unchanged caps -- was rejected.
+    expected = []      # (profile_id, fis, layout)
     claimed = []
-    groups = []            # (constituent factor indices, emitted profile)
     if agg_detail:
         for gi, entry in enumerate(agg_detail):
             if not isinstance(entry, dict) or "factors" not in entry:
@@ -328,71 +394,76 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                     % gi)
                 continue
             fl = [int(x) for x in entry["factors"]]
+            bad = [fi for fi in fl if not (0 <= fi < len(factors))]
+            if bad:
+                problems.append("aggregation record %d names factor index(es) "
+                                "%s outside the model" % (gi, bad[:4]))
+                continue
             claimed.extend(fl)
-            groups.append(fl)
+            if entry.get("aggregated") and len(fl) > 1:
+                expected.append((("agg",) + tuple(fl), fl, "sorted"))
+            else:
+                for fi in fl:
+                    expected.append((fi, [fi], "factor"))
     else:
         for entry in profiles:
             fid = entry[0]
-            if isinstance(fid, int) and fid >= 0:
+            if isinstance(fid, int) and 0 <= fid < len(factors):
                 claimed.append(fid)
-                groups.append([fid])
+                expected.append((fid, [fid], "factor"))
             else:
                 problems.append(
                     "profile identifier %r is not a plain original factor "
                     "index and no aggregation record explains it" % (fid,))
 
     from collections import Counter as _Ctr
+    # (a) the groups partition the checker's own crossing occurrences once
     want_c, got_c = _Ctr(own_crossing), _Ctr(claimed)
     if want_c != got_c:
         miss = sorted((want_c - got_c).elements())
         extra = sorted((got_c - want_c).elements())
         problems.append(
-            "the response profiles do not account for the checker's own "
+            "the represented groups do not account for the checker's own "
             "crossing-factor occurrences exactly once: missing %s, extra %s"
             % (miss[:4], extra[:4]))
-
-    # Every claimed group must have an EMITTED profile. A detail record that
-    # claims coverage while the profile list is empty is self-consistent but
-    # vacuous: nothing is then compared, so an interacting model passes as
-    # independent.
-    if not problems and groups and not profiles:
+    # (b) the EMITTED profile ids equal the expected ids as a multiset --
+    #     checked BEFORE any dictionary could collapse a duplicate
+    emitted_ids = [e[0] for e in profiles]
+    exp_c, emi_c = _Ctr(x[0] for x in expected), _Ctr(emitted_ids)
+    if exp_c != emi_c:
+        miss = sorted((exp_c - emi_c).elements(), key=repr)
+        extra = sorted((emi_c - exp_c).elements(), key=repr)
         problems.append(
-            "the aggregation record claims to cover original crossing "
-            "factor(s) %s, but NO response profile was emitted; there is "
-            "nothing to verify and an interacting model cannot be treated as "
-            "independent" % (sorted(claimed)[:4],))
-    # verify each group's profile TABLE against the original factors
-    if not problems:
-        by_id = {e[0]: e for e in profiles}
-        for fl in groups:
-            if len(fl) == 1 and fl[0] in by_id:
-                tgts = [by_id[fl[0]]]
-            else:
-                tgts = [e for e in profiles if isinstance(e[0], tuple)]
-            if not tgts:
-                problems.append(
-                    "original crossing factor(s) %s are claimed by an "
-                    "aggregation record but no emitted profile represents "
-                    "them" % (fl[:4],))
-                continue
-            for tgt in tgts:
-                fid, in_vars, nout, tbl = tgt
-                which = fl if (isinstance(fid, tuple) or len(fl) == 1) \
-                    else [fid]
-                own = _own_profile_product(which, factors, card, region,
-                                           in_vars, nout, deadline=deadline)
-                if own is None:
-                    problems.append(
-                        "the profile for original factor(s) %s is too large "
-                        "for the checker to verify locally, so the witness is "
-                        "UNVERIFIED" % (which[:4],))
-                    continue
-                if not _profiles_agree(tbl, own):
-                    problems.append(
-                        "the response profile for original factor(s) %s does "
-                        "NOT match the product the checker computes from "
-                        "those factors; labels and support masks do not prove "
-                        "profile VALUES" % (which[:4],))
+            "the emitted profiles do not correspond one-to-one with the "
+            "represented groups: expected but missing %s, emitted but "
+            "unjustified %s (duplicates count)" % (miss[:4], extra[:4]))
+    if problems:
+        return problems
+
+    # (c) every emitted profile is verified against ITS OWN group, in its own
+    #     layout -- never cross-compared against another group's product
+    exp_by_id = {x[0]: x for x in expected}
+    for (fid, in_vars, nout, tbl) in profiles:
+        _pid, fl, layout = exp_by_id[fid]
+        try:
+            own = _own_profile_product(fl, factors, card, region, in_vars,
+                                       nout, layout, deadline=deadline,
+                                       budget=budget)
+        except RegionalCheckError as e:
+            problems.append("profile %r: %s" % (fid, e))
+            continue
+        if own is None:
+            problems.append(
+                "the profile for original factor(s) %s is too large for the "
+                "checker to verify locally, so the witness is UNVERIFIED"
+                % (fl[:4],))
+            continue
+        if not _profiles_agree(tbl, own):
+            problems.append(
+                "the response profile %r for original factor(s) %s does NOT "
+                "match the product the checker computes from those factors "
+                "in the %s layout; labels and support masks do not prove "
+                "profile VALUES" % (fid, fl[:4], layout))
     if problems:
         return problems
 
@@ -573,7 +644,7 @@ def recheck_region(region, restricted, card, queries, rho_cap, region_of,
     wp = _verify_coarsening_witness(
         region, card, restricted.factors, queries, pc, iA, imarks, rho_cap,
         deadline=deadline, region_of_for_profiles=region_of,
-        prebuilt_rd=rd)
+        prebuilt_rd=rd, budget=budget)
     if wp:
         problems.extend(wp)
         return cr, problems

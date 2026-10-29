@@ -362,10 +362,31 @@ def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
                       reduced_ops["ro"])
         chk_local = 2 * sum(int(getattr(rd, "construction_ops", 0))
                             for rd in rds)
-        rec.put("checker_ops", chk_mp + chk_local + marg, UPPER,
+        # The checker's PROFILE-PRODUCT proof is additional exact construction,
+        # not free verification: for every crossing-factor group it recomputes
+        # the response kernel from the original factors (one multiply per
+        # constituent factor per kernel entry) and compares every entry. r12
+        # added this work without pricing it; an unchanged padded bound may or
+        # may not have covered it, and that is a relation to prove, not to
+        # assume from source unchangedness.
+        chk_profile = 0
+        for rd in rds:
+            cross = list(getattr(rd, "crossing_factors", []) or [])
+            # the kernel over a group's variables is bounded by the declared
+            # aggregate entry cap; price one multiply per factor per entry plus
+            # one exact comparison per entry
+            # per-region upper bound: every crossing factor's own kernel, each
+            # at most the aggregate entry cap
+            chk_profile += len(cross) * (K.CAPS["aggregated_kernel_entries"]
+                                         * 2)
+        rec.put("checker_profile_proof_ops", chk_profile, UPPER,
+                "per crossing-factor group: one exact multiply per constituent "
+                "factor per kernel entry plus one exact comparison per entry, "
+                "bounded by the declared aggregate entry cap")
+        rec.put("checker_ops", chk_mp + chk_local + chk_profile + marg, UPPER,
                 "independent reduced-graph message passing in interval mode, "
-                "PLUS the checker's own local region reconstruction and its "
-                "containment sweep")
+                "PLUS the checker's own local region reconstruction, PLUS its "
+                "profile-product proof, PLUS its containment sweep")
         rec.put("reduced_induced_width", reduced_ops["width"], EXACT)
         rec.put("reduced_largest_bag", reduced_ops["largest_bag"], EXACT)
         rec.bytes_producer = Counter(reduced_ops["largest_bag"] * 64, FORECAST,
