@@ -117,7 +117,8 @@ def _independent_region_local(region, card, factors, queries, deadline=None,
 
 def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                                iA, imarks, rho_cap, deadline=None,
-                               region_of_for_profiles=None):
+                               region_of_for_profiles=None,
+                               prebuilt_rd=None):
     """Verify the SUBMITTED coarsening witness from checker-owned quantities.
 
     r9 verified the raw local weights A_R(b) and A_{R,i,a}(b) independently,
@@ -174,7 +175,8 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
     # structural primitives (crossing_profile / aggregate_crossings are
     # permitted shared structure; the decisive extrema and the alpha/rho
     # derivation below are the checker's own).
-    rd_sig = R.region_data(region, card, factors, queries, deadline=deadline)
+    rd_sig = prebuilt_rd if prebuilt_rd is not None else R.region_data(
+        region, card, factors, queries, deadline=deadline)
     bpos = {v: k for k, v in enumerate(rd_sig.boundary)}
     try:
         if region_of_for_profiles is not None:
@@ -278,15 +280,22 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
 
 
 def recheck_region(region, restricted, card, queries, rho_cap, region_of,
-                   producer_coarse, deadline=None, budget=None):
+                   producer_coarse, deadline=None, budget=None,
+                   prebuilt_rd=None):
     """Independently rebuild one region's cells and compare STRUCTURE only.
 
     The producer's numbers are never consumed: masses and marks are recomputed
     from the original factors, and only the resulting membership and mass values
     are compared.
     """
-    rd = R.region_data(region, card, restricted.factors, queries,
-                       deadline=deadline, budget=budget)
+    # Reuse the caller's already-reconstructed local data. The checker made
+    # THREE local enumerations per region (the outer loop's, this one, and the
+    # witness verifier's profile rebuild); reuse is a work reduction that does
+    # not weaken independence, because the independent raw accumulation below
+    # is a separate implementation either way.
+    rd = prebuilt_rd if prebuilt_rd is not None else R.region_data(
+        region, card, restricted.factors, queries,
+        deadline=deadline, budget=budget)
     cr = R.merge_region(rd, restricted.factors, card, rho_cap, queries,
                         deadline=deadline, region_of=region_of, aggregate=True)
     pc = producer_coarse
@@ -337,7 +346,8 @@ def recheck_region(region, restricted, card, queries, rho_cap, region_of,
     # independent verification of the transformation.
     wp = _verify_coarsening_witness(
         region, card, restricted.factors, queries, pc, iA, imarks, rho_cap,
-        deadline=deadline, region_of_for_profiles=region_of)
+        deadline=deadline, region_of_for_profiles=region_of,
+        prebuilt_rd=rd)
     if wp:
         problems.extend(wp)
         return cr, problems
@@ -714,7 +724,8 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
                             % (i, rds[i].boundary, rd_own.boundary))
         cr, probs = recheck_region(reg, restricted, restricted.card, queries,
                                    rho_cap, region_of, coarse[i],
-                                   deadline=deadline, budget=budget)
+                                   deadline=deadline, budget=budget,
+                                   prebuilt_rd=rd_own)
         rebuilt.append(cr)
         for p in probs:
             problems.append("region %d: %s" % (i, p))

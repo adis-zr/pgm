@@ -209,6 +209,18 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
         raise Declined("general-residual DP needs a single component; got %d"
                        % len(roots))
 
+    # CUMULATIVE work counter. The per-child counter reset before reaching
+    # its callback threshold, so on a 14-leaf star every individual product
+    # stayed below it and 420 ordinary plus 5,096 marked updates completed
+    # with ZERO callbacks after an expired deadline. Small products repeated
+    # many times must not evade the clock.
+    work = {"n": 0}
+
+    def tick(k=1):
+        work["n"] += k
+        if deadline is not None and (work["n"] & 0xFF) == 0:
+            deadline()
+
     # messages[(child,parent)] = {(sep_assignment, statistic): weight}
     messages = {}
     marks = {}            # (child,parent) -> {(var,state): {key: weight}}
@@ -322,14 +334,33 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
                                 "products at child %d)" % (cap, done, ci))
                         nxt[k2] = nxt.get(k2, Fr(0)) + pw * cw
                         done += 1
-                        if deadline is not None and (done & 0xFF) == 0:
-                            deadline()
+                        tick()
                 partials = nxt
                 if not partials:
                     break
+                if deadline is not None:
+                    deadline()          # child boundary
             for ps, pw in partials.items():
                 key = (soff, ps + local_stat)
-                out[key] = out.get(key, Fr(0)) + w * pw
+                # the FINAL accumulator is bounded too: the guards protected
+                # only the temporary `nxt`, so two admissible 15-key supports
+                # combined into 30 final keys under a cap of 16 before refusal
+                if key not in out and len(out) >= cap:
+                    raise Declined(
+                        "the final message accumulator reached the declared "
+                        "%d cap during construction" % cap)
+                nv = out.get(key, Fr(0)) + w * pw
+                if (nv.numerator.bit_length() > K.CAPS["rational_bit_length"]
+                        or nv.denominator.bit_length()
+                        > K.CAPS["rational_bit_length"]):
+                    raise Declined(
+                        "an accumulated message weight reached %d bits, above "
+                        "the declared %d-bit cap"
+                        % (max(nv.numerator.bit_length(),
+                               nv.denominator.bit_length()),
+                           K.CAPS["rational_bit_length"]))
+                out[key] = nv
+                tick()
 
             # ---- MARKED join: exactly ONE child supplies its marked
             # distribution and EVERY OTHER child supplies its ordinary one.
@@ -371,11 +402,12 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
                                     "%d products)" % (cap, done))
                             nxt[k2] = nxt.get(k2, Fr(0)) + pw * cw
                             done += 1
-                            if deadline is not None and (done & 0xFF) == 0:
-                                deadline()
+                            tick()
                     others = nxt
                     if not others:
                         break
+                    if deadline is not None:
+                        deadline()      # marked child boundary
                 if not others:
                     continue
                 for (v, st), tabm in cmk.items():

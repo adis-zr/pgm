@@ -922,8 +922,11 @@ def _regional_execute(r, payload, queries, eps, bg):
     # sharing only the validated structural data and the exact rational
     # primitives the contract permits.
     try:
+        # pass budget=bg: the hook existed but the EXECUTED call omitted it,
+        # so a direct helper test charged and refused while the production
+        # path bypassed the counter entirely
         (Zlo, Zhi), (clo, chi) = _producer_reduced_contract(
-            r, regions, coarse, rds, queries, deadline=dl)
+            r, regions, coarse, rds, queries, deadline=dl, budget=bg)
         # The INDEPENDENT checker runs its own 128-bit point contraction and
         # charges that arithmetic's N1 error, so its enclosure is wider than
         # an exact-rational producer point by about 5e-39 on each side. The

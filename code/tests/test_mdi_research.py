@@ -5786,7 +5786,10 @@ def test_r9_connected_joins_bound_during_construction():
     src = inspect.getsource(G._run_component)
     assert "the ordinary join reached the declared" in src
     assert "the marked join reached the declared" in src
-    assert src.count("(done & 0xFF)") >= 2, "no interior deadline checks"
+    # interior work must be ticked against a CUMULATIVE counter, so small
+    # products repeated many times cannot evade the clock
+    assert "def tick(" in src, "no cumulative work counter"
+    assert src.count("tick()") >= 3, "interior work is not ticked"
     facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(1)], origin=0),
             M.Factor(scope=(1,), card=(16,), table=[Fr(1)] * 16, origin=1),
             M.Factor(scope=(2,), card=(16,), table=[Fr(1)] * 16, origin=2),
@@ -5943,3 +5946,146 @@ def test_r10_zero_evidence_needs_an_independent_witness():
     r1 = S.solve(m1, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                  deadline_s=30)
     assert r1["outcome"] == "ZERO_EVIDENCE_PROVED", r1["outcome"]
+
+
+def test_r10_dp_resource_guards_cover_executed_work():
+    """R9-4. The per-child work counter reset before reaching its callback
+    threshold, so on a 14-leaf star every individual product stayed below it
+    and 420 ordinary plus 5,096 marked updates completed with ZERO callbacks
+    after an expired deadline. The guards also protected only the temporary
+    dictionary: two admissible 15-key supports combined into 30 FINAL keys
+    under a cap of 16, and accumulated exact sums exceeded the bit cap."""
+    from mdi import gendp as G
+    ctx = A.Ctx(128)
+    # (a) a cumulative counter stops the 14-leaf star at the first callback
+    nn = 15
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(2)], origin=v)
+            for v in range(nn)]
+    for v in range(1, nn):
+        facs.append(M.Factor(scope=(0, v), card=(2, 2),
+                             table=[Fr(2), Fr(1), Fr(1), Fr(2)],
+                             origin=100 + v))
+    m = M.Model(nvars=nn, card=[2] * nn, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+
+    class C:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 1000)]
+        features = [{v: [Fr(0), Fr(1)] for v in range(nn)}]
+
+    sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                        K.RESOURCES["arm_rss_bytes"])
+    pl, _est = sel["chosen"]
+    calls = [0]
+
+    def expired():
+        calls[0] += 1
+        raise RuntimeError("EXPIRED")
+
+    with pytest.raises(RuntimeError):
+        G.run(pl, r.factors, r.card, C(), 1, set(range(nn)), ctx,
+              deadline=expired)
+    assert calls[0] >= 1
+    # the clean run must still complete
+    (zl, zh), mk, _m = G.run(pl, r.factors, r.card, C(), 1, set(range(nn)),
+                             ctx)
+    assert zl > 0 and len(mk) == 2 * nn
+
+    # (b) the FINAL accumulator is bounded
+    f2 = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(1)], origin=0),
+          M.Factor(scope=(1,), card=(16,), table=[Fr(1)] * 16, origin=1),
+          M.Factor(scope=(2,), card=(16,), table=[Fr(1)] * 16, origin=2),
+          M.Factor(scope=(0, 1), card=(2, 16), table=[Fr(1)] * 32, origin=3),
+          M.Factor(scope=(0, 2), card=(2, 16), table=[Fr(1)] * 32, origin=4)]
+    m2 = M.Model(nvars=3, card=[2, 16, 16], factors=f2)
+    m2.validate()
+    r2 = M.restrict(m2, {})
+
+    class C2:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 100000)]
+        features = [{0: [Fr(0), Fr(0)],
+                     1: [Fr(i) for i in range(16)],
+                     2: [Fr(i) for i in range(16)]}]
+
+    s2 = P.choose_plan(r2.free, r2.card, r2.factors, 64,
+                       K.RESOURCES["arm_rss_bytes"])
+    p2, _e2 = s2["chosen"]
+    with pytest.raises(G.Declined):
+        G.run(p2, r2.factors, r2.card, C2(), 1, set(range(3)), ctx,
+              cap_states=16)
+
+    # (c) accumulated exact sums are bit-bounded
+    B = Fr(2) ** 40000
+    f3 = [M.Factor(scope=(0,), card=(2,), table=[B, B + 1], origin=0),
+          M.Factor(scope=(1,), card=(2,), table=[B, B + 1], origin=1),
+          M.Factor(scope=(0, 1), card=(2, 2),
+                   table=[Fr(1), Fr(1), Fr(1), Fr(1)], origin=2)]
+    m3 = M.Model(nvars=2, card=[2, 2], factors=f3)
+    m3.validate()
+    r3 = M.restrict(m3, {})
+
+    class C3:
+        rank = 1
+        signs = [1]
+        gammas = [Fr(1, 1000)]
+        features = [{0: [Fr(0), Fr(1)], 1: [Fr(0), Fr(1)]}]
+
+    s3 = P.choose_plan(r3.free, r3.card, r3.factors, 64,
+                       K.RESOURCES["arm_rss_bytes"])
+    p3, _e3 = s3["chosen"]
+    with pytest.raises(G.Declined) as e:
+        G.run(p3, r3.factors, r3.card, C3(), 1, set(range(2)), ctx)
+    assert "bit" in str(e.value).lower()
+
+
+def test_r10_checker_reuses_one_local_reconstruction():
+    """R9-5. The checker made THREE local enumerations per region: the outer
+    loop's, recheck_region's, and the witness verifier's profile rebuild.
+    Reuse is a work reduction that does not weaken independence, because the
+    independent raw accumulation is a separate implementation either way."""
+    from mdi import regions as R, regional_check as RC
+    n = 4
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)], origin=v)
+            for v in range(n)]
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    regs = [(v,) for v in range(n)]
+    rds = [R.region_data(g, r.card, r.factors, set(range(n))) for g in regs]
+    ro = {v: i for i, g in enumerate(regs) for v in g}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), set(range(n)),
+                          region_of=ro, aggregate=True) for i in range(n)]
+    t1 = K.level_radius(1)
+    pub = {v: [(max(Fr(0), pt[v][s] - t1), min(Fr(1), pt[v][s] + t1))
+               for s in range(2)] for v in range(n)}
+    calls = {"n": 0}
+    orig = R.region_data
+
+    def counted(*a, **k):
+        calls["n"] += 1
+        return orig(*a, **k)
+
+    R.region_data = counted
+    try:
+        ok, fails, _m = RC.verify_regional_publication(
+            r, regs, crs, rds, set(range(n)), pub, t1, Fr(1, 100))
+    finally:
+        R.region_data = orig
+    assert ok, fails
+    # one per region, not three
+    assert calls["n"] <= n, (calls["n"], n)
+
+
+def test_r10_production_regional_call_charges_its_budget():
+    """R9-4. _producer_reduced_contract gained a budget parameter, but
+    _regional_execute supplied only its deadline, so a direct helper test
+    charged and refused while the EXECUTED call bypassed the counter."""
+    import inspect
+    import mdi.pipeline as PP
+    src = inspect.getsource(PP._regional_execute)
+    assert "budget=bg" in src, "the production call omits budget=bg"
