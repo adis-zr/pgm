@@ -220,12 +220,29 @@ def check_quadrature_publication(free, card, unary, cand, queries, published,
     """
     # the quadrature radius is charged PER MODE, from each mode's own feature
     # radius, rather than from mode 0 alone
+    # This checker evaluates the ORIGINAL UNROUNDED law by direct exact
+    # enumeration, so its own enclosure already contains the truth; the
+    # quadrature radius is charged only because the PRODUCER's value may sit
+    # anywhere inside it.
+    #
+    # The radius must come from the lattice the producer actually uses. A
+    # NEGATIVE mode uses the oscillatory lattice, whose unit-modulus integrand
+    # needs neither the exp(gamma R^2/2) magnitude factor nor a shifted tail.
+    # Calling the positive gf_lattice for a negative mode made the checker
+    # DECLINE a query the producer completed successfully: one variable,
+    # unary [1,1], features [0,10], gamma 1 evaluates in 2,049 nodes with
+    # widths about .002137 and .001082, yet the checker refused before its
+    # two-configuration check.
     qrad = Fr(0)
     for mi in range(cand.rank):
         Rk = Fr(0)
         for f in cand.features[mi].values():
             Rk += max(abs(Fr(x)) for x in f)
-        qrad += Fr(CO.gf_lattice(cand.gammas[mi], Rk, delta)["total_bound"])
+        if cand.signs[mi] < 0:
+            lat = CO.fourier_lattice(cand.gammas[mi], Rk, delta)
+        else:
+            lat = CO.gf_lattice(cand.gammas[mi], Rk, delta)
+        qrad += Fr(lat["total_bound"])
     ok, fails, meta = check_statistic_publication(
         free, card, unary, cand, None, queries, published, eps, ctx,
         radius=radius + qrad, cap_configs=cap_configs)

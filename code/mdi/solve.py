@@ -709,7 +709,16 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
         order = sorted(r.free)
         _Z = Fr(0)
         _cnt = {}
+        # Check the shared deadline BEFORE the loop and INSIDE it. Checking
+        # only afterward meant all 4,096 assignments ran even when the
+        # supplied callback was already expired at loop entry: the refusal
+        # came after the overrun instead of bounding it.
+        dl()
+        _seen = 0
         for combo in _it.product(*[range(r.card[v]) for v in order]):
+            _seen += 1
+            if (_seen & 0xFF) == 0:
+                dl()
             a = dict(zip(order, combo))
             wt = Fr(1)
             for f in r.factors:

@@ -9,6 +9,7 @@ import sys
 sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
 from dataclasses import dataclass, field
+from mdi import config as K
 
 # contract F.2: label every quantity
 EXACT = "exact"                 # a counted quantity, no estimation
@@ -136,6 +137,14 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
         nin_all = n_children + n_parent
         n_home = sum(1 for v, h in plan.var_home.items() if h == b.idx)
         ro += n_home * (dom * (own + nin_all) + dom)
+        # The ROOT/EVIDENCE contraction is a further full sweep of each
+        # component root, which `solve` performs via root_value() to establish
+        # the evidence weight. It was not priced at all, so small models
+        # undercounted: one binary unary priced 4 and executed 5, one ternary
+        # priced 6 and executed 8, two independent binary unaries priced 8 and
+        # executed 10. Some chains had enough slack elsewhere to hide it.
+        if b.parent < 0:
+            up += dom * (own + n_children) + max(0, dom - 1)
     rec.put("weighted_bag_visits", weighted_bag, UPPER,
             "bag domain times owned factors plus every incident message")
     rec.put("weighted_separator_entries", weighted_sep, EXACT)
@@ -145,8 +154,41 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
             "separator slot")
     rec.put("producer_downward_ops", down, UPPER)
     rec.put("readout_ops", ro, UPPER)
-    rec.put("checker_ops", 2 * (up + down + ro), UPPER,
-            "interval mode carries two endpoints")
+    # The checker's INTERVAL message passing, two endpoints per entry...
+    chk = 2 * (up + down + ro)
+    # ...PLUS the independent AGGREGATION enumeration, which runs after the
+    # interval contraction when the free joint space is within the declared
+    # cap. It was absent from the price entirely: on twelve independent binary
+    # variables it visits 4,096 assignments and performs about 102,400 exact
+    # Fraction operations against a recorded 96. Fraction and MPFR calls are
+    # not equal-time units; what was wrong is the omission of a whole
+    # algorithm, not any asserted hardware ratio.
+    joint = 1
+    nvars = 0
+    for v in sorted(plan.card):
+        joint *= plan.card[v]
+        nvars += 1
+        if joint > K.CAPS["region_tuple_assignments"]:
+            joint = None
+            break
+    if joint is not None:
+        # per assignment: one multiply per factor entry plus one add per
+        # variable marker, plus the normalizing division per coordinate
+        n_fac = sum(len(b.factors) for b in plan.bags)
+        rec.put("independent_enumeration_assignments", joint, EXACT,
+                "the bounded independent aggregation check actually runs")
+        rec.put("independent_enumeration_ops", joint * (n_fac + nvars), UPPER,
+                "exact Fraction multiplies and marker adds in the "
+                "independent aggregation enumeration")
+        chk += joint * (n_fac + nvars)
+    else:
+        rec.put("independent_enumeration_assignments", 0, EXACT,
+                "above the declared cap, so the independent aggregation "
+                "check does NOT run and the complete certified status is not "
+                "claimed")
+    rec.put("checker_ops", chk, UPPER,
+            "interval mode carries two endpoints, plus the bounded "
+            "independent aggregation enumeration where it runs")
     rec.put("factor_entry_conversions", conv, UPPER,
             "reduced by the per-entry conversion cache")
     rec.put("requested_markers", n_requested, EXACT)

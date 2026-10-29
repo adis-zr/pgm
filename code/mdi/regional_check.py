@@ -21,7 +21,7 @@ class RegionalCheckError(ValueError):
 
 
 def recheck_region(region, restricted, card, queries, rho_cap, region_of,
-                   producer_coarse, deadline=None):
+                   producer_coarse, deadline=None, budget=None):
     """Independently rebuild one region's cells and compare STRUCTURE only.
 
     The producer's numbers are never consumed: masses and marks are recomputed
@@ -29,7 +29,7 @@ def recheck_region(region, restricted, card, queries, rho_cap, region_of,
     are compared.
     """
     rd = R.region_data(region, card, restricted.factors, queries,
-                       deadline=deadline)
+                       deadline=deadline, budget=budget)
     cr = R.merge_region(rd, restricted.factors, card, rho_cap, queries,
                         deadline=deadline, region_of=region_of, aggregate=True)
     pc = producer_coarse
@@ -303,7 +303,8 @@ def _reduced_message_passing(restricted, regions, coarse, rds, queries,
 
 
 def verify_regional_publication(restricted, regions, coarse, rds, queries,
-                                published, t_level, eps, deadline=None):
+                                published, t_level, eps, deadline=None,
+                                budget=None):
     """Full §D.7 check: rebuild every region, independently contract the reduced
     model, and require the publication to CONTAIN the checker's enclosure."""
     # original model and evidence validation BEFORE any numerical work
@@ -389,8 +390,9 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
         # use that rather than the producer's rds. Trusting producer boundary
         # metadata after discarding our own let a corrupted boundary ordering
         # pass an exact-coarsening example with error about 0.131.
+        # the checker's own reconstruction is charged too: it is real work
         rd_own = R.region_data(reg, restricted.card, restricted.factors,
-                               queries, deadline=deadline)
+                               queries, deadline=deadline, budget=budget)
         own_rds.append(rd_own)
         if tuple(rd_own.boundary) != tuple(rds[i].boundary):
             problems.append("region %d: producer boundary order %s differs from "
@@ -398,7 +400,7 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
                             % (i, rds[i].boundary, rd_own.boundary))
         cr, probs = recheck_region(reg, restricted, restricted.card, queries,
                                    rho_cap, region_of, coarse[i],
-                                   deadline=deadline)
+                                   deadline=deadline, budget=budget)
         rebuilt.append(cr)
         for p in probs:
             problems.append("region %d: %s" % (i, p))

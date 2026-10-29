@@ -536,9 +536,21 @@ def fourier_lattice(gamma: Fr, R: Fr, delta: Fr):
     Tails: the two tails beyond |z| > T are at most 2 * phi-tail, and for
     T >= 1, int_{|z|>T} phi <= 2 phi(T)/T <= (4/5) e^{-T^2/2} / T.
 
-    Discretization: trapezoid error on [-T, T] with step h is at most
-    (2T) h^2 M2 / 12 where M2 bounds the SECOND DERIVATIVE of the oscillatory
-    integrand (fourier_second_derivative_bound).
+    Discretization: the evaluator sums FULL endpoint weights, so it is a
+    composite MIDPOINT rule on [-T - h/2, T + h/2], not the trapezoid rule.
+    The reviewer supplied the proof that the recorded bound is nevertheless
+    valid, and it is documented here rather than left as a wording mismatch:
+
+        midpoint error on [-T-h/2, T+h/2]  <=  (2T + h) h^2 M2 / 24
+                                           <=  (2T) h^2 M2 / 12   when h <= 2T
+
+    since (2T + h)/24 <= (2T + 2T)/24 = (2T)/12. The global second-derivative
+    bound M2 applies on the slightly expanded interval, and the recorded tail
+    beyond T dominates the tail beyond T + h/2 (the expanded interval is
+    LARGER, so its tail is smaller). Hence the recorded
+    (2T) h^2 M2 / 12 is a valid upper bound for the program that actually
+    runs, and NO extra padding is required for the endpoint-weight
+    convention.
 
     delta is split equally between tail and discretization, solved exactly.
     """
@@ -784,6 +796,45 @@ def _modulus_upper(re_lo: Fr, re_hi: Fr, im_lo: Fr, im_hi: Fr) -> Fr:
     return rm + im
 
 
+def _pi_bounds(ctx: A.Ctx = None):
+    """Rigorous rational bounds on pi, at high precision.
+
+    The coarse constants 314159/100000 and 3927/1250 have a relative slack of
+    about 3.18e-6. Multiplied by a critical index k, that slack grows like
+    |k|, so a FIXED one-or-two-index pad around a coarse quotient cannot
+    locate k*pi at large |k|: around -1,000,000*pi the search range came out
+    [-999999, -999999] and never reached k = -1000000, so the cosine
+    enclosure missed its true maximum 1 by about 5e-7.
+    """
+    import gmpy2
+    p = 512 if ctx is None else max(512, 4 * ctx.p)
+    with gmpy2.context(precision=p, round=gmpy2.RoundDown):
+        lo = A.exact_fr(gmpy2.const_pi())
+    with gmpy2.context(precision=p, round=gmpy2.RoundUp):
+        hi = A.exact_fr(gmpy2.const_pi())
+    return lo, hi
+
+
+def _critical_index_range(lo: Fr, hi: Fr, pi_lo: Fr, pi_hi: Fr, shift: Fr):
+    """Every integer k with (shift + k*pi) possibly inside [lo, hi].
+
+    Solved with SIGN-CORRECT rational quotient bounds: for k*pi to land in
+    [lo - shift, hi - shift], k must lie between the two quotients taken with
+    the pi bound that makes each extreme largest. Both signs of k are handled
+    explicitly, and the result is padded by one index on each side only to
+    absorb the division's own flooring.
+    """
+    a, b = lo - shift, hi - shift
+    cands = []
+    for piv in (pi_lo, pi_hi):
+        for end in (a, b):
+            cands.append(Fr(end) / piv)
+    k_lo = min(cands)
+    k_hi = max(cands)
+    import math as _m
+    return _m.floor(k_lo) - 1, _m.ceil(k_hi) + 1
+
+
 def _trig_point_enclose(q: Fr, ctx: A.Ctx, which: str):
     """Rigorous enclosure of sin(q) or cos(q) at an EXACT RATIONAL q.
 
@@ -841,19 +892,17 @@ def _cos_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
     out_lo, out_hi = min(l1, l2), max(h1, h2)
     # an interior extremum of cos sits at a multiple of pi. If the interval can
     # contain one, widen conservatively.
-    pi_lo = Fr(314159, 100000)
-    # k*pi is bracketed by the two pi bounds, but for NEGATIVE k the product
-    # with the LARGER pi bound is the SMALLER number, so the bracket must be
-    # ordered explicitly. Using [k*pi_lo, k*pi_up] unordered made every
-    # negative-k bracket inverted, so `centre_lo <= hi` tested a bracket whose
-    # endpoints were the wrong way round and k = -2 was unreachable entirely.
-    # Floor division is also required: int() truncates toward zero, which skips
-    # a critical point just below a negative interval's lower end.
-    import math as _m
-    k_lo = _m.floor(lo / pi_up) - 1
-    k_hi = _m.ceil(hi / pi_lo) + 1
+    # RIGOROUS pi bounds, and a sign-correct critical-index range. Negative-k
+    # brackets must also be ordered: for k < 0 the product with the LARGER pi
+    # bound is the SMALLER number.
+    pl, ph = _pi_bounds(ctx)
+    k_lo, k_hi = _critical_index_range(lo, hi, pl, ph, Fr(0))
+    if k_hi - k_lo > 4096:
+        # the interval spans thousands of critical points, so both extrema are
+        # certainly attained
+        return Fr(-1), Fr(1)
     for k in range(k_lo, k_hi + 1):
-        a, b = Fr(k) * pi_lo, Fr(k) * pi_up
+        a, b = Fr(k) * pl, Fr(k) * ph
         centre_lo, centre_hi = (a, b) if a <= b else (b, a)
         if (lo <= centre_hi and centre_lo <= hi):
             if k % 2 == 0:
@@ -874,16 +923,18 @@ def _sin_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
     l1, h1 = _trig_point_enclose(lo, ctx, "sin")
     l2, h2 = _trig_point_enclose(hi, ctx, "sin")
     out_lo, out_hi = min(l1, l2), max(h1, h2)
-    pi_lo = Fr(314159, 100000)
-    half_lo, half_up = pi_lo / 2, pi_up / 2
-    # same negative-k bracket ordering and floor-division fix as in cos
-    import math as _m
-    k_lo = _m.floor((lo - half_up) / pi_up) - 2
-    k_hi = _m.ceil((hi - half_lo) / pi_lo) + 2
+    pl, ph = _pi_bounds(ctx)
+    # sin's extrema sit at pi/2 + k*pi; the shift is bracketed too, so take
+    # the widest span over both pi bounds
+    k_lo1, k_hi1 = _critical_index_range(lo, hi, pl, ph, pl / 2)
+    k_lo2, k_hi2 = _critical_index_range(lo, hi, pl, ph, ph / 2)
+    k_lo, k_hi = min(k_lo1, k_lo2), max(k_hi1, k_hi2)
+    if k_hi - k_lo > 4096:
+        return Fr(-1), Fr(1)
     for k in range(k_lo, k_hi + 1):
-        a = half_lo + Fr(k) * pi_lo
-        b = half_up + Fr(k) * pi_up
-        centre_lo, centre_hi = (a, b) if a <= b else (b, a)
+        ends = [pl / 2 + Fr(k) * pl, ph / 2 + Fr(k) * ph,
+                pl / 2 + Fr(k) * ph, ph / 2 + Fr(k) * pl]
+        centre_lo, centre_hi = min(ends), max(ends)
         if (lo <= centre_hi and centre_lo <= hi):
             if k % 2 == 0:
                 out_hi = Fr(1)

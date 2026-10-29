@@ -3981,19 +3981,24 @@ def test_r5_structural_certainty_is_exact():
 
 def test_r5_pipeline_invokes_the_registered_executor():
     """R4-09. The pipeline looked up an executor via dispatch() and then
-    branched on crec.kind, so replacing the identity executor with a raising
-    sentinel still produced a certified result with ZERO executor calls."""
+    branched on crec.kind, so replacing the SELECTED route's executor with a
+    raising sentinel still produced a certified result with ZERO executor
+    calls. The sentinel is installed on whichever route the planner picks, so
+    the test does not depend on honest prices favouring one route."""
     from mdi import pipeline as PLN, plantype as PT
     import mdi.registry            # noqa: F401  (registers the executors)
     m = M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n"))
+    good = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    kind = good.plan["kind"]
+    assert kind in PT._PIPELINE_EXECUTORS, kind
     calls = [0]
 
     def sentinel(ctx):
         calls[0] += 1
         raise RuntimeError("SENTINEL")
 
-    orig = PT._PIPELINE_EXECUTORS["identity"]
-    PT._PIPELINE_EXECUTORS["identity"] = sentinel
+    orig = PT._PIPELINE_EXECUTORS[kind]
+    PT._PIPELINE_EXECUTORS[kind] = sentinel
     try:
         try:
             res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
@@ -4003,7 +4008,7 @@ def test_r5_pipeline_invokes_the_registered_executor():
         assert calls[0] >= 1, "the registered executor was never invoked"
         assert not certified, "certified without running the executor"
     finally:
-        PT._PIPELINE_EXECUTORS["identity"] = orig
+        PT._PIPELINE_EXECUTORS[kind] = orig
 
 
 def test_r5_corrupted_on_disk_plan_stops_execution():
@@ -4077,6 +4082,7 @@ def test_r5_shared_budget_is_enforced_on_actual_work():
         S._rss_bytes = orig_rss
     assert not res.status.startswith("CERTIFIED"), res.status
     assert (res.budget or {}).get("checks", 0) >= 1, res.budget
+    # the RSS refusal must fire regardless of which route honest prices pick
 
     orig_vp = S.verify_publication
 
@@ -4085,10 +4091,19 @@ def test_r5_shared_budget_is_enforced_on_actual_work():
         return orig_vp(*a, **k)
 
     S.verify_publication = slow
+    import mdi.regional_check as _RC
+    orig_vr = _RC.verify_regional_publication
+
+    def slow_r(*a, **k):
+        _t.sleep(0.080)
+        return orig_vr(*a, **k)
+
+    _RC.verify_regional_publication = slow_r
     try:
         res2 = PLN.solve(m, {}, wall_s=0.020, cap_bytes=1 << 30)
     finally:
         S.verify_publication = orig_vp
+        _RC.verify_regional_publication = orig_vr
     assert not res2.status.startswith("CERTIFIED"), res2.status
     assert (res2.budget or {}).get("checks", 0) >= 1, res2.budget
 
@@ -4783,3 +4798,294 @@ def test_r6_self_consistent_false_plan_records_do_not_bind():
         mut(dd)
         with pytest.raises(PT.PlanError):
             bind(dd)
+
+
+# ===== r6 review: conditioning, applicability, zeros, extrema, accounting =====
+
+def test_r7_conditioning_does_not_create_an_unaccounted_origin():
+    """R6-1. `if f.origin == -1: continue` was UNCONDITIONAL. Synthetic
+    origins are -1-v, so -1 belongs to variable 0 only while variable 0 is
+    FREE; once X0 is observed, -1 is reserved for nothing and the skip hid an
+    arbitrary extra factor, certifying near (1/6, 5/6) against a true
+    (.5, .5) at 13, 16 and 20 free variables."""
+    import copy
+    from mdi import preprocess as PRE
+    for n in (13, 14, 17, 21):
+        facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)],
+                         origin=v) for v in range(n)]
+        m = M.Model(nvars=n, card=[2] * n, factors=facs)
+        m.validate()
+        r = M.restrict(m, {0: 0})
+        simp = PRE.simplify(r)
+        # THE CLEAN CONDITIONED BASE MUST VERIFY
+        assert PRE.verify_identities(r, simp), len(r.free)
+        bad = copy.deepcopy(simp)
+        bad.factors = list(bad.factors) + [
+            M.Factor(scope=(1, 2), card=(2, 2),
+                     table=[Fr(1), Fr(1), Fr(1), Fr(9)], origin=-1)]
+        with pytest.raises(PRE.PreprocessError):
+            PRE.verify_identities(r, bad)
+
+
+def test_r7_above_cap_does_not_claim_independent_verification():
+    """R6-2. The bounded exact cross-check only runs below the enumeration
+    cap. Above it producer and checker share C.Engine's aggregate logic, so a
+    common-mode fault is undetectable -- and the same injected readout fault
+    rejected at 12 binary variables and returned VERIFIED_ALL_MARGINALS with
+    independently_verified=True at 13, publishing (.75,.25) against a uniform
+    truth."""
+    from mdi import contract as C
+
+    def faulty(self, var):
+        counts, seen, depth = orig(self, var)
+        if var == 0 and seen[0]:
+            if self.mode == "P":
+                counts[0] = counts[0] * 3
+            else:
+                counts[0] = (counts[0][0] * 3, counts[0][1] * 3)
+        return counts, seen, depth
+
+    orig = C.Engine.read_marginal
+    for n, below_cap in ((12, True), (13, False)):
+        facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)],
+                         origin=v) for v in range(n)]
+        m = M.Model(nvars=n, card=[2] * n, factors=facs)
+        m.validate()
+        clean = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                        deadline_s=60)
+        if below_cap:
+            assert clean["outcome"] == "VERIFIED_ALL_MARGINALS", clean
+            assert clean["independently_verified"] is True
+        else:
+            # above the cap the complete status is NOT claimed
+            assert clean["outcome"] == "VERIFIED_SHARED_AGGREGATION_ONLY", \
+                clean["outcome"]
+            assert clean["independently_verified"] is False
+        C.Engine.read_marginal = faulty
+        try:
+            res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                          deadline_s=60)
+        finally:
+            C.Engine.read_marginal = orig
+        # either the fault is caught, or the run must not claim independence
+        assert not (res["outcome"] == "VERIFIED_ALL_MARGINALS"
+                    and res.get("independently_verified")), res["outcome"]
+
+
+def test_r7_hard_zero_pair_is_always_retained():
+    """R6-3. Scope occupancy was treated as proof of consumption. A residual
+    pair on that scope is a mode-COMPENSATION factor exp(-G): strictly
+    positive, and it does not reproduce the original constraint. On pair
+    [1,1,1,0] the hard zero was dropped for BOTH signs and the originally
+    impossible assignment became possible -- marginals near (.5,.5) against
+    an original (2/3,1/3)."""
+    from mdi import modes as MD
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(1), Fr(1), Fr(0)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    ctx = A.Ctx(160)
+    for sign in (1, -1):
+        class C:
+            rank = 1
+            signs = [sign]
+            gammas = [Fr(1)]
+            features = [{0: [Fr(0), Fr(1)], 1: [Fr(0), Fr(1)]}]
+
+        res = MD.build_residual(r.free, r.factors, r.card, C(), ctx)
+        assert 0 in res.kept, (sign, res.kept, res.detail.get("kept_scopes"))
+
+
+def test_r7_natural_hard_zero_composed_control_encloses_every_state():
+    """R6-3. The reviewer's natural control: four binary variables, six
+    positive pairs, plus pair [0,0,1,1] forcing X0=1. r6 published
+    P(X0=0) in [.01727, .01732] although its true probability is exactly
+    ZERO, and all eight intervals missed."""
+    import itertools
+    from mdi import composed as CX, regions as R
+    ctx = A.Ctx(160)
+    n = 4
+    facs = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            facs.append(M.Factor(scope=(i, j), card=(2, 2),
+                                 table=[Fr(3), Fr(2), Fr(2), Fr(3)],
+                                 origin=len(facs)))
+    facs.append(M.Factor(scope=(0, 1), card=(2, 2),
+                         table=[Fr(0), Fr(0), Fr(1), Fr(1)],
+                         origin=len(facs)))
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z = Fr(0)
+    ct = {}
+    for combo in itertools.product(range(2), repeat=n):
+        wt = Fr(1)
+        for f in r.factors:
+            off = 0
+            for k, v in enumerate(f.scope):
+                off = off * f.card[k] + combo[v]
+            wt *= f.table[off]
+        if wt == 0:
+            continue
+        Z += wt
+        for v in range(n):
+            ct[(v, combo[v])] = ct.get((v, combo[v]), Fr(0)) + wt
+    assert ct.get((0, 0), Fr(0)) == 0
+    regs = [(i,) for i in range(n)]
+    rds = [R.region_data(g, r.card, r.factors, set(range(n))) for g in regs]
+    ro = {v: i for i, g in enumerate(regs) for v in g}
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), set(range(n)),
+                          region_of=ro, aggregate=True) for i in range(n)]
+    try:
+        out, meta = CX.run(r, regs, crs, rds, set(range(n)), ctx, Fr(1, 100))
+    except CX.Declined:
+        return                       # a bounded decline is valid
+    for v in sorted(out):
+        for s, (lo, hi) in enumerate(out[v]):
+            t = ct.get((v, s), Fr(0)) / Z
+            assert lo <= t <= hi, (v, s, float(lo), float(t), float(hi))
+
+
+def test_r7_large_negative_critical_points_are_found():
+    """R6-4. The coarse pi constants have a relative slack of about 3.18e-6;
+    multiplied by a critical index k that slack grows like |k|, so a fixed
+    one-index pad cannot locate k*pi at large |k|. Around -1,000,000*pi the
+    search range came out [-999999, -999999] and the cosine enclosure missed
+    its true maximum 1 by about 5e-7."""
+    import gmpy2
+    from mdi import collective as CO
+    ctx = A.Ctx(160)
+    with gmpy2.context(precision=512, round=gmpy2.RoundDown):
+        pid = A.exact_fr(gmpy2.const_pi())
+    with gmpy2.context(precision=512, round=gmpy2.RoundUp):
+        piu = A.exact_fr(gmpy2.const_pi())
+    for k in (-1000000, -999999, -500000, -1000, -3, -2, -1, 0, 1, 2,
+              999999, 1000000):
+        a, b = Fr(k) * pid, Fr(k) * piu
+        lo = min(a, b) - Fr(1, 1000)
+        hi = max(a, b) + Fr(1, 1000)
+        elo, ehi = CO._cos_enclose(lo, hi, ctx)
+        if k % 2 == 0:
+            assert ehi >= Fr(1), (k, str(ehi))
+        else:
+            assert elo <= Fr(-1), (k, str(elo))
+    for k in (-1000000, -999999, -1000, -1, 0, 1, 1000000):
+        c1 = pid / 2 + Fr(k) * pid
+        c2 = piu / 2 + Fr(k) * piu
+        lo = min(c1, c2) - Fr(1, 1000)
+        hi = max(c1, c2) + Fr(1, 1000)
+        elo, ehi = CO._sin_enclose(lo, hi, ctx)
+        if k % 2 == 0:
+            assert ehi >= Fr(1), (k, str(ehi))
+        else:
+            assert elo <= Fr(-1), (k, str(elo))
+
+
+def test_r7_quadrature_checker_uses_the_sign_correct_lattice():
+    """R6-4. The registered checker called the POSITIVE gf_lattice for a
+    negative mode, so it DECLINED a query the producer completed: one
+    variable, unary [1,1], features [0,10], gamma 1 evaluates in 2,049 nodes
+    with widths about .002137 and .001082."""
+    import math
+    from mdi import collective as CO, collective_check as CC
+    ctx = A.Ctx(160)
+
+    class C:
+        rank = 1
+        signs = [-1]
+        gammas = [Fr(1)]
+        features = [{0: [Fr(0), Fr(10)]}]
+
+    unary = {0: [Fr(1), Fr(1)]}
+    (Zlo, Zhi), mk, meta = CO.fourier_evaluate([0], {0: 2}, unary, C(), {0},
+                                               ctx, Fr(1, 1000))
+    rows = []
+    for s in (0, 1):
+        lo, hi = mk[(0, s)]
+        rows.append((max(Fr(0), lo / Zhi), min(Fr(1), hi / Zlo)))
+    ok, fails, m2 = CC.check_quadrature_publication(
+        [0], {0: 2}, unary, C(), {0}, {0: rows}, Fr(1, 100), ctx, Fr(1, 1000))
+    assert ok, fails
+    # and the published intervals contain the exact truth
+    t = (1.0 / (1 + math.exp(-50)), math.exp(-50) / (1 + math.exp(-50)))
+    for s, (lo, hi) in enumerate(rows):
+        assert float(lo) <= t[s] <= float(hi), (s, float(lo), float(hi))
+
+
+def test_r7_fourier_midpoint_bound_chain_holds():
+    """R6-4. The evaluator sums FULL endpoint weights, so it is a composite
+    MIDPOINT rule on [-T-h/2, T+h/2]. The recorded bound is still valid:
+    (2T+h)h^2*M2/24 <= 2T*h^2*M2/12 whenever h <= 2T."""
+    from mdi import collective as CO
+    import inspect
+    assert "MIDPOINT" in inspect.getsource(CO.fourier_lattice)
+    M2 = Fr(227, 5)
+    for T, h in ((4, Fr(1, 256)), (5, Fr(1, 512)), (1, Fr(1, 2)),
+                 (2, Fr(1, 4))):
+        assert h <= 2 * T
+        assert (2 * T + h) * h * h * M2 / 24 <= Fr(2 * T) * h * h * M2 / 12
+
+
+def test_r7_identity_price_covers_the_root_contraction():
+    """R6-6. The ROOT/EVIDENCE contraction was not priced at all: one binary
+    unary priced 4 and executed 5, one ternary priced 6 and executed 8, two
+    independent binary unaries priced 8 and executed 10."""
+    from mdi import pricing as PR
+    cases = [(1, [2], [[Fr(1), Fr(3)]]),
+             (1, [3], [[Fr(1), Fr(2), Fr(3)]]),
+             (2, [2, 2], [[Fr(1), Fr(3)], [Fr(1), Fr(2)]]),
+             (3, [2, 2, 2], [[Fr(1), Fr(3)], [Fr(1), Fr(2)],
+                             [Fr(2), Fr(1)]])]
+    for n, card, tabs in cases:
+        facs = [M.Factor(scope=(v,), card=(card[v],), table=list(tabs[v]),
+                         origin=v) for v in range(n)]
+        m = M.Model(nvars=n, card=list(card), factors=facs)
+        m.validate()
+        r = M.restrict(m, {})
+        sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                            K.RESOURCES["arm_rss_bytes"])
+        pl, est = sel["chosen"]
+        rec = PR.price_identity_plan(pl, est, len(r.free), 64)
+        priced = sum(int(rec.counters[k].value)
+                     for k in ("producer_upward_ops",
+                               "producer_downward_ops", "readout_ops"))
+        res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
+                      deadline_s=30, run_checker=False)
+        executed = res["ops"]["mul"] + res["ops"]["add"]
+        assert priced >= executed, (n, card, priced, executed)
+
+
+def test_r7_independent_enumeration_is_priced():
+    """R6-6. The bounded independent aggregation check runs AFTER the interval
+    contraction and was absent from the price: on twelve independent binary
+    variables it visits 4,096 assignments and performs about 102,400 exact
+    Fraction operations against a recorded checker price of 96."""
+    from mdi import pricing as PR
+    n = 12
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)], origin=v)
+            for v in range(n)]
+    m = M.Model(nvars=n, card=[2] * n, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                        K.RESOURCES["arm_rss_bytes"])
+    pl, est = sel["chosen"]
+    rec = PR.price_identity_plan(pl, est, len(r.free), 64)
+    assert int(rec.counters["independent_enumeration_assignments"].value) \
+        == 4096
+    assert int(rec.counters["independent_enumeration_ops"].value) > 50000
+    assert int(rec.counters["checker_ops"].value) > 50000
+
+
+def test_r7_production_path_charges_the_allocation_counters():
+    """R6-6. The helper enforced local_mass_entries but the pipeline omitted
+    budget=bg, so a public route reported used={} while building masses and
+    markers."""
+    from mdi import pipeline as PLN
+    import mdi.registry            # noqa: F401
+    m = M.read_uai(w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n"))
+    res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    used = (res.budget or {}).get("used") or {}
+    assert used.get("local_mass_entries", 0) > 0, used

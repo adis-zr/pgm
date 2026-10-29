@@ -261,11 +261,17 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             try:
                 for reg in regs:
                     try:
+                        # pass budget=bg so the DECLARED allocation counters
+                        # are actually charged on the production path. The
+                        # helper enforced its limit, but the pipeline omitted
+                        # the argument, so a public route reported used={}
+                        # while building masses and markers.
                         rd = R.region_data(reg, r.card, r.factors, queries,
-                                           deadline=dl)
+                                           deadline=dl, budget=bg)
                         cr = R.merge_region(rd, r.factors, r.card, rho_cap,
                                             queries, deadline=dl,
-                                            region_of=region_of, aggregate=True)
+                                            region_of=region_of,
+                                            aggregate=True)
                     except (R.CapExceeded, R.Declined):
                         skipped += 1
                         continue
@@ -606,7 +612,8 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             ok, fails, meta = checker(r, cpayload["regions"],
                                       cpayload["coarse"], cpayload["rds"],
                                       queries, pub, cpayload["t_level"], eps,
-                                      deadline=bg.deadline_fn("check"))
+                                      deadline=bg.deadline_fn("check"),
+                                      budget=bg)
     except B.BudgetExceeded as e:
         stages["check_s"] = time.monotonic() - t
         return Outcome(status="RESOURCE_STOP",
