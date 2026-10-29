@@ -169,6 +169,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     t = time.monotonic()
     records, prices = [], []
     rejected = []
+    _shared_exhausted = None
 
     # identity, always retained
     sel = P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes)
@@ -277,6 +278,23 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                         continue
                     rds.append(rd); crs.append(cr)
             except B.BudgetExceeded as e:
+                # SHARED WORK EXHAUSTION must stop; it is not a per-candidate
+                # refusal. Discovery recorded a rejection and continued, so a
+                # unit local_mass_entries limit was charged twice and the
+                # pipeline still certified the identity fallback. A candidate
+                # whose own construction is too large may legitimately be
+                # rejected -- but a consumed SHARED counter cannot be
+                # swallowed by moving to the next candidate.
+                if getattr(e, "kind", None) in ("wall", "rss"):
+                    _shared_exhausted = e
+                    break
+                _lim = bg.limits.get(getattr(e, "kind", ""), None)
+                _used = bg.used.get(getattr(e, "kind", ""), 0)
+                if _lim is not None and _used >= _lim:
+                    # the shared counter is spent: no later candidate, and no
+                    # fallback, may proceed on a budget that is gone
+                    _shared_exhausted = e
+                    break
                 rejected.append({"name": "regional:" + c["mode"],
                                  "reason": str(e)})
                 continue
@@ -422,6 +440,14 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                  "composed_meta": cm_meta}))
                 prices.append(cprice)
     stages["discover_s"] = time.monotonic() - t
+    if _shared_exhausted is not None:
+        # a consumed SHARED work counter stops the invocation; it is not a
+        # per-candidate refusal that a fallback may proceed past
+        return Outcome(status="RESOURCE_STOP",
+                       reason="the shared work budget was exhausted during "
+                              "discovery: %s" % _shared_exhausted,
+                       prices=out.prices, rejected=rejected, stages=stages,
+                       budget=bg.report())
     out.rejected = rejected
 
     # ---------------- stage 4: persist, reload, validate ----------------

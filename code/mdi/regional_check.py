@@ -115,6 +115,62 @@ def _independent_region_local(region, card, factors, queries, deadline=None,
     return boundary, interior, internal, crossing, A, marks
 
 
+def _own_profile_product(fis, factors, card, region, in_vars, nout,
+                         deadline=None):
+    """The CHECKER's own product kernel for the given original factors."""
+    import itertools as _it
+    from mdi import config as _K
+    rset = set(region)
+    scope = sorted({v for fi in fis for v in factors[fi].scope})
+    inside = [v for v in scope if v in rset]
+    outside = [v for v in scope if v not in rset]
+    nin = non = 1
+    for v in inside:
+        nin *= card[v]
+    for v in outside:
+        non *= card[v]
+    if nin * non > _K.CAPS["aggregated_kernel_entries"]:
+        return None
+    if tuple(inside) != tuple(in_vars) or non != nout:
+        return {"__layout__": (tuple(inside), non)}
+    out = {}
+    for ic in _it.product(*[range(card[v]) for v in inside]):
+        if deadline is not None:
+            deadline()
+        row = []
+        for oc in _it.product(*[range(card[v]) for v in outside]):
+            a = dict(zip(inside, ic))
+            a.update(dict(zip(outside, oc)))
+            w = Fr(1)
+            for fi in fis:
+                f = factors[fi]
+                st = f.strides()
+                off = sum(a[v] * st[k] for k, v in enumerate(f.scope))
+                e = Fr(f.table[off])
+                if e == 0:
+                    w = Fr(0)
+                    break
+                w *= e
+            row.append(w)
+        out[tuple(ic)] = row
+    return out
+
+
+def _profiles_agree(submitted, own):
+    """Exact comparison of a submitted profile table with the checker's own."""
+    if not isinstance(own, dict) or "__layout__" in own:
+        return False
+    if not isinstance(submitted, dict) or set(submitted) != set(own):
+        return False
+    for k in own:
+        srow, orow = submitted[k], own[k]
+        if len(srow) != len(orow):
+            return False
+        if any(Fr(a) != Fr(b) for a, b in zip(srow, orow)):
+            return False
+    return True
+
+
 def _own_ratio_extrema(row_b, row_r):
     """The CHECKER's OWN exact ratio extrema over common positive entries.
 
@@ -220,8 +276,9 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
         region, card, factors, queries, deadline=deadline)
     bpos = {v: k for k, v in enumerate(rd_sig.boundary)}
     try:
+        agg_detail = None
         if region_of_for_profiles is not None:
-            profiles, _ad = R.aggregate_crossings(
+            profiles, agg_detail = R.aggregate_crossings(
                 rd_sig, factors, card, region_of_for_profiles,
                 deadline=deadline)
         else:
@@ -238,37 +295,107 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                 "proof requires (%s), so the witness is UNVERIFIED rather "
                 "than accepted" % _e]
 
-    # INDEPENDENT crossing coverage. The profile list is a numerical product
-    # over the ORIGINAL crossing factors, not neutral plumbing: forcing the
-    # shared aggregate_crossings to return an EMPTY list made an interacting
-    # model look independent, admitted one cell per region, and accepted four
-    # wrong intervals near 1/2 for the pair [1,2,3,8].
+    # ---- INDEPENDENT coverage AND numerical product verification.
+    #
+    # r11 derived own_crossing but could only reject when the profile list was
+    # EMPTY: the second `len(profiles) < 1` branch was unreachable once the
+    # list was nonempty, so keeping one profile while omitting another
+    # accepted four wrong coordinates. It also trusted the profile TABLE
+    # VALUES: replacing them with ones -- preserving every factor id, scope,
+    # length and support mask -- left the independent extrema computing (1,1)
+    # on wrong inputs and accepted four intervals near 1/2 for [1,2,3,8].
+    # Labels do not prove products, and a nonempty list does not prove
+    # coverage.
+    #
+    # The identifier schema is a bare factor index OR a tagged group such as
+    # ('agg', r1, r2); `int('agg')` crashed a CLEAN valid case, which is why
+    # the constituent factors are read from the aggregation DETAIL record.
     own_crossing = []
     rset = set(region)
     for fi, f in enumerate(factors):
         sc = set(f.scope)
         if (sc & rset) and not (sc <= rset):
             own_crossing.append(fi)
-    covered = set()
-    for entry in profiles:
-        fid = entry[0]
-        if isinstance(fid, (list, tuple)):
-            covered |= {int(x) for x in fid}
-        elif isinstance(fid, int) and fid >= 0:
-            covered.add(fid)
-    uncovered = [fi for fi in own_crossing if fi not in covered]
-    if uncovered and len(profiles) == 0:
-        return ["the submitted witness carries NO response profiles, but the "
-                "checker finds %d original crossing factor(s) %s on this "
-                "region; an interacting model cannot be treated as "
-                "independent" % (len(own_crossing), uncovered[:4])]
-    if uncovered:
-        # aggregation legitimately fuses several crossing factors, so an
-        # unlabelled aggregate is accepted only when the profile count can
-        # account for every crossing factor
-        if len(profiles) < 1:
-            return ["original crossing factors %s are covered by no response "
-                    "profile" % (uncovered[:4],)]
+
+    claimed = []
+    groups = []            # (constituent factor indices, emitted profile)
+    if agg_detail:
+        for gi, entry in enumerate(agg_detail):
+            if not isinstance(entry, dict) or "factors" not in entry:
+                problems.append(
+                    "aggregation record %d does not name its constituent "
+                    "original factors, so coverage cannot be established"
+                    % gi)
+                continue
+            fl = [int(x) for x in entry["factors"]]
+            claimed.extend(fl)
+            groups.append(fl)
+    else:
+        for entry in profiles:
+            fid = entry[0]
+            if isinstance(fid, int) and fid >= 0:
+                claimed.append(fid)
+                groups.append([fid])
+            else:
+                problems.append(
+                    "profile identifier %r is not a plain original factor "
+                    "index and no aggregation record explains it" % (fid,))
+
+    from collections import Counter as _Ctr
+    want_c, got_c = _Ctr(own_crossing), _Ctr(claimed)
+    if want_c != got_c:
+        miss = sorted((want_c - got_c).elements())
+        extra = sorted((got_c - want_c).elements())
+        problems.append(
+            "the response profiles do not account for the checker's own "
+            "crossing-factor occurrences exactly once: missing %s, extra %s"
+            % (miss[:4], extra[:4]))
+
+    # Every claimed group must have an EMITTED profile. A detail record that
+    # claims coverage while the profile list is empty is self-consistent but
+    # vacuous: nothing is then compared, so an interacting model passes as
+    # independent.
+    if not problems and groups and not profiles:
+        problems.append(
+            "the aggregation record claims to cover original crossing "
+            "factor(s) %s, but NO response profile was emitted; there is "
+            "nothing to verify and an interacting model cannot be treated as "
+            "independent" % (sorted(claimed)[:4],))
+    # verify each group's profile TABLE against the original factors
+    if not problems:
+        by_id = {e[0]: e for e in profiles}
+        for fl in groups:
+            if len(fl) == 1 and fl[0] in by_id:
+                tgts = [by_id[fl[0]]]
+            else:
+                tgts = [e for e in profiles if isinstance(e[0], tuple)]
+            if not tgts:
+                problems.append(
+                    "original crossing factor(s) %s are claimed by an "
+                    "aggregation record but no emitted profile represents "
+                    "them" % (fl[:4],))
+                continue
+            for tgt in tgts:
+                fid, in_vars, nout, tbl = tgt
+                which = fl if (isinstance(fid, tuple) or len(fl) == 1) \
+                    else [fid]
+                own = _own_profile_product(which, factors, card, region,
+                                           in_vars, nout, deadline=deadline)
+                if own is None:
+                    problems.append(
+                        "the profile for original factor(s) %s is too large "
+                        "for the checker to verify locally, so the witness is "
+                        "UNVERIFIED" % (which[:4],))
+                    continue
+                if not _profiles_agree(tbl, own):
+                    problems.append(
+                        "the response profile for original factor(s) %s does "
+                        "NOT match the product the checker computes from "
+                        "those factors; labels and support masks do not prove "
+                        "profile VALUES" % (which[:4],))
+    if problems:
+        return problems
+
     if profiles is not None:
         for ci, cell in enumerate(pc.cells):
             rep = tuple(cell.rep)

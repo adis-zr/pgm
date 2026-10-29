@@ -6163,7 +6163,10 @@ def test_r11_omitted_crossing_profiles_reject():
     t1 = K.level_radius(1)
     res = K.PUBLICATION_RESERVE
     orig = R.aggregate_crossings
-    R.aggregate_crossings = lambda rd, f, c, ro, **kw: ([], {"omitted": True})
+    # drop every response profile while leaving the DETAIL record claiming the
+    # factors are covered -- the shape the review's control uses
+    R.aggregate_crossings = lambda rd, f, c, ro, **kw: (
+        [], [{"scope": (), "factors": [0], "aggregated": False}])
     try:
         regs = [(0,), (1,)]
         rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
@@ -6178,7 +6181,9 @@ def test_r11_omitted_crossing_profiles_reject():
     finally:
         R.aggregate_crossings = orig
     assert not ok
-    assert any("crossing factor" in str(x) for x in fails), fails[:3]
+    # it must reject on a PROFILE obligation, not on containment margin
+    assert any(("crossing-factor" in str(x) or "profile" in str(x))
+               for x in fails), fails[:3]
 
 
 def test_r11_missing_marker_keys_reject_by_coverage():
@@ -6378,3 +6383,128 @@ def test_r11_reconstruction_count_is_honest():
     assert counts["rd"] == n, counts
     assert counts["own"] == n, counts
     assert total == 2 * n, (total, counts)
+
+
+# ===== r11 review: profile integrity, clean aggregation, discovery budget =====
+
+def test_r12_profile_values_are_verified_not_trusted():
+    """R11-1. _own_ratio_extrema was independent, but its numerical INPUTS
+    were not: replacing the shared profile table values with ones -- while
+    preserving every factor id, scope, length and support mask -- left the
+    independent extrema computing (1,1) on wrong inputs and accepted four
+    intervals near 1/2 for the pair [1,2,3,8], whose truths are
+    X0=(3/14,11/14) and X1=(2/7,5/7). Labels do not prove products."""
+    from mdi import regions as R, regional_check as RC
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(8)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    t1 = K.level_radius(1)
+    res = K.PUBLICATION_RESERVE
+
+    def build():
+        regs = [(0,), (1,)]
+        rds = [R.region_data(g, r.card, r.factors, {0, 1}) for g in regs]
+        ro = {0: 0, 1: 1}
+        crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1},
+                              region_of=ro, aggregate=True)
+               for i in range(2)]
+        return regs, rds, crs
+
+    # the CLEAN witness passes under these publication rules
+    regs, rds, crs = build()
+    good = {v: [(max(Fr(0), pt[v][s] - t1 - res),
+                 min(Fr(1), pt[v][s] + t1 + res)) for s in range(2)]
+            for v in (0, 1)}
+    ok0, f0, _m0 = RC.verify_regional_publication(
+        r, regs, crs, rds, {0, 1}, good, t1, Fr(1, 100))
+    assert ok0, f0
+
+    orig = R.aggregate_crossings
+
+    def ones(rd, fa, c, r_, **kw):
+        pr, d = orig(rd, fa, c, r_, **kw)
+        return [(fid, iv, no,
+                 {k: tuple(Fr(1) for _ in v) for k, v in tbl.items()})
+                for (fid, iv, no, tbl) in pr], d
+
+    R.aggregate_crossings = ones
+    try:
+        regs, rds, crs = build()
+        pub = {v: [(Fr(1, 2) - t1 - res, Fr(1, 2) + t1 + res)] * 2
+               for v in (0, 1)}
+        ok, fails, _m = RC.verify_regional_publication(
+            r, regs, crs, rds, {0, 1}, pub, t1, Fr(1, 100))
+    finally:
+        R.aggregate_crossings = orig
+    assert not ok, "corrupted profile VALUES were accepted"
+    assert any("does NOT match the product" in str(x) for x in fails), \
+        fails[:3]
+
+
+def test_r12_clean_aggregated_identifier_verifies():
+    """R11-2. A CLEAN valid case crashed: the coverage parser ran
+    int('agg') on the legitimate grouped identifier ('agg', 0, 1). No fault
+    injection -- r10 accepted this same witness."""
+    from mdi import regions as R, regional_check as RC
+    facs = [M.Factor(scope=(0, 2), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(8)], origin=0),
+            M.Factor(scope=(1, 2), card=(2, 2),
+                     table=[Fr(2), Fr(1), Fr(1), Fr(2)], origin=1)]
+    m = M.Model(nvars=3, card=[2, 2, 2], factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    Z, pt = O.exact_all_marginals(r)
+    regs = [(0, 1), (2,)]
+    rds = [R.region_data(g, r.card, r.factors, {0, 1, 2}) for g in regs]
+    ro = {0: 0, 1: 0, 2: 1}
+    # the producer really does emit the tagged identifier here
+    prof, _det = R.aggregate_crossings(rds[0], r.factors, r.card, ro)
+    assert any(isinstance(e[0], tuple) and e[0][0] == "agg" for e in prof), \
+        [e[0] for e in prof]
+    crs = [R.merge_region(rds[i], r.factors, r.card, Fr(1), {0, 1, 2},
+                          region_of=ro, aggregate=True) for i in range(2)]
+    t1 = K.level_radius(1)
+    res = K.PUBLICATION_RESERVE
+    pub = {v: [(max(Fr(0), pt[v][s] - t1 - res),
+                min(Fr(1), pt[v][s] + t1 + res)) for s in range(2)]
+           for v in range(3)}
+    ok, fails, _m = RC.verify_regional_publication(
+        r, regs, crs, rds, {0, 1, 2}, pub, t1, Fr(1, 100))
+    assert ok, fails
+
+
+def test_r12_discovery_stops_on_shared_budget_exhaustion():
+    """R11-3. Discovery caught the same shared BudgetExceeded, recorded a
+    candidate rejection and continued: a unit local_mass_entries limit was
+    charged two and the pipeline still returned CERTIFIED_FALLBACK_ONLY.
+    Shared work exhaustion is not a per-candidate refusal."""
+    from mdi import pipeline as PLN
+    import mdi.budget as B
+    import mdi.registry            # noqa: F401
+    facs = [M.Factor(scope=(0, 1), card=(2, 2),
+                     table=[Fr(1), Fr(2), Fr(3), Fr(5)], origin=0)]
+    m = M.Model(nvars=2, card=[2, 2], factors=facs)
+    m.validate()
+    # the unconstrained run must certify
+    clean = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    assert clean.status.startswith("CERTIFIED"), clean.reason
+    orig = B.Budget.__init__
+
+    def patched(self, wall_s, limits=None, rss_fn=None, rss_limit=None):
+        lim = dict(limits or {})
+        lim["local_mass_entries"] = 1
+        orig(self, wall_s, limits=lim, rss_fn=rss_fn, rss_limit=rss_limit)
+
+    B.Budget.__init__ = patched
+    try:
+        res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+    finally:
+        B.Budget.__init__ = orig
+    assert not res.status.startswith("CERTIFIED"), res.status
+    assert res.status == "RESOURCE_STOP", res.status
+    # the attempted work remains charged
+    used = (res.budget or {}).get("used") or {}
+    assert used.get("local_mass_entries", 0) >= 1, used
