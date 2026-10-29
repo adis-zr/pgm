@@ -317,6 +317,13 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
                        "weight"], None
     if not queries:
         return False, ["no queries requested"], None
+    # Reject an UNKNOWN requested variable explicitly, as the public pipeline
+    # does. It was rejected only incidentally, via "marker key sets differ",
+    # which names the wrong cause.
+    unknown = sorted(v for v in queries if v not in restricted.card)
+    if unknown:
+        return False, ["requested variables %s are not free variables of the "
+                       "restricted model" % unknown[:8]], None
     missing = [v for v in sorted(queries) if v not in published]
     if missing:
         return False, ["variables %s have no published row" % missing[:8]], None
@@ -413,6 +420,16 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
     (Zlo, Zhi), (counts_lo, counts_hi) = independent_contract(
         restricted, regions, rebuilt, rds, queries, deadline=deadline)
     fails = []
+    # STRUCTURAL support from the checker's own counts: how many states of
+    # each variable carry positive mass. With an EXACT coarsening (t_level 0)
+    # a single supported state has probability exactly 1 and a zero count
+    # exactly 0, so a correct exact publication must be accepted rather than
+    # refused for failing to contain a needlessly padded reference.
+    _exact_support = (Fr(t_level) == 0)
+    _n_supported = {}
+    for _k, _vv in counts_hi.items():
+        if _vv > 0:
+            _n_supported[_k[0]] = _n_supported.get(_k[0], 0) + 1
     # Build the checker's OWN original-model enclosure, then require the
     # publication to CONTAIN it.
     #
@@ -459,8 +476,19 @@ def verify_regional_publication(restricted, regions, coarse, rds, queries,
             # denominator, and conversely
             qlo = counts_lo.get((v, s), Fr(0)) / Zhi
             qhi = counts_hi.get((v, s), Fr(0)) / Zlo
-            clo = max(Fr(0), qlo - t_level)
-            chi = min(Fr(1), qhi + t_level)
+            # STRUCTURAL support is exact: when the checker's own count is
+            # exactly zero and the coarsening is exact (t_level == 0), the
+            # probability IS zero and a correct publication of [0, 0] must be
+            # accepted. Padding a zero reference out to [0, t] refused a
+            # correct exact-zero result.
+            if qlo == 0 and qhi == 0:
+                clo = chi = Fr(0)
+            elif _exact_support and _n_supported.get(v) == 1 and qlo > 0:
+                # the only supported state: its probability IS exactly 1
+                clo = chi = Fr(1)
+            else:
+                clo = max(Fr(0), qlo - t_level)
+                chi = min(Fr(1), qhi + t_level)
             # the publication must CONTAIN that enclosure
             if not (lo <= clo and chi <= hi):
                 fails.append(
