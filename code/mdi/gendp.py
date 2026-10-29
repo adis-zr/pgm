@@ -44,30 +44,144 @@ def run(plan, factors, card, cand, Q, queries, ctx: A.Ctx, deadline=None,
     if len(roots) <= 1:
         return _run_component(plan, factors, card, cand, Q, queries, ctx,
                               deadline=deadline, cap_states=cap_states)
-    # A DISCONNECTED residual graph cannot be contracted component by
-    # component here. Independent components would multiply only if the law
-    # factorized across them, but the collective statistic
-    #     S = sum_i f_i(z_i)
-    # sums over EVERY variable, and exp(-gamma S^2 / 2) couples all of them
-    # regardless of which residual factors remain. Multiplying per-component
-    # totals would therefore drop the cross terms of S^2: on four binary
-    # variables with a ternary constraint it published X3 at 0.5 against a
-    # true 0.3556.
+    # ---- DISCONNECTED residual, done correctly ----
+    # Multiplying already-integrated component totals is WRONG: the collective
+    # statistic S = sum_i f_i(z_i) sums over every variable, so
+    # exp(-gamma S^2 / 2) couples all of them and a product of per-component
+    # totals drops the cross terms of S^2. (That error published X3 at 0.5
+    # against a true 0.3556.)
     #
-    # The sound options are a joint contraction over the whole variable set
-    # (which this DP's single-component schedule does not express) or an
-    # explicit decline. Declining is correct and cheap.
-    raise Declined(
-        "the residual graph has %d disconnected components, but the "
-        "collective statistic couples every variable through exp(-gamma "
-        "S^2/2), so per-component contraction would drop the cross terms of "
-        "S^2; this candidate DECLINES rather than publishing a product of "
-        "independent totals" % len(roots))
+    # The correct construction keeps each component's UNINTEGRATED statistic
+    # distribution A_c(s), CONVOLVES them into the distribution of the total
+    # statistic, and applies exp(sign*gamma*(s/Q)^2/2) once to that total. A
+    # marked distribution replaces its own component in the same convolution,
+    # so every cross term is retained.
+    import copy as _copy
+    comps = []
+    for rt in roots:
+        seen, stack = [], [rt]
+        while stack:
+            x = stack.pop()
+            seen.append(x)
+            stack.extend(plan.bags[x].children)
+        comps.append(sorted(seen))
+    var_comp, fac_comp = {}, {}
+    for ci, bidx in enumerate(comps):
+        for b in bidx:
+            for v in plan.bags[b].vars:
+                if v in var_comp and var_comp[v] != ci:
+                    raise Declined("variable %d spans two components" % v)
+                var_comp[v] = ci
+            for fi in plan.bags[b].factors:
+                if fi in fac_comp and fac_comp[fi] != ci:
+                    raise Declined("factor %d spans two components" % fi)
+                fac_comp[fi] = ci
+    missing = [fi for fi in range(len(factors)) if fi not in fac_comp]
+    if missing:
+        raise Declined("factors %s belong to no component, so the residual "
+                       "law would be incomplete" % missing[:4])
+
+    cap = cap_states or K.CAPS["local_mass_entries"]
+    per = []
+    for ci, bidx in enumerate(comps):
+        sub = _copy.copy(plan)
+        remap = {b: k for k, b in enumerate(bidx)}
+        newbags = []
+        for b in bidx:
+            nb = _copy.copy(plan.bags[b])
+            nb.idx = remap[b]
+            nb.parent = remap.get(plan.bags[b].parent, -1)
+            nb.children = [remap[c] for c in plan.bags[b].children]
+            newbags.append(nb)
+        sub.bags = newbags
+        sub.var_home = {v: remap[h] for v, h in plan.var_home.items()
+                        if h in remap}
+        q_sub = {v for v in queries if var_comp.get(v) == ci}
+        acc, macc, cmeta = _run_component(
+            sub, factors, card, cand, Q, q_sub, ctx, deadline=deadline,
+            cap_states=cap_states, raw_statistics=True)
+        if not acc:
+            raise Declined("component %d has an empty statistic distribution"
+                           % ci)
+        per.append((acc, macc))
+
+    def convolve(a, b):
+        out = {}
+        for sa, wa in a.items():
+            if wa == 0:
+                continue
+            for sb, wb in b.items():
+                if wb == 0:
+                    continue
+                k = sa + sb
+                out[k] = out.get(k, Fr(0)) + wa * wb
+        if len(out) > cap:
+            raise Declined(
+                "the convolved statistic support is %d, above the declared "
+                "%d cap" % (len(out), cap))
+        return out
+
+    # the TOTAL statistic distribution
+    total = {0: Fr(1)}
+    for acc, _m in per:
+        total = convolve(total, acc)
+        if deadline is not None:
+            deadline()
+    # a marked total replaces its own component's distribution
+    marked_total = {}
+    for ci, (acc, macc) in enumerate(per):
+        for key, mdist in macc.items():
+            cur = {0: Fr(1)}
+            for cj, (acc2, _m2) in enumerate(per):
+                cur = convolve(cur, mdist if cj == ci else acc2)
+                if deadline is not None:
+                    deadline()
+            marked_total[key] = cur
+
+    # apply the signed exponential ONCE, to the total statistic
+    s_k, g_k = cand.signs[0], cand.gammas[0]
+    import gmpy2
+
+    def wfac(stat):
+        S = Fr(stat, Q)
+        x = Fr(s_k) * g_k * S * S / 2
+        with ctx.D:
+            lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        with ctx.U:
+            hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        return A.exact_fr(lo), A.exact_fr(hi)
+
+    cache = {}
+    Zlo = Zhi = Fr(0)
+    for stat, wv in total.items():
+        if stat not in cache:
+            cache[stat] = wfac(stat)
+        lo, hi = cache[stat]
+        Zlo += wv * lo
+        Zhi += wv * hi
+    if Zhi <= 0:
+        raise Declined("the convolved total has nonpositive weight")
+    out_marks = {}
+    for key, dist in marked_total.items():
+        mlo = mhi = Fr(0)
+        for stat, wv in dist.items():
+            if stat not in cache:
+                cache[stat] = wfac(stat)
+            lo, hi = cache[stat]
+            mlo += wv * lo
+            mhi += wv * hi
+        out_marks[key] = (mlo, mhi)
+    return (Zlo, Zhi), out_marks, {
+        "components": len(comps),
+        "multi_component": True,
+        "total_statistic_support": len(total),
+        "method": "per-component UNINTEGRATED statistic distributions "
+                  "convolved, with exp(sign*gamma*(s/Q)^2/2) applied once to "
+                  "the TOTAL statistic, so every cross term of S^2 is kept"}
 
 
 def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
-                   deadline=None,
-        cap_states=None):
+                   deadline=None, cap_states=None, raw_statistics=False):
     """Contract the residual on `plan`, carrying integer statistics.
 
     Returns (Z_interval, marker_intervals, meta). Masses stay NONNEGATIVE; the
@@ -252,6 +366,23 @@ def _run_component(plan, factors, card, cand, Q, queries, ctx: A.Ctx,
     if extra:
         raise Declined("variables %s had a statistic inserted but are not in "
                        "this component" % extra[:5])
+
+    if raw_statistics:
+        # Return the UNINTEGRATED statistic distribution A_c(s) and the marked
+        # distributions, WITHOUT applying exp(sign*gamma*(s/Q)^2/2). The
+        # caller convolves components and applies the exponential to the TOTAL
+        # statistic, which is what keeps the cross terms of S^2.
+        acc = {}
+        for (soff, stat), wv in root_msg.items():
+            acc[stat] = acc.get(stat, Fr(0)) + wv
+        macc = {}
+        for key, tab in root_marks.items():
+            d = {}
+            for (soff, stat), wv in tab.items():
+                d[stat] = d.get(stat, Fr(0)) + wv
+            macc[key] = d
+        own = sorted({v for b in bags for v in b.vars})
+        return acc, macc, {"variables": own, "support": len(acc)}
 
     # apply the signed quadratic exponential at the ROOT only
     s_k, g_k = cand.signs[0], cand.gammas[0]

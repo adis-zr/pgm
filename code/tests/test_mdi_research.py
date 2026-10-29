@@ -2273,7 +2273,7 @@ def test_general_dp_refuses_double_insertion():
     # per-component totals, since the collective statistic couples every
     # variable through exp(-gamma S^2/2)
     dsrc = inspect.getsource(G.run)
-    assert "disconnected components" in dsrc
+    assert "DISCONNECTED residual" in dsrc
 
 
 # ===== review 4: false verified marginals (the most serious defect) =====
@@ -4324,15 +4324,76 @@ def test_r6_retained_factors_have_exclusive_ownership():
     assert res.detail.get("ownership_exclusive") is True
 
 
-def test_r6_disconnected_residual_declines_instead_of_multiplying():
-    """R5-4. Per-component contraction is UNSOUND: the collective statistic S
-    sums over every variable, so exp(-gamma S^2/2) couples all of them and
-    multiplying per-component totals drops the cross terms of S^2."""
-    import inspect
+def test_r7_disconnected_residual_convolves_unintegrated_statistics():
+    """R6-6. Multiplying already-INTEGRATED component totals is wrong: the
+    collective statistic sums over every variable, so exp(-gamma S^2/2)
+    couples all of them and a product of per-component totals drops the cross
+    terms of S^2 (it published X3 at 0.5 against a true 0.3556).
+
+    The correct construction keeps each component's UNINTEGRATED statistic
+    distribution A_c(s), convolves them into the distribution of the TOTAL
+    statistic, and applies the exponential once to that total. This test
+    checks it against a rigorous 512-bit reference enclosure, not a float
+    tolerance."""
+    import itertools, gmpy2
     from mdi import gendp as G
+    import inspect
     src = inspect.getsource(G.run)
-    assert "disconnected components" in src
     assert "cross terms" in src
+    assert "convolve" in src.lower()
+
+    def ref(x, p=512):
+        mq = gmpy2.mpq(x.numerator, x.denominator)
+        with gmpy2.context(precision=p, round=gmpy2.RoundDown):
+            lo = gmpy2.exp(gmpy2.mpfr(mq))
+        with gmpy2.context(precision=p, round=gmpy2.RoundUp):
+            hi = gmpy2.exp(gmpy2.mpfr(mq))
+        return A.exact_fr(lo), A.exact_fr(hi)
+
+    ctx = A.Ctx(160)
+    tabs = ([Fr(1), Fr(2)], [Fr(1), Fr(1)], [Fr(2), Fr(1)], [Fr(1), Fr(3)])
+    facs = [M.Factor(scope=(v,), card=(2,), table=list(t), origin=v)
+            for v, t in enumerate(tabs)]
+    m = M.Model(nvars=4, card=[2] * 4, factors=facs)
+    m.validate()
+    r = M.restrict(m, {})
+    for sign in (1, -1):
+        class C:
+            rank = 1
+            signs = [sign]
+            gammas = [Fr(1, 2)]
+            features = [{v: [Fr(0), Fr(1)] for v in range(4)}]
+
+        sel = P.choose_plan(r.free, r.card, r.factors, 64,
+                            K.RESOURCES["arm_rss_bytes"])
+        pl, _est = sel["chosen"]
+        (Zlo, Zhi), mk, meta = G.run(pl, r.factors, r.card, C(), 1,
+                                     set(range(4)), ctx)
+        assert meta.get("components") and meta["components"] > 1, meta
+        # rigorous reference: enumerate every configuration exactly
+        Zl = Zh = Fr(0)
+        cl, ch = {}, {}
+        for combo in itertools.product(range(2), repeat=4):
+            Ssum = sum(combo)
+            wt = Fr(1)
+            for v, a in enumerate(combo):
+                wt *= tabs[v][a]
+            el, eh = ref(Fr(sign * Ssum * Ssum, 4))
+            if sign < 0:
+                el, eh = eh, el
+            Zl += wt * el
+            Zh += wt * eh
+            for v, a in enumerate(combo):
+                cl[(v, a)] = cl.get((v, a), Fr(0)) + wt * el
+                ch[(v, a)] = ch.get((v, a), Fr(0)) + wt * eh
+        lo_ref, hi_ref = min(Zl, Zh), max(Zl, Zh)
+        assert Zlo <= lo_ref and hi_ref <= Zhi, (sign, float(Zlo), float(Zhi))
+        for v in range(4):
+            for a in range(2):
+                lo, hi = mk[(v, a)]
+                a_lo = min(cl[(v, a)], ch[(v, a)])
+                a_hi = max(cl[(v, a)], ch[(v, a)])
+                assert lo <= a_lo and a_hi <= hi, (sign, v, a)
 
 
 def test_r6_composed_declines_rather_than_publishing_an_impossible_state():

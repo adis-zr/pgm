@@ -563,18 +563,35 @@ def build_residual(free, factors, card, cand: ModeCandidate, ctx: A.Ctx,
             kept.append(fi)
             continue
         if any(t == 0 for t in f.table):
-            key = tuple(sorted(f.scope))
-            if key in res_pairs or key in consts:
-                # already represented; retaining it would double-count
-                continue
+            # A HARD ZERO is ALWAYS retained. Treating scope occupancy as
+            # proof of consumption was wrong: a residual pair on that scope is
+            # a mode-COMPENSATION factor exp(-G) that cancels the collective
+            # interaction, and it is strictly positive -- it does not
+            # reproduce the original constraint. Another positive input factor
+            # may also share the scope. These are distinct multiplicative
+            # contributions.
+            #
+            # On pair [1,1,1,0] with a rank-1 gamma=1 feature [0,1] the pair
+            # was dropped for BOTH signs, the residual's (1,1) entry came out
+            # strictly positive, and the originally IMPOSSIBLE assignment
+            # became possible: represented marginals near (.5,.5) against an
+            # original (2/3,1/3), under a claimed fit allowance below 8e-13.
+            # A small log-fit error cannot repair an exact support
+            # contradiction.
             kept.append(fi)
-    # a retained factor must not also be represented as a residual pair
+    # Ownership is by ORIGINAL CONTRIBUTION, not by scope uniqueness. A
+    # retained hard-zero factor and a residual pair on the same scope are both
+    # legitimate and multiply; what must never happen is the SAME original
+    # factor being counted twice. res_pairs holds derived compensation tables
+    # keyed by scope, never original factors, so no exclusion is needed here --
+    # only unary factors (owned by res_unary) are excluded, above.
+    _seen_kept = set()
     for fi in kept:
-        key = tuple(sorted(factors[fi].scope))
-        if key in res_pairs:
+        if fi in _seen_kept:
             raise AssertionError(
-                "factor %d on scope %s is BOTH retained and a residual pair: "
-                "factor ownership must be mutually exclusive" % (fi, key))
+                "original factor %d is retained twice; ownership must be "
+                "mutually exclusive" % fi)
+        _seen_kept.add(fi)
     const_log = Fr(0)
     for (i, j), c in consts.items():
         lo, hi = _log_enclose(c, ctx)
