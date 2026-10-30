@@ -19,7 +19,7 @@ import sys
 sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
 from mdi import (model as M, config as K, modes as MD, residual as RS,
-                 collective as CO, marked as MK, arith as A)
+                 collective as CO, marked as MK, arith as A, factors as FX)
 
 
 class Declined(Exception):
@@ -199,7 +199,8 @@ def _residual_marked(marked: MK.Marked, res, can, kept) -> MK.Marked:
     for (i, j), tbl in sorted(can.kept_pairs.items()):
         facs.append(M.Factor(scope=(i, j), card=(marked.card[i], marked.card[j]),
                              table=[Fr(x) for x in tbl], origin=-20000 - len(facs)))
-    law = marked.law_factors()
+    law = [FX.densify(f, K.CAPS["aggregated_kernel_entries"])
+           for f in marked.law_factors()]
     for ki, fi in enumerate(kept):
         kf = law[fi]
         facs.append(M.Factor(scope=tuple(kf.scope), card=tuple(kf.card),
@@ -218,49 +219,166 @@ def _residual_marked(marked: MK.Marked, res, can, kept) -> MK.Marked:
     return out
 
 
-def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None):
-    """Bounded admission. Returns (record_dict, residual_marked) or raises
-    Declined with the concrete reason.
+def choose_Q(cand, free, remaining, tries=None):
+    """Spec §7.1: at most `dyadic_Q_tries` dyadic Q values chosen FROM the
+    proved rounding bound. The bound Delta(Q) is cheap, so it is evaluated on
+    the dyadic ladder; the attempts recorded are the smallest admissible Q and
+    its two coarser neighbours (the ones that decide it is the smallest). The
+    coarsest admissible grid is what the DP then solves."""
+    tries = tries or K.CAPS["dyadic_Q_tries"]
+    ladder = []
+    for j in range(0, 40):
+        Q = 1 << j
+        kq = CO.round_features(cand, free, Q)
+        D = CO.rounding_energy_bound(cand, free, kq, Q)
+        tv = K.tanh_upper(D)
+        ladder.append((Q, D, tv, tv <= remaining))
+        if tv <= remaining:
+            break
+    chosen = next((x for x in ladder if x[3]), None)
+    attempts = ladder[-tries:]
+    out = [{"Q": Q, "rounding_energy": str(D), "tv": str(tv), "admissible": ok}
+           for Q, D, tv, ok in attempts]
+    if chosen is None:
+        return None, None, out
+    return chosen[0], chosen[2], out
 
-    `prefer` optionally names an evaluator ("statistic" | "gaussian" |
-    "fourier"); by default the statistic DP is tried first for every rank
-    and the quadrature evaluators for rank 1 of the matching sign.
+
+def lattice_for(cand, k, delta):
+    """The GF3 lattice of mode k at TV radius delta (positive: gf_lattice;
+    negative: the oscillatory fourier_lattice)."""
+    Rk = Fr(0)
+    for f in cand.features[k].values():
+        Rk += max(abs(Fr(x)) for x in f)
+    if cand.signs[k] > 0:
+        return CO.gf_lattice(cand.gammas[k], Rk, delta)
+    return CO.fourier_lattice(cand.gammas[k], Rk, delta)
+
+
+def gf_forecast(cand, qallow, num_eps):
+    """§7.2 feasibility forecast for Gaussian/Fourier/mixed integration.
+
+    Positive coordinates: each needs a lattice whose GF3 total bound fits its
+    share of the quadrature allowance (a TV radius on the law, since
+    exp(+gS^2/2) >= 1 makes the absolute lattice error a relative one).
+
+    Negative coordinates: the lattice error is an ABSOLUTE error on a count
+    whose true value may be as small as L = exp(-Y_max) times the positive
+    mass. It is not a probability radius; it enters the sharp marker-ratio
+    enclosure, whose worst-case width is 2*delta/L. The forecast therefore
+    needs delta_neg <= L * num_eps / 4 (half the numerical width, for the
+    two-sided ratio), which can force an unaffordable node count -- that is
+    reported as a decline BEFORE any evaluation.
+
+    Returns (per-mode delta list, lattices, node product, meta) or raises
+    Declined.
     """
-    law = marked.law_factors()
+    pos = [k for k in range(cand.rank) if cand.signs[k] > 0]
+    neg = [k for k in range(cand.rank) if cand.signs[k] < 0]
+    deltas = [None] * cand.rank
+    lats = [None] * cand.rank
+    meta = {"positive_modes": len(pos), "negative_modes": len(neg)}
+    if pos:
+        share = Fr(qallow) / len(pos)
+        for k in pos:
+            d = share
+            lat = None
+            for _ in range(4):
+                try:
+                    lat = CO.gf_lattice(cand.gammas[k], _R(cand, k), d)
+                except CO.Declined:
+                    lat = None
+                if lat is not None and Fr(lat["total_bound"]) <= share:
+                    break
+                d /= 2
+            if lat is None or Fr(lat["total_bound"]) > share:
+                raise Declined("positive mode %d: no GF lattice within its %s share "
+                               "of the quadrature allowance" % (k, share))
+            deltas[k] = d
+            lats[k] = lat
+    if neg:
+        Ymax = Fr(0)
+        for k in neg:
+            Ymax += cand.gammas[k] * _R(cand, k) * _R(cand, k) / 2
+        L_lo = CO._exp_lower(-Ymax)          # exp(-Ymax), a rational LOWER bound
+        if L_lo <= 0:
+            raise Declined("the negative-response lower bound exp(-%s) underflows "
+                           "the rational enclosure" % Ymax)
+        meta["Y_max"] = str(Ymax)
+        meta["L_lower"] = str(L_lo)
+        need = L_lo * Fr(num_eps) / (4 * len(neg))
+        for k in neg:
+            d = need
+            try:
+                lat = CO.fourier_lattice(cand.gammas[k], _R(cand, k), d)
+            except CO.Declined as e:
+                raise Declined("negative mode %d: the oscillatory lattice at the "
+                               "required delta %s is unavailable (%s)" % (k, d, e))
+            deltas[k] = d
+            lats[k] = lat
+    nodes = 1
+    for lat in lats:
+        nodes *= lat["nodes"]
+    meta["nodes_per_mode"] = [lat["nodes"] for lat in lats]
+    meta["tensor_nodes"] = nodes
+    return deltas, lats, nodes, meta
+
+
+def _R(cand, k):
+    Rk = Fr(0)
+    for f in cand.features[k].values():
+        Rk += max(abs(Fr(x)) for x in f)
+    return Rk
+
+
+def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
+          num_eps=None):
+    """Bounded admission. Returns a LIST of admissible collective records
+    (record_dict, residual_marked) -- one per (certified candidate, applicable
+    evaluator) -- or raises Declined with every concrete reason.
+
+    Every candidate of the §6 menu is certified by the gauge-invariant fit
+    certificate on the residual actually emitted; a certified representation
+    is then offered to EVERY evaluator that applies to it: the statistic DP
+    (any rank), and Gaussian / Fourier / mixed integration (rank 1 positive /
+    rank 1 negative / mixed signs) when the §7.2 forecast is affordable.
+    `prefer` restricts to one evaluator and reports its own decline.
+    """
     free = marked.free()
+    try:
+        law = [FX.densify(f, K.CAPS["aggregated_kernel_entries"])
+               for f in marked.law_factors()]
+    except FX.ViewError as e:
+        raise Declined("the collective recognizer needs bounded explicit "
+                       "tables: %s" % e)
     cands, info = MD.propose_modes(free, law, marked.card)
     if not cands:
         raise Declined("no collective mode recognized from the factor tables: %s"
                        % info.get("declined", info))
     allow = K.RADII["collective_fit_and_rounding"]
+    qallow = K.RADII["gaussian_quadrature"]
+    num_eps = Fr(num_eps) if num_eps is not None else \
+        (K.MAX_WIDTH - 2 * (allow + qallow) - K.PUBLICATION_RESERVE)
     errors = []
+    out = []
+    seen_keys = set()
     for cand in cands:
         if deadline is not None:
             deadline()
         try:
             res = MD.build_residual(free, law, marked.card, cand, ctx,
                                     round_bits=ROUND_BITS)
-        except (MD.Declined, Exception) as e:
+        except Exception as e:
             errors.append("%s: residual declined: %s" % (cand.kind, e))
             continue
-        fit_tv = MD.tv_from_nu(res.nu)
-        if fit_tv > allow:
-            errors.append("%s: fit TV %s exceeds the %s allowance"
-                          % (cand.kind, fit_tv, allow))
+        fit_tv0 = MD.tv_from_nu(res.nu)
+        if fit_tv0 > allow:
+            errors.append("%s: fit TV %s exceeds the %s allowance" % (cand.kind, fit_tv0, allow))
             continue
-        # drop tiny interactions within what remains of the SAME allowance
-        drop_budget = 2 * (allow - fit_tv)
+        drop_budget = 2 * (allow - fit_tv0)
         can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx, drop_budget)
-        total_fit = RS.tv_from_total_nu(res.nu, can.nu_extra)
-        if total_fit > allow:
-            errors.append("%s: residual TV %s exceeds the allowance" % (cand.kind, total_fit))
-            continue
         kept = list(res.kept)
-        # `res.kept` indexes marked.law_factors(); masses are unary and never
-        # retained (res_unary owns them), so the indices are consistent
         rmk = _residual_marked(marked, res, can, kept)
-        # the RECORDED certificate is the canonical gauge-invariant bound on
-        # the residual actually emitted, not the fitter's internal tally
         try:
             nu = fit_certificate(law, rmk.factors, cand, marked.card, free, ctx)
         except Declined as e:
@@ -271,97 +389,65 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None):
             errors.append("%s: canonical fit TV %s exceeds the %s allowance"
                           % (cand.kind, total_fit, allow))
             continue
-        # ---- evaluator choice from the REMAINING allowance. With `prefer`
-        # ONLY that evaluator is tried, so its decline is reported as its own
-        # (a silent fallback to another evaluator hid the Gaussian route's
-        # refusal entirely); without it the statistic DP is tried first.
         remaining = allow - total_fit
-        order = [prefer] if prefer else ["statistic", "gaussian", "fourier"]
-        for ev in order:
+        base = {"candidate": cand, "fit_tv": total_fit, "precision": ctx.p,
+                "round_bits": ROUND_BITS, "kept_factors": kept,
+                "dropped_pairs": [[i, j] for i, j, _r in can.dropped_pairs],
+                "drop_budget": drop_budget, "mode_info": info,
+                "fit_detail": res.detail}
+        evaluators = [prefer] if prefer else ["statistic", "gaussian", "fourier", "mixed"]
+        for ev in evaluators:
             if ev == "statistic":
                 if remaining <= 0:
                     errors.append("%s: no rounding allowance remains" % cand.kind)
                     continue
-                tries = K.CAPS["dyadic_Q_tries"]
-                menu = [1 << (16 * j) for j in range(tries)]
-                attempts = []
-                chosen = None
-                for Q in menu:
-                    kq = CO.round_features(cand, free, Q)
-                    D = CO.rounding_energy_bound(cand, free, kq, Q)
-                    tv = K.tanh_upper(D)       # TV <= tanh(Delta/2)
-                    attempts.append({"Q": Q, "rounding_energy": str(D),
-                                     "tv": str(tv), "admissible": bool(tv <= remaining)})
-                    if tv <= remaining:
-                        chosen = (Q, tv)
-                        break
-                if chosen is None:
-                    errors.append("%s: no Q in %s meets the remaining %s"
-                                  % (cand.kind, menu, remaining))
+                Q, rtv, attempts = choose_Q(cand, free, remaining)
+                if Q is None:
+                    errors.append("%s: no dyadic Q meets the remaining %s"
+                                  % (cand.kind, remaining))
                     continue
-                Q, rtv = chosen
-                return {"evaluator": "statistic",
-                        "candidate": cand, "Q": Q, "delta": None,
-                        "fit_tv": total_fit, "rounding_tv": rtv,
-                        "quadrature_tv": Fr(0), "precision": ctx.p,
-                        "round_bits": ROUND_BITS, "kept_factors": kept,
-                        "dropped_pairs": [[i, j] for i, j, _r in can.dropped_pairs],
-                        "drop_budget": drop_budget,
-                        "Q_attempts": attempts, "mode_info": info,
-                        "fit_detail": res.detail}, rmk
-            if ev in ("gaussian", "fourier"):
-                if cand.rank != 1:
-                    errors.append("%s: quadrature needs rank 1, got %d"
-                                  % (cand.kind, cand.rank))
-                    continue
-                if (ev == "gaussian") != (cand.signs[0] > 0):
-                    errors.append("%s: the %s identity needs a %s mode, the "
-                                  "recognized sign is %+d"
-                                  % (cand.kind, ev,
-                                     "positive" if ev == "gaussian" else "negative",
-                                     cand.signs[0]))
-                    continue
-                qallow = K.RADII["gaussian_quadrature"]
-                Rk = Fr(0)
-                for f in cand.features[0].values():
-                    Rk += max(abs(Fr(x)) for x in f)
-                # the quadrature delta IS the GF3 TV radius: the coarsest
-                # dyadic delta within the allowance whose lattice constructs.
-                # The node count is not capped here; it enters the complete
-                # price (nodes times the per-node contraction) and the byte
-                # and wall budgets decide admission, as §7.2 asks.
-                chosen = None
-                tried = []
-                d = qallow
-                for _ in range(4):
-                    try:
-                        lat = (CO.gf_lattice(cand.gammas[0], Rk, d) if ev == "gaussian"
-                               else CO.fourier_lattice(cand.gammas[0], Rk, d))
-                    except CO.Declined as e:
-                        tried.append({"delta": str(d), "declined": str(e)})
-                        d /= 2
-                        continue
-                    tried.append({"delta": str(d), "nodes": lat["nodes"],
-                                  "total_bound": str(lat["total_bound"])})
-                    if Fr(lat["total_bound"]) <= qallow:
-                        chosen = (d, lat)
-                        break
-                    d /= 2
-                if chosen is None:
-                    errors.append("%s: no %s lattice within the %s quadrature "
-                                  "allowance (%s)" % (cand.kind, ev, qallow, tried[-1]))
-                    continue
-                d, lat = chosen
-                return {"evaluator": ev, "candidate": cand, "Q": None,
-                        "delta": d, "fit_tv": total_fit, "rounding_tv": Fr(0),
-                        "quadrature_tv": Fr(lat["total_bound"]),
-                        "precision": ctx.p, "round_bits": ROUND_BITS,
-                        "kept_factors": kept,
-                        "dropped_pairs": [[i, j] for i, j, _r in can.dropped_pairs],
-                        "drop_budget": drop_budget, "lattice_attempts": tried,
-                        "nodes": lat["nodes"], "mode_info": info,
-                        "fit_detail": res.detail}, rmk
-    raise Declined("every recognized mode declined: " + "; ".join(errors[:4]))
+                rec = dict(base, evaluator="statistic", Q=Q, delta=None,
+                           rounding_tv=rtv, quadrature_tv=Fr(0),
+                           Q_attempts=attempts)
+                key = ("statistic", cand.kind, cand.rank)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    out.append((rec, rmk))
+                continue
+            want_pos = [k for k in range(cand.rank) if cand.signs[k] > 0]
+            want_neg = [k for k in range(cand.rank) if cand.signs[k] < 0]
+            if ev == "gaussian" and (want_neg or cand.rank != 1):
+                errors.append("%s: Gaussian needs a single positive mode (signs %s)"
+                              % (cand.kind, cand.signs))
+                continue
+            if ev == "fourier" and (want_pos or cand.rank != 1):
+                errors.append("%s: Fourier needs a single negative mode (signs %s)"
+                              % (cand.kind, cand.signs))
+                continue
+            if ev == "mixed" and not (want_pos and want_neg):
+                errors.append("%s: mixed integration needs both signs (signs %s)"
+                              % (cand.kind, cand.signs))
+                continue
+            try:
+                deltas, lats, nodes, fmeta = gf_forecast(cand, qallow, num_eps)
+            except Declined as e:
+                errors.append("%s/%s: %s" % (cand.kind, ev, e))
+                continue
+            qtv = sum((Fr(lats[k]["total_bound"]) for k in want_pos), Fr(0))
+            rec = dict(base, evaluator=ev, Q=None,
+                       delta=(deltas[0] if cand.rank == 1 else None),
+                       deltas=[str(d) for d in deltas], rounding_tv=Fr(0),
+                       quadrature_tv=qtv, nodes=nodes, forecast=fmeta,
+                       negative_deltas=[str(deltas[k]) for k in want_neg])
+            key = (ev, cand.kind, cand.rank)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                out.append((rec, rmk))
+    if not out:
+        raise Declined("every recognized mode declined: " + "; ".join(errors[:6]))
+    for rec, _ in out:
+        rec["declines"] = errors[:8]
+    return out
 
 
 def total_radius(coll) -> Fr:
@@ -375,8 +461,12 @@ def rebuild_residual(marked: MK.Marked, coll, ctx: A.Ctx):
     factor tables. Used by the executor (fresh process) and by the checker
     (independent reconstruction). Raises Declined if the record's radii are
     not covered by the recomputed certificate."""
-    law = marked.law_factors()
     free = marked.free()
+    try:
+        law = [FX.densify(f, K.CAPS["aggregated_kernel_entries"])
+               for f in marked.law_factors()]
+    except FX.ViewError as e:
+        raise Declined("the residual rebuild needs bounded explicit tables: %s" % e)
     cand = coll["candidate"]
     res = MD.build_residual(free, law, marked.card, cand, ctx,
                             round_bits=coll["round_bits"])
@@ -401,13 +491,13 @@ def rebuild_residual(marked: MK.Marked, coll, ctx: A.Ctx):
             raise Declined("the recomputed rounding TV %s exceeds the recorded %s"
                            % (K.tanh_upper(D), coll["rounding_tv"]))
     else:
-        Rk = Fr(0)
-        for f in cand.features[0].values():
-            Rk += max(abs(Fr(x)) for x in f)
-        lat = (CO.gf_lattice(cand.gammas[0], Rk, coll["delta"])
-               if coll["evaluator"] == "gaussian"
-               else CO.fourier_lattice(cand.gammas[0], Rk, coll["delta"]))
-        if Fr(lat["total_bound"]) > Fr(coll["quadrature_tv"]):
-            raise Declined("the recomputed lattice bound %s exceeds the recorded %s"
-                           % (lat["total_bound"], coll["quadrature_tv"]))
+        deltas = coll.get("deltas") or [coll["delta"]]
+        qtv = Fr(0)
+        for k in range(cand.rank):
+            lat = lattice_for(cand, k, Fr(deltas[k]))
+            if cand.signs[k] > 0:
+                qtv += Fr(lat["total_bound"])
+        if qtv > Fr(coll["quadrature_tv"]):
+            raise Declined("the recomputed positive lattice bound %s exceeds the "
+                           "recorded %s" % (qtv, coll["quadrature_tv"]))
     return rmk, res, can

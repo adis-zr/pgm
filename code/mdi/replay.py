@@ -28,10 +28,6 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0):
     with open(plan_path) as fh:
         txt = fh.read()
     rec = PT.PlanRecord.from_json(txt)
-    if rec.kind == "identity":
-        return {"status": "NOT_A_PROGRAM_PLAN",
-                "reason": "the identity plan's program is the validated generic "
-                          "schedule run by mdi.solve; replay covers program routes"}
     prog = rec.parsed_program
     queries = set(prog["queries"])
     r0 = M.restrict(m, ev)
@@ -47,9 +43,41 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0):
                   limits={"local_mass_entries": K.CAPS["local_mass_entries"]},
                   rss_fn=S._rss_bytes, rss_limit=K.RESOURCES["arm_rss_bytes"])
     bg.enter("replay-execute")
+    if rec.kind == "identity":
+        # the identity program: the persisted order, precision and exponent
+        # range govern mdi.solve; its checker is the standalone verifier
+        from mdi import registry as RG
+        ctx = {"model": m, "evidence": ev, "eps": eps - K.PUBLICATION_RESERVE,
+               "cap_bytes": K.RESOURCES["arm_rss_bytes"], "remaining": bg.remaining,
+               "program": prog}
+        try:
+            iv = RG.pipeline_identity_executor(ctx)
+        except PT.ExecutorRefusal as e:
+            return {"status": "REPLAY_REFUSED", "kind": "identity", "name": rec.name,
+                    "reason": "%s: %s" % (e.status, e.reason),
+                    "elapsed_s": time.monotonic() - t0}
+        pub = {v: [(Fr(lo), Fr(hi)) for lo, hi in iv[v]] for v in iv}
+        bg.enter("replay-check")
+        ok, fails, cmeta = RG.pipeline_identity_checker(m, ev, pub, eps,
+                                                        deadline_s=bg.remaining(),
+                                                        program=prog)
+        worst = max((hi - lo for v in pub for lo, hi in pub[v]), default=Fr(0))
+        status = ("REPLAY_VERIFIED" if ok and worst <= eps else
+                  "REPLAY_REJECTED" if not ok else "REPLAY_WIDTH_EXCEEDED")
+        return {"status": status, "kind": "identity", "name": rec.name,
+                "intervals": {str(v): [[str(lo), str(hi)] for lo, hi in pub[v]]
+                              for v in sorted(pub) if v in queries},
+                "radius": "0", "max_width": str(worst), "research": prog["research"],
+                "executor": {k: str(v) for k, v in (ctx.get("meta") or {}).items()},
+                "checker": {k: (str(v) if not isinstance(v, (dict, list, bool)) else v)
+                            for k, v in (cmeta or {}).items()},
+                "failures": [str(x)[:200] for x in (fails or [])[:8]],
+                "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
+    radius = sum((Fr(v) for v in rec.allocations.values()), Fr(0))
     try:
         rows, meta = RT.execute(prog, r, queries, deadline=bg.deadline_fn("replay"),
-                                budget=bg)
+                                budget=bg,
+                                num_eps=eps - 2 * radius - K.PUBLICATION_RESERVE)
     except B.BudgetExceeded as e:
         return {"status": "REPLAY_RESOURCE_STOP", "kind": rec.kind, "name": rec.name,
                 "reason": "execution: %s" % e, "budget": bg.report(),
@@ -58,7 +86,6 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0):
         return {"status": "REPLAY_REFUSED", "kind": rec.kind, "name": rec.name,
                 "reason": "%s: %s" % (type(e).__name__, e),
                 "elapsed_s": time.monotonic() - t0}
-    radius = sum((Fr(v) for v in rec.allocations.values()), Fr(0))
     pad = radius + K.PUBLICATION_RESERVE
     pub = {}
     for v in sorted(queries):
@@ -68,7 +95,7 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0):
     try:
         ok, fails, cmeta = PC.verify_program(r, queries, prog, pub, eps,
                                              deadline=bg.deadline_fn("replay-check"),
-                                             budget=bg)
+                                             budget=bg, exec_record=meta)
     except B.BudgetExceeded as e:
         return {"status": "REPLAY_RESOURCE_STOP", "kind": rec.kind, "name": rec.name,
                 "reason": "producer completed but independent verification did "

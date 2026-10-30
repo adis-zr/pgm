@@ -134,19 +134,21 @@ def cand_from_jsonable(d: dict):
                             kind=str(d["kind"]))
 
 
-COLLECTIVE_KEYS = ("evaluator", "candidate", "Q", "delta", "fit_tv",
+COLLECTIVE_KEYS = ("evaluator", "candidate", "Q", "delta", "deltas", "fit_tv",
                    "rounding_tv", "quadrature_tv", "precision", "round_bits",
                    "kept_factors", "dropped_pairs", "drop_budget")
 
 
 def collective_from_jsonable(d: dict) -> dict:
     _need(d, COLLECTIVE_KEYS, "collective record")
-    if d["evaluator"] not in ("statistic", "gaussian", "fourier"):
+    if d["evaluator"] not in ("statistic", "gaussian", "fourier", "mixed"):
         raise ProgramError("unknown collective evaluator %r" % d["evaluator"])
     out = {"evaluator": d["evaluator"],
            "candidate": cand_from_jsonable(d["candidate"]),
            "Q": (None if d["Q"] is None else int(d["Q"])),
            "delta": (None if d["delta"] is None else _fr(d["delta"], "delta")),
+           "deltas": (None if d["deltas"] is None
+                      else [_fr(x, "delta") for x in d["deltas"]]),
            "fit_tv": _fr(d["fit_tv"], "fit_tv"),
            "rounding_tv": _fr(d["rounding_tv"], "rounding_tv"),
            "quadrature_tv": _fr(d["quadrature_tv"], "quadrature_tv"),
@@ -156,11 +158,29 @@ def collective_from_jsonable(d: dict) -> dict:
            "drop_budget": _fr(d["drop_budget"], "drop_budget")}
     if out["Q"] is not None and out["Q"] < 1:
         raise ProgramError("Q must be a positive integer")
+    if out["evaluator"] == "statistic":
+        if out["Q"] is None or out["deltas"] is not None:
+            raise ProgramError("a statistic record needs Q and no lattice deltas")
+    else:
+        if out["deltas"] is None or len(out["deltas"]) != out["candidate"].rank:
+            raise ProgramError("a quadrature record needs one lattice delta per mode")
+        if any(x <= 0 for x in out["deltas"]):
+            raise ProgramError("lattice deltas must be positive")
+        pos = [k for k in range(out["candidate"].rank) if out["candidate"].signs[k] > 0]
+        neg = [k for k in range(out["candidate"].rank) if out["candidate"].signs[k] < 0]
+        want = {"gaussian": (True, False), "fourier": (False, True), "mixed": (True, True)}[out["evaluator"]]
+        if (bool(pos), bool(neg)) != want:
+            raise ProgramError("evaluator %s does not match the mode signs %s"
+                               % (out["evaluator"], out["candidate"].signs))
     return out
 
 
 PROGRAM_KEYS = ("kind", "scales", "collective", "order", "precision",
-                "queries", "research")
+                "queries", "research", "arithmetic", "checker")
+# arithmetic: {"emin": int|None, "emax": int|None, "mode": "P"|"E"}
+# checker:    {"strategy": "min_fill"|"dense_min_fill", "precision": int}
+ARITH_KEYS = ("emin", "emax", "mode")
+CHECKER_KEYS = ("strategy", "precision")
 
 
 def validate_program(prog: dict) -> dict:
@@ -171,10 +191,10 @@ def validate_program(prog: dict) -> dict:
     _need(prog, PROGRAM_KEYS, "program")
     kind = prog["kind"]
     if kind not in ("identity", "regional", "composed", "statistic",
-                    "gaussian", "fourier"):
+                    "gaussian", "fourier", "mixed"):
         raise ProgramError("unknown program kind %r" % kind)
     scales = [scale_from_jsonable(s) for s in prog["scales"]]
-    if kind in ("identity", "statistic", "gaussian", "fourier") and scales:
+    if kind in ("identity", "statistic", "gaussian", "fourier", "mixed") and scales:
         raise ProgramError("kind %s carries coarsening scales" % kind)
     if kind in ("regional", "composed") and not scales:
         raise ProgramError("kind %s carries no coarsening scale" % kind)
@@ -183,14 +203,16 @@ def validate_program(prog: dict) -> dict:
     coll = None
     if prog["collective"] is not None:
         coll = collective_from_jsonable(prog["collective"])
-    if kind in ("composed", "statistic", "gaussian", "fourier") and coll is None:
+    if kind in ("composed", "statistic", "gaussian", "fourier", "mixed") and coll is None:
         raise ProgramError("kind %s carries no collective record" % kind)
     if kind in ("identity", "regional") and coll is not None:
         raise ProgramError("kind %s carries a collective record" % kind)
-    if kind in ("statistic", "gaussian", "fourier") and \
+    if kind in ("statistic", "gaussian", "fourier", "mixed") and \
             coll["evaluator"] != kind:
         raise ProgramError("kind %s names evaluator %s" % (kind, coll["evaluator"]))
     order = [int(x) for x in prog["order"]]
+    if kind == "identity" and not order:
+        raise ProgramError("an identity program must record its elimination order")
     prec = int(prog["precision"])
     if prec < 8:
         raise ProgramError("precision %d is not usable" % prec)
@@ -198,5 +220,28 @@ def validate_program(prog: dict) -> dict:
     research = prog["research"]
     if not isinstance(research, dict):
         raise ProgramError("research must be a mapping")
+    arith = prog["arithmetic"]
+    _need(arith, ARITH_KEYS, "arithmetic")
+    for k in ("emin", "emax"):
+        if arith[k] is not None and not isinstance(arith[k], int):
+            raise ProgramError("arithmetic %s must be an integer or null" % k)
+    if arith["mode"] not in ("P", "E"):
+        raise ProgramError("arithmetic mode %r is not P (MPFR point) or E (exact)"
+                           % (arith["mode"],))
+    if (kind == "identity") != (arith["mode"] == "P"):
+        raise ProgramError("the identity program runs the MPFR point kernel (mode "
+                           "P); program routes run exact arithmetic (mode E)")
+    chk = prog["checker"]
+    _need(chk, CHECKER_KEYS, "checker")
+    if chk["strategy"] not in ("min_fill_interval", "dense_min_fill"):
+        raise ProgramError("unknown checker strategy %r" % (chk["strategy"],))
+    if (kind == "identity") != (chk["strategy"] == "min_fill_interval"):
+        raise ProgramError("checker strategy %r does not match kind %s"
+                           % (chk["strategy"], kind))
+    if int(chk["precision"]) < 8:
+        raise ProgramError("checker precision is not usable")
     return {"kind": kind, "scales": scales, "collective": coll, "order": order,
-            "precision": prec, "queries": queries, "research": research}
+            "precision": prec, "queries": queries, "research": research,
+            "arithmetic": {"emin": arith["emin"], "emax": arith["emax"],
+                           "mode": arith["mode"]},
+            "checker": {"strategy": chk["strategy"], "precision": int(chk["precision"])}}

@@ -535,260 +535,296 @@ ALGEBRA_COST = {
     "rational": (1, 1), "interval": (2, 2), "complex": (20, 4)}
 
 
-def _schedule_cost(bags, card, alg, stat=None):
-    """Weighted Fraction-operation bound of both passes and the readout over a
-    bag tree. `bags` is a list of dicts {vars, elim, children, own, home}.
-
-    For the statistic algebra the cost of a product is 2*|a|*|b| and of an add
-    |b|, with |.| the support bound of the operand: own tables carry delta
-    distributions (support 1) and a child's message carries the statistic of
-    the variables eliminated in its subtree.
-    """
-    def dom(vs):
-        n = 1
-        for v in vs:
-            n *= card[v]
-        return n
-    idx = {b["idx"]: b for b in bags}
-    sub = {}
-
-    def subtree_elim(bi):
-        if bi in sub:
-            return sub[bi]
-        out = {idx[bi]["elim"]}
-        for c in idx[bi]["children"]:
-            out |= subtree_elim(c)
-        sub[bi] = out
-        return out
-    if stat is None:
-        cm, ca = ALGEBRA_COST[alg]
-
-        def prod_cost(d, n_tables, incoming):
-            return d * n_tables * cm
-
-        def sum_cost(d, support):
-            return d * ca
-        sup_of = lambda bi: 1
-    else:
-        kq, rank, cap = stat
-
-        def sup_of(bi):
-            return _stat_span(kq, rank, subtree_elim(bi), card, cap)
-
-        def prod_cost(d, n_tables, incoming):
-            # own delta tables first (2 ops each), then the children in turn
-            # with the running support growing to the union span
-            cost = 2 * d * max(0, n_tables - len(incoming))
-            run = 1
-            run_vars = set()
-            for c in incoming:
-                s_c = sup_of(c)
-                cost += 2 * d * run * s_c
-                run_vars |= subtree_elim(c)
-                run = _stat_span(kq, rank, run_vars, card, cap)
-            return cost, run
-
-        def sum_cost(d, support):
-            return d * support
-    up = down = ro = 0
-    for b in bags:
-        d = dom(b["vars"])
-        own = b["own"]
-        kids = list(b["children"])
-        npar = 1 if b["parent"] >= 0 else 0
-        if stat is None:
-            up += prod_cost(d, own + len(kids), kids) + sum_cost(d, 1)
-            for c in kids:
-                down += prod_cost(d, own + npar + len(kids) - 1, []) + sum_cost(d, 1)
-            ro += b["home"] * (prod_cost(d, own + len(kids) + npar, []) + sum_cost(d, 1))
+def dry_run_sparse(tabs, card, real, order, stat_insert=None, rank=1,
+                   support_cap=None, entry_cap=None, only=None):
+    """Run the PRODUCER's sparse engine on the loaded program's tables with the
+    cost-metering algebra: the same control flow (product order, messages,
+    readout) with every real primitive charged and every statistic support
+    carried as an exact key set. Returns (ops, peak_live, largest, supports)."""
+    from mdi import sparse_jt as SJ
+    meter = SJ.CostMeter(real, rank=rank, support_cap=support_cap)
+    lifted = []
+    for t in tabs:
+        if isinstance(t, SJ.Lazy):
+            # a compact factor's support is unknown without evaluating it:
+            # the dry run treats every entry as nonzero (an upper bound)
+            lifted.append(SJ.Lazy(t.scope, t.card, lambda key, m=meter: m.one()))
         else:
-            c, run = prod_cost(d, own + len(kids), kids)
-            up += c + sum_cost(d, run) + d * run          # + the shift
-            for ch in kids:
-                others = [x for x in kids if x != ch]
-                c2, run2 = prod_cost(d, own + npar + len(others), others)
-                # the parent message carries everything outside this subtree
-                c2 += 2 * d * run2 * sup_of(b["idx"]) if npar else 0
-                down += c2 + sum_cost(d, run2) + d * run2
-            c3, run3 = prod_cost(d, own + len(kids), kids)
-            ro += b["home"] * (c3 + sum_cost(d, run3) + d * run3 + 2 * run3 * d)
-    return up, down, ro
+            lifted.append(SJ.Table(t.scope, {k: meter.one() for k in t.entries}))
+    jt = SJ.SparseJT(lifted, card, meter, entry_cap=entry_cap, order=order).run(
+        stat_insert=stat_insert)
+    for v in (sorted(only) if only is not None else jt.free):
+        jt.marginal(v)
+    sizes = {}
+    for key, m in jt.msg.items():
+        sizes[key] = sum(meter.size(x) for x in m.entries.values())
+    return meter.ops, jt.peak_live_entries, jt.largest_bag, sizes, jt
+
+
+def dry_run_dense(tables, card, real, stat_insert=None, rank=1, support_cap=None,
+                  entry_cap=None, only=None):
+    """The CHECKER's dense engine on the same tables with the metering algebra."""
+    from mdi import sparse_jt as SJ, dense_be as DB, factors as FX
+    meter = SJ.CostMeter(real, rank=rank, support_cap=support_cap)
+    lifted = []
+    for sc, tab in tables:
+        if hasattr(tab, "at_digits"):
+            lifted.append((sc, FX.LazyTable(tab.card, tab.offsets, tab.base,
+                                            lift=lambda x, m=meter: m.one())))
+        else:
+            lifted.append((sc, [meter.one() if not _is_zero_entry(x) else meter_zero(meter)
+                                for x in tab]))
+    jt = DB.DenseJT(lifted, card, meter, entry_cap=entry_cap, stat_insert=stat_insert)
+    meter.zero = frozenset() if real == "statistic" else False
+    jt.run()
+    for v in (sorted(only) if only is not None else jt.plan.free):
+        jt.marginal(v)
+    return meter.ops, jt.peak_live_entries, jt.plan.largest_bag_entries, jt
+
+
+def _is_zero_entry(x):
+    if isinstance(x, tuple):
+        return all(q == 0 for q in x)
+    if isinstance(x, dict):
+        return not x
+    return x == 0
+
+
+def meter_zero(meter):
+    return frozenset() if meter.real == "statistic" else False
+
+
+def _dense_tables_for_meter(final_marked, card, meter_one):
+    """The final law as dense-engine tables whose nonzero entries are the
+    meter's `one` (support only; values are irrelevant to a dry run)."""
+    from mdi import factors as FX
+    zero_like = frozenset() if isinstance(meter_one, frozenset) else False
+    out = []
+    for f in final_marked.law_factors():
+        if FX.is_view(f):
+            out.append((tuple(f.scope), FX.LazyTable(f.card, [f.offsets[v] for v in f.scope],
+                                                    f.base.table,
+                                                    lift=lambda x, o=meter_one: o)))
+        else:
+            out.append((tuple(f.scope), [meter_one if Fr(x) != 0 else zero_like
+                                         for x in f.table]))
+    touched = {v for f in final_marked.factors for v in f.scope}
+    for v in final_marked.free():
+        if v not in touched and not any(x != 1 for x in final_marked.mass[v]):
+            out.append(((v,), [meter_one] * card[v]))
+    return out
 
 
 def price_program(name, kind, final_marked, scales, coll, n_requested,
                   construction_ops, fit_ops=None):
-    """Price a PROGRAM route from the schedule it will actually run.
+    """Price a PROGRAM route from the schedule it will actually run, by DRY
+    RUNNING both engines on the loaded program's tables with a metering
+    algebra (sparse_jt.CostMeter).
 
-    The producer contracts the final marked model with the sparse junction
-    tree along the order it persists; the checker contracts the same model
-    with its dense engine on the validated min-fill tree, re-enumerates every
-    region and re-proves every profile and the fit certificate. Both are
-    priced from bag domains, which bound the sparse run from above (a sparse
-    table never has more entries than its domain), weighted by each algebra's
-    primitive cost. Collective evaluators multiply the per-node work by the
-    lattice node count (quadrature) or carry per-subtree statistic supports
-    (statistic DP).
+    The producer dry run follows the sparse engine's exact control flow --
+    product order, messages in both directions, calibrated readout -- and
+    charges every real primitive; statistic supports are carried as exact key
+    sets, so joins and readouts are priced on their OCCUPIED supports, not on
+    a box. The checker dry run does the same on the dense engine over the
+    validated min-fill tree. Everything else the executor and checker do
+    (lifting from the record, residual rebuild, per-node enclosures, marker
+    accumulation, payload readout, the checker's own enumeration and proofs)
+    is added as counted upper bounds.
     """
     from mdi import sparse_jt as SJ, plan as PP, model as MM, collective as CO
+    from mdi import factors as FX
     rec = CostRecord(kind=kind, name=name)
     card = dict(final_marked.card)
     law = final_marked.law_factors()
     touched = {v for f in final_marked.factors for v in f.scope}
-    tabs = [SJ.table_from_factor(f) for f in law]
+    tabs = [SJ.lazy_from_factor(f) if FX.is_view(f) else SJ.table_from_factor(f)
+            for f in law]
     for v in final_marked.free():
         if v not in touched and not any(x != 1 for x in final_marked.mass[v]):
             tabs.append(SJ.Table((v,), {(c,): Fr(1) for c in range(card[v])}))
-    try:
-        jt = SJ.SparseJT(tabs, card, SJ.Rational)
-    except SJ.SparseError as e:
-        rec.put("producer_upward_ops", None, UNKNOWN, "schedule refused: %s" % e)
-        rec.eligible = False
-        rec.ineligible_reason = "the final model admits no elimination schedule: %s" % e
-        return rec, None
 
     def dom(vs):
         n = 1
         for v in vs:
             n *= card[v]
         return n
-    nq = len(final_marked.queries())
-    # ---- the two bag trees, as uniform dicts
-    sp_bags = []
-    for b in jt.bags:
-        sp_bags.append({"idx": b["idx"], "vars": b["vars"], "elim": b["elim"],
-                        "children": list(b["children"]), "parent": b["parent"],
-                        "own": len(b["tables"]),
-                        "home": sum(1 for v, h in jt.home.items() if h == b["idx"])})
-    largest = max((dom(b["vars"]) for b in sp_bags), default=1)
-    sum_sep = sum(dom(b["sep"]) for b in jt.bags)
-    shells = [MM.Factor(scope=tuple(t.scope), card=tuple(card[v] for v in t.scope),
-                        table=[Fr(1)] * dom(t.scope), origin=i)
-              for i, t in enumerate(tabs)]
-    adj = PP.primal_graph(sorted(card), card, shells)
-    try:
-        dpl = PP.build_plan("min_fill", PP.order_min_fill(sorted(card), card, adj),
-                            sorted(card), card, shells)
-        dn_bags = []
-        for b in dpl.bags:
-            dn_bags.append({"idx": b.idx, "vars": b.vars, "elim": b.eliminated,
-                            "children": list(b.children), "parent": b.parent,
-                            "own": len(b.factors),
-                            "home": sum(1 for v, h in dpl.var_home.items()
-                                        if h == b.idx)})
-        dense_largest = dpl.largest_bag_entries
-    except Exception:
-        dn_bags = None
-        dense_largest = largest
-    # ---- algebra, lattice and per-node overheads
-    alg = "rational"
-    stat = None
+    # ---- algebra, lattice nodes, statistic insertion
+    real = "rational"
+    stat_insert = None
+    rank = 1
     nodes = 1
-    per_node_extra = 0           # tilt/phase enclosures and marker accumulation
+    per_node_extra = 0
+    trans = 0                   # transcendental (MPFR) evaluations, counted separately
+    n_cells = sum(card[final_marked.owner[v]] * final_marked.orig_card[v]
+                  for v in final_marked.queries())
+    n_states = sum(card[v] for v in final_marked.free())
     if coll is not None:
         cand = coll["candidate"]
+        rank = cand.rank
         if coll["evaluator"] == "statistic":
+            real = "statistic"
             kq = CO.round_features(cand, final_marked.free(), coll["Q"])
-            stat = (kq, cand.rank, K.CAPS["local_mass_entries"])
-            tot_sup = _stat_span(kq, cand.rank, final_marked.free(), card,
+            if rank == 1:
+                stat_insert = {v: [kq[0][v][a] for a in range(card[v])]
+                               for v in final_marked.free()}
+            else:
+                stat_insert = {v: [tuple(kq[k][v][a] for k in range(rank))
+                                   for a in range(card[v])] for v in final_marked.free()}
+            tot_sup = _stat_span(kq, rank, final_marked.free(), card,
                                  K.CAPS["local_mass_entries"])
             rec.put("statistic_support_bound", tot_sup, UPPER,
                     "min(span of the rounded total statistic, product of "
-                    "distinct per-variable rounded values, cap)")
-            # root integration and marker integration: 2 ops per support point
-            # per integrated distribution (total + every owner cell per state)
-            n_cells = sum(card[final_marked.owner[v]] * final_marked.orig_card[v]
-                          for v in final_marked.queries())
-            nroots = len(set(jt.component_of(v) for v in card))
-            # root integration (2 ops per support point) of the total and of
-            # every owner cell per state; with several components each cell
-            # distribution is first convolved with the others' totals
-            # (prefix/suffix: 3 convolutions per root, each <= 2*sup^2)
-            conv_others = (2 * tot_sup * tot_sup) if nroots > 1 else 0
-            per_node_extra = (2 * tot_sup * (1 + n_cells) + 4 * n_cells
-                              + n_cells * conv_others + 3 * nroots * conv_others)
+                    "distinct per-variable rounded values, cap); the dry run "
+                    "below carries the EXACT occupied supports")
         else:
-            nodes = int(coll.get("nodes") or 0)
-            if not nodes:
-                Rk = sum((max(abs(Fr(x)) for x in f)
-                          for f in cand.features[0].values()), Fr(0))
-                lat = (CO.gf_lattice(cand.gammas[0], Rk, coll["delta"])
-                       if coll["evaluator"] == "gaussian"
-                       else CO.fourier_lattice(cand.gammas[0], Rk, coll["delta"]))
-                nodes = lat["nodes"]
-            rec.put("quadrature_nodes", nodes, EXACT)
-            alg = "interval" if coll["evaluator"] == "gaussian" else "complex"
-            n_states = sum(card[v] for v in final_marked.free())
-            n_cells = sum(card[final_marked.owner[v]] * final_marked.orig_card[v]
-                          for v in final_marked.queries())
-            cm, ca = ALGEBRA_COST[alg]
-            nroots = len(set(jt.component_of(v) for v in card))
-            # per node, counted from the code: the normal weight (8), one
-            # tilt enclosure per variable state (interval: 4) or one cos+sin
-            # enclosure pair (complex: 24 + 72 at zero width plus 2 per
-            # critical index examined, at most 8 for the sqrt-enclosure
-            # widths that occur; 128 bounds it), the Z/Im scaling (8), the
-            # prefix/suffix products of the component totals (3*nroots
-            # multiplies), and per owner cell per state: up to two algebra
-            # multiplies (others' totals, payload), one add, the payload
-            # division and the weight scaling (4), plus the two accumulations
-            phase = 4 if alg == "interval" else 128
-            per_node_extra = (8 + n_states * phase + 8 + 3 * nroots * cm
-                              + n_cells * (2 * cm + ca + 1 + 4 + 2))
-    up, down, ro = _schedule_cost(sp_bags, card, alg, stat)
-    # the product of component totals, per node
-    _nroots = len(set(jt.component_of(v) for v in card))
-    _cm = ALGEBRA_COST.get(alg, (1, 1))[0]
-    if stat is not None:
-        _cm = 2 * _stat_span(stat[0], stat[1], final_marked.free(), card, stat[2]) ** 2
-    up += max(0, _nroots - 1) * _cm
-    # ---- the executor's OTHER work: rebuilding the lifted models from the
-    # record and the original-variable readout
+            # Gaussian / Fourier / mixed: the FULL positive marker-mass pass
+            # (interval algebra, one contraction per positive node) and, per
+            # positive node, one complex contraction per conjugate pair of
+            # negative nodes. Node counts from the record's lattices.
+            from mdi import collective_route as CRX
+            deltas = coll.get("deltas") or [coll["delta"]]
+            pos_nodes = neg_nodes = 1
+            for k in range(cand.rank):
+                lat = CRX.lattice_for(cand, k, Fr(deltas[k]))
+                if cand.signs[k] > 0:
+                    pos_nodes *= lat["nodes"]
+                else:
+                    neg_nodes *= lat["nodes"]
+            has_neg = any(sg < 0 for sg in cand.signs)
+            neg_pairs = (neg_nodes + 1) // 2 if has_neg else 0
+            rec.put("positive_grid_nodes", pos_nodes, EXACT)
+            rec.put("negative_conjugate_pairs_per_positive_node", neg_pairs, EXACT)
+            real = "complex" if has_neg else "interval"
+            # the interval pass runs at EVERY positive node; the complex pass
+            # at every (positive node, conjugate pair)
+            nodes = pos_nodes * neg_pairs if has_neg else pos_nodes
+            rec.put("quadrature_nodes", nodes, EXACT,
+                    "positive nodes times conjugate pairs (complex contractions)"
+                    if has_neg else "positive nodes (interval contractions)")
+            cm, ca = ALGEBRA_COST[real]
+            n_pos = sum(1 for sg in cand.signs if sg > 0)
+            n_neg = sum(1 for sg in cand.signs if sg < 0)
+            # Per node, counted from gf_evaluate's code paths:
+            #  * normal weight: 8 Fraction ops per mode;
+            #  * positive tilt per variable state per positive mode: the
+            #    exp-enclosure argument products (4) and the running product
+            #    (2) -> 6;
+            #  * phase per variable state per negative mode: angle (5),
+            #    _cos_enclose (24 at zero width + 2 per critical index, at
+            #    most 3 indices for the sqrt-enclosure widths that occur -> 30,
+            #    bounded by 48), _sin_enclose (72 + 8 per index -> 96, bounded
+            #    by 128), tilt x phase rectangle (8) -> 189, bounded by 200;
+            #  * per owner cell per state: up to two algebra multiplies, one
+            #    add, the payload division, two weight scalings (8), the
+            #    delta clipping (6) and two accumulations -> 2cm + ca + 17.
+            # the phase enclosures are computed once per NEGATIVE node and
+            # reused across positive nodes; per pair only the tilt x phase
+            # rectangle (8 per state) remains
+            phase = 6 * n_pos + 8 * n_neg
+            per_node_extra = (8 * cand.rank + n_states * phase + 16
+                              + n_cells * (2 * cm + ca + 17))
+            if has_neg:
+                phase_once = neg_pairs * (8 * n_neg + n_states * 200 * n_neg)
+                per_node_extra += (phase_once + nodes - 1) // max(1, nodes)
+            trans = nodes * (2 * cand.rank + n_states * 2 * n_pos) + \
+                (neg_pairs * n_states * 4 * n_neg if has_neg else 0)
+    # ---- the two dry runs
+    try:
+        owners = set(final_marked.owner.values())
+        p_ops, p_live, p_largest, p_sizes, sjt = dry_run_sparse(
+            tabs, card, real, None, stat_insert=stat_insert, rank=rank,
+            support_cap=K.CAPS["local_mass_entries"],
+            entry_cap=K.CAPS["local_mass_entries"], only=owners)
+        order = list(sjt.order)
+        nroots = len(sjt.roots)
+    except SJ.SparseError as e:
+        rec.put("producer_upward_ops", None, UNKNOWN, "schedule refused: %s" % e)
+        rec.eligible = False
+        rec.ineligible_reason = ("the producer's schedule exceeds a declared cap "
+                                 "on this program: %s" % e)
+        return rec, None
+    extra_pos = 0
+    extra_pos_c = 0
+    if coll is not None and real == "complex":
+        # the positive marker-mass pass in the INTERVAL algebra, once per
+        # positive node, on both engines
+        try:
+            pi_ops, _l, _lg, _sz, _j = dry_run_sparse(
+                tabs, card, "interval", None, entry_cap=K.CAPS["local_mass_entries"],
+                only=set(final_marked.owner.values()))
+            extra_pos = pi_ops * pos_nodes + pos_nodes * (8 + n_states * 4 + n_cells * 6)
+            ci_ops, _l2, _lg2, _j2 = dry_run_dense(
+                _dense_tables_for_meter(final_marked, card, True), card, "interval",
+                entry_cap=K.CAPS["local_mass_entries"],
+                only=set(final_marked.owner.values()))
+            extra_pos_c = ci_ops * pos_nodes + pos_nodes * (8 + n_states * 4 + n_cells * 6)
+        except Exception as e:
+            rec.put("positive_pass_note", 0, EXACT, "interval dry run refused: %s" % e)
+    meter_one = frozenset([(0,) * rank if rank > 1 else 0]) if real == "statistic" else True
+    try:
+        c_ops, c_live, c_largest, djt = dry_run_dense(
+            _dense_tables_for_meter(final_marked, card, meter_one), card, real,
+            stat_insert=stat_insert, rank=rank,
+            support_cap=K.CAPS["local_mass_entries"],
+            entry_cap=K.CAPS["local_mass_entries"], only=owners)
+    except Exception as e:
+        c_ops = None
+        c_live = c_largest = 0
+        rec.put("checker_schedule_note", 0, EXACT, "dense schedule refused: %s" % e)
+    # ---- the executor's OTHER work
     lift = 0
+    maps = 0
     for sc in scales:
         ncell = [len(cr.cells) for cr in sc.coarse]
         for pc in sc.projected:
-            n = 1
-            for i in pc.regions:
-                n *= ncell[i]
-            lift += n * (2 * len(pc.scope) + 2)
+            # composing offset maps: one add per state per scope variable
+            maps += sum(len(o) for o in pc.offsets.values()) if hasattr(pc, "offsets") else 0
+            lift += 2 * (sum(len(o) for o in pc.offsets.values()) if hasattr(pc, "offsets") else 0)
         for cr in sc.coarse:
             lift += 2 * len(cr.cells) * (len(cr.N) + 1)
             lift += 4 * len(cr.cells) * max(1, len(cr.N))
     readout = 0
     for v in final_marked.queries():
         o = final_marked.owner[v]
-        readout += 6 * card[o] * final_marked.orig_card[v] + 4 * final_marked.orig_card[v]
-    conv = sum(dom(t.scope) for t in tabs)
-    # the residual rebuild (mode fit certificate) runs in the executor too
+        readout += 8 * card[o] * final_marked.orig_card[v] + 6 * final_marked.orig_card[v]
     fit = 0
     if coll is not None:
-        # the residual rebuild and its certificate, counted from the code:
-        # per coupled state pair at most 20 (build_residual: mode term,
-        # target bounds, grid rounding, error) + 12 (canonicalize, amortized
-        # gauge split and log radius) + 24 (fit_certificate: fixed table,
-        # interaction part, leftovers) + 8 slack = 64; per variable state at
-        # most 48 across the three.
         n_pairs = sum(1 for f in law if len(f.scope) == 2)
         n_coupled = max(n_pairs, len(card) * (len(card) - 1) // 2)
         cmax = max(card.values()) if card else 1
         fit = 64 * n_coupled * cmax * cmax + 48 * sum(card.values())
-    rec.put("producer_upward_ops", (up + conv) * nodes + lift + fit, UPPER,
-            "per bag: algebra-weighted products and sums over the bag domain, "
-            "times the lattice node count; plus table conversion, the "
-            "rebuilding of every lifted model and the residual certificate")
-    rec.put("producer_downward_ops", down * nodes, UPPER)
-    rec.put("readout_ops", ro * nodes + per_node_extra * nodes + readout, UPPER,
-            "calibrated readout plus per-node enclosures and marker "
-            "accumulation, plus the original-variable payload readout")
+        if real == "statistic":
+            # root integration of the total and of every owner cell per state,
+            # 2 ops per support point; with several components each cell
+            # distribution is convolved with the others' totals first
+            tot_sup = int(rec.counters["statistic_support_bound"].value)
+            conv_others = (2 * tot_sup * tot_sup) if nroots > 1 else 0
+            per_node_extra = (2 * tot_sup * (1 + n_cells) + 4 * n_cells
+                              + n_cells * conv_others + 3 * nroots * conv_others)
+            trans = tot_sup * (1 + n_cells)
+    rec.put("producer_schedule_ops", p_ops, UPPER,
+            "dry run of the sparse engine on the loaded program with the "
+            "metering algebra: both passes and the calibrated readout, exact "
+            "occupied statistic supports")
+    rec.put("producer_upward_ops", p_ops * nodes + extra_pos + lift + fit, UPPER,
+            "schedule dry run times the lattice node count (plus the positive "
+            "marker-mass pass for Fourier/mixed), plus lifting from the record "
+            "and the residual certificate")
+    rec.put("producer_downward_ops", 0, EXACT,
+            "both passes are inside producer_schedule_ops")
+    rec.put("readout_ops", per_node_extra * nodes + readout, UPPER,
+            "per-node enclosures, marker accumulation and integration, plus "
+            "the original-variable payload readout")
+    rec.put("transcendental_evaluations", trans, UPPER,
+            "MPFR exp/log/trig/sqrt enclosures; NOT a Fraction count and not "
+            "summed into total_arithmetic")
     if fit_ops is not None:
         rec.put("mode_fit_ops", int(fit_ops), FORECAST,
                 "mode recognition during discovery (paid once, recorded)")
     # ---- the checker
-    if dn_bags is None:
+    if c_ops is None:
         rec.put("checker_ops", None, UNKNOWN, "no dense schedule")
     else:
-        cu, cd, cr_ = _schedule_cost(dn_bags, card, alg, stat)
-        cu += max(0, _nroots - 1) * _cm
         chk_local = 0
         for sc in scales:
             for rd, cr in zip(sc.rds, sc.coarse):
@@ -797,35 +833,30 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
                     joint *= _card_of(sc, v)
                 nfac = len(rd.internal_factors) + 1
                 chk_local += joint * (nfac + 1 + 2 * len(rd.marks))
-                # own deletion bound, witness partition, alpha/rho per member
                 chk_local += len(rd.A) * (4 + 2 * len(rd.crossing_factors)) * 2
                 chk_local += sum(len(c.members) for c in cr.cells) * 8
                 chk_local += len(cr.cells) * (2 + 2 * len(cr.N))
             chk_local += len(sc.regions) * K.CAPS["aggregated_kernel_entries"]
-            ncell = [len(cr.cells) for cr in sc.coarse]
-            for pc in sc.projected:
-                n = 1
-                for i in pc.regions:
-                    n *= ncell[i]
-                chk_local += n * (len(pc.scope) + 1)
+            chk_local += 2 * maps
         chk_fit = 2 * fit if coll is not None else 0
+        rec.put("checker_schedule_ops", c_ops, UPPER,
+                "dry run of the dense engine on the validated min-fill tree")
         rec.put("checker_ops",
-                (cu + cd + cr_ + conv) * nodes + per_node_extra * nodes
-                + chk_local + chk_fit + readout, UPPER,
-                "dense exact junction tree on the validated min-fill tree with "
-                "the same algebra weights, plus the checker's own region "
-                "enumeration, witness proof, deletion bounds, lifted tables "
-                "and fit certificate")
+                c_ops * nodes + extra_pos_c + per_node_extra * nodes + chk_local
+                + chk_fit + readout,
+                UPPER,
+                "dense dry run times nodes, plus the checker's own region "
+                "enumeration, witness proof, deletion bounds, lifted maps, fit "
+                "certificate and payload readout")
     if construction_ops is None:
-        rec.put("construction_ops", None, UNKNOWN,
-                "local construction was not measured")
+        rec.put("construction_ops", None, UNKNOWN, "local construction was not measured")
     else:
         rec.put("construction_ops", int(construction_ops), CALIB,
                 "measured exact-rational arithmetic in local mass, marker and "
                 "profile construction across every scale")
     rec.put("requested_markers", n_requested, EXACT)
     rec.put("final_variables", len(card), EXACT)
-    rec.put("final_largest_bag", largest, EXACT)
+    rec.put("final_largest_bag", p_largest, EXACT)
     rec.put("regions", sum(len(sc.regions) for sc in scales), EXACT)
     rec.put("cells", sum(len(cr.cells) for sc in scales for cr in sc.coarse), EXACT)
     rec.put("levels", len(scales), EXACT)
@@ -833,18 +864,26 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
                                    for sc in scales), Fr(0))
             + (Fr(coll["fit_tv"]) + Fr(coll["rounding_tv"]) + Fr(coll["quadrature_tv"])
                if coll else Fr(0)), EXACT)
-    width = {"rational": 1, "interval": 2, "complex": 4}[alg]
-    if stat is not None:
-        width = _stat_span(stat[0], stat[1], final_marked.free(), card, stat[2])
-    rec.bytes_producer = Counter((sum_sep + largest) * 64 * width, FORECAST,
-                                 "separator entries plus one largest-bag working "
-                                 "table, times the algebra width; ENTRY COUNTS "
-                                 "only, excludes object overhead; NOT measured "
-                                 "whole-process memory")
-    rec.bytes_checker = Counter((dense_largest * 2 + sum_sep) * 64 * width, FORECAST,
-                                "dense bag table plus message tables, times the "
-                                "algebra width")
-    return rec, jt.order
+    # ---- liveness: messages (with statistic supports) + the largest working
+    # table + the inputs (dense tables, offset maps, marker payloads)
+    width = {"rational": 1, "interval": 2, "complex": 4, "statistic": 1}[real]
+    inputs = sum((len(f.table) if not FX.is_view(f) else f.map_entries()) for f in law)
+    markers = sum(len(col) for col in final_marked.marks.values()) + \
+        sum(len(final_marked.mass[v]) for v in final_marked.free())
+    rec.put("peak_live_message_entries", p_live, UPPER,
+            "sparse dry run: peak simultaneously live message entries, "
+            "statistic supports counted per entry")
+    rec.put("input_entries_retained", inputs + markers, EXACT,
+            "dense input tables plus offset maps plus marker payloads")
+    rec.bytes_producer = Counter((p_live + p_largest) * width * 64 + (inputs + markers) * 64,
+                                 FORECAST,
+                                 "peak live messages plus one largest working table, "
+                                 "times the algebra width, plus retained inputs; "
+                                 "ENTRY COUNTS at 64 bytes each, excludes object "
+                                 "overhead; NOT measured whole-process memory")
+    rec.bytes_checker = Counter((c_live + 2 * c_largest) * width * 64 + (inputs + markers) * 64,
+                                FORECAST, "dense dry run liveness plus retained inputs")
+    return rec, order
 
 
 def _card_of(sc, v):

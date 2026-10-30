@@ -217,13 +217,22 @@ def test_quadrature_programs_execute_and_verify_from_their_record():
         r = M.restrict(m, {})
         Z, pt = O.exact_all_marginals(r)
         q = set(r.free)
-        coll, rmk = CR.admit(MK.Marked.from_restricted(r, q), A.Ctx(96), prefer=prefer)
+        coll, rmk = CR.admit(MK.Marked.from_restricted(r, q), A.Ctx(96), prefer=prefer)[0]
         assert coll["evaluator"] == prefer
-        assert coll["quadrature_tv"] > 0 and coll["quadrature_tv"] <= \
-            K.RADII["gaussian_quadrature"]
+        if prefer == "gaussian":
+            # the positive lattice's GF3 bound IS a TV radius on the law
+            assert 0 < coll["quadrature_tv"] <= K.RADII["gaussian_quadrature"]
+        else:
+            # a negative lattice's error is an absolute count error that enters
+            # the sharp marker-ratio enclosure, never a probability radius; the
+            # delta was chosen from the negative-response lower bound L
+            assert coll["quadrature_tv"] == 0
+            assert coll["negative_deltas"] and Fr(coll["forecast"]["L_lower"]) > 0
         prog = _parse(RT.program_for(prefer, [], coll, [], 96, q))
         rows, meta = RT.execute(prog, r, q)
-        assert meta["evaluator"] == prefer and meta["nodes"] >= 3
+        assert meta["evaluator"] == prefer and meta["positive_nodes"] >= 1
+        if prefer == "fourier":
+            assert meta["conjugate_pairs"] >= 2 and meta["negative_key_set_symmetric"]
         pub = _pub(prog, rows)
         assert _contains(pub, pt)
         ok, fails, cmeta = PC.verify_program(r, q, prog, pub, Fr(1, 100))
@@ -431,7 +440,7 @@ def test_collective_record_mutations_reject_on_the_named_obligation():
     q = set(r.free)
     regs = [tuple(range(b * BS, (b + 1) * BS)) for b in range(NB)]
     scales, final = RT.build_scales(MK.Marked.from_restricted(r, q), regs, 1)
-    coll, rmk = CR.admit(final, A.Ctx(160))
+    coll, rmk = CR.admit(final, A.Ctx(160), prefer="statistic")[0]
     assert coll["evaluator"] == "statistic"
     base = RT.program_for("composed", scales, coll, [], 160, q)
     prog = _parse(base)
@@ -542,7 +551,7 @@ def test_program_prices_bound_the_executed_and_checked_work():
         trial(r, q, scales, final, None, "regional")
     scales, final = RT.build_scales(mk0, [tuple(range(b * 3, (b + 1) * 3))
                                           for b in range(4)], 1)
-    coll, rmk = CR.admit(final, A.Ctx(160))
+    coll, rmk = CR.admit(final, A.Ctx(160), prefer="statistic")[0]
     trial(r, q, scales, rmk, coll, "composed")
     fields = [0.1 * (k + 1) * (1 if k % 2 == 0 else -1) for k in range(6)]
     for J in (0.30, -0.22):
@@ -550,7 +559,7 @@ def test_program_prices_bound_the_executed_and_checked_work():
         r = M.restrict(m, {})
         q = set(r.free)
         coll, rmk = CR.admit(MK.Marked.from_restricted(r, q), A.Ctx(96),
-                             prefer="statistic")
+                             prefer="statistic")[0]
         trial(r, q, [], rmk, coll, "statistic")
 
 

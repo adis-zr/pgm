@@ -215,62 +215,136 @@ def propose_modes(free, factors, card, max_rank=None):
             cands.append(ModeCandidate(signs=[s], gammas=[gam], features=[feat],
                                        kind="constant_rows"))
 
-    # ---- proposal 2: block-constant from repeated profiles ----
+    # ---- proposal 2: BLOCK-CONSTANT from repeated coupling profiles ----
+    # Variables whose coupling rows agree (to 12 places) form a block; a
+    # block-constant J has rank at most the number of blocks. The k x k block
+    # matrix is eigen-decomposed (k <= 4) and each eigenpair proposes a mode
+    # with the block value as the feature; the eigenpairs TOGETHER, within the
+    # rank and sign caps, propose one combined signed candidate.
     prof = {}
     for v in sorted(free):
         row = tuple(sorted(round(Jm[idx[v]][idx[w]], 12) for w in sorted(free) if w != v))
         prof.setdefault(row, []).append(v)
     if 1 < len(prof) <= 4:
         info["repeated_profile_blocks"] = len(prof)
+        blocks = [sorted(vs) for vs in prof.values()]
+        block_of = {v: b for b, vs in enumerate(blocks) for v in vs}
+        kb = len(blocks)
+        Bm = [[0.0] * kb for _ in range(kb)]
+        for b1 in range(kb):
+            for b2 in range(kb):
+                vals = [Jm[idx[i]][idx[j]] for i in blocks[b1] for j in blocks[b2] if i != j]
+                Bm[b1][b2] = sum(vals) / len(vals) if vals else 0.0
+        try:
+            bvecs = _power_fits(Bm, kb, min(kb, max_rank))
+        except Exception as e:
+            bvecs = []
+            info["block_error"] = "%s: %s" % (type(e).__name__, e)
+        D = 10 ** 6
+        import math as _m
+        signs_c, gammas_c, feats_c = [], [], []
+        npos = nneg = 0
+        for (lamb, wv) in bvecs:
+            sgn = 1 if lamb > 0 else -1
+            if abs(lamb) <= 1e-12:
+                continue
+            if sgn > 0 and npos >= K.CAPS["mode_rank_positive"]:
+                continue
+            if sgn < 0 and nneg >= K.CAPS["mode_rank_negative"]:
+                continue
+            scale = _m.sqrt(abs(lamb))
+            mx = max(abs(x) for x in wv) or 1.0
+            feat = {}
+            for v in sorted(free):
+                c = Fr(round(wv[block_of[v]] * scale / mx * D), D)
+                feat[v] = [-c, c]
+            gq = Fr(max(1, round(mx * mx * D)), D)
+            cands.append(ModeCandidate(signs=[sgn], gammas=[gq], features=[feat],
+                                       kind="block_rank1"))
+            signs_c.append(sgn); gammas_c.append(gq); feats_c.append(feat)
+            npos += sgn > 0
+            nneg += sgn < 0
+        if len(signs_c) > 1:
+            cands.append(ModeCandidate(signs=list(signs_c), gammas=list(gammas_c),
+                                       features=list(feats_c), kind="block_combined"))
 
-    # ---- proposal 3: bounded low-rank fits, allowing the diagonal to be free ----
+    # ---- proposal 3: bounded low-rank fits under the prescribed residual masks ----
     # Fit J ~ sum_k s_k g_k w_k w_k^T on OFF-DIAGONAL entries only, letting the
     # diagonal complete freely: forcing it to zero can turn a rank-one
     # complete-graph interaction into a full-rank matrix.
-    try:
-        vecs = _power_fits(Jm, n, max_rank)
-    except Exception as e:
-        vecs = []
-        info["lowrank_error"] = "%s: %s" % (type(e).__name__, e)
-    npos = nneg = 0
-    for (lamb, w) in vecs:
-        s = 1 if lamb > 0 else -1
-        if s > 0 and npos >= K.CAPS["mode_rank_positive"]:
-            continue
-        if s < 0 and nneg >= K.CAPS["mode_rank_negative"]:
-            continue
-        g = abs(lamb)
-        if g <= 0:
-            continue
-        # The eigenvector w is UNIT normalized, so lambda already absorbs the
-        # feature scale: for a uniform coupling J the fixed point is lambda = J*n
-        # with w_k = 1/sqrt(n). Rounding the features to +-1 while keeping
-        # |lambda| as gamma therefore double-counted the normalization and
-        # reported gamma = |J|*n instead of |J| (1.8000 for J=0.30, n=6).
-        #
-        # Keep the eigenvector's own scale in the features instead: with
-        # f_k = w_k * sqrt(gamma_raw) the induced coupling is
-        # gamma * f_i * f_j = lambda * w_i * w_j, which is the fitted matrix
-        # entry. We therefore set gamma = 1 in units of the scaled features.
-        D = 10 ** 6
-        import math as _m
-        scale = _m.sqrt(g)
-        feat = {}
-        inv = {k: v for v, k in idx.items()}
-        mx = max(abs(w[k]) for k in range(n)) or 1.0
-        for k in range(n):
-            c = Fr(round(w[k] * scale / mx * D), D)
-            feat[inv[k]] = [-c, c]
-        # gamma restores the normalization removed by dividing out mx
-        gq = Fr(max(1, round(mx * mx * D)), D)
-        cands.append(ModeCandidate(signs=[s], gammas=[gq], features=[feat],
-                                   kind="lowrank_rank1"))
-        if s > 0:
-            npos += 1
-        else:
-            nneg += 1
-        if len(cands) >= max_rank:
+    #
+    # MASKS (cap `residual_masks`): mask 0 fits every present positive pair;
+    # after each fit the pairs whose residual coupling is largest (above twice
+    # the median residual) are MASKED -- treated as absent for the next fit, so
+    # they stay in the residual as retained interacting pairs with their full
+    # tables -- and the fit is repeated on the rest. Each mask yields at most
+    # `fits_per_mask` rank-one candidates and one COMBINED signed candidate.
+    import math as _m
+    D = 10 ** 6
+    inv = {k: v for v, k in idx.items()}
+    masked = set()
+    for mask_round in range(K.CAPS["residual_masks"]):
+        Jfit = [row[:] for row in Jm]
+        for (a, b) in masked:
+            Jfit[a][b] = Jfit[b][a] = 0.0
+        try:
+            vecs = _power_fits(Jfit, n, min(max_rank, K.CAPS["fits_per_mask"]))
+        except Exception as e:
+            vecs = []
+            info["lowrank_error"] = "%s: %s" % (type(e).__name__, e)
+        npos = nneg = 0
+        signs_c, gammas_c, feats_c = [], [], []
+        for (lamb, w) in vecs:
+            s = 1 if lamb > 0 else -1
+            if s > 0 and npos >= K.CAPS["mode_rank_positive"]:
+                continue
+            if s < 0 and nneg >= K.CAPS["mode_rank_negative"]:
+                continue
+            g = abs(lamb)
+            if g <= 0:
+                continue
+            # The eigenvector w is UNIT normalized, so lambda already absorbs
+            # the feature scale (gamma = |lambda| * n for a uniform coupling
+            # would double count). Keep the eigenvector's scale in the
+            # features: f_k = w_k sqrt(|lambda|) / mx, gamma = mx^2.
+            scale = _m.sqrt(g)
+            feat = {}
+            mx = max(abs(w[k]) for k in range(n)) or 1.0
+            for k in range(n):
+                c = Fr(round(w[k] * scale / mx * D), D)
+                feat[inv[k]] = [-c, c]
+            gq = Fr(max(1, round(mx * mx * D)), D)
+            kind = "lowrank_rank1" if mask_round == 0 else "lowrank_rank1_mask%d" % mask_round
+            cands.append(ModeCandidate(signs=[s], gammas=[gq], features=[feat], kind=kind))
+            signs_c.append(s); gammas_c.append(gq); feats_c.append(feat)
+            npos += s > 0
+            nneg += s < 0
+        if len(signs_c) > 1:
+            cands.append(ModeCandidate(signs=list(signs_c), gammas=list(gammas_c),
+                                       features=list(feats_c),
+                                       kind="lowrank_combined" + ("" if mask_round == 0
+                                                                  else "_mask%d" % mask_round)))
+        # the residual coupling of this mask's fit, and the next mask
+        if not vecs:
             break
+        resid = {}
+        for (i, j), _J in present:
+            a, b = idx[i], idx[j]
+            if (a, b) in masked or (b, a) in masked:
+                continue
+            fitted = sum(l * w[a] * w[b] for (l, w) in vecs)
+            resid[(a, b)] = abs(Jfit[a][b] - fitted)
+        if not resid:
+            break
+        med = sorted(resid.values())[len(resid) // 2]
+        worst = {pr for pr, rv in resid.items() if rv > 2 * med and rv > 1e-9}
+        if not worst or len(worst) == len(resid):
+            break
+        masked |= worst
+        info.setdefault("masks", []).append({"round": mask_round + 1,
+                                             "masked_pairs": len(masked)})
+    if not cands:
+        return [], {**info, "declined": "no admissible mode proposal"}
     return cands, info
 
 

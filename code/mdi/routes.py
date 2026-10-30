@@ -13,7 +13,7 @@ sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
 from mdi import (model as M, config as K, regions as R, marked as MK,
                  program as PG, collective_route as CR, collective_jt as CJ,
-                 sparse_jt as SJ, arith as A, budget as B)
+                 sparse_jt as SJ, arith as A, budget as B, factors as FX)
 
 
 class RouteError(Exception):
@@ -63,19 +63,36 @@ def research_executed(scales, coll) -> dict:
             "qualifies": bool(merged or deleted or coll)}
 
 
+def identity_program(order, precision, emin, emax, queries, checker_precision):
+    """The persisted program of the IDENTITY route: the validated generic
+    schedule, its arithmetic settings and its checker's strategy."""
+    return {"kind": "identity", "scales": [], "collective": None,
+            "order": [int(x) for x in order], "precision": int(precision),
+            "queries": sorted(int(v) for v in queries),
+            "research": {"cells_merged_regions": 0, "deleted_states": 0,
+                         "collective": None, "qualifies": False},
+            "arithmetic": {"emin": int(emin), "emax": int(emax), "mode": "P"},
+            "checker": {"strategy": "min_fill_interval",
+                        "precision": int(checker_precision)}}
+
+
 def program_for(kind, scales, coll, order, precision, queries, extra=None):
     """The persisted program block of a plan record."""
     prog = {"kind": kind,
             "scales": [PG.scale_to_jsonable(sc) for sc in scales],
             "collective": None, "order": [int(x) for x in order],
             "precision": int(precision), "queries": sorted(int(v) for v in queries),
-            "research": research_executed(scales, coll)}
+            "research": research_executed(scales, coll),
+            "arithmetic": {"emin": None, "emax": None, "mode": "E"},
+            "checker": {"strategy": "dense_min_fill",
+                        "precision": int(precision) + 16}}
     if coll is not None:
         prog["collective"] = {
             "evaluator": coll["evaluator"],
             "candidate": PG.cand_to_jsonable(coll["candidate"]),
-            "Q": coll["Q"], "delta": (None if coll["delta"] is None
+            "Q": coll["Q"], "delta": (None if coll.get("delta") is None
                                       else str(Fr(coll["delta"]))),
+            "deltas": (None if not coll.get("deltas") else [str(Fr(x)) for x in coll["deltas"]]),
             "fit_tv": str(Fr(coll["fit_tv"])),
             "rounding_tv": str(Fr(coll["rounding_tv"])),
             "quadrature_tv": str(Fr(coll["quadrature_tv"])),
@@ -143,48 +160,22 @@ def lift_from_record(marked: MK.Marked, sc, deadline=None, budget=None):
             for c in regs[i]["cells"]:
                 col.append(c["N"].get((v, a), Fr(0)))
             lmarks[(v, a)] = col
-    # crossing factors at the representatives
+    # crossing factors as COMPACT views: the record's representatives select
+    # offsets into the ORIGINAL tables; maps compose across scales
+    reps = {i: [tuple(c["rep"]) for c in regs[i]["cells"]] for i in range(len(regs))}
+    bpos = {i: {v: k for k, v in enumerate(regs[i]["boundary"])} for i in range(len(regs))}
     lfactors = []
-    cap = K.CAPS["aggregated_kernel_entries"]
     for f in marked.factors:
         rs = sorted({region_of[v] for v in f.scope})
         if len(rs) <= 1:
             continue
-        n = 1
-        for i in rs:
-            n *= ncell[i]
-        if n > cap:
-            raise RouteError("a lifted crossing over regions %s needs %d "
-                             "entries, above the %d cap" % (rs, n, cap))
-        st = f.strides()
-        bpos = {i: {v: k for k, v in enumerate(regs[i]["boundary"])} for i in rs}
-        for k, v in enumerate(f.scope):
-            if v not in bpos[region_of[v]]:
-                raise RouteError("variable %d of crossing factor %d is not on "
-                                 "the boundary of its region" % (v, f.origin))
-        lst = [1] * len(rs)
-        acc = 1
-        for k in range(len(rs) - 1, -1, -1):
-            lst[k] = acc
-            acc *= ncell[rs[k]]
-        tab = []
-        for flat in range(n):
-            if deadline is not None and (flat & 0xFF) == 0:
-                deadline()
-            rem, dig = flat, []
-            for k in range(len(rs)):
-                dig.append(rem // lst[k])
-                rem %= lst[k]
-            off = 0
-            for k, v in enumerate(f.scope):
-                i = region_of[v]
-                rep = regs[i]["cells"][dig[rs.index(i)]]["rep"]
-                off += rep[bpos[i][v]] * st[k]
-            tab.append(Fr(f.table[off]))
+        try:
+            lfactors.append(FX.as_view(f).compose(region_of, reps, bpos, ncell))
+        except FX.ViewError as e:
+            raise RouteError(str(e))
         if budget is not None:
-            budget.charge("local_mass_entries", n, "lifted crossing table")
-        lfactors.append(M.Factor(scope=tuple(rs), card=tuple(ncell[i] for i in rs),
-                                 table=tab, origin=f.origin))
+            budget.charge("local_mass_entries", lfactors[-1].map_entries(),
+                          "lifted offset maps")
     lifted = MK.Marked(card={i: ncell[i] for i in range(len(regs))},
                        factors=lfactors, owner=lowner, marks=lmarks, mass=lmass,
                        orig_card=dict(marked.orig_card), level=marked.level + 1,
@@ -195,7 +186,81 @@ def lift_from_record(marked: MK.Marked, sc, deadline=None, budget=None):
     return lifted
 
 
-def execute(prog, r, queries, deadline=None, budget=None, engine="sparse"):
+def scale_view_from_record(marked, sc):
+    """A Scale-like view of a PERSISTED scale sufficient for pricing: regions,
+    RegionData shells (support and marker keys from the witness), coarse
+    shells (cells, M, N) and the lifted model's compact crossings."""
+    regs = [tuple(rg["region"]) for rg in sc["regions"]]
+    rds, crs, dels = [], [], []
+    for rg in sc["regions"]:
+        A = {}
+        marks = {}
+        for c in rg["cells"]:
+            for mb, al in c["members"]:
+                A[tuple(mb)] = Fr(1)
+            for k in c["N"]:
+                marks.setdefault(k, {})
+        for b in rg["deleted"]:
+            A[tuple(b)] = Fr(1)
+        rset = set(rg["region"])
+        internal = [fi for fi, f in enumerate(marked.factors) if set(f.scope) <= rset]
+        crossing = [fi for fi, f in enumerate(marked.factors)
+                    if (set(f.scope) & rset) and not (set(f.scope) <= rset)]
+        rds.append(R.RegionData(vars=tuple(rg["region"]), boundary=tuple(rg["boundary"]),
+                                internal_factors=internal, crossing_factors=crossing,
+                                A=A, marks=marks))
+        cells = [R.Cell(rep=tuple(c["rep"]), members=[(tuple(mb), Fr(al)) for mb, al in c["members"]])
+                 for c in rg["cells"]]
+        N = {}
+        for c in rg["cells"]:
+            for k in c["N"]:
+                N.setdefault(k, [])
+        for c in rg["cells"]:
+            for k in N:
+                N[k].append(Fr(c["N"].get(k, Fr(0))))
+        crs.append(R.CoarseRegion(region=tuple(rg["region"]), boundary=tuple(rg["boundary"]),
+                                  cells=cells, M=[Fr(c["M"]) for c in rg["cells"]], N=N,
+                                  cell_of={}, rho_region=Fr(rg["rho_region"]),
+                                  comparisons=0, declines={}))
+        dels.append(None if not rg["deleted"] else
+                    R.DeletionRecord(region=tuple(rg["region"]),
+                                     deleted=[tuple(b) for b in rg["deleted"]],
+                                     U=Fr(0), L=Fr(1), prob_bound=Fr(rg["deletion_bound"]),
+                                     radius_charged=Fr(rg["deletion_bound"]),
+                                     retained_states=len(rg["cells"]),
+                                     positive_denominator=True))
+    lifted = lift_from_record(marked, sc)
+    return MK.Scale(regions=regs, rds=rds, coarse=crs, deletions=dels,
+                    projected=list(lifted.factors), t_level=Fr(sc["t_level"]),
+                    deletion_radius_total=Fr(sc["deletion_radius_total"]),
+                    R_level=Fr(sc["R_level"]), lifted=lifted,
+                    input_card=dict(marked.card))
+
+
+def sharp_rows(counts, orig_card, queries):
+    """P(x_i = a) from count enclosures by the sharp marker ratio with the
+    producer's OWN complement sums: X = count(a), C = sum of the other states'
+    counts, P in [X_l/(X_l + C_u), X_u/(X_u + C_l)]."""
+    rows = {}
+    for v in sorted(queries):
+        xs = [(Fr(counts[v][a][0]), Fr(counts[v][a][1])) for a in range(orig_card[v])]
+        tl = sum(x[0] for x in xs)
+        th = sum(x[1] for x in xs)
+        if th <= 0:
+            raise RouteError("variable %d has no positive total count" % v)
+        rr = []
+        for a, (xl, xu) in enumerate(xs):
+            cl, cu = tl - xl, th - xu
+            dl, du = xl + cu, xu + cl
+            lo = xl / dl if dl > 0 else Fr(0)
+            hi = xu / du if du > 0 else Fr(1)
+            rr.append((max(Fr(0), lo), min(Fr(1), hi)))
+        rows[v] = rr
+    return rows
+
+
+def execute(prog, r, queries, deadline=None, budget=None, engine="sparse",
+            num_eps=None, progress=None):
     """Run a PARSED program on the restricted model. Returns
     (rows {orig var: [(lo, hi)] of exact enclosures of the REPRESENTED law's
     marginals}, meta). The caller widens by the recorded allocations."""
@@ -226,16 +291,13 @@ def execute(prog, r, queries, deadline=None, budget=None, engine="sparse"):
                                          "collective evaluation")
     (Zlo, Zhi), counts, cmeta = CJ.evaluate(rmk, coll, ctx, engine=engine,
                                             deadline=deadline, order=order,
-                                            charge=charge)
-    if Zlo <= 0:
+                                            charge=charge, num_eps=num_eps)
+    if progress is not None:
+        progress("collective", "%s evaluated" % coll["evaluator"])
+    if Zhi <= 0:
         raise RouteError("the collective evaluation has no positive total")
-    rows = {}
-    for v in rmk.queries():
-        rr = []
-        for a in range(rmk.orig_card[v]):
-            lo, hi = counts[v][a]
-            rr.append((max(Fr(0), lo / Zhi), min(Fr(1), hi / Zlo)))
-        rows[v] = rr
+    # the SHARP marker ratio from the counts (event against its own complement)
+    rows = sharp_rows(counts, rmk.orig_card, rmk.queries())
     meta.update(cmeta)
     meta["residual_factors"] = len(rmk.factors)
     return rows, meta

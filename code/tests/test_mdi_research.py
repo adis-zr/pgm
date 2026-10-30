@@ -1286,12 +1286,18 @@ def _demo_plan():
         factor_scopes=[(0, (0, 1), (2, 2)), (1, (1,), (2,))],
         region_membership=[], cell_membership=[],
         allocations={"regional": Fr(2, 1000), "deletion": Fr(5, 10000)},
-        executor_id="mdi.registry:_identity_executor",
-        checker_id="mdi.registry:_identity_checker",
+        executor_id="mdi.registry:pipeline_identity_executor",
+        checker_id="mdi.registry:pipeline_identity_checker",
         numerical={"precision": 64, "mode": "P", "emin": -3000, "emax": 3000},
         cost_counters={"bag_visits": 254, "label": "exact"},
         storage_schedule={"peak_live_entries": 127},
-        rejected_alternatives=[{"name": "regional:x", "reason": "skipped regions"}])
+        rejected_alternatives=[{"name": "regional:x", "reason": "skipped regions"}],
+        program={"kind": "identity", "scales": [], "collective": None,
+                 "order": [0, 1], "precision": 64, "queries": [0, 1],
+                 "research": {"cells_merged_regions": 0, "deleted_states": 0,
+                              "collective": None, "qualifies": False},
+                 "arithmetic": {"emin": -3000, "emax": 3000, "mode": "P"},
+                 "checker": {"strategy": "min_fill_interval", "precision": 80}})
 
 
 def test_plan_record_round_trips_byte_identically():
@@ -2834,12 +2840,19 @@ def test_r6_plan_loader_accepts_a_clean_base_then_rejects_each_mutation():
             factor_ownership=[(0, "bag")],
             factor_scopes=[(0, (0, 1), (2, 2))], region_membership=[],
             cell_membership=[], allocations={"t": Fr(1, 1000)},
-            executor_id="mdi.registry:_identity_executor",
-            checker_id="mdi.registry:_identity_checker",
+            executor_id="mdi.registry:pipeline_identity_executor",
+            checker_id="mdi.registry:pipeline_identity_checker",
             numerical={"precision": 64, "mode": "P", "emin": -10, "emax": 10},
             cost_counters={"producer_upward_ops": 1},
             storage_schedule={"peak_live_entries": 2},
-            rejected_alternatives=[]).validate()
+            rejected_alternatives=[],
+            program={"kind": "identity", "scales": [], "collective": None,
+                     "order": [0, 1], "precision": 64, "queries": [0, 1],
+                     "research": {"cells_merged_regions": 0, "deleted_states": 0,
+                                  "collective": None, "qualifies": False},
+                     "arithmetic": {"emin": -10, "emax": 10, "mode": "P"},
+                     "checker": {"strategy": "min_fill_interval",
+                                 "precision": 80}}).validate()
 
     # THE CLEAN BASE MUST LOAD, and round-trip byte-identically
     rec = base()
@@ -4030,8 +4043,14 @@ def test_r5_pipeline_invokes_the_registered_executor():
         calls[0] += 1
         raise RuntimeError("SENTINEL")
 
+    # the pipeline resolves the executor FROM THE RECORD's declared role and
+    # requires it to be the registered one, so the sentinel must stand in
+    # both places (a registry-only swap is refused without any call)
+    import mdi.registry as RG
     orig = PT._PIPELINE_EXECUTORS[kind]
+    role = orig.__name__
     PT._PIPELINE_EXECUTORS[kind] = sentinel
+    setattr(RG, role, sentinel)
     try:
         try:
             res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
@@ -4042,6 +4061,7 @@ def test_r5_pipeline_invokes_the_registered_executor():
         assert not certified, "certified without running the executor"
     finally:
         PT._PIPELINE_EXECUTORS[kind] = orig
+        setattr(RG, role, orig)
 
 
 def test_r5_corrupted_on_disk_plan_stops_execution():

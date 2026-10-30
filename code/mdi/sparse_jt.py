@@ -49,6 +49,98 @@ class Table:
         return len(self.entries)
 
 
+class Lazy:
+    """A COMPACT input factor: `scope` and a `fn(assignment tuple) -> value`
+    evaluated only at the assignments a bag operation actually reaches. It is
+    never enumerated on construction; a product with a sparse Table visits the
+    Table's keys and extends them over the Lazy's extra variables only."""
+    __slots__ = ("scope", "card", "fn", "n")
+
+    def __init__(self, scope, card, fn):
+        self.scope = tuple(scope)
+        self.card = tuple(card)
+        self.fn = fn
+        n = 1
+        for c in self.card:
+            n *= c
+        self.n = n
+
+    def __len__(self):
+        return self.n
+
+
+def lazy_from_factor(f, lift=None):
+    """A Lazy over a factor (dense or projected view) via its own `table[flat]`
+    indexing, so nothing is expanded."""
+    st = f.strides()
+    tab = f.table
+
+    def fn(key):
+        off = 0
+        for k, d in enumerate(key):
+            off += d * st[k]
+        v = tab[off]
+        return v if lift is None else lift(v)
+    return Lazy(f.scope, f.card, fn)
+
+
+class CostMeter:
+    """A metering algebra for DRY RUNS: values are support descriptors (True
+    for a nonzero scalar; a frozenset of statistic keys for the statistic
+    algebra) and every mul/add charges what the REAL algebra would perform in
+    Fraction operations. Running the engine with this algebra prices exactly
+    the schedule the engine runs, from the loaded program."""
+    name = "cost"
+
+    def __init__(self, real, rank=1, support_cap=None):
+        self.real = real            # "rational" | "interval" | "complex" | "statistic"
+        self.rank = rank
+        self.cap = support_cap
+        self.ops = 0                # Fraction operations the real run performs
+        self.entries = 0            # entries visited
+        self.zero_key = (0,) * rank if rank > 1 else 0
+        self.zero = frozenset() if real == "statistic" else False
+        self.cost = {"rational": (1, 1), "interval": (2, 2), "complex": (20, 4)}
+
+    def one(self):
+        return frozenset([self.zero_key]) if self.real == "statistic" else True
+
+    def mul(self, a, b):
+        if self.real == "statistic":
+            self.ops += 2 * len(a) * len(b)
+            out = frozenset(stat_add(x, y) for x in a for y in b)
+            if self.cap is not None and len(out) > self.cap:
+                raise SparseError("dry run: a convolved statistic support would "
+                                  "reach %d, above the %d cap" % (len(out), self.cap))
+            return out
+        self.ops += self.cost[self.real][0]
+        return True
+
+    def add(self, a, b):
+        if self.real == "statistic":
+            self.ops += len(b)
+            return a | b
+        self.ops += self.cost[self.real][1]
+        return True
+
+    def is_zero(self, a):
+        return not a
+
+    def check_bits(self, a, cap):
+        return None
+
+    def check(self, a, cap):
+        return None
+
+    def shift(self, a, s):
+        if self.real == "statistic":
+            return frozenset(stat_add(x, s) for x in a)
+        return a
+
+    def size(self, a):
+        return len(a) if self.real == "statistic" else 1
+
+
 def table_from_factor(f, deadline=None):
     """Dense factor -> sparse exact table (zeros dropped)."""
     st = f.strides()
@@ -192,6 +284,10 @@ class Statistic:
     @staticmethod
     def is_zero(a):
         return not a
+
+    @staticmethod
+    def size(a):
+        return len(a)
 
     @staticmethod
     def check_bits(a, cap):
@@ -392,8 +488,81 @@ class SparseJT:
         if self.deadline is not None and (n & 0xFF) == 0:
             self.deadline()
 
-    def multiply(self, t1: Table, t2: Table) -> Table:
+    def _materialize(self, lz):
+        """Enumerate a Lazy's scope into a Table: the one place a compact input
+        is expanded, and only when a bag operation needs the whole domain. The
+        entry cap is the declared bound on that materialization."""
+        if lz.n > self.entry_cap:
+            raise SparseError(
+                "a bag needs the whole %d-entry domain of a compact factor over "
+                "%s, above the declared %d-entry cap: this grouping is refused "
+                "for its actual schedule cost" % (lz.n, lz.scope, self.entry_cap))
+        import itertools
+        ent = {}
         S = self.S
+        for combo in itertools.product(*[range(c) for c in lz.card]):
+            self._tick()
+            v = lz.fn(combo)
+            if not S.is_zero(v):
+                ent[combo] = v
+        return Table(lz.scope, ent)
+
+    def multiply(self, t1, t2):
+        S = self.S
+        if isinstance(t1, Lazy) and isinstance(t2, Lazy):
+            # both compact: compose lazily; evaluated when a Table arrives or
+            # when the bag must be summed (then materialized under the cap)
+            sc = tuple(sorted(set(t1.scope) | set(t2.scope)))
+            p1 = [sc.index(v) for v in t1.scope]
+            p2 = [sc.index(v) for v in t2.scope]
+            card = tuple(self.card[v] for v in sc)
+
+            def fn(key, _a=t1.fn, _b=t2.fn, _p1=p1, _p2=p2):
+                self.ops["mul"] += 1
+                return S.mul(_a(tuple(key[k] for k in _p1)),
+                             _b(tuple(key[k] for k in _p2)))
+            return Lazy(sc, card, fn)
+        if isinstance(t1, Lazy):
+            t1, t2 = t2, t1
+        if isinstance(t2, Lazy):
+            # a Table times a compact factor: visit the Table's keys and extend
+            # them over the compact factor's EXTRA variables only
+            import itertools
+            sc1 = t1.scope
+            out_sc = tuple(sorted(set(sc1) | set(t2.scope)))
+            pos = {v: k for k, v in enumerate(out_sc)}
+            p1 = {v: k for k, v in enumerate(sc1)}
+            extra = [v for v in t2.scope if v not in p1]
+            lz_pos = [None] * len(t2.scope)
+            out = {}
+            for a1, v1 in t1.entries.items():
+                base = [0] * len(out_sc)
+                for v, k in p1.items():
+                    base[pos[v]] = a1[k]
+                for ec in itertools.product(*[range(self.card[v]) for v in extra]):
+                    self._tick()
+                    kk = list(base)
+                    for v, d in zip(extra, ec):
+                        kk[pos[v]] = d
+                    key2 = tuple(kk[pos[v]] for v in t2.scope)
+                    v2 = t2.fn(key2)
+                    if S.is_zero(v2):
+                        continue
+                    self.ops["mul"] += 1
+                    val = S.mul(v1, v2)
+                    if S.is_zero(val):
+                        continue
+                    k = tuple(kk)
+                    if k in out:
+                        self.ops["add"] += 1
+                        val = S.add(out[k], val)
+                    elif len(out) >= self.entry_cap:
+                        raise SparseError(
+                            "a product table over %s reached the declared "
+                            "%d-entry cap" % (out_sc, self.entry_cap))
+                    S.check_bits(val, self.bit_cap)
+                    out[k] = val
+            return Table(out_sc, out)
         sc1, sc2 = t1.scope, t2.scope
         out_sc = tuple(sorted(set(sc1) | set(sc2)))
         pos = {v: k for k, v in enumerate(out_sc)}
@@ -431,8 +600,12 @@ class SparseJT:
                 out[k] = val
         return Table(out_sc, out)
 
-    def marginalize(self, t: Table, var) -> Table:
+    def marginalize(self, t, var) -> Table:
         S = self.S
+        if isinstance(t, Lazy):
+            if var not in t.scope:
+                return t
+            t = self._materialize(t)
         if var not in t.scope:
             return t
         k = t.scope.index(var)
@@ -450,23 +623,48 @@ class SparseJT:
                 out[key] = v
         return Table(out_sc, out)
 
-    def insert_statistic(self, t: Table, var, kq_of_state):
+    def insert_statistic(self, t, var, kq_of_state):
         """Statistic semiring only: multiply every entry by the delta
         distribution at this variable's integer statistic, exactly once."""
+        if isinstance(t, Lazy):
+            t = self._materialize(t)
         k = t.scope.index(var)
         out = {}
+        shift = getattr(self.S, "shift", None)
         for a, dist in t.entries.items():
             self._tick()
             s0 = kq_of_state[a[k]]
-            out[a] = {stat_add(s, s0): w for s, w in dist.items()}
+            if shift is not None and not isinstance(dist, dict):
+                out[a] = shift(dist, s0)          # a metering dry run
+            else:
+                out[a] = {stat_add(s, s0): w for s, w in dist.items()}
         return Table(t.scope, out)
+
+    def rebind(self, tables):
+        """Replace the table ENTRIES keeping every scope and the built tree:
+        quadrature nodes change only the unary tilt/phase tables, so the
+        schedule is built once and rerun per node."""
+        if len(tables) != len(self.tables):
+            raise SparseError("rebind: table count changed")
+        for old, new in zip(self.tables, tables):
+            if tuple(old.scope) != tuple(new.scope):
+                raise SparseError("rebind: table scope changed")
+        self.tables = list(tables)
+        self.msg = {}
+        self.root_total = {}
+        self._belief = {}
+        return self
 
     # ---- passes ----
     def _bag_product(self, bidx, exclude=None):
         b = self.bags[bidx]
         acc = Table((), {(): self.S.one()})
-        for ti in b["tables"]:
-            acc = self.multiply(acc, self.tables[ti])
+        # dense/sparse own tables first, compact ones last, so a compact
+        # factor is evaluated only at the keys that survive the others
+        own = sorted((self.tables[ti] for ti in b["tables"]),
+                     key=lambda t: isinstance(t, Lazy))
+        for t in own:
+            acc = self.multiply(acc, t)
         for c in b["children"]:
             if c == exclude:
                 continue
@@ -500,6 +698,8 @@ class SparseJT:
             self.msg[(bidx, b["parent"])] = acc
         else:
             acc = self._sum_out(acc, list(b["vars"]), stat_insert)
+            if isinstance(acc, Lazy):
+                acc = self._materialize(acc)
             self.root_total[bidx] = acc.entries.get((), None)
         self._note_live()
 
@@ -511,8 +711,6 @@ class SparseJT:
         none of them was inserted on this side of the tree before."""
         b = self.bags[bidx]
         acc = Table((), {(): self.S.one()})
-        for ti in b["tables"]:
-            acc = self.multiply(acc, self.tables[ti])
         if b["parent"] >= 0:
             m = self.msg.get((b["parent"], bidx))
             if m is None:
@@ -525,6 +723,10 @@ class SparseJT:
             if m is None:
                 raise SparseError("missing message %d->%d" % (c, bidx))
             acc = self.multiply(acc, m)
+        own = sorted((self.tables[ti] for ti in b["tables"]),
+                     key=lambda t: isinstance(t, Lazy))
+        for t in own:
+            acc = self.multiply(acc, t)
         sep = set(self.bags[child]["sep"])
         acc = self._sum_out(acc, [v for v in b["vars"] if v not in sep],
                             stat_insert)
@@ -532,7 +734,11 @@ class SparseJT:
         self._note_live()
 
     def _note_live(self):
-        e = sum(len(m.entries) for m in self.msg.values())
+        sz = getattr(self.S, "size", None)
+        if sz is None:
+            e = sum(len(m.entries) for m in self.msg.values())
+        else:
+            e = sum(sum(sz(v) for v in m.entries.values()) for m in self.msg.values())
         if e > self.peak_live_entries:
             self.peak_live_entries = e
 
@@ -553,6 +759,7 @@ class SparseJT:
         """
         self.msg = {}
         self.root_total = {}
+        self._belief = {}
         self.stat_insert = stat_insert
         for rt in self.roots:
             for b in self._post_order(rt):
@@ -573,14 +780,53 @@ class SparseJT:
             b = self.bags[b]["parent"]
         return b
 
+    def calibrated_bag(self, bidx):
+        """The calibrated belief of one bag (own tables x every incident
+        message), computed ONCE and cached for every variable it is home to."""
+        cache = getattr(self, "_belief", None)
+        if cache is None:
+            cache = self._belief = {}
+        if bidx in cache:
+            return cache[bidx]
+        b = self.bags[bidx]
+        acc = Table((), {(): self.S.one()})
+        if b["parent"] >= 0:
+            m = self.msg.get((b["parent"], bidx))
+            if m is None:
+                raise SparseError("bag %d has no parent message, so its belief "
+                                  "is NOT calibrated" % bidx)
+            acc = self.multiply(acc, m)
+        for c in b["children"]:
+            m = self.msg.get((c, bidx))
+            if m is None:
+                raise SparseError("bag %d is missing message from %d" % (bidx, c))
+            acc = self.multiply(acc, m)
+        own = sorted((self.tables[ti] for ti in b["tables"]),
+                     key=lambda t: isinstance(t, Lazy))
+        for t in own:
+            acc = self.multiply(acc, t)
+        if isinstance(acc, Lazy):
+            acc = self._materialize(acc)
+        cache[bidx] = acc
+        return acc
+
     def marginal(self, var) -> Table:
         """The calibrated single-variable table at var's home bag: its
-        entries sum to the component's total (rational semiring)."""
+        entries sum to the component's total (rational semiring). The bag's
+        belief is shared across every variable it is home to."""
+        bidx = self.home[var]
+        b = self.bags[bidx]
+        acc = self.calibrated_bag(bidx)
+        si = getattr(self, "stat_insert", None)
+        acc = self._sum_out(acc, [v for v in b["vars"] if v != var], si)
+        if si is not None and var in acc.scope:
+            acc = self.insert_statistic(acc, var, si[var])
+        return acc
+
+    def _marginal_unshared(self, var) -> Table:
         bidx = self.home[var]
         b = self.bags[bidx]
         acc = Table((), {(): self.S.one()})
-        for ti in b["tables"]:
-            acc = self.multiply(acc, self.tables[ti])
         if b["parent"] >= 0:
             m = self.msg.get((b["parent"], bidx))
             if m is None:
@@ -593,6 +839,12 @@ class SparseJT:
                 raise SparseError("marginal(%d): bag %d is missing message "
                                   "from %d" % (var, bidx, c))
             acc = self.multiply(acc, m)
+        own = sorted((self.tables[ti] for ti in b["tables"]),
+                     key=lambda t: isinstance(t, Lazy))
+        for t in own:
+            acc = self.multiply(acc, t)
+        if isinstance(acc, Lazy):
+            acc = self._materialize(acc)
         si = getattr(self, "stat_insert", None)
         acc = self._sum_out(acc, [v for v in b["vars"] if v != var], si)
         if si is not None and var in acc.scope:
@@ -602,28 +854,31 @@ class SparseJT:
         return acc
 
     def total(self):
-        """Product of the component totals (rational semiring)."""
+        """Product of the component totals (rational semiring); the final
+        product is bit-bounded like every intermediate."""
         Z = self.S.one()
         for rt in self.roots:
             t = self.root_total.get(rt)
             if t is None or self.S.is_zero(t):
                 return None
             Z = self.S.mul(Z, t)
+            self.S.check_bits(Z, self.bit_cap)
         return Z
 
 
 def all_marginals(tables, card, deadline=None, entry_cap=None, order=None,
-                  charge=None):
+                  charge=None, only=None):
     """Convenience: exact rational Z and {var: [count per state]} where each
     count/Z is the exact marginal. Counts are per component total; they are
-    rescaled so every count is relative to the GLOBAL Z."""
+    rescaled so every count is relative to the GLOBAL Z. `only` restricts the
+    readout to the requested owners."""
     jt = SparseJT(tables, card, Rational, entry_cap=entry_cap,
                   deadline=deadline, order=order, charge=charge).run()
     Z = jt.total()
     if Z is None or Z <= 0:
         raise SparseError("the model has zero total weight")
     out = {}
-    for v in jt.free:
+    for v in (sorted(only) if only is not None else jt.free):
         m = jt.marginal(v)
         comp_total = jt.root_total[jt.component_of(v)]
         scale = Z / comp_total

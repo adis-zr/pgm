@@ -30,11 +30,12 @@ PREREQS = {
     "publication_contract_met": ("independently_verified",),
 }
 
-KINDS = ("identity", "regional", "statistic", "gaussian", "fourier", "composed")
+KINDS = ("identity", "regional", "statistic", "gaussian", "fourier", "mixed",
+         "composed")
 
 
 DECLARED_KINDS = ("identity", "regional", "composed", "statistic",
-                  "general_statistic", "gaussian", "fourier", "deletion",
+                  "general_statistic", "gaussian", "fourier", "mixed", "deletion",
                   "level2")
 
 
@@ -326,7 +327,7 @@ class PlanRecord:
                 raise PlanError("the program names kind %r but the record is %r"
                                 % (parsed["kind"], rec.kind))
             rec.parsed_program = parsed
-        elif rec.kind != "identity":
+        else:
             raise PlanError("a %s plan carries no program block, so nothing "
                             "describes what its executor would run" % rec.kind)
         return rec.validate()

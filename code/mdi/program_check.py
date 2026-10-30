@@ -15,7 +15,8 @@ import itertools
 import gmpy2
 from mdi import (model as M, config as K, regions as R, marked as MK,
                  regional_check as RC, collective_route as CR,
-                 collective_jt as CJ, dense_be as DB, arith as A, program as PG)
+                 collective_jt as CJ, dense_be as DB, arith as A, program as PG,
+                 factors as FX)
 
 
 class CheckError(Exception):
@@ -221,29 +222,19 @@ def verify_scale(marked: MK.Marked, sc, deadline=None, budget=None):
         pc = verified[i][2]
         for a in range(marked.orig_card[v]):
             lmarks[(v, a)] = [Fr(x) for x in pc.N[(v, a)]]
+    # the checker's OWN compact views, composed from the verified
+    # representatives and boundary orders (its own position maps)
+    reps = {i: [tuple(c.rep) for c in verified[i][2].cells] for i in range(len(regs))}
+    bpos = {i: {v: k for k, v in enumerate(verified[i][1])} for i in range(len(regs))}
     lfactors = []
     for f in marked.factors:
         rs = sorted({region_of[v] for v in f.scope})
         if len(rs) <= 1:
             continue
-        cards = tuple(ncell[i] for i in rs)
-        n = 1
-        for c in cards:
-            n *= c
-        if n > K.CAPS["aggregated_kernel_entries"]:
-            return None, ["a lifted crossing over regions %s needs %d entries, "
-                          "above the cap" % (rs, n)]
-        tab = []
-        for combo in itertools.product(*[range(c) for c in cards]):
-            a = {}
-            for k, i in enumerate(rs):
-                region, boundary, pc = verified[i]
-                rep = pc.cells[combo[k]].rep
-                for kk, v in enumerate(boundary):
-                    a[v] = rep[kk]
-            tab.append(Fr(f.at(a)))
-        lfactors.append(M.Factor(scope=tuple(rs), card=cards, table=tab,
-                                 origin=f.origin))
+        try:
+            lfactors.append(FX.as_view(f).compose(region_of, reps, bpos, ncell))
+        except FX.ViewError as e:
+            return None, ["lifting factor %d: %s" % (f.origin, e)]
     lifted = MK.Marked(card={i: ncell[i] for i in range(len(regs))},
                        factors=lfactors, owner=lowner, marks=lmarks, mass=lmass,
                        orig_card=dict(marked.orig_card), level=marked.level + 1)
@@ -251,7 +242,20 @@ def verify_scale(marked: MK.Marked, sc, deadline=None, budget=None):
         lifted.check_identity()
     except MK.MarkedError as e:
         return None, ["the verified witness violates the marker identity: %s" % e]
-    return lifted, {"t_level": t_level, "deletion": own_del, "R_level": own_rho}
+    # what this scale VERIFIABLY transformed: a region whose verified cells are
+    # fewer than its verified supported boundary states merged; deletions
+    # were proved above
+    merged = sum(1 for (region, boundary, pc), rg in zip(verified, regs)
+                 if len(pc.cells) < len(pc.cells) + 0 and False)
+    merged = 0
+    deleted = 0
+    for (region, boundary, pc), rg in zip(verified, regs):
+        n_members = sum(len(c.members) for c in pc.cells)
+        if len(pc.cells) < n_members:
+            merged += 1
+        deleted += len(rg["deleted"])
+    return lifted, {"t_level": t_level, "deletion": own_del, "R_level": own_rho,
+                    "merged_regions": merged, "deleted_states": deleted}
 
 
 # ------------------------------------------------- own fit certificate
@@ -279,7 +283,12 @@ def verify_fit(marked: MK.Marked, rmk: MK.Marked, cand, claimed_tv: Fr, ctx):
     """
     card = marked.card
     free = marked.free()
-    law = marked.law_factors()
+    try:
+        law = [FX.densify(f, K.CAPS["aggregated_kernel_entries"])
+               for f in marked.law_factors()]
+    except FX.ViewError as e:
+        return False, ["the checker's fit certificate needs bounded explicit "
+                       "tables: %s" % e]
     resid = list(rmk.factors)
 
     def dense_pair(tbl, i, j, flip):
@@ -408,9 +417,65 @@ def verify_fit(marked: MK.Marked, rmk: MK.Marked, cand, claimed_tv: Fr, ctx):
     return True, {"own_nu": str(nu), "own_tv": str(own_tv)}
 
 
+# ---------------------------------------------------- own restoration
+
+def own_restore(marked: MK.Marked, Z, cell_counts):
+    """The checker's own original-query restoration from ITS verified masses,
+    markers and counts (never Marked.read_original).
+
+    For original (i, a) with owner o: the event count X = sum_c cnt(c) N_{i,a}(c)
+    / M(c) and its complement C = sum_{a' != a} X_{a'} (the checker's own sum
+    over the other states, not Z - X). The probability is enclosed by the
+    sharp ratio [X_l / (X_l + C_u), X_u / (X_u + C_l)] with a positive
+    denominator proved from the checker's own counts; a zero numerator gives
+    an exact 0 and an exactly covering event an exact 1.
+    """
+    out = {}
+    for v in marked.queries():
+        o = marked.owner[v]
+        xs = []
+        for a in range(marked.orig_card[v]):
+            lo = hi = Fr(0)
+            for c in range(marked.card[o]):
+                Mc = Fr(marked.mass[o][c])
+                if Mc <= 0:
+                    continue
+                Nc = Fr(marked.marks[(v, a)][c])
+                if Nc == 0:
+                    continue
+                cc = cell_counts[o][c]
+                cl, ch = (Fr(cc[0]), Fr(cc[1])) if isinstance(cc, tuple) else (Fr(cc), Fr(cc))
+                # the payload division is the checker's own, directed
+                lo += cl * Nc / Mc
+                hi += ch * Nc / Mc
+            xs.append((lo, hi))
+        rows = []
+        tot_lo = sum(x[0] for x in xs)
+        tot_hi = sum(x[1] for x in xs)
+        if tot_hi <= 0:
+            raise CheckError("the checker's own counts for variable %d have no "
+                             "positive total" % v)
+        for a, (xl, xu) in enumerate(xs):
+            cl = tot_lo - xl          # the other states' lower counts
+            cu = tot_hi - xu
+            if xu == 0:
+                rows.append((Fr(0), Fr(0)))
+            elif cu == 0 and cl == 0:
+                rows.append((Fr(1), Fr(1)))
+            else:
+                dl = xl + cu
+                du = xu + cl
+                plo = xl / dl if dl > 0 else Fr(0)
+                phi = xu / du if du > 0 else Fr(1)
+                rows.append((max(Fr(0), plo), min(Fr(1), phi)))
+        out[v] = rows
+    return out
+
+
 # --------------------------------------------------------------- the check
 
-def verify_program(r, queries, prog, published, eps, deadline=None, budget=None):
+def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
+                   exec_record=None):
     """Verify a parsed program's publication. `published` holds ONLY the
     requested variables' rows. Returns (ok, failures, meta)."""
     queries = set(queries)
@@ -427,6 +492,8 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None)
     marked = MK.Marked.from_restricted(r, queries)
     radius = Fr(0)
     meta = {"scales": [], "independent_enclosure": True}
+    merged_regions = 0
+    deleted_states = 0
     for k, sc in enumerate(prog["scales"]):
         lifted, info = verify_scale(marked, sc, deadline=deadline, budget=budget)
         if lifted is None:
@@ -434,11 +501,17 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None)
                 {"certificate_rejected": True}
         radius += info["t_level"] + info["deletion"]
         meta["scales"].append({kk: str(vv) for kk, vv in info.items()})
+        merged_regions += info["merged_regions"]
+        deleted_states += info["deleted_states"]
         marked = lifted
     coll = prog["collective"]
     if coll is None:
-        tables = [(tuple(f.scope), [Fr(x) for x in f.table])
-                  for f in marked.law_factors()]
+        tables = []
+        for f in marked.law_factors():
+            if FX.is_view(f):
+                tables.append((tuple(f.scope), f.table))
+            else:
+                tables.append((tuple(f.scope), [Fr(x) for x in f.table]))
         touched = {v for f in marked.factors for v in f.scope}
         for v in marked.free():
             if v not in touched and not any(x != 1 for x in marked.mass[v]):
@@ -452,8 +525,11 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None)
                                                charge=charge)
         except DB.DenseError as e:
             return False, ["the checker's own contraction refused: %s" % e], None
-        rows = MK.read_original(marked, Z, counts)
-        meta["method"] = "checker-owned dense junction tree, exact rationals"
+        # counts are per component; rescale to the global total first, with
+        # the checker's own component bookkeeping (exact_marginals did so)
+        rows = own_restore(marked, Z, counts)
+        meta["method"] = ("checker-owned dense junction tree, exact rationals, "
+                          "checker-owned sharp marker-ratio restoration")
     else:
         ctx = A.Ctx(coll["precision"] + 16)
         try:
@@ -488,43 +564,74 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None)
                                "recorded %s" % (own_round, coll["rounding_tv"])], None
             meta["own_rounding_tv"] = str(own_round)
         else:
-            # the checker's own lattice bound for the record's delta
+            # the checker's own lattice bounds for the record's per-mode deltas:
+            # the POSITIVE modes' GF3 bounds are a TV radius and must be covered
+            # by the recorded quadrature_tv; the negative modes' bounds enter the
+            # sharp marker-ratio enclosure the checker itself evaluates below
             cand = coll["candidate"]
-            Rk = Fr(0)
-            for f in cand.features[0].values():
-                Rk += max(abs(Fr(x)) for x in f)
+            deltas = coll.get("deltas") or [coll["delta"]]
+            qtv = Fr(0)
             try:
-                lat = (CO.gf_lattice(cand.gammas[0], Rk, coll["delta"])
-                       if coll["evaluator"] == "gaussian"
-                       else CO.fourier_lattice(cand.gammas[0], Rk, coll["delta"]))
+                for k in range(cand.rank):
+                    lat = CR.lattice_for(cand, k, Fr(deltas[k]))
+                    if cand.signs[k] > 0:
+                        qtv += Fr(lat["total_bound"])
             except CO.Declined as e:
                 return False, ["the checker cannot construct the record's lattice: %s" % e], None
-            if Fr(lat["total_bound"]) > Fr(coll["quadrature_tv"]):
-                return False, ["the checker's own lattice bound %s exceeds the "
-                               "recorded %s" % (lat["total_bound"], coll["quadrature_tv"])], None
-            meta["own_quadrature_tv"] = str(lat["total_bound"])
+            if qtv > Fr(coll["quadrature_tv"]):
+                return False, ["the checker's own positive lattice bound %s exceeds the "
+                               "recorded %s" % (qtv, coll["quadrature_tv"])], None
+            meta["own_quadrature_tv"] = str(qtv)
         charge = None
         if budget is not None:
             charge = lambda n: budget.charge("local_mass_entries", n,
                                              "checker dense collective evaluation")
         try:
+            # the checker rechecks the RETAINED positive nodes of the record
+            # (when an execution record names them) with the same omitted-node
+            # allowances, never integrating omitted nodes to rescue it; without
+            # a record it evaluates every node
+            retained = (exec_record or {}).get("retained_positive_node_indices")
             (Zlo, Zhi), counts, cmeta = CJ.evaluate(rmk, coll, ctx, engine="dense",
-                                                    deadline=deadline, charge=charge)
+                                                    deadline=deadline, charge=charge,
+                                                    stop_early=False,
+                                                    only_nodes=retained)
+            if retained is not None:
+                meta["rechecked_retained_nodes"] = len(retained)
+                if not cmeta.get("negative_key_set_symmetric", True):
+                    return False, ["the negative frequency key set is not symmetric: "
+                                   "conjugate pairing fails"], None
         except (CJ.Declined, DB.DenseError) as e:
             return False, ["the checker's own collective evaluation refused: %s" % e], None
         if Zlo <= 0:
             return False, ["the checker's own collective total is not positive"], None
+        # the collective evaluator returns per-(variable, state) COUNT
+        # enclosures already restored through the payload; the checker's own
+        # sharp ratio uses its own complement sums
         rows = {}
         for v in rmk.queries():
+            xs = [(Fr(counts[v][a][0]), Fr(counts[v][a][1]))
+                  for a in range(rmk.orig_card[v])]
+            tl = sum(x[0] for x in xs)
+            th = sum(x[1] for x in xs)
+            if th <= 0:
+                return False, ["the checker's own collective counts for variable "
+                               "%d have no positive total" % v], None
             rr = []
-            for a in range(rmk.orig_card[v]):
-                lo, hi = counts[v][a]
-                rr.append((max(Fr(0), lo / Zhi), min(Fr(1), hi / Zlo)))
+            for a, (xl, xu) in enumerate(xs):
+                cl, cu = tl - xl, th - xu
+                dl, du = xl + cu, xu + cl
+                rr.append((max(Fr(0), xl / dl if dl > 0 else Fr(0)),
+                           min(Fr(1), xu / du if du > 0 else Fr(1))))
             rows[v] = rr
         radius += CR.total_radius(coll)
         meta["method"] = "checker-owned dense %s evaluation" % coll["evaluator"]
         meta["collective"] = {k: v for k, v in cmeta.items() if k != "lattice"}
     meta["checker_radius"] = str(radius)
+    meta["verified_research"] = {
+        "cells_merged_regions": merged_regions, "deleted_states": deleted_states,
+        "collective": (coll["evaluator"] if coll is not None else None),
+        "qualifies": bool(merged_regions or deleted_states or coll is not None)}
     # the aggregation itself was recomputed by a SECOND implementation (the
     # dense junction tree) on the checker's own verified lifted model, so
     # the independence the identity gate asks about holds here structurally

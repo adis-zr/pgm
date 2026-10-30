@@ -28,6 +28,7 @@ from fractions import Fraction as Fr
 from dataclasses import dataclass, field
 import itertools
 from mdi import model as M, config as K, regions as R, compact as CP
+from mdi import factors as FX
 
 
 class MarkedError(ValueError):
@@ -108,15 +109,20 @@ class Marked:
         """Every factor of the represented law: masses and crossings."""
         return self.mass_factors() + list(self.factors)
 
-    def restricted_view(self, with_mass=True):
+    def restricted_view(self, with_mass=True, dense_cap=None):
         """An M.Restricted over the CURRENT variables (for consumers that take
-        one: mode fitting, the identity engine, pricing). The law's mass
-        factors are included unless the caller handles them itself."""
+        one: partition proposals need scopes only; the collective recognizer
+        needs bounded dense tables and passes `dense_cap`). Projected views
+        are densified ONLY when a cap is given and they fit it; otherwise
+        they are passed through as views (scopes/cards intact)."""
         facs = self.law_factors() if with_mass else list(self.factors)
+        if dense_cap is not None:
+            facs = [FX.densify(f, dense_cap) for f in facs]
         n = (max(self.card) + 1) if self.card else 1
         mdl = M.Model(nvars=n, card=[self.card.get(v, 1) for v in range(n)],
                       factors=facs)
-        mdl.validate()
+        if dense_cap is not None:
+            mdl.validate()
         return M.Restricted(model=mdl, evidence={}, factors=facs,
                             free=self.free(), card=dict(self.card),
                             constant=Fr(1), impossible_factor=None)
@@ -215,8 +221,7 @@ def _region_data_marked(marked: Marked, region, deadline=None, budget=None):
             for a in range(marked.orig_card[v])]
     A, marks = {}, {k: {} for k in want}
     ops = 0
-    pre = [(marked.factors[fi], marked.factors[fi].strides())
-           for fi in internal]
+    pre = [marked.factors[fi] for fi in internal]
     if deadline is not None:
         deadline()
     seen = 0
@@ -230,11 +235,8 @@ def _region_data_marked(marked: Marked, region, deadline=None, budget=None):
             a = dict(zip(boundary, bc))
             a.update(zip(interior, ic))
             w = Fr(1)
-            for f, st in pre:
-                off = 0
-                for k, v in enumerate(f.scope):
-                    off += a[v] * st[k]
-                e = f.table[off]
+            for f in pre:
+                e = f.at(a)
                 if e == 0:
                     w = Fr(0)
                     break
@@ -344,39 +346,20 @@ def coarsen(marked: Marked, regions, t_level: Fr, deletion_radius: Fr,
     R_level = R.level_distortion(crs)
     if not K.certify_R_against_t(R_level, t_level):
         raise R.Declined("R_level %s is not certified at t=%s" % (R_level, t_level))
-    view = marked.restricted_view(with_mass=False)
-    projected, _ = CP.project_crossings(view, regions, crs, rds)
     # ---- the LIFTED marked model: cell variables, local mass factors,
-    # projected crossing factors, moved ownership, payload markers
+    # COMPACT projected crossings (offset maps composed through the scale,
+    # nothing expanded), moved ownership, payload markers
     ncell = [len(c.cells) for c in crs]
     lcard = {i: ncell[i] for i in range(nreg)}
+    reps = {i: [tuple(c.rep) for c in crs[i].cells] for i in range(nreg)}
+    bpos = {i: {v: k for k, v in enumerate(rds[i].boundary)} for i in range(nreg)}
     lfactors = []
-    cap = K.CAPS["aggregated_kernel_entries"]
-    for pc in projected:
-        rs = tuple(pc.regions)
-        n = 1
-        for i in rs:
-            n *= ncell[i]
-        if n > cap:
-            raise R.CapExceeded("a lifted crossing over regions %s would need "
-                                "%d entries, above the %d cap; admitted BEFORE "
-                                "materializing it" % (rs, n, cap))
-        st = [1] * len(rs)
-        acc = 1
-        for k in range(len(rs) - 1, -1, -1):
-            st[k] = acc
-            acc *= ncell[rs[k]]
-        tab = []
-        for flat in range(n):
-            if deadline is not None and (flat & 0xFF) == 0:
-                deadline()
-            rem, dig = flat, []
-            for k in range(len(rs)):
-                dig.append(rem // st[k])
-                rem %= st[k]
-            tab.append(Fr(pc.value({rs[k]: dig[k] for k in range(len(rs))})))
-        lfactors.append(M.Factor(scope=rs, card=tuple(ncell[i] for i in rs),
-                                 table=tab, origin=pc.origin))
+    for f in marked.factors:
+        rs = sorted({region_of[v] for v in f.scope})
+        if len(rs) <= 1:
+            continue
+        lfactors.append(FX.as_view(f).compose(region_of, reps, bpos, ncell))
+    projected = lfactors
     lowner = {}
     lmarks = {}
     for v in marked.queries():
@@ -411,14 +394,18 @@ def contract_exact(marked: Marked, deadline=None, budget=None, order=None):
         if any(x != 1 for x in row) or v not in touched:
             tabs.append(SJ.Table((v,), ent))
     for f in marked.factors:
-        tabs.append(SJ.table_from_factor(f, deadline=deadline))
+        if FX.is_view(f):
+            tabs.append(SJ.lazy_from_factor(f))
+        else:
+            tabs.append(SJ.table_from_factor(f, deadline=deadline))
     charge = None
     if budget is not None:
         budget.charge("local_mass_entries", 1, "marked exact contraction")
         charge = lambda n: budget.charge("local_mass_entries", n,
                                          "marked exact contraction")
     Z, counts, jt = SJ.all_marginals(tabs, marked.card, deadline=deadline,
-                                     order=order, charge=charge)
+                                     order=order, charge=charge,
+                                     only=set(marked.owner.values()))
     return Z, counts, jt
 
 
@@ -428,3 +415,4 @@ def propose_regions(marked: Marked, cap_assign=None):
     view = marked.restricted_view(with_mass=False)
     return R.propose_partitions(view.free, view.card, view.factors,
                                 cap_assign=cap_assign)
+

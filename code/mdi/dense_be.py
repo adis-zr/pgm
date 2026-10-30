@@ -151,6 +151,10 @@ class StatAlg:
     `shift` adds a variable's statistic to every key."""
     name = "statistic"
 
+    @staticmethod
+    def size(a):
+        return len(a)
+
     def __init__(self, support_cap, rank=1):
         self.support_cap = support_cap
         self.rank = rank
@@ -240,9 +244,27 @@ class DenseJT:
             if b.domain(self.card) > self.entry_cap:
                 raise DenseError("bag %s has domain %d, above the %d-entry cap"
                                  % (b.vars, b.domain(self.card), self.entry_cap))
-        self.tables = [(tuple(sc), list(tab)) for sc, tab in factors]
+        # dense lists are copied; a LazyTable (compact view) is kept as is and
+        # indexed by flat offset inside the bag loops
+        self.tables = [(tuple(sc), tab if hasattr(tab, "at_digits") else list(tab))
+                       for sc, tab in factors]
         self.msg = {}
         self.root_total = {}
+
+    def rebind(self, factors):
+        """Replace table contents keeping scopes and the validated bag tree."""
+        if len(factors) != len(self.tables):
+            raise DenseError("rebind: table count changed")
+        new = []
+        for (sc_old, _t), (sc, tab) in zip(self.tables, factors):
+            if tuple(sc_old) != tuple(sc):
+                raise DenseError("rebind: table scope changed")
+            new.append((tuple(sc), tab if hasattr(tab, "at_digits") else list(tab)))
+        self.tables = new
+        self.msg = {}
+        self.root_total = {}
+        self._belief = {}
+        return self
 
     def _tick(self, k):
         self._visited += 1
@@ -344,7 +366,12 @@ class DenseJT:
         return keep, out
 
     def _note_live(self):
-        e = sum(len(t) for _sc, t in self.msg.values())
+        sz = getattr(self.alg, "size", None)
+        if sz is None:
+            e = sum(len(t) for _sc, t in self.msg.values())
+        else:
+            e = sum(sum(sz(x) for x in t if not self.alg.is_zero(x))
+                    for _sc, t in self.msg.values())
         if e > self.peak_live_entries:
             self.peak_live_entries = e
 
@@ -388,6 +415,7 @@ class DenseJT:
             if A.is_zero(t):
                 return None
             Z = A.mul(Z, t)
+            A.check(Z, self.bit_cap)      # the final component product too
         return Z
 
     def component_root(self, var):
@@ -400,10 +428,16 @@ class DenseJT:
         return self.root_total[self.component_root(var)]
 
     def marginal(self, var):
-        """Calibrated single-variable table: list over var's states."""
+        """Calibrated single-variable table: list over var's states. The home
+        bag's belief is computed once and shared by its home variables."""
         A = self.alg
         bidx = self.plan.var_home[var]
-        bvars, bcard, bst, vals = self._product_table(bidx, None)
+        cache = getattr(self, "_belief", None)
+        if cache is None:
+            cache = self._belief = {}
+        if bidx not in cache:
+            cache[bidx] = self._product_table(bidx, None)
+        bvars, bcard, bst, vals = cache[bidx]
         keep, out = self._sum_to(bvars, bcard, bst, vals, (var,))
         if self.stat_insert is not None:
             out = [A.shift(x, self.stat_insert[var][a]) if not A.is_zero(x) else x

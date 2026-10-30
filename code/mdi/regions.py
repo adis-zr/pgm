@@ -44,8 +44,12 @@ def _interaction_variation(f) -> Fr:
     """A certified scalar summarizing a pair factor's response variation:
     max/min over positive entries, or 0 when a zero is present (handled
     separately). Used only to ORDER candidates, never to certify."""
-    pos = [t for t in f.table if t > 0]
-    if not pos or len(pos) != len(f.table):
+    tab = f.table
+    if not isinstance(tab, list):
+        # a projected view is not enumerated for an ordering heuristic
+        return Fr(0)
+    pos = [t for t in tab if t > 0]
+    if not pos or len(pos) != len(tab):
         return Fr(0)
     return max(pos) / min(pos)
 
@@ -344,6 +348,13 @@ def crossing_profile(f, region_vars, card):
     nout = 1
     for c in ocards:
         nout *= c
+    nin = 1
+    for c in icards:
+        nin *= c
+    if nin * nout > K.CAPS["profile_entry_comparisons"]:
+        raise CapExceeded("a response profile of %d entries exceeds the declared "
+                          "comparison budget; this region is refused for its "
+                          "actual proof cost" % (nin * nout))
     tbl = {}
     for icombo in itertools.product(*[range(c) for c in icards]):
         row = []

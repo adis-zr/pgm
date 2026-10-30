@@ -86,8 +86,16 @@ def _mk_deadline(t_end, cap_bytes, baseline=None,
 
 def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
           deadline_s=600.0, p_min=64, progress=None, run_checker=True,
-          plan_bytes_per_entry=None, preprocess=True):
-    """Compute every singleton marginal under `evidence` with certified intervals."""
+          plan_bytes_per_entry=None, preprocess=True, program=None):
+    """Compute every singleton marginal under `evidence` with certified intervals.
+
+    `program` (optional) is a PERSISTED identity program: {"order": [...],
+    "precision": p, "emin": e, "emax": E}. When given, the elimination order
+    and the arithmetic settings are TAKEN FROM IT -- planning and precision
+    selection are not rerun -- and the plan built from that order must
+    validate against the preprocessed factors; a program that does not
+    describe a runnable schedule is a typed refusal.
+    """
     t0 = time.time()
     stages = {}
     prog = progress or (lambda *a, **k: None)
@@ -164,7 +172,27 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     # ---------- stage: planning ----------
     ts = time.time()
     bpe = plan_bytes_per_entry or (64 if mode == "P" else 128)
-    sel = P.choose_plan(r.free, r.card, r.factors, bpe, cap_bytes)
+    if program is not None:
+        # the persisted program GOVERNS: build the recorded order, validate it
+        order = [int(x) for x in program["order"]]
+        if sorted(order) != sorted(r.free):
+            out.update({"outcome": "NUMERICAL_REFUSAL",
+                        "reason": "the persisted identity order does not name the "
+                                  "preprocessed free variables",
+                        "elapsed_s": time.time() - t0})
+            return out
+        try:
+            pl = P.build_plan("program", order, r.free, r.card, r.factors)
+        except P.PlanError as e:
+            out.update({"outcome": "NUMERICAL_REFUSAL",
+                        "reason": "the persisted identity order is not a valid "
+                                  "schedule: %s" % e, "elapsed_s": time.time() - t0})
+            return out
+        est = P.byte_estimate(pl, bpe)
+        sel = {"chosen": (pl, est), "candidates": [(pl.stats(), est)],
+               "fits": est["estimate_bytes"] <= cap_bytes}
+    else:
+        sel = P.choose_plan(r.free, r.card, r.factors, bpe, cap_bytes)
     stages["planning_s"] = time.time() - ts
     out["plan_candidates"] = sel["candidates"]
     if not sel["fits"]:
@@ -206,6 +234,17 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         out.update({"outcome": "NUMERICAL_REFUSAL", "reason": str(e),
                     "elapsed_s": time.time() - t0})
         return out
+    if program is not None:
+        # the recorded precision must be at least what the schedule's depth
+        # bound requires; it is then USED, not rechosen
+        rp = int(program["precision"])
+        if rp < p:
+            out.update({"outcome": "NUMERICAL_REFUSAL",
+                        "reason": "the persisted precision %d is below the %d bits "
+                                  "the schedule's depth bound requires" % (rp, p),
+                        "elapsed_s": time.time() - t0})
+            return out
+        p = rp
     out["precision_bits"] = p
     # exponent range from input-derived bounds
     B, Q, T = _exponent_bounds(r)
@@ -217,10 +256,22 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     guard = 256
     emin = -(B + Q + guard)
     emax = (T + Q + guard)
+    if program is not None and program.get("emin") is not None:
+        # the recorded exponent range must cover the input-derived one
+        if int(program["emin"]) > emin or int(program["emax"]) < emax:
+            out.update({"outcome": "NUMERICAL_REFUSAL",
+                        "reason": "the persisted exponent range [%s, %s] does not "
+                                  "cover the input-derived [%d, %d]"
+                                  % (program["emin"], program["emax"], emin, emax),
+                        "elapsed_s": time.time() - t0})
+            return out
+        emin, emax = int(program["emin"]), int(program["emax"])
     try:
         ctx = A.Ctx(p, emin=emin, emax=emax)
     except Exception:
         ctx = A.Ctx(p)
+    out["program_settings"] = {"order": list(pl.order), "precision": p,
+                               "emin": ctx.emin, "emax": ctx.emax}
     out["mpfr"] = {"version": gmpy2.mpfr_version(), "precision": p,
                    "emin": ctx.emin, "emax": ctx.emax}
     out["memory"] = {"declared_cap_bytes": cap_bytes,

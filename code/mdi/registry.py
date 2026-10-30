@@ -31,15 +31,38 @@ def _identity_checker(model, evidence, iv, eps, deadline_s=None,
 # dispatched object is the thing that actually runs.
 
 def pipeline_identity_executor(ctx):
-    """ctx carries model, evidence, eps, cap_bytes, remaining()."""
+    """Execute the IDENTITY program: the persisted order, precision and
+    exponent range govern; planning is not rerun."""
     from mdi import solve as S
+    prog = ctx.get("program")
+    sub = None
+    if prog is not None:
+        sub = {"order": prog["order"], "precision": prog["precision"],
+               "emin": prog["arithmetic"]["emin"], "emax": prog["arithmetic"]["emax"]}
     res = S.solve(ctx["model"], ctx["evidence"], eps=ctx["eps"], mode="P",
                   cap_bytes=ctx["cap_bytes"],
                   deadline_s=max(0.001, ctx["remaining"]()),
-                  run_checker=False, preprocess=True)
+                  run_checker=False, preprocess=True, program=sub)
     if res["outcome"] != "PRODUCER_COMPLETE_UNCHECKED":
         raise PT.ExecutorRefusal(res["outcome"], res.get("reason", ""))
+    ctx["meta"] = {"evaluator": "identity", "ops": res.get("ops"),
+                   "peak_live_message_entries": res.get("peak_live_message_entries"),
+                   "settings": res.get("program_settings")}
     return res["intervals"]
+
+
+def pipeline_identity_checker(model, evidence, iv, eps, deadline_s=None,
+                              cap_bytes=None, program=None, **kw):
+    """The identity checker the pipeline INVOKES: the standalone independent
+    verifier, whose own schedule strategy (min-fill, interval mode) and
+    precision are what the program declares."""
+    from mdi import solve as S
+    if program is not None and program["checker"]["strategy"] != "min_fill_interval":
+        return False, [{"reason": "the program declares checker strategy %r, which "
+                                  "this checker does not run"
+                                  % program["checker"]["strategy"]}], None
+    return S.verify_publication(model, evidence, iv, eps=eps,
+                                deadline_s=deadline_s, cap_bytes=cap_bytes)
 
 
 def pipeline_program_executor(ctx):
@@ -57,7 +80,8 @@ def pipeline_program_executor(ctx):
     try:
         rows, meta = RT.execute(prog, ctx["restricted"], ctx["queries"],
                                 deadline=bg.deadline_fn("execute:" + prog["kind"]),
-                                budget=bg)
+                                budget=bg, num_eps=ctx.get("eps"),
+                                progress=ctx.get("progress"))
     except B.BudgetExceeded:
         raise
     except Exception as e:
@@ -82,8 +106,13 @@ def _program_checker(restricted, queries, program, published, eps, **kw):
 
 
 PT.register_pipeline_executor("identity", pipeline_identity_executor)
-for _k in ("regional", "composed", "statistic", "gaussian", "fourier"):
+for _k in ("regional", "composed", "statistic", "gaussian", "fourier", "mixed"):
     PT.register_pipeline_executor(_k, pipeline_program_executor)
+
+# the checkers the pipeline invokes, by kind
+PIPELINE_CHECKERS = {"identity": pipeline_identity_checker}
+for _k in ("regional", "composed", "statistic", "gaussian", "fourier", "mixed"):
+    PIPELINE_CHECKERS[_k] = _program_checker
 
 # ---- what exists ----
 PT.register_executor("identity", _identity_executor)
@@ -93,7 +122,7 @@ PT.register_checker("identity", _identity_checker)
 # the program checker against the original model (routes.py,
 # program_check.py). The former per-kind adapters (coarse.py executor,
 # collective.py point evaluators, composed.py) are no longer on any path.
-for _k in ("regional", "composed", "statistic", "gaussian", "fourier"):
+for _k in ("regional", "composed", "statistic", "gaussian", "fourier", "mixed"):
     PT.register_executor(_k, _program_executor)
     PT.register_checker(_k, _program_checker)
 
