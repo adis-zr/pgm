@@ -41,6 +41,10 @@ class CostRecord:
     bytes_checker: Counter | None = None
     eligible: bool = True
     ineligible_reason: str = ""
+    # feasibility at the checking standard actually promised: per engine,
+    # FEASIBLE / *_CAP_PROVED (full positive support proves the cap excess) /
+    # *_FEASIBILITY_UNKNOWN (hard zeros leave the sparse occupancy unknown)
+    feasibility: dict = field(default_factory=lambda: {"producer": "FEASIBLE", "checker": "FEASIBLE"})
 
     def put(self, key, value, label, note=""):
         self.counters[key] = Counter(value, label, note)
@@ -110,6 +114,11 @@ class CostRecord:
                                                "loaded program; sunk discovery separate"}
         st, sl = self.sunk_arithmetic()
         d["sunk_arithmetic"] = {"value": st, "label": sl}
+        d["feasibility"] = dict(self.feasibility)
+        d["labels"] = {"exact_structural_counts": sorted(k for k, c in self.counters.items() if c.label == EXACT),
+                       "safe_bounds": sorted(k for k, c in self.counters.items() if c.label == UPPER),
+                       "heuristic_prices": sorted(k for k, c in self.counters.items() if c.label == FORECAST),
+                       "work_already_spent": sorted(k for k, c in self.counters.items() if c.label == CALIB)}
         if self.bytes_producer:
             d["bytes_producer"] = self.bytes_producer.as_dict()
         if self.bytes_checker:
@@ -883,6 +892,10 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
         rec.eligible = False
         rec.ineligible_reason = ("the producer's schedule exceeds a declared cap "
                                  "on this program: %s" % e)
+        has_zero = any((not FX.is_view(f)) and any(Fr(x) == 0 for x in f.table) for f in law)
+        rec.feasibility["producer"] = ("PRODUCER_FEASIBILITY_UNKNOWN" if has_zero else "PRODUCER_CAP_PROVED")
+        rec.feasibility["producer_reason"] = str(e)[:160]
+        rec.feasibility["checker"] = "NOT_EVALUATED"
         return rec, None
     extra_pos = 0
     extra_pos_c = 0
@@ -930,6 +943,13 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
         c_live = c_largest = 0
         ent_dense = None
         rec.put("checker_schedule_note", 0, EXACT, "dense schedule refused: %s" % e)
+        # FEASIBILITY at the checking standard: the dense dry run shaped every
+        # table as FULLY supported. If the law has no hard zero, that shape IS
+        # the checker's table and the cap excess is PROVED; with hard zeros the
+        # sparse occupancy is unknown and the refusal is a bound, not a proof
+        has_zero = any((not FX.is_view(f)) and any(Fr(x) == 0 for x in f.table) for f in law)
+        rec.feasibility["checker"] = ("CHECKER_FEASIBILITY_UNKNOWN" if has_zero else "CHECKER_CAP_PROVED")
+        rec.feasibility["checker_reason"] = str(e)[:160]
     rec.put("pricing_probe_entries", probe_used["n"], CALIB,
             "metered entries visited by this candidate's pricing probes (charged "
             "to the shared pricing counter, not the execution meter)")
@@ -1007,6 +1027,12 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
     # ---- the checker
     if c_ops is None:
         rec.put("checker_ops", None, UNKNOWN, "no dense schedule")
+        if rec.eligible:
+            rec.eligible = False
+            rec.ineligible_reason = ("the independent checker's schedule is not feasible at the "
+                                     "promised checking standard (%s): an interval-only or "
+                                     "unchecked route cannot win a fully checked comparison"
+                                     % rec.feasibility.get("checker"))
     else:
         chk_local = 0
         for sc in scales:

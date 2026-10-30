@@ -228,6 +228,7 @@ class DenseJT:
         self.deadline = deadline
         self.charge = charge          # charge(n) every 64 entries visited
         self._visited = 0
+        self._charged = 0
         self.entry_cap = entry_cap or K.CAPS["local_mass_entries"]
         self.bit_cap = bit_cap or K.CAPS["rational_bit_length"]
         self.stat_insert = stat_insert
@@ -280,10 +281,16 @@ class DenseJT:
 
     def _tick(self, k):
         self._visited += 1
-        if self.charge is not None and (self._visited & 0x3F) == 0:
-            self.charge(64)
+        if self.charge is not None and self._visited - self._charged >= 64:
+            self.charge(self._visited - self._charged)
+            self._charged = self._visited
         if self.deadline is not None and (k & 0xFF) == 0:
             self.deadline()
+
+    def flush_charge(self):
+        if self.charge is not None and self._visited > self._charged:
+            self.charge(self._visited - self._charged)
+            self._charged = self._visited
 
     def _product_table(self, bidx, exclude):
         """Dense product over the bag of owned tables and incoming messages
@@ -422,6 +429,7 @@ class DenseJT:
                         self.msg[(x, c)] = (keep, out)
                         self._note_live()
                         stack.append(c)
+        self.flush_charge()
         return self
 
     def total(self):
@@ -459,6 +467,7 @@ class DenseJT:
         if self.stat_insert is not None:
             out = [A.shift(x, self.stat_insert[var][a]) if not A.is_zero(x) else x
                    for a, x in enumerate(out)]
+        self.flush_charge()
         return out
 
 

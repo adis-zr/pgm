@@ -157,18 +157,19 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     out["zeros_after_evidence"] = sum(1 for f in r.factors for t in f.table
                                       if t == 0)
 
-    # an all-zero restricted factor proves zero evidence weight immediately
-    if r.impossible_factor is not None:
-        out.update({"outcome": "ZERO_EVIDENCE_PROVED",
-                    "reason": "restricted factor %d is identically zero" % r.impossible_factor,
-                    "elapsed_s": time.time() - t0})
-        return out
-    if r.constant == 0:
-        out.update({"outcome": "ZERO_EVIDENCE_PROVED",
-                    "reason": "a fully pinned factor evaluates to exactly zero",
+    # a zero-evidence claim from the restriction passes through the common
+    # original-model proof (the named factor re-derived from the original
+    # tables at the evidence); an unproved claim is a refusal, not a terminal
+    if r.impossible_factor is not None or r.constant == 0:
+        from mdi import pipeline as _PLN
+        proof = _PLN.zero_evidence_proof(model, evidence, r)
+        out.update({"outcome": "ZERO_EVIDENCE_PROVED" if proof.get("proved") else "NUMERICAL_REFUSAL",
+                    "reason": proof["reason"], "checker": proof,
                     "elapsed_s": time.time() - t0})
         return out
 
+    from mdi.guard import numerical_entry
+    numerical_entry("solve.solve:identity-producer")
     # ---------- stage: planning ----------
     ts = time.time()
     bpe = plan_bytes_per_entry or (64 if mode == "P" else 128)
@@ -1088,6 +1089,8 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
     to a 300-second horizon and a 2 GiB cap, so identity checking ran outside
     the caller's budget entirely: an 80 ms checker under a 20 ms complete
     deadline still certified."""
+    from mdi.guard import numerical_entry
+    numerical_entry('solve.verify_publication:identity-checker')
     schema = validate_output_schema(model, evidence, iv, eps)
     if schema:
         return False, [{"reason": "output schema invalid",

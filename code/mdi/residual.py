@@ -36,7 +36,7 @@ class Canonical:
 
 
 def canonicalize(residual_unary, residual_pairs, card, ctx: A.Ctx,
-                 drop_budget: Fr, protected=None):
+                 drop_budget: Fr, protected=None, strict_mask=None):
     """Turn a fitted residual into a product law where the error permits.
 
     `drop_budget` is the uniform log-error still available from the single
@@ -49,6 +49,14 @@ def canonicalize(residual_unary, residual_pairs, card, ctx: A.Ctx,
     nu_extra = Fr(0)
     budget = Fr(drop_budget)
     protected = {(min(a, b), max(a, b)) for a, b in (protected or ())}
+    # STRICT mask: the residual retains ONLY the positive pair interactions the
+    # mask allows; every other positive pair is gauge-transferred exactly
+    # (rank-one part into the unaries) and its interaction part is REMOVED
+    # with its certified log discrepancy charged, whatever the budget says --
+    # if the total exceeds the budget the strict representation DECLINES
+    strict = None if strict_mask is None else {(min(a, b), max(a, b)) for a, b in strict_mask}
+    if strict is not None:
+        protected = protected | strict
 
     # --- step 1: exact transfers (zero error) ---
     pending = []
@@ -109,7 +117,12 @@ def canonicalize(residual_unary, residual_pairs, card, ctx: A.Ctx,
     radii.sort(key=lambda x: (x[0], x[1]))
 
     for worst, (i, j), g in radii:
+        forced = strict is not None and (min(i, j), max(i, j)) not in strict
         if nu_extra + worst > budget:
+            if forced:
+                raise Declined("strict mask: removing the interaction of pair (%d, %d) needs "
+                               "log radius %s but only %s of the fit budget remains"
+                               % (i, j, worst, budget - nu_extra))
             kept[(i, j)] = [Fr(x) for x in residual_pairs[(i, j)]]
             continue
         # drop H, keep C*u*v exactly
@@ -122,10 +135,16 @@ def canonicalize(residual_unary, residual_pairs, card, ctx: A.Ctx,
         nu_extra += worst
         dropped.append((i, j, worst))
 
+    if strict is not None:
+        bad = [k for k in kept if (min(k), max(k)) not in strict
+               and any(x <= 0 for x in kept[k]) is False]
+        if bad:
+            raise Declined("strict mask: pairs %s remain interacting outside the mask" % bad[:4])
     detail = {"pairs_in": len(residual_pairs),
               "transferred_exactly": len(transferred),
               "dropped_with_charge": len(dropped),
               "kept_interacting": len(kept),
+              "strict_mask": (sorted(strict) if strict is not None else None),
               "nu_extra": str(nu_extra),
               "drop_budget": str(budget),
               "worst_single_radius": str(max((r for r, _, _ in radii), default=Fr(0)))}

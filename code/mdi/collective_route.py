@@ -18,6 +18,7 @@ from __future__ import annotations
 import sys
 sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
+from mdi import budget as B
 from mdi import (model as M, config as K, modes as MD, residual as RS,
                  collective as CO, marked as MK, arith as A, factors as FX)
 
@@ -389,7 +390,7 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
     except FX.ViewError as e:
         raise Declined("the collective recognizer needs bounded explicit "
                        "tables: %s" % e)
-    cands, info = MD.propose_modes(free, law, marked.card)
+    cands, info = MD.propose_modes(free, law, marked.card, deadline=deadline)
     if not cands:
         raise Declined("no collective mode recognized from the factor tables: %s"
                        % info.get("declined", info))
@@ -405,7 +406,9 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
             deadline()
         try:
             res = MD.build_residual(free, law, marked.card, cand, ctx,
-                                    round_bits=ROUND_BITS)
+                                    round_bits=ROUND_BITS, deadline=deadline)
+        except B.BudgetExceeded:
+            raise
         except Exception as e:
             errors.append("%s: residual declined: %s" % (cand.kind, e))
             continue
@@ -416,8 +419,13 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
         drop_budget = 2 * (allow - fit_tv0)
         # the DECLARED mask: those pairs are retained exactly in the residual
         # that is built and priced (never dropped or transferred)
-        can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx, drop_budget,
-                              protected=set(getattr(cand, "masked", None) or []))
+        try:
+            can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx, drop_budget,
+                                  protected=set(getattr(cand, "masked", None) or []),
+                                  strict_mask=(set(cand.masked) if getattr(cand, "strict", False) else None))
+        except RS.Declined as e:
+            errors.append("%s: %s" % (cand.kind, e))
+            continue
         kept = list(res.kept)
         rmk = _residual_marked(marked, res, can, kept)
         try:
@@ -486,7 +494,7 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
     if not out:
         raise Declined("every recognized mode declined: " + "; ".join(errors[:6]))
     for rec, _ in out:
-        rec["declines"] = errors[:8]
+        rec["declines"] = errors[:200]
     return out
 
 
@@ -522,6 +530,7 @@ def canonical_identity(coll, scales_key=(), executable=None):
            "kept": sorted(int(x) for x in coll["kept_factors"]),
            "dropped": sorted([int(a), int(b)] for a, b in coll["dropped_pairs"]),
            "masked": sorted([int(a), int(b)] for a, b in (getattr(cand, "masked", None) or [])),
+           "strict": bool(getattr(cand, "strict", False)),
            "scales": list(scales_key)}
     # EXECUTABLE features: the statistic DP runs on the integer statistics
     # k = round_half_up(f Q), which are NOT invariant under f -> -f at a tie,
@@ -566,7 +575,8 @@ def rebuild_residual(marked: MK.Marked, coll, ctx: A.Ctx):
                             round_bits=coll["round_bits"])
     can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx,
                           Fr(coll["drop_budget"]),
-                          protected=set(getattr(cand, "masked", None) or []))
+                          protected=set(getattr(cand, "masked", None) or []),
+                          strict_mask=(set(cand.masked) if getattr(cand, "strict", False) else None))
     for pr in (getattr(cand, "masked", None) or []):
         if tuple(pr) not in can.kept_pairs and (pr[0], pr[1]) in res.pairs:
             raise Declined("the declared mask pair %s is not retained in the residual" % (pr,))

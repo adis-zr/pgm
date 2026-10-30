@@ -715,6 +715,8 @@ def evaluate(marked, coll, ctx, engine="sparse", deadline=None, order=None,
              charge=None, num_eps=None, stop_early=True, only_nodes=None):
     """Run the evaluator named by a parsed collective record on the marked
     residual. Returns ((Zlo, Zhi), counts, meta)."""
+    from mdi.guard import numerical_entry
+    numerical_entry("collective_jt.evaluate")
     cand = coll["candidate"]
     ev = coll["evaluator"]
     if ev == "statistic":

@@ -31,11 +31,21 @@ class Budget:
     quietly proceed past one.
     """
 
-    def __init__(self, wall_s, limits=None, rss_fn=None, rss_limit=None):
+    # phases that share one cumulative time allowance: discovery and the
+    # construction work repeated while persisting / repricing count against
+    # the SAME 30 s; independent local certificate checking has its own 30 s
+    PHASE_GROUPS = {"discover": "construction", "persist": "construction",
+                    "check_local": "check_local"}
+    PHASE_LIMITS = {"construction": 30.0, "check_local": 30.0}
+
+    def __init__(self, wall_s, limits=None, rss_fn=None, rss_limit=None, phase_limits=None):
         self.progress = None          # progress(phase, info), set by the owner
         self.t0 = time.monotonic()
         self.wall_s = float(wall_s)
         self.limits = dict(limits or {})
+        self.phase_limits = dict(self.PHASE_LIMITS if phase_limits is None else phase_limits)
+        self.phase_time = {}          # group -> seconds accumulated in completed phases
+        self.phase_t0 = self.t0
         self.used = {}
         self.rss_fn = rss_fn
         self.rss_limit = rss_limit
@@ -70,6 +80,14 @@ class Budget:
                                "limit": self.wall_s, "where": where or self.phase})
             raise BudgetExceeded("wall", round(el, 3), self.wall_s,
                                  where or self.phase)
+        grp = self.PHASE_GROUPS.get(self.phase)
+        if grp is not None and grp in self.phase_limits:
+            pused = self.phase_time.get(grp, 0.0) + (time.monotonic() - self.phase_t0)
+            if pused > self.phase_limits[grp]:
+                self.stops.append({"kind": "phase:" + grp, "used": round(pused, 3),
+                                   "limit": self.phase_limits[grp], "where": where or self.phase})
+                raise BudgetExceeded("phase:" + grp, round(pused, 3), self.phase_limits[grp],
+                                     where or self.phase)
         if self.rss_fn is not None and self.rss_limit:
             cur = self.rss_fn()
             if cur > self.peak_rss:
@@ -124,8 +142,22 @@ class Budget:
         self.check("enter:" + phase)
 
     def _enter_raw(self, phase):
+        now = time.monotonic()
+        grp = self.PHASE_GROUPS.get(self.phase)
+        if grp is not None:
+            self.phase_time[grp] = self.phase_time.get(grp, 0.0) + (now - self.phase_t0)
         self.phase = phase
+        self.phase_t0 = now
         return self
+
+    def phase_used(self, group):
+        """Seconds consumed by a phase group so far (completed + current)."""
+        cur = (time.monotonic() - self.phase_t0) if self.PHASE_GROUPS.get(self.phase) == group else 0.0
+        return self.phase_time.get(group, 0.0) + cur
+
+    def phase_exhausted(self, group):
+        lim = self.phase_limits.get(group)
+        return lim is not None and self.phase_used(group) > lim
 
     def deadline_fn(self, where=""):
         """A zero-argument callable for the inner loops."""
@@ -138,6 +170,8 @@ class Budget:
                 "remaining_s": round(self.remaining(), 3),
                 "used": dict(self.used), "limits": dict(self.limits),
                 "phases": list(self.phases),
+                "phase_limits": dict(self.phase_limits),
+                "phase_used_s": {g: round(self.phase_used(g), 3) for g in self.phase_limits},
                 "peak_rss": self.peak_rss, "rss_limit": self.rss_limit,
                 "stops": list(self.stops), "checks": self._checks,
                 "note": "one monotonic deadline and shared counters across "

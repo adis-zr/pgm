@@ -399,6 +399,7 @@ class SparseJT:
         self.deadline = deadline
         self.charge = charge          # charge(n) every 64 built entries
         self.ops = {"mul": 0, "add": 0, "entries_built": 0}
+        self._charged = 0
         self.peak_live_entries = 0
         self.free = sorted({v for t in self.tables for v in t.scope})
         for t in self.tables:
@@ -496,8 +497,9 @@ class SparseJT:
     def _tick(self):
         self.ops["entries_built"] += 1
         n = self.ops["entries_built"]
-        if self.charge is not None and (n & 0x3F) == 0:
-            self.charge(64)
+        if self.charge is not None and n - self._charged >= 64:
+            self.charge(n - self._charged)
+            self._charged = n
         if self.deadline is not None and (n & 0xFF) == 0:
             self.deadline()
 
@@ -790,7 +792,16 @@ class SparseJT:
                     for c in self.bags[x]["children"]:
                         self._send_down(x, c, stat_insert)
                         stack.append(c)
+        self.flush_charge()
         return self
+
+    def flush_charge(self):
+        """Charge the PARTIAL batch (< 64 entries) that the block rule has not
+        yet charged, so every built entry reaches the shared meter."""
+        n = self.ops["entries_built"]
+        if self.charge is not None and n > self._charged:
+            self.charge(n - self._charged)
+            self._charged = n
 
     def component_of(self, var):
         b = self.home[var]
@@ -840,6 +851,7 @@ class SparseJT:
         acc = self._sum_out(acc, [v for v in b["vars"] if v != var], si)
         if si is not None and var in acc.scope:
             acc = self.insert_statistic(acc, var, si[var])
+        self.flush_charge()
         return acc
 
     def _marginal_unshared(self, var) -> Table:

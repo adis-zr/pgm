@@ -1,0 +1,29 @@
+{
+ "note": "the overseer packet's verifier/ files were not available on this machine; these are the build's regenerated records for the named fixtures (r17 triangle model under the r18 frozen grids; both r18 chain mixed records; one altered chain record with coherent outer counters), labelled as such",
+ "records": {
+  "r17_triangle_block_combined.plan.json": {
+   "model": "r17_triangle.uai",
+   "eligible": true,
+   "identity": "mixed-reqce758879-bab407eb28674b48"
+  },
+  "r17_triangle_lowrank_combined.plan.json": {
+   "model": "r17_triangle.uai",
+   "eligible": true,
+   "identity": "mixed-reqce758879-d2db987054042fb9"
+  },
+  "r18_chain_block_combined.plan.json": {
+   "model": "r18_chain.uai",
+   "eligible": true,
+   "identity": "mixed-req716a7146-7f3fd97d66ce174d"
+  },
+  "r18_chain_lowrank_combined.plan.json": {
+   "model": "r18_chain.uai",
+   "eligible": true,
+   "identity": "mixed-req716a7146-41f49dde70c0be6b"
+  },
+  "r18_chain_lowrank_combined_tailfault_coherent.plan.json": {
+   "model": "r18_chain.uai",
+   "fault": "negative GF2 grid reach shortened by one step (J-1); counters re-derived so binding passes; only the checker's own GF2 admissibility can refuse"
+  }
+ }
+}

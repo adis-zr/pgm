@@ -281,6 +281,8 @@ def execute(prog, r, queries, deadline=None, budget=None, engine="sparse",
     """Run a PARSED program on the restricted model. Returns
     (rows {orig var: [(lo, hi)] of exact enclosures of the REPRESENTED law's
     marginals}, meta). The caller widens by the recorded allocations."""
+    from mdi.guard import numerical_entry
+    numerical_entry("routes.execute")
     marked = MK.Marked.from_restricted(r, set(queries))
     for sc in prog["scales"]:
         marked = lift_from_record(marked, sc, deadline=deadline, budget=budget)

@@ -103,7 +103,9 @@ def test_persisted_program_governs_execution_in_a_fresh_process():
     # (b) with the identity re-derived (as any producer of the altered record
     #     could do), the record BINDS and ONLY the checker's independent
     #     recomputation rejects it, on the named obligation
-    bad["storage_schedule"]["identity"] = PLN.executable_identity("regional", bad["program"])
+    mh, eh, qh = PLN.model_hashes(m, {}, set(M.restrict(m, {}).free))
+    bad["storage_schedule"]["identity"] = PLN.executable_identity("regional", bad["program"],
+                                                                  request=(mh, eh, qh, K.MAX_WIDTH))
     json.dump(bad, open(p2, "w"))
     altered = replay(p2)
     assert altered["status"] == "REPLAY_REJECTED", altered["status"]

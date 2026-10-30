@@ -27,6 +27,9 @@ class PipelineError(ValueError):
     pass
 
 
+from mdi.guard import GuardViolation, numerical_entry      # noqa: E402
+
+
 def _sha(obj) -> str:
     return hashlib.sha256(repr(obj).encode()).hexdigest()
 
@@ -60,8 +63,12 @@ class Outcome:
 
 def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
           cap_bytes=None, research_enabled=True, plan_dir=None,
-          progress=None):
-    """The single public entry point."""
+          progress=None, plan_only=False, phase_limits=None):
+    """The single public entry point. `plan_only=True` is the bounded planning
+    observation: the SAME code runs discovery, persisted binding, pricing and
+    selection, then stops with an explicit terminal record and never enters an
+    executor or checker (the numerical guard is installed for the run)."""
+    from mdi import guard as GD
     evidence = dict(evidence or {})
     eps = Fr(max_width if max_width is not None else K.MAX_WIDTH)
     cap_bytes = cap_bytes or K.RESOURCES["arm_rss_bytes"]
@@ -69,8 +76,20 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     bg = B.Budget(wall_s=wall_s,
                   limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
                           "local_mass_entries": K.CAPS["local_mass_entries"]},
-                  rss_fn=S._rss_bytes, rss_limit=cap_bytes)
+                  rss_fn=S._rss_bytes, rss_limit=cap_bytes, phase_limits=phase_limits)
     bg.progress = prog
+    if plan_only:
+        GD.install(True)
+    try:
+        return _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled,
+                      plan_dir, prog, bg, plan_only)
+    finally:
+        if plan_only:
+            GD.install(False)
+
+
+def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, plan_dir,
+           prog, bg, plan_only):
     stages = {}
     # `rejected` is referenced by every stage's RESOURCE_STOP path, so it must
     # exist before the first stage can fail. An expired preprocessing deadline
@@ -139,12 +158,19 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
 
     if not r0.free:
         # EVERY variable is observed: there is no free marginal to compute.
-        # The evidence weight is the exact product of the pinned factor
-        # values, already proved positive above, and the publication is the
-        # exact restoration of the evidence. Nothing numerical ran, so the
-        # certificate is the exact constant itself.
+        # The positive evidence weight is RE-DERIVED from the original factor
+        # tables at the evidence (the same original-model proof every
+        # terminal passes through); the publication restores the evidence
+        pf = positive_evidence_proof(model, evidence)
+        if not pf.get("proved"):
+            return Outcome(status="NUMERICAL_REFUSAL",
+                           reason="fully pinned request: %s" % pf["reason"],
+                           stages=stages, budget=bg.report(), checker=pf)
         pub = {v: [(Fr(1), Fr(1)) if s == st else (Fr(0), Fr(0))
                    for s in range(model.card[v])] for v, st in evidence.items()}
+        bad = response_schema_violation(pub, model, evidence, set())
+        if bad:
+            return Outcome(status="NUMERICAL_REFUSAL", reason=bad, stages=stages, budget=bg.report())
         return Outcome(status="CERTIFIED_FALLBACK_ONLY",
                        reason="every variable is observed; the evidence weight "
                               "is the exact pinned constant %s > 0 and the "
@@ -155,9 +181,9 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                             "why": "no free variable"},
                        stages=stages, budget=bg.report(),
                        checker={"status": "VERIFIED",
-                                "method": "exact pinned constant; no free "
-                                          "variable, no contraction",
-                                "independent_aggregation_checked": True})
+                                "method": "exact pinned constant re-derived from the original "
+                                          "factor tables; no free variable, no contraction",
+                                "independent_aggregation_checked": True, **pf})
     mh, eh, qh = model_hashes(model, evidence, queries)
 
     # ---------------- stage 2: common exact preprocessing ----------------
@@ -262,7 +288,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             numerical={"precision": _p, "mode": "P", "emin": _emin, "emax": _emax},
             cost_counters={k: c.as_dict() for k, c in iprice.counters.items()},
             storage_schedule={"peak_live_entries": iest["peak_live_entries"],
-                              "identity": executable_identity("identity", iprog)},
+                              "identity": executable_identity("identity", iprog, request=(mh, eh, qh, eps))},
             rejected_alternatives=[], properties=iprops, program=iprog)
         irec.identity_key = irec.storage_schedule["identity"]
         records.append((irec, iprice, {"plan": ipl, "est": iest}))
@@ -274,12 +300,29 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     # record, the final elimination order. Execution and checking later read
     # the program back from disk and reconstruct everything from the original
     # model; the live objects built here are not passed to them.
+    _discovery_complete = True
     if research_enabled:
         _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s,
-                           records, prices, rejected, cap_bytes)
+                           records, prices, rejected, cap_bytes, eps=eps)
+        for x in rejected:
+            x.setdefault("phase", "discover")
+            x.setdefault("typed", "CANDIDATE_REFUSAL")
         _shared_exhausted = getattr(_discover_programs, "_shared", None)
+        _phase_stop = getattr(_discover_programs, "_phase_stop", None)
+        if _phase_stop is not None:
+            _discover_programs._phase_stop = None
+            _discovery_complete = False
+            rejected.append({"name": "discovery", "phase": "discover",
+                             "reason": "discovery stopped: %s; %d completed plan(s) preserved, "
+                                       "no new candidate started" % (_phase_stop, len(records)),
+                             "typed": "PHASE_TIMEOUT"})
+            if _shared_exhausted is _phase_stop:
+                _shared_exhausted = None
         if _shared_exhausted is not None:
             _discover_programs._shared = None
+    else:
+        rejected.append({"name": "research", "reason": "research routes disabled for this arm (baseline)",
+                         "typed": "DISABLED"})
     stages["discover_s"] = time.monotonic() - t
     if _shared_exhausted is not None:
         # a consumed SHARED work counter stops the invocation; it is not a
@@ -298,8 +341,13 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        budget=bg.report())
 
     # ---------------- stage 4: persist, reload, validate ----------------
+    # the identity record binds OUTSIDE the construction allowance (its price
+    # rebuilds no lifted model and no residual); every research record's
+    # repricing is construction work repeated and counts against the SAME
+    # 30 s as discovery -- when that allowance is spent, the record is
+    # recorded as a typed timeout and the fallback still binds
     try:
-        bg.enter("persist")
+        bg.enter("bind_identity")
     except B.BudgetExceeded as e:
         return Outcome(status="RESOURCE_STOP", reason=str(e),
                        prices=out.prices, rejected=rejected, stages=stages,
@@ -318,8 +366,31 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
         # it represents), so two candidates on one partition never overwrite
         ident = (rec.storage_schedule or {}).get("identity") or rec.name.replace(":", "_")
         path = os.path.join(plan_dir, "%s.plan.json" % ident)
+        if rec.kind != "identity":
+            bg._enter_raw("persist")
+            if bg.phase_exhausted("construction"):
+                rejected.append({"name": rec.name, "typed": "PHASE_TIMEOUT", "phase": "persist",
+                                 "reason": "not repriced: the discovery / local-construction allowance "
+                                           "(%.0f s) is spent; the completed plan is preserved on disk"
+                                           % bg.phase_limits.get("construction", 0)})
+                try:
+                    with open(path, "w") as fh:
+                        fh.write(rec.to_json())
+                except OSError:
+                    pass
+                bg._enter_raw("bind_identity")
+                continue
+        else:
+            bg._enter_raw("bind_identity")
         try:
             txt = rec.to_json()
+            if os.path.exists(path):
+                with open(path, "r") as fh:
+                    prior = fh.read()
+                if prior != txt:
+                    raise PT.PlanError("a completed program already occupies %s and this executable "
+                                       "differs; a different executable never overwrites a "
+                                       "completed program" % os.path.basename(path))
             with open(path, "w") as fh:
                 fh.write(txt)
             # read the bytes BACK from the filesystem
@@ -337,13 +408,17 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             # DISCARD discovery's live payload and price: from here on the
             # loaded record is the only input, bound at the ONE boundary
             rprice = bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes,
-                                 bg=bg)
+                                 bg=bg, eps=eps)
         except (PT.PlanError, ValueError, OSError) as e:
             rejected.append({"name": rec.name,
                              "reason": "plan record failed persist/reload/binding: %s"
                                        % e})
             continue
         except B.BudgetExceeded as e:
+            if isinstance(getattr(e, "kind", None), str) and e.kind.startswith("phase:"):
+                rejected.append({"name": rec.name, "typed": "PHASE_TIMEOUT",
+                                 "reason": "repricing stopped by the construction allowance: %s" % e})
+                continue
             return Outcome(status="RESOURCE_STOP",
                            reason="the shared budget was exhausted while re-pricing "
                                   "loaded programs: %s" % e,
@@ -351,6 +426,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
         back.source_path = path
         reloaded.append((back, rprice, None))
     del records
+    bg._enter_raw("bind_identity")
     stages["persist_s"] = time.monotonic() - t
     if not reloaded:
         return Outcome(status="RESOURCE_STOP",
@@ -408,8 +484,29 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                        or x["admission_refusal"]})
     out.plan = {"chosen": chosen_name, "kind": crec.kind,
                 "why": cmp["rule"],
-                "properties": crec.properties.as_dict()}
+                "properties": crec.properties.as_dict(),
+                "identity": getattr(crec, "identity_key", None),
+                "discovery_complete": _discovery_complete}
     prog("select", "%s (%s)" % (chosen_name, crec.kind))
+    if plan_only:
+        # the GENUINE stop of the planning observation: discovery, persisted
+        # binding, pricing and selection ran through the same code; no
+        # executor or checker is entered; the terminal record is explicit
+        out.plan["feasibility"] = {p["name"]: p.get("feasibility") for p in out.prices}
+        out.plan["complete_cost"] = _complete_cost(out.prices, rejected, {}, {}, stages)
+        try:
+            bg.check("planning-terminal")
+        except B.BudgetExceeded as e:
+            return Outcome(status="PLANNING_RESOURCE_STOP", reason=str(e), plan=out.plan,
+                           prices=out.prices, rejected=rejected, stages=stages,
+                           budget=bg.report(), preprocess=out.preprocess)
+        return Outcome(status=("PLANNING_COMPLETE" if _discovery_complete else "PLANNING_INCOMPLETE"),
+                       reason=("selection made; no marginal was produced or read"
+                               if _discovery_complete else
+                               "selection made among the candidates completed before the "
+                               "discovery allowance ran out; the search is INCOMPLETE"),
+                       plan=out.plan, prices=out.prices, rejected=rejected, stages=stages,
+                       budget=bg.report(), preprocess=out.preprocess)
 
     # ---------------- stages 6-7: the ONE loaded-object boundary ----------------
     out.plan["executed_kind"] = crec.kind
@@ -472,10 +569,14 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
                 "restricted": r, "queries": queries, "budget": bg,
                 "program": getattr(crec, "parsed_program", None),
                 "progress": prog or (lambda *a, **k: None)}
+        numerical_entry("pipeline.run_loaded:executor")
         raw = _w("execute", lambda: pexec(ectx))
         exec_meta = ectx.get("meta") or {}
     except PT.ExecutorRefusal as e:
         return Outcome(status=e.status, reason=e.reason, prices=out.prices,
+                       rejected=rejected, stages=stages, budget=bg.report())
+    except GuardViolation as e:
+        return Outcome(status="GUARD_VIOLATION", reason=str(e), prices=out.prices,
                        rejected=rejected, stages=stages, budget=bg.report())
     except PT.PlanError as e:
         return Outcome(status="RESOURCE_STOP",
@@ -522,8 +623,11 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
                        prices=out.prices, rejected=rejected, stages=stages, budget=bg.report())
 
     # ---------------- independent check ----------------
+    # the research checker's local certificate checking (own witnesses, own
+    # residual, own reference) runs under the SEPARATE 30 s allowance; the
+    # identity checker is not local certificate checking
     try:
-        bg.enter("check")
+        bg.enter("check_local" if crec.kind != "identity" else "check")
     except B.BudgetExceeded as e:
         return Outcome(status="RESOURCE_STOP", reason=str(e),
                        prices=out.prices, rejected=rejected, stages=stages,
@@ -531,6 +635,7 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
     check_dl = bg.deadline_fn("check")
     t = time.monotonic()
     try:
+        numerical_entry("pipeline.run_loaded:checker")
         if crec.kind == "identity":
             ok, fails, meta = _w("check", lambda: checker(
                 model, evidence, pub, eps, deadline_s=bg.remaining(),
@@ -563,6 +668,17 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
                        reason="checker raised: %s: %s" % (type(e).__name__, e),
                        prices=out.prices, stages=stages, budget=bg.report())
     stages["check_s"] = time.monotonic() - t
+    if ok and crec.kind == "identity":
+        saved_id = {k: Fr(v) for k, v in crec.allocations.items()}
+        if saved_id != {"transformation": Fr(0)}:
+            return Outcome(status="NUMERICAL_REFUSAL",
+                           reason="invalid proof budget: the identity program must save exactly "
+                                  "one zero transformation allowance, not %s"
+                                  % {k: str(v) for k, v in saved_id.items()},
+                           checker={"status": "FAILED"}, prices=out.prices, rejected=rejected,
+                           stages=stages, budget=bg.report(), properties=crec.properties.as_dict())
+        out.plan["ledger"] = {"verified": {"transformation": "0"}, "saved": {"transformation": "0"},
+                              "saved_total": "0", "necessary_expansion": "0"}
     if ok and crec.kind != "identity":
         # the ROUTE-SPECIFIC ERROR LEDGER: the checker's own verified components
         # against the saved allocations (finite, nonnegative, within the frozen
@@ -687,10 +803,17 @@ def ledger_violation(verified, saved, prog):
     for k in range(levels):
         applicable.add("regional_level%d" % (k + 1))
         applicable.add("deletion_level%d" % (k + 1))
+    must_zero = set()
     if coll is not None:
-        applicable |= {"collective_fit", "collective_rounding"}
-        if coll["evaluator"] != "statistic":
-            applicable.add("gaussian_quadrature")
+        applicable |= {"collective_fit", "collective_rounding", "gaussian_quadrature"}
+        # the component the evaluator does not use is SAVED and must be exactly zero
+        must_zero.add("gaussian_quadrature" if coll["evaluator"] == "statistic" else "collective_rounding")
+    for k in must_zero:
+        if saved.get(k, Fr(0)) != 0:
+            return "saved allowance %s = %s is not used by the %s evaluator and must be exactly zero" % (
+                k, saved.get(k), coll["evaluator"])
+        if verified.get(k, Fr(0)) != 0:
+            return "verified component %s = %s is not used by the %s evaluator" % (k, verified.get(k), coll["evaluator"])
     for k, v in saved.items():
         if v < 0:
             return "saved allowance %s is negative (%s)" % (k, v)
@@ -700,8 +823,8 @@ def ledger_violation(verified, saved, prog):
             return "saved allowance %s is not a component of any route" % k
         if v > cap:
             return "saved allowance %s = %s exceeds its frozen cap %s" % (k, v, cap)
-        if k not in applicable and v != 0:
-            return "saved allowance %s = %s is not applicable to this route and is not zero" % (k, v)
+        if k not in applicable:
+            return "saved allowance %s is not applicable to this route" % k
     for k, v in verified.items():
         if v < 0:
             return "verified component %s is negative (%s)" % (k, v)
@@ -714,6 +837,12 @@ def ledger_violation(verified, saved, prog):
     for k in applicable:
         if k not in saved:
             return "the record saves no allowance for component %s" % k
+    extra = sorted(set(saved) - applicable)
+    if extra:
+        return "the record saves allowances %s for components this route does not run" % extra
+    if coll is not None and saved["collective_fit"] + saved["collective_rounding"] > LEDGER_CAPS["collective_fit"]:
+        return ("the combined fit + rounding allowance %s exceeds the frozen cap %s"
+                % (saved["collective_fit"] + saved["collective_rounding"], LEDGER_CAPS["collective_fit"]))
     sum_saved = sum(saved.values(), Fr(0))
     sum_verified = sum(verified.values(), Fr(0))
     reg = sum((saved[k] for k in saved if k.startswith("regional_level")), Fr(0))
@@ -755,6 +884,23 @@ def response_schema_violation(pub, model, evidence, queries):
     return None
 
 
+def positive_evidence_proof(model, evidence):
+    """For a FULLY pinned request: the evidence weight is the exact product of
+    every original factor at the evidence, re-derived from the original tables
+    (the checker's own evaluation); proved positive or refused."""
+    ev = dict(evidence)
+    total = Fr(1)
+    for f in model.factors:
+        if any(v not in ev for v in f.scope):
+            return {"proved": False, "reason": "factor %d has an unobserved variable" % f.origin}
+        total *= Fr(f.at(ev))
+    if total <= 0:
+        return {"proved": False, "reason": "the original factors evaluate to %s at the evidence" % total,
+                "evidence_weight": str(total)}
+    return {"proved": True, "evidence_weight": str(total),
+            "method": "checker-owned product of the original factors at the evidence"}
+
+
 def zero_evidence_proof(model, evidence, r0, named=None):
     """Re-derive a zero-evidence claim from the ORIGINAL factor tables at the
     evidence assignment (the checker's own witness): either a named factor is
@@ -789,7 +935,7 @@ def zero_evidence_proof(model, evidence, r0, named=None):
                       % cands[:4]}
 
 
-def executable_identity(kind, prog_json):
+def executable_identity(kind, prog_json, request=None):
     """The ONE executable identity of a program, derived from the RAW program
     JSON alone (discovery and binding call this same function): kind, the
     coarsening witness key, the collective record's canonical modes, Q or GF
@@ -806,6 +952,11 @@ def executable_identity(kind, prog_json):
                   "arithmetic": {k: str(v) for k, v in (raw.get("arithmetic") or {}).items()},
                   "checker": {k: str(v) for k, v in (raw.get("checker") or {}).items()},
                   "queries": sorted(int(v) for v in (raw.get("queries") or []))}
+    # the REQUEST identity (model, evidence, requested set, width) is part of
+    # the key: a program is an executable FOR one request
+    if request is not None:
+        executable["request"] = {"model": str(request[0])[:16], "evidence": str(request[1])[:16],
+                                 "queries": str(request[2])[:16], "width": str(Fr(request[3]))}
     if prog.get("collective") is not None:
         ident, _ikey = CR.canonical_identity(prog["collective"], scales_key, executable=executable)
     elif kind == "identity":
@@ -813,7 +964,9 @@ def executable_identity(kind, prog_json):
     else:
         ident = hashlib.sha256(("regional|" + "|".join(scales_key) + "|"
                                 + json.dumps(executable, sort_keys=True)).encode()).hexdigest()[:16]
-    return "%s-%s" % (kind, ident)
+    req = ("req%s" % hashlib.sha256(json.dumps(executable.get("request", {}), sort_keys=True).encode()).hexdigest()[:8]) \
+        if request is not None else "noreq"
+    return "%s-%s-%s" % (kind, req, ident)
 
 
 def loaded_admission(rec, price, cap_bytes=None, bg=None):
@@ -849,7 +1002,7 @@ def loaded_admission(rec, price, cap_bytes=None, bg=None):
     return None
 
 
-def bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes, bg=None):
+def bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes, bg=None, eps=None):
     """The single BINDING of a loaded record: hashes, scopes, preprocessing
     proof, roles, no completion flags, program/kind agreement, requested set,
     and a RE-DERIVED price on the saved order that must equal the recorded
@@ -861,7 +1014,15 @@ def bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes, bg=None):
     if sorted(back.parsed_program["queries"]) != sorted(queries):
         raise PT.PlanError("the reloaded program's requested set differs from "
                            "the current request")
-    rprice = _reprice_loaded(back, r, queries, nq, simp, cap_bytes, bg=bg)
+    try:
+        rprice = _reprice_loaded(back, r, queries, nq, simp, cap_bytes, bg=bg)
+    except (PT.PlanError, B.BudgetExceeded):
+        raise
+    except Exception as e:
+        # an undercharged or inconsistent record does not RE-DERIVE (the
+        # residual's recomputed certificate exceeds the recorded allowance, a
+        # grid is inadmissible, ...): a named typed refusal, never a traceback
+        raise PT.PlanError("the loaded program does not re-derive: %s: %s" % (type(e).__name__, e))
     bad = _price_disagrees(back.cost_counters, rprice)
     if bad:
         raise PT.PlanError("the recorded cost counters do not match the price "
@@ -869,7 +1030,8 @@ def bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes, bg=None):
                            "order: %s" % bad)
     # the executable identity is RE-DERIVED from the loaded program; the stored
     # name is checked against it, never trusted
-    own = executable_identity(back.kind, back.program)
+    own = executable_identity(back.kind, back.program,
+                              request=(mh, eh, qh, eps if eps is not None else K.MAX_WIDTH))
     stored = (back.storage_schedule or {}).get("identity")
     if stored is not None and stored != own:
         raise PT.PlanError("the stored identity %s is not the identity re-derived from the "
@@ -1348,7 +1510,7 @@ def _candidate_record(kind, name, mh, eh, qh, simp, r, prog, allocations,
 
 
 def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
-                       prices, rejected, cap_bytes):
+                       prices, rejected, cap_bytes, eps=None):
     """Build and price every research program (§5-§8) on the restricted model.
 
     Routes offered, each a real candidate with its own program, price,
@@ -1364,7 +1526,9 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
     from mdi import (marked as MK, routes as RT, collective_route as CR,
                      program as PG)
     _discover_programs._shared = None
+    _discover_programs._phase_stop = None
     deadline = bg.deadline_fn("discover")
+    n_before = len(rejected)
     mk0 = MK.Marked.from_restricted(r, set(queries))
     prec = 128
     ctx = A.Ctx(prec)
@@ -1386,7 +1550,8 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
                              % (type(e).__name__, e)})
             return
         prog = RT.program_for(kind, scales, coll, order or [], prec, queries)
-        ident = executable_identity(kind, json.loads(json.dumps(prog)))
+        ident = executable_identity(kind, json.loads(json.dumps(prog)),
+                                    request=(mh, eh, qh, eps if eps is not None else K.MAX_WIDTH))
         # the program must PARSE strictly before it is offered
         try:
             PG.validate_program(json.loads(json.dumps(prog)))
@@ -1402,7 +1567,8 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
             # a TYPED price refusal: the candidate is recorded with its reason
             # and discovery continues to every other candidate and fallback
             rejected.append({"name": name, "reason": "price refusal: %s" % price.ineligible_reason,
-                             "typed": "PRICE_REFUSAL"})
+                             "typed": "PRICE_REFUSAL", "phase": "discover",
+                             "feasibility": dict(price.feasibility)})
         rec = _candidate_record(kind, name, mh, eh, qh, simp, r, prog, alloc,
                                 price, order, prec, storage)
         rec.identity_key = ident
@@ -1410,10 +1576,17 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
         prices.append(price)
 
     def _shared(e):
-        if getattr(e, "kind", None) in ("wall", "rss"):
+        k = getattr(e, "kind", None)
+        if k in ("wall", "rss"):
             return True
-        lim = bg.limits.get(getattr(e, "kind", ""), None)
-        used = bg.used.get(getattr(e, "kind", ""), 0)
+        if isinstance(k, str) and k.startswith("phase:"):
+            # the discovery / local-construction allowance ran out: completed
+            # plans and partial refusals are PRESERVED and no new discovery
+            # starts; this is not a whole-arm stop
+            _discover_programs._phase_stop = e
+            return True
+        lim = bg.limits.get(k or "", None)
+        used = bg.used.get(k or "", 0)
         return lim is not None and used >= lim
 
     # ---- collective routes on the INPUT law: every certified candidate is

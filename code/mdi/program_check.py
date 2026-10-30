@@ -891,6 +891,30 @@ def _own_isqrt_ceil(q: Fr) -> int:
     return n
 
 
+class _Observable:
+    """A frozen copy of the checker's original observable (owners, cards,
+    masses, markers, requested set)."""
+    __slots__ = ("owner", "card", "orig_card", "mass", "marks", "_queries", "_free")
+
+    def queries(self):
+        return list(self._queries)
+
+    def free(self):
+        return list(self._free)
+
+
+def _snapshot_observable(marked):
+    o = _Observable()
+    o.owner = {int(v): marked.owner[v] for v in marked.owner}
+    o.card = {v: int(c) for v, c in marked.card.items()}
+    o.orig_card = {int(v): int(c) for v, c in marked.orig_card.items()}
+    o.mass = {v: [Fr(x) for x in marked.mass[v]] for v in marked.mass}
+    o.marks = {k: [Fr(x) for x in row] for k, row in marked.marks.items()}
+    o._queries = sorted(marked.queries())
+    o._free = sorted(marked.free())
+    return o
+
+
 def _own_bind_residual(marked, rmk):
     """Bind the residual marked model's owners, masses and state-labelled
     payloads to the CHECKER's verified model (the marked model it built from
@@ -1154,6 +1178,8 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
                    exec_record=None):
     """Verify a parsed program's publication. `published` holds ONLY the
     requested variables' rows. Returns (ok, failures, meta)."""
+    from mdi.guard import numerical_entry
+    numerical_entry("program_check.verify_program")
     queries = set(queries)
     if set(prog["queries"]) != queries:
         return False, ["the program's requested set %s is not the current "
@@ -1213,15 +1239,16 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
             sum(Fr(counts[v][c]) for c in range(marked.card[v])) > 0 for v in counts)
     else:
         ctx = A.Ctx(coll["precision"] + 16)
+        # the checker's IMMUTABLE original observable: a deep snapshot of its
+        # verified owners, cardinalities, masses and state-labelled payloads,
+        # taken BEFORE the residual builder runs; both the builder's output
+        # and the (possibly mutated in place) verified model are bound to it
+        snap = _snapshot_observable(marked)
         try:
             rmk, res, can = CR.rebuild_residual(marked, coll, A.Ctx(coll["precision"]))
         except (CR.Declined, Exception) as e:
             return False, ["the collective record does not rebuild: %s" % e], None
-        # the residual's ORIGINAL-EVENT OWNERS and STATE-LABELLED PAYLOADS are
-        # bound by the checker to its own verified marked model, never taken
-        # from the producer's residual builder: same owner per requested
-        # variable, same masses, same marker payload per (variable, state, cell)
-        bad = _own_bind_residual(marked, rmk)
+        bad = _own_bind_residual(snap, rmk) or _own_bind_residual(snap, marked)
         if bad:
             return False, ["residual binding: %s" % bad], {"certificate_rejected": True}
         ok, info = verify_fit(marked, rmk, coll["candidate"], coll["fit_tv"], ctx)

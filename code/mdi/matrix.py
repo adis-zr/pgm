@@ -117,11 +117,13 @@ def _price(res, name):
     return next(x for x in res.prices if x["name"] == name)
 
 
-def _replay_fresh(mp, plan, timeout, evid="-"):
+def _replay_fresh(mp, plan, timeout, evid="-", eps=None):
     env = dict(os.environ)
     env["PYTHONPATH"] = HERE
-    out = subprocess.run([sys.executable, "-m", "mdi.replay", mp, evid, plan], cwd=HERE,
-                         capture_output=True, text=True, timeout=timeout, env=env)
+    cmd = [sys.executable, "-m", "mdi.replay", mp, evid, plan]
+    if eps is not None:
+        cmd += ["--eps", str(eps)]
+    out = subprocess.run(cmd, cwd=HERE, capture_output=True, text=True, timeout=timeout, env=env)
     if not out.stdout.strip():
         raise RuntimeError("replay produced no output: %s" % out.stderr[-600:])
     return json.loads(out.stdout)

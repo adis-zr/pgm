@@ -1,7 +1,7 @@
 """Fresh-process execution of a PERSISTED plan through the pipeline's ONE
 loaded-object boundary (spec §8/§11 binding).
 
-    python -m mdi.replay MODEL.uai [EVIDENCE.evid|-] PLAN.plan.json [OUT.json] [CAP_BYTES]
+    python -m mdi.replay MODEL.uai [EVIDENCE.evid|-] PLAN.plan.json [OUT.json] [--eps W] [--cap BYTES]
 
 Reads the original model and evidence, rebuilds the restricted and
 preprocessed law, loads the record, BINDS it exactly as the pipeline does
@@ -79,9 +79,9 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
                      constant=r0.constant, impossible_factor=None)
     nq = sum(r.card[v] for v in sorted(queries))
     try:
-        bg.enter("bind")
+        bg.enter("persist" if rec.kind != "identity" else "bind")
         price = PLN.bind_loaded(rec, mh, eh, qh, r, simp, queries, nq,
-                                K.RESOURCES["arm_rss_bytes"], bg=bg)
+                                K.RESOURCES["arm_rss_bytes"], bg=bg, eps=eps)
     except PT.PlanError as e:
         return {"status": "REPLAY_REFUSED", "kind": rec.kind, "name": rec.name,
                 "reason": "binding refused: %s" % e, "elapsed_s": time.monotonic() - t0}
@@ -109,12 +109,37 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
               "VERIFIED_SHARED_AGGREGATION_ONLY": "REPLAY_SHARED_AGGREGATION_ONLY"}.get(
         res.status, "REPLAY_" + res.status)
     pub = res.intervals or {}
+    # every serialized (variable, state) key and interval is validated against
+    # the ORIGINAL model and the request; the width is recomputed from the
+    # endpoints; observed coordinates are preserved as exact point masses
+    schema_bad = None
+    if pub:
+        want = set(queries) | set(ev)
+        if set(pub) != want:
+            schema_bad = "published keys %s differ from the request %s" % (sorted(pub)[:6], sorted(want)[:6])
+        for v in sorted(pub):
+            if len(pub[v]) != m.card[v]:
+                schema_bad = schema_bad or "variable %d publishes %d states of %d" % (v, len(pub[v]), m.card[v])
+            for a, (lo, hi) in enumerate(pub[v]):
+                lo, hi = Fr(lo), Fr(hi)
+                if not (0 <= lo <= hi <= 1):
+                    schema_bad = schema_bad or "variable %d state %d: [%s, %s] is not a valid interval" % (v, a, lo, hi)
+            if v in ev and pub[v] != [(Fr(1), Fr(1)) if a == ev[v] else (Fr(0), Fr(0)) for a in range(m.card[v])]:
+                schema_bad = schema_bad or "observed variable %d is not an exact point mass" % v
     worst = max((Fr(hi) - Fr(lo) for v in pub for lo, hi in pub[v]), default=Fr(0))
+    if schema_bad and status == "REPLAY_VERIFIED":
+        status = "REPLAY_REJECTED"
+        res.reason = "response schema: %s" % schema_bad
+    if status == "REPLAY_VERIFIED" and worst > eps:
+        status = "REPLAY_REJECTED"
+        res.reason = "the width recomputed from the endpoints %s exceeds the request %s" % (worst, eps)
     return {"status": status, "pipeline_status": res.status, "kind": rec.kind,
             "name": rec.name, "identity": getattr(rec, "identity_key", None),
             "plan_sha_bound": {"model": mh[:16], "evidence": eh[:16], "query": qh[:16]},
             "intervals": {str(v): [[str(lo), str(hi)] for lo, hi in pub[v]]
-                          for v in sorted(pub) if v in queries},
+                          for v in sorted(pub)},
+            "requested": sorted(int(v) for v in queries), "observed": {str(v): int(st) for v, st in sorted(ev.items())},
+            "request_width": str(eps),
             "radius": str(sum((Fr(v) for v in rec.allocations.values()), Fr(0))),
             "max_width": str(worst), "research": (res.plan or {}).get("research"),
             "executor": {k: str(v) for k, v in ((res.plan or {}).get("executed") or {}).items()
@@ -130,14 +155,28 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
 
 
 def main(argv):
-    if len(argv) < 3:
+    eps = None
+    cap = None
+    rest = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--eps":
+            eps = argv[i + 1]
+            i += 2
+            continue
+        if argv[i] == "--cap":
+            cap = int(argv[i + 1])
+            i += 2
+            continue
+        rest.append(argv[i])
+        i += 1
+    if len(rest) < 3:
         print(__doc__)
         return 2
-    cap = int(argv[4]) if len(argv) > 4 else None
-    out = replay(argv[0], argv[1], argv[2], cap_bytes=cap)
+    out = replay(rest[0], rest[1], rest[2], eps=eps, cap_bytes=cap)
     txt = json.dumps(out, indent=1, default=str)
-    if len(argv) > 3:
-        with open(argv[3], "w") as fh:
+    if len(rest) > 3:
+        with open(rest[3], "w") as fh:
             fh.write(txt)
     print(txt)
     return 0 if out["status"] == "REPLAY_VERIFIED" else 1

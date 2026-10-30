@@ -119,11 +119,12 @@ def cand_to_jsonable(cand) -> dict:
             "features": [{str(v): [_q(x) for x in f] for v, f in fk.items()}
                          for fk in cand.features],
             "kind": str(cand.kind),
-            "masked": [[int(a), int(b)] for a, b in (getattr(cand, "masked", None) or [])]}
+            "masked": [[int(a), int(b)] for a, b in (getattr(cand, "masked", None) or [])],
+            "strict": bool(getattr(cand, "strict", False))}
 
 
 def cand_from_jsonable(d: dict):
-    _need(d, ("signs", "gammas", "features", "kind", "masked"), "mode candidate")
+    _need(d, ("signs", "gammas", "features", "kind", "masked", "strict"), "mode candidate")
     signs = [int(s) for s in d["signs"]]
     if any(s not in (1, -1) for s in signs):
         raise ProgramError("mode signs must be +1 or -1")
@@ -139,8 +140,10 @@ def cand_from_jsonable(d: dict):
         if not (isinstance(pr, (list, tuple)) and len(pr) == 2):
             raise ProgramError("a masked pair must be a 2-list of variables")
         masked.append((int(pr[0]), int(pr[1])))
+    if not isinstance(d["strict"], bool):
+        raise ProgramError("the strict flag must be a boolean")
     return MD.ModeCandidate(signs=signs, gammas=gammas, features=feats,
-                            kind=str(d["kind"]), masked=masked)
+                            kind=str(d["kind"]), masked=masked, strict=d["strict"])
 
 
 GRID_KEYS = ("rule", "version", "sign", "beta", "R", "tol", "t", "m", "T", "b", "h",
@@ -169,6 +172,20 @@ def _grid_from_jsonable(g: dict) -> dict:
         out["J"] = int(g["J"])
     if out["m"] < 1 or out["h"] <= 0 or out["nodes"] < 1 or out["tol"] <= 0:
         raise ProgramError("a GF grid has non-positive parameters")
+    if out["error"] <= 0:
+        raise ProgramError("a GF grid records a non-positive error allocation %s" % out["error"])
+    if out["h"] != Fr(1, out["m"]):
+        raise ProgramError("GF grid spacing %s is not 1/m = 1/%d" % (out["h"], out["m"]))
+    term = out["K"] if out["sign"] > 0 else out["J"]
+    if term < 0:
+        raise ProgramError("GF grid terminal index is negative")
+    if out["signed_frequencies"] != 2 * term + 1 or out["nodes"] != 2 * term + 1:
+        raise ProgramError("GF grid signed-frequency count %d / node count %d do not match the "
+                           "terminal index %d (2 x %d + 1)" % (out["signed_frequencies"], out["nodes"], term, term))
+    want_rep = (2 * term + 1) if out["sign"] > 0 else (term + 1)
+    if out["representatives"] != want_rep:
+        raise ProgramError("GF grid representative count %d does not match the terminal index %d"
+                           % (out["representatives"], term))
     return out
 
 

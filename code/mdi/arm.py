@@ -52,7 +52,7 @@ class Progress:
             pass
 
 
-def run_arm(problem, research, rundir, eps=None, wall=None, cap=None):
+def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path=None, evid_path=None):
     """Run one arm and write a durable record. Returns the record."""
     eps = eps or K.MAX_WIDTH
     wall = wall or K.RESOURCES["arm_wall_s"]
@@ -65,7 +65,8 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None):
            "label": label, "eps": str(eps), "wall_s": wall, "cap_bytes": cap,
            "threads_declared": K.RESOURCES["threads"],
            "spec_sha256": K.SPEC_SHA256, "stages": {}, "rejected_plans": []}
-    mp, ep = os.path.join(PKT, problem + ".uai"), os.path.join(PKT, problem + ".uai.evid")
+    mp = model_path or os.path.join(PKT, problem + ".uai")
+    ep = evid_path or os.path.join(PKT, problem + ".uai.evid")
     rec["input_sha256"] = {"model": sha256_file(mp), "evidence": sha256_file(ep)}
 
     try:
@@ -82,9 +83,13 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None):
              % (len(r.free), rec["queries"]))
 
         if r.impossible_factor is not None or r.constant == 0:
-            rec["outcome"] = "ZERO_EVIDENCE_PROVED"
-            rec["reason"] = ("restricted factor %s is identically zero"
-                             % r.impossible_factor)
+            # the terminal passes through the SAME original-model proof as the
+            # pipeline's: the witness is re-derived from the original tables
+            from mdi import pipeline as _PLN
+            proof = _PLN.zero_evidence_proof(m, ev, r)
+            rec["outcome"] = "ZERO_EVIDENCE_PROVED" if proof.get("proved") else "NUMERICAL_REFUSAL"
+            rec["reason"] = proof["reason"]
+            rec["checker"] = proof
             rec["elapsed_s"] = time.time() - t0
             _write(rec, rundir, label); prog.close()
             return rec

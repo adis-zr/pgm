@@ -86,10 +86,12 @@ class ModeCandidate:
     kind: str               # how it was proposed
     rank: int = 0
     masked: list = field(default_factory=list)   # pairs the residual RETAINS exactly
+    strict: bool = False                        # STRICT: retain ONLY the mask's pairs
 
     def __post_init__(self):
         self.rank = len(self.signs)
         self.masked = sorted({(min(int(a), int(b)), max(int(a), int(b))) for a, b in (self.masked or [])})
+        self.strict = bool(self.strict)
 
 
 def _pair_matrix(free, factors, card):
@@ -151,7 +153,7 @@ def _pair_matrix(free, factors, card):
     return Hs, absorb, consts, zero_pairs
 
 
-def propose_modes(free, factors, card, max_rank=None):
+def propose_modes(free, factors, card, max_rank=None, deadline=None):
     """A finite menu: constant/proportional row proposals, block-constant from
     repeated profiles, and at most two bounded low-rank fits per residual mask.
 
@@ -290,6 +292,8 @@ def propose_modes(free, factors, card, max_rank=None):
     # the mask CAP bounds the rounds: the three prescribed masks first, the
     # labelled outlier heuristic only if budget remains
     for mask_round in range(budget_masks):
+        if deadline is not None:
+            deadline()
         if mask_round < len(masks):
             mname, masked = masks[mask_round]
         else:
@@ -341,6 +345,10 @@ def propose_modes(free, factors, card, max_rank=None):
             kind = "lowrank_rank1" if mname == "all" else "lowrank_rank1_%s" % mname
             cands.append(ModeCandidate(signs=[s], gammas=[gq], features=[feat], kind=kind,
                                        masked=[(inv[a], inv[b]) for a, b in masked]))
+            if mname != "all":
+                # the STRICT masked representation: residual pairs = the mask only
+                cands.append(ModeCandidate(signs=[s], gammas=[gq], features=[feat], kind=kind + "_strict",
+                                           masked=[(inv[a], inv[b]) for a, b in masked], strict=True))
             signs_c.append(s); gammas_c.append(gq); feats_c.append(feat)
             npos += s > 0
             nneg += s < 0
@@ -350,6 +358,11 @@ def propose_modes(free, factors, card, max_rank=None):
                                        kind="lowrank_combined" + ("" if mname == "all"
                                                                   else "_%s" % mname),
                                        masked=[(inv[a], inv[b]) for a, b in masked]))
+            if mname != "all":
+                cands.append(ModeCandidate(signs=list(signs_c), gammas=list(gammas_c),
+                                           features=list(feats_c),
+                                           kind="lowrank_combined_%s_strict" % mname,
+                                           masked=[(inv[a], inv[b]) for a, b in masked], strict=True))
     if not cands:
         return [], {**info, "declined": "no admissible mode proposal"}
     return cands, info
@@ -434,7 +447,12 @@ def _propose_categorical(free, card, Hs, consts, zero_pairs, info, max_rank):
             feat[v] = [Fr(round(f[v][a] / mx * D), D) for a in range(card[v])]
         gq = Fr(max(1, round(abs(lam) * mx * mx * D)), D)
         cands.append(ModeCandidate(signs=[sign], gammas=[gq], features=[feat],
-                                   kind="categorical_rank1" + ("" if mname == "all" else "_%s" % mname)))
+                                   kind="categorical_rank1" + ("" if mname == "all" else "_%s" % mname),
+                                   masked=[tuple(pr) for pr in masked]))
+        if mname != "all":
+            cands.append(ModeCandidate(signs=[sign], gammas=[gq], features=[feat],
+                                       kind="categorical_rank1_%s_strict" % mname,
+                                       masked=[tuple(pr) for pr in masked], strict=True))
         # a second mode on the residual contrasts of this mask, for a combined
         # signed candidate within the caps
         resid = {}
@@ -474,7 +492,13 @@ def _propose_categorical(free, card, Hs, consts, zero_pairs, info, max_rank):
                     (sign2 < 0 and (sign < 0) and K.CAPS["mode_rank_negative"] >= 2) or sign2 != sign:
                 cands.append(ModeCandidate(signs=[sign, sign2], gammas=[gq, gq2],
                                            features=[feat, feat2],
-                                           kind="categorical_combined" + ("" if mname == "all" else "_%s" % mname)))
+                                           kind="categorical_combined" + ("" if mname == "all" else "_%s" % mname),
+                                           masked=[tuple(pr) for pr in masked]))
+                if mname != "all":
+                    cands.append(ModeCandidate(signs=[sign, sign2], gammas=[gq, gq2],
+                                               features=[feat, feat2],
+                                               kind="categorical_combined_%s_strict" % mname,
+                                               masked=[tuple(pr) for pr in masked], strict=True))
     if not cands:
         return [], {**info, "declined": "categorical fit is numerically trivial"}
     return cands, {**info, "categorical": True, "contrast_dim": dim}
@@ -679,7 +703,7 @@ def _log_enclose(q: Fr, ctx: A.Ctx):
 
 
 def build_residual(free, factors, card, cand: ModeCandidate, ctx: A.Ctx,
-                   round_bits=40):
+                   round_bits=40, deadline=None):
     """Construct the residual and certify nu.
 
     For EVERY pair, including absent input pairs, bound
@@ -742,6 +766,8 @@ def build_residual(free, factors, card, cand: ModeCandidate, ctx: A.Ctx,
 
     res_pairs = {}
     for (i, j) in sorted(coupled):
+        if deadline is not None:
+            deadline()
         H = Hs.get((i, j)) or Hs.get((j, i))
         absent = H is None
         if absent:

@@ -6594,10 +6594,10 @@ def test_r12_discovery_stops_on_shared_budget_exhaustion():
     assert clean.status.startswith("CERTIFIED"), clean.reason
     orig = B.Budget.__init__
 
-    def patched(self, wall_s, limits=None, rss_fn=None, rss_limit=None):
+    def patched(self, wall_s, limits=None, rss_fn=None, rss_limit=None, **kw):
         lim = dict(limits or {})
         lim["local_mass_entries"] = 1
-        orig(self, wall_s, limits=lim, rss_fn=rss_fn, rss_limit=rss_limit)
+        orig(self, wall_s, limits=lim, rss_fn=rss_fn, rss_limit=rss_limit, **kw)
 
     B.Budget.__init__ = patched
     try:
