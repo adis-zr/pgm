@@ -1,7 +1,7 @@
 """Fresh-process execution of a PERSISTED plan through the pipeline's ONE
 loaded-object boundary (spec §8/§11 binding).
 
-    python -m mdi.replay MODEL.uai [EVIDENCE.evid|-] PLAN.plan.json [OUT.json]
+    python -m mdi.replay MODEL.uai [EVIDENCE.evid|-] PLAN.plan.json [OUT.json] [CAP_BYTES]
 
 Reads the original model and evidence, rebuilds the restricted and
 preprocessed law, loads the record, BINDS it exactly as the pipeline does
@@ -18,7 +18,7 @@ sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
 
 
-def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=None):
+def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=None, cap_bytes=None):
     """Bind, admit, execute and check ONE persisted plan in this process under
     a fresh shared budget with the pipeline's limits; a record the pipeline's
     admission rule refuses is refused here too. `wrap(stage, fn)` optionally
@@ -33,21 +33,51 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
     ev = M.read_evidence(evidence_path, m) if evidence_path and evidence_path != "-" else {}
     with open(plan_path) as fh:
         txt = fh.read()
-    rec = PT.PlanRecord.from_json(txt)
+    try:
+        rec = PT.PlanRecord.from_json(txt)
+    except (PT.PlanError, ValueError) as e:
+        # an invalid proof record (negative or non-rational allowance, unknown
+        # field, inconsistent program) is REFUSED at load with the named reason
+        return {"status": "REPLAY_REFUSED", "kind": None, "name": None,
+                "reason": "invalid proof record: %s" % e, "elapsed_s": time.monotonic() - t0}
     prog = rec.parsed_program
     queries = set(prog["queries"])
-    r0 = M.restrict(m, ev)
-    mh, eh, qh = PLN.model_hashes(m, ev, queries)
-    simp = PRE.simplify(r0)
-    PRE.verify_identities(r0, simp)
-    r = M.Restricted(model=m, evidence=dict(ev), factors=simp.factors,
-                     free=list(simp.free), card=dict(simp.card),
-                     constant=r0.constant, impossible_factor=None)
-    nq = sum(r.card[v] for v in sorted(queries))
+    # the shared budget starts BEFORE preprocessing, exactly as the pipeline's
     bg = B.Budget(wall_s=wall_s,
                   limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
                           "local_mass_entries": K.CAPS["local_mass_entries"]},
                   rss_fn=S._rss_bytes, rss_limit=K.RESOURCES["arm_rss_bytes"])
+    try:
+        bg.enter("parse")
+        r0 = M.restrict(m, ev)
+        if r0.impossible_factor is not None or r0.constant == 0:
+            proof = PLN.zero_evidence_proof(m, ev, r0)
+            return {"status": ("REPLAY_ZERO_EVIDENCE_PROVED" if proof.get("proved")
+                               else "REPLAY_REJECTED"),
+                    "kind": rec.kind, "name": rec.name, "reason": proof["reason"],
+                    "checker": proof, "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
+        mh, eh, qh = PLN.model_hashes(m, ev, queries)
+        bg.enter("preprocess")
+        simp = PRE.simplify(r0)
+        PRE.verify_identities(r0, simp)
+        if simp.impossible is not None:
+            proof = PLN.zero_evidence_proof(m, ev, r0, named=simp.impossible)
+            return {"status": ("REPLAY_ZERO_EVIDENCE_PROVED" if proof.get("proved")
+                               else "REPLAY_REJECTED"),
+                    "kind": rec.kind, "name": rec.name, "reason": proof["reason"],
+                    "checker": proof, "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
+    except B.BudgetExceeded as e:
+        return {"status": "REPLAY_RESOURCE_STOP", "kind": rec.kind, "name": rec.name,
+                "reason": "preprocessing: %s" % e, "budget": bg.report(),
+                "elapsed_s": time.monotonic() - t0}
+    except PRE.PreprocessError as e:
+        return {"status": "REPLAY_REJECTED", "kind": rec.kind, "name": rec.name,
+                "reason": "exact preprocessing failed its independent verification: %s" % e,
+                "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
+    r = M.Restricted(model=m, evidence=dict(ev), factors=simp.factors,
+                     free=list(simp.free), card=dict(simp.card),
+                     constant=r0.constant, impossible_factor=None)
+    nq = sum(r.card[v] for v in sorted(queries))
     try:
         bg.enter("bind")
         price = PLN.bind_loaded(rec, mh, eh, qh, r, simp, queries, nq,
@@ -59,7 +89,8 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
         return {"status": "REPLAY_RESOURCE_STOP", "kind": rec.kind, "name": rec.name,
                 "reason": "binding: %s" % e, "budget": bg.report(),
                 "elapsed_s": time.monotonic() - t0}
-    bad = PLN.loaded_admission(rec, price)
+    cap = cap_bytes or K.RESOURCES["arm_rss_bytes"]
+    bad = PLN.loaded_admission(rec, price, cap_bytes=cap, bg=bg)
     if bad:
         return {"status": "REPLAY_REFUSED", "kind": rec.kind, "name": rec.name,
                 "identity": getattr(rec, "identity_key", None),
@@ -70,8 +101,7 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
     rec.properties.set("selected")
     out = PLN.Outcome(status="INIT")
     out.prices = [price.as_dict()]
-    res = PLN.run_loaded(rec, m, ev, queries, r, bg, eps, K.RESOURCES["arm_rss_bytes"],
-                         out=out, wrap=wrap)
+    res = PLN.run_loaded(rec, m, ev, queries, r, bg, eps, cap, out=out, wrap=wrap)
     status = {"CERTIFIED_RESEARCH_ROUTE": "REPLAY_VERIFIED",
               "CERTIFIED_FALLBACK_ONLY": "REPLAY_VERIFIED",
               "NUMERICAL_REFUSAL": "REPLAY_REJECTED",
@@ -93,6 +123,9 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
                         for k, v in (res.checker or {}).items() if k != "executor"},
             "failures": [str(x)[:200] for x in ((res.checker or {}).get("failures") or [])[:8]],
             "reason": res.reason, "budget": res.budget or bg.report(),
+            "stages": {k: round(v, 4) for k, v in (res.stages or {}).items() if isinstance(v, (int, float))},
+            "ledger": (res.plan or {}).get("ledger"),
+            "complete_cost": (res.plan or {}).get("complete_cost"),
             "price": price.as_dict(), "elapsed_s": time.monotonic() - t0}
 
 
@@ -100,7 +133,8 @@ def main(argv):
     if len(argv) < 3:
         print(__doc__)
         return 2
-    out = replay(argv[0], argv[1], argv[2])
+    cap = int(argv[4]) if len(argv) > 4 else None
+    out = replay(argv[0], argv[1], argv[2], cap_bytes=cap)
     txt = json.dumps(out, indent=1, default=str)
     if len(argv) > 3:
         with open(argv[3], "w") as fh:

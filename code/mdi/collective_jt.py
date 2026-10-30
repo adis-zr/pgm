@@ -41,9 +41,9 @@ class Declined(Exception):
 
 def _exp_pair(x: Fr, ctx):
     with ctx.D:
-        lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        lo = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     with ctx.U:
-        hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        hi = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     return A.exact_fr(lo), A.exact_fr(hi)
 
 
@@ -178,7 +178,9 @@ def statistic_evaluate(marked, cand, Q, ctx, engine="sparse", deadline=None,
     Returns ((Zlo, Zhi), {orig var: [(lo, hi) counts per state]}, meta).
     The counts are relative to Z (not normalized), exact up to the directed
     exponential enclosure applied once at the root.
+    
     """
+    A.reset_transcendental_calls()
     rank = cand.rank
     free = marked.free()
     cap = support_cap or K.CAPS["local_mass_entries"]
@@ -262,7 +264,8 @@ def statistic_evaluate(marked, cand, Q, ctx, engine="sparse", deadline=None,
         counts[v] = rows
     meta = {"evaluator": "statistic", "engine": engine, "Q": Q,
             "statistic_support": len(total), "ops": ops,
-            "peak_live_entries": peak, "rank": rank}
+            "peak_live_entries": peak, "rank": rank,
+            "transcendental_calls": A.transcendental_calls()}
     return (Zlo, Zhi), counts, meta
 
 
@@ -329,7 +332,7 @@ def _lattice_points(lat):
     return [Fr(j) * h for j in range(-jmax, jmax + 1)]
 
 
-def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
+def gf_evaluate(marked, cand, ctx, grids, engine="sparse", deadline=None,
                 order=None, charge=None, num_eps=None, stop_early=True,
                 progress=None, only_nodes=None):
     """§7.2 complete: positive Gaussian coordinates and negative Fourier
@@ -372,11 +375,21 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
     pos = [k for k in range(rank) if cand.signs[k] > 0]
     neg = [k for k in range(rank) if cand.signs[k] < 0]
     free = marked.free()
+    # the ACTUAL loaded grids (Chapter 05 GF1/GF2): points j h for |j| <= K/J,
+    # weights h phi(j h); the producer never rebuilds a grid from a tolerance
+    from mdi import collective_route as CRX
+    if len(grids) != rank:
+        raise Declined("one GF grid per mode is required (%d for rank %d)" % (len(grids), rank))
     lats = {}
     for k in range(rank):
-        Rk = _features_R(cand, k)
-        lats[k] = (CO.gf_lattice(cand.gammas[k], Rk, Fr(deltas[k])) if cand.signs[k] > 0
-                   else CO.fourier_lattice(cand.gammas[k], Rk, Fr(deltas[k])))
+        g = grids[k]
+        if int(g["sign"]) != int(cand.signs[k]):
+            raise Declined("grid %d sign %s does not match mode sign %s" % (k, g["sign"], cand.signs[k]))
+        pts, h = CRX.grid_points(g)
+        lats[k] = {"h": Fr(h), "points": pts, "nodes": len(pts), "tol": Fr(g["tol"]),
+                   "rule": g["rule"], "version": g["version"], "m": int(g["m"]),
+                   "terminal": int(g.get("K", g.get("J", 0)))}
+    A.reset_transcendental_calls()
     sg = {k: CO._sqrt_enclose(cand.gammas[k], ctx) for k in range(rank)}
     base_int = _law_tables(marked, lambda x: (x, x))
     base_cx = _law_tables(marked, lambda x: (x, x, Fr(0), Fr(0)))
@@ -386,10 +399,11 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
     # ---- the positive grid and the FULL positive marker-mass pass
     import itertools
     _cache = {}
-    pos_pts = [_lattice_points(lats[k]) for k in pos]
+    pos_pts = [lats[k]["points"] for k in pos]
     pos_nodes = list(itertools.product(*pos_pts)) if pos else [()]
     mass = []        # per positive node: (weight (wl, wu), tilt rows, m+ per event, m+ total)
     processed_pos = 0
+    peak_live = 0
     for node in pos_nodes:
         if deadline is not None:
             deadline()
@@ -417,16 +431,23 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
                                               cache=_cache)
         if total is None:
             raise Declined("the residual has zero total weight at a positive node")
+        peak_live = max(peak_live, int(peak or 0))
         mplus = _own_mass_contribution(marked, marg, others, DB.IntervalAlg)
         mass.append(((wl, wu), tilts, mplus, total))
         processed_pos += 1
         if progress is not None and (processed_pos & 0x3F) == 0:
             progress("positive-mass", "%d/%d nodes" % (processed_pos, len(pos_nodes)))
+    n_states = sum(marked.card[v] for v in free)
+    n_cells = sum(marked.card[marked.owner[v]] * marked.orig_card[v] for v in queries)
     meta = {"evaluator": ("gaussian" if not neg else "fourier" if not pos else "mixed"),
             "engine": engine, "positive_nodes": len(pos_nodes),
             "negative_nodes_per_positive": 1,
-            "lattices": {k: {kk: str(vv) for kk, vv in lats[k].items() if kk != "derivation"}
-                         for k in range(rank)}}
+            "grids": {k: {"rule": lats[k]["rule"], "version": lats[k]["version"],
+                          "h": str(lats[k]["h"]), "m": lats[k]["m"], "terminal": lats[k]["terminal"],
+                          "nodes": lats[k]["nodes"], "tol": str(lats[k]["tol"])} for k in range(rank)},
+            # MEASURED: the positive-node data retained for the Fourier pass
+            # (weights 2 + tilt rows 2 per state + masses 2 per cell + total 2)
+            "retained_positive_node_entries": len(pos_nodes) * (2 + 2 * n_states + 2 * n_cells + 2)}
     if only_nodes is None:
         omitted = 0
     if not neg:
@@ -440,27 +461,21 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
                 for a in range(nst[v]):
                     counts[v][a][0] += wl * mplus[v][a][0]
                     counts[v][a][1] += wu * mplus[v][a][1]
-        meta["quadrature_tv"] = str(_tensor_error([Fr(lats[k]["total_bound"]) for k in pos]))
+        meta["quadrature_tv"] = str(CO.gf3_eta([lats[k]["tol"] for k in pos]))
+        meta["transcendental_calls"] = A.transcendental_calls()
+        meta["precomputed_phase_entries"] = 0
+        meta["peak_live_entries"] = peak_live
         return (Zlo, Zhi), {v: [tuple(r) for r in rows] for v, rows in counts.items()}, meta
 
     # ---- the negative grid: tensor Fourier error on the normalized average
-    neg_pts = [_lattice_points(lats[k]) for k in neg]
+    neg_pts = [lats[k]["points"] for k in neg]
     neg_nodes = list(itertools.product(*neg_pts))
     meta["negative_nodes_per_positive"] = len(neg_nodes)
-    # TENSOR ERROR LEMMA (finite Gaussian-grid product rule). Each negative
-    # coordinate's lattice replaces its own expectation by a weighted sum whose
-    # error on a unit-modulus integrand is at most delta_k, and whose weights
-    # sum to at most 1 + delta_k. Applying the coordinates in turn,
-    #   |E[prod] - sum prod| <= sum_k delta_k * prod_{j != k} (1 + delta_j).
-    # The checker (program_check.own_gf_reference) evaluates the same lemma.
-    dl = [Fr(lats[k]["total_bound"]) for k in neg]
-    delta = Fr(0)
-    for i, d in enumerate(dl):
-        prod = Fr(1)
-        for j, d2 in enumerate(dl):
-            if j != i:
-                prod *= (1 + d2)
-        delta += d * prod
+    # Chapter 05 eq. (9): every GF2 coefficient is nonnegative and their sum is
+    # at most 1 + e, so the tensor of r_- grids has pointwise error at most
+    # delta = prod(1 + e_l) - 1 on the certified ranges (a telescoping product;
+    # the checker's own_gf_reference evaluates the same rule)
+    delta = CO.gf2_tensor_delta([lats[k]["tol"] for k in neg])
     # conjugate pairs: node z and -z (componentwise) have conjugate
     # contributions. The key set is built ONCE and checked symmetric with
     # linear work (charged below), then paired.
@@ -551,6 +566,8 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
                 row.append((clo, chi, slo, shi))
             per_v[v] = row
         phase_rows.append((nwl, nwu, per_v, has_conj))
+    # MEASURED: the precomputed negative phases kept for every positive node
+    meta["precomputed_phase_entries"] = len(phase_rows) * (2 + 4 * n_states)
     owners = set(marked.owner.values())
     if only_nodes is not None:
         # RECHECK exactly the producer's retained positive nodes (§11): the
@@ -597,6 +614,7 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
                                                    only=owners, cache=_cache)
             if ctot is None:
                 raise Declined("the residual has zero total weight at a node")
+            peak_live = max(peak_live, int(peak or 0))
             cev = _own_mass_contribution(marked, cmarg, cothers, DB.ComplexAlg)
             mult = 2 if has_conj else 1
 
@@ -655,7 +673,9 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
                  "imaginary_enclosure": (str(Imlo), str(Imhi)),
                  "negative_exponent_Ymax": str(sum((cand.gammas[k] * _features_R(cand, k) ** 2 / 2
                                                     for k in neg), Fr(0))),
-                 "quadrature_tv": str(_tensor_error([Fr(lats[k]["total_bound"]) for k in pos])),
+                 "quadrature_tv": str(CO.gf3_eta([lats[k]["tol"] for k in pos])),
+                 "transcendental_calls": A.transcendental_calls(),
+                 "peak_live_entries": peak_live,
                  "ratio_rows": {str(v): [[str(a), str(b)] for a, b in rows[v]] for v in rows}})
     return (Zlo, Zhi), counts, meta
 
@@ -664,7 +684,8 @@ def gaussian_evaluate(marked, cand, ctx, delta, engine="sparse", deadline=None,
                       cap_nodes=None, order=None, charge=None):
     if cand.rank != 1 or cand.signs[0] <= 0:
         raise Declined("gaussian_evaluate needs a single POSITIVE mode")
-    return gf_evaluate(marked, cand, ctx, [delta], engine=engine, deadline=deadline,
+    g = CO.gf1_grid(cand.gammas[0], _features_R(cand, 0), Fr(delta))
+    return gf_evaluate(marked, cand, ctx, [g], engine=engine, deadline=deadline,
                        order=order, charge=charge)
 
 
@@ -672,7 +693,8 @@ def fourier_evaluate(marked, cand, ctx, delta, engine="sparse", deadline=None,
                      cap_nodes=None, order=None, charge=None, num_eps=None):
     if cand.rank != 1 or cand.signs[0] >= 0:
         raise Declined("fourier_evaluate needs a single NEGATIVE mode")
-    return gf_evaluate(marked, cand, ctx, [delta], engine=engine, deadline=deadline,
+    g = CO.gf2_grid(cand.gammas[0], _features_R(cand, 0), Fr(delta))
+    return gf_evaluate(marked, cand, ctx, [g], engine=engine, deadline=deadline,
                        order=order, charge=charge, num_eps=num_eps)
 
 
@@ -699,8 +721,10 @@ def evaluate(marked, coll, ctx, engine="sparse", deadline=None, order=None,
         return statistic_evaluate(marked, cand, coll["Q"], ctx, engine=engine,
                                   deadline=deadline, order=order, charge=charge)
     if ev in ("gaussian", "fourier", "mixed"):
-        deltas = coll.get("deltas") or [coll["delta"]]
-        return gf_evaluate(marked, cand, ctx, [Fr(d) for d in deltas], engine=engine,
+        grids = coll.get("grids")
+        if not grids:
+            raise Declined("a quadrature record carries no GF grids")
+        return gf_evaluate(marked, cand, ctx, grids, engine=engine,
                            deadline=deadline, order=order, charge=charge,
                            num_eps=num_eps, stop_early=stop_early,
                            only_nodes=only_nodes)

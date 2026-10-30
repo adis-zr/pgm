@@ -73,9 +73,9 @@ def _enclose_weight(unary, card, free, combo, cand, Q, ctx):
             S += fv if Q is None else _exact_quantize(fv, Q)
         x += Fr(cand.signs[mi]) * cand.gammas[mi] * S * S / 2
     with ctx.D:
-        lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        lo = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     with ctx.U:
-        hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        hi = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     return w * A.exact_fr(lo), w * A.exact_fr(hi)
 
 

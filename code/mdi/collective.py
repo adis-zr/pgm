@@ -138,9 +138,9 @@ def dp_root_combine(acc, marks, cand, Q: int, ctx: A.Ctx):
         S = Fr(s, Q)
         x = Fr(s_k) * g_k * S * S / 2
         with ctx.D:
-            lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+            lo = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
         with ctx.U:
-            hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+            hi = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
         return A.exact_fr(lo), A.exact_fr(hi)
 
     Zlo = Zhi = Fr(0)
@@ -441,9 +441,9 @@ def gaussian_evaluate(free, card, residual_unary, cand, queries, ctx: A.Ctx,
 def _sqrt_enclose(q: Fr, ctx: A.Ctx):
     import gmpy2
     with ctx.D:
-        lo = gmpy2.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
+        lo = A.T.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
     with ctx.U:
-        hi = gmpy2.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
+        hi = A.T.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
     return A.exact_fr(lo), A.exact_fr(hi)
 
 
@@ -453,9 +453,9 @@ def _exp_enclose(t: Fr, sg_lo: Fr, sg_hi: Fr, ctx: A.Ctx):
     a = sg_lo * t if t >= 0 else sg_hi * t
     b = sg_hi * t if t >= 0 else sg_lo * t
     with ctx.D:
-        lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(a.numerator, a.denominator)))
+        lo = A.T.exp(gmpy2.mpfr(gmpy2.mpq(a.numerator, a.denominator)))
     with ctx.U:
-        hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(b.numerator, b.denominator)))
+        hi = A.T.exp(gmpy2.mpfr(gmpy2.mpq(b.numerator, b.denominator)))
     return A.exact_fr(lo), A.exact_fr(hi)
 
 
@@ -471,13 +471,13 @@ def _normal_weight(z: Fr, h: Fr, ctx: A.Ctx):
     import gmpy2
     x = -(z * z) / 2
     with ctx.D:
-        lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        lo = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     with ctx.U:
-        hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        hi = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     with ctx.U:
-        den_hi = gmpy2.sqrt(2 * gmpy2.const_pi())      # over-estimate
+        den_hi = A.T.sqrt(2 * A.T.const_pi())      # over-estimate
     with ctx.D:
-        den_lo = gmpy2.sqrt(2 * gmpy2.const_pi())      # under-estimate
+        den_lo = A.T.sqrt(2 * A.T.const_pi())      # under-estimate
     c_lo = Fr(1) / A.exact_fr(den_hi)                  # smallest 1/sqrt(2pi)
     c_hi = Fr(1) / A.exact_fr(den_lo)                  # largest
     if not (0 < c_lo <= c_hi):
@@ -828,9 +828,9 @@ def _pi_bounds(ctx: A.Ctx = None):
     if hit is not None:
         return hit
     with gmpy2.context(precision=p, round=gmpy2.RoundDown):
-        lo = A.exact_fr(gmpy2.const_pi())
+        lo = A.exact_fr(A.T.const_pi())
     with gmpy2.context(precision=p, round=gmpy2.RoundUp):
-        hi = A.exact_fr(gmpy2.const_pi())
+        hi = A.exact_fr(A.T.const_pi())
     _PI_CACHE[p] = (lo, hi)
     return lo, hi
 
@@ -961,3 +961,154 @@ def _sin_enclose(lo: Fr, hi: Fr, ctx: A.Ctx):
             else:
                 out_lo = Fr(-1)
     return max(Fr(-1), out_lo), min(Fr(1), out_hi)
+
+
+# =====================================================================
+# Chapter 05 §§2.1-2.4: the explicit rational grids GF1 (positive), GF2
+# (negative Fourier) and the GF3 original-model allowance. These are the
+# FROZEN integration algorithm of spec §7.2. The derivative/midpoint
+# lattices above (`gf_lattice`, `fourier_lattice`) are SUPERSEDED: they are
+# retained only for the archived r16/r17 records and their refusal (a 769 x
+# 257 lattice against the shared cap), whose precise scope is the
+# tail+discretization construction, not the identities themselves.
+# =====================================================================
+
+GF_RULE = "chapter05-gf1-gf3"
+GF_RULE_VERSION = 1
+
+
+def _min_k_pow2_le(x: Fr, start=0) -> int:
+    """t = min{k >= start : 2^-k <= x} by exact comparison."""
+    if x <= 0:
+        raise Declined("GF grid tolerance must be positive")
+    k = start
+    while Fr(1, 1 << k) > x:
+        k += 1
+        if k > 4096:
+            raise Declined("GF grid tolerance %s is too small to index" % x)
+    return k
+
+
+def _min_k_sq_ge(x: Fr, start=0) -> int:
+    """min{k >= start : k^2 >= x} by exact comparison."""
+    k = start
+    while Fr(k * k) < x:
+        k += 1
+    return k
+
+
+def gf1_grid(beta: Fr, R: Fr, d: Fr):
+    """GF1 (Chapter 05 §2.2, eq. 5-6) with n = 1: the rational positive grid
+    whose weighted sum Q_+(s) = h/sqrt(2 pi) sum_{|j|<=K} e^{-(jh)^2/2}
+    e^{sqrt(beta) j h s} satisfies (1-d) e^{beta s^2/2} <= Q_+(s) <=
+    (1+d) e^{beta s^2/2} for |s| <= R. All integers by exact comparison."""
+    beta, R, d = Fr(beta), Fr(R), Fr(d)
+    if beta <= 0 or R < 0:
+        raise Declined("GF1 needs beta > 0 and R >= 0")
+    if not (0 < d <= Fr(1, 2)):
+        raise Declined("GF1 needs 0 < d <= 1/2 (got %s)" % d)
+    t = _min_k_pow2_le(d / 8)
+    m = _min_k_sq_ge(Fr(t, 18), start=1)            # 18 m^2 >= t
+    T = _min_k_sq_ge(Fr(2 * t))                     # T^2 >= 2t
+    b = _min_k_sq_ge(beta * R * R)                  # b^2 >= beta R^2 (n = 1)
+    K = m * (b + T)
+    return {"rule": GF_RULE, "version": GF_RULE_VERSION, "sign": 1,
+            "beta": beta, "R": R, "tol": d, "t": t, "m": m, "T": T, "b": b,
+            "h": Fr(1, m), "K": K, "nodes": 2 * K + 1,
+            "signed_frequencies": 2 * K + 1, "representatives": 2 * K + 1,
+            "error": d, "error_kind": "relative factor error (1 -/+ d)"}
+
+
+def gf2_grid(a: Fr, R: Fr, e: Fr):
+    """GF2 (Chapter 05 §2.3, eq. 8) with n = 1: the rational negative Fourier
+    grid whose trigonometric polynomial Q_-(s) = h/sqrt(2 pi) sum_{|j|<=J}
+    e^{-(jh)^2/2} e^{i sqrt(a) j h s} has |Q_-(s) - e^{-a s^2/2}| < e for
+    |s| <= R, nonnegative coefficients summing to at most 1 + e."""
+    a, R, e = Fr(a), Fr(R), Fr(e)
+    if a <= 0 or R < 0:
+        raise Declined("GF2 needs a > 0 and R >= 0")
+    if not (0 < e <= 1):
+        raise Declined("GF2 needs 0 < e <= 1 (got %s)" % e)
+    t = _min_k_pow2_le(e / 8)
+    T = _min_k_sq_ge(Fr(2 * t))
+    b = _min_k_sq_ge(a * R * R)
+    m = max(1, -(-(b + T) // 6))                    # ceil((b + T)/6)
+    J = m * T
+    return {"rule": GF_RULE, "version": GF_RULE_VERSION, "sign": -1,
+            "beta": a, "R": R, "tol": e, "t": t, "m": m, "T": T, "b": b,
+            "h": Fr(1, m), "J": J, "nodes": 2 * J + 1,
+            "signed_frequencies": 2 * J + 1, "representatives": J + 1,
+            "error": e, "error_kind": "absolute response error e"}
+
+
+def gf_grid_admissible(grid, beta: Fr, R: Fr):
+    """Re-derive the GF1/GF2 integers from a LOADED grid's tolerance and the
+    caller's own (beta, R) and decide whether the loaded spacing and terminal
+    index keep the proof: a finer spacing (m >= m_needed) and a terminal
+    index reaching at least as far (K/m >= b + T, resp. J/m >= T) preserve
+    the bounds, since the lattice-image term decreases in m and the tails
+    decrease in the reach. Returns None or a reason."""
+    sign = int(grid["sign"])
+    tol = Fr(grid["tol"])
+    try:
+        own = gf1_grid(beta, R, tol) if sign > 0 else gf2_grid(beta, R, tol)
+    except Declined as e:
+        return "grid tolerance is not admissible: %s" % e
+    m = int(grid["m"])
+    if m < own["m"]:
+        return "loaded spacing 1/%d is coarser than the proved 1/%d" % (m, own["m"])
+    if Fr(grid["h"]) != Fr(1, m):
+        return "loaded spacing h=%s is not 1/m=1/%d" % (grid["h"], m)
+    if sign > 0:
+        K = int(grid["K"])
+        if Fr(K, m) < own["b"] + own["T"]:
+            return ("loaded reach K h = %s is below the proved b + T = %d"
+                    % (Fr(K, m), own["b"] + own["T"]))
+        if int(grid["nodes"]) != 2 * K + 1:
+            return "loaded node count %s is not 2K+1" % grid["nodes"]
+    else:
+        J = int(grid["J"])
+        if Fr(J, m) < own["T"]:
+            return "loaded reach J h = %s is below the proved T* = %d" % (Fr(J, m), own["T"])
+        if int(grid["nodes"]) != 2 * J + 1 or int(grid["representatives"]) != J + 1:
+            return "loaded frequency counts do not match J=%d" % J
+    return None
+
+
+def gf3_eta(ds):
+    """GF3 (Chapter 05 §2.4, eq. 10): an exact rational UPPER bound on the
+    total-variation allowance eta = (sqrt(b+) - sqrt(a+)) / (sqrt(b+) +
+    sqrt(a+)) with a+ = prod(1 - d_c), b+ = prod(1 + d_c), via rational
+    LOWER bounds on both square roots (eta = (b+ - a+)/(sqrt(b+)+sqrt(a+))^2).
+    Empty positive tensor: eta = 0."""
+    ds = [Fr(x) for x in ds]
+    if not ds:
+        return Fr(0)
+    ap = Fr(1)
+    bp = Fr(1)
+    for d in ds:
+        ap *= (1 - d)
+        bp *= (1 + d)
+    if ap <= 0:
+        raise Declined("GF3: a+ = prod(1 - d) is not positive")
+    sa = _isqrt_floor_fr(ap)
+    sb = _isqrt_floor_fr(bp)
+    return (bp - ap) / ((sa + sb) * (sa + sb))
+
+
+def gf2_tensor_delta(es):
+    """Chapter 05 eq. (9): the tensor Fourier error prod(1 + e_l) - 1."""
+    out = Fr(1)
+    for e in es:
+        out *= (1 + Fr(e))
+    return out - 1
+
+
+def _isqrt_floor_fr(x: Fr) -> Fr:
+    """A rational LOWER bound on sqrt(x) for x >= 0 (12 decimal digits)."""
+    x = Fr(x)
+    if x <= 0:
+        return Fr(0)
+    S = 10 ** 12
+    num = _isqrt_floor(x.numerator * S * S // x.denominator)
+    return Fr(num, S)

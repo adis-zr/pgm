@@ -344,7 +344,17 @@ def test_dry_run_prices_cover_counted_work_on_every_route():
         pc = int(price.counters["checker_ops"].value)
         assert pp >= n_exec, (label, pp, n_exec)
         assert pc >= n_chk, (label, pc, n_chk)
-        assert price.counters["transcendental_evaluations"].label == PR.UPPER
+        # transcendental calls are a per-engine FORECAST from probed primitive
+        # counts, never summed into the Fraction totals; both engines report
+        # their measured count (matrix R6 compares them)
+        assert price.counters["transcendental_evaluations"].label == PR.FORECAST
+        if coll is not None:
+            # collective routes forecast per engine; a regional program has no
+            # transcendental work and reports none (missing stays missing)
+            assert "transcendental_producer_forecast" in price.counters
+            assert "transcendental_checker_forecast" in price.counters
+        else:
+            assert "transcendental_producer_forecast" not in price.counters
         if meta.get("peak_live_entries") is not None:
             assert int(price.counters["peak_live_message_entries"].value) >= meta["peak_live_entries"], label
 
@@ -441,10 +451,11 @@ def test_mixed_gaussian_fourier_program_executes_and_is_rechecked():
     # component demonstration preserved from r16: it runs RT.execute without
     # the shared budget and takes minutes; acceptance under the budget is the
     # matrix's F6 row, which is BLOCKED (see R17_INTEGRATED_REVISION.md §6)
-    mixed.sort(key=lambda x: x[0]["forecast"]["tensor_nodes"])
+    mixed.sort(key=lambda x: x[0]["forecast"]["tensor_nodes"])   # GF1 x GF2 tensor (Chapter 05)
     coll, rmk = mixed[0]
     assert set(coll["candidate"].signs) == {1, -1}
     assert Fr(coll["forecast"]["L_lower"]) > 0 and coll["negative_deltas"]
+    assert coll["forecast"]["rule"] == "chapter05-gf1-gf3" and coll["grids"]
     prog = _parse(RT.program_for("mixed", [], coll, [], 96, q))
     num_eps = K.MAX_WIDTH - 2 * CR.total_radius(prog["collective"]) - RES
     rows, meta = RT.execute(prog, r, q, num_eps=num_eps)
@@ -458,12 +469,12 @@ def test_mixed_gaussian_fourier_program_executes_and_is_rechecked():
     ok, fails, cm = PC.verify_program(r, q, prog, pub, Fr(1, 100), exec_record=meta)
     assert ok, fails[:2]
     assert cm["rechecked_retained_nodes"] == meta["processed_positive_nodes"]
-    # the record's lattice deltas are re-derived by the checker; a corrupted
-    # positive radius rejects
+    # the record's GF3 allowance is re-derived by the checker from the loaded
+    # grids; a corrupted positive radius rejects
     bad = copy.deepcopy(RT.program_for("mixed", [], coll, [], 96, q))
     bad["collective"]["quadrature_tv"] = "0"
     ok2, f2, _ = PC.verify_program(r, q, _parse(bad), pub, Fr(1, 100), exec_record=meta)
-    assert not ok2 and any("lattice" in x or "rebuild" in x for x in f2), f2[:2]
+    assert not ok2 and any("GF3" in x or "rebuild" in x or "grid" in x for x in f2), f2[:2]
 
 
 def test_pure_fourier_delta_comes_from_the_negative_response_bound():
@@ -479,6 +490,7 @@ def test_pure_fourier_delta_comes_from_the_negative_response_bound():
     assert coll["quadrature_tv"] == 0
     L = Fr(coll["forecast"]["L_lower"])
     num_eps = K.MAX_WIDTH - 2 * K.RADII["collective_fit_and_rounding"] - 2 * K.RADII["gaussian_quadrature"] - RES
+    # GF2: e = delta_0 / (2 r_-) with delta_0 = L num_eps / 4 (Chapter 05 eq. 9)
     assert Fr(coll["negative_deltas"][0]) <= L * num_eps / 4
     prog = _parse(RT.program_for("fourier", [], coll, [], 96, q))
     rows, meta = RT.execute(prog, r, q, num_eps=num_eps)

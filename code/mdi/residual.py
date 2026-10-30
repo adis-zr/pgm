@@ -36,7 +36,7 @@ class Canonical:
 
 
 def canonicalize(residual_unary, residual_pairs, card, ctx: A.Ctx,
-                 drop_budget: Fr):
+                 drop_budget: Fr, protected=None):
     """Turn a fitted residual into a product law where the error permits.
 
     `drop_budget` is the uniform log-error still available from the single
@@ -48,12 +48,16 @@ def canonicalize(residual_unary, residual_pairs, card, ctx: A.Ctx,
     transferred, dropped, kept = [], [], {}
     nu_extra = Fr(0)
     budget = Fr(drop_budget)
+    protected = {(min(a, b), max(a, b)) for a, b in (protected or ())}
 
     # --- step 1: exact transfers (zero error) ---
     pending = []
     for (i, j), tbl in sorted(residual_pairs.items()):
         t = [Fr(x) for x in tbl]
         di, dj = card[i], card[j]
+        if (min(i, j), max(i, j)) in protected:
+            kept[(i, j)] = t                   # a DECLARED mask pair is retained exactly
+            continue
         if any(x <= 0 for x in t):
             kept[(i, j)] = t                   # zeros stay; not our business
             continue

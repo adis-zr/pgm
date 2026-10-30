@@ -93,9 +93,9 @@ def program_for(kind, scales, coll, order, precision, queries, extra=None):
             "Q": coll["Q"], "delta": (None if coll.get("delta") is None
                                       else str(Fr(coll["delta"]))),
             "deltas": (None if not coll.get("deltas") else [str(Fr(x)) for x in coll["deltas"]]),
-            "lattices": (None if not coll.get("lattices") else [
-                {"T": str(Fr(l["T"])), "h": str(Fr(l["h"])), "nodes": int(l["nodes"]),
-                 "total_bound": str(Fr(l["total_bound"]))} for l in coll["lattices"]]),
+            "grids": (None if not coll.get("grids") else [
+                dict(g, beta=str(Fr(g["beta"])), R=str(Fr(g["R"])), tol=str(Fr(g["tol"])),
+                     h=str(Fr(g["h"])), error=str(Fr(g["error"]))) for g in coll["grids"]]),
             "fit_tv": str(Fr(coll["fit_tv"])),
             "rounding_tv": str(Fr(coll["rounding_tv"])),
             "quadrature_tv": str(Fr(coll["quadrature_tv"])),
@@ -114,6 +114,21 @@ def allocations_for(scales, coll) -> dict:
     for k, sc in enumerate(scales):
         out["regional_level%d" % (k + 1)] = Fr(sc.t_level)
         out["deletion_level%d" % (k + 1)] = Fr(sc.deletion_radius_total)
+    if coll is not None:
+        out["collective_fit"] = Fr(coll["fit_tv"])
+        out["collective_rounding"] = Fr(coll["rounding_tv"])
+        out["gaussian_quadrature"] = Fr(coll["quadrature_tv"])
+    return out
+
+
+def allocations_for_program(prog) -> dict:
+    """The same component radii as `allocations_for`, read from a PARSED
+    program (the loaded record's authority at binding)."""
+    out = {}
+    for k, sc in enumerate(prog["scales"]):
+        out["regional_level%d" % (k + 1)] = Fr(sc["t_level"])
+        out["deletion_level%d" % (k + 1)] = Fr(sc["deletion_radius_total"])
+    coll = prog["collective"]
     if coll is not None:
         out["collective_fit"] = Fr(coll["fit_tv"])
         out["collective_rounding"] = Fr(coll["rounding_tv"])
@@ -203,8 +218,6 @@ def scale_view_from_record(marked, sc):
                 A[tuple(mb)] = Fr(1)
             for k in c["N"]:
                 marks.setdefault(k, {})
-        for b in rg["deleted"]:
-            A[tuple(b)] = Fr(1)
         rset = set(rg["region"])
         internal = [fi for fi, f in enumerate(marked.factors) if set(f.scope) <= rset]
         crossing = [fi for fi, f in enumerate(marked.factors)

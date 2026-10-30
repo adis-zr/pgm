@@ -558,6 +558,39 @@ ALGEBRA_COST = {
     "rational": (1, 1), "interval": (2, 2), "complex": (20, 4)}
 
 
+_PRIM = {}
+
+
+def primitive_call_counts():
+    """MPFR calls per enclosure primitive of EACH engine, measured once by
+    running the primitives through the counting proxy (wide trigonometric
+    intervals exercise the interior-extremum branches). The transcendental
+    forecast is built from these measured constants, per engine."""
+    if _PRIM:
+        return _PRIM
+    from mdi import collective as CO, program_check as PC, arith as A
+    ctx = A.Ctx(64)
+
+    def count(fn):
+        A.reset_transcendental_calls()
+        fn()
+        return A.transcendental_calls()
+    wide = [(Fr(0), Fr(7)), (Fr(-1), Fr(1)), (Fr(1, 3), Fr(1, 2)), (Fr(3), Fr(10))]
+    _PRIM.update({
+        "p_weight": count(lambda: CO._normal_weight(Fr(1, 2), Fr(1), ctx)),
+        "p_tilt": count(lambda: CO._exp_enclose(Fr(1, 3), Fr(1, 2), Fr(2, 3), ctx)),
+        "p_sqrt": count(lambda: CO._sqrt_enclose(Fr(2), ctx)),
+        "p_phase": max(count(lambda: (CO._cos_enclose(a, b, ctx), CO._sin_enclose(a, b, ctx))) for a, b in wide),
+        "c_weight": count(lambda: PC._own_normal_weight(Fr(1, 2), Fr(1), ctx)),
+        "c_tilt": count(lambda: (PC._own_exp_pair(Fr(1, 3), ctx), PC._own_exp_pair(Fr(1, 2), ctx))),
+        "c_sqrt": count(lambda: PC._own_sqrt_pair(Fr(2), ctx)),
+        "c_phase": max(count(lambda: (PC._own_trig(a, b, ctx, "cos"), PC._own_trig(a, b, ctx, "sin"))) for a, b in wide),
+        "stat_root": count(lambda: __import__("mdi.collective_jt", fromlist=["x"])._exp_pair(Fr(1, 3), ctx)),
+        "stat_root_checker": count(lambda: PC._own_exp_pair(Fr(1, 3), ctx)),
+    })
+    return _PRIM
+
+
 def dry_run_sparse(tabs, card, real, order, stat_insert=None, rank=1,
                    support_cap=None, entry_cap=None, only=None, deadline=None,
                    charge=None):
@@ -711,15 +744,23 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
             # (interval algebra, one contraction per positive node) and, per
             # positive node, one complex contraction per conjugate pair of
             # negative nodes. Node counts from the record's lattices.
-            from mdi import collective_route as CRX
-            deltas = coll.get("deltas") or [coll["delta"]]
+            # node counts from the ACTUAL loaded grids (Chapter 05 GF1/GF2);
+            # the grid-construction work (exact integer comparisons and the
+            # finite point set) is counted too
+            grids = coll.get("grids") or []
+            if len(grids) != cand.rank:
+                raise ValueError("a quadrature record needs one GF grid per mode")
             pos_nodes = neg_nodes = 1
+            grid_ops = 0
             for k in range(cand.rank):
-                lat = CRX.lattice_for(cand, k, Fr(deltas[k]))
+                g = grids[k]
                 if cand.signs[k] > 0:
-                    pos_nodes *= lat["nodes"]
+                    pos_nodes *= int(g["nodes"])
                 else:
-                    neg_nodes *= lat["nodes"]
+                    neg_nodes *= int(g["nodes"])
+                grid_ops += int(g["t"]) + int(g["m"]) + int(g["T"]) + int(g["b"]) + int(g["nodes"])
+            rec.put("grid_construction_ops", grid_ops, EXACT,
+                    "GF1/GF2 integer comparisons plus the finite point sets")
             has_neg = any(sg < 0 for sg in cand.signs)
             neg_pairs = (neg_nodes + 1) // 2 if has_neg else 0
             rec.put("positive_grid_nodes", pos_nodes, EXACT)
@@ -758,6 +799,29 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
                 per_node_extra += (phase_once + nodes - 1) // max(1, nodes)
             trans = nodes * (2 * cand.rank + n_states * 2 * n_pos) + \
                 (neg_pairs * n_states * 4 * n_neg if has_neg else 0)
+            # transcendental forecasts PER ENGINE from the probed per-primitive
+            # call counts (weights per node, tilts per state per positive mode,
+            # phases per state per negative mode, sqrt per mode)
+            pr = primitive_call_counts()
+            trans_p = (pos_nodes * (n_pos * pr["p_weight"] + n_states * n_pos * pr["p_tilt"])
+                       + (neg_pairs * (n_neg * pr["p_weight"] + n_states * n_neg * pr["p_phase"]) if has_neg else 0)
+                       + cand.rank * pr["p_sqrt"])
+            trans_c = (pos_nodes * (n_pos * pr["c_weight"] + n_states * n_pos * pr["c_tilt"])
+                       + (neg_pairs * (n_neg * pr["c_weight"] + n_states * n_neg * pr["c_phase"]) if has_neg else 0)
+                       + cand.rank * pr["c_sqrt"] + 64)
+            trans = max(trans_p, trans_c)
+            rec.put("transcendental_producer_forecast", trans_p, FORECAST,
+                    "MPFR calls of the producer's enclosures (probed per-primitive counts)")
+            rec.put("transcendental_checker_forecast", trans_c, FORECAST,
+                    "MPFR calls of the checker's own enclosures (probed per-primitive counts)")
+            retained = pos_nodes * (2 + 2 * n_states + 2 * n_cells + 2)
+            phases = (neg_pairs * (2 + 4 * n_states)) if has_neg else 0
+            rec.put("retained_positive_node_entries", retained, EXACT,
+                    "weights, tilt rows, event masses and totals kept per positive node")
+            rec.put("precomputed_phase_entries", phases, EXACT,
+                    "negative-node weights and per-state phase rectangles kept across positive nodes")
+            rec.put("event_staging_entries", nodes * n_states * (4 if has_neg else 2), UPPER,
+                    "per-node unary tilt / tilt x phase tables staged for the contraction")
     # ---- the two dry runs, on the SAVED order when one is given; guarded by
     # the shared deadline and by a PER-CANDIDATE meter with the same entry cap
     # the program itself must respect (a probe that exceeds it proves the
@@ -899,7 +963,14 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
             conv_others = (2 * tot_sup * tot_sup) if nroots > 1 else 0
             per_node_extra = (2 * tot_sup * (1 + n_cells) + 4 * n_cells
                               + n_cells * conv_others + 3 * nroots * conv_others)
-            trans = tot_sup * (1 + n_cells)
+            pr = primitive_call_counts()
+            trans_p = tot_sup * (1 + n_cells) * pr["stat_root"]
+            trans_c = tot_sup * (1 + n_cells) * pr["stat_root_checker"]
+            trans = max(trans_p, trans_c)
+            rec.put("transcendental_producer_forecast", trans_p, FORECAST,
+                    "root exponential per support point (producer)")
+            rec.put("transcendental_checker_forecast", trans_c, FORECAST,
+                    "root exponential per support point (checker)")
     # quadratic-energy construction (the rounding bound per Q attempt), root
     # integration, normalization (the sharp ratio per state) and structural
     # map composition are priced explicitly
@@ -926,9 +997,10 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
             "per-node enclosures, marker accumulation and integration, the "
             "original-variable payload readout, normalization and the energy "
             "bound")
-    rec.put("transcendental_evaluations", trans, UPPER,
-            "MPFR exp/log/trig/sqrt enclosures; NOT a Fraction count and not "
-            "summed into total_arithmetic")
+    rec.put("transcendental_evaluations", trans, FORECAST,
+            "MPFR exp/log/trig/sqrt/pi evaluations per engine, from measured "
+            "per-primitive call counts; NOT a Fraction count and not summed into "
+            "total_arithmetic; each engine REPORTS its measured count")
     if fit_ops is not None:
         rec.put("mode_fit_ops", int(fit_ops), FORECAST,
                 "mode recognition during discovery (paid once, recorded)")
@@ -938,13 +1010,17 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
     else:
         chk_local = 0
         for sc in scales:
-            for rd, cr in zip(sc.rds, sc.coarse):
+            for ri, (rd, cr) in enumerate(zip(sc.rds, sc.coarse)):
                 joint = 1
                 for v in rd.vars:
                     joint *= _card_of(sc, v)
                 nfac = len(rd.internal_factors) + 1
                 chk_local += joint * (nfac + 1 + 2 * len(rd.marks))
-                chk_local += len(rd.A) * (4 + 2 * len(rd.crossing_factors)) * 2
+                # the checker enumerates EVERY supported boundary state, the
+                # deleted ones included (it re-proves the deletion from them)
+                dl = sc.deletions[ri] if ri < len(sc.deletions) else None
+                n_bd = len(rd.A) + (len(dl.deleted) if dl else 0)
+                chk_local += n_bd * (4 + 2 * len(rd.crossing_factors)) * 2
                 chk_local += sum(len(c.members) for c in cr.cells) * 8
                 chk_local += len(cr.cells) * (2 + 2 * len(cr.N))
             chk_local += len(sc.regions) * K.CAPS["aggregated_kernel_entries"]
@@ -974,7 +1050,9 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
             lift_entries += sum(len(o) for o in pc.offsets.values()) if hasattr(pc, "offsets") else 0
     chk_struct = 0
     for sc in scales:
-        chk_struct += sum(max(1, len(rd.A)) for rd in sc.rds)
+        for ri, rd in enumerate(sc.rds):
+            dl = sc.deletions[ri] if ri < len(sc.deletions) else None
+            chk_struct += max(1, len(rd.A) + (len(dl.deleted) if dl else 0))
         # the checker's own profile product per crossing group is charged by
         # its kernel size, which the checker refuses above the kernel cap
         for cr in sc.coarse:
@@ -1030,14 +1108,21 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
             "statistic supports counted per entry")
     rec.put("input_entries_retained", inputs + markers, EXACT,
             "dense input tables plus offset maps plus marker payloads")
-    rec.bytes_producer = Counter((p_live + p_largest) * width * 64 + (inputs + markers) * 64,
+    extra_live = 0
+    if coll is not None and coll["evaluator"] != "statistic":
+        extra_live = int(rec.counters["retained_positive_node_entries"].value) + \
+            int(rec.counters["precomputed_phase_entries"].value)
+    rec.bytes_producer = Counter((p_live + p_largest) * width * 64 + (inputs + markers) * 64
+                                 + extra_live * 2 * 64,
                                  FORECAST,
                                  "peak live messages plus one largest working table, "
                                  "times the algebra width, plus retained inputs; "
                                  "ENTRY COUNTS at 64 bytes each, excludes object "
                                  "overhead; NOT measured whole-process memory")
-    rec.bytes_checker = Counter((c_live + 2 * c_largest) * width * 64 + (inputs + markers) * 64,
-                                FORECAST, "dense dry run liveness plus retained inputs")
+    rec.bytes_checker = Counter((c_live + 2 * c_largest) * width * 64 + (inputs + markers) * 64
+                                + extra_live * 2 * 64,
+                                FORECAST, "dense dry run liveness plus retained inputs plus the "
+                                          "retained node data and precomputed phases")
     return rec, order
 
 

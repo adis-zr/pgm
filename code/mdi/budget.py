@@ -43,6 +43,7 @@ class Budget:
         self._lock = threading.Lock()
         self.stops = []
         self.phase = "init"
+        self.phases = []              # every phase entered, in order (reviewable)
         self._checks = 0
 
     # ---- time ----
@@ -119,6 +120,7 @@ class Budget:
         and an 80 ms checker under a 20 ms deadline certified with a negative
         remaining time."""
         self._enter_raw(phase)
+        self.phases.append(str(phase))
         self.check("enter:" + phase)
 
     def _enter_raw(self, phase):
@@ -135,6 +137,7 @@ class Budget:
         return {"wall_s": self.wall_s, "elapsed_s": round(self.elapsed(), 3),
                 "remaining_s": round(self.remaining(), 3),
                 "used": dict(self.used), "limits": dict(self.limits),
+                "phases": list(self.phases),
                 "peak_rss": self.peak_rss, "rss_limit": self.rss_limit,
                 "stops": list(self.stops), "checks": self._checks,
                 "note": "one monotonic deadline and shared counters across "

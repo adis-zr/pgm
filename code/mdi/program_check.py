@@ -13,7 +13,7 @@ sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
 import itertools
 import gmpy2
-from mdi import (model as M, config as K, regions as R, marked as MK,
+from mdi import (model as M, config as K, regions as R, marked as MK, collective as CO,
                  regional_check as RC, collective_route as CR,
                  collective_jt as CJ, dense_be as DB, arith as A, program as PG,
                  factors as FX)
@@ -400,9 +400,9 @@ def verify_scale(marked: MK.Marked, sc, deadline=None, budget=None):
 
 def _log_pair(q: Fr, ctx):
     with ctx.D:
-        lo = gmpy2.log(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
+        lo = A.T.log(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
     with ctx.U:
-        hi = gmpy2.log(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
+        hi = A.T.log(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
     return A.exact_fr(lo), A.exact_fr(hi)
 
 
@@ -619,17 +619,17 @@ def _own_round_half_up(x: Fr) -> int:
 
 def _own_exp_pair(x: Fr, ctx):
     with ctx.D:
-        lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        lo = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     with ctx.U:
-        hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        hi = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     return A.exact_fr(lo), A.exact_fr(hi)
 
 
 def _own_sqrt_pair(q: Fr, ctx):
     with ctx.D:
-        lo = gmpy2.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
+        lo = A.T.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
     with ctx.U:
-        hi = gmpy2.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
+        hi = A.T.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
     return A.exact_fr(lo), A.exact_fr(hi)
 
 
@@ -688,6 +688,7 @@ def _own_event_counts(rmk, jt, alg, value_of_cell):
 def own_statistic_reference(rmk, coll, ctx, deadline, charge):
     """The checker's own statistic-DP reference: own rounding, dense statistic
     contraction, own root exponential, own marker restoration."""
+    A.reset_transcendental_calls()
     cand = coll["candidate"]
     Q = coll["Q"]
     rank = cand.rank
@@ -737,14 +738,15 @@ def own_statistic_reference(rmk, coll, ctx, deadline, charge):
     ev = _own_event_counts(rmk, jt, alg, lambda g: {zero: g})
     counts = {v: [integrate(d) for d in rows] for v, rows in ev.items()}
     return counts, {"engine": "dense", "method": "checker-owned statistic reference",
-                    "support": len(total), "Z": (str(Zlo), str(Zhi))}
+                    "support": len(total), "Z": (str(Zlo), str(Zhi)),
+                    "transcendental_calls": A.transcendental_calls(), "ops": dict(jt.ops)}
 
 
 def _own_pi(ctx):
     with ctx.D:
-        lo = gmpy2.const_pi()
+        lo = A.T.const_pi()
     with ctx.U:
-        hi = gmpy2.const_pi()
+        hi = A.T.const_pi()
     return A.exact_fr(lo), A.exact_fr(hi)
 
 
@@ -889,6 +891,33 @@ def _own_isqrt_ceil(q: Fr) -> int:
     return n
 
 
+def _own_bind_residual(marked, rmk):
+    """Bind the residual marked model's owners, masses and state-labelled
+    payloads to the CHECKER's verified model (the marked model it built from
+    its own witnesses). Returns a reason or None."""
+    if set(rmk.queries()) != set(marked.queries()):
+        return "the residual's requested set %s differs from the verified %s" % (
+            sorted(rmk.queries())[:6], sorted(marked.queries())[:6])
+    for v in sorted(marked.queries()):
+        if rmk.owner.get(v) != marked.owner.get(v):
+            return "variable %d is owned by %s in the residual but %s in the verified model" % (
+                v, rmk.owner.get(v), marked.owner.get(v))
+        if rmk.orig_card.get(v) != marked.orig_card.get(v):
+            return "variable %d changes cardinality in the residual" % v
+        o = marked.owner[v]
+        if rmk.card.get(o) != marked.card.get(o):
+            return "owner %s changes cardinality in the residual" % o
+        if [Fr(x) for x in rmk.mass[o]] != [Fr(x) for x in marked.mass[o]]:
+            return "owner %s masses differ from the verified masses" % o
+        for a in range(marked.orig_card[v]):
+            if [Fr(x) for x in rmk.marks[(v, a)]] != [Fr(x) for x in marked.marks[(v, a)]]:
+                return "marker (%d,%d) payload differs from the verified payload" % (v, a)
+    for v in rmk.free():
+        if v not in marked.card or rmk.card[v] != marked.card[v]:
+            return "the residual carries a variable %s the verified model does not" % v
+    return None
+
+
 def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
     """The checker's own Gaussian/Fourier/mixed reference on the dense engine:
     own lattice validation, own tilts and phases, own weights, own positive
@@ -899,29 +928,48 @@ def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
     rank = cand.rank
     pos = [k for k in range(rank) if cand.signs[k] > 0]
     neg = [k for k in range(rank) if cand.signs[k] < 0]
-    lats = coll.get("lattices")
-    if not lats or len(lats) != rank:
-        raise CheckError("the record carries no per-mode lattice to validate")
+    grids = coll.get("grids")
+    if not grids or len(grids) != rank:
+        raise CheckError("the record carries no per-mode GF grid to validate")
+    # the checker's OWN admissible GF1/GF2 integers from the LOADED grid's
+    # tolerance and its own mode range R_k (sum of per-variable maxima of the
+    # recorded features): the loaded spacing and terminal index must be at
+    # least as fine and as far as the proof requires
     own_delta = []
     for k in range(rank):
-        bad = validate_lattice(cand, k, lats[k])
-        if isinstance(bad, str):
-            raise CheckError("mode %d lattice: %s" % (k, bad))
-        own_delta.append(bad)
-    # positive modes: the RECORDED quadrature radius (a published TV radius)
-    # must cover the checker's own tensor lattice error
-    own_qtv = _own_tensor_error([own_delta[k] for k in pos]) if pos else Fr(0)
+        g = grids[k]
+        if int(g["sign"]) != int(cand.signs[k]):
+            raise CheckError("mode %d grid sign does not match the mode" % k)
+        if str(g["rule"]) != CO.GF_RULE or int(g["version"]) != CO.GF_RULE_VERSION:
+            raise CheckError("mode %d grid rule %s v%s is not the frozen %s v%d"
+                             % (k, g["rule"], g["version"], CO.GF_RULE, CO.GF_RULE_VERSION))
+        Rk = Fr(0)
+        for f in cand.features[k].values():
+            Rk += max(abs(Fr(x)) for x in f)
+        if Fr(g["R"]) < Rk:
+            raise CheckError("mode %d grid range %s is below the checker's own range %s"
+                             % (k, g["R"], Rk))
+        if Fr(g["beta"]) != Fr(cand.gammas[k]):
+            raise CheckError("mode %d grid beta %s is not the mode's gamma %s" % (k, g["beta"], cand.gammas[k]))
+        bad = CO.gf_grid_admissible(g, Fr(cand.gammas[k]), Rk)
+        if bad:
+            raise CheckError("mode %d grid: %s" % (k, bad))
+        own_delta.append(Fr(g["tol"]))
+    # GF3: the recorded quadrature radius (a published TV radius) must cover
+    # the checker's own eta of the positive tolerances
+    own_qtv = CO.gf3_eta([own_delta[k] for k in pos]) if pos else Fr(0)
     if own_qtv > Fr(coll["quadrature_tv"]):
         raise CheckError("the recorded quadrature radius %s does not cover the "
-                         "checker's own positive-lattice error %s"
-                         % (coll["quadrature_tv"], own_qtv))
+                         "checker's own GF3 allowance %s" % (coll["quadrature_tv"], own_qtv))
+    A.reset_transcendental_calls()
     free = rmk.free()
     sg = {k: _own_sqrt_pair(Fr(cand.gammas[k]), ctx) for k in range(rank)}
 
     def points(k):
-        T, h = Fr(lats[k]["T"]), Fr(lats[k]["h"])
-        jmax = int(T / h)
-        return [Fr(j) * h for j in range(-jmax, jmax + 1)], h
+        g = grids[k]
+        n = int(g["K"]) if int(g["sign"]) > 0 else int(g["J"])
+        h = Fr(g["h"])
+        return [Fr(j) * h for j in range(-n, n + 1)], h
     base_int = _own_law_tables(rmk, lambda x: (x, x))
     base_cx = _own_law_tables(rmk, lambda x: (x, x, Fr(0), Fr(0)))
     queries = rmk.queries()
@@ -977,7 +1025,9 @@ def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
         return {v: [tuple(r) for r in rows] for v, rows in counts.items()}, \
             {"engine": "dense", "method": "checker-owned Gaussian reference",
              "positive_nodes": len(mass), "own_quadrature_tv": str(own_qtv),
-             "own_lattice_bounds": [str(x) for x in own_delta]}
+             "own_lattice_bounds": [str(x) for x in own_delta],
+             "transcendental_calls": A.transcendental_calls(),
+             "ops": dict(engine_int.ops) if engine_int is not None else {}}
     # ---- negative grid: conjugate pairs from a key set built ONCE
     neg_pts = [points(k) for k in neg]
     neg_nodes = list(itertools.product(*[pp[0] for pp in neg_pts]))
@@ -994,8 +1044,12 @@ def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
         seen.add(nd)
         seen.add(conj)
         pairs.append((nd, conj != nd))
-    # tensor Fourier error from the checker's OWN per-mode lattice bounds
-    delta = _own_tensor_error([own_delta[k] for k in neg])
+    # Chapter 05 eq. (9): the tensor Fourier error prod(1 + e) - 1 from the
+    # checker's own admitted tolerances
+    delta = Fr(1)
+    for k in neg:
+        delta *= (1 + own_delta[k])
+    delta -= 1
     phase_rows = []
     for nd, has_conj in pairs:
         if deadline is not None:
@@ -1080,11 +1134,18 @@ def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
                 X_todo[v][a] -= wu * mhi
     counts = {v: [(X_done[v][a][0], X_done[v][a][1] + X_todo[v][a]) for a in range(nst[v])]
               for v in queries}
+    ops = {"mul": 0, "add": 0}
+    for eng in (engine_int, engine_cx):
+        if eng is not None:
+            for kk in ops:
+                ops[kk] += int(eng.ops.get(kk, 0))
     return counts, {"engine": "dense", "method": "checker-owned mixed/Fourier reference",
                     "positive_nodes": len(mass), "processed": len(process),
+                    "retained_positive_node_indices": sorted(process),
                     "conjugate_pairs": len(pairs), "tensor_delta": str(delta),
                     "own_quadrature_tv": str(own_qtv),
-                    "own_lattice_bounds": [str(x) for x in own_delta]}
+                    "own_lattice_bounds": [str(x) for x in own_delta],
+                    "transcendental_calls": A.transcendental_calls(), "ops": ops}
 
 
 # --------------------------------------------------------------- the check
@@ -1107,6 +1168,7 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
     marked = MK.Marked.from_restricted(r, queries)
     radius = Fr(0)
     meta = {"scales": [], "independent_enclosure": True}
+    ledger = {}
     merged_regions = 0
     deleted_states = 0
     for k, sc in enumerate(prog["scales"]):
@@ -1115,6 +1177,8 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
             return False, ["scale %d: %s" % (k + 1, p) for p in info], \
                 {"certificate_rejected": True}
         radius += info["t_level"] + info["deletion"]
+        ledger["regional_level%d" % (k + 1)] = str(info["t_level"])
+        ledger["deletion_level%d" % (k + 1)] = str(info["deletion"])
         meta["scales"].append({kk: str(vv) for kk, vv in info.items()})
         merged_regions += info["merged_regions"]
         deleted_states += info["deleted_states"]
@@ -1145,12 +1209,21 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
         rows = own_restore(marked, Z, counts)
         meta["method"] = ("checker-owned dense junction tree, exact rationals, "
                           "checker-owned sharp marker-ratio restoration")
+        meta["positive_denominators"] = bool(Fr(Z) > 0) and all(
+            sum(Fr(counts[v][c]) for c in range(marked.card[v])) > 0 for v in counts)
     else:
         ctx = A.Ctx(coll["precision"] + 16)
         try:
             rmk, res, can = CR.rebuild_residual(marked, coll, A.Ctx(coll["precision"]))
         except (CR.Declined, Exception) as e:
             return False, ["the collective record does not rebuild: %s" % e], None
+        # the residual's ORIGINAL-EVENT OWNERS and STATE-LABELLED PAYLOADS are
+        # bound by the checker to its own verified marked model, never taken
+        # from the producer's residual builder: same owner per requested
+        # variable, same masses, same marker payload per (variable, state, cell)
+        bad = _own_bind_residual(marked, rmk)
+        if bad:
+            return False, ["residual binding: %s" % bad], {"certificate_rejected": True}
         ok, info = verify_fit(marked, rmk, coll["candidate"], coll["fit_tv"], ctx)
         if not ok:
             return False, info, {"certificate_rejected": True}
@@ -1216,9 +1289,23 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
                 rr.append((max(Fr(0), xl / dl if dl > 0 else Fr(0)),
                            min(Fr(1), xu / du if du > 0 else Fr(1))))
             rows[v] = rr
-        radius += CR.total_radius(coll)
+        # the checker's OWN component radii for this route: its fit certificate,
+        # its rounding bound (statistic) or its GF3 allowance (quadrature); the
+        # recorded radii are what the publication was padded by and must cover
+        # these (verified above); unused components are exactly zero
+        own_fit = Fr(info["own_tv"])
+        own_round = Fr(meta.get("own_rounding_tv", "0"))
+        own_q = Fr(cmeta.get("own_quadrature_tv", "0")) if coll["evaluator"] != "statistic" else Fr(0)
+        ledger["collective_fit"] = str(own_fit)
+        ledger["collective_rounding"] = str(own_round)
+        ledger["gaussian_quadrature"] = str(own_q)
+        radius += own_fit + own_round + own_q
         meta["method"] = "checker-owned dense %s evaluation" % coll["evaluator"]
         meta["collective"] = {k: v for k, v in cmeta.items() if k != "lattice"}
+        # positive denominators: the checker's own counts totals
+        meta["positive_denominators"] = all(
+            sum(Fr(counts[v][a][1]) for a in range(rmk.orig_card[v])) > 0 for v in rmk.queries())
+    meta["ledger"] = ledger
     meta["checker_radius"] = str(radius)
     meta["verified_research"] = {
         "cells_merged_regions": merged_regions, "deleted_states": deleted_states,

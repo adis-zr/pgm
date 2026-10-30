@@ -101,6 +101,9 @@ def scale_from_jsonable(d: dict) -> dict:
                      "aggregation": [{"factors": [int(x) for x in e["factors"]],
                                       "aggregated": bool(e["aggregated"])}
                                      for e in rg["aggregation"]]})
+    for k in ("t_level", "R_level", "deletion_radius_total"):
+        if _fr(d[k], k) < 0:
+            raise ProgramError("scale radius %s is negative (%s): an invalid proof budget" % (k, d[k]))
     return {"t_level": _fr(d["t_level"], "t_level"),
             "R_level": _fr(d["R_level"], "R_level"),
             "deletion_radius_total": _fr(d["deletion_radius_total"],
@@ -115,11 +118,12 @@ def cand_to_jsonable(cand) -> dict:
             "gammas": [_q(g) for g in cand.gammas],
             "features": [{str(v): [_q(x) for x in f] for v, f in fk.items()}
                          for fk in cand.features],
-            "kind": str(cand.kind)}
+            "kind": str(cand.kind),
+            "masked": [[int(a), int(b)] for a, b in (getattr(cand, "masked", None) or [])]}
 
 
 def cand_from_jsonable(d: dict):
-    _need(d, ("signs", "gammas", "features", "kind"), "mode candidate")
+    _need(d, ("signs", "gammas", "features", "kind", "masked"), "mode candidate")
     signs = [int(s) for s in d["signs"]]
     if any(s not in (1, -1) for s in signs):
         raise ProgramError("mode signs must be +1 or -1")
@@ -130,11 +134,45 @@ def cand_from_jsonable(d: dict):
              for fk in d["features"]]
     if not (len(signs) == len(gammas) == len(feats)) or not signs:
         raise ProgramError("mode record has inconsistent rank")
+    masked = []
+    for pr in d.get("masked") or []:
+        if not (isinstance(pr, (list, tuple)) and len(pr) == 2):
+            raise ProgramError("a masked pair must be a 2-list of variables")
+        masked.append((int(pr[0]), int(pr[1])))
     return MD.ModeCandidate(signs=signs, gammas=gammas, features=feats,
-                            kind=str(d["kind"]))
+                            kind=str(d["kind"]), masked=masked)
 
 
-COLLECTIVE_KEYS = ("evaluator", "candidate", "Q", "delta", "deltas", "lattices",
+GRID_KEYS = ("rule", "version", "sign", "beta", "R", "tol", "t", "m", "T", "b", "h",
+             "nodes", "signed_frequencies", "representatives", "error", "error_kind")
+
+
+def _grid_from_jsonable(g: dict) -> dict:
+    term = ("K",) if int(g.get("sign", 0)) > 0 else ("J",)
+    _need(g, GRID_KEYS + term, "GF grid record")
+    out = {"rule": str(g["rule"]), "version": int(g["version"]), "sign": int(g["sign"]),
+           "beta": _fr(g["beta"], "grid beta"), "R": _fr(g["R"], "grid R"),
+           "tol": _fr(g["tol"], "grid tolerance"), "t": int(g["t"]), "m": int(g["m"]),
+           "T": int(g["T"]), "b": int(g["b"]), "h": _fr(g["h"], "grid spacing"),
+           "nodes": int(g["nodes"]), "signed_frequencies": int(g["signed_frequencies"]),
+           "representatives": int(g["representatives"]), "error": _fr(g["error"], "grid error"),
+           "error_kind": str(g["error_kind"])}
+    if out["sign"] not in (1, -1):
+        raise ProgramError("grid sign must be +1 or -1")
+    if out["sign"] > 0:
+        if "K" not in g:
+            raise ProgramError("a positive GF1 grid needs its terminal index K")
+        out["K"] = int(g["K"])
+    else:
+        if "J" not in g:
+            raise ProgramError("a negative GF2 grid needs its terminal index J")
+        out["J"] = int(g["J"])
+    if out["m"] < 1 or out["h"] <= 0 or out["nodes"] < 1 or out["tol"] <= 0:
+        raise ProgramError("a GF grid has non-positive parameters")
+    return out
+
+
+COLLECTIVE_KEYS = ("evaluator", "candidate", "Q", "delta", "deltas", "grids",
                    "fit_tv", "rounding_tv", "quadrature_tv", "precision", "round_bits",
                    "kept_factors", "dropped_pairs", "drop_budget")
 
@@ -149,10 +187,7 @@ def collective_from_jsonable(d: dict) -> dict:
            "delta": (None if d["delta"] is None else _fr(d["delta"], "delta")),
            "deltas": (None if d["deltas"] is None
                       else [_fr(x, "delta") for x in d["deltas"]]),
-           "lattices": (None if d["lattices"] is None else [
-               {"T": _fr(l["T"], "lattice T"), "h": _fr(l["h"], "lattice h"),
-                "nodes": int(l["nodes"]), "total_bound": _fr(l["total_bound"], "lattice bound")}
-               for l in d["lattices"]]),
+           "grids": (None if d["grids"] is None else [_grid_from_jsonable(g) for g in d["grids"]]),
            "fit_tv": _fr(d["fit_tv"], "fit_tv"),
            "rounding_tv": _fr(d["rounding_tv"], "rounding_tv"),
            "quadrature_tv": _fr(d["quadrature_tv"], "quadrature_tv"),
@@ -162,17 +197,24 @@ def collective_from_jsonable(d: dict) -> dict:
            "drop_budget": _fr(d["drop_budget"], "drop_budget")}
     if out["Q"] is not None and out["Q"] < 1:
         raise ProgramError("Q must be a positive integer")
+    for k in ("fit_tv", "rounding_tv", "quadrature_tv", "drop_budget"):
+        if out[k] < 0:
+            raise ProgramError("collective radius %s is negative (%s): an invalid proof budget" % (k, out[k]))
     if out["evaluator"] == "statistic":
         if out["Q"] is None or out["deltas"] is not None:
             raise ProgramError("a statistic record needs Q and no lattice deltas")
     else:
         if out["deltas"] is None or len(out["deltas"]) != out["candidate"].rank:
             raise ProgramError("a quadrature record needs one lattice delta per mode")
-        if out["lattices"] is None or len(out["lattices"]) != out["candidate"].rank:
-            raise ProgramError("a quadrature record needs one validated lattice per mode")
-        for l in out["lattices"]:
-            if l["nodes"] < 1 or l["T"] <= 0 or l["h"] <= 0:
-                raise ProgramError("a recorded lattice has non-positive parameters")
+        if out["grids"] is None or len(out["grids"]) != out["candidate"].rank:
+            raise ProgramError("a quadrature record needs one GF grid per mode")
+        for k, g in enumerate(out["grids"]):
+            if g["sign"] != out["candidate"].signs[k]:
+                raise ProgramError("grid %d has sign %d but mode sign %d"
+                                   % (k, g["sign"], out["candidate"].signs[k]))
+            if Fr(g["tol"]) != out["deltas"][k]:
+                raise ProgramError("grid %d tolerance %s differs from the recorded delta %s"
+                                   % (k, g["tol"], out["deltas"][k]))
         if any(x <= 0 for x in out["deltas"]):
             raise ProgramError("lattice deltas must be positive")
         pos = [k for k in range(out["candidate"].rank) if out["candidate"].signs[k] > 0]

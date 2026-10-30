@@ -21,6 +21,49 @@ from fractions import Fraction as Fr
 import gmpy2
 from gmpy2 import mpfr, mpq
 
+
+class _Transcendental:
+    """Every MPFR transcendental evaluation (exp, log, sqrt, sin, cos, pi)
+    goes through this proxy so the count is a MEASUREMENT the executor and
+    checker report, compared against the price's bound. Reset per stage by
+    the caller that reports it."""
+    calls = 0
+
+    def exp(self, x):
+        _Transcendental.calls += 1
+        return gmpy2.exp(x)
+
+    def log(self, x):
+        _Transcendental.calls += 1
+        return gmpy2.log(x)
+
+    def sqrt(self, x):
+        _Transcendental.calls += 1
+        return gmpy2.sqrt(x)
+
+    def sin(self, x):
+        _Transcendental.calls += 1
+        return gmpy2.sin(x)
+
+    def cos(self, x):
+        _Transcendental.calls += 1
+        return gmpy2.cos(x)
+
+    def const_pi(self):
+        _Transcendental.calls += 1
+        return gmpy2.const_pi()
+
+
+T = _Transcendental()
+
+
+def transcendental_calls() -> int:
+    return _Transcendental.calls
+
+
+def reset_transcendental_calls():
+    _Transcendental.calls = 0
+
 RNDD = gmpy2.RoundDown
 RNDU = gmpy2.RoundUp
 

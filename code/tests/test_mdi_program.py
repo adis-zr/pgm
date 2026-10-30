@@ -96,6 +96,15 @@ def test_persisted_program_governs_execution_in_a_fresh_process():
             c["N"]["%d,1" % v] = str(tot * Fr(1, 10))
     p2 = os.path.join(d, "altered.plan.json")
     json.dump(bad, open(p2, "w"))
+    # (a) the altered program no longer matches its stored EXECUTABLE identity:
+    #     binding refuses it before anything runs
+    refused = replay(p2)
+    assert refused["status"] == "REPLAY_REFUSED" and "identity" in refused["reason"], refused
+    # (b) with the identity re-derived (as any producer of the altered record
+    #     could do), the record BINDS and ONLY the checker's independent
+    #     recomputation rejects it, on the named obligation
+    bad["storage_schedule"]["identity"] = PLN.executable_identity("regional", bad["program"])
+    json.dump(bad, open(p2, "w"))
     altered = replay(p2)
     assert altered["status"] == "REPLAY_REJECTED", altered["status"]
     assert any("alpha_b A_{R,i,a}" in f or "marker" in f
@@ -263,6 +272,7 @@ def test_quadrature_programs_execute_and_verify_from_their_record():
             # delta was chosen from the negative-response lower bound L
             assert coll["quadrature_tv"] == 0
             assert coll["negative_deltas"] and Fr(coll["forecast"]["L_lower"]) > 0
+            assert coll["grids"][0]["sign"] == -1 and coll["grids"][0]["representatives"] == coll["grids"][0]["J"] + 1
         prog = _parse(RT.program_for(prefer, [], coll, [], 96, q))
         rows, meta = RT.execute(prog, r, q)
         assert meta["evaluator"] == prefer and meta["positive_nodes"] >= 1

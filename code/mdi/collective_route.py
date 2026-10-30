@@ -256,46 +256,52 @@ def lattice_for(cand, k, delta):
 
 
 def gf_forecast(cand, qallow, num_eps):
-    """§7.2 feasibility forecast for Gaussian/Fourier/mixed integration.
+    """§7.2 feasibility forecast with the FROZEN Chapter 05 grids (GF1-GF3).
 
-    Positive coordinates: each needs a lattice whose GF3 total bound fits its
-    share of the quadrature allowance (a TV radius on the law, since
-    exp(+gS^2/2) >= 1 makes the absolute lattice error a relative one).
+    Positive modes (GF1 + GF3): every positive mode gets the same relative
+    tolerance d (dyadic, <= 1/2), the largest for which the GF3 allowance
+    eta(d, ..., d) fits the quadrature allowance -- eta is the TV radius
+    charged to the original law.
 
-    Negative coordinates: the lattice error is an ABSOLUTE error on a count
-    whose true value may be as small as L = exp(-Y_max) times the positive
-    mass. It is not a probability radius; it enters the sharp marker-ratio
-    enclosure, whose worst-case width is 2*delta/L. The forecast therefore
-    needs delta_neg <= L * num_eps / 4 (half the numerical width, for the
-    two-sided ratio), which can force an unaffordable node count -- that is
-    reported as a decline BEFORE any evaluation.
+    Negative modes (GF2): the tensor Fourier error delta = prod(1 + e_l) - 1 is
+    ABSOLUTE on a count whose true value may be as small as L = exp(-Y_max)
+    times the positive mass, so it enters the sharp marker-ratio enclosure
+    with worst width 2 delta / L; the forecast needs delta <= L num_eps / 4
+    and takes e_l = delta_0 / (2 r_-) (Chapter 05 eq. 9).
 
-    Returns (per-mode delta list, lattices, node product, meta) or raises
-    Declined.
+    Returns (per-mode tolerances, per-mode grids, tensor node product, meta)
+    or raises Declined BEFORE any evaluation.
     """
     pos = [k for k in range(cand.rank) if cand.signs[k] > 0]
     neg = [k for k in range(cand.rank) if cand.signs[k] < 0]
-    deltas = [None] * cand.rank
-    lats = [None] * cand.rank
-    meta = {"positive_modes": len(pos), "negative_modes": len(neg)}
+    tols = [None] * cand.rank
+    grids = [None] * cand.rank
+    meta = {"rule": CO.GF_RULE, "version": CO.GF_RULE_VERSION,
+            "positive_modes": len(pos), "negative_modes": len(neg)}
     if pos:
-        share = Fr(qallow) / len(pos)
+        d = Fr(1, 2)
+        chosen = None
+        for _ in range(64):
+            try:
+                eta = CO.gf3_eta([d] * len(pos))
+            except CO.Declined:
+                eta = None
+            if eta is not None and eta <= Fr(qallow):
+                chosen = (d, eta)
+                break
+            d /= 2
+        if chosen is None:
+            raise Declined("no dyadic GF1 tolerance keeps the GF3 allowance within %s"
+                           % qallow)
+        d, eta = chosen
+        meta["positive_tolerance"] = str(d)
+        meta["gf3_eta"] = str(eta)
         for k in pos:
-            d = share
-            lat = None
-            for _ in range(4):
-                try:
-                    lat = CO.gf_lattice(cand.gammas[k], _R(cand, k), d)
-                except CO.Declined:
-                    lat = None
-                if lat is not None and Fr(lat["total_bound"]) <= share:
-                    break
-                d /= 2
-            if lat is None or Fr(lat["total_bound"]) > share:
-                raise Declined("positive mode %d: no GF lattice within its %s share "
-                               "of the quadrature allowance" % (k, share))
-            deltas[k] = d
-            lats[k] = lat
+            try:
+                grids[k] = CO.gf1_grid(cand.gammas[k], _R(cand, k), d)
+            except CO.Declined as e:
+                raise Declined("positive mode %d: GF1 grid unavailable (%s)" % (k, e))
+            tols[k] = d
     if neg:
         Ymax = Fr(0)
         for k in neg:
@@ -306,22 +312,54 @@ def gf_forecast(cand, qallow, num_eps):
                            "the rational enclosure" % Ymax)
         meta["Y_max"] = str(Ymax)
         meta["L_lower"] = str(L_lo)
-        need = L_lo * Fr(num_eps) / (4 * len(neg))
+        delta0 = L_lo * Fr(num_eps) / 4
+        if delta0 > 1:
+            delta0 = Fr(1)
+        e = delta0 / (2 * len(neg))
+        meta["negative_tensor_delta_target"] = str(delta0)
+        meta["negative_tolerance"] = str(e)
         for k in neg:
-            d = need
             try:
-                lat = CO.fourier_lattice(cand.gammas[k], _R(cand, k), d)
-            except CO.Declined as e:
-                raise Declined("negative mode %d: the oscillatory lattice at the "
-                               "required delta %s is unavailable (%s)" % (k, d, e))
-            deltas[k] = d
-            lats[k] = lat
+                grids[k] = CO.gf2_grid(cand.gammas[k], _R(cand, k), e)
+            except CO.Declined as ex:
+                raise Declined("negative mode %d: GF2 grid unavailable at e=%s (%s)"
+                               % (k, e, ex))
+            tols[k] = e
+        if CO.gf2_tensor_delta([e] * len(neg)) > delta0:
+            raise Declined("the GF2 tensor error exceeds its target")
     nodes = 1
-    for lat in lats:
-        nodes *= lat["nodes"]
-    meta["nodes_per_mode"] = [lat["nodes"] for lat in lats]
+    for g in grids:
+        nodes *= g["nodes"]
+    meta["nodes_per_mode"] = [g["nodes"] for g in grids]
+    meta["signed_frequencies_per_mode"] = [g["signed_frequencies"] for g in grids]
+    meta["representatives_per_mode"] = [g["representatives"] for g in grids]
     meta["tensor_nodes"] = nodes
-    return deltas, lats, nodes, meta
+    return tols, grids, nodes, meta
+
+
+def grid_record(g):
+    """The persisted form of one GF grid: rule, version, actual mode range
+    and tolerance, finite spacing, terminal index, signed frequency set and
+    error allocation, all exact."""
+    out = {"rule": str(g["rule"]), "version": int(g["version"]), "sign": int(g["sign"]),
+           "beta": str(Fr(g["beta"])), "R": str(Fr(g["R"])), "tol": str(Fr(g["tol"])),
+           "t": int(g["t"]), "m": int(g["m"]), "T": int(g["T"]), "b": int(g["b"]),
+           "h": str(Fr(g["h"])), "nodes": int(g["nodes"]),
+           "signed_frequencies": int(g["signed_frequencies"]),
+           "representatives": int(g["representatives"]),
+           "error": str(Fr(g["error"])), "error_kind": str(g["error_kind"])}
+    if g["sign"] > 0:
+        out["K"] = int(g["K"])
+    else:
+        out["J"] = int(g["J"])
+    return out
+
+
+def grid_points(g):
+    """The actual finite lattice of a LOADED grid: j h for |j| <= K (resp. J)."""
+    h = Fr(g["h"])
+    n = int(g["K"]) if int(g["sign"]) > 0 else int(g["J"])
+    return [Fr(j) * h for j in range(-n, n + 1)], h
 
 
 def _R(cand, k):
@@ -376,7 +414,10 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
             errors.append("%s: fit TV %s exceeds the %s allowance" % (cand.kind, fit_tv0, allow))
             continue
         drop_budget = 2 * (allow - fit_tv0)
-        can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx, drop_budget)
+        # the DECLARED mask: those pairs are retained exactly in the residual
+        # that is built and priced (never dropped or transferred)
+        can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx, drop_budget,
+                              protected=set(getattr(cand, "masked", None) or []))
         kept = list(res.kept)
         rmk = _residual_marked(marked, res, can, kept)
         try:
@@ -409,10 +450,9 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
                 rec = dict(base, evaluator="statistic", Q=Q, delta=None,
                            rounding_tv=rtv, quadrature_tv=Fr(0),
                            Q_attempts=attempts)
-                key = ("statistic", cand.kind, cand.rank)
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    out.append((rec, rmk))
+                # every certified candidate is OFFERED; duplicates are resolved
+                # later by the executable identity, never by (kind, rank)
+                out.append((rec, rmk))
                 continue
             want_pos = [k for k in range(cand.rank) if cand.signs[k] > 0]
             want_neg = [k for k in range(cand.rank) if cand.signs[k] < 0]
@@ -431,25 +471,18 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
                               % (cand.kind, cand.signs))
                 continue
             try:
-                deltas, lats, nodes, fmeta = gf_forecast(cand, qallow, num_eps)
+                tols, grids, nodes, fmeta = gf_forecast(cand, qallow, num_eps)
             except Declined as e:
                 errors.append("%s/%s: %s" % (cand.kind, ev, e))
                 continue
-            from mdi.collective_jt import _tensor_error
-            qtv = _tensor_error([Fr(lats[k]["total_bound"]) for k in want_pos])
+            qtv = CO.gf3_eta([tols[k] for k in want_pos]) if want_pos else Fr(0)
             rec = dict(base, evaluator=ev, Q=None,
-                       delta=(deltas[0] if cand.rank == 1 else None),
-                       deltas=[str(d) for d in deltas], rounding_tv=Fr(0),
+                       delta=(tols[0] if cand.rank == 1 else None),
+                       deltas=[str(d) for d in tols], rounding_tv=Fr(0),
                        quadrature_tv=qtv, nodes=nodes, forecast=fmeta,
-                       negative_deltas=[str(deltas[k]) for k in want_neg],
-                       lattices=[{"T": str(Fr(lat["T"])), "h": str(Fr(lat["h"])),
-                                  "nodes": int(lat["nodes"]),
-                                  "total_bound": str(Fr(lat["total_bound"]))}
-                                 for lat in lats])
-            key = (ev, cand.kind, cand.rank)
-            if key not in seen_keys:
-                seen_keys.add(key)
-                out.append((rec, rmk))
+                       negative_deltas=[str(tols[k]) for k in want_neg],
+                       grids=[grid_record(g) for g in grids])
+            out.append((rec, rmk))
     if not out:
         raise Declined("every recognized mode declined: " + "; ".join(errors[:6]))
     for rec, _ in out:
@@ -457,13 +490,17 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
     return out
 
 
-def canonical_identity(coll, scales_key=()):
+def canonical_identity(coll, scales_key=(), executable=None):
     """A stable identity of the REPRESENTED LAW / PROGRAM: evaluator, exact
     mode parameters canonicalized up to mode permutation and the sign flip of
     a feature vector (f -> -f leaves S^2 invariant), Q or lattice deltas,
     retained factors, dropped pairs, and the coarsening witness key. Two
     candidates with the same identity represent the same law and are
-    duplicates by this EXPLICIT rule; different generator labels are not."""
+    duplicates by this EXPLICIT rule; different generator labels are not.
+    `executable` (the program's order, precision, arithmetic and checker
+    settings) and the actual integer statistics / grid parameters complete
+    the executable identity: duplicates are resolved only after EVERY
+    executable feature is accounted for."""
     import hashlib
     cand = coll["candidate"]
     modes = []
@@ -484,7 +521,24 @@ def canonical_identity(coll, scales_key=()):
            "Q": coll.get("Q"), "deltas": [str(Fr(d)) for d in (coll.get("deltas") or [])],
            "kept": sorted(int(x) for x in coll["kept_factors"]),
            "dropped": sorted([int(a), int(b)] for a, b in coll["dropped_pairs"]),
+           "masked": sorted([int(a), int(b)] for a, b in (getattr(cand, "masked", None) or [])),
            "scales": list(scales_key)}
+    # EXECUTABLE features: the statistic DP runs on the integer statistics
+    # k = round_half_up(f Q), which are NOT invariant under f -> -f at a tie,
+    # so two sign-related candidates are the same program only when their
+    # rounded statistics coincide; the GF evaluators run on the actual grids
+    if coll.get("Q") is not None:
+        kq = CO.round_features(cand, sorted({v for fk in cand.features for v in fk}), int(coll["Q"]))
+        key["integer_statistics"] = sorted(
+            sorted((int(v), [int(x) for x in row]) for v, row in kq[k].items()) for k in range(cand.rank))
+    if coll.get("grids"):
+        key["grids"] = [[str(g["rule"]), int(g["version"]), int(g["sign"]), str(Fr(g["tol"])),
+                         int(g["m"]), int(g.get("K", g.get("J", 0)))] for g in coll["grids"]]
+    if executable is not None:
+        key["order"] = [int(x) for x in (executable.get("order") or [])]
+        key["precision"] = int(executable.get("precision", 0))
+        key["arithmetic"] = dict(executable.get("arithmetic") or {})
+        key["checker"] = dict(executable.get("checker") or {})
     import json
     txt = json.dumps(key, sort_keys=True)
     return hashlib.sha256(txt.encode()).hexdigest()[:16], key
@@ -511,7 +565,11 @@ def rebuild_residual(marked: MK.Marked, coll, ctx: A.Ctx):
     res = MD.build_residual(free, law, marked.card, cand, ctx,
                             round_bits=coll["round_bits"])
     can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx,
-                          Fr(coll["drop_budget"]))
+                          Fr(coll["drop_budget"]),
+                          protected=set(getattr(cand, "masked", None) or []))
+    for pr in (getattr(cand, "masked", None) or []):
+        if tuple(pr) not in can.kept_pairs and (pr[0], pr[1]) in res.pairs:
+            raise Declined("the declared mask pair %s is not retained in the residual" % (pr,))
     rmk = _residual_marked(marked, res, can, list(res.kept))
     nu = fit_certificate(law, rmk.factors, cand, marked.card, free, ctx)
     total_fit = K.tanh_upper(nu)
@@ -531,16 +589,9 @@ def rebuild_residual(marked: MK.Marked, coll, ctx: A.Ctx):
             raise Declined("the recomputed rounding TV %s exceeds the recorded %s"
                            % (K.tanh_upper(D), coll["rounding_tv"]))
     else:
-        deltas = coll.get("deltas") or [coll["delta"]]
-        qtv = Fr(0)
-        for k in range(cand.rank):
-            lat = lattice_for(cand, k, Fr(deltas[k]))
-            if cand.signs[k] > 0:
-                qtv += Fr(lat["total_bound"])
-        from mdi.collective_jt import _tensor_error
-        qtv = _tensor_error([Fr(lattice_for(cand, k, Fr(deltas[k]))["total_bound"])
-                             for k in range(cand.rank) if cand.signs[k] > 0])
+        tols = coll.get("deltas") or [coll["delta"]]
+        qtv = CO.gf3_eta([Fr(tols[k]) for k in range(cand.rank) if cand.signs[k] > 0])
         if qtv > Fr(coll["quadrature_tv"]):
-            raise Declined("the recomputed positive lattice bound %s exceeds the "
-                           "recorded %s" % (qtv, coll["quadrature_tv"]))
+            raise Declined("the recomputed GF3 allowance %s exceeds the recorded %s"
+                           % (qtv, coll["quadrature_tv"]))
     return rmk, res, can

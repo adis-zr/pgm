@@ -85,9 +85,11 @@ class ModeCandidate:
     features: list          # features[k][i] -> list over states: f_ki(a), rational
     kind: str               # how it was proposed
     rank: int = 0
+    masked: list = field(default_factory=list)   # pairs the residual RETAINS exactly
 
     def __post_init__(self):
         self.rank = len(self.signs)
+        self.masked = sorted({(min(int(a), int(b)), max(int(a), int(b))) for a, b in (self.masked or [])})
 
 
 def _pair_matrix(free, factors, card):
@@ -285,7 +287,9 @@ def propose_modes(free, factors, card, max_rank=None):
     info["masks"] = [{"mask": nm, "retained_edges": len(ms)} for nm, ms in masks]
     budget_masks = K.CAPS["residual_masks"]
     last_fit = None
-    for mask_round in range(budget_masks + 1):
+    # the mask CAP bounds the rounds: the three prescribed masks first, the
+    # labelled outlier heuristic only if budget remains
+    for mask_round in range(budget_masks):
         if mask_round < len(masks):
             mname, masked = masks[mask_round]
         else:
@@ -335,7 +339,8 @@ def propose_modes(free, factors, card, max_rank=None):
                 feat[inv[k]] = [-c, c]
             gq = Fr(max(1, round(mx * mx * D)), D)
             kind = "lowrank_rank1" if mname == "all" else "lowrank_rank1_%s" % mname
-            cands.append(ModeCandidate(signs=[s], gammas=[gq], features=[feat], kind=kind))
+            cands.append(ModeCandidate(signs=[s], gammas=[gq], features=[feat], kind=kind,
+                                       masked=[(inv[a], inv[b]) for a, b in masked]))
             signs_c.append(s); gammas_c.append(gq); feats_c.append(feat)
             npos += s > 0
             nneg += s < 0
@@ -343,7 +348,8 @@ def propose_modes(free, factors, card, max_rank=None):
             cands.append(ModeCandidate(signs=list(signs_c), gammas=list(gammas_c),
                                        features=list(feats_c),
                                        kind="lowrank_combined" + ("" if mname == "all"
-                                                                  else "_%s" % mname)))
+                                                                  else "_%s" % mname),
+                                       masked=[(inv[a], inv[b]) for a, b in masked]))
     if not cands:
         return [], {**info, "declined": "no admissible mode proposal"}
     return cands, info
@@ -666,9 +672,9 @@ def _log_enclose(q: Fr, ctx: A.Ctx):
     if q <= 0:
         raise Declined("log of a nonpositive value")
     with ctx.D:
-        lo = gmpy2.log(gmpy2.mpq(q.numerator, q.denominator))
+        lo = A.T.log(gmpy2.mpq(q.numerator, q.denominator))
     with ctx.U:
-        hi = gmpy2.log(gmpy2.mpq(q.numerator, q.denominator))
+        hi = A.T.log(gmpy2.mpq(q.numerator, q.denominator))
     return A.exact_fr(lo), A.exact_fr(hi)
 
 
@@ -863,7 +869,7 @@ def _exp_rational(x: Fr, ctx: A.Ctx, bits=40) -> Fr:
     """A strictly positive rational near exp(x), on an explicit dyadic grid."""
     import gmpy2
     with ctx.D:
-        v = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+        v = A.T.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
     q = A.exact_fr(v)
     if q <= 0:
         raise Declined("exp underflowed to zero")

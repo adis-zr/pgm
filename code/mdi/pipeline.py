@@ -19,7 +19,8 @@ from mdi import (model as M, plan as P, arith as A, solve as S, config as K,
                  preprocess as PRE, plantype as PT, registry as RG,
                  pricing as PR, regions as R, compact as CP, budget as B,
                  regional_check as RC, level2 as L2, residual as RS,
-                 collective as CO, modes as MD, coarse as CZ)
+                 collective as CO, modes as MD, coarse as CZ,
+                 program as PG, routes as RT, collective_route as CR)
 
 
 class PipelineError(ValueError):
@@ -124,10 +125,17 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                   "restricted model" % notfree[:8])
     stages["parse_s"] = time.monotonic() - t
     if r0.impossible_factor is not None or r0.constant == 0:
-        return Outcome(status="ZERO_EVIDENCE_PROVED",
-                       reason="a restricted factor is identically zero or a "
-                              "pinned factor is exactly zero",
-                       stages=stages, budget=bg.report())
+        # the terminal outcome carries the SAME original-model proof
+        # requirement as a publication: the named witness is re-derived from
+        # the ORIGINAL factor bytes at the evidence, not taken from restrict()
+        proof = zero_evidence_proof(model, evidence, r0)
+        if proof.get("proved"):
+            return Outcome(status="ZERO_EVIDENCE_PROVED", reason=proof["reason"],
+                           stages=stages, budget=bg.report(), checker=proof)
+        return Outcome(status="NUMERICAL_REFUSAL",
+                       reason="the restriction claims zero evidence weight but the claim "
+                              "does not re-derive from the original model: %s" % proof["reason"],
+                       stages=stages, budget=bg.report(), checker=proof)
 
     if not r0.free:
         # EVERY variable is observed: there is no free marginal to compute.
@@ -168,9 +176,15 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                               "verification: %s" % e,
                        stages=stages, budget=bg.report())
     if simp.impossible is not None:
-        return Outcome(status="ZERO_EVIDENCE_PROVED",
-                       reason="factor %d is identically zero" % simp.impossible,
-                       stages=stages, budget=bg.report())
+        proof = zero_evidence_proof(model, evidence, r0, named=simp.impossible)
+        if proof.get("proved"):
+            return Outcome(status="ZERO_EVIDENCE_PROVED", reason=proof["reason"],
+                           stages=stages, budget=bg.report(), checker=proof)
+        return Outcome(status="NUMERICAL_REFUSAL",
+                       reason="preprocessing claims factor %d is identically zero but the "
+                              "claim does not re-derive from the original model: %s"
+                              % (simp.impossible, proof["reason"]),
+                       stages=stages, budget=bg.report(), checker=proof)
     r = M.Restricted(model=model, evidence=evidence, factors=simp.factors,
                      free=list(simp.free), card=dict(simp.card),
                      constant=r0.constant, impossible_factor=None)
@@ -248,8 +262,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             numerical={"precision": _p, "mode": "P", "emin": _emin, "emax": _emax},
             cost_counters={k: c.as_dict() for k, c in iprice.counters.items()},
             storage_schedule={"peak_live_entries": iest["peak_live_entries"],
-                              "identity": "identity-" + hashlib.sha256(
-                                  json.dumps(iprog, sort_keys=True).encode()).hexdigest()[:16]},
+                              "identity": executable_identity("identity", iprog)},
             rejected_alternatives=[], properties=iprops, program=iprog)
         irec.identity_key = irec.storage_schedule["identity"]
         records.append((irec, iprice, {"plan": ipl, "est": iest}))
@@ -353,7 +366,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        budget=bg.report())
     t = time.monotonic()
     for rec, price, payload in reloaded:
-        bad = loaded_admission(rec, price)
+        bad = loaded_admission(rec, price, cap_bytes=cap_bytes, bg=bg)
         if bad and price.eligible:
             price.eligible = False
             price.ineligible_reason = bad
@@ -501,6 +514,12 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
     for v, st in evidence.items():
         pub[v] = [(Fr(1), Fr(1)) if s == st else (Fr(0), Fr(0))
                   for s in range(model.card[v])]
+    resp = {v: pub[v] for v in sorted(pub) if v in queries or v in evidence}
+    bad = response_schema_violation(resp, model, evidence, queries)
+    if bad:
+        return Outcome(status="NUMERICAL_REFUSAL",
+                       reason="the response does not bind to the original request: %s" % bad,
+                       prices=out.prices, rejected=rejected, stages=stages, budget=bg.report())
 
     # ---------------- independent check ----------------
     try:
@@ -544,6 +563,22 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
                        reason="checker raised: %s: %s" % (type(e).__name__, e),
                        prices=out.prices, stages=stages, budget=bg.report())
     stages["check_s"] = time.monotonic() - t
+    if ok and crec.kind != "identity":
+        # the ROUTE-SPECIFIC ERROR LEDGER: the checker's own verified components
+        # against the saved allocations (finite, nonnegative, within the frozen
+        # caps, applicable to this route, unused components exactly zero, the
+        # saved total at least the verified expansion)
+        led = (meta or {}).get("ledger") or {}
+        bad = ledger_violation(led, crec.allocations, crec.parsed_program)
+        if bad:
+            return Outcome(status="NUMERICAL_REFUSAL",
+                           reason="invalid proof budget: %s" % bad,
+                           checker={"status": "FAILED", "failures": [bad], "ledger": led},
+                           prices=out.prices, rejected=rejected, stages=stages,
+                           budget=bg.report(), properties=crec.properties.as_dict())
+        out.plan["ledger"] = {"verified": led, "saved": {k: str(Fr(v)) for k, v in crec.allocations.items()},
+                              "saved_total": str(radius),
+                              "necessary_expansion": str(sum((Fr(v) for v in led.values()), Fr(0)))}
     if not ok:
         return Outcome(status="NUMERICAL_REFUSAL",
                        reason="independent checker REJECTED the publication",
@@ -629,7 +664,159 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
                    properties=crec.properties.as_dict())
 
 
-def loaded_admission(rec, price):
+LEDGER_CAPS = {"regional": K.RADII["regional_coarsening_total"],
+               "deletion": K.RADII["state_deletion_total"],
+               "collective_fit": K.RADII["collective_fit_and_rounding"],
+               "collective_rounding": K.RADII["collective_fit_and_rounding"],
+               "gaussian_quadrature": K.RADII["gaussian_quadrature"]}
+
+
+def ledger_violation(verified, saved, prog):
+    """Compare the checker's verified component radii with the SAVED
+    allocations of the loaded record. Every saved allowance must be an exact
+    nonnegative rational, within its frozen cap, applicable to the route the
+    program actually runs (a component the program does not use must be
+    exactly zero on both sides), and at least the verified value (a
+    conservative saved allowance is valid); the saved total must contain the
+    necessary expansion. Returns a reason or None."""
+    saved = {k: Fr(v) for k, v in saved.items()}
+    verified = {k: Fr(v) for k, v in verified.items()}
+    levels = len(prog["scales"])
+    coll = prog["collective"]
+    applicable = set()
+    for k in range(levels):
+        applicable.add("regional_level%d" % (k + 1))
+        applicable.add("deletion_level%d" % (k + 1))
+    if coll is not None:
+        applicable |= {"collective_fit", "collective_rounding"}
+        if coll["evaluator"] != "statistic":
+            applicable.add("gaussian_quadrature")
+    for k, v in saved.items():
+        if v < 0:
+            return "saved allowance %s is negative (%s)" % (k, v)
+        base = k.split("_level")[0] if k.startswith(("regional", "deletion")) else k
+        cap = LEDGER_CAPS.get(base)
+        if cap is None:
+            return "saved allowance %s is not a component of any route" % k
+        if v > cap:
+            return "saved allowance %s = %s exceeds its frozen cap %s" % (k, v, cap)
+        if k not in applicable and v != 0:
+            return "saved allowance %s = %s is not applicable to this route and is not zero" % (k, v)
+    for k, v in verified.items():
+        if v < 0:
+            return "verified component %s is negative (%s)" % (k, v)
+        if k not in applicable and v != 0:
+            return "verified component %s = %s is not applicable to this route" % (k, v)
+        if k in applicable and saved.get(k) is None:
+            return "the record saves no allowance for the verified component %s" % k
+        if k in applicable and saved[k] < v:
+            return ("saved allowance %s = %s is below the checker's verified %s" % (k, saved[k], v))
+    for k in applicable:
+        if k not in saved:
+            return "the record saves no allowance for component %s" % k
+    sum_saved = sum(saved.values(), Fr(0))
+    sum_verified = sum(verified.values(), Fr(0))
+    reg = sum((saved[k] for k in saved if k.startswith("regional_level")), Fr(0))
+    dele = sum((saved[k] for k in saved if k.startswith("deletion_level")), Fr(0))
+    if reg > LEDGER_CAPS["regional"]:
+        return "the regional allowances total %s above the frozen cap %s" % (reg, LEDGER_CAPS["regional"])
+    if dele > LEDGER_CAPS["deletion"]:
+        return "the deletion allowances total %s above the frozen cap %s" % (dele, LEDGER_CAPS["deletion"])
+    if sum_saved < sum_verified:
+        return "the saved total %s is below the necessary expansion %s" % (sum_saved, sum_verified)
+    return None
+
+
+def response_schema_violation(pub, model, evidence, queries):
+    """The regular response schema, bound to the ORIGINAL request: exactly the
+    requested variables plus the observed coordinates the public API returns,
+    one row per model state, exact rationals, lower <= upper inside [0, 1],
+    and every observed coordinate an exact point mass at its observed state.
+    Returns a reason or None."""
+    want = set(queries) | set(evidence)
+    got = set(pub)
+    if got != want:
+        return "response keys %s differ from the request %s" % (sorted(got)[:8], sorted(want)[:8])
+    for v in sorted(pub):
+        rows = pub[v]
+        if len(rows) != model.card[v]:
+            return "variable %d publishes %d states, the model declares %d" % (v, len(rows), model.card[v])
+        for a, (lo, hi) in enumerate(rows):
+            lo, hi = Fr(lo), Fr(hi)
+            if lo > hi:
+                return "variable %d state %d: lower %s exceeds upper %s" % (v, a, lo, hi)
+            if lo < 0 or hi > 1:
+                return "variable %d state %d: endpoints outside [0, 1]" % (v, a)
+        if v in evidence:
+            st = evidence[v]
+            if any((Fr(lo), Fr(hi)) != ((Fr(1), Fr(1)) if a == st else (Fr(0), Fr(0)))
+                   for a, (lo, hi) in enumerate(rows)):
+                return "observed variable %d is not published as the point mass at state %d" % (v, st)
+    return None
+
+
+def zero_evidence_proof(model, evidence, r0, named=None):
+    """Re-derive a zero-evidence claim from the ORIGINAL factor tables at the
+    evidence assignment (the checker's own witness): either a named factor is
+    identically zero on every free assignment consistent with the evidence,
+    or a fully pinned factor evaluates to exactly zero. Returns a dict with
+    `proved` and the named witness."""
+    import itertools
+    ev = dict(evidence)
+    cands = [named] if named is not None else []
+    if r0.impossible_factor is not None and r0.impossible_factor not in cands:
+        cands.append(r0.impossible_factor)
+    for f in model.factors:
+        if f.origin in cands or named is None:
+            free = [v for v in f.scope if v not in ev]
+            if any(len(free) > 12 for _ in [0]):
+                continue
+            allzero = True
+            for ass in itertools.product(*[range(model.card[v]) for v in free]):
+                a = dict(ev)
+                a.update(dict(zip(free, ass)))
+                if Fr(f.at(a)) != 0:
+                    allzero = False
+                    break
+            if allzero:
+                return {"proved": True, "witness_factor": f.origin,
+                        "reason": "original factor %d is identically zero on every assignment "
+                                  "consistent with the evidence (re-derived from the original "
+                                  "table, %d free variable(s))" % (f.origin, len(free)),
+                        "method": "checker-owned enumeration of the original factor"}
+    return {"proved": False, "witness_factor": None,
+            "reason": "no original factor is identically zero at the evidence (candidates %s)"
+                      % cands[:4]}
+
+
+def executable_identity(kind, prog_json):
+    """The ONE executable identity of a program, derived from the RAW program
+    JSON alone (discovery and binding call this same function): kind, the
+    coarsening witness key, the collective record's canonical modes, Q or GF
+    tolerances, actual integer statistics after rounding, grid parameters,
+    retained/dropped/masked sets, and the executable settings (saved order,
+    precision, arithmetic, checker). Two records are duplicates only when
+    every one of these agrees; a shared generator name never decides."""
+    raw = json.loads(json.dumps(prog_json, default=str))
+    prog = PG.validate_program(raw)
+    scales_key = tuple(hashlib.sha256(json.dumps(sc, sort_keys=True).encode()).hexdigest()[:12]
+                       for sc in (raw.get("scales") or []))
+    executable = {"order": [int(x) for x in (raw.get("order") or [])],
+                  "precision": int(raw.get("precision") or 0),
+                  "arithmetic": {k: str(v) for k, v in (raw.get("arithmetic") or {}).items()},
+                  "checker": {k: str(v) for k, v in (raw.get("checker") or {}).items()},
+                  "queries": sorted(int(v) for v in (raw.get("queries") or []))}
+    if prog.get("collective") is not None:
+        ident, _ikey = CR.canonical_identity(prog["collective"], scales_key, executable=executable)
+    elif kind == "identity":
+        ident = hashlib.sha256(json.dumps(executable, sort_keys=True).encode()).hexdigest()[:16]
+    else:
+        ident = hashlib.sha256(("regional|" + "|".join(scales_key) + "|"
+                                + json.dumps(executable, sort_keys=True)).encode()).hexdigest()[:16]
+    return "%s-%s" % (kind, ident)
+
+
+def loaded_admission(rec, price, cap_bytes=None, bg=None):
     """The ONE admission rule a bound loaded record must pass before it may be
     selected or replayed: registered roles for its kind and an eligible
     re-derived price (bounded counters all known, within every declared cap,
@@ -645,6 +832,20 @@ def loaded_admission(rec, price):
                 "ineligible" % miss)
     if not rec.properties.complete_cost_priced:
         return "the record was never completely priced"
+    # byte forecasts against the declared cap (the SAME rule compare() applies)
+    if cap_bytes:
+        for who, c in (("producer", price.bytes_producer), ("checker", price.bytes_checker)):
+            if c is not None and c.value is not None and int(c.value) > cap_bytes:
+                return ("the %s byte forecast %d exceeds the %d cap" % (who, int(c.value), cap_bytes))
+    # the forecast metered entries must fit what REMAINS of the shared meter
+    if bg is not None:
+        fc = price.counters.get("metered_entries_forecast")
+        lim = bg.limits.get("local_mass_entries")
+        if fc is not None and fc.value is not None and lim is not None:
+            remaining = lim - bg.used.get("local_mass_entries", 0)
+            if int(fc.value) > remaining:
+                return ("the forecast metered entry visits %d exceed the REMAINING shared "
+                        "meter %d of %d" % (int(fc.value), remaining, lim))
     return None
 
 
@@ -666,7 +867,20 @@ def bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes, bg=None):
         raise PT.PlanError("the recorded cost counters do not match the price "
                            "re-derived from the loaded program on its SAVED "
                            "order: %s" % bad)
-    back.identity_key = (back.storage_schedule or {}).get("identity")
+    # the executable identity is RE-DERIVED from the loaded program; the stored
+    # name is checked against it, never trusted
+    own = executable_identity(back.kind, back.program)
+    stored = (back.storage_schedule or {}).get("identity")
+    if stored is not None and stored != own:
+        raise PT.PlanError("the stored identity %s is not the identity re-derived from the "
+                           "loaded program %s" % (stored, own))
+    back.identity_key = own
+    # the saved allocations must be exactly the program's radii per component
+    want = RT.allocations_for_program(back.parsed_program) if back.kind != "identity" else {}
+    saved = {k: Fr(v) for k, v in back.allocations.items()}
+    if back.kind != "identity" and saved != want:
+        raise PT.PlanError("the saved allocations %s are not the program's radii %s"
+                           % ({k: str(v) for k, v in saved.items()}, {k: str(v) for k, v in want.items()}))
     return rprice
 
 
@@ -1054,14 +1268,37 @@ def _complete_cost(prices, rejected, exec_meta, check_meta, stages):
             if c and c["value"] is not None:
                 tot += int(c["value"])
                 labels.add(c["label"])
-    ex = (exec_meta or {}).get("ops") or {}
-    ex_ops = sum(int(v) for k, v in ex.items() if k in ("mul", "add")) if isinstance(ex, dict) else 0
+    ex = (exec_meta or {}).get("ops")
+    ex_ops = (sum(int(v) for k, v in ex.items() if k in ("mul", "add"))
+              if isinstance(ex, dict) and ex else None)          # MISSING stays missing
     ck = (check_meta or {}).get("collective") or {}
-    ck_ops = (ck.get("ops") or {}) if isinstance(ck, dict) else {}
-    ck_ops = sum(int(v) for k, v in ck_ops.items() if k in ("mul", "add")) if isinstance(ck_ops, dict) else 0
+    ck_raw = (ck.get("ops") if isinstance(ck, dict) else None) or (check_meta or {}).get("ops")
+    ck_ops = (sum(int(v) for k, v in ck_raw.items() if k in ("mul", "add"))
+              if isinstance(ck_raw, dict) and ck_raw else None)
+    ex_tr = (exec_meta or {}).get("transcendental_calls")
+    ck_tr = (ck.get("transcendental_calls") if isinstance(ck, dict) else None)
+    bounds, forecasts = {}, {}
+    for p in prices:
+        for k, c in p["counters"].items():
+            if c.get("value") is None:
+                continue
+            if c.get("label") == "upper_bound":
+                bounds.setdefault(k, 0)
+                bounds[k] += int(c["value"])
+            elif c.get("label") == "forecast":
+                forecasts.setdefault(k, 0)
+                forecasts[k] += int(c["value"])
     return {"discovery_all_candidates_ops": tot,
             "discovery_labels": sorted(labels),
             "rejected_candidates": len(rejected),
+            "proven_bounds_all_candidates": bounds,
+            "forecasts_all_candidates": forecasts,
+            "measured": {"executed_engine_ops": ex_ops, "checker_engine_ops": ck_ops,
+                         "executor_transcendental_calls": ex_tr,
+                         "checker_transcendental_calls": ck_tr,
+                         "executor_peak_live_entries": (exec_meta or {}).get("peak_live_entries"),
+                         "retained_positive_node_entries": (exec_meta or {}).get("retained_positive_node_entries"),
+                         "precomputed_phase_entries": (exec_meta or {}).get("precomputed_phase_entries")},
             "executed_engine_ops": ex_ops,
             "checker_engine_ops": ck_ops,
             "stage_seconds": {k: round(v, 4) for k, v in stages.items()
@@ -1149,13 +1386,7 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
                              % (type(e).__name__, e)})
             return
         prog = RT.program_for(kind, scales, coll, order or [], prec, queries)
-        scales_key = tuple(hashlib.sha256(json.dumps(sc, sort_keys=True).encode()).hexdigest()[:12]
-                           for sc in prog["scales"])
-        if coll is not None:
-            ident, _ikey = CR.canonical_identity(coll, scales_key)
-        else:
-            ident = hashlib.sha256(("regional|" + "|".join(scales_key)).encode()).hexdigest()[:16]
-        ident = "%s-%s" % (kind, ident)
+        ident = executable_identity(kind, json.loads(json.dumps(prog)))
         # the program must PARSE strictly before it is offered
         try:
             PG.validate_program(json.loads(json.dumps(prog)))
@@ -1163,9 +1394,15 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
             rejected.append({"name": name, "reason": "program block invalid: %s" % e})
             return
         alloc = RT.allocations_for(scales, coll)
+        flb = price.counters.get("final_largest_bag")
         storage = {"final_variables": len(final.card),
-                   "final_largest_bag": int(price.counters["final_largest_bag"].value),
+                   "final_largest_bag": (int(flb.value) if flb is not None and flb.value is not None else None),
                    "levels": len(scales), "identity": ident}
+        if not price.eligible:
+            # a TYPED price refusal: the candidate is recorded with its reason
+            # and discovery continues to every other candidate and fallback
+            rejected.append({"name": name, "reason": "price refusal: %s" % price.ineligible_reason,
+                             "typed": "PRICE_REFUSAL"})
         rec = _candidate_record(kind, name, mh, eh, qh, simp, r, prog, alloc,
                                 price, order, prec, storage)
         rec.identity_key = ident

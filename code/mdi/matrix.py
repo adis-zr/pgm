@@ -1,18 +1,17 @@
-"""The integrated acceptance matrix (spec §12, revision r17).
+"""The integrated acceptance matrix (spec §12, revision r18).
 
 Every control enters through the public entry point (`pipeline.solve`) and,
 where a persisted program is exercised, through the ONE loaded-object
-boundary (`mdi.replay`, in a fresh interpreter or in-process with the same
-validator, dispatcher and limits). Nothing here calls an executor or checker
-with `budget=None`: every execution runs under the shared budget with the
-production caps, so a resource stop is reported as a resource stop.
+boundary (`mdi.replay`: a fresh interpreter, or in-process with the same
+validator, admission rule, dispatcher and limits). Nothing here runs an
+executor or checker outside the shared budget.
 
-Every PASS row carries the advertised predicates: containment of the exact
-truth, published width within the contract, the replay status, and the
-resource obligations (the budget report with no stops and every meter within
-its limit). Measurements are measured (expansion counters, operation counts,
-budget usage); nothing is asserted by hand. A branch that the shared budget
-refuses is a BLOCKED row naming the precise resource blocker, never a PASS.
+Every applicable row checks: the exact query key set, truth containment,
+positive denominators, published widths, resource stops (none) and the fresh
+replay status. Offering, admission, execution and verification are reported
+separately per branch. Measurements stay measurements (a missing one is
+reported as missing and cannot pass a coverage assertion); proven bounds and
+forecasts are separate fields. A remaining gap is labelled explicitly.
 
     python -m mdi.matrix OUT.json [per_control_wall_s] [only ...]
 """
@@ -66,19 +65,37 @@ def _contains_rep(rep, pt):
                             for v, rows in iv.items() for s, (lo, hi) in enumerate(rows))
 
 
+def _keys_rep(rep, want):
+    iv = rep.get("intervals") or {}
+    return sorted(int(v) for v in iv) == sorted(int(v) for v in want)
+
+
 def _width(pub):
     return max((Fr(hi) - Fr(lo) for v in pub for lo, hi in pub[v]), default=Fr(0))
 
 
 def _resource(bud):
-    """The resource obligations of one guarded run: a budget report exists,
-    no meter stopped, and every meter is within its declared limit."""
     bud = bud or {}
     used = bud.get("used") or {}
     lim = bud.get("limits") or {}
     within = all(used.get(k, 0) <= lim[k] for k in lim)
     return {"present": bool(bud), "stops": list(bud.get("stops") or []), "used": used,
-            "limits": lim, "ok": bool(bud) and not bud.get("stops") and within}
+            "limits": lim, "phases": bud.get("phases"),
+            "ok": bool(bud) and not bud.get("stops") and within}
+
+
+def _row_ok(rep, pt, queries, need_ledger=True):
+    """The predicates every applicable replay row must carry."""
+    ck = rep.get("checker") or {}
+    pd = ck.get("positive_denominators")
+    w = Fr(rep["max_width"]) if rep.get("max_width") else None
+    return {"replay": rep["status"], "exact_keys": _keys_rep(rep, queries),
+            "truth": _contains_rep(rep, pt), "positive_denominators": pd,
+            "width": rep.get("max_width"), "width_ok": (w is not None and w <= EPS),
+            "resources": _resource(rep.get("budget")), "ledger": rep.get("ledger"),
+            "ok": (rep["status"] == "REPLAY_VERIFIED" and _keys_rep(rep, queries) and _contains_rep(rep, pt)
+                   and pd is True and w is not None and w <= EPS
+                   and _resource(rep.get("budget"))["ok"] and (rep.get("ledger") is not None or not need_ledger))}
 
 
 def _solve(m, wall, evidence=None, queries=None):
@@ -86,15 +103,12 @@ def _solve(m, wall, evidence=None, queries=None):
     d = tempfile.mkdtemp()
     FX.reset_expansion_counter()
     t = time.time()
-    res = PLN.solve(m, evidence or {}, queries=queries, wall_s=wall, cap_bytes=1 << 30,
-                    plan_dir=d)
+    res = PLN.solve(m, evidence or {}, queries=queries, wall_s=wall, cap_bytes=1 << 30, plan_dir=d)
     el = time.time() - t
-    exp = dict(FX.EXPANSIONS)
-    return res, d, el, exp
+    return res, d, el, dict(FX.EXPANSIONS)
 
 
 def _plan(res, d, name):
-    """Plan files are named by the candidate's STABLE identity."""
     p = next(x for x in res.prices if x["name"] == name)
     return os.path.join(d, p["identity"] + ".plan.json")
 
@@ -103,35 +117,35 @@ def _price(res, name):
     return next(x for x in res.prices if x["name"] == name)
 
 
-def _replay_fresh(mp, plan, timeout):
+def _replay_fresh(mp, plan, timeout, evid="-"):
     env = dict(os.environ)
     env["PYTHONPATH"] = HERE
-    out = subprocess.run([sys.executable, "-m", "mdi.replay", mp, "-", plan], cwd=HERE,
+    out = subprocess.run([sys.executable, "-m", "mdi.replay", mp, evid, plan], cwd=HERE,
                          capture_output=True, text=True, timeout=timeout, env=env)
     if not out.stdout.strip():
         raise RuntimeError("replay produced no output: %s" % out.stderr[-600:])
     return json.loads(out.stdout)
 
 
-def _replay_here(mp, plan, wrap=None):
-    """The same boundary in-process (bind -> admission -> run_loaded under a
-    fresh shared budget with the pipeline's limits); used where a fault is
-    injected into the producer or operations are counted."""
+def _replay_here(mp, plan, wrap=None, evid="-"):
     from mdi import replay as RP
-    return RP.replay(mp, "-", plan, wrap=wrap)
+    return RP.replay(mp, evid, plan, wrap=wrap)
 
 
-def _unique(res):
+def _offering(res):
+    off = [p["name"] for p in res.prices]
+    adm = [p["name"] for p in res.prices if p["eligible"]]
+    typed = {}
+    for x in res.rejected:
+        t = x.get("typed") or ("duplicate" if "duplicate" in x["reason"] else "other")
+        typed[t] = typed.get(t, 0) + 1
     ids = [p["identity"] for p in res.prices]
-    dups = [x for x in res.rejected if "duplicate" in x["reason"]]
-    return {"records": len(ids), "distinct_identities": len(set(ids)),
-            "duplicates_rejected_with_reason": len(dups),
-            "duplicate_reasons": [x["reason"][:80] for x in dups[:3]],
-            "ok": len(ids) == len(set(ids)) and all("identity" in x["reason"] for x in dups)}
+    return {"offered": off, "admitted": adm, "refused_by_price": [p["name"] for p in res.prices if not p["eligible"]],
+            "typed_refusals": typed, "distinct_identities": len(set(ids)), "records": len(ids),
+            "unique_ok": len(ids) == len(set(ids))}
 
 
 def _measure_ops():
-    """A wrap(stage, fn) that counts Fraction operations per stage."""
     import fractions
     counts = {}
     saved = {nm: getattr(fractions.Fraction, nm) for nm in
@@ -183,19 +197,38 @@ def _two_equal_blocks(J=0.25, nb=2, bs=3):
     return M.Model(nvars=n, card=[2] * n, factors=facs).validate()
 
 
-def _triangle(a=0.15, b=0.05, c=-0.05):
+def _chain3(a=-0.05, c=-0.05, fields=(0.1, 0.2, 0.3)):
+    """The FIXED chain for mixed acceptance: couplings (-0.05, -0.05)."""
     from mdi import model as M
-    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1) + Fr(10 * (v + 1), 100)], origin=v)
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1) + Fr(int(fields[v] * 100), 100)], origin=v)
             for v in range(3)]
-    for (i, j), J in (((0, 1), a), ((0, 2), b), ((1, 2), c)):
-        if J:
-            facs.append(M.Factor(scope=(i, j), card=(2, 2), table=_pair(J), origin=10 + i * 3 + j))
+    for (i, j), J in (((0, 1), a), ((1, 2), c)):
+        facs.append(M.Factor(scope=(i, j), card=(2, 2), table=_pair(J), origin=10 + i * 3 + j))
     return M.Model(nvars=3, card=[2] * 3, factors=facs).validate()
 
 
+def _f3_bipartite(k=7):
+    """The unchanged 14-variable F3 synthetic model."""
+    from mdi import model as M
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1) + Fr(1 + v % 7, 20)], origin=v)
+            for v in range(2 * k)]
+    for i in range(k):
+        for j in range(k):
+            facs.append(M.Factor(scope=(i, k + j), card=(2, 2),
+                                 table=_pair(0.05 * (1 + ((i + j) % 3)) / 2), origin=100 + 10 * i + j))
+    return M.Model(nvars=2 * k, card=[2] * (2 * k), factors=facs).validate()
+
+
+def _deletion_chain(n=8):
+    from mdi import model as M
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1, 10 ** 7) if v == 5 else Fr(1 + v % 2)],
+                     origin=v) for v in range(n)]
+    facs += [M.Factor(scope=(i, i + 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)], origin=100 + i)
+             for i in range(n - 1)]
+    return M.Model(nvars=n, card=[2] * n, factors=facs).validate()
+
+
 def _categorical_pairwise():
-    """Four 3-state variables with pairwise contrasts: the categorical menu's
-    natural input (rank-1 categorical features, combined, masked)."""
     from mdi import model as M
     facs = [M.Factor(scope=(v,), card=(3,), table=[Fr(1), Fr(1) + Fr(v + 1, 10), Fr(1) - Fr(v + 1, 20)],
                      origin=v) for v in range(4)]
@@ -207,15 +240,6 @@ def _categorical_pairwise():
     return M.Model(nvars=4, card=[3] * 4, factors=facs).validate()
 
 
-def _categorical():
-    from mdi import model as M
-    facs = [M.Factor(scope=(0, 1), card=(2, 3), table=[Fr(1), Fr(2), Fr(0), Fr(3), Fr(1), Fr(5)], origin=0),
-            M.Factor(scope=(1, 2, 3), card=(3, 2, 2),
-                     table=[Fr(x) for x in (1, 2, 1, 0, 2, 1, 1, 3, 1, 1, 2, Fr(1, 10 ** 9))], origin=1),
-            M.Factor(scope=(4, 5), card=(2, 3), table=[Fr(2), Fr(1), Fr(1), Fr(1), Fr(0), Fr(4)], origin=2)]
-    return M.Model(nvars=6, card=[2, 3, 2, 2, 2, 3], factors=facs).validate()
-
-
 def _mean_field_path(n, J):
     from tests.test_mdi_research import mean_field, w
     fields = [0.1 * (k + 1) * (1 if k % 2 == 0 else -1) for k in range(n)]
@@ -224,195 +248,317 @@ def _mean_field_path(n, J):
 
 # ---------------------------------------------------------------- controls
 
-def control_identity_replay(wall):
-    """F1: the identity program governs the public run and a fresh process;
-    the identity checker runs at the program's checker precision."""
+def control_identity_and_f3_fallback(wall):
+    """R1: the identity program governs the public run and a fresh process;
+    the public pipeline COMPLETES on the unchanged 14-variable F3 model where
+    integration and most statistic candidates are refused by TYPED price
+    refusals and the identity-only control verifies all 28 coordinates."""
     from mdi import model as M, oracle as O
     from tests.test_mdi_research import TINY, w
     mp = w(TINY)
     m = M.read_uai(mp)
-    res, d, el, exp = _solve(m, wall)
+    res, d, el, _ = _solve(m, wall)
     Z, pt = O.exact_all_marginals(M.restrict(m, {}))
-    plan = _plan(res, d, "identity")
-    rep = _replay_fresh(mp, plan, wall)
-    prog = json.load(open(plan))["program"]
-    prec_ok = (int(res.checker.get("checker_precision_bits", -1)) == int(prog["checker"]["precision"])
-               and str(rep.get("checker", {}).get("checker_precision_bits")) == str(prog["checker"]["precision"]))
-    rs = _resource(res.budget)
-    rr = _resource(rep.get("budget"))
-    return {"pipeline": res.status, "chosen": res.plan.get("chosen"), "identity": res.plan.get("identity"),
-            "truth": _contains(res.intervals, pt), "width": str(_width(res.intervals)),
-            "replay": rep["status"], "replay_truth": _contains_rep(rep, pt),
-            "checker_precision_program": prog["checker"]["precision"],
-            "checker_precision_run": res.checker.get("checker_precision_bits"),
-            "resources_pipeline": rs, "resources_replay": rr, "seconds": round(el, 2),
-            "ok": (res.status == "CERTIFIED_FALLBACK_ONLY" and res.plan.get("chosen") == "identity"
-                   and rep["status"] == "REPLAY_VERIFIED" and _contains(res.intervals, pt)
-                   and _contains_rep(rep, pt) and _width(res.intervals) <= EPS and prec_ok
-                   and rs["ok"] and rr["ok"])}
+    rep = _replay_fresh(mp, _plan(res, d, "identity"), wall)
+    q = sorted(M.restrict(m, {}).free)
+    row = _row_ok(rep, pt, q, need_ledger=False)
+    row["ok"] = (rep["status"] == "REPLAY_VERIFIED" and row["exact_keys"] and row["truth"]
+                 and row["width_ok"] and row["resources"]["ok"])
+    out = {"tiny": {"pipeline": res.status, "chosen": res.plan.get("chosen"), "offering": _offering(res),
+                    "truth": _contains(res.intervals, pt), "width": str(_width(res.intervals)),
+                    "resources": _resource(res.budget), "identity_replay_row": row}}
+    ok = (res.status.startswith("CERTIFIED") and _contains(res.intervals, pt) and _width(res.intervals) <= EPS
+          and _resource(res.budget)["ok"] and row["ok"])
+    m3 = _f3_bipartite()
+    mp3 = _write_uai(m3)
+    res3, d3, el3, exp3 = _solve(M.read_uai(mp3), wall)
+    Z, pt3 = O.exact_all_marginals(M.restrict(m3, {}))
+    offs = _offering(res3)
+    ncoord = sum(len(r) for r in res3.intervals.values())
+    out["f3_14_variables"] = {"pipeline": res3.status, "chosen": res3.plan.get("chosen"), "seconds": round(el3, 1),
+                              "coordinates_published": ncoord,
+                              "coordinates_checked": res3.checker.get("coordinates_checked"),
+                              "truth": _contains(res3.intervals, pt3), "width": str(_width(res3.intervals)),
+                              "offering": offs, "resources": _resource(res3.budget),
+                              "measured_expansions": exp3, "complete_cost": res3.plan.get("complete_cost")}
+    ok = ok and (res3.status.startswith("CERTIFIED") and ncoord == 28 and _contains(res3.intervals, pt3)
+                 and _width(res3.intervals) <= EPS and _resource(res3.budget)["ok"]
+                 and offs["typed_refusals"].get("PRICE_REFUSAL", 0) >= 1 and offs["unique_ok"]
+                 and res3.checker.get("coordinates_checked") == 28)
+    out["ok"] = bool(ok)
+    return out
 
 
-def control_regional_two_scales_replay(wall):
-    """F2: compact one- and two-scale programs selected and replayed fresh;
-    unique identities; the altered witness rejects on the named obligation;
-    dense expansions are MEASURED."""
-    from mdi import model as M, oracle as O
-    from tests.test_mdi_research import ring_of_blocks, w
-    mp = w(ring_of_blocks()[0])
+def control_valid_proof_record(wall):
+    """R2: a verified publication follows from a VALID proof record: the
+    supplied checker/radius fixtures through the public fresh-process replay
+    (clean encloses all six exact probabilities; the negative allowance is
+    refused as an invalid proof budget); ledger faults on the same record are
+    refused with the clean record preserved; an inverted row is refused
+    before containment; the shared residual-label fault rejects while the
+    clean record verifies; zero-evidence terminals carry the original-model
+    proof (a true claim is proved, a false one is not)."""
+    from mdi import model as M, oracle as O, collective_route as CR, pipeline as PLN
+    from mdi import program_check as PC, program as PG
+    out = {}
+    oks = []
+    cdir = os.path.join(HERE, "checker")
+    mp = os.path.join(cdir, "radius_model.uai")
     m = M.read_uai(mp)
-    res, d, el, exp = _solve(m, wall)
     Z, pt = O.exact_all_marginals(M.restrict(m, {}))
-    names = [p["name"] for p in res.prices]
-    l1 = next(n for n in names if n.startswith("regional:") and "@64" in n and not n.endswith(":L2"))
-    l2 = next(n for n in names if n.startswith("regional:") and n.endswith(":L2"))
-    r1 = _replay_fresh(mp, _plan(res, d, l1), wall)
-    r2 = _replay_fresh(mp, _plan(res, d, l2), wall)
-    base = json.load(open(_plan(res, d, l1)))
-    bad = copy.deepcopy(base)
-    for c in bad["program"]["scales"][0]["regions"][0]["cells"]:
-        tot = Fr(c["M"])
-        vs = sorted({int(k.split(",")[0]) for k in c["N"]})
-        c["N"] = {}
-        for v in vs:
-            c["N"]["%d,0" % v] = str(tot * Fr(9, 10))
-            c["N"]["%d,1" % v] = str(tot * Fr(1, 10))
-    p2 = os.path.join(d, "altered.plan.json")
-    json.dump(bad, open(p2, "w"))
-    alt = _replay_fresh(mp, p2, wall)
-    uq = _unique(res)
-    rs = _resource(res.budget)
-    ok = (res.status == "CERTIFIED_RESEARCH_ROUTE" and _contains(res.intervals, pt)
-          and _width(res.intervals) <= EPS
-          and r1["status"] == "REPLAY_VERIFIED" and r2["status"] == "REPLAY_VERIFIED"
-          and _contains_rep(r1, pt) and _contains_rep(r2, pt)
-          and _resource(r1.get("budget"))["ok"] and _resource(r2.get("budget"))["ok"]
-          and alt["status"] == "REPLAY_REJECTED"
-          and "alpha_b A_{R,i,a}" in (alt.get("failures") or [""])[0]
-          and uq["ok"] and rs["ok"] and exp["entries"] <= 4096 * max(1, exp["materializations"]))
-    return {"pipeline": res.status, "chosen": res.plan.get("chosen"), "research": res.plan.get("research"),
-            "truth": _contains(res.intervals, pt), "width": str(_width(res.intervals)),
-            "replay_L1": r1["status"], "replay_L2": r2["status"],
-            "replay_L1_truth": _contains_rep(r1, pt), "replay_L2_truth": _contains_rep(r2, pt),
-            "altered": alt["status"], "altered_obligation": (alt.get("failures") or [""])[0][:100],
-            "measured_expansions_during_solve": exp, "unique_candidates": uq,
-            "resources_pipeline": rs, "complete_cost": res.plan.get("complete_cost"),
-            "seconds": round(el, 2), "ok": ok}
+    q = sorted(M.restrict(m, {}).free)
+    clean = _replay_fresh(mp, os.path.join(cdir, "radius_clean.plan.json"), wall)
+    neg = _replay_fresh(mp, os.path.join(cdir, "radius_negative.plan.json"), wall)
+    crow = _row_ok(clean, pt, q)
+    crow["six_probabilities_enclosed"] = _contains_rep(clean, pt) and \
+        sum(len(r) for r in clean.get("intervals", {}).values()) == 6
+    crow["ok"] = crow["ok"] and crow["six_probabilities_enclosed"]
+    out["radius_clean"] = crow
+    out["radius_negative"] = {"status": neg["status"], "reason": str(neg.get("reason"))[:160],
+                              "ok": neg["status"] == "REPLAY_REFUSED" and "NEGATIVE" in str(neg.get("reason"))}
+    oks += [crow["ok"], out["radius_negative"]["ok"]]
+    base = json.load(open(os.path.join(cdir, "radius_clean.plan.json")))
+    d = tempfile.mkdtemp()
+    muts = {}
+    b1 = copy.deepcopy(base)
+    b1["allocations"]["regional_level1"] = str(Fr(b1["allocations"]["regional_level1"]) / 1000)
+    b1["program"]["scales"][0]["t_level"] = b1["allocations"]["regional_level1"]
+    muts["saved_below_verified_component"] = b1
+    b2 = copy.deepcopy(base)
+    b2["allocations"]["gaussian_quadrature"] = "1/100000"
+    muts["non_applicable_component_nonzero"] = b2
+    b3 = copy.deepcopy(base)
+    b3["allocations"]["regional_level1"] = "1/10"
+    b3["program"]["scales"][0]["t_level"] = "1/10"
+    muts["saved_allowance_above_frozen_cap"] = b3
+    for label, bad in muts.items():
+        p2 = os.path.join(d, label + ".plan.json")
+        json.dump(bad, open(p2, "w"))
+        r2 = _replay_fresh(mp, p2, wall)
+        txt = str(r2.get("reason")) + " ".join(r2.get("failures") or [])
+        okm = r2["status"] in ("REPLAY_REFUSED", "REPLAY_REJECTED") and any(
+            k in txt for k in ("proof budget", "allocation", "allowance", "radius", "witness", "alpha", "rho"))
+        out[label] = {"status": r2["status"], "reason": str(r2.get("reason"))[:160],
+                      "failure": (r2.get("failures") or [""])[0][:120], "ok": okm}
+        oks.append(okm)
+    prog = PG.validate_program(json.loads(json.dumps(base["program"])))
+    r = M.restrict(m, {})
+    inv = {v: [(Fr(6, 10), Fr(4, 10)) if s == 0 else (Fr(4, 10), Fr(6, 10)) for s in range(2)] for v in q}
+    okI, fI, mI = PC.verify_program(r, set(q), prog, inv, EPS)
+    out["inverted_row_before_containment"] = {
+        "ok": (not okI) and any("INVERTED" in x for x in fI) and bool((mI or {}).get("schema_rejected")),
+        "failure": (fI or [""])[0][:100]}
+    oks.append(out["inverted_row_before_containment"]["ok"])
+    mp4 = _mean_field_path(4, 0.30)
+    m4 = M.read_uai(mp4)
+    res4, d4, _, _ = _solve(m4, wall)
+    Z, pt4 = O.exact_all_marginals(M.restrict(m4, {}))
+    q4 = sorted(M.restrict(m4, {}).free)
+    stat = next(p["name"] for p in res4.prices if p["name"].startswith("statistic:") and p["eligible"])
+    plan4 = _plan(res4, d4, stat)
+    clean4 = _replay_here(mp4, plan4)
+    orig = CR._residual_marked
+
+    def faulty(marked, res, can, kept):
+        rmk = orig(marked, res, can, kept)
+        vs = sorted(rmk.queries())
+        if len(vs) >= 2:
+            a, b = vs[0], vs[1]
+            rmk.owner[a], rmk.owner[b] = rmk.owner[b], rmk.owner[a]
+        return rmk
+    CR._residual_marked = faulty
+    try:
+        bad4 = _replay_here(mp4, plan4)
+    finally:
+        CR._residual_marked = orig
+    row4 = _row_ok(clean4, pt4, q4)
+    txt4 = str(bad4.get("reason")) + " ".join(bad4.get("failures") or [])
+    out["residual_label_fault"] = {"clean": row4, "fault": bad4["status"], "fault_reason": txt4[:160],
+                                   "ok": row4["ok"] and bad4["status"] == "REPLAY_REJECTED"
+                                         and "residual binding" in txt4}
+    oks.append(out["residual_label_fault"]["ok"])
+    z = M.Model(nvars=2, card=[2, 2], factors=[
+        M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(0)], origin=0),
+        M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=1)]).validate()
+    rz = PLN.solve(z, {0: 1}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    fake = PLN.zero_evidence_proof(z, {}, M.restrict(z, {}), named=1)
+    out["zero_evidence_terminal"] = {"true_claim": rz.status, "witness": (rz.checker or {}).get("witness_factor"),
+                                     "false_claim_proved": fake.get("proved"),
+                                     "false_claim_reason": fake["reason"][:120],
+                                     "ok": rz.status == "ZERO_EVIDENCE_PROVED"
+                                           and (rz.checker or {}).get("witness_factor") == 0
+                                           and fake.get("proved") is False}
+    oks.append(out["zero_evidence_terminal"]["ok"])
+    out["ok"] = all(oks)
+    return out
 
 
-def control_compact_structural_refusal(wall):
-    """F3: a grouping whose lifted compact view exceeds the declared cap is
-    refused for its SCHEDULE price without any dense expansion (measured),
-    on a local fixture and -- when present -- on the external Pedigree input
-    through the pipeline's VERIFIED simplification. Construction probes:
-    nothing is executed."""
-    from mdi import model as M, regions as R, marked as MK, routes as RT, pricing as PR, factors as FX
-    from mdi import preprocess as PRE
-    out = {"label": "construction probes through the verified simplification; no execution"}
-    # local: two regions of seven binary variables joined by a complete
-    # bipartite set of weak couplings, so every variable is boundary and each
-    # region keeps 128 cells: every crossing view is a 128 x 128 = 16,384-entry
-    # compact map, above the 4,096-entry message cap
-    k = 7
-    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1) + Fr(1 + v % 7, 20)], origin=v)
-            for v in range(2 * k)]
-    for i in range(k):
-        for j in range(k):
-            facs.append(M.Factor(scope=(i, k + j), card=(2, 2),
-                                 table=_pair(0.05 * (1 + ((i + j) % 3)) / 2), origin=100 + 10 * i + j))
-    regs = [tuple(range(k)), tuple(range(k, 2 * k))]
-    m = M.Model(nvars=2 * k, card=[2] * (2 * k), factors=facs).validate()
-    r0 = M.restrict(m, {})
-    simp = PRE.simplify(r0)
-    PRE.verify_identities(r0, simp)
-    r = M.Restricted(model=m, evidence={}, factors=simp.factors, free=list(simp.free),
-                     card=dict(simp.card), constant=r0.constant, impossible_factor=None)
-    FX.reset_expansion_counter()
-    t = time.time()
-    scales, final = RT.build_scales(MK.Marked.from_restricted(r, set(r.free)), regs, 1)
-    big = max(f.size() for f in final.factors)
-    views = sum(1 for f in final.factors if FX.is_view(f))
-    price, order = PR.price_program("local", "regional", final, scales, None,
-                                    sum(r.card[v] for v in r.free),
-                                    sum(rd.construction_ops for sc in scales for rd in sc.rds))
-    exp_local = dict(FX.EXPANSIONS)
-    out["local"] = {"built_s": round(time.time() - t, 2), "cells": [len(c.cells) for c in scales[0].coarse],
-                    "views": views, "largest_view_entries": big,
-                    "measured_expansions": exp_local, "eligible": price.eligible,
-                    "refusal": price.ineligible_reason[:140]}
-    local_ok = views > 0 and big > 4096 and not price.eligible and exp_local["entries"] == 0 \
-        and "cap" in price.ineligible_reason
-    # external (construction only, verified simplification, nothing executed)
-    p = "/tmp/tep/three_external_problems/inputs/Pedigree_11"
-    ext_ok = True
-    if os.path.exists(p + ".uai"):
-        me = M.read_uai(p + ".uai")
-        ev = M.read_evidence(p + ".uai.evid", me)
-        re0 = M.restrict(me, ev)
-        simp = PRE.simplify(re0)
-        PRE.verify_identities(re0, simp)
-        re = M.Restricted(model=me, evidence=dict(ev), factors=simp.factors, free=list(simp.free),
-                          card=dict(simp.card), constant=re0.constant, impossible_factor=None)
-        q = set(re.free)
-        c = [c for c in R.propose_partitions(re.free, re.card, re.factors) if c["mode"] != "singleton"][0]
-        FX.reset_expansion_counter()
-        t = time.time()
-        scales, final = RT.build_scales(MK.Marked.from_restricted(re, q), [tuple(x) for x in c["regions"]], 1)
-        tb = time.time() - t
-        views = sum(1 for f in final.factors if FX.is_view(f))
-        big = max(f.size() for f in final.factors)
-        price, order = PR.price_program("ext", "regional", final, scales, None, sum(re.card[v] for v in q),
-                                        sum(rd.construction_ops for sc in scales for rd in sc.rds))
-        exp_ext = dict(FX.EXPANSIONS)
-        out["external_Pedigree_11"] = {
-            "label": "simplified restricted model (PRE.simplify + verify_identities); construction only",
-            "free_after_simplification": len(re.free), "built_s": round(tb, 2),
-            "regions": len(c["regions"]), "views": views, "largest_view_entries": big,
-            "measured_expansions": exp_ext, "eligible": price.eligible,
-            "refusal": price.ineligible_reason[:140]}
-        ext_ok = views > 0 and big > 4096 and not price.eligible and exp_ext["entries"] == 0
-    else:
-        out["external_Pedigree_11"] = {"present": False,
-                                       "note": "external inputs absent; the local witness is the mandatory one"}
-    out["ok"] = local_ok and ext_ok
+def control_frozen_integration(wall):
+    """R3: the frozen GF1-GF3 algorithm on the fixed chain (-0.05, -0.05),
+    public-preprocessed, discovered mixed representation. Chapter 05 integers
+    (15 positive nodes, 25 signed frequencies, 13 representatives; 5 processed
+    / 10 omitted in review) are DIAGNOSTICS; acceptance is exact truth, width,
+    identical retained keys and the shared limits. Pure signs at rank two
+    execute and verify; saved-grid mutations refuse binding; price, producer
+    and checker agree on the representatives."""
+    from mdi import model as M, oracle as O, collective as CO
+    m = _chain3()
+    mp = _write_uai(m)
+    res, d, el, _ = _solve(M.read_uai(mp), wall)
+    Z, pt = O.exact_all_marginals(M.restrict(m, {}))
+    q = sorted(M.restrict(m, {}).free)
+    out = {"fixture": "chain J=(-0.05,-0.05) fields (0.1,0.2,0.3)", "pipeline": res.status,
+           "chosen": res.plan.get("chosen"), "offering": _offering(res), "proof_rule": CO.GF_RULE,
+           "proof_version": CO.GF_RULE_VERSION}
+    oks = [res.status.startswith("CERTIFIED") and _contains(res.intervals, pt) and _resource(res.budget)["ok"]]
+    rows = {}
+    for p in [p for p in res.prices if p["name"].startswith("mixed:")]:
+        prog = json.load(open(_plan(res, d, p["name"])))["program"]["collective"]
+        rep = _replay_fresh(mp, _plan(res, d, p["name"]), wall)
+        row = _row_ok(rep, pt, q)
+        ex = rep.get("executor") or {}
+        ck = (rep.get("checker") or {}).get("collective") or {}
+        rx = ex.get("retained_positive_node_indices")
+        ret_exec = sorted(int(x) for x in str(rx).strip("[]").split(",") if x.strip()) if rx is not None else []
+        ret_chk = sorted(ck.get("retained_positive_node_indices") or [])
+        row.update({"grids": [{k: g[k] for k in g if k in ("sign", "tol", "m", "h", "nodes", "signed_frequencies",
+                                                            "representatives", "K", "J", "t", "T", "b")}
+                              for g in prog["grids"]],
+                    "tolerances": prog["deltas"], "gf3_eta_recorded": prog["quadrature_tv"],
+                    "positive_nodes": ex.get("positive_nodes"), "processed": ex.get("processed_positive_nodes"),
+                    "omitted": ex.get("omitted_positive_nodes"), "conjugate_pairs": ex.get("conjugate_pairs"),
+                    "checker_processed": ck.get("processed"), "checker_pairs": ck.get("conjugate_pairs"),
+                    "retained_keys_identical": ret_exec == ret_chk and bool(ret_chk),
+                    "executor_transcendental_calls": ex.get("transcendental_calls"),
+                    "checker_transcendental_calls": ck.get("transcendental_calls"),
+                    "priced_pairs": p["counters"]["negative_conjugate_pairs_per_positive_node"]["value"],
+                    "eligible": p["eligible"]})
+        row["ok"] = (row["ok"] and row["retained_keys_identical"] and p["eligible"]
+                     and str(row["priced_pairs"]) == str(row["conjugate_pairs"]) == str(row["checker_pairs"])
+                     and ex.get("transcendental_calls") is not None and ck.get("transcendental_calls") is not None)
+        rows[p["name"]] = row
+        oks.append(row["ok"])
+    out["mixed_programs"] = rows
+    lr = rows.get("mixed:lowrank_combined") or {}
+    out["chapter05_diagnostics"] = {
+        "expected": {"positive_nodes": 15, "signed_frequencies": 25, "conjugate_representatives": 13,
+                     "review_processed": 5, "review_omitted": 10},
+        "observed": {"positive_nodes": lr.get("positive_nodes"), "processed": lr.get("processed"),
+                     "omitted": lr.get("omitted"), "conjugate_pairs": lr.get("conjugate_pairs"),
+                     "grids": lr.get("grids")},
+        "note": "diagnostics, not acceptance conditions"}
+    try:
+        lat = CO.gf_lattice(Fr(48818, 100000), Fr(328056, 1000000), Fr(1, 4000))
+        latn = CO.fourier_lattice(Fr(90903, 100000), Fr(700684, 1000000), Fr(2, 1000))
+        out["archived_derivative_grid"] = {
+            "positive_nodes": lat["nodes"], "negative_nodes": latn["nodes"],
+            "scope": "the SUPERSEDED tail+discretization lattices of r16/r17 (not the Chapter 05 grids): their "
+                     "769 x 257 tensor exceeded the shared 1,000,000-entry meter, was refused by price and "
+                     "stopped at 1,000,001 entries (ROUTE_MATRIX_r17.json F6). The identities and error "
+                     "estimates were never at fault; the construction was. Preserved, not used."}
+    except Exception as e:
+        out["archived_derivative_grid"] = {"error": str(e)[:120]}
+    pq = _price(res, "mixed:lowrank_combined")["counters"] if lr else {}
+    out["full_grid_price_vs_adaptive_stop"] = {
+        "priced_full_grid_contractions": (pq.get("quadrature_nodes") or {}).get("value"),
+        "measured_processed_positive_nodes": lr.get("processed"), "measured_omitted": lr.get("omitted"),
+        "stopping_tolerance": "the production numerical allowance eps - 2 radius - reserve in execution, "
+                              "verification (identical retained keys) and this control",
+        "note": "a conservative full-grid price bound is distinguished from the measured adaptive stop; "
+                "no pre-node pruning is claimed"}
+    pure = {}
+    for J, ev in ((0.25, "gaussian"), (-0.15, "fourier")):
+        m2 = _two_equal_blocks(J, 2, 3 if J > 0 else 2)
+        mp2 = _write_uai(m2)
+        res2, d2, _, _ = _solve(M.read_uai(mp2), wall)
+        Z, pt2 = O.exact_all_marginals(M.restrict(m2, {}))
+        q2 = sorted(M.restrict(m2, {}).free)
+        name = next((p["name"] for p in res2.prices if p["name"] == ev + ":block_combined"), None)
+        if name is None:
+            pure[ev] = {"ok": False, "reason": "no rank-2 %s record offered" % ev, "offering": _offering(res2)}
+            oks.append(False)
+            continue
+        prog2 = json.load(open(_plan(res2, d2, name)))["program"]["collective"]
+        rep2 = _replay_fresh(mp2, _plan(res2, d2, name), wall)
+        row2 = _row_ok(rep2, pt2, q2)
+        row2.update({"signs": prog2["candidate"]["signs"], "grid_nodes": [g["nodes"] for g in prog2["grids"]],
+                     "eligible": _price(res2, name)["eligible"], "offering": _offering(res2)})
+        row2["ok"] = row2["ok"] and len(prog2["candidate"]["signs"]) == 2 and len(set(prog2["candidate"]["signs"])) == 1
+        pure[ev] = row2
+        oks.append(row2["ok"])
+    out["pure_sign_rank2"] = pure
+    mpf = _mean_field_path(4, -0.22)
+    mf = M.read_uai(mpf)
+    resf, df, _, _ = _solve(mf, wall)
+    fname = next(p["name"] for p in resf.prices if p["name"].startswith("fourier:") and p["eligible"])
+    base = json.load(open(_plan(resf, df, fname)))
+    g = base["program"]["collective"]["grids"][0]
+    muts = {}
+    if g["m"] > 1:
+        m1 = g["m"] - 1
+        muts["coarser_spacing"] = dict(g, m=m1, h=str(Fr(1, m1)), J=m1 * g["T"], nodes=2 * m1 * g["T"] + 1,
+                                       signed_frequencies=2 * m1 * g["T"] + 1, representatives=m1 * g["T"] + 1)
+    mm = g["m"] + 1
+    muts["finer_spacing"] = dict(g, m=mm, h=str(Fr(1, mm)), J=mm * g["T"], nodes=2 * mm * g["T"] + 1,
+                                 signed_frequencies=2 * mm * g["T"] + 1, representatives=mm * g["T"] + 1)
+    muts["shorter_reach"] = dict(g, J=g["J"] - 1, nodes=2 * (g["J"] - 1) + 1,
+                                 signed_frequencies=2 * (g["J"] - 1) + 1, representatives=g["J"])
+    gm = {}
+    for label, gg in muts.items():
+        bad = copy.deepcopy(base)
+        bad["program"]["collective"]["grids"][0] = gg
+        p2 = os.path.join(df, "grid_%s.plan.json" % label)
+        json.dump(bad, open(p2, "w"))
+        r2 = _replay_fresh(mpf, p2, wall)
+        gm[label] = {"status": r2["status"], "reason": str(r2.get("reason"))[:140],
+                     "ok": r2["status"] in ("REPLAY_REFUSED", "REPLAY_REJECTED")}
+        oks.append(gm[label]["ok"])
+    out["saved_grid_mutations"] = gm
+    pf = _price(resf, fname)
+    repf = _replay_fresh(mpf, _plan(resf, df, fname), wall)
+    exf = repf.get("executor") or {}
+    ckf = (repf.get("checker") or {}).get("collective") or {}
+    pp = str(pf["counters"]["negative_conjugate_pairs_per_positive_node"]["value"])
+    out["representative_symmetry"] = {"priced_pairs": pp, "producer_pairs": exf.get("conjugate_pairs"),
+                                      "checker_pairs": ckf.get("conjugate_pairs"),
+                                      "grid_representatives": g["representatives"],
+                                      "grid_signed_frequencies": g["signed_frequencies"],
+                                      "ok": pp == str(exf.get("conjugate_pairs")) == str(ckf.get("conjugate_pairs"))
+                                            == str(g["representatives"])}
+    oks.append(out["representative_symmetry"]["ok"])
+    out["ok"] = all(oks)
     return out
 
 
 def control_independent_representation_and_readout(wall):
-    """F4: the checker's proof of the original query is independent: the
-    compact-compose fault, the shared-readout fault, the statistic
-    state-count fault and the Fourier payload fault each REJECT on the
-    containment obligation through the same loaded-object boundary, with
-    their clean counterparts VERIFIED under identical publication rules;
-    categorical / hard-zero / subset restoration verifies."""
+    """R4: compose, shared-readout, statistic state-count and Fourier payload
+    faults REJECT through the same boundary that VERIFIES their clean
+    records; categorical / hard-zero / subset with evidence, and a nonzero
+    DELETION program, verify and replay."""
     from mdi import model as M, oracle as O, factors as FX, marked as MK, collective_jt as CJ
     from tests.test_mdi_research import ring_of_blocks, w
     out = {}
     oks = []
 
-    def pair_(label, mp, plan, pt, patch_target, attr, faulty, obligation="does NOT contain"):
+    def pair_(label, mp, plan, pt, q, target, attr, faulty, obligation="does NOT contain"):
         clean = _replay_here(mp, plan)
-        orig = getattr(patch_target, attr)
-        setattr(patch_target, attr, faulty(orig))
+        orig = getattr(target, attr)
+        setattr(target, attr, faulty(orig))
         try:
             bad = _replay_here(mp, plan)
         finally:
-            setattr(patch_target, attr, orig)
+            setattr(target, attr, orig)
         fail0 = (bad.get("failures") or [""])[0]
-        rs = _resource(clean.get("budget"))
-        ok = (clean["status"] == "REPLAY_VERIFIED" and _contains_rep(clean, pt)
-              and Fr(clean["max_width"]) <= EPS and rs["ok"]
-              and bad["status"] == "REPLAY_REJECTED" and obligation in fail0)
-        out[label] = {"clean": clean["status"], "clean_truth": _contains_rep(clean, pt),
-                      "clean_width": clean["max_width"], "clean_resources": rs,
-                      "fault": bad["status"], "fault_obligation": fail0[:110],
-                      "fault_intervals_x0": (bad.get("intervals") or {}).get("0"), "ok": ok}
+        row = _row_ok(clean, pt, q)
+        ok = row["ok"] and bad["status"] == "REPLAY_REJECTED" and obligation in fail0
+        out[label] = {"clean": row, "fault": bad["status"], "fault_obligation": fail0[:110], "ok": ok}
         oks.append(ok)
 
-    # ring: compose fault (producer-side offset maps corrupted) and shared readout fault
     mp = w(ring_of_blocks()[0])
     m = M.read_uai(mp)
-    res, d, el, exp = _solve(m, wall)
+    res, d, _, _ = _solve(m, wall)
     Z, pt = O.exact_all_marginals(M.restrict(m, {}))
+    q = sorted(M.restrict(m, {}).free)
     l1 = next(p["name"] for p in res.prices if p["name"].startswith("regional:") and "@64" in p["name"]
               and not p["name"].endswith(":L2"))
     plan = _plan(res, d, l1)
@@ -426,7 +572,7 @@ def control_independent_representation_and_readout(wall):
             return FX.ProjectedFactor(scope=v.scope, card=v.card, offsets=v.offsets, base=v.base,
                                       origin=v.origin, scale=v.scale)
         return faulty
-    pair_("compact_compose_fault", mp, plan, pt, FX.ProjectedFactor, "compose", compose_fault)
+    pair_("compact_compose_fault", mp, plan, pt, q, FX.ProjectedFactor, "compose", compose_fault)
 
     def readout_fault(orig):
         def faulty(marked, Z, counts):
@@ -434,13 +580,12 @@ def control_independent_representation_and_readout(wall):
             return {v: [(lo * Fr(9, 5), hi * Fr(9, 5)) if s == 0 else (lo / 5, hi / 5)
                         for s, (lo, hi) in enumerate(rws)] for v, rws in o.items()}
         return faulty
-    pair_("shared_readout_fault", mp, plan, pt, MK, "read_original", readout_fault)
-
-    # mean field 4: statistic state-count fault and Fourier payload fault
+    pair_("shared_readout_fault", mp, plan, pt, q, MK, "read_original", readout_fault)
     mp4 = _mean_field_path(4, 0.30)
     m4 = M.read_uai(mp4)
-    res4, d4, el4, _ = _solve(m4, wall)
+    res4, d4, _, _ = _solve(m4, wall)
     Z, pt4 = O.exact_all_marginals(M.restrict(m4, {}))
+    q4 = sorted(M.restrict(m4, {}).free)
     stat = next(p["name"] for p in res4.prices if p["name"].startswith("statistic:") and p["eligible"])
 
     def stat_fault(orig):
@@ -450,333 +595,281 @@ def control_independent_representation_and_readout(wall):
                       for v, rows in counts.items()}
             return Zr, counts, meta
         return faulty
-    pair_("statistic_state_count_fault", mp4, _plan(res4, d4, stat), pt4, CJ, "statistic_evaluate", stat_fault)
-
+    pair_("statistic_state_count_fault", mp4, _plan(res4, d4, stat), pt4, q4, CJ, "statistic_evaluate", stat_fault)
     mpf = _mean_field_path(4, -0.22)
     mf = M.read_uai(mpf)
-    resf, df, elf, _ = _solve(mf, wall)
+    resf, df, _, _ = _solve(mf, wall)
     Z, ptf = O.exact_all_marginals(M.restrict(mf, {}))
+    qf = sorted(M.restrict(mf, {}).free)
     four = next(p["name"] for p in resf.prices if p["name"].startswith("fourier:") and p["eligible"])
 
     def payload_fault(orig):
         def faulty(marked, marg, others, alg):
             o = orig(marked, marg, others, alg)
             for v in o:
-                o[v][0] = alg.mul(o[v][0], (Fr(3), Fr(3), Fr(0), Fr(0)) if alg.name == "complex"
-                                  else (Fr(3), Fr(3)))
+                o[v][0] = alg.mul(o[v][0], (Fr(3), Fr(3), Fr(0), Fr(0)) if alg.name == "complex" else (Fr(3), Fr(3)))
             return o
         return faulty
-    pair_("fourier_payload_fault", mpf, _plan(resf, df, four), ptf, CJ, "_own_mass_contribution",
-          payload_fault)
-
-    # categorical / hard zero / subset restoration through the public entry
-    mc = _categorical()
-    resc, dc, elc, _ = _solve(mc, wall, evidence={3: 1}, queries={0, 1, 5})
+    pair_("fourier_payload_fault", mpf, _plan(resf, df, four), ptf, qf, CJ, "_own_mass_contribution", payload_fault)
+    facs = [M.Factor(scope=(0, 1), card=(2, 3), table=[Fr(1), Fr(2), Fr(0), Fr(3), Fr(1), Fr(5)], origin=0),
+            M.Factor(scope=(1, 2, 3), card=(3, 2, 2),
+                     table=[Fr(x) for x in (1, 2, 1, 0, 2, 1, 1, 3, 1, 1, 2, Fr(1, 10 ** 9))], origin=1),
+            M.Factor(scope=(4, 5), card=(2, 3), table=[Fr(2), Fr(1), Fr(1), Fr(1), Fr(0), Fr(4)], origin=2)]
+    mc = M.Model(nvars=6, card=[2, 3, 2, 2, 2, 3], factors=facs).validate()
+    mpc = _write_uai(mc)
+    evp = mpc + ".evid"
+    open(evp, "w").write("1 3 1\n")
+    resc, dc, _, _ = _solve(M.read_uai(mpc), wall, evidence={3: 1}, queries={0, 1, 5})
     Z, ptc = O.exact_all_marginals(M.restrict(mc, {3: 1}))
-    reg = [p["name"] for p in resc.prices if p["name"].startswith("regional:") and p["eligible"]]
-    cat = {"pipeline": resc.status, "chosen": resc.plan.get("chosen"),
-           "truth": _contains({v: resc.intervals[v] for v in (0, 1, 5)}, ptc),
-           "width": str(_width({v: resc.intervals[v] for v in (0, 1, 5)})),
-           "resources": _resource(resc.budget), "regional_records": reg}
-    cat_ok = resc.status.startswith("CERTIFIED") and cat["truth"] and Fr(cat["width"]) <= EPS \
+    reg = next((p["name"] for p in resc.prices if p["name"].startswith("regional:") and p["eligible"]), None)
+    cat = {"pipeline": resc.status, "chosen": resc.plan.get("chosen"), "response_keys": sorted(resc.intervals),
+           "truth": _contains({v: resc.intervals[v] for v in (0, 1, 5)}, ptc), "resources": _resource(resc.budget)}
+    okc = resc.status.startswith("CERTIFIED") and cat["truth"] and sorted(resc.intervals) == [0, 1, 3, 5] \
         and cat["resources"]["ok"]
     if reg:
-        mpc = _write_uai(mc)
-        # replay needs the evidence file
-        evp = mpc + ".evid"
-        open(evp, "w").write("1 3 1\n")
-        from mdi import replay as RP
-        rc = RP.replay(mpc, evp, _plan(resc, dc, reg[0]))
-        cat["regional_replay"] = rc["status"]
-        cat["regional_replay_truth"] = _contains_rep(rc, ptc)
-        cat["regional_replay_reason"] = str(rc.get("reason"))[:100]
-        cat_ok = cat_ok and rc["status"] == "REPLAY_VERIFIED" and _contains_rep(rc, ptc)
-    cat["ok"] = cat_ok
-    out["categorical_zero_subset"] = cat
-    oks.append(cat_ok)
+        rc = _replay_fresh(mpc, _plan(resc, dc, reg), wall, evid=evp)
+        rowc = _row_ok(rc, ptc, [0, 1, 5])
+        cat["regional_replay"] = rowc
+        okc = okc and rowc["ok"]
+    cat["ok"] = okc
+    out["categorical_zero_subset_evidence"] = cat
+    oks.append(okc)
+    md = _deletion_chain()
+    mpd = _write_uai(md)
+    resd, dd, _, _ = _solve(M.read_uai(mpd), wall)
+    Z, ptd = O.exact_all_marginals(M.restrict(md, {}))
+    qd = sorted(M.restrict(md, {}).free)
+    delrec = None
+    for p in resd.prices:
+        if p["name"].startswith("regional:"):
+            prog = json.load(open(_plan(resd, dd, p["name"])))["program"]
+            if sum(len(rg["deleted"]) for sc in prog["scales"] for rg in sc["regions"]) > 0:
+                delrec = p["name"]
+                break
+    if delrec is None:
+        out["nonzero_deletion"] = {"ok": False, "reason": "no regional record with a deleted state was offered",
+                                   "offering": _offering(resd)}
+        oks.append(False)
+    else:
+        rd = _replay_fresh(mpd, _plan(resd, dd, delrec), wall)
+        rowd = _row_ok(rd, ptd, qd)
+        rowd.update({"program": delrec, "research": rd.get("research"),
+                     "eligible": _price(resd, delrec)["eligible"], "offering": _offering(resd)})
+        rowd["ok"] = rowd["ok"] and (rd.get("research") or {}).get("deleted_states", 0) >= 1 \
+            and Fr(((rd.get("ledger") or {}).get("verified") or {}).get("deletion_level1", "0")) > 0
+        out["nonzero_deletion"] = rowd
+        oks.append(rowd["ok"])
     out["ok"] = all(oks)
     return out
 
 
-def control_portfolio_menu_and_identity(wall):
-    """F5: the specified bounded algorithm is the candidate portfolio: block
-    recognition keeps within-block data and the incidence of equal blocks,
-    the mask menu and categorical menu are offered, every certified
-    representation is offered to every applicable evaluator (pure-sign
-    multiple modes included), candidates are unique by IDENTITY, coarse Q is
-    bound-selected, and a vector statistic program runs and verifies."""
-    from mdi import model as M, oracle as O, modes as MO
+def control_portfolio_and_identity(wall):
+    """R5: the 12-versus-8 control (every certified candidate persisted with a
+    distinct executable identity despite shared generator names), the
+    feature-sign rounding tie, block repairs, masks carried into the residual
+    actually built and priced, the categorical menu, coarse Q."""
+    from mdi import model as M, oracle as O, modes as MO, collective_route as CR, marked as MK, arith as A
     from tests.test_mdi_research import ring_of_blocks, w
     out = {}
-    # two-block signed model
+    oks = []
     m = _two_block_signed()
     mp = _write_uai(m)
-    res, d, el, exp = _solve(M.read_uai(mp), wall)
-    Z, pt = O.exact_all_marginals(M.restrict(m, {}))
-    names = {p["name"]: p for p in res.prices}
-    progs = {n: json.load(open(_plan(res, d, n)))["program"] for n in names if names[n]["identity"]}
-    kinds = sorted({(n.split(":")[0], progs[n]["collective"]["candidate"]["kind"],
-                     tuple(progs[n]["collective"]["candidate"]["signs"]))
-                    for n in progs if progs[n].get("collective")})
-    cands, info = MO.propose_modes(list(M.restrict(m, {}).free), M.restrict(m, {}).factors,
-                                   M.restrict(m, {}).card)
+    res, d, _, _ = _solve(M.read_uai(mp), wall)
+    q = sorted(M.restrict(m, {}).free)
+    offs = _offering(res)
+    r0 = M.restrict(m, {})
+    adm = CR.admit(MK.Marked.from_restricted(r0, set(q)), A.Ctx(96))
+    shared = {}
+    for p in res.prices:
+        shared.setdefault(p["name"].split("#")[0], []).append(p["identity"])
+    cands, info = MO.propose_modes(list(r0.free), r0.factors, r0.card)
     bm = info.get("block_matrix")
-    vec = next((n for n in names if n.startswith("statistic:block_combined")), None)
-    out["two_block_signed"] = {
-        "pipeline": res.status, "chosen": res.plan.get("chosen"), "truth": _contains(res.intervals, pt),
-        "evaluator_kind_signs": [list(k) for k in kinds],
-        "block_matrix_from_recognizer": bm,
-        "mixed_offered_and_priced": [n for n in names if n.startswith("mixed:")],
-        "mixed_eligibility": {n: (names[n]["eligible"], names[n]["ineligible_reason"][:90])
-                              for n in names if n.startswith("mixed:")},
-        "masks_offered": sorted({n.split(":")[1] for n in names if "_forest" in n or "_augmented" in n
-                                 or "_outlier" in n}),
-        "unique_candidates": _unique(res), "resources": _resource(res.budget)}
-    ok = (res.status.startswith("CERTIFIED") and _contains(res.intervals, pt) and vec is not None
-          and bm is not None and all(abs(bm[i][i]) > 0 for i in range(len(bm)))
-          and any(e == "mixed" for e, k, s in kinds)
-          and any("_forest" in n for n in names) and out["two_block_signed"]["unique_candidates"]["ok"]
-          and out["two_block_signed"]["resources"]["ok"])
-    if vec:
-        rv = _replay_here(mp, _plan(res, d, vec))
-        out["two_block_signed"]["vector_statistic_replay"] = {
-            "name": vec, "status": rv["status"], "truth": _contains_rep(rv, pt), "width": rv.get("max_width"),
-            "rank": len(progs[vec]["collective"]["candidate"]["signs"]),
-            "Q": progs[vec]["collective"]["Q"], "support": (rv.get("executor") or {}).get("statistic_support"),
-            "resources": _resource(rv.get("budget"))}
-        ok = ok and rv["status"] == "REPLAY_VERIFIED" and _contains_rep(rv, pt) \
-            and Fr(rv["max_width"]) <= EPS and _resource(rv.get("budget"))["ok"]
-    # two EQUAL disconnected blocks: two block modes (incidence preserved), a
-    # pure-sign rank-2 candidate offered to statistic AND Gaussian
+    out["twelve_versus_eight"] = {"admitted_by_recognizer": len(adm), "records_persisted": offs["records"],
+                                  "distinct_identities": offs["distinct_identities"],
+                                  "generator_names_shared_by_distinct_records":
+                                      {k: len(v) for k, v in shared.items() if len(v) > 1},
+                                  "duplicates_rejected": offs["typed_refusals"].get("duplicate", 0),
+                                  "block_matrix": bm, "offering": offs}
+    n_coll = sum(1 for n in offs["offered"] if n.split(":")[0] in ("statistic", "gaussian", "fourier", "mixed"))
+    out["twelve_versus_eight"]["collective_records_persisted"] = n_coll
+    ok12 = (n_coll == len(adm) and offs["unique_ok"] and bm is not None
+            and all(abs(bm[i][i]) > 0 for i in range(len(bm))) and any(len(v) > 1 for v in shared.values()))
+    oks.append(ok12)
+    Q = 4
+    f = {0: [Fr(-1, 8), Fr(1, 8)], 1: [Fr(-3, 8), Fr(3, 8)]}
+    cA = MO.ModeCandidate(signs=[1], gammas=[Fr(1, 2)], features=[f], kind="lowrank_rank1")
+    cB = MO.ModeCandidate(signs=[1], gammas=[Fr(1, 2)], features=[{v: [-x for x in row] for v, row in f.items()}],
+                          kind="lowrank_rank1")
+    base = {"evaluator": "statistic", "Q": Q, "deltas": None, "kept_factors": [], "dropped_pairs": []}
+    exe = {"order": [0, 1], "precision": 96, "arithmetic": {"mode": "E"}, "checker": {"strategy": "dense_min_fill"}}
+    idA, kA = CR.canonical_identity(dict(base, candidate=cA), (), executable=exe)
+    idB, kB = CR.canonical_identity(dict(base, candidate=cB), (), executable=exe)
+    out["feature_sign_rounding_tie"] = {"Q": Q, "canonical_modes_equal": kA["modes"] == kB["modes"],
+                                        "integer_statistics_A": kA["integer_statistics"],
+                                        "integer_statistics_B": kB["integer_statistics"],
+                                        "identities_distinct": idA != idB,
+                                        "ok": kA["modes"] == kB["modes"] and idA != idB}
+    oks.append(out["feature_sign_rounding_tie"]["ok"])
+    masked_rows = []
+    for c, rmk in adm:
+        cd = c["candidate"]
+        if cd.masked:
+            kept = {tuple(fct.scope) for fct in rmk.factors if len(fct.scope) == 2}
+            masked_rows.append({"kind": cd.kind, "masked_pairs": len(cd.masked),
+                                "all_retained_in_built_residual": all(tuple(pr) in kept for pr in cd.masked)})
+    out["masks_in_built_residual"] = {"rows": masked_rows[:6],
+                                      "ok": bool(masked_rows) and all(r["all_retained_in_built_residual"] for r in masked_rows)}
+    oks.append(out["masks_in_built_residual"]["ok"])
     m2 = _two_equal_blocks()
-    mp2 = _write_uai(m2)
-    res2, d2, el2, _ = _solve(M.read_uai(mp2), wall)
-    Z, pt2 = O.exact_all_marginals(M.restrict(m2, {}))
-    n2 = {p["name"]: p for p in res2.prices}
-    pure = {}
-    for n in n2:
-        if n2[n]["identity"] and n.split(":")[0] in ("statistic", "gaussian", "fourier"):
-            pg = json.load(open(_plan(res2, d2, n)))["program"]["collective"]
-            if len(pg["candidate"]["signs"]) >= 2:
-                pure[n] = {"signs": pg["candidate"]["signs"], "eligible": n2[n]["eligible"],
-                           "reason": n2[n]["ineligible_reason"][:110],
-                           "metered_entries_forecast": (n2[n]["counters"].get("metered_entries_forecast") or {}).get("value")}
-    eq = {"pipeline": res2.status, "truth": _contains(res2.intervals, pt2),
-          "pure_sign_multi_mode_candidates": pure, "unique_candidates": _unique(res2),
-          "resources": _resource(res2.budget)}
-    gauss2 = [n for n in pure if n.startswith("gaussian:block_combined")]
-    stat2 = [n for n in pure if n.startswith("statistic:block_combined")]
-    ok2 = (res2.status.startswith("CERTIFIED") and eq["truth"] and gauss2 and stat2
-           and all(s == 1 for s in pure[gauss2[0]]["signs"]) and eq["unique_candidates"]["ok"]
-           and eq["resources"]["ok"])
-    if stat2:
-        rs2 = _replay_here(mp2, _plan(res2, d2, stat2[0]))
-        eq["statistic_block_combined_replay"] = {"status": rs2["status"], "truth": _contains_rep(rs2, pt2),
-                                                 "width": rs2.get("max_width"),
-                                                 "resources": _resource(rs2.get("budget"))}
-        ok2 = ok2 and rs2["status"] == "REPLAY_VERIFIED" and _contains_rep(rs2, pt2)
-    out["two_equal_disconnected_blocks"] = eq
-    # categorical menu on a pairwise 3-state model, through the pipeline
+    r2 = M.restrict(m2, {})
+    c2, i2 = MO.propose_modes(list(r2.free), r2.factors, r2.card)
+    bc = [c for c in c2 if c.kind == "block_combined"]
+    out["two_equal_blocks"] = {"block_matrix": i2.get("block_matrix"), "block_combined_signs": [c.signs for c in bc],
+                               "ok": bool(bc) and all(len(c.signs) == 2 for c in bc)}
+    oks.append(out["two_equal_blocks"]["ok"])
     mc = _categorical_pairwise()
     mpc = _write_uai(mc)
-    resc, dc, elc, _ = _solve(M.read_uai(mpc), wall)
+    resc, dc, _, _ = _solve(M.read_uai(mpc), wall)
     Z, ptc = O.exact_all_marginals(M.restrict(mc, {}))
+    qc = sorted(M.restrict(mc, {}).free)
     catn = sorted({p["name"] for p in resc.prices if "categorical" in p["name"]})
-    out["categorical_menu"] = {"records": catn, "pipeline": resc.status, "truth": _contains(resc.intervals, ptc),
-                               "unique_candidates": _unique(resc), "resources": _resource(resc.budget)}
-    okc = (any("categorical_rank1" in k for k in catn) and any("categorical_combined" in k for k in catn)
-           and any("_forest" in k for k in catn) and resc.status.startswith("CERTIFIED")
-           and _contains(resc.intervals, ptc) and out["categorical_menu"]["unique_candidates"]["ok"])
-    cstat = next((k for k in catn if k.startswith("statistic:categorical_rank1")), None)
+    cstat = next((k for k in catn if k.startswith("statistic:categorical_rank1") and _price(resc, k)["eligible"]), None)
+    cat = {"records": catn, "pipeline": resc.status, "offering": _offering(resc)}
+    okc = any("categorical_rank1" in k for k in catn) and any("categorical_combined" in k for k in catn) \
+        and any("_forest" in k for k in catn) and resc.status.startswith("CERTIFIED")
     if cstat:
-        rcs = _replay_here(mpc, _plan(resc, dc, cstat))
-        out["categorical_menu"]["statistic_categorical_replay"] = {
-            "status": rcs["status"], "truth": _contains_rep(rcs, ptc), "width": rcs.get("max_width"),
-            "resources": _resource(rcs.get("budget"))}
-        okc = okc and rcs["status"] == "REPLAY_VERIFIED" and _contains_rep(rcs, ptc) \
-            and Fr(rcs["max_width"]) <= EPS
-    # coarse Q on the composed ring, read from the PERSISTED record
-    mr = _write_uai(M.read_uai(w(ring_of_blocks()[0])))
-    resr, dr, elr, _ = _solve(M.read_uai(mr), wall)
+        rcs = _replay_fresh(mpc, _plan(resc, dc, cstat), wall)
+        cat["statistic_categorical_replay"] = _row_ok(rcs, ptc, qc)
+        okc = okc and cat["statistic_categorical_replay"]["ok"]
+    cat["ok"] = okc
+    out["categorical_menu"] = cat
+    oks.append(okc)
+    mr = w(ring_of_blocks()[0])
+    resr, dr, _, _ = _solve(M.read_uai(mr), wall)
     comp = [p for p in resr.prices if p["name"].startswith("composed:") and ":statistic:" in p["name"]]
     qs = {p["name"]: json.load(open(_plan(resr, dr, p["name"])))["program"]["collective"]["Q"] for p in comp}
-    out["composed_ring_coarse_Q"] = {"Q_by_record": qs, "all_below_2^16": bool(qs) and all(q < (1 << 16) for q in qs.values())}
-    okq = bool(qs) and all(q < (1 << 16) for q in qs.values())
-    out["ok"] = bool(ok and ok2 and okc and okq)
+    out["composed_ring_coarse_Q"] = {"Q_by_record": qs, "ok": bool(qs) and all(v < (1 << 16) for v in qs.values())}
+    oks.append(out["composed_ring_coarse_Q"]["ok"])
+    out["ok"] = all(oks)
     return out
 
 
-def control_mixed_under_shared_budget(wall):
-    """F6: the mixed Gaussian/Fourier branch under the NORMAL shared budget.
-    The smallest genuinely mixed candidates are admitted, priced on their
-    saved order, persisted and deduplicated; their forecast metered entry
-    visits are compared with the shared cap; the pipeline and a fresh replay
-    refuse what the price refuses; the guarded component run confirms the
-    stop. If no fixture is admissible, the row is BLOCKED with the precise
-    resource blocker (never a PASS, never an unguarded run)."""
-    from mdi import model as M, oracle as O, routes as RT, plantype as PT, budget as B, config as K
-    from mdi import solve as S
-    fixtures = [("triangle 0.15/0.05/-0.05", _triangle(0.15, 0.05, -0.05)),
-                ("triangle 0.05/0/-0.05", _triangle(0.05, 0.0, -0.05)),
-                ("chain -0.05/-0.05", _triangle(-0.05, 0.0, -0.05)),
-                ("chain -0.01/-0.01", _triangle(-0.01, 0.0, -0.01))]
-    rows = []
-    best = None
-    for label, m in fixtures:
-        mp = _write_uai(m)
-        res, d, el, _ = _solve(M.read_uai(mp), wall)
-        for p in res.prices:
-            if not p["name"].startswith("mixed:"):
-                continue
-            prog = json.load(open(_plan(res, d, p["name"])))["program"]["collective"]
-            c = p["counters"]
-            row = {"fixture": label, "name": p["name"], "signs": prog["candidate"]["signs"],
-                   "nodes_per_mode": [l["nodes"] for l in prog["lattices"]],
-                   "eligible": p["eligible"], "refusal": p["ineligible_reason"][:160],
-                   "metered_entries_forecast": (c.get("metered_entries_forecast") or {}).get("value"),
-                   "producer_entries": (c.get("producer_metered_entries") or {}).get("value"),
-                   "checker_entries": (c.get("checker_metered_entries") or {}).get("value"),
-                   "remaining_cost": p["total_arithmetic"]["value"], "identity": p["identity"],
-                   "plan": _plan(res, d, p["name"]), "model_path": mp, "pipeline": res.status,
-                   "unique_candidates": _unique(res)["ok"]}
-            rows.append(row)
-            f = int(row["metered_entries_forecast"] or 0)
-            if best is None or f < best[0]:
-                best = (f, row)
-    cap = K.CAPS["local_mass_entries"]
-    out = {"candidates": [{k: v for k, v in r.items() if k not in ("plan", "model_path")} for r in rows],
-           "shared_cap_local_mass_entries": cap}
-    if not rows:
-        out["ok"] = False
-        out["reason"] = "no mixed candidate was admitted on any fixture"
-        return out
-    admissible = [r for r in rows if r["eligible"]]
-    if admissible:
-        r = admissible[0]
-        rep = _replay_fresh(r["model_path"], r["plan"], wall)
-        m = M.read_uai(r["model_path"])
-        Z, pt = O.exact_all_marginals(M.restrict(m, {}))
-        out["admissible_run"] = {"name": r["name"], "fixture": r["fixture"], "replay": rep["status"],
-                                 "truth": _contains_rep(rep, pt), "width": rep.get("max_width"),
-                                 "executor": rep.get("executor"), "resources": _resource(rep.get("budget"))}
-        out["ok"] = (rep["status"] == "REPLAY_VERIFIED" and _contains_rep(rep, pt)
-                     and Fr(rep["max_width"]) <= EPS and _resource(rep.get("budget"))["ok"]
-                     and (rep.get("executor") or {}).get("omitted_positive_nodes", "0") not in ("0", 0))
-        return out
-    # BLOCKED: the smallest forecast against the cap; the pipeline's and the
-    # fresh replay's refusals; the guarded component run's measured stop
-    f, r = best
-    rep = _replay_fresh(r["model_path"], r["plan"], wall)
-    rec = PT.PlanRecord.from_json(open(r["plan"]).read())
-    m = M.read_uai(r["model_path"])
-    bg = B.Budget(wall_s=wall, limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
-                                        "local_mass_entries": cap},
-                  rss_fn=S._rss_bytes, rss_limit=1 << 30)
-    t = time.time()
-    stop = None
-    try:
-        RT.execute(rec.parsed_program, M.restrict(m, {}), set(rec.parsed_program["queries"]),
-                   deadline=bg.deadline_fn("component"), budget=bg)
-        comp = "COMPLETED"
-    except B.BudgetExceeded as e:
-        comp = "RESOURCE_STOP"
-        stop = {"kind": e.kind, "used": e.used, "limit": e.limit, "where": e.where}
-    out["blocked"] = True
-    out["smallest_mixed_candidate"] = {k: v for k, v in r.items() if k not in ("plan", "model_path")}
-    out["pipeline_refusal"] = r["refusal"]
-    out["fresh_replay"] = {"status": rep["status"], "reason": str(rep.get("reason"))[:200]}
-    out["guarded_component_run"] = {"outcome": comp, "stop": stop, "seconds": round(time.time() - t, 1),
-                                    "used": dict(bg.used),
-                                    "label": "the persisted program executed under a fresh shared budget "
-                                             "with the production caps, outside selection, to confirm the "
-                                             "forecast stop; not a certified result"}
-    out["precise_blocker"] = (
-        "every genuinely mixed candidate on the smallest fixtures needs a %d x %d-node tensor lattice "
-        "(positive quadrature allowance %s, negative delta from L = exp(-Y_max)); the smallest forecast "
-        "metered entry visits (producer + checker) is %d against the shared cumulative cap of %d; the "
-        "pipeline refuses it by price, a fresh replay refuses it by the same rule, and the guarded "
-        "component run stops at %s. No cap was enlarged."
-        % (r["nodes_per_mode"][0], r["nodes_per_mode"][1], K.RADII["gaussian_quadrature"], f, cap,
-           (stop or {}).get("used")))
-    out["ok"] = (not r["eligible"] and "cap" in r["refusal"] and rep["status"] == "REPLAY_REFUSED"
-                 and comp == "RESOURCE_STOP" and stop["kind"] == "local_mass_entries"
-                 and f > cap and r["unique_candidates"])
-    return out
-
-
-def control_price_covers_counted_work(wall):
-    """F7: priced bounds cover the COUNTED producer and checker operations
-    and the MEASURED metered entries and liveness of guarded replays on
-    statistic (scalar and vector), Fourier, regional and composed programs;
-    the price is on the saved order and a legal different order does not
-    bind."""
+def control_work_and_memory(wall):
+    """R6: priced bounds cover the COUNTED operations, measured metered
+    entries, measured transcendental calls of both engines, measured retained
+    node data and precomputed phases, and liveness, on statistic (default
+    order), Gaussian (small storage), Fourier, mixed, regional and composed
+    programs; measurement / proven bound / forecast are separate fields;
+    stage elapsed times are complete; a missing measurement cannot pass
+    coverage; a cost-changing reordered plan is refused at binding."""
     from mdi import model as M, oracle as O
     from tests.test_mdi_research import ring_of_blocks, w
     rows = []
     all_ok = True
 
-    def check(label, mp, res, d, name, pt):
+    def coverage(c, counts, rep, name):
+        """The coverage predicate on MEASURED values; None never passes."""
+        ex = rep.get("executor") or {}
+        ck = (rep.get("checker") or {}).get("collective") or {}
+        pp = sum(int(c[k]["value"]) for k in ("producer_upward_ops", "producer_downward_ops", "readout_ops"))
+        pc = int(c["checker_ops"]["value"])
+        bud = rep.get("budget") or {}
+        used = bud["used"].get("local_mass_entries", 0) if "used" in bud else None
+        fc = (c.get("metered_entries_forecast") or {}).get("value")
+        live_m = ex.get("peak_live_entries")
+        live_p = int(c["peak_live_message_entries"]["value"]) + int(c["final_largest_bag"]["value"])
+        tr_fp = (c.get("transcendental_producer_forecast") or {}).get("value")
+        tr_fc = (c.get("transcendental_checker_forecast") or {}).get("value")
+        tr_e, tr_c = ex.get("transcendental_calls"), ck.get("transcendental_calls")
+        ret_f = (c.get("retained_positive_node_entries") or {}).get("value")
+        ret_m = ex.get("retained_positive_node_entries")
+        ph_f = (c.get("precomputed_phase_entries") or {}).get("value")
+        ph_m = ex.get("precomputed_phase_entries")
+        st = rep.get("stages") or {}
+        measured = {"producer_ops": counts.get("execute"), "checker_ops": counts.get("check"),
+                    "metered_entries": used, "peak_live": live_m, "producer_transcendental": tr_e,
+                    "checker_transcendental": tr_c, "retained_positive_node_entries": ret_m,
+                    "precomputed_phase_entries": ph_m, "stage_seconds": st}
+        bounds = {"producer_ops": pp, "checker_ops": pc, "metered_entries": fc, "peak_live": live_p,
+                  "event_staging_entries": (c.get("event_staging_entries") or {}).get("value")}
+        forecasts = {"transcendental_producer": tr_fp, "transcendental_checker": tr_fc,
+                     "retained_positive_node_entries": ret_f, "precomputed_phase_entries": ph_f}
+        kind = name.split(":")[0]
+        is_gf = kind in ("gaussian", "fourier", "mixed") or any(":%s:" % k in name for k in ("gaussian", "fourier", "mixed"))
+        is_stat = kind == "statistic" or ":statistic:" in name
+        cov = (measured["producer_ops"] is not None and measured["checker_ops"] is not None
+               and pp >= measured["producer_ops"] and pc >= measured["checker_ops"]
+               and fc is not None and used is not None and int(fc) >= int(used)
+               and live_m is not None and int(live_m) <= live_p
+               and st.get("execute_s") is not None and st.get("check_s") is not None)
+        if is_gf:
+            cov = cov and None not in (tr_e, tr_c, tr_fp, tr_fc, ret_m, ret_f, ph_m, ph_f) \
+                and int(tr_fp) >= int(tr_e) and int(tr_fc) >= int(tr_c) \
+                and int(ret_f) >= int(ret_m) and int(ph_f) >= int(ph_m)
+        elif is_stat:
+            cov = cov and None not in (tr_e, tr_c, tr_fp, tr_fc) \
+                and int(tr_fp) >= int(tr_e) and int(tr_fc) >= int(tr_c)
+        return bool(cov), measured, bounds, forecasts
+
+    def check(label, mp, res, d, name, pt, q):
         wrap, counts = _measure_ops()
         rep = _replay_here(mp, _plan(res, d, name), wrap=wrap)
         p = _price(res, name)
-        c = p["counters"]
-        pp = sum(int(c[k]["value"]) for k in ("producer_upward_ops", "producer_downward_ops", "readout_ops"))
-        pc = int(c["checker_ops"]["value"])
-        used = (rep.get("budget") or {}).get("used", {}).get("local_mass_entries", 0)
-        fc = (c.get("metered_entries_forecast") or {}).get("value")
-        ex = rep.get("executor") or {}
-        live_m = ex.get("peak_live_entries")
-        live_p = int(c["peak_live_message_entries"]["value"]) + int(c["final_largest_bag"]["value"])
-        row = {"control": label, "program": name, "replay": rep["status"], "truth": _contains_rep(rep, pt),
-               "width": rep.get("max_width"),
-               "producer_priced": pp, "producer_counted": counts.get("execute"),
-               "checker_priced": pc, "checker_counted": counts.get("check"),
-               "metered_entries_forecast": fc, "metered_entries_measured": used,
-               "peak_live_priced": live_p, "peak_live_measured": live_m,
-               "resources": _resource(rep.get("budget"))}
-        row["covers"] = (pp >= (counts.get("execute") or 0) and pc >= (counts.get("check") or 0)
-                         and fc is not None and int(fc) >= int(used)
-                         and (live_m is None or int(live_m) <= live_p))
-        row["ok"] = (rep["status"] == "REPLAY_VERIFIED" and row["truth"] and Fr(rep["max_width"]) <= EPS
-                     and row["covers"] and row["resources"]["ok"])
+        cov, measured, bounds, forecasts = coverage(p["counters"], counts, rep, name)
+        row = {"control": label, "program": name, "row": _row_ok(rep, pt, q), "measured": measured,
+               "proven_bounds": bounds, "forecasts": dict(forecasts, bytes_producer=p.get("bytes_producer"),
+                                                          bytes_checker=p.get("bytes_checker")),
+               "covers": cov}
+        row["ok"] = row["row"]["ok"] and cov
         rows.append(row)
+        # the missing-measurement rule, demonstrated on THIS row: strip one
+        # measurement and the predicate must fail
+        stripped = dict(rep)
+        stripped["executor"] = dict(rep.get("executor") or {})
+        stripped["executor"]["peak_live_entries"] = None
+        cov2, _m, _b, _f = coverage(p["counters"], counts, stripped, name)
+        row["missing_measurement_fails_coverage"] = (not cov2)
+        row["ok"] = row["ok"] and not cov2
         return row["ok"]
 
     mp4 = _mean_field_path(4, 0.30)
     m4 = M.read_uai(mp4)
     res4, d4, _, _ = _solve(m4, wall)
     Z, pt4 = O.exact_all_marginals(M.restrict(m4, {}))
+    q4 = sorted(M.restrict(m4, {}).free)
     stat = next(p["name"] for p in res4.prices if p["name"].startswith("statistic:") and p["eligible"])
-    all_ok &= check("mean-field-4 statistic", mp4, res4, d4, stat, pt4)
+    all_ok &= check("mean-field-4 statistic (default order)", mp4, res4, d4, stat, pt4, q4)
+    gau = next(p["name"] for p in res4.prices if p["name"].startswith("gaussian:") and p["eligible"])
+    all_ok &= check("mean-field-4 gaussian (small storage)", mp4, res4, d4, gau, pt4, q4)
     mpf = _mean_field_path(4, -0.22)
     mf = M.read_uai(mpf)
     resf, df, _, _ = _solve(mf, wall)
     Z, ptf = O.exact_all_marginals(M.restrict(mf, {}))
+    qf = sorted(M.restrict(mf, {}).free)
     four = next(p["name"] for p in resf.prices if p["name"].startswith("fourier:") and p["eligible"])
-    all_ok &= check("mean-field-4 fourier", mpf, resf, df, four, ptf)
+    all_ok &= check("mean-field-4 fourier", mpf, resf, df, four, ptf, qf)
+    mc = _chain3()
+    mpc = _write_uai(mc)
+    resc, dc, _, _ = _solve(M.read_uai(mpc), wall)
+    Z, ptc = O.exact_all_marginals(M.restrict(mc, {}))
+    qc = sorted(M.restrict(mc, {}).free)
+    if any(p["name"] == "mixed:lowrank_combined" and p["eligible"] for p in resc.prices):
+        all_ok &= check("chain mixed", mpc, resc, dc, "mixed:lowrank_combined", ptc, qc)
+    else:
+        all_ok = False
+        rows.append({"control": "chain mixed", "ok": False, "reason": "mixed:lowrank_combined not eligible"})
     mpr = w(ring_of_blocks()[0])
     mr = M.read_uai(mpr)
     resr, dr, _, _ = _solve(mr, wall)
     Z, ptr = O.exact_all_marginals(M.restrict(mr, {}))
+    qr = sorted(M.restrict(mr, {}).free)
     l1 = next(p["name"] for p in resr.prices if p["name"].startswith("regional:") and "@64" in p["name"]
               and not p["name"].endswith(":L2"))
-    all_ok &= check("ring regional L1", mpr, resr, dr, l1, ptr)
+    all_ok &= check("ring regional L1", mpr, resr, dr, l1, ptr, qr)
     comp = next((p["name"] for p in resr.prices if p["name"].startswith("composed:") and ":statistic:" in p["name"]
                  and p["eligible"]), None)
     if comp:
-        all_ok &= check("ring composed statistic", mpr, resr, dr, comp, ptr)
-    mb = _two_block_signed()
-    mpb = _write_uai(mb)
-    resb, db, _, _ = _solve(M.read_uai(mpb), wall)
-    Z, ptb = O.exact_all_marginals(M.restrict(mb, {}))
-    vec = next((p["name"] for p in resb.prices if p["name"].startswith("statistic:block_combined")), None)
-    if vec:
-        all_ok &= check("two-block vector statistic", mpb, resb, db, vec, ptb)
-    # saved-order pricing: a legal but DIFFERENT order whose schedule cost
-    # differs does not bind (the price is re-derived on the saved order and
-    # must equal the recorded counters); a rotation with an identical cost is
-    # self-consistent and binds. Search the ring's regional/composed records
-    # for a cost-changing rotation; at least one must be refused.
+        all_ok &= check("ring composed statistic", mpr, resr, dr, comp, ptr, qr)
     saved = {"refused": 0, "cost_identical_bound": 0, "first_refusal": None}
     for p in resr.prices:
         if not (p["name"].startswith("regional:") or p["name"].startswith("composed:")):
@@ -792,8 +885,7 @@ def control_price_covers_counted_work(wall):
             if rep["status"] == "REPLAY_REFUSED" and "SAVED order" in str(rep.get("reason")):
                 saved["refused"] += 1
                 if saved["first_refusal"] is None:
-                    saved["first_refusal"] = {"program": p["name"], "rotation": k,
-                                              "reason": str(rep.get("reason"))[:160]}
+                    saved["first_refusal"] = {"program": p["name"], "rotation": k, "reason": str(rep.get("reason"))[:160]}
             elif rep["status"] == "REPLAY_VERIFIED":
                 saved["cost_identical_bound"] += 1
         if saved["refused"]:
@@ -803,11 +895,13 @@ def control_price_covers_counted_work(wall):
     return {"rows": rows, "saved_order_witness": saved, "ok": bool(all_ok)}
 
 
-def control_public_selection(wall):
-    """F8: the public pipeline selects the REMAINING-cost argmin among
-    admissible loaded programs under one stated convention; the complete
-    invocation cost and the budget report are returned; identity may win."""
-    from mdi import model as M, oracle as O
+def control_public_selection_and_admission(wall):
+    """R7: one admission decision for pipeline and replay (byte forecasts,
+    remaining shared counters, terminal handling); budget accounting starts
+    before preprocessing (phases recorded) in both; the response schema is
+    bound to the original request including observed coordinates; selection
+    is the remaining-cost argmin and identity may win."""
+    from mdi import model as M, oracle as O, replay as RP, pipeline as PLN
     out = []
     ok = True
     for n in (6, 9):
@@ -818,30 +912,52 @@ def control_public_selection(wall):
         elig = {p["name"]: int(p["total_arithmetic"]["value"]) for p in res.prices
                 if p["eligible"] and p["total_arithmetic"]["value"] is not None}
         argmin = min(elig, key=elig.get)
-        conv = {p["total_arithmetic"].get("convention") for p in res.prices}
         rs = _resource(res.budget)
+        phases = rs.get("phases") or []
         row = {"n": n, "status": res.status, "chosen": res.plan["chosen"], "argmin": argmin,
-               "eligible_remaining_costs": elig,
-               "ineligible": {p["name"]: p["ineligible_reason"][:80] for p in res.prices if not p["eligible"]},
-               "convention": sorted(c for c in conv if c), "complete_cost": res.plan.get("complete_cost"),
-               "truth": _contains(res.intervals, pt), "width": str(_width(res.intervals)),
-               "resources": rs, "seconds": round(el, 2)}
-        ok = ok and res.status.startswith("CERTIFIED") and res.plan["chosen"] == argmin \
-            and row["truth"] and Fr(row["width"]) <= EPS and rs["ok"] and len(row["convention"]) == 1 \
+               "offering": _offering(res), "phases": phases,
+               "budget_before_preprocessing": bool(phases) and phases[0] == "parse" and "preprocess" in phases,
+               "complete_cost": res.plan.get("complete_cost"), "truth": _contains(res.intervals, pt),
+               "width": str(_width(res.intervals)), "resources": rs, "seconds": round(el, 2)}
+        ok = ok and res.status.startswith("CERTIFIED") and res.plan["chosen"] == argmin and row["truth"] \
+            and Fr(row["width"]) <= EPS and rs["ok"] and row["budget_before_preprocessing"] \
             and res.plan.get("complete_cost") is not None
         out.append(row)
-    return {"runs": out, "ok": ok}
+    # an ineligible record (price refusal) exists on the 14-variable F3 model
+    m6 = _f3_bipartite()
+    mp6 = _write_uai(m6)
+    res6, d6, _, _ = _solve(M.read_uai(mp6), wall)
+    inel = next((p for p in res6.prices if not p["eligible"]), None)
+    adm = {"ineligible_record_present": inel is not None, "fixture": "F3 14-variable bipartite"}
+    if inel:
+        # the same cap the pipeline ran under (1 GiB in this matrix)
+        rep = RP.replay(mp6, "-", os.path.join(d6, inel["identity"] + ".plan.json"), cap_bytes=1 << 30)
+        adm.update({"name": inel["name"], "pipeline_reason": inel["ineligible_reason"][:120],
+                    "replay": rep["status"], "replay_reason": str(rep.get("reason"))[:120],
+                    "replay_phases": (rep.get("budget") or {}).get("phases"),
+                    "same_decision": rep["status"] == "REPLAY_REFUSED"
+                                     and inel["ineligible_reason"][:80] in str(rep.get("reason"))})
+        ok = ok and adm["same_decision"] and bool(adm["replay_phases"]) and adm["replay_phases"][0] == "parse"
+    else:
+        ok = False
+    mc = M.read_uai(_mean_field_path(4, 0.30))
+    rc = PLN.solve(mc, {1: 1}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    resp = {"status": rc.status, "keys": sorted(rc.intervals),
+            "observed_row": [[str(a), str(b)] for a, b in rc.intervals.get(1, [])],
+            "ok": rc.status.startswith("CERTIFIED") and sorted(rc.intervals) == [0, 1, 2, 3]
+                  and rc.intervals[1] == [(Fr(0), Fr(0)), (Fr(1), Fr(1))]}
+    ok = ok and resp["ok"]
+    return {"runs": out, "replay_admission": adm, "response_schema": resp, "ok": bool(ok)}
 
 
 CONTROLS = [
-    ("F1 identity program replay", control_identity_replay),
-    ("F2 compact two-scale replay, unique identities, altered witness", control_regional_two_scales_replay),
-    ("F3 compact structural refusal without expansion", control_compact_structural_refusal),
-    ("F4 independent representation and readout (four faults)", control_independent_representation_and_readout),
-    ("F5 portfolio menu, pure-sign modes, coarse Q, identity", control_portfolio_menu_and_identity),
-    ("F6 mixed Gaussian/Fourier under the shared budget", control_mixed_under_shared_budget),
-    ("F7 prices cover counted work, entries, liveness; saved order", control_price_covers_counted_work),
-    ("F8 public selection argmin and complete cost", control_public_selection),
+    ("R1 identity program and the F3 public fallback", control_identity_and_f3_fallback),
+    ("R2 verified publication from a valid proof record", control_valid_proof_record),
+    ("R3 frozen GF1-GF3 integration on the fixed chain", control_frozen_integration),
+    ("R4 independent representation and readout; deletion", control_independent_representation_and_readout),
+    ("R5 portfolio, executable identity, masks, categorical, Q", control_portfolio_and_identity),
+    ("R6 work and memory claims reviewable", control_work_and_memory),
+    ("R7 one admission, budget before preprocessing, response schema", control_public_selection_and_admission),
 ]
 
 
@@ -889,8 +1005,9 @@ def run_matrix(out_path, wall=600.0, only=None):
                "failed": sum(1 for r in rows if r["status"] in ("FAIL", "ERROR", "TIMEOUT")),
                "skipped": sum(1 for r in rows if r["status"] == "SKIP"),
                "per_control_wall_s": wall, "built": time.strftime("%Y-%m-%d %H:%M:%S"),
-               "note": "BLOCKED rows hold on every predicate they state but name a branch the shared "
-                       "budget refuses; they are not passes and the preflight is not returned while any exists"}
+               "note": "every applicable row carries exact query keys, truth containment, positive denominators, "
+                       "width, resource stops and the fresh replay status; measurements, proven bounds and "
+                       "forecasts are separate fields; a missing measurement is reported as missing"}
     with open(out_path, "w") as fh:
         json.dump(summary, fh, indent=1, default=str)
     return summary
