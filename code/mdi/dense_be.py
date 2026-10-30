@@ -24,6 +24,18 @@ class DenseError(Exception):
     pass
 
 
+class _ScopeShell:
+    """Scope and cardinality only: what the validated bag-tree builder needs.
+    It never allocates a table."""
+    __slots__ = ("scope", "card", "origin", "table")
+
+    def __init__(self, scope, card, origin):
+        self.scope = tuple(scope)
+        self.card = tuple(card)
+        self.origin = origin
+        self.table = None
+
+
 def _strides(card):
     st = [1] * len(card)
     acc = 1
@@ -233,8 +245,8 @@ class DenseJT:
             if len(tab) != n:
                 raise DenseError("dense table over %s has %d entries, domain %d"
                                  % (sc, len(tab), n))
-            shells.append(M.Factor(scope=sc, card=cd, table=[Fr(1)] * n,
-                                   origin=len(shells)))
+            # a SCOPE shell for the bag-tree builder: no dummy dense table
+            shells.append(_ScopeShell(sc, cd, len(shells)))
         adj = P.primal_graph(free, self.card, shells)
         if order is None:
             order = P.order_min_fill(free, self.card, adj)
@@ -367,13 +379,17 @@ class DenseJT:
 
     def _note_live(self):
         sz = getattr(self.alg, "size", None)
+        tabs = [t for _sc, t in self.msg.values()] + \
+            [b[3] for b in getattr(self, "_belief", {}).values()]
         if sz is None:
-            e = sum(len(t) for _sc, t in self.msg.values())
+            e = sum(len(t) for t in tabs)
         else:
-            e = sum(sum(sz(x) for x in t if not self.alg.is_zero(x))
-                    for _sc, t in self.msg.values())
+            e = sum(sum(sz(x) for x in t if not self.alg.is_zero(x)) for t in tabs)
         if e > self.peak_live_entries:
             self.peak_live_entries = e
+
+    def release_belief(self, bidx):
+        getattr(self, "_belief", {}).pop(bidx, None)
 
     def run(self, downward=True):
         bags = self.plan.bags
@@ -437,6 +453,7 @@ class DenseJT:
             cache = self._belief = {}
         if bidx not in cache:
             cache[bidx] = self._product_table(bidx, None)
+            self._note_live()
         bvars, bcard, bst, vals = cache[bidx]
         keep, out = self._sum_to(bvars, bcard, bst, vals, (var,))
         if self.stat_insert is not None:

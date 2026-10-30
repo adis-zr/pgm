@@ -835,7 +835,8 @@ def validate_output_schema(model, evidence, iv, eps):
     return problems
 
 
-def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
+def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
+           checker_precision=None):
     """Independent interval contraction, rebuilt from the ORIGINAL model.
 
     Shares the validated decomposition and MPFR primitives (permitted), but
@@ -882,7 +883,9 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
     for v in r.free:
         if v not in pl2.var_home:
             raise A.NumericalRefusal("checker found no home bag for variable %d" % v)
-    cp = max(80, p + 16)
+    cp = max(80, p + 16) if checker_precision is None else int(checker_precision)
+    if cp < 8:
+        raise A.NumericalRefusal("checker precision %d is not usable" % cp)
     ctx = A.Ctx(cp)
     dl = _mk_deadline(t_end, cap_bytes, _rss_bytes())
     eng = C.Engine(pl2, r.factors, ctx, mode="I", deadline=dl,
@@ -1078,7 +1081,7 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
 
 
 def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
-                       deadline_s=None, cap_bytes=None):
+                       deadline_s=None, cap_bytes=None, checker_precision=None):
     """Standalone checker entry point (used by the rejection tests).
 
     `deadline_s` and `cap_bytes` carry the SHARED budget. They were hard-wired
@@ -1122,7 +1125,8 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
         _end = (time.time() + float(deadline_s)) if deadline_s is not None \
             else (time.time() + 300)
         ok, fails, cmeta = _check(model, evidence, iv, eps, pl, 64, _cap,
-                                  _end, lambda *a: None)
+                                  _end, lambda *a: None,
+                                  checker_precision=checker_precision)
     except A.NumericalRefusal as e:
         # A refusal is a REJECTION of the publication, reported as such. Letting
         # it propagate made a caller see an exception rather than "not verified",

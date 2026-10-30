@@ -215,28 +215,28 @@ def propose_modes(free, factors, card, max_rank=None):
             cands.append(ModeCandidate(signs=[s], gammas=[gam], features=[feat],
                                        kind="constant_rows"))
 
-    # ---- proposal 2: BLOCK-CONSTANT from repeated coupling profiles ----
-    # Variables whose coupling rows agree (to 12 places) form a block; a
-    # block-constant J has rank at most the number of blocks. The k x k block
-    # matrix is eigen-decomposed (k <= 4) and each eigenpair proposes a mode
-    # with the block value as the feature; the eigenpairs TOGETHER, within the
-    # rank and sign caps, propose one combined signed candidate.
-    prof = {}
-    for v in sorted(free):
-        row = tuple(sorted(round(Jm[idx[v]][idx[w]], 12) for w in sorted(free) if w != v))
-        prof.setdefault(row, []).append(v)
-    if 1 < len(prof) <= 4:
-        info["repeated_profile_blocks"] = len(prof)
-        blocks = [sorted(vs) for vs in prof.values()]
+    # ---- proposal 2: BLOCK-CONSTANT modes from incidence-preserving blocks ----
+    # Colour refinement groups variables with equal coupling profiles AND equal
+    # neighbourhood structure; the k x k block matrix keeps its DIAGONAL (the
+    # within-block interaction is data, not a free self term) and is
+    # eigen-decomposed with the full symmetric fitter. Each eigenpair is a
+    # rank-one mode with the block value as feature; together, within the
+    # rank/sign caps, they form one combined signed candidate.
+    present_edges = {(min(i, j), max(i, j)) for (i, j), _J in present}
+    blocks = _wl_blocks(sorted(free), present_edges, Jm, idx)
+    if 1 < len(blocks) <= 4:
+        info["repeated_profile_blocks"] = len(blocks)
         block_of = {v: b for b, vs in enumerate(blocks) for v in vs}
         kb = len(blocks)
         Bm = [[0.0] * kb for _ in range(kb)]
         for b1 in range(kb):
             for b2 in range(kb):
-                vals = [Jm[idx[i]][idx[j]] for i in blocks[b1] for j in blocks[b2] if i != j]
+                vals = [Jm[idx[i]][idx[j]] for i in blocks[b1] for j in blocks[b2]
+                        if i != j and (min(i, j), max(i, j)) in present_edges]
                 Bm[b1][b2] = sum(vals) / len(vals) if vals else 0.0
+        info["block_matrix"] = [[round(x, 6) for x in row] for row in Bm]
         try:
-            bvecs = _power_fits(Bm, kb, min(kb, max_rank))
+            bvecs = _symmetric_eigs(Bm, min(kb, max_rank))
         except Exception as e:
             bvecs = []
             info["block_error"] = "%s: %s" % (type(e).__name__, e)
@@ -268,22 +268,45 @@ def propose_modes(free, factors, card, max_rank=None):
             cands.append(ModeCandidate(signs=list(signs_c), gammas=list(gammas_c),
                                        features=list(feats_c), kind="block_combined"))
 
-    # ---- proposal 3: bounded low-rank fits under the prescribed residual masks ----
-    # Fit J ~ sum_k s_k g_k w_k w_k^T on OFF-DIAGONAL entries only, letting the
-    # diagonal complete freely: forcing it to zero can turn a rank-one
-    # complete-graph interaction into a full-rank matrix.
-    #
-    # MASKS (cap `residual_masks`): mask 0 fits every present positive pair;
-    # after each fit the pairs whose residual coupling is largest (above twice
-    # the median residual) are MASKED -- treated as absent for the next fit, so
-    # they stay in the residual as retained interacting pairs with their full
-    # tables -- and the fit is repeated on the rest. Each mask yields at most
-    # `fits_per_mask` rank-one candidates and one COMBINED signed candidate.
+    # ---- proposal 3: bounded low-rank fits under the PRESCRIBED residual masks ----
+    # A mask names the edges the residual RETAINS exactly (excluded from the
+    # fit, so they stay as interacting residual pairs). The menu:
+    #   mask 0: no retained edges -- fit every positive pair;
+    #   mask 1: the interaction-weighted maximum spanning FOREST retained;
+    #   mask 2: the forest's WIDTH-CAPPED AUGMENTATION retained (width <= 2).
+    # An additional labelled outlier heuristic (mask the worst residual pairs
+    # of the previous fit) is proposed only within the remaining mask budget.
     import math as _m
     D = 10 ** 6
     inv = {k: v for v, k in idx.items()}
-    masked = set()
-    for mask_round in range(K.CAPS["residual_masks"]):
+    forest, aug = _forest_and_augmentation(sorted(free), present)
+    masks = [("all", set()), ("forest", {(idx[i], idx[j]) for i, j in forest}),
+             ("augmented", {(idx[i], idx[j]) for i, j in aug})]
+    info["masks"] = [{"mask": nm, "retained_edges": len(ms)} for nm, ms in masks]
+    budget_masks = K.CAPS["residual_masks"]
+    last_fit = None
+    for mask_round in range(budget_masks + 1):
+        if mask_round < len(masks):
+            mname, masked = masks[mask_round]
+        else:
+            # outlier heuristic from the previous fit, if any budget remains
+            if last_fit is None or mask_round >= budget_masks + 1:
+                break
+            Jprev, vecs_prev, masked_prev = last_fit
+            resid = {}
+            for (i, j), _J in present:
+                a, b = idx[i], idx[j]
+                if (a, b) in masked_prev or (b, a) in masked_prev:
+                    continue
+                fitted = sum(l * w[a] * w[b] for (l, w) in vecs_prev)
+                resid[(a, b)] = abs(Jprev[a][b] - fitted)
+            if not resid:
+                break
+            med = sorted(resid.values())[len(resid) // 2]
+            worst = {pr for pr, rv in resid.items() if rv > 2 * med and rv > 1e-9}
+            if not worst or len(worst) == len(resid):
+                break
+            mname, masked = "outlier", masked_prev | worst
         Jfit = [row[:] for row in Jm]
         for (a, b) in masked:
             Jfit[a][b] = Jfit[b][a] = 0.0
@@ -292,6 +315,7 @@ def propose_modes(free, factors, card, max_rank=None):
         except Exception as e:
             vecs = []
             info["lowrank_error"] = "%s: %s" % (type(e).__name__, e)
+        last_fit = (Jfit, vecs, masked)
         npos = nneg = 0
         signs_c, gammas_c, feats_c = [], [], []
         for (lamb, w) in vecs:
@@ -303,10 +327,6 @@ def propose_modes(free, factors, card, max_rank=None):
             g = abs(lamb)
             if g <= 0:
                 continue
-            # The eigenvector w is UNIT normalized, so lambda already absorbs
-            # the feature scale (gamma = |lambda| * n for a uniform coupling
-            # would double count). Keep the eigenvector's scale in the
-            # features: f_k = w_k sqrt(|lambda|) / mx, gamma = mx^2.
             scale = _m.sqrt(g)
             feat = {}
             mx = max(abs(w[k]) for k in range(n)) or 1.0
@@ -314,7 +334,7 @@ def propose_modes(free, factors, card, max_rank=None):
                 c = Fr(round(w[k] * scale / mx * D), D)
                 feat[inv[k]] = [-c, c]
             gq = Fr(max(1, round(mx * mx * D)), D)
-            kind = "lowrank_rank1" if mask_round == 0 else "lowrank_rank1_mask%d" % mask_round
+            kind = "lowrank_rank1" if mname == "all" else "lowrank_rank1_%s" % mname
             cands.append(ModeCandidate(signs=[s], gammas=[gq], features=[feat], kind=kind))
             signs_c.append(s); gammas_c.append(gq); feats_c.append(feat)
             npos += s > 0
@@ -322,27 +342,8 @@ def propose_modes(free, factors, card, max_rank=None):
         if len(signs_c) > 1:
             cands.append(ModeCandidate(signs=list(signs_c), gammas=list(gammas_c),
                                        features=list(feats_c),
-                                       kind="lowrank_combined" + ("" if mask_round == 0
-                                                                  else "_mask%d" % mask_round)))
-        # the residual coupling of this mask's fit, and the next mask
-        if not vecs:
-            break
-        resid = {}
-        for (i, j), _J in present:
-            a, b = idx[i], idx[j]
-            if (a, b) in masked or (b, a) in masked:
-                continue
-            fitted = sum(l * w[a] * w[b] for (l, w) in vecs)
-            resid[(a, b)] = abs(Jfit[a][b] - fitted)
-        if not resid:
-            break
-        med = sorted(resid.values())[len(resid) // 2]
-        worst = {pr for pr, rv in resid.items() if rv > 2 * med and rv > 1e-9}
-        if not worst or len(worst) == len(resid):
-            break
-        masked |= worst
-        info.setdefault("masks", []).append({"round": mask_round + 1,
-                                             "masked_pairs": len(masked)})
+                                       kind="lowrank_combined" + ("" if mname == "all"
+                                                                  else "_%s" % mname)))
     if not cands:
         return [], {**info, "declined": "no admissible mode proposal"}
     return cands, info
@@ -380,46 +381,224 @@ def _propose_categorical(free, card, Hs, consts, zero_pairs, info, max_rank):
             contrasts[(i, j)] = rows
     if not contrasts:
         return [], {**info, "declined": "every categorical contrast is trivial"}
-    # alternating least squares for f with log H(a,b) ~ lam * f_i(a) * f_j(b)
-    f = {v: [0.0] + [1.0] * (card[v] - 1) for v in sorted(free)}
-    lam = 1.0
-    for _ in range(min(K.CAPS["mode_fit_iterations"], 40)):
-        for v in sorted(free):
-            num = [0.0] * card[v]
-            den = [0.0] * card[v]
-            for (i, j), rows in contrasts.items():
-                if v == i:
-                    for (a, b), val in rows.items():
-                        num[a] += val * f[j][b]
-                        den[a] += f[j][b] * f[j][b]
-                elif v == j:
-                    for (a, b), val in rows.items():
-                        num[b] += val * f[i][a]
-                        den[b] += f[i][a] * f[i][a]
-            for a in range(1, card[v]):
-                if den[a] > 1e-300:
-                    f[v][a] = num[a] / den[a]
-        # a scale for lam
-        nsum = dsum = 0.0
-        for (i, j), rows in contrasts.items():
-            for (a, b), val in rows.items():
-                nsum += val * f[i][a] * f[j][b]
-                dsum += (f[i][a] * f[j][b]) ** 2
-        if dsum > 1e-300:
-            lam = nsum / dsum
-    if abs(lam) < 1e-12:
-        return [], {**info, "declined": "categorical fit is numerically trivial"}
-    sign = 1 if lam > 0 else -1
+    # the same prescribed masks as the binary menu, on the categorical pairs:
+    # edge weight = the largest |contrast| of the pair
+    present = [((i, j), max(abs(x) for x in rows.values())) for (i, j), rows in contrasts.items()]
+    forest, aug = _forest_and_augmentation(sorted(free), present)
+    masks = [("all", set()), ("forest", set(forest)), ("augmented", set(aug))]
+    info["masks"] = [{"mask": nm, "retained_edges": len(ms)} for nm, ms in masks]
     D = 10 ** 6
-    mx = max(abs(f[v][a]) for v in sorted(free) for a in range(card[v])) or 1.0
-    feat = {}
-    for v in sorted(free):
-        feat[v] = [Fr(round(f[v][a] / mx * D), D) for a in range(card[v])]
-    gq = Fr(max(1, round(abs(lam) * mx * mx * D)), D)
-    cand = ModeCandidate(signs=[sign], gammas=[gq], features=[feat],
-                         kind="categorical_rank1")
-    return [cand], {**info, "categorical": True, "contrast_dim": dim,
-                    "fit_lambda": round(lam, 9)}
+    cands = []
+    for mname, masked in masks[:K.CAPS["residual_masks"]]:
+        fitc = {k: v for k, v in contrasts.items() if (min(k), max(k)) not in masked}
+        if not fitc:
+            continue
+        # alternating least squares for f with log H(a,b) ~ lam * f_i(a) * f_j(b)
+        f = {v: [0.0] + [1.0] * (card[v] - 1) for v in sorted(free)}
+        lam = 1.0
+        for _ in range(min(K.CAPS["mode_fit_iterations"], 40)):
+            for v in sorted(free):
+                num = [0.0] * card[v]
+                den = [0.0] * card[v]
+                for (i, j), rows in fitc.items():
+                    if v == i:
+                        for (a, b), val in rows.items():
+                            num[a] += val * f[j][b]
+                            den[a] += f[j][b] * f[j][b]
+                    elif v == j:
+                        for (a, b), val in rows.items():
+                            num[b] += val * f[i][a]
+                            den[b] += f[i][a] * f[i][a]
+                for a in range(1, card[v]):
+                    if den[a] > 1e-300:
+                        f[v][a] = num[a] / den[a]
+            nsum = dsum = 0.0
+            for (i, j), rows in fitc.items():
+                for (a, b), val in rows.items():
+                    nsum += val * f[i][a] * f[j][b]
+                    dsum += (f[i][a] * f[j][b]) ** 2
+            if dsum > 1e-300:
+                lam = nsum / dsum
+        if abs(lam) < 1e-12:
+            continue
+        sign = 1 if lam > 0 else -1
+        mx = max(abs(f[v][a]) for v in sorted(free) for a in range(card[v])) or 1.0
+        feat = {}
+        for v in sorted(free):
+            feat[v] = [Fr(round(f[v][a] / mx * D), D) for a in range(card[v])]
+        gq = Fr(max(1, round(abs(lam) * mx * mx * D)), D)
+        cands.append(ModeCandidate(signs=[sign], gammas=[gq], features=[feat],
+                                   kind="categorical_rank1" + ("" if mname == "all" else "_%s" % mname)))
+        # a second mode on the residual contrasts of this mask, for a combined
+        # signed candidate within the caps
+        resid = {}
+        for (i, j), rows in fitc.items():
+            resid[(i, j)] = {ab: val - lam * f[i][ab[0]] * f[j][ab[1]] for ab, val in rows.items()}
+        f2 = {v: [0.0] + [1.0] * (card[v] - 1) for v in sorted(free)}
+        lam2 = 1.0
+        for _ in range(min(K.CAPS["mode_fit_iterations"], 40)):
+            for v in sorted(free):
+                num = [0.0] * card[v]
+                den = [0.0] * card[v]
+                for (i, j), rows in resid.items():
+                    if v == i:
+                        for (a, b), val in rows.items():
+                            num[a] += val * f2[j][b]
+                            den[a] += f2[j][b] * f2[j][b]
+                    elif v == j:
+                        for (a, b), val in rows.items():
+                            num[b] += val * f2[i][a]
+                            den[b] += f2[i][a] * f2[i][a]
+                for a in range(1, card[v]):
+                    if den[a] > 1e-300:
+                        f2[v][a] = num[a] / den[a]
+            nsum = dsum = 0.0
+            for (i, j), rows in resid.items():
+                for (a, b), val in rows.items():
+                    nsum += val * f2[i][a] * f2[j][b]
+                    dsum += (f2[i][a] * f2[j][b]) ** 2
+            if dsum > 1e-300:
+                lam2 = nsum / dsum
+        if abs(lam2) >= 1e-9:
+            sign2 = 1 if lam2 > 0 else -1
+            mx2 = max(abs(f2[v][a]) for v in sorted(free) for a in range(card[v])) or 1.0
+            feat2 = {v: [Fr(round(f2[v][a] / mx2 * D), D) for a in range(card[v])] for v in sorted(free)}
+            gq2 = Fr(max(1, round(abs(lam2) * mx2 * mx2 * D)), D)
+            if (sign2 > 0 and (sign > 0) and K.CAPS["mode_rank_positive"] >= 2) or \
+                    (sign2 < 0 and (sign < 0) and K.CAPS["mode_rank_negative"] >= 2) or sign2 != sign:
+                cands.append(ModeCandidate(signs=[sign, sign2], gammas=[gq, gq2],
+                                           features=[feat, feat2],
+                                           kind="categorical_combined" + ("" if mname == "all" else "_%s" % mname)))
+    if not cands:
+        return [], {**info, "declined": "categorical fit is numerically trivial"}
+    return cands, {**info, "categorical": True, "contrast_dim": dim}
+
+
+def _symmetric_eigs(B, kmax, iters=200):
+    """Deflated power iteration on a SMALL symmetric matrix INCLUDING its
+    diagonal (block level: the diagonal is the within-block interaction
+    data). Proposal only."""
+    k = len(B)
+    Mx = [row[:] for row in B]
+    out = []
+    for _ in range(min(kmax, k)):
+        # a start vector with distinct components: the uniform vector can be
+        # orthogonal to the remaining eigenvector after deflation (two equal
+        # disconnected blocks have eigenvectors (1,1) and (1,-1))
+        v = [1.0 + (a + 1) / (k + 1.0) for a in range(k)]
+        nrm0 = math.sqrt(sum(x * x for x in v))
+        v = [x / nrm0 for x in v]
+        lam = 0.0
+        for _it in range(iters):
+            w = [sum(Mx[a][b] * v[b] for b in range(k)) for a in range(k)]
+            nrm = math.sqrt(sum(x * x for x in w))
+            if nrm <= 1e-300:
+                return out
+            vn = [x / nrm for x in w]
+            lam_new = sum(vn[a] * Mx[a][b] * vn[b] for a in range(k) for b in range(k))
+            v = vn
+            if abs(lam_new - lam) <= 1e-15 * max(1.0, abs(lam_new)):
+                lam = lam_new
+                break
+            lam = lam_new
+        if abs(lam) < 1e-12:
+            break
+        out.append((lam, v[:]))
+        for a in range(k):
+            for b in range(k):
+                Mx[a][b] -= lam * v[a] * v[b]
+    return out
+
+
+def _wl_blocks(free, present_edges, Jm, idx, rounds=4):
+    """Incidence-preserving block recognition (colour refinement): start from
+    the multiset of a variable's couplings, then refine by the multiset of
+    (coupling, neighbour's class) until stable. Variables with equal coupling
+    multisets in DIFFERENT incidence positions are not merged."""
+    # incidence first: the connected component of the PRESENT edges is part of
+    # the initial colour, so two equal but disconnected blocks stay distinct
+    comp = {}
+    for v in free:
+        if v in comp:
+            continue
+        stack = [v]
+        comp[v] = v
+        while stack:
+            x = stack.pop()
+            for w in free:
+                if w != x and (min(x, w), max(x, w)) in present_edges and w not in comp:
+                    comp[w] = v
+                    stack.append(w)
+    cls = {}
+    for v in free:
+        cls[v] = (comp[v], tuple(sorted(round(Jm[idx[v]][idx[w]], 12) for w in free if w != v)))
+    names = {c: i for i, c in enumerate(sorted(set(cls.values()), key=repr))}
+    col = {v: names[cls[v]] for v in free}
+    for _ in range(rounds):
+        sig = {}
+        for v in free:
+            nb = tuple(sorted((round(Jm[idx[v]][idx[w]], 12), col[w]) for w in free
+                              if w != v and (min(v, w), max(v, w)) in present_edges))
+            sig[v] = (col[v], nb)
+        names = {c: i for i, c in enumerate(sorted(set(sig.values()), key=repr))}
+        new = {v: names[sig[v]] for v in free}
+        if len(set(new.values())) == len(set(col.values())):
+            col = new
+            break
+        col = new
+    blocks = {}
+    for v in free:
+        blocks.setdefault(col[v], []).append(v)
+    return [sorted(b) for _c, b in sorted(blocks.items())]
+
+
+def _forest_and_augmentation(free, present, width_cap=2):
+    """The prescribed masks: the interaction-weighted maximum spanning FOREST
+    (Kruskal on |J|) and its WIDTH-CAPPED AUGMENTATION (heaviest remaining
+    edges added while the retained graph's min-fill induced width stays
+    within the cap). Returns (forest_edges, augmented_edges) as sets of
+    (i, j) with i < j: the edges the residual RETAINS exactly; the fit
+    explains the others."""
+    edges = sorted(((abs(J), (min(i, j), max(i, j))) for (i, j), J in present), reverse=True)
+    parent = {v: v for v in free}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    forest = set()
+    for _w, (i, j) in edges:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[ri] = rj
+            forest.add((i, j))
+
+    def width(es):
+        adj = {v: set() for v in free}
+        for i, j in es:
+            adj[i].add(j)
+            adj[j].add(i)
+        rem = set(free)
+        a = {v: set(adj[v]) for v in free}
+        wmax = 0
+        while rem:
+            v = min(rem, key=lambda x: (sum(1 for p in a[x] for q in a[x]
+                                            if p < q and q not in a[p]), len(a[x]), x))
+            nb = a[v] & rem
+            wmax = max(wmax, len(nb))
+            for x in nb:
+                a[x] |= nb
+                a[x].discard(x)
+            rem.discard(v)
+        return wmax
+    aug = set(forest)
+    for _w, e in edges:
+        if e in aug:
+            continue
+        if width(aug | {e}) <= width_cap:
+            aug = aug | {e}
+    return forest, aug
 
 
 def _power_fits(Jm, n, kmax, iters=None):

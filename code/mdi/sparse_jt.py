@@ -107,19 +107,32 @@ class CostMeter:
 
     def mul(self, a, b):
         if self.real == "statistic":
+            # the pair loop is capped BEFORE a huge set is built: the product
+            # of operand sizes bounds the work, and the running key set is
+            # checked against the cap as it grows
+            if self.cap is not None and len(a) * len(b) > 64 * self.cap:
+                raise SparseError("dry run: a convolution of %d x %d supports exceeds "
+                                  "the work bound of the %d cap" % (len(a), len(b), self.cap))
             self.ops += 2 * len(a) * len(b)
-            out = frozenset(stat_add(x, y) for x in a for y in b)
-            if self.cap is not None and len(out) > self.cap:
-                raise SparseError("dry run: a convolved statistic support would "
-                                  "reach %d, above the %d cap" % (len(out), self.cap))
-            return out
+            out = set()
+            for x in a:
+                for y in b:
+                    out.add(stat_add(x, y))
+                if self.cap is not None and len(out) > self.cap:
+                    raise SparseError("dry run: a convolved statistic support reached "
+                                      "%d, above the %d cap" % (len(out), self.cap))
+            return frozenset(out)
         self.ops += self.cost[self.real][0]
         return True
 
     def add(self, a, b):
         if self.real == "statistic":
             self.ops += len(b)
-            return a | b
+            out = a | b
+            if self.cap is not None and len(out) > self.cap:
+                raise SparseError("dry run: a summed statistic support reached %d, "
+                                  "above the %d cap" % (len(out), self.cap))
+            return out
         self.ops += self.cost[self.real][1]
         return True
 
@@ -735,12 +748,17 @@ class SparseJT:
 
     def _note_live(self):
         sz = getattr(self.S, "size", None)
+        tabs = list(self.msg.values()) + list(getattr(self, "_belief", {}).values())
         if sz is None:
-            e = sum(len(m.entries) for m in self.msg.values())
+            e = sum(len(m.entries) for m in tabs)
         else:
-            e = sum(sum(sz(v) for v in m.entries.values()) for m in self.msg.values())
+            e = sum(sum(sz(v) for v in m.entries.values()) for m in tabs)
         if e > self.peak_live_entries:
             self.peak_live_entries = e
+
+    def release_belief(self, bidx):
+        """Drop a cached calibrated belief after its last owned readout."""
+        getattr(self, "_belief", {}).pop(bidx, None)
 
     def _post_order(self, root):
         seq, stack = [], [root]
@@ -808,6 +826,7 @@ class SparseJT:
         if isinstance(acc, Lazy):
             acc = self._materialize(acc)
         cache[bidx] = acc
+        self._note_live()
         return acc
 
     def marginal(self, var) -> Table:
@@ -878,8 +897,15 @@ def all_marginals(tables, card, deadline=None, entry_cap=None, order=None,
     if Z is None or Z <= 0:
         raise SparseError("the model has zero total weight")
     out = {}
-    for v in (sorted(only) if only is not None else jt.free):
+    want = sorted(only) if only is not None else list(jt.free)
+    remaining_by_bag = {}
+    for v in want:
+        remaining_by_bag[jt.home[v]] = remaining_by_bag.get(jt.home[v], 0) + 1
+    for v in want:
         m = jt.marginal(v)
+        remaining_by_bag[jt.home[v]] -= 1
+        if remaining_by_bag[jt.home[v]] == 0:
+            jt.release_belief(jt.home[v])          # last owned readout of this bag
         comp_total = jt.root_total[jt.component_of(v)]
         scale = Z / comp_total
         row = [Fr(0)] * card[v]

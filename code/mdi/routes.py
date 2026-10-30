@@ -93,6 +93,9 @@ def program_for(kind, scales, coll, order, precision, queries, extra=None):
             "Q": coll["Q"], "delta": (None if coll.get("delta") is None
                                       else str(Fr(coll["delta"]))),
             "deltas": (None if not coll.get("deltas") else [str(Fr(x)) for x in coll["deltas"]]),
+            "lattices": (None if not coll.get("lattices") else [
+                {"T": str(Fr(l["T"])), "h": str(Fr(l["h"])), "nodes": int(l["nodes"]),
+                 "total_bound": str(Fr(l["total_bound"]))} for l in coll["lattices"]]),
             "fit_tv": str(Fr(coll["fit_tv"])),
             "rounding_tv": str(Fr(coll["rounding_tv"])),
             "quadrature_tv": str(Fr(coll["quadrature_tv"])),
@@ -221,7 +224,8 @@ def scale_view_from_record(marked, sc):
         crs.append(R.CoarseRegion(region=tuple(rg["region"]), boundary=tuple(rg["boundary"]),
                                   cells=cells, M=[Fr(c["M"]) for c in rg["cells"]], N=N,
                                   cell_of={}, rho_region=Fr(rg["rho_region"]),
-                                  comparisons=0, declines={}))
+                                  comparisons=0, declines={},
+                                  aggregation=[dict(e) for e in (rg.get("aggregation") or [])]))
         dels.append(None if not rg["deleted"] else
                     R.DeletionRecord(region=tuple(rg["region"]),
                                      deleted=[tuple(b) for b in rg["deleted"]],

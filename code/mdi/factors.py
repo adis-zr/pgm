@@ -30,6 +30,17 @@ class ViewError(ValueError):
     pass
 
 
+# MEASURED dense expansions of compact views (the acceptance matrix reads
+# these instead of asserting "no expansion" by hand): every bounded
+# materialization of a LazyTable and every densify of a view is counted here.
+EXPANSIONS = {"materializations": 0, "entries": 0}
+
+
+def reset_expansion_counter():
+    EXPANSIONS["materializations"] = 0
+    EXPANSIONS["entries"] = 0
+
+
 def _strides(card):
     st = [1] * len(card)
     acc = 1
@@ -86,6 +97,8 @@ class LazyTable:
         if self.n > cap:
             raise ViewError("materializing a %d-entry projected view exceeds "
                             "the %d-entry cap" % (self.n, cap))
+        EXPANSIONS["materializations"] += 1
+        EXPANSIONS["entries"] += self.n
         return [self[i] for i in range(self.n)]
 
 
@@ -183,8 +196,19 @@ def dense_table(f, cap):
 
 
 def densify(f, cap, origin=None):
-    """A dense M.Factor copy of a view (bounded), or the factor itself."""
+    """A dense M.Factor copy of a view (bounded), or the factor itself. Any
+    object exposing a lazy `table` with `at_digits` (a view of either
+    implementation) is materialized by integer indexing under the cap."""
     if not is_view(f):
+        tab = getattr(f, "table", None)
+        if tab is not None and hasattr(tab, "at_digits"):
+            n = f.size()
+            if n > cap:
+                raise ViewError("a %d-entry view exceeds the %d-entry cap" % (n, cap))
+            EXPANSIONS["materializations"] += 1
+            EXPANSIONS["entries"] += n
+            return M.Factor(scope=tuple(f.scope), card=tuple(f.card),
+                            table=[tab[i] for i in range(n)], origin=f.origin)
         return f
     return M.Factor(scope=tuple(f.scope), card=tuple(f.card), table=dense_table(f, cap),
                     origin=f.origin if origin is None else origin, scale=f.scale)

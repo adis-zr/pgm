@@ -134,8 +134,8 @@ def cand_from_jsonable(d: dict):
                             kind=str(d["kind"]))
 
 
-COLLECTIVE_KEYS = ("evaluator", "candidate", "Q", "delta", "deltas", "fit_tv",
-                   "rounding_tv", "quadrature_tv", "precision", "round_bits",
+COLLECTIVE_KEYS = ("evaluator", "candidate", "Q", "delta", "deltas", "lattices",
+                   "fit_tv", "rounding_tv", "quadrature_tv", "precision", "round_bits",
                    "kept_factors", "dropped_pairs", "drop_budget")
 
 
@@ -149,6 +149,10 @@ def collective_from_jsonable(d: dict) -> dict:
            "delta": (None if d["delta"] is None else _fr(d["delta"], "delta")),
            "deltas": (None if d["deltas"] is None
                       else [_fr(x, "delta") for x in d["deltas"]]),
+           "lattices": (None if d["lattices"] is None else [
+               {"T": _fr(l["T"], "lattice T"), "h": _fr(l["h"], "lattice h"),
+                "nodes": int(l["nodes"]), "total_bound": _fr(l["total_bound"], "lattice bound")}
+               for l in d["lattices"]]),
            "fit_tv": _fr(d["fit_tv"], "fit_tv"),
            "rounding_tv": _fr(d["rounding_tv"], "rounding_tv"),
            "quadrature_tv": _fr(d["quadrature_tv"], "quadrature_tv"),
@@ -164,6 +168,11 @@ def collective_from_jsonable(d: dict) -> dict:
     else:
         if out["deltas"] is None or len(out["deltas"]) != out["candidate"].rank:
             raise ProgramError("a quadrature record needs one lattice delta per mode")
+        if out["lattices"] is None or len(out["lattices"]) != out["candidate"].rank:
+            raise ProgramError("a quadrature record needs one validated lattice per mode")
+        for l in out["lattices"]:
+            if l["nodes"] < 1 or l["T"] <= 0 or l["h"] <= 0:
+                raise ProgramError("a recorded lattice has non-positive parameters")
         if any(x <= 0 for x in out["deltas"]):
             raise ProgramError("lattice deltas must be positive")
         pos = [k for k in range(out["candidate"].rank) if out["candidate"].signs[k] > 0]

@@ -23,6 +23,144 @@ class CheckError(Exception):
     pass
 
 
+# ------------------------------------------------- own compact views
+
+class OwnView:
+    """The CHECKER's compact view of an original table over the current
+    variables: offsets derived by the checker from the ORIGINAL factor's
+    layout (its scope order and cardinalities) and from the checker's own
+    verified representatives and boundary orders. Shares nothing with
+    factors.ProjectedFactor except the exact table bytes it reads."""
+    __slots__ = ("scope", "card", "offsets", "base_table", "origin", "scale", "table")
+
+    def __init__(self, scope, card, offsets, base_table, origin):
+        self.scope = tuple(scope)
+        self.card = tuple(card)
+        self.offsets = {v: list(o) for v, o in offsets.items()}
+        self.base_table = base_table
+        self.origin = origin
+        self.scale = Fr(1)
+        self.table = _OwnTable(self)
+
+    def strides(self):
+        st = [1] * len(self.card)
+        acc = 1
+        for k in range(len(self.card) - 1, -1, -1):
+            st[k] = acc
+            acc *= self.card[k]
+        return tuple(st)
+
+    def size(self):
+        n = 1
+        for c in self.card:
+            n *= c
+        return n
+
+    def at(self, assign):
+        off = 0
+        for v in self.scope:
+            off += self.offsets[v][assign[v]]
+        return self.base_table[off]
+
+    def map_entries(self):
+        return sum(len(o) for o in self.offsets.values())
+
+
+class _OwnTable:
+    __slots__ = ("v",)
+
+    def __init__(self, view):
+        self.v = view
+
+    def __len__(self):
+        return self.v.size()
+
+    def __getitem__(self, flat):
+        v = self.v
+        if not isinstance(flat, int) or not (0 <= flat < v.size()):
+            raise IndexError(flat)
+        st = v.strides()
+        off = 0
+        rem = flat
+        for k, var in enumerate(v.scope):
+            d, rem = divmod(rem, st[k])
+            off += v.offsets[var][d]
+        return v.base_table[off]
+
+    def at_digits(self, digits):
+        v = self.v
+        off = 0
+        for k, var in enumerate(v.scope):
+            off += v.offsets[var][digits[k]]
+        return v.base_table[off]
+
+    def __iter__(self):
+        raise CheckError("the checker's view is not enumerated implicitly")
+
+
+def own_view_of_original(f):
+    """The identity view of a dense original factor, with offsets the checker
+    computes from the factor's own layout (first scope variable most
+    significant)."""
+    card = tuple(f.card)
+    st = []
+    acc = 1
+    for k in range(len(card) - 1, -1, -1):
+        st.insert(0, acc)
+        acc *= card[k]
+    offs = {v: [a * st[k] for a in range(card[k])] for k, v in enumerate(f.scope)}
+    return OwnView(f.scope, card, offs, f.table, f.origin)
+
+
+def own_lift_view(f, region_of, reps, bpos, ncell):
+    """The checker's own composition: the offset of region i at cell c is the
+    sum of the input view's offsets at the states the verified representative
+    assigns to the scope variables inside region i."""
+    if not isinstance(f, OwnView):
+        f = own_view_of_original(f)
+    new_vars = sorted({region_of[v] for v in f.scope})
+    offs = {}
+    for i in new_vars:
+        mine = [v for v in f.scope if region_of[v] == i]
+        col = []
+        for c in range(ncell[i]):
+            rep = reps[i][c]
+            o = 0
+            for v in mine:
+                if v not in bpos[i]:
+                    raise CheckError("variable %d of factor %d is not on the verified "
+                                     "boundary of region %d" % (v, f.origin, i))
+                o += f.offsets[v][rep[bpos[i][v]]]
+            col.append(o)
+        offs[i] = col
+    return OwnView(tuple(new_vars), tuple(ncell[i] for i in new_vars), offs,
+                   f.base_table, f.origin)
+
+
+def own_dense(f, cap):
+    """A bounded dense copy of any factor the checker holds (view or table)."""
+    if isinstance(f, OwnView):
+        n = f.size()
+        if n > cap:
+            raise CheckError("a %d-entry view exceeds the %d-entry cap" % (n, cap))
+        return M.Factor(scope=tuple(f.scope), card=tuple(f.card),
+                        table=[f.table[i] for i in range(n)], origin=f.origin)
+    return FX.densify(f, cap)
+
+
+def validate_producer_view(pf, own):
+    """Every offset map of the producer's view must equal the checker's own
+    derivation, entry by entry (cost: maps, not tables)."""
+    if tuple(pf.scope) != tuple(own.scope) or tuple(pf.card) != tuple(own.card):
+        return "scope/cardinality differ: %s/%s vs %s/%s" % (pf.scope, pf.card, own.scope, own.card)
+    for v in own.scope:
+        if list(pf.offsets.get(v, [])) != own.offsets[v]:
+            return "offset map of variable %d differs from the checker's own derivation" % v
+    if pf.base.table is not own.base_table and list(pf.base.table) != list(own.base_table):
+        return "the view does not read the original table"
+    return None
+
+
 # ------------------------------------------------- own local enumeration
 
 def own_region_local(marked: MK.Marked, region, deadline=None, budget=None):
@@ -222,8 +360,8 @@ def verify_scale(marked: MK.Marked, sc, deadline=None, budget=None):
         pc = verified[i][2]
         for a in range(marked.orig_card[v]):
             lmarks[(v, a)] = [Fr(x) for x in pc.N[(v, a)]]
-    # the checker's OWN compact views, composed from the verified
-    # representatives and boundary orders (its own position maps)
+    # the checker's OWN compact views, derived by its own composition from the
+    # original layouts and ITS verified representatives and boundary orders
     reps = {i: [tuple(c.rep) for c in verified[i][2].cells] for i in range(len(regs))}
     bpos = {i: {v: k for k, v in enumerate(verified[i][1])} for i in range(len(regs))}
     lfactors = []
@@ -232,8 +370,8 @@ def verify_scale(marked: MK.Marked, sc, deadline=None, budget=None):
         if len(rs) <= 1:
             continue
         try:
-            lfactors.append(FX.as_view(f).compose(region_of, reps, bpos, ncell))
-        except FX.ViewError as e:
+            lfactors.append(own_lift_view(f, region_of, reps, bpos, ncell))
+        except CheckError as e:
             return None, ["lifting factor %d: %s" % (f.origin, e)]
     lifted = MK.Marked(card={i: ncell[i] for i in range(len(regs))},
                        factors=lfactors, owner=lowner, marks=lmarks, mass=lmass,
@@ -284,9 +422,9 @@ def verify_fit(marked: MK.Marked, rmk: MK.Marked, cand, claimed_tv: Fr, ctx):
     card = marked.card
     free = marked.free()
     try:
-        law = [FX.densify(f, K.CAPS["aggregated_kernel_entries"])
+        law = [own_dense(f, K.CAPS["aggregated_kernel_entries"])
                for f in marked.law_factors()]
-    except FX.ViewError as e:
+    except (FX.ViewError, CheckError) as e:
         return False, ["the checker's fit certificate needs bounded explicit "
                        "tables: %s" % e]
     resid = list(rmk.factors)
@@ -472,6 +610,483 @@ def own_restore(marked: MK.Marked, Z, cell_counts):
     return out
 
 
+# ------------------------------------------- own collective references
+
+def _own_round_half_up(x: Fr) -> int:
+    fl = x.numerator // x.denominator
+    return fl + 1 if (x - fl) >= Fr(1, 2) else fl
+
+
+def _own_exp_pair(x: Fr, ctx):
+    with ctx.D:
+        lo = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+    with ctx.U:
+        hi = gmpy2.exp(gmpy2.mpfr(gmpy2.mpq(x.numerator, x.denominator)))
+    return A.exact_fr(lo), A.exact_fr(hi)
+
+
+def _own_sqrt_pair(q: Fr, ctx):
+    with ctx.D:
+        lo = gmpy2.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
+    with ctx.U:
+        hi = gmpy2.sqrt(gmpy2.mpfr(gmpy2.mpq(q.numerator, q.denominator)))
+    return A.exact_fr(lo), A.exact_fr(hi)
+
+
+def _own_law_tables(rmk, lift):
+    out = []
+    for f in rmk.law_factors():
+        if isinstance(f, OwnView) or FX.is_view(f):
+            tab = f.table
+            base = f.base_table if isinstance(f, OwnView) else f.base.table
+            offs = f.offsets
+            out.append((tuple(f.scope),
+                        FX.LazyTable(f.card, [offs[v] for v in f.scope], base,
+                                     lift=lambda x, _l=lift: _l(Fr(x)))))
+        else:
+            out.append((tuple(f.scope), [lift(Fr(x)) for x in f.table]))
+    touched = {v for f in rmk.factors for v in f.scope}
+    for v in rmk.free():
+        if v not in touched and not any(x != 1 for x in rmk.mass[v]):
+            out.append(((v,), [lift(Fr(1))] * rmk.card[v]))
+    return out
+
+
+def _own_event_counts(rmk, jt, alg, value_of_cell):
+    """sum over the owner's cells of count(c) x payload g(c), with the OTHER
+    components' totals multiplied in by a direct product (the checker's own
+    bookkeeping)."""
+    roots = sorted(jt.root_total)
+    out = {}
+    for v in rmk.queries():
+        o = rmk.owner[v]
+        own_root = jt.component_root(o)
+        others = alg.one()
+        for rt in roots:
+            if rt != own_root:
+                others = alg.mul(others, jt.root_total[rt])
+        marg = jt.marginal(o)
+        rows = []
+        for a in range(rmk.orig_card[v]):
+            acc = alg.zero
+            for c in range(rmk.card[o]):
+                Mc = Fr(rmk.mass[o][c])
+                Nc = Fr(rmk.marks[(v, a)][c])
+                if Mc <= 0 or Nc == 0:
+                    continue
+                val = marg[c]
+                if alg.is_zero(val):
+                    continue
+                val = alg.mul(val, others)
+                val = alg.mul(val, value_of_cell(Nc / Mc))
+                acc = alg.add(acc, val)
+            rows.append(acc)
+        out[v] = rows
+    return out
+
+
+def own_statistic_reference(rmk, coll, ctx, deadline, charge):
+    """The checker's own statistic-DP reference: own rounding, dense statistic
+    contraction, own root exponential, own marker restoration."""
+    cand = coll["candidate"]
+    Q = coll["Q"]
+    rank = cand.rank
+    free = rmk.free()
+    zero = (0,) * rank if rank > 1 else 0
+    kq = {}
+    for v in free:
+        row = []
+        for a in range(rmk.card[v]):
+            ks = tuple(_own_round_half_up(Fr(cand.features[k].get(v, [Fr(0)] * rmk.card[v])[a]) * Q)
+                       for k in range(rank))
+            row.append(ks if rank > 1 else ks[0])
+        kq[v] = row
+    alg = DB.StatAlg(K.CAPS["local_mass_entries"], rank=rank)
+    tables = _own_law_tables(rmk, lambda x: ({zero: x} if x != 0 else {}))
+    jt = DB.DenseJT(tables, rmk.card, alg, deadline=deadline, stat_insert=kq,
+                    entry_cap=K.CAPS["local_mass_entries"], charge=charge).run()
+    total = jt.total()
+    if not total:
+        raise CheckError("the checker's residual has zero total weight")
+    cache = {}
+
+    def wfac(key):
+        if key not in cache:
+            ks = key if isinstance(key, tuple) else (key,)
+            x = Fr(0)
+            for k in range(rank):
+                S = Fr(ks[k], Q)
+                x += Fr(cand.signs[k]) * Fr(cand.gammas[k]) * S * S / 2
+            cache[key] = _own_exp_pair(x, ctx)
+        return cache[key]
+
+    def integrate(dist):
+        lo = hi = Fr(0)
+        n = 0
+        for key, w in dist.items():
+            n += 1
+            if deadline is not None and (n & 0x3F) == 0:
+                deadline()
+            l, h = wfac(key)
+            lo += w * l
+            hi += w * h
+        return lo, hi
+    Zlo, Zhi = integrate(total)
+    if Zlo <= 0:
+        raise CheckError("the checker's integrated total is not positive")
+    ev = _own_event_counts(rmk, jt, alg, lambda g: {zero: g})
+    counts = {v: [integrate(d) for d in rows] for v, rows in ev.items()}
+    return counts, {"engine": "dense", "method": "checker-owned statistic reference",
+                    "support": len(total), "Z": (str(Zlo), str(Zhi))}
+
+
+def _own_pi(ctx):
+    with ctx.D:
+        lo = gmpy2.const_pi()
+    with ctx.U:
+        hi = gmpy2.const_pi()
+    return A.exact_fr(lo), A.exact_fr(hi)
+
+
+def _own_trig(lo, hi, ctx, which):
+    """The checker's own enclosure of cos/sin over [lo, hi]: directed endpoint
+    values at extra precision with the exact argument-conversion allowance,
+    widened to the attained extremum when a critical point can lie inside."""
+    if lo > hi:
+        lo, hi = hi, lo
+    fn = gmpy2.cos if which == "cos" else gmpy2.sin
+    extra = 2 * ctx.p + 64
+    cd = gmpy2.context(precision=extra, round=gmpy2.RoundDown)
+    cu = gmpy2.context(precision=extra, round=gmpy2.RoundUp)
+    vals = []
+    for q in (lo, hi):
+        mq = gmpy2.mpq(q.numerator, q.denominator)
+        with cd:
+            ad = gmpy2.mpfr(mq)
+        with cu:
+            au = gmpy2.mpfr(mq)
+        da = max(abs(q - A.exact_fr(ad)), abs(A.exact_fr(au) - q))
+        with cd:
+            vlo = min(fn(ad), fn(au))
+        with cu:
+            vhi = max(fn(ad), fn(au))
+        vals.append((A.exact_fr(vlo) - da, A.exact_fr(vhi) + da))
+    out_lo = min(v[0] for v in vals)
+    out_hi = max(v[1] for v in vals)
+    pl, ph = _own_pi(ctx)
+    if hi - lo >= 2 * pl:
+        return Fr(-1), Fr(1)
+    # critical points: cos at k*pi (max for even k, min for odd k); sin at
+    # pi/2 + k*pi (max for even k, min for odd k)
+    shift = Fr(0) if which == "cos" else Fr(1, 2)
+    kmin = int((lo / ph - shift)) - 2
+    kmax = int((hi / pl - shift)) + 2
+    for k in range(kmin, kmax + 1):
+        c_lo = min((k + shift) * pl, (k + shift) * ph)
+        c_hi = max((k + shift) * pl, (k + shift) * ph)
+        if c_lo <= hi and c_hi >= lo:
+            if k % 2 == 0:
+                out_hi = Fr(1)
+            else:
+                out_lo = Fr(-1)
+    return max(Fr(-1), out_lo), min(Fr(1), out_hi)
+
+
+def _own_normal_weight(z, h, ctx):
+    """h * exp(-z^2/2) / sqrt(2 pi) with directed endpoints."""
+    x = -(z * z) / 2
+    elo, ehi = _own_exp_pair(x, ctx)
+    pl, ph = _own_pi(ctx)
+    slo, _ = _own_sqrt_pair(2 * pl, ctx)
+    _, shi = _own_sqrt_pair(2 * ph, ctx)
+    return h * elo / shi, h * ehi / slo
+
+
+def validate_lattice(cand, k, rec):
+    """The checker's OWN certified error of the recorded lattice {T, h, nodes}
+    of mode k: own exp enclosure, own rational sqrt bound, the proved
+    constants (positive: shifted-Gaussian magnitude; negative: oscillatory
+    second-derivative constant 2/5 + 2 sqrt(g) R/4 + g R^2 2/5). Returns the
+    own total bound, which the reference USES as its lattice delta -- the
+    recorded `total_bound` is a producer claim and never enters the proof.
+    Returns a string naming the defect when the lattice is inadmissible."""
+    T = Fr(rec["T"])
+    h = Fr(rec["h"])
+    nodes = int(rec["nodes"])
+    if nodes != 2 * int(T / h) + 1:
+        return "node count %d does not match T=%s, h=%s" % (nodes, T, h)
+    if h > 2 * T or h <= 0 or T <= 0:
+        return "lattice step/radius are not admissible (h=%s, T=%s)" % (h, T)
+    g = Fr(cand.gammas[k])
+    R = Fr(0)
+    for f in cand.features[k].values():
+        R += max(abs(Fr(x)) for x in f)
+    if cand.signs[k] > 0:
+        a2 = g * R * R
+        M = _own_exp_upper(a2 / 2) * Fr(2, 5)
+        a_up = _own_isqrt_ceil(a2)
+        dd = T - a_up
+        if dd <= 0:
+            return "truncation radius %s is inside the shifted centre %s" % (T, a_up)
+        tail = 2 * M * _own_exp_upper(-Fr(dd * dd, 2))
+        disc = 2 * T * h * h * M / 12
+    else:
+        if T < 1:
+            return "oscillatory truncation radius %s below 1" % T
+        tail = Fr(4, 5) * _own_exp_upper(-T * T / 2) / T
+        sg_up = Fr(_own_isqrt_ceil(g * 10 ** 24), 10 ** 12)       # >= sqrt(g)
+        M2 = Fr(2, 5) + 2 * sg_up * R * Fr(1, 4) + g * R * R * Fr(2, 5)
+        disc = 2 * T * h * h * M2 / 12
+    return tail + disc
+
+
+def _own_tensor_error(deltas):
+    """sum_k delta_k prod_{j != k} (1 + delta_j): the finite-grid tensor lemma
+    (the checker's own statement of the proof dependency)."""
+    out = Fr(0)
+    for i, d in enumerate(deltas):
+        prod = Fr(1)
+        for j, d2 in enumerate(deltas):
+            if j != i:
+                prod *= (1 + d2)
+        out += d * prod
+    return out
+
+
+def _own_exp_upper(x: Fr, terms=64) -> Fr:
+    x = Fr(x)
+    if x == 0:
+        return Fr(1)
+    if x < 0:
+        s = Fr(0)
+        t = Fr(1)
+        for k in range(terms):
+            if k:
+                t = t * (-x) / k
+            s += t
+        return Fr(1) / s                                      # 1 / lower(exp(-x))
+    n = terms
+    while Fr(n) <= x:
+        n *= 2
+    s = Fr(0)
+    t = Fr(1)
+    for k in range(n):
+        if k:
+            t = t * x / k
+        s += t
+    return s + t * x / n / (Fr(1) - x / n)
+
+
+def _own_isqrt_ceil(q: Fr) -> int:
+    import math
+    if q <= 0:
+        return 0
+    n = math.isqrt(q.numerator // q.denominator) + 1
+    while Fr(n * n) < q:
+        n += 1
+    while n > 0 and Fr((n - 1) * (n - 1)) >= q:
+        n -= 1
+    return n
+
+
+def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
+    """The checker's own Gaussian/Fourier/mixed reference on the dense engine:
+    own lattice validation, own tilts and phases, own weights, own positive
+    mass pass, own conjugate-paired Fourier accumulation over EXACTLY the
+    retained positive nodes, own omitted-node allowances."""
+    import itertools
+    cand = coll["candidate"]
+    rank = cand.rank
+    pos = [k for k in range(rank) if cand.signs[k] > 0]
+    neg = [k for k in range(rank) if cand.signs[k] < 0]
+    lats = coll.get("lattices")
+    if not lats or len(lats) != rank:
+        raise CheckError("the record carries no per-mode lattice to validate")
+    own_delta = []
+    for k in range(rank):
+        bad = validate_lattice(cand, k, lats[k])
+        if isinstance(bad, str):
+            raise CheckError("mode %d lattice: %s" % (k, bad))
+        own_delta.append(bad)
+    # positive modes: the RECORDED quadrature radius (a published TV radius)
+    # must cover the checker's own tensor lattice error
+    own_qtv = _own_tensor_error([own_delta[k] for k in pos]) if pos else Fr(0)
+    if own_qtv > Fr(coll["quadrature_tv"]):
+        raise CheckError("the recorded quadrature radius %s does not cover the "
+                         "checker's own positive-lattice error %s"
+                         % (coll["quadrature_tv"], own_qtv))
+    free = rmk.free()
+    sg = {k: _own_sqrt_pair(Fr(cand.gammas[k]), ctx) for k in range(rank)}
+
+    def points(k):
+        T, h = Fr(lats[k]["T"]), Fr(lats[k]["h"])
+        jmax = int(T / h)
+        return [Fr(j) * h for j in range(-jmax, jmax + 1)], h
+    base_int = _own_law_tables(rmk, lambda x: (x, x))
+    base_cx = _own_law_tables(rmk, lambda x: (x, x, Fr(0), Fr(0)))
+    queries = rmk.queries()
+    nst = {v: rmk.orig_card[v] for v in queries}
+    pos_pts = [points(k) for k in pos]
+    pos_nodes = list(itertools.product(*[pp[0] for pp in pos_pts])) if pos else [()]
+    engine_int = None
+    engine_cx = None
+    mass = []
+    for node in pos_nodes:
+        if deadline is not None:
+            deadline()
+        wl = wu = Fr(1)
+        for (pts, h), z in zip(pos_pts, node):
+            a, b = _own_normal_weight(z, h, ctx)
+            wl *= a
+            wu *= b
+        tilts = []
+        for v in free:
+            row = []
+            for a in range(rmk.card[v]):
+                lo = hi = Fr(1)
+                for k, z in zip(pos, node):
+                    fv = Fr(cand.features[k].get(v, [Fr(0)] * rmk.card[v])[a])
+                    t = z * fv
+                    alo = (sg[k][0] if t >= 0 else sg[k][1]) * t
+                    ahi = (sg[k][1] if t >= 0 else sg[k][0]) * t
+                    l, _ = _own_exp_pair(alo, ctx)
+                    _, h_ = _own_exp_pair(ahi, ctx)
+                    lo *= l
+                    hi *= h_
+                row.append((lo, hi))
+            tilts.append(((v,), row))
+        tables = base_int + tilts
+        if engine_int is None:
+            engine_int = DB.DenseJT(tables, rmk.card, DB.IntervalAlg, deadline=deadline,
+                                    entry_cap=K.CAPS["local_mass_entries"], charge=charge)
+        else:
+            engine_int.rebind(tables)
+        engine_int.run()
+        total = engine_int.total()
+        if total is None:
+            raise CheckError("zero total at a positive node")
+        mplus = _own_event_counts(rmk, engine_int, DB.IntervalAlg, lambda g: (g, g))
+        mass.append(((wl, wu), tilts, mplus, total))
+    if not neg:
+        counts = {v: [[Fr(0), Fr(0)] for _ in range(nst[v])] for v in queries}
+        for (wl, wu), _t, mplus, total in mass:
+            for v in queries:
+                for a in range(nst[v]):
+                    counts[v][a][0] += wl * mplus[v][a][0]
+                    counts[v][a][1] += wu * mplus[v][a][1]
+        return {v: [tuple(r) for r in rows] for v, rows in counts.items()}, \
+            {"engine": "dense", "method": "checker-owned Gaussian reference",
+             "positive_nodes": len(mass), "own_quadrature_tv": str(own_qtv),
+             "own_lattice_bounds": [str(x) for x in own_delta]}
+    # ---- negative grid: conjugate pairs from a key set built ONCE
+    neg_pts = [points(k) for k in neg]
+    neg_nodes = list(itertools.product(*[pp[0] for pp in neg_pts]))
+    keyset = set(neg_nodes)
+    for nd in neg_nodes:
+        if tuple(-z for z in nd) not in keyset:
+            raise CheckError("the negative frequency key set is not symmetric")
+    pairs = []
+    seen = set()
+    for nd in neg_nodes:
+        if nd in seen:
+            continue
+        conj = tuple(-z for z in nd)
+        seen.add(nd)
+        seen.add(conj)
+        pairs.append((nd, conj != nd))
+    # tensor Fourier error from the checker's OWN per-mode lattice bounds
+    delta = _own_tensor_error([own_delta[k] for k in neg])
+    phase_rows = []
+    for nd, has_conj in pairs:
+        if deadline is not None:
+            deadline()
+        nwl = nwu = Fr(1)
+        for (pts, h), z in zip(neg_pts, nd):
+            a, b = _own_normal_weight(z, h, ctx)
+            nwl *= a
+            nwu *= b
+        per_v = {}
+        for v in free:
+            row = []
+            for a in range(rmk.card[v]):
+                alo = ahi = Fr(0)
+                for k, z in zip(neg, nd):
+                    fv = Fr(cand.features[k].get(v, [Fr(0)] * rmk.card[v])[a])
+                    t = z * fv
+                    alo += (sg[k][0] if t >= 0 else sg[k][1]) * t
+                    ahi += (sg[k][1] if t >= 0 else sg[k][0]) * t
+                clo, chi = _own_trig(alo, ahi, ctx, "cos")
+                slo, shi = _own_trig(alo, ahi, ctx, "sin")
+                row.append((clo, chi, slo, shi))
+            per_v[v] = row
+        phase_rows.append((nwl, nwu, per_v, has_conj))
+    idx_all = list(range(len(mass)))
+    if retained is not None:
+        want = set(int(i) for i in retained)
+        bad = [i for i in want if not (0 <= i < len(mass))]
+        if bad:
+            raise CheckError("retained positive node indices %s are outside the grid" % bad[:4])
+        process = [i for i in idx_all if i in want]
+    else:
+        process = idx_all
+    X_done = {v: [[Fr(0), Fr(0)] for _ in range(nst[v])] for v in queries}
+    X_todo = {v: [Fr(0)] * nst[v] for v in queries}
+    for (wl, wu), _t, mplus, _tot in mass:
+        for v in queries:
+            for a in range(nst[v]):
+                X_todo[v][a] += wu * mplus[v][a][1]
+    for i in process:
+        (wl, wu), tilts, mplus, total = mass[i]
+        acc_ev = {v: [(Fr(0), Fr(0), Fr(0), Fr(0)) for _ in range(nst[v])] for v in queries}
+        for nwl, nwu, per_v, has_conj in phase_rows:
+            if deadline is not None:
+                deadline()
+            phases = []
+            for (v,), trow in tilts:
+                prow = per_v[v]
+                row = []
+                for a in range(rmk.card[v]):
+                    tl, th = trow[a]
+                    clo, chi, slo, shi = prow[a]
+                    cs = (tl * clo, th * clo, tl * chi, th * chi)
+                    ss = (tl * slo, th * slo, tl * shi, th * shi)
+                    row.append((min(cs), max(cs), min(ss), max(ss)))
+                phases.append(((v,), row))
+            tables = base_cx + phases
+            if engine_cx is None:
+                engine_cx = DB.DenseJT(tables, rmk.card, DB.ComplexAlg, deadline=deadline,
+                                       entry_cap=K.CAPS["local_mass_entries"], charge=charge)
+            else:
+                engine_cx.rebind(tables)
+            engine_cx.run()
+            if engine_cx.total() is None:
+                raise CheckError("zero total at a node")
+            cev = _own_event_counts(rmk, engine_cx, DB.ComplexAlg, lambda g: (g, g, Fr(0), Fr(0)))
+            mult = 2 if has_conj else 1
+            for v in queries:
+                for a in range(nst[v]):
+                    rect = cev[v][a]
+                    c = (rect[0] * nwl * mult, rect[0] * nwu * mult, rect[1] * nwl * mult, rect[1] * nwu * mult)
+                    acc_ev[v][a] = (acc_ev[v][a][0] + min(c), acc_ev[v][a][1] + max(c), Fr(0), Fr(0))
+        for v in queries:
+            for a in range(nst[v]):
+                mlo, mhi = mplus[v][a]
+                xl = max(Fr(0), acc_ev[v][a][0] - delta * mhi)
+                xu = min(mhi, acc_ev[v][a][1] + delta * mhi)
+                if xl > xu:
+                    xl, xu = Fr(0), mhi
+                X_done[v][a][0] += wl * xl
+                X_done[v][a][1] += wu * xu
+                X_todo[v][a] -= wu * mhi
+    counts = {v: [(X_done[v][a][0], X_done[v][a][1] + X_todo[v][a]) for a in range(nst[v])]
+              for v in queries}
+    return counts, {"engine": "dense", "method": "checker-owned mixed/Fourier reference",
+                    "positive_nodes": len(mass), "processed": len(process),
+                    "conjugate_pairs": len(pairs), "tensor_delta": str(delta),
+                    "own_quadrature_tv": str(own_qtv),
+                    "own_lattice_bounds": [str(x) for x in own_delta]}
+
+
 # --------------------------------------------------------------- the check
 
 def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
@@ -508,7 +1123,7 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
     if coll is None:
         tables = []
         for f in marked.law_factors():
-            if FX.is_view(f):
+            if FX.is_view(f) or isinstance(f, OwnView):
                 tables.append((tuple(f.scope), f.table))
             else:
                 tables.append((tuple(f.scope), [Fr(x) for x in f.table]))
@@ -564,50 +1179,27 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
                                "recorded %s" % (own_round, coll["rounding_tv"])], None
             meta["own_rounding_tv"] = str(own_round)
         else:
-            # the checker's own lattice bounds for the record's per-mode deltas:
-            # the POSITIVE modes' GF3 bounds are a TV radius and must be covered
-            # by the recorded quadrature_tv; the negative modes' bounds enter the
-            # sharp marker-ratio enclosure the checker itself evaluates below
-            cand = coll["candidate"]
-            deltas = coll.get("deltas") or [coll["delta"]]
-            qtv = Fr(0)
-            try:
-                for k in range(cand.rank):
-                    lat = CR.lattice_for(cand, k, Fr(deltas[k]))
-                    if cand.signs[k] > 0:
-                        qtv += Fr(lat["total_bound"])
-            except CO.Declined as e:
-                return False, ["the checker cannot construct the record's lattice: %s" % e], None
-            if qtv > Fr(coll["quadrature_tv"]):
-                return False, ["the checker's own positive lattice bound %s exceeds the "
-                               "recorded %s" % (qtv, coll["quadrature_tv"])], None
-            meta["own_quadrature_tv"] = str(qtv)
+            # the checker's own lattice bounds are derived INSIDE
+            # own_gf_reference (validate_lattice): the producer's lattice
+            # constructor is never called here; the own positive tensor bound
+            # must be covered by the recorded quadrature radius
+            pass
         charge = None
         if budget is not None:
             charge = lambda n: budget.charge("local_mass_entries", n,
                                              "checker dense collective evaluation")
         try:
-            # the checker rechecks the RETAINED positive nodes of the record
-            # (when an execution record names them) with the same omitted-node
-            # allowances, never integrating omitted nodes to rescue it; without
-            # a record it evaluates every node
-            retained = (exec_record or {}).get("retained_positive_node_indices")
-            (Zlo, Zhi), counts, cmeta = CJ.evaluate(rmk, coll, ctx, engine="dense",
-                                                    deadline=deadline, charge=charge,
-                                                    stop_early=False,
-                                                    only_nodes=retained)
-            if retained is not None:
-                meta["rechecked_retained_nodes"] = len(retained)
-                if not cmeta.get("negative_key_set_symmetric", True):
-                    return False, ["the negative frequency key set is not symmetric: "
-                                   "conjugate pairing fails"], None
-        except (CJ.Declined, DB.DenseError) as e:
+            if coll["evaluator"] == "statistic":
+                counts, cmeta = own_statistic_reference(rmk, coll, ctx, deadline, charge)
+            else:
+                retained = (exec_record or {}).get("retained_positive_node_indices")
+                counts, cmeta = own_gf_reference(rmk, coll, ctx, deadline, charge,
+                                                 retained=retained)
+                if retained is not None:
+                    meta["rechecked_retained_nodes"] = len(retained)
+        except (CheckError, DB.DenseError) as e:
             return False, ["the checker's own collective evaluation refused: %s" % e], None
-        if Zlo <= 0:
-            return False, ["the checker's own collective total is not positive"], None
-        # the collective evaluator returns per-(variable, state) COUNT
-        # enclosures already restored through the payload; the checker's own
-        # sharp ratio uses its own complement sums
+        # the checker's own sharp ratio from its own event counts
         rows = {}
         for v in rmk.queries():
             xs = [(Fr(counts[v][a][0]), Fr(counts[v][a][1]))
@@ -651,9 +1243,11 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
                 clo = max(Fr(0), qlo - radius)
                 chi = min(Fr(1), qhi + radius)
             if not (lo <= clo and chi <= hi):
-                fails.append("variable %d state %d: publication [%s, %s] does NOT "
-                             "contain the independent enclosure [%s, %s]"
-                             % (v, s, lo, hi, clo, chi))
+                # decimal renderings keep the NAMED obligation legible in a
+                # truncated report; the exact rationals are in `rows`/`published`
+                fails.append("variable %d state %d: publication [%.9f, %.9f] does NOT "
+                             "contain the independent enclosure [%.9f, %.9f]"
+                             % (v, s, float(lo), float(hi), float(clo), float(chi)))
             if hi - lo > Fr(eps):
                 fails.append("variable %d state %d: width exceeds eps" % (v, s))
     return (not fails), fails, meta

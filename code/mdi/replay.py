@@ -1,14 +1,16 @@
-"""Fresh-process execution of a PERSISTED plan (spec §8/§11 binding).
+"""Fresh-process execution of a PERSISTED plan through the pipeline's ONE
+loaded-object boundary (spec §8/§11 binding).
 
     python -m mdi.replay MODEL.uai [EVIDENCE.evid|-] PLAN.plan.json [OUT.json]
 
-Reads the original model and evidence from disk, rebuilds the restricted and
-preprocessed law, binds the plan record (hashes, scopes, preprocessing proof,
-executor/checker references), parses its PROGRAM strictly, executes the
-program with the producer's engine, publishes with the recorded radii, and
-runs the independent program checker against the ORIGINAL model. Nothing from
-the discovering process is available here: this is the demonstration that
-the saved plan governs execution.
+Reads the original model and evidence, rebuilds the restricted and
+preprocessed law, loads the record, BINDS it exactly as the pipeline does
+(`pipeline.bind_loaded`: hashes, scopes, preprocessing proof, roles, no
+completion flags, program/kind agreement, re-derived price on the saved
+order), then runs `pipeline.run_loaded` -- the same executor dispatch,
+publication rule, independent checker, research agreement, status
+derivation and shared budget limits as the public pipeline. Nothing from the
+discovering process is available here.
 """
 from __future__ import annotations
 import sys, json, time
@@ -16,10 +18,14 @@ sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
 
 
-def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0):
+def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=None):
+    """Bind, admit, execute and check ONE persisted plan in this process under
+    a fresh shared budget with the pipeline's limits; a record the pipeline's
+    admission rule refuses is refused here too. `wrap(stage, fn)` optionally
+    wraps the executor and checker calls (the acceptance matrix counts
+    operations through it)."""
     from mdi import (model as M, plantype as PT, preprocess as PRE, config as K,
-                     routes as RT, program_check as PC, budget as B, pipeline as PLN,
-                     solve as S)
+                     pipeline as PLN, budget as B, solve as S)
     import mdi.registry            # noqa: F401
     t0 = time.monotonic()
     eps = Fr(eps) if eps is not None else K.MAX_WIDTH
@@ -37,86 +43,57 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0):
     r = M.Restricted(model=m, evidence=dict(ev), factors=simp.factors,
                      free=list(simp.free), card=dict(simp.card),
                      constant=r0.constant, impossible_factor=None)
-    rec.bind_check(mh, eh, qh, restricted=r, preprocess_identity=simp.identity(),
-                   max_precision=4096)
+    nq = sum(r.card[v] for v in sorted(queries))
     bg = B.Budget(wall_s=wall_s,
-                  limits={"local_mass_entries": K.CAPS["local_mass_entries"]},
+                  limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
+                          "local_mass_entries": K.CAPS["local_mass_entries"]},
                   rss_fn=S._rss_bytes, rss_limit=K.RESOURCES["arm_rss_bytes"])
-    bg.enter("replay-execute")
-    if rec.kind == "identity":
-        # the identity program: the persisted order, precision and exponent
-        # range govern mdi.solve; its checker is the standalone verifier
-        from mdi import registry as RG
-        ctx = {"model": m, "evidence": ev, "eps": eps - K.PUBLICATION_RESERVE,
-               "cap_bytes": K.RESOURCES["arm_rss_bytes"], "remaining": bg.remaining,
-               "program": prog}
-        try:
-            iv = RG.pipeline_identity_executor(ctx)
-        except PT.ExecutorRefusal as e:
-            return {"status": "REPLAY_REFUSED", "kind": "identity", "name": rec.name,
-                    "reason": "%s: %s" % (e.status, e.reason),
-                    "elapsed_s": time.monotonic() - t0}
-        pub = {v: [(Fr(lo), Fr(hi)) for lo, hi in iv[v]] for v in iv}
-        bg.enter("replay-check")
-        ok, fails, cmeta = RG.pipeline_identity_checker(m, ev, pub, eps,
-                                                        deadline_s=bg.remaining(),
-                                                        program=prog)
-        worst = max((hi - lo for v in pub for lo, hi in pub[v]), default=Fr(0))
-        status = ("REPLAY_VERIFIED" if ok and worst <= eps else
-                  "REPLAY_REJECTED" if not ok else "REPLAY_WIDTH_EXCEEDED")
-        return {"status": status, "kind": "identity", "name": rec.name,
-                "intervals": {str(v): [[str(lo), str(hi)] for lo, hi in pub[v]]
-                              for v in sorted(pub) if v in queries},
-                "radius": "0", "max_width": str(worst), "research": prog["research"],
-                "executor": {k: str(v) for k, v in (ctx.get("meta") or {}).items()},
-                "checker": {k: (str(v) if not isinstance(v, (dict, list, bool)) else v)
-                            for k, v in (cmeta or {}).items()},
-                "failures": [str(x)[:200] for x in (fails or [])[:8]],
-                "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
-    radius = sum((Fr(v) for v in rec.allocations.values()), Fr(0))
     try:
-        rows, meta = RT.execute(prog, r, queries, deadline=bg.deadline_fn("replay"),
-                                budget=bg,
-                                num_eps=eps - 2 * radius - K.PUBLICATION_RESERVE)
-    except B.BudgetExceeded as e:
-        return {"status": "REPLAY_RESOURCE_STOP", "kind": rec.kind, "name": rec.name,
-                "reason": "execution: %s" % e, "budget": bg.report(),
-                "elapsed_s": time.monotonic() - t0}
-    except Exception as e:
+        bg.enter("bind")
+        price = PLN.bind_loaded(rec, mh, eh, qh, r, simp, queries, nq,
+                                K.RESOURCES["arm_rss_bytes"], bg=bg)
+    except PT.PlanError as e:
         return {"status": "REPLAY_REFUSED", "kind": rec.kind, "name": rec.name,
-                "reason": "%s: %s" % (type(e).__name__, e),
-                "elapsed_s": time.monotonic() - t0}
-    pad = radius + K.PUBLICATION_RESERVE
-    pub = {}
-    for v in sorted(queries):
-        pub[v] = [(max(Fr(0), Fr(lo) - pad), min(Fr(1), Fr(hi) + pad))
-                  for lo, hi in rows[v]]
-    bg.enter("replay-check")
-    try:
-        ok, fails, cmeta = PC.verify_program(r, queries, prog, pub, eps,
-                                             deadline=bg.deadline_fn("replay-check"),
-                                             budget=bg, exec_record=meta)
+                "reason": "binding refused: %s" % e, "elapsed_s": time.monotonic() - t0}
     except B.BudgetExceeded as e:
         return {"status": "REPLAY_RESOURCE_STOP", "kind": rec.kind, "name": rec.name,
-                "reason": "producer completed but independent verification did "
-                          "not finish: %s" % e,
-                "intervals": {str(v): [[str(lo), str(hi)] for lo, hi in pub[v]]
-                              for v in sorted(pub)},
-                "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
-    worst = max((hi - lo for v in pub for lo, hi in pub[v]), default=Fr(0))
-    status = ("REPLAY_VERIFIED" if ok and worst <= eps else
-              "REPLAY_REJECTED" if not ok else "REPLAY_WIDTH_EXCEEDED")
-    return {"status": status, "kind": rec.kind, "name": rec.name,
+                "reason": "binding: %s" % e, "budget": bg.report(),
+                "elapsed_s": time.monotonic() - t0}
+    bad = PLN.loaded_admission(rec, price)
+    if bad:
+        return {"status": "REPLAY_REFUSED", "kind": rec.kind, "name": rec.name,
+                "identity": getattr(rec, "identity_key", None),
+                "reason": "the loaded program is not admissible under the pipeline's "
+                          "rule: %s" % bad,
+                "price": price.as_dict(), "budget": bg.report(),
+                "elapsed_s": time.monotonic() - t0}
+    rec.properties.set("selected")
+    out = PLN.Outcome(status="INIT")
+    out.prices = [price.as_dict()]
+    res = PLN.run_loaded(rec, m, ev, queries, r, bg, eps, K.RESOURCES["arm_rss_bytes"],
+                         out=out, wrap=wrap)
+    status = {"CERTIFIED_RESEARCH_ROUTE": "REPLAY_VERIFIED",
+              "CERTIFIED_FALLBACK_ONLY": "REPLAY_VERIFIED",
+              "NUMERICAL_REFUSAL": "REPLAY_REJECTED",
+              "RESOURCE_STOP": "REPLAY_RESOURCE_STOP",
+              "VERIFIED_SHARED_AGGREGATION_ONLY": "REPLAY_SHARED_AGGREGATION_ONLY"}.get(
+        res.status, "REPLAY_" + res.status)
+    pub = res.intervals or {}
+    worst = max((Fr(hi) - Fr(lo) for v in pub for lo, hi in pub[v]), default=Fr(0))
+    return {"status": status, "pipeline_status": res.status, "kind": rec.kind,
+            "name": rec.name, "identity": getattr(rec, "identity_key", None),
             "plan_sha_bound": {"model": mh[:16], "evidence": eh[:16], "query": qh[:16]},
             "intervals": {str(v): [[str(lo), str(hi)] for lo, hi in pub[v]]
-                          for v in sorted(pub)},
-            "radius": str(radius), "max_width": str(worst),
-            "research": prog["research"], "executor": {k: str(v) for k, v in meta.items()
-                                                       if k not in ("lattice",)},
+                          for v in sorted(pub) if v in queries},
+            "radius": str(sum((Fr(v) for v in rec.allocations.values()), Fr(0))),
+            "max_width": str(worst), "research": (res.plan or {}).get("research"),
+            "executor": {k: str(v) for k, v in ((res.plan or {}).get("executed") or {}).items()
+                         if k not in ("lattice",)},
             "checker": {k: (str(v) if not isinstance(v, (dict, list, bool)) else v)
-                        for k, v in (cmeta or {}).items()},
-            "failures": [str(x)[:200] for x in (fails or [])[:8]],
-            "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
+                        for k, v in (res.checker or {}).items() if k != "executor"},
+            "failures": [str(x)[:200] for x in ((res.checker or {}).get("failures") or [])[:8]],
+            "reason": res.reason, "budget": res.budget or bg.report(),
+            "price": price.as_dict(), "elapsed_s": time.monotonic() - t0}
 
 
 def main(argv):

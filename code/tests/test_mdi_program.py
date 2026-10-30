@@ -59,8 +59,8 @@ def test_persisted_program_governs_execution_in_a_fresh_process():
     assert res.status == "CERTIFIED_RESEARCH_ROUTE", (res.status, res.reason)
     assert res.plan["kind"] == "regional"
     assert res.plan["research"]["cells_merged_regions"] >= 1
-    chosen = res.plan["chosen"].replace(":", "_")
-    plan = os.path.join(d, chosen + ".plan.json")
+    chosen_id = next(p["identity"] for p in res.prices if p["name"] == res.plan["chosen"])
+    plan = os.path.join(d, chosen_id + ".plan.json")
     assert os.path.exists(plan)
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -115,8 +115,9 @@ def test_program_block_is_parsed_strictly():
     txt, n, NB, BS = ring_of_blocks()
     m = M.read_uai(w(txt))
     d = tempfile.mkdtemp()
-    PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30, plan_dir=d)
-    plan = glob.glob(os.path.join(d, "regional_ascending_id@64.plan.json"))[0]
+    res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30, plan_dir=d)
+    plan = os.path.join(d, next(p["identity"] for p in res.prices
+                                if p["name"] == "regional:ascending_id@64") + ".plan.json")
     base = json.load(open(plan))
     assert PT.PlanRecord.from_json(json.dumps(base)).parsed_program is not None
     muts = [
@@ -148,7 +149,8 @@ def test_every_research_kind_is_offered_priced_and_certifiable():
     executed from its record and checked independently."""
     fields = [0.1 * (k + 1) * (1 if k % 2 == 0 else -1) for k in range(6)]
     for J, quad in ((0.30, "gaussian"), (-0.22, "fourier")):
-        m = M.read_uai(w(mean_field(6, J, fields)))
+        mp = w(mean_field(6, J, fields))
+        m = M.read_uai(mp)
         r = M.restrict(m, {})
         Z, pt = O.exact_all_marginals(r)
         q = set(r.free)
@@ -156,27 +158,59 @@ def test_every_research_kind_is_offered_priced_and_certifiable():
         res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30, plan_dir=d)
         assert res.status.startswith("CERTIFIED"), (res.status, res.reason)
         names = {p["name"]: p for p in res.prices}
-        assert "statistic" in names and names["statistic"]["eligible"], sorted(names)
-        assert quad in names and names[quad]["eligible"], sorted(names)
+        # candidates are named evaluator:kind and persisted under their IDENTITY
+        stat = next(k for k in names if k.startswith("statistic:"))
+        assert names[stat]["eligible"], sorted(names)
+        quad_name = next(k for k in names if k.startswith(quad + ":"))
+        assert quad_name in names, sorted(names)
         assert any(k.startswith("regional:") for k in names)
         eligible = {k: int(p["total_arithmetic"]["value"]) for k, p in names.items()
                     if p["eligible"] and p["total_arithmetic"]["value"] is not None}
         assert res.plan["chosen"] == min(eligible, key=eligible.get), \
             (res.plan["chosen"], eligible)
         assert _contains(res.intervals, pt)
-        # the collective programs certify from their PERSISTED records
-        for kind in ("statistic", quad):
-            path = os.path.join(d, kind + ".plan.json")
+        # the collective programs certify from their PERSISTED records through
+        # the ONE loaded-object boundary (bind -> admission -> run_loaded under
+        # a fresh shared budget). A quadrature program whose forecast metered
+        # entries exceed the shared cap is offered, priced and persisted but
+        # REFUSED by the same rule in replay -- it is never run unguarded here.
+        from mdi import replay as RP
+        for name in (stat, quad_name):
+            kind = name.split(":")[0]
+            path = os.path.join(d, names[name]["identity"] + ".plan.json")
             rec = PT.PlanRecord.from_json(open(path).read())
             prog = rec.parsed_program
             assert prog["kind"] == kind and prog["collective"]["evaluator"] == kind
-            rows, meta = RT.execute(prog, r, q)
-            pub = _pub(prog, rows)
-            assert _contains(pub, pt), kind
-            ok, fails, cmeta = PC.verify_program(r, q, prog, pub, Fr(1, 100))
-            assert ok, (kind, fails[:2])
-            assert cmeta["fit"]["own_tv"]            # the checker's OWN certificate
-            assert cmeta["collective"]["engine"] == "dense"
+            if names[name]["eligible"]:
+                rep = RP.replay(mp, "-", path)
+                assert rep["status"] == "REPLAY_VERIFIED", (name, rep.get("reason"), rep.get("failures"))
+                assert all(Fr(lo) <= pt[int(v)][s] <= Fr(hi) for v, rows in rep["intervals"].items()
+                           for s, (lo, hi) in enumerate(rows)), name
+                assert rep["checker"]["collective"]["engine"] == "dense"
+                assert rep["checker"]["fit"]["own_tv"]          # the checker's OWN certificate
+            else:
+                assert "cap" in names[name]["ineligible_reason"], names[name]["ineligible_reason"]
+                rep = RP.replay(mp, "-", path)
+                assert rep["status"] == "REPLAY_REFUSED" and "cap" in rep["reason"], rep.get("reason")
+    # the smaller mean field: Gaussian and Fourier programs are AFFORDABLE under
+    # the shared cap and verify from their records in a fresh binding
+    fields4 = [0.1 * (k + 1) * (1 if k % 2 == 0 else -1) for k in range(4)]
+    from mdi import replay as RP
+    for J, quad in ((0.30, "gaussian"), (-0.22, "fourier")):
+        mp = w(mean_field(4, J, fields4))
+        m = M.read_uai(mp)
+        Z, pt = O.exact_all_marginals(M.restrict(m, {}))
+        d = tempfile.mkdtemp()
+        res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30, plan_dir=d)
+        names = {p["name"]: p for p in res.prices}
+        qn = next(k for k in names if k.startswith(quad + ":") and names[k]["eligible"])
+        rep = RP.replay(mp, "-", os.path.join(d, names[qn]["identity"] + ".plan.json"))
+        assert rep["status"] == "REPLAY_VERIFIED", (qn, rep.get("reason"), rep.get("failures"))
+        assert all(Fr(lo) <= pt[int(v)][s] <= Fr(hi) for v, rows in rep["intervals"].items()
+                   for s, (lo, hi) in enumerate(rows)), qn
+        assert rep["checker"]["collective"]["own_lattice_bounds"]     # the checker's OWN deltas
+        assert int(names[qn]["counters"]["metered_entries_forecast"]["value"]) >= \
+            int(rep["budget"]["used"].get("local_mass_entries", 0))
     # a larger mean field: the statistic DP is cheaper than identity and the
     # planner's argmin is still what runs
     fields = [0.1 * (k + 1) * (1 if k % 2 == 0 else -1) for k in range(9)]
@@ -187,7 +221,8 @@ def test_every_research_kind_is_offered_priced_and_certifiable():
     names = {p["name"]: p for p in res.prices}
     eligible = {k: int(p["total_arithmetic"]["value"]) for k, p in names.items()
                 if p["eligible"] and p["total_arithmetic"]["value"] is not None}
-    assert eligible["statistic"] < eligible["identity"], eligible
+    stat9 = min(k for k in eligible if k.startswith("statistic:"))
+    assert eligible[stat9] < eligible["identity"], eligible
     assert res.plan["chosen"] == min(eligible, key=eligible.get)
     assert res.status == "CERTIFIED_RESEARCH_ROUTE", (res.status, res.reason)
     assert _contains(res.intervals, pt)
@@ -238,7 +273,8 @@ def test_quadrature_programs_execute_and_verify_from_their_record():
         ok, fails, cmeta = PC.verify_program(r, q, prog, pub, Fr(1, 100))
         assert ok, fails[:2]
         assert cmeta["collective"]["engine"] == "dense"
-        assert "own_quadrature_tv" in cmeta
+        # the checker's OWN lattice bounds are the deltas its reference used
+        assert "own_quadrature_tv" in cmeta["collective"] and cmeta["collective"]["own_lattice_bounds"]
 
 
 # -------------------------------------------------------- scales and deletion
@@ -761,10 +797,11 @@ def test_recognition_survives_exact_gauge_redistribution_through_the_pipeline():
     res = PLN.solve(m2, {}, wall_s=120.0, cap_bytes=1 << 30, plan_dir=d)
     assert res.status.startswith("CERTIFIED"), (res.status, res.reason)
     names = {p["name"]: p for p in res.prices}
-    assert "statistic" in names and names["statistic"]["eligible"], \
+    stat = next((k for k in names if k.startswith("statistic:")), None)
+    assert stat is not None and names[stat]["eligible"], \
         [(x["name"], x["reason"][:60]) for x in res.rejected]
     assert _contains(res.intervals, pt)
-    rec = PT.PlanRecord.from_json(open(os.path.join(d, "statistic.plan.json")).read())
+    rec = PT.PlanRecord.from_json(open(os.path.join(d, names[stat]["identity"] + ".plan.json")).read())
     prog = rec.parsed_program
     q = set(r.free)
     rows, _ = RT.execute(prog, r, q)

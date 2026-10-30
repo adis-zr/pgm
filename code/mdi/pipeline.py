@@ -247,8 +247,11 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             checker_id="mdi.registry:pipeline_identity_checker",
             numerical={"precision": _p, "mode": "P", "emin": _emin, "emax": _emax},
             cost_counters={k: c.as_dict() for k, c in iprice.counters.items()},
-            storage_schedule={"peak_live_entries": iest["peak_live_entries"]},
+            storage_schedule={"peak_live_entries": iest["peak_live_entries"],
+                              "identity": "identity-" + hashlib.sha256(
+                                  json.dumps(iprog, sort_keys=True).encode()).hexdigest()[:16]},
             rejected_alternatives=[], properties=iprops, program=iprog)
+        irec.identity_key = irec.storage_schedule["identity"]
         records.append((irec, iprice, {"plan": ipl, "est": iest}))
         prices.append(iprice)
 
@@ -298,8 +301,10 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     os.makedirs(plan_dir, exist_ok=True)
     reloaded = []
     for rec, price, payload in records:
-        path = os.path.join(plan_dir, "%s.plan.json"
-                            % rec.name.replace(":", "_"))
+        # the file is named by the candidate's STABLE IDENTITY (the law/program
+        # it represents), so two candidates on one partition never overwrite
+        ident = (rec.storage_schedule or {}).get("identity") or rec.name.replace(":", "_")
+        path = os.path.join(plan_dir, "%s.plan.json" % ident)
         try:
             txt = rec.to_json()
             with open(path, "w") as fh:
@@ -316,39 +321,21 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                                    "round trip through disk")
             # bind the SEMANTIC fields too, against the original restricted
             # model and the preprocessing proof the current inputs produce
-            back.bind_check(mh, eh, qh, restricted=r,
-                            preprocess_identity=simp.identity(),
-                            max_precision=4096)
-            if back.kind != "identity":
-                if getattr(back, "parsed_program", None) is None:
-                    raise PT.PlanError("a %s plan reloaded without a program"
-                                       % back.kind)
-                if sorted(back.parsed_program["queries"]) != sorted(queries):
-                    raise PT.PlanError("the reloaded program's requested set "
-                                       "differs from the current request")
+            # DISCARD discovery's live payload and price: from here on the
+            # loaded record is the only input, bound at the ONE boundary
+            rprice = bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes,
+                                 bg=bg)
         except (PT.PlanError, ValueError, OSError) as e:
             rejected.append({"name": rec.name,
-                             "reason": "plan record failed persist/reload: %s"
+                             "reason": "plan record failed persist/reload/binding: %s"
                                        % e})
             continue
+        except B.BudgetExceeded as e:
+            return Outcome(status="RESOURCE_STOP",
+                           reason="the shared budget was exhausted while re-pricing "
+                                  "loaded programs: %s" % e,
+                           rejected=rejected, stages=stages, budget=bg.report())
         back.source_path = path
-        # DISCARD discovery's live payload and price: from here on the loaded
-        # record is the only input. Its cost is RE-DERIVED from the program
-        # and must agree with the recorded counters.
-        try:
-            rprice = _reprice_loaded(back, r, queries, nq, simp, cap_bytes)
-        except Exception as e:
-            rejected.append({"name": rec.name,
-                             "reason": "the loaded program could not be re-priced: "
-                                       "%s: %s" % (type(e).__name__, e)})
-            continue
-        bad = _price_disagrees(back.cost_counters, rprice)
-        if bad:
-            rejected.append({"name": rec.name,
-                             "reason": "the recorded cost counters do not match the "
-                                       "price re-derived from the loaded program: %s"
-                                       % bad})
-            continue
         reloaded.append((back, rprice, None))
     del records
     stages["persist_s"] = time.monotonic() - t
@@ -366,23 +353,38 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        budget=bg.report())
     t = time.monotonic()
     for rec, price, payload in reloaded:
-        miss = rec.properties.may_execute_as_certified_route()
-        miss = [x for x in miss if x != "selected"]
-        if miss:
+        bad = loaded_admission(rec, price)
+        if bad and price.eligible:
             price.eligible = False
-            price.ineligible_reason = ("missing %s; an unregistered executor or "
-                                       "checker makes the route ineligible"
-                                       % miss)
+            price.ineligible_reason = bad
+    # explicit DEDUPLICATION by represented-law identity, never by generator
+    # label: two loaded records with the same identity key are the same
+    # program; the second is recorded as a duplicate, not lost
+    by_id = {}
+    uniq = []
+    for rec, price, pl in reloaded:
+        key = getattr(rec, "identity_key", None) or rec.name
+        if key in by_id:
+            rejected.append({"name": rec.name,
+                             "reason": "duplicate of %s under the explicit identity "
+                                       "rule (same evaluator, canonical modes, Q/deltas, "
+                                       "retained and dropped sets, witness)" % by_id[key]})
+            continue
+        by_id[key] = rec.name
+        uniq.append((rec, price, pl))
+    reloaded = uniq
     cmp = PR.compare([p for _, p, _ in reloaded], cap_bytes=cap_bytes)
     stages["select_s"] = time.monotonic() - t
-    out.prices = [p.as_dict() for _, p, _ in reloaded]
+    out.prices = [dict(p.as_dict(), identity=getattr(rec, "identity_key", None))
+                  for rec, p, _ in reloaded]
     if cmp["chosen"] is None:
         return Outcome(status="RESOURCE_STOP",
                        reason="every route is ineligible or over the byte cap",
                        prices=out.prices, rejected=rejected, stages=stages,
                        budget=bg.report())
     chosen_name = cmp["chosen"]["name"]
-    chosen = next(x for x in reloaded if x[1].name == chosen_name)
+    chosen_rec = cmp["chosen"]["record"]
+    chosen = next(x for x in reloaded if x[1] is chosen_rec)
     crec, cprice, cpayload = chosen
     crec.properties.set("selected")
     for x in cmp["all"]:
@@ -396,7 +398,31 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                 "properties": crec.properties.as_dict()}
     prog("select", "%s (%s)" % (chosen_name, crec.kind))
 
-    # ---------------- stage 6: execute through the dispatcher ----------------
+    # ---------------- stages 6-7: the ONE loaded-object boundary ----------------
+    out.plan["executed_kind"] = crec.kind
+    res = run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog,
+                     out=out, rejected=rejected, stages=stages)
+    return res
+
+
+def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
+               out=None, rejected=None, stages=None, wrap=None):
+    """Execute and independently check ONE loaded, bound plan record. This is
+    the single validation/dispatch boundary: the public pipeline and
+    `mdi.replay` both call it, so a fresh process enforces exactly the limits,
+    role binding, publication rule, research agreement and status derivation
+    the pipeline does.
+
+    `crec` must already have passed `bind_check`; its roles are resolved from
+    the record and must be the registered ones; the executor runs under the
+    shared budget; the checker named by the record verifies; the research
+    label follows the checker's verified transformations. `wrap(stage, fn)`
+    optionally wraps the executor and checker calls (the acceptance matrix
+    counts operations through it; it changes nothing else)."""
+    _w = wrap or (lambda stage, f: f())
+    out = out if out is not None else Outcome(status="INIT")
+    rejected = rejected if rejected is not None else []
+    stages = stages if stages is not None else {}
     try:
         bg.enter("execute")
     except B.BudgetExceeded as e:
@@ -404,7 +430,6 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        prices=out.prices, rejected=rejected, stages=stages,
                        budget=bg.report())
     t = time.monotonic()
-    # the sum of every charged transformation radius, from the RECORD
     radius = sum((Fr(v) for v in crec.allocations.values()), Fr(0))
     num_eps = eps - 2 * radius - K.PUBLICATION_RESERVE
     if num_eps <= 0:
@@ -413,13 +438,6 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        prices=out.prices, stages=stages, budget=bg.report())
     exec_meta = {}
     try:
-        # INVOKE the executor bound by the validated selected plan. The
-        # previous code called PT.dispatch() and then branched on crec.kind,
-        # so the dispatched executor was never used: swapping in a raising
-        # sentinel still produced a certified result with zero executor calls.
-        # The executor and checker are the functions the RECORD names, and
-        # they must be the ones registered for the kind: a record declaring a
-        # role its kind does not run is refused rather than certified.
         pexec = _resolve_role(crec.executor_id)
         if pexec is not PT.dispatch_pipeline(crec.kind):
             return Outcome(status="RESOURCE_STOP",
@@ -440,8 +458,8 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                 "cap_bytes": cap_bytes, "remaining": bg.remaining,
                 "restricted": r, "queries": queries, "budget": bg,
                 "program": getattr(crec, "parsed_program", None),
-                "progress": prog}
-        raw = pexec(ectx)
+                "progress": prog or (lambda *a, **k: None)}
+        raw = _w("execute", lambda: pexec(ectx))
         exec_meta = ectx.get("meta") or {}
     except PT.ExecutorRefusal as e:
         return Outcome(status=e.status, reason=e.reason, prices=out.prices,
@@ -471,9 +489,6 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                 worst = hi2 - lo2
             rows.append((lo2, hi2))
         pub[v] = rows
-    # only the REQUESTED variables are published by a program route; the
-    # identity solver publishes every free variable and the requested subset
-    # is what the checker is handed
     if crec.kind != "identity":
         pub = {v: pub[v] for v in sorted(queries) if v in pub}
         missing_q = [v for v in sorted(queries) if v not in pub]
@@ -487,35 +502,28 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
         pub[v] = [(Fr(1), Fr(1)) if s == st else (Fr(0), Fr(0))
                   for s in range(model.card[v])]
 
-    # ---------------- stage 7: independent check ----------------
+    # ---------------- independent check ----------------
     try:
         bg.enter("check")
     except B.BudgetExceeded as e:
         return Outcome(status="RESOURCE_STOP", reason=str(e),
                        prices=out.prices, rejected=rejected, stages=stages,
                        budget=bg.report())
-    # the independent checker receives the SHARED deadline, so its own work is
-    # bounded by the same budget as the producer's
     check_dl = bg.deadline_fn("check")
     t = time.monotonic()
     try:
         if crec.kind == "identity":
-            # consume the checker's OWN metadata. Replacing it with
-            # {"kind": "identity"} discarded independent_aggregation_checked,
-            # so a result whose exact independent check HAD run and passed was
-            # downgraded anyway.
-            ok, fails, meta = checker(model, evidence, pub, eps,
-                                      deadline_s=bg.remaining(),
-                                      cap_bytes=cap_bytes,
-                                      program=crec.parsed_program)
+            ok, fails, meta = _w("check", lambda: checker(
+                model, evidence, pub, eps, deadline_s=bg.remaining(),
+                cap_bytes=cap_bytes, program=crec.parsed_program))
             meta = dict(meta or {})
             meta["kind"] = "identity"
             bg.check("after-identity-check")
         else:
             qpub = {v: pub[v] for v in sorted(queries)}
-            ok, fails, meta = checker(r, queries, crec.parsed_program, qpub,
-                                      eps, deadline=check_dl, budget=bg,
-                                      exec_record=exec_meta)
+            ok, fails, meta = _w("check", lambda: checker(
+                r, queries, crec.parsed_program, qpub, eps, deadline=check_dl,
+                budget=bg, exec_record=exec_meta))
             meta = dict(meta or {})
             meta["kind"] = crec.kind
             meta["executor"] = exec_meta
@@ -544,8 +552,6 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        prices=out.prices, rejected=rejected, stages=stages,
                        budget=bg.report(),
                        properties=crec.properties.as_dict())
-    # the LAST enforcement point: a run that exceeded its budget may not
-    # publish, even if every stage individually completed
     try:
         bg.check("publish")
     except B.BudgetExceeded as e:
@@ -556,12 +562,6 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                        stages=stages, budget=bg.report(),
                        checker={"status": "VERIFIED_BUT_UNPUBLISHED"},
                        properties=crec.properties.as_dict())
-    # The CERTIFIED statuses and the independently_verified property require
-    # that the checking method the route depends on actually RAN. For identity
-    # that includes the independent AGGREGATION cross-check; above its
-    # enumeration cap producer and checker share one aggregate
-    # implementation, so a common-mode fault is undetectable and the complete
-    # status must not be claimed.
     _agg = (meta or {}).get("independent_aggregation_checked")
     _agg_required = (crec.kind == "identity")
     _agg_ok = (not _agg_required) or bool(_agg)
@@ -591,17 +591,10 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
             properties=crec.properties.as_dict())
     crec.properties.set("independently_verified")
     crec.properties.set("publication_contract_met")
-    # publish exactly the REQUESTED rows plus the restored evidence; the
-    # identity solver computes every marginal and its checker validated the
-    # complete schema, but the API's answer is the request
     pub = {v: pub[v] for v in sorted(pub) if v in queries or v in evidence}
-    # §15: the research label requires an ACTUAL transformation -- a
-    # nontrivial cell merge, a certified deletion or a collective
-    # computation -- not merely region grouping followed by exact elimination
     _claimed = (getattr(crec, "parsed_program", None) or {}).get("research") or {}
     _research = (meta or {}).get("verified_research") or {}
     if crec.kind != "identity":
-        # the record's claim must agree with what the checker VERIFIED
         for _k in ("cells_merged_regions", "deleted_states", "collective"):
             if _claimed.get(_k) != _research.get(_k):
                 return Outcome(
@@ -623,13 +616,10 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                             "evaluator, so it does not qualify as a research "
                             "route")
     out.plan["research"] = _research
+    out.plan["identity"] = getattr(crec, "identity_key", None)
     if exec_meta:
         out.plan["executed"] = {k: v for k, v in exec_meta.items()
                                 if k not in ("lattice",)}
-    # COMPLETE invocation cost: discovery of every candidate (measured where
-    # measured, forecast where forecast), the selected route's execution and
-    # check, serialization. The selection used only the remaining cost of the
-    # loaded programs; sunk discovery never disappears from this record.
     out.plan["complete_cost"] = _complete_cost(out.prices, rejected, exec_meta,
                                                meta, stages)
     return Outcome(status=status, intervals=pub, plan=out.plan,
@@ -639,15 +629,46 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                    properties=crec.properties.as_dict())
 
 
-# ---------------------------------------------------------------------------
-# SUPERSEDED (r15). The two helpers below were the r7-r14 regional executor.
-# Execution now runs the PERSISTED PROGRAM through routes.execute with the
-# sparse exact junction tree (sparse_jt), and checking runs program_check with
-# the dense engine (dense_be). Neither helper is on any production path; they
-# are retained because the r8-r11 regression controls that documented their
-# defects still exercise them directly, and those records are preserved
-# rather than rewritten.
-# ---------------------------------------------------------------------------
+def loaded_admission(rec, price):
+    """The ONE admission rule a bound loaded record must pass before it may be
+    selected or replayed: registered roles for its kind and an eligible
+    re-derived price (bounded counters all known, within every declared cap,
+    forecast metered entries within the shared cap). Returns the named reason
+    or None. The pipeline applies it at selection; mdi.replay applies it after
+    binding, so a fresh process cannot run what the pipeline would refuse."""
+    if not price.eligible:
+        return price.ineligible_reason or "the re-derived price is ineligible"
+    miss = rec.properties.may_execute_as_certified_route()
+    miss = [x for x in miss if x not in ("selected", "complete_cost_priced")]
+    if miss:
+        return ("missing %s; an unregistered executor or checker makes the route "
+                "ineligible" % miss)
+    if not rec.properties.complete_cost_priced:
+        return "the record was never completely priced"
+    return None
+
+
+def bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes, bg=None):
+    """The single BINDING of a loaded record: hashes, scopes, preprocessing
+    proof, roles, no completion flags, program/kind agreement, requested set,
+    and a RE-DERIVED price on the saved order that must equal the recorded
+    counters. Used by the pipeline after read-back and by mdi.replay."""
+    back.bind_check(mh, eh, qh, restricted=r, preprocess_identity=simp.identity(),
+                    max_precision=4096)
+    if getattr(back, "parsed_program", None) is None:
+        raise PT.PlanError("a %s plan reloaded without a program" % back.kind)
+    if sorted(back.parsed_program["queries"]) != sorted(queries):
+        raise PT.PlanError("the reloaded program's requested set differs from "
+                           "the current request")
+    rprice = _reprice_loaded(back, r, queries, nq, simp, cap_bytes, bg=bg)
+    bad = _price_disagrees(back.cost_counters, rprice)
+    if bad:
+        raise PT.PlanError("the recorded cost counters do not match the price "
+                           "re-derived from the loaded program on its SAVED "
+                           "order: %s" % bad)
+    back.identity_key = (back.storage_schedule or {}).get("identity")
+    return rprice
+
 
 def _producer_reduced_contract(r, regions, coarse, rds, queries,
                                deadline=None, budget=None):
@@ -975,7 +996,7 @@ def _resolve_role(ref):
     return getattr(importlib.import_module(mod), fn)
 
 
-def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes):
+def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
     """Re-derive a loaded record's price FROM ITS PROGRAM: rebuild the lifted
     models from the witness and the residual from the collective record, then
     price the schedule that will run. Discovery's live price is not consulted."""
@@ -998,7 +1019,14 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes):
         final, _res, _can = CR.rebuild_residual(marked, coll, A.Ctx(coll["precision"]))
         coll = dict(coll)
     cons = int((rec.cost_counters.get("construction_ops") or {}).get("value") or 0)
-    price, _order = PR.price_program(rec.name, rec.kind, final, scales, coll, nq, cons)
+    # price EXACTLY the saved order, under the shared budget
+    price, _order = PR.price_program(rec.name, rec.kind, final, scales, coll, nq, cons,
+                                     order=prog["order"] or None,
+                                     deadline=(bg.deadline_fn("reprice") if bg else None),
+                                     budget=bg)
+    if _order is not None and prog["order"] and list(_order) != list(prog["order"]):
+        raise PT.PlanError("the re-priced schedule's order %s is not the saved order %s"
+                           % (_order[:6], prog["order"][:6]))
     return price
 
 
@@ -1106,13 +1134,28 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
 
     def _record(kind, name, scales, coll, final, cons, fit_ops=None):
         try:
+            # the schedule is chosen ONCE here (the dry run's order) and saved;
+            # every later price is derived on that saved order
             price, order = PR.price_program(name, kind, final, scales, coll, nq,
-                                            cons, fit_ops=fit_ops)
+                                            cons, fit_ops=fit_ops,
+                                            deadline=deadline, budget=bg)
+        except B.BudgetExceeded as e:
+            if _shared(e):
+                _discover_programs._shared = e
+            rejected.append({"name": name, "reason": "pricing: %s" % e})
+            return
         except Exception as e:
             rejected.append({"name": name, "reason": "pricing failed: %s: %s"
                              % (type(e).__name__, e)})
             return
         prog = RT.program_for(kind, scales, coll, order or [], prec, queries)
+        scales_key = tuple(hashlib.sha256(json.dumps(sc, sort_keys=True).encode()).hexdigest()[:12]
+                           for sc in prog["scales"])
+        if coll is not None:
+            ident, _ikey = CR.canonical_identity(coll, scales_key)
+        else:
+            ident = hashlib.sha256(("regional|" + "|".join(scales_key)).encode()).hexdigest()[:16]
+        ident = "%s-%s" % (kind, ident)
         # the program must PARSE strictly before it is offered
         try:
             PG.validate_program(json.loads(json.dumps(prog)))
@@ -1122,9 +1165,10 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
         alloc = RT.allocations_for(scales, coll)
         storage = {"final_variables": len(final.card),
                    "final_largest_bag": int(price.counters["final_largest_bag"].value),
-                   "levels": len(scales)}
+                   "levels": len(scales), "identity": ident}
         rec = _candidate_record(kind, name, mh, eh, qh, simp, r, prog, alloc,
                                 price, order, prec, storage)
+        rec.identity_key = ident
         records.append((rec, price, {"program": prog}))
         prices.append(price)
 
@@ -1157,17 +1201,19 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
         rejected.append({"name": "collective", "reason": "collective admission failed: "
                          "%s: %s" % (type(e).__name__, e)})
     n_pairs = sum(1 for f in r.factors if len(f.scope) == 2)
-    seen_names = set()
+    seen_names = {}
     for coll, rmk in admitted:
         if bg.remaining() < wall_s * 0.25:
-            rejected.append({"name": coll["evaluator"], "reason": "discovery budget exhausted"})
+            rejected.append({"name": coll["evaluator"],
+                             "reason": "discovery budget exhausted: candidate NOT priced"})
             continue
-        name = coll["evaluator"]
-        if name in seen_names:
-            name = "%s:%s" % (coll["evaluator"], coll["candidate"].kind)
-            if name in seen_names:
-                continue
-        seen_names.add(name)
+        base_name = "%s:%s" % (coll["evaluator"], coll["candidate"].kind)
+        n_prev = seen_names.get(base_name, 0)
+        seen_names[base_name] = n_prev + 1
+        name = base_name if n_prev == 0 else "%s#%d" % (base_name, n_prev + 1)
+        if coll["evaluator"] == "statistic" and n_prev == 0 and \
+                not any(k.startswith("statistic:") for k in seen_names if k != base_name):
+            name = base_name
         for dcl in coll.get("declines", []):
             if dcl not in [x["reason"] for x in rejected]:
                 rejected.append({"name": "collective", "reason": dcl})
@@ -1251,8 +1297,12 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
                                      "reason": "composed route declined: %s: %s"
                                                % (type(e).__name__, e)})
                     continue
+                cseen = {}
                 for coll, rmk in admitted:
-                    cn = cname if coll["evaluator"] == "statistic" else cname + ":" + coll["evaluator"]
+                    cb = cname + ":" + coll["evaluator"] + ":" + coll["candidate"].kind
+                    k_prev = cseen.get(cb, 0)
+                    cseen[cb] = k_prev + 1
+                    cn = cb if k_prev == 0 else "%s#%d" % (cb, k_prev + 1)
                     n_pairs = len(final.factors)
                     _record("composed", cn, scales, coll, rmk, cons,
                             fit_ops=8 * (n_pairs + len(final.card)) * 4)

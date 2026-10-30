@@ -49,11 +49,16 @@ class CostRecord:
     REQUIRED = ("producer_upward_ops", "producer_downward_ops", "readout_ops",
                 "checker_ops")
 
+    SUNK = ("construction_ops", "mode_fit_ops")
+
     def total_arithmetic(self):
-        """Sum the arithmetic counters. A MISSING required counter makes the
-        total UNKNOWN, never zero: an absent price is not a cheap price."""
-        keys = self.REQUIRED + ("construction_ops", "statistic_join_ops",
-                                "grid_ops", "mode_fit_ops")
+        """The REMAINING cost: producer execution and independent checking of
+        the loaded program. This is the selection quantity. Already-paid
+        discovery work (construction, mode fitting) is accounted separately in
+        `sunk_arithmetic` and in the complete invocation cost; it is not
+        charged again against a candidate at selection. A MISSING required
+        counter makes the total UNKNOWN, never zero."""
+        keys = self.REQUIRED + ("statistic_join_ops", "grid_ops")
         missing = [k for k in self.REQUIRED if k not in self.counters]
         if missing:
             self.eligible = False
@@ -83,12 +88,28 @@ class CostRecord:
             EXACT if labels == {EXACT} else FORECAST)
         return tot, label
 
+    def sunk_arithmetic(self):
+        """Discovery work already paid for this candidate (measured or forecast)."""
+        tot = 0
+        labels = set()
+        for k in self.SUNK:
+            c = self.counters.get(k)
+            if c is None or c.value is None or c.label == UNKNOWN:
+                continue
+            tot += int(c.value)
+            labels.add(c.label)
+        return tot, ("forecast" if FORECAST in labels or CALIB in labels else EXACT)
+
     def as_dict(self):
         d = {"kind": self.kind, "name": self.name, "eligible": self.eligible,
              "ineligible_reason": self.ineligible_reason,
              "counters": {k: c.as_dict() for k, c in self.counters.items()}}
         tot, lab = self.total_arithmetic()
-        d["total_arithmetic"] = {"value": tot, "label": lab}
+        d["total_arithmetic"] = {"value": tot, "label": lab,
+                                 "convention": "REMAINING execution + checking of the "
+                                               "loaded program; sunk discovery separate"}
+        st, sl = self.sunk_arithmetic()
+        d["sunk_arithmetic"] = {"value": st, "label": sl}
         if self.bytes_producer:
             d["bytes_producer"] = self.bytes_producer.as_dict()
         if self.bytes_checker:
@@ -502,9 +523,11 @@ def compare(records, cap_bytes=None):
                                max(x["bytes_producer"], x["bytes_checker"])))
     return {"ranked": usable, "all": rows,
             "chosen": usable[0] if usable else None,
-            "rule": "lowest total arithmetic among ELIGIBLE routes whose "
-                    "forecast fits the byte cap; a cell-count ratio is never "
-                    "used as the selection criterion"}
+            "rule": "lowest REMAINING arithmetic (execution + independent "
+                    "checking of the loaded program) among ELIGIBLE routes whose "
+                    "forecast fits the byte cap; already-paid discovery and "
+                    "construction are reported separately and never compared as "
+                    "remaining cost; a cell-count ratio is never used"}
 
 
 # ======================= program routes (the executed schedule) =======================
@@ -536,7 +559,8 @@ ALGEBRA_COST = {
 
 
 def dry_run_sparse(tabs, card, real, order, stat_insert=None, rank=1,
-                   support_cap=None, entry_cap=None, only=None):
+                   support_cap=None, entry_cap=None, only=None, deadline=None,
+                   charge=None):
     """Run the PRODUCER's sparse engine on the loaded program's tables with the
     cost-metering algebra: the same control flow (product order, messages,
     readout) with every real primitive charged and every statistic support
@@ -551,8 +575,8 @@ def dry_run_sparse(tabs, card, real, order, stat_insert=None, rank=1,
             lifted.append(SJ.Lazy(t.scope, t.card, lambda key, m=meter: m.one()))
         else:
             lifted.append(SJ.Table(t.scope, {k: meter.one() for k in t.entries}))
-    jt = SJ.SparseJT(lifted, card, meter, entry_cap=entry_cap, order=order).run(
-        stat_insert=stat_insert)
+    jt = SJ.SparseJT(lifted, card, meter, entry_cap=entry_cap, order=order,
+                     deadline=deadline, charge=charge).run(stat_insert=stat_insert)
     for v in (sorted(only) if only is not None else jt.free):
         jt.marginal(v)
     sizes = {}
@@ -562,8 +586,11 @@ def dry_run_sparse(tabs, card, real, order, stat_insert=None, rank=1,
 
 
 def dry_run_dense(tables, card, real, stat_insert=None, rank=1, support_cap=None,
-                  entry_cap=None, only=None):
-    """The CHECKER's dense engine on the same tables with the metering algebra."""
+                  entry_cap=None, only=None, deadline=None, charge=None, readouts=None):
+    """The CHECKER's dense engine on the same tables with the metering algebra.
+    `readouts` lists the owner read per REQUESTED variable (owners repeat: the
+    checker's own event-count readout sums the home belief once per requested
+    variable), so the visited-entry count matches the checker's control flow."""
     from mdi import sparse_jt as SJ, dense_be as DB, factors as FX
     meter = SJ.CostMeter(real, rank=rank, support_cap=support_cap)
     lifted = []
@@ -574,10 +601,12 @@ def dry_run_dense(tables, card, real, stat_insert=None, rank=1, support_cap=None
         else:
             lifted.append((sc, [meter.one() if not _is_zero_entry(x) else meter_zero(meter)
                                 for x in tab]))
-    jt = DB.DenseJT(lifted, card, meter, entry_cap=entry_cap, stat_insert=stat_insert)
+    jt = DB.DenseJT(lifted, card, meter, entry_cap=entry_cap, stat_insert=stat_insert,
+                    deadline=deadline, charge=charge)
     meter.zero = frozenset() if real == "statistic" else False
     jt.run()
-    for v in (sorted(only) if only is not None else jt.plan.free):
+    for v in (list(readouts) if readouts is not None
+              else (sorted(only) if only is not None else jt.plan.free)):
         jt.marginal(v)
     return meter.ops, jt.peak_live_entries, jt.plan.largest_bag_entries, jt
 
@@ -616,7 +645,8 @@ def _dense_tables_for_meter(final_marked, card, meter_one):
 
 
 def price_program(name, kind, final_marked, scales, coll, n_requested,
-                  construction_ops, fit_ops=None):
+                  construction_ops, fit_ops=None, order=None, deadline=None,
+                  budget=None):
     """Price a PROGRAM route from the schedule it will actually run, by DRY
     RUNNING both engines on the loaded program's tables with a metering
     algebra (sparse_jt.CostMeter).
@@ -632,7 +662,7 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
     is added as counted upper bounds.
     """
     from mdi import sparse_jt as SJ, plan as PP, model as MM, collective as CO
-    from mdi import factors as FX
+    from mdi import factors as FX, dense_be as DB
     rec = CostRecord(kind=kind, name=name)
     card = dict(final_marked.card)
     law = final_marked.law_factors()
@@ -728,49 +758,117 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
                 per_node_extra += (phase_once + nodes - 1) // max(1, nodes)
             trans = nodes * (2 * cand.rank + n_states * 2 * n_pos) + \
                 (neg_pairs * n_states * 4 * n_neg if has_neg else 0)
-    # ---- the two dry runs
+    # ---- the two dry runs, on the SAVED order when one is given; guarded by
+    # the shared deadline and by a PER-CANDIDATE meter with the same entry cap
+    # the program itself must respect (a probe that exceeds it proves the
+    # program unaffordable and refuses the candidate, without consuming the
+    # plan's execution meter for every other candidate). The probe's work is
+    # then charged to the shared `pricing_entries` counter (complete cost).
+    probe_used = {"n": 0}
+    cap_entries = K.CAPS["local_mass_entries"]
+
+    def charge(n):
+        probe_used["n"] += n
+        if probe_used["n"] > cap_entries:
+            raise SJ.SparseError("the pricing probe for this candidate reached %d "
+                                 "metered entries, above the %d cap: the program is "
+                                 "unaffordable" % (probe_used["n"], cap_entries))
+        if budget is not None:
+            budget.charge("pricing_entries", n, "pricing probe")
+    if coll is not None and coll["evaluator"] != "statistic":
+        # one per-variable tilt (positive) / tilt x phase (negative) unary
+        # table joins the law at every lattice node in both engines
+        tabs = tabs + [SJ.Table((v,), {(c,): Fr(1) for c in range(card[v])})
+                       for v in final_marked.free()]
+        _node_unaries = [((v,), [True] * card[v]) for v in final_marked.free()]
+    else:
+        _node_unaries = []
+    probe_exact = True
+    if real == "statistic":
+        # inexpensive bound first: probe exact supports only when the span
+        # bound is small enough for the probe itself to be cheap
+        if int(rec.counters["statistic_support_bound"].value) > 4096:
+            probe_exact = False
     try:
         owners = set(final_marked.owner.values())
-        p_ops, p_live, p_largest, p_sizes, sjt = dry_run_sparse(
-            tabs, card, real, None, stat_insert=stat_insert, rank=rank,
-            support_cap=K.CAPS["local_mass_entries"],
-            entry_cap=K.CAPS["local_mass_entries"], only=owners)
+        readouts = [final_marked.owner[v] for v in final_marked.queries()]
+        if probe_exact:
+            p_ops, p_live, p_largest, p_sizes, sjt = dry_run_sparse(
+                tabs, card, real, order, stat_insert=stat_insert, rank=rank,
+                support_cap=K.CAPS["local_mass_entries"],
+                entry_cap=K.CAPS["local_mass_entries"], only=owners,
+                deadline=deadline, charge=charge)
+        else:
+            # bound-only pricing: run the rational dry run (entries) and scale
+            # every primitive by the support bound (an UPPER bound)
+            p_ops, p_live, p_largest, p_sizes, sjt = dry_run_sparse(
+                tabs, card, "rational", order, only=owners, deadline=deadline,
+                charge=charge)
+            sb = int(rec.counters["statistic_support_bound"].value)
+            p_ops *= 2 * sb * sb
+            p_live *= sb
+            rec.put("support_probe", 0, EXACT, "exact support probe skipped: the "
+                    "span bound %d exceeds the probe threshold; the price scales "
+                    "every primitive by the bound" % sb)
         order = list(sjt.order)
         nroots = len(sjt.roots)
-    except SJ.SparseError as e:
+    except (SJ.SparseError, DB.DenseError) as e:
         rec.put("producer_upward_ops", None, UNKNOWN, "schedule refused: %s" % e)
+        rec.put("pricing_probe_entries", probe_used["n"], CALIB,
+                "metered entries visited by the failed probe (charged)")
         rec.eligible = False
         rec.ineligible_reason = ("the producer's schedule exceeds a declared cap "
                                  "on this program: %s" % e)
         return rec, None
     extra_pos = 0
     extra_pos_c = 0
+    ent_sparse = int(sjt.ops.get("entries_built", 0))
+    ent_pos_sparse = ent_pos_dense = 0
     if coll is not None and real == "complex":
         # the positive marker-mass pass in the INTERVAL algebra, once per
         # positive node, on both engines
         try:
             pi_ops, _l, _lg, _sz, _j = dry_run_sparse(
-                tabs, card, "interval", None, entry_cap=K.CAPS["local_mass_entries"],
-                only=set(final_marked.owner.values()))
+                tabs, card, "interval", order, entry_cap=K.CAPS["local_mass_entries"],
+                only=set(final_marked.owner.values()), deadline=deadline, charge=charge)
             extra_pos = pi_ops * pos_nodes + pos_nodes * (8 + n_states * 4 + n_cells * 6)
+            ent_pos_sparse = int(_j.ops.get("entries_built", 0))
             ci_ops, _l2, _lg2, _j2 = dry_run_dense(
-                _dense_tables_for_meter(final_marked, card, True), card, "interval",
+                _dense_tables_for_meter(final_marked, card, True) + _node_unaries, card, "interval",
                 entry_cap=K.CAPS["local_mass_entries"],
-                only=set(final_marked.owner.values()))
+                only=set(final_marked.owner.values()), deadline=deadline, charge=charge,
+                readouts=[final_marked.owner[v] for v in final_marked.queries()])
             extra_pos_c = ci_ops * pos_nodes + pos_nodes * (8 + n_states * 4 + n_cells * 6)
+            ent_pos_dense = int(_j2._visited)
         except Exception as e:
             rec.put("positive_pass_note", 0, EXACT, "interval dry run refused: %s" % e)
     meter_one = frozenset([(0,) * rank if rank > 1 else 0]) if real == "statistic" else True
     try:
-        c_ops, c_live, c_largest, djt = dry_run_dense(
-            _dense_tables_for_meter(final_marked, card, meter_one), card, real,
-            stat_insert=stat_insert, rank=rank,
-            support_cap=K.CAPS["local_mass_entries"],
-            entry_cap=K.CAPS["local_mass_entries"], only=owners)
+        if probe_exact:
+            c_ops, c_live, c_largest, djt = dry_run_dense(
+                _dense_tables_for_meter(final_marked, card, meter_one)
+                + ([((v,), [meter_one] * card[v]) for v in final_marked.free()]
+                   if _node_unaries else []), card, real,
+                stat_insert=stat_insert, rank=rank,
+                support_cap=K.CAPS["local_mass_entries"],
+                entry_cap=K.CAPS["local_mass_entries"], only=owners,
+                deadline=deadline, charge=charge, readouts=readouts)
+        else:
+            c_ops, c_live, c_largest, djt = dry_run_dense(
+                _dense_tables_for_meter(final_marked, card, True), card, "rational",
+                only=owners, deadline=deadline, charge=charge, readouts=readouts)
+            sb = int(rec.counters["statistic_support_bound"].value)
+            c_ops *= 2 * sb * sb
+            c_live *= sb
+        ent_dense = int(djt._visited)
     except Exception as e:
         c_ops = None
         c_live = c_largest = 0
+        ent_dense = None
         rec.put("checker_schedule_note", 0, EXACT, "dense schedule refused: %s" % e)
+    rec.put("pricing_probe_entries", probe_used["n"], CALIB,
+            "metered entries visited by this candidate's pricing probes (charged "
+            "to the shared pricing counter, not the execution meter)")
     # ---- the executor's OTHER work
     lift = 0
     maps = 0
@@ -802,6 +900,18 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
             per_node_extra = (2 * tot_sup * (1 + n_cells) + 4 * n_cells
                               + n_cells * conv_others + 3 * nroots * conv_others)
             trans = tot_sup * (1 + n_cells)
+    # quadratic-energy construction (the rounding bound per Q attempt), root
+    # integration, normalization (the sharp ratio per state) and structural
+    # map composition are priced explicitly
+    energy = 0
+    if coll is not None and real == "statistic":
+        # the rounding bound is evaluated once per dyadic rung up to the saved
+        # Q (derivable from the record: bit_length(Q) rungs)
+        energy = 4 * sum(card.values()) * rank * max(1, int(coll["Q"]).bit_length())
+    norm = 8 * sum(final_marked.orig_card[v] for v in final_marked.queries())
+    rec.put("energy_bound_ops", energy, UPPER, "rounding-energy bound per Q attempt")
+    rec.put("normalization_ops", norm, UPPER, "sharp marker ratio per requested state")
+    rec.put("structural_map_ops", maps, EXACT, "offset-map composition entries across scales")
     rec.put("producer_schedule_ops", p_ops, UPPER,
             "dry run of the sparse engine on the loaded program with the "
             "metering algebra: both passes and the calibrated readout, exact "
@@ -812,9 +922,10 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
             "and the residual certificate")
     rec.put("producer_downward_ops", 0, EXACT,
             "both passes are inside producer_schedule_ops")
-    rec.put("readout_ops", per_node_extra * nodes + readout, UPPER,
-            "per-node enclosures, marker accumulation and integration, plus "
-            "the original-variable payload readout")
+    rec.put("readout_ops", per_node_extra * nodes + readout + norm + energy, UPPER,
+            "per-node enclosures, marker accumulation and integration, the "
+            "original-variable payload readout, normalization and the energy "
+            "bound")
     rec.put("transcendental_evaluations", trans, UPPER,
             "MPFR exp/log/trig/sqrt enclosures; NOT a Fraction count and not "
             "summed into total_arithmetic")
@@ -843,11 +954,55 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
                 "dry run of the dense engine on the validated min-fill tree")
         rec.put("checker_ops",
                 c_ops * nodes + extra_pos_c + per_node_extra * nodes + chk_local
-                + chk_fit + readout,
+                + chk_fit + readout + norm + energy,
                 UPPER,
                 "dense dry run times nodes, plus the checker's own region "
                 "enumeration, witness proof, deletion bounds, lifted maps, fit "
                 "certificate and payload readout")
+    # ---- the SHARED entry meter the program will actually run under: every
+    # entry either engine visits is charged to local_mass_entries (producer
+    # and checker share one cumulative cap for the whole plan), so a program
+    # whose forecast visits exceed the cap cannot complete and is refused by
+    # price BEFORE it is executed -- a real resource stop is never passed off
+    # as completion, and the executor never starts work the price knows it
+    # cannot finish. The forecast is an UPPER bound: engines charge in blocks
+    # of 64 visited entries, the forecast counts every entry.
+    lift_entries = 0
+    for sc in scales:
+        lift_entries += sum(max(1, len(cr.cells)) for cr in sc.coarse)
+        for pc in sc.projected:
+            lift_entries += sum(len(o) for o in pc.offsets.values()) if hasattr(pc, "offsets") else 0
+    chk_struct = 0
+    for sc in scales:
+        chk_struct += sum(max(1, len(rd.A)) for rd in sc.rds)
+        # the checker's own profile product per crossing group is charged by
+        # its kernel size, which the checker refuses above the kernel cap
+        for cr in sc.coarse:
+            chk_struct += len(cr.aggregation or []) * K.CAPS["aggregated_kernel_entries"]
+    p_entries = lift_entries + ent_sparse * nodes + ent_pos_sparse * (pos_nodes if real == "complex" else 0)
+    if real == "complex":
+        p_entries += neg_nodes          # the conjugate key set, checked once, linear and charged
+    rec.put("producer_metered_entries", p_entries, UPPER,
+            "entries the producer's engine visits (dry run times nodes, plus the "
+            "positive pass and lifting), each charged to the shared meter")
+    if ent_dense is None:
+        rec.put("checker_metered_entries", None, UNKNOWN, "no dense schedule")
+        rec.put("metered_entries_forecast", None, UNKNOWN, "no dense schedule")
+    else:
+        c_entries = chk_struct + ent_dense * nodes + ent_pos_dense * (pos_nodes if real == "complex" else 0)
+        rec.put("checker_metered_entries", c_entries, UPPER,
+                "entries the checker's dense engine visits (dry run times nodes, plus "
+                "the positive pass and its own region masses), charged to the SAME meter")
+        rec.put("metered_entries_forecast", p_entries + c_entries, UPPER,
+                "producer + checker visits against the cumulative local_mass_entries cap")
+        if p_entries + c_entries > K.CAPS["local_mass_entries"] and rec.eligible:
+            rec.eligible = False
+            rec.ineligible_reason = (
+                "the forecast metered entry visits %d (producer %d + checker %d) "
+                "exceed the shared local_mass_entries cap %d: the program would "
+                "stop on the budget it runs under, so it is refused by price"
+                % (p_entries + c_entries, p_entries, c_entries,
+                   K.CAPS["local_mass_entries"]))
     if construction_ops is None:
         rec.put("construction_ops", None, UNKNOWN, "local construction was not measured")
     else:

@@ -309,6 +309,20 @@ def _own_mass_contribution(marked, marg, others, alg):
     return out
 
 
+def _tensor_error(deltas):
+    """sum_k delta_k prod_{j != k} (1 + delta_j): the product-rule error of a
+    tensor of 1-D lattices whose integrand is bounded by 1 (phases) or whose
+    relative errors compound (positive tilts, each >= 1)."""
+    out = Fr(0)
+    for i, d in enumerate(deltas):
+        prod = Fr(1)
+        for j, d2 in enumerate(deltas):
+            if j != i:
+                prod *= (1 + d2)
+        out += d * prod
+    return out
+
+
 def _lattice_points(lat):
     h, T = lat["h"], lat["T"]
     jmax = int(Fr(T) / h)
@@ -426,17 +440,41 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
                 for a in range(nst[v]):
                     counts[v][a][0] += wl * mplus[v][a][0]
                     counts[v][a][1] += wu * mplus[v][a][1]
-        meta["quadrature_tv"] = str(sum((Fr(lats[k]["total_bound"]) for k in pos), Fr(0)))
+        meta["quadrature_tv"] = str(_tensor_error([Fr(lats[k]["total_bound"]) for k in pos]))
         return (Zlo, Zhi), {v: [tuple(r) for r in rows] for v, rows in counts.items()}, meta
 
     # ---- the negative grid: tensor Fourier error on the normalized average
     neg_pts = [_lattice_points(lats[k]) for k in neg]
     neg_nodes = list(itertools.product(*neg_pts))
     meta["negative_nodes_per_positive"] = len(neg_nodes)
+    # TENSOR ERROR LEMMA (finite Gaussian-grid product rule). Each negative
+    # coordinate's lattice replaces its own expectation by a weighted sum whose
+    # error on a unit-modulus integrand is at most delta_k, and whose weights
+    # sum to at most 1 + delta_k. Applying the coordinates in turn,
+    #   |E[prod] - sum prod| <= sum_k delta_k * prod_{j != k} (1 + delta_j).
+    # The checker (program_check.own_gf_reference) evaluates the same lemma.
+    dl = [Fr(lats[k]["total_bound"]) for k in neg]
     delta = Fr(0)
-    for k in neg:
-        delta += Fr(lats[k]["total_bound"])
-    # conjugate pairs: node z and -z (componentwise) have conjugate contributions
+    for i, d in enumerate(dl):
+        prod = Fr(1)
+        for j, d2 in enumerate(dl):
+            if j != i:
+                prod *= (1 + d2)
+        delta += d * prod
+    # conjugate pairs: node z and -z (componentwise) have conjugate
+    # contributions. The key set is built ONCE and checked symmetric with
+    # linear work (charged below), then paired.
+    keyset = set(neg_nodes)
+    if charge is not None:
+        charge(len(neg_nodes))
+    symmetric = True
+    for nd in neg_nodes:
+        if tuple(-z for z in nd) not in keyset:
+            symmetric = False
+            break
+    if not symmetric:
+        raise Declined("the negative frequency key set is not symmetric; conjugate "
+                       "pairing is impossible")
     pairs = []
     seen = set()
     for nd in neg_nodes:
@@ -448,8 +486,7 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
         seen.add(conj)
         pairs.append((nd, conj != key))
     meta["conjugate_pairs"] = len(pairs)
-    meta["negative_key_set_symmetric"] = all(tuple(-z for z in nd) in set(neg_nodes)
-                                             for nd in neg_nodes)
+    meta["negative_key_set_symmetric"] = True
     # rank the positive nodes by their total positive mass (upper), largest first
     order_idx = sorted(range(len(mass)), key=lambda i: -(mass[i][0][1] * mass[i][3][1]))
     # accumulators per event: processed X interval, unprocessed allowance [0, w m+]
@@ -618,7 +655,7 @@ def gf_evaluate(marked, cand, ctx, deltas, engine="sparse", deadline=None,
                  "imaginary_enclosure": (str(Imlo), str(Imhi)),
                  "negative_exponent_Ymax": str(sum((cand.gammas[k] * _features_R(cand, k) ** 2 / 2
                                                     for k in neg), Fr(0))),
-                 "quadrature_tv": str(sum((Fr(lats[k]["total_bound"]) for k in pos), Fr(0))),
+                 "quadrature_tv": str(_tensor_error([Fr(lats[k]["total_bound"]) for k in pos])),
                  "ratio_rows": {str(v): [[str(a), str(b)] for a, b in rows[v]] for v in rows}})
     return (Zlo, Zhi), counts, meta
 

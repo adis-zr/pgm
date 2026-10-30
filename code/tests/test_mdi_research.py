@@ -2064,7 +2064,8 @@ def test_H_categorical_mode_fitting_is_implemented():
         return
     assert info.get("categorical"), info
     for cand in cands:
-        assert cand.kind == "categorical_rank1"
+        # the categorical menu now also offers combined and masked candidates
+        assert cand.kind.startswith("categorical_"), cand.kind
         for v, fv in cand.features[0].items():
             assert len(fv) == r.card[v], (v, len(fv), r.card[v])
 

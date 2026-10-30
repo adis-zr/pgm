@@ -19,7 +19,9 @@ def _identity_checker(model, evidence, iv, eps, deadline_s=None,
     # forward the TYPED result, including whether the independent aggregation
     # check actually ran; the pipeline gates its status on it
     return S.verify_publication(model, evidence, iv, eps=eps,
-                                deadline_s=deadline_s, cap_bytes=cap_bytes)
+                                deadline_s=deadline_s, cap_bytes=cap_bytes,
+                                checker_precision=(program["checker"]["precision"]
+                                                   if program is not None else None))
 
 
 # ---- pipeline executors ----
@@ -62,7 +64,9 @@ def pipeline_identity_checker(model, evidence, iv, eps, deadline_s=None,
                                   "this checker does not run"
                                   % program["checker"]["strategy"]}], None
     return S.verify_publication(model, evidence, iv, eps=eps,
-                                deadline_s=deadline_s, cap_bytes=cap_bytes)
+                                deadline_s=deadline_s, cap_bytes=cap_bytes,
+                                checker_precision=(program["checker"]["precision"]
+                                                   if program is not None else None))
 
 
 def pipeline_program_executor(ctx):

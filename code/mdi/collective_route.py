@@ -416,12 +416,14 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
                 continue
             want_pos = [k for k in range(cand.rank) if cand.signs[k] > 0]
             want_neg = [k for k in range(cand.rank) if cand.signs[k] < 0]
-            if ev == "gaussian" and (want_neg or cand.rank != 1):
-                errors.append("%s: Gaussian needs a single positive mode (signs %s)"
+            # pure-sign MULTI-mode integration is the Gaussian (all positive)
+            # or Fourier (all negative) special case of the tensor rule
+            if ev == "gaussian" and want_neg:
+                errors.append("%s: Gaussian needs all-positive modes (signs %s)"
                               % (cand.kind, cand.signs))
                 continue
-            if ev == "fourier" and (want_pos or cand.rank != 1):
-                errors.append("%s: Fourier needs a single negative mode (signs %s)"
+            if ev == "fourier" and want_pos:
+                errors.append("%s: Fourier needs all-negative modes (signs %s)"
                               % (cand.kind, cand.signs))
                 continue
             if ev == "mixed" and not (want_pos and want_neg):
@@ -433,12 +435,17 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
             except Declined as e:
                 errors.append("%s/%s: %s" % (cand.kind, ev, e))
                 continue
-            qtv = sum((Fr(lats[k]["total_bound"]) for k in want_pos), Fr(0))
+            from mdi.collective_jt import _tensor_error
+            qtv = _tensor_error([Fr(lats[k]["total_bound"]) for k in want_pos])
             rec = dict(base, evaluator=ev, Q=None,
                        delta=(deltas[0] if cand.rank == 1 else None),
                        deltas=[str(d) for d in deltas], rounding_tv=Fr(0),
                        quadrature_tv=qtv, nodes=nodes, forecast=fmeta,
-                       negative_deltas=[str(deltas[k]) for k in want_neg])
+                       negative_deltas=[str(deltas[k]) for k in want_neg],
+                       lattices=[{"T": str(Fr(lat["T"])), "h": str(Fr(lat["h"])),
+                                  "nodes": int(lat["nodes"]),
+                                  "total_bound": str(Fr(lat["total_bound"]))}
+                                 for lat in lats])
             key = (ev, cand.kind, cand.rank)
             if key not in seen_keys:
                 seen_keys.add(key)
@@ -448,6 +455,39 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
     for rec, _ in out:
         rec["declines"] = errors[:8]
     return out
+
+
+def canonical_identity(coll, scales_key=()):
+    """A stable identity of the REPRESENTED LAW / PROGRAM: evaluator, exact
+    mode parameters canonicalized up to mode permutation and the sign flip of
+    a feature vector (f -> -f leaves S^2 invariant), Q or lattice deltas,
+    retained factors, dropped pairs, and the coarsening witness key. Two
+    candidates with the same identity represent the same law and are
+    duplicates by this EXPLICIT rule; different generator labels are not."""
+    import hashlib
+    cand = coll["candidate"]
+    modes = []
+    for k in range(cand.rank):
+        items = sorted((int(v), tuple(str(Fr(x)) for x in f)) for v, f in cand.features[k].items())
+        # sign-flip canonical form: the first nonzero feature entry positive
+        flip = False
+        for _v, f in items:
+            nz = next((Fr(x) for x in f if Fr(x) != 0), None)
+            if nz is not None:
+                flip = nz < 0
+                break
+        if flip:
+            items = [(v, tuple(str(-Fr(x)) for x in f)) for v, f in items]
+        modes.append((int(cand.signs[k]), str(Fr(cand.gammas[k])), tuple(items)))
+    modes.sort()
+    key = {"evaluator": coll["evaluator"], "modes": [list(m[:2]) + [[list(x) for x in m[2]]] for m in modes],
+           "Q": coll.get("Q"), "deltas": [str(Fr(d)) for d in (coll.get("deltas") or [])],
+           "kept": sorted(int(x) for x in coll["kept_factors"]),
+           "dropped": sorted([int(a), int(b)] for a, b in coll["dropped_pairs"]),
+           "scales": list(scales_key)}
+    import json
+    txt = json.dumps(key, sort_keys=True)
+    return hashlib.sha256(txt.encode()).hexdigest()[:16], key
 
 
 def total_radius(coll) -> Fr:
@@ -497,6 +537,9 @@ def rebuild_residual(marked: MK.Marked, coll, ctx: A.Ctx):
             lat = lattice_for(cand, k, Fr(deltas[k]))
             if cand.signs[k] > 0:
                 qtv += Fr(lat["total_bound"])
+        from mdi.collective_jt import _tensor_error
+        qtv = _tensor_error([Fr(lattice_for(cand, k, Fr(deltas[k]))["total_bound"])
+                             for k in range(cand.rank) if cand.signs[k] > 0])
         if qtv > Fr(coll["quadrature_tv"]):
             raise Declined("the recomputed positive lattice bound %s exceeds the "
                            "recorded %s" % (qtv, coll["quadrature_tv"]))

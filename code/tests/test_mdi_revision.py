@@ -45,6 +45,13 @@ def _contains(pub, pt):
                for v in pub for s in range(len(pub[v])))
 
 
+def _plan_file(d, res, name):
+    """Plan files are named by the candidate's STABLE IDENTITY, not its
+    generator label; look the file up through the pipeline's price list."""
+    p = next(x for x in res.prices if x["name"] == name)
+    return os.path.join(d, p["identity"] + ".plan.json")
+
+
 def _replay(mp, plan, timeout=300):
     env = dict(os.environ)
     env["PYTHONPATH"] = HERE
@@ -158,7 +165,8 @@ def test_identity_program_governs_solve_and_replays_fresh():
     d = tempfile.mkdtemp()
     res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30, plan_dir=d)
     assert res.plan["chosen"] == "identity"
-    rec = PT.PlanRecord.from_json(open(os.path.join(d, "identity.plan.json")).read())
+    ident_file = _plan_file(d, res, "identity")
+    rec = PT.PlanRecord.from_json(open(ident_file).read())
     prog = rec.parsed_program
     assert prog["kind"] == "identity" and prog["order"] and prog["arithmetic"]["mode"] == "P"
     sub = {"order": prog["order"], "precision": prog["precision"],
@@ -172,7 +180,7 @@ def test_identity_program_governs_solve_and_replays_fresh():
     assert S.solve(m, {}, eps=Fr(1, 100), run_checker=False, program=bad)["outcome"] == "NUMERICAL_REFUSAL"
     low = dict(sub, precision=8)
     assert S.solve(m, {}, eps=Fr(1, 100), run_checker=False, program=low)["outcome"] == "NUMERICAL_REFUSAL"
-    rep = _replay(mp, os.path.join(d, "identity.plan.json"))
+    rep = _replay(mp, ident_file)
     assert rep["status"] == "REPLAY_VERIFIED", rep
 
 
@@ -193,12 +201,12 @@ def test_loaded_record_roles_and_costs_are_bound():
     rr = M.Restricted(model=m, evidence={}, factors=simp.factors, free=list(simp.free),
                       card=dict(simp.card), constant=r.constant, impossible_factor=None)
     for p in res.prices:
-        rec = PT.PlanRecord.from_json(open(os.path.join(d, p["name"].replace(":", "_") + ".plan.json")).read())
+        rec = PT.PlanRecord.from_json(open(os.path.join(d, p["identity"] + ".plan.json")).read())
         price = PLN._reprice_loaded(rec, rr, set(rr.free), sum(rr.card[v] for v in rr.free), simp, 1 << 30)
         assert PLN._price_disagrees(rec.cost_counters, price) is None, p["name"]
     assert "regional:ascending_id@64" == res.plan["chosen"]
     # a record whose recorded counters disagree with its program is refused
-    base = json.load(open(os.path.join(d, "regional_ascending_id@64.plan.json")))
+    base = json.load(open(_plan_file(d, res, "regional:ascending_id@64")))
     bad = copy.deepcopy(base)
     bad["cost_counters"]["producer_schedule_ops"]["value"] = 1
     rec = PT.PlanRecord.from_json(json.dumps(bad))
@@ -216,8 +224,8 @@ def test_persisted_claims_of_completion_do_not_bind():
     txt, n, NB, BS = ring_of_blocks()
     m = M.read_uai(w(txt))
     d = tempfile.mkdtemp()
-    PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30, plan_dir=d)
-    base = json.load(open(os.path.join(d, "identity.plan.json")))
+    res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30, plan_dir=d)
+    base = json.load(open(_plan_file(d, res, "identity")))
     for flag in ("selected", "producer_complete", "independently_verified"):
         bad = copy.deepcopy(base)
         bad["properties"]["selected"] = True
@@ -387,7 +395,8 @@ def test_menu_proposes_block_combined_and_masked_modes_and_coarse_Q():
     kinds = {c.kind for c in cands}
     assert "block_rank1" in kinds and "lowrank_combined" in kinds
     assert any(set(c.signs) == {1, -1} for c in cands), "a mixed-sign combined candidate"
-    assert any(k.endswith("_mask1") for k in kinds), "the residual-mask search ran"
+    assert any(k.endswith("_forest") or k.endswith("_augmented") for k in kinds), \
+        "the interaction-weighted forest / width-capped augmentation masks ran"
     q = set(r.free)
     Z, pt = O.exact_all_marginals(r)
     adm = CR.admit(MK.Marked.from_restricted(r, q), A.Ctx(96))
@@ -427,6 +436,12 @@ def test_mixed_gaussian_fourier_program_executes_and_is_rechecked():
     adm = CR.admit(MK.Marked.from_restricted(r, q), A.Ctx(96))
     mixed = [x for x in adm if x[0]["evaluator"] == "mixed"]
     assert mixed, [c["evaluator"] for c, _ in adm]
+    # the smallest mixed tensor lattice (every mixed candidate is offered; the
+    # rank-3 block candidate needs 257 x 769 x 769 nodes). This is the UNGUARDED
+    # component demonstration preserved from r16: it runs RT.execute without
+    # the shared budget and takes minutes; acceptance under the budget is the
+    # matrix's F6 row, which is BLOCKED (see R17_INTEGRATED_REVISION.md §6)
+    mixed.sort(key=lambda x: x[0]["forecast"]["tensor_nodes"])
     coll, rmk = mixed[0]
     assert set(coll["candidate"].signs) == {1, -1}
     assert Fr(coll["forecast"]["L_lower"]) > 0 and coll["negative_deltas"]
