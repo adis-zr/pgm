@@ -32,6 +32,7 @@ class Budget:
     """
 
     def __init__(self, wall_s, limits=None, rss_fn=None, rss_limit=None):
+        self.progress = None          # progress(phase, info), set by the owner
         self.t0 = time.monotonic()
         self.wall_s = float(wall_s)
         self.limits = dict(limits or {})
@@ -57,6 +58,12 @@ class Budget:
         """The single deadline and memory test. Call inside interior loops."""
         self._checks += 1
         el = self.elapsed()
+        if self.progress is not None and (self._checks & 0x3F) == 0:
+            # durable progress from INSIDE long loops (§14): the caller's
+            # hook throttles its own emission
+            self.progress(where or self.phase,
+                          "checks=%d used=%s" % (self._checks,
+                                                 {k: v for k, v in self.used.items()}))
         if el > self.wall_s:
             self.stops.append({"kind": "wall", "used": el,
                                "limit": self.wall_s, "where": where or self.phase})

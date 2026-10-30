@@ -3,6 +3,9 @@
 Spec 5.6: the final contraction computes ORIGINAL-variable outputs directly
 from the markers, not by independently approximating every coarse-cell marginal.
 """
+# SUPERSEDED (r15): not on any pipeline path; the regional route executes its persisted program through routes.execute and the sparse junction tree.
+# Retained for the direct controls that document its history.
+
 from __future__ import annotations
 import sys
 sys.set_int_max_str_digits(0)

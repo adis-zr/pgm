@@ -8,6 +8,9 @@ bounded observables g = N/M, and the transformation errors ADD.
 This sequence does not require the coarsening approximation to remain valid
 under a Gaussian tilt: coarsening is not reapplied at tilted nodes.
 """
+# SUPERSEDED (r15): not on any pipeline path; the composed route is routes.py + collective_route.py (admission on a Marked model) executed by collective_jt on the persisted program.
+# Retained for the direct controls that document its history.
+
 from __future__ import annotations
 import sys
 sys.set_int_max_str_digits(0)

@@ -576,15 +576,41 @@ def _verify_zero_support(r, deadline=None):
         if not alive:
             return True, ("variable %d has no supported state in any unary "
                           "factor" % v)
-    # (c) bounded exact enumeration of the support
+    # (c) a COMPLETED Boolean support contraction (§7.2): OR/AND elimination
+    # over the factor supports on the checker's own sparse junction tree. It
+    # costs elimination work rather than enumeration, and it is a complete
+    # proof either way: a False total means NO assignment survives; a True
+    # total exhibits positive support (the model is NOT impossible).
     joint = 1
     for v in sorted(r.card):
         joint *= r.card[v]
-        if joint > _K.CAPS["region_tuple_assignments"]:
+    if joint > _K.CAPS["region_tuple_assignments"]:
+        try:
+            from mdi import sparse_jt as _SJ
+            tabs = []
+            touched = {v for f in r.factors for v in f.scope}
+            for f in r.factors:
+                t = _SJ.table_from_factor(f, deadline=deadline)
+                tabs.append(_SJ.Table(t.scope, {k: True for k in t.entries}))
+            for v in sorted(r.card):
+                if v not in touched:
+                    tabs.append(_SJ.Table((v,), {(c,): True
+                                                 for c in range(r.card[v])}))
+            jt = _SJ.SparseJT(tabs, r.card, _SJ.Boolean, deadline=deadline,
+                              entry_cap=_K.CAPS["checker_contraction_space"]
+                              ).run(downward=False)
+            alive = jt.total()
+            if alive is None or not alive:
+                return True, ("completed Boolean support contraction over %d "
+                              "variables found no surviving assignment"
+                              % len(r.card))
+            return False, ("completed Boolean support contraction exhibits a "
+                           "surviving assignment, so the model is NOT impossible")
+        except _SJ.SparseError as e:
             return False, ("the free joint space exceeds the %d-assignment "
-                           "independent-enumeration cap, and no structural "
-                           "witness applies"
-                           % _K.CAPS["region_tuple_assignments"])
+                           "enumeration cap and the Boolean support "
+                           "contraction refused (%s); no structural witness "
+                           "applies" % (_K.CAPS["region_tuple_assignments"], e))
     order = sorted(r.card)
     seen = 0
     for combo in _it.product(*[range(r.card[v]) for v in order]):
@@ -878,6 +904,42 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
                 _cnt[(vv, a[vv])] = _cnt.get((vv, a[vv]), Fr(0)) + wt
         if _Z > 0:
             _indep = (_Z, _cnt)
+    _indep_scope = ("direct exact enumeration of every free assignment"
+                    if _indep is not None else None)
+    if _indep is None:
+        # ABOVE the enumeration cap: a STRUCTURAL second implementation. The
+        # sparse exact junction tree (sparse_jt) shares no aggregation code
+        # with C.Engine -- different data layout, schedule construction and
+        # arithmetic (exact rationals) -- so its marginals are an independent
+        # recomputation at elimination cost rather than enumeration cost. It
+        # is bounded by the declared entry and bit caps; when either refuses
+        # the independent check is reported as NOT RUN, never as a pass.
+        try:
+            from mdi import sparse_jt as _SJ
+            _tabs = [_SJ.table_from_factor(f, deadline=dl) for f in r.factors]
+            _touched = {v for f in r.factors for v in f.scope}
+            for v in r.free:
+                if v not in _touched:
+                    _tabs.append(_SJ.Table((v,), {(c,): Fr(1)
+                                                   for c in range(r.card[v])}))
+            _Z2, _mg, _jt = _SJ.all_marginals(
+                _tabs, r.card, deadline=dl,
+                entry_cap=K.CAPS["checker_contraction_space"])
+            _cnt2 = {}
+            for v in r.free:
+                for a in range(r.card[v]):
+                    if _mg[v][a] != 0:
+                        _cnt2[(v, a)] = _mg[v][a]
+            _indep = (_Z2, _cnt2)
+            _indep_scope = ("sparse exact junction tree (a second aggregation "
+                            "implementation), %d entries built, order %s"
+                            % (_jt.ops["entries_built"], _jt.order[:8]))
+        except (_SJ.SparseError, A.NumericalRefusal):
+            _indep = None
+        except Exception as _e:        # a refusal of the independent path
+            if isinstance(_e, (Deadline, MemoryStop)):
+                raise
+            _indep = None
 
     fails, nchk = [], 0
     for v in r.free:
@@ -954,10 +1016,10 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog):
             "borrows_producer_values": False,
             "independent_aggregation_checked": _indep is not None,
             "independent_aggregation_scope":
-                ("direct exact enumeration of every free assignment"
-                 if _indep is not None else
+                (_indep_scope if _indep is not None else
                  "NOT RUN: the free joint space exceeds the declared "
-                 "enumeration cap, so producer and checker share the same "
+                 "enumeration cap AND the sparse exact junction tree refused "
+                 "(entry or bit cap), so producer and checker share the same "
                  "aggregate implementation and a common-mode aggregation "
                  "fault would not be detected")}
     del eng

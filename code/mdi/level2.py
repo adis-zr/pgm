@@ -10,6 +10,9 @@ A level-one surrogate comparison does NOT satisfy this obligation: the parent
 assignment space is enumerated and the child marked factor is substituted inside
 it.
 """
+# SUPERSEDED (r15): not on any pipeline path; the second scale is marked.coarsen applied to the level-one lifted model (routes.build_scales).
+# Retained for the direct controls that document its history.
+
 from __future__ import annotations
 import sys
 sys.set_int_max_str_digits(0)

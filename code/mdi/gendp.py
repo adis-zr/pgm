@@ -10,6 +10,9 @@ assignment, accumulated statistic), so joining two children convolves their
 DISJOINT forgotten statistics exactly, with no second rounding. The signed
 quadratic exponential is applied only at the root.
 """
+# SUPERSEDED (r15): not on any pipeline path; the general-residual statistic DP is collective_jt.statistic_evaluate over sparse_jt / dense_be with the statistic algebra.
+# Retained for the direct controls that document its history.
+
 from __future__ import annotations
 import sys
 sys.set_int_max_str_digits(0)

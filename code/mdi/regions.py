@@ -128,23 +128,61 @@ PARTITION_MODES = ["ascending_id", "descending_degree", "interaction", "singleto
 
 
 def propose_partitions(free, card, factors, cap_assign=None):
-    """At most four deterministic partition candidates (spec cap)."""
+    """At most `partition_proposals_per_level` deterministic partition
+    candidates (spec cap), drawn from the growth modes at TWO region scales.
+
+    Growing every region to the full joint-state cap swallows a small model
+    into ONE region: the 12-variable ring became a single 4,096-state region
+    with one cell and no crossing factor, so no coarsening, no second scale
+    and no composed route was ever offered. A region scale near the square
+    root of the joint cap keeps crossing structure. Proposals are ranked so
+    that genuinely multi-region partitions come first (fewer boundary states
+    preferred) and the singleton partition last, then truncated to the cap.
+    """
     cap_assign = cap_assign or K.CAPS["region_tuple_assignments"]
     adj = factor_adjacency(free, factors)
-    out = []
-    for mode in PARTITION_MODES[:K.CAPS["partition_proposals_per_level"]]:
-        if mode == "singleton":
-            regs = tuple((v,) for v in sorted(free))
-        else:
-            regs = tuple(grow_partition(free, card, factors, adj, mode, cap_assign))
-        out.append({"mode": mode, "regions": regs})
-    # deduplicate while preserving order
+    import math
+    mid = max(2, 1 << (max(1, cap_assign.bit_length() - 1) // 2))
+    raw = []
+    for cap in (cap_assign, mid):
+        for mode in PARTITION_MODES:
+            if mode == "singleton":
+                continue
+            regs = tuple(grow_partition(free, card, factors, adj, mode, cap))
+            raw.append({"mode": mode if cap == cap_assign else mode + "@%d" % cap,
+                        "regions": regs})
+    raw.append({"mode": "singleton",
+                "regions": tuple((v,) for v in sorted(free))})
     seen, uniq = set(), []
-    for c in out:
+    for c in raw:
         if c["regions"] in seen:
             continue
-        seen.add(c["regions"]); uniq.append(c)
-    return uniq
+        seen.add(c["regions"])
+        uniq.append(c)
+
+    def boundary_states(regs):
+        region_of = {v: i for i, rr in enumerate(regs) for v in rr}
+        tot = 0
+        for i, rr in enumerate(regs):
+            b = set()
+            for f in factors:
+                if len({region_of[v] for v in f.scope if v in region_of}) > 1:
+                    b |= {v for v in f.scope if v in rr}
+            n = 1
+            for v in b:
+                n *= card[v]
+            tot += n
+        return tot
+
+    def rank(c):
+        regs = c["regions"]
+        if c["mode"] == "singleton":
+            return (2, 0, 0)
+        if len(regs) <= 1:
+            return (1, 0, 0)
+        return (0, boundary_states(regs), len(regs))
+    uniq.sort(key=rank)
+    return uniq[:K.CAPS["partition_proposals_per_level"]]
 
 
 # ======================= 5.2 local masses and marks =======================

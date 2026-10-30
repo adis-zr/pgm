@@ -22,34 +22,6 @@ def _identity_checker(model, evidence, iv, eps, deadline_s=None,
                                 deadline_s=deadline_s, cap_bytes=cap_bytes)
 
 
-def _regional_executor(restricted, regions, coarse, rds, queries, **kw):
-    from mdi import coarse as CZ
-    return CZ.solve_coarse_with_markers(
-        restricted.free, restricted.card, restricted.factors, regions, coarse,
-        rds, queries, **kw)
-
-
-def _statistic_executor(free, card, residual_unary, residual_pairs,
-                        kept_factors, cand, Q, queries, **kw):
-    from mdi import collective as CO
-    acc, marks, kq = CO.statistic_dp(free, card, residual_unary, residual_pairs,
-                                     kept_factors, cand, Q, queries, **kw)
-    return acc, marks, kq
-
-
-def _general_statistic_executor(plan, factors, card, cand, Q, queries, ctx,
-                                **kw):
-    from mdi import gendp as G
-    return G.run(plan, factors, card, cand, Q, queries, ctx, **kw)
-
-
-def _gaussian_executor(free, card, residual_unary, cand, queries, ctx, delta,
-                       **kw):
-    from mdi import collective as CO
-    return CO.gaussian_evaluate(free, card, residual_unary, cand, queries, ctx,
-                                delta, **kw)
-
-
 # ---- pipeline executors ----
 # The public pipeline must INVOKE the executor bound by the validated selected
 # plan. It previously looked one up via dispatch() and then branched on
@@ -70,101 +42,62 @@ def pipeline_identity_executor(ctx):
     return res["intervals"]
 
 
-def pipeline_regional_executor(ctx):
-    return ctx["regional_execute"](ctx["restricted"], ctx["payload"],
-                                   ctx["queries"], ctx["eps"], ctx["budget"])
-
-
-def pipeline_composed_executor(ctx):
-    """Evaluate the composed law AFTER selection, from the bounded admission
-    computed during discovery. Discovery used to run the whole inference."""
-    from mdi import composed as CM, arith as A
-    adm = ctx["payload"].get("composed_admission")
-    if adm is None:
+def pipeline_program_executor(ctx):
+    """Execute the PERSISTED program of the selected plan. The context carries
+    the original restricted model, the requested variables, the parsed
+    program read back from disk, and the shared budget -- and nothing from
+    discovery."""
+    from mdi import routes as RT
+    prog = ctx["program"]
+    if prog is None:
+        raise PT.ExecutorRefusal("RESOURCE_STOP", "the selected plan carries "
+                                 "no program block")
+    bg = ctx["budget"]
+    from mdi import budget as B
+    try:
+        rows, meta = RT.execute(prog, ctx["restricted"], ctx["queries"],
+                                deadline=bg.deadline_fn("execute:" + prog["kind"]),
+                                budget=bg)
+    except B.BudgetExceeded:
+        raise
+    except Exception as e:
+        # any refusal of the program's own construction (a witness that
+        # violates the marker identity, a cap, a declined residual) is a
+        # typed NUMERICAL refusal of this plan, never a crash
         raise PT.ExecutorRefusal("NUMERICAL_REFUSAL",
-                                 "the composed admission record is absent")
-    pay = ctx["payload"]
-    out, meta = CM.run(ctx["restricted"], pay["regions"], pay["coarse"],
-                       pay["rds"], ctx["queries"], A.Ctx(160), ctx["eps"],
-                       admission=adm)
-    pay["composed_meta"] = {**pay.get("composed_meta", {}), **meta}
-    return out
+                                 "program execution refused: %s: %s"
+                                 % (type(e).__name__, e))
+    ctx["meta"] = meta
+    return rows
+
+
+def _program_executor(restricted, queries, program, **kw):
+    from mdi import routes as RT
+    return RT.execute(program, restricted, queries, **kw)
+
+
+def _program_checker(restricted, queries, program, published, eps, **kw):
+    from mdi import program_check as PC
+    return PC.verify_program(restricted, queries, program, published, eps, **kw)
 
 
 PT.register_pipeline_executor("identity", pipeline_identity_executor)
-PT.register_pipeline_executor("regional", pipeline_regional_executor)
-PT.register_pipeline_executor("composed", pipeline_composed_executor)
+for _k in ("regional", "composed", "statistic", "gaussian", "fourier"):
+    PT.register_pipeline_executor(_k, pipeline_program_executor)
 
 # ---- what exists ----
 PT.register_executor("identity", _identity_executor)
 PT.register_checker("identity", _identity_checker)
 
-def _regional_checker(restricted, regions, coarse, rds, queries, published,
-                      t_level, eps, **kw):
-    from mdi import regional_check as RC
-    return RC.verify_regional_publication(restricted, regions, coarse, rds,
-                                          queries, published, t_level, eps, **kw)
-
-
-PT.register_executor("regional", _regional_executor)
-PT.register_checker("regional", _regional_checker)
-
-PT.register_executor("statistic", _statistic_executor)
-# The GENERAL-residual variant runs on a validated elimination schedule, so a
-# residual with retained pair or higher-arity factors is admissible.
-GENERAL_STATISTIC = _general_statistic_executor
-# NO statistic checker yet.
-
-PT.register_executor("gaussian", _gaussian_executor)
-# NO gaussian checker yet.
-
-def _fourier_executor(free, card, residual_unary, cand, queries, ctx, delta,
-                      **kw):
-    from mdi import collective as CO
-    return CO.fourier_evaluate(free, card, residual_unary, cand, queries, ctx,
-                               delta, **kw)
-
-
-def _composed_executor(restricted, regions, coarse, rds, queries, ctx, eps,
-                       **kw):
-    """Coarsen, then run a verified collective evaluator on the CATEGORICAL
-    cells (contract E.7)."""
-    from mdi import composed as CM
-    return CM.run(restricted, regions, coarse, rds, queries, ctx, eps, **kw)
-
-
-PT.register_executor("fourier", _fourier_executor)
-PT.register_executor("composed", _composed_executor)
+# Every research kind is executed from its PERSISTED PROGRAM and checked by
+# the program checker against the original model (routes.py,
+# program_check.py). The former per-kind adapters (coarse.py executor,
+# collective.py point evaluators, composed.py) are no longer on any path.
+for _k in ("regional", "composed", "statistic", "gaussian", "fourier"):
+    PT.register_executor(_k, _program_executor)
+    PT.register_checker(_k, _program_checker)
 
 UNIMPLEMENTED = {}
-
-def _statistic_checker(free, card, unary, cand, Q, queries, published, eps,
-                       ctx, **kw):
-    from mdi import collective_check as CC
-    return CC.check_statistic_publication(free, card, unary, cand, Q, queries,
-                                          published, eps, ctx, **kw)
-
-
-def _quadrature_checker(free, card, unary, cand, queries, published, eps, ctx,
-                        delta, **kw):
-    from mdi import collective_check as CC
-    return CC.check_quadrature_publication(free, card, unary, cand, queries,
-                                           published, eps, ctx, delta, **kw)
-
-
-def _composed_checker(restricted, regions, coarse, rds, queries, published,
-                      eps, total_radius, regional_radius=None, **kw):
-    from mdi import collective_check as CC
-    return CC.check_composed_publication(restricted, regions, coarse, rds,
-                                         queries, published, eps, total_radius,
-                                         regional_radius=regional_radius)
-
-
-PT.register_checker("statistic", _statistic_checker)
-PT.register_checker("gaussian", _quadrature_checker)
-PT.register_checker("fourier", _quadrature_checker)
-PT.register_checker("composed", _composed_checker)
-
 MISSING_CHECKERS = {}
 
 

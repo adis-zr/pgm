@@ -309,7 +309,8 @@ def _own_ratio_extrema(row_b, row_r):
 def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                                iA, imarks, rho_cap, deadline=None,
                                region_of_for_profiles=None,
-                               prebuilt_rd=None, budget=None):
+                               prebuilt_rd=None, budget=None,
+                               required_keys=None, deleted=()):
     """Verify the SUBMITTED coarsening witness from checker-owned quantities.
 
     r9 verified the raw local weights A_R(b) and A_{R,i,a}(b) independently,
@@ -351,7 +352,18 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
                 problems.append(
                     "cell %d claims boundary state %s, which has NO support "
                     "in the checker's own local enumeration" % (ci, b))
-    missing = [b for b in iA if b not in seen]
+    # a CERTIFIED deletion (checked separately by the caller) may remove
+    # supported states; anything else unaccounted for is dropped mass
+    _del = {tuple(b) for b in deleted}
+    for b in _del:
+        if b in seen:
+            problems.append("boundary state %s is both deleted and a cell "
+                            "member" % (b,))
+        if b not in iA:
+            problems.append("deleted boundary state %s has no support in the "
+                            "checker's own enumeration; deleting an absent "
+                            "state is not a deletion" % (b,))
+    missing = [b for b in iA if b not in seen and b not in _del]
     if missing:
         problems.append(
             "boundary states %s carry checker-computed support but belong to "
@@ -588,9 +600,14 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
     # their cardinalities. Iterating only the SUBMITTED keys let a merger that
     # dropped X0's whole key set pass this check, so a missing numerator
     # silently became zero.
-    required = {(v, st) for v in region if v in queries
-                for st in range(card[v])}
-    present = {k for k in pc.N if k[0] in queries}
+    if required_keys is None:
+        required = {(v, st) for v in region if v in queries
+                    for st in range(card[v])}
+    else:
+        required = set(required_keys)
+    _qvars = {k[0] for k in required}
+    present = {k for k in pc.N if k[0] in (_qvars if required_keys is not None
+                                           else queries)}
     miss_k = sorted(required - present)
     if miss_k:
         problems.append(
@@ -601,7 +618,7 @@ def _verify_coarsening_witness(region, card, factors, queries, producer_coarse,
         problems.append("the witness carries marker key(s) %s that no "
                         "requested variable implies" % (extra_k[:6],))
     for key, col in sorted(pc.N.items()):
-        if key[0] not in queries:
+        if key not in required:
             continue
         if len(col) != len(pc.cells):
             problems.append(

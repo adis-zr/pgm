@@ -115,6 +115,11 @@ class PlanRecord:
     rejected_alternatives: list
     properties: PlanProperties = field(default_factory=PlanProperties)
     version: int = 1
+    # The PROGRAM the executor runs and the checker verifies (program.py):
+    # every coarsening scale's witness, the collective record, the final
+    # elimination order and precision. None for the identity route, whose
+    # program is the validated generic schedule itself.
+    program: dict | None = None
 
     def validate(self):
         if self.kind not in KINDS:
@@ -149,7 +154,7 @@ class PlanRecord:
         if "emin" in num and "emax" in num and num["emin"] >= num["emax"]:
             raise PlanError("numerical emin >= emax")
         mode = num.get("mode")
-        if mode is not None and mode not in ("P", "I"):
+        if mode is not None and mode not in ("P", "I", "E"):
             raise PlanError("invalid arithmetic mode %r" % (mode,))
         for origin, scope, cardt in self.factor_scopes:
             if len(scope) != len(cardt):
@@ -190,6 +195,8 @@ class PlanRecord:
              "rejected_alternatives": self.rejected_alternatives,
              "properties": self.properties.as_dict(),
              "version": self.version}
+        if self.program is not None:
+            d["program"] = self.program
         return json.dumps(d, sort_keys=True, separators=(",", ":"))
 
     @staticmethod
@@ -210,7 +217,7 @@ class PlanRecord:
         # not a compatible superset: seven of the original fourteen malformed
         # mutations loaded because only the REQUIRED keys were examined.
         allowed = set(need) | {"region_membership", "cell_membership",
-                               "rejected_alternatives"}
+                               "rejected_alternatives", "program"}
         extra = sorted(set(d) - allowed)
         if extra:
             raise PlanError("plan record carries unknown fields %s" % extra)
@@ -305,7 +312,23 @@ class PlanRecord:
             numerical=d["numerical"], cost_counters=d["cost_counters"],
             storage_schedule=d["storage_schedule"],
             rejected_alternatives=d.get("rejected_alternatives", []),
-            properties=props, version=d["version"])
+            properties=props, version=d["version"],
+            program=d.get("program"))
+        if rec.program is not None:
+            # the program block is parsed STRICTLY: exact strings, known
+            # fields, a kind that agrees with the record
+            from mdi import program as _PG
+            try:
+                parsed = _PG.validate_program(rec.program)
+            except _PG.ProgramError as e:
+                raise PlanError("the plan's program block is invalid: %s" % e)
+            if parsed["kind"] != rec.kind:
+                raise PlanError("the program names kind %r but the record is %r"
+                                % (parsed["kind"], rec.kind))
+            rec.parsed_program = parsed
+        elif rec.kind != "identity":
+            raise PlanError("a %s plan carries no program block, so nothing "
+                            "describes what its executor would run" % rec.kind)
         return rec.validate()
 
     def bind_check(self, model_sha, evidence_sha, query_sha,
@@ -330,6 +353,18 @@ class PlanRecord:
                 % (self.model_sha256[:8], self.evidence_sha256[:8],
                    self.query_sha256[:8], model_sha[:8], evidence_sha[:8],
                    query_sha[:8]))
+
+        # A PERSISTED plan is a program, not a certificate. Completion flags
+        # are established by the run that executes and checks it; a record
+        # that arrives claiming them is forged or stale and must not bind.
+        claimed = [p_ for p_ in ("selected", "producer_complete",
+                                 "independently_verified",
+                                 "publication_contract_met")
+                   if getattr(self.properties, p_)]
+        if claimed:
+            raise PlanError("the persisted plan claims completion flags %s; a "
+                            "saved program carries no verification state"
+                            % claimed)
 
         # the named implementations must RESOLVE, not merely look like mdi
         # module paths

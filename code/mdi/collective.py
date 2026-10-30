@@ -8,6 +8,14 @@
 7.2 Gaussian positive modes and Fourier negative modes via
     exp(+g S^2/2) = E exp(sqrt(g) Z S)  and  exp(-g S^2/2) = E exp(i sqrt(g) Z S).
 """
+# r15: the lattices (gf_lattice, fourier_lattice), the directed enclosures
+# (_cos_enclose, _sin_enclose, _normal_weight, _exp_enclose, _sqrt_enclose),
+# round_features and rounding_energy_bound are the shared primitives the
+# collective routes use. statistic_dp, dp_root_combine, gaussian_evaluate
+# and fourier_evaluate here are SUPERSEDED (r15) by collective_jt, which
+# runs the same identities through calibrated contraction on a Marked
+# residual; they are retained for the direct controls only.
+
 from __future__ import annotations
 import sys
 sys.set_int_max_str_digits(0)

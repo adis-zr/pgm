@@ -2754,14 +2754,17 @@ def test_r4_pipeline_rejects_an_intentionally_faulty_producer(model_txt):
         return [(max(Fr(0), Fr(lo) + Fr(1, 10)), min(Fr(1), Fr(hi) + Fr(1, 10)))
                 for lo, hi in rows]
 
-    if kind == "regional":
-        orig = PP._regional_execute
+    if kind != "identity":
+        # every research kind executes its PERSISTED PROGRAM through
+        # routes.execute; the fault is injected on that executed path
+        from mdi import routes as RT
+        orig = RT.execute
 
-        def faulty(rr, payload, queries, eps, bg):
-            return {v: shift(rows)
-                    for v, rows in orig(rr, payload, queries, eps, bg).items()}
-        PP._regional_execute = faulty
-        restore = lambda: setattr(PP, "_regional_execute", orig)
+        def faulty(prog, rr, queries, **kw):
+            rows, meta = orig(prog, rr, queries, **kw)
+            return {v: shift(rs) for v, rs in rows.items()}, meta
+        RT.execute = faulty
+        restore = lambda: setattr(RT, "execute", orig)
     else:
         orig = SS.solve
 
@@ -3128,7 +3131,28 @@ def test_r4_categorical_mode_fitting_recovers_and_removes():
 def test_r4_trig_enclosures_are_sound_including_interior_extrema():
     """E.6: the complex path needs directed cos and sin enclosures that account
     for interior extrema, not just endpoint values."""
+    import gmpy2
     ctx = A.Ctx(120)
+
+    def reference(q, which, extra=512):
+        # a 512-bit directed reference with the exact argument-conversion
+        # allowance; compared as EXACT RATIONALS (a float tolerance hid the
+        # r4 extrema defect at 6.4e-18 and 2.1e-20)
+        mq = gmpy2.mpq(q.numerator, q.denominator)
+        fn = gmpy2.sin if which == "sin" else gmpy2.cos
+        cd = gmpy2.context(precision=extra, round=gmpy2.RoundDown)
+        cu = gmpy2.context(precision=extra, round=gmpy2.RoundUp)
+        with cd:
+            ad = gmpy2.mpfr(mq)
+        with cu:
+            au = gmpy2.mpfr(mq)
+        da = max(abs(q - A.exact_fr(ad)), abs(A.exact_fr(au) - q))
+        with cd:
+            lo = min(fn(ad), fn(au))
+        with cu:
+            hi = max(fn(ad), fn(au))
+        return A.exact_fr(lo) - da, A.exact_fr(hi) + da
+
     viol = 0
     for lo_n in range(-20, 21):
         for w_n in (1, 5, 20):
@@ -3139,10 +3163,12 @@ def test_r4_trig_enclosures_are_sound_including_interior_extrema():
             assert -1 <= cl <= ch <= 1
             assert -1 <= sl <= sh <= 1
             for t in range(41):
-                x = float(lo) + (float(hi) - float(lo)) * t / 40
-                if not (float(cl) - 1e-12 <= math.cos(x) <= float(ch) + 1e-12):
+                x = lo + (hi - lo) * Fr(t, 40)
+                rcl, rch = reference(x, "cos")
+                rsl, rsh = reference(x, "sin")
+                if not (cl <= rcl and rch <= ch):
                     viol += 1
-                if not (float(sl) - 1e-12 <= math.sin(x) <= float(sh) + 1e-12):
+                if not (sl <= rsl and rsh <= sh):
                     viol += 1
     assert viol == 0, viol
 
@@ -3489,16 +3515,23 @@ def test_r4_complete_cost_accounting_includes_local_construction():
         "VERIFIED", "VERIFIED_WITHOUT_INDEPENDENT_AGGREGATION"), \
         res.checker["status"]
     byname = {x["name"]: x for x in res.prices}
-    reg = next((v for k, v in byname.items() if k.startswith("regional:")),
-               None)
-    if reg is not None and reg["eligible"]:
+    regs = {k: v for k, v in byname.items() if k.startswith("regional:")}
+    assert regs, "regional candidates must be priced"
+    for k, reg in regs.items():
+        if not reg["eligible"]:
+            continue
         cons = reg["counters"]["construction_ops"]
         # local construction may NEVER be priced at zero or as an upper bound
-        assert cons["label"] == "measured_calibration", cons
-        assert int(cons["value"]) > 0, cons
-        # and it must dominate the six-operation reduced contraction here,
-        # which is exactly why the earlier comparison was invalid
-        assert int(cons["value"]) > 100000, cons
+        assert cons["label"] == "measured_calibration", (k, cons)
+        assert int(cons["value"]) > 0, (k, cons)
+    # the candidate whose single region holds all 12 variables enumerates
+    # 4,096 configurations for A and 24 markers: its measured construction
+    # must dominate its six-operation reduced contraction, which is exactly
+    # why the withdrawn comparison was invalid
+    full = regs.get("regional:ascending_id")
+    if full is not None and full["eligible"]:
+        assert int(full["counters"]["construction_ops"]["value"]) > 100000, \
+            full["counters"]["construction_ops"]
     # the published intervals must contain the truth whichever route won
     for v in r.free:
         for s in range(r.card[v]):
@@ -3531,7 +3564,7 @@ def test_r4_composed_route_is_offered_as_a_pipeline_candidate():
     call. When it declines, the reason must be recorded."""
     import inspect
     from mdi import pipeline as PLN
-    src = inspect.getsource(PLN.solve)
+    src = inspect.getsource(PLN.solve) + inspect.getsource(PLN._discover_programs)
     assert "composed:" in src, "the pipeline must offer the composed route"
     assert "composed route declined" in src, "a declension must be recorded"
     txt, n, NB, BS = ring_of_blocks()
@@ -4853,23 +4886,29 @@ def test_r7_above_cap_does_not_claim_independent_verification():
         m.validate()
         clean = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                         deadline_s=60)
+        assert clean["outcome"] == "VERIFIED_ALL_MARGINALS", clean["outcome"]
+        assert clean["independently_verified"] is True
+        scope = clean["checker"]["independent_aggregation_scope"]
         if below_cap:
-            assert clean["outcome"] == "VERIFIED_ALL_MARGINALS", clean
-            assert clean["independently_verified"] is True
+            assert "enumeration" in scope, scope
         else:
-            # above the cap the complete status is NOT claimed
-            assert clean["outcome"] == "VERIFIED_SHARED_AGGREGATION_ONLY", \
-                clean["outcome"]
-            assert clean["independently_verified"] is False
+            # ABOVE the enumeration cap the independent aggregation is the
+            # STRUCTURAL second implementation (the sparse exact junction
+            # tree), not a shared engine and not a skipped check
+            assert "sparse exact junction tree" in scope, scope
         C.Engine.read_marginal = faulty
         try:
             res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                           deadline_s=60)
         finally:
             C.Engine.read_marginal = orig
-        # either the fault is caught, or the run must not claim independence
-        assert not (res["outcome"] == "VERIFIED_ALL_MARGINALS"
-                    and res.get("independently_verified")), res["outcome"]
+        # the fault must be CAUGHT at both sizes: the independent aggregation
+        # runs by enumeration below the cap and by the second implementation
+        # above it
+        assert res["outcome"] == "NUMERICAL_REFUSAL", (n, res["outcome"])
+        msg = " ".join(str(f) for f in (res.get("checker") or {}).get(
+            "failures", []))
+        assert "shared aggregation" in msg, msg[:200]
 
 
 def test_r7_hard_zero_pair_is_always_retained():
@@ -5666,11 +5705,44 @@ def test_r9_shared_local_marker_fault_is_caught():
     R.region_data = faulty
     try:
         res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+        bad_ok, bad_fails = _program_route_verdict(r, [(v,) for v in range(n)])
     finally:
         R.region_data = orig
-    assert not res.status.startswith("CERTIFIED"), res.status
-    props = res.properties or {}
-    assert not props.get("independently_verified"), props
+    if res.plan.get("kind") == "regional":
+        assert not res.status.startswith("CERTIFIED"), res.status
+        props = res.properties or {}
+        assert not props.get("independently_verified"), props
+    # the program built from the faulty producer must be REJECTED by the
+    # independent checker on the named obligation
+    assert not bad_ok, "the skewed markers were certified"
+    assert any("alpha_b A_{R,i,a}" in x or "marker" in x for x in bad_fails), \
+        bad_fails[:3]
+    # the published answer must contain the truth whichever route ran
+    for v in range(n):
+        for sx in range(2):
+            lo, hi = res.intervals[v][sx]
+            assert lo <= pt[v][sx] <= hi, (v, sx)
+
+
+def _program_route_verdict(r, regions, levels=1):
+    """Build the regional PROGRAM with the CURRENT (possibly patched) producer
+    primitives, execute it from its serialized form, publish with the recorded
+    radii, and return the independent program checker's verdict."""
+    import json
+    from mdi import (marked as MK, routes as RT, program as PG,
+                     program_check as PC)
+    q = set(r.free)
+    scales, final = RT.build_scales(MK.Marked.from_restricted(r, q), regions,
+                                    levels)
+    prog = PG.validate_program(json.loads(json.dumps(
+        RT.program_for("regional", scales, None, [], 128, q))))
+    rows, _meta = RT.execute(prog, r, q)
+    rad = sum((sc["t_level"] + sc["deletion_radius_total"]
+               for sc in prog["scales"]), Fr(0)) + K.PUBLICATION_RESERVE
+    pub = {v: [(max(Fr(0), lo - rad), min(Fr(1), hi + rad)) for lo, hi in rows[v]]
+           for v in rows}
+    ok, fails, _m = PC.verify_program(r, q, prog, pub, Fr(1, 100))
+    return ok, fails
 
 
 def test_r9_ownership_proof_is_order_independent():
@@ -5856,11 +5928,19 @@ def test_r10_shared_merge_marker_fault_is_caught():
     R.merge_region = faulty
     try:
         res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
+        bad_ok, bad_fails = _program_route_verdict(r, [(v,) for v in range(n)])
     finally:
         R.merge_region = orig
-    assert not res.status.startswith("CERTIFIED"), res.status
-    props = res.properties or {}
-    assert not props.get("independently_verified"), props
+    if res.plan.get("kind") == "regional":
+        assert not res.status.startswith("CERTIFIED"), res.status
+        props = res.properties or {}
+        assert not props.get("independently_verified"), props
+    assert not bad_ok, "the skewed cell markers were certified"
+    assert any("alpha_b A_{R,i,a}" in x for x in bad_fails), bad_fails[:3]
+    for v in range(n):
+        for sx in range(2):
+            lo, hi = res.intervals[v][sx]
+            assert lo <= pt[v][sx] <= hi, (v, sx)
 
 
 def test_r10_false_distortion_certificate_is_caught():

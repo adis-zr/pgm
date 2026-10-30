@@ -15,7 +15,11 @@ CAPS = {
     "region_tuple_assignments": 4096,          # assignments in one region/parent tuple space
     "profile_entry_comparisons": 2_000_000,    # per model, across proposals
     "rational_bit_length": 65_536,             # numerator and denominator each
-    "local_mass_entries": 1_000_000,           # retained across a plan
+    # A CUMULATIVE METER of exact entries built or stored across one plan's
+    # construction, execution and checking (masses, markers, lifted tables,
+    # junction-tree entries). It is not a bound on simultaneously retained
+    # states; the byte forecasts and the RSS cap bound residency.
+    "local_mass_entries": 1_000_000,           # cumulative across a plan
     "feature_contrast_dim": 1024,
     "residual_masks": 3,
     "fits_per_mask": 2,
