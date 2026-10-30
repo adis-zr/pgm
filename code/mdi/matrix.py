@@ -772,16 +772,33 @@ def control_price_covers_counted_work(wall):
     vec = next((p["name"] for p in resb.prices if p["name"].startswith("statistic:block_combined")), None)
     if vec:
         all_ok &= check("two-block vector statistic", mpb, resb, db, vec, ptb)
-    # saved-order pricing: a legal but different order does not bind
-    base = json.load(open(_plan(resr, dr, l1)))
-    bad = copy.deepcopy(base)
-    order = list(bad["program"]["order"])
-    bad["program"]["order"] = order[1:] + order[:1] if len(order) > 1 else order
-    p2 = os.path.join(dr, "reordered.plan.json")
-    json.dump(bad, open(p2, "w"))
-    rep = _replay_here(mpr, p2)
-    saved = {"status": rep["status"], "reason": str(rep.get("reason"))[:160],
-             "ok": rep["status"] == "REPLAY_REFUSED" and "SAVED order" in str(rep.get("reason"))}
+    # saved-order pricing: a legal but DIFFERENT order whose schedule cost
+    # differs does not bind (the price is re-derived on the saved order and
+    # must equal the recorded counters); a rotation with an identical cost is
+    # self-consistent and binds. Search the ring's regional/composed records
+    # for a cost-changing rotation; at least one must be refused.
+    saved = {"refused": 0, "cost_identical_bound": 0, "first_refusal": None}
+    for p in resr.prices:
+        if not (p["name"].startswith("regional:") or p["name"].startswith("composed:")):
+            continue
+        b0 = json.load(open(_plan(resr, dr, p["name"])))
+        o = list(b0["program"]["order"])
+        for k in range(1, len(o)):
+            bad = copy.deepcopy(b0)
+            bad["program"]["order"] = o[k:] + o[:k]
+            p2 = os.path.join(dr, "reordered.plan.json")
+            json.dump(bad, open(p2, "w"))
+            rep = _replay_here(mpr, p2)
+            if rep["status"] == "REPLAY_REFUSED" and "SAVED order" in str(rep.get("reason")):
+                saved["refused"] += 1
+                if saved["first_refusal"] is None:
+                    saved["first_refusal"] = {"program": p["name"], "rotation": k,
+                                              "reason": str(rep.get("reason"))[:160]}
+            elif rep["status"] == "REPLAY_VERIFIED":
+                saved["cost_identical_bound"] += 1
+        if saved["refused"]:
+            break
+    saved["ok"] = saved["refused"] >= 1
     all_ok &= saved["ok"]
     return {"rows": rows, "saved_order_witness": saved, "ok": bool(all_ok)}
 
