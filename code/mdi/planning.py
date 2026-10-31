@@ -276,12 +276,59 @@ def run_pass(problem, research, rundir, eps=None, wall=None, cap=None, model_pat
     return term
 
 
+def parse_cli(argv):
+    """The planning CLI's option parser, callable without running a pass
+    (the stub-only control): returns (rundir, problems, eps)."""
+    rundir = argv[0] if argv else None
+    eps = None
+    rest = []
+    i = 1
+    while i < len(argv):
+        if argv[i] == "--eps":
+            if i + 1 >= len(argv):
+                raise SystemExit("--eps needs a value")
+            eps = Fr(argv[i + 1])
+            i += 2
+            continue
+        if argv[i].startswith("--eps="):
+            eps = Fr(argv[i].split("=", 1)[1])
+            i += 1
+            continue
+        if argv[i].startswith("--"):
+            raise SystemExit("unknown option %s" % argv[i])
+        rest.append(argv[i])
+        i += 1
+    probs = rest or list(PROBLEMS)
+    unknown = [p for p in probs if p not in PROBLEMS]
+    if unknown:
+        raise SystemExit("unknown problem(s) %s; known: %s" % (unknown, list(PROBLEMS)))
+    return rundir, probs, eps
+
+
 def main(argv):
     rundir = argv[0] if argv else tempfile.mkdtemp(prefix="mdi_planning_")
-    probs = [a for a in argv[1:] if not a.startswith("--")] or list(PROBLEMS)
     eps = None
-    if "--eps" in argv:
-        eps = Fr(argv[argv.index("--eps") + 1])
+    rest = []
+    i = 1
+    while i < len(argv):
+        if argv[i] == "--eps":
+            if i + 1 >= len(argv):
+                raise SystemExit("--eps needs a value")
+            eps = Fr(argv[i + 1])
+            i += 2
+            continue
+        if argv[i].startswith("--eps="):
+            eps = Fr(argv[i].split("=", 1)[1])
+            i += 1
+            continue
+        if argv[i].startswith("--"):
+            raise SystemExit("unknown option %s" % argv[i])
+        rest.append(argv[i])
+        i += 1
+    probs = rest or list(PROBLEMS)
+    unknown = [p for p in probs if p not in PROBLEMS]
+    if unknown:
+        raise SystemExit("unknown problem(s) %s; known: %s" % (unknown, list(PROBLEMS)))
     summary = []
     for prob in probs:
         for research in (False, True):

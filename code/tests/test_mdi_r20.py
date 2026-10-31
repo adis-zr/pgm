@@ -425,3 +425,120 @@ def test_arm_timing_is_one_clock_with_a_separate_receipt():
     assert rec["outcome"].startswith("CERTIFIED") and saved["elapsed_s"] == rec["elapsed_s"] and 0 <= saved["elapsed_s"] < 60
     assert "elapsed_s_including_durable_write" not in saved and saved["receipt_path"] == "arm_mf4_baseline.receipt.json"
     assert receipt["within_wall"] is True and receipt["elapsed_s_including_durable_write"] >= saved["elapsed_s"]
+
+
+# ------------------------------------------------ r22: read-only canonical law, incumbent retention, event ledger
+
+def test_canonical_law_refuses_attribute_replacement_and_the_r21_fault_is_rejected():
+    """The r21 review's fault: ordinary ATTRIBUTE replacement of factor tables
+    on the canonical model reachable through the producer's Restricted. The
+    canonical types are recursively read-only, so the producer's fault is a
+    typed program refusal and no wrong publication is certified."""
+    from mdi import routes as RT, law as LAW, preprocess as PRE
+    mp = "verifier/r17_triangle.uai"
+    m = M.read_uai(mp)
+    res, d = _solve(mp)
+    plan = _plan(res, d, "statistic:lowrank_combined")
+    orig = RT.execute
+
+    def faulty(prog, r, queries, **kw):
+        for f in r.model.factors:
+            if len(f.scope) == 1:
+                f.table = tuple(Fr(1) for _ in f.table)
+        r0 = M.restrict(r.model, r.evidence)
+        simp = PRE.simplify(r0)
+        return orig(prog, M.Restricted(model=r.model, evidence=r.evidence, factors=simp.factors, free=list(simp.free),
+                                       card=dict(simp.card), constant=r0.constant, impossible_factor=None), queries, **kw)
+    RT.execute = faulty
+    try:
+        bad = RP.replay(mp, "-", plan)
+    finally:
+        RT.execute = orig
+    assert bad["status"] == "REPLAY_REJECTED" and "read-only" in str(bad.get("reason")) and not bad.get("intervals")
+    assert RP.replay(mp, "-", plan)["status"] == "REPLAY_VERIFIED"
+    law = LAW.OriginalLaw.freeze(m, {}, set(M.restrict(m, {}).free))
+    for fn in (lambda: setattr(law.model.factors[0], "table", ()), lambda: setattr(law.model, "factors", ()),
+               lambda: setattr(law.model, "card", ()), lambda: setattr(law, "model", None),
+               lambda: law.model.factors.__setitem__(0, None), lambda: law.evidence.__setitem__(0, 1)):
+        with pytest.raises((TypeError, AttributeError)):
+            fn()
+    assert law.verify_authority() is None
+    # tuple-table caller factors with default duplicate ids are canonicalized like list tables
+    ft = M.Factor(scope=(0,), card=(2,), table=(Fr(1), Fr(4)))
+    la = LAW.OriginalLaw.freeze(M.Model(nvars=1, card=[2], factors=[ft, ft]).validate(), {}, {0})
+    lb = LAW.OriginalLaw.freeze(M.Model(nvars=1, card=[2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(4)]),
+                                                                    M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(4)])]).validate(), {}, {0})
+    assert la.equal_law(lb) and ft.origin == -1
+    r1 = PLN.solve(M.Model(nvars=1, card=[2], factors=[ft, ft]).validate(), {}, wall_s=30, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    assert r1.status.startswith("CERTIFIED") and Fr(r1.intervals[0][1][0]) <= Fr(16, 17) <= Fr(r1.intervals[0][1][1])
+
+
+def test_incumbent_survives_a_later_local_construction_stop_but_not_a_global_stop():
+    from mdi import routes as RT
+    from test_mdi_research import ring_of_blocks
+    mpr = w(ring_of_blocks()[0])
+
+    class Clock:
+        t = 1000.0
+
+        def __call__(self):
+            return Clock.t
+    saved = B.DEFAULT_CLOCK[0]
+    orig = RT.build_scales
+    fired = {"n": 0}
+
+    def late(*a, **k):
+        fired["n"] += 1
+        if fired["n"] == 1:
+            Clock.t += 31.0
+        return orig(*a, **k)
+    B.DEFAULT_CLOCK[0] = Clock()
+    RT.build_scales = late
+    try:
+        ri = PLN.solve(M.read_uai(mpr), {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        RT.build_scales = orig
+        B.DEFAULT_CLOCK[0] = saved
+    led = ri.plan["invocation_ledger"]
+    assert ri.status.startswith("CERTIFIED") and ri.plan["discovery_complete"] is False
+    assert led["candidates_admitted_during_discovery"] >= 1
+    assert any(p["eligible"] and p["name"] != "identity" for p in ri.prices)
+    assert not [s for s in ri.budget["stops"] if not str(s.get("kind", "")).startswith("phase:")]
+    fired["n"] = 0
+
+    def late_global(*a, **k):
+        fired["n"] += 1
+        if fired["n"] == 1:
+            Clock.t += 700.0
+        return orig(*a, **k)
+    B.DEFAULT_CLOCK[0] = Clock()
+    RT.build_scales = late_global
+    try:
+        rg = PLN.solve(M.read_uai(mpr), {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        RT.build_scales = orig
+        B.DEFAULT_CLOCK[0] = saved
+    assert rg.status == "RESOURCE_STOP" and not rg.intervals
+
+
+def test_construction_events_are_counted_once_and_closed():
+    from test_mdi_research import ring_of_blocks
+    mpr = w(ring_of_blocks()[0])
+    res = PLN.solve(M.read_uai(mpr), {}, wall_s=400, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    led = res.plan["invocation_ledger"]
+    evs = led["construction_events"]
+    assert evs and all(e["status"] != "running" for e in evs)
+    done = [e for e in evs if e.get("construction_ops_measured")]
+    uniq = sum(e["construction_ops_measured"] for e in done)
+    naive = sum(e["construction_ops_measured"] * max(1, len(e["referenced_by"])) for e in done)
+    assert any(len(e["referenced_by"]) > 1 for e in done) and uniq < naive
+    assert led["construction_ops_measured"] == uniq
+    assert all(a["construction_event"] is not None for a in led["attempts"]
+               if a["kind"] == "candidate" and a["name"].startswith(("regional", "composed")))
+
+
+def test_planning_cli_parses_eps_as_an_option_not_a_problem():
+    from mdi import planning as PLAN
+    assert PLAN.parse_cli(["RUNDIR", "Grids_11", "--eps", "1/200"]) == ("RUNDIR", ["Grids_11"], Fr(1, 200))
+    with pytest.raises(SystemExit):
+        PLAN.parse_cli(["RUNDIR", "Grids_11", "1/200"])

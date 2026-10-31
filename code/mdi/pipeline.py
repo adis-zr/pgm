@@ -382,16 +382,33 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     # the program back from disk and reconstruct everything from the original
     # model; the live objects built here are not passed to them.
     _discovery_complete = True
-    ledger_inv = {"attempts": [],                       # every recognizer / construction attempt, start and end
+    ledger_inv = {"attempts": [],                       # every recognizer attempt and candidate, start and end
+                  "construction_events": [],            # every EXECUTED scale construction, opened before work, closed in finally
+                  "construction_events_executed": 0,
                   "recognizer_runs": 0, "recognizer_runs_declined": 0, "recognizer_runs_failed": 0,
                   "recognizer_seconds": 0.0, "recognizer_transcendental_calls": 0,
                   "recognizer_fit_ops": "unknown",      # exact-rational fit work is NOT instrumented: unknown, never a formula
-                  "construction_ops_measured": 0,       # measured in regions.build (local mass / markers / profiles)
+                  "construction_ops_measured": 0,       # sum over UNIQUE executed events (regions.build measured operations)
                   "candidates_built": 0, "candidates_price_refused": 0, "candidates_declined": 0,
+                  "candidates_admitted_during_discovery": 0, "candidates_phase_timeout": 0,
                   "units": {"recognizer_seconds": "monotonic seconds", "recognizer_transcendental_calls": "MPFR calls (measured)",
-                            "construction_ops_measured": "exact-rational operations (measured)",
-                            "recognizer_fit_ops": "unknown (not instrumented)"}}
+                            "construction_ops_measured": "exact-rational operations (measured), each executed event counted once",
+                            "recognizer_fit_ops": "unknown (not instrumented)",
+                            "candidate.construction_event": "reference to the executed event the candidate reuses"}}
     _discover_programs._ledger = ledger_inv
+    if not plan_dir:
+        plan_dir = tempfile.mkdtemp(prefix="mdi_plans_")
+    os.makedirs(plan_dir, exist_ok=True)
+    reloaded = []
+    admitted_ids = set()
+
+    def _admit_now(rec, price):
+        st = _persist_bind_one(rec, plan_dir, law, mh, eh, qh, queries, nq, cap_bytes, bg, eps,
+                               stages, rejected, reloaded)
+        if st in ("admitted", "phase_timeout", "duplicate", "refused"):
+            admitted_ids.add(id(rec))
+        return st
+    _discover_programs._admit = _admit_now
     if research_enabled:
         _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s,
                            records, prices, rejected, cap_bytes, eps=eps)
@@ -453,50 +470,34 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                        budget=bg.report())
     t = time.monotonic()
     # The record must be WRITTEN first and then read back FROM DISK, so the
-    # on-disk bytes are the authority for everything downstream. Reloading
-    # from an in-memory string before writing meant a corrupted written plan
-    # still produced a certified result: the file was never read again.
-    if not plan_dir:
-        plan_dir = tempfile.mkdtemp(prefix="mdi_plans_")
-    os.makedirs(plan_dir, exist_ok=True)
-    reloaded = []
+    # on-disk bytes are the authority for everything downstream. Research
+    # records were admitted DURING discovery (incumbent retention); this sweep
+    # binds the identity (outside the construction allowance) and any research
+    # record discovery completed but did not reach (a stopped discovery)
     for rec, price, payload in records:
-        # the file is named by the candidate's STABLE IDENTITY (the law/program
-        # it represents), so two candidates on one partition never overwrite
-        ident = (rec.storage_schedule or {}).get("identity") or rec.name.replace(":", "_")
-        path = os.path.join(plan_dir, "%s.plan.json" % ident)
+        if id(rec) in admitted_ids:
+            continue
         if rec.kind != "identity":
             bg._enter_raw("persist")
-            if bg.phase_exhausted("construction"):
-                rejected.append({"name": rec.name, "typed": "PHASE_TIMEOUT", "phase": "persist",
-                                 "reason": "not repriced: the discovery / local-construction allowance "
-                                           "(%.0f s) is spent; the completed plan is preserved on disk"
-                                           % bg.phase_limits.get("construction", 0)})
-                try:
-                    txt_u = rec.to_json()
-                    if os.path.exists(path) and open(path).read() != txt_u:
-                        rejected.append({"name": rec.name, "typed": "COLLISION", "phase": "persist",
-                                         "reason": "a completed program already occupies %s and this executable "
-                                                   "differs; not overwritten" % os.path.basename(path)})
-                    elif not os.path.exists(path):
-                        with open(path, "w") as fh:
-                            fh.write(txt_u)
-                except OSError:
-                    pass
-                bg._enter_raw("bind_identity")
-                continue
-        else:
+            try:
+                _persist_bind_one(rec, plan_dir, law, mh, eh, qh, queries, nq, cap_bytes, bg, eps,
+                                  stages, rejected, reloaded)
+            except B.BudgetExceeded as e:
+                return Outcome(status="RESOURCE_STOP",
+                               reason="the shared budget was exhausted while re-pricing "
+                                      "loaded programs: %s" % e,
+                               rejected=rejected, stages=stages, budget=bg.report())
             bg._enter_raw("bind_identity")
+            continue
+        bg._enter_raw("bind_identity")
+        ident = (rec.storage_schedule or {}).get("identity") or rec.name.replace(":", "_")
+        path = os.path.join(plan_dir, "%s.plan.json" % ident)
         try:
             txt = rec.to_json()
             if os.path.exists(path):
                 with open(path, "r") as fh:
                     prior = fh.read()
                 if prior != txt:
-                    # the file on disk is authoritative and is never overwritten.
-                    # An EQUIVALENT executable (same program, allocations, schedule
-                    # and price; only the generator name differs) is a DUPLICATE;
-                    # a differing executable under the same identity is a COLLISION
                     typed = "COLLISION"
                     try:
                         a, b = json.loads(prior), json.loads(txt)
@@ -515,39 +516,23 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                     continue
             with open(path, "w") as fh:
                 fh.write(txt)
-            # read the bytes BACK from the filesystem
             with open(path, "r") as fh:
                 ondisk = fh.read()
             if ondisk != txt:
-                raise PT.PlanError("the persisted plan does not match what "
-                                   "was written")
+                raise PT.PlanError("the persisted plan does not match what was written")
             back = PT.PlanRecord.from_json(ondisk)
             if back.to_json() != ondisk:
-                raise PT.PlanError("plan record is not byte-identical after a "
-                                   "round trip through disk")
-            # bind the SEMANTIC fields too, against the original restricted
-            # model and the preprocessing proof the current inputs produce
-            # DISCARD discovery's live payload and price: from here on the
-            # loaded record is the only input, bound at the ONE boundary
-            # the BINDER owns its working restriction, derived from the frozen law
+                raise PT.PlanError("plan record is not byte-identical after a round trip through disk")
             t_b = time.monotonic()
             bown = law.restriction()
             stages["binding_restriction_s"] = stages.get("binding_restriction_s", 0.0) + (time.monotonic() - t_b)
-            rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes,
-                                 bg=bg, eps=eps)
+            rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes, bg=bg, eps=eps)
         except (PT.PlanError, ValueError, OSError) as e:
-            rejected.append({"name": rec.name,
-                             "reason": "plan record failed persist/reload/binding: %s"
-                                       % e})
+            rejected.append({"name": rec.name, "reason": "plan record failed persist/reload/binding: %s" % e})
             continue
         except B.BudgetExceeded as e:
-            if isinstance(getattr(e, "kind", None), str) and e.kind.startswith("phase:"):
-                rejected.append({"name": rec.name, "typed": "PHASE_TIMEOUT",
-                                 "reason": "repricing stopped by the construction allowance: %s" % e})
-                continue
             return Outcome(status="RESOURCE_STOP",
-                           reason="the shared budget was exhausted while re-pricing "
-                                  "loaded programs: %s" % e,
+                           reason="the shared budget was exhausted while binding the identity: %s" % e,
                            rejected=rejected, stages=stages, budget=bg.report())
         back.source_path = path
         reloaded.append((back, rprice, None))
@@ -792,6 +777,12 @@ def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
     try:
         numerical_entry("pipeline.run_loaded:checker")
         if crec.kind == "identity":
+            bad_auth = law.verify_authority()
+            if bad_auth:
+                return Outcome(status="NUMERICAL_REFUSAL",
+                               reason="the original-law authority failed verification before checking: %s" % bad_auth,
+                               prices=out.prices, rejected=rejected, stages=stages, budget=bg.report(),
+                               checker={"status": "FAILED", "failures": [bad_auth]})
             # the identity checker restricts and preprocesses the FROZEN law
             # itself; its message entries, enumeration assignments and sparse
             # aggregation entries are charged to the SAME shared meter
@@ -803,6 +794,16 @@ def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
             meta["kind"] = "identity"
             bg.check("after-identity-check")
         else:
+            # the canonical AUTHORITY is verified (its bytes still hash to the
+            # law's identity) before the checker derives its reference from it
+            t_r = time.monotonic()
+            bad_auth = law.verify_authority()
+            stages["checker_authority_verify_s"] = time.monotonic() - t_r
+            if bad_auth:
+                return Outcome(status="NUMERICAL_REFUSAL",
+                               reason="the original-law authority failed verification before checking: %s" % bad_auth,
+                               prices=out.prices, rejected=rejected, stages=stages, budget=bg.report(),
+                               checker={"status": "FAILED", "failures": [bad_auth]})
             # the CHECKER's own working restriction, derived from the frozen law
             # (never the producer's): its reference is the original law
             t_r = time.monotonic()
@@ -1766,6 +1767,110 @@ def _candidate_record(kind, name, mh, eh, qh, simp, r, prog, allocations,
     return rec
 
 
+def _event_open(kind, name, **info):
+    """Open a CONSTRUCTION EVENT (one executed scale build) in the invocation
+    ledger before any work; `_event_close` records its terminal state (completed,
+    declined, refused, budget, failed) with actual elapsed time and the measured
+    counters. Candidates REFERENCE the event they reuse; the invocation's
+    measured construction total sums each executed event ONCE."""
+    led = getattr(_discover_programs, "_ledger", None)
+    ev = {"id": "ev%03d" % (len(led["construction_events"]) + 1 if led is not None else 0), "kind": kind, "name": name,
+          "started_s": round(time.monotonic() - _discover_programs._t0, 4), "status": "running",
+          "_t": time.monotonic(), "_tr": A.transcendental_snapshot(), "referenced_by": []}
+    ev.update(info)
+    if led is not None:
+        led["construction_events"].append(ev)
+    return ev
+
+
+def _event_close(ev, status, **info):
+    led = getattr(_discover_programs, "_ledger", None)
+    ev["status"] = status
+    ev["elapsed_s"] = round(time.monotonic() - ev.pop("_t"), 4)
+    ev["transcendental_calls"] = A.transcendental_since(ev.pop("_tr"))["total"]
+    ev.setdefault("construction_ops_measured", None)       # unknown unless the build reported it
+    ev.update(info)
+    if led is not None:
+        led["construction_ops_measured"] = sum(int(e.get("construction_ops_measured") or 0)
+                                               for e in led["construction_events"] if e.get("status") != "running")
+        led["construction_events_executed"] = sum(1 for e in led["construction_events"] if e.get("status") != "running")
+
+
+def _persist_bind_one(rec, plan_dir, law, mh, eh, qh, queries, nq, cap_bytes, bg, eps, stages, rejected, reloaded):
+    """Persist ONE completed research record, read it back from disk, bind and
+    reprice it on its saved order under the construction allowance. Returns
+    'admitted' | 'phase_timeout' | 'refused' | 'duplicate'; raises
+    BudgetExceeded for a shared (wall / rss / meter) stop. Used while
+    discovery is still running (incumbent retention) and by the final sweep."""
+    from mdi import plantype as PT
+    ident = (rec.storage_schedule or {}).get("identity") or rec.name.replace(":", "_")
+    path = os.path.join(plan_dir, "%s.plan.json" % ident)
+    if bg.phase_exhausted("construction"):
+        rejected.append({"name": rec.name, "typed": "PHASE_TIMEOUT", "phase": "persist",
+                         "reason": "not repriced: the discovery / local-construction allowance "
+                                   "(%.0f s) is spent; the completed plan is preserved on disk"
+                                   % bg.phase_limits.get("construction", 0)})
+        try:
+            txt_u = rec.to_json()
+            if os.path.exists(path) and open(path).read() != txt_u:
+                rejected.append({"name": rec.name, "typed": "COLLISION", "phase": "persist",
+                                 "reason": "a completed program already occupies %s and this executable "
+                                           "differs; not overwritten" % os.path.basename(path)})
+            elif not os.path.exists(path):
+                with open(path, "w") as fh:
+                    fh.write(txt_u)
+        except OSError:
+            pass
+        return "phase_timeout"
+    try:
+        txt = rec.to_json()
+        if os.path.exists(path):
+            with open(path, "r") as fh:
+                prior = fh.read()
+            if prior != txt:
+                typed = "COLLISION"
+                try:
+                    a, b = json.loads(prior), json.loads(txt)
+                    for d in (a, b):
+                        d.pop("name", None); d.pop("rejected_alternatives", None)
+                    if a == b:
+                        typed = "DUPLICATE"
+                except ValueError:
+                    pass
+                rejected.append({"name": rec.name, "typed": typed, "phase": "persist",
+                                 "reason": ("an equivalent program already occupies %s (duplicate under one identity); "
+                                            "not written again" if typed == "DUPLICATE" else
+                                            "a completed program already occupies %s and this executable "
+                                            "differs; a different executable never overwrites a "
+                                            "completed program") % os.path.basename(path)})
+                return "duplicate" if typed == "DUPLICATE" else "refused"
+        with open(path, "w") as fh:
+            fh.write(txt)
+        with open(path, "r") as fh:
+            ondisk = fh.read()
+        if ondisk != txt:
+            raise PT.PlanError("the persisted plan does not match what was written")
+        back = PT.PlanRecord.from_json(ondisk)
+        if back.to_json() != ondisk:
+            raise PT.PlanError("plan record is not byte-identical after a round trip through disk")
+        t_b = time.monotonic()
+        bown = law.restriction()
+        stages["binding_restriction_s"] = stages.get("binding_restriction_s", 0.0) + (time.monotonic() - t_b)
+        rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes, bg=bg, eps=eps)
+    except (PT.PlanError, ValueError, OSError) as e:
+        rejected.append({"name": rec.name, "reason": "plan record failed persist/reload/binding: %s" % e})
+        return "refused"
+    except B.BudgetExceeded as e:
+        if isinstance(getattr(e, "kind", None), str) and e.kind.startswith("phase:"):
+            rejected.append({"name": rec.name, "typed": "PHASE_TIMEOUT",
+                             "reason": "repricing stopped by the construction allowance: %s" % e})
+            return "phase_timeout"
+        raise
+    back.source_path = path
+    reloaded.append((back, rprice, None))
+    return "admitted"
+
+
 def _attempt(kind, name):
     """Record the START of a recognizer / construction attempt (truthful
     ledger: every attempt, including the ones that decline or fail)."""
@@ -1819,13 +1924,18 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
     prec = 128
     ctx = A.Ctx(prec)
 
-    def _record(kind, name, scales, coll, final, cons, fit_ops=None):
+    def _record(kind, name, scales, coll, final, cons, fit_ops=None, event=None):
         led = getattr(_discover_programs, "_ledger", None)
         if led is not None:
             led["candidates_built"] += 1
-            led["construction_ops_measured"] += int(cons or 0)     # measured in regions.build
-            led["attempts"].append({"kind": "candidate", "name": name, "construction_ops_measured": int(cons or 0),
+            # the candidate REFERENCES the executed construction event it reuses;
+            # the measured operations are counted once, on the event
+            led["attempts"].append({"kind": "candidate", "name": name,
+                                    "construction_event": (event["id"] if event else None),
+                                    "reconstruction_ops_forecast": int(cons or 0),
                                     "at_s": round(time.monotonic() - _discover_programs._t0, 4)})
+            if event is not None:
+                event["referenced_by"].append(name)
         try:
             # the schedule is chosen ONCE here (the dry run's order) and saved;
             # every later price is derived on that saved order
@@ -1868,6 +1978,24 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
         rec.identity_key = ident
         records.append((rec, price, {"program": prog}))
         prices.append(price)
+        # the completed candidate is PERSISTED, RELOADED, BOUND and REPRICED
+        # NOW, before any further speculative construction: a later candidate
+        # that exhausts the local construction allowance loses only itself,
+        # never an already admitted incumbent (a shared-meter / wall stop
+        # still stops the invocation)
+        admit = getattr(_discover_programs, "_admit", None)
+        if admit is not None:
+            try:
+                st = admit(rec, price)
+            except B.BudgetExceeded as e:
+                if _shared(e):
+                    _discover_programs._shared = e
+                return
+            if led is not None:
+                if st == "admitted":
+                    led["candidates_admitted_during_discovery"] += 1
+                elif st == "phase_timeout":
+                    led["candidates_phase_timeout"] += 1
 
     def _shared(e):
         k = getattr(e, "kind", None)
@@ -1968,22 +2096,32 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
             continue
         for levels in (1, 2):
             name = base if levels == 1 else base + ":L2"
+            ev = _event_open("scale_construction", name, levels=levels, regions=len(regs))
             try:
                 scales, final = RT.build_scales(mk0, regs, levels,
                                                 deadline=deadline, budget=bg)
             except B.BudgetExceeded as e:
+                _event_close(ev, "budget", reason=str(e)[:160])
                 if _shared(e):
                     _discover_programs._shared = e
                     return
                 rejected.append({"name": name, "reason": str(e)})
                 continue
             except (R.CapExceeded, R.Declined, MK.MarkedError, CP.CompactError) as e:
+                _event_close(ev, "declined", reason="%s: %s" % (type(e).__name__, str(e)[:120]))
                 rejected.append({"name": name, "reason": "%s: %s"
+                                 % (type(e).__name__, e)})
+                continue
+            except Exception as e:
+                _event_close(ev, "failed", reason="%s: %s" % (type(e).__name__, str(e)[:120]))
+                rejected.append({"name": name, "reason": "scale construction failed: %s: %s"
                                  % (type(e).__name__, e)})
                 continue
             cons = sum(int(getattr(rd, "construction_ops", 0))
                        for sc in scales for rd in sc.rds)
-            _record("regional", name, scales, None, final, cons)
+            _event_close(ev, "completed", construction_ops_measured=int(cons),
+                         scales=len(scales), cells=sum(len(cr.cells) for sc in scales for cr in sc.coarse))
+            _record("regional", name, scales, None, final, cons, event=ev)
             if True:
                 # ---- the COMPOSED route: a collective evaluator on the cells
                 # of this scale (§7.3: coarsen the fixed law first, then fit)
@@ -2006,6 +2144,7 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
                     rejected.append({"name": cname, "reason": str(e)})
                     continue
                 except Exception as e:
+                    _attempt_end(att, "failed", reason="%s: %s" % (type(e).__name__, str(e)[:120]))
                     rejected.append({"name": cname,
                                      "reason": "composed route declined: %s: %s"
                                                % (type(e).__name__, e)})
@@ -2018,5 +2157,5 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
                     cn = cb if k_prev == 0 else "%s#%d" % (cb, k_prev + 1)
                     n_pairs = len(final.factors)
                     _record("composed", cn, scales, coll, rmk, cons,
-                            fit_ops=8 * (n_pairs + len(final.card)) * 4)
+                            fit_ops=8 * (n_pairs + len(final.card)) * 4, event=ev)
                 continue

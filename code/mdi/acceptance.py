@@ -173,10 +173,34 @@ def row_p1_triangle(wall):
     def producer_mutates_frozen_law(prog, r, queries, **kw):
         r.model.factors[0].table[0] = Fr(9)          # must raise: the frozen law is immutable
         return orig_exec(prog, r, queries, **kw)
+
+    def producer_replaces_canonical_tables(prog, r, queries, **kw):
+        # the r21 review's fault: ordinary ATTRIBUTE replacement on the canonical
+        # model reachable through the producer's Restricted, then a working
+        # restriction derived from the changed model
+        from mdi import preprocess as PRE
+        for f in r.model.factors:
+            if len(f.scope) == 1:
+                f.table = tuple(Fr(1) for _ in f.table)
+        r0 = M.restrict(r.model, r.evidence)
+        simp = PRE.simplify(r0)
+        return orig_exec(prog, M.Restricted(model=r.model, evidence=r.evidence, factors=simp.factors, free=list(simp.free),
+                                            card=dict(simp.card), constant=r0.constant, impossible_factor=None), queries, **kw)
+
+    def producer_replaces_model_factors(prog, r, queries, **kw):
+        r.model.factors = tuple(f for f in r.model.factors if len(f.scope) != 1)
+        return orig_exec(prog, r, queries, **kw)
+
+    def producer_replaces_cards(prog, r, queries, **kw):
+        r.model.card = tuple(3 for _ in r.model.card)
+        return orig_exec(prog, r, queries, **kw)
     rows_alias = {}
     for label, fn in (("producer_mutates_its_working_tables", producer_mutates_working_tables),
                       ("same_wrong_calculation_on_isolated_copy", producer_wrong_on_isolated_copy),
-                      ("producer_tries_to_mutate_frozen_law", producer_mutates_frozen_law)):
+                      ("producer_tries_to_mutate_frozen_law", producer_mutates_frozen_law),
+                      ("producer_replaces_canonical_factor_tables", producer_replaces_canonical_tables),
+                      ("producer_replaces_canonical_factor_list", producer_replaces_model_factors),
+                      ("producer_replaces_canonical_cardinalities", producer_replaces_cards)):
         RT.execute = fn
         try:
             bad = _replay_here(mp, plan_t)
@@ -187,15 +211,43 @@ def row_p1_triangle(wall):
                      if not (Fr(lo) <= pt[int(v)][st] <= Fr(hi)))
         rows_alias[label] = {"status": bad["status"], "obligation": txt[:200], "original_probabilities_excluded": misses,
                              "ok": bad["status"] == "REPLAY_REJECTED" and misses == 0
-                                   and ("does NOT contain" in txt or "tuple" in txt), "raw": _raw(bad)}
+                                   and ("does NOT contain" in txt or "tuple" in txt or "read-only" in txt), "raw": _raw(bad)}
     h_after = (hashlib.sha256(open(mp, "rb").read()).hexdigest(), hashlib.sha256(open(plan_t, "rb").read()).hexdigest())
     rowc = _row_ok(clean_t, pt, q)
     rowc["raw"] = _raw(clean_t)
+    after = _replay_here(mp, plan_t)             # the healthy pipeline still verifies after every fault
     out["working_input_alias"] = {"clean": rowc, "faults": rows_alias, "input_and_plan_hashes_unchanged": h_before == h_after,
+                                  "clean_after_faults": after["status"],
                                   "checker_restriction_derived_separately": (clean_t.get("stages") or {}).get("checker_restriction_s") is not None,
+                                  "authority_verified_before_check": (clean_t.get("stages") or {}).get("checker_authority_verify_s") is not None,
                                   "ok": rowc["ok"] and all(r["ok"] for r in rows_alias.values()) and h_before == h_after
-                                        and (clean_t.get("stages") or {}).get("checker_restriction_s") is not None}
+                                        and after["status"] == "REPLAY_VERIFIED"
+                                        and (clean_t.get("stages") or {}).get("checker_restriction_s") is not None
+                                        and (clean_t.get("stages") or {}).get("checker_authority_verify_s") is not None}
     oks.append(out["working_input_alias"]["ok"])
+    # the canonical types refuse every supported mutation path directly
+    law_t = LAW.OriginalLaw.freeze(M.read_uai(mp), {}, set(q))
+    fm = law_t.model
+    refusals = {}
+    for label, fn in (("factor.table = ...", lambda: setattr(fm.factors[0], "table", (Fr(9),) * len(fm.factors[0].table))),
+                      ("factor.table[0] = ...", lambda: fm.factors[0].table.__setitem__(0, Fr(9))),
+                      ("factor.origin = ...", lambda: setattr(fm.factors[0], "origin", 99)),
+                      ("factor.scope = ...", lambda: setattr(fm.factors[0], "scope", (1,))),
+                      ("del factor.table", lambda: delattr(fm.factors[0], "table")),
+                      ("model.factors = ...", lambda: setattr(fm, "factors", ())),
+                      ("model.factors[0] = ...", lambda: fm.factors.__setitem__(0, None)),
+                      ("model.card = ...", lambda: setattr(fm, "card", (3,) * len(fm.card))),
+                      ("law.model = ...", lambda: setattr(law_t, "model", None)),
+                      ("law.evidence[0] = 1", lambda: law_t.evidence.__setitem__(0, 1)),
+                      ("law.queries.add(9)", lambda: law_t.queries.add(9))):
+        try:
+            fn()
+            refusals[label] = "MUTATED"
+        except (TypeError, AttributeError) as e:
+            refusals[label] = type(e).__name__
+    out["canonical_types_read_only"] = {"refusals": refusals, "authority": law_t.verify_authority(),
+                                        "ok": all(v != "MUTATED" for v in refusals.values()) and law_t.verify_authority() is None}
+    oks.append(out["canonical_types_read_only"]["ok"])
     # ---- occurrence identities: the SAME Factor object listed twice, two separate
     # equal copies and their exact product are the same exact law and publish correctly
     f = M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)])
@@ -207,16 +259,26 @@ def row_p1_triangle(wall):
     m_prod = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)]),
                                                    M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(4), Fr(1), Fr(1), Fr(9)])]).validate()
     Zp, ptp = O.exact_all_marginals(M.restrict(m_prod, {}))
+    # tuple-table caller factors with default duplicate ids (the r21 safe-refusal edge),
+    # and explicit distinct ids, must represent the SAME law as the list-table inputs
+    ft = M.Factor(scope=(0, 1), card=(2, 2), table=(Fr(2), Fr(1), Fr(1), Fr(3)))
+    m_tuple = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0,), card=(2,), table=(Fr(1), Fr(3))), ft, ft]).validate()
+    m_ids = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)], origin=7),
+                                                  M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)], origin=11),
+                                                  M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)], origin=13)]).validate()
     rows_occ = {}
-    for label, mm in (("same_object_twice", m_twice), ("two_equal_copies", m_copies), ("exact_product", m_prod)):
+    for label, mm in (("same_object_twice", m_twice), ("two_equal_copies", m_copies), ("exact_product", m_prod),
+                      ("tuple_tables_default_ids", m_tuple), ("explicit_distinct_ids", m_ids)):
         law = LAW.OriginalLaw.freeze(mm, {}, {0, 1})
         rr = PLN.solve(mm, {}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
         rows_occ[label] = {"status": rr.status, "occurrence_ids": [x.origin for x in law.model.factors],
                            "truth_vs_exact_product": _contains(rr.intervals, ptp) if rr.intervals else False,
                            "caller_objects_untouched": (f.origin == -1 and isinstance(f.table, list)),
                            "law_hash": law.model_sha256[:16]}
-    same_law = rows_occ["same_object_twice"]["law_hash"] == rows_occ["two_equal_copies"]["law_hash"]
-    out["repeated_factor_occurrences"] = {"rows": rows_occ, "same_object_twice_equals_two_copies": same_law,
+    same_law = (rows_occ["same_object_twice"]["law_hash"] == rows_occ["two_equal_copies"]["law_hash"]
+                == rows_occ["tuple_tables_default_ids"]["law_hash"])
+    out["repeated_factor_occurrences"] = {"rows": rows_occ, "same_object_twice_equals_two_copies_equals_tuple_tables": same_law,
+                                          "tuple_caller_untouched": isinstance(ft.table, tuple) and ft.origin == -1,
                                           "ok": same_law and all(r["status"].startswith("CERTIFIED") and r["truth_vs_exact_product"]
                                                                  and r["caller_objects_untouched"] for r in rows_occ.values())}
     oks.append(out["repeated_factor_occurrences"]["ok"])
@@ -469,15 +531,40 @@ def row_p5_regional_deletion_composed(wall):
              "regional_L2": lambda n: n.startswith("regional:") and n.endswith(":L2"),
              "composed_statistic": lambda n: n.startswith("composed:") and ":statistic:" in n,
              "composed_gaussian": lambda n: n.startswith("composed:") and ":gaussian:" in n}
+    led = res.plan.get("invocation_ledger") or {}
+    out["selection"] = {"status": res.status, "chosen": res.plan.get("chosen"),
+                        "admitted_during_discovery": led.get("candidates_admitted_during_discovery"),
+                        "phase_timeouts": led.get("candidates_phase_timeout"),
+                        "note": "selection follows the complete price under this invocation's budget; the identity may win"}
     for label, pred in picks.items():
         nm = next((p["name"] for p in res.prices if pred(p["name"]) and p["eligible"]), None)
-        if nm is None:
-            out[label] = {"ok": False, "reason": "no eligible program", "offering": [p["name"] for p in res.prices]}
-            oks.append(False)
-            continue
-        rep = _replay_fresh(mp, _plan(res, d, nm), wall)
+        if nm is not None:
+            plan_path, how = _plan(res, d, nm), "admitted and priced in this invocation"
+        else:
+            # the BRANCH capability does not depend on this host finishing every
+            # candidate inside the construction allowance: a completed program
+            # preserved on disk is bound, executed and checked by a FRESH replay
+            # under its own contract (the saved program governs)
+            kind_prefix = {"regional_L1": "regional-", "regional_L2": "regional-", "composed_statistic": "composed-",
+                           "composed_gaussian": "composed-"}[label]
+            cands = []
+            for fn in sorted(os.listdir(d)):
+                if not (fn.startswith(kind_prefix) and fn.endswith(".plan.json")):
+                    continue
+                recj = json.load(open(os.path.join(d, fn)))
+                if pred(recj.get("name", "")):
+                    cands.append((fn, recj.get("name")))
+            if not cands:
+                out[label] = {"ok": False, "reason": "no completed program of this branch was persisted",
+                              "offering": [p["name"] for p in res.prices]}
+                oks.append(False)
+                continue
+            plan_path, nm = os.path.join(d, cands[0][0]), cands[0][1]
+            how = "completed program preserved on disk (not admitted within this invocation's allowance); bound in a fresh replay"
+        rep = _replay_fresh(mp, plan_path, wall)
         row = _row_ok(rep, pt, q)
         row["program"] = nm
+        row["how"] = how
         row["research"] = rep.get("research")
         row["raw"] = _raw(rep)
         out[label] = row
@@ -854,6 +941,27 @@ def row_p7_execution_contract(wall):
                                       and isinstance(cc.get("discovery_all_candidates_ops"), dict)
                                       and cc["discovery_all_candidates_ops"].get("recognizer_fit_ops") == "unknown"}
     oks.append(out["invocation_ledger"]["ok"])
+    # construction EVENTS: each executed scale build is one event with a terminal
+    # status; candidates reference the event they reuse; the invocation total sums
+    # unique events (the review's 1,096 x 3 = 3,288 over-count is gone)
+    evs = led.get("construction_events") or []
+    done = [e for e in evs if e.get("status") != "running"]
+    multi = [e for e in done if len(e.get("referenced_by") or []) > 1 and e.get("construction_ops_measured")]
+    uniq = sum(int(e.get("construction_ops_measured") or 0) for e in done)
+    naive = sum(int(e.get("construction_ops_measured") or 0) * max(1, len(e.get("referenced_by") or [])) for e in done)
+    cands_ref = [a for a in atts if a.get("kind") == "candidate"]
+    out["construction_event_ledger"] = {
+        "events": [{k: e.get(k) for k in ("id", "name", "status", "construction_ops_measured", "elapsed_s", "transcendental_calls")}
+                   | {"referenced_by": len(e.get("referenced_by") or [])} for e in evs],
+        "unique_event_total": uniq, "naive_per_candidate_total": naive,
+        "an_event_is_reused_by_several_candidates": bool(multi),
+        "every_event_closed": all(e.get("status") != "running" for e in evs),
+        "every_candidate_references_its_event": all(a.get("construction_event") is not None for a in cands_ref if a["name"].startswith(("regional", "composed"))),
+        "ledger_total_equals_unique_events": int(led.get("construction_ops_measured", -1)) == uniq,
+        "ok": bool(evs) and all(e.get("status") != "running" for e in evs) and bool(multi) and uniq < naive
+              and int(led.get("construction_ops_measured", -1)) == uniq
+              and all(a.get("construction_event") is not None for a in cands_ref if a["name"].startswith(("regional", "composed")))}
+    oks.append(out["construction_event_ledger"]["ok"])
     out["ok"] = all(oks)
     return out
 
@@ -1058,6 +1166,58 @@ def row_p8_lifecycle(wall):
     Z, pt3 = O.exact_all_marginals(M.restrict(m3, {}))
     res3, d3, el3, _ = _solve(m3, wall)
     typed = dict(collections.Counter(x.get("typed") for x in res3.rejected))
+    # INCUMBENT RETENTION under an injected clock: early research programs are
+    # persisted, bound and priced; a LATER construction exhausts the local
+    # allowance -- the early programs stay eligible and selection proceeds;
+    # the paired GLOBAL exhaustion is a RESOURCE_STOP
+    from mdi import routes as RT
+    from tests.test_mdi_research import ring_of_blocks, w as _w
+    mpr = _w(ring_of_blocks()[0])
+    saved_clock = B.DEFAULT_CLOCK[0]
+    B.DEFAULT_CLOCK[0] = clk
+    orig_bs = RT.build_scales
+    fired = {"n": 0}
+
+    def late_slow_build(*a, **k):
+        fired["n"] += 1
+        if fired["n"] == 1:
+            clk.t += 31.0                          # the FIRST regional build spends the whole local allowance
+        return orig_bs(*a, **k)
+    RT.build_scales = late_slow_build
+    try:
+        ri = PLN.solve(M.read_uai(mpr), {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        RT.build_scales = orig_bs
+        B.DEFAULT_CLOCK[0] = saved_clock
+    ledi = ri.plan.get("invocation_ledger") or {}
+    elig_research = [p["name"] for p in ri.prices if p["eligible"] and p["name"] != "identity"]
+    out["incumbent_retained_after_local_stop"] = {
+        "status": ri.status, "chosen": ri.plan.get("chosen"), "discovery_complete": ri.plan.get("discovery_complete"),
+        "admitted_during_discovery": ledi.get("candidates_admitted_during_discovery"), "eligible_research_records": len(elig_research),
+        "phase_stops": [s_ for s_ in (ri.budget or {}).get("stops", []) if str(s_.get("kind", "")).startswith("phase:")][:1],
+        "arm_stops": [s_ for s_ in (ri.budget or {}).get("stops", []) if not str(s_.get("kind", "")).startswith("phase:")],
+        "ok": ri.status.startswith("CERTIFIED") and ri.plan.get("discovery_complete") is False
+              and int(ledi.get("candidates_admitted_during_discovery") or 0) >= 1 and len(elig_research) >= 1
+              and not [s_ for s_ in (ri.budget or {}).get("stops", []) if not str(s_.get("kind", "")).startswith("phase:")]}
+    oks.append(out["incumbent_retained_after_local_stop"]["ok"])
+    B.DEFAULT_CLOCK[0] = clk
+    fired["n"] = 0
+
+    def late_global_build(*a, **k):
+        fired["n"] += 1
+        if fired["n"] == 1:
+            clk.t += 700.0                         # past the whole-arm WALL
+        return orig_bs(*a, **k)
+    RT.build_scales = late_global_build
+    try:
+        rg_ = PLN.solve(M.read_uai(mpr), {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        RT.build_scales = orig_bs
+        B.DEFAULT_CLOCK[0] = saved_clock
+    out["global_exhaustion_still_stops"] = {"status": rg_.status, "reason": str(rg_.reason)[:120],
+                                            "stops": [(s_.get("kind"), s_.get("where")) for s_ in (rg_.budget or {}).get("stops", [])][:2],
+                                            "ok": rg_.status == "RESOURCE_STOP" and not rg_.intervals}
+    oks.append(out["global_exhaustion_still_stops"]["ok"])
     out["construction_fallback_f3"] = {"status": res3.status, "chosen": res3.plan.get("chosen"), "seconds": round(el3, 1),
                                        "discovery_complete": res3.plan.get("discovery_complete"), "typed_refusals": {str(k): v for k, v in typed.items()},
                                        "phase_used_s": res3.budget.get("phase_used_s"), "truth": _contains(res3.intervals, pt3),
@@ -1106,14 +1266,14 @@ def row_p9_truth_predicate(wall):
 
 
 ROWS = [
-    ("P1 proof boundary: exact original triangle (clean 6; marker/residual swaps; working-input alias; occurrences)", row_p1_triangle),
+    ("P1 proof boundary: exact original triangle (clean 6; marker/residual swaps; working-input alias; read-only canonical types; occurrences)", row_p1_triangle),
     ("P2 proof boundary: exact original F6 chain (15/25/13/5; shared gf2 and gf3 faults; conservative witness; r19 grid gate)", row_p2_chain),
     ("P3 pure-sign rank-2 Gaussian and Fourier", row_p3_pure_sign_rank2),
     ("P4 statistic family: categorical, higher-arity/non-binary, hard zero, disconnected", row_p4_statistic_family),
-    ("P5 regional L1/L2, composed statistic/gaussian, nonzero deletion", row_p5_regional_deletion_composed),
+    ("P5 regional L1/L2, composed statistic/gaussian (branch capability via the saved program), nonzero deletion", row_p5_regional_deletion_composed),
     ("P6 saved-program authority: strict witnesses, identity tuples, effective request v3, collision, schema", row_p6_saved_program_authority),
     ("P7 execution contract: pre-admission applicability, one meter for producer+checker, deadline, MPFR, priced work, truthful ledger", row_p7_execution_contract),
-    ("P8 lifecycle: injected clock, early proofs past the wall, one terminal path, arm timing, entry flush, probe charging, memory, F3", row_p8_lifecycle),
+    ("P8 lifecycle: injected clock, early proofs past the wall, one terminal path, arm timing, incumbent retention vs global stop, F3", row_p8_lifecycle),
     ("P9 the independent truth predicate fails every disguise", row_p9_truth_predicate),
 ]
 
