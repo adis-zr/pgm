@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys, os, json, time, hashlib
 sys.set_int_max_str_digits(0)
 from fractions import Fraction as Fr
+from mdi import budget as B
 from mdi import (config as K, model as M, plan as P, arith as A, solve as S,
                  regions as R, modes as MD, collective as CO, planner as PL)
 
@@ -59,12 +60,16 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
     cap = cap or K.RESOURCES["arm_rss_bytes"]
     os.makedirs(rundir, exist_ok=True)
     label = "%s_%s" % (problem, "research" if research else "baseline")
+    # ONE absolute deadline for the whole invocation, from before any parsing
+    t0 = B.DEFAULT_CLOCK[0]()
+    t_end = t0 + wall
     prog = Progress(label, rundir, time.time() + wall, wall)
-    t0 = time.time()
     rec = {"problem": problem, "arm": "research" if research else "baseline",
            "label": label, "eps": str(eps), "wall_s": wall, "cap_bytes": cap,
-           "threads_declared": K.RESOURCES["threads"],
-           "spec_sha256": K.SPEC_SHA256, "stages": {}, "rejected_plans": []}
+           "threads_declared": K.RESOURCES["threads"], "outcome": "STARTED",
+           "spec_sha256": K.SPEC_SHA256, "stages": {}, "rejected_plans": [],
+           "started": time.strftime("%Y-%m-%d %H:%M:%S")}
+    _write(rec, rundir, label)          # durable STARTED record
     mp = model_path or os.path.join(PKT, problem + ".uai")
     ep = evid_path or os.path.join(PKT, problem + ".uai.evid")
     rec["input_sha256"] = {"model": sha256_file(mp), "evidence": sha256_file(ep)}
@@ -76,6 +81,12 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
         ev = M.read_evidence(ep, m)
         r = M.restrict(m, ev)
         rec["stages"]["parse_s"] = time.time() - ts
+        if B.DEFAULT_CLOCK[0]() > t_end:
+            rec["outcome"] = "RESOURCE_STOP"
+            rec["reason"] = "the complete wall of %.3f s was exhausted during parsing" % wall
+            rec["elapsed_s"] = B.DEFAULT_CLOCK[0]() - t0
+            _write(rec, rundir, label); prog.close()
+            return rec
         rec["free_vars"] = len(r.free)
         rec["restricted_zeros"] = sum(1 for f in r.factors for t in f.table if t == 0)
         rec["queries"] = sum(m.card[v] for v in range(m.nvars) if v not in ev)
@@ -103,8 +114,11 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
         # executor are gone.
         from mdi import pipeline as PLN
         ts = time.time()
+        remaining = t_end - B.DEFAULT_CLOCK[0]()
+        if remaining <= 0:
+            raise _Exhausted("the complete wall of %.3f s was exhausted before planning" % wall)
         res = PLN.solve(m, ev, queries=set(r.free), max_width=eps,
-                        wall_s=max(1.0, wall - (time.time() - t0)),
+                        wall_s=remaining,                    # NEVER renewed
                         cap_bytes=cap, research_enabled=research,
                         plan_dir=os.path.join(rundir, "plans_%s" % label),
                         progress=lambda ph, info="": prog(ph, info))
@@ -127,17 +141,33 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
             rec["contract_met"] = bool(worst <= eps)
             _write_intervals(res.intervals, m, rundir, label)
             _write_point_vector(res.intervals, m, ev, rundir, label)
+    except _Exhausted as e:
+        rec["outcome"] = "RESOURCE_STOP"
+        rec["reason"] = str(e)
     except Exception as e:
         import traceback
         rec["outcome"] = "IMPLEMENTATION_INCOMPLETE"
         rec["reason"] = "%s: %s" % (type(e).__name__, e)
         rec["traceback"] = traceback.format_exc()[-2000:]
-    rec["elapsed_s"] = time.time() - t0
     rec["peak_rss_bytes"] = S._rss_bytes()
+    rec["elapsed_s"] = B.DEFAULT_CLOCK[0]() - t0
     _write(rec, rundir, label)
-    prog("done", "%s in %.1fs" % (rec["outcome"], rec["elapsed_s"]))
+    # the DURABLE output is part of the contract: if it completed after the
+    # deadline the result was not delivered within the wall
+    rec["elapsed_s_including_durable_write"] = B.DEFAULT_CLOCK[0]() - t0
+    if rec["elapsed_s_including_durable_write"] > wall and rec["outcome"].startswith("CERTIFIED"):
+        rec["outcome_before_deadline_check"] = rec["outcome"]
+        rec["outcome"] = "RESOURCE_STOP"
+        rec["reason"] = ("the durable output completed %.3f s after the start, past the %.3f s wall"
+                         % (rec["elapsed_s_including_durable_write"], wall))
+        _write(rec, rundir, label)
+    prog("done", "%s in %.1fs" % (rec["outcome"], rec["elapsed_s_including_durable_write"]))
     prog.close()
     return rec
+
+
+class _Exhausted(Exception):
+    pass
 
 
 def _jsonable(x):
@@ -151,8 +181,14 @@ def _jsonable(x):
 
 
 def _write(rec, rundir, label):
-    with open(os.path.join(rundir, "arm_%s.json" % label), "w") as fh:
+    """Atomic durable write: temp file then rename."""
+    path = os.path.join(rundir, "arm_%s.json" % label)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
         json.dump(_jsonable(rec), fh, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
 
 
 def _write_intervals(pub, m, rundir, label):

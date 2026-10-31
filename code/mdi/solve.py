@@ -86,7 +86,7 @@ def _mk_deadline(t_end, cap_bytes, baseline=None,
 
 def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
           deadline_s=600.0, p_min=64, progress=None, run_checker=True,
-          plan_bytes_per_entry=None, preprocess=True, program=None):
+          plan_bytes_per_entry=None, preprocess=True, program=None, charge=None):
     """Compute every singleton marginal under `evidence` with certified intervals.
 
     `program` (optional) is a PERSISTED identity program: {"order": [...],
@@ -103,6 +103,13 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     rss_baseline = _rss_bytes()
     out = {"mode": mode, "eps": str(eps), "nvars": model.nvars,
            "evidence_vars": len(evidence), "stages": stages}
+    if deadline_s <= 0:
+        # an EXHAUSTED shared deadline is never renewed: no work starts
+        out.update({"outcome": "RESOURCE_STOP",
+                    "reason": "the shared deadline was exhausted before the identity executor "
+                              "started (%.3f s remaining)" % deadline_s,
+                    "elapsed_s": 0.0, "peak_rss_bytes": rss_baseline})
+        return out
     # A declared cap at or below the process baseline is a refusal, but the
     # caller is owed the CONCRETE planning estimate that justifies it, so the
     # refusal is deferred until after planning rather than raised here. The
@@ -287,7 +294,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     try:
         eng = C.Engine(pl, r.factors, ctx, mode=mode,
                        progress=lambda ph, n: prog(ph, "%d messages" % n),
-                       cap_bytes=cap_bytes, deadline=dl)
+                       cap_bytes=cap_bytes, deadline=dl, charge=charge)
         nup = ndn = 0
         roots = []
         seen_comp = set()
@@ -1069,6 +1076,11 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             "independent_plan_rebuilt": True, "mode": "I",
             "shares": "validated decomposition + MPFR primitives",
             "borrows_producer_values": False,
+            # every normalizing division above is guarded: a zero upper total
+            # is a refusal (raised), and a ratio is formed only when its
+            # denominator is proved positive; so reaching this point proves
+            # every denominator used was positive
+            "positive_denominators": True,
             "independent_aggregation_checked": _indep is not None,
             "independent_aggregation_scope":
                 (_indep_scope if _indep is not None else

@@ -50,7 +50,8 @@ class Engine:
     """mode 'P' = certified point (RNDD + depth labels); 'I' = directed interval."""
 
     def __init__(self, plan, factors, ctx, mode="P", progress=None,
-                 cap_bytes=None, deadline=None, conv_cache=None):
+                 cap_bytes=None, deadline=None, conv_cache=None, charge=None):
+        self.charge = charge           # shared-meter charge per message entry (r20)
         self.plan = plan
         self.factors = factors
         self.ctx = ctx
@@ -211,6 +212,8 @@ class Engine:
 
         t = Table(vars=sep, card=scard, vals=out, depth=out_depth, support=sup)
         self.msg[(src, dst)] = t
+        if self.charge is not None:
+            self.charge(t.size())
         return t
 
     # ---------- passes ----------

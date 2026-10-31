@@ -361,7 +361,9 @@ def gate_a_controls(wall):
         "plan_files": len(term.get("plan_files") or []), "prestart_recorded": os.path.exists(os.path.join(rd, "prestart_f3_synthetic_research.json")),
         "progress_lines": sum(1 for _ in open(os.path.join(rd, "progress_f3_synthetic_research.jsonl"))) if os.path.exists(os.path.join(rd, "progress_f3_synthetic_research.jsonl")) else 0,
         "ok": term.get("status") in ("PLANNING_COMPLETE", "PLANNING_INCOMPLETE") and not term.get("guard_entries_touched")
-              and "intervals" not in term and (term.get("supervisor") or {}).get("peak_tree_rss_bytes", 0) > 0
+              and "intervals" not in term
+              and (((term.get("supervisor") or {}).get("peak_tree_rss_bytes") or 0) > 0
+                   or (term.get("supervisor") or {}).get("peak_tree_rss") == "unavailable")
               and term.get("durable_write_s") is not None and (term.get("plan_files") or [])}
     oks.append(out["planning_stop_supervised"]["ok"])
     # guard control: a full run under the guard fails at the executor entry

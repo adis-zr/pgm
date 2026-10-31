@@ -24,37 +24,54 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
     admission rule refuses is refused here too. `wrap(stage, fn)` optionally
     wraps the executor and checker calls (the acceptance matrix counts
     operations through it)."""
-    from mdi import (model as M, plantype as PT, preprocess as PRE, config as K,
+    from mdi import (arith as A, model as M, plantype as PT, preprocess as PRE, config as K,
                      pipeline as PLN, budget as B, solve as S)
     import mdi.registry            # noqa: F401
     t0 = time.monotonic()
-    eps = Fr(eps) if eps is not None else K.MAX_WIDTH
-    m = M.read_uai(model_path)
-    ev = M.read_evidence(evidence_path, m) if evidence_path and evidence_path != "-" else {}
-    with open(plan_path) as fh:
-        txt = fh.read()
+    # the INVOCATION budget exists before any model / evidence / plan parsing:
+    # parsing is inside the observed, metered time
+    bg = B.Budget(wall_s=wall_s,
+                  limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
+                          "local_mass_entries": K.CAPS["local_mass_entries"]},
+                  rss_fn=S._rss_bytes, rss_limit=(cap_bytes or K.RESOURCES["arm_rss_bytes"]))
+    try:
+        bg.enter("parse")
+        m = M.read_uai(model_path)
+        ev = M.read_evidence(evidence_path, m) if evidence_path and evidence_path != "-" else {}
+        with open(plan_path) as fh:
+            txt = fh.read()
+        bg.check("parsed")
+    except B.BudgetExceeded as e:
+        return {"status": "REPLAY_RESOURCE_STOP", "kind": None, "name": None,
+                "reason": "parsing: %s" % e, "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
     try:
         rec = PT.PlanRecord.from_json(txt)
     except (PT.PlanError, ValueError) as e:
         # an invalid proof record (negative or non-rational allowance, unknown
-        # field, inconsistent program) is REFUSED at load with the named reason
+        # field, inconsistent program, missing request) is REFUSED at load
         return {"status": "REPLAY_REFUSED", "kind": None, "name": None,
                 "reason": "invalid proof record: %s" % e, "elapsed_s": time.monotonic() - t0}
+    # the request width GOVERNS: a caller's width must equal the record's;
+    # with none given the record's own request is replayed (never a default)
+    req_w = Fr(rec.request["width"])
+    if eps is not None and Fr(eps) != req_w:
+        return {"status": "REPLAY_REFUSED", "kind": rec.kind, "name": rec.name,
+                "reason": "the record was built for width %s; this request asks %s" % (req_w, Fr(eps)),
+                "elapsed_s": time.monotonic() - t0}
+    eps = req_w
     prog = rec.parsed_program
     queries = set(prog["queries"])
-    # the shared budget starts BEFORE preprocessing, exactly as the pipeline's
-    bg = B.Budget(wall_s=wall_s,
-                  limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
-                          "local_mass_entries": K.CAPS["local_mass_entries"]},
-                  rss_fn=S._rss_bytes, rss_limit=K.RESOURCES["arm_rss_bytes"])
     try:
-        bg.enter("parse")
+        bg.enter("restrict")
         r0 = M.restrict(m, ev)
         if r0.impossible_factor is not None or r0.constant == 0:
             proof = PLN.zero_evidence_proof(m, ev, r0)
             return {"status": ("REPLAY_ZERO_EVIDENCE_PROVED" if proof.get("proved")
                                else "REPLAY_REJECTED"),
                     "kind": rec.kind, "name": rec.name, "reason": proof["reason"],
+                    "supplied_program_verified": False,
+                    "note": "the INPUT was independently proved to have zero evidence weight; the supplied "
+                            "plan was neither executed nor verified",
                     "checker": proof, "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
         mh, eh, qh = PLN.model_hashes(m, ev, queries)
         bg.enter("preprocess")
@@ -65,6 +82,9 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
             return {"status": ("REPLAY_ZERO_EVIDENCE_PROVED" if proof.get("proved")
                                else "REPLAY_REJECTED"),
                     "kind": rec.kind, "name": rec.name, "reason": proof["reason"],
+                    "supplied_program_verified": False,
+                    "note": "the INPUT was independently proved to have zero evidence weight; the supplied "
+                            "plan was neither executed nor verified",
                     "checker": proof, "budget": bg.report(), "elapsed_s": time.monotonic() - t0}
     except B.BudgetExceeded as e:
         return {"status": "REPLAY_RESOURCE_STOP", "kind": rec.kind, "name": rec.name,
@@ -78,6 +98,7 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
                      free=list(simp.free), card=dict(simp.card),
                      constant=r0.constant, impossible_factor=None)
     nq = sum(r.card[v] for v in sorted(queries))
+    _tr_bind = A.transcendental_snapshot()
     try:
         bg.enter("persist" if rec.kind != "identity" else "bind")
         price = PLN.bind_loaded(rec, mh, eh, qh, r, simp, queries, nq,
@@ -98,10 +119,18 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
                           "rule: %s" % bad,
                 "price": price.as_dict(), "budget": bg.report(),
                 "elapsed_s": time.monotonic() - t0}
+    bind_calls = A.transcendental_since(_tr_bind)
     rec.properties.set("selected")
     out = PLN.Outcome(status="INIT")
     out.prices = [price.as_dict()]
     res = PLN.run_loaded(rec, m, ev, queries, r, bg, eps, cap, out=out, wrap=wrap)
+    if res.plan is not None:
+        # the BIND stage (reconstruction, fit proof, grids, repricing) is a
+        # metered stage of the replay like execute and check
+        res.plan.setdefault("stage_transcendental_calls", {})["bind"] = bind_calls
+        cc = res.plan.get("complete_cost") or {}
+        if isinstance(cc.get("measured"), dict):
+            cc["measured"].setdefault("stage_transcendental_calls", {})["bind"] = bind_calls
     status = {"CERTIFIED_RESEARCH_ROUTE": "REPLAY_VERIFIED",
               "CERTIFIED_FALLBACK_ONLY": "REPLAY_VERIFIED",
               "NUMERICAL_REFUSAL": "REPLAY_REJECTED",
@@ -139,7 +168,8 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
             "intervals": {str(v): [[str(lo), str(hi)] for lo, hi in pub[v]]
                           for v in sorted(pub)},
             "requested": sorted(int(v) for v in queries), "observed": {str(v): int(st) for v, st in sorted(ev.items())},
-            "request_width": str(eps),
+            "request_width": str(eps), "request": dict(rec.request or {}),
+            "model_card": [int(c) for c in m.card],
             "radius": str(sum((Fr(v) for v in rec.allocations.values()), Fr(0))),
             "max_width": str(worst), "research": (res.plan or {}).get("research"),
             "executor": {k: str(v) for k, v in ((res.plan or {}).get("executed") or {}).items()

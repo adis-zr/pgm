@@ -19,6 +19,11 @@
    "note": "",
    "value": 1
   },
+  "checker_comparison_ops": {
+   "label": "upper_bound",
+   "note": "comparisons and sign tests of the checker: <= 3 x its arithmetic bound",
+   "value": 13236
+  },
   "checker_metered_entries": {
    "label": "upper_bound",
    "note": "entries the checker's dense engine visits (dry run times nodes, plus the positive pass and its own region masses), charged to the SAME meter",
@@ -83,6 +88,11 @@
    "label": "measured_calibration",
    "note": "metered entries visited by this candidate's pricing probes (charged to the shared pricing counter, not the execution meter)",
    "value": 9
+  },
+  "producer_comparison_ops": {
+   "label": "upper_bound",
+   "note": "comparisons and sign tests of the producer: <= 3 x its arithmetic bound (hull 2(k-1) per k products; <= 3 per-entry tests, >= 1 multiply per entry)",
+   "value": 516
   },
   "producer_downward_ops": {
    "label": "exact",
@@ -323,6 +333,41 @@
   ]
  ],
  "rejected_alternatives": [],
+ "request": {
+  "arithmetic_mode": "E",
+  "card": {
+   "0": 2,
+   "1": 2,
+   "2": 2
+  },
+  "checker_precision": 144,
+  "checker_strategy": "dense_min_fill",
+  "collective_precision": 0,
+  "emax": null,
+  "emin": null,
+  "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "limits": {
+   "arm_rss_bytes": 8589934592,
+   "arm_wall_s": "600.0",
+   "local_mass_entries": 1000000,
+   "profile_comparisons": 2000000
+  },
+  "max_precision": 4096,
+  "model_sha256": "81fc621e452889eb73d9dc02755749fa1adc8eb9b9f7bd34ffe53a5b259e3389",
+  "observed": {},
+  "order": [
+   0
+  ],
+  "precision": 128,
+  "queries": [
+   0,
+   1,
+   2
+  ],
+  "query_sha256": "9a297ba133a66355bdf9fd27295a541e16a2ee98a3f85cafd90d2e0c820b74a8",
+  "version": 2,
+  "width": "1/100"
+ },
  "storage_schedule": {
   "final_largest_bag": 1,
   "final_variables": 1,

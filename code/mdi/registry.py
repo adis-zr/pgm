@@ -41,10 +41,12 @@ def pipeline_identity_executor(ctx):
     if prog is not None:
         sub = {"order": prog["order"], "precision": prog["precision"],
                "emin": prog["arithmetic"]["emin"], "emax": prog["arithmetic"]["emax"]}
+    bg = ctx.get("budget")
+    charge = (lambda n: bg.charge("local_mass_entries", n, "identity producer message entries")) if bg else None
     res = S.solve(ctx["model"], ctx["evidence"], eps=ctx["eps"], mode="P",
                   cap_bytes=ctx["cap_bytes"],
-                  deadline_s=max(0.001, ctx["remaining"]()),
-                  run_checker=False, preprocess=True, program=sub)
+                  deadline_s=ctx["remaining"](),
+                  run_checker=False, preprocess=True, program=sub, charge=charge)
     if res["outcome"] != "PRODUCER_COMPLETE_UNCHECKED":
         raise PT.ExecutorRefusal(res["outcome"], res.get("reason", ""))
     ctx["meta"] = {"evaluator": "identity", "ops": res.get("ops"),

@@ -180,7 +180,7 @@ def statistic_evaluate(marked, cand, Q, ctx, engine="sparse", deadline=None,
     exponential enclosure applied once at the root.
     
     """
-    A.reset_transcendental_calls()
+    _tr0 = A.transcendental_snapshot()
     rank = cand.rank
     free = marked.free()
     cap = support_cap or K.CAPS["local_mass_entries"]
@@ -265,7 +265,8 @@ def statistic_evaluate(marked, cand, Q, ctx, engine="sparse", deadline=None,
     meta = {"evaluator": "statistic", "engine": engine, "Q": Q,
             "statistic_support": len(total), "ops": ops,
             "peak_live_entries": peak, "rank": rank,
-            "transcendental_calls": A.transcendental_calls()}
+            "transcendental_calls": A.transcendental_since(_tr0)["total"],
+            "transcendental_by_kind": A.transcendental_since(_tr0)}
     return (Zlo, Zhi), counts, meta
 
 
@@ -389,7 +390,7 @@ def gf_evaluate(marked, cand, ctx, grids, engine="sparse", deadline=None,
         lats[k] = {"h": Fr(h), "points": pts, "nodes": len(pts), "tol": Fr(g["tol"]),
                    "rule": g["rule"], "version": g["version"], "m": int(g["m"]),
                    "terminal": int(g.get("K", g.get("J", 0)))}
-    A.reset_transcendental_calls()
+    _tr0 = A.transcendental_snapshot()      # monotone: every sin/cos/pi/sqrt/exp/log since here
     sg = {k: CO._sqrt_enclose(cand.gammas[k], ctx) for k in range(rank)}
     base_int = _law_tables(marked, lambda x: (x, x))
     base_cx = _law_tables(marked, lambda x: (x, x, Fr(0), Fr(0)))
@@ -462,7 +463,8 @@ def gf_evaluate(marked, cand, ctx, grids, engine="sparse", deadline=None,
                     counts[v][a][0] += wl * mplus[v][a][0]
                     counts[v][a][1] += wu * mplus[v][a][1]
         meta["quadrature_tv"] = str(CO.gf3_eta([lats[k]["tol"] for k in pos]))
-        meta["transcendental_calls"] = A.transcendental_calls()
+        meta["transcendental_calls"] = A.transcendental_since(_tr0)["total"]
+        meta["transcendental_by_kind"] = A.transcendental_since(_tr0)
         meta["precomputed_phase_entries"] = 0
         meta["peak_live_entries"] = peak_live
         return (Zlo, Zhi), {v: [tuple(r) for r in rows] for v, rows in counts.items()}, meta
@@ -674,7 +676,8 @@ def gf_evaluate(marked, cand, ctx, grids, engine="sparse", deadline=None,
                  "negative_exponent_Ymax": str(sum((cand.gammas[k] * _features_R(cand, k) ** 2 / 2
                                                     for k in neg), Fr(0))),
                  "quadrature_tv": str(CO.gf3_eta([lats[k]["tol"] for k in pos])),
-                 "transcendental_calls": A.transcendental_calls(),
+                 "transcendental_calls": A.transcendental_since(_tr0)["total"],
+                 "transcendental_by_kind": A.transcendental_since(_tr0),
                  "peak_live_entries": peak_live,
                  "ratio_rows": {str(v): [[str(a), str(b)] for a, b in rows[v]] for v in rows}})
     return (Zlo, Zhi), counts, meta

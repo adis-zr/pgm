@@ -28,12 +28,12 @@
    "note": "positive nodes times conjugate pairs (complex contractions)"
   },
   "transcendental_producer_forecast": {
-   "value": 490,
+   "value": 1642,
    "label": "forecast",
    "note": "MPFR calls of the producer's enclosures (probed per-primitive counts)"
   },
   "transcendental_checker_forecast": {
-   "value": 932,
+   "value": 2084,
    "label": "forecast",
    "note": "MPFR calls of the checker's own enclosures (probed per-primitive counts)"
   },
@@ -93,7 +93,7 @@
    "note": "per-node enclosures, marker accumulation and integration, the original-variable payload readout, normalization and the energy bound"
   },
   "transcendental_evaluations": {
-   "value": 932,
+   "value": 2084,
    "label": "forecast",
    "note": "MPFR exp/log/trig/sqrt/pi evaluations per engine, from measured per-primitive call counts; NOT a Fraction count and not summed into total_arithmetic; each engine REPORTS its measured count"
   },
@@ -171,6 +171,16 @@
    "value": 24,
    "label": "exact",
    "note": "dense input tables plus offset maps plus marker payloads"
+  },
+  "producer_comparison_ops": {
+   "value": 778158,
+   "label": "upper_bound",
+   "note": "comparisons and sign tests of the producer: <= 3 x its arithmetic bound (hull 2(k-1) per k products; <= 3 per-entry tests, >= 1 multiply per entry)"
+  },
+  "checker_comparison_ops": {
+   "value": 781326,
+   "label": "upper_bound",
+   "note": "comparisons and sign tests of the checker: <= 3 x its arithmetic bound"
   }
  },
  "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -423,10 +433,47 @@
  "query_sha256": "9a297ba133a66355bdf9fd27295a541e16a2ee98a3f85cafd90d2e0c820b74a8",
  "region_membership": [],
  "rejected_alternatives": [],
+ "request": {
+  "arithmetic_mode": "E",
+  "card": {
+   "0": 2,
+   "1": 2,
+   "2": 2
+  },
+  "checker_precision": 144,
+  "checker_strategy": "dense_min_fill",
+  "collective_precision": 128,
+  "emax": null,
+  "emin": null,
+  "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "limits": {
+   "arm_rss_bytes": 8589934592,
+   "arm_wall_s": "600.0",
+   "local_mass_entries": 1000000,
+   "profile_comparisons": 2000000
+  },
+  "max_precision": 4096,
+  "model_sha256": "75a671160a0b6e590f6a5f7d3eeeb88c03879e32fb04973576d5971f018bea14",
+  "observed": {},
+  "order": [
+   0,
+   1,
+   2
+  ],
+  "precision": 128,
+  "queries": [
+   0,
+   1,
+   2
+  ],
+  "query_sha256": "9a297ba133a66355bdf9fd27295a541e16a2ee98a3f85cafd90d2e0c820b74a8",
+  "version": 2,
+  "width": "1/100"
+ },
  "storage_schedule": {
   "final_largest_bag": 2,
   "final_variables": 3,
-  "identity": "mixed-req716a7146-472a8dbd5acae186",
+  "identity": "mixed-req716a7146-ffedf83d880387fa",
   "levels": 0
  },
  "version": 1

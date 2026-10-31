@@ -97,7 +97,10 @@ def _child(model_path, evid_path, rundir, label, research, eps, wall, cap):
         rec["input_sha256"] = {"model": sha256_file(model_path),
                                "evidence": (sha256_file(evid_path) if evid_path else None)}
         pdir = os.path.join(rundir, "plans_%s" % label)
-        res = PLN.solve(m, ev, queries=queries, max_width=eps, wall_s=max(1.0, wall - (time.monotonic() - t0)),
+        remaining = wall - (time.monotonic() - t0)
+        if remaining <= 0:
+            raise RuntimeError("the wall of %.1f s was exhausted during parsing" % wall)
+        res = PLN.solve(m, ev, queries=queries, max_width=eps, wall_s=remaining,
                         cap_bytes=cap, research_enabled=research, plan_dir=pdir,
                         progress=progress, plan_only=True)
         progress("terminal", res.status)
@@ -194,6 +197,8 @@ def _tree_rss_bytes(pid):
                 rows.append((int(parts[0]), int(parts[1]), int(parts[2]) * 1024))
             except ValueError:
                 pass
+    if not any(r[0] == pid for r in rows):
+        return None            # the sampler cannot see the child: UNAVAILABLE, never zero
     tree = {pid}
     changed = True
     while changed:
@@ -233,6 +238,7 @@ def run_pass(problem, research, rundir, eps=None, wall=None, cap=None, model_pat
     proc = subprocess.Popen([sys.executable, "-c", code], cwd=HERE, env=env,
                             stdout=subprocess.DEVNULL, stderr=open(os.path.join(rundir, "stderr_%s.log" % label), "w"))
     peak_tree = 0
+    sampled = 0
     stop = None
     while True:
         rc = proc.poll()
@@ -241,6 +247,7 @@ def run_pass(problem, research, rundir, eps=None, wall=None, cap=None, model_pat
         el = time.monotonic() - t0
         rss = _tree_rss_bytes(proc.pid)
         if rss is not None:
+            sampled += 1
             peak_tree = max(peak_tree, rss)
             if rss > cap:
                 stop = {"kind": "rss_tree", "used": rss, "limit": cap, "at_s": round(el, 1)}
@@ -259,7 +266,10 @@ def run_pass(problem, research, rundir, eps=None, wall=None, cap=None, model_pat
         term["status"] = "PLANNING_RESOURCE_STOP"
         term["supervisor_stop"] = stop
         term["reason"] = "the supervisor stopped the pass: %s" % stop
-    term["supervisor"] = {"elapsed_s": round(elapsed, 3), "peak_tree_rss_bytes": peak_tree,
+    term["supervisor"] = {"elapsed_s": round(elapsed, 3),
+                          "peak_tree_rss_bytes": (peak_tree if sampled else None),
+                          "peak_tree_rss": ("%d" % peak_tree if sampled else "unavailable"),
+                          "rss_samples": sampled,
                           "child_exit": proc.returncode, "wall_s": wall, "cap_bytes": cap}
     with open(term_path, "w") as fh:
         json.dump(term, fh, indent=1, default=str)
@@ -281,7 +291,8 @@ def main(argv):
             term = run_pass(prob, research, d, eps=eps)
             row = {"problem": prob, "arm": "research" if research else "baseline", "status": term.get("status"),
                    "chosen": (term.get("plan") or {}).get("chosen"), "elapsed_s": term.get("supervisor", {}).get("elapsed_s"),
-                   "peak_tree_rss_bytes": term.get("supervisor", {}).get("peak_tree_rss_bytes")}
+                   "peak_tree_rss_bytes": term.get("supervisor", {}).get("peak_tree_rss_bytes"),
+                   "peak_tree_rss": term.get("supervisor", {}).get("peak_tree_rss", "unavailable")}
             print("[planning] %-28s %-22s chosen=%s %.1fs" % (prob + " " + row["arm"], row["status"], row["chosen"],
                                                               row["elapsed_s"] or 0), flush=True)
             summary.append(row)

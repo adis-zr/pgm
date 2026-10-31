@@ -62,7 +62,7 @@ class CostRecord:
         `sunk_arithmetic` and in the complete invocation cost; it is not
         charged again against a candidate at selection. A MISSING required
         counter makes the total UNKNOWN, never zero."""
-        keys = self.REQUIRED + ("statistic_join_ops", "grid_ops")
+        keys = self.REQUIRED + ("statistic_join_ops", "grid_ops", "producer_comparison_ops", "checker_comparison_ops")
         missing = [k for k in self.REQUIRED if k not in self.counters]
         if missing:
             self.eligible = False
@@ -124,6 +124,75 @@ class CostRecord:
         if self.bytes_checker:
             d["bytes_checker"] = self.bytes_checker.as_dict()
         return d
+
+
+def identity_checker_feasibility(plan, r, budget=None):
+    """Applicability of the identity route's INDEPENDENT checker, decided
+    before any producer work. The structural checker (sparse exact junction
+    tree) refuses any bag above `checker_contraction_space`. Full positive
+    support makes a bag's occupancy its full domain: an excess is PROVED.
+    With hard zeros the occupancy is uncertain: a bounded, charged Boolean
+    support probe (entry cap = the checker cap) decides it, else UNKNOWN."""
+    from mdi import sparse_jt as SJ, config as K
+    cap = K.CAPS["checker_contraction_space"]
+    largest = int(getattr(plan, "largest_bag_entries", 0) or 0)
+    out = {"producer": "FEASIBLE", "largest_bag": largest, "checker_cap": cap}
+    if largest <= cap:
+        out["checker"] = "FEASIBLE"
+        return out
+    has_zero = any(Fr(x) == 0 for f in r.factors for x in f.table)
+    if not has_zero:
+        out["checker"] = "CHECKER_CAP_PROVED"
+        out["checker_reason"] = ("full positive support: the checker's largest bag %d exceeds its %d-entry "
+                                 "cap" % (largest, cap))
+        return out
+    used = {"n": 0}
+
+    def charge(n):
+        used["n"] += n
+        if budget is not None:
+            budget.charge("pricing_entries", n, "identity checker support probe")
+    try:
+        tabs = [SJ.Table(tuple(f.scope), {k: True for k in SJ.table_from_factor(f).entries}) for f in r.factors]
+        touched = {v for f in r.factors for v in f.scope}
+        for v in r.free:
+            if v not in touched:
+                tabs.append(SJ.Table((v,), {(c,): True for c in range(r.card[v])}))
+        SJ.SparseJT(tabs, r.card, SJ.Boolean, entry_cap=cap, order=list(plan.order), charge=charge).run()
+        out["checker"] = "FEASIBLE"
+        out["checker_reason"] = "bounded Boolean support probe completed under the checker cap (%d entries charged)" % used["n"]
+    except SJ.SparseError as e:
+        out["checker"] = "CHECKER_FEASIBILITY_UNKNOWN"
+        out["checker_reason"] = "hard zeros leave the occupancy uncertain and the bounded probe refused: %s" % str(e)[:120]
+    out["probe_entries_charged"] = used["n"]
+    return out
+
+
+
+
+def _comparison_bound(rec):
+    """Every exact-rational COMPARISON and sign test the engines perform is
+    priced by name, per engine, from the arithmetic bounds already on the
+    record: the interval hull of k products takes at most 2(k-1) < 2k
+    comparisons (min and max), an interval add takes none, and every produced
+    entry (at least one multiply each) is tested for sign / zero / absolute
+    value at most three times -- so comparisons + sign tests <= 3 x arithmetic
+    operations. The matrix counts EVERY Fraction operation (arithmetic,
+    comparison, negation, absolute value, power) and compares the sum with
+    arithmetic + this bound, per engine."""
+    def _val(k):
+        c = rec.counters.get(k)
+        return None if (c is None or c.value is None) else int(c.value)
+    prod = [_val(k) for k in ("producer_upward_ops", "producer_downward_ops", "readout_ops")]
+    chk = _val("checker_ops")
+    if None not in prod:
+        rec.put("producer_comparison_ops", 3 * sum(prod), UPPER,
+                "comparisons and sign tests of the producer: <= 3 x its arithmetic bound (hull 2(k-1) per k products; "
+                "<= 3 per-entry tests, >= 1 multiply per entry)")
+    if chk is not None:
+        rec.put("checker_comparison_ops", 3 * chk, UPPER,
+                "comparisons and sign tests of the checker: <= 3 x its arithmetic bound")
+    return rec
 
 
 def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=None):
@@ -252,6 +321,7 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
     rec.put("factor_entry_conversions", conv, UPPER,
             "reduced by the per-entry conversion cache")
     rec.put("requested_markers", n_requested, EXACT)
+    _comparison_bound(rec)
     rec.put("precision_bits", precision, EXACT)
     rec.put("largest_bag_entries", plan.largest_bag_entries, EXACT)
     rec.put("induced_width", plan.induced_width, EXACT)
@@ -495,6 +565,7 @@ def price_regional_plan(name, regions, coarse, rds, projected, n_requested,
                                      "joint-enumeration fallback")
         rec.bytes_checker = Counter(total_assign * 128, FORECAST,
                                     "joint-enumeration fallback")
+    _comparison_bound(rec)
     return rec
 
 
@@ -581,9 +652,9 @@ def primitive_call_counts():
     ctx = A.Ctx(64)
 
     def count(fn):
-        A.reset_transcendental_calls()
+        snap = A.transcendental_snapshot()      # the counter is monotone: measure by difference
         fn()
-        return A.transcendental_calls()
+        return A.transcendental_since(snap)["total"]
     wide = [(Fr(0), Fr(7)), (Fr(-1), Fr(1)), (Fr(1, 3), Fr(1, 2)), (Fr(3), Fr(10))]
     _PRIM.update({
         "p_weight": count(lambda: CO._normal_weight(Fr(1, 2), Fr(1), ctx)),
@@ -981,8 +1052,20 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
             # distribution is convolved with the others' totals first
             tot_sup = int(rec.counters["statistic_support_bound"].value)
             conv_others = (2 * tot_sup * tot_sup) if nroots > 1 else 0
+            # EVERY exact-rational operation of the statistic readout is
+            # priced by name: key construction (rank products per support
+            # point per cell), the root-weight pairs and their accumulation,
+            # the convolution with the other components, the restoration of
+            # the original-variable payload (ratio, sign, clamp) and the
+            # comparisons of the enclosure endpoints
+            keys = 2 * rank * tot_sup * (1 + n_cells)
+            restore = 6 * tot_sup * (1 + n_cells) + 4 * tot_sup
             per_node_extra = (2 * tot_sup * (1 + n_cells) + 4 * n_cells
-                              + n_cells * conv_others + 3 * nroots * conv_others)
+                              + n_cells * conv_others + 3 * nroots * conv_others
+                              + keys + restore)
+            rec.put("statistic_key_ops", keys, UPPER, "statistic key construction per support point and cell")
+            rec.put("statistic_restoration_ops", restore, UPPER,
+                    "root-weight accumulation, payload restoration and endpoint comparisons")
             pr = primitive_call_counts()
             trans_p = tot_sup * (1 + n_cells) * pr["stat_root"]
             trans_c = tot_sup * (1 + n_cells) * pr["stat_root_checker"]
@@ -1149,6 +1232,7 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
                                 + extra_live * 2 * 64,
                                 FORECAST, "dense dry run liveness plus retained inputs plus the "
                                           "retained node data and precomputed phases")
+    _comparison_bound(rec)
     return rec, order
 
 

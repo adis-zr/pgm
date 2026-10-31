@@ -12,6 +12,11 @@
    "note": "",
    "value": 0
   },
+  "checker_comparison_ops": {
+   "label": "upper_bound",
+   "note": "comparisons and sign tests of the checker: <= 3 x its arithmetic bound",
+   "value": 1959831
+  },
   "checker_metered_entries": {
    "label": "upper_bound",
    "note": "entries the checker's dense engine visits (dry run times nodes, plus the positive pass and its own region masses), charged to the SAME meter",
@@ -107,6 +112,11 @@
    "note": "metered entries visited by this candidate's pricing probes (charged to the shared pricing counter, not the execution meter)",
    "value": 436
   },
+  "producer_comparison_ops": {
+   "label": "upper_bound",
+   "note": "comparisons and sign tests of the producer: <= 3 x its arithmetic bound (hull 2(k-1) per k products; <= 3 per-entry tests, >= 1 multiply per entry)",
+   "value": 1744443
+  },
   "producer_downward_ops": {
    "label": "exact",
    "note": "both passes are inside producer_schedule_ops",
@@ -165,17 +175,17 @@
   "transcendental_checker_forecast": {
    "label": "forecast",
    "note": "MPFR calls of the checker's own enclosures (probed per-primitive counts)",
-   "value": 964
+   "value": 2212
   },
   "transcendental_evaluations": {
    "label": "forecast",
    "note": "MPFR exp/log/trig/sqrt/pi evaluations per engine, from measured per-primitive call counts; NOT a Fraction count and not summed into total_arithmetic; each engine REPORTS its measured count",
-   "value": 964
+   "value": 2212
   },
   "transcendental_producer_forecast": {
    "label": "forecast",
    "note": "MPFR calls of the producer's enclosures (probed per-primitive counts)",
-   "value": 508
+   "value": 1756
   }
  },
  "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -415,10 +425,47 @@
  "query_sha256": "9a297ba133a66355bdf9fd27295a541e16a2ee98a3f85cafd90d2e0c820b74a8",
  "region_membership": [],
  "rejected_alternatives": [],
+ "request": {
+  "arithmetic_mode": "E",
+  "card": {
+   "0": 2,
+   "1": 2,
+   "2": 2
+  },
+  "checker_precision": 144,
+  "checker_strategy": "dense_min_fill",
+  "collective_precision": 128,
+  "emax": null,
+  "emin": null,
+  "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "limits": {
+   "arm_rss_bytes": 8589934592,
+   "arm_wall_s": "600.0",
+   "local_mass_entries": 1000000,
+   "profile_comparisons": 2000000
+  },
+  "max_precision": 4096,
+  "model_sha256": "75a671160a0b6e590f6a5f7d3eeeb88c03879e32fb04973576d5971f018bea14",
+  "observed": {},
+  "order": [
+   0,
+   1,
+   2
+  ],
+  "precision": 128,
+  "queries": [
+   0,
+   1,
+   2
+  ],
+  "query_sha256": "9a297ba133a66355bdf9fd27295a541e16a2ee98a3f85cafd90d2e0c820b74a8",
+  "version": 2,
+  "width": "1/100"
+ },
  "storage_schedule": {
   "final_largest_bag": 8,
   "final_variables": 3,
-  "identity": "mixed-req716a7146-7f3fd97d66ce174d",
+  "identity": "mixed-req716a7146-ad7b1d6e8165df6a",
   "levels": 0
  },
  "version": 1

@@ -153,6 +153,47 @@ def canonicalize(residual_unary, residual_pairs, card, ctx: A.Ctx,
                      scale=scale, nu_extra=nu_extra, detail=detail)
 
 
+def strict_residual(residual_unary, residual_pairs, card, ctx: A.Ctx, mask):
+    """The STRICT masked representation, constructed explicitly: every
+    positive pair interaction OFF the mask is removed after its exact unary
+    gauge transfer (C u v absorbed into the endpoint unaries, nothing charged
+    per edge); every pair ON the mask, every zero-bearing pair and every
+    higher-arity factor is retained exactly. The representation's error is
+    then proved as a WHOLE by the gauge-invariant fit certificate on the
+    original law (collective_route.fit_certificate), not bounded edge by
+    edge. Returns a Canonical whose dropped_pairs carry no per-edge charge
+    (nu_extra = 0): the full-fit proof is the only certificate."""
+    unary = {v: [Fr(x) for x in row] for v, row in residual_unary.items()}
+    mask = {(min(a, b), max(a, b)) for a, b in mask}
+    scale = Fr(1)
+    transferred, dropped, kept = [], [], {}
+    for (i, j), tbl in sorted(residual_pairs.items()):
+        t = [Fr(x) for x in tbl]
+        di, dj = card[i], card[j]
+        if (min(i, j), max(i, j)) in mask or any(x <= 0 for x in t):
+            kept[(i, j)] = t
+            continue
+        try:
+            g = gauge_split(t, di, dj)
+        except Declined:
+            raise Declined("strict mask: pair (%d, %d) has no positive gauge split" % (i, j))
+        scale *= g.C
+        for a in range(di):
+            unary[i][a] *= g.u[a]
+        for b in range(dj):
+            unary[j][b] *= g.v[b]
+        if all(g.H[a][b] == 1 for a in range(di) for b in range(dj)):
+            transferred.append((i, j))
+        else:
+            dropped.append((i, j, Fr(0)))        # charged by the FULL fit proof, not here
+    detail = {"pairs_in": len(residual_pairs), "transferred_exactly": len(transferred),
+              "dropped_with_charge": 0, "dropped_for_full_fit_proof": len(dropped),
+              "kept_interacting": len(kept), "nu_extra": "0", "drop_budget": "0",
+              "strict_mask": sorted(mask), "construction": "explicit strict (full-fit proof)"}
+    return Canonical(unary=unary, dropped_pairs=dropped, transferred_pairs=transferred, kept_pairs=kept,
+                     scale=scale, nu_extra=Fr(0), detail=detail)
+
+
 def tv_from_total_nu(nu_fit: Fr, nu_drop: Fr) -> Fr:
     """TV <= tanh(nu/2) <= nu/2 on the COMBINED uniform log error.
 

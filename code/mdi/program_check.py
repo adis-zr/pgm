@@ -282,6 +282,51 @@ def _coarse_from_record(rg, boundary):
     return cr
 
 
+def own_level_zero(r, queries):
+    """The checker's level-zero original observable: for every requested
+    original variable v (its own owner), the original cardinality, a unit mass
+    per state and the exact state indicator N_{v,a}(c) = [a == c]. Derived
+    from the ORIGINAL variable/state identifiers, not from any producer
+    object."""
+    queries = sorted(int(v) for v in queries)
+    card = {int(v): int(c) for v, c in r.card.items()}
+    for v in queries:
+        if v not in card:
+            raise CheckError("requested variable %d is not a free variable of the restricted model" % v)
+    marks = {}
+    for v in queries:
+        for a in range(card[v]):
+            marks[(v, a)] = [Fr(1) if c == a else Fr(0) for c in range(card[v])]
+    return MK.Marked(card=card, factors=list(r.factors), owner={v: v for v in queries},
+                     marks=marks, mass={v: [Fr(1)] * card[v] for v in card},
+                     orig_card=dict(card), level=0)
+
+
+def verify_level_zero(own, theirs):
+    """Verify a producer-side level-zero Marked object against the checker's
+    own observable: identical owners, cardinalities, unit masses and exact
+    state indicators. Returns a reason or None."""
+    if sorted(theirs.queries()) != sorted(own.queries()):
+        return "requested set %s differs from the original request %s" % (
+            sorted(theirs.queries())[:6], sorted(own.queries())[:6])
+    for v in own.queries():
+        if theirs.owner.get(v) != v:
+            return "variable %d is not its own owner at level zero (owner %s)" % (v, theirs.owner.get(v))
+        if theirs.orig_card.get(v) != own.orig_card[v] or theirs.card.get(v) != own.card[v]:
+            return "variable %d cardinality %s/%s differs from the original %d" % (
+                v, theirs.card.get(v), theirs.orig_card.get(v), own.card[v])
+        if [Fr(x) for x in theirs.mass.get(v, [])] != own.mass[v]:
+            return "variable %d does not carry unit masses at level zero" % v
+        for a in range(own.card[v]):
+            if [Fr(x) for x in theirs.marks.get((v, a), [])] != own.marks[(v, a)]:
+                return ("marker (%d,%d) is not the exact state indicator [a == c] "
+                        "(shared initial-marker fault)" % (v, a))
+    for v in own.card:
+        if theirs.card.get(v) != own.card[v]:
+            return "free variable %d cardinality differs" % v
+    return None
+
+
 def verify_scale(marked: MK.Marked, sc, deadline=None, budget=None):
     """Verify one persisted scale on the checker's own input model and return
     the checker's OWN lifted model plus the radii it established."""
@@ -688,7 +733,7 @@ def _own_event_counts(rmk, jt, alg, value_of_cell):
 def own_statistic_reference(rmk, coll, ctx, deadline, charge):
     """The checker's own statistic-DP reference: own rounding, dense statistic
     contraction, own root exponential, own marker restoration."""
-    A.reset_transcendental_calls()
+    _tr0 = A.transcendental_snapshot()
     cand = coll["candidate"]
     Q = coll["Q"]
     rank = cand.rank
@@ -739,7 +784,8 @@ def own_statistic_reference(rmk, coll, ctx, deadline, charge):
     counts = {v: [integrate(d) for d in rows] for v, rows in ev.items()}
     return counts, {"engine": "dense", "method": "checker-owned statistic reference",
                     "support": len(total), "Z": (str(Zlo), str(Zhi)),
-                    "transcendental_calls": A.transcendental_calls(), "ops": dict(jt.ops)}
+                    "transcendental_calls": A.transcendental_since(_tr0)["total"],
+                    "transcendental_by_kind": A.transcendental_since(_tr0), "ops": dict(jt.ops)}
 
 
 def _own_pi(ctx):
@@ -756,7 +802,7 @@ def _own_trig(lo, hi, ctx, which):
     widened to the attained extremum when a critical point can lie inside."""
     if lo > hi:
         lo, hi = hi, lo
-    fn = gmpy2.cos if which == "cos" else gmpy2.sin
+    fn = A.T.cos if which == "cos" else A.T.sin
     extra = 2 * ctx.p + 64
     cd = gmpy2.context(precision=extra, round=gmpy2.RoundDown)
     cu = gmpy2.context(precision=extra, round=gmpy2.RoundUp)
@@ -975,17 +1021,21 @@ def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
                              % (k, g["R"], Rk))
         if Fr(g["beta"]) != Fr(cand.gammas[k]):
             raise CheckError("mode %d grid beta %s is not the mode's gamma %s" % (k, g["beta"], cand.gammas[k]))
-        bad = CO.gf_grid_admissible(g, Fr(cand.gammas[k]), Rk)
+        # the checker's OWN sufficient conditions, by direct inequalities on
+        # the loaded witnesses (never the producer's constructor)
+        bad = CO.gf_sufficient_conditions(g, Fr(cand.gammas[k]), Rk)
         if bad:
             raise CheckError("mode %d grid: %s" % (k, bad))
         own_delta.append(Fr(g["tol"]))
-    # GF3: the recorded quadrature radius (a published TV radius) must cover
-    # the checker's own eta of the positive tolerances
-    own_qtv = CO.gf3_eta([own_delta[k] for k in pos]) if pos else Fr(0)
-    if own_qtv > Fr(coll["quadrature_tv"]):
-        raise CheckError("the recorded quadrature radius %s does not cover the "
-                         "checker's own GF3 allowance %s" % (coll["quadrature_tv"], own_qtv))
-    A.reset_transcendental_calls()
+    # GF3 by the direct inequality (1 - eta)^2 B <= (1 + eta)^2 A on the
+    # recorded allowance eta and the positive tolerances
+    own_qtv = Fr(coll["quadrature_tv"])
+    if pos and not CO.gf3_transfer_holds(own_qtv, [own_delta[k] for k in pos]):
+        raise CheckError("the recorded quadrature radius %s does not satisfy the GF3 transfer "
+                         "inequality for tolerances %s" % (own_qtv, [str(own_delta[k]) for k in pos]))
+    if not pos and own_qtv != 0:
+        raise CheckError("a pure Fourier program records a nonzero quadrature radius %s" % own_qtv)
+    _tr0 = A.transcendental_snapshot()
     free = rmk.free()
     sg = {k: _own_sqrt_pair(Fr(cand.gammas[k]), ctx) for k in range(rank)}
 
@@ -1050,7 +1100,8 @@ def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
             {"engine": "dense", "method": "checker-owned Gaussian reference",
              "positive_nodes": len(mass), "own_quadrature_tv": str(own_qtv),
              "own_lattice_bounds": [str(x) for x in own_delta],
-             "transcendental_calls": A.transcendental_calls(),
+             "transcendental_calls": A.transcendental_since(_tr0)["total"],
+             "transcendental_by_kind": A.transcendental_since(_tr0),
              "ops": dict(engine_int.ops) if engine_int is not None else {}}
     # ---- negative grid: conjugate pairs from a key set built ONCE
     neg_pts = [points(k) for k in neg]
@@ -1169,13 +1220,14 @@ def own_gf_reference(rmk, coll, ctx, deadline, charge, retained=None):
                     "conjugate_pairs": len(pairs), "tensor_delta": str(delta),
                     "own_quadrature_tv": str(own_qtv),
                     "own_lattice_bounds": [str(x) for x in own_delta],
-                    "transcendental_calls": A.transcendental_calls(), "ops": ops}
+                    "transcendental_calls": A.transcendental_since(_tr0)["total"],
+                    "transcendental_by_kind": A.transcendental_since(_tr0), "ops": ops}
 
 
 # --------------------------------------------------------------- the check
 
 def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
-                   exec_record=None):
+                   exec_record=None, on_global=None):
     """Verify a parsed program's publication. `published` holds ONLY the
     requested variables' rows. Returns (ok, failures, meta)."""
     from mdi.guard import numerical_entry
@@ -1191,9 +1243,21 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
         return False, schema, {"schema_rejected": True}
     if r.impossible_factor is not None or r.constant == 0:
         return False, ["zero evidence weight"], None
-    marked = MK.Marked.from_restricted(r, queries)
+    # the checker's OWN level-zero original observable, derived from the
+    # original requested variable/state identifiers and cardinalities alone;
+    # the producer's constructor is then VERIFIED against it (named
+    # obligation) and never used as the checker's starting point
+    marked = own_level_zero(r, queries)
+    bad = verify_level_zero(marked, MK.Marked.from_restricted(r, queries))
+    if bad:
+        return False, ["original observable: %s" % bad], {"certificate_rejected": True}
     radius = Fr(0)
-    meta = {"scales": [], "independent_enclosure": True}
+    meta = {"scales": [], "independent_enclosure": True,
+            "trusted_base": ["exact input decoding (model.read_uai / Fraction)",
+                             "Fraction and MPFR directed primitives", "public query semantics"],
+            "checker_derived": ["level-zero observable", "region masses and markers", "coarsening witness",
+                                "deletion bound", "compact maps", "fit certificate", "rounding / GF conditions",
+                                "dense contraction", "event counts", "restoration"]}
     ledger = {}
     merged_regions = 0
     deleted_states = 0
@@ -1225,6 +1289,8 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
         if budget is not None:
             charge = lambda n: budget.charge("local_mass_entries", n,
                                              "checker dense contraction")
+        if on_global is not None:
+            on_global()          # local proofs are done: the GLOBAL reference runs under the arm phase
         try:
             Z, counts, jt = DB.exact_marginals(tables, marked.card, deadline=deadline,
                                                charge=charge)
@@ -1288,6 +1354,8 @@ def verify_program(r, queries, prog, published, eps, deadline=None, budget=None,
         if budget is not None:
             charge = lambda n: budget.charge("local_mass_entries", n,
                                              "checker dense collective evaluation")
+        if on_global is not None:
+            on_global()          # local proofs (witnesses, residual, fit, grids) are done
         try:
             if coll["evaluator"] == "statistic":
                 counts, cmeta = own_statistic_reference(rmk, coll, ctx, deadline, charge)

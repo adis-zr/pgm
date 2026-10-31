@@ -875,7 +875,7 @@ def _trig_point_enclose(q: Fr, ctx: A.Ctx, which: str):
     import gmpy2
     p = ctx.p
     extra = 2 * p + 64
-    fn = gmpy2.sin if which == "sin" else gmpy2.cos
+    fn = A.T.sin if which == "sin" else A.T.cos
     # the exact rational argument, converted at EXTRA precision both ways, so
     # the conversion error itself is bounded exactly
     cd = gmpy2.context(precision=extra, round=gmpy2.RoundDown)
@@ -1073,6 +1073,80 @@ def gf_grid_admissible(grid, beta: Fr, R: Fr):
         if int(grid["nodes"]) != 2 * J + 1 or int(grid["representatives"]) != J + 1:
             return "loaded frequency counts do not match J=%d" % J
     return None
+
+
+def gf_sufficient_conditions(grid, beta: Fr, R: Fr):
+    """CHECKER-OWNED sufficient conditions for a loaded GF1/GF2 grid, by direct
+    exact integer/rational inequalities. Does NOT call gf1_grid / gf2_grid:
+    the witnesses t, b, T, m, K/J are READ from the loaded grid and tested
+    against the Chapter 05 §§2.2-2.3 conditions with the checker's own
+    strength `beta` and range `R`:
+
+        m >= 1, h = 1/m, 2^-t <= tol/8, b^2 >= beta R^2, T^2 >= 2t,
+        positive: 18 m^2 >= t and K/m >= b + T;
+        negative: 6 m >= b + T and J/m >= T,
+        counts: nodes = signed_frequencies = 2K+1 (resp. 2J+1),
+                representatives = 2K+1 (resp. J+1).
+
+    A conservative sufficient witness (larger t, b, T, m or reach than the
+    minimal constructor) is accepted. Returns None or the violated rule."""
+    sign = int(grid["sign"])
+    tol = Fr(grid["tol"])
+    if not (0 < tol <= (Fr(1, 2) if sign > 0 else Fr(1))):
+        return "tolerance %s outside (0, %s]" % (tol, "1/2" if sign > 0 else "1")
+    t, b, T, m = int(grid["t"]), int(grid["b"]), int(grid["T"]), int(grid["m"])
+    if m < 1 or t < 0 or b < 0 or T < 0:
+        return "a grid witness is negative or m < 1 (t=%d b=%d T=%d m=%d)" % (t, b, T, m)
+    if Fr(grid["h"]) != Fr(1, m):
+        return "spacing h=%s is not 1/m=1/%d" % (grid["h"], m)
+    if Fr(1, 1 << t) > tol / 8:
+        return "2^-t = 2^-%d exceeds tol/8 = %s" % (t, tol / 8)
+    if Fr(b * b) < Fr(beta) * Fr(R) * Fr(R):
+        return "b^2 = %d is below beta R^2 = %s" % (b * b, Fr(beta) * Fr(R) * Fr(R))
+    if T * T < 2 * t:
+        return "T^2 = %d is below 2t = %d" % (T * T, 2 * t)
+    if sign > 0:
+        K = int(grid["K"])
+        if 18 * m * m < t:
+            return "18 m^2 = %d is below t = %d (positive grid spacing too coarse)" % (18 * m * m, t)
+        if Fr(K, m) < b + T:
+            return "reach K h = %s is below b + T = %d" % (Fr(K, m), b + T)
+        if int(grid["nodes"]) != 2 * K + 1 or int(grid["signed_frequencies"]) != 2 * K + 1 \
+                or int(grid["representatives"]) != 2 * K + 1:
+            return "positive grid counts do not match K=%d" % K
+        if T < 1 and K < 1:
+            return "degenerate positive grid"
+    else:
+        J = int(grid["J"])
+        if 6 * m < b + T:
+            return "6 m = %d is below b + T* = %d (negative grid spacing too coarse)" % (6 * m, b + T)
+        if Fr(J, m) < T:
+            return "reach J h = %s is below T* = %d" % (Fr(J, m), T)
+        if T < 3:
+            return "T* = %d is below the 3 the oscillatory tail bound requires" % T
+        if int(grid["nodes"]) != 2 * J + 1 or int(grid["signed_frequencies"]) != 2 * J + 1 \
+                or int(grid["representatives"]) != J + 1:
+            return "negative grid counts do not match J=%d" % J
+    return None
+
+
+def gf3_transfer_holds(eta: Fr, ds) -> bool:
+    """CHECKER-OWNED GF3 check by a direct rational inequality: with
+    A = prod(1 - d_c), B = prod(1 + d_c) and 0 <= eta < 1, the recorded
+    allowance eta is at least (sqrt B - sqrt A)/(sqrt B + sqrt A) iff
+    (1 - eta)^2 B <= (1 + eta)^2 A. No square root is evaluated."""
+    eta = Fr(eta)
+    if eta < 0 or eta >= 1:
+        return False
+    A = Fr(1)
+    B = Fr(1)
+    for d in ds:
+        d = Fr(d)
+        if not (0 < d <= Fr(1, 2)):
+            return False
+        A *= (1 - d)
+        B *= (1 + d)
+    return (1 - eta) * (1 - eta) * B <= (1 + eta) * (1 + eta) * A
 
 
 def gf3_eta(ds):

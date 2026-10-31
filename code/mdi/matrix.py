@@ -111,17 +111,74 @@ def _resource(bud):
 
 
 def _row_ok(rep, pt, queries, need_ledger=True):
-    """The predicates every applicable replay row must carry."""
+    """The predicates every applicable replay row must carry, each re-derived
+    by the matrix itself: the expected key set and cardinalities come from the
+    record's REQUEST object (and must agree with the control's own requested
+    set), every endpoint string is parsed as an exact rational, 0 <= lo <= hi
+    <= 1 holds, the width is RECOMPUTED from the endpoints (the reported
+    max_width is checked against it, never trusted), truth containment is the
+    exact rational test against the independent enumeration, observed
+    coordinates are exact point masses. Empty rows, missing keys, a wrong
+    cardinality, a disguised [0, 1] row (its recomputed width is 1) and a
+    missing budget all FAIL."""
     ck = rep.get("checker") or {}
     pd = ck.get("positive_denominators")
-    w = Fr(rep["max_width"]) if rep.get("max_width") else None
-    return {"replay": rep["status"], "exact_keys": _keys_rep(rep, queries),
-            "truth": _contains_rep(rep, pt), "positive_denominators": pd,
-            "width": rep.get("max_width"), "width_ok": (w is not None and w <= EPS),
-            "resources": _resource(rep.get("budget")), "ledger": rep.get("ledger"),
-            "ok": (rep["status"] == "REPLAY_VERIFIED" and _keys_rep(rep, queries) and _contains_rep(rep, pt)
-                   and pd is True and w is not None and w <= EPS
-                   and _resource(rep.get("budget"))["ok"] and (rep.get("ledger") is not None or not need_ledger))}
+    req = rep.get("request") or {}
+    iv = rep.get("intervals") or {}
+    obs = {int(k): int(v) for k, v in (rep.get("observed") or {}).items()}
+    req_q = sorted(int(v) for v in (req.get("queries") or []))
+    want_q = sorted(int(v) for v in queries)
+    expect_keys = sorted(set(req_q) | set(obs))
+    got_keys = sorted(int(v) for v in iv)
+    exact_keys = bool(req) and req_q == want_q and got_keys == expect_keys and bool(got_keys)
+    cards_ok = bool(iv)
+    parsed = {}
+    endpoints_ok = True
+    for v, rows in iv.items():
+        v = int(v)
+        if not rows:
+            cards_ok = False
+            continue
+        # a requested variable's cardinality comes from the request; an observed
+        # coordinate's from the model cardinalities the replay publishes
+        if v in req_q:
+            want_card = int((req.get("card") or {}).get(str(v), 0))
+        elif v in obs and rep.get("model_card") is not None and v < len(rep["model_card"]):
+            want_card = int(rep["model_card"][v])
+        else:
+            want_card = None
+        if want_card is None or len(rows) != want_card:
+            cards_ok = False
+        prow = []
+        for lo, hi in rows:
+            try:
+                lo, hi = Fr(lo), Fr(hi)
+            except (ValueError, TypeError, ZeroDivisionError):
+                endpoints_ok = False
+                continue
+            if not (0 <= lo <= hi <= 1):
+                endpoints_ok = False
+            prow.append((lo, hi))
+        parsed[v] = prow
+    recomputed = max((hi - lo for rows in parsed.values() for lo, hi in rows), default=None)
+    reported = Fr(rep["max_width"]) if rep.get("max_width") not in (None, "") else None
+    width_ok = recomputed is not None and recomputed <= EPS and reported is not None and reported == recomputed
+    truth = bool(parsed) and cards_ok
+    if truth:
+        for v, rows in parsed.items():
+            if v in obs:
+                if any((lo, hi) != ((Fr(1), Fr(1)) if s == obs[v] else (Fr(0), Fr(0))) for s, (lo, hi) in enumerate(rows)):
+                    truth = False
+                continue
+            if v not in pt or len(pt[v]) != len(rows) or any(not (lo <= pt[v][s] <= hi) for s, (lo, hi) in enumerate(rows)):
+                truth = False
+    res = _resource(rep.get("budget"))
+    return {"replay": rep["status"], "exact_keys": exact_keys, "cards": cards_ok, "endpoints_valid": endpoints_ok,
+            "truth": truth, "positive_denominators": pd,
+            "width": (str(recomputed) if recomputed is not None else None), "width_reported": rep.get("max_width"),
+            "width_ok": width_ok, "resources": res, "ledger": rep.get("ledger"),
+            "ok": (rep["status"] == "REPLAY_VERIFIED" and exact_keys and cards_ok and endpoints_ok and truth
+                   and pd is True and width_ok and res["ok"] and (rep.get("ledger") is not None or not need_ledger))}
 
 
 def _solve(m, wall, evidence=None, queries=None):
@@ -173,18 +230,23 @@ def _offering(res):
             "unique_ok": len(ids) == len(set(ids))}
 
 
+# EVERY Fraction operation the engines can perform is counted: the four
+# arithmetic operations, power, negation, absolute value and the comparisons
+ALL_FRACTION_OPS = ("__mul__", "__rmul__", "__add__", "__radd__", "__truediv__", "__rtruediv__",
+                    "__sub__", "__rsub__", "__pow__", "__neg__", "__abs__", "__lt__", "__le__",
+                    "__gt__", "__ge__", "__eq__", "__floordiv__", "__mod__")
+
+
 def _measure_ops():
     import fractions
     counts = {}
-    saved = {nm: getattr(fractions.Fraction, nm) for nm in
-             ("__mul__", "__rmul__", "__add__", "__radd__", "__truediv__", "__rtruediv__",
-              "__sub__", "__rsub__")}
+    saved = {nm: getattr(fractions.Fraction, nm) for nm in ALL_FRACTION_OPS}
     box = {"n": 0}
 
     def mk(fn):
-        def w_(self, other, *a):
+        def w_(self, *a):
             box["n"] += 1
-            return fn(self, other, *a)
+            return fn(self, *a)
         return w_
 
     def wrap(stage, fn):
@@ -733,11 +795,27 @@ def control_portfolio_and_identity(wall):
     exe = {"order": [0, 1], "precision": 96, "arithmetic": {"mode": "E"}, "checker": {"strategy": "dense_min_fill"}}
     idA, kA = CR.canonical_identity(dict(base, candidate=cA), (), executable=exe)
     idB, kB = CR.canonical_identity(dict(base, candidate=cB), (), executable=exe)
-    out["feature_sign_rounding_tie"] = {"Q": Q, "canonical_modes_equal": kA["modes"] == kB["modes"],
-                                        "integer_statistics_A": kA["integer_statistics"],
-                                        "integer_statistics_B": kB["integer_statistics"],
+    # per-mode tuple: [sign, strength, canonical features, rounded integer statistic, grid]
+    featA, featB = [m[:3] for m in kA["modes"]], [m[:3] for m in kB["modes"]]
+    statA, statB = [m[3] for m in kA["modes"]], [m[3] for m in kB["modes"]]
+    out["feature_sign_rounding_tie"] = {"Q": Q, "canonical_features_equal": featA == featB,
+                                        "integer_statistics_A": statA, "integer_statistics_B": statB,
+                                        "statistics_distinct": statA != statB,
                                         "identities_distinct": idA != idB,
-                                        "ok": kA["modes"] == kB["modes"] and idA != idB}
+                                        "ok": featA == featB and statA != statB and idA != idB}
+    # a genuine permutation of WHOLE modes (strength stays with its statistic) deduplicates;
+    # swapping the strengths between two modes with different statistics does not
+    g2 = {0: [Fr(-1, 8), Fr(1, 8)], 1: [Fr(1, 4), Fr(-1, 4)]}
+    cP = MO.ModeCandidate(signs=[1, 1], gammas=[Fr(1, 2), Fr(1, 3)], features=[f, g2], kind="lowrank_combined")
+    cPp = MO.ModeCandidate(signs=[1, 1], gammas=[Fr(1, 3), Fr(1, 2)], features=[g2, f], kind="lowrank_combined")
+    cSw = MO.ModeCandidate(signs=[1, 1], gammas=[Fr(1, 3), Fr(1, 2)], features=[f, g2], kind="lowrank_combined")
+    idP, _ = CR.canonical_identity(dict(base, candidate=cP), (), executable=exe)
+    idPp, _ = CR.canonical_identity(dict(base, candidate=cPp), (), executable=exe)
+    idSw, _ = CR.canonical_identity(dict(base, candidate=cSw), (), executable=exe)
+    out["mode_permutation"] = {"permuted_modes_same_identity": idP == idPp,
+                               "swapped_strengths_distinct_identity": idP != idSw,
+                               "ok": idP == idPp and idP != idSw}
+    oks.append(out["mode_permutation"]["ok"])
     oks.append(out["feature_sign_rounding_tie"]["ok"])
     masked_rows = []
     for c, rmk in adm:
@@ -800,8 +878,11 @@ def control_work_and_memory(wall):
         """The coverage predicate on MEASURED values; None never passes."""
         ex = rep.get("executor") or {}
         ck = (rep.get("checker") or {}).get("collective") or {}
-        pp = sum(int(c[k]["value"]) for k in ("producer_upward_ops", "producer_downward_ops", "readout_ops"))
-        pc = int(c["checker_ops"]["value"])
+        # the arithmetic bound PLUS the named comparison / sign-test bound, per
+        # engine, against EVERY counted Fraction operation of that engine
+        pp = sum(int(c[k]["value"]) for k in ("producer_upward_ops", "producer_downward_ops", "readout_ops")) \
+            + int((c.get("producer_comparison_ops") or {}).get("value") or 0)
+        pc = int(c["checker_ops"]["value"]) + int((c.get("checker_comparison_ops") or {}).get("value") or 0)
         bud = rep.get("budget") or {}
         used = bud["used"].get("local_mass_entries", 0) if "used" in bud else None
         fc = (c.get("metered_entries_forecast") or {}).get("value")
@@ -816,6 +897,7 @@ def control_work_and_memory(wall):
         ph_m = ex.get("precomputed_phase_entries")
         st = rep.get("stages") or {}
         measured = {"producer_ops": counts.get("execute"), "checker_ops": counts.get("check"),
+                    "counted_operations": "every Fraction operation: arithmetic, comparison, negation, absolute value, power",
                     "metered_entries": used, "peak_live": live_m, "producer_transcendental": tr_e,
                     "checker_transcendental": tr_c, "retained_positive_node_entries": ret_m,
                     "precomputed_phase_entries": ph_m, "stage_seconds": st}
@@ -911,7 +993,10 @@ def control_work_and_memory(wall):
             p2 = os.path.join(dr, "reordered.plan.json")
             json.dump(bad, open(p2, "w"))
             rep = _replay_here(mpr, p2)
-            if rep["status"] == "REPLAY_REFUSED" and "SAVED order" in str(rep.get("reason")):
+            # r20: the request object binds the order too, so a rotated program
+            # is refused at LOAD (request order differs) before saved-order repricing
+            if rep["status"] == "REPLAY_REFUSED" and ("SAVED order" in str(rep.get("reason"))
+                                                       or "request order differs" in str(rep.get("reason"))):
                 saved["refused"] += 1
                 if saved["first_refusal"] is None:
                     saved["first_refusal"] = {"program": p["name"], "rotation": k, "reason": str(rep.get("reason"))[:160]}

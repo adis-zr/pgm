@@ -418,11 +418,16 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
             continue
         drop_budget = 2 * (allow - fit_tv0)
         # the DECLARED mask: those pairs are retained exactly in the residual
-        # that is built and priced (never dropped or transferred)
+        # that is built and priced (never dropped or transferred). The STRICT
+        # representation is constructed explicitly and proved as a whole by
+        # the full original-law fit certificate below (no per-edge charge)
         try:
-            can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx, drop_budget,
-                                  protected=set(getattr(cand, "masked", None) or []),
-                                  strict_mask=(set(cand.masked) if getattr(cand, "strict", False) else None))
+            if getattr(cand, "strict", False):
+                can = RS.strict_residual(res.unary, res.pairs, marked.card, ctx, set(cand.masked))
+                drop_budget = Fr(0)
+            else:
+                can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx, drop_budget,
+                                      protected=set(getattr(cand, "masked", None) or []))
         except RS.Declined as e:
             errors.append("%s: %s" % (cand.kind, e))
             continue
@@ -435,8 +440,9 @@ def admit(marked: MK.Marked, ctx: A.Ctx, deadline=None, prefer=None,
             continue
         total_fit = K.tanh_upper(nu)
         if total_fit > allow:
-            errors.append("%s: canonical fit TV %s exceeds the %s allowance"
-                          % (cand.kind, total_fit, allow))
+            errors.append("%s: %sfit TV %s exceeds the %s allowance"
+                          % (cand.kind, "strict full-fit proof: " if getattr(cand, "strict", False) else "canonical ",
+                             total_fit, allow))
             continue
         remaining = allow - total_fit
         base = {"candidate": cand, "fit_tv": total_fit, "precision": ctx.p,
@@ -511,10 +517,18 @@ def canonical_identity(coll, scales_key=(), executable=None):
     executable feature is accounted for."""
     import hashlib
     cand = coll["candidate"]
+    # ONE executable tuple per mode -- sign, strength, canonical features, the
+    # ACTUAL rounded integer statistic (statistic routes), the mode's grid and
+    # tolerance (quadrature routes) -- sorted as complete tuples so a strength
+    # stays associated with the statistic it weights; a genuine permutation of
+    # whole modes still deduplicates
+    Q = coll.get("Q")
+    free_vars = sorted({int(v) for fk in cand.features for v in fk})
+    kq = CO.round_features(cand, free_vars, int(Q)) if Q is not None else None
+    grids = coll.get("grids") or []
     modes = []
     for k in range(cand.rank):
         items = sorted((int(v), tuple(str(Fr(x)) for x in f)) for v, f in cand.features[k].items())
-        # sign-flip canonical form: the first nonzero feature entry positive
         flip = False
         for _v, f in items:
             nz = next((Fr(x) for x in f if Fr(x) != 0), None)
@@ -523,31 +537,34 @@ def canonical_identity(coll, scales_key=(), executable=None):
                 break
         if flip:
             items = [(v, tuple(str(-Fr(x)) for x in f)) for v, f in items]
-        modes.append((int(cand.signs[k]), str(Fr(cand.gammas[k])), tuple(items)))
-    modes.sort()
-    key = {"evaluator": coll["evaluator"], "modes": [list(m[:2]) + [[list(x) for x in m[2]]] for m in modes],
-           "Q": coll.get("Q"), "deltas": [str(Fr(d)) for d in (coll.get("deltas") or [])],
+        stat = None
+        if kq is not None:
+            # the statistic is NOT invariant under f -> -f at a rounding tie, so
+            # the executed integers travel with their own mode, unflipped
+            stat = tuple(sorted((int(v), tuple(int(x) for x in row)) for v, row in kq[k].items()))
+        grid = None
+        if grids:
+            g = grids[k]
+            grid = (str(g["rule"]), int(g["version"]), int(g["sign"]), str(Fr(g["tol"])), int(g["m"]),
+                    int(g.get("K", g.get("J", 0))))
+        modes.append((int(cand.signs[k]), str(Fr(cand.gammas[k])), tuple(items), stat, grid))
+    modes.sort(key=repr)
+    key = {"evaluator": coll["evaluator"],
+           "modes": [[m[0], m[1], [list(x) for x in m[2]],
+                      (None if m[3] is None else [list(x) for x in m[3]]),
+                      (None if m[4] is None else list(m[4]))] for m in modes],
+           "Q": Q, "deltas": [str(Fr(d)) for d in (coll.get("deltas") or [])],
            "kept": sorted(int(x) for x in coll["kept_factors"]),
            "dropped": sorted([int(a), int(b)] for a, b in coll["dropped_pairs"]),
            "masked": sorted([int(a), int(b)] for a, b in (getattr(cand, "masked", None) or [])),
            "strict": bool(getattr(cand, "strict", False)),
            "scales": list(scales_key)}
-    # EXECUTABLE features: the statistic DP runs on the integer statistics
-    # k = round_half_up(f Q), which are NOT invariant under f -> -f at a tie,
-    # so two sign-related candidates are the same program only when their
-    # rounded statistics coincide; the GF evaluators run on the actual grids
-    if coll.get("Q") is not None:
-        kq = CO.round_features(cand, sorted({v for fk in cand.features for v in fk}), int(coll["Q"]))
-        key["integer_statistics"] = sorted(
-            sorted((int(v), [int(x) for x in row]) for v, row in kq[k].items()) for k in range(cand.rank))
-    if coll.get("grids"):
-        key["grids"] = [[str(g["rule"]), int(g["version"]), int(g["sign"]), str(Fr(g["tol"])),
-                         int(g["m"]), int(g.get("K", g.get("J", 0)))] for g in coll["grids"]]
     if executable is not None:
         key["order"] = [int(x) for x in (executable.get("order") or [])]
         key["precision"] = int(executable.get("precision", 0))
         key["arithmetic"] = dict(executable.get("arithmetic") or {})
         key["checker"] = dict(executable.get("checker") or {})
+        key["request"] = dict(executable.get("request") or {})
     import json
     txt = json.dumps(key, sort_keys=True)
     return hashlib.sha256(txt.encode()).hexdigest()[:16], key
@@ -573,13 +590,20 @@ def rebuild_residual(marked: MK.Marked, coll, ctx: A.Ctx):
     cand = coll["candidate"]
     res = MD.build_residual(free, law, marked.card, cand, ctx,
                             round_bits=coll["round_bits"])
-    can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx,
-                          Fr(coll["drop_budget"]),
-                          protected=set(getattr(cand, "masked", None) or []),
-                          strict_mask=(set(cand.masked) if getattr(cand, "strict", False) else None))
+    if getattr(cand, "strict", False):
+        can = RS.strict_residual(res.unary, res.pairs, marked.card, ctx, set(cand.masked))
+    else:
+        can = RS.canonicalize(res.unary, res.pairs, marked.card, ctx,
+                              Fr(coll["drop_budget"]),
+                              protected=set(getattr(cand, "masked", None) or []))
     for pr in (getattr(cand, "masked", None) or []):
         if tuple(pr) not in can.kept_pairs and (pr[0], pr[1]) in res.pairs:
             raise Declined("the declared mask pair %s is not retained in the residual" % (pr,))
+    if getattr(cand, "strict", False):
+        off = [k for k, t in can.kept_pairs.items() if (min(k), max(k)) not in set(cand.masked)
+               and all(Fr(x) > 0 for x in t)]
+        if off:
+            raise Declined("strict residual retains off-mask positive pairs %s" % off[:4])
     rmk = _residual_marked(marked, res, can, list(res.kept))
     nu = fit_certificate(law, rmk.factors, cand, marked.card, free, ctx)
     total_fit = K.tanh_upper(nu)

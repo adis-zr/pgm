@@ -24,33 +24,39 @@ from gmpy2 import mpfr, mpq
 
 class _Transcendental:
     """Every MPFR transcendental evaluation (exp, log, sqrt, sin, cos, pi)
-    goes through this proxy so the count is a MEASUREMENT the executor and
-    checker report, compared against the price's bound. Reset per stage by
-    the caller that reports it."""
+    goes through this proxy. The counter is MONOTONE for the process: a stage
+    reads it before and after its work and reports the difference, so setup
+    and precomputed-phase calls inside the stage are included and nothing is
+    erased by a reset. Per-kind counts are kept underneath the total."""
     calls = 0
+    by_kind = {"exp": 0, "log": 0, "sqrt": 0, "sin": 0, "cos": 0, "const_pi": 0}
+
+    def _tick(self, kind):
+        _Transcendental.calls += 1
+        _Transcendental.by_kind[kind] += 1
 
     def exp(self, x):
-        _Transcendental.calls += 1
+        self._tick("exp")
         return gmpy2.exp(x)
 
     def log(self, x):
-        _Transcendental.calls += 1
+        self._tick("log")
         return gmpy2.log(x)
 
     def sqrt(self, x):
-        _Transcendental.calls += 1
+        self._tick("sqrt")
         return gmpy2.sqrt(x)
 
     def sin(self, x):
-        _Transcendental.calls += 1
+        self._tick("sin")
         return gmpy2.sin(x)
 
     def cos(self, x):
-        _Transcendental.calls += 1
+        self._tick("cos")
         return gmpy2.cos(x)
 
     def const_pi(self):
-        _Transcendental.calls += 1
+        self._tick("const_pi")
         return gmpy2.const_pi()
 
 
@@ -58,11 +64,23 @@ T = _Transcendental()
 
 
 def transcendental_calls() -> int:
+    """The monotone process total."""
     return _Transcendental.calls
 
 
+def transcendental_snapshot() -> dict:
+    return {"total": _Transcendental.calls, **dict(_Transcendental.by_kind)}
+
+
+def transcendental_since(snap: dict) -> dict:
+    """Calls made since `snap` (a stage's own count, setup included)."""
+    cur = transcendental_snapshot()
+    return {k: cur[k] - snap.get(k, 0) for k in cur}
+
+
 def reset_transcendental_calls():
-    _Transcendental.calls = 0
+    """Kept for compatibility: a NO-OP. Stages measure by difference."""
+    return None
 
 RNDD = gmpy2.RoundDown
 RNDU = gmpy2.RoundUp

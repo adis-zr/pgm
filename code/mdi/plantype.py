@@ -121,6 +121,12 @@ class PlanRecord:
     # elimination order and precision. None for the identity route, whose
     # program is the validated generic schedule itself.
     program: dict | None = None
+    # the MANDATORY versioned request/settings object (r20): binds the original
+    # model, evidence and query/state schema, the requested width, the
+    # numerical settings, the saved order, the checking strategy and the
+    # resource limits wherever they define execution. Missing or inconsistent
+    # fields refuse at load, before any numerical work.
+    request: dict | None = None
 
     def validate(self):
         if self.kind not in KINDS:
@@ -198,6 +204,8 @@ class PlanRecord:
              "version": self.version}
         if self.program is not None:
             d["program"] = self.program
+        if self.request is not None:
+            d["request"] = self.request
         return json.dumps(d, sort_keys=True, separators=(",", ":"))
 
     @staticmethod
@@ -218,7 +226,7 @@ class PlanRecord:
         # not a compatible superset: seven of the original fourteen malformed
         # mutations loaded because only the REQUIRED keys were examined.
         allowed = set(need) | {"region_membership", "cell_membership",
-                               "rejected_alternatives", "program"}
+                               "rejected_alternatives", "program", "request"}
         extra = sorted(set(d) - allowed)
         if extra:
             raise PlanError("plan record carries unknown fields %s" % extra)
@@ -314,7 +322,8 @@ class PlanRecord:
             storage_schedule=d["storage_schedule"],
             rejected_alternatives=d.get("rejected_alternatives", []),
             properties=props, version=d["version"],
-            program=d.get("program"))
+            program=d.get("program"), request=d.get("request"))
+        rec.request = validate_request(rec.request, rec)
         if rec.program is not None:
             # the program block is parsed STRICTLY: exact strings, known
             # fields, a kind that agrees with the record
@@ -542,6 +551,98 @@ def dispatch(kind):
 def supported(kind):
     return {"executor_supported": EXECUTORS.get(kind) is not None,
             "checker_supported": CHECKERS.get(kind) is not None}
+
+
+REQUEST_VERSION = 2          # r20: the request declares the collective precision too
+REQUEST_KEYS = ("version", "model_sha256", "evidence_sha256", "query_sha256", "queries", "observed",
+                "card", "width", "precision", "max_precision", "emin", "emax", "arithmetic_mode",
+                "order", "checker_strategy", "checker_precision", "collective_precision", "limits")
+MAX_PRECISION = 4096
+
+
+def make_request(model_sha, evidence_sha, query_sha, queries, evidence, card, width, numerical,
+                 order, checker, limits, collective=None):
+    """The one request/settings object every stage consumes."""
+    return {"collective_precision": int((collective or {}).get("precision", 0)),"version": REQUEST_VERSION, "model_sha256": model_sha, "evidence_sha256": evidence_sha,
+            "query_sha256": query_sha, "queries": sorted(int(v) for v in queries),
+            "observed": {str(int(v)): int(s) for v, s in sorted(evidence.items())},
+            "card": {str(int(v)): int(card[v]) for v in sorted(queries)},
+            "width": str(Fr(width)), "precision": int(numerical.get("precision", 0)),
+            "max_precision": MAX_PRECISION,
+            "emin": (None if numerical.get("emin") is None else int(numerical["emin"])),
+            "emax": (None if numerical.get("emax") is None else int(numerical["emax"])),
+            "arithmetic_mode": str(numerical.get("mode", "")),
+            "order": [int(x) for x in (order or [])],
+            "checker_strategy": str((checker or {}).get("strategy", "")),
+            "checker_precision": int((checker or {}).get("precision", 0)),
+            "limits": {str(k): (int(v) if isinstance(v, int) else str(v)) for k, v in (limits or {}).items()}}
+
+
+def validate_request(req, rec):
+    """Strict parse of the request object and consistency with the record it
+    governs: hashes, requested set, width, EVERY precision the execution
+    consumes (outer numerical, program, collective, checker) at or below the
+    declared maximum, order and checking strategy. Missing -> PlanError."""
+    if req is None:
+        raise PlanError("the plan record carries no request object; a program is an executable "
+                        "FOR one request and must bind it (missing 'request')")
+    if not isinstance(req, dict):
+        raise PlanError("request must be a mapping")
+    miss = [k for k in REQUEST_KEYS if k not in req]
+    extra = sorted(set(req) - set(REQUEST_KEYS))
+    if miss or extra:
+        raise PlanError("request object missing %s / unknown %s" % (miss, extra))
+    if req["version"] != REQUEST_VERSION:
+        raise PlanError("stale request version %r" % req["version"])
+    for k in ("model_sha256", "evidence_sha256", "query_sha256"):
+        if req[k] != getattr(rec, k):
+            raise PlanError("request %s differs from the record's" % k)
+    try:
+        w = Fr(req["width"])
+    except (ValueError, TypeError, ZeroDivisionError):
+        raise PlanError("request width %r is not an exact rational" % (req["width"],))
+    if not (0 < w <= 1):
+        raise PlanError("request width %s is not in (0, 1]" % w)
+    if int(req["max_precision"]) != MAX_PRECISION:
+        raise PlanError("request declares maximum precision %s, the contract fixes %d"
+                        % (req["max_precision"], MAX_PRECISION))
+    precs = {"request.precision": int(req["precision"]), "request.checker_precision": int(req["checker_precision"]),
+             "numerical.precision": int((rec.numerical or {}).get("precision", 0))}
+    if int(req["collective_precision"]) > MAX_PRECISION:
+        raise PlanError("request.collective_precision = %d exceeds the declared maximum %d"
+                        % (int(req["collective_precision"]), MAX_PRECISION))
+    prog = rec.program or {}
+    if prog:
+        precs["program.precision"] = int(prog.get("precision", 0))
+        if prog.get("checker"):
+            precs["program.checker.precision"] = int(prog["checker"].get("precision", 0))
+        if prog.get("collective"):
+            precs["program.collective.precision"] = int(prog["collective"].get("precision", 0))
+    for k, v in precs.items():
+        if v > MAX_PRECISION:
+            raise PlanError("%s = %d exceeds the declared maximum %d" % (k, v, MAX_PRECISION))
+        if v < 1:
+            raise PlanError("%s = %d is not a positive precision" % (k, v))
+    if precs["request.precision"] != precs["numerical.precision"]:
+        raise PlanError("request precision %d and the record's numerical precision %d disagree"
+                        % (precs["request.precision"], precs["numerical.precision"]))
+    if prog:
+        if precs["request.precision"] != precs.get("program.precision", precs["request.precision"]):
+            raise PlanError("request precision %d and the program precision %d disagree"
+                            % (precs["request.precision"], precs["program.precision"]))
+        if prog.get("checker") and precs["request.checker_precision"] != precs["program.checker.precision"]:
+            raise PlanError("request checker precision %d and the program's %d disagree"
+                            % (precs["request.checker_precision"], precs["program.checker.precision"]))
+        if prog.get("collective") and int(prog["collective"].get("precision", 0)) != int(req["collective_precision"]):
+            raise PlanError("the collective record's precision %s differs from the request's declared "
+                            "collective precision %s" % (prog["collective"].get("precision"), req["collective_precision"]))
+        if [int(x) for x in (prog.get("order") or [])] != list(req["order"]):
+            raise PlanError("request order differs from the program order")
+        if prog.get("checker") and str(prog["checker"].get("strategy", "")) != req["checker_strategy"]:
+            raise PlanError("request checking strategy differs from the program's")
+        if sorted(int(v) for v in (prog.get("queries") or [])) != list(req["queries"]):
+            raise PlanError("request queries differ from the program's requested set")
+    return req
 
 
 def query_hash(nvars, card, evidence, queries) -> str:

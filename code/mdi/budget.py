@@ -23,6 +23,12 @@ class BudgetExceeded(Exception):
                          % (kind, used, limit, (" at " + where) if where else ""))
 
 
+# the process-wide default clock: the lifecycle controls inject a fake clock
+# here so parse delays, terminal-write delays and phase timeouts are
+# deterministic; production never touches it
+DEFAULT_CLOCK = [time.monotonic]
+
+
 class Budget:
     """Shared across every phase of one invocation.
 
@@ -37,10 +43,16 @@ class Budget:
     PHASE_GROUPS = {"discover": "construction", "persist": "construction",
                     "check_local": "check_local"}
     PHASE_LIMITS = {"construction": 30.0, "check_local": 30.0}
+    PHASE_LEAVE_ENFORCED = {"check_local"}
 
-    def __init__(self, wall_s, limits=None, rss_fn=None, rss_limit=None, phase_limits=None):
+    def __init__(self, wall_s, limits=None, rss_fn=None, rss_limit=None, phase_limits=None,
+                 clock=None):
         self.progress = None          # progress(phase, info), set by the owner
-        self.t0 = time.monotonic()
+        # the clock is INJECTABLE so the lifecycle controls (parse delay,
+        # terminal-write delay, local-proof and numerical-check timeouts) run
+        # deterministically; production uses the monotonic clock
+        self._clock = clock or DEFAULT_CLOCK[0]
+        self.t0 = self._clock()
         self.wall_s = float(wall_s)
         self.limits = dict(limits or {})
         self.phase_limits = dict(self.PHASE_LIMITS if phase_limits is None else phase_limits)
@@ -58,7 +70,7 @@ class Budget:
 
     # ---- time ----
     def elapsed(self):
-        return time.monotonic() - self.t0
+        return self._clock() - self.t0
 
     def remaining(self):
         """Seconds left. May be NEGATIVE; callers must not clamp it to a
@@ -82,7 +94,7 @@ class Budget:
                                  where or self.phase)
         grp = self.PHASE_GROUPS.get(self.phase)
         if grp is not None and grp in self.phase_limits:
-            pused = self.phase_time.get(grp, 0.0) + (time.monotonic() - self.phase_t0)
+            pused = self.phase_time.get(grp, 0.0) + (self._clock() - self.phase_t0)
             if pused > self.phase_limits[grp]:
                 self.stops.append({"kind": "phase:" + grp, "used": round(pused, 3),
                                    "limit": self.phase_limits[grp], "where": where or self.phase})
@@ -137,12 +149,20 @@ class Budget:
         2 GiB RSS under a 1 GiB cap certified with ZERO shared-budget checks,
         and an 80 ms checker under a 20 ms deadline certified with a negative
         remaining time."""
+        # LEAVING the local-check phase is an enforcement point for its
+        # allowance: a local proof that overran its 30 s stops here, before
+        # the global reference contraction can start. (The construction
+        # allowance is different: its exhaustion ENDS discovery and the
+        # completed plans and the identity fallback proceed; it is tested
+        # inside the construction loops, never on leaving.)
+        if self.PHASE_GROUPS.get(self.phase) in self.PHASE_LEAVE_ENFORCED:
+            self.check("leave:" + str(self.phase))
         self._enter_raw(phase)
         self.phases.append(str(phase))
         self.check("enter:" + phase)
 
     def _enter_raw(self, phase):
-        now = time.monotonic()
+        now = self._clock()
         grp = self.PHASE_GROUPS.get(self.phase)
         if grp is not None:
             self.phase_time[grp] = self.phase_time.get(grp, 0.0) + (now - self.phase_t0)
@@ -152,7 +172,7 @@ class Budget:
 
     def phase_used(self, group):
         """Seconds consumed by a phase group so far (completed + current)."""
-        cur = (time.monotonic() - self.phase_t0) if self.PHASE_GROUPS.get(self.phase) == group else 0.0
+        cur = (self._clock() - self.phase_t0) if self.PHASE_GROUPS.get(self.phase) == group else 0.0
         return self.phase_time.get(group, 0.0) + cur
 
     def phase_exhausted(self, group):

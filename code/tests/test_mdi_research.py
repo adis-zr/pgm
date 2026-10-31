@@ -1278,6 +1278,9 @@ def test_plan_properties_enforce_prerequisites():
 def _demo_plan():
     from mdi import plantype as PT
     return PT.PlanRecord(
+        request=PT.make_request("a" * 64, "b" * 64, "c" * 64, [0, 1], {}, [2, 2], Fr(1, 100),
+                                {"precision": 64, "mode": "P", "emin": -3000, "emax": 3000}, [0, 1],
+                                {"strategy": "min_fill_interval", "precision": 80}, {}),
         kind="identity", name="identity",
         model_sha256="a" * 64, evidence_sha256="b" * 64, query_sha256="c" * 64,
         preprocess_identity={"scale": "1", "removed_constants": [],
@@ -2835,6 +2838,9 @@ def test_r6_plan_loader_accepts_a_clean_base_then_rejects_each_mutation():
 
     def base():
         return PT.PlanRecord(
+            request=PT.make_request("a" * 64, "b" * 64, "c" * 64, [0, 1], {}, [2, 2], Fr(1, 100),
+                                    {"precision": 64, "mode": "P", "emin": -10, "emax": 10}, [0, 1],
+                                    {"strategy": "min_fill_interval", "precision": 80}, {}),
             kind="identity", name="identity", model_sha256="a" * 64,
             evidence_sha256="b" * 64, query_sha256="c" * 64,
             preprocess_identity={"scale": "1"},
