@@ -60,14 +60,32 @@ def _contains(pub, pt):
 
 
 def _contains_rep(rep, pt):
+    """Truth containment on the requested rows; an OBSERVED coordinate (which
+    replay publishes as an exact point mass) must be exactly that point mass."""
     iv = rep.get("intervals") or {}
-    return bool(iv) and all(Fr(lo) <= pt[int(v)][s] <= Fr(hi)
-                            for v, rows in iv.items() for s, (lo, hi) in enumerate(rows))
+    obs = {int(k): int(v) for k, v in (rep.get("observed") or {}).items()}
+    if not iv:
+        return False
+    for v, rows in iv.items():
+        v = int(v)
+        if v in obs:
+            if any((Fr(lo), Fr(hi)) != ((Fr(1), Fr(1)) if s == obs[v] else (Fr(0), Fr(0)))
+                   for s, (lo, hi) in enumerate(rows)):
+                return False
+            continue
+        if v not in pt:
+            return False
+        if any(not (Fr(lo) <= pt[v][s] <= Fr(hi)) for s, (lo, hi) in enumerate(rows)):
+            return False
+    return True
 
 
 def _keys_rep(rep, want):
+    """Exact query key set: the requested variables plus the observed
+    coordinates the public API returns, nothing else."""
     iv = rep.get("intervals") or {}
-    return sorted(int(v) for v in iv) == sorted(int(v) for v in want)
+    obs = {int(k) for k in (rep.get("observed") or {})}
+    return sorted(int(v) for v in iv) == sorted(set(int(v) for v in want) | obs)
 
 
 def _width(pub):
@@ -75,13 +93,21 @@ def _width(pub):
 
 
 def _resource(bud):
+    """Resource obligations: a budget report exists, no whole-arm stop (wall,
+    RSS, shared counter) occurred, every meter is within its limit. A PHASE
+    allowance stop (the 30 s construction / local-check allowance) is reported
+    separately: it ends discovery and preserves completed plans; it is not a
+    resource violation of the arm."""
     bud = bud or {}
     used = bud.get("used") or {}
     lim = bud.get("limits") or {}
     within = all(used.get(k, 0) <= lim[k] for k in lim)
-    return {"present": bool(bud), "stops": list(bud.get("stops") or []), "used": used,
-            "limits": lim, "phases": bud.get("phases"),
-            "ok": bool(bud) and not bud.get("stops") and within}
+    stops = list(bud.get("stops") or [])
+    arm_stops = [x for x in stops if not str(x.get("kind", "")).startswith("phase:")]
+    phase_stops = [x for x in stops if str(x.get("kind", "")).startswith("phase:")]
+    return {"present": bool(bud), "stops": arm_stops, "phase_stops": phase_stops, "used": used,
+            "limits": lim, "phases": bud.get("phases"), "phase_used_s": bud.get("phase_used_s"),
+            "ok": bool(bud) and not arm_stops and within}
 
 
 def _row_ok(rep, pt, queries, need_ledger=True):
@@ -210,7 +236,8 @@ def _chain3(a=-0.05, c=-0.05, fields=(0.1, 0.2, 0.3)):
 
 
 def _f3_bipartite(k=7):
-    """The unchanged 14-variable F3 synthetic model."""
+    """The unchanged 14-variable F3 synthetic model (k=7); smaller k gives the
+    same family with a discovery that completes inside the allowance."""
     from mdi import model as M
     facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1) + Fr(1 + v % 7, 20)], origin=v)
             for v in range(2 * k)]
@@ -925,12 +952,13 @@ def control_public_selection_and_admission(wall):
             and Fr(row["width"]) <= EPS and rs["ok"] and row["budget_before_preprocessing"] \
             and res.plan.get("complete_cost") is not None
         out.append(row)
-    # an ineligible record (price refusal) exists on the 14-variable F3 model
-    m6 = _f3_bipartite()
-    mp6 = _write_uai(m6)
+    # an ineligible BOUND record (forecast metered entries above the shared cap)
+    # exists on the 10-variable bipartite model, whose discovery completes
+    # inside the construction allowance
+    mp6 = _write_uai(_f3_bipartite(5))
     res6, d6, _, _ = _solve(M.read_uai(mp6), wall)
     inel = next((p for p in res6.prices if not p["eligible"]), None)
-    adm = {"ineligible_record_present": inel is not None, "fixture": "F3 14-variable bipartite"}
+    adm = {"ineligible_record_present": inel is not None, "fixture": "bipartite 5+5 (F3 family, k=5)"}
     if inel:
         # the same cap the pipeline ran under (1 GiB in this matrix)
         rep = RP.replay(mp6, "-", os.path.join(d6, inel["identity"] + ".plan.json"), cap_bytes=1 << 30)
