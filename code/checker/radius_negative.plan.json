@@ -82,7 +82,7 @@
   "pricing_probe_entries": {
    "label": "measured_calibration",
    "note": "metered entries visited by this candidate's pricing probes (charged to the shared pricing counter, not the execution meter)",
-   "value": 0
+   "value": 9
   },
   "producer_downward_ops": {
    "label": "exact",
@@ -326,7 +326,7 @@
  "storage_schedule": {
   "final_largest_bag": 1,
   "final_variables": 1,
-  "identity": "regional-b803bbbd2ae06ff9",
+  "identity": "regional-req3a177734-3ffc719e05624536",
   "levels": 1
  },
  "version": 1
