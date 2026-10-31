@@ -37,6 +37,11 @@ from mdi.matrix import (EPS, _row_ok, _solve, _plan, _price, _replay_fresh, _rep
                         _deletion_chain, _categorical_pairwise, _mean_field_path, _f3_bipartite)  # noqa: E402
 
 
+def K_RESERVE():
+    from mdi import config as K
+    return K.PUBLICATION_RESERVE
+
+
 def _raw(rep):
     """The persisted raw row: everything a reviewer needs, nothing derived."""
     keep = ("status", "pipeline_status", "kind", "name", "identity", "intervals", "requested", "observed",
@@ -88,7 +93,7 @@ def row_p1_triangle(wall):
     probabilities in a fresh process; the SHARED initial-marker swap, the
     output residual swap and the in-place residual swap are each rejected on a
     named obligation; the checker reports what it derived itself."""
-    from mdi import model as M, marked as MK, collective_route as CR
+    from mdi import model as M, marked as MK, collective_route as CR, oracle as O, pipeline as PLN
     vdir = os.path.join(HERE, "verifier")
     mp = os.path.join(vdir, "r17_triangle.uai")
     tr = json.load(open(os.path.join(vdir, "r17_triangle_truth.json")))
@@ -139,6 +144,82 @@ def row_p1_triangle(wall):
     out["in_place_residual_swap"] = _fault_pair(mp, plan, pt, q, CR, "_residual_marked", inplace_swap,
                                                 ("residual binding", "observable"))
     oks += [out["output_residual_swap"]["ok"], out["in_place_residual_swap"]["ok"]]
+    # ---- the WORKING-INPUT ALIAS (r20 review, blocking finding): a fault confined
+    # to producer execution rewrites the producer's working unary tables after
+    # binding; the original input bytes and the saved program are unchanged
+    from mdi import routes as RT, law as LAW
+    import hashlib
+    res_t, d_t, _, _ = _solve(M.read_uai(mp), wall)
+    plan_t = _plan(res_t, d_t, "statistic:lowrank_combined")
+    h_before = (hashlib.sha256(open(mp, "rb").read()).hexdigest(), hashlib.sha256(open(plan_t, "rb").read()).hexdigest())
+    clean_t = _replay_here(mp, plan_t)
+    orig_exec = RT.execute
+
+    def producer_mutates_working_tables(prog, r, queries, **kw):
+        for f in r.factors:
+            if len(f.scope) == 1:
+                for i in range(len(f.table)):
+                    f.table[i] = Fr(1)
+        return orig_exec(prog, r, queries, **kw)
+
+    def producer_wrong_on_isolated_copy(prog, r, queries, **kw):
+        r2 = copy.deepcopy(r)
+        for f in r2.factors:
+            if len(f.scope) == 1:
+                for i in range(len(f.table)):
+                    f.table[i] = Fr(1)
+        return orig_exec(prog, r2, queries, **kw)
+
+    def producer_mutates_frozen_law(prog, r, queries, **kw):
+        r.model.factors[0].table[0] = Fr(9)          # must raise: the frozen law is immutable
+        return orig_exec(prog, r, queries, **kw)
+    rows_alias = {}
+    for label, fn in (("producer_mutates_its_working_tables", producer_mutates_working_tables),
+                      ("same_wrong_calculation_on_isolated_copy", producer_wrong_on_isolated_copy),
+                      ("producer_tries_to_mutate_frozen_law", producer_mutates_frozen_law)):
+        RT.execute = fn
+        try:
+            bad = _replay_here(mp, plan_t)
+        finally:
+            RT.execute = orig_exec
+        txt = str(bad.get("reason")) + " " + " ".join(bad.get("failures") or [])
+        misses = sum(1 for v, rws in (bad.get("intervals") or {}).items() for st, (lo, hi) in enumerate(rws)
+                     if not (Fr(lo) <= pt[int(v)][st] <= Fr(hi)))
+        rows_alias[label] = {"status": bad["status"], "obligation": txt[:200], "original_probabilities_excluded": misses,
+                             "ok": bad["status"] == "REPLAY_REJECTED" and misses == 0
+                                   and ("does NOT contain" in txt or "tuple" in txt), "raw": _raw(bad)}
+    h_after = (hashlib.sha256(open(mp, "rb").read()).hexdigest(), hashlib.sha256(open(plan_t, "rb").read()).hexdigest())
+    rowc = _row_ok(clean_t, pt, q)
+    rowc["raw"] = _raw(clean_t)
+    out["working_input_alias"] = {"clean": rowc, "faults": rows_alias, "input_and_plan_hashes_unchanged": h_before == h_after,
+                                  "checker_restriction_derived_separately": (clean_t.get("stages") or {}).get("checker_restriction_s") is not None,
+                                  "ok": rowc["ok"] and all(r["ok"] for r in rows_alias.values()) and h_before == h_after
+                                        and (clean_t.get("stages") or {}).get("checker_restriction_s") is not None}
+    oks.append(out["working_input_alias"]["ok"])
+    # ---- occurrence identities: the SAME Factor object listed twice, two separate
+    # equal copies and their exact product are the same exact law and publish correctly
+    f = M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)])
+    u = M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)])
+    m_twice = M.Model(nvars=2, card=[2, 2], factors=[u, f, f]).validate()
+    m_copies = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)]),
+                                                     M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)]),
+                                                     M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)])]).validate()
+    m_prod = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)]),
+                                                   M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(4), Fr(1), Fr(1), Fr(9)])]).validate()
+    Zp, ptp = O.exact_all_marginals(M.restrict(m_prod, {}))
+    rows_occ = {}
+    for label, mm in (("same_object_twice", m_twice), ("two_equal_copies", m_copies), ("exact_product", m_prod)):
+        law = LAW.OriginalLaw.freeze(mm, {}, {0, 1})
+        rr = PLN.solve(mm, {}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+        rows_occ[label] = {"status": rr.status, "occurrence_ids": [x.origin for x in law.model.factors],
+                           "truth_vs_exact_product": _contains(rr.intervals, ptp) if rr.intervals else False,
+                           "caller_objects_untouched": (f.origin == -1 and isinstance(f.table, list)),
+                           "law_hash": law.model_sha256[:16]}
+    same_law = rows_occ["same_object_twice"]["law_hash"] == rows_occ["two_equal_copies"]["law_hash"]
+    out["repeated_factor_occurrences"] = {"rows": rows_occ, "same_object_twice_equals_two_copies": same_law,
+                                          "ok": same_law and all(r["status"].startswith("CERTIFIED") and r["truth_vs_exact_product"]
+                                                                 and r["caller_objects_untouched"] for r in rows_occ.values())}
+    oks.append(out["repeated_factor_occurrences"]["ok"])
     out["ok"] = all(oks)
     return out
 
@@ -305,7 +386,7 @@ def row_p4_statistic_family(wall):
         row["programs"] = {}
         for nm in names[:2]:
             rep = _replay_fresh(mp, _plan(res, d, nm), wall, evid=(evp or "-"))
-            rr = _row_ok(rep, pt, q)
+            rr = _row_ok(rep, pt, q, evidence=ev)
             rr["raw"] = _raw(rep)
             row["programs"][nm] = rr
         row["ok"] = res.status.startswith("CERTIFIED") and row["truth"] and bool(names) and all(r["ok"] for r in row["programs"].values())
@@ -502,6 +583,44 @@ def row_p6_saved_program_authority(wall):
     p6 = os.path.join(d, "malreq.plan.json"); json.dump(mal, open(p6, "w"))
     r6 = RP.replay(mp, "-", p6)
     req["malformed_request_width"] = {"status": r6["status"], "reason": str(r6.get("reason"))[:140], "ok": r6["status"] == "REPLAY_REFUSED"}
+    # ---- the EFFECTIVE request (r21): actual caller limits are recorded; saved
+    # entry-one / zero-wall / byte-one / null-limits / fake-mode / inconsistent
+    # exponents are handled by the documented rule BEFORE execution; a replay
+    # tightens its budget to the record's effective limits, never loosens
+    d20 = tempfile.mkdtemp()
+    r20 = PLN.solve(M.read_uai(mp), {}, wall_s=20, cap_bytes=1 << 30, plan_dir=d20, research_enabled=False)
+    plan20 = _plan(r20, d20, "identity")
+    rec20 = json.load(open(plan20))
+    eff = rec20["request"]["limits"]["effective"]
+    clean20 = RP.replay(mp, "-", plan20)
+    effrows = {"recorded_effective": eff, "recorded_frozen": rec20["request"]["limits"]["frozen"],
+               "effective_matches_caller": eff.get("wall_s") == 20.0 and eff.get("rss_bytes") == (1 << 30),
+               "replay_tightened_to_record": (clean20.get("budget") or {}).get("tightened"),
+               "clean_replay": clean20["status"]}
+
+    def mut20(label, fn, want_status, want_words):
+        b = copy.deepcopy(rec20); fn(b)
+        pth = os.path.join(d20, label + ".plan.json"); json.dump(b, open(pth, "w"))
+        rr = RP.replay(mp, "-", pth)
+        txt = str(rr.get("reason"))
+        effrows[label] = {"status": rr["status"], "reason": txt[:160], "used": (rr.get("budget") or {}).get("used"),
+                          "ok": rr["status"] == want_status and any(w_ in txt for w_ in want_words)}
+    mut20("saved_entry_limit_one", lambda b: b["request"]["limits"]["effective"].__setitem__("local_mass_entries", 1),
+          "REPLAY_REFUSED", ("REMAINING shared meter", "forecast metered"))
+    mut20("saved_zero_wall", lambda b: b["request"]["limits"]["effective"].__setitem__("wall_s", 0),
+          "REPLAY_REFUSED", ("not in (0,",))
+    mut20("saved_byte_limit_one", lambda b: b["request"]["limits"]["effective"].__setitem__("rss_bytes", 1),
+          "REPLAY_RESOURCE_STOP", ("rss",))
+    mut20("saved_null_limits", lambda b: b["request"].__setitem__("limits", None), "REPLAY_REFUSED", ("limits",))
+    mut20("saved_fake_mode", lambda b: b["request"].__setitem__("arithmetic_mode", "Q"), "REPLAY_REFUSED", ("arithmetic mode",))
+    mut20("saved_inconsistent_exponents", lambda b: (b["request"].__setitem__("emin", 0), b["request"].__setitem__("emax", 0)),
+          "REPLAY_REFUSED", ("emin", "emax", "exponent"))
+    mut20("saved_effective_above_frozen", lambda b: b["request"]["limits"]["effective"].__setitem__("wall_s", 601),
+          "REPLAY_REFUSED", ("not in (0,",))
+    effrows["ok"] = (effrows["effective_matches_caller"] and clean20["status"] == "REPLAY_VERIFIED"
+                     and bool(effrows["replay_tightened_to_record"])
+                     and all(v["ok"] for k, v in effrows.items() if isinstance(v, dict) and "ok" in v))
+    req["effective_request"] = effrows
     req["ok"] = all(v["ok"] for v in req.values() if isinstance(v, dict))
     out["request_object_governs"] = req
     oks.append(req["ok"])
@@ -586,19 +705,74 @@ def row_p7_execution_contract(wall):
                                         "ok": r13.status.startswith("CERTIFIED") and (r13.checker or {}).get("coordinates_checked") == 26
                                               and _contains(r13.intervals, pt13) and _width(r13.intervals) <= EPS}
     oks.append(out["chain_13_identity_checker"]["ok"])
+    # the affordable 16-variable chain still verifies all 32 probabilities
+    n16 = 16
+    ch16 = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1) + Fr(1 + v % 5, 10)], origin=v) for v in range(n16)]
+    ch16 += [M.Factor(scope=(i, i + 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(2 + i % 3)], origin=100 + i) for i in range(n16 - 1)]
+    m16 = M.Model(nvars=n16, card=[2] * n16, factors=ch16).validate()
+    Z, pt16 = O.exact_all_marginals(M.restrict(m16, {}))
+    r16 = PLN.solve(m16, {}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    out["chain_16_identity_checker"] = {"status": r16.status, "coordinates_checked": (r16.checker or {}).get("coordinates_checked"),
+                                        "truth": _contains(r16.intervals, pt16), "width": str(_width(r16.intervals)),
+                                        "ok": r16.status.startswith("CERTIFIED") and (r16.checker or {}).get("coordinates_checked") == 32
+                                              and _contains(r16.intervals, pt16) and _width(r16.intervals) <= EPS}
+    oks.append(out["chain_16_identity_checker"]["ok"])
+    # the identity's PRODUCER and CHECKER on the same shared meter (conditional
+    # solve): the meter splits by source; below the forecast the pipeline refuses
+    # before work (same unit as the actual producer + checker schedule); through
+    # the registered roles under a cap between producer and producer + checker
+    # the CHECKER stops with the producer's entries charged; normal cap succeeds
+    m4 = M.read_uai(_mean_field_path(4, 0.30))
+    Z, pt4c = O.exact_all_marginals(M.restrict(m4, {3: 1}))
+    rn = PLN.solve(m4, {3: 1}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    src = rn.budget.get("used_by_source") or {}
+    prod = sum(v for k, v in src.items() if "producer" in k)
+    chk = sum(v for k, v in src.items() if "checker" in k)
+    fc = next((int(p["counters"]["metered_entries_forecast"]["value"]) for p in rn.prices if p["name"] == "identity"), None)
+    meter = {"normal_cap": {"status": rn.status, "truth": _contains({v: rn.intervals[v] for v in (0, 1, 2)}, pt4c),
+                            "producer_entries": prod, "checker_entries": chk, "forecast_metered_entries": fc,
+                            "forecast_covers_actual": fc is not None and fc >= prod + chk}}
     orig_init = B.Budget.__init__
-
-    def patched(self, wall_s, limits=None, rss_fn=None, rss_limit=None, **kw):
-        lim = dict(limits or {}); lim["local_mass_entries"] = 1
-        orig_init(self, wall_s, limits=lim, rss_fn=rss_fn, rss_limit=rss_limit, **kw)
-    B.Budget.__init__ = patched
-    try:
-        rt = PLN.solve(M.read_uai(w(TINY)), {}, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
-    finally:
-        B.Budget.__init__ = orig_init
-    out["identity_under_shared_entry_meter"] = {"status": rt.status, "used": rt.budget.get("used"), "stops": (rt.budget.get("stops") or [])[:1],
-                                                "ok": rt.status == "RESOURCE_STOP" and (rt.budget.get("used") or {}).get("local_mass_entries", 0) > 1 and not rt.intervals}
-    oks.append(out["identity_under_shared_entry_meter"]["ok"])
+    for label, cap in (("cap_one", 1), ("cap_producer_only", prod), ("cap_below_producer_plus_checker", prod + chk - 1)):
+        def patched(self, wall_s, limits=None, rss_fn=None, rss_limit=None, _cap=cap, **kw):
+            lim = dict(limits or {}); lim["local_mass_entries"] = _cap
+            orig_init(self, wall_s, limits=lim, rss_fn=rss_fn, rss_limit=rss_limit, **kw)
+        B.Budget.__init__ = patched
+        try:
+            rr = PLN.solve(m4, {3: 1}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+        finally:
+            B.Budget.__init__ = orig_init
+        meter[label] = {"status": rr.status, "reason": str(rr.reason)[:120], "used": rr.budget.get("used"),
+                        "published": bool(rr.intervals),
+                        "ok": rr.status in ("RESOURCE_STOP", "PRICE_REFUSAL") and not rr.intervals}
+    # the registered roles under a budget whose cap admits production but not checking
+    from mdi import registry as RG, law as LAW
+    law4 = LAW.OriginalLaw.freeze(m4, {3: 1}, {0, 1, 2})
+    for label, cap in (("roles_cap_one", 1), ("roles_cap_between", prod + chk - 1), ("roles_cap_normal", 10 ** 6)):
+        bgr = B.Budget(60, limits={"local_mass_entries": cap})
+        own = law4.restriction()
+        ctx = {"model": law4.model, "evidence": dict(law4.evidence), "eps": EPS - K_RESERVE(), "cap_bytes": 1 << 30,
+               "remaining": bgr.remaining, "restricted": own.r, "queries": {0, 1, 2}, "budget": bgr, "program": None,
+               "progress": lambda *a, **k: None}
+        stage = None
+        try:
+            stage = "producer"
+            iv = RG.pipeline_identity_executor(ctx)
+            stage = "checker"
+            ok, fails, meta = RG.pipeline_identity_checker(law4.model, dict(law4.evidence), iv, EPS, deadline_s=60, cap_bytes=1 << 30,
+                                                           charge=lambda n: bgr.charge("local_mass_entries", n, "identity checker entries"))
+            meter[label] = {"stopped_in": None, "verified": bool(ok), "used": dict(bgr.used), "by_source": dict(bgr.used_by_source),
+                            "ok": (cap >= prod + chk) and bool(ok)}
+        except B.BudgetExceeded as e:
+            meter[label] = {"stopped_in": stage, "reason": str(e)[:120], "used": dict(bgr.used), "by_source": dict(bgr.used_by_source),
+                            "ok": (stage == "producer" and cap == 1) or (stage == "checker" and 1 < cap < prod + chk and bgr.used.get("local_mass_entries", 0) > prod)}
+        except Exception as e:
+            meter[label] = {"stopped_in": stage, "error": "%s: %s" % (type(e).__name__, str(e)[:100]), "ok": False}
+    meter["ok"] = (rn.status.startswith("CERTIFIED") and meter["normal_cap"]["truth"] and prod > 0 and chk > 0
+                   and meter["normal_cap"]["forecast_covers_actual"]
+                   and all(v["ok"] for k, v in meter.items() if isinstance(v, dict) and "ok" in v))
+    out["identity_producer_and_checker_on_one_meter"] = meter
+    oks.append(meter["ok"])
     s0 = S.solve(M.read_uai(w(TINY)), {}, eps=EPS, mode="P", cap_bytes=1 << 30, deadline_s=0.0)
     s1 = S.solve(M.read_uai(w(TINY)), {}, eps=EPS, mode="P", cap_bytes=1 << 30, deadline_s=-2.0)
     out["exhausted_deadline_never_renewed"] = {"zero": s0["outcome"], "negative": s1["outcome"],
@@ -665,12 +839,20 @@ def row_p7_execution_contract(wall):
     oks.append(out["ring_statistic_priced_work"]["ok"])
     led = resr.plan.get("invocation_ledger") or {}
     cc = resr.plan.get("complete_cost") or {}
-    out["invocation_ledger"] = {"ledger": led, "discovery_all_candidates_ops": cc.get("discovery_all_candidates_ops"),
-                                "units": {"recognizer_fit_ops": "exact-rational operations", "construction_ops": "exact-rational operations",
-                                          "pricing_probe_entries": "metered table entries", "candidates_built": "count"},
-                                "ok": int(led.get("recognizer_fit_ops", 0)) > 0 and int(led.get("construction_ops", 0)) > 0
-                                      and int(led.get("candidates_built", 0)) > 0 and int(led.get("pricing_probe_entries", 0)) > 0
-                                      and cc.get("discovery_all_candidates_ops") == int(led.get("recognizer_fit_ops", 0)) + int(led.get("construction_ops", 0))}
+    atts = led.get("attempts") or []
+    recog = [a for a in atts if a.get("kind") == "recognizer"]
+    out["invocation_ledger"] = {"attempts_recorded": len(atts), "recognizer_attempts": len(recog),
+                                "recognizer_statuses": sorted({a.get("status") for a in recog}),
+                                "every_recognizer_attempt_has_elapsed_and_mpfr": all("elapsed_s" in a and "transcendental_calls" in a for a in recog),
+                                "fit_ops_labelled_unknown": all(a.get("fit_ops") == "unknown" for a in recog) and led.get("recognizer_fit_ops") == "unknown",
+                                "construction_ops_measured": led.get("construction_ops_measured"),
+                                "recognizer_seconds": led.get("recognizer_seconds"), "recognizer_transcendental_calls": led.get("recognizer_transcendental_calls"),
+                                "units": led.get("units"), "complete_cost_discovery": cc.get("discovery_all_candidates_ops"),
+                                "ok": len(recog) >= 2 and all("elapsed_s" in a and "transcendental_calls" in a for a in recog)
+                                      and all(a.get("status") in ("admitted", "declined", "failed", "budget") for a in recog)
+                                      and led.get("recognizer_fit_ops") == "unknown" and int(led.get("construction_ops_measured", 0)) > 0
+                                      and isinstance(cc.get("discovery_all_candidates_ops"), dict)
+                                      and cc["discovery_all_candidates_ops"].get("recognizer_fit_ops") == "unknown"}
     oks.append(out["invocation_ledger"]["ok"])
     out["ok"] = all(oks)
     return out
@@ -700,6 +882,8 @@ def row_p8_lifecycle(wall):
         def __call__(self):
             return self.t
     clk = Clock()
+    evz_ok = mp + ".e0"
+    open(evz_ok, "w").write("0\n")
     saved_clock = B.DEFAULT_CLOCK[0]
     B.DEFAULT_CLOCK[0] = clk
     try:
@@ -762,9 +946,10 @@ def row_p8_lifecycle(wall):
         finally:
             ARM._write = orig_write
         out["terminal_write_delay"] = {"outcome": ar["outcome"], "reason": str(ar.get("reason"))[:140],
-                                       "elapsed_including_durable_write": ar.get("elapsed_s_including_durable_write"),
+                                       "receipt": ar.get("receipt"),
                                        "started_record_first": ar.get("started") is not None,
-                                       "ok": ar["outcome"] == "RESOURCE_STOP" and "durable" in str(ar.get("reason"))}
+                                       "ok": ar["outcome"] == "RESOURCE_STOP" and "durable" in str(ar.get("reason"))
+                                             and (ar.get("receipt") or {}).get("within_wall") is False}
         oks.append(out["terminal_write_delay"]["ok"])
         calls = {"n": 0}
         orig_rss = S._rss_bytes
@@ -782,6 +967,70 @@ def row_p8_lifecycle(wall):
         oks.append(out["rss_cap"]["ok"])
     finally:
         B.DEFAULT_CLOCK[0] = saved_clock
+    # genuine zero-evidence and fully pinned proofs advanced PAST the wall are
+    # resource outcomes with the proof kept as partial evidence, never published
+    saved_clock = B.DEFAULT_CLOCK[0]
+    B.DEFAULT_CLOCK[0] = clk
+    try:
+        z = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(0)], origin=0),
+                                                   M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=1)]).validate()
+        orig_zp = PLN.zero_evidence_proof
+
+        def slow_zp(*a, **k):
+            clk.t += 0.150
+            return orig_zp(*a, **k)
+        PLN.zero_evidence_proof = slow_zp
+        try:
+            rz = PLN.solve(z, {0: 1}, wall_s=0.050, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        finally:
+            PLN.zero_evidence_proof = orig_zp
+        orig_pp = PLN.positive_evidence_proof
+
+        def slow_pp(*a, **k):
+            clk.t += 0.150
+            return orig_pp(*a, **k)
+        PLN.positive_evidence_proof = slow_pp
+        try:
+            rpin = PLN.solve(M.read_uai(mp), {0: 0, 1: 1, 2: 0, 3: 1}, wall_s=0.050, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        finally:
+            PLN.positive_evidence_proof = orig_pp
+        out["early_proofs_past_the_wall"] = {
+            "zero_evidence": {"status": rz.status, "partial": (rz.partial_evidence or {}).get("status_before_limit_check"),
+                              "remaining_s": (rz.budget or {}).get("remaining_s")},
+            "fully_pinned": {"status": rpin.status, "partial": (rpin.partial_evidence or {}).get("status_before_limit_check"),
+                             "intervals_withheld": not rpin.intervals},
+            "ok": rz.status == "RESOURCE_STOP" and (rz.partial_evidence or {}).get("status_before_limit_check") == "ZERO_EVIDENCE_PROVED"
+                  and rpin.status == "RESOURCE_STOP" and (rpin.partial_evidence or {}).get("status_before_limit_check") == "CERTIFIED_FALLBACK_ONLY"
+                  and not rpin.intervals}
+        oks.append(out["early_proofs_past_the_wall"]["ok"])
+        # the ordinary zero-evidence ARM: plausible elapsed on the one clock; saved record and
+        # returned result agree; the durable-write receipt is separate and points back
+        mpz = _write_uai(z)
+        evz = mpz + ".evid"
+        open(evz, "w").write("1 0 1\n")
+        rdz = tempfile.mkdtemp()
+        az = ARM.run_arm("zero", False, rdz, wall=30, model_path=mpz, evid_path=evz)
+        savedz = json.load(open(os.path.join(rdz, "arm_zero_baseline.json")))
+        recz = json.load(open(os.path.join(rdz, "arm_zero_baseline.receipt.json")))
+        out["arm_zero_evidence_timing"] = {"outcome": az["outcome"], "elapsed_s": az["elapsed_s"], "saved_elapsed_s": savedz["elapsed_s"],
+                                           "receipt": recz, "saved_points_to_receipt": savedz.get("receipt_path"),
+                                           "ok": az["outcome"] == "ZERO_EVIDENCE_PROVED" and 0 <= az["elapsed_s"] < 30
+                                                 and savedz["elapsed_s"] == az["elapsed_s"] and recz["within_wall"] is True
+                                                 and "elapsed_s_including_durable_write" not in savedz}
+        oks.append(out["arm_zero_evidence_timing"]["ok"])
+    finally:
+        B.DEFAULT_CLOCK[0] = saved_clock
+    # a successful arm under the real clock: saved record == returned result on every timing field
+    rds = tempfile.mkdtemp()
+    asu = ARM.run_arm("mf4", False, rds, wall=60, model_path=mp, evid_path=evz_ok)
+    saveds = json.load(open(os.path.join(rds, "arm_mf4_baseline.json")))
+    recs = json.load(open(os.path.join(rds, "arm_mf4_baseline.receipt.json")))
+    out["arm_success_timing_consistent"] = {"outcome": asu["outcome"], "saved_elapsed_equals_returned": saveds["elapsed_s"] == asu["elapsed_s"],
+                                            "receipt_within_wall": recs["within_wall"], "semantics": saveds.get("timing_semantics"),
+                                            "ok": asu["outcome"].startswith("CERTIFIED") and saveds["elapsed_s"] == asu["elapsed_s"]
+                                                  and recs["within_wall"] is True and saveds.get("timing_semantics") is not None
+                                                  and "elapsed_s_including_durable_write" not in saveds}
+    oks.append(out["arm_success_timing_consistent"]["ok"])
     bad = json.load(open(plan)); bad["request"]["card"] = {"0": 3}
     pb = os.path.join(d, "badcard.plan.json"); json.dump(bad, open(pb, "w"))
     rb = RP.replay(mp, "-", pb)
@@ -857,14 +1106,14 @@ def row_p9_truth_predicate(wall):
 
 
 ROWS = [
-    ("P1 proof boundary: exact original triangle (clean 6; initial-marker, output and in-place residual swaps)", row_p1_triangle),
+    ("P1 proof boundary: exact original triangle (clean 6; marker/residual swaps; working-input alias; occurrences)", row_p1_triangle),
     ("P2 proof boundary: exact original F6 chain (15/25/13/5; shared gf2 and gf3 faults; conservative witness; r19 grid gate)", row_p2_chain),
     ("P3 pure-sign rank-2 Gaussian and Fourier", row_p3_pure_sign_rank2),
     ("P4 statistic family: categorical, higher-arity/non-binary, hard zero, disconnected", row_p4_statistic_family),
     ("P5 regional L1/L2, composed statistic/gaussian, nonzero deletion", row_p5_regional_deletion_composed),
-    ("P6 saved-program authority: strict witnesses, identity tuples, request object, collision, schema", row_p6_saved_program_authority),
-    ("P7 execution contract: pre-admission applicability, shared meter, deadline, MPFR counts, priced work, ledger", row_p7_execution_contract),
-    ("P8 lifecycle controls under an injected clock; entry flush; probe charging; memory unavailable; F3 fallback", row_p8_lifecycle),
+    ("P6 saved-program authority: strict witnesses, identity tuples, effective request v3, collision, schema", row_p6_saved_program_authority),
+    ("P7 execution contract: pre-admission applicability, one meter for producer+checker, deadline, MPFR, priced work, truthful ledger", row_p7_execution_contract),
+    ("P8 lifecycle: injected clock, early proofs past the wall, one terminal path, arm timing, entry flush, probe charging, memory, F3", row_p8_lifecycle),
     ("P9 the independent truth predicate fails every disguise", row_p9_truth_predicate),
 ]
 

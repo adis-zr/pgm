@@ -110,7 +110,7 @@ def _resource(bud):
             "ok": bool(bud) and not arm_stops and within}
 
 
-def _row_ok(rep, pt, queries, need_ledger=True):
+def _row_ok(rep, pt, queries, need_ledger=True, eps=None, evidence=None):
     """The predicates every applicable replay row must carry, each re-derived
     by the matrix itself: the expected key set and cardinalities come from the
     record's REQUEST object (and must agree with the control's own requested
@@ -121,16 +121,25 @@ def _row_ok(rep, pt, queries, need_ledger=True):
     coordinates are exact point masses. Empty rows, missing keys, a wrong
     cardinality, a disguised [0, 1] row (its recomputed width is 1) and a
     missing budget all FAIL."""
+    # the obligations come from the INDEPENDENTLY RETAINED request of the
+    # control (its requested width `eps`, its evidence, its requested set and
+    # its own exact truth), never from the report: the report's request and
+    # observed map must AGREE with them
+    eps = Fr(eps) if eps is not None else EPS
+    evidence = {int(k): int(v) for k, v in (evidence or {}).items()}
     ck = rep.get("checker") or {}
     pd = ck.get("positive_denominators")
     req = rep.get("request") or {}
     iv = rep.get("intervals") or {}
-    obs = {int(k): int(v) for k, v in (rep.get("observed") or {}).items()}
+    obs_rep = {int(k): int(v) for k, v in (rep.get("observed") or {}).items()}
+    obs = evidence
     req_q = sorted(int(v) for v in (req.get("queries") or []))
     want_q = sorted(int(v) for v in queries)
-    expect_keys = sorted(set(req_q) | set(obs))
+    expect_keys = sorted(set(want_q) | set(obs))
     got_keys = sorted(int(v) for v in iv)
-    exact_keys = bool(req) and req_q == want_q and got_keys == expect_keys and bool(got_keys)
+    req_width_ok = bool(req) and Fr(req.get("width", "0") or 0) == eps
+    req_obs_ok = {int(k): int(v) for k, v in (req.get("observed") or {}).items()} == obs and obs_rep == obs
+    exact_keys = bool(req) and req_q == want_q and got_keys == expect_keys and bool(got_keys) and req_obs_ok
     cards_ok = bool(iv)
     parsed = {}
     endpoints_ok = True
@@ -162,7 +171,8 @@ def _row_ok(rep, pt, queries, need_ledger=True):
         parsed[v] = prow
     recomputed = max((hi - lo for rows in parsed.values() for lo, hi in rows), default=None)
     reported = Fr(rep["max_width"]) if rep.get("max_width") not in (None, "") else None
-    width_ok = recomputed is not None and recomputed <= EPS and reported is not None and reported == recomputed
+    width_ok = (recomputed is not None and recomputed <= eps and reported is not None and reported == recomputed
+                and req_width_ok)
     truth = bool(parsed) and cards_ok
     if truth:
         for v, rows in parsed.items():
@@ -174,6 +184,8 @@ def _row_ok(rep, pt, queries, need_ledger=True):
                 truth = False
     res = _resource(rep.get("budget"))
     return {"replay": rep["status"], "exact_keys": exact_keys, "cards": cards_ok, "endpoints_valid": endpoints_ok,
+            "request_width": str(eps), "request_width_matches_report": req_width_ok,
+            "evidence_matches_report": req_obs_ok,
             "truth": truth, "positive_denominators": pd,
             "width": (str(recomputed) if recomputed is not None else None), "width_reported": rep.get("max_width"),
             "width_ok": width_ok, "resources": res, "ledger": rep.get("ledger"),
@@ -719,7 +731,7 @@ def control_independent_representation_and_readout(wall):
         and cat["resources"]["ok"]
     if reg:
         rc = _replay_fresh(mpc, _plan(resc, dc, reg), wall, evid=evp)
-        rowc = _row_ok(rc, ptc, [0, 1, 5])
+        rowc = _row_ok(rc, ptc, [0, 1, 5], evidence={3: 1})
         cat["regional_replay"] = rowc
         okc = okc and rowc["ok"]
     cat["ok"] = okc
@@ -896,8 +908,18 @@ def control_work_and_memory(wall):
         ph_f = (c.get("precomputed_phase_entries") or {}).get("value")
         ph_m = ex.get("precomputed_phase_entries")
         st = rep.get("stages") or {}
+        st_tr = ((rep.get("complete_cost") or {}).get("measured") or {}).get("stage_transcendental_calls") or {}
+        full_exec = (st_tr.get("execute") or {}).get("total")
+        full_check = (st_tr.get("check") or {}).get("total")
         measured = {"producer_ops": counts.get("execute"), "checker_ops": counts.get("check"),
                     "counted_operations": "every Fraction operation: arithmetic, comparison, negation, absolute value, power",
+                    # SCOPES stated: the transcendental FORECASTS cover the evaluator's
+                    # enclosures only; the full-stage counts (setup, rebuild, grids, fit
+                    # proof included) are MEASURED and reported, not forecast
+                    "forecast_scope": "evaluator enclosures (producer_transcendental / checker_transcendental)",
+                    "full_stage_transcendental_execute": full_exec, "full_stage_transcendental_check": full_check,
+                    "unforecast_setup_calls_execute": (None if (full_exec is None or tr_e is None) else int(full_exec) - int(tr_e)),
+                    "unforecast_setup_calls_check": (None if (full_check is None or tr_c is None) else int(full_check) - int(tr_c)),
                     "metered_entries": used, "peak_live": live_m, "producer_transcendental": tr_e,
                     "checker_transcendental": tr_c, "retained_positive_node_entries": ret_m,
                     "precomputed_phase_entries": ph_m, "stage_seconds": st}
@@ -914,8 +936,11 @@ def control_work_and_memory(wall):
                and live_m is not None and int(live_m) <= live_p
                and st.get("execute_s") is not None and st.get("check_s") is not None)
         if is_gf:
-            cov = cov and None not in (tr_e, tr_c, tr_fp, tr_fc, ret_m, ret_f, ph_m, ph_f) \
+            # matching scopes: evaluator forecast vs evaluator measurement; the
+            # full-stage measurement must be at least the evaluator's (consistency)
+            cov = cov and None not in (tr_e, tr_c, tr_fp, tr_fc, ret_m, ret_f, ph_m, ph_f, full_exec, full_check) \
                 and int(tr_fp) >= int(tr_e) and int(tr_fc) >= int(tr_c) \
+                and int(full_exec) >= int(tr_e) and int(full_check) >= int(tr_c) \
                 and int(ret_f) >= int(ret_m) and int(ph_f) >= int(ph_m)
         elif is_stat:
             cov = cov and None not in (tr_e, tr_c, tr_fp, tr_fc) \

@@ -452,10 +452,18 @@
   "emin": null,
   "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "limits": {
-   "arm_rss_bytes": 8589934592,
-   "arm_wall_s": "600.0",
-   "local_mass_entries": 1000000,
-   "profile_comparisons": 2000000
+   "effective": {
+    "local_mass_entries": 1000000,
+    "profile_comparisons": 2000000,
+    "rss_bytes": 1073741824,
+    "wall_s": 300.0
+   },
+   "frozen": {
+    "arm_rss_bytes": 8589934592,
+    "arm_wall_s": 600.0,
+    "local_mass_entries": 1000000,
+    "profile_comparisons": 2000000
+   }
   },
   "max_precision": 4096,
   "model_sha256": "75a671160a0b6e590f6a5f7d3eeeb88c03879e32fb04973576d5971f018bea14",
@@ -472,13 +480,13 @@
    2
   ],
   "query_sha256": "9a297ba133a66355bdf9fd27295a541e16a2ee98a3f85cafd90d2e0c820b74a8",
-  "version": 2,
+  "version": 3,
   "width": "1/100"
  },
  "storage_schedule": {
   "final_largest_bag": 2,
   "final_variables": 3,
-  "identity": "mixed-req716a7146-8c772b474d806efe",
+  "identity": "mixed-req716a7146-bddd9ed8b95fe08c",
   "levels": 0
  },
  "version": 1

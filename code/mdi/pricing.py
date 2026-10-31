@@ -318,6 +318,23 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
     rec.put("checker_ops", chk, UPPER,
             "interval mode carries two endpoints, plus the bounded "
             "independent aggregation enumeration where it runs")
+    # the SHARED ENTRY METER, in the unit the engines charge: the producer's
+    # messages (one separator table per upward and per downward message), the
+    # checker's interval messages (the same schedule), its enumeration
+    # assignments (when within the cap) and the sparse aggregation's built
+    # entries (at most one per bag-domain entry)
+    msg_entries = 2 * sum(b.sep_domain(plan.card) for b in plan.bags if b.parent >= 0)
+    p_entries = msg_entries
+    c_entries = msg_entries + (joint or 0) + sum(b.domain(plan.card) for b in plan.bags)
+    rec.put("producer_metered_entries", p_entries, UPPER, "identity producer message entries on the shared meter")
+    rec.put("checker_metered_entries", c_entries, UPPER,
+            "identity checker: interval messages + enumeration assignments + sparse aggregation entries")
+    rec.put("metered_entries_forecast", p_entries + c_entries, UPPER,
+            "producer + checker visits against the cumulative local_mass_entries cap (same unit as the meter)")
+    if p_entries + c_entries > K.CAPS["local_mass_entries"] and rec.eligible:
+        rec.eligible = False
+        rec.ineligible_reason = ("the identity's forecast metered entries %d exceed the shared cap %d"
+                                 % (p_entries + c_entries, K.CAPS["local_mass_entries"]))
     rec.put("factor_entry_conversions", conv, UPPER,
             "reduced by the per-entry conversion cache")
     rec.put("requested_markers", n_requested, EXACT)

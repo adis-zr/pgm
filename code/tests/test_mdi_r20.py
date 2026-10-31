@@ -185,6 +185,20 @@ def test_identity_checker_applicability_is_decided_before_admission():
 
 
 def test_identity_runs_under_the_shared_entry_meter():
+    """The identity's producer AND checker charge the one shared meter (r21):
+    the pipeline forecasts both in the meter's unit and refuses a cap of one
+    before work; the registered roles under a cap between the producer's and
+    the producer-plus-checker's entries stop in VERIFICATION with the
+    producer's entries charged; the normal cap verifies."""
+    from mdi import registry as RG, law as LAW, oracle as O
+    m = M.read_uai(_mf4(0.30))
+    rn = PLN.solve(m, {3: 1}, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    src = rn.budget["used_by_source"]
+    prod = sum(v for k, v in src.items() if "producer" in k)
+    chk = sum(v for k, v in src.items() if "checker" in k)
+    assert rn.status.startswith("CERTIFIED") and prod > 0 and chk > 0
+    fc = next(int(p["counters"]["metered_entries_forecast"]["value"]) for p in rn.prices if p["name"] == "identity")
+    assert fc >= prod + chk                                  # forecast in the meter's own unit
     orig = B.Budget.__init__
 
     def patched(self, wall_s, limits=None, rss_fn=None, rss_limit=None, **kw):
@@ -195,7 +209,26 @@ def test_identity_runs_under_the_shared_entry_meter():
         rt = PLN.solve(M.read_uai(w(TINY)), {}, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
     finally:
         B.Budget.__init__ = orig
-    assert rt.status == "RESOURCE_STOP" and rt.budget["used"].get("local_mass_entries", 0) > 1 and not rt.intervals
+    assert rt.status in ("PRICE_REFUSAL", "RESOURCE_STOP") and not rt.intervals      # refused BEFORE work
+    law4 = LAW.OriginalLaw.freeze(m, {3: 1}, {0, 1, 2})
+    for cap, want_stage in ((1, "producer"), (prod + chk - 1, "checker"), (10 ** 6, None)):
+        bgr = B.Budget(60, limits={"local_mass_entries": cap})
+        own = law4.restriction()
+        ctx = {"model": law4.model, "evidence": dict(law4.evidence), "eps": Fr(1, 100) - Fr(1, 10 ** 6), "cap_bytes": 1 << 30,
+               "remaining": bgr.remaining, "restricted": own.r, "queries": {0, 1, 2}, "budget": bgr, "program": None,
+               "progress": lambda *a, **k: None}
+        stage = "producer"
+        try:
+            iv = RG.pipeline_identity_executor(ctx)
+            stage = "checker"
+            ok, fails, meta = RG.pipeline_identity_checker(law4.model, dict(law4.evidence), iv, Fr(1, 100), deadline_s=60,
+                                                           cap_bytes=1 << 30,
+                                                           charge=lambda n: bgr.charge("local_mass_entries", n, "identity checker entries"))
+            assert want_stage is None and ok, (cap, fails)
+        except B.BudgetExceeded:
+            assert stage == want_stage, (cap, stage)
+            if stage == "checker":
+                assert bgr.used["local_mass_entries"] > prod
 
 
 def test_exhausted_deadline_is_never_renewed():
@@ -257,4 +290,138 @@ def test_input_schema_violations_are_typed_outcomes():
     m2 = M.Model(nvars=1, card=[2], factors=facs)
     res2 = PLN.solve(m2, {}, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
     assert res2.status.startswith("CERTIFIED"), res2.reason
-    assert len({f.origin for f in m2.factors}) == 2
+    # occurrence identities live on the FROZEN law; the caller's objects are never mutated
+    assert [f.origin for f in res2.law.model.factors] == [0, 1]
+    assert all(f.origin == -1 for f in m2.factors)
+    # the same Factor object listed twice is two occurrences: same exact law as two equal copies
+    from mdi import law as LAW
+    f = M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(2)])
+    la = LAW.OriginalLaw.freeze(M.Model(nvars=1, card=[2], factors=[f, f]).validate(), {}, {0})
+    lb = LAW.OriginalLaw.freeze(m2, {}, {0})
+    assert la.equal_law(lb) and isinstance(la.model.factors[0].table, tuple) and f.origin == -1
+
+
+# ------------------------------------------------ r21: immutable law, effective request, one terminal path
+
+def test_checker_reference_is_the_frozen_law_not_the_producers_working_input():
+    """r21 (R20 review, blocking finding): a fault confined to producer
+    execution rewrites the producer's WORKING unary tables after binding; the
+    checker's reference is derived from the immutable frozen law, so the
+    wrong publication is rejected on the named containment obligation. The
+    same wrong calculation on an isolated copy is rejected too, and the frozen
+    law refuses mutation outright."""
+    from mdi import routes as RT, law as LAW
+    mp = "verifier/r17_triangle.uai"
+    m = M.read_uai(mp)
+    Z, pt = O.exact_all_marginals(M.restrict(m, {}))
+    res, d = _solve(mp)
+    plan = _plan(res, d, "statistic:lowrank_combined")
+    clean = RP.replay(mp, "-", plan)
+    assert clean["status"] == "REPLAY_VERIFIED" and clean["stages"].get("checker_restriction_s") is not None
+    orig = RT.execute
+
+    def faulty(prog, r, queries, **kw):
+        for f in r.factors:
+            if len(f.scope) == 1:
+                for i in range(len(f.table)):
+                    f.table[i] = Fr(1)
+        return orig(prog, r, queries, **kw)
+    RT.execute = faulty
+    try:
+        bad = RP.replay(mp, "-", plan)
+    finally:
+        RT.execute = orig
+    assert bad["status"] == "REPLAY_REJECTED" and "does NOT contain" in " ".join(bad.get("failures") or [])
+    assert not bad.get("intervals")
+
+    def frozen(prog, r, queries, **kw):
+        r.model.factors[0].table[0] = Fr(9)            # raises: tuple table
+        return orig(prog, r, queries, **kw)
+    RT.execute = frozen
+    try:
+        fz = RP.replay(mp, "-", plan)
+    finally:
+        RT.execute = orig
+    assert fz["status"] == "REPLAY_REJECTED" and "tuple" in str(fz.get("reason"))
+    law = LAW.OriginalLaw.freeze(m, {}, set(M.restrict(m, {}).free))
+    a, b = law.restriction(), law.restriction()
+    a.r.factors[0].table[0] = Fr(99)
+    assert b.r.factors[0].table[0] != Fr(99) and isinstance(law.model.factors[0].table, tuple)
+
+
+def test_effective_request_v3_binds_limits_mode_and_exponents():
+    mp = _mf4(0.30)
+    d = tempfile.mkdtemp()
+    res = PLN.solve(M.read_uai(mp), {}, wall_s=20, cap_bytes=1 << 30, plan_dir=d, research_enabled=False)
+    plan = _plan(res, d, "identity")
+    base = json.load(open(plan))
+    eff = base["request"]["limits"]["effective"]
+    assert eff["wall_s"] == 20.0 and eff["rss_bytes"] == (1 << 30) and base["request"]["limits"]["frozen"]["arm_wall_s"] == 600.0
+    clean = RP.replay(mp, "-", plan)
+    assert clean["status"] == "REPLAY_VERIFIED" and clean["budget"]["tightened"], clean["budget"]
+    # a 900 s caller runs under the frozen 600 s and the ask is recorded
+    big = PLN.solve(M.read_uai(mp), {}, wall_s=900, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    assert big.budget["effective_limits"]["wall_s"] == 600.0 and big.budget["requested_by_caller"]["wall_s"] == 900.0
+
+    def mut(label, fn):
+        b = copy.deepcopy(base); fn(b)
+        p2 = os.path.join(d, label + ".plan.json"); json.dump(b, open(p2, "w"))
+        return RP.replay(mp, "-", p2)
+    assert mut("e1", lambda b: b["request"]["limits"]["effective"].__setitem__("local_mass_entries", 1))["status"] == "REPLAY_REFUSED"
+    assert mut("w0", lambda b: b["request"]["limits"]["effective"].__setitem__("wall_s", 0))["status"] == "REPLAY_REFUSED"
+    assert mut("b1", lambda b: b["request"]["limits"]["effective"].__setitem__("rss_bytes", 1))["status"] == "REPLAY_RESOURCE_STOP"
+    assert mut("nl", lambda b: b["request"].__setitem__("limits", None))["status"] == "REPLAY_REFUSED"
+    assert mut("md", lambda b: b["request"].__setitem__("arithmetic_mode", "Q"))["status"] == "REPLAY_REFUSED"
+    assert mut("ex", lambda b: (b["request"].__setitem__("emin", 0), b["request"].__setitem__("emax", 0)))["status"] == "REPLAY_REFUSED"
+    assert mut("af", lambda b: b["request"]["limits"]["effective"].__setitem__("wall_s", 601))["status"] == "REPLAY_REFUSED"
+
+
+def test_early_proofs_past_the_wall_are_resource_outcomes_with_partial_evidence():
+    class Clock:
+        t = 1000.0
+
+        def __call__(self):
+            return Clock.t
+    saved = B.DEFAULT_CLOCK[0]
+    B.DEFAULT_CLOCK[0] = Clock()
+    try:
+        z = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(0)], origin=0),
+                                                   M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=1)]).validate()
+        orig = PLN.zero_evidence_proof
+
+        def slow(*a, **k):
+            Clock.t += 0.150
+            return orig(*a, **k)
+        PLN.zero_evidence_proof = slow
+        try:
+            rz = PLN.solve(z, {0: 1}, wall_s=0.050, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        finally:
+            PLN.zero_evidence_proof = orig
+        assert rz.status == "RESOURCE_STOP" and rz.partial_evidence["status_before_limit_check"] == "ZERO_EVIDENCE_PROVED"
+        origp = PLN.positive_evidence_proof
+
+        def slowp(*a, **k):
+            Clock.t += 0.150
+            return origp(*a, **k)
+        PLN.positive_evidence_proof = slowp
+        try:
+            rp = PLN.solve(M.read_uai(_mf4()), {0: 0, 1: 1, 2: 0, 3: 1}, wall_s=0.050, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        finally:
+            PLN.positive_evidence_proof = origp
+        assert rp.status == "RESOURCE_STOP" and not rp.intervals and rp.partial_evidence["status_before_limit_check"] == "CERTIFIED_FALLBACK_ONLY"
+    finally:
+        B.DEFAULT_CLOCK[0] = saved
+
+
+def test_arm_timing_is_one_clock_with_a_separate_receipt():
+    from mdi import arm as ARM
+    mp = _mf4(0.30)
+    evp = mp + ".e0"
+    open(evp, "w").write("0\n")
+    rd = tempfile.mkdtemp()
+    rec = ARM.run_arm("mf4", False, rd, wall=60, model_path=mp, evid_path=evp)
+    saved = json.load(open(os.path.join(rd, "arm_mf4_baseline.json")))
+    receipt = json.load(open(os.path.join(rd, "arm_mf4_baseline.receipt.json")))
+    assert rec["outcome"].startswith("CERTIFIED") and saved["elapsed_s"] == rec["elapsed_s"] and 0 <= saved["elapsed_s"] < 60
+    assert "elapsed_s_including_durable_write" not in saved and saved["receipt_path"] == "arm_mf4_baseline.receipt.json"
+    assert receipt["within_wall"] is True and receipt["elapsed_s_including_durable_write"] >= saved["elapsed_s"]

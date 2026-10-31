@@ -14,14 +14,15 @@ def _identity_executor(model, evidence, **kw):
 
 
 def _identity_checker(model, evidence, iv, eps, deadline_s=None,
-                      cap_bytes=None, **kw):
+                      cap_bytes=None, program=None, charge=None, **kw):
     from mdi import solve as S
     # forward the TYPED result, including whether the independent aggregation
     # check actually ran; the pipeline gates its status on it
     return S.verify_publication(model, evidence, iv, eps=eps,
                                 deadline_s=deadline_s, cap_bytes=cap_bytes,
                                 checker_precision=(program["checker"]["precision"]
-                                                   if program is not None else None))
+                                                   if program is not None else None),
+                                charge=charge)
 
 
 # ---- pipeline executors ----
@@ -56,7 +57,7 @@ def pipeline_identity_executor(ctx):
 
 
 def pipeline_identity_checker(model, evidence, iv, eps, deadline_s=None,
-                              cap_bytes=None, program=None, **kw):
+                              cap_bytes=None, program=None, charge=None, **kw):
     """The identity checker the pipeline INVOKES: the standalone independent
     verifier, whose own schedule strategy (min-fill, interval mode) and
     precision are what the program declares."""
@@ -68,7 +69,8 @@ def pipeline_identity_checker(model, evidence, iv, eps, deadline_s=None,
     return S.verify_publication(model, evidence, iv, eps=eps,
                                 deadline_s=deadline_s, cap_bytes=cap_bytes,
                                 checker_precision=(program["checker"]["precision"]
-                                                   if program is not None else None))
+                                                   if program is not None else None),
+                                charge=charge)
 
 
 def pipeline_program_executor(ctx):

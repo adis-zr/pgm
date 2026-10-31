@@ -553,7 +553,9 @@ def canonical_identity(coll, scales_key=(), executable=None):
            "modes": [[m[0], m[1], [list(x) for x in m[2]],
                       (None if m[3] is None else [list(x) for x in m[3]]),
                       (None if m[4] is None else list(m[4]))] for m in modes],
-           "Q": Q, "deltas": [str(Fr(d)) for d in (coll.get("deltas") or [])],
+           # the per-mode tolerances travel INSIDE each mode's grid tuple above, so a
+           # permutation of whole modes deduplicates (no order-sensitive side array)
+           "Q": Q,
            "kept": sorted(int(x) for x in coll["kept_factors"]),
            "dropped": sorted([int(a), int(b)] for a, b in coll["dropped_pairs"]),
            "masked": sorted([int(a), int(b)] for a, b in (getattr(cand, "masked", None) or [])),

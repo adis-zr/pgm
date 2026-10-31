@@ -27,7 +27,7 @@ class Progress:
     def __init__(self, label, rundir, deadline, budget_s):
         self.label = label
         self.path = os.path.join(rundir, "progress_%s.log" % label)
-        self.t0 = time.time()
+        self.t0 = B.DEFAULT_CLOCK[0]()
         self.next = self.t0
         self.deadline = deadline
         self.budget = budget_s
@@ -35,7 +35,7 @@ class Progress:
         self.state = {"phase": "init", "status": "starting"}
 
     def __call__(self, phase, info=""):
-        now = time.time()
+        now = B.DEFAULT_CLOCK[0]()
         self.state = {"phase": phase, "status": str(info)}
         if now >= self.next:
             el = now - self.t0
@@ -56,14 +56,15 @@ class Progress:
 def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path=None, evid_path=None):
     """Run one arm and write a durable record. Returns the record."""
     eps = eps or K.MAX_WIDTH
-    wall = wall or K.RESOURCES["arm_wall_s"]
-    cap = cap or K.RESOURCES["arm_rss_bytes"]
+    # the caller's limits, never above the frozen maxima
+    wall = min(float(wall or K.RESOURCES["arm_wall_s"]), float(K.RESOURCES["arm_wall_s"]))
+    cap = min(int(cap or K.RESOURCES["arm_rss_bytes"]), int(K.RESOURCES["arm_rss_bytes"]))
     os.makedirs(rundir, exist_ok=True)
     label = "%s_%s" % (problem, "research" if research else "baseline")
     # ONE absolute deadline for the whole invocation, from before any parsing
     t0 = B.DEFAULT_CLOCK[0]()
     t_end = t0 + wall
-    prog = Progress(label, rundir, time.time() + wall, wall)
+    prog = Progress(label, rundir, B.DEFAULT_CLOCK[0]() + wall, wall)
     rec = {"problem": problem, "arm": "research" if research else "baseline",
            "label": label, "eps": str(eps), "wall_s": wall, "cap_bytes": cap,
            "threads_declared": K.RESOURCES["threads"], "outcome": "STARTED",
@@ -76,17 +77,13 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
 
     try:
         prog("parse", problem)
-        ts = time.time()
+        ts = B.DEFAULT_CLOCK[0]()
         m = M.read_uai(mp)
         ev = M.read_evidence(ep, m)
         r = M.restrict(m, ev)
-        rec["stages"]["parse_s"] = time.time() - ts
+        rec["stages"]["parse_s"] = B.DEFAULT_CLOCK[0]() - ts
         if B.DEFAULT_CLOCK[0]() > t_end:
-            rec["outcome"] = "RESOURCE_STOP"
-            rec["reason"] = "the complete wall of %.3f s was exhausted during parsing" % wall
-            rec["elapsed_s"] = B.DEFAULT_CLOCK[0]() - t0
-            _write(rec, rundir, label); prog.close()
-            return rec
+            raise _Exhausted("the complete wall of %.3f s was exhausted during parsing" % wall)
         rec["free_vars"] = len(r.free)
         rec["restricted_zeros"] = sum(1 for f in r.factors for t in f.table if t == 0)
         rec["queries"] = sum(m.card[v] for v in range(m.nvars) if v not in ev)
@@ -101,9 +98,7 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
             rec["outcome"] = "ZERO_EVIDENCE_PROVED" if proof.get("proved") else "NUMERICAL_REFUSAL"
             rec["reason"] = proof["reason"]
             rec["checker"] = proof
-            rec["elapsed_s"] = time.time() - t0
-            _write(rec, rundir, label); prog.close()
-            return rec
+            raise _Terminal()                    # through the ONE finalization below
 
         # ---------------- the CONNECTED public pipeline ----------------
         # Everything from here runs through mdi.pipeline: independently
@@ -113,7 +108,7 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
         # checking. The old ratio-only selection and the Cartesian coarse
         # executor are gone.
         from mdi import pipeline as PLN
-        ts = time.time()
+        ts = B.DEFAULT_CLOCK[0]()
         remaining = t_end - B.DEFAULT_CLOCK[0]()
         if remaining <= 0:
             raise _Exhausted("the complete wall of %.3f s was exhausted before planning" % wall)
@@ -122,7 +117,7 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
                         cap_bytes=cap, research_enabled=research,
                         plan_dir=os.path.join(rundir, "plans_%s" % label),
                         progress=lambda ph, info="": prog(ph, info))
-        rec["stages"]["pipeline_s"] = time.time() - ts
+        rec["stages"]["pipeline_s"] = B.DEFAULT_CLOCK[0]() - ts
         rec["pipeline"] = {
             "status": res.status, "reason": res.reason, "plan": res.plan,
             "preprocess": res.preprocess, "checker": res.checker,
@@ -141,6 +136,8 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
             rec["contract_met"] = bool(worst <= eps)
             _write_intervals(res.intervals, m, rundir, label)
             _write_point_vector(res.intervals, m, ev, rundir, label)
+    except _Terminal:
+        pass
     except _Exhausted as e:
         rec["outcome"] = "RESOURCE_STOP"
         rec["reason"] = str(e)
@@ -149,21 +146,60 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
         rec["outcome"] = "IMPLEMENTATION_INCOMPLETE"
         rec["reason"] = "%s: %s" % (type(e).__name__, e)
         rec["traceback"] = traceback.format_exc()[-2000:]
+    # ---------------- the ONE terminal finalization ----------------
+    # the effective deadline is tested after ANY proof (ordinary, zero
+    # evidence, fully pinned) and before publication; a correct proof that
+    # completed past the wall is a RESOURCE_STOP with its proof kept as
+    # partial evidence, never as a publication
     rec["peak_rss_bytes"] = S._rss_bytes()
     rec["elapsed_s"] = B.DEFAULT_CLOCK[0]() - t0
+    if rec["elapsed_s"] > wall and rec["outcome"] in ("CERTIFIED_RESEARCH_ROUTE", "CERTIFIED_FALLBACK_ONLY",
+                                                      "ZERO_EVIDENCE_PROVED", "VERIFIED_SHARED_AGGREGATION_ONLY"):
+        rec["partial_evidence"] = {"status_before_limit_check": rec["outcome"], "reason": rec.get("reason"),
+                                   "checker": rec.get("checker")}
+        rec["outcome"] = "RESOURCE_STOP"
+        rec["reason"] = ("the proof completed %.3f s after the start, past the %.3f s wall; it is partial "
+                         "evidence, not a publication" % (rec["elapsed_s"], wall))
+        for f in ("final_max_width", "contract_met"):
+            rec.pop(f, None)
+    # TIMING SEMANTICS (recorded with the record): `elapsed_s` is measured on
+    # the ONE monotonic clock from before parsing to the moment the terminal
+    # record is assembled; `durable_write` is a separate receipt written by the
+    # supervisor-visible writer AFTER the record file is durable, so the saved
+    # record cannot claim to measure its own future completion
+    rec["timing_semantics"] = {"clock": "one monotonic clock (budget.DEFAULT_CLOCK)",
+                               "elapsed_s": "start of invocation -> terminal record assembled",
+                               "durable_write": "written to arm_<label>.receipt.json after the record is durable; "
+                                                "its elapsed includes the record's own write"}
+    rec["receipt_path"] = "arm_%s.receipt.json" % label      # the saved record POINTS to its receipt
     _write(rec, rundir, label)
-    # the DURABLE output is part of the contract: if it completed after the
-    # deadline the result was not delivered within the wall
-    rec["elapsed_s_including_durable_write"] = B.DEFAULT_CLOCK[0]() - t0
-    if rec["elapsed_s_including_durable_write"] > wall and rec["outcome"].startswith("CERTIFIED"):
-        rec["outcome_before_deadline_check"] = rec["outcome"]
+    t_done = B.DEFAULT_CLOCK[0]()
+    receipt = {"label": label, "outcome": rec["outcome"], "elapsed_s_including_durable_write": t_done - t0,
+               "wall_s": wall, "within_wall": (t_done - t0) <= wall}
+    if not receipt["within_wall"] and rec["outcome"] in ("CERTIFIED_RESEARCH_ROUTE", "CERTIFIED_FALLBACK_ONLY",
+                                                           "ZERO_EVIDENCE_PROVED", "VERIFIED_SHARED_AGGREGATION_ONLY"):
+        # the durable output completed after the wall: the result was not
+        # delivered within the contract; the record is rewritten as a stop
+        rec["partial_evidence"] = {"status_before_limit_check": rec["outcome"], "reason": rec.get("reason"),
+                                   "checker": rec.get("checker")}
         rec["outcome"] = "RESOURCE_STOP"
         rec["reason"] = ("the durable output completed %.3f s after the start, past the %.3f s wall"
-                         % (rec["elapsed_s_including_durable_write"], wall))
+                         % (t_done - t0, wall))
+        for f in ("final_max_width", "contract_met"):
+            rec.pop(f, None)
         _write(rec, rundir, label)
-    prog("done", "%s in %.1fs" % (rec["outcome"], rec["elapsed_s_including_durable_write"]))
+        receipt["outcome"] = rec["outcome"]
+    _write_receipt(receipt, rundir, label)
+    # the RETURNED object carries the receipt under its own key; the saved
+    # record carries only the pointer (it cannot measure its own write)
+    rec["receipt"] = receipt
+    prog("done", "%s in %.1fs" % (rec["outcome"], receipt["elapsed_s_including_durable_write"]))
     prog.close()
     return rec
+
+
+class _Terminal(Exception):
+    pass
 
 
 class _Exhausted(Exception):
@@ -178,6 +214,16 @@ def _jsonable(x):
     if isinstance(x, (list, tuple)):
         return [_jsonable(v) for v in x]
     return x
+
+
+def _write_receipt(receipt, rundir, label):
+    path = os.path.join(rundir, "arm_%s.receipt.json" % label)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(_jsonable(receipt), fh, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
 
 
 def _write(rec, rundir, label):

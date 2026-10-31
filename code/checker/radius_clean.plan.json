@@ -347,10 +347,18 @@
   "emin": null,
   "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "limits": {
-   "arm_rss_bytes": 8589934592,
-   "arm_wall_s": "600.0",
-   "local_mass_entries": 1000000,
-   "profile_comparisons": 2000000
+   "effective": {
+    "local_mass_entries": 1000000,
+    "profile_comparisons": 2000000,
+    "rss_bytes": 1073741824,
+    "wall_s": 300.0
+   },
+   "frozen": {
+    "arm_rss_bytes": 8589934592,
+    "arm_wall_s": 600.0,
+    "local_mass_entries": 1000000,
+    "profile_comparisons": 2000000
+   }
   },
   "max_precision": 4096,
   "model_sha256": "81fc621e452889eb73d9dc02755749fa1adc8eb9b9f7bd34ffe53a5b259e3389",
@@ -365,7 +373,7 @@
    2
   ],
   "query_sha256": "9a297ba133a66355bdf9fd27295a541e16a2ee98a3f85cafd90d2e0c820b74a8",
-  "version": 2,
+  "version": 3,
   "width": "1/100"
  },
  "storage_schedule": {

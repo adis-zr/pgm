@@ -553,11 +553,35 @@ def supported(kind):
             "checker_supported": CHECKERS.get(kind) is not None}
 
 
-REQUEST_VERSION = 2          # r20: the request declares the collective precision too
+REQUEST_VERSION = 3          # r21: frozen maxima + effective limits; every field bound
 REQUEST_KEYS = ("version", "model_sha256", "evidence_sha256", "query_sha256", "queries", "observed",
                 "card", "width", "precision", "max_precision", "emin", "emax", "arithmetic_mode",
                 "order", "checker_strategy", "checker_precision", "collective_precision", "limits")
 MAX_PRECISION = 4096
+# the FROZEN algorithm maxima (never exceeded by any invocation) and the
+# EFFECTIVE per-invocation limits (what the caller actually ran under; a later
+# replay runs under the minimum of these and its own caller's limits)
+FROZEN_LIMIT_KEYS = ("local_mass_entries", "profile_comparisons", "arm_wall_s", "arm_rss_bytes")
+EFFECTIVE_LIMIT_KEYS = ("wall_s", "rss_bytes", "local_mass_entries", "profile_comparisons")
+
+
+def frozen_limits():
+    from mdi import config as K
+    return {"local_mass_entries": int(K.CAPS["local_mass_entries"]),
+            "profile_comparisons": int(K.CAPS["profile_entry_comparisons"]),
+            "arm_wall_s": float(K.RESOURCES["arm_wall_s"]),
+            "arm_rss_bytes": int(K.RESOURCES["arm_rss_bytes"])}
+
+
+def effective_limits_from(effective=None):
+    """The effective limits object: the caller's actual limits (from the
+    invocation budget) or, when none are given, the frozen maxima."""
+    fz = frozen_limits()
+    eff = dict(effective or {})
+    return {"wall_s": float(eff.get("wall_s", fz["arm_wall_s"])),
+            "rss_bytes": int(eff.get("rss_bytes") or fz["arm_rss_bytes"]),
+            "local_mass_entries": int(eff.get("local_mass_entries", fz["local_mass_entries"])),
+            "profile_comparisons": int(eff.get("profile_comparisons", fz["profile_comparisons"]))}
 
 
 def make_request(model_sha, evidence_sha, query_sha, queries, evidence, card, width, numerical,
@@ -575,7 +599,7 @@ def make_request(model_sha, evidence_sha, query_sha, queries, evidence, card, wi
             "order": [int(x) for x in (order or [])],
             "checker_strategy": str((checker or {}).get("strategy", "")),
             "checker_precision": int((checker or {}).get("precision", 0)),
-            "limits": {str(k): (int(v) if isinstance(v, int) else str(v)) for k, v in (limits or {}).items()}}
+            "limits": {"frozen": frozen_limits(), "effective": effective_limits_from(limits)}}
 
 
 def validate_request(req, rec):
@@ -638,6 +662,57 @@ def validate_request(req, rec):
                             "collective precision %s" % (prog["collective"].get("precision"), req["collective_precision"]))
         if [int(x) for x in (prog.get("order") or [])] != list(req["order"]):
             raise PlanError("request order differs from the program order")
+        # the ARITHMETIC settings the execution consumes are bound, not metadata
+        arith = prog.get("arithmetic") or {}
+        if str(req["arithmetic_mode"]) not in ("P", "E"):
+            raise PlanError("request arithmetic mode %r is not P or E" % (req["arithmetic_mode"],))
+        if str(req["arithmetic_mode"]) != str(arith.get("mode")):
+            raise PlanError("request arithmetic mode %r differs from the program's %r"
+                            % (req["arithmetic_mode"], arith.get("mode")))
+        if (rec.kind == "identity") != (req["arithmetic_mode"] == "P"):
+            raise PlanError("arithmetic mode %r is not the mode of a %s program" % (req["arithmetic_mode"], rec.kind))
+        if req["arithmetic_mode"] == "P":
+            for k in ("emin", "emax"):
+                if not isinstance(req[k], int) or isinstance(req[k], bool):
+                    raise PlanError("request %s must be an integer for the MPFR point kernel" % k)
+                if req[k] != arith.get(k):
+                    raise PlanError("request %s = %s differs from the program's %s" % (k, req[k], arith.get(k)))
+            if not (req["emin"] < 0 < req["emax"]):
+                raise PlanError("request exponent range [%s, %s] is not a usable range" % (req["emin"], req["emax"]))
+        else:
+            # exact arithmetic has NO exponent range: the defined empty value is null
+            for k in ("emin", "emax"):
+                if req[k] is not None or arith.get(k) is not None:
+                    raise PlanError("request %s must be null for exact arithmetic (got %r / program %r)"
+                                    % (k, req[k], arith.get(k)))
+        if (prog.get("collective") is not None) != (int(req["collective_precision"]) > 0):
+            raise PlanError("request collective precision %s does not match the presence of a collective record"
+                            % req["collective_precision"])
+        if prog.get("checker") and int(prog["checker"].get("precision", 0)) != int(req["checker_precision"]):
+            raise PlanError("request checker precision differs from the program's")
+    # the LIMITS: frozen maxima must be the contract's; effective limits are
+    # positive and never above the frozen maxima; nothing is optional or null
+    lim = req["limits"]
+    if not isinstance(lim, dict) or set(lim) != {"frozen", "effective"}:
+        raise PlanError("request limits must carry exactly 'frozen' and 'effective'")
+    fz = frozen_limits()
+    if not isinstance(lim["frozen"], dict) or set(lim["frozen"]) != set(FROZEN_LIMIT_KEYS):
+        raise PlanError("request frozen limits must carry %s" % list(FROZEN_LIMIT_KEYS))
+    for k in FROZEN_LIMIT_KEYS:
+        if float(lim["frozen"][k]) != float(fz[k]):
+            raise PlanError("request frozen limit %s = %s differs from the contract's %s" % (k, lim["frozen"][k], fz[k]))
+    eff = lim["effective"]
+    if not isinstance(eff, dict) or set(eff) != set(EFFECTIVE_LIMIT_KEYS):
+        raise PlanError("request effective limits must carry %s" % list(EFFECTIVE_LIMIT_KEYS))
+    bound = {"wall_s": fz["arm_wall_s"], "rss_bytes": fz["arm_rss_bytes"],
+             "local_mass_entries": fz["local_mass_entries"], "profile_comparisons": fz["profile_comparisons"]}
+    for k in EFFECTIVE_LIMIT_KEYS:
+        v = eff[k]
+        if v is None or isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise PlanError("request effective limit %s = %r is not a number" % (k, v))
+        if not (0 < float(v) <= float(bound[k])):
+            raise PlanError("request effective limit %s = %s is not in (0, %s]" % (k, v, bound[k]))
+    if prog:
         if prog.get("checker") and str(prog["checker"].get("strategy", "")) != req["checker_strategy"]:
             raise PlanError("request checking strategy differs from the program's")
         if sorted(int(v) for v in (prog.get("queries") or [])) != list(req["queries"]):

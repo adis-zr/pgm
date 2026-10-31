@@ -11,6 +11,7 @@ import gmpy2
 from gmpy2 import mpfr
 from mdi import model as M, plan as P, arith as A, contract as C
 from mdi import config as K
+from mdi import budget as _BUDGET
 
 
 def PRE_MOD():
@@ -72,7 +73,7 @@ def _mk_deadline(t_end, cap_bytes, baseline=None,
             "because the current process is oversized" % (base, cap_bytes))
 
     def check():
-        if time.time() > t_end:
+        if _BUDGET.DEFAULT_CLOCK[0]() > t_end:
             raise Deadline("outer deadline exceeded")
         if eff:
             cur = _rss_bytes()
@@ -96,7 +97,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     validate against the preprocessed factors; a program that does not
     describe a runnable schedule is a typed refusal.
     """
-    t0 = time.time()
+    t0 = _BUDGET.DEFAULT_CLOCK[0]()
     stages = {}
     prog = progress or (lambda *a, **k: None)
     t_end = t0 + deadline_s
@@ -119,10 +120,10 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                       allow_oversized=True)
 
     # ---------- stage: input conversion ----------
-    ts = time.time()
+    ts = _BUDGET.DEFAULT_CLOCK[0]()
     model.validate()
     r = M.restrict(model, evidence)
-    stages["input_conversion_s"] = time.time() - ts
+    stages["input_conversion_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
 
     # ---------- stage: common exact preprocessing (contract C) ----------
     # Identical in every arm, so it improves the baseline the research routes
@@ -130,7 +131,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     # from the original bytes. On Pedigree_11 this removes 22 positive constants
     # and splits 13 exactly separable pairs, taking min_fill from width 24 to 20
     # and the largest bag from 33,554,432 to 2,097,152.
-    ts = time.time()
+    ts = _BUDGET.DEFAULT_CLOCK[0]()
     pre_scale = Fr(1)
     pre_identity = None
     if preprocess:
@@ -141,7 +142,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
             if simp.impossible is not None:
                 out.update({"outcome": "ZERO_EVIDENCE_PROVED",
                             "reason": "factor %d is identically zero" % simp.impossible,
-                            "elapsed_s": time.time() - t0})
+                            "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
                 return out
             r = M.Restricted(model=model, evidence=dict(evidence),
                              factors=simp.factors, free=list(simp.free),
@@ -153,9 +154,9 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
             out.update({"outcome": "NUMERICAL_REFUSAL",
                         "reason": "exact preprocessing failed its own identity "
                                   "check: %s" % e,
-                        "elapsed_s": time.time() - t0})
+                        "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
-    stages["preprocess_s"] = time.time() - ts
+    stages["preprocess_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
     out["preprocess"] = pre_identity
     out["preprocess_scale"] = str(pre_scale)
     prog("input", "%d free vars" % len(r.free))
@@ -172,13 +173,13 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         proof = _PLN.zero_evidence_proof(model, evidence, r)
         out.update({"outcome": "ZERO_EVIDENCE_PROVED" if proof.get("proved") else "NUMERICAL_REFUSAL",
                     "reason": proof["reason"], "checker": proof,
-                    "elapsed_s": time.time() - t0})
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
         return out
 
     from mdi.guard import numerical_entry
     numerical_entry("solve.solve:identity-producer")
     # ---------- stage: planning ----------
-    ts = time.time()
+    ts = _BUDGET.DEFAULT_CLOCK[0]()
     bpe = plan_bytes_per_entry or (64 if mode == "P" else 128)
     if program is not None:
         # the persisted program GOVERNS: build the recorded order, validate it
@@ -187,28 +188,28 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
             out.update({"outcome": "NUMERICAL_REFUSAL",
                         "reason": "the persisted identity order does not name the "
                                   "preprocessed free variables",
-                        "elapsed_s": time.time() - t0})
+                        "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
         try:
             pl = P.build_plan("program", order, r.free, r.card, r.factors)
         except P.PlanError as e:
             out.update({"outcome": "NUMERICAL_REFUSAL",
                         "reason": "the persisted identity order is not a valid "
-                                  "schedule: %s" % e, "elapsed_s": time.time() - t0})
+                                  "schedule: %s" % e, "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
         est = P.byte_estimate(pl, bpe)
         sel = {"chosen": (pl, est), "candidates": [(pl.stats(), est)],
                "fits": est["estimate_bytes"] <= cap_bytes}
     else:
         sel = P.choose_plan(r.free, r.card, r.factors, bpe, cap_bytes)
-    stages["planning_s"] = time.time() - ts
+    stages["planning_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
     out["plan_candidates"] = sel["candidates"]
     if not sel["fits"]:
         best = sel["candidates"][0]
         out.update({"outcome": "RESOURCE_BOUND",
                     "reason": "no generic ordering fits the byte cap",
                     "best_candidate": best[0], "best_estimate": best[1],
-                    "cap_bytes": cap_bytes, "elapsed_s": time.time() - t0})
+                    "cap_bytes": cap_bytes, "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
         return out
     if _baseline_over_cap:
         # the declared cap is at or below what the process already holds. The
@@ -223,7 +224,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                     "best_candidate": best[0], "best_estimate": best[1],
                     "cap_bytes": cap_bytes,
                     "baseline_rss_bytes": rss_baseline,
-                    "elapsed_s": time.time() - t0})
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
         return out
     pl, est = sel["chosen"]
     out["plan"] = pl.stats()
@@ -240,7 +241,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         p = A.choose_precision(E_max, eps, p_min)
     except A.NumericalRefusal as e:
         out.update({"outcome": "NUMERICAL_REFUSAL", "reason": str(e),
-                    "elapsed_s": time.time() - t0})
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
         return out
     if program is not None:
         # the recorded precision must be at least what the schedule's depth
@@ -250,7 +251,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
             out.update({"outcome": "NUMERICAL_REFUSAL",
                         "reason": "the persisted precision %d is below the %d bits "
                                   "the schedule's depth bound requires" % (rp, p),
-                        "elapsed_s": time.time() - t0})
+                        "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
         p = rp
     out["precision_bits"] = p
@@ -271,7 +272,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                         "reason": "the persisted exponent range [%s, %s] does not "
                                   "cover the input-derived [%d, %d]"
                                   % (program["emin"], program["emax"], emin, emax),
-                        "elapsed_s": time.time() - t0})
+                        "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
         emin, emax = int(program["emin"]), int(program["emax"])
     try:
@@ -290,7 +291,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                              "but the value includes interpreter and module memory."}
 
     # ---------- stage: contraction ----------
-    ts = time.time()
+    ts = _BUDGET.DEFAULT_CLOCK[0]()
     try:
         eng = C.Engine(pl, r.factors, ctx, mode=mode,
                        progress=lambda ph, n: prog(ph, "%d messages" % n),
@@ -303,16 +304,16 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                 roots.append(b.idx)
         for rt in roots:
             nup += eng.upward(rt)
-        stages["upward_s"] = time.time() - ts
+        stages["upward_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
         prog("upward", "done, %d messages" % nup)
 
         # ---------- global positivity BEFORE publishing anything ----------
-        ts = time.time()
+        ts = _BUDGET.DEFAULT_CLOCK[0]()
         comp_weights = []
         for rt in roots:
             t = eng.root_value(rt)
             comp_weights.append((rt, t))
-        stages["evidence_weight_s"] = time.time() - ts
+        stages["evidence_weight_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
         zero_comp = [rt for rt, t in comp_weights if not t.support[0]]
         if zero_comp:
             # A DEFINITIVE NEGATIVE RESULT needs a checked witness, exactly as
@@ -347,7 +348,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                               % (zero_comp[0], why),
                     "zero_support_independently_verified": True,
                     "components": len(roots),
-                    "elapsed_s": time.time() - t0})
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             else:
                 out.update({
                     "outcome": "ZERO_SUPPORT_UNCHECKED",
@@ -358,7 +359,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                               % (zero_comp[0], why),
                     "zero_support_independently_verified": False,
                     "components": len(roots),
-                    "elapsed_s": time.time() - t0})
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
         # numeric positivity of every component
         for rt, t in comp_weights:
@@ -368,7 +369,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                 out.update({"outcome": "NUMERICAL_REFUSAL",
                             "reason": "component at bag %d has no certified positive "
                                       "lower bound (inconclusive, NOT impossibility)" % rt,
-                            "elapsed_s": time.time() - t0})
+                            "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
                 return out
         # Total evidence weight: the product over components, times the exact
         # pinned constant, TIMES the exact scale that preprocessing removed.
@@ -391,7 +392,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         # Each bag's variables are read the moment that bag is calibrated, so
         # its messages can be freed straight after: live memory then follows the
         # planner's peak-live estimate instead of retaining every message.
-        ts = time.time()
+        ts = _BUDGET.DEFAULT_CLOCK[0]()
         collected = {}
         home_vars = {}
         for v in r.free:
@@ -404,7 +405,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
 
         for rt in roots:
             ndn += eng.downward(rt, on_calibrated=_on_calibrated)
-        stages["downward_s"] = time.time() - ts
+        stages["downward_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
         out["peak_live_message_entries"] = eng.peak_live_entries
         prog("downward", "done, %d messages, %d marginals read"
              % (ndn, len(collected)))
@@ -414,7 +415,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                 "readout missed %d variables (first %s)" % (len(missing), missing[:5]))
 
         # ---------- stage: publication ----------
-        ts = time.time()
+        ts = _BUDGET.DEFAULT_CLOCK[0]()
         iv, raw = {}, {}
         prod_half = eps / 2
         expand = eps / 8
@@ -467,7 +468,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         for v, st in evidence.items():
             iv[v] = [(Fr(1), Fr(1)) if s == st else (Fr(0), Fr(0))
                      for s in range(model.card[v])]
-        stages["publication_s"] = time.time() - ts
+        stages["publication_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
         out["intervals"] = iv
         out["raw_intervals"] = raw
         out["ops"] = dict(eng.ops)
@@ -476,34 +477,34 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         del eng
     except Deadline as e:
         out.update({"outcome": "TIMEOUT", "reason": str(e),
-                    "elapsed_s": time.time() - t0, "peak_rss_bytes": _rss_bytes()})
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0, "peak_rss_bytes": _rss_bytes()})
         return out
     except MemoryStop as e:
         out.update({"outcome": "MEMORY_STOP", "reason": str(e),
-                    "elapsed_s": time.time() - t0, "peak_rss_bytes": _rss_bytes()})
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0, "peak_rss_bytes": _rss_bytes()})
         return out
     except A.NumericalRefusal as e:
         out.update({"outcome": "NUMERICAL_REFUSAL", "reason": str(e),
-                    "elapsed_s": time.time() - t0, "peak_rss_bytes": _rss_bytes()})
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0, "peak_rss_bytes": _rss_bytes()})
         return out
 
     # ---------- stage: independent checker ----------
     if run_checker:
-        ts = time.time()
+        ts = _BUDGET.DEFAULT_CLOCK[0]()
         try:
             ok, fails, cmeta = _check(model, evidence, iv, eps, pl, p, cap_bytes,
                                       t_end, prog)
-            stages["checking_s"] = time.time() - ts
+            stages["checking_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
             out["checker"] = {"status": "VERIFIED" if ok else "FAILED",
                               "containment_failures": len(fails),
                               "failures": fails[:8], **cmeta}
             if not ok:
                 out.update({"outcome": "NUMERICAL_REFUSAL",
                             "reason": "independent checker rejected %d coordinates" % len(fails),
-                            "elapsed_s": time.time() - t0})
+                            "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
                 return out
         except (Deadline, MemoryStop) as e:
-            stages["checking_s"] = time.time() - ts
+            stages["checking_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts
             # A checker that stopped before establishing containment has
             # verified NOTHING. Naming it VERIFIED_PARTIAL implied a verified
             # subset that no record identified.
@@ -519,7 +520,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                                   "%s" % e,
                         "producer_complete": True,
                         "independently_verified": False,
-                        "elapsed_s": time.time() - t0})
+                        "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
     else:
         # Checking was DISABLED. The producer's own enclosures are not a
@@ -530,7 +531,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         out.update({"outcome": "PRODUCER_COMPLETE_UNCHECKED",
                     "producer_complete": True,
                     "independently_verified": False,
-                    "elapsed_s": time.time() - t0,
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0,
                     "peak_rss_bytes": _rss_bytes()})
         return out
     # `independently_verified` means the AGGREGATION itself was checked by a
@@ -545,7 +546,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
         out.update({"outcome": "VERIFIED_ALL_MARGINALS",
                     "producer_complete": True,
                     "independently_verified": True,
-                    "elapsed_s": time.time() - t0,
+                    "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0,
                     "peak_rss_bytes": _rss_bytes()})
     else:
         out.update({
@@ -559,7 +560,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                       "complete independently verified status.",
             "producer_complete": True,
             "independently_verified": False,
-            "elapsed_s": time.time() - t0,
+            "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0,
             "peak_rss_bytes": _rss_bytes()})
     return out
 
@@ -844,7 +845,7 @@ def validate_output_schema(model, evidence, iv, eps):
 
 
 def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
-           checker_precision=None):
+           checker_precision=None, charge=None):
     """Independent interval contraction, rebuilt from the ORIGINAL model.
 
     Shares the validated decomposition and MPFR primitives (permitted), but
@@ -897,7 +898,8 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
     ctx = A.Ctx(cp)
     dl = _mk_deadline(t_end, cap_bytes, _rss_bytes())
     eng = C.Engine(pl2, r.factors, ctx, mode="I", deadline=dl,
-                   progress=lambda ph, n: prog("check-" + ph, "%d" % n))
+                   progress=lambda ph, n: prog("check-" + ph, "%d" % n),
+                   charge=charge)                 # the checker's messages hit the SHARED meter
     roots = [b.idx for b in pl2.bags if b.parent == -1]
     for rt in roots:
         eng.upward(rt)
@@ -949,6 +951,8 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             _seen += 1
             if (_seen & 0xFF) == 0:
                 dl()
+                if charge is not None:
+                    charge(256)                 # enumeration assignments are metered entries
             a = dict(zip(order, combo))
             wt = Fr(1)
             for f in r.factors:
@@ -964,6 +968,8 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             _Z += wt
             for vv in order:
                 _cnt[(vv, a[vv])] = _cnt.get((vv, a[vv]), Fr(0)) + wt
+        if charge is not None and (_seen & 0xFF):
+            charge(_seen & 0xFF)                # the partial batch is flushed
         if _Z > 0:
             _indep = (_Z, _cnt)
     _indep_scope = ("direct exact enumeration of every free assignment"
@@ -986,7 +992,7 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
                                                    for c in range(r.card[v])}))
             _Z2, _mg, _jt = _SJ.all_marginals(
                 _tabs, r.card, deadline=dl,
-                entry_cap=K.CAPS["checker_contraction_space"])
+                entry_cap=K.CAPS["checker_contraction_space"], charge=charge)
             _cnt2 = {}
             for v in r.free:
                 for a in range(r.card[v]):
@@ -996,6 +1002,8 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             _indep_scope = ("sparse exact junction tree (a second aggregation "
                             "implementation), %d entries built, order %s"
                             % (_jt.ops["entries_built"], _jt.order[:8]))
+        except _BUDGET.BudgetExceeded:
+            raise                                   # a shared-meter stop is a RESOURCE outcome, never "not run"
         except (_SJ.SparseError, A.NumericalRefusal):
             _indep = None
         except Exception as _e:        # a refusal of the independent path
@@ -1094,7 +1102,7 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
 
 
 def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
-                       deadline_s=None, cap_bytes=None, checker_precision=None):
+                       deadline_s=None, cap_bytes=None, checker_precision=None, charge=None):
     """Standalone checker entry point (used by the rejection tests).
 
     `deadline_s` and `cap_bytes` carry the SHARED budget. They were hard-wired
@@ -1137,11 +1145,11 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
                       rr.free, rr.card, rr.factors)
     try:
         _cap = cap_bytes if cap_bytes is not None else (1 << 31)
-        _end = (time.time() + float(deadline_s)) if deadline_s is not None \
-            else (time.time() + 300)
+        _end = (_BUDGET.DEFAULT_CLOCK[0]() + float(deadline_s)) if deadline_s is not None \
+            else (_BUDGET.DEFAULT_CLOCK[0]() + 300)
         ok, fails, cmeta = _check(model, evidence, iv, eps, pl, 64, _cap,
                                   _end, lambda *a: None,
-                                  checker_precision=checker_precision)
+                                  checker_precision=checker_precision, charge=charge)
     except A.NumericalRefusal as e:
         # A refusal is a REJECTION of the publication, reported as such. Letting
         # it propagate made a caller see an exception rather than "not verified",

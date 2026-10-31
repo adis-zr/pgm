@@ -257,7 +257,7 @@ def gate_b_terminals(wall):
     open(evp, "w").write("1 1 1\n")
     ident = next(p["identity"] for p in r4.prices if p["name"] == r4.plan["chosen"])
     rep = RP.replay(mp4, evp, os.path.join(d4, ident + ".plan.json"))
-    rowr = _row_ok(rep, {**pt4, 1: [Fr(0), Fr(1)]}, [0, 1, 2, 3], need_ledger=(r4.plan["chosen"] != "identity"))
+    rowr = _row_ok(rep, pt4, [0, 2, 3], need_ledger=(r4.plan["chosen"] != "identity"), evidence={1: 1})
     rowr["observed_row"] = rep["intervals"].get("1")
     rowr["request_width"] = rep.get("request_width")
     rowr["ok"] = (rep["status"] == "REPLAY_VERIFIED" and rep["intervals"].get("1") == [["0", "0"], ["1", "1"]]
@@ -281,7 +281,7 @@ def gate_b_terminals(wall):
                "width": str(_width(rr.intervals)), "width_ok": _width(rr.intervals) <= eps, "resources": _resource(rr.budget)}
         if mixed:
             repm = _replay_fresh(mpc, os.path.join(dd, mixed["identity"] + ".plan.json"), wall, eps=eps)
-            rm = _row_ok(repm, ptc, qc)
+            rm = _row_ok(repm, ptc, qc, eps=eps)
             rm["width_ok"] = bool(repm.get("max_width")) and Fr(repm["max_width"]) <= eps
             rm["ok"] = rm["ok"] and rm["width_ok"]
             row["mixed_replay"] = rm
@@ -421,9 +421,13 @@ def gate_a_controls(wall):
     path = os.path.join(d4, ident + ".plan.json")
     with open(path, "a") as fh:
         fh.write("\n")
+    before = open(path).read()
     res4b = PLN.solve(M.read_uai(mp4), {}, wall_s=wall, cap_bytes=1 << 30, plan_dir=d4)
-    hit = [x for x in res4b.rejected if "never overwrites" in x["reason"]]
-    out["no_overwrite"] = {"rejected": [x["name"] for x in hit][:3], "ok": bool(hit) and res4b.status.startswith("CERTIFIED")}
+    # an occupied identity path is never overwritten: an equivalent executable is a
+    # typed DUPLICATE, a differing one a typed COLLISION (r21); the file is unchanged
+    hit = [x for x in res4b.rejected if x.get("typed") in ("DUPLICATE", "COLLISION")]
+    out["no_overwrite"] = {"rejected": [(x["name"], x.get("typed")) for x in hit][:3], "file_unchanged": open(path).read() == before,
+                           "ok": bool(hit) and open(path).read() == before and res4b.status.startswith("CERTIFIED")}
     oks.append(out["no_overwrite"]["ok"])
     out["request_identity_in_key"] = {"example": ident, "ok": "-req" in ident}
     oks.append(out["request_identity_in_key"]["ok"])

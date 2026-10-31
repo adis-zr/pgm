@@ -59,6 +59,7 @@ class Budget:
         self.phase_time = {}          # group -> seconds accumulated in completed phases
         self.phase_t0 = self.t0
         self.used = {}
+        self.used_by_source = {}      # "<counter>@<where>" -> amount (which engine charged what)
         self.rss_fn = rss_fn
         self.rss_limit = rss_limit
         self.peak_rss = 0
@@ -67,6 +68,42 @@ class Budget:
         self.phase = "init"
         self.phases = []              # every phase entered, in order (reviewable)
         self._checks = 0
+        self.tightened = []           # every tightening by a saved record's effective limits
+        self.requested_by_caller = {} # what the caller asked for before the frozen maxima were applied
+
+    # ---- the EFFECTIVE request limits (r21) ----
+    def effective_limits(self):
+        """The limits this invocation actually runs under, recorded into the
+        request object of every program it persists."""
+        out = {"wall_s": float(self.wall_s), "rss_bytes": (int(self.rss_limit) if self.rss_limit else None)}
+        for k, v in sorted(self.limits.items()):
+            out[k] = int(v)
+        return out
+
+    def tighten(self, eff, where="bind"):
+        """Apply a saved record's effective limits: every limit becomes the
+        MINIMUM of the current and the saved one. A caller may request a
+        stricter budget than the record was built under; it never receives a
+        larger one. Returns what changed."""
+        changed = {}
+        w = eff.get("wall_s")
+        if w is not None and float(w) < self.wall_s:
+            changed["wall_s"] = (self.wall_s, float(w))
+            self.wall_s = float(w)
+        rb = eff.get("rss_bytes")
+        if rb is not None and (self.rss_limit is None or int(rb) < int(self.rss_limit)):
+            changed["rss_bytes"] = (self.rss_limit, int(rb))
+            self.rss_limit = int(rb)
+        for k, v in eff.items():
+            if k in ("wall_s", "rss_bytes") or v is None:
+                continue
+            cur = self.limits.get(k)
+            if cur is None or int(v) < int(cur):
+                changed[k] = (cur, int(v))
+                self.limits[k] = int(v)
+        if changed:
+            self.tightened.append({"where": where, "changed": {k: list(v) for k, v in changed.items()}})
+        return changed
 
     # ---- time ----
     def elapsed(self):
@@ -113,10 +150,14 @@ class Budget:
 
     # ---- counters ----
     def charge(self, name, amount=1, where=""):
-        """Add to a shared counter and enforce its limit if one is declared."""
+        """Add to a shared counter and enforce its limit if one is declared.
+        The charge is also attributed to its SOURCE (`where`) so a record can
+        show which engine consumed the shared meter."""
         with self._lock:
             self.used[name] = self.used.get(name, 0) + amount
             cur = self.used[name]
+            key = "%s@%s" % (name, where or self.phase)
+            self.used_by_source[key] = self.used_by_source.get(key, 0) + amount
         lim = self.limits.get(name)
         if lim is not None and cur > lim:
             self.stops.append({"kind": name, "used": cur, "limit": lim,
@@ -188,12 +229,14 @@ class Budget:
     def report(self):
         return {"wall_s": self.wall_s, "elapsed_s": round(self.elapsed(), 3),
                 "remaining_s": round(self.remaining(), 3),
-                "used": dict(self.used), "limits": dict(self.limits),
+                "used": dict(self.used), "used_by_source": dict(self.used_by_source), "limits": dict(self.limits),
                 "phases": list(self.phases),
                 "phase_limits": dict(self.phase_limits),
                 "phase_used_s": {g: round(self.phase_used(g), 3) for g in self.phase_limits},
                 "peak_rss": self.peak_rss, "rss_limit": self.rss_limit,
                 "stops": list(self.stops), "checks": self._checks,
+                "effective_limits": self.effective_limits(), "tightened": list(self.tightened),
+                "requested_by_caller": dict(self.requested_by_caller),
                 "note": "one monotonic deadline and shared counters across "
                         "every phase; a stop is an outcome, never a reason to "
                         "raise a cap"}

@@ -21,6 +21,7 @@ from mdi import (model as M, plan as P, arith as A, solve as S, config as K,
                  regional_check as RC, level2 as L2, residual as RS,
                  collective as CO, modes as MD, coarse as CZ,
                  program as PG, routes as RT, collective_route as CR)
+from mdi import law as LAW
 
 
 class PipelineError(ValueError):
@@ -35,15 +36,9 @@ def _sha(obj) -> str:
 
 
 def model_hashes(model, evidence, queries):
-    mh = hashlib.sha256()
-    mh.update(("%s;%d;" % (model.net_type, model.nvars)).encode())
-    mh.update((",".join(str(c) for c in model.card) + ";").encode())
-    for f in model.factors:
-        mh.update(("%s|%s|" % (f.scope, [str(x) for x in f.table])).encode())
-    eh = hashlib.sha256(
-        (",".join("%d:%d" % (v, s) for v, s in sorted(evidence.items()))).encode())
-    qh = PT.query_hash(model.nvars, model.card, evidence, queries)
-    return mh.hexdigest(), eh.hexdigest(), qh
+    """The three request hashes, computed from the FROZEN canonical law so
+    every caller (pipeline, replay, fixtures, controls) agrees byte for byte."""
+    return LAW.OriginalLaw.freeze(model, evidence, queries).hashes
 
 
 @dataclass
@@ -59,6 +54,8 @@ class Outcome:
     checker: dict = field(default_factory=dict)
     stages: dict = field(default_factory=dict)
     properties: dict = field(default_factory=dict)
+    partial_evidence: dict = field(default_factory=dict)   # a proof completed past the limit (never published)
+    law: object = None                                     # the frozen original law of this invocation
 
 
 def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
@@ -73,24 +70,64 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     eps = Fr(max_width if max_width is not None else K.MAX_WIDTH)
     cap_bytes = cap_bytes or K.RESOURCES["arm_rss_bytes"]
     prog = progress or (lambda *a, **k: None)
+    # the EFFECTIVE limits of this invocation: the caller's limits, never above
+    # the frozen algorithm maxima (a caller may ask for less, never for more);
+    # what the caller asked for is recorded beside them
+    asked = {"wall_s": float(wall_s), "rss_bytes": int(cap_bytes)}
+    wall_s = min(float(wall_s), float(K.RESOURCES["arm_wall_s"]))
+    cap_bytes = min(int(cap_bytes), int(K.RESOURCES["arm_rss_bytes"]))
     bg = B.Budget(wall_s=wall_s,
                   limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
                           "local_mass_entries": K.CAPS["local_mass_entries"]},
                   rss_fn=S._rss_bytes, rss_limit=cap_bytes, phase_limits=phase_limits)
+    bg.requested_by_caller = asked
     bg.progress = prog
     if plan_only:
         GD.install(True)
     try:
-        return _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled,
-                      plan_dir, prog, bg, plan_only)
+        out = _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled,
+                     plan_dir, prog, bg, plan_only)
     finally:
         if plan_only:
             GD.install(False)
+    return finalize_terminal(out, bg)
+
+
+SUCCESS_STATUSES = ("CERTIFIED_RESEARCH_ROUTE", "CERTIFIED_FALLBACK_ONLY", "ZERO_EVIDENCE_PROVED",
+                    "VERIFIED_SHARED_AGGREGATION_ONLY", "PLANNING_COMPLETE", "PLANNING_INCOMPLETE")
+
+
+def finalize_terminal(out, bg):
+    """The ONE terminal path of every public invocation: the effective
+    deadline, memory and counters are tested AFTER any proof (ordinary
+    success, zero evidence, fully pinned, planning) and BEFORE publication. A
+    mathematically correct result completed past the effective limit is a
+    RESOURCE_STOP; its proof is kept as partial evidence, never as a
+    publication. The final budget report is attached to every outcome."""
+    try:
+        bg.check("terminal")
+    except B.BudgetExceeded as e:
+        if out.status in SUCCESS_STATUSES:
+            evidence = {"status_before_limit_check": out.status, "reason": out.reason,
+                        "checker": out.checker, "intervals_withheld": bool(out.intervals),
+                        "note": "the proof completed after the effective limit; it is partial evidence, "
+                                "not a publication"}
+            out = Outcome(status=("PLANNING_RESOURCE_STOP" if out.status.startswith("PLANNING") else "RESOURCE_STOP"),
+                          reason="completed after the effective limit: %s" % e,
+                          plan=out.plan, prices=out.prices, rejected=out.rejected,
+                          stages=out.stages, preprocess=out.preprocess, properties=out.properties,
+                          partial_evidence=evidence)
+    out.budget = bg.report()
+    if out.law is None:
+        out.law = _LAW_CURRENT[0]
+    return out
 
 
 def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, plan_dir,
            prog, bg, plan_only):
     EPS_FOR_RECORD[0] = Fr(eps)
+    _BG_FOR_RECORDS[0] = bg
+    _LAW_CURRENT[0] = None
     stages = {}
     # `rejected` is referenced by every stage's RESOURCE_STOP path, so it must
     # exist before the first stage can fail. An expired preprocessing deadline
@@ -117,7 +154,13 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
         bad = input_schema_violation(model, evidence)
         if bad:
             return Outcome(status="INVALID_INPUT", reason=bad, stages=stages, budget=bg.report())
-        assign_occurrence_ids(model)
+        # the IMMUTABLE original law: a canonical frozen copy with occurrence
+        # identities (the caller's objects are never touched; a Factor object
+        # listed twice is two occurrences); every owner below derives its own
+        # working restriction from it and nobody can reach another's tables
+        law = LAW.OriginalLaw.freeze(model, evidence, queries if queries is not None else
+                                     [v for v in range(model.nvars) if v not in evidence])
+        model = law.model
     except M.InvalidModel as e:
         return Outcome(status="INVALID_INPUT", reason=str(e))
     for v, s in evidence.items():
@@ -192,7 +235,10 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                                 "method": "exact pinned constant re-derived from the original "
                                           "factor tables; no free variable, no contraction",
                                 "independent_aggregation_checked": True, **pf})
-    mh, eh, qh = model_hashes(model, evidence, queries)
+    law = LAW.OriginalLaw.freeze(model, evidence, queries)       # the request is now exact
+    mh, eh, qh = law.hashes
+    out.law = law
+    _LAW_CURRENT[0] = law
 
     # ---------------- stage 2: common exact preprocessing ----------------
     try:
@@ -219,6 +265,8 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                               "claim does not re-derive from the original model: %s"
                               % (simp.impossible, proof["reason"]),
                        stages=stages, budget=bg.report(), checker=proof)
+    # DISCOVERY's own working restriction (the binding, the producer and the
+    # checker each derive theirs from the frozen law later)
     r = M.Restricted(model=model, evidence=evidence, factors=simp.factors,
                      free=list(simp.free), card=dict(simp.card),
                      constant=r0.constant, impossible_factor=None)
@@ -308,10 +356,7 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
             request=PT.make_request(mh, eh, qh, queries, r.evidence, r.model.card,
                                     eps if eps is not None else K.MAX_WIDTH,
                                     {"precision": _p, "mode": "P", "emin": _emin, "emax": _emax}, iprog["order"],
-                                    iprog.get("checker"),
-                                    {"local_mass_entries": K.CAPS["local_mass_entries"],
-                                     "profile_comparisons": K.CAPS["profile_entry_comparisons"],
-                                     "arm_rss_bytes": K.RESOURCES["arm_rss_bytes"], "arm_wall_s": K.RESOURCES["arm_wall_s"]}),
+                                    iprog.get("checker"), bg.effective_limits()),
             kind="identity", name="identity", model_sha256=mh, evidence_sha256=eh,
             query_sha256=qh, preprocess_identity=simp.identity(),
             factor_ownership=[(f.origin, "bag") for f in r.factors],
@@ -337,8 +382,15 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     # the program back from disk and reconstruct everything from the original
     # model; the live objects built here are not passed to them.
     _discovery_complete = True
-    ledger_inv = {"recognizer_fit_runs": 0, "recognizer_fit_ops": 0, "construction_ops": 0,
-                  "candidates_built": 0, "candidates_price_refused": 0, "candidates_declined": 0}
+    ledger_inv = {"attempts": [],                       # every recognizer / construction attempt, start and end
+                  "recognizer_runs": 0, "recognizer_runs_declined": 0, "recognizer_runs_failed": 0,
+                  "recognizer_seconds": 0.0, "recognizer_transcendental_calls": 0,
+                  "recognizer_fit_ops": "unknown",      # exact-rational fit work is NOT instrumented: unknown, never a formula
+                  "construction_ops_measured": 0,       # measured in regions.build (local mass / markers / profiles)
+                  "candidates_built": 0, "candidates_price_refused": 0, "candidates_declined": 0,
+                  "units": {"recognizer_seconds": "monotonic seconds", "recognizer_transcendental_calls": "MPFR calls (measured)",
+                            "construction_ops_measured": "exact-rational operations (measured)",
+                            "recognizer_fit_ops": "unknown (not instrumented)"}}
     _discover_programs._ledger = ledger_inv
     if research_enabled:
         _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s,
@@ -441,12 +493,25 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                 with open(path, "r") as fh:
                     prior = fh.read()
                 if prior != txt:
-                    # COLLISION policy: the file on disk is authoritative; this
-                    # executable is refused with a typed reason and nothing is written
-                    rejected.append({"name": rec.name, "typed": "COLLISION", "phase": "persist",
-                                     "reason": "a completed program already occupies %s and this executable "
-                                               "differs; a different executable never overwrites a "
-                                               "completed program" % os.path.basename(path)})
+                    # the file on disk is authoritative and is never overwritten.
+                    # An EQUIVALENT executable (same program, allocations, schedule
+                    # and price; only the generator name differs) is a DUPLICATE;
+                    # a differing executable under the same identity is a COLLISION
+                    typed = "COLLISION"
+                    try:
+                        a, b = json.loads(prior), json.loads(txt)
+                        for d in (a, b):
+                            d.pop("name", None); d.pop("rejected_alternatives", None)
+                        if a == b:
+                            typed = "DUPLICATE"
+                    except ValueError:
+                        pass
+                    rejected.append({"name": rec.name, "typed": typed, "phase": "persist",
+                                     "reason": ("an equivalent program already occupies %s (duplicate under one identity); "
+                                                "not written again" if typed == "DUPLICATE" else
+                                                "a completed program already occupies %s and this executable "
+                                                "differs; a different executable never overwrites a "
+                                                "completed program") % os.path.basename(path)})
                     continue
             with open(path, "w") as fh:
                 fh.write(txt)
@@ -464,7 +529,11 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
             # model and the preprocessing proof the current inputs produce
             # DISCARD discovery's live payload and price: from here on the
             # loaded record is the only input, bound at the ONE boundary
-            rprice = bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes,
+            # the BINDER owns its working restriction, derived from the frozen law
+            t_b = time.monotonic()
+            bown = law.restriction()
+            stages["binding_restriction_s"] = stages.get("binding_restriction_s", 0.0) + (time.monotonic() - t_b)
+            rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes,
                                  bg=bg, eps=eps)
         except (PT.PlanError, ValueError, OSError) as e:
             rejected.append({"name": rec.name,
@@ -524,10 +593,14 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     out.prices = [dict(p.as_dict(), identity=getattr(rec, "identity_key", None))
                   for rec, p, _ in reloaded]
     if cmp["chosen"] is None:
-        return Outcome(status="RESOURCE_STOP",
-                       reason="every route is ineligible or over the byte cap",
-                       prices=out.prices, rejected=rejected, stages=stages,
-                       budget=bg.report())
+        # the TRUTHFUL terminal: every bound route was refused by its price or
+        # admission rule BEFORE any numerical work; the reasons are named
+        why = [{"name": x["name"], "reason": (x.get("ineligible_reason") or x.get("admission_refusal") or "")[:200]}
+               for x in cmp["all"]]
+        return Outcome(status="PRICE_REFUSAL",
+                       reason="no route is admissible: %s" % "; ".join("%s: %s" % (w["name"], w["reason"]) for w in why)[:600],
+                       prices=out.prices, rejected=rejected + [dict(w, typed="PRICE_REFUSAL", phase="select") for w in why],
+                       stages=stages, budget=bg.report())
     chosen_name = cmp["chosen"]["name"]
     chosen_rec = cmp["chosen"]["record"]
     chosen = next(x for x in reloaded if x[1] is chosen_rec)
@@ -571,15 +644,19 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
 
     # ---------------- stages 6-7: the ONE loaded-object boundary ----------------
     out.plan["executed_kind"] = crec.kind
-    res = run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog,
+    res = run_loaded(crec, law, queries, bg, eps, cap_bytes, prog,
                      out=out, rejected=rejected, stages=stages)
     return res
 
 
-def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
+def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
                out=None, rejected=None, stages=None, wrap=None):
     """Execute and independently check ONE loaded, bound plan record. This is
     the single validation/dispatch boundary: the public pipeline and
+    `mdi.replay` both enter here with the IMMUTABLE original law (`law`); the
+    producer and the checker each derive their OWN working restriction from
+    it, so neither can reach the other's tables and the checker's reference
+    is always the original law.
     `mdi.replay` both call it, so a fresh process enforces exactly the limits,
     role binding, publication rule, research agreement and status derivation
     the pipeline does.
@@ -591,6 +668,7 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
     optionally wraps the executor and checker calls (the acceptance matrix
     counts operations through it; it changes nothing else)."""
     _w0 = wrap or (lambda stage, f: f())
+    model, evidence = law.model, dict(law.evidence)      # the FROZEN original law
     stage_calls = {}
 
     def _w(stage, f):
@@ -636,14 +714,19 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
                                   % (crec.checker_id, crec.kind),
                            prices=out.prices, rejected=rejected,
                            stages=stages, budget=bg.report())
+        # the PRODUCER's own working restriction (fresh lists from the frozen law)
+        t_r = time.monotonic()
+        pown = law.restriction()
+        stages["producer_restriction_s"] = time.monotonic() - t_r
         ectx = {"model": model, "evidence": evidence, "eps": num_eps,
                 "cap_bytes": cap_bytes, "remaining": bg.remaining,
-                "restricted": r, "queries": queries, "budget": bg,
+                "restricted": pown.r, "queries": queries, "budget": bg,
                 "program": getattr(crec, "parsed_program", None),
                 "progress": prog or (lambda *a, **k: None)}
         numerical_entry("pipeline.run_loaded:executor")
         raw = _w("execute", lambda: pexec(ectx))
         exec_meta = ectx.get("meta") or {}
+        del pown, ectx                   # the producer's working tables are not reachable below
     except PT.ExecutorRefusal as e:
         return Outcome(status=e.status, reason=e.reason, prices=out.prices,
                        rejected=rejected, stages=stages, budget=bg.report())
@@ -709,16 +792,25 @@ def run_loaded(crec, model, evidence, queries, r, bg, eps, cap_bytes, prog=None,
     try:
         numerical_entry("pipeline.run_loaded:checker")
         if crec.kind == "identity":
+            # the identity checker restricts and preprocesses the FROZEN law
+            # itself; its message entries, enumeration assignments and sparse
+            # aggregation entries are charged to the SAME shared meter
             ok, fails, meta = _w("check", lambda: checker(
                 model, evidence, pub, eps, deadline_s=bg.remaining(),
-                cap_bytes=cap_bytes, program=crec.parsed_program))
+                cap_bytes=cap_bytes, program=crec.parsed_program,
+                charge=lambda n: bg.charge("local_mass_entries", n, "identity checker entries")))
             meta = dict(meta or {})
             meta["kind"] = "identity"
             bg.check("after-identity-check")
         else:
+            # the CHECKER's own working restriction, derived from the frozen law
+            # (never the producer's): its reference is the original law
+            t_r = time.monotonic()
+            cown = law.restriction()
+            stages["checker_restriction_s"] = time.monotonic() - t_r
             qpub = {v: pub[v] for v in sorted(queries)}
             ok, fails, meta = _w("check", lambda: checker(
-                r, queries, crec.parsed_program, qpub, eps, deadline=check_dl,
+                cown.r, queries, crec.parsed_program, qpub, eps, deadline=check_dl,
                 budget=bg, exec_record=exec_meta,
                 on_global=lambda: bg.enter("check")))
             meta = dict(meta or {})
@@ -1140,6 +1232,11 @@ def bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes, bg=None, eps=
     if want_card != {int(v): int(r.model.card[v]) for v in queries}:
         raise PT.PlanError("the record's request declares cardinalities %s that differ from the model's"
                            % sorted(want_card.items())[:4])
+    # the EFFECTIVE request governs the invocation: the budget is tightened to
+    # the record's effective limits (the minimum with the caller's); a caller
+    # never receives a larger budget than the record was built under
+    if bg is not None:
+        bg.tighten(req["limits"]["effective"], where="bind:" + back.name)
     if getattr(back, "parsed_program", None) is None:
         raise PT.PlanError("a %s plan reloaded without a program" % back.kind)
     if sorted(back.parsed_program["queries"]) != sorted(queries):
@@ -1569,7 +1666,15 @@ def _complete_cost(prices, rejected, exec_meta, check_meta, stages, stage_calls=
     # done (recognizer runs charged once, construction per candidate, probes),
     # never re-derived from loaded prices, which forecast remaining execution
     led = dict(ledger or {})
-    tot = int(led.get("recognizer_fit_ops", 0)) + int(led.get("construction_ops", 0))
+    led.pop("attempts_running", None)
+    # the discovery work is reported in its OWN units: measured construction
+    # operations, measured recognizer seconds and MPFR calls; the exact-rational
+    # fit work is UNKNOWN (not instrumented) and is never summed into a total
+    tot = {"construction_ops_measured": int(led.get("construction_ops_measured", 0)),
+           "recognizer_seconds": led.get("recognizer_seconds", 0.0),
+           "recognizer_transcendental_calls": int(led.get("recognizer_transcendental_calls", 0)),
+           "recognizer_fit_ops": "unknown",
+           "attempts": len(led.get("attempts") or [])}
     labels = {"measured_calibration"} if led else set()
     ex = (exec_meta or {}).get("ops")
     ex_ops = (sum(int(v) for k, v in ex.items() if k in ("mul", "add"))
@@ -1616,7 +1721,9 @@ def _complete_cost(prices, rejected, exec_meta, check_meta, stages, stage_calls=
 
 # ======================= discovery of PROGRAM routes =======================
 
-EPS_FOR_RECORD = [K.MAX_WIDTH]      # the current request width, set by _solve before discovery
+EPS_FOR_RECORD = [K.MAX_WIDTH]
+_BG_FOR_RECORDS = [None]       # the invocation budget whose effective limits every record carries
+_LAW_CURRENT = [None]          # the frozen law of the running invocation (attached to its terminal outcome)      # the current request width, set by _solve before discovery
 
 
 def _candidate_record(kind, name, mh, eh, qh, simp, r, prog, allocations,
@@ -1642,9 +1749,7 @@ def _candidate_record(kind, name, mh, eh, qh, simp, r, prog, allocations,
     rec = PT.PlanRecord(
         request=PT.make_request(mh, eh, qh, prog["queries"], r.evidence, r.model.card, EPS_FOR_RECORD[0],
                                 {"precision": int(precision), "mode": "E"}, prog.get("order"), prog.get("checker"),
-                                {"local_mass_entries": K.CAPS["local_mass_entries"],
-                                 "profile_comparisons": K.CAPS["profile_entry_comparisons"],
-                                 "arm_rss_bytes": K.RESOURCES["arm_rss_bytes"], "arm_wall_s": K.RESOURCES["arm_wall_s"]},
+                                _BG_FOR_RECORDS[0].effective_limits() if _BG_FOR_RECORDS[0] is not None else None,
                                 collective=prog.get("collective")),
         kind=kind, name=name, model_sha256=mh, evidence_sha256=eh,
         query_sha256=qh, preprocess_identity=simp.identity(),
@@ -1659,6 +1764,34 @@ def _candidate_record(kind, name, mh, eh, qh, simp, r, prog, allocations,
         storage_schedule=storage, rejected_alternatives=[], properties=props,
         program=prog)
     return rec
+
+
+def _attempt(kind, name):
+    """Record the START of a recognizer / construction attempt (truthful
+    ledger: every attempt, including the ones that decline or fail)."""
+    led = getattr(_discover_programs, "_ledger", None)
+    a = {"kind": kind, "name": name, "started_s": round(time.monotonic() - _discover_programs._t0, 4),
+         "status": "running", "_t": time.monotonic(), "_tr": A.transcendental_snapshot()}
+    if led is not None:
+        led["attempts"].append(a)
+    return a
+
+
+def _attempt_end(a, status, **info):
+    led = getattr(_discover_programs, "_ledger", None)
+    a["status"] = status
+    a["elapsed_s"] = round(time.monotonic() - a.pop("_t"), 4)
+    a["transcendental_calls"] = A.transcendental_since(a.pop("_tr"))["total"]
+    a["fit_ops"] = "unknown"                 # exact-rational fit work is not instrumented
+    a.update(info)
+    if led is not None and a["kind"] == "recognizer":
+        led["recognizer_runs"] += 1
+        led["recognizer_seconds"] = round(led["recognizer_seconds"] + a["elapsed_s"], 4)
+        led["recognizer_transcendental_calls"] += a["transcendental_calls"]
+        if status == "declined":
+            led["recognizer_runs_declined"] += 1
+        elif status in ("failed", "budget"):
+            led["recognizer_runs_failed"] += 1
 
 
 def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
@@ -1679,6 +1812,7 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
                      program as PG)
     _discover_programs._shared = None
     _discover_programs._phase_stop = None
+    _discover_programs._t0 = time.monotonic()
     deadline = bg.deadline_fn("discover")
     n_before = len(rejected)
     mk0 = MK.Marked.from_restricted(r, set(queries))
@@ -1689,7 +1823,9 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
         led = getattr(_discover_programs, "_ledger", None)
         if led is not None:
             led["candidates_built"] += 1
-            led["construction_ops"] += int(cons or 0)
+            led["construction_ops_measured"] += int(cons or 0)     # measured in regions.build
+            led["attempts"].append({"kind": "candidate", "name": name, "construction_ops_measured": int(cons or 0),
+                                    "at_s": round(time.monotonic() - _discover_programs._t0, 4)})
         try:
             # the schedule is chosen ONCE here (the dry run's order) and saved;
             # every later price is derived on that saved order
@@ -1753,23 +1889,23 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
     # affordable); each is its own priced program
     num_eps = K.MAX_WIDTH - 2 * (K.RADII["collective_fit_and_rounding"]
                                  + K.RADII["gaussian_quadrature"]) - K.PUBLICATION_RESERVE
+    att = _attempt("recognizer", "collective on the input law")
     try:
         admitted = CR.admit(mk0, ctx, deadline=deadline, num_eps=num_eps)
-        led = getattr(_discover_programs, "_ledger", None)
-        if led is not None:
-            # the recognizer ran ONCE for every candidate it produced: charged once
-            led["recognizer_fit_runs"] += 1
-            led["recognizer_fit_ops"] += 8 * (sum(1 for f in r.factors if len(f.scope) == 2) + len(r.free)) * 4
+        _attempt_end(att, "admitted", candidates=len(admitted))
     except CR.Declined as e:
+        _attempt_end(att, "declined", reason=str(e)[:160])
         admitted = []
         rejected.append({"name": "collective", "reason": "collective routes declined: %s" % e})
     except B.BudgetExceeded as e:
+        _attempt_end(att, "budget", reason=str(e)[:160])
         if _shared(e):
             _discover_programs._shared = e
             return
         admitted = []
         rejected.append({"name": "collective", "reason": str(e)})
     except Exception as e:
+        _attempt_end(att, "failed", reason="%s: %s" % (type(e).__name__, str(e)[:120]))
         admitted = []
         rejected.append({"name": "collective", "reason": "collective admission failed: "
                          "%s: %s" % (type(e).__name__, e)})
@@ -1852,18 +1988,18 @@ def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,
                 # ---- the COMPOSED route: a collective evaluator on the cells
                 # of this scale (§7.3: coarsen the fixed law first, then fit)
                 cname = "composed:" + c["mode"] + ("" if levels == 1 else ":L2")
+                att = _attempt("recognizer", cname)
                 try:
                     admitted = CR.admit(final, A.Ctx(160), deadline=deadline,
                                         num_eps=num_eps)
-                    led = getattr(_discover_programs, "_ledger", None)
-                    if led is not None:
-                        led["recognizer_fit_runs"] += 1
-                        led["recognizer_fit_ops"] += 8 * (len(final.factors) + len(final.card)) * 4
+                    _attempt_end(att, "admitted", candidates=len(admitted))
                 except CR.Declined as e:
+                    _attempt_end(att, "declined", reason=str(e)[:160])
                     rejected.append({"name": cname,
                                      "reason": "composed route declined: %s" % e})
                     continue
                 except B.BudgetExceeded as e:
+                    _attempt_end(att, "budget", reason=str(e)[:160])
                     if _shared(e):
                         _discover_programs._shared = e
                         return

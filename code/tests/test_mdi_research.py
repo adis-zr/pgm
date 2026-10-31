@@ -1852,7 +1852,14 @@ def test_pricing_prefers_identity_for_a_priced_reason():
     reg_rec = PR.price_regional_plan("regional:ascending_id", regs, crs, rds,
                                      pc, nq, t1)
     cmp = PR.compare([ident, reg_rec], cap_bytes=8 * (1 << 30))
-    assert cmp["chosen"]["name"] == "identity", cmp["chosen"]
+    # r21: the identity's producer AND checker run on the shared 1,000,000-entry
+    # meter, so its forecast metered entries (tens of millions on this structure)
+    # make it INELIGIBLE by price, truthfully, before any work; the regional
+    # route is likewise ineligible (its reduced assignment count), so nothing is
+    # chosen -- a refusal by price, not a ratio
+    assert not ident.eligible and "shared cap" in (ident.ineligible_reason or ""), ident.ineligible_reason
+    assert int(ident.counters["metered_entries_forecast"].value) > K.CAPS["local_mass_entries"]
+    assert cmp["chosen"] is None, cmp["chosen"]
     # the regional route's binding cost is its reduced assignment count
     assert int(reg_rec.counters["reduced_cell_assignments"].value) > 10 ** 20
     assert reg_rec.counters["reduced_cell_assignments"].label == PR.UPPER
