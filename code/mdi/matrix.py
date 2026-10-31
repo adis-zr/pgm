@@ -208,6 +208,46 @@ def _plan(res, d, name):
     return os.path.join(d, p["identity"] + ".plan.json")
 
 
+RING_FIXTURES = {"regional_L1": "ring_regional_L1.plan.json", "regional_L2": "ring_regional_L2.plan.json",
+                 "composed_statistic": "ring_composed_statistic.plan.json", "composed_gaussian": "ring_composed_gaussian.plan.json"}
+RING_PREDS = {"regional_L1": lambda n: n.startswith("regional:") and "@64" in n and not n.endswith(":L2"),
+              "regional_L2": lambda n: n.startswith("regional:") and n.endswith(":L2"),
+              "composed_statistic": lambda n: n.startswith("composed:") and ":statistic:" in n,
+              "composed_gaussian": lambda n: n.startswith("composed:") and ":gaussian:" in n}
+
+
+def _ring_program(res, d, branch):
+    """The BRANCH capability is tested through the saved program on any host:
+    (plan_path, name, price_dict, how). Order: a program admitted and priced in
+    this invocation; else a completed program persisted on disk by this
+    invocation (bound afresh on replay); else the shipped fixture produced by
+    the public pipeline on the build host (`verifier/ring_*.plan.json`). A
+    time-bounded full discovery that never reached the branch on this host is
+    reported as such; it is not a missing algorithm."""
+    pred = RING_PREDS[branch]
+    p = next((x for x in res.prices if pred(x["name"]) and x["eligible"]), None)
+    if p is not None:
+        return _plan(res, d, p["name"]), p["name"], p, "admitted and priced in this invocation"
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".plan.json"):
+            continue
+        try:
+            recj = json.load(open(os.path.join(d, fn)))
+        except ValueError:
+            continue
+        if pred(recj.get("name", "")):
+            price = {"name": recj["name"], "counters": recj["cost_counters"], "eligible": None,
+                     "bytes_producer": None, "bytes_checker": None}
+            return os.path.join(d, fn), recj["name"], price, "completed program persisted on disk by this invocation (not admitted within its allowance); bound in replay"
+    fx = os.path.join(HERE, "verifier", RING_FIXTURES[branch])
+    if os.path.exists(fx):
+        recj = json.load(open(fx))
+        price = {"name": recj["name"], "counters": recj["cost_counters"], "eligible": None,
+                 "bytes_producer": None, "bytes_checker": None}
+        return fx, recj["name"], price, "shipped fixture produced by the public pipeline on the build host; bound in replay"
+    return None, None, None, "no program of this branch available (not admitted, not persisted, no fixture)"
+
+
 def _price(res, name):
     return next(x for x in res.prices if x["name"] == name)
 
@@ -662,9 +702,11 @@ def control_independent_representation_and_readout(wall):
     res, d, _, _ = _solve(m, wall)
     Z, pt = O.exact_all_marginals(M.restrict(m, {}))
     q = sorted(M.restrict(m, {}).free)
-    l1 = next(p["name"] for p in res.prices if p["name"].startswith("regional:") and "@64" in p["name"]
-              and not p["name"].endswith(":L2"))
-    plan = _plan(res, d, l1)
+    plan, l1, _pr, how_l1 = _ring_program(res, d, "regional_L1")
+    out["ring_regional_program"] = {"program": l1, "how": how_l1}
+    if plan is None:
+        out["ok"] = False
+        return out
 
     def compose_fault(orig):
         def faulty(self, region_of, reps, bpos, ncell):
@@ -947,12 +989,12 @@ def control_work_and_memory(wall):
                 and int(tr_fp) >= int(tr_e) and int(tr_fc) >= int(tr_c)
         return bool(cov), measured, bounds, forecasts
 
-    def check(label, mp, res, d, name, pt, q):
+    def check(label, mp, res, d, name, pt, q, plan_path=None, price=None, how="admitted and priced in this invocation"):
         wrap, counts = _measure_ops()
-        rep = _replay_here(mp, _plan(res, d, name), wrap=wrap)
-        p = _price(res, name)
+        rep = _replay_here(mp, plan_path or _plan(res, d, name), wrap=wrap)
+        p = price or _price(res, name)
         cov, measured, bounds, forecasts = coverage(p["counters"], counts, rep, name)
-        row = {"control": label, "program": name, "row": _row_ok(rep, pt, q), "measured": measured,
+        row = {"control": label, "program": name, "how": how, "row": _row_ok(rep, pt, q), "measured": measured,
                "proven_bounds": bounds, "forecasts": dict(forecasts, bytes_producer=p.get("bytes_producer"),
                                                           bytes_checker=p.get("bytes_checker")),
                "covers": cov}
@@ -999,13 +1041,18 @@ def control_work_and_memory(wall):
     resr, dr, _, _ = _solve(mr, wall)
     Z, ptr = O.exact_all_marginals(M.restrict(mr, {}))
     qr = sorted(M.restrict(mr, {}).free)
-    l1 = next(p["name"] for p in resr.prices if p["name"].startswith("regional:") and "@64" in p["name"]
-              and not p["name"].endswith(":L2"))
-    all_ok &= check("ring regional L1", mpr, resr, dr, l1, ptr, qr)
-    comp = next((p["name"] for p in resr.prices if p["name"].startswith("composed:") and ":statistic:" in p["name"]
-                 and p["eligible"]), None)
-    if comp:
-        all_ok &= check("ring composed statistic", mpr, resr, dr, comp, ptr, qr)
+    pl1, l1, pr1, how1 = _ring_program(resr, dr, "regional_L1")
+    if pl1 is None:
+        all_ok = False
+        rows.append({"control": "ring regional L1", "ok": False, "reason": how1})
+    else:
+        all_ok &= check("ring regional L1", mpr, resr, dr, l1, ptr, qr, plan_path=pl1, price=pr1, how=how1)
+    plc, comp, prc, howc = _ring_program(resr, dr, "composed_statistic")
+    if plc is None:
+        all_ok = False
+        rows.append({"control": "ring composed statistic", "ok": False, "reason": howc})
+    else:
+        all_ok &= check("ring composed statistic", mpr, resr, dr, comp, ptr, qr, plan_path=plc, price=prc, how=howc)
     saved = {"refused": 0, "cost_identical_bound": 0, "first_refusal": None}
     for p in resr.prices:
         if not (p["name"].startswith("regional:") or p["name"].startswith("composed:")):

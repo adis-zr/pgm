@@ -542,3 +542,107 @@ def test_planning_cli_parses_eps_as_an_option_not_a_problem():
     assert PLAN.parse_cli(["RUNDIR", "Grids_11", "--eps", "1/200"]) == ("RUNDIR", ["Grids_11"], Fr(1, 200))
     with pytest.raises(SystemExit):
         PLAN.parse_cli(["RUNDIR", "Grids_11", "1/200"])
+
+
+# ------------------------------------------------ r23: one request authority, one-time normalization, honest terminals
+
+def test_producer_evidence_mutation_cannot_change_the_certified_conditional():
+    """r23 (R22 review, control A): two binary variables, pair [3,1,1,3],
+    evidence X0=0, query X1; P(X1=0 | X0=0) = 3/4 exactly. A producer-only
+    mutation of ITS evidence argument is rejected by the checker, which derives
+    its conditional from the retained frozen law."""
+    import mdi.registry as RG
+    m2 = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(3), Fr(1), Fr(1), Fr(3)], origin=0)]).validate()
+    ev = {0: 0}
+    clean = PLN.solve(m2, dict(ev), queries={1}, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    assert clean.status.startswith("CERTIFIED") and Fr(clean.intervals[1][0][0]) <= Fr(3, 4) <= Fr(clean.intervals[1][0][1])
+    orig = PT._PIPELINE_EXECUTORS["identity"]
+
+    def ev_fault(ctx):
+        ctx["evidence"][0] = 1
+        return orig(ctx)
+    PT._PIPELINE_EXECUTORS["identity"] = ev_fault
+    setattr(RG, orig.__name__, ev_fault)
+    try:
+        bad = PLN.solve(m2, dict(ev), queries={1}, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    finally:
+        PT._PIPELINE_EXECUTORS["identity"] = orig
+        setattr(RG, orig.__name__, orig)
+    assert not bad.status.startswith("CERTIFIED") and not bad.intervals, (bad.status, bad.reason)
+    assert ev == {0: 0}
+
+
+def test_producer_query_narrowing_cannot_shrink_the_replayed_answer():
+    """r23 (R22 review, control B): the original triangle's saved statistic
+    program for queries [0,1,2]; the producer narrows ITS query set and working
+    program to {1}; replay rejects on the missing requested coordinates."""
+    from mdi import routes as RT
+    mp = "verifier/r17_triangle.uai"
+    res, d = _solve(mp)
+    plan = _plan(res, d, "statistic:lowrank_combined")
+    orig = RT.execute
+
+    def q_fault(prog, r, queries, **kw):
+        queries.intersection_update({1})
+        prog["queries"] = [1]
+        return orig(prog, r, queries, **kw)
+    RT.execute = q_fault
+    try:
+        bad = RP.replay(mp, "-", plan)
+    finally:
+        RT.execute = orig
+    assert bad["status"] == "REPLAY_REJECTED" and not bad.get("intervals") and "requested variables" in str(bad.get("reason"))
+    assert json.load(open(plan))["request"]["queries"] == [0, 1, 2]
+    assert RP.replay(mp, "-", plan)["status"] == "REPLAY_VERIFIED"
+
+
+def test_public_request_is_normalized_once_and_arguments_are_validated():
+    mu = M.Model(nvars=1, card=[2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)], origin=0)]).validate()
+    for qf in ({0}, [0], (0,), (v for v in [0]), iter([0])):
+        r = PLN.solve(mu, {}, queries=qf, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+        assert r.status.startswith("CERTIFIED") and sorted(r.intervals) == [0]
+        assert Fr(r.intervals[0][0][0]) <= Fr(1, 4) <= Fr(r.intervals[0][0][1]), r.intervals
+    for kw in (dict(queries="0"), dict(queries=[True]), dict(cap_bytes=0), dict(wall_s=float("nan")), dict(wall_s=float("inf")),
+               dict(wall_s=-1), dict(max_width=0.01), dict(cap_bytes=True), dict(max_width=Fr(3, 2))):
+        base = dict(wall_s=60, cap_bytes=1 << 30)
+        base.update(kw)
+        r = PLN.solve(mu, {0: 1}, plan_dir=tempfile.mkdtemp(), research_enabled=False, **base)
+        assert r.status == "INVALID_INPUT", (kw, r.status, r.reason)
+    r = PLN.solve(mu, {0: 1}, wall_s=None, cap_bytes=None, max_width=None, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    assert r.status.startswith("CERTIFIED") and r.budget["effective_limits"]["wall_s"] == 600.0
+    assert PLN.solve(mu, {}, max_width="1/200", wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False).status.startswith("CERTIFIED")
+    rep = RP.replay("verifier/radius_model.uai" if os.path.exists("verifier/radius_model.uai") else "checker/radius_model.uai", "-",
+                    "checker/radius_clean.plan.json", cap_bytes=0)
+    assert rep["status"] == "REPLAY_INVALID_INPUT"
+
+
+def test_invocation_ledger_survives_a_global_stop():
+    from test_mdi_research import ring_of_blocks
+    orig = B.Budget.__init__
+
+    def patched(self, wall_s, limits=None, rss_fn=None, rss_limit=None, **kw):
+        lim = dict(limits or {}); lim["pricing_entries"] = 2000
+        orig(self, wall_s, limits=lim, rss_fn=rss_fn, rss_limit=rss_limit, **kw)
+    B.Budget.__init__ = patched
+    try:
+        rs = PLN.solve(M.read_uai(w(ring_of_blocks()[0])), {}, wall_s=300, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        B.Budget.__init__ = orig
+    led = (rs.plan or {}).get("invocation_ledger") or {}
+    assert rs.status == "RESOURCE_STOP" and led and len(led["attempts"]) > 0
+    assert all(e["status"] != "running" for e in led["construction_events"])
+
+
+def test_ring_fixtures_replay_fresh_on_this_host():
+    """The ring's regional / composed branch capability is tested through the
+    shipped saved programs (bound, executed, checked afresh), independent of
+    whether a time-bounded discovery on this host reaches those branches."""
+    tr = json.load(open("verifier/ring_model_truth.json"))
+    pt = {int(v): [Fr(x) for x in row] for v, row in tr.items()}
+    for fn in ("ring_regional_L1.plan.json", "ring_regional_L2.plan.json", "ring_composed_statistic.plan.json", "ring_composed_gaussian.plan.json"):
+        rep = RP.replay("verifier/ring_model.uai", "-", os.path.join("verifier", fn))
+        assert rep["status"] == "REPLAY_VERIFIED", (fn, rep.get("reason"))
+        assert sorted(int(v) for v in rep["intervals"]) == sorted(pt)
+        for v, rows in rep["intervals"].items():
+            for s_, (lo, hi) in enumerate(rows):
+                assert Fr(lo) <= pt[int(v)][s_] <= Fr(hi), (fn, v, s_)

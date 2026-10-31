@@ -30,13 +30,29 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
     evidence, refusal, rejection, exception, resource exhaustion -- leaves
     through `_finalize`: the effective limits are tested after any proof and
     before publication, and the final budget report travels with the result."""
-    from mdi import config as K, budget as B, solve as S
+    from mdi import config as K, budget as B, solve as S, pipeline as PLN
     t0 = B.DEFAULT_CLOCK[0]()
+    # the resource arguments are validated at the boundary (None = default;
+    # zero / non-finite / wrong type are typed refusals, never silent defaults)
+    _w, bad_w = PLN._finite_positive(wall_s, "wall_s") if wall_s is not None else (float(K.RESOURCES["arm_wall_s"]), None)
+    _c, bad_c = PLN._finite_positive(cap_bytes, "cap_bytes", integer=True) if cap_bytes is not None else (int(K.RESOURCES["arm_rss_bytes"]), None)
+    if bad_w or bad_c:
+        return {"status": "REPLAY_INVALID_INPUT", "kind": None, "name": None, "reason": bad_w or bad_c, "elapsed_s": 0.0}
+    if eps is not None:
+        if isinstance(eps, (float, bool)):
+            return {"status": "REPLAY_INVALID_INPUT", "kind": None, "name": None,
+                    "reason": "eps %r is a binary64 value; pass an exact rational (Fraction or '1/200')" % (eps,), "elapsed_s": 0.0}
+        try:
+            eps = Fr(eps)
+        except (ValueError, TypeError, ZeroDivisionError):
+            return {"status": "REPLAY_INVALID_INPUT", "kind": None, "name": None,
+                    "reason": "eps %r is not an exact rational" % (eps,), "elapsed_s": 0.0}
+    wall_s, cap_bytes = _w, _c
     # the INVOCATION budget exists before any model / evidence / plan parsing:
     # parsing is inside the observed, metered time
-    asked = {"wall_s": float(wall_s), "rss_bytes": int(cap_bytes or K.RESOURCES["arm_rss_bytes"])}
+    asked = {"wall_s": float(wall_s), "rss_bytes": int(cap_bytes)}
     wall_s = min(float(wall_s), float(K.RESOURCES["arm_wall_s"]))
-    cap_eff = min(int(cap_bytes or K.RESOURCES["arm_rss_bytes"]), int(K.RESOURCES["arm_rss_bytes"]))
+    cap_eff = min(int(cap_bytes), int(K.RESOURCES["arm_rss_bytes"]))
     bg = B.Budget(wall_s=wall_s,
                   limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
                           "local_mass_entries": K.CAPS["local_mass_entries"]},
@@ -181,9 +197,13 @@ def _replay(model_path, evidence_path, plan_path, eps, wrap, cap_bytes, bg, t0):
         res.status, "REPLAY_" + res.status)
     pub = res.intervals or {}
     # every serialized (variable, state) key and interval is validated against
-    # the ORIGINAL model and the request; the width is recomputed from the
-    # endpoints; observed coordinates are preserved as exact point masses
+    # the RETAINED authority (the frozen law's evidence and requested set and
+    # the ORIGINAL model); the width is recomputed from the endpoints; observed
+    # coordinates are preserved as exact point masses
+    queries, ev = set(law.queries), dict(law.evidence)
     schema_bad = None
+    if status == "REPLAY_VERIFIED" and not pub:
+        schema_bad = "a verified status with no published rows"
     if pub:
         want = set(queries) | set(ev)
         if set(pub) != want:

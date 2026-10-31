@@ -225,6 +225,54 @@ def row_p1_triangle(wall):
                                         and (clean_t.get("stages") or {}).get("checker_restriction_s") is not None
                                         and (clean_t.get("stages") or {}).get("checker_authority_verify_s") is not None}
     oks.append(out["working_input_alias"]["ok"])
+    # ---- the RETAINED REQUEST governs after producer execution (r22 review): a
+    # producer-only mutation of its evidence argument (pipeline.solve) and a
+    # producer-only narrowing of its query set and working program (replay)
+    from mdi import plantype as PT
+    import mdi.registry as RG
+    m2 = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(3), Fr(1), Fr(1), Fr(3)], origin=0)]).validate()
+    ev2 = {0: 0}
+    Z2, pt2 = O.exact_all_marginals(M.restrict(m2, ev2))
+    clean2 = PLN.solve(m2, dict(ev2), queries={1}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    orig_ex = PT._PIPELINE_EXECUTORS["identity"]
+
+    def ev_fault(ctx):
+        ctx["evidence"][0] = 1                      # the producer changes ITS evidence argument
+        return orig_ex(ctx)
+    PT._PIPELINE_EXECUTORS["identity"] = ev_fault
+    setattr(RG, orig_ex.__name__, ev_fault)
+    try:
+        bad2 = PLN.solve(m2, dict(ev2), queries={1}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    finally:
+        PT._PIPELINE_EXECUTORS["identity"] = orig_ex
+        setattr(RG, orig_ex.__name__, orig_ex)
+    truth2 = bool(clean2.intervals) and Fr(clean2.intervals[1][0][0]) <= Fr(3, 4) <= Fr(clean2.intervals[1][0][1]) \
+        and clean2.intervals[0] == [(Fr(1), Fr(1)), (Fr(0), Fr(0))]
+    out["evidence_alias_pipeline"] = {"clean": {"status": clean2.status, "x1_row": [[str(a), str(b)] for a, b in clean2.intervals.get(1, [])],
+                                                "truth_3_4_enclosed": truth2},
+                                      "producer_mutates_evidence_argument": {"status": bad2.status, "reason": str(bad2.reason)[:160],
+                                                                             "published": bool(bad2.intervals)},
+                                      "caller_evidence_unchanged": ev2 == {0: 0},
+                                      "ok": clean2.status.startswith("CERTIFIED") and truth2 and not bad2.status.startswith("CERTIFIED")
+                                            and not bad2.intervals and ev2 == {0: 0}}
+    oks.append(out["evidence_alias_pipeline"]["ok"])
+    orig_rt = RT.execute
+
+    def q_fault(prog, r, queries, **kw):
+        queries.intersection_update({1})            # the producer narrows ITS query set
+        prog["queries"] = [1]                       # and ITS working program
+        return orig_rt(prog, r, queries, **kw)
+    RT.execute = q_fault
+    try:
+        badq = _replay_here(mp, plan_t)
+    finally:
+        RT.execute = orig_rt
+    saved_req = json.load(open(plan_t))["request"]["queries"]
+    out["query_alias_replay"] = {"saved_request_queries": saved_req, "status": badq["status"], "reason": str(badq.get("reason"))[:160],
+                                 "published_keys": sorted(badq.get("intervals") or {}),
+                                 "ok": badq["status"] == "REPLAY_REJECTED" and not badq.get("intervals") and saved_req == [0, 1, 2]
+                                       and "requested variables" in str(badq.get("reason"))}
+    oks.append(out["query_alias_replay"]["ok"])
     # the canonical types refuse every supported mutation path directly
     law_t = LAW.OriginalLaw.freeze(M.read_uai(mp), {}, set(q))
     fm = law_t.model
@@ -569,6 +617,27 @@ def row_p5_regional_deletion_composed(wall):
         row["raw"] = _raw(rep)
         out[label] = row
         oks.append(row["ok"])
+    # the shipped ring fixtures (verifier/ring_*.plan.json, produced by the public
+    # pipeline on the build host) are bound, executed and checked afresh on THIS
+    # host regardless of how far its time-bounded discovery got
+    vdir = os.path.join(HERE, "verifier")
+    mpf = os.path.join(vdir, "ring_model.uai")
+    trf = json.load(open(os.path.join(vdir, "ring_model_truth.json")))
+    ptf = {int(v): [Fr(x) for x in row] for v, row in trf.items()}
+    qf = sorted(ptf)
+    fx_rows = {}
+    for label, fn in MX.RING_FIXTURES.items():
+        pth = os.path.join(vdir, fn)
+        if not os.path.exists(pth):
+            fx_rows[label] = {"ok": False, "reason": "fixture absent"}
+            continue
+        repf = _replay_fresh(mpf, pth, wall)
+        rowf = _row_ok(repf, ptf, qf)
+        rowf["program"] = json.load(open(pth))["name"]
+        rowf["raw"] = _raw(repf)
+        fx_rows[label] = rowf
+    out["ring_fixtures_fresh_replay"] = {"rows": fx_rows, "ok": bool(fx_rows) and all(r["ok"] for r in fx_rows.values())}
+    oks.append(out["ring_fixtures_fresh_replay"]["ok"])
     md = _deletion_chain()
     mpd = _write_uai(md)
     resd, dd, _, _ = _solve(M.read_uai(mpd), wall)
@@ -728,6 +797,36 @@ def row_p6_saved_program_authority(wall):
     out["typed_schema_outcomes"] = {"unknown_query": (ru.status, str(ru.reason)[:80]), "negative_entry": (rn.status, str(rn.reason)[:80]),
                                     "ok": ru.status == "INVALID_INPUT" and rn.status == "INVALID_INPUT"}
     oks.append(out["typed_schema_outcomes"]["ok"])
+    # ---- the public request is normalized ONCE: every finite iterable of ints
+    # is the same request; malformed queries / widths / limits are typed refusals
+    mu = M.Model(nvars=1, card=[2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)], origin=0)]).validate()
+    forms = {"set": {0}, "list": [0], "tuple": (0,), "generator": (v for v in [0]), "iterator": iter([0])}
+    rows_q = {}
+    for label, qf in forms.items():
+        rq = PLN.solve(mu, {}, queries=qf, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+        rows_q[label] = {"status": rq.status, "keys": sorted(rq.intervals),
+                         "encloses_1_4_and_3_4": bool(rq.intervals) and Fr(rq.intervals[0][0][0]) <= Fr(1, 4) <= Fr(rq.intervals[0][0][1])
+                                                 and Fr(rq.intervals[0][1][0]) <= Fr(3, 4) <= Fr(rq.intervals[0][1][1])}
+    refusals = {}
+    for label, kw in (("string_queries", dict(queries="0")), ("bool_query_element", dict(queries=[True])),
+                      ("cap_bytes_zero", dict(cap_bytes=0)), ("wall_nan", dict(wall_s=float("nan"))), ("wall_inf", dict(wall_s=float("inf"))),
+                      ("wall_negative", dict(wall_s=-1)), ("float_width", dict(max_width=0.01)), ("bool_cap", dict(cap_bytes=True)),
+                      ("width_above_one", dict(max_width=Fr(3, 2)))):
+        base = dict(wall_s=wall, cap_bytes=1 << 30)
+        base.update(kw)
+        rr = PLN.solve(mu, {0: 1}, plan_dir=tempfile.mkdtemp(), research_enabled=False, **base)
+        refusals[label] = {"status": rr.status, "reason": str(rr.reason)[:100]}
+    rdef = PLN.solve(mu, {0: 1}, wall_s=None, cap_bytes=None, max_width=None, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    rstr = PLN.solve(mu, {}, max_width="1/200", wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    out["public_request_normalization"] = {
+        "query_forms": rows_q, "refusals": refusals,
+        "none_means_frozen_defaults": {"status": rdef.status, "effective": (rdef.budget or {}).get("effective_limits")},
+        "string_width": {"status": rstr.status, "width": str((rstr.budget or {}) and rstr.plan.get("request_width", "")) or None},
+        "ok": all(r["status"].startswith("CERTIFIED") and r["keys"] == [0] and r["encloses_1_4_and_3_4"] for r in rows_q.values())
+              and all(r["status"] == "INVALID_INPUT" for r in refusals.values())
+              and rdef.status.startswith("CERTIFIED") and (rdef.budget or {}).get("effective_limits", {}).get("wall_s") == 600.0
+              and rstr.status.startswith("CERTIFIED")}
+    oks.append(out["public_request_normalization"]["ok"])
     # zero-support replay terminal states the plan was NOT verified
     m4 = M.read_uai(mp)
     z = M.Model(nvars=m4.nvars, card=list(m4.card), factors=list(m4.factors) + [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(0)], origin=999)]).validate()
@@ -962,6 +1061,24 @@ def row_p7_execution_contract(wall):
               and int(led.get("construction_ops_measured", -1)) == uniq
               and all(a.get("construction_event") is not None for a in cands_ref if a["name"].startswith(("regional", "composed")))}
     oks.append(out["construction_event_ledger"]["ok"])
+    # the ledger already assembled survives a GLOBAL stop during discovery (no new work)
+    orig_init2 = B.Budget.__init__
+
+    def patched2(self, wall_s, limits=None, rss_fn=None, rss_limit=None, **kw):
+        lim = dict(limits or {}); lim["pricing_entries"] = 2000
+        orig_init2(self, wall_s, limits=lim, rss_fn=rss_fn, rss_limit=rss_limit, **kw)
+    B.Budget.__init__ = patched2
+    try:
+        rs = PLN.solve(M.read_uai(mpr), {}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        B.Budget.__init__ = orig_init2
+    leds = (rs.plan or {}).get("invocation_ledger") or {}
+    out["ledger_on_global_stop"] = {"status": rs.status, "reason": str(rs.reason)[:100], "ledger_present": bool(leds),
+                                    "attempts": len(leds.get("attempts") or []), "events": len(leds.get("construction_events") or []),
+                                    "every_event_closed": all(e.get("status") != "running" for e in (leds.get("construction_events") or [])),
+                                    "ok": rs.status == "RESOURCE_STOP" and bool(leds) and len(leds.get("attempts") or []) > 0
+                                          and all(e.get("status") != "running" for e in (leds.get("construction_events") or []))}
+    oks.append(out["ledger_on_global_stop"]["ok"])
     out["ok"] = all(oks)
     return out
 
@@ -1266,12 +1383,12 @@ def row_p9_truth_predicate(wall):
 
 
 ROWS = [
-    ("P1 proof boundary: exact original triangle (clean 6; marker/residual swaps; working-input alias; read-only canonical types; occurrences)", row_p1_triangle),
+    ("P1 proof boundary: exact original triangle (clean 6; marker/residual swaps; working-input alias; read-only types; retained request; occurrences)", row_p1_triangle),
     ("P2 proof boundary: exact original F6 chain (15/25/13/5; shared gf2 and gf3 faults; conservative witness; r19 grid gate)", row_p2_chain),
     ("P3 pure-sign rank-2 Gaussian and Fourier", row_p3_pure_sign_rank2),
     ("P4 statistic family: categorical, higher-arity/non-binary, hard zero, disconnected", row_p4_statistic_family),
     ("P5 regional L1/L2, composed statistic/gaussian (branch capability via the saved program), nonzero deletion", row_p5_regional_deletion_composed),
-    ("P6 saved-program authority: strict witnesses, identity tuples, effective request v3, collision, schema", row_p6_saved_program_authority),
+    ("P6 saved-program authority: strict witnesses, identity tuples, effective request v3, collision, schema, one-time request normalization", row_p6_saved_program_authority),
     ("P7 execution contract: pre-admission applicability, one meter for producer+checker, deadline, MPFR, priced work, truthful ledger", row_p7_execution_contract),
     ("P8 lifecycle: injected clock, early proofs past the wall, one terminal path, arm timing, incumbent retention vs global stop, F3", row_p8_lifecycle),
     ("P9 the independent truth predicate fails every disguise", row_p9_truth_predicate),

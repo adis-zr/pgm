@@ -66,10 +66,15 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     selection, then stops with an explicit terminal record and never enters an
     executor or checker (the numerical guard is installed for the run)."""
     from mdi import guard as GD
-    evidence = dict(evidence or {})
-    eps = Fr(max_width if max_width is not None else K.MAX_WIDTH)
-    cap_bytes = cap_bytes or K.RESOURCES["arm_rss_bytes"]
     prog = progress or (lambda *a, **k: None)
+    # the public request is NORMALIZED exactly once, before anything consumes
+    # or hashes it: a malformed argument is a typed INVALID_INPUT, never an
+    # incidental exception and never a silently changed request
+    norm, bad = normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes)
+    if bad:
+        return Outcome(status="INVALID_INPUT", reason=bad)
+    evidence, queries, eps, wall_s, cap_bytes = (norm["evidence"], norm["queries"], norm["width"],
+                                                 norm["wall_s"], norm["cap_bytes"])
     # the EFFECTIVE limits of this invocation: the caller's limits, never above
     # the frozen algorithm maxima (a caller may ask for less, never for more);
     # what the caller asked for is recorded beside them
@@ -93,8 +98,101 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     return finalize_terminal(out, bg)
 
 
+def _finite_positive(x, name, integer=False):
+    """A finite positive number (bool is not a number); returns (value, reason)."""
+    import math
+    if isinstance(x, bool) or not isinstance(x, (int, float, Fr)):
+        return None, "%s must be a finite positive number, got %r" % (name, x)
+    if isinstance(x, float) and (math.isnan(x) or math.isinf(x)):
+        return None, "%s must be finite, got %r" % (name, x)
+    if x <= 0:
+        return None, "%s must be positive, got %r (zero is not 'default': pass None for the default)" % (name, x)
+    if integer:
+        if isinstance(x, float) and not x.is_integer():
+            return None, "%s must be an integer number of bytes, got %r" % (name, x)
+        return int(x), None
+    return float(x), None
+
+
+def normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes):
+    """The ONE normalization of a public request. Returns (normalized, None)
+    or (None, reason).
+
+    Accepted: `evidence` None or a mapping {int variable: int state};
+    `queries` None (every free variable) or ANY finite iterable of ints
+    (set, list, tuple, generator, iterator -- consumed exactly once here);
+    `max_width` None (the frozen 0.01) or an exact rational (Fraction, int or
+    a string such as "1/200"; binary64 floats are refused, as factor entries
+    are); `wall_s` None (frozen maximum) or a finite positive number of
+    seconds; `cap_bytes` None (frozen maximum) or a finite positive integer
+    (zero is refused, it is not a default). Model elements are validated by
+    the pipeline after this step."""
+    out = {}
+    if evidence is None:
+        evidence = {}
+    if not isinstance(evidence, dict):
+        try:
+            evidence = dict(evidence)
+        except (TypeError, ValueError):
+            return None, "evidence must be a mapping variable -> state"
+    ev = {}
+    for v, st in evidence.items():
+        if isinstance(v, bool) or isinstance(st, bool) or not isinstance(v, int) or not isinstance(st, int):
+            return None, "evidence entry (%r, %r) is not an integer pair" % (v, st)
+        ev[int(v)] = int(st)
+    out["evidence"] = ev
+    if queries is None:
+        out["queries"] = None
+    else:
+        if isinstance(queries, (str, bytes)):
+            return None, "queries must be an iterable of integer variables, not a string"
+        try:
+            items = list(queries)                       # consumed ONCE, here
+        except TypeError:
+            return None, "queries must be an iterable of integer variables, got %r" % (type(queries).__name__,)
+        for v in items:
+            if isinstance(v, bool) or not isinstance(v, int):
+                return None, "requested variable %r is not an integer" % (v,)
+        out["queries"] = frozenset(int(v) for v in items)
+    if max_width is None:
+        out["width"] = K.MAX_WIDTH
+    else:
+        if isinstance(max_width, float) or isinstance(max_width, bool):
+            return None, "max_width %r is a binary64 value; pass an exact rational (Fraction, int or '1/200')" % (max_width,)
+        try:
+            w = Fr(max_width)
+        except (ValueError, TypeError, ZeroDivisionError):
+            return None, "max_width %r is not an exact rational" % (max_width,)
+        if not (0 < w <= 1):
+            return None, "requested width %s is not in (0, 1]" % w
+        out["width"] = w
+    if wall_s is None:
+        out["wall_s"] = float(K.RESOURCES["arm_wall_s"])
+    else:
+        val, bad = _finite_positive(wall_s, "wall_s")
+        if bad:
+            return None, bad
+        out["wall_s"] = val
+    if cap_bytes is None:
+        out["cap_bytes"] = int(K.RESOURCES["arm_rss_bytes"])
+    else:
+        val, bad = _finite_positive(cap_bytes, "cap_bytes", integer=True)
+        if bad:
+            return None, bad
+        out["cap_bytes"] = val
+    return out, None
+
+
 SUCCESS_STATUSES = ("CERTIFIED_RESEARCH_ROUTE", "CERTIFIED_FALLBACK_ONLY", "ZERO_EVIDENCE_PROVED",
                     "VERIFIED_SHARED_AGGREGATION_ONLY", "PLANNING_COMPLETE", "PLANNING_INCOMPLETE")
+
+
+def _program_snapshot(crec):
+    """The checker's program authority: an INDEPENDENT strict parse of the
+    record's immutable program JSON (the bytes that were bound), never the
+    producer's working copy."""
+    from mdi import program as PG
+    return PG.validate_program(json.loads(json.dumps(crec.program)))
 
 
 def finalize_terminal(out, bg):
@@ -120,6 +218,11 @@ def finalize_terminal(out, bg):
     out.budget = bg.report()
     if out.law is None:
         out.law = _LAW_CURRENT[0]
+    # the invocation ledger assembled during discovery is NEVER dropped by a
+    # terminal (resource stop, price refusal, refusal): known work stays known
+    if _LEDGER_CURRENT[0] is not None and not (out.plan or {}).get("invocation_ledger"):
+        out.plan = dict(out.plan or {})
+        out.plan["invocation_ledger"] = dict(_LEDGER_CURRENT[0])
     return out
 
 
@@ -128,6 +231,7 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     EPS_FOR_RECORD[0] = Fr(eps)
     _BG_FOR_RECORDS[0] = bg
     _LAW_CURRENT[0] = None
+    _LEDGER_CURRENT[0] = None
     stages = {}
     # `rejected` is referenced by every stage's RESOURCE_STOP path, so it must
     # exist before the first stage can fail. An expired preprocessing deadline
@@ -146,9 +250,6 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                               "the first stage: %s" % e,
                        budget=bg.report())
     t = time.monotonic()
-    if not (0 < eps <= 1):
-        return Outcome(status="INVALID_INPUT", reason="requested width %s is not in (0, 1]" % eps,
-                       stages=stages, budget=bg.report())
     try:
         model.validate()
         bad = input_schema_violation(model, evidence)
@@ -161,6 +262,7 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
         law = LAW.OriginalLaw.freeze(model, evidence, queries if queries is not None else
                                      [v for v in range(model.nvars) if v not in evidence])
         model = law.model
+        evidence = dict(law.evidence)                   # the pipeline's own working copy
     except M.InvalidModel as e:
         return Outcome(status="INVALID_INPUT", reason=str(e))
     for v, s in evidence.items():
@@ -435,6 +537,7 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     ledger_inv["pricing_probe_entries"] = int(bg.used.get("pricing_entries", 0))
     ledger_inv["local_mass_entries_discovery"] = int(bg.used.get("local_mass_entries", 0))
     out.plan["invocation_ledger"] = dict(ledger_inv)
+    _LEDGER_CURRENT[0] = ledger_inv            # known work travels with every terminal, stops included
     if _shared_exhausted is not None:
         # a consumed SHARED work counter stops the invocation; it is not a
         # per-candidate refusal that a fallback may proceed past
@@ -653,7 +756,15 @@ def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
     optionally wraps the executor and checker calls (the acceptance matrix
     counts operations through it; it changes nothing else)."""
     _w0 = wrap or (lambda stage, f: f())
-    model, evidence = law.model, dict(law.evidence)      # the FROZEN original law
+    model = law.model                                     # the FROZEN original law
+    # the RETAINED request governs: the caller's queries must be the law's
+    if set(queries) != set(law.queries):
+        return Outcome(status="NUMERICAL_REFUSAL",
+                       reason="the requested set %s handed to execution differs from the retained request %s"
+                              % (sorted(queries)[:6], sorted(law.queries)[:6]),
+                       prices=(out.prices if out is not None else []), budget=bg.report())
+    queries = frozenset(law.queries)
+    evidence = dict(law.evidence)                        # the PUBLISHER's own copy, never handed to a producer
     stage_calls = {}
 
     def _w(stage, f):
@@ -699,19 +810,23 @@ def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
                                   % (crec.checker_id, crec.kind),
                            prices=out.prices, rejected=rejected,
                            stages=stages, budget=bg.report())
-        # the PRODUCER's own working restriction (fresh lists from the frozen law)
+        # the PRODUCER's OWN working views: a fresh restriction from the frozen
+        # law, its own evidence dict, its own query set and its own copy of the
+        # parsed program; nothing it can change is used by the checker or the
+        # publisher (which re-derive theirs from the retained authority)
         t_r = time.monotonic()
         pown = law.restriction()
         stages["producer_restriction_s"] = time.monotonic() - t_r
-        ectx = {"model": model, "evidence": evidence, "eps": num_eps,
+        import copy as _copy
+        ectx = {"model": model, "evidence": dict(law.evidence), "eps": num_eps,
                 "cap_bytes": cap_bytes, "remaining": bg.remaining,
-                "restricted": pown.r, "queries": queries, "budget": bg,
-                "program": getattr(crec, "parsed_program", None),
+                "restricted": pown.r, "queries": set(law.queries), "budget": bg,
+                "program": _copy.deepcopy(getattr(crec, "parsed_program", None)),
                 "progress": prog or (lambda *a, **k: None)}
         numerical_entry("pipeline.run_loaded:executor")
         raw = _w("execute", lambda: pexec(ectx))
         exec_meta = ectx.get("meta") or {}
-        del pown, ectx                   # the producer's working tables are not reachable below
+        del pown, ectx                   # the producer's working views are not reachable below
     except PT.ExecutorRefusal as e:
         return Outcome(status=e.status, reason=e.reason, prices=out.prices,
                        rejected=rejected, stages=stages, budget=bg.report())
@@ -786,9 +901,13 @@ def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
             # the identity checker restricts and preprocesses the FROZEN law
             # itself; its message entries, enumeration assignments and sparse
             # aggregation entries are charged to the SAME shared meter
+            # the checker's evidence and program are derived from the RETAINED
+            # authority (the frozen law and the record's immutable JSON), never
+            # from a view the producer held
+            chk_program = _program_snapshot(crec)
             ok, fails, meta = _w("check", lambda: checker(
-                model, evidence, pub, eps, deadline_s=bg.remaining(),
-                cap_bytes=cap_bytes, program=crec.parsed_program,
+                model, dict(law.evidence), pub, eps, deadline_s=bg.remaining(),
+                cap_bytes=cap_bytes, program=chk_program,
                 charge=lambda n: bg.charge("local_mass_entries", n, "identity checker entries")))
             meta = dict(meta or {})
             meta["kind"] = "identity"
@@ -809,9 +928,20 @@ def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
             t_r = time.monotonic()
             cown = law.restriction()
             stages["checker_restriction_s"] = time.monotonic() - t_r
-            qpub = {v: pub[v] for v in sorted(queries)}
+            # EVERY requested coordinate of the retained request must be present
+            # before the checker runs: a producer that narrowed its working
+            # request cannot narrow the obligation
+            missing = sorted(v for v in law.queries if v not in pub)
+            if missing:
+                return Outcome(status="NUMERICAL_REFUSAL",
+                               reason="the producer published no rows for requested variables %s of the retained "
+                                      "request %s" % (missing[:6], sorted(law.queries)[:6]),
+                               prices=out.prices, rejected=rejected, stages=stages, budget=bg.report(),
+                               checker={"status": "FAILED", "failures": ["missing requested coordinates %s" % missing[:6]]})
+            qpub = {v: pub[v] for v in sorted(law.queries)}
+            chk_program = _program_snapshot(crec)
             ok, fails, meta = _w("check", lambda: checker(
-                cown.r, queries, crec.parsed_program, qpub, eps, deadline=check_dl,
+                cown.r, set(law.queries), chk_program, qpub, eps, deadline=check_dl,
                 budget=bg, exec_record=exec_meta,
                 on_global=lambda: bg.enter("check")))
             meta = dict(meta or {})
@@ -1724,7 +1854,8 @@ def _complete_cost(prices, rejected, exec_meta, check_meta, stages, stage_calls=
 
 EPS_FOR_RECORD = [K.MAX_WIDTH]
 _BG_FOR_RECORDS = [None]       # the invocation budget whose effective limits every record carries
-_LAW_CURRENT = [None]          # the frozen law of the running invocation (attached to its terminal outcome)      # the current request width, set by _solve before discovery
+_LAW_CURRENT = [None]          # the frozen law of the running invocation (attached to its terminal outcome)
+_LEDGER_CURRENT = [None]       # the invocation ledger already built (attached to EVERY terminal, incl. stops)      # the current request width, set by _solve before discovery
 
 
 def _candidate_record(kind, name, mh, eh, qh, simp, r, prog, allocations,

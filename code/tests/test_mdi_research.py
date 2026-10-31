@@ -4074,18 +4074,24 @@ def test_r5_pipeline_invokes_the_registered_executor():
     # requires it to be the registered one, so the sentinel must stand in
     # both places (a registry-only swap is refused without any call)
     import mdi.registry as RG
+    from mdi import replay as RP
+    import os as _os, tempfile as _tf
+    # the fault is injected on the executor of the route the FIRST discovery
+    # selected, and that very saved plan is replayed (bound from disk): a second
+    # time-bounded discovery might select another route and never run the patch
+    d = _tf.mkdtemp()
+    good = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30, plan_dir=d)
+    kind = good.plan["kind"]
+    plan = _os.path.join(d, next(p["identity"] for p in good.prices if p["name"] == good.plan["chosen"]) + ".plan.json")
     orig = PT._PIPELINE_EXECUTORS[kind]
     role = orig.__name__
     PT._PIPELINE_EXECUTORS[kind] = sentinel
     setattr(RG, role, sentinel)
     try:
-        try:
-            res = PLN.solve(m, {}, wall_s=60.0, cap_bytes=1 << 30)
-            certified = res.status.startswith("CERTIFIED")
-        except RuntimeError:
-            certified = False
-        assert calls[0] >= 1, "the registered executor was never invoked"
-        assert not certified, "certified without running the executor"
+        mp = w("MARKOV\n2\n2 2\n2\n1 0\n1 1\n2\n1 3\n2\n1 1\n")
+        rep = RP.replay(mp, "-", plan)
+        assert calls[0] >= 1, "the injected executor never ran on the selected saved plan"
+        assert rep["status"] != "REPLAY_VERIFIED" and not rep.get("intervals"), rep["status"]
     finally:
         PT._PIPELINE_EXECUTORS[kind] = orig
         setattr(RG, role, orig)
