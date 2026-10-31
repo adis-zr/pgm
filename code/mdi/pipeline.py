@@ -73,8 +73,8 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     norm, bad = normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes)
     if bad:
         return Outcome(status="INVALID_INPUT", reason=bad)
-    evidence, queries, eps, wall_s, cap_bytes = (norm["evidence"], norm["queries"], norm["width"],
-                                                 norm["wall_s"], norm["cap_bytes"])
+    model, evidence, queries, eps, wall_s, cap_bytes = (norm["model"], norm["evidence"], norm["queries"], norm["width"],
+                                                        norm["wall_s"], norm["cap_bytes"])
     # the EFFECTIVE limits of this invocation: the caller's limits, never above
     # the frozen algorithm maxima (a caller may ask for less, never for more);
     # what the caller asked for is recorded beside them
@@ -110,8 +110,69 @@ def _finite_positive(x, name, integer=False):
     if integer:
         if isinstance(x, float) and not x.is_integer():
             return None, "%s must be an integer number of bytes, got %r" % (name, x)
+        if isinstance(x, Fr) and x.denominator != 1:
+            return None, "%s must be an integer number of bytes, got %s (not silently truncated)" % (name, x)
         return int(x), None
     return float(x), None
+
+
+def normalize_model(model):
+    """Normalize the caller's model into OWNED exact data before any numeric
+    validation: every table scalar becomes an exact Fraction (int, Fraction or
+    a decimal / rational string such as '0.1' or '3/10'; binary64 floats,
+    None and non-numeric strings are refused with a named reason). Factor
+    multiplicity, scope layout and origins are preserved; the caller's objects
+    are never modified. Returns (new_model, None) or (None, reason)."""
+    if model is None or not hasattr(model, "factors") or not hasattr(model, "card") or not hasattr(model, "nvars"):
+        return None, "model must be an mdi.model.Model (got %r)" % (type(model).__name__,)
+    try:
+        nvars = int(model.nvars)
+        card = [int(c) for c in model.card]
+    except (TypeError, ValueError):
+        return None, "model.nvars and model.card must be integers"
+    facs = []
+    try:
+        iterable = list(model.factors)
+    except TypeError:
+        return None, "model.factors must be a sequence of Factor objects"
+    for i, f in enumerate(iterable):
+        if not hasattr(f, "scope") or not hasattr(f, "card") or not hasattr(f, "table"):
+            return None, "factor at position %d is not a Factor (got %r)" % (i, type(f).__name__)
+        tab = []
+        try:
+            entries = list(f.table)
+        except TypeError:
+            return None, "factor %s: table is not a sequence" % (getattr(f, "origin", i),)
+        for x in entries:
+            if isinstance(x, bool) or isinstance(x, float):
+                return None, ("factor %s carries a binary64 / boolean entry %r; exact rationals are required "
+                              "(Fraction, int, or a decimal / rational string)" % (getattr(f, "origin", i), x))
+            if isinstance(x, (int, Fr)):
+                q = Fr(x)
+            elif isinstance(x, str):
+                try:
+                    q = Fr(x.strip())
+                except (ValueError, ZeroDivisionError):
+                    return None, "factor %s carries a non-rational entry %r" % (getattr(f, "origin", i), x)
+            else:
+                return None, "factor %s carries a non-rational entry %r" % (getattr(f, "origin", i), x)
+            if q < 0:
+                return None, "factor %s carries a negative entry %s" % (getattr(f, "origin", i), q)
+            tab.append(q)
+        try:
+            facs.append(M.Factor(scope=tuple(int(v) for v in f.scope), card=tuple(int(c) for c in f.card), table=tab,
+                                 origin=int(getattr(f, "origin", -1)), scale=Fr(getattr(f, "scale", 1))))
+        except (TypeError, ValueError) as e:
+            return None, "factor %s has a malformed scope / cardinality: %s" % (getattr(f, "origin", i), e)
+    out = M.Model(nvars=nvars, card=card, factors=facs, net_type=str(getattr(model, "net_type", "MARKOV")),
+                  provenance=dict(getattr(model, "provenance", {}) or {}))
+    try:
+        out.validate()
+    except M.InvalidModel as e:
+        return None, str(e)
+    except (TypeError, ValueError) as e:
+        return None, "malformed model: %s" % e
+    return out, None
 
 
 def normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes):
@@ -128,6 +189,10 @@ def normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes):
     (zero is refused, it is not a default). Model elements are validated by
     the pipeline after this step."""
     out = {}
+    nm, bad = normalize_model(model)
+    if bad:
+        return None, bad
+    out["model"] = nm
     if evidence is None:
         evidence = {}
     if not isinstance(evidence, dict):
@@ -955,11 +1020,14 @@ def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
         return Outcome(status="RESOURCE_STOP",
                        reason="producer completed but independent verification "
                               "did not finish: %s" % e,
-                       intervals=pub, prices=out.prices, rejected=rejected,
+                       prices=out.prices, rejected=rejected,
                        stages=stages, budget=bg.report(),
                        checker={"status": "VERIFICATION_INCOMPLETE",
                                 "verified_coordinates": 0,
                                 "verified_subset": None},
+                       # the producer's rows are UNVERIFIED: diagnostic partial evidence, never `intervals`
+                       partial_evidence={"status_before_limit_check": None, "unverified_producer_rows": pub,
+                                         "note": "the independent check did not finish; these rows are not certified"},
                        properties=crec.properties.as_dict())
     except Exception as e:
         stages["check_s"] = time.monotonic() - t

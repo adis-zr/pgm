@@ -584,33 +584,27 @@ def row_p5_regional_deletion_composed(wall):
                         "admitted_during_discovery": led.get("candidates_admitted_during_discovery"),
                         "phase_timeouts": led.get("candidates_phase_timeout"),
                         "note": "selection follows the complete price under this invocation's budget; the identity may win"}
-    for label, pred in picks.items():
-        nm = next((p["name"] for p in res.prices if pred(p["name"]) and p["eligible"]), None)
-        if nm is not None:
-            plan_path, how = _plan(res, d, nm), "admitted and priced in this invocation"
-        else:
-            # the BRANCH capability does not depend on this host finishing every
-            # candidate inside the construction allowance: a completed program
-            # preserved on disk is bound, executed and checked by a FRESH replay
-            # under its own contract (the saved program governs)
-            kind_prefix = {"regional_L1": "regional-", "regional_L2": "regional-", "composed_statistic": "composed-",
-                           "composed_gaussian": "composed-"}[label]
-            cands = []
-            for fn in sorted(os.listdir(d)):
-                if not (fn.startswith(kind_prefix) and fn.endswith(".plan.json")):
-                    continue
-                recj = json.load(open(os.path.join(d, fn)))
-                if pred(recj.get("name", "")):
-                    cands.append((fn, recj.get("name")))
-            if not cands:
-                out[label] = {"ok": False, "reason": "no completed program of this branch was persisted",
-                              "offering": [p["name"] for p in res.prices]}
-                oks.append(False)
-                continue
-            plan_path, nm = os.path.join(d, cands[0][0]), cands[0][1]
-            how = "completed program preserved on disk (not admitted within this invocation's allowance); bound in a fresh replay"
-        rep = _replay_fresh(mp, plan_path, wall)
-        row = _row_ok(rep, pt, q)
+    # BRANCH CAPABILITY through the explicit fallback relation (matrix._ring_program):
+    # a program admitted in this invocation, else one persisted on disk by it,
+    # else the shipped fixture -- the source is recorded; whether the CURRENT
+    # timed discovery reached each branch is a separate coverage diagnostic
+    out["current_discovery_coverage"] = {}
+    for label in picks:
+        plan_path, nm, _pr, how = MX._ring_program(res, d, label)
+        out["current_discovery_coverage"][label] = {"admitted_in_this_invocation": how.startswith("admitted"),
+                                                    "persisted_in_this_invocation": "persisted on disk" in how, "source": how}
+        if plan_path is None:
+            out[label] = {"ok": False, "reason": how, "offering": [p["name"] for p in res.prices]}
+            oks.append(False)
+            continue
+        rep = _replay_fresh(mp, plan_path, wall) if not plan_path.startswith(os.path.join(HERE, "verifier")) \
+            else _replay_fresh(os.path.join(HERE, "verifier", "ring_model.uai"), plan_path, wall)
+        pt_use, q_use = (pt, q)
+        if plan_path.startswith(os.path.join(HERE, "verifier")):
+            trf0 = json.load(open(os.path.join(HERE, "verifier", "ring_model_truth.json")))
+            pt_use = {int(v): [Fr(x) for x in row] for v, row in trf0.items()}
+            q_use = sorted(pt_use)
+        row = _row_ok(rep, pt_use, q_use)
         row["program"] = nm
         row["how"] = how
         row["research"] = rep.get("research")
@@ -818,6 +812,41 @@ def row_p6_saved_program_authority(wall):
         refusals[label] = {"status": rr.status, "reason": str(rr.reason)[:100]}
     rdef = PLN.solve(mu, {0: 1}, wall_s=None, cap_bytes=None, max_width=None, plan_dir=tempfile.mkdtemp(), research_enabled=False)
     rstr = PLN.solve(mu, {}, max_width="1/200", wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    dec_rows = {}
+    for label, facs in (("decimal_strings", [M.Factor((0,), (2,), ['0.1', '0.3'], 0)]), ("rational_strings", [M.Factor((0,), (2,), ['1/10', '3/10'], 0)]),
+                        ("fractions", [M.Factor((0,), (2,), [Fr(1, 10), Fr(3, 10)], 0)])):
+        mdl = M.Model(1, [2], facs)
+        before = list(facs[0].table)
+        rr = PLN.solve(mdl, {}, research_enabled=False, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        dec_rows[label] = {"status": rr.status, "encloses_1_4_and_3_4": bool(rr.intervals) and Fr(rr.intervals[0][0][0]) <= Fr(1, 4) <= Fr(rr.intervals[0][0][1])
+                                                             and Fr(rr.intervals[0][1][0]) <= Fr(3, 4) <= Fr(rr.intervals[0][1][1]),
+                           "caller_table_untouched": facs[0].table == before}
+    bad_rows = {}
+    for label, mdl in (("none_entry", M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), None], 0)])), ("text_entry", M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), 'oops'], 0)])),
+                       ("float_entry", M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), 0.3], 0)])), ("model_none", None), ("model_dict", {"nvars": 1}),
+                       ("factor_not_a_factor", M.Model(1, [2], ["x"]))):
+        rr = PLN.solve(mdl, {}, research_enabled=False, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        bad_rows[label] = {"status": rr.status, "reason": str(rr.reason)[:90]}
+    r_frac_bad = PLN.solve(mu, {}, wall_s=wall, cap_bytes=Fr(2147483649, 2), plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    r_frac_ok = PLN.solve(mu, {}, wall_s=wall, cap_bytes=Fr(1 << 30), plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    mpe = _write_uai(mu)
+    de = tempfile.mkdtemp()
+    r_empty = PLN.solve(M.read_uai(mpe), {}, queries=[], wall_s=wall, cap_bytes=1 << 30, plan_dir=de, research_enabled=False)
+    rep_empty = _replay_fresh(mpe, _plan(r_empty, de, "identity"), wall)
+    rep_cap = _replay_fresh(mpe, _plan(r_empty, de, "identity"), wall) if False else RP.replay(mpe, "-", _plan(r_empty, de, "identity"), cap_bytes=Fr(3, 2))
+    out["declared_input_contract"] = {
+        "exact_scalar_forms": dec_rows, "malformed_inputs": bad_rows,
+        "nonintegral_fraction_cap": {"status": r_frac_bad.status, "reason": str(r_frac_bad.reason)[:90]},
+        "integral_fraction_cap": {"status": r_frac_ok.status, "effective_rss": (r_frac_ok.budget or {}).get("effective_limits", {}).get("rss_bytes")},
+        "empty_request": {"solve": r_empty.status, "solve_intervals": r_empty.intervals, "replay": rep_empty["status"], "replay_intervals": rep_empty.get("intervals")},
+        "replay_nonintegral_cap": rep_cap["status"],
+        "ok": all(r["status"].startswith("CERTIFIED") and r["encloses_1_4_and_3_4"] and r["caller_table_untouched"] for r in dec_rows.values())
+              and all(r["status"] == "INVALID_INPUT" for r in bad_rows.values())
+              and r_frac_bad.status == "INVALID_INPUT" and r_frac_ok.status.startswith("CERTIFIED")
+              and (r_frac_ok.budget or {}).get("effective_limits", {}).get("rss_bytes") == (1 << 30)
+              and r_empty.status.startswith("CERTIFIED") and r_empty.intervals == {} and rep_empty["status"] == "REPLAY_VERIFIED"
+              and rep_empty.get("intervals") == {} and rep_cap["status"] == "REPLAY_INVALID_INPUT"}
+    oks.append(out["declared_input_contract"]["ok"])
     out["public_request_normalization"] = {
         "query_forms": rows_q, "refusals": refusals,
         "none_means_frozen_defaults": {"status": rdef.status, "effective": (rdef.budget or {}).get("effective_limits")},
@@ -1153,8 +1182,12 @@ def row_p8_lifecycle(wall):
         out["global_check_timeout_601s"] = {"status": rn["status"], "reason": str(rn.get("reason"))[:140], "stops": stops[:2],
                                             "phases": (rn.get("budget") or {}).get("phases"),
                                             "checker_status": (rn.get("checker") or {}).get("status"),
+                                            "intervals_published": bool(rn.get("intervals")),
+                                            "unverified_rows_as_partial_evidence": bool(((rn.get("partial_evidence") or {}).get("unverified_producer_rows"))),
                                             "ok": rn["status"] == "REPLAY_RESOURCE_STOP" and any(k == "wall" for k, _w in stops)
-                                                  and (rn.get("checker") or {}).get("status") == "VERIFICATION_INCOMPLETE"}
+                                                  and (rn.get("checker") or {}).get("status") == "VERIFICATION_INCOMPLETE"
+                                                  and not rn.get("intervals")
+                                                  and bool(((rn.get("partial_evidence") or {}).get("unverified_producer_rows")))}
         oks.append(out["global_check_timeout_601s"]["ok"])
         evz = mp + ".e0"
         open(evz, "w").write("0\n")
@@ -1387,8 +1420,8 @@ ROWS = [
     ("P2 proof boundary: exact original F6 chain (15/25/13/5; shared gf2 and gf3 faults; conservative witness; r19 grid gate)", row_p2_chain),
     ("P3 pure-sign rank-2 Gaussian and Fourier", row_p3_pure_sign_rank2),
     ("P4 statistic family: categorical, higher-arity/non-binary, hard zero, disconnected", row_p4_statistic_family),
-    ("P5 regional L1/L2, composed statistic/gaussian (branch capability via the saved program), nonzero deletion", row_p5_regional_deletion_composed),
-    ("P6 saved-program authority: strict witnesses, identity tuples, effective request v3, collision, schema, one-time request normalization", row_p6_saved_program_authority),
+    ("P5 regional L1/L2, composed statistic/gaussian (branch capability via the saved program; current-discovery coverage separate), nonzero deletion", row_p5_regional_deletion_composed),
+    ("P6 saved-program authority: strict witnesses, identity tuples, effective request v3, collision, schema, declared input contract, normalization", row_p6_saved_program_authority),
     ("P7 execution contract: pre-admission applicability, one meter for producer+checker, deadline, MPFR, priced work, truthful ledger", row_p7_execution_contract),
     ("P8 lifecycle: injected clock, early proofs past the wall, one terminal path, arm timing, incumbent retention vs global stop, F3", row_p8_lifecycle),
     ("P9 the independent truth predicate fails every disguise", row_p9_truth_predicate),

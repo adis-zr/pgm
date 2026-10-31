@@ -75,6 +75,8 @@ def _finalize(out, bg, t0):
         bg.check("terminal")
     except B.BudgetExceeded as e:
         if out.get("status") in REPLAY_SUCCESS:
+            kept = {k: out.get(k) for k in ("complete_cost", "price", "stages", "ledger", "request", "requested",
+                                            "observed", "model_card", "pipeline_status") if k in out}
             out = {"status": "REPLAY_RESOURCE_STOP", "kind": out.get("kind"), "name": out.get("name"),
                    "identity": out.get("identity"),
                    "reason": "completed after the effective limit: %s" % e,
@@ -82,7 +84,7 @@ def _finalize(out, bg, t0):
                                         "checker": out.get("checker"), "intervals_withheld": bool(out.get("intervals")),
                                         "note": "the proof completed after the effective limit; it is partial evidence, "
                                                 "not a publication"},
-                   "request": out.get("request"), "requested": out.get("requested"), "observed": out.get("observed")}
+                   **kept}                                   # known diagnostics are preserved, not dropped
     out["budget"] = bg.report()
     out["elapsed_s"] = B.DEFAULT_CLOCK[0]() - t0
     return out
@@ -202,10 +204,14 @@ def _replay(model_path, evidence_path, plan_path, eps, wrap, cap_bytes, bg, t0):
     # coordinates are preserved as exact point masses
     queries, ev = set(law.queries), dict(law.evidence)
     schema_bad = None
-    if status == "REPLAY_VERIFIED" and not pub:
-        schema_bad = "a verified status with no published rows"
+    want = set(queries) | set(ev)
+    if status == "REPLAY_VERIFIED" and set(pub) != want:
+        # the published key set must EQUAL the retained request plus observed
+        # set -- including when that set is legitimately empty (an empty
+        # request publishes an empty mapping); empty output for a nonempty
+        # request is a schema violation
+        schema_bad = "published keys %s differ from the request %s" % (sorted(pub)[:6], sorted(want)[:6])
     if pub:
-        want = set(queries) | set(ev)
         if set(pub) != want:
             schema_bad = "published keys %s differ from the request %s" % (sorted(pub)[:6], sorted(want)[:6])
         for v in sorted(pub):
@@ -243,6 +249,8 @@ def _replay(model_path, evidence_path, plan_path, eps, wrap, cap_bytes, bg, t0):
             "stages": {k: round(v, 4) for k, v in (res.stages or {}).items() if isinstance(v, (int, float))},
             "ledger": (res.plan or {}).get("ledger"),
             "complete_cost": (res.plan or {}).get("complete_cost"),
+            # UNVERIFIED diagnostics (a check that did not finish) travel here, never in `intervals`
+            "partial_evidence": (res.partial_evidence or None),
             "price": price.as_dict()}
 
 

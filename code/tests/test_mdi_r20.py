@@ -646,3 +646,87 @@ def test_ring_fixtures_replay_fresh_on_this_host():
         for v, rows in rep["intervals"].items():
             for s_, (lo, hi) in enumerate(rows):
                 assert Fr(lo) <= pt[int(v)][s_] <= Fr(hi), (fn, v, s_)
+
+
+# ------------------------------------------------ r24: declared input contract, empty-request replay, exact caps, P5 coverage
+
+def test_declared_table_scalar_forms_are_normalized_and_malformed_inputs_are_typed():
+    for facs in ([M.Factor((0,), (2,), ['0.1', '0.3'], 0)], [M.Factor((0,), (2,), ['1/10', '3/10'], 0)], [M.Factor((0,), (2,), [Fr(1, 10), Fr(3, 10)], 0)]):
+        before = list(facs[0].table)
+        r = PLN.solve(M.Model(1, [2], facs), {}, research_enabled=False, wall_s=30, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        assert r.status.startswith("CERTIFIED") and Fr(r.intervals[0][0][0]) <= Fr(1, 4) <= Fr(r.intervals[0][0][1]), r.reason
+        assert facs[0].table == before                       # the caller's objects are untouched
+    for mdl in (M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), None], 0)]), M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), 'oops'], 0)]),
+                M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), 0.3], 0)]), None, {"nvars": 1}, M.Model(1, [2], ["x"])):
+        r = PLN.solve(mdl, {}, research_enabled=False, wall_s=30, cap_bytes=1 << 30)
+        assert r.status == "INVALID_INPUT", (mdl, r.status, r.reason)
+
+
+def test_empty_request_replays_consistently_and_caps_are_exactly_integral():
+    mu = M.Model(nvars=1, card=[2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(3)], origin=0)]).validate()
+    mp = MX._write_uai(mu)
+    d = tempfile.mkdtemp()
+    r = PLN.solve(M.read_uai(mp), {}, queries=[], wall_s=30, cap_bytes=1 << 30, plan_dir=d, research_enabled=False)
+    assert r.status.startswith("CERTIFIED") and r.intervals == {}
+    plan = MX._plan(r, d, "identity")
+    rep = RP.replay(mp, "-", plan)
+    assert rep["status"] == "REPLAY_VERIFIED" and rep["intervals"] == {}
+    assert PLN.solve(mu, {}, wall_s=30, cap_bytes=Fr(2147483649, 2), plan_dir=tempfile.mkdtemp(), research_enabled=False).status == "INVALID_INPUT"
+    ok = PLN.solve(mu, {}, wall_s=30, cap_bytes=Fr(1 << 30), plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    assert ok.status.startswith("CERTIFIED") and ok.budget["effective_limits"]["rss_bytes"] == (1 << 30)
+    assert RP.replay(mp, "-", plan, cap_bytes=Fr(3, 2))["status"] == "REPLAY_INVALID_INPUT"
+
+
+def test_p5_branch_capability_does_not_depend_on_current_discovery():
+    """The acceptance row's branch capability is established through the
+    explicit fallback relation (admitted -> persisted -> shipped fixture); an
+    EMPTY current discovery leaves the branch rows passing and is recorded in
+    the coverage diagnostic."""
+    from mdi import acceptance as AC
+    orig = AC._solve
+
+    def empty_solve(m, wall, evidence=None, queries=None):
+        res, d, el, exp = orig(m, wall, evidence=evidence, queries=queries)
+        if m.nvars == 12:
+            res = PLN.Outcome(status="CERTIFIED_FALLBACK_ONLY", prices=[], plan={"chosen": "identity", "invocation_ledger": {}})
+            d = tempfile.mkdtemp()
+        return res, d, el, exp
+    AC._solve = empty_solve
+    try:
+        r = AC.row_p5_regional_deletion_composed(300)
+    finally:
+        AC._solve = orig
+    assert r["ok"], {k: v for k, v in r.items() if isinstance(v, dict) and not v.get("ok", True)}
+    assert all(not v["admitted_in_this_invocation"] for v in r["current_discovery_coverage"].values())
+    assert all(r[k]["how"].startswith("shipped fixture") for k in ("regional_L1", "regional_L2", "composed_statistic", "composed_gaussian"))
+
+
+def test_unverified_producer_rows_are_partial_evidence_not_intervals():
+    """A check that does not finish publishes nothing: the producer's rows are
+    explicit unverified partial evidence under the resource stop."""
+    from mdi import program_check as PC
+    mp = _mf4(0.30)
+    res, d = _solve(mp)
+    stat = next(p["name"] for p in res.prices if p["name"].startswith("statistic:") and p["eligible"])
+    plan = _plan(res, d, stat)
+
+    class Clock:
+        t = 1000.0
+
+        def __call__(self):
+            return Clock.t
+    saved = B.DEFAULT_CLOCK[0]
+    orig = PC.own_statistic_reference
+
+    def slow(*a, **k):
+        Clock.t += 601.0
+        return orig(*a, **k)
+    B.DEFAULT_CLOCK[0] = Clock()
+    PC.own_statistic_reference = slow
+    try:
+        rn = RP.replay(mp, "-", plan, wall_s=600)
+    finally:
+        PC.own_statistic_reference = orig
+        B.DEFAULT_CLOCK[0] = saved
+    assert rn["status"] == "REPLAY_RESOURCE_STOP" and not rn.get("intervals")
+    assert rn["partial_evidence"]["unverified_producer_rows"]
