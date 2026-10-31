@@ -1,0 +1,2 @@
+# persisted candidate programs of the planning passes (durable on disk, excluded from git and the archive)
+runs/mdi_2026-10-28/PLANNING_*/*/plans_*/
