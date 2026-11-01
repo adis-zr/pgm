@@ -7,6 +7,8 @@
 #   driver_probe.sh REPRODUCE.sh duplicate_row    -- acceptance has P3 twice: must fail
 #   driver_probe.sh REPRODUCE.sh blocked_row      -- route matrix R6 is BLOCKED while summary says failed 0: must fail
 #   driver_probe.sh REPRODUCE.sh wrong_truth      -- the inline ring diagnostic's solver result misses truth: must fail
+#   driver_probe.sh REPRODUCE.sh result_false     -- acceptance P1 is labelled PASS but its own result.ok is false: must fail (r26)
+#   driver_probe.sh REPRODUCE.sh result_missing   -- acceptance P1 is labelled PASS but carries no result object: must fail (r26)
 # Stages: interpreter inline_1..inline_5 shipped_tests route_matrix gate_matrix strict_mask strict_witnesses gf_grid_regression acceptance_matrix
 set -u
 DRIVER="$1"; MODE="$2"
@@ -22,8 +24,11 @@ rows_json() {   # \$1 list key, \$2 name key, \$3.. identities ; honours MODE va
     st="PASS"
     [ "\$MODE" = "blocked_row" ] && [ "\$id" = "R6" ] && st="BLOCKED"
     [ "\$MODE" = "missing_row" ] && [ "\$id" = "P5" ] && continue
-    out="\$out\$sep{\\"\$nk\\": \\"\$id stub\\", \\"status\\": \\"\$st\\"}"; sep=", "
-    [ "\$MODE" = "duplicate_row" ] && [ "\$id" = "P3" ] && out="\$out, {\\"\$nk\\": \\"P3 stub again\\", \\"status\\": \\"PASS\\"}"
+    res=", \\"result\\": {\\"ok\\": true}"
+    [ "\$MODE" = "result_false" ] && [ "\$id" = "P1" ] && res=", \\"result\\": {\\"ok\\": false}"
+    [ "\$MODE" = "result_missing" ] && [ "\$id" = "P1" ] && res=""
+    out="\$out\$sep{\\"\$nk\\": \\"\$id stub\\", \\"status\\": \\"\$st\\"\$res}"; sep=", "
+    [ "\$MODE" = "duplicate_row" ] && [ "\$id" = "P3" ] && out="\$out, {\\"\$nk\\": \\"P3 stub again\\", \\"status\\": \\"PASS\\", \\"result\\": {\\"ok\\": true}}"
   done
   n=\$(echo "\$out" | grep -o '"status"' | wc -l | tr -d ' ')
   if [ "\$MODE" = "empty_matrix" ]; then printf '{"%s": [], "passed": 0, "failed": 0}' "\$key"; else printf '{"%s": [%s], "passed": %s, "failed": 0}' "\$key" "\$out" "\$n"; fi

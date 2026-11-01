@@ -101,7 +101,9 @@ def _finalize(out, bg, t0):
                    "partial_evidence": {"status_before_limit_check": out.get("status"), "reason": out.get("reason"),
                                         "checker": out.get("checker"), "intervals_withheld": bool(out.get("intervals")),
                                         "note": "the proof completed after the effective limit; it is partial evidence, "
-                                                "not a publication"},
+                                                "not a publication",
+                                        # the computed rows are RETAINED as unverified partial evidence (r26)
+                                        **({"unverified_producer_rows": out["intervals"]} if out.get("intervals") else {})},
                    **kept}                                   # known diagnostics are preserved, not dropped
     if out.get("status") != "REPLAY_VERIFIED" and out.get("intervals"):
         pe = dict(out.get("partial_evidence") or {})

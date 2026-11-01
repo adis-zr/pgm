@@ -67,19 +67,27 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     executor or checker (the numerical guard is installed for the run)."""
     from mdi import guard as GD
     prog = progress or (lambda *a, **k: None)
+    # (0) THIS invocation's context is established before anything can return:
+    # no terminal of this call -- an invalid request, a stop during
+    # normalization, a stop at any later stage -- can consult the law, the
+    # ledger, the budget or the width of a previous call (r26)
+    _begin_invocation()
+    wall_arg, cap_arg = wall_s, cap_bytes
     # (1) the CHEAP scalar limits are validated first (no model work yet) ...
     lim, bad = normalize_limits(max_width, wall_s, cap_bytes)
     if bad:
         return Outcome(status="INVALID_INPUT", reason=bad)
-    eps, wall_s, cap_bytes = lim["width"], lim["wall_s"], lim["cap_bytes"]
+    eps = lim["width"]
     # (2) ... so the ONE invocation budget exists from ENTRY time: the whole-model
     # normalization below (table copies, scalar parsing, structural validation)
     # is metered work inside it, checked within its loops; its start is never
     # reset afterwards. The EFFECTIVE limits are the caller's, never above the
-    # frozen maxima; what the caller asked for is recorded beside them.
-    asked = {"wall_s": float(wall_s), "rss_bytes": int(cap_bytes)}
-    wall_s = min(float(wall_s), float(K.RESOURCES["arm_wall_s"]))
-    cap_bytes = min(int(cap_bytes), int(K.RESOURCES["arm_rss_bytes"]))
+    # frozen maxima -- clamped EXACTLY, before any binary64 conversion, so an
+    # enormous finite request is a legal request for the maximum, never an
+    # overflow; what the caller asked for is recorded beside them.
+    asked = {"wall_s": _asked_number(lim["wall_s"]), "rss_bytes": int(lim["cap_bytes"])}
+    wall_s = _clamp_to_float(lim["wall_s"], K.RESOURCES["arm_wall_s"])
+    cap_bytes = min(int(lim["cap_bytes"]), int(K.RESOURCES["arm_rss_bytes"]))
     bg = B.Budget(wall_s=wall_s,
                   limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],
                           "local_mass_entries": K.CAPS["local_mass_entries"]},
@@ -91,7 +99,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     # an overrun during normalization is a RESOURCE_STOP, never a certificate
     try:
         bg.enter("normalize")
-        norm, bad = normalize_request(model, evidence, queries, eps, wall_s=asked["wall_s"], cap_bytes=asked["rss_bytes"], bg=bg)
+        norm, bad = normalize_request(model, evidence, queries, eps, wall_s=wall_arg, cap_bytes=cap_arg, bg=bg)
         bg.check("normalized")
     except B.BudgetExceeded as e:
         return finalize_terminal(Outcome(status="RESOURCE_STOP",
@@ -126,7 +134,25 @@ def _finite_positive(x, name, integer=False):
         if isinstance(x, Fr) and x.denominator != 1:
             return None, "%s must be an integer number of bytes, got %s (not silently truncated)" % (name, x)
         return int(x), None
-    return float(x), None
+    # an exact value stays exact here: it is clamped to the frozen maximum
+    # EXACTLY before any binary64 conversion (a finite 10**400 seconds is a
+    # legal request for the maximum, not an OverflowError)
+    return (x if isinstance(x, (int, Fr)) else float(x)), None
+
+
+def _clamp_to_float(x, maximum):
+    """min(x, maximum) computed exactly for int / Fraction, then binary64."""
+    if isinstance(x, float):
+        return min(x, float(maximum))
+    return float(min(Fr(x), Fr(maximum)))
+
+
+def _asked_number(x):
+    """The caller's requested limit for the report: a binary64 value when it is
+    representable, else its exact decimal string."""
+    if isinstance(x, float):
+        return x
+    return float(x) if abs(Fr(x)) < Fr(10) ** 300 else str(x)
 
 
 def _exact_int(x, what):
@@ -263,7 +289,7 @@ def normalize_limits(max_width, wall_s, cap_bytes):
     if wall_s is None:
         out["wall_s"] = float(K.RESOURCES["arm_wall_s"])
     else:
-        val, bad = _finite_positive(wall_s, "wall_s")
+        val, bad = _finite_positive(wall_s, "wall_s")   # exact for int / Fraction; clamped exactly by the caller
         if bad:
             return None, bad
         out["wall_s"] = val
@@ -356,6 +382,11 @@ def finalize_terminal(out, bg):
                         "checker": out.checker, "intervals_withheld": bool(out.intervals),
                         "note": "the proof completed after the effective limit; it is partial evidence, "
                                 "not a publication"}
+            if out.intervals:
+                # the computed rows are RETAINED as unverified partial evidence
+                # (one schema with every other non-certified terminal), never
+                # reduced to a flag (r26)
+                evidence["unverified_producer_rows"] = out.intervals
             out = Outcome(status=("PLANNING_RESOURCE_STOP" if out.status.startswith("PLANNING") else "RESOURCE_STOP"),
                           reason="completed after the effective limit: %s" % e,
                           plan=out.plan, prices=out.prices, rejected=out.rejected,
@@ -2011,10 +2042,26 @@ def _complete_cost(prices, rejected, exec_meta, check_meta, stages, stage_calls=
 
 # ======================= discovery of PROGRAM routes =======================
 
-EPS_FOR_RECORD = [K.MAX_WIDTH]
+EPS_FOR_RECORD = [K.MAX_WIDTH]  # the current request width, set by _solve before discovery
 _BG_FOR_RECORDS = [None]       # the invocation budget whose effective limits every record carries
 _LAW_CURRENT = [None]          # the frozen law of the running invocation (attached to its terminal outcome)
-_LEDGER_CURRENT = [None]       # the invocation ledger already built (attached to EVERY terminal, incl. stops)      # the current request width, set by _solve before discovery
+_LEDGER_CURRENT = [None]       # the invocation ledger already built (attached to EVERY terminal, incl. stops)
+
+
+def _begin_invocation():
+    """Establish THIS invocation's context at the public entry boundary (r26):
+    the frozen law, the invocation ledger, the record budget, the record width
+    and the discovery hooks are empty until this call sets them. An early
+    terminal (invalid input, a stop during normalization) therefore carries no
+    law and no ledger -- never another call's -- and a later stop carries this
+    call's own. Called before any path can return."""
+    _LAW_CURRENT[0] = None
+    _LEDGER_CURRENT[0] = None
+    _BG_FOR_RECORDS[0] = None
+    EPS_FOR_RECORD[0] = K.MAX_WIDTH
+    for attr in ("_ledger", "_admit", "_shared", "_phase_stop"):
+        if hasattr(_discover_programs, attr):
+            setattr(_discover_programs, attr, None)
 
 
 def _candidate_record(kind, name, mh, eh, qh, simp, r, prog, allocations,

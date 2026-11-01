@@ -207,9 +207,22 @@ def test_loaded_record_roles_and_costs_are_bound():
         rec = PT.PlanRecord.from_json(open(os.path.join(d, p["identity"] + ".plan.json")).read())
         price = PLN._reprice_loaded(rec, rr, set(rr.free), sum(rr.card[v] for v in rr.free), simp, 1 << 30)
         assert PLN._price_disagrees(rec.cost_counters, price) is None, p["name"]
-    assert "regional:ascending_id@64" == res.plan["chosen"]
+    # selection is the complete-price argmin over the ELIGIBLE records of this
+    # invocation -- whichever candidate that is on this host (r26: the correct
+    # candidate NAME may vary; the rule may not)
+    elig = {p["name"]: int(p["total_arithmetic"]["value"]) for p in res.prices
+            if p["eligible"] and p["total_arithmetic"]["value"] is not None}
+    assert res.plan["chosen"] in elig and elig[res.plan["chosen"]] == min(elig.values()), (res.plan["chosen"], elig)
+    # the mutation controls run on a clean regional record obtained through the
+    # explicit admitted -> persisted -> shipped relation, bound and VERIFIED
+    # against the exact original model first (never a hardcoded winner)
+    from mdi import matrix as MX
+    got = MX.ring_program_verified(res, d, "regional_L1", mp)
+    assert got is not None, "no clean level-1 regional program available or it did not verify"
+    plan_path, rname, _price, how, _mp, rep = got
+    assert rep["status"] == "REPLAY_VERIFIED" and rname.startswith("regional:"), (rname, how)
+    base = json.load(open(plan_path))
     # a record whose recorded counters disagree with its program is refused
-    base = json.load(open(_plan_file(d, res, "regional:ascending_id@64")))
     bad = copy.deepcopy(base)
     bad["cost_counters"]["producer_schedule_ops"]["value"] = 1
     rec = PT.PlanRecord.from_json(json.dumps(bad))
@@ -219,8 +232,12 @@ def test_loaded_record_roles_and_costs_are_bound():
     bad2 = copy.deepcopy(base)
     bad2["executor_id"] = "mdi.registry:pipeline_identity_executor"
     assert PLN._resolve_role(bad2["executor_id"]) is not PT.dispatch_pipeline("regional")
-    # the research label follows the CHECKER's verified transformation
-    assert res.checker["verified_research"]["cells_merged_regions"] == res.plan["research"]["cells_merged_regions"] >= 1
+    # the research label follows the CHECKER's verified transformation: on the
+    # verified regional program, and on the pipeline's own result when a
+    # research route was selected
+    assert rep["checker"]["verified_research"]["cells_merged_regions"] == rep["research"]["cells_merged_regions"] >= 1
+    if res.plan["chosen"].startswith(("regional:", "composed:")):
+        assert res.checker["verified_research"]["cells_merged_regions"] == res.plan["research"]["cells_merged_regions"] >= 1
 
 
 def test_persisted_claims_of_completion_do_not_bind():

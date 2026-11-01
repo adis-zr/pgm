@@ -136,12 +136,21 @@ def test_persisted_program_governs_execution_in_a_fresh_process():
 
 
 def test_program_block_is_parsed_strictly():
+    """The strict-schema obligation is a property of a SAVED regional program:
+    the clean record comes through the explicit admitted -> persisted ->
+    shipped relation and is bound and verified against the exact original
+    model BEFORE the mutations run (r26: never a fixed winner of this host's
+    timed discovery, never an unexecuted mutation)."""
+    from mdi import matrix as MX
     txt, n, NB, BS = ring_of_blocks()
-    m = M.read_uai(w(txt))
+    mp = w(txt)
+    m = M.read_uai(mp)
     d = tempfile.mkdtemp()
     res = PLN.solve(m, {}, wall_s=120.0, cap_bytes=1 << 30, plan_dir=d)
-    plan = os.path.join(d, next(p["identity"] for p in res.prices
-                                if p["name"] == "regional:ascending_id@64") + ".plan.json")
+    got = MX.ring_program_verified(res, d, "regional_L1", mp)
+    assert got is not None, "no clean level-1 regional program available (admitted, persisted or shipped) or it did not verify"
+    plan, name, _price, how, _mp, rep = got
+    assert rep["status"] == "REPLAY_VERIFIED" and name.startswith("regional:"), (name, how)
     base = json.load(open(plan))
     assert PT.PlanRecord.from_json(json.dumps(base)).parsed_program is not None
     muts = [

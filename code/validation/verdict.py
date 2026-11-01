@@ -1,10 +1,12 @@
-"""The release driver's final verdict (r25): parses the three matrix summaries
-and requires the EXACT expected coverage -- every required row identity once,
-each PASS, no BLOCKED / SKIP / duplicate / missing / unexpected required
-entries -- with the summaries RECOMPUTED from the rows (a summary saying
-'failed: 0' is not evidence that the required tests ran). Run with an
-interpreter independent of the one under test. Prints the findings; exits 0
-only when every obligation holds.
+"""The release driver's final verdict (r25, completed r26): parses the three
+matrix summaries and requires the EXACT expected coverage -- every required
+row identity once, each PASS, each carrying a PRESENT successful result
+(`result.ok` is true: a PASS label over a false or absent result is a
+contradiction, not a pass), no BLOCKED / SKIP / duplicate / missing /
+unexpected required entries -- with the summaries RECOMPUTED from the rows (a
+summary saying 'failed: 0' is not evidence that the required tests ran). Run
+with an interpreter independent of the one under test. Prints the findings;
+exits 0 only when every obligation holds.
 
     verdict.py ACCEPTANCE.json ROUTE.json GATE.json RUN_MARKER
 """
@@ -35,21 +37,33 @@ def check(label, path, marker):
     for r in rows:
         name = str(r.get(name_key, ""))
         ident = name.split(" ")[0]
-        seen.setdefault(ident, []).append(str(r.get("status")))
+        seen.setdefault(ident, []).append(r)
     for ident in expected:
-        st = seen.get(ident)
-        if not st:
+        rs = seen.get(ident)
+        if not rs:
             problems.append("%s: required row %s is MISSING" % (label, ident))
-        elif len(st) != 1:
-            problems.append("%s: required row %s appears %d times" % (label, ident, len(st)))
-        elif st[0] != "PASS":
-            problems.append("%s: required row %s is %s, not PASS" % (label, ident, st[0]))
+            continue
+        if len(rs) != 1:
+            problems.append("%s: required row %s appears %d times" % (label, ident, len(rs)))
+            continue
+        st = str(rs[0].get("status"))
+        if st != "PASS":
+            problems.append("%s: required row %s is %s, not PASS" % (label, ident, st))
+        # the row's OWN result must be present and successful: status and result
+        # content are one record and may not contradict each other
+        res = rs[0].get("result")
+        if not isinstance(res, dict):
+            problems.append("%s: required row %s carries no result object (status %s)" % (label, ident, st))
+        elif res.get("ok") is not True:
+            problems.append("%s: required row %s has result.ok = %r under status %s" % (label, ident, res.get("ok"), st))
     unexpected = [i for i in seen if i not in expected]
     if unexpected:
         problems.append("%s: unexpected rows %s" % (label, unexpected))
-    # the summary is RECOMPUTED from the rows and must agree with the file's own counts
-    n_pass = sum(1 for r in rows if str(r.get("status")) == "PASS")
-    n_fail = sum(1 for r in rows if str(r.get("status")) != "PASS")
+    # the summary is RECOMPUTED from the rows and must agree with the file's own
+    # counts; a row counts as passing only with a PASS status AND a successful result
+    n_pass = sum(1 for r in rows if str(r.get("status")) == "PASS"
+                 and isinstance(r.get("result"), dict) and r["result"].get("ok") is True)
+    n_fail = len(rows) - n_pass
     if int(s.get("passed", -1)) != n_pass or int(s.get("failed", -1)) != n_fail:
         problems.append("%s: summary (passed %s, failed %s) disagrees with its rows (passed %d, failed %d)"
                         % (label, s.get("passed"), s.get("failed"), n_pass, n_fail))

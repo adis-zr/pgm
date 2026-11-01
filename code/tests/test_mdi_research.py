@@ -3607,11 +3607,22 @@ def test_r4_composed_route_is_offered_as_a_pipeline_candidate():
     src = inspect.getsource(PLN.solve) + inspect.getsource(PLN._discover_programs)
     assert "composed:" in src, "the pipeline must offer the composed route"
     assert "composed route declined" in src, "a declension must be recorded"
+    from mdi import matrix as MX
     txt, n, NB, BS = ring_of_blocks()
     m = M.read_uai(w(txt))
-    res = PLN.solve(m, {}, wall_s=180.0, cap_bytes=1 << 30)
+    # the offering is established by ACTUAL public production discovery on a
+    # DETERMINISTIC history (r26): the input-law recognizer declines once, so
+    # the first regional construction executes and the composed route is
+    # attempted on its cells -- offered as priced candidates or recorded as a
+    # named declension -- independently of how far this host's timed
+    # discovery would otherwise get. Fixture replay cannot establish offering.
+    res = MX.with_input_law_recognizer_declined(lambda: PLN.solve(m, {}, wall_s=180.0, cap_bytes=1 << 30))
     names = [x["name"] for x in res.prices] + [x["name"] for x in res.rejected]
     assert any(x.startswith("composed:") for x in names), names
+    led = res.plan.get("invocation_ledger") or {}
+    assert any(a.get("kind") == "recognizer" and str(a.get("name", "")).startswith("composed:") for a in led.get("attempts") or []), \
+        [a.get("name") for a in led.get("attempts") or []]
+    assert res.status.startswith("CERTIFIED"), (res.status, res.reason)
 
 
 # ===== r4 review: adversarial checker regressions =====

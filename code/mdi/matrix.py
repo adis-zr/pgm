@@ -248,6 +248,86 @@ def _ring_program(res, d, branch):
     return None, None, None, "no program of this branch available (not admitted, not persisted, no fixture)"
 
 
+def ring_program_verified(res, d, branch, model_path, wall=600.0):
+    """The clean program of a ring BRANCH through the explicit relation
+    (`_ring_program`), BOUND AND VERIFIED against the exact original model and
+    request before any caller inspects, re-orders or corrupts it (r26). Returns
+    (plan_path, name, price, how, model_path_for_replay, replay_result) or
+    None when no program of the branch is available or the clean program does
+    not verify -- a missing or unusable fixture is a failure, never a pass."""
+    plan_path, name, price, how = _ring_program(res, d, branch)
+    if plan_path is None:
+        return None
+    mp = os.path.join(HERE, "verifier", "ring_model.uai") if plan_path.startswith(os.path.join(HERE, "verifier")) else model_path
+    rep = _replay_here(mp, plan_path)
+    if rep.get("status") != "REPLAY_VERIFIED":
+        return None
+    return plan_path, name, price, how, mp, rep
+
+
+def with_input_law_recognizer_declined(fn):
+    """Run `fn` while the INPUT-LAW collective recognizer declines (once), so
+    regional construction executes first and the composed candidates are
+    offered on its cells and reuse its event: a DETERMINISTIC construction /
+    recognizer / reuse history for the capability obligations, independent of
+    how far a timed discovery gets on this host. The natural history of an
+    ordinary invocation is observed separately; neither supplies the other's
+    evidence (r26: one helper for the unit tests, the acceptance rows and the
+    driver)."""
+    from mdi import collective_route as CR
+    orig = CR.admit
+    state = {"n": 0}
+
+    def declining(marked, *a, **k):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise CR.Declined("control: the input-law recognizer declines so regional construction runs first")
+        return orig(marked, *a, **k)
+    CR.admit = declining
+    try:
+        return fn()
+    finally:
+        CR.admit = orig
+
+
+def natural_history_integrity(res):
+    """INTEGRITY of whatever a natural (timed) discovery actually did: every
+    attempt and event closed with a terminal status, elapsed time and MPFR
+    count; fit work honestly unknown; every candidate's event reference
+    resolves; the invocation total equals the sum over unique closed events;
+    the complete-cost mirror agrees with the ledger. No requirement on HOW FAR
+    discovery got (that is a coverage observation, and the capability
+    obligations run on the deterministic history)."""
+    led = (res.plan or {}).get("invocation_ledger") or {}
+    cc = (res.plan or {}).get("complete_cost") or {}
+    atts = led.get("attempts") or []
+    evs = led.get("construction_events") or []
+    recog = [a for a in atts if a.get("kind") == "recognizer"]
+    cands = [a for a in atts if a.get("kind") == "candidate"]
+    closed_ev = [e for e in evs if e.get("status") != "running"]
+    ev_ids = {e.get("id") for e in evs}
+    refs = [a.get("construction_event") for a in cands if str(a.get("name", "")).startswith(("regional", "composed"))]
+    uniq = sum(int(e.get("construction_ops_measured") or 0) for e in closed_ev)
+    disc = cc.get("discovery_all_candidates_ops") if isinstance(cc.get("discovery_all_candidates_ops"), dict) else None
+    out = {"attempts": len(atts), "recognizer_attempts": len(recog), "events": len(evs),
+           "every_attempt_closed": all(a.get("status") != "running" for a in recog),
+           "every_attempt_has_elapsed_and_mpfr": all("elapsed_s" in a and "transcendental_calls" in a for a in recog),
+           "attempt_statuses_terminal": all(a.get("status") in ("admitted", "declined", "failed", "budget") for a in recog)
+                                        and all("at_s" in a for a in cands),
+           "fit_ops_honestly_unknown": all(a.get("fit_ops") == "unknown" for a in recog) and led.get("recognizer_fit_ops") == "unknown",
+           "every_event_closed": len(closed_ev) == len(evs),
+           "every_event_has_elapsed_and_mpfr": all("elapsed_s" in e and "transcendental_calls" in e for e in closed_ev),
+           "every_candidate_event_reference_resolves": all(r is not None and r in ev_ids for r in refs),
+           "ledger_total_equals_unique_closed_events": int(led.get("construction_ops_measured", -1)) == uniq,
+           "recognizer_seconds_equal_sum": abs(float(led.get("recognizer_seconds", -1)) - sum(float(a.get("elapsed_s", 0)) for a in recog)) < 1e-3 * max(1, len(recog)),
+           "recognizer_mpfr_equal_sum": int(led.get("recognizer_transcendental_calls", -1)) == sum(int(a.get("transcendental_calls", 0)) for a in recog),
+           "complete_cost_mirrors_ledger": disc is not None and int(disc.get("construction_ops_measured", -1)) == int(led.get("construction_ops_measured", -2))
+                                           and disc.get("recognizer_fit_ops") == "unknown" and int(disc.get("attempts", -1)) == len(atts),
+           "units": led.get("units")}
+    out["ok"] = bool(led) and all(v for k, v in out.items() if k not in ("attempts", "recognizer_attempts", "events", "units"))
+    return out
+
+
 def _price(res, name):
     return next(x for x in res.prices if x["name"] == name)
 
@@ -702,11 +782,13 @@ def control_independent_representation_and_readout(wall):
     res, d, _, _ = _solve(m, wall)
     Z, pt = O.exact_all_marginals(M.restrict(m, {}))
     q = sorted(M.restrict(m, {}).free)
-    plan, l1, _pr, how_l1 = _ring_program(res, d, "regional_L1")
-    out["ring_regional_program"] = {"program": l1, "how": how_l1}
-    if plan is None:
+    got = ring_program_verified(res, d, "regional_L1", mp)
+    if got is None:
+        out["ring_regional_program"] = {"program": None, "how": _ring_program(res, d, "regional_L1")[3] + " (no clean program verified)"}
         out["ok"] = False
         return out
+    plan, l1, _pr, how_l1, mp, _rep = got        # bound and verified against the exact original model before any fault
+    out["ring_regional_program"] = {"program": l1, "how": how_l1}
 
     def compose_fault(orig):
         def faulty(self, region_of, reps, bpos, ncell):
@@ -915,13 +997,12 @@ def control_portfolio_and_identity(wall):
     # clean program is bound and verified first, then its Q is read
     src = "admitted and priced in this invocation"
     if not qs:
-        plc, nmc, _prc, src = _ring_program(resr, dr, "composed_statistic")
-        if plc is not None:
-            recc = json.load(open(plc))
-            mpc_ = os.path.join(HERE, "verifier", "ring_model.uai") if plc.startswith(os.path.join(HERE, "verifier")) else mr
-            repc = _replay_here(mpc_, plc)
-            if repc["status"] == "REPLAY_VERIFIED":
-                qs = {nmc: recc["program"]["collective"]["Q"]}
+        got = ring_program_verified(resr, dr, "composed_statistic", mr)
+        if got is not None:
+            plc, nmc, _prc, src, _mpc, _repc = got
+            qs = {nmc: json.load(open(plc))["program"]["collective"]["Q"]}
+        else:
+            src = _ring_program(resr, dr, "composed_statistic")[3] + " (no clean program verified)"
     out["composed_ring_coarse_Q"] = {"Q_by_record": qs, "source": src, "ok": bool(qs) and all(v < (1 << 16) for v in qs.values())}
     oks.append(out["composed_ring_coarse_Q"]["ok"])
     out["ok"] = all(oks)
@@ -1074,12 +1155,11 @@ def control_work_and_memory(wall):
              if p["name"].startswith("regional:") or p["name"].startswith("composed:")]
     if not progs:
         for br in ("regional_L1", "composed_statistic"):
-            plb, nmb, _prb, howb = _ring_program(resr, dr, br)
-            if plb is not None:
-                mpb = os.path.join(HERE, "verifier", "ring_model.uai") if plb.startswith(os.path.join(HERE, "verifier")) else mpr
-                if _replay_here(mpb, plb)["status"] == "REPLAY_VERIFIED":
-                    progs.append((plb, nmb, mpb))
-                    saved["source"] = howb
+            got = ring_program_verified(resr, dr, br, mpr)
+            if got is not None:
+                plb, nmb, _prb, howb, mpb, _repb = got
+                progs.append((plb, nmb, mpb))
+                saved["source"] = howb
     for plan_path, pname, mp_use in progs:
         b0 = json.load(open(plan_path))
         o = list(b0["program"]["order"])

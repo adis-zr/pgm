@@ -829,6 +829,10 @@ def row_p6_saved_program_authority(wall):
         bad_rows[label] = {"status": rr.status, "reason": str(rr.reason)[:90]}
     r_frac_bad = PLN.solve(mu, {}, wall_s=wall, cap_bytes=Fr(2147483649, 2), plan_dir=tempfile.mkdtemp(), research_enabled=False)
     r_frac_ok = PLN.solve(mu, {}, wall_s=wall, cap_bytes=Fr(1 << 30), plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    # r26: an enormous FINITE wall is a legal request for the frozen maximum (clamped exactly, never an overflow)
+    r_huge = PLN.solve(mu, {}, wall_s=10 ** 400, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    huge_ok = r_huge.status.startswith("CERTIFIED") and (r_huge.budget or {}).get("effective_limits", {}).get("wall_s") == 600.0 \
+        and str((r_huge.budget or {}).get("requested_by_caller", {}).get("wall_s", "")).startswith("1" + "0" * 20)
     mpe = _write_uai(mu)
     de = tempfile.mkdtemp()
     r_empty = PLN.solve(M.read_uai(mpe), {}, queries=[], wall_s=wall, cap_bytes=1 << 30, plan_dir=de, research_enabled=False)
@@ -887,7 +891,9 @@ def row_p6_saved_program_authority(wall):
         "integral_fraction_cap": {"status": r_frac_ok.status, "effective_rss": (r_frac_ok.budget or {}).get("effective_limits", {}).get("rss_bytes")},
         "empty_request": {"solve": r_empty.status, "solve_intervals": r_empty.intervals, "replay": rep_empty["status"], "replay_intervals": rep_empty.get("intervals")},
         "replay_nonintegral_cap": rep_cap["status"],
-        "ok": all(r["status"].startswith("CERTIFIED") and r["encloses_1_4_and_3_4"] and r["caller_table_untouched"] for r in dec_rows.values())
+        "enormous_finite_wall": {"status": r_huge.status, "effective_wall_s": (r_huge.budget or {}).get("effective_limits", {}).get("wall_s"),
+                                 "requested_digits": len(str((r_huge.budget or {}).get("requested_by_caller", {}).get("wall_s", ""))), "ok": huge_ok},
+        "ok": huge_ok and all(r["status"].startswith("CERTIFIED") and r["encloses_1_4_and_3_4"] and r["caller_table_untouched"] for r in dec_rows.values())
               and all(r["status"] == "INVALID_INPUT" for r in bad_rows.values())
               and r_frac_bad.status == "INVALID_INPUT" and r_frac_ok.status.startswith("CERTIFIED")
               and (r_frac_ok.budget or {}).get("effective_limits", {}).get("rss_bytes") == (1 << 30)
@@ -1099,49 +1105,44 @@ def row_p7_execution_contract(wall):
         rows[p["name"]] = row
     out["ring_statistic_priced_work"] = {"programs": len(rows), "rows": rows, "ok": bool(rows) and all(r["ok"] for r in rows.values())}
     oks.append(out["ring_statistic_priced_work"]["ok"])
-    led = resr.plan.get("invocation_ledger") or {}
-    cc = resr.plan.get("complete_cost") or {}
+    # the NATURAL discovery history of this (timed) invocation: an INTEGRITY
+    # obligation on what actually happened -- closed attempts and events,
+    # recorded elapsed work, honest unknowns, totals that agree -- and an
+    # OBSERVATION of how far it got (never a requirement on how far; r26)
+    natural = MX.natural_history_integrity(resr)
+    led_n = resr.plan.get("invocation_ledger") or {}
+    natural["observation"] = {"construction_events": len(led_n.get("construction_events") or []),
+                              "events_completed": sum(1 for e in (led_n.get("construction_events") or []) if e.get("status") == "completed"),
+                              "candidates_admitted_during_discovery": led_n.get("candidates_admitted_during_discovery"),
+                              "note": "what this host's timed discovery reached; not the accounting obligation"}
+    out["natural_discovery_history"] = natural
+    oks.append(natural["ok"])
+    # the CAPABILITY obligations -- recognizer coverage with measured work,
+    # construction EVENTS counted once and reused -- run on a DETERMINISTIC
+    # history: the input-law recognizer declines once so regional construction
+    # executes and the composed candidates are offered on its cells and reuse
+    # its event (the review's 1,096 x 3 = 3,288 over-count is gone)
+    resd_, dd_, _, _ = MX.with_input_law_recognizer_declined(lambda: _solve(mr, wall))
+    led = resd_.plan.get("invocation_ledger") or {}
+    cc = resd_.plan.get("complete_cost") or {}
     atts = led.get("attempts") or []
     recog = [a for a in atts if a.get("kind") == "recognizer"]
-    out["invocation_ledger"] = {"attempts_recorded": len(atts), "recognizer_attempts": len(recog),
+    out["invocation_ledger"] = {"history": "deterministic (input-law recognizer declined once)",
+                                "attempts_recorded": len(atts), "recognizer_attempts": len(recog),
                                 "recognizer_statuses": sorted({a.get("status") for a in recog}),
+                                "composed_recognizer_attempted": any(str(a.get("name", "")).startswith("composed:") for a in recog),
                                 "every_recognizer_attempt_has_elapsed_and_mpfr": all("elapsed_s" in a and "transcendental_calls" in a for a in recog),
                                 "fit_ops_labelled_unknown": all(a.get("fit_ops") == "unknown" for a in recog) and led.get("recognizer_fit_ops") == "unknown",
                                 "construction_ops_measured": led.get("construction_ops_measured"),
                                 "recognizer_seconds": led.get("recognizer_seconds"), "recognizer_transcendental_calls": led.get("recognizer_transcendental_calls"),
                                 "units": led.get("units"), "complete_cost_discovery": cc.get("discovery_all_candidates_ops"),
-                                "ok": len(recog) >= 2 and all("elapsed_s" in a and "transcendental_calls" in a for a in recog)
+                                "ok": len(recog) >= 2 and any(str(a.get("name", "")).startswith("composed:") for a in recog)
+                                      and all("elapsed_s" in a and "transcendental_calls" in a for a in recog)
                                       and all(a.get("status") in ("admitted", "declined", "failed", "budget") for a in recog)
                                       and led.get("recognizer_fit_ops") == "unknown" and int(led.get("construction_ops_measured", 0)) > 0
                                       and isinstance(cc.get("discovery_all_candidates_ops"), dict)
                                       and cc["discovery_all_candidates_ops"].get("recognizer_fit_ops") == "unknown"}
     oks.append(out["invocation_ledger"]["ok"])
-    # the NATURAL discovery history of this invocation is an observation only
-    out["natural_discovery_history"] = {"recognizer_attempts": len(recog), "construction_events": len(led.get("construction_events") or []),
-                                        "events_completed": sum(1 for e in (led.get("construction_events") or []) if e.get("status") == "completed"),
-                                        "note": "what this host's timed discovery reached; not the accounting obligation"}
-    # construction EVENTS (the accounting OBLIGATION, on a deterministic reuse
-    # history: the input-law recognizer declines once so regional construction
-    # executes and the composed candidates reuse its event): each executed scale
-    # build is one event with a terminal status; candidates reference the event
-    # they reuse; the invocation total sums unique events (the review's
-    # 1,096 x 3 = 3,288 over-count is gone)
-    from mdi import collective_route as CR
-    orig_admit = CR.admit
-    state = {"n": 0}
-
-    def declining(marked, *a, **k):
-        state["n"] += 1
-        if state["n"] == 1:
-            raise CR.Declined("control: the input-law recognizer declines so regional construction runs first")
-        return orig_admit(marked, *a, **k)
-    CR.admit = declining
-    try:
-        resd_, dd_, _, _ = _solve(mr, wall)
-    finally:
-        CR.admit = orig_admit
-    led = resd_.plan.get("invocation_ledger") or {}
-    atts = led.get("attempts") or []
     evs = led.get("construction_events") or []
     done = [e for e in evs if e.get("status") != "running"]
     multi = [e for e in done if len(e.get("referenced_by") or []) > 1 and e.get("construction_ops_measured")]
@@ -1149,6 +1150,7 @@ def row_p7_execution_contract(wall):
     naive = sum(int(e.get("construction_ops_measured") or 0) * max(1, len(e.get("referenced_by") or [])) for e in done)
     cands_ref = [a for a in atts if a.get("kind") == "candidate"]
     out["construction_event_ledger"] = {
+        "history": "deterministic (input-law recognizer declined once)",
         "events": [{k: e.get(k) for k in ("id", "name", "status", "construction_ops_measured", "elapsed_s", "transcendental_calls")}
                    | {"referenced_by": len(e.get("referenced_by") or [])} for e in evs],
         "unique_event_total": uniq, "naive_per_candidate_total": naive,
@@ -1392,6 +1394,98 @@ def row_p8_lifecycle(wall):
                                            and rpub["status"] == "REPLAY_RESOURCE_STOP" and not rpub.get("intervals")
                                            and bool((rpub.get("partial_evidence") or {}).get("unverified_producer_rows")) and ser_ok}
     oks.append(out["terminal_output_policy"]["ok"])
+    # r26 (R25 review, S1): ordinary SEQUENTIAL calls never inherit another
+    # invocation's law or ledger -- fresh invalid; certified A; A -> invalid;
+    # A -> B stopped during normalization (injected clock); A -> clean B;
+    # A -> B stopped at publication; A's output unchanged throughout
+    def _own(o):
+        led_ = (o.plan or {}).get("invocation_ledger") if o.plan else None
+        return {"nvars": None if o.law is None else o.law.model.nvars,
+                "hashes": None if o.law is None else [h[:12] for h in o.law.hashes],
+                "attempts": None if not led_ else len(led_.get("attempts") or []),
+                "events": None if not led_ else len(led_.get("construction_events") or []),
+                "work": None if not led_ else led_.get("construction_ops_measured")}
+    mA = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(3), Fr(1), Fr(1), Fr(3)], origin=0)]).validate()
+    mB = M.Model(nvars=3, card=[2, 2, 2], factors=[M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(3), Fr(1), Fr(1), Fr(3)], origin=0),
+                                                   M.Factor(scope=(1, 2), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(2)], origin=1)]).validate()
+    empty = {"nvars": None, "hashes": None, "attempts": None, "events": None, "work": None}
+    fresh = PLN.solve(None)
+    rA = PLN.solve(mA, {}, [0, 1], max_width=EPS, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    ownA = _own(rA)
+    rowsA = json.dumps(rA.intervals, default=str)
+    rInv = PLN.solve(None)
+    tick = [0.0]
+
+    def one_second_clock():
+        tick[0] += 1.0
+        return tick[0]
+    B.DEFAULT_CLOCK[0] = one_second_clock
+    try:
+        rBn = PLN.solve(mB, {}, [0, 1, 2], max_width=EPS, wall_s=0.1, cap_bytes=1 << 30)
+    finally:
+        B.DEFAULT_CLOCK[0] = saved_clock
+    rBc = PLN.solve(mB, {}, [0, 1, 2], max_width=EPS, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    rA2 = PLN.solve(mA, {}, [0, 1], max_width=EPS, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    clk.t = 1000.0
+    orig_check = B.Budget.check
+
+    def late_publish(self, where=""):
+        if where == "publish":
+            clk.t += 700.0
+        return orig_check(self, where)
+    B.DEFAULT_CLOCK[0] = clk
+    B.Budget.check = late_publish
+    try:
+        rBl = PLN.solve(mB, {}, [0, 1, 2], max_width=EPS, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        B.Budget.check = orig_check
+        B.DEFAULT_CLOCK[0] = saved_clock
+    own = {"fresh_invalid": _own(fresh), "A": ownA, "A_then_invalid": _own(rInv), "A_then_B_normalization_stop": _own(rBn),
+           "A_then_B_clean": _own(rBc), "A_then_B_publish_stop": _own(rBl)}
+    out["invocation_isolation"] = {
+        "statuses": {"fresh_invalid": fresh.status, "A": rA.status, "A_then_invalid": rInv.status, "A_then_B_normalization_stop": rBn.status,
+                     "A_then_B_clean": rBc.status, "A_then_B_publish_stop": rBl.status},
+        "ownership": own,
+        "normalization_stop_elapsed_s": (rBn.budget or {}).get("elapsed_s"),
+        "A_output_unchanged": json.dumps(rA.intervals, default=str) == rowsA and _own(rA) == ownA,
+        "ok": fresh.status == "INVALID_INPUT" and own["fresh_invalid"] == empty
+              and rA.status.startswith("CERTIFIED") and ownA["nvars"] == 2 and ownA["attempts"]
+              and rInv.status == "INVALID_INPUT" and not rInv.intervals and own["A_then_invalid"] == empty and rInv.law is not rA.law
+              and rBn.status == "RESOURCE_STOP" and not rBn.intervals and own["A_then_B_normalization_stop"] == empty
+              and float((rBn.budget or {}).get("elapsed_s") or 0) >= 1.0 and rBn.law is not rA.law
+              and rBc.status.startswith("CERTIFIED") and own["A_then_B_clean"]["nvars"] == 3 and own["A_then_B_clean"]["hashes"] != ownA["hashes"]
+              and rBc.plan["invocation_ledger"] is not rA.plan["invocation_ledger"]
+              and rBl.status == "RESOURCE_STOP" and not rBl.intervals and bool((rBl.partial_evidence or {}).get("unverified_producer_rows"))
+              and own["A_then_B_publish_stop"]["nvars"] == 3 and own["A_then_B_publish_stop"]["hashes"] == own["A_then_B_clean"]["hashes"]
+              and own["A_then_B_publish_stop"]["attempts"] and rBl.law is not rA2.law
+              and rBl.plan["invocation_ledger"] is not rA2.plan["invocation_ledger"]
+              and json.dumps(rA.intervals, default=str) == rowsA}
+    oks.append(out["invocation_isolation"]["ok"])
+    # r26: a stop at the FINAL terminal check keeps the computed rows as partial evidence (solve and replay)
+    clk.t = 1000.0
+
+    def late_terminal(self, where=""):
+        if where == "terminal":
+            clk.t += 700.0
+        return orig_check(self, where)
+    B.DEFAULT_CLOCK[0] = clk
+    B.Budget.check = late_terminal
+    try:
+        sT = PLN.solve(M.read_uai(mp), {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        rT = RP.replay(mp, "-", plan, wall_s=600)
+    finally:
+        B.Budget.check = orig_check
+        B.DEFAULT_CLOCK[0] = saved_clock
+    out["late_terminal_rows_retained"] = {"solve": {"status": sT.status, "intervals": bool(sT.intervals), "withheld": (sT.partial_evidence or {}).get("intervals_withheld"),
+                                                    "unverified_rows": bool((sT.partial_evidence or {}).get("unverified_producer_rows"))},
+                                          "replay": {"status": rT["status"], "intervals": bool(rT.get("intervals")), "withheld": (rT.get("partial_evidence") or {}).get("intervals_withheld"),
+                                                     "unverified_rows": bool((rT.get("partial_evidence") or {}).get("unverified_producer_rows"))},
+                                          "ok": sT.status == "RESOURCE_STOP" and not sT.intervals and (sT.partial_evidence or {}).get("intervals_withheld") is True
+                                                and bool((sT.partial_evidence or {}).get("unverified_producer_rows"))
+                                                and rT["status"] == "REPLAY_RESOURCE_STOP" and not rT.get("intervals")
+                                                and (rT.get("partial_evidence") or {}).get("intervals_withheld") is True
+                                                and bool((rT.get("partial_evidence") or {}).get("unverified_producer_rows"))}
+    oks.append(out["late_terminal_rows_retained"]["ok"])
     bad = json.load(open(plan)); bad["request"]["card"] = {"0": 3}
     pb = os.path.join(d, "badcard.plan.json"); json.dump(bad, open(pb, "w"))
     rb = RP.replay(mp, "-", pb)

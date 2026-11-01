@@ -522,24 +522,9 @@ def test_incumbent_survives_a_later_local_construction_stop_but_not_a_global_sto
 
 
 def _with_input_law_recognizer_declined(fn):
-    """Run `fn` while the INPUT-LAW collective recognizer declines (once), so
-    regional construction executes and the composed candidates reuse its
-    event: a deterministic construction-reuse history for the accounting
-    obligation, independent of how far a timed discovery gets."""
-    from mdi import collective_route as CR
-    orig = CR.admit
-    state = {"n": 0}
-
-    def declining(marked, *a, **k):
-        state["n"] += 1
-        if state["n"] == 1:
-            raise CR.Declined("control: the input-law recognizer declines so regional construction runs first")
-        return orig(marked, *a, **k)
-    CR.admit = declining
-    try:
-        return fn()
-    finally:
-        CR.admit = orig
+    """The ONE deterministic reuse history shared with the acceptance rows and
+    the driver (`matrix.with_input_law_recognizer_declined`, r26)."""
+    return MX.with_input_law_recognizer_declined(fn)
 
 
 def test_construction_events_are_counted_once_and_closed():
@@ -857,8 +842,12 @@ def test_release_verdict_requires_exact_coverage():
     open(marker, "w").close()
     time.sleep(1.1)
 
-    def write(name, key, nk, idents, statuses=None, summary=None):
-        rows = [{nk: "%s stub" % i, "status": (statuses or {}).get(i, "PASS")} for i in idents]
+    def write(name, key, nk, idents, statuses=None, summary=None, result_ok=None, drop_result=()):
+        rows = [{nk: "%s stub" % i, "status": (statuses or {}).get(i, "PASS"),
+                 "result": {"ok": (result_ok or {}).get(i, True), "detail": "stub"}} for i in idents]
+        for r in rows:
+            if r[nk].split(" ")[0] in drop_result:
+                del r["result"]
         s = {key: rows, "passed": sum(1 for r in rows if r["status"] == "PASS"), "failed": sum(1 for r in rows if r["status"] != "PASS")}
         if summary:
             s.update(summary)
@@ -877,6 +866,28 @@ def test_release_verdict_requires_exact_coverage():
     assert run(write("acc4.json", "rows", "row", ["P%d" % i for i in range(1, 10)] + ["P3"]), R, G) != 0   # duplicate
     assert run(A, write("route2.json", "controls", "control", ["R%d" % i for i in range(1, 8)], {"R6": "BLOCKED"}, {"failed": 0}), G) != 0
     assert run(A, R, write("gate2.json", "controls", "control", ["A1", "B1", "B2", "B3", "B4"], {"B2": "SKIP"})) != 0
+    # r26: a PASS label over a FALSE or ABSENT result is a contradiction, not a pass
+    P = ["P%d" % i for i in range(1, 10)]
+    assert run(write("acc5.json", "rows", "row", P, result_ok={"P1": False}), R, G) != 0
+    assert run(write("acc6.json", "rows", "row", P, drop_result=("P1",)), R, G) != 0
+    assert run(A, write("route3.json", "controls", "control", ["R%d" % i for i in range(1, 8)], result_ok={"R6": None}), G) != 0
+    # the ACTUAL shipped matrices: clean they pass; with only P1.result.ok flipped, or only P1.result removed, they fail
+    runs_dir = os.path.join(HERE, "runs", "mdi_2026-10-28")
+    real = [os.path.join(runs_dir, f) for f in ("ACCEPTANCE_MATRIX_r25.json", "ROUTE_MATRIX_r25_rerun.json", "GATE_MATRIX_r25_rerun.json")]
+    if all(os.path.exists(f) for f in real):
+        fresh = []
+        for f in real:
+            dst = os.path.join(d, os.path.basename(f))
+            json.dump(json.load(open(f)), open(dst, "w"))
+            fresh.append(dst)
+        assert run(*fresh) == 0
+        acc = json.load(open(fresh[0]))
+        flipped = copy.deepcopy(acc); flipped["rows"][0]["result"]["ok"] = False
+        json.dump(flipped, open(os.path.join(d, "acc_flipped.json"), "w"))
+        gone = copy.deepcopy(acc); del gone["rows"][0]["result"]
+        json.dump(gone, open(os.path.join(d, "acc_gone.json"), "w"))
+        assert run(os.path.join(d, "acc_flipped.json"), fresh[1], fresh[2]) != 0
+        assert run(os.path.join(d, "acc_gone.json"), fresh[1], fresh[2]) != 0
 
 
 def test_inline_ring_diagnostic_body_asserts_truth():
@@ -884,8 +895,8 @@ def test_inline_ring_diagnostic_body_asserts_truth():
     its ACTUAL body: with the real solver it exits 0; with a solver result that
     misses every truth it exits non-zero."""
     import subprocess, re
-    drv = open(os.path.join(HERE, "runs", "mdi_2026-10-28", "REPRODUCE_r25.sh")).read() if os.path.exists(
-        os.path.join(HERE, "runs", "mdi_2026-10-28", "REPRODUCE_r25.sh")) else open(os.path.join(HERE, "..", "REPRODUCE.sh")).read()
+    cand = [os.path.join(HERE, "runs", "mdi_2026-10-28", "REPRODUCE_r26.sh"), os.path.join(HERE, "..", "REPRODUCE.sh")]
+    drv = open(next(c for c in cand if os.path.exists(c))).read()
     m = re.search(r'=== 2\. the ring.*?\n"\$PY" - <<\'PY\'\n(.*?)\nPY\n', drv, re.S)
     body = m.group(1)
     bad_body = body.replace("res = PLN.solve(m, {}, wall_s=300.0, cap_bytes=1<<30, plan_dir=d)",
@@ -897,3 +908,171 @@ def test_inline_ring_diagnostic_body_asserts_truth():
     bad = subprocess.run([sys.executable, "-"], input=bad_body, capture_output=True, text=True, cwd=HERE, env=env, timeout=600)
     assert good.returncode == 0, good.stdout[-400:] + good.stderr[-400:]
     assert bad.returncode != 0 and "FAILED" in (bad.stderr + bad.stdout)
+
+
+# ------------------------------------------------ r26: invocation isolation, exact limits, retained rows, natural integrity
+
+def _pair_a():
+    return M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(3), Fr(1), Fr(1), Fr(3)], origin=0)]).validate()
+
+
+def _chain_b():
+    return M.Model(nvars=3, card=[2, 2, 2], factors=[M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(3), Fr(1), Fr(1), Fr(3)], origin=0),
+                                                     M.Factor(scope=(1, 2), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(2)], origin=1)]).validate()
+
+
+def _own(out):
+    led = (out.plan or {}).get("invocation_ledger") if out.plan else None
+    return {"law": None if out.law is None else (out.law.model.nvars, out.law.hashes),
+            "attempts": None if not led else sorted(a["name"] for a in led["attempts"]),
+            "events": None if not led else [e["id"] for e in led["construction_events"]],
+            "work": None if not led else led["construction_ops_measured"]}
+
+
+def test_sequential_invocations_never_inherit_another_calls_law_or_ledger():
+    """r26 (R25 review, S1): fresh invalid -> no law, no ledger; after a
+    certified request A, an invalid request, a request B stopped during
+    normalization (injected clock), a clean B and a B stopped at a later stage
+    each carry ONLY their own authority and work; A's output is unchanged."""
+    fresh = PLN.solve(None)
+    assert fresh.status == "INVALID_INPUT" and not fresh.intervals and _own(fresh) == {"law": None, "attempts": None, "events": None, "work": None}
+    a = PLN.solve(_pair_a(), {}, [0, 1], max_width=Fr(1, 100), wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    assert a.status.startswith("CERTIFIED")
+    own_a = _own(a)
+    assert own_a["law"][0] == 2 and own_a["attempts"] and own_a["work"] is not None
+    a_rows = json.dumps(a.intervals, default=str)
+    # A -> invalid
+    inv = PLN.solve(None)
+    assert inv.status == "INVALID_INPUT" and not inv.intervals
+    assert _own(inv) == {"law": None, "attempts": None, "events": None, "work": None}, _own(inv)
+    assert inv.law is not a.law and not (inv.plan or {}).get("invocation_ledger")
+    # A -> B stopped DURING normalization (every tick of the injected clock is one second under a 0.1 s limit)
+    t = [0.0]
+
+    def clock():
+        t[0] += 1.0
+        return t[0]
+    saved = B.DEFAULT_CLOCK[0]
+    B.DEFAULT_CLOCK[0] = clock
+    try:
+        bn = PLN.solve(_chain_b(), {}, [0, 1, 2], max_width=Fr(1, 100), wall_s=0.1, cap_bytes=1 << 30)
+    finally:
+        B.DEFAULT_CLOCK[0] = saved
+    assert bn.status == "RESOURCE_STOP" and not bn.intervals and bn.budget["elapsed_s"] >= 1.0
+    assert _own(bn) == {"law": None, "attempts": None, "events": None, "work": None}, _own(bn)
+    assert bn.law is not a.law
+    # A -> clean B: its own three-variable law and its own work
+    bc = PLN.solve(_chain_b(), {}, [0, 1, 2], max_width=Fr(1, 100), wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    own_bc = _own(bc)
+    assert bc.status.startswith("CERTIFIED") and own_bc["law"][0] == 3 and own_bc["law"][1] != own_a["law"][1]
+    assert own_bc["attempts"] is not None and bc.law is not a.law
+    assert bc.plan["invocation_ledger"] is not a.plan["invocation_ledger"]
+    # A -> B stopped at a LATER stage (publish-time stop): B's own law and ledger travel with the stop
+    a2 = PLN.solve(_pair_a(), {}, [0, 1], max_width=Fr(1, 100), wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    assert a2.status.startswith("CERTIFIED")
+
+    class Clock:
+        t = 1000.0
+
+        def __call__(self):
+            return Clock.t
+    orig_check = B.Budget.check
+
+    def late_publish(self, where=""):
+        if where == "publish":
+            Clock.t += 700.0
+        return orig_check(self, where)
+    B.DEFAULT_CLOCK[0] = Clock()
+    B.Budget.check = late_publish
+    try:
+        bl = PLN.solve(_chain_b(), {}, [0, 1, 2], max_width=Fr(1, 100), wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        B.Budget.check = orig_check
+        B.DEFAULT_CLOCK[0] = saved
+    own_bl = _own(bl)
+    assert bl.status == "RESOURCE_STOP" and not bl.intervals and bl.partial_evidence.get("unverified_producer_rows")
+    assert own_bl["law"] is not None and own_bl["law"][0] == 3 and own_bl["law"][1] == own_bc["law"][1] and bl.law is not a2.law
+    assert own_bl["attempts"] is not None and bl.plan["invocation_ledger"] is not a2.plan["invocation_ledger"]
+    # A's output never changed
+    assert json.dumps(a.intervals, default=str) == a_rows and _own(a) == own_a
+
+
+def test_enormous_finite_wall_is_a_legal_request_for_the_maximum():
+    """r26 (nonblocking edge): wall_s = 10**400 (int or Fraction) is clamped to
+    the frozen maximum EXACTLY before any binary64 conversion; the request is
+    reported; a non-finite or non-positive wall is still refused."""
+    m = M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)]).validate()
+    for big in (10 ** 400, Fr(10 ** 400, 3)):
+        r = PLN.solve(m, {}, wall_s=big, cap_bytes=1 << 30, research_enabled=False)
+        assert r.status.startswith("CERTIFIED"), (r.status, r.reason)
+        assert r.budget["effective_limits"]["wall_s"] == 600.0
+        assert str(r.budget["requested_by_caller"]["wall_s"]).startswith(str(big)[:20])
+        json.dumps(r.budget)
+    r = PLN.solve(m, {}, wall_s=90, cap_bytes=1 << 30, research_enabled=False)
+    assert r.budget["effective_limits"]["wall_s"] == 90.0 and r.budget["requested_by_caller"]["wall_s"] == 90.0
+    for bad in (float("inf"), float("nan"), 0, -1, "600"):
+        assert PLN.solve(m, {}, wall_s=bad).status == "INVALID_INPUT"
+
+
+def test_late_terminal_stop_retains_the_computed_rows_as_partial_evidence():
+    """r26 (nonblocking edge): a deadline hit at the FINAL terminal check
+    withholds the publication and keeps the computed rows under
+    `partial_evidence.unverified_producer_rows` (solve and replay)."""
+    mp = _mf4(0.30)
+    res, d = _solve(mp)
+    stat = next(p["name"] for p in res.prices if p["name"].startswith("statistic:") and p["eligible"])
+    plan = _plan(res, d, stat)
+
+    class Clock:
+        t = 1000.0
+
+        def __call__(self):
+            return Clock.t
+    saved = B.DEFAULT_CLOCK[0]
+    orig_check = B.Budget.check
+
+    def late_terminal(self, where=""):
+        if where == "terminal":
+            Clock.t += 700.0
+        return orig_check(self, where)
+    B.DEFAULT_CLOCK[0] = Clock()
+    B.Budget.check = late_terminal
+    try:
+        rs = PLN.solve(M.read_uai(mp), {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+        rp = RP.replay(mp, "-", plan, wall_s=600)
+    finally:
+        B.Budget.check = orig_check
+        B.DEFAULT_CLOCK[0] = saved
+    assert rs.status == "RESOURCE_STOP" and not rs.intervals
+    assert rs.partial_evidence["intervals_withheld"] is True and rs.partial_evidence["unverified_producer_rows"]
+    assert rs.partial_evidence["status_before_limit_check"].startswith("CERTIFIED")
+    assert rp["status"] == "REPLAY_RESOURCE_STOP" and not rp.get("intervals")
+    assert rp["partial_evidence"]["intervals_withheld"] is True and rp["partial_evidence"]["unverified_producer_rows"]
+    json.dumps(rp)
+
+
+def test_natural_history_integrity_is_separate_from_capability_coverage():
+    """r26 (V2): the natural history of a timed discovery is checked for
+    INTEGRITY (closed attempts/events, elapsed work, honest unknowns, matching
+    totals) without any requirement on how far it got -- an invocation whose
+    construction allowance is one second passes integrity with an empty
+    coverage -- while the capability obligation (recognizer coverage, event
+    reuse) runs on the deterministic history."""
+    from test_mdi_research import ring_of_blocks
+    mpr = w(ring_of_blocks()[0])
+    short = PLN.solve(M.read_uai(mpr), {}, wall_s=120, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(),
+                      phase_limits={"construction": 1.0, "check_local": 30.0})
+    nat = MX.natural_history_integrity(short)
+    assert nat["ok"], nat
+    det = _with_input_law_recognizer_declined(
+        lambda: PLN.solve(M.read_uai(mpr), {}, wall_s=400, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp()))
+    assert MX.natural_history_integrity(det)["ok"]
+    led = det.plan["invocation_ledger"]
+    recog = [a for a in led["attempts"] if a["kind"] == "recognizer"]
+    assert len(recog) >= 2 and any(a["name"].startswith("composed:") for a in recog)
+    assert any(len(e["referenced_by"]) > 1 for e in led["construction_events"])
+    # a ledger whose totals disagree fails integrity
+    broken_plan = copy.deepcopy(det.plan)
+    broken_plan["invocation_ledger"]["construction_ops_measured"] += 1
+    broken = PLN.Outcome(status=det.status, plan=broken_plan)
+    assert not MX.natural_history_integrity(broken)["ok"]
