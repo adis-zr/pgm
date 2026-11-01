@@ -67,17 +67,16 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     executor or checker (the numerical guard is installed for the run)."""
     from mdi import guard as GD
     prog = progress or (lambda *a, **k: None)
-    # the public request is NORMALIZED exactly once, before anything consumes
-    # or hashes it: a malformed argument is a typed INVALID_INPUT, never an
-    # incidental exception and never a silently changed request
-    norm, bad = normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes)
+    # (1) the CHEAP scalar limits are validated first (no model work yet) ...
+    lim, bad = normalize_limits(max_width, wall_s, cap_bytes)
     if bad:
         return Outcome(status="INVALID_INPUT", reason=bad)
-    model, evidence, queries, eps, wall_s, cap_bytes = (norm["model"], norm["evidence"], norm["queries"], norm["width"],
-                                                        norm["wall_s"], norm["cap_bytes"])
-    # the EFFECTIVE limits of this invocation: the caller's limits, never above
-    # the frozen algorithm maxima (a caller may ask for less, never for more);
-    # what the caller asked for is recorded beside them
+    eps, wall_s, cap_bytes = lim["width"], lim["wall_s"], lim["cap_bytes"]
+    # (2) ... so the ONE invocation budget exists from ENTRY time: the whole-model
+    # normalization below (table copies, scalar parsing, structural validation)
+    # is metered work inside it, checked within its loops; its start is never
+    # reset afterwards. The EFFECTIVE limits are the caller's, never above the
+    # frozen maxima; what the caller asked for is recorded beside them.
     asked = {"wall_s": float(wall_s), "rss_bytes": int(cap_bytes)}
     wall_s = min(float(wall_s), float(K.RESOURCES["arm_wall_s"]))
     cap_bytes = min(int(cap_bytes), int(K.RESOURCES["arm_rss_bytes"]))
@@ -87,6 +86,20 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
                   rss_fn=S._rss_bytes, rss_limit=cap_bytes, phase_limits=phase_limits)
     bg.requested_by_caller = asked
     bg.progress = prog
+    # (3) the public request is NORMALIZED exactly once, INSIDE the budget: a
+    # malformed argument is a typed INVALID_INPUT (its elapsed work recorded),
+    # an overrun during normalization is a RESOURCE_STOP, never a certificate
+    try:
+        bg.enter("normalize")
+        norm, bad = normalize_request(model, evidence, queries, eps, wall_s=asked["wall_s"], cap_bytes=asked["rss_bytes"], bg=bg)
+        bg.check("normalized")
+    except B.BudgetExceeded as e:
+        return finalize_terminal(Outcome(status="RESOURCE_STOP",
+                                         reason="the effective limit was exhausted during input normalization: %s" % e,
+                                         stages={"normalize_s": bg.elapsed()}), bg)
+    if bad:
+        return finalize_terminal(Outcome(status="INVALID_INPUT", reason=bad, stages={"normalize_s": bg.elapsed()}), bg)
+    model, evidence, queries = norm["model"], norm["evidence"], norm["queries"]
     if plan_only:
         GD.install(True)
     try:
@@ -116,66 +129,155 @@ def _finite_positive(x, name, integer=False):
     return float(x), None
 
 
-def normalize_model(model):
+def _exact_int(x, what):
+    """Structural fields (variable counts, cardinalities, variable ids, origins)
+    must BE integers: a Python int that is not a bool. Nothing is coerced --
+    int(Fraction(5, 2)) is not a validation. Returns (value, reason)."""
+    if isinstance(x, bool) or not isinstance(x, int):
+        return None, "%s must be an integer, got %r" % (what, x)
+    return x, None
+
+
+def normalize_model(model, bg=None):
     """Normalize the caller's model into OWNED exact data before any numeric
-    validation: every table scalar becomes an exact Fraction (int, Fraction or
-    a decimal / rational string such as '0.1' or '3/10'; binary64 floats,
-    None and non-numeric strings are refused with a named reason). Factor
-    multiplicity, scope layout and origins are preserved; the caller's objects
-    are never modified. Returns (new_model, None) or (None, reason)."""
+    validation. Structural fields are VALIDATED as exact integers before use
+    (never coerced); every table scalar becomes an exact Fraction (int,
+    Fraction or a decimal / rational string such as '0.1' or '3/10'; binary64
+    floats, booleans, None and non-numeric strings are refused with a named
+    reason). Factor multiplicity, scope layout, origins and scales are
+    preserved; the caller's objects are never modified. The accepted protocol
+    is structural: an object with integer `nvars`, an integer sequence `card`
+    and a sequence `factors` of objects with `scope`, `card`, `table` (optional
+    integer `origin`, exact rational `scale`). The work is METERED through `bg`
+    (checked per factor and every 4,096 scalars). Returns (new_model, None) or
+    (None, reason)."""
     if model is None or not hasattr(model, "factors") or not hasattr(model, "card") or not hasattr(model, "nvars"):
-        return None, "model must be an mdi.model.Model (got %r)" % (type(model).__name__,)
+        return None, "model must be an mdi.model.Model-like object with nvars, card and factors (got %r)" % (type(model).__name__,)
+    nvars, bad = _exact_int(getattr(model, "nvars"), "model.nvars")
+    if bad:
+        return None, bad
     try:
-        nvars = int(model.nvars)
-        card = [int(c) for c in model.card]
+        cards_in = list(model.card)
+    except TypeError:
+        return None, "model.card must be a sequence of integers"
+    card = []
+    for v, c in enumerate(cards_in):
+        ci, bad = _exact_int(c, "model.card[%d]" % v)
+        if bad:
+            return None, bad
+        card.append(ci)
+    try:
+        prov = dict(getattr(model, "provenance", None) or {})
     except (TypeError, ValueError):
-        return None, "model.nvars and model.card must be integers"
+        return None, "model.provenance must be a mapping"
     facs = []
     try:
         iterable = list(model.factors)
     except TypeError:
         return None, "model.factors must be a sequence of Factor objects"
+    n_scalars = 0
     for i, f in enumerate(iterable):
+        if bg is not None:
+            bg.check("normalize:factor")
         if not hasattr(f, "scope") or not hasattr(f, "card") or not hasattr(f, "table"):
             return None, "factor at position %d is not a Factor (got %r)" % (i, type(f).__name__)
-        tab = []
+        oid, bad = _exact_int(getattr(f, "origin", -1), "factor[%d].origin" % i)
+        if bad:
+            return None, bad
+        try:
+            scope_in, fcard_in = list(f.scope), list(f.card)
+        except TypeError:
+            return None, "factor %s: scope and card must be sequences" % (oid,)
+        scope, fcard = [], []
+        for v in scope_in:
+            vi, bad = _exact_int(v, "factor %s scope variable" % oid)
+            if bad:
+                return None, bad
+            scope.append(vi)
+        for c in fcard_in:
+            ci, bad = _exact_int(c, "factor %s cardinality" % oid)
+            if bad:
+                return None, bad
+            fcard.append(ci)
+        sc = getattr(f, "scale", 1)
+        if isinstance(sc, bool) or isinstance(sc, float) or not isinstance(sc, (int, Fr)):
+            return None, "factor %s: scale must be an exact rational, got %r" % (oid, sc)
         try:
             entries = list(f.table)
         except TypeError:
-            return None, "factor %s: table is not a sequence" % (getattr(f, "origin", i),)
+            return None, "factor %s: table is not a sequence" % (oid,)
+        tab = []
         for x in entries:
+            n_scalars += 1
+            if bg is not None and (n_scalars & 0xFFF) == 0:
+                bg.check("normalize:scalars")
             if isinstance(x, bool) or isinstance(x, float):
                 return None, ("factor %s carries a binary64 / boolean entry %r; exact rationals are required "
-                              "(Fraction, int, or a decimal / rational string)" % (getattr(f, "origin", i), x))
+                              "(Fraction, int, or a decimal / rational string)" % (oid, x))
             if isinstance(x, (int, Fr)):
                 q = Fr(x)
             elif isinstance(x, str):
                 try:
                     q = Fr(x.strip())
-                except (ValueError, ZeroDivisionError):
-                    return None, "factor %s carries a non-rational entry %r" % (getattr(f, "origin", i), x)
+                except (ValueError, ZeroDivisionError, OverflowError):
+                    return None, "factor %s carries a non-rational entry %r" % (oid, x[:40])
             else:
-                return None, "factor %s carries a non-rational entry %r" % (getattr(f, "origin", i), x)
+                return None, "factor %s carries a non-rational entry %r" % (oid, x)
             if q < 0:
-                return None, "factor %s carries a negative entry %s" % (getattr(f, "origin", i), q)
+                return None, "factor %s carries a negative entry %s" % (oid, q)
             tab.append(q)
-        try:
-            facs.append(M.Factor(scope=tuple(int(v) for v in f.scope), card=tuple(int(c) for c in f.card), table=tab,
-                                 origin=int(getattr(f, "origin", -1)), scale=Fr(getattr(f, "scale", 1))))
-        except (TypeError, ValueError) as e:
-            return None, "factor %s has a malformed scope / cardinality: %s" % (getattr(f, "origin", i), e)
+        if bg is not None:
+            bg.check("normalize:factor-done")
+        facs.append(M.Factor(scope=tuple(scope), card=tuple(fcard), table=tab, origin=oid, scale=Fr(sc)))
+    if bg is not None:
+        bg.check("normalize:validate")
     out = M.Model(nvars=nvars, card=card, factors=facs, net_type=str(getattr(model, "net_type", "MARKOV")),
-                  provenance=dict(getattr(model, "provenance", {}) or {}))
+                  provenance=prov)
     try:
         out.validate()
     except M.InvalidModel as e:
         return None, str(e)
-    except (TypeError, ValueError) as e:
+    except (TypeError, ValueError, OverflowError) as e:
         return None, "malformed model: %s" % e
     return out, None
 
 
-def normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes):
+def normalize_limits(max_width, wall_s, cap_bytes):
+    """The cheap scalar limits, validated BEFORE the budget is created (no model
+    work): width an exact rational in (0, 1] (floats refused), wall_s a finite
+    positive number of seconds, cap_bytes a finite positive EXACTLY INTEGRAL
+    number (never truncated). None means the frozen default."""
+    out = {}
+    if max_width is None:
+        out["width"] = K.MAX_WIDTH
+    else:
+        if isinstance(max_width, float) or isinstance(max_width, bool):
+            return None, "max_width %r is a binary64 value; pass an exact rational (Fraction, int or '1/200')" % (max_width,)
+        try:
+            w = Fr(max_width)
+        except (ValueError, TypeError, ZeroDivisionError, OverflowError):
+            return None, "max_width %r is not an exact rational" % (max_width,)
+        if not (0 < w <= 1):
+            return None, "requested width %s is not in (0, 1]" % w
+        out["width"] = w
+    if wall_s is None:
+        out["wall_s"] = float(K.RESOURCES["arm_wall_s"])
+    else:
+        val, bad = _finite_positive(wall_s, "wall_s")
+        if bad:
+            return None, bad
+        out["wall_s"] = val
+    if cap_bytes is None:
+        out["cap_bytes"] = int(K.RESOURCES["arm_rss_bytes"])
+    else:
+        val, bad = _finite_positive(cap_bytes, "cap_bytes", integer=True)
+        if bad:
+            return None, bad
+        out["cap_bytes"] = val
+    return out, None
+
+
+def normalize_request(model, evidence, queries, max_width, wall_s=None, cap_bytes=None, bg=None):
     """The ONE normalization of a public request. Returns (normalized, None)
     or (None, reason).
 
@@ -189,7 +291,11 @@ def normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes):
     (zero is refused, it is not a default). Model elements are validated by
     the pipeline after this step."""
     out = {}
-    nm, bad = normalize_model(model)
+    lim, bad = normalize_limits(max_width, wall_s, cap_bytes)
+    if bad:
+        return None, bad
+    out.update(lim)
+    nm, bad = normalize_model(model, bg=bg)
     if bad:
         return None, bad
     out["model"] = nm
@@ -219,35 +325,10 @@ def normalize_request(model, evidence, queries, max_width, wall_s, cap_bytes):
             if isinstance(v, bool) or not isinstance(v, int):
                 return None, "requested variable %r is not an integer" % (v,)
         out["queries"] = frozenset(int(v) for v in items)
-    if max_width is None:
-        out["width"] = K.MAX_WIDTH
-    else:
-        if isinstance(max_width, float) or isinstance(max_width, bool):
-            return None, "max_width %r is a binary64 value; pass an exact rational (Fraction, int or '1/200')" % (max_width,)
-        try:
-            w = Fr(max_width)
-        except (ValueError, TypeError, ZeroDivisionError):
-            return None, "max_width %r is not an exact rational" % (max_width,)
-        if not (0 < w <= 1):
-            return None, "requested width %s is not in (0, 1]" % w
-        out["width"] = w
-    if wall_s is None:
-        out["wall_s"] = float(K.RESOURCES["arm_wall_s"])
-    else:
-        val, bad = _finite_positive(wall_s, "wall_s")
-        if bad:
-            return None, bad
-        out["wall_s"] = val
-    if cap_bytes is None:
-        out["cap_bytes"] = int(K.RESOURCES["arm_rss_bytes"])
-    else:
-        val, bad = _finite_positive(cap_bytes, "cap_bytes", integer=True)
-        if bad:
-            return None, bad
-        out["cap_bytes"] = val
     return out, None
 
 
+CERTIFIED_STATUSES = ("CERTIFIED_RESEARCH_ROUTE", "CERTIFIED_FALLBACK_ONLY")   # the ONLY statuses whose intervals are certified
 SUCCESS_STATUSES = ("CERTIFIED_RESEARCH_ROUTE", "CERTIFIED_FALLBACK_ONLY", "ZERO_EVIDENCE_PROVED",
                     "VERIFIED_SHARED_AGGREGATION_ONLY", "PLANNING_COMPLETE", "PLANNING_INCOMPLETE")
 
@@ -280,6 +361,16 @@ def finalize_terminal(out, bg):
                           plan=out.plan, prices=out.prices, rejected=out.rejected,
                           stages=out.stages, preprocess=out.preprocess, properties=out.properties,
                           partial_evidence=evidence)
+    # the ONE output policy: only a CERTIFIED status exposes `intervals`; rows a
+    # non-certified terminal computed (publish-time stop, width refusal,
+    # shared-aggregation-only, checker stop) are explicit UNVERIFIED partial
+    # evidence, never a publication
+    if out.status not in CERTIFIED_STATUSES and out.intervals:
+        pe = dict(out.partial_evidence or {})
+        pe.setdefault("unverified_producer_rows", out.intervals)
+        pe.setdefault("note", "rows computed by a non-certified terminal; not a publication")
+        out.partial_evidence = pe
+        out.intervals = {}
     out.budget = bg.report()
     if out.law is None:
         out.law = _LAW_CURRENT[0]

@@ -521,10 +521,32 @@ def test_incumbent_survives_a_later_local_construction_stop_but_not_a_global_sto
     assert rg.status == "RESOURCE_STOP" and not rg.intervals
 
 
+def _with_input_law_recognizer_declined(fn):
+    """Run `fn` while the INPUT-LAW collective recognizer declines (once), so
+    regional construction executes and the composed candidates reuse its
+    event: a deterministic construction-reuse history for the accounting
+    obligation, independent of how far a timed discovery gets."""
+    from mdi import collective_route as CR
+    orig = CR.admit
+    state = {"n": 0}
+
+    def declining(marked, *a, **k):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise CR.Declined("control: the input-law recognizer declines so regional construction runs first")
+        return orig(marked, *a, **k)
+    CR.admit = declining
+    try:
+        return fn()
+    finally:
+        CR.admit = orig
+
+
 def test_construction_events_are_counted_once_and_closed():
     from test_mdi_research import ring_of_blocks
     mpr = w(ring_of_blocks()[0])
-    res = PLN.solve(M.read_uai(mpr), {}, wall_s=400, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    res = _with_input_law_recognizer_declined(
+        lambda: PLN.solve(M.read_uai(mpr), {}, wall_s=400, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp()))
     led = res.plan["invocation_ledger"]
     evs = led["construction_events"]
     assert evs and all(e["status"] != "running" for e in evs)
@@ -730,3 +752,148 @@ def test_unverified_producer_rows_are_partial_evidence_not_intervals():
         B.DEFAULT_CLOCK[0] = saved
     assert rn["status"] == "REPLAY_RESOURCE_STOP" and not rn.get("intervals")
     assert rn["partial_evidence"]["unverified_producer_rows"]
+
+
+# ------------------------------------------------ r25: normalization inside the budget, structural validity, one output policy, verdict
+
+def test_input_normalization_is_metered_by_the_invocation_budget():
+    """r25 (R24 review C1): the whole-model normalization is work INSIDE the one
+    entry-time budget. Under an injected clock a 1 s normalization against a
+    0.1 s wall is a RESOURCE_STOP with the elapsed work recorded, never a
+    certificate; a cheap valid input still certifies and reports the
+    `normalize` phase."""
+    class Clock:
+        t = 1000.0
+
+        def __call__(self):
+            return Clock.t
+    saved = B.DEFAULT_CLOCK[0]
+    orig = PLN.normalize_model
+
+    def slow(model, bg=None):
+        Clock.t += 1.0
+        return orig(model, bg=bg)
+    B.DEFAULT_CLOCK[0] = Clock()
+    PLN.normalize_model = slow
+    try:
+        r = PLN.solve(M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)]), {0: 0}, wall_s=0.1, cap_bytes=1 << 30,
+                      plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    finally:
+        PLN.normalize_model = orig
+        B.DEFAULT_CLOCK[0] = saved
+    assert r.status == "RESOURCE_STOP" and not r.intervals and r.budget["elapsed_s"] >= 1.0
+    ok = PLN.solve(M.Model(1, [2], [M.Factor((0,), (2,), ['1.' + '0' * 1000, '3'], 0)]), {0: 0}, wall_s=5, cap_bytes=1 << 30,
+                   plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    assert ok.status.startswith("CERTIFIED") and ok.budget["phases"][0] == "normalize"
+
+
+def test_structural_fields_are_validated_not_coerced():
+    for mdl in (M.Model(Fr(3, 2), [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)]),
+                M.Model(1, [Fr(5, 2)], [M.Factor((0,), (Fr(5, 2),), [Fr(1), Fr(3)], 0)]),
+                M.Model(1, [2.5], [M.Factor((0,), (2.5,), [Fr(1), Fr(3)], 0)]),
+                M.Model(1, [2], [M.Factor((Fr(1, 2),), (2,), [Fr(1), Fr(3)], 0)]),
+                M.Model(float("inf"), [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)]),
+                M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 1.0)]),
+                M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)], provenance=3)):
+        r = PLN.solve(mdl, {}, wall_s=30, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+        assert r.status == "INVALID_INPUT", (r.status, r.reason)
+    good = PLN.solve(M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)]), {}, wall_s=30, cap_bytes=1 << 30,
+                     plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    assert good.status.startswith("CERTIFIED")
+
+
+def test_non_certified_terminals_never_expose_intervals_and_replay_is_json_serializable():
+    from mdi import program_check as PC
+    mp = _mf4(0.30)
+    res, d = _solve(mp)
+    stat = next(p["name"] for p in res.prices if p["name"].startswith("statistic:") and p["eligible"])
+    plan = _plan(res, d, stat)
+
+    class Clock:
+        t = 1000.0
+
+        def __call__(self):
+            return Clock.t
+    saved = B.DEFAULT_CLOCK[0]
+    orig_check = B.Budget.check
+
+    def late_publish(self, where=""):
+        if where == "publish":
+            Clock.t += 700.0
+        return orig_check(self, where)
+    B.DEFAULT_CLOCK[0] = Clock()
+    B.Budget.check = late_publish
+    try:
+        rp = RP.replay(mp, "-", plan, wall_s=600)
+        rs = PLN.solve(M.read_uai(mp), {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        B.Budget.check = orig_check
+        B.DEFAULT_CLOCK[0] = saved
+    assert rs.status == "RESOURCE_STOP" and not rs.intervals and rs.partial_evidence.get("unverified_producer_rows")
+    assert rp["status"] == "REPLAY_RESOURCE_STOP" and not rp.get("intervals") and rp["partial_evidence"]["unverified_producer_rows"]
+    json.dumps(rp)
+    orig_ref = PC.own_statistic_reference
+
+    def slow(*a, **k):
+        Clock.t += 601.0
+        return orig_ref(*a, **k)
+    B.DEFAULT_CLOCK[0] = Clock()
+    PC.own_statistic_reference = slow
+    try:
+        rn = RP.replay(mp, "-", plan, wall_s=600)
+    finally:
+        PC.own_statistic_reference = orig_ref
+        B.DEFAULT_CLOCK[0] = saved
+    json.dumps(rn)
+    assert not rn.get("intervals") and rn["partial_evidence"]["unverified_producer_rows"]
+    assert json.dumps(RP.replay(mp, "-", plan))
+
+
+def test_release_verdict_requires_exact_coverage():
+    import subprocess
+    vp = os.path.join(HERE, "validation", "verdict.py")
+    d = tempfile.mkdtemp()
+    marker = os.path.join(d, "marker")
+    open(marker, "w").close()
+    time.sleep(1.1)
+
+    def write(name, key, nk, idents, statuses=None, summary=None):
+        rows = [{nk: "%s stub" % i, "status": (statuses or {}).get(i, "PASS")} for i in idents]
+        s = {key: rows, "passed": sum(1 for r in rows if r["status"] == "PASS"), "failed": sum(1 for r in rows if r["status"] != "PASS")}
+        if summary:
+            s.update(summary)
+        p = os.path.join(d, name)
+        json.dump(s, open(p, "w"))
+        return p
+
+    def run(acc, route, gate):
+        return subprocess.run([sys.executable, vp, acc, route, gate, marker], capture_output=True, text=True).returncode
+    A = write("acc.json", "rows", "row", ["P%d" % i for i in range(1, 10)])
+    R = write("route.json", "controls", "control", ["R%d" % i for i in range(1, 8)])
+    G = write("gate.json", "controls", "control", ["A1", "B1", "B2", "B3", "B4"])
+    assert run(A, R, G) == 0
+    assert run(write("acc2.json", "rows", "row", []), R, G) != 0                                   # empty, failed 0
+    assert run(write("acc3.json", "rows", "row", ["P%d" % i for i in range(1, 9)]), R, G) != 0     # P9 missing
+    assert run(write("acc4.json", "rows", "row", ["P%d" % i for i in range(1, 10)] + ["P3"]), R, G) != 0   # duplicate
+    assert run(A, write("route2.json", "controls", "control", ["R%d" % i for i in range(1, 8)], {"R6": "BLOCKED"}, {"failed": 0}), G) != 0
+    assert run(A, R, write("gate2.json", "controls", "control", ["A1", "B1", "B2", "B3", "B4"], {"B2": "SKIP"})) != 0
+
+
+def test_inline_ring_diagnostic_body_asserts_truth():
+    """The release driver's inline ring diagnostic (step 2) is executed with
+    its ACTUAL body: with the real solver it exits 0; with a solver result that
+    misses every truth it exits non-zero."""
+    import subprocess, re
+    drv = open(os.path.join(HERE, "runs", "mdi_2026-10-28", "REPRODUCE_r25.sh")).read() if os.path.exists(
+        os.path.join(HERE, "runs", "mdi_2026-10-28", "REPRODUCE_r25.sh")) else open(os.path.join(HERE, "..", "REPRODUCE.sh")).read()
+    m = re.search(r'=== 2\. the ring.*?\n"\$PY" - <<\'PY\'\n(.*?)\nPY\n', drv, re.S)
+    body = m.group(1)
+    bad_body = body.replace("res = PLN.solve(m, {}, wall_s=300.0, cap_bytes=1<<30, plan_dir=d)",
+                            "res = PLN.solve(m, {}, wall_s=300.0, cap_bytes=1<<30, plan_dir=d)\n"
+                            "res.intervals = {v: [(Fr(0), Fr(0)) for _ in rows] for v, rows in res.intervals.items()}")
+    assert bad_body != body
+    env = dict(os.environ, PYTHONPATH=HERE)
+    good = subprocess.run([sys.executable, "-"], input=body, capture_output=True, text=True, cwd=HERE, env=env, timeout=600)
+    bad = subprocess.run([sys.executable, "-"], input=bad_body, capture_output=True, text=True, cwd=HERE, env=env, timeout=600)
+    assert good.returncode == 0, good.stdout[-400:] + good.stderr[-400:]
+    assert bad.returncode != 0 and "FAILED" in (bad.stderr + bad.stdout)

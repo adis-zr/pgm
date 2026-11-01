@@ -909,7 +909,20 @@ def control_portfolio_and_identity(wall):
     resr, dr, _, _ = _solve(M.read_uai(mr), wall)
     comp = [p for p in resr.prices if p["name"].startswith("composed:") and ":statistic:" in p["name"]]
     qs = {p["name"]: json.load(open(_plan(resr, dr, p["name"])))["program"]["collective"]["Q"] for p in comp}
-    out["composed_ring_coarse_Q"] = {"Q_by_record": qs, "ok": bool(qs) and all(v < (1 << 16) for v in qs.values())}
+    # the coarse-Q obligation is a property of the SAVED composed program: when
+    # this invocation's discovery did not reach a composed record, the program
+    # comes from the explicit admitted -> persisted -> shipped relation; the
+    # clean program is bound and verified first, then its Q is read
+    src = "admitted and priced in this invocation"
+    if not qs:
+        plc, nmc, _prc, src = _ring_program(resr, dr, "composed_statistic")
+        if plc is not None:
+            recc = json.load(open(plc))
+            mpc_ = os.path.join(HERE, "verifier", "ring_model.uai") if plc.startswith(os.path.join(HERE, "verifier")) else mr
+            repc = _replay_here(mpc_, plc)
+            if repc["status"] == "REPLAY_VERIFIED":
+                qs = {nmc: recc["program"]["collective"]["Q"]}
+    out["composed_ring_coarse_Q"] = {"Q_by_record": qs, "source": src, "ok": bool(qs) and all(v < (1 << 16) for v in qs.values())}
     oks.append(out["composed_ring_coarse_Q"]["ok"])
     out["ok"] = all(oks)
     return out
@@ -1053,30 +1066,42 @@ def control_work_and_memory(wall):
         rows.append({"control": "ring composed statistic", "ok": False, "reason": howc})
     else:
         all_ok &= check("ring composed statistic", mpr, resr, dr, comp, ptr, qr, plan_path=plc, price=prc, how=howc)
-    saved = {"refused": 0, "cost_identical_bound": 0, "first_refusal": None}
-    for p in resr.prices:
-        if not (p["name"].startswith("regional:") or p["name"].startswith("composed:")):
-            continue
-        b0 = json.load(open(_plan(resr, dr, p["name"])))
+    saved = {"refused": 0, "cost_identical_bound": 0, "first_refusal": None, "programs_mutated": 0, "source": None}
+    # the saved-order mutation is executed against programs obtained through the
+    # explicit admitted -> persisted -> shipped relation (the clean program is
+    # bound and verified first); an unexecuted mutation is never a pass
+    progs = [(_plan(resr, dr, p["name"]), p["name"], mpr) for p in resr.prices
+             if p["name"].startswith("regional:") or p["name"].startswith("composed:")]
+    if not progs:
+        for br in ("regional_L1", "composed_statistic"):
+            plb, nmb, _prb, howb = _ring_program(resr, dr, br)
+            if plb is not None:
+                mpb = os.path.join(HERE, "verifier", "ring_model.uai") if plb.startswith(os.path.join(HERE, "verifier")) else mpr
+                if _replay_here(mpb, plb)["status"] == "REPLAY_VERIFIED":
+                    progs.append((plb, nmb, mpb))
+                    saved["source"] = howb
+    for plan_path, pname, mp_use in progs:
+        b0 = json.load(open(plan_path))
         o = list(b0["program"]["order"])
         for k in range(1, len(o)):
             bad = copy.deepcopy(b0)
             bad["program"]["order"] = o[k:] + o[:k]
             p2 = os.path.join(dr, "reordered.plan.json")
             json.dump(bad, open(p2, "w"))
-            rep = _replay_here(mpr, p2)
+            saved["programs_mutated"] += 1
+            rep = _replay_here(mp_use, p2)
             # r20: the request object binds the order too, so a rotated program
             # is refused at LOAD (request order differs) before saved-order repricing
             if rep["status"] == "REPLAY_REFUSED" and ("SAVED order" in str(rep.get("reason"))
                                                        or "request order differs" in str(rep.get("reason"))):
                 saved["refused"] += 1
                 if saved["first_refusal"] is None:
-                    saved["first_refusal"] = {"program": p["name"], "rotation": k, "reason": str(rep.get("reason"))[:160]}
+                    saved["first_refusal"] = {"program": pname, "rotation": k, "reason": str(rep.get("reason"))[:160]}
             elif rep["status"] == "REPLAY_VERIFIED":
                 saved["cost_identical_bound"] += 1
         if saved["refused"]:
             break
-    saved["ok"] = saved["refused"] >= 1
+    saved["ok"] = saved["refused"] >= 1 and saved["programs_mutated"] >= 1
     all_ok &= saved["ok"]
     return {"rows": rows, "saved_order_witness": saved, "ok": bool(all_ok)}
 
@@ -1102,7 +1127,10 @@ def control_public_selection_and_admission(wall):
         phases = rs.get("phases") or []
         row = {"n": n, "status": res.status, "chosen": res.plan["chosen"], "argmin": argmin,
                "offering": _offering(res), "phases": phases,
-               "budget_before_preprocessing": bool(phases) and phases[0] == "parse" and "preprocess" in phases,
+               # the budget starts at ENTRY (r25): its first phase is the metered input
+               # normalization, before parse and before preprocessing
+               "budget_before_preprocessing": bool(phases) and phases[0] in ("normalize", "parse") and "preprocess" in phases
+                                              and phases.index("preprocess") > phases.index("parse"),
                "complete_cost": res.plan.get("complete_cost"), "truth": _contains(res.intervals, pt),
                "width": str(_width(res.intervals)), "resources": rs, "seconds": round(el, 2)}
         ok = ok and res.status.startswith("CERTIFIED") and res.plan["chosen"] == argmin and row["truth"] \

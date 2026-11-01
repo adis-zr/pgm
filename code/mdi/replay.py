@@ -68,8 +68,26 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
     return _finalize(out, bg, t0)
 
 
+def _json_safe(x):
+    """Replay promises a JSON-serializable dict: every exact rational anywhere
+    in the result (ordinary rows, partial evidence, diagnostics) is encoded as
+    its exact string, consistently."""
+    if isinstance(x, Fr):
+        return str(x)
+    if isinstance(x, dict):
+        return {str(k): _json_safe(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_json_safe(v) for v in x]
+    if isinstance(x, (set, frozenset)):
+        return sorted(_json_safe(v) for v in x)
+    return x
+
+
 def _finalize(out, bg, t0):
-    """The ONE terminal path of a replay."""
+    """The ONE terminal path of a replay: the effective limits are tested after
+    any proof; only REPLAY_VERIFIED exposes `intervals` (any rows of another
+    terminal are explicit unverified partial evidence); the whole result is
+    JSON-serializable."""
     from mdi import budget as B
     try:
         bg.check("terminal")
@@ -85,9 +103,15 @@ def _finalize(out, bg, t0):
                                         "note": "the proof completed after the effective limit; it is partial evidence, "
                                                 "not a publication"},
                    **kept}                                   # known diagnostics are preserved, not dropped
+    if out.get("status") != "REPLAY_VERIFIED" and out.get("intervals"):
+        pe = dict(out.get("partial_evidence") or {})
+        pe.setdefault("unverified_producer_rows", out["intervals"])
+        pe.setdefault("note", "rows computed by a non-certified terminal; not a publication")
+        out["partial_evidence"] = pe
+        out["intervals"] = {}
     out["budget"] = bg.report()
     out["elapsed_s"] = B.DEFAULT_CLOCK[0]() - t0
-    return out
+    return _json_safe(out)
 
 
 def _replay(model_path, evidence_path, plan_path, eps, wrap, cap_bytes, bg, t0):

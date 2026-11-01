@@ -670,7 +670,7 @@ def row_p6_saved_program_authority(wall):
     8192 precision, a different width all refused; the record's own width
     replays); a different executable never overwrites a completed program
     (collision); unknown query and schema violations are typed."""
-    from mdi import model as M, replay as RP, pipeline as PLN, collective_route as CR, modes as MO, plantype as PT
+    from mdi import model as M, replay as RP, pipeline as PLN, collective_route as CR, modes as MO, plantype as PT, budget as B
     from portfolio import independent_strict_witness as SW
     out, oks = {}, []
     sw = SW.run(wall=wall)
@@ -834,6 +834,53 @@ def row_p6_saved_program_authority(wall):
     r_empty = PLN.solve(M.read_uai(mpe), {}, queries=[], wall_s=wall, cap_bytes=1 << 30, plan_dir=de, research_enabled=False)
     rep_empty = _replay_fresh(mpe, _plan(r_empty, de, "identity"), wall)
     rep_cap = _replay_fresh(mpe, _plan(r_empty, de, "identity"), wall) if False else RP.replay(mpe, "-", _plan(r_empty, de, "identity"), cap_bytes=Fr(3, 2))
+    struct_rows = {}
+    for label, mdl in (("nvars_3_2", M.Model(Fr(3, 2), [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)])),
+                       ("card_5_2", M.Model(1, [Fr(5, 2)], [M.Factor((0,), (Fr(5, 2),), [Fr(1), Fr(3)], 0)])),
+                       ("card_2_5_float", M.Model(1, [2.5], [M.Factor((0,), (2.5,), [Fr(1), Fr(3)], 0)])),
+                       ("scope_1_2", M.Model(1, [2], [M.Factor((Fr(1, 2),), (2,), [Fr(1), Fr(3)], 0)])),
+                       ("nvars_inf", M.Model(float("inf"), [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)])),
+                       ("origin_float", M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 1.0)])),
+                       ("provenance_not_mapping", M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)], provenance=3))):
+        rr = PLN.solve(mdl, {}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+        struct_rows[label] = {"status": rr.status, "reason": str(rr.reason)[:80]}
+    out["structural_validity_before_coercion"] = {"rows": struct_rows,
+                                                  "ok": all(r["status"] == "INVALID_INPUT" for r in struct_rows.values())}
+    oks.append(out["structural_validity_before_coercion"]["ok"])
+    # the budget starts at ENTRY: an injected 1 s normalization against a 0.1 s wall
+    # is a RESOURCE_STOP with the work recorded (deterministic); the real large
+    # decimal encoding is reported as an OBSERVATION of actual elapsed time
+    class _Clk:
+        t = 1000.0
+
+        def __call__(self):
+            return _Clk.t
+    saved_clk = B.DEFAULT_CLOCK[0]
+    orig_nm = PLN.normalize_model
+
+    def slow_nm(model, bg=None):
+        _Clk.t += 1.0
+        return orig_nm(model, bg=bg)
+    B.DEFAULT_CLOCK[0] = _Clk()
+    PLN.normalize_model = slow_nm
+    try:
+        rnorm = PLN.solve(M.Model(1, [2], [M.Factor((0,), (2,), [Fr(1), Fr(3)], 0)]), {0: 0}, wall_s=0.1, cap_bytes=1 << 30,
+                          plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    finally:
+        PLN.normalize_model = orig_nm
+        B.DEFAULT_CLOCK[0] = saved_clk
+    t_big = time.monotonic()
+    rbig = PLN.solve(M.Model(1, [2], [M.Factor((0,), (2,), ['1.' + '0' * 1_000_000, '3'], 0)]), {0: 0}, wall_s=0.1, cap_bytes=1 << 30,
+                     plan_dir=tempfile.mkdtemp(), research_enabled=False)
+    el_big = time.monotonic() - t_big
+    out["normalization_inside_the_budget"] = {
+        "injected_1s_under_0_1s": {"status": rnorm.status, "elapsed_s": (rnorm.budget or {}).get("elapsed_s"), "reason": str(rnorm.reason)[:80]},
+        "observed_1MB_decimal_under_0_1s": {"status": rbig.status, "outer_elapsed_s": round(el_big, 3), "reported_elapsed_s": (rbig.budget or {}).get("elapsed_s"),
+                                            "note": "an observation of this host's actual normalization time; not a speed benchmark"},
+        "ok": rnorm.status == "RESOURCE_STOP" and not rnorm.intervals and float((rnorm.budget or {}).get("elapsed_s") or 0) >= 1.0
+              and (rbig.status != "CERTIFIED_FALLBACK_ONLY" or el_big <= 0.1 + 0.05)
+              and abs(float((rbig.budget or {}).get("elapsed_s") or 0) - el_big) < 0.1}
+    oks.append(out["normalization_inside_the_budget"]["ok"])
     out["declared_input_contract"] = {
         "exact_scalar_forms": dec_rows, "malformed_inputs": bad_rows,
         "nonintegral_fraction_cap": {"status": r_frac_bad.status, "reason": str(r_frac_bad.reason)[:90]},
@@ -1069,9 +1116,32 @@ def row_p7_execution_contract(wall):
                                       and isinstance(cc.get("discovery_all_candidates_ops"), dict)
                                       and cc["discovery_all_candidates_ops"].get("recognizer_fit_ops") == "unknown"}
     oks.append(out["invocation_ledger"]["ok"])
-    # construction EVENTS: each executed scale build is one event with a terminal
-    # status; candidates reference the event they reuse; the invocation total sums
-    # unique events (the review's 1,096 x 3 = 3,288 over-count is gone)
+    # the NATURAL discovery history of this invocation is an observation only
+    out["natural_discovery_history"] = {"recognizer_attempts": len(recog), "construction_events": len(led.get("construction_events") or []),
+                                        "events_completed": sum(1 for e in (led.get("construction_events") or []) if e.get("status") == "completed"),
+                                        "note": "what this host's timed discovery reached; not the accounting obligation"}
+    # construction EVENTS (the accounting OBLIGATION, on a deterministic reuse
+    # history: the input-law recognizer declines once so regional construction
+    # executes and the composed candidates reuse its event): each executed scale
+    # build is one event with a terminal status; candidates reference the event
+    # they reuse; the invocation total sums unique events (the review's
+    # 1,096 x 3 = 3,288 over-count is gone)
+    from mdi import collective_route as CR
+    orig_admit = CR.admit
+    state = {"n": 0}
+
+    def declining(marked, *a, **k):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise CR.Declined("control: the input-law recognizer declines so regional construction runs first")
+        return orig_admit(marked, *a, **k)
+    CR.admit = declining
+    try:
+        resd_, dd_, _, _ = _solve(mr, wall)
+    finally:
+        CR.admit = orig_admit
+    led = resd_.plan.get("invocation_ledger") or {}
+    atts = led.get("attempts") or []
     evs = led.get("construction_events") or []
     done = [e for e in evs if e.get("status") != "running"]
     multi = [e for e in done if len(e.get("referenced_by") or []) > 1 and e.get("construction_ops_measured")]
@@ -1289,6 +1359,39 @@ def row_p8_lifecycle(wall):
                                                   and recs["within_wall"] is True and saveds.get("timing_semantics") is not None
                                                   and "elapsed_s_including_durable_write" not in saveds}
     oks.append(out["arm_success_timing_consistent"]["ok"])
+    # the ONE output policy at the publish-time stop (solve and replay): no
+    # intervals, rows as unverified partial evidence; every replay result is
+    # JSON-serializable (ordinary rows, partial evidence, diagnostics)
+    saved_clock2 = B.DEFAULT_CLOCK[0]
+    B.DEFAULT_CLOCK[0] = clk
+    orig_check = B.Budget.check
+
+    def late_publish(self, where=""):
+        if where == "publish":
+            clk.t += 700.0
+        return orig_check(self, where)
+    B.Budget.check = late_publish
+    try:
+        rpub = RP.replay(mp, "-", plan, wall_s=600)
+        spub = PLN.solve(M.read_uai(mp), {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp())
+    finally:
+        B.Budget.check = orig_check
+        B.DEFAULT_CLOCK[0] = saved_clock2
+    ser_ok = True
+    for rr_ in (rpub, rn, RP.replay(mp, "-", plan)):
+        try:
+            json.dumps(rr_)
+        except TypeError:
+            ser_ok = False
+    out["terminal_output_policy"] = {"solve_publish_stop": {"status": spub.status, "intervals": bool(spub.intervals),
+                                                            "unverified_rows": bool((spub.partial_evidence or {}).get("unverified_producer_rows"))},
+                                     "replay_publish_stop": {"status": rpub["status"], "intervals": bool(rpub.get("intervals")),
+                                                             "unverified_rows": bool((rpub.get("partial_evidence") or {}).get("unverified_producer_rows"))},
+                                     "replay_results_json_serializable": ser_ok,
+                                     "ok": spub.status == "RESOURCE_STOP" and not spub.intervals and bool((spub.partial_evidence or {}).get("unverified_producer_rows"))
+                                           and rpub["status"] == "REPLAY_RESOURCE_STOP" and not rpub.get("intervals")
+                                           and bool((rpub.get("partial_evidence") or {}).get("unverified_producer_rows")) and ser_ok}
+    oks.append(out["terminal_output_policy"]["ok"])
     bad = json.load(open(plan)); bad["request"]["card"] = {"0": 3}
     pb = os.path.join(d, "badcard.plan.json"); json.dump(bad, open(pb, "w"))
     rb = RP.replay(mp, "-", pb)
@@ -1421,9 +1524,9 @@ ROWS = [
     ("P3 pure-sign rank-2 Gaussian and Fourier", row_p3_pure_sign_rank2),
     ("P4 statistic family: categorical, higher-arity/non-binary, hard zero, disconnected", row_p4_statistic_family),
     ("P5 regional L1/L2, composed statistic/gaussian (branch capability via the saved program; current-discovery coverage separate), nonzero deletion", row_p5_regional_deletion_composed),
-    ("P6 saved-program authority: strict witnesses, identity tuples, effective request v3, collision, schema, declared input contract, normalization", row_p6_saved_program_authority),
+    ("P6 saved-program authority: strict witnesses, identity tuples, effective request v3, collision, schema, input contract, structural validity, budget start", row_p6_saved_program_authority),
     ("P7 execution contract: pre-admission applicability, one meter for producer+checker, deadline, MPFR, priced work, truthful ledger", row_p7_execution_contract),
-    ("P8 lifecycle: injected clock, early proofs past the wall, one terminal path, arm timing, incumbent retention vs global stop, F3", row_p8_lifecycle),
+    ("P8 lifecycle: injected clock, early proofs past the wall, one terminal path and output policy, arm timing, incumbent retention vs global stop, F3", row_p8_lifecycle),
     ("P9 the independent truth predicate fails every disguise", row_p9_truth_predicate),
 ]
 
