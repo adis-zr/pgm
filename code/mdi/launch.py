@@ -216,7 +216,7 @@ def repair_balance_s(led, label):
 def _classify(sup, arm_rec, receipt, wall):
     so = sup.get("outcome")
     if so == "TIMEOUT":
-        return "resource_refusal", "supervisor deadline %.1f s" % wall
+        return "resource_refusal", "killed by the supervisor at its deadline (wall %.1f s plus the declared durable-write grace)" % wall
     if so == "MEMORY_STOP":
         return "resource_refusal", "supervisor memory limit"
     if so in ("LAUNCH_FAILURE", "NONZERO_EXIT") and not arm_rec:
@@ -261,7 +261,9 @@ def write_manifest(rundir, bindings, pin, resolved, argv, launcher_path, binding
            "configuration": resolved["configuration"], "runtime": resolved["runtime"], "thread_env": dict(THREAD_ENV),
            "input_dir": input_dir, "inputs": resolved["inputs"], "order": [list(x) for x in bindings["order"]],
            "limits": {"cell_wall_s": bindings["cell_wall_s"], "cap_bytes": bindings["engine_limits"]["arm_rss_bytes"],
-                      "allowance_s": bindings["allowance_s"], "session_cap_s": bindings["session_cap_s"]},
+                      "allowance_s": bindings["allowance_s"], "session_cap_s": bindings["session_cap_s"],
+                      "durable_grace_s": bindings.get("durable_grace_s", 0.0),
+                      "note": "the supervisor kills at wall + durable_grace_s; certification requires the arm's receipt within the wall AND supervisor elapsed <= wall; every measured second is charged"},
            "synthetic_control": bool(bindings.get("synthetic_control")),
            "reference_files_opened": False}
     if man["contract"]["pinned_sha256"] and man["contract"]["sha256"] and man["contract"]["pinned_sha256"] != man["contract"]["sha256"]:
@@ -395,6 +397,7 @@ def run_cells(rundir, bindings, repair=None, cmd_factory=None, python=None, supe
         os.makedirs(adir)
         cmd = cmd_factory(c["problem"], c["arm"], adir, wall)
         att = {"n": n, "kind": "repair" if is_repair else "initial", "dir": os.path.relpath(adir, rundir), "wall_granted_s": wall,
+               "supervisor_kill_deadline_s": wall + float(bindings.get("durable_grace_s", 0.0)),
                "command": cmd, "status": "STARTED", "started": time.strftime("%Y-%m-%d %H:%M:%S")}
         c["attempts"].append(att)
         c["status"] = "STARTED"
@@ -402,7 +405,11 @@ def run_cells(rundir, bindings, repair=None, cmd_factory=None, python=None, supe
             led["repair"] = {"used": True, "label": label, "balance_s": repair_balance_s(led, label), "wall_granted_s": wall}
         _jdump(led, lp)                                      # durable STARTED before the spawn
         print("  [launch] %-24s %s attempt %d wall %.1f s ..." % (label, att["kind"], n, wall), flush=True)
-        sup = sup_run(cmd, cwd=HERE, log_path=os.path.join(adir, "supervisor.log"), deadline_s=wall,
+        # the supervisor's kill deadline is the wall plus a DECLARED durable-write grace
+        # (process start-up and the arm's own terminal record); classification and
+        # the receipt stay strict at the wall, and the whole measured time is charged
+        grace = float(bindings.get("durable_grace_s", 0.0))
+        sup = sup_run(cmd, cwd=HERE, log_path=os.path.join(adir, "supervisor.log"), deadline_s=wall + grace,
                       mem_limit_kib=cap_bytes // 1024, env=env, label=label)
         arm_rec = receipt = None
         pa, pr = os.path.join(adir, "arm_%s.json" % label), os.path.join(adir, "arm_%s.receipt.json" % label)
