@@ -872,9 +872,12 @@ def test_release_verdict_requires_exact_coverage():
     assert run(write("acc6.json", "rows", "row", P, drop_result=("P1",)), R, G) != 0
     assert run(A, write("route3.json", "controls", "control", ["R%d" % i for i in range(1, 8)], result_ok={"R6": None}), G) != 0
     # the ACTUAL shipped matrices: clean they pass; with only P1.result.ok flipped, or only P1.result removed, they fail
-    runs_dir = os.path.join(HERE, "runs", "mdi_2026-10-28")
-    real = [os.path.join(runs_dir, f) for f in ("ACCEPTANCE_MATRIX_r25.json", "ROUTE_MATRIX_r25_rerun.json", "GATE_MATRIX_r25_rerun.json")]
-    if all(os.path.exists(f) for f in real):
+    names = ("ACCEPTANCE_MATRIX_r25.json", "ROUTE_MATRIX_r25_rerun.json", "GATE_MATRIX_r25_rerun.json")
+    runs_dir = next((rd for rd in (os.path.join(HERE, "runs", "mdi_2026-10-28"), os.path.join(HERE, "..", "runs"))
+                     if all(os.path.exists(os.path.join(rd, f)) for f in names)), None)
+    assert runs_dir is not None, "the shipped r25 matrices must be present for the actual-record control"
+    real = [os.path.join(runs_dir, f) for f in names]
+    if True:
         fresh = []
         for f in real:
             dst = os.path.join(d, os.path.basename(f))
