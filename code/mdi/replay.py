@@ -50,8 +50,10 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
     wall_s, cap_bytes = _w, _c
     # the INVOCATION budget exists before any model / evidence / plan parsing:
     # parsing is inside the observed, metered time
-    asked = {"wall_s": float(wall_s), "rss_bytes": int(cap_bytes)}
-    wall_s = min(float(wall_s), float(K.RESOURCES["arm_wall_s"]))
+    # the EXACT clamp shared with solve (post-r26 follow-up): an enormous finite
+    # wall is a legal request for the frozen maximum, never an overflow
+    asked = {"wall_s": PLN._asked_number(wall_s), "rss_bytes": int(cap_bytes)}
+    wall_s = PLN._clamp_to_float(wall_s, K.RESOURCES["arm_wall_s"])
     cap_eff = min(int(cap_bytes), int(K.RESOURCES["arm_rss_bytes"]))
     bg = B.Budget(wall_s=wall_s,
                   limits={"profile_comparisons": K.CAPS["profile_entry_comparisons"],

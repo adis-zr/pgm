@@ -223,7 +223,14 @@ def _ring_program(res, d, branch):
     invocation (bound afresh on replay); else the shipped fixture produced by
     the public pipeline on the build host (`verifier/ring_*.plan.json`). A
     time-bounded full discovery that never reached the branch on this host is
-    reported as such; it is not a missing algorithm."""
+    reported as such; it is not a missing algorithm.
+
+    PRECONDITION (post-r26 follow-up): this helper serves the CANONICAL RING
+    model only. The shipped fixture is admitted solely when the invocation's
+    frozen-law model hash (`res.law`) equals the fixture record's; for any
+    other model the fixture branch is refused with a named reason. It is a
+    validation helper for the ring controls, not a verifier for an arbitrary
+    supplied model, and it never substitutes a fixture for a supplied model."""
     pred = RING_PREDS[branch]
     p = next((x for x in res.prices if pred(x["name"]) and x["eligible"]), None)
     if p is not None:
@@ -242,9 +249,17 @@ def _ring_program(res, d, branch):
     fx = os.path.join(HERE, "verifier", RING_FIXTURES[branch])
     if os.path.exists(fx):
         recj = json.load(open(fx))
+        law = getattr(res, "law", None)
+        mh = law.hashes[0] if law is not None else None
+        if mh is None:
+            return None, None, None, ("shipped fixture refused: the invocation carries no frozen law, so the canonical-ring "
+                                      "precondition cannot be checked (not admitted, not persisted)")
+        if recj.get("model_sha256") != mh:
+            return None, None, None, ("shipped fixture refused: it was produced for the canonical ring (model %s…), the "
+                                      "supplied model is %s… (not admitted, not persisted)" % (str(recj.get("model_sha256"))[:12], mh[:12]))
         price = {"name": recj["name"], "counters": recj["cost_counters"], "eligible": None,
                  "bytes_producer": None, "bytes_checker": None}
-        return fx, recj["name"], price, "shipped fixture produced by the public pipeline on the build host; bound in replay"
+        return fx, recj["name"], price, "shipped fixture produced by the public pipeline on the build host for the canonical ring (model hash equal); bound in replay"
     return None, None, None, "no program of this branch available (not admitted, not persisted, no fixture)"
 
 
@@ -258,11 +273,13 @@ def ring_program_verified(res, d, branch, model_path, wall=600.0):
     plan_path, name, price, how = _ring_program(res, d, branch)
     if plan_path is None:
         return None
-    mp = os.path.join(HERE, "verifier", "ring_model.uai") if plan_path.startswith(os.path.join(HERE, "verifier")) else model_path
-    rep = _replay_here(mp, plan_path)
+    # the program is ALWAYS replayed against the SUPPLIED model (a fixture is
+    # admitted only when its frozen-law hash equals the invocation's, so no
+    # model is ever replaced by a fixture)
+    rep = _replay_here(model_path, plan_path)
     if rep.get("status") != "REPLAY_VERIFIED":
         return None
-    return plan_path, name, price, how, mp, rep
+    return plan_path, name, price, how, model_path, rep
 
 
 def with_input_law_recognizer_declined(fn):

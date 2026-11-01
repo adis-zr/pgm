@@ -1079,3 +1079,51 @@ def test_natural_history_integrity_is_separate_from_capability_coverage():
     broken_plan["invocation_ledger"]["construction_ops_measured"] += 1
     broken = PLN.Outcome(status=det.status, plan=broken_plan)
     assert not MX.natural_history_integrity(broken)["ok"]
+
+
+# ------------------------------------------------ post-r26 follow-ups (the two nonblocking limitations)
+
+def test_replay_clamps_an_enormous_finite_wall_exactly():
+    """Follow-up to the R26 review: replay shares solve's exact clamp, so
+    `wall_s = 10**400` is a legal request for the frozen maximum (no overflow);
+    non-finite / non-positive walls are still typed refusals."""
+    ring = os.path.join(HERE, "verifier", "ring_model.uai")
+    plan = os.path.join(HERE, "verifier", "ring_regional_L1.plan.json")
+    for big in (10 ** 400, Fr(10 ** 400, 3)):
+        r = RP.replay(ring, "-", plan, wall_s=big)
+        assert r["status"] == "REPLAY_VERIFIED", (r["status"], r.get("reason"))
+        assert r["budget"]["effective_limits"]["wall_s"] == 600.0
+        assert str(r["budget"]["requested_by_caller"]["wall_s"]).startswith(str(big)[:20])
+        json.dumps(r)
+    for bad in (float("inf"), 0, -1, "600"):
+        assert RP.replay(ring, "-", plan, wall_s=bad)["status"] == "REPLAY_INVALID_INPUT"
+
+
+def test_ring_fixture_helper_serves_the_canonical_ring_only():
+    """Follow-up to the R26 review: the shipped ring fixture is admitted by the
+    helper only when the invocation's frozen-law hash equals the fixture's;
+    a different model with an empty discovery is refused with a named reason
+    (no fixture ever replaces a supplied model), and the program is replayed
+    against the SUPPLIED model path."""
+    from mdi import law as LAW
+    from test_mdi_research import ring_of_blocks
+    # a non-ring model, empty discovery: refused
+    mp = _mf4(0.30)
+    m = M.read_uai(mp)
+    r = M.restrict(m, {})
+    res = PLN.Outcome(status="X", prices=[], law=LAW.OriginalLaw.freeze(m, {}, set(r.free)))
+    d = tempfile.mkdtemp()
+    plan, name, price, how = MX._ring_program(res, d, "regional_L1")
+    assert plan is None and name is None and "canonical ring" in how and "refused" in how, how
+    assert MX.ring_program_verified(res, d, "regional_L1", mp) is None
+    # no frozen law at all: refused too
+    assert MX._ring_program(PLN.Outcome(status="X", prices=[]), d, "regional_L1")[0] is None
+    # the canonical ring, empty discovery: the fixture is served and replayed against the supplied path
+    mpr = w(ring_of_blocks()[0])
+    mr = M.read_uai(mpr)
+    rr = M.restrict(mr, {})
+    resr = PLN.Outcome(status="X", prices=[], law=LAW.OriginalLaw.freeze(mr, {}, set(rr.free)))
+    got = MX.ring_program_verified(resr, tempfile.mkdtemp(), "regional_L1", mpr)
+    assert got is not None
+    plan, name, price, how, mp_used, rep = got
+    assert "canonical ring" in how and mp_used == mpr and rep["status"] == "REPLAY_VERIFIED" and name.startswith("regional:")

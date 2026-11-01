@@ -597,14 +597,11 @@ def row_p5_regional_deletion_composed(wall):
             out[label] = {"ok": False, "reason": how, "offering": [p["name"] for p in res.prices]}
             oks.append(False)
             continue
-        rep = _replay_fresh(mp, plan_path, wall) if not plan_path.startswith(os.path.join(HERE, "verifier")) \
-            else _replay_fresh(os.path.join(HERE, "verifier", "ring_model.uai"), plan_path, wall)
-        pt_use, q_use = (pt, q)
-        if plan_path.startswith(os.path.join(HERE, "verifier")):
-            trf0 = json.load(open(os.path.join(HERE, "verifier", "ring_model_truth.json")))
-            pt_use = {int(v): [Fr(x) for x in row] for v, row in trf0.items()}
-            q_use = sorted(pt_use)
-        row = _row_ok(rep, pt_use, q_use)
+        # the program (admitted, persisted, or the fixture admitted only under the
+        # canonical-ring hash guard) is replayed against THIS row's model and
+        # checked against THIS row's exact truth; no model is replaced by a fixture
+        rep = _replay_fresh(mp, plan_path, wall)
+        row = _row_ok(rep, pt, q)
         row["program"] = nm
         row["how"] = how
         row["research"] = rep.get("research")
