@@ -47,6 +47,74 @@ def rss_scale():
     return _RSS_SCALE
 
 
+def engine_class():
+    """The dense engine class `_engine_for` instantiates on this host (the
+    fault-injection controls patch THIS class, so the fault lands in the engine
+    that actually executes)."""
+    try:
+        from mdi import vec_engine as V
+        if V.AVAILABLE:
+            return V.VecEngine
+    except ImportError:
+        pass
+    return C.Engine
+
+
+def _engine_for(plan, factors, ctx, **kw):
+    """The dense engine in the layout that executes (2 November 2026, physical
+    capacity policy): the vectorized layout (`vec_engine.VecEngine`, bit-identical
+    arithmetic over numpy object arrays) when numpy is available, else the scalar
+    `contract.Engine`. The arithmetic, depth labels and support semantics are the
+    same; only the data layout differs."""
+    try:
+        from mdi import vec_engine as V
+        if V.AVAILABLE:
+            return V.VecEngine(plan, factors, ctx, **kw)
+    except ImportError:
+        pass
+    return C.Engine(plan, factors, ctx, **kw)
+
+
+def _exact_aggregation(r, pl2, dl, charge, cap_bytes, t_end):
+    """The independent EXACT aggregation of the identity checker: the vectorized
+    exact integer junction tree (`vec_engine.VecExact`) on the checker's own
+    min-fill plan when the physical budget admits it (mdi.capacity forecast
+    against the remaining wall and the RSS cap), else the sparse exact junction
+    tree bounded by the meter's backstop. Returns ((Z, counts), scope) or None
+    when the aggregation is not admitted (reported NOT RUN, never a pass)."""
+    from mdi import capacity as CAP
+    remaining = t_end - _BUDGET.DEFAULT_CLOCK[0]()
+    fc = CAP.forecast_identity(pl2, pl2, r.factors, r.card, r.free)
+    ad = CAP.admit(fc, remaining, cap_bytes, _rss_bytes())
+    if ad["aggregation"] != "FEASIBLE":
+        return None, ("NOT RUN: the exact aggregation is not admitted by the physical budget: %s" % ad["aggregation_reason"])
+    try:
+        from mdi import vec_engine as V
+        vec = V.AVAILABLE
+    except ImportError:
+        vec = False
+    if vec:
+        vx = V.VecExact(pl2, r.factors, r.card, deadline=dl, charge=charge).run()
+        cnt = vx.counts(r.free)
+        return (Fr(int(vx.Z)), {k: Fr(int(v)) for k, v in cnt.items()}), (
+            "vectorized exact integer junction tree (a second aggregation implementation), %d entries visited, "
+            "order %s, %d-bit total" % (vx.entries_visited, list(pl2.order)[:8], int(vx.Z).bit_length()))
+    from mdi import sparse_jt as _SJ
+    _tabs = [_SJ.table_from_factor(f, deadline=dl) for f in r.factors]
+    _touched = {v for f in r.factors for v in f.scope}
+    for v in r.free:
+        if v not in _touched:
+            _tabs.append(_SJ.Table((v,), {(c,): Fr(1) for c in range(r.card[v])}))
+    try:
+        _Z2, _mg, _jt = _SJ.all_marginals(_tabs, r.card, deadline=dl, entry_cap=K.CAPS["local_mass_entries"],
+                                          order=list(pl2.order), charge=charge)
+    except _SJ.SparseError:
+        return None, "NOT RUN: the sparse exact junction tree refused (entry or bit backstop)"
+    _cnt2 = {(v, a): _mg[v][a] for v in r.free for a in range(r.card[v]) if _mg[v][a] != 0}
+    return (_Z2, _cnt2), ("sparse exact junction tree (a second aggregation implementation), %d entries built, order %s"
+                          % (_jt.ops["entries_built"], _jt.order[:8]))
+
+
 def _mk_deadline(t_end, cap_bytes, baseline=None,
                  allow_oversized=False):
     """Outer deadline plus a memory cap measured on the WHOLE process RSS.
@@ -293,9 +361,10 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     # ---------- stage: contraction ----------
     ts = _BUDGET.DEFAULT_CLOCK[0]()
     try:
-        eng = C.Engine(pl, r.factors, ctx, mode=mode,
-                       progress=lambda ph, n: prog(ph, "%d messages" % n),
-                       cap_bytes=cap_bytes, deadline=dl, charge=charge)
+        eng = _engine_for(pl, r.factors, ctx, mode=mode,
+                          progress=lambda ph, n: prog(ph, "%d messages" % n),
+                          cap_bytes=cap_bytes, deadline=dl, charge=charge)
+        out["engine_layout"] = getattr(eng, "layout", "scalar")
         nup = ndn = 0
         roots = []
         seen_comp = set()
@@ -897,9 +966,9 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
         raise A.NumericalRefusal("checker precision %d is not usable" % cp)
     ctx = A.Ctx(cp)
     dl = _mk_deadline(t_end, cap_bytes, _rss_bytes())
-    eng = C.Engine(pl2, r.factors, ctx, mode="I", deadline=dl,
-                   progress=lambda ph, n: prog("check-" + ph, "%d" % n),
-                   charge=charge)                 # the checker's messages hit the SHARED meter
+    eng = _engine_for(pl2, r.factors, ctx, mode="I", deadline=dl,
+                      progress=lambda ph, n: prog("check-" + ph, "%d" % n),
+                      charge=charge)                 # the checker's messages hit the SHARED meter
     roots = [b.idx for b in pl2.bags if b.parent == -1]
     for rt in roots:
         eng.upward(rt)
@@ -974,42 +1043,34 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             _indep = (_Z, _cnt)
     _indep_scope = ("direct exact enumeration of every free assignment"
                     if _indep is not None else None)
+    _not_run = ("NOT RUN: the free joint space exceeds the declared enumeration cap and the exact "
+                "aggregation did not run, so producer and checker share the same aggregate "
+                "implementation and a common-mode aggregation fault would not be detected")
     if _indep is None:
         # ABOVE the enumeration cap: a STRUCTURAL second implementation. The
         # sparse exact junction tree (sparse_jt) shares no aggregation code
         # with C.Engine -- different data layout, schedule construction and
-        # arithmetic (exact rationals) -- so its marginals are an independent
+        # arithmetic (exact integers) -- so its marginals are an independent
         # recomputation at elimination cost rather than enumeration cost. It
-        # is bounded by the declared entry and bit caps; when either refuses
-        # the independent check is reported as NOT RUN, never as a pass.
+        # is admitted against the PHYSICAL budget (mdi.capacity, AMENDMENTS[0]);
+        # when the forecast or the run exceeds it, the independent check is
+        # reported as NOT RUN, never as a pass.
         try:
-            from mdi import sparse_jt as _SJ
-            _tabs = [_SJ.table_from_factor(f, deadline=dl) for f in r.factors]
-            _touched = {v for f in r.factors for v in f.scope}
-            for v in r.free:
-                if v not in _touched:
-                    _tabs.append(_SJ.Table((v,), {(c,): Fr(1)
-                                                   for c in range(r.card[v])}))
-            _Z2, _mg, _jt = _SJ.all_marginals(
-                _tabs, r.card, deadline=dl,
-                entry_cap=K.CAPS["checker_contraction_space"], charge=charge)
-            _cnt2 = {}
-            for v in r.free:
-                for a in range(r.card[v]):
-                    if _mg[v][a] != 0:
-                        _cnt2[(v, a)] = _mg[v][a]
-            _indep = (_Z2, _cnt2)
-            _indep_scope = ("sparse exact junction tree (a second aggregation "
-                            "implementation), %d entries built, order %s"
-                            % (_jt.ops["entries_built"], _jt.order[:8]))
+            _agg, _agg_scope = _exact_aggregation(r, pl2, dl, charge, cap_bytes, t_end)
+            if _agg is not None:
+                _indep, _indep_scope = _agg, _agg_scope
+            else:
+                _not_run = _agg_scope
         except _BUDGET.BudgetExceeded:
             raise                                   # a shared-meter stop is a RESOURCE outcome, never "not run"
-        except (_SJ.SparseError, A.NumericalRefusal):
+        except (A.NumericalRefusal, MemoryError) as _e:
             _indep = None
+            _not_run = "NOT RUN: the exact aggregation refused: %s" % str(_e)[:160]
         except Exception as _e:        # a refusal of the independent path
             if isinstance(_e, (Deadline, MemoryStop)):
                 raise
             _indep = None
+            _not_run = "NOT RUN: %s: %s" % (type(_e).__name__, str(_e)[:160])
 
     fails, nchk = [], 0
     for v in r.free:
@@ -1091,12 +1152,7 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             "positive_denominators": True,
             "independent_aggregation_checked": _indep is not None,
             "independent_aggregation_scope":
-                (_indep_scope if _indep is not None else
-                 "NOT RUN: the free joint space exceeds the declared "
-                 "enumeration cap AND the sparse exact junction tree refused "
-                 "(entry or bit cap), so producer and checker share the same "
-                 "aggregate implementation and a common-mode aggregation "
-                 "fault would not be detected")}
+                (_indep_scope if _indep is not None else _not_run)}
     del eng
     return (not fails), fails, meta
 

@@ -926,7 +926,7 @@ def row_p6_saved_program_authority(wall):
 
 def row_p7_execution_contract(wall):
     """P7: the independent checker's applicability is decided BEFORE admission
-    (13-variable positive complete graph: bag 8,192 > 4,096, CHECKER_CAP_PROVED,
+    (13-variable positive complete graph: bag 8,192, certified under the physical policy,
     a truthful typed refusal in seconds; a hard-zero variant is UNKNOWN after
     a charged bounded probe; the 13-variable chain still verifies 26
     coordinates); identity runs under the shared entry meter; an exhausted
@@ -946,21 +946,33 @@ def row_p7_execution_contract(wall):
     t = time.time()
     rg = PLN.solve(mg, {}, wall_s=wall, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
     el = time.time() - t
+    Zg, ptg = O.exact_all_marginals(M.restrict(mg, {}))
+    feas_g = next((p.get("feasibility") for p in rg.prices if p["name"] == "identity"), None) or {}
+    # since 2 November 2026 the identity checker is admitted against the PHYSICAL budget (mdi.capacity):
+    # the 13-variable complete graph (bag 8,192) is certified with its forecast recorded before admission
     out["complete_graph_13_pre_admission"] = {"status": rg.status, "seconds": round(el, 2), "reason": str(rg.reason)[:220],
-                                              "feasibility": next((x.get("feasibility") for x in rg.rejected if x.get("name") == "identity"), None),
-                                              "ok": rg.status == "PRICE_REFUSAL" and "CHECKER_CAP_PROVED" in str(rg.reason) and "8192" in str(rg.reason)
-                                                    and not rg.intervals and el < 60}
+                                              "feasibility": feas_g,
+                                              "truth": _contains(rg.intervals, ptg) if rg.intervals else False,
+                                              "independent_aggregation": (rg.checker or {}).get("independent_aggregation_scope", "")[:80],
+                                              "ok": rg.status.startswith("CERTIFIED") and _contains(rg.intervals, ptg) and _width(rg.intervals) <= EPS
+                                                    and feas_g.get("policy") == "physical-2026-11-02" and feas_g.get("checker") == "FEASIBLE"
+                                                    and feas_g.get("largest_bag") == 8192 and feas_g.get("checker_order") == "min_fill"
+                                                    and bool((rg.checker or {}).get("independent_aggregation_checked")) and el < 120}
     oks.append(out["complete_graph_13_pre_admission"]["ok"])
-    compz = un + [M.Factor(scope=(i, j), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(0) if (i, j) == (0, 1) else Fr(2 + (i + j) % 3)], origin=100 + 13 * i + j)
-                  for i in range(n) for j in range(i + 1, n)]
-    mz = M.Model(nvars=n, card=[2] * n, factors=compz).validate()
-    rz = M.restrict(mz, {})
+    # the physical admission REFUSES before any work when the forecast cannot fit: the same model
+    # under a 1 ms remaining wall, and under a 1 MiB cap, each named by stage
+    from mdi import capacity as CAP
+    rz = M.restrict(mg, {})
     sel = P.choose_plan(rz.free, rz.card, rz.factors, 64, 1 << 30)
-    bgp = B.Budget(60, limits={"pricing_entries": 10 ** 6})
-    feas = PR.identity_checker_feasibility(sel["chosen"][0], rz, bgp)
-    out["hard_zero_13_feasibility_unknown"] = {"feasibility": feas, "charged": dict(bgp.used),
-                                               "ok": feas["checker"] == "CHECKER_FEASIBILITY_UNKNOWN" and bgp.used.get("pricing_entries", 0) > 0}
-    oks.append(out["hard_zero_13_feasibility_unknown"]["ok"])
+    fc = CAP.forecast_identity(sel["chosen"][0], CAP.checker_plan(rz), rz.factors, rz.card, rz.free)
+    ad_w = CAP.admit(fc, 0.001, 1 << 30, 0); ad_m = CAP.admit(fc, 600, 1 << 20, 0)
+    feas_bad = PR.identity_checker_feasibility(sel["chosen"][0], rz, None, wall_remaining_s=0.001, rss_cap_bytes=1 << 30)
+    out["physical_admission_refuses_before_work"] = {"wall": ad_w["route"], "wall_reason": ad_w["route_reason"][:160],
+                                                     "memory": ad_m["route"], "memory_reason": ad_m["route_reason"][:160],
+                                                     "feasibility_under_1ms": feas_bad["checker"], "forecast": fc["seconds"],
+                                                     "ok": ad_w["route"] == "WALL_FORECAST_EXCEEDS" and ad_m["route"] == "RSS_FORECAST_EXCEEDS"
+                                                           and feas_bad["checker"] == "CHECKER_WALL_FORECAST_EXCEEDS"}
+    oks.append(out["physical_admission_refuses_before_work"]["ok"])
     chain = un + [M.Factor(scope=(i, i + 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(2 + i % 3)], origin=100 + i) for i in range(n - 1)]
     m13 = M.Model(nvars=n, card=[2] * n, factors=chain).validate()
     Z, pt13 = O.exact_all_marginals(M.restrict(m13, {}))

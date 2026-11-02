@@ -553,10 +553,10 @@ def supported(kind):
             "checker_supported": CHECKERS.get(kind) is not None}
 
 
-REQUEST_VERSION = 3          # r21: frozen maxima + effective limits; every field bound
+REQUEST_VERSION = 4          # 2026-11-02: the physical capacity policy is named; r21 frozen maxima + effective limits kept
 REQUEST_KEYS = ("version", "model_sha256", "evidence_sha256", "query_sha256", "queries", "observed",
                 "card", "width", "precision", "max_precision", "emin", "emax", "arithmetic_mode",
-                "order", "checker_strategy", "checker_precision", "collective_precision", "limits")
+                "order", "checker_strategy", "checker_precision", "collective_precision", "limits", "capacity")
 MAX_PRECISION = 4096
 # the FROZEN algorithm maxima (never exceeded by any invocation) and the
 # EFFECTIVE per-invocation limits (what the caller actually ran under; a later
@@ -599,7 +599,21 @@ def make_request(model_sha, evidence_sha, query_sha, queries, evidence, card, wi
             "order": [int(x) for x in (order or [])],
             "checker_strategy": str((checker or {}).get("strategy", "")),
             "checker_precision": int((checker or {}).get("precision", 0)),
-            "limits": {"frozen": frozen_limits(), "effective": effective_limits_from(limits)}}
+            "limits": {"frozen": frozen_limits(), "effective": effective_limits_from(limits)},
+            "capacity": capacity_policy()}
+
+
+def capacity_policy():
+    """The admission policy and calibration a record was priced under (request v4,
+    2 November 2026): admission against the physical budget from calibrated forecasts
+    of the executing schedules (mdi.capacity), in the layout that executes."""
+    from mdi import capacity as CAP
+    try:
+        from mdi import vec_engine as V
+        layout = "vectorized" if V.AVAILABLE else "scalar"
+    except Exception:
+        layout = "scalar"
+    return {"policy": "physical-2026-11-02", "calibration": CAP.CALIBRATION["version"], "layout": layout}
 
 
 def validate_request(req, rec):
@@ -701,6 +715,14 @@ def validate_request(req, rec):
     for k in FROZEN_LIMIT_KEYS:
         if float(lim["frozen"][k]) != float(fz[k]):
             raise PlanError("request frozen limit %s = %s differs from the contract's %s" % (k, lim["frozen"][k], fz[k]))
+    # the CAPACITY policy (v4): the admission policy and calibration this record was priced under
+    cap = req.get("capacity")
+    if not isinstance(cap, dict) or set(cap) != {"policy", "calibration", "layout"}:
+        raise PlanError("request capacity must carry exactly policy, calibration and layout")
+    want = capacity_policy()
+    if cap["policy"] != want["policy"] or cap["calibration"] != want["calibration"]:
+        raise PlanError("request capacity policy %s / calibration %s differ from the contract's %s / %s"
+                        % (cap["policy"], cap["calibration"], want["policy"], want["calibration"]))
     eff = lim["effective"]
     if not isinstance(eff, dict) or set(eff) != set(EFFECTIVE_LIMIT_KEYS):
         raise PlanError("request effective limits must carry %s" % list(EFFECTIVE_LIMIT_KEYS))

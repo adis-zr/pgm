@@ -1852,17 +1852,22 @@ def test_pricing_prefers_identity_for_a_priced_reason():
     reg_rec = PR.price_regional_plan("regional:ascending_id", regs, crs, rds,
                                      pc, nq, t1)
     cmp = PR.compare([ident, reg_rec], cap_bytes=8 * (1 << 30))
-    # r21: the identity's producer AND checker run on the shared 1,000,000-entry
-    # meter, so its forecast metered entries (tens of millions on this structure)
-    # make it INELIGIBLE by price, truthfully, before any work; the regional
-    # route is likewise ineligible (its reduced assignment count), so nothing is
-    # chosen -- a refusal by price, not a ratio
-    assert not ident.eligible and "shared cap" in (ident.ineligible_reason or ""), ident.ineligible_reason
-    assert int(ident.counters["metered_entries_forecast"].value) > K.CAPS["local_mass_entries"]
-    assert cmp["chosen"] is None, cmp["chosen"]
+    # 2 November 2026 (physical policy): the identity's producer AND checker run on
+    # the shared meter, whose cap is now its physical backstop; the identity's
+    # forecast metered entries (tens of millions on this structure) are recorded
+    # and ELIGIBLE by the meter -- the physical admission (mdi.capacity, on the
+    # executing schedules) decides it inside the pipeline. The regional route is
+    # ineligible by its reduced assignment count, so the comparison is decided by
+    # priced work, never by a cell-count ratio.
+    assert ident.eligible, ident.ineligible_reason
+    assert int(ident.counters["metered_entries_forecast"].value) > 10 ** 7
+    assert int(ident.counters["metered_entries_forecast"].value) <= K.CAPS["local_mass_entries"]
+    assert cmp["chosen"] is not None and cmp["chosen"]["name"] == "identity"
     # the regional route's binding cost is its reduced assignment count
     assert int(reg_rec.counters["reduced_cell_assignments"].value) > 10 ** 20
     assert reg_rec.counters["reduced_cell_assignments"].label == PR.UPPER
+    reg_row = next(x for x in cmp["all"] if x["name"] == "regional:ascending_id")
+    assert reg_row["admission_refusal"] or reg_row["ineligible_reason"], reg_row
     # and the ratio is NOT what decided it
     assert "cell-count ratio is never used" in cmp["rule"]
 
@@ -2988,12 +2993,16 @@ def test_r4_operation_bounds_actually_bound_the_execution():
 
 
 def test_r4_declared_assignment_cap_is_4096():
-    """Renaming 262,144 is not restoration."""
+    """Renaming 262,144 is not restoration. The 2 November 2026 amendment moved
+    the IDENTITY checker's admission to the physical budget (mdi.capacity); the
+    4,096-entry keys stay at 4,096 for the research routes' local enumeration
+    fallbacks, and the amendment is RECORDED, never silent."""
     for key in ("region_tuple_assignments", "region_local_enumeration",
                 "aggregated_kernel_entries", "level2_contraction_space",
                 "checker_contraction_space"):
         assert K.CAPS[key] == 4096, (key, K.CAPS[key])
-    assert K.AMENDMENTS == [], "a cap change must be a recorded amendment"
+    assert len(K.AMENDMENTS) == 1 and K.AMENDMENTS[0]["date"] == "2026-11-02", "a cap change must be a recorded amendment"
+    assert "PHYSICAL" in K.AMENDMENTS[0]["change"] and K.CAPS["local_mass_entries"] == 60_000_000_000
 
 
 def test_r4_schedule_simulation_is_iterative():
@@ -4811,7 +4820,8 @@ def test_r6_shared_aggregation_fault_is_caught_independently():
     clean = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                     deadline_s=30)
     assert clean["outcome"] == "VERIFIED_ALL_MARGINALS", clean["outcome"]
-    orig = C.Engine.read_marginal
+    E = S.engine_class()                      # the engine that EXECUTES on this host
+    orig = E.read_marginal
 
     def faulty(self, var):
         counts, seen, depth = orig(self, var)
@@ -4822,12 +4832,12 @@ def test_r6_shared_aggregation_fault_is_caught_independently():
                 counts[0] = (counts[0][0] * 3, counts[0][1] * 3)
         return counts, seen, depth
 
-    C.Engine.read_marginal = faulty
+    E.read_marginal = faulty
     try:
         res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                       deadline_s=30)
     finally:
-        C.Engine.read_marginal = orig
+        E.read_marginal = orig
     assert res["outcome"] != "VERIFIED_ALL_MARGINALS", res["outcome"]
     msg = " ".join(str(f) for f in (res.get("checker") or {}).get("failures",
                                                                  []))
@@ -4942,7 +4952,8 @@ def test_r7_above_cap_does_not_claim_independent_verification():
                 counts[0] = (counts[0][0] * 3, counts[0][1] * 3)
         return counts, seen, depth
 
-    orig = C.Engine.read_marginal
+    E = S.engine_class()                      # the engine that EXECUTES on this host
+    orig = E.read_marginal
     for n, below_cap in ((12, True), (13, False)):
         facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1)],
                          origin=v) for v in range(n)]
@@ -4957,15 +4968,15 @@ def test_r7_above_cap_does_not_claim_independent_verification():
             assert "enumeration" in scope, scope
         else:
             # ABOVE the enumeration cap the independent aggregation is the
-            # STRUCTURAL second implementation (the sparse exact junction
-            # tree), not a shared engine and not a skipped check
-            assert "sparse exact junction tree" in scope, scope
-        C.Engine.read_marginal = faulty
+            # STRUCTURAL second implementation (an exact junction tree in its
+            # own layout), not a shared engine and not a skipped check
+            assert "exact" in scope and "junction tree" in scope, scope
+        E.read_marginal = faulty
         try:
             res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                           deadline_s=60)
         finally:
-            C.Engine.read_marginal = orig
+            E.read_marginal = orig
         # the fault must be CAUGHT at both sizes: the independent aggregation
         # runs by enumeration below the cap and by the second implementation
         # above it
@@ -6055,7 +6066,8 @@ def test_r10_zero_evidence_needs_an_independent_witness():
     clean = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                     deadline_s=30)
     assert clean["outcome"] == "VERIFIED_ALL_MARGINALS", clean["outcome"]
-    orig = C.Engine.root_value
+    E = S.engine_class()
+    orig = E.root_value
 
     def faulty(self, root):
         t = orig(self, root)
@@ -6064,12 +6076,12 @@ def test_r10_zero_evidence_needs_an_independent_witness():
                            support=[False])
         return t
 
-    C.Engine.root_value = faulty
+    E.root_value = faulty
     try:
         res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                       deadline_s=30)
     finally:
-        C.Engine.root_value = orig
+        E.root_value = orig
     assert res["outcome"] != "ZERO_EVIDENCE_PROVED", res["outcome"]
     assert res.get("zero_support_independently_verified") is False, res
 
@@ -6378,24 +6390,25 @@ def test_r11_zero_proof_operands_come_from_the_original_model():
     facs = [M.Factor(scope=(0,), card=(2,), table=[Fr(1), Fr(2)], origin=0)]
     m = M.Model(nvars=1, card=[2], factors=facs)
     m.validate()
-    orig = C.Engine.upward
+    E = S.engine_class()
+    orig = E.upward
 
     def faulty(self, root, keep=None):
         for f in self.factors:
             f.table = [Fr(0)] * len(f.table)
         return orig(self, root, keep=keep)
 
-    C.Engine.upward = faulty
+    E.upward = faulty
     try:
         res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                       deadline_s=30)
     finally:
-        C.Engine.upward = orig
+        E.upward = orig
     assert res["outcome"] != "ZERO_EVIDENCE_PROVED", res["outcome"]
     # the original model must be untouched
     assert [Fr(x) for x in m.factors[0].table] == [Fr(1), Fr(2)]
     # and the r9 root-result-only fault must still reject
-    o2 = C.Engine.root_value
+    o2 = E.root_value
 
     def f2(self, root):
         t = o2(self, root)
@@ -6404,12 +6417,12 @@ def test_r11_zero_proof_operands_come_from_the_original_model():
                            support=[False])
         return t
 
-    C.Engine.root_value = f2
+    E.root_value = f2
     try:
         r2 = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30,
                      deadline_s=30)
     finally:
-        C.Engine.root_value = o2
+        E.root_value = o2
     assert r2["outcome"] != "ZERO_EVIDENCE_PROVED", r2["outcome"]
     # genuine impossibilities still proved
     f0 = [M.Factor(scope=(0,), card=(2,), table=[Fr(0), Fr(0)], origin=0)]

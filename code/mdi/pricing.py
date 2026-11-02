@@ -126,45 +126,38 @@ class CostRecord:
         return d
 
 
-def identity_checker_feasibility(plan, r, budget=None):
-    """Applicability of the identity route's INDEPENDENT checker, decided
-    before any producer work. The structural checker (sparse exact junction
-    tree) refuses any bag above `checker_contraction_space`. Full positive
-    support makes a bag's occupancy its full domain: an excess is PROVED.
-    With hard zeros the occupancy is uncertain: a bounded, charged Boolean
-    support probe (entry cap = the checker cap) decides it, else UNKNOWN."""
-    from mdi import sparse_jt as SJ, config as K
-    cap = K.CAPS["checker_contraction_space"]
-    largest = int(getattr(plan, "largest_bag_entries", 0) or 0)
-    out = {"producer": "FEASIBLE", "largest_bag": largest, "checker_cap": cap}
-    if largest <= cap:
+def identity_checker_feasibility(plan, r, budget=None, wall_remaining_s=None, rss_cap_bytes=None,
+                                 rss_now_bytes=0, checker_plan=None):
+    """Applicability of the identity route's INDEPENDENT checker and exact
+    aggregation, decided before any producer work -- against the PHYSICAL budget
+    (2 November 2026, config.AMENDMENTS[0]): the producer's saved order and the
+    checker's OWN min-fill plan (the schedule `solve._check` actually builds)
+    are forecast at the calibrated rates of the layout that executes
+    (mdi.capacity). `checker` is FEASIBLE when producer + interval checker fit
+    the remaining wall and the RSS cap; `aggregation` says whether the exact
+    aggregation also fits (when it does not, the route still runs and ends as
+    VERIFIED_SHARED_AGGREGATION_ONLY, never a certificate). A refusal names the
+    stage and the figures; it is a forecast at this calibration, never a proof
+    about other hardware."""
+    from mdi import capacity as CAP, config as K
+    chk = checker_plan if checker_plan is not None else CAP.checker_plan(r)
+    fc = CAP.forecast_identity(plan, chk, r.factors, r.card, r.free)
+    wall = float(wall_remaining_s) if wall_remaining_s is not None else float(K.RESOURCES["arm_wall_s"])
+    cap = int(rss_cap_bytes) if rss_cap_bytes is not None else int(K.RESOURCES["arm_rss_bytes"])
+    ad = CAP.admit(fc, wall, cap, rss_now_bytes or 0)
+    out = {"producer": "FEASIBLE", "largest_bag": int(plan.largest_bag_entries),
+           "checker_largest_bag": int(chk.largest_bag_entries), "checker_order": chk.name,
+           "policy": "physical-2026-11-02", "calibration": fc["calibration"],
+           "forecast_seconds": fc["seconds"], "forecast_bytes": fc["bytes"], "exact_root_bits_bound": fc["exact_root_bits_bound"],
+           "admission": ad}
+    if ad["route"] == "FEASIBLE":
         out["checker"] = "FEASIBLE"
-        return out
-    has_zero = any(Fr(x) == 0 for f in r.factors for x in f.table)
-    if not has_zero:
-        out["checker"] = "CHECKER_CAP_PROVED"
-        out["checker_reason"] = ("full positive support: the checker's largest bag %d exceeds its %d-entry "
-                                 "cap" % (largest, cap))
-        return out
-    used = {"n": 0}
-
-    def charge(n):
-        used["n"] += n
-        if budget is not None:
-            budget.charge("pricing_entries", n, "identity checker support probe")
-    try:
-        tabs = [SJ.Table(tuple(f.scope), {k: True for k in SJ.table_from_factor(f).entries}) for f in r.factors]
-        touched = {v for f in r.factors for v in f.scope}
-        for v in r.free:
-            if v not in touched:
-                tabs.append(SJ.Table((v,), {(c,): True for c in range(r.card[v])}))
-        SJ.SparseJT(tabs, r.card, SJ.Boolean, entry_cap=cap, order=list(plan.order), charge=charge).run()
-        out["checker"] = "FEASIBLE"
-        out["checker_reason"] = "bounded Boolean support probe completed under the checker cap (%d entries charged)" % used["n"]
-    except SJ.SparseError as e:
-        out["checker"] = "CHECKER_FEASIBILITY_UNKNOWN"
-        out["checker_reason"] = "hard zeros leave the occupancy uncertain and the bounded probe refused: %s" % str(e)[:120]
-    out["probe_entries_charged"] = used["n"]
+        out["checker_reason"] = ad["route_reason"]
+    else:
+        out["checker"] = "CHECKER_" + ad["route"]
+        out["checker_reason"] = ad["route_reason"]
+    out["aggregation"] = ad["aggregation"]
+    out["aggregation_reason"] = ad["aggregation_reason"]
     return out
 
 
@@ -297,43 +290,41 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
         # declared contraction-space cap. Forecast that applicability BEFORE
         # execution, so a run whose complete status cannot be claimed is
         # known to be shared-aggregation-only up front.
-        fits = plan.largest_bag_entries <= K.CAPS["checker_contraction_space"]
-        rec.put("independent_aggregation_forecast", 1 if fits else 0, FORECAST,
-                ("the sparse exact junction tree fits the %d-entry cap, so the "
-                 "independent aggregation check is expected to run"
-                 if fits else
-                 "the largest bag %d exceeds the %d-entry checker cap, so the "
-                 "independent aggregation check will NOT run and the complete "
-                 "certified status will not be claimed")
-                % ((K.CAPS["checker_contraction_space"],) if fits
-                   else (plan.largest_bag_entries, K.CAPS["checker_contraction_space"])))
-        if fits:
-            # sparse elimination: one multiply and one add per bag entry per
-            # table, over the same bag tree
-            sj = sum(2 * b.domain(plan.card) * (len(b.factors) + len(b.children) + 2)
-                     for b in plan.bags)
-            rec.put("independent_sparse_ops", sj, UPPER,
-                    "sparse exact junction tree over the bag domains")
-            chk += sj
+        # ABOVE the enumeration cap the checker runs the STRUCTURAL second
+        # implementation (the exact integer aggregation, vectorized) when the
+        # PHYSICAL budget admits it (mdi.capacity; config.AMENDMENTS[0]). The
+        # forecast here records the aggregation's work on the checker's own
+        # min-fill schedule; whether it fits the wall and the RSS cap is decided
+        # by `identity_checker_feasibility`, recorded on the price's feasibility.
+        rec.put("independent_aggregation_forecast", 1, FORECAST,
+                "the exact integer aggregation runs on the checker's min-fill schedule when the physical "
+                "budget admits it (capacity forecast on the record's feasibility); otherwise the complete "
+                "certified status is not claimed")
+        sj = sum(2 * b.domain(plan.card) * (len(b.factors) + len(b.children) + 2)
+                 for b in plan.bags)
+        rec.put("independent_sparse_ops", sj, UPPER,
+                "exact aggregation over the bag domains (two operations per entry per table)")
+        chk += sj
     rec.put("checker_ops", chk, UPPER,
             "interval mode carries two endpoints, plus the bounded "
             "independent aggregation enumeration where it runs")
     # the SHARED ENTRY METER, in the unit the engines charge: the producer's
     # messages (one separator table per upward and per downward message), the
     # checker's interval messages (the same schedule), its enumeration
-    # assignments (when within the cap) and the sparse aggregation's built
-    # entries (at most one per bag-domain entry)
+    # assignments (when within the cap) and the exact aggregation's visited
+    # entries (at most one per bag-domain entry). The meter's cap is its
+    # physical backstop (AMENDMENTS[0]); admission is by `identity_checker_feasibility`.
     msg_entries = 2 * sum(b.sep_domain(plan.card) for b in plan.bags if b.parent >= 0)
     p_entries = msg_entries
     c_entries = msg_entries + (joint or 0) + sum(b.domain(plan.card) for b in plan.bags)
     rec.put("producer_metered_entries", p_entries, UPPER, "identity producer message entries on the shared meter")
     rec.put("checker_metered_entries", c_entries, UPPER,
-            "identity checker: interval messages + enumeration assignments + sparse aggregation entries")
+            "identity checker: interval messages + enumeration assignments + exact aggregation entries")
     rec.put("metered_entries_forecast", p_entries + c_entries, UPPER,
-            "producer + checker visits against the cumulative local_mass_entries cap (same unit as the meter)")
+            "producer + checker visits against the cumulative local_mass_entries meter (same unit as the meter)")
     if p_entries + c_entries > K.CAPS["local_mass_entries"] and rec.eligible:
         rec.eligible = False
-        rec.ineligible_reason = ("the identity's forecast metered entries %d exceed the shared cap %d"
+        rec.ineligible_reason = ("the identity's forecast metered entries %d exceed the shared meter's physical backstop %d"
                                  % (p_entries + c_entries, K.CAPS["local_mass_entries"]))
     rec.put("factor_entry_conversions", conv, UPPER,
             "reduced by the per-entry conversion cache")
@@ -926,14 +917,26 @@ def price_program(name, kind, final_marked, scales, coll, n_requested,
     # plan's execution meter for every other candidate). The probe's work is
     # then charged to the shared `pricing_entries` counter (complete cost).
     probe_used = {"n": 0}
-    cap_entries = K.CAPS["local_mass_entries"]
+    # the per-candidate probe bound is PHYSICAL and DETERMINISTIC (AMENDMENTS[0]): a
+    # program must be PRICED inside the frozen construction allowance
+    # (CAPS["discovery_wall_s"], 30 s), so its dry run may visit at most the entries
+    # that allowance buys at the calibrated scalar rate (capacity.entries_affordable:
+    # 666,666). A candidate whose probe exceeds that cannot be priced within its
+    # allowance and is refused, typed; discovery continues to the next candidate.
+    # The bound is the same whenever the price is derived (discovery, binding,
+    # replay). The program's EXECUTION affordability against the remaining wall is
+    # decided at binding by `pipeline.loaded_admission`.
+    from mdi import capacity as CAP
+    _probe_wall = float(K.CAPS["discovery_wall_s"])
+    cap_entries = CAP.entries_affordable(_probe_wall, "scalar_sparse")
 
     def charge(n):
         probe_used["n"] += n
         if probe_used["n"] > cap_entries:
-            raise SJ.SparseError("the pricing probe for this candidate reached %d "
-                                 "metered entries, above the %d cap: the program is "
-                                 "unaffordable" % (probe_used["n"], cap_entries))
+            raise SJ.SparseError("the pricing probe for this candidate reached %d metered entries, above the "
+                                 "%d entries the frozen %.0f s construction allowance buys at the calibrated scalar "
+                                 "rate: the program cannot be priced within its allowance and is refused"
+                                 % (probe_used["n"], cap_entries, _probe_wall))
         if budget is not None:
             budget.charge("pricing_entries", n, "pricing probe")
     if coll is not None and coll["evaluator"] != "statistic":

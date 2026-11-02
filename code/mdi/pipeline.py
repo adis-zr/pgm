@@ -595,24 +595,25 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
         ipl, iest = sel["chosen"]
     if ipl is not None:
         # the independent checker's applicability is established BEFORE any
-        # producer work: full positive support above the checker cap is a
-        # PROVED refusal; hard zeros leave the occupancy uncertain and a bounded
-        # charged Boolean support probe decides or labels it UNKNOWN
+        # producer work, against the PHYSICAL budget (config.AMENDMENTS[0]):
+        # the producer's saved order and the checker's OWN min-fill plan are
+        # forecast at the calibrated rates of the layout that executes; the
+        # refusal names the stage and the figures
         try:
-            ifeas = PR.identity_checker_feasibility(ipl, r, bg)
+            ifeas = PR.identity_checker_feasibility(ipl, r, bg, wall_remaining_s=bg.remaining(),
+                                                    rss_cap_bytes=cap_bytes, rss_now_bytes=S._rss_bytes())
         except B.BudgetExceeded as e:
-            # the bounded probe is charged to the SHARED meter: its exhaustion
-            # stops the invocation, it is never passed off as a candidate refusal
             return Outcome(status="RESOURCE_STOP",
                            reason="the shared work budget was exhausted by the identity checker's "
-                                  "support probe: %s" % e,
+                                  "capacity forecast: %s" % e,
                            rejected=rejected, stages=stages, budget=bg.report())
         if ifeas["checker"] != "FEASIBLE":
             rejected.append({"name": "identity", "typed": "PRICE_REFUSAL", "phase": "discover",
                              "feasibility": ifeas,
-                             "reason": "identity refused before admission: the independent checker's "
-                                       "largest scheduled bag %s exceeds its %d-entry cap (%s)"
-                                       % (ifeas.get("largest_bag"), K.CAPS["checker_contraction_space"], ifeas["checker"])})
+                             "reason": "identity refused before admission: %s (%s; forecast %s s, peak %.2f GiB)"
+                                       % (ifeas["checker"], ifeas.get("checker_reason"),
+                                          ifeas["forecast_seconds"].get("producer_and_checker"),
+                                          ifeas["forecast_bytes"].get("peak_producer_and_checker", 0) / 2 ** 30)})
             ipl = None
     if ipl is not None:
         # the identity PROGRAM: the chosen order, the precision its depth bound
@@ -884,9 +885,12 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     for x in cmp["all"]:
         if x["name"] != chosen_name and (x["ineligible_reason"] or
                                          x["admission_refusal"]):
+            # a candidate refused at selection by the admission rule (price,
+            # byte forecast or the physical wall rule) is a typed PRICE refusal
             rejected.append({"name": x["name"],
                              "reason": x["ineligible_reason"]
-                                       or x["admission_refusal"]})
+                                       or x["admission_refusal"],
+                             "typed": "PRICE_REFUSAL", "phase": "select"})
     out.plan = {"chosen": chosen_name, "kind": crec.kind,
                 "why": cmp["rule"],
                 "properties": crec.properties.as_dict(),
@@ -1157,6 +1161,13 @@ def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
                        reason="checker raised: %s: %s" % (type(e).__name__, e),
                        prices=out.prices, stages=stages, budget=bg.report())
     stages["check_s"] = time.monotonic() - t
+    # containment VERIFIED but the independent aggregation did not run (every
+    # failure the checker reports is that single note): the terminal is the
+    # contract's VERIFIED_SHARED_AGGREGATION_ONLY below, never a certificate
+    # and never a rejection of a publication whose containment held
+    if (not ok) and crec.kind == "identity" and fails and all(
+            isinstance(f, dict) and f.get("independent_aggregation_checked") is False and "var" not in f for f in fails):
+        ok = True
     if ok and crec.kind == "identity":
         saved_id = {k: Fr(v) for k, v in crec.allocations.items()}
         if saved_id != {"transformation": Fr(0)}:
@@ -1529,6 +1540,19 @@ def loaded_admission(rec, price, cap_bytes=None, bg=None):
             if int(fc.value) > remaining:
                 return ("the forecast metered entry visits %d exceed the REMAINING shared "
                         "meter %d of %d" % (int(fc.value), remaining, lim))
+        # the PHYSICAL rule (config.AMENDMENTS[0]), applied to every route alike: the
+        # forecast visits at the calibrated rate of the engine layout the route runs
+        # must fit the remaining wall. The identity route is forecast by mdi.capacity
+        # on its executing schedules (recorded on its feasibility); a program route
+        # runs the scalar exact engines, so its metered forecast is priced at the
+        # calibrated scalar rate.
+        if rec.kind != "identity" and fc is not None and fc.value is not None:
+            from mdi import capacity as CAP
+            rate = CAP.CALIBRATION["us_per_entry"]["scalar_sparse"] * 1e-6
+            need = int(fc.value) * rate
+            if need > bg.remaining():
+                return ("the forecast %d metered entry visits at the calibrated scalar rate (%.0f us/entry) need "
+                        "%.1f s against %.1f s remaining" % (int(fc.value), rate * 1e6, need, bg.remaining()))
     return None
 
 
@@ -1938,12 +1962,13 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
         price = PR.price_identity_plan(pl, est, nq, prog["precision"],
                                        {"constants": len(simp.removed_constants),
                                         "splits": len(simp.split_pairs)})
-        feas = PR.identity_checker_feasibility(pl, r, bg)
+        feas = PR.identity_checker_feasibility(pl, r, bg, wall_remaining_s=(bg.remaining() if bg is not None else None),
+                                               rss_cap_bytes=cap_bytes, rss_now_bytes=S._rss_bytes())
         price.feasibility = feas
         if feas["checker"] != "FEASIBLE" and price.eligible:
             price.eligible = False
-            price.ineligible_reason = ("the identity route's independent checker is not applicable: %s (%s)"
-                                       % (feas["checker"], feas.get("checker_reason", "")))
+            price.ineligible_reason = ("the identity route's independent checker is not admissible under the physical "
+                                       "budget: %s (%s)" % (feas["checker"], feas.get("checker_reason", "")))
         return price
     marked = MK.Marked.from_restricted(r, set(queries))
     scales = []

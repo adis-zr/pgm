@@ -19,7 +19,8 @@ CAPS = {
     # construction, execution and checking (masses, markers, lifted tables,
     # junction-tree entries). It is not a bound on simultaneously retained
     # states; the byte forecasts and the RSS cap bound residency.
-    "local_mass_entries": 1_000_000,           # cumulative across a plan
+    "local_mass_entries": 60_000_000_000,      # the shared meter's PHYSICAL backstop (600 s x 1e8 entries/s): the
+                                               # accounting unit is unchanged; admission is physical (mdi.capacity) -- AMENDMENTS[0]
     "feature_contrast_dim": 1024,
     "residual_masks": 3,
     "fits_per_mask": 2,
@@ -39,12 +40,30 @@ CAPS = {
     "region_local_enumeration": 4_096,         # boundary x interior, one region
     "aggregated_kernel_entries": 4_096,        # one product kernel
     "level2_contraction_space": 4_096,         # parent boundary product
-    "checker_contraction_space": 4_096,        # independent reduced contraction
+    "checker_contraction_space": 4_096,        # research routes' local enumeration fallbacks ONLY (AMENDMENTS[0]: the
+                                               # identity checker is admitted against the physical budget, not this guard)
 }
 
 # Any cap change must be listed here with its reason, so a silent enlargement is
 # impossible. An empty list means every cap is at its specified value.
-AMENDMENTS = []
+AMENDMENTS = [
+    {"date": "2026-11-02",
+     "authority": "overseer review of the 1 November six-cell comparison (the R26 closeout follow-up): 'make the resource "
+                  "policy correspond to the physical budget'",
+     "change": "the identity route's producer, independent interval checker and exact aggregation are admitted against the "
+               "PHYSICAL budget (remaining wall, process RSS cap) from calibrated forecasts of the schedules that execute "
+               "(mdi.capacity, vectorized layout mdi.vec_engine), not against the 4,096-entry checker_contraction_space guard; "
+               "that key stays at 4,096 for the research routes' local enumeration fallbacks",
+     "also": "CAPS['local_mass_entries'] 1,000,000 -> 60,000,000,000, the shared meter's physical backstop (600 s x 1e8 "
+             "entries/s); it remains the accounting unit charged by every engine; research-route pricing probes are bounded "
+             "by the entries the frozen 30 s construction allowance buys at the calibrated scalar rate "
+             "(capacity.entries_affordable, 666,666); the request object is version 4 and names the capacity policy and "
+             "calibration",
+     "reason": "the 4,096-entry bound and the 1,000,000-entry cumulative meter were implementation guards, not requirements "
+               "of the width-1/100 guarantee; under them no candidate reached by discovery was admitted on Grids_11, "
+               "Pedigree_11 or Promedus_12 and the intended comparison was never reached; measurements in "
+               "runs/mdi_2026-10-28/CAPACITY_2026-11-02/"},
+]
 
 # ---------------- section 13: resource contract ----------------
 RESOURCES = {

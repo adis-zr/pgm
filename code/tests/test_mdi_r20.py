@@ -172,6 +172,12 @@ def test_unknown_query_is_a_named_schema_outcome():
 # ------------------------------------------ layer 3: execution / resource contract
 
 def test_identity_checker_applicability_is_decided_before_admission():
+    """The identity checker's applicability is decided BEFORE any producer
+    work -- since 2 November 2026 against the PHYSICAL budget (mdi.capacity):
+    the 13-variable positive complete graph (bag 8,192) is admitted and
+    certified under the frozen 600 s / 1 GiB, with the forecast recorded on the
+    price; the same model under a 1 s wall is refused before work with the
+    forecast named (never an exception, never a run past the budget)."""
     n = 13
     facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1) + Fr(1 + v % 5, 10)], origin=v) for v in range(n)]
     facs += [M.Factor(scope=(i, j), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(2 + (i + j) % 3)], origin=100 + 13 * i + j)
@@ -179,9 +185,25 @@ def test_identity_checker_applicability_is_decided_before_admission():
     mg = M.Model(nvars=n, card=[2] * n, factors=facs).validate()
     t = time.time()
     rg = PLN.solve(mg, {}, wall_s=600, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
-    assert rg.status == "PRICE_REFUSAL" and "CHECKER_CAP_PROVED" in rg.reason and "8192" in rg.reason, rg.reason
-    assert time.time() - t < 20
-    assert not rg.intervals
+    assert rg.status.startswith("CERTIFIED"), (rg.status, rg.reason)
+    assert time.time() - t < 60
+    Z, pt = O.exact_all_marginals(M.restrict(mg, {}))
+    assert all(Fr(rg.intervals[v][a][0]) <= pt[v][a] <= Fr(rg.intervals[v][a][1]) for v in pt for a in range(2))
+    feas = next(p.get("feasibility") for p in rg.prices if p["name"] == "identity")
+    assert feas["policy"] == "physical-2026-11-02" and feas["checker"] == "FEASIBLE" and feas["largest_bag"] == 8192
+    assert feas["checker_order"] == "min_fill" and feas["forecast_seconds"]["total"] > 0
+    assert rg.checker.get("independent_aggregation_checked") is True
+    # a refusal under a wall the forecast cannot fit: typed, before any work, naming the stage
+    from mdi import capacity as CAP
+    r = M.restrict(mg, {})
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
+    fc = CAP.forecast_identity(sel["chosen"][0], CAP.checker_plan(r), r.factors, r.card, r.free)
+    ad = CAP.admit(fc, 0.001, 1 << 30, 0)
+    assert ad["route"] == "WALL_FORECAST_EXCEEDS" and "remaining" in ad["route_reason"]
+    ad2 = CAP.admit(fc, 600, 1 << 20, 0)
+    assert ad2["route"] == "RSS_FORECAST_EXCEEDS" and "GiB cap" in ad2["route_reason"]
+    bad = PR.identity_checker_feasibility(sel["chosen"][0], r, None, wall_remaining_s=0.001, rss_cap_bytes=1 << 30)
+    assert bad["checker"] == "CHECKER_WALL_FORECAST_EXCEEDS"
 
 
 def test_identity_runs_under_the_shared_entry_meter():
@@ -695,7 +717,12 @@ def test_p5_branch_capability_does_not_depend_on_current_discovery():
     def empty_solve(m, wall, evidence=None, queries=None):
         res, d, el, exp = orig(m, wall, evidence=evidence, queries=queries)
         if m.nvars == 12:
-            res = PLN.Outcome(status="CERTIFIED_FALLBACK_ONLY", prices=[], plan={"chosen": "identity", "invocation_ledger": {}})
+            from mdi import law as LAW
+            r_ = M.restrict(m, {})
+            # an EMPTY discovery of the canonical ring: the frozen law travels with the outcome
+            # (the fixture helper admits the shipped programs only under its model hash)
+            res = PLN.Outcome(status="CERTIFIED_FALLBACK_ONLY", prices=[], plan={"chosen": "identity", "invocation_ledger": {}},
+                              law=LAW.OriginalLaw.freeze(m, {}, set(r_.free)))
             d = tempfile.mkdtemp()
         return res, d, el, exp
     AC._solve = empty_solve

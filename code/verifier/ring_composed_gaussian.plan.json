@@ -1752,6 +1752,11 @@
  "rejected_alternatives": [],
  "request": {
   "arithmetic_mode": "E",
+  "capacity": {
+   "calibration": "2026-11-02-pinhost",
+   "layout": "vectorized",
+   "policy": "physical-2026-11-02"
+  },
   "card": {
    "0": 2,
    "1": 2,
@@ -1774,7 +1779,7 @@
   "evidence_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "limits": {
    "effective": {
-    "local_mass_entries": 1000000,
+    "local_mass_entries": 60000000000,
     "profile_comparisons": 2000000,
     "rss_bytes": 1073741824,
     "wall_s": 600.0
@@ -1782,7 +1787,7 @@
    "frozen": {
     "arm_rss_bytes": 8589934592,
     "arm_wall_s": 600.0,
-    "local_mass_entries": 1000000,
+    "local_mass_entries": 60000000000,
     "profile_comparisons": 2000000
    }
   },
@@ -1811,7 +1816,7 @@
    11
   ],
   "query_sha256": "3acdc0a9b054517230176fc342827325e5c55d6ec62c376e381802175cfdd6c3",
-  "version": 3,
+  "version": 4,
   "width": "1/100"
  },
  "storage_schedule": {

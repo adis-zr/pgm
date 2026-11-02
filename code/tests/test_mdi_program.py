@@ -697,7 +697,8 @@ def test_identity_independent_aggregation_is_structural_above_the_cap():
             counts[0] = (counts[0] * 3 if self.mode == "P"
                          else (counts[0][0] * 3, counts[0][1] * 3))
         return counts, seen, depth
-    orig = C.Engine.read_marginal
+    E = S.engine_class()                      # the engine that EXECUTES on this host
+    orig = E.read_marginal
     for n in (12, 13, 20):
         facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1 + v % 3)], origin=v)
                 for v in range(n)]
@@ -707,7 +708,7 @@ def test_identity_independent_aggregation_is_structural_above_the_cap():
         clean = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30, deadline_s=60)
         assert clean["outcome"] == "VERIFIED_ALL_MARGINALS", clean["outcome"]
         scope = clean["checker"]["independent_aggregation_scope"]
-        assert ("enumeration" in scope) if n <= 12 else ("sparse exact junction tree" in scope)
+        assert ("enumeration" in scope) if n <= 12 else ("exact" in scope and "junction tree" in scope)
         r = M.restrict(m, {})
         sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
         pl, est = sel["chosen"]
@@ -715,11 +716,11 @@ def test_identity_independent_aggregation_is_structural_above_the_cap():
         if n > 12:
             assert int(rec.counters["independent_aggregation_forecast"].value) == 1
             assert "independent_sparse_ops" in rec.counters
-        C.Engine.read_marginal = faulty
+        E.read_marginal = faulty
         try:
             res = S.solve(m, {}, eps=Fr(1, 100), mode="P", cap_bytes=1 << 30, deadline_s=60)
         finally:
-            C.Engine.read_marginal = orig
+            E.read_marginal = orig
         assert res["outcome"] == "NUMERICAL_REFUSAL", (n, res["outcome"])
         msg = " ".join(str(f) for f in res["checker"]["failures"])
         assert "shared aggregation" in msg, msg[:200]
