@@ -604,10 +604,11 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
         # the producer's saved order and the checker's OWN min-fill plan are
         # forecast at the calibrated rates of the layout that executes; the
         # refusal names the stage and the figures
+        _chk = CAPX.checker_plan(r)          # the checker's OWN schedule: admission AND pricing describe it
         try:
             ifeas = PR.identity_checker_feasibility(ipl, r, bg, wall_remaining_s=bg.remaining(),
                                                     rss_cap_bytes=cap_bytes, rss_now_bytes=CAPX.rss_current_bytes(),
-                                                    rss_baseline_bytes=CAPX.invocation_baseline_bytes(),
+                                                    rss_baseline_bytes=CAPX.invocation_baseline_bytes(), checker_plan=_chk,
                                                     diagnostic_shared_only=_DIAGNOSTIC_SHARED_ONLY[0])
         except B.BudgetExceeded as e:
             return Outcome(status="RESOURCE_STOP",
@@ -640,7 +641,8 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     if ipl is not None and _p is not None:
         iprice = PR.price_identity_plan(ipl, iest, nq, _p,
                                         {"constants": len(simp.removed_constants),
-                                         "splits": len(simp.split_pairs)})
+                                         "splits": len(simp.split_pairs)},
+                                        checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table))
         isup = PT.supported("identity")
         iprops = PT.PlanProperties()
         iprops.set("mathematically_certified")          # exact elimination
@@ -1966,12 +1968,14 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
         # the ACTUAL saved precision prices the storage: an MPFR point of p
         # bits occupies about 32 + p/8 bytes (64 at the default 64..256 bits)
         est = P.byte_estimate(pl, max(64, 32 + (int(prog["precision"]) + 7) // 8))
+        _chk = CAPX.checker_plan(r)          # the checker's OWN schedule prices the checker
         price = PR.price_identity_plan(pl, est, nq, prog["precision"],
                                        {"constants": len(simp.removed_constants),
-                                        "splits": len(simp.split_pairs)})
+                                        "splits": len(simp.split_pairs)},
+                                       checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table))
         feas = PR.identity_checker_feasibility(pl, r, bg, wall_remaining_s=(bg.remaining() if bg is not None else None),
                                                rss_cap_bytes=cap_bytes, rss_now_bytes=CAPX.rss_current_bytes(),
-                                               rss_baseline_bytes=CAPX.invocation_baseline_bytes(),
+                                               rss_baseline_bytes=CAPX.invocation_baseline_bytes(), checker_plan=_chk,
                                                diagnostic_shared_only=_DIAGNOSTIC_SHARED_ONLY[0])
         price.feasibility = feas
         if feas["checker"] != "FEASIBLE" and price.eligible:
@@ -2096,6 +2100,7 @@ def _begin_invocation():
     _BG_FOR_RECORDS[0] = None
     _DIAGNOSTIC_SHARED_ONLY[0] = False
     CAPX.INVOCATION_BASELINE[0] = None
+    CAPX._OCCUPANCY_CACHE.clear()          # each invocation is charged its own (single) occupancy probe
     EPS_FOR_RECORD[0] = K.MAX_WIDTH
     for attr in ("_ledger", "_admit", "_shared", "_phase_stop"):
         if hasattr(_discover_programs, attr):

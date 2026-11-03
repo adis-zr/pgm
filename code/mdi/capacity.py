@@ -30,7 +30,11 @@ from mdi import plan as P
 # entry visited by one operand (sum over bags of domain x operands, upward + downward +
 # readout: `schedule_work`). The admission rate is the measured maximum x safety factor.
 CALIBRATION = {
-    "version": "2026-11-03-pinhost",
+    # the version names the CONSTANTS and the FORECAST RULES that priced a record: 2026-11-03b (integrated
+    # pass) keeps every constant of 2026-11-03 but forecasts the exact aggregation on its actual tiles and
+    # retained messages, prices the checker on the checker's own schedule and counts the occupancy probe,
+    # so a record priced under the earlier rules is refused at replay as priced under another calibration
+    "version": "2026-11-03b-pinhost",
     "safety_factor": 1.5,
     "measured_us_per_work_entry": {"vec_P": {"Pedigree_11": 0.048, "Promedus_12": 0.047, "Grids_11": 0.051},
                                    "vec_I": {"Pedigree_11": 0.093, "Promedus_12": 0.088, "Grids_11": 0.100},
@@ -46,7 +50,10 @@ CALIBRATION = {
     # estimate following the live allocations; the RSS cap is ENFORCED by the engines' polls regardless
     "measured_bytes_per_two_pass_entry": {"vec_P": {"Pedigree_11": 109, "Promedus_12": 56, "Grids_11": 60},
                                           "vec_I": {"Pedigree_11": 114, "Promedus_12": 124, "Grids_11": 140}},
-    "measured_exact_peak_GiB_vs_forecast": {"Pedigree_11": [1.21, 1.4], "Promedus_12": [3.57, 13.1], "Grids_11": [19.87, 20.8]},
+    # isolated exact aggregation: [measured RSS growth, forecast exact_X]; the 3 November integrated forecast counts
+    # EVERY retained upward message plus the actual tile (Grids_11's 19.87 GiB was measured on the 2 November engine,
+    # which retained the same messages; its forecast then read 13.06 GiB, now 20.31)
+    "measured_exact_peak_GiB_vs_forecast": {"Pedigree_11": [1.31, 1.62], "Promedus_12": [3.57, 7.08], "Grids_11": [19.87, 20.31]},
     "bytes_per_entry": {"vec_P": 112, "vec_I": 144, "mpz_header": 64, "mpz_zero": 48, "scalar_fraction": 580, "scalar_mpz": 360, "scalar_interval": 300},
     # what a finished engine stage leaves resident that the next stage does not reuse, as a FRACTION of the
     # stage's live set (P then I in one process: Promedus_12 whole 6.46 vs isolated I 5.73 GiB = 12.7 %;
@@ -106,44 +113,50 @@ def exact_message_bits(plan, factors):
     return bits
 
 
+def exact_tile_entries(bag, card, chunk=None):
+    """The product-tile size the exact engine ACTUALLY allocates for `bag`: the
+    engine iterates axes -- summed first, then kept -- until the remaining
+    sub-bag is at most `chunk` (vec_engine.VecExact._reduce), so the tile is the
+    first sub-bag not above the chunk (the whole domain when it fits; never above
+    the chunk unless a single axis exceeds it)."""
+    chunk = chunk or (1 << 20)
+    dom = bag.domain(card)
+    if dom <= chunk:
+        return dom
+    sep = set(bag.separator)
+    order = [v for v in bag.vars if v not in sep] + [v for v in bag.vars if v in sep]
+    sub = dom
+    for v in order:
+        if sub <= chunk:
+            break
+        sub //= card[v]
+    return sub
+
+
 def exact_peak_bytes(plan, factors, header=None, occupancy=None):
-    """Peak resident bytes of the vectorized exact aggregation: the largest bag
-    product transient at ITS bit bound, the live upward messages at theirs, and
-    one downward message at the root's. `occupancy` (from `occupancy_probe`,
-    {bag: nonzero fraction of its upward message}) scales the RETAINED message
-    bytes: an exact zero entry costs the object header only (`mpz(0)` carries no
-    limbs), so with hard zeros the messages are mostly headers. The product
-    transient is NOT scaled (its array is allocated at full domain)."""
+    """Peak resident bytes of the vectorized exact aggregation on ITS ACTUAL
+    allocation schedule (3 November 2026): EVERY upward message is RETAINED
+    through the downward pass (`VecExact.run()` keeps `msg` for `counts()`), so
+    the live set at the peak is the sum of ALL upward messages at their own bit
+    bounds (never a parent-frees-child simulation), plus the largest product
+    TILE the engine allocates (`exact_tile_entries`, from the tiling the engine
+    performs), plus one downward message at the root's bits. `occupancy`
+    ({bag: nonzero fraction of its upward message}) scales the RETAINED message
+    bytes: an exact zero entry costs the object header only."""
     header = CALIBRATION["bytes_per_entry"]["mpz_header"] if header is None else header
     zero_bytes = CALIBRATION["bytes_per_entry"].get("mpz_zero", 48)
     bits = exact_message_bits(plan, factors)
     root_bits = max(bits.values()) if bits else 1
     per_entry = lambda bt: bt // 8 + header
-    chunk = 1 << 20                                   # vec_engine.VecExact.CHUNK_ENTRIES
-    largest = max((min(b.domain(plan.card), chunk) * per_entry(bits[b.idx]) for b in plan.bags), default=0)
+    card = plan.card
+    largest = max((exact_tile_entries(b, card) * per_entry(bits[b.idx]) for b in plan.bags), default=0)
 
     def msg_bytes(x, n):
         occ = 1.0 if occupancy is None else float(occupancy.get(x, 1.0))
         return int(n * (occ * per_entry(bits[x]) + (1.0 - occ) * zero_bytes))
-    # live upward messages, simulated as in plan.peak_live_upward but weighted by bytes
-    card = plan.card
-    seq, stack = [], [b.idx for b in plan.bags if b.parent == -1]
-    while stack:
-        x = stack.pop(); seq.append(x); stack.extend(plan.bags[x].children)
-    live, peak, cur = {}, 0, 0
-    for x in reversed(seq):
-        b = plan.bags[x]
-        for c in b.children:
-            if c in live:
-                cur -= live.pop(c)
-        if b.parent >= 0:
-            e = msg_bytes(x, b.sep_domain(card))
-            live[x] = e
-            cur += e
-        peak = max(peak, cur)
-    # downward messages carry at most the root's bits
+    retained = sum(msg_bytes(b.idx, b.sep_domain(card)) for b in plan.bags if b.parent >= 0)
     down = max((b.sep_domain(card) for b in plan.bags if b.parent >= 0), default=0) * per_entry(root_bits)
-    return largest + peak + down, root_bits
+    return largest + retained + down, root_bits
 
 
 def occupancy_probe(plan, factors, card, deadline=None, charge=None):
@@ -152,12 +165,18 @@ def occupancy_probe(plan, factors, card, deadline=None, charge=None):
     aggregation (hard zeros prune). Costs a Boolean product per bag (measured
     0.3-1.9 s on the external schedules), charged to the shared meter like any
     other visited entries, and REUSED: one probe per (plan, factor list) per
-    process -- the admission at discovery, the repricing at binding and the
-    checker's own admission all read the same result (the cache key is the
-    plan's order and the factor tables' identity, so a different model or
-    schedule probes afresh). Returns ({bag: fraction}, entries_visited)."""
+    INVOCATION -- the admission at discovery, the repricing at binding and the
+    checker's own admission all read the same result. The cache key is the
+    plan's order and the factor tables' CONTENT (scope, cardinalities, zero
+    mask -- the only inputs the occupancy depends on), never object identity:
+    the three stages each restrict and simplify their own factor lists, so an
+    identity key missed every time and the probe ran three times per invocation
+    (Pedigree_11: 3 x 5.9 M entries) while the record said once. The pipeline
+    clears the cache at its entry boundary, so each invocation is charged
+    exactly one probe. Returns ({bag: fraction}, entries_visited)."""
     import numpy as np
-    key = (tuple(plan.order), tuple((tuple(f.scope), id(f.table)) for f in factors))
+    key = (tuple(plan.order), tuple((tuple(f.scope), tuple(int(c) for c in f.card),
+                                    bytes(1 if Fr(x) == 0 else 0 for x in f.table)) for f in factors))
     hit = _OCCUPANCY_CACHE.get(key)
     if hit is not None:
         return hit[0], 0                      # reused: nothing new is visited or charged
@@ -284,7 +303,7 @@ def forecast_identity(prod_plan, chk_plan, factors, card, free, cal=None, occupa
             "bytes": {**{k: int(v) for k, v in byt.items()}, "peak_producer_and_checker": int(max(byt["producer_P"], byt["checker_I"])), "peak": int(max(byt.values()))}}
 
 
-def admit(fc, wall_remaining_s, rss_cap_bytes, rss_now_bytes=0, rss_baseline_bytes=None, cal=None):
+def admit(fc, wall_remaining_s, rss_cap_bytes, rss_now_bytes=0, rss_baseline_bytes=None, cal=None, remaining_only=False):
     """The admission decision against the PHYSICAL budget, per stage. Memory is
     judged as the stage's forecast live set plus the INVOCATION BASELINE (the
     resident set at the invocation's entry: interpreter, parsed model, tables)
@@ -295,7 +314,10 @@ def admit(fc, wall_remaining_s, rss_cap_bytes, rss_now_bytes=0, rss_baseline_byt
     engine's freed arenas are reused by the next stage (whole-invocation peaks
     6.46 / 6.81 GiB against isolated stage peaks 5.73 / 6.10), so counting them
     as live would refuse stages that fit. `route`: producer + interval checker;
-    `aggregation`: the exact aggregation; `certificate`: every stage."""
+    `aggregation`: the exact aggregation; `certificate`: every stage.
+    `remaining_only=True` is the LATER admission (producer and interval checker
+    already finished): only the aggregation's own remaining work is reserved
+    against the remaining wall, never the finished stages' forecasts again."""
     cal = cal or CALIBRATION
     now = int(rss_now_bytes or 0)
     base = int(rss_baseline_bytes) if rss_baseline_bytes is not None else now
@@ -331,12 +353,14 @@ def admit(fc, wall_remaining_s, rss_cap_bytes, rss_now_bytes=0, rss_baseline_byt
         out["route"] = "FEASIBLE"
         out["route_reason"] = "producer + interval checker forecast %.1f s and %.2f GiB (+%.2f GiB resident) fit %.1f s and the %.2f GiB cap" % (
             pc_s, fc["bytes"]["peak_producer_and_checker"] / 2 ** 30, resident / 2 ** 30, wall, (cap or 0) / 2 ** 30)
-    tot_s = fc["seconds"]["total"]
+    tot_s = fc["seconds"]["exact_X"] if remaining_only else fc["seconds"]["total"]
     x_b = fc["bytes"]["exact_X"] + base + residue_x
     if tot_s > wall:
         out["aggregation"] = "WALL_FORECAST_EXCEEDS"
-        out["aggregation_reason"] = ("adding the exact aggregation (%.1f s) forecasts %.1f s against %.1f s remaining"
-                                     % (fc["seconds"]["exact_X"], tot_s, wall))
+        out["aggregation_reason"] = (("the exact aggregation's remaining work (%.1f s) exceeds %.1f s remaining" % (fc["seconds"]["exact_X"], wall))
+                                     if remaining_only else
+                                     ("adding the exact aggregation (%.1f s) forecasts %.1f s against %.1f s remaining"
+                                      % (fc["seconds"]["exact_X"], tot_s, wall)))
     elif cap is not None and x_b > cap:
         out["aggregation"] = "RSS_FORECAST_EXCEEDS"
         out["aggregation_reason"] = ("the exact integer aggregation forecasts %.2f GiB resident (per-message bit bounds up to %d bits) "

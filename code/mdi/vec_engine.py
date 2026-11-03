@@ -1,11 +1,18 @@
-"""Vectorized LAYOUT of the identity route's two engines (capacity pass, 2 November 2026).
+"""Vectorized LAYOUT of the identity route's two engines (capacity pass, 2 November 2026;
+claims corrected 3 November 2026).
 
-The arithmetic is unchanged: the SAME gmpy2 directed-rounding contexts (`arith.Ctx.D`
-/ `.U`), the same precision and exponent range, the same conservative depth labels,
-the same zero-safe support semantics and the same SEQUENTIAL summation order over a
-bag's interior (numpy's object-dtype `add.reduce` accumulates in index order, so
-every rounded sum is bit-for-bit the value `contract.Engine` computes; the shipped
-control `test_vectorized_engine_is_bit_identical_to_the_scalar_engine` asserts it).
+The arithmetic is the same mathematical object: the SAME gmpy2 directed-rounding
+contexts (`arith.Ctx.D` / `.U`), the same precision and exponent range, the same
+conservative depth labels and the same zero-safe support semantics. The ROUNDED
+VALUES are NOT promised bit-identical to `contract.Engine`: numpy's object-dtype
+reduction over a transposed, broadcast view does not visit a bag's interior in the
+scalar engine's flat index order on mixed-cardinality / reversed-scope bags, so the
+two engines can round differently within the same depth bound (28 of 30 such cases
+differed in a review). What the certificate needs is order-independent: every point
+value is a directed-rounded enclosure of the exact count whose error is bounded by
+the depth label (`arith.lam(depth, p)`), which does not depend on summation order;
+so both engines' published intervals enclose the exact truth
+(`test_vectorized_engine_agrees_with_the_scalar_engine_and_both_enclose_the_truth`).
 Only the data layout differs: bag products and separator sums are whole-array
 operations on numpy object arrays of `mpfr` instead of a Python loop over flat
 indices, which is what makes the 600-second physical budget reachable on bags of
@@ -42,6 +49,60 @@ def _bag_view(arr, scope, bag_vars):
     a = arr.transpose(axes) if axes != list(range(len(axes))) else arr
     shape = [arr.shape[pos[v]] if v in pos else 1 for v in bag_vars]
     return a.reshape(shape)
+
+
+def _bag_view_checker(arr, scope, bag_vars, card):
+    """The CHECKER'S OWN layout interpretation (3 November 2026): the table over
+    `scope` placed on the bag's axes by explicit UAI stride arithmetic -- the
+    first scope variable is the most significant index, the last varies fastest
+    -- without `transpose`/`reshape` views and without `_bag_view`. Every entry
+    is addressed by its own computed flat offset, so a wrong axis interpretation
+    in the shared helper is not inherited; the result carries the same values
+    at the same bag coordinates only when both interpretations agree, and the
+    exact aggregation then checks the engine's enclosures against counts
+    computed through this view."""
+    flat = arr.reshape(-1)
+    scope = tuple(scope)
+    strides = {}
+    acc = 1
+    for v in reversed(scope):
+        strides[v] = acc
+        acc *= card[v]
+    shape = tuple(card[v] if v in strides else 1 for v in bag_vars)
+    n = 1
+    for c in shape:
+        n *= c
+    # the flat offset of every bag coordinate into the table: sum over scope vars of digit * stride
+    offs = np.zeros(shape, dtype=np.int64)
+    for k, v in enumerate(bag_vars):
+        if v in strides:
+            idx = np.arange(card[v], dtype=np.int64).reshape([card[v] if j == k else 1 for j in range(len(bag_vars))])
+            offs = offs + idx * strides[v]
+    return flat[offs.reshape(-1)].reshape(shape)
+
+
+def verify_layout_interpretation(factors, card, probe=None):
+    """Runtime verification of the SHARED layout helper against the checker's
+    own stride arithmetic on every factor table: for each factor, both views
+    over the factor's own scope (and over a bag that contains its scope in a
+    different order) must address the same original entries. Returns the list
+    of disagreements (empty when the two interpretations agree)."""
+    bad = []
+    for fi, f in enumerate(factors):
+        shape = tuple(int(c) for c in f.card)
+        if not shape:
+            continue
+        arr = np.arange(len(f.table), dtype=object).reshape(shape)        # entry indices, not values
+        scope = tuple(f.scope)
+        # a bag ordering that differs from the scope when the scope has >= 2 vars
+        bag = tuple(sorted(scope)) if len(scope) >= 2 else scope
+        if bag == scope and len(scope) >= 2:
+            bag = tuple(reversed(scope))
+        a = np.asarray(_bag_view(arr, scope, bag), dtype=object)
+        b = np.asarray(_bag_view_checker(arr, scope, bag, dict(card)), dtype=object)
+        if a.shape != b.shape or not np.array_equal(a, b):
+            bad.append({"factor": fi, "scope": scope, "bag": bag, "reason": "the shared layout helper and the checker's stride arithmetic address different table entries"})
+    return bad
 
 
 class VecEngine:
@@ -395,6 +456,7 @@ class VecExact:
         self.ops = {"mul": 0, "add": 0}
         self.peak_live_entries = 0
         self.entries_visited = 0
+        self.max_transient_entries = 0
         self.max_bits = 0
         self.scale_bits = 0
         self._fac = {}
@@ -412,17 +474,10 @@ class VecExact:
             self._fac[fi] = arr.reshape(shape) if shape else arr.reshape(())
 
     def _product(self, bidx, exclude):
-        B = self.plan.bags[bidx]
-        bvars = tuple(B.vars)
+        """The whole bag product (no reduction), through the checker's own layout
+        interpretation; used only by callers that need the full array."""
+        bvars, parts = self._parts(bidx, exclude)
         shape = tuple(self.card[v] for v in bvars)
-        parts = [_bag_view(self._fac[fi], tuple(self.factors[fi].scope), bvars) for fi in B.factors]
-        for nb in ([B.parent] if B.parent >= 0 else []) + list(B.children):
-            if nb == exclude:
-                continue
-            t = self.msg.get((nb, bidx))
-            if t is None:
-                raise RuntimeError("missing message %d->%d" % (nb, bidx))
-            parts.append(_bag_view(t[1], tuple(t[0]), bvars))
         if not parts:
             acc = np.full(shape, mpz(1), dtype=object)
         else:
@@ -442,20 +497,27 @@ class VecExact:
     def _parts(self, bidx, exclude):
         B = self.plan.bags[bidx]
         bvars = tuple(B.vars)
-        parts = [_bag_view(self._fac[fi], tuple(self.factors[fi].scope), bvars) for fi in B.factors]
+        # the checker's OWN axis interpretation for the factor tables (stride
+        # arithmetic, never the shared transpose/reshape helper); messages are
+        # the engine's own arrays and are placed by the same arithmetic
+        parts = [_bag_view_checker(self._fac[fi], tuple(self.factors[fi].scope), bvars, self.card) for fi in B.factors]
         for nb in ([B.parent] if B.parent >= 0 else []) + list(B.children):
             if nb == exclude:
                 continue
             t = self.msg.get((nb, bidx))
             if t is None:
                 raise RuntimeError("missing message %d->%d" % (nb, bidx))
-            parts.append(_bag_view(t[1], tuple(t[0]), bvars))
+            parts.append(_bag_view_checker(t[1], tuple(t[0]), bvars, self.card))
         return bvars, parts
 
     def _reduce(self, bidx, exclude, keep_axes):
-        """Exact product over the bag reduced (summed) to `keep_axes`, CHUNKED
-        along the first summed axis so that no transient exceeds
-        CHUNK_ENTRIES: the sum is exact, so the chunk order is immaterial."""
+        """Exact product over the bag reduced (summed) to `keep_axes`, TILED so
+        that no product transient exceeds CHUNK_ENTRIES: the summed axes are
+        iterated jointly (as many leading summed axes as needed, their indices
+        enumerated) until the remaining sub-bag fits; the sum is exact, so the
+        tile order is immaterial. `self.max_transient_entries` records the
+        largest product array actually allocated (the forecast's `exact_chunk`
+        must bound it)."""
         bvars, parts = self._parts(bidx, exclude)
         shape = tuple(self.card[v] for v in bvars)
         dom = 1
@@ -477,28 +539,62 @@ class VecExact:
                 self.ops["mul"] += int(acc.size)
                 if self.deadline is not None:
                     self.deadline()          # polled between whole-array operations (each <= CHUNK_ENTRIES)
+            n = 1
+            for c in shp:
+                n *= c
+            self.max_transient_entries = max(self.max_transient_entries, n)
             return acc
-        if dom <= self.CHUNK_ENTRIES or not sum_axes:
+        if dom <= self.CHUNK_ENTRIES or not sum_axes and dom <= self.CHUNK_ENTRIES:
             acc = product(parts, shape)
             out = np.asarray(acc.sum(axis=sum_axes), dtype=object) if sum_axes else acc
             self.ops["add"] += int(np.size(out)) * max(0, dom // max(1, int(np.size(out))) - 1)
             return bvars, out
-        k0 = sum_axes[0]
-        rest = tuple(k if k < k0 else k - 1 for k in sum_axes[1:])      # axes after dropping k0
-        sub_shape = shape[:k0] + shape[k0 + 1:]
-        out = None
-        for i in range(shape[k0]):
+        # choose the axes to iterate -- summed axes first, then KEPT axes -- until the
+        # sub-bag (the product tile) fits the chunk; the output is assembled slice by
+        # slice over the iterated kept axes, so neither the tile nor any intermediate
+        # exceeds CHUNK_ENTRIES (the output array itself is the message and is retained)
+        kept_axes = [k for k in range(len(bvars)) if k in keep_axes]
+        iter_axes = []
+        sub = dom
+        for k in list(sum_axes) + kept_axes:
+            if sub <= self.CHUNK_ENTRIES:
+                break
+            iter_axes.append(k)
+            sub //= shape[k]
+        iter_set = set(iter_axes)
+        sub_order = [k for k in range(len(bvars)) if k not in iter_set]            # axes of the sub-bag, original order
+        rest = tuple(i for i, k in enumerate(sub_order) if k in sum_axes)          # summed axes within the sub-bag
+        sub_shape = tuple(shape[k] for k in sub_order)
+        out_shape = tuple(shape[k] for k in kept_axes)
+        out = np.full(out_shape, mpz(0), dtype=object) if out_shape else None
+        total = mpz(0)
+        import itertools
+        for idx in itertools.product(*[range(shape[k]) for k in iter_axes]):
             if self.deadline is not None:
-                self.deadline()              # polled per chunk
-            sl = [np.take(q, i if q.shape[k0] > 1 else 0, axis=k0) for q in parts]
+                self.deadline()              # polled per tile
+            sl = []
+            for q in parts:
+                v = q
+                # the tile's index on every iterated axis (a broadcast axis of size 1 keeps 0), highest axis first
+                for k, i in sorted(zip(iter_axes, idx), reverse=True):
+                    v = np.take(v, i if v.shape[k] > 1 else 0, axis=k)
+                sl.append(v)
             acc = product(sl, sub_shape)
             red = np.asarray(acc.sum(axis=rest), dtype=object) if rest else acc
             self.ops["add"] += int(np.size(red)) * max(0, int(acc.size) // max(1, int(np.size(red))) - 1)
             if out is None:
-                out = red
+                total = total + mpz(red.item() if isinstance(red, np.ndarray) else red)
+                continue
+            sel = tuple(idx[iter_axes.index(k)] if k in iter_set else slice(None) for k in kept_axes)
+            cur = out[sel]
+            if isinstance(cur, np.ndarray):
+                np.add(cur, red, out=cur)
+                out[sel] = cur
             else:
-                np.add(out, red, out=out)
-                self.ops["add"] += int(np.size(out))
+                out[sel] = cur + (red.item() if isinstance(red, np.ndarray) else red)
+            self.ops["add"] += int(np.size(red))
+        if out is None:
+            return bvars, np.asarray(total, dtype=object)
         return bvars, out
 
     def send(self, src, dst):
@@ -512,6 +608,10 @@ class VecExact:
         live = sum(int(np.size(m[1])) for m in self.msg.values())
         self.peak_live_entries = max(self.peak_live_entries, live)
         return out
+
+    def message_bits(self):
+        """Realised bit sizes of the retained messages: {(src, dst): max bit length}."""
+        return {k: max((int(x).bit_length() for x in m[1].ravel()), default=0) for k, m in self.msg.items()}
 
     def run(self):
         bags = self.plan.bags

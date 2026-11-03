@@ -62,10 +62,11 @@ def engine_class():
 
 def _engine_for(plan, factors, ctx, **kw):
     """The dense engine in the layout that executes (2 November 2026, physical
-    capacity policy): the vectorized layout (`vec_engine.VecEngine`, bit-identical
-    arithmetic over numpy object arrays) when numpy is available, else the scalar
-    `contract.Engine`. The arithmetic, depth labels and support semantics are the
-    same; only the data layout differs."""
+    capacity policy): the vectorized layout (`vec_engine.VecEngine`, the same
+    directed-rounding arithmetic and depth labels over numpy object arrays; its
+    rounded values need not match the scalar engine's bit for bit, its enclosures
+    are valid by the order-independent depth argument) when numpy is available,
+    else the scalar `contract.Engine`."""
     try:
         from mdi import vec_engine as V
         if V.AVAILABLE:
@@ -92,7 +93,8 @@ def _exact_aggregation(r, pl2, dl, charge, cap_bytes, t_end):
         except ImportError:
             occ = None
     fc = CAP.forecast_identity(pl2, pl2, r.factors, r.card, r.free, occupancy=occ)
-    ad = CAP.admit(fc, remaining, cap_bytes, CAP.rss_current_bytes(), rss_baseline_bytes=CAP.invocation_baseline_bytes())
+    ad = CAP.admit(fc, remaining, cap_bytes, CAP.rss_current_bytes(), rss_baseline_bytes=CAP.invocation_baseline_bytes(),
+                   remaining_only=True)                 # the producer and the interval checker have already run
     if ad["aggregation"] != "FEASIBLE":
         return None, ("NOT RUN: the exact aggregation is not admitted by the physical budget: %s" % ad["aggregation_reason"])
     try:
@@ -968,6 +970,19 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
     for v in r.free:
         if v not in pl2.var_home:
             raise A.NumericalRefusal("checker found no home bag for variable %d" % v)
+    # INPUT-TABLE INTERPRETATION (3 November 2026): the checker verifies, with its
+    # own stride arithmetic, that the shared vectorized layout helper addresses the
+    # same original table entries it does, on every factor and on a bag ordering
+    # different from the scope; a disagreement is a refusal before any arithmetic
+    try:
+        from mdi import vec_engine as _V
+        if _V.AVAILABLE:
+            _bad = _V.verify_layout_interpretation(r.factors, r.card)
+            if _bad:
+                raise A.NumericalRefusal("checker refuses: the layout helper's axis interpretation of %d factor table(s) "
+                                         "differs from the checker's stride arithmetic: %s" % (len(_bad), _bad[0]))
+    except ImportError:
+        pass
     cp = max(80, p + 16) if checker_precision is None else int(checker_precision)
     if cp < 8:
         raise A.NumericalRefusal("checker precision %d is not usable" % cp)

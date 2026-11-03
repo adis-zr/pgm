@@ -150,8 +150,11 @@ def identity_checker_feasibility(plan, r, budget=None, wall_remaining_s=None, rs
     occ = None
     occ_visited = 0
     if any(Fr(x) == 0 for f in r.factors for x in f.table):
+        # the probe runs under the invocation's OWN deadline / RSS check (an expired or
+        # exhausted budget stops it before any work; its stop is a typed terminal)
+        _dl = budget.deadline_fn("admission:occupancy probe") if budget is not None and hasattr(budget, "deadline_fn") else None
         try:
-            occ, occ_visited = CAP.occupancy_probe(chk, r.factors, r.card,
+            occ, occ_visited = CAP.occupancy_probe(chk, r.factors, r.card, deadline=_dl,
                                                    charge=(lambda n: budget.charge("pricing_entries", n, "occupancy probe")) if budget is not None else None)
         except ImportError:
             occ = None
@@ -205,18 +208,10 @@ def _comparison_bound(rec):
     return rec
 
 
-def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=None):
-    """Price the identity route from its compiled schedule.
-
-    The counts mirror what `Engine.send` ACTUALLY executes per assignment:
-    one multiplication per owned factor and per incoming message, plus at most
-    one addition per assignment beyond the first that lands in a given
-    separator slot. The previous formula used (own + max(0, nin - 1))
-    multiplications and no additions, which UNDERSHOT: a 3-variable solve was
-    priced at 20 upward operations but executed 24, so the figure was not an
-    upper bound at all.
-    """
-    rec = CostRecord(kind="identity", name="identity")
+def _two_pass_schedule_ops(plan):
+    """Operation and visit counts of ONE two-pass engine run (producer P or
+    interval checker I) on `plan`, mirroring what `Engine.send` / `read_marginal`
+    / `root_value` execute: returns (up, down, ro, conv, weighted_bag, weighted_sep)."""
     up = down = ro = 0
     conv = 0
     weighted_bag = weighted_sep = 0
@@ -254,6 +249,42 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
         # executed 10. Some chains had enough slack elsewhere to hide it.
         if b.parent < 0:
             up += dom * (own + n_children) + max(0, dom - 1)
+    return up, down, ro, conv, weighted_bag, weighted_sep
+
+
+def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=None, checker_plan=None, hard_zeros=None):
+    """Price the identity route from its compiled schedule.
+
+    `plan` is the PRODUCER's schedule (the saved order). The independent checker
+    does not run on it: `solve.verify_publication` builds its OWN min-fill plan
+    for the interval contraction and the exact aggregation (`capacity.checker_plan`),
+    so every checker figure -- interval operations, interval messages, exact
+    reductions and the occupancy probe -- is derived from `checker_plan` when the
+    caller supplies it (the pipeline does, at discovery and at binding). Without
+    it the checker is priced on `plan`, which is exact only when the two schedules
+    coincide (3 November 2026 integrated pass: on min-degree producers above the
+    enumeration cap the min-fill checker executed 1,312 / 2,224 / 1,510 metered
+    entries against saved bounds of 1,304 / 2,192 / 1,468). `hard_zeros` says
+    whether the law has exact zeros -- then the checker's admission runs the
+    charged occupancy probe once (one full bag domain per non-root bag of the
+    checker plan) and that work is in the checker's bound; None (unknown) prices
+    the probe conservatively.
+
+    The counts mirror what `Engine.send` ACTUALLY executes per assignment:
+    one multiplication per owned factor and per incoming message, plus at most
+    one addition per assignment beyond the first that lands in a given
+    separator slot. The previous formula used (own + max(0, nin - 1))
+    multiplications and no additions, which UNDERSHOT: a 3-variable solve was
+    priced at 20 upward operations but executed 24, so the figure was not an
+    upper bound at all.
+    """
+    rec = CostRecord(kind="identity", name="identity")
+    cp = checker_plan if checker_plan is not None else plan
+    up, down, ro, conv, weighted_bag, weighted_sep = _two_pass_schedule_ops(plan)
+    if cp is plan:
+        c_up, c_down, c_ro = up, down, ro
+    else:
+        c_up, c_down, c_ro, _cc, _cw, _cs = _two_pass_schedule_ops(cp)
     rec.put("weighted_bag_visits", weighted_bag, UPPER,
             "bag domain times owned factors plus every incident message")
     rec.put("weighted_separator_entries", weighted_sep, EXACT)
@@ -263,8 +294,9 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
             "separator slot")
     rec.put("producer_downward_ops", down, UPPER)
     rec.put("readout_ops", ro, UPPER)
-    # The checker's INTERVAL message passing, two endpoints per entry...
-    chk = 2 * (up + down + ro)
+    # The checker's INTERVAL message passing, two endpoints per entry, on the
+    # CHECKER's schedule (its own min-fill plan)...
+    chk = 2 * (c_up + c_down + c_ro)
     # ...PLUS the independent AGGREGATION enumeration, which runs after the
     # interval contraction when the free joint space is within the declared
     # cap. It was absent from the price entirely: on twelve independent binary
@@ -317,26 +349,42 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
                 "the exact integer aggregation runs on the checker's min-fill schedule when the physical "
                 "budget admits it (capacity forecast on the record's feasibility); otherwise the complete "
                 "certified status is not claimed")
-        sj = sum(2 * b.domain(plan.card) * (len(b.factors) + len(b.children) + 2)
-                 for b in plan.bags)
+        sj = sum(2 * b.domain(cp.card) * (len(b.factors) + len(b.children) + 2)
+                 for b in cp.bags)
         rec.put("independent_sparse_ops", sj, UPPER,
-                "exact aggregation over the bag domains (two operations per entry per table)")
+                "exact aggregation over the bag domains of the checker's schedule (%s; two operations per entry per table)" % cp.name)
         chk += sj
     rec.put("checker_ops", chk, UPPER,
             "interval mode carries two endpoints, plus the bounded "
             "independent aggregation enumeration where it runs")
-    # the SHARED ENTRY METER, in the unit the engines charge: the producer's
-    # messages (one separator table per upward and per downward message), the
-    # checker's interval messages (the same schedule), its enumeration
-    # assignments (when within the cap) and the exact aggregation's visited
-    # entries (at most one per bag-domain entry). The meter's cap is its
-    # physical backstop (AMENDMENTS[0]); admission is by `identity_checker_feasibility`.
-    msg_entries = 2 * sum(b.sep_domain(plan.card) for b in plan.bags if b.parent >= 0)
-    p_entries = msg_entries
-    c_entries = msg_entries + (joint or 0) + sum(b.domain(plan.card) for b in plan.bags)
+    # the SHARED ENTRY METER, in the unit the engines charge -- derived from the
+    # SCHEDULE each engine actually executes (3 November 2026), so a saved upper
+    # bound is never below executed work in the same unit:
+    #   producer (VecEngine, mode P): one separator table per upward message and
+    #     per downward message (`send` charges `t.size()`);
+    #   interval checker (VecEngine, mode I): the same message schedule;
+    #   independent enumeration (when within the cap): one entry per assignment;
+    #   exact aggregation (VecExact): `_reduce` charges the FULL bag domain once
+    #     per reduction -- one upward reduction per non-root bag, one root total,
+    #     one downward reduction per child message, and one readout reduction per
+    #     home variable (each a full bag sweep).
+    #   occupancy probe (capacity.occupancy_probe, when the law has hard zeros):
+    #     one Boolean product per non-root bag of the checker plan, charged once
+    #     per invocation (the cache is keyed by content and reset at the entry).
+    p_entries = 2 * sum(b.sep_domain(plan.card) for b in plan.bags if b.parent >= 0)
+    c_msg_entries = 2 * sum(b.sep_domain(cp.card) for b in cp.bags if b.parent >= 0)
+    agg_entries = 0
+    for b in cp.bags:
+        dom = b.domain(cp.card)
+        n_home = sum(1 for v, h in cp.var_home.items() if h == b.idx)
+        agg_entries += dom * (1 + len(b.children) + n_home)
+    probe_entries = sum(b.domain(cp.card) for b in cp.bags if b.parent >= 0) if hard_zeros is not False else 0
+    c_entries = c_msg_entries + (joint or 0) + agg_entries + probe_entries
     rec.put("producer_metered_entries", p_entries, UPPER, "identity producer message entries on the shared meter")
     rec.put("checker_metered_entries", c_entries, UPPER,
-            "identity checker: interval messages + enumeration assignments + exact aggregation entries")
+            "identity checker on its own schedule (%s): interval messages + enumeration assignments + exact aggregation "
+            "reductions (upward, root, downward per child, readout per home variable; each a full bag domain) + one "
+            "occupancy probe (%d entries%s)" % (cp.name, probe_entries, "" if hard_zeros is not None else ", priced conservatively"))
     rec.put("metered_entries_forecast", p_entries + c_entries, UPPER,
             "producer + checker visits against the cumulative local_mass_entries meter (same unit as the meter)")
     if p_entries + c_entries > K.CAPS["local_mass_entries"] and rec.eligible:

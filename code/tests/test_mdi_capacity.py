@@ -1,5 +1,7 @@
-"""Capacity pass (2 November 2026): the vectorized layout is bit-identical to the
-scalar engine; the exact aggregation agrees with the sparse exact junction tree;
+"""Capacity pass (2 November 2026): the vectorized layout computes the same
+mathematical objects as the scalar engine and both enclose the exact truth (values
+are NOT promised bit-identical; 3 November correction); the exact aggregation agrees
+with the sparse exact junction tree;
 admission describes the schedules that execute and is decided against the
 physical budget; the request object names the policy; the amendment is recorded."""
 import os, sys, json, random, tempfile
@@ -51,24 +53,29 @@ def _run(engine_cls, pl, r, mode, p):
     return eng, rv, read
 
 
-def test_vectorized_engine_is_bit_identical_to_the_scalar_engine():
-    """Every root value, every readout count, every depth label and every support
-    flag of the vectorized layout equals the scalar engine's, in mode P and mode I,
-    on models with and without hard zeros (same gmpy2 contexts, same sequential
-    summation order)."""
+def test_vectorized_engine_agrees_with_the_scalar_engine_and_both_enclose_the_truth():
+    """The vectorized layout computes the SAME mathematical objects as the scalar
+    engine (same directed-rounding contexts, same precision, same depth labels,
+    same support flags); its rounded VALUES are not promised bit-identical --
+    numpy's object reduction order over a transposed, broadcast view differs from
+    the scalar engine's flat sequential order on mixed-cardinality / reversed-scope
+    bags (3 November 2026 correction: 28 of 30 such cases differed). What the
+    contract needs is order-independent: every point value is a directed-rounded
+    enclosure of the exact count with the stated depth, so the EXACT truth lies
+    inside the published enclosure of both engines, and the two engines' point
+    values differ by at most the depth-bounded rounding slack. Checked here on
+    models with and without hard zeros, mixed cardinalities and reversed scopes."""
+    from mdi import arith as A
     for n, k, z, seed in ((7, 2, False, 1), (9, 3, True, 2), (12, 2, True, 3), (10, 3, True, 4)):
         m = _rnd_model(n, k, z, seed)
         r = M.restrict(m, {})
         pl = _plan_of(r)
+        Z, pt = O.exact_all_marginals(r)
         for mode, p in (("P", 64), ("I", 80)):
             es, rvs, rs = _run(C.Engine, pl, r, mode, p)
             ev, rvv, rvd = _run(V.VecEngine, pl, r, mode, p)
             for a, b in zip(rvs, rvv):
                 assert a.depth == b.depth and bool(a.support[0]) == bool(b.support[0])
-                if mode == "P":
-                    assert a.vals[0] == b.vals[0]
-                else:
-                    assert a.vals[0][0] == b.vals[0][0] and a.vals[0][1] == b.vals[0][1]
             for v in r.free:
                 cs, ss, ds = rs[v]
                 cv, sv, dv = rvd[v]
@@ -77,10 +84,22 @@ def test_vectorized_engine_is_bit_identical_to_the_scalar_engine():
                     if not ss[a]:
                         continue
                     if mode == "P":
-                        assert cs[a] == cv[a]
+                        # both are RNDD enclosures of the same exact count at the same depth: within the depth-bounded slack
+                        x_s, x_v = A.exact_fr(cs[a]), A.exact_fr(cv[a])
+                        assert abs(x_s - x_v) <= max(x_s, x_v) * Fr(1, 2 ** (p - 8))
                     else:
-                        assert cs[a][0] == cv[a][0] and cs[a][1] == cv[a][1]
-            assert es.ops["add"] <= ev.ops["add"] * 1 + es.ops["add"]        # both engines count their work
+                        # two valid enclosures of the same exact count must OVERLAP
+                        lo_s, hi_s = A.exact_fr(cs[a][0]), A.exact_fr(cs[a][1])
+                        lo_v, hi_v = A.exact_fr(cv[a][0]), A.exact_fr(cv[a][1])
+                        assert lo_v <= hi_v and lo_s <= hi_s and lo_v <= hi_s and lo_s <= hi_v
+    # the END-TO-END obligation: the published enclosures of the vectorized pipeline contain the exact truth
+    for n, k, z, seed in ((7, 2, False, 1), (9, 3, True, 2), (12, 2, True, 3), (10, 3, True, 4)):
+        m = _rnd_model(n, k, z, seed)
+        r = M.restrict(m, {})
+        Z, pt = O.exact_all_marginals(r)
+        res = PLN.solve(m, {}, wall_s=60, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+        assert res.status.startswith("CERTIFIED")
+        assert all(Fr(res.intervals[v][a][0]) <= pt[v][a] <= Fr(res.intervals[v][a][1]) for v in pt for a in range(k))
 
 
 def test_vectorized_exact_aggregation_equals_the_sparse_exact_junction_tree():
