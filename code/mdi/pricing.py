@@ -252,6 +252,32 @@ def _two_pass_schedule_ops(plan):
     return up, down, ro, conv, weighted_bag, weighted_sep
 
 
+def _exact_reduction_ops(plan):
+    """Multiply + add count of the exact aggregation (`vec_engine.VecExact`) on
+    `plan`: `_reduce` multiplies (operands - 1) times per bag entry (the first
+    operand is broadcast, every further one multiplies in place; tiles partition
+    the domain so the tiled total is the same) and adds at most once per bag
+    entry (an untiled sum adds dom - out entries; the tiled sum adds dom, counting
+    the accumulation into the output). The reductions, in the order the engine
+    runs them: one upward message per non-root bag and one root total, both over
+    the owned factors and the child messages; one downward message per child over
+    the owned factors, the parent message and the other children; one readout per
+    home variable over every operand (the parent message is present for every
+    non-root bag at readout, the child messages are retained until the bag is
+    processed)."""
+    tot = 0
+    for b in plan.bags:
+        dom = b.domain(plan.card)
+        own = len(b.factors)
+        nch = len(b.children)
+        npar = 1 if b.parent >= 0 else 0
+        n_home = sum(1 for v, h in plan.var_home.items() if h == b.idx)
+        tot += dom * max(0, own + nch - 1) + dom                            # upward message or root total
+        tot += nch * (dom * max(0, own + npar + nch - 2) + dom)             # one downward message per child
+        tot += n_home * (dom * max(0, own + npar + nch - 1) + dom)          # one readout per home variable
+    return tot
+
+
 def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=None, checker_plan=None, hard_zeros=None):
     """Price the identity route from its compiled schedule.
 
@@ -349,14 +375,24 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
                 "the exact integer aggregation runs on the checker's min-fill schedule when the physical "
                 "budget admits it (capacity forecast on the record's feasibility); otherwise the complete "
                 "certified status is not claimed")
-        sj = sum(2 * b.domain(cp.card) * (len(b.factors) + len(b.children) + 2)
-                 for b in cp.bags)
+        # ARITHMETIC of the exact aggregation (3 November 2026, third review): derived
+        # from the reductions `VecExact` performs on the checker's schedule, with the
+        # operands each reduction actually multiplies -- the former per-bag figure
+        # 2 x dom x (own + children + 2) priced ONE product per bag and undercounted the
+        # BRANCHING work (one downward product per child, one readout product per home
+        # variable): binary stars of 13 / 25 / 64 variables counted 843 / 2,835 / 17,265
+        # multiply-adds against 488 / 968 / 2,528 priced.
+        sj = _exact_reduction_ops(cp)
         rec.put("independent_sparse_ops", sj, UPPER,
-                "exact aggregation over the bag domains of the checker's schedule (%s; two operations per entry per table)" % cp.name)
+                "exact aggregation on the checker's schedule (%s): per reduction (operands - 1) multiplies and at most "
+                "one add per bag entry -- one upward reduction per non-root bag and one root total (owned factors + "
+                "child messages), one downward reduction per child (owned + parent + the other children), one readout "
+                "per home variable (every operand)" % cp.name)
         chk += sj
     rec.put("checker_ops", chk, UPPER,
-            "interval mode carries two endpoints, plus the bounded "
-            "independent aggregation enumeration where it runs")
+            "interval mode carries two endpoints (on the checker's own schedule), plus the bounded "
+            "independent aggregation enumeration where it runs, else the exact aggregation's "
+            "reductions (independent_sparse_ops)")
     # the SHARED ENTRY METER, in the unit the engines charge -- derived from the
     # SCHEDULE each engine actually executes (3 November 2026), so a saved upper
     # bound is never below executed work in the same unit:

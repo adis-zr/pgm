@@ -118,7 +118,14 @@ def exact_tile_entries(bag, card, chunk=None):
     engine iterates axes -- summed first, then kept -- until the remaining
     sub-bag is at most `chunk` (vec_engine.VecExact._reduce), so the tile is the
     first sub-bag not above the chunk (the whole domain when it fits; never above
-    the chunk unless a single axis exceeds it)."""
+    the chunk unless a single axis exceeds it). SCOPE: this is the tile of the
+    UPWARD reduction (kept axes = the separator to the parent). The downward and
+    readout reductions keep different axes (a child separator; one variable) and
+    the engine tiles them with the same rule, so their tiles are also at most the
+    chunk, but their kept-axis order differs from the one simulated here; the
+    forecast therefore bounds the tile SIZE (<= chunk) without naming the exact
+    sub-bag of every reduction. Operand views and staging copies are outside the
+    tile term (see VecExact._reduce)."""
     chunk = chunk or (1 << 20)
     dom = bag.domain(card)
     if dom <= chunk:
@@ -142,7 +149,15 @@ def exact_peak_bytes(plan, factors, header=None, occupancy=None):
     TILE the engine allocates (`exact_tile_entries`, from the tiling the engine
     performs), plus one downward message at the root's bits. `occupancy`
     ({bag: nonzero fraction of its upward message}) scales the RETAINED message
-    bytes: an exact zero entry costs the object header only."""
+    bytes: an exact zero entry costs the object header only. WHAT IS NOT COVERED
+    (third review): the operand views the checker's layout helper builds per
+    reduction (offset arrays and gathered copies the size of each operand's
+    placement), numpy's staging copies inside object-array sums, the converted
+    factor tables, and the interpreter; measured on Pedigree_11 the forecast
+    stayed above the RSS growth (1.62 vs 1.31 GiB) through the message bit
+    bounds, not through these terms. The figure is an admission ESTIMATE; the
+    RSS cap is enforced by the engines' polls and, in the comparison, by the
+    launcher's process-tree supervision."""
     header = CALIBRATION["bytes_per_entry"]["mpz_header"] if header is None else header
     zero_bytes = CALIBRATION["bytes_per_entry"].get("mpz_zero", 48)
     bits = exact_message_bits(plan, factors)
@@ -175,6 +190,8 @@ def occupancy_probe(plan, factors, card, deadline=None, charge=None):
     clears the cache at its entry boundary, so each invocation is charged
     exactly one probe. Returns ({bag: fraction}, entries_visited)."""
     import numpy as np
+    if deadline is not None:
+        deadline()                            # the budget is polled BEFORE the key is built and before a cache hit returns
     key = (tuple(plan.order), tuple((tuple(f.scope), tuple(int(c) for c in f.card),
                                     bytes(1 if Fr(x) == 0 else 0 for x in f.table)) for f in factors))
     hit = _OCCUPANCY_CACHE.get(key)

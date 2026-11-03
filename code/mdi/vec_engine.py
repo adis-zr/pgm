@@ -478,6 +478,10 @@ class VecExact:
         interpretation; used only by callers that need the full array."""
         bvars, parts = self._parts(bidx, exclude)
         shape = tuple(self.card[v] for v in bvars)
+        n = 1
+        for c in shape:
+            n *= c
+        self.max_transient_entries = max(self.max_transient_entries, n)
         if not parts:
             acc = np.full(shape, mpz(1), dtype=object)
         else:
@@ -512,12 +516,21 @@ class VecExact:
 
     def _reduce(self, bidx, exclude, keep_axes):
         """Exact product over the bag reduced (summed) to `keep_axes`, TILED so
-        that no product transient exceeds CHUNK_ENTRIES: the summed axes are
+        that no PRODUCT transient exceeds CHUNK_ENTRIES: the summed axes are
         iterated jointly (as many leading summed axes as needed, their indices
         enumerated) until the remaining sub-bag fits; the sum is exact, so the
         tile order is immaterial. `self.max_transient_entries` records the
-        largest product array actually allocated (the forecast's `exact_chunk`
-        must bound it)."""
+        largest product array actually allocated, operands or not (the
+        forecast's tile must bound it). SCOPE of the chunk limit (third review,
+        3 November 2026): it bounds the product tiles only. The operand VIEWS
+        `_bag_view_checker` builds (an int64 offset array and the gathered table
+        copy, both the size of the operand's bag placement) and numpy's staging
+        copies inside `sum` are not tiled and can exceed the limit on an operand
+        whose own placement is above the chunk; the retained message / readout
+        row is the reduction's output and is bounded by the separator (or the
+        variable's cardinality), not by the chunk. The forecast counts these
+        under the retained-message and tile terms and is an estimate; the RSS
+        cap is enforced by the polls regardless."""
         bvars, parts = self._parts(bidx, exclude)
         shape = tuple(self.card[v] for v in bvars)
         dom = 1
@@ -531,6 +544,10 @@ class VecExact:
             self.charge(dom)
 
         def product(ps, shp):
+            n = 1
+            for c in shp:
+                n *= c
+            self.max_transient_entries = max(self.max_transient_entries, n)     # every allocated tile, operands or not
             if not ps:
                 return np.full(shp, mpz(1), dtype=object)
             acc = np.array(np.broadcast_to(ps[0], shp), dtype=object)
@@ -539,10 +556,6 @@ class VecExact:
                 self.ops["mul"] += int(acc.size)
                 if self.deadline is not None:
                     self.deadline()          # polled between whole-array operations (each <= CHUNK_ENTRIES)
-            n = 1
-            for c in shp:
-                n *= c
-            self.max_transient_entries = max(self.max_transient_entries, n)
             return acc
         if dom <= self.CHUNK_ENTRIES or not sum_axes and dom <= self.CHUNK_ENTRIES:
             acc = product(parts, shape)

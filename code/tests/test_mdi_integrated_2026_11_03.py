@@ -226,3 +226,100 @@ def test_checker_bound_is_derived_from_the_checkers_own_schedule_and_counts_one_
     m2 = _chain(13, unary=[Fr(1), Fr(1)])
     s2 = PRE.simplify(M.restrict(m2, {}))
     assert CAP.occupancy_probe(CAP.checker_plan(M.restrict(m2, {})), s2.factors, r.card)[1] > 0
+
+
+def _star(n):
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1 + v % 3)], origin=v) for v in range(n)]
+    facs += [M.Factor(scope=(0, v), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)], origin=100 + v) for v in range(1, n)]
+    return M.Model(nvars=n, card=[2] * n, factors=facs).validate()
+
+
+def test_arithmetic_price_covers_the_branching_work_of_the_exact_check():
+    """(third review, 3 Nov 2026) The ARITHMETIC price of the identity route --
+    `independent_sparse_ops` for the exact check and `checker_ops` for the whole
+    checker, both labelled upper_bound and used by the portfolio to rank routes --
+    priced one product per bag and so undercounted the branching work: one downward
+    product per child and one readout product per home variable. Binary stars of
+    13 / 25 / 64 variables counted 843 / 2,835 / 17,265 exact multiply-adds against
+    488 / 968 / 2,528 priced (whole checker 2,529 / 8,505 / 51,795 against 2,524 /
+    7,324 / 38,836). Now both are derived from the reductions the exact engine
+    performs with their operand counts and cover the engines' own multiply + add
+    counters (no comparisons or conversions are counted) on the stars and on a
+    chain; the clean counterpart still certifies the exact truth."""
+    exact, interval = [], []
+    _oi = V.VecExact.__init__
+
+    def _init(self, *a, **k):
+        _oi(self, *a, **k)
+        exact.append(self)
+    _oe = S._engine_for
+
+    def _eng(*a, **k):
+        e = _oe(*a, **k)
+        if k.get("mode") == "I":
+            interval.append(e)
+        return e
+    V.VecExact.__init__ = _init
+    S._engine_for = _eng
+    try:
+        for m, n in ((_star(13), 13), (_star(25), 25), (_star(64), 64), (_chain(16, k=2, seed=7), 16)):
+            exact.clear(); interval.clear()
+            res = PLN.solve(m, {}, wall_s=300, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+            assert res.status.startswith("CERTIFIED"), (n, res.status, res.reason)
+            assert exact, "the exact aggregation ran (above the enumeration cap)"
+            c = next(p["counters"] for p in res.prices if p["name"] == "identity")
+            ex = sum(e.ops["mul"] + e.ops["add"] for e in exact)
+            iv = sum(e.ops["mul"] + e.ops["add"] for e in interval)
+            assert c["independent_sparse_ops"]["label"] == "upper_bound" and c["checker_ops"]["label"] == "upper_bound"
+            assert int(c["independent_sparse_ops"]["value"]) >= ex, (n, c["independent_sparse_ops"]["value"], ex)
+            assert int(c["checker_ops"]["value"]) >= iv + ex, (n, c["checker_ops"]["value"], iv + ex)
+            if n <= 16:                    # the exact oracle enumerates the joint: feasible on the small models only
+                Z, pt = O.exact_all_marginals(M.restrict(m, {}))
+                assert all(Fr(res.intervals[v][a][0]) <= pt[v][a] <= Fr(res.intervals[v][a][1]) for v in pt for a in range(len(pt[v])))
+    finally:
+        V.VecExact.__init__ = _oi
+        S._engine_for = _oe
+    # the schedule formula on a plan directly: every bag's reductions with their operands
+    r = M.restrict(_star(13), {})
+    cp = CAP.checker_plan(r)
+    vx = V.VecExact(cp, r.factors, r.card).run()
+    vx.counts(r.free)
+    assert PR._exact_reduction_ops(cp) >= vx.ops["mul"] + vx.ops["add"]
+
+
+def test_probe_polls_its_budget_before_any_work_and_tiles_report_operandless_transients():
+    """(third review) The occupancy probe polls the budget BEFORE it builds its
+    cache key and before a cache hit returns (an expired budget never returns a
+    cached verdict unguarded); the exact engine's largest-transient telemetry
+    counts a tile allocated without operands (the `np.full` branch) as well."""
+    m = _chain(13, unary=[Fr(1), Fr(0)])
+    r = M.restrict(m, {})
+    cp = CAP.checker_plan(r)
+    CAP._OCCUPANCY_CACHE.clear()
+    occ, n = CAP.occupancy_probe(cp, r.factors, r.card)
+    assert n > 0 and CAP._OCCUPANCY_CACHE
+    polls = []
+
+    class _Expired(Exception):
+        pass
+
+    def expired():
+        polls.append(1)
+        raise _Expired("control: the budget's own deadline fired")
+    with pytest.raises(_Expired):
+        CAP.occupancy_probe(cp, r.factors, r.card, deadline=expired)     # a HIT in the cache: still polled, refused first
+    assert polls == [1]
+    # and through the budget object itself: an expired budget stops the pre-admission probe on a cache HIT too
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, 1 << 30)
+    bg = B.Budget(wall_s=0.0, limits={"pricing_entries": 10 ** 9})
+    with pytest.raises(B.BudgetExceeded):
+        PR.identity_checker_feasibility(sel["chosen"][0], r, bg, wall_remaining_s=bg.remaining(), rss_cap_bytes=1 << 30, checker_plan=cp)
+    # a bag with no operands: an unconstrained free variable's singleton bag (no factor touches it)
+    facs = [M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=0)]
+    m2 = M.Model(nvars=3, card=[2, 2, 2], factors=facs).validate()
+    r2 = M.restrict(m2, {})
+    pl2 = CAP.checker_plan(r2)
+    vx = V.VecExact(pl2, r2.factors, r2.card).run()
+    vx.counts(r2.free)
+    assert vx.max_transient_entries >= max(b.domain(pl2.card) for b in pl2.bags)
+    assert any(not b.factors for b in pl2.bags), "the control has an operandless bag"
