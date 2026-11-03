@@ -1,2 +1,5 @@
 # persisted candidate programs of the planning passes (durable on disk, excluded from git and the archive)
 runs/mdi_2026-10-28/PLANNING_*/*/plans_*/
+
+# reference .MAR copies extracted by the post-run scorer (reproducible from the packet; never committed)
+code/runs/mdi_2026-10-28/COMPARISON_*/references_read_after_all_cells/
