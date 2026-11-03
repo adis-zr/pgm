@@ -118,9 +118,22 @@ def test_admission_describes_the_executing_schedules_and_the_physical_budget():
     assert wall["route"] == "WALL_FORECAST_EXCEEDS"
     mem = CAP.admit(fc, 600, 1, 0)
     assert mem["route"] == "RSS_FORECAST_EXCEEDS" and "GiB cap" in mem["route_reason"]
-    # the aggregation can be refused while the route is admitted (the terminal is then shared-aggregation-only)
+    # the aggregation can be refused while producer + checker fit: the ROUTE is admissible only
+    # as the explicit shared-aggregation-only diagnostic; for the CERTIFICATE it is refused
     tight = CAP.admit(fc, fc["seconds"]["producer_and_checker"] + 1e-9, 8 << 30, 0)
     assert tight["route"] == "FEASIBLE" and tight["aggregation"] == "WALL_FORECAST_EXCEEDS", tight
+    assert tight["certificate"] == "AGGREGATION_WALL_FORECAST_EXCEEDS" and "cannot satisfy the certificate" in tight["certificate_reason"]
+    assert ok["certificate"] == "FEASIBLE"
+    feas_c = PR.identity_checker_feasibility(pp, r, None, wall_remaining_s=fc["seconds"]["producer_and_checker"] + 1e-9, rss_cap_bytes=8 << 30)
+    assert feas_c["checker"] == "CHECKER_AGGREGATION_WALL_FORECAST_EXCEEDS" and feas_c["admitted_for"] == "certificate"
+    feas_d = PR.identity_checker_feasibility(pp, r, None, wall_remaining_s=fc["seconds"]["producer_and_checker"] + 1e-9, rss_cap_bytes=8 << 30,
+                                             diagnostic_shared_only=True)
+    assert feas_d["checker"] == "FEASIBLE" and feas_d["admitted_for"] == "diagnostic_shared_only"
+    # the calibration binds the layout that executes: the scalar fallback never inherits the vectorized rates
+    cal_s = CAP.calibration_for_layout("scalar")
+    assert cal_s["version"].endswith("-scalar") and cal_s["us_per_entry"]["vec_P"] == CAP.CALIBRATION["us_per_entry"]["scalar_dense"]
+    fc_s = CAP.forecast_identity(pp, cp, r.factors, r.card, r.free, cal=cal_s)
+    assert fc_s["seconds"]["total"] > 100 * fc["seconds"]["total"] and fc_s["layout"] == "scalar"
     feas = PR.identity_checker_feasibility(pp, r, None, wall_remaining_s=600, rss_cap_bytes=8 << 30)
     assert feas["policy"] == "physical-2026-11-02" and feas["checker"] == "FEASIBLE" and feas["checker_order"] == "min_fill"
     # the exact message bit bounds are monotone up the tree and bound the measured total
@@ -142,15 +155,17 @@ def test_shared_aggregation_only_when_the_aggregation_is_not_admitted():
     # inject an admission that refuses only the aggregation
     orig = CAP.admit
 
-    def refuse_aggregation(fc, wall, cap, now=0):
-        out = orig(fc, wall, cap, now)
+    def refuse_aggregation(fc, wall, cap, now=0, **kw):
+        out = orig(fc, wall, cap, now, **kw)
         out["aggregation"] = "RSS_FORECAST_EXCEEDS"
         out["aggregation_reason"] = "control: the exact aggregation is refused by the physical budget"
+        out["certificate"] = "AGGREGATION_RSS_FORECAST_EXCEEDS"
+        out["certificate_reason"] = "control: the complete certified path does not fit"
         return out
     CAP.admit = refuse_aggregation
     try:
         ok2, fails2, meta2 = S.verify_publication(m, {}, iv, eps=Fr(1, 100), deadline_s=600, cap_bytes=1 << 30)
-        res = PLN.solve(m, {}, wall_s=120, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
+        res = PLN.solve(m, {}, wall_s=120, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False, diagnostic_shared_only=True)
     finally:
         CAP.admit = orig
     assert not ok2 and meta2["independent_aggregation_checked"] is False and "NOT RUN" in meta2["independent_aggregation_scope"]

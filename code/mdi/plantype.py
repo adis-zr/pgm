@@ -606,14 +606,12 @@ def make_request(model_sha, evidence_sha, query_sha, queries, evidence, card, wi
 def capacity_policy():
     """The admission policy and calibration a record was priced under (request v4,
     2 November 2026): admission against the physical budget from calibrated forecasts
-    of the executing schedules (mdi.capacity), in the layout that executes."""
+    of the executing schedules (mdi.capacity), in the layout that executes. The
+    calibration version is bound to the layout, so a host taking the scalar
+    fallback never inherits the vectorized rates (and vice versa)."""
     from mdi import capacity as CAP
-    try:
-        from mdi import vec_engine as V
-        layout = "vectorized" if V.AVAILABLE else "scalar"
-    except Exception:
-        layout = "scalar"
-    return {"policy": "physical-2026-11-02", "calibration": CAP.CALIBRATION["version"], "layout": layout}
+    cal = CAP.calibration_for_layout()
+    return {"policy": "physical-2026-11-02", "calibration": cal["version"], "layout": cal["layout"]}
 
 
 def validate_request(req, rec):

@@ -336,7 +336,7 @@
  "request": {
   "arithmetic_mode": "E",
   "capacity": {
-   "calibration": "2026-11-02-pinhost",
+   "calibration": "2026-11-03-pinhost",
    "layout": "vectorized",
    "policy": "physical-2026-11-02"
   },

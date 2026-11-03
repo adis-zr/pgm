@@ -127,35 +127,52 @@ class CostRecord:
 
 
 def identity_checker_feasibility(plan, r, budget=None, wall_remaining_s=None, rss_cap_bytes=None,
-                                 rss_now_bytes=0, checker_plan=None):
+                                 rss_now_bytes=0, checker_plan=None, diagnostic_shared_only=False, rss_baseline_bytes=None):
     """Applicability of the identity route's INDEPENDENT checker and exact
     aggregation, decided before any producer work -- against the PHYSICAL budget
     (2 November 2026, config.AMENDMENTS[0]): the producer's saved order and the
     checker's OWN min-fill plan (the schedule `solve._check` actually builds)
     are forecast at the calibrated rates of the layout that executes
-    (mdi.capacity). `checker` is FEASIBLE when producer + interval checker fit
-    the remaining wall and the RSS cap; `aggregation` says whether the exact
-    aggregation also fits (when it does not, the route still runs and ends as
+    (mdi.capacity). For the CERTIFIED comparison (the default) the route is
+    admitted only when the complete required checking path fits -- producer,
+    interval checker and exact aggregation -- because a route whose aggregation
+    is already refused cannot satisfy the requested certificate.
+    `diagnostic_shared_only=True` is the explicitly selected diagnostic that
+    admits producer + interval checker alone (its terminal is
     VERIFIED_SHARED_AGGREGATION_ONLY, never a certificate). A refusal names the
     stage and the figures; it is a forecast at this calibration, never a proof
     about other hardware."""
     from mdi import capacity as CAP, config as K
     chk = checker_plan if checker_plan is not None else CAP.checker_plan(r)
-    fc = CAP.forecast_identity(plan, chk, r.factors, r.card, r.free)
+    # the BOUNDED, CHARGED occupancy probe (hard zeros prune the exact aggregation's
+    # messages): run once here, charged to the shared pricing counter, recorded on the
+    # feasibility and reused by the forecast; a law with full positive support needs none
+    occ = None
+    occ_visited = 0
+    if any(Fr(x) == 0 for f in r.factors for x in f.table):
+        try:
+            occ, occ_visited = CAP.occupancy_probe(chk, r.factors, r.card,
+                                                   charge=(lambda n: budget.charge("pricing_entries", n, "occupancy probe")) if budget is not None else None)
+        except ImportError:
+            occ = None
+    fc = CAP.forecast_identity(plan, chk, r.factors, r.card, r.free, occupancy=occ)
     wall = float(wall_remaining_s) if wall_remaining_s is not None else float(K.RESOURCES["arm_wall_s"])
     cap = int(rss_cap_bytes) if rss_cap_bytes is not None else int(K.RESOURCES["arm_rss_bytes"])
-    ad = CAP.admit(fc, wall, cap, rss_now_bytes or 0)
+    ad = CAP.admit(fc, wall, cap, rss_now_bytes or 0, rss_baseline_bytes=rss_baseline_bytes)
     out = {"producer": "FEASIBLE", "largest_bag": int(plan.largest_bag_entries),
            "checker_largest_bag": int(chk.largest_bag_entries), "checker_order": chk.name,
-           "policy": "physical-2026-11-02", "calibration": fc["calibration"],
+           "policy": "physical-2026-11-02", "calibration": fc["calibration"], "layout": fc["layout"],
            "forecast_seconds": fc["seconds"], "forecast_bytes": fc["bytes"], "exact_root_bits_bound": fc["exact_root_bits_bound"],
-           "admission": ad}
-    if ad["route"] == "FEASIBLE":
+           "occupancy_probe": {"ran": occ is not None, "entries_visited_charged": occ_visited,
+                               "mean_nonzero_fraction": (round(sum(occ.values()) / max(1, len(occ)), 4) if occ else None)},
+           "admission": ad, "admitted_for": ("diagnostic_shared_only" if diagnostic_shared_only else "certificate")}
+    decision = ad["route"] if diagnostic_shared_only else ad["certificate"]
+    reason = ad["route_reason"] if diagnostic_shared_only else ad["certificate_reason"]
+    if decision == "FEASIBLE":
         out["checker"] = "FEASIBLE"
-        out["checker_reason"] = ad["route_reason"]
     else:
-        out["checker"] = "CHECKER_" + ad["route"]
-        out["checker_reason"] = ad["route_reason"]
+        out["checker"] = "CHECKER_" + decision
+    out["checker_reason"] = reason
     out["aggregation"] = ad["aggregation"]
     out["aggregation_reason"] = ad["aggregation_reason"]
     return out

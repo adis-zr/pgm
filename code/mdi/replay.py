@@ -61,6 +61,8 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
                   rss_fn=S._rss_bytes, rss_limit=cap_eff)
     bg.requested_by_caller = asked
     cap_bytes = cap_eff
+    from mdi import capacity as CAPX
+    CAPX.INVOCATION_BASELINE[0] = CAPX.rss_current_bytes()      # the replay's own invocation baseline
     try:
         out = _replay(model_path, evidence_path, plan_path, eps, wrap, cap_bytes, bg, t0)
     except Exception as e:                       # an implementation fault is a typed terminal, not a crash

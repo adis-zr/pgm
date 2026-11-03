@@ -84,8 +84,15 @@ def _exact_aggregation(r, pl2, dl, charge, cap_bytes, t_end):
     when the aggregation is not admitted (reported NOT RUN, never a pass)."""
     from mdi import capacity as CAP
     remaining = t_end - _BUDGET.DEFAULT_CLOCK[0]()
-    fc = CAP.forecast_identity(pl2, pl2, r.factors, r.card, r.free)
-    ad = CAP.admit(fc, remaining, cap_bytes, _rss_bytes())
+    # the same bounded occupancy probe the admission used (charged to the shared meter)
+    occ = None
+    if any(Fr(x) == 0 for f in r.factors for x in f.table):
+        try:
+            occ, _n = CAP.occupancy_probe(pl2, r.factors, r.card, deadline=dl, charge=charge)
+        except ImportError:
+            occ = None
+    fc = CAP.forecast_identity(pl2, pl2, r.factors, r.card, r.free, occupancy=occ)
+    ad = CAP.admit(fc, remaining, cap_bytes, CAP.rss_current_bytes(), rss_baseline_bytes=CAP.invocation_baseline_bytes())
     if ad["aggregation"] != "FEASIBLE":
         return None, ("NOT RUN: the exact aggregation is not admitted by the physical budget: %s" % ad["aggregation_reason"])
     try:
@@ -1055,6 +1062,17 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
         # is admitted against the PHYSICAL budget (mdi.capacity, AMENDMENTS[0]);
         # when the forecast or the run exceeds it, the independent check is
         # reported as NOT RUN, never as a pass.
+        # The interval engine's own retained state (converted factor tables,
+        # message dictionary) has served its last use -- every readout row is in
+        # `cread` -- so it is released BEFORE the aggregation's admission reads
+        # the current resident set: a stage's forecast competes with what is
+        # actually still live, not with a finished engine's caches.
+        for _attr in ("_fac", "msg"):
+            _d = getattr(eng, _attr, None)
+            if isinstance(_d, dict):
+                _d.clear()
+        import gc as _gc
+        _gc.collect()
         try:
             _agg, _agg_scope = _exact_aggregation(r, pl2, dl, charge, cap_bytes, t_end)
             if _agg is not None:

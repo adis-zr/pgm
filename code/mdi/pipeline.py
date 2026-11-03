@@ -22,6 +22,7 @@ from mdi import (model as M, plan as P, arith as A, solve as S, config as K,
                  collective as CO, modes as MD, coarse as CZ,
                  program as PG, routes as RT, collective_route as CR)
 from mdi import law as LAW
+from mdi import capacity as CAPX
 
 
 class PipelineError(ValueError):
@@ -60,7 +61,7 @@ class Outcome:
 
 def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
           cap_bytes=None, research_enabled=True, plan_dir=None,
-          progress=None, plan_only=False, phase_limits=None):
+          progress=None, plan_only=False, phase_limits=None, diagnostic_shared_only=False):
     """The single public entry point. `plan_only=True` is the bounded planning
     observation: the SAME code runs discovery, persisted binding, pricing and
     selection, then stops with an explicit terminal record and never enters an
@@ -72,6 +73,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     # normalization, a stop at any later stage -- can consult the law, the
     # ledger, the budget or the width of a previous call (r26)
     _begin_invocation()
+    _DIAGNOSTIC_SHARED_ONLY[0] = bool(diagnostic_shared_only)   # explicit diagnostic selection travels with this invocation
     wall_arg, cap_arg = wall_s, cap_bytes
     # (1) the CHEAP scalar limits are validated first (no model work yet) ...
     lim, bad = normalize_limits(max_width, wall_s, cap_bytes)
@@ -108,6 +110,9 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     if bad:
         return finalize_terminal(Outcome(status="INVALID_INPUT", reason=bad, stages={"normalize_s": bg.elapsed()}), bg)
     model, evidence, queries = norm["model"], norm["evidence"], norm["queries"]
+    # the INVOCATION BASELINE: the resident set after normalization (interpreter, parsed
+    # model, owned tables) that every stage's memory forecast is judged against
+    CAPX.INVOCATION_BASELINE[0] = CAPX.rss_current_bytes()
     if plan_only:
         GD.install(True)
     try:
@@ -601,7 +606,9 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
         # refusal names the stage and the figures
         try:
             ifeas = PR.identity_checker_feasibility(ipl, r, bg, wall_remaining_s=bg.remaining(),
-                                                    rss_cap_bytes=cap_bytes, rss_now_bytes=S._rss_bytes())
+                                                    rss_cap_bytes=cap_bytes, rss_now_bytes=CAPX.rss_current_bytes(),
+                                                    rss_baseline_bytes=CAPX.invocation_baseline_bytes(),
+                                                    diagnostic_shared_only=_DIAGNOSTIC_SHARED_ONLY[0])
         except B.BudgetExceeded as e:
             return Outcome(status="RESOURCE_STOP",
                            reason="the shared work budget was exhausted by the identity checker's "
@@ -1963,7 +1970,9 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
                                        {"constants": len(simp.removed_constants),
                                         "splits": len(simp.split_pairs)})
         feas = PR.identity_checker_feasibility(pl, r, bg, wall_remaining_s=(bg.remaining() if bg is not None else None),
-                                               rss_cap_bytes=cap_bytes, rss_now_bytes=S._rss_bytes())
+                                               rss_cap_bytes=cap_bytes, rss_now_bytes=CAPX.rss_current_bytes(),
+                                               rss_baseline_bytes=CAPX.invocation_baseline_bytes(),
+                                               diagnostic_shared_only=_DIAGNOSTIC_SHARED_ONLY[0])
         price.feasibility = feas
         if feas["checker"] != "FEASIBLE" and price.eligible:
             price.eligible = False
@@ -2071,18 +2080,22 @@ EPS_FOR_RECORD = [K.MAX_WIDTH]  # the current request width, set by _solve befor
 _BG_FOR_RECORDS = [None]       # the invocation budget whose effective limits every record carries
 _LAW_CURRENT = [None]          # the frozen law of the running invocation (attached to its terminal outcome)
 _LEDGER_CURRENT = [None]       # the invocation ledger already built (attached to EVERY terminal, incl. stops)
+_DIAGNOSTIC_SHARED_ONLY = [False]   # the explicitly selected shared-aggregation-only diagnostic of THIS invocation (3 Nov 2026)
 
 
 def _begin_invocation():
     """Establish THIS invocation's context at the public entry boundary (r26):
     the frozen law, the invocation ledger, the record budget, the record width
-    and the discovery hooks are empty until this call sets them. An early
+    and the discovery hooks are empty until this call sets them; the
+    shared-aggregation-only diagnostic selection is off. An early
     terminal (invalid input, a stop during normalization) therefore carries no
     law and no ledger -- never another call's -- and a later stop carries this
     call's own. Called before any path can return."""
     _LAW_CURRENT[0] = None
     _LEDGER_CURRENT[0] = None
     _BG_FOR_RECORDS[0] = None
+    _DIAGNOSTIC_SHARED_ONLY[0] = False
+    CAPX.INVOCATION_BASELINE[0] = None
     EPS_FOR_RECORD[0] = K.MAX_WIDTH
     for attr in ("_ledger", "_admit", "_shared", "_phase_stop"):
         if hasattr(_discover_programs, attr):

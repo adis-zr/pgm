@@ -100,7 +100,12 @@ class VecEngine:
     def _mul_arrays(self, acc, part, cx, inplace=False):
         """acc x part under the directed context `cx`; with `inplace` (acc is a
         private full-shape array) the product is written into acc so the
-        transient is one array, not two."""
+        transient is one array, not two. The deadline / RSS check is polled
+        before every whole-array operation (a bag product of up to 16.8 M
+        entries is a few seconds of work; the poll bounds the overrun to one
+        such operation, which the terminal's budget check then records)."""
+        if self.deadline is not None:
+            self.deadline()
         try:
             with cx:
                 if inplace and acc.shape == np.broadcast_shapes(acc.shape, part.shape):
@@ -114,6 +119,8 @@ class VecEngine:
         return out
 
     def _sum_axes(self, arr, axes, cx):
+        if self.deadline is not None:
+            self.deadline()
         if not axes:
             return arr
         n_terms = 1
@@ -468,6 +475,8 @@ class VecExact:
             for q in ps[1:]:
                 np.multiply(acc, q, out=acc)
                 self.ops["mul"] += int(acc.size)
+                if self.deadline is not None:
+                    self.deadline()          # polled between whole-array operations (each <= CHUNK_ENTRIES)
             return acc
         if dom <= self.CHUNK_ENTRIES or not sum_axes:
             acc = product(parts, shape)
@@ -479,6 +488,8 @@ class VecExact:
         sub_shape = shape[:k0] + shape[k0 + 1:]
         out = None
         for i in range(shape[k0]):
+            if self.deadline is not None:
+                self.deadline()              # polled per chunk
             sl = [np.take(q, i if q.shape[k0] > 1 else 0, axis=k0) for q in parts]
             acc = product(sl, sub_shape)
             red = np.asarray(acc.sum(axis=rest), dtype=object) if rest else acc
