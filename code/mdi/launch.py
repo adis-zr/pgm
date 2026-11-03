@@ -26,7 +26,7 @@ kills descendants). It adds only orchestration:
                                 [--packet PACKET.zip] [--input-dir DIR]
                                 [--prepare-only] [--repair LABEL]
                                 [--closeout] [--charge WHAT SECONDS]
-    python -m mdi.launch --cell PROBLEM baseline|research ATTEMPT_DIR WALL_S   (the child)
+    python -m mdi.launch --cell PROBLEM baseline|research|support ATTEMPT_DIR WALL_S   (the child)
 """
 from __future__ import annotations
 import sys, os, json, time, hashlib, zipfile, subprocess, shutil
@@ -472,7 +472,7 @@ def _cell_main(argv):
     from mdi import arm as ARM
     import mdi.registry            # noqa: F401
     problem, arm, adir, wall = argv[0], argv[1], os.path.abspath(argv[2]), float(argv[3])
-    rec = ARM.run_arm(problem, arm == "research", adir, wall=wall)
+    rec = ARM.run_arm(problem, arm == "research", adir, wall=wall, support=(arm == "support"))
     print(json.dumps({k: rec.get(k) for k in ("problem", "arm", "outcome", "reason", "elapsed_s", "final_max_width")}, default=str))
     return 0
 

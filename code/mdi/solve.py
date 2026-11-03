@@ -370,9 +370,28 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
     # ---------- stage: contraction ----------
     ts = _BUDGET.DEFAULT_CLOCK[0]()
     try:
-        eng = _engine_for(pl, r.factors, ctx, mode=mode,
-                          progress=lambda ph, n: prog(ph, "%d messages" % n),
-                          cap_bytes=cap_bytes, deadline=dl, charge=charge)
+        _declared = (program or {}).get("support") if program is not None else None
+        if _declared:
+            # the bounded pilot (3 Nov 2026): the program declares a compiled global support;
+            # the executor compiles it itself (cached within the invocation, charged), refuses
+            # unless the compilation IS the declared one, and runs the SPARSE engine over it
+            from mdi import support as SP
+            ts_s = _BUDGET.DEFAULT_CLOCK[0]()
+            try:
+                sup, _fresh = SP.compile_support_cached(pl, r.factors, r.card, deadline=dl, charge=charge)
+            except SP.SupportError as e:
+                raise A.NumericalRefusal("the executor could not compile the program's declared support: %s" % e)
+            stages["support_compile_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts_s
+            if sup.digest() != str(_declared.get("digest")) or sup.rows_per_bag() != [int(x) for x in _declared.get("rows_per_bag", [])]:
+                raise A.NumericalRefusal("the executor's support compilation differs from the program's declared support")
+            out["support"] = sup.counts()
+            out["support"]["reused_from_discovery"] = not _fresh
+            eng = SP.SparseEngine(pl, r.factors, ctx, sup, mode=mode,
+                                  progress=lambda ph, n: prog(ph, "%d messages" % n), deadline=dl, charge=charge)
+        else:
+            eng = _engine_for(pl, r.factors, ctx, mode=mode,
+                              progress=lambda ph, n: prog(ph, "%d messages" % n),
+                              cap_bytes=cap_bytes, deadline=dl, charge=charge)
         out["engine_layout"] = getattr(eng, "layout", "scalar")
         nup = ndn = 0
         roots = []
@@ -923,7 +942,7 @@ def validate_output_schema(model, evidence, iv, eps):
 
 
 def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
-           checker_precision=None, charge=None):
+           checker_precision=None, charge=None, support_declared=None, producer_order=None):
     """Independent interval contraction, rebuilt from the ORIGINAL model.
 
     Shares the validated decomposition and MPFR primitives (permitted), but
@@ -988,9 +1007,47 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
         raise A.NumericalRefusal("checker precision %d is not usable" % cp)
     ctx = A.Ctx(cp)
     dl = _mk_deadline(t_end, cap_bytes, _rss_bytes())
-    eng = _engine_for(pl2, r.factors, ctx, mode="I", deadline=dl,
-                      progress=lambda ph, n: prog("check-" + ph, "%d" % n),
-                      charge=charge)                 # the checker's messages hit the SHARED meter
+    _crows = None
+    if support_declared:
+        # the bounded pilot (3 Nov 2026): the program declares a compiled support. The checker
+        # RECONSTRUCTS the support recurrences itself (its own placement arithmetic and
+        # traversal; charged to its meter; capped) and refuses unless the reconstruction is
+        # exactly the declared support -- completeness, including omitted entries -- then runs
+        # its interval contraction and its exact aggregation over ITS OWN rows.
+        from mdi import support as _SP, support_check as _SC
+        # the declaration is made on the PRODUCER's saved order; when the checker's own
+        # order differs, the completeness check reconstructs on the producer's order and the
+        # checker's numerical passes use a second reconstruction on its own plan (both
+        # charged and capped); when the orders agree one reconstruction serves both
+        _porder = [int(x) for x in (producer_order or [])]
+        try:
+            if _porder and _porder != [int(x) for x in pl2.order]:
+                _plp = P.build_plan("program", _porder, r.free, r.card, r.factors)
+                _prow, _pscan, _pel = _SC.reconstruct_support(_plp, r.factors, r.card, deadline=dl, charge=charge)
+                _bad = _SC.verify_declaration(_plp, _prow, support_declared)
+                del _prow
+            else:
+                _plp = pl2
+                _pscan = _pel = 0
+            _crows, _cscan, _cel = _SC.reconstruct_support(pl2, r.factors, r.card, deadline=dl, charge=charge)
+            if _plp is pl2:
+                _bad = _SC.verify_declaration(pl2, _crows, support_declared)
+        except _SP.SupportError as e:
+            raise A.NumericalRefusal("checker could not reconstruct the declared support: %s" % e)
+        except P.PlanError as e:
+            raise A.NumericalRefusal("checker could not rebuild the producer's declared order: %s" % e)
+        if _bad:
+            raise A.NumericalRefusal("checker refuses: the program's declared support is not the independently reconstructed "
+                                     "global support (%s)" % "; ".join(_bad[:4]))
+        _cscan += _pscan
+        _cel += _pel
+        _cs = _SP.Support(pl2, r.card, _crows, {}, _cscan, _cel, 0)
+        eng = _SP.SparseEngine(pl2, r.factors, ctx, _cs, mode="I", deadline=dl,
+                               progress=lambda ph, n: prog("check-" + ph, "%d" % n), charge=charge)
+    else:
+        eng = _engine_for(pl2, r.factors, ctx, mode="I", deadline=dl,
+                          progress=lambda ph, n: prog("check-" + ph, "%d" % n),
+                          charge=charge)                 # the checker's messages hit the SHARED meter
     roots = [b.idx for b in pl2.bags if b.parent == -1]
     for rt in roots:
         eng.upward(rt)
@@ -1089,7 +1146,17 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
         import gc as _gc
         _gc.collect()
         try:
-            _agg, _agg_scope = _exact_aggregation(r, pl2, dl, charge, cap_bytes, t_end)
+            if _crows is not None:
+                # the sparse EXACT aggregation over the checker's own reconstructed rows
+                from mdi import support_check as _SC2
+                _vx = _SC2.SparseExact(pl2, r.factors, r.card, _crows, deadline=dl, charge=charge).run()
+                _cnt = _vx.counts(r.free)
+                _agg = (Fr(int(_vx.Z)), {k: Fr(int(v)) for k, v in _cnt.items()})
+                _agg_scope = ("sparse exact integer junction tree over the checker's own reconstructed global support (a second "
+                              "aggregation implementation), %d rows, %d entries visited, order %s, %d-bit total"
+                              % (sum(int(x.size) for x in _crows.values()), _vx.entries_visited, list(pl2.order)[:8], int(_vx.Z).bit_length()))
+            else:
+                _agg, _agg_scope = _exact_aggregation(r, pl2, dl, charge, cap_bytes, t_end)
             if _agg is not None:
                 _indep, _indep_scope = _agg, _agg_scope
             else:
@@ -1176,8 +1243,10 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
     # reported as a FACT about the check that ran, not left implicit.
     meta = {"checker_precision_bits": cp, "coordinates_checked": nchk,
             "independent_plan_rebuilt": True, "mode": "I",
-            "shares": "validated decomposition + MPFR primitives",
+            "shares": "validated decomposition + MPFR primitives" + (" + the sparse engine class over the checker's OWN reconstructed rows" if _crows is not None else ""),
             "borrows_producer_values": False,
+            "support_reconstructed": (None if _crows is None else {"rows_total": int(sum(int(x.size) for x in _crows.values())),
+                                                                   "scan_positions": int(_cscan), "seconds": round(_cel, 4), "declared_matches": True}),
             # every normalizing division above is guarded: a zero upper total
             # is a refusal (raised), and a ratio is formed only when its
             # denominator is proved positive; so reaching this point proves
@@ -1191,7 +1260,7 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
 
 
 def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
-                       deadline_s=None, cap_bytes=None, checker_precision=None, charge=None):
+                       deadline_s=None, cap_bytes=None, checker_precision=None, charge=None, program=None):
     """Standalone checker entry point (used by the rejection tests).
 
     `deadline_s` and `cap_bytes` carry the SHARED budget. They were hard-wired
@@ -1238,7 +1307,9 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
             else (_BUDGET.DEFAULT_CLOCK[0]() + 300)
         ok, fails, cmeta = _check(model, evidence, iv, eps, pl, 64, _cap,
                                   _end, lambda *a: None,
-                                  checker_precision=checker_precision, charge=charge)
+                                  checker_precision=checker_precision, charge=charge,
+                                  support_declared=((program or {}).get("support") if program is not None else None),
+                                  producer_order=((program or {}).get("order") if program is not None else None))
     except A.NumericalRefusal as e:
         # A refusal is a REJECTION of the publication, reported as such. Letting
         # it propagate made a caller see an exception rather than "not verified",

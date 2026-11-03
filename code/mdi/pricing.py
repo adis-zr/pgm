@@ -208,6 +208,11 @@ def _comparison_bound(rec):
     return rec
 
 
+def _SP():
+    from mdi import support as SP
+    return SP
+
+
 def _two_pass_schedule_ops(plan):
     """Operation and visit counts of ONE two-pass engine run (producer P or
     interval checker I) on `plan`, mirroring what `Engine.send` / `read_marginal`
@@ -278,7 +283,8 @@ def _exact_reduction_ops(plan):
     return tot
 
 
-def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=None, checker_plan=None, hard_zeros=None):
+def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=None, checker_plan=None, hard_zeros=None,
+                        support=None, support_price=None):
     """Price the identity route from its compiled schedule.
 
     `plan` is the PRODUCER's schedule (the saved order). The independent checker
@@ -311,15 +317,45 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
         c_up, c_down, c_ro = up, down, ro
     else:
         c_up, c_down, c_ro, _cc, _cw, _cs = _two_pass_schedule_ops(cp)
+    sparse = None
+    if support is not None:
+        # ---- the bounded pilot (3 Nov 2026): the program carries a compiled global support,
+        # so the producer, the interval checker and the exact checker execute the SPARSE
+        # circuit over the declared rows; every arithmetic and metered bound below is derived
+        # from the ACTUAL support counts (never from the dense domains), and the support
+        # compilations themselves (producer at discovery, checker's reconstruction) are
+        # priced as Boolean scan positions
+        if support_price is None:
+            rec.eligible = False
+            rec.ineligible_reason = "the program declares a compiled support but no support price was derived from it"
+        else:
+            sparse = support_price
+            sparse_c = support_price.get("checker") or support_price      # the checker's figures on ITS order
+            ops_s = sparse["ops"]
+            up, down, ro = ops_s["producer_upward_ops"], ops_s["producer_downward_ops"], ops_s["readout_ops"]
+            c_up, c_down, c_ro = sparse_c["ops"]["producer_upward_ops"], sparse_c["ops"]["producer_downward_ops"], sparse_c["ops"]["readout_ops"]
+            recon = int(_SP().reconstruction_scan_bound(cp)) + (int(_SP().reconstruction_scan_bound(plan)) if list(cp.order) != list(plan.order) else 0)
+            rec.put("support_rows_total", int(support["rows_total"]), EXACT, "globally feasible bag rows the sparse circuit executes over")
+            rec.put("support_max_rows", int(support["max_rows"]), EXACT)
+            rec.put("support_sep_entries", int(support["sep_entries"]), EXACT, "globally feasible separator entries (one message each way)")
+            rec.put("support_dense_schedule_rows", int(sparse["dense_enumerated_schedule_rows"]), EXACT, "the dense schedule's enumerated rows")
+            rec.put("support_sparse_schedule_rows", int(sparse["counts"]["enumerated_schedule_rows"]), EXACT, "the sparse schedule's enumerated rows")
+            rec.put("support_compile_scan_positions", int(sparse["counts"]["scan_positions"]), EXACT,
+                    "Boolean positions the producer's support compilation scanned (charged to the pricing counter at discovery)")
+            rec.put("support_reconstruction_scan_bound", recon, UPPER,
+                    "Boolean positions the checker's independent reconstruction scans (charged to the checker's meter; on the "
+                    "checker's order, plus the producer's order when the two differ)")
     rec.put("weighted_bag_visits", weighted_bag, UPPER,
             "bag domain times owned factors plus every incident message")
     rec.put("weighted_separator_entries", weighted_sep, EXACT)
+    _sparse_note = (" -- SPARSE circuit over the declared support rows: (operands - 1) multiplies and at most one add per row per reduction"
+                    if sparse is not None else "")
     rec.put("producer_upward_ops", up, UPPER,
             "per assignment: one multiply per owned factor and per child "
             "message, plus at most one add per assignment past the first in a "
-            "separator slot")
-    rec.put("producer_downward_ops", down, UPPER)
-    rec.put("readout_ops", ro, UPPER)
+            "separator slot" + _sparse_note)
+    rec.put("producer_downward_ops", down, UPPER, ("one message per child" + _sparse_note) if sparse is not None else "")
+    rec.put("readout_ops", ro, UPPER, ("one readout per home variable" + _sparse_note) if sparse is not None else "")
     # The checker's INTERVAL message passing, two endpoints per entry, on the
     # CHECKER's schedule (its own min-fill plan)...
     chk = 2 * (c_up + c_down + c_ro)
@@ -382,7 +418,7 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
         # BRANCHING work (one downward product per child, one readout product per home
         # variable): binary stars of 13 / 25 / 64 variables counted 843 / 2,835 / 17,265
         # multiply-adds against 488 / 968 / 2,528 priced.
-        sj = _exact_reduction_ops(cp)
+        sj = _exact_reduction_ops(cp) if sparse is None else int(sparse_c["ops"]["exact_checker_ops"])
         rec.put("independent_sparse_ops", sj, UPPER,
                 "exact aggregation on the checker's schedule (%s): per reduction (operands - 1) multiplies and at most "
                 "one add per bag entry -- one upward reduction per non-root bag and one root total (owned factors + "
@@ -407,15 +443,22 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
     #   occupancy probe (capacity.occupancy_probe, when the law has hard zeros):
     #     one Boolean product per non-root bag of the checker plan, charged once
     #     per invocation (the cache is keyed by content and reset at the entry).
-    p_entries = 2 * sum(b.sep_domain(plan.card) for b in plan.bags if b.parent >= 0)
-    c_msg_entries = 2 * sum(b.sep_domain(cp.card) for b in cp.bags if b.parent >= 0)
-    agg_entries = 0
-    for b in cp.bags:
-        dom = b.domain(cp.card)
-        n_home = sum(1 for v, h in cp.var_home.items() if h == b.idx)
-        agg_entries += dom * (1 + len(b.children) + n_home)
-    probe_entries = sum(b.domain(cp.card) for b in cp.bags if b.parent >= 0) if hard_zeros is not False else 0
-    c_entries = c_msg_entries + (joint or 0) + agg_entries + probe_entries
+    if sparse is None:
+        p_entries = 2 * sum(b.sep_domain(plan.card) for b in plan.bags if b.parent >= 0)
+        c_msg_entries = 2 * sum(b.sep_domain(cp.card) for b in cp.bags if b.parent >= 0)
+        agg_entries = 0
+        for b in cp.bags:
+            dom = b.domain(cp.card)
+            n_home = sum(1 for v, h in cp.var_home.items() if h == b.idx)
+            agg_entries += dom * (1 + len(b.children) + n_home)
+        probe_entries = sum(b.domain(cp.card) for b in cp.bags if b.parent >= 0) if hard_zeros is not False else 0
+        c_entries = c_msg_entries + (joint or 0) + agg_entries + probe_entries
+    else:
+        # the sparse engines charge rows per product and entries per message; the checker
+        # also charges its Boolean reconstruction scan
+        p_entries = int(sparse["producer_metered_entries"])
+        probe_entries = 0
+        c_entries = int(sparse_c["interval_checker_metered_entries"]) + (joint or 0) + int(sparse_c["exact_checker_metered_entries"]) + recon
     rec.put("producer_metered_entries", p_entries, UPPER, "identity producer message entries on the shared meter")
     rec.put("checker_metered_entries", c_entries, UPPER,
             "identity checker on its own schedule (%s): interval messages + enumeration assignments + exact aggregation "

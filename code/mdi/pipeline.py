@@ -61,7 +61,8 @@ class Outcome:
 
 def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
           cap_bytes=None, research_enabled=True, plan_dir=None,
-          progress=None, plan_only=False, phase_limits=None, diagnostic_shared_only=False):
+          progress=None, plan_only=False, phase_limits=None, diagnostic_shared_only=False,
+          support_enabled=False):
     """The single public entry point. `plan_only=True` is the bounded planning
     observation: the SAME code runs discovery, persisted binding, pricing and
     selection, then stops with an explicit terminal record and never enters an
@@ -74,6 +75,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     # ledger, the budget or the width of a previous call (r26)
     _begin_invocation()
     _DIAGNOSTIC_SHARED_ONLY[0] = bool(diagnostic_shared_only)   # explicit diagnostic selection travels with this invocation
+    _SUPPORT_ENABLED[0] = bool(support_enabled)                 # the pilot's explicit selection travels with this invocation
     wall_arg, cap_arg = wall_s, cap_bytes
     # (1) the CHEAP scalar limits are validated first (no model work yet) ...
     lim, bad = normalize_limits(max_width, wall_s, cap_bytes)
@@ -638,11 +640,19 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
             from mdi import routes as _RT
             iprog = _RT.identity_program(ipl.order, _p, _emin, _emax, queries,
                                          max(80, _p + 16))
+    _support_note = None
+    if ipl is not None and _p is not None and _SUPPORT_ENABLED[0]:
+        # ---- the bounded pilot (3 Nov 2026): compile the global support of the identity
+        # decomposition, price the sparse schedule from the ACTUAL counts, and emit the
+        # identity program WITH its support only when the admission rule holds; every
+        # other path falls back to the dense identity with the attempt charged
+        _support_note = _support_admission(ipl, r, bg, iprog, rejected, checker_plan=_chk)
     if ipl is not None and _p is not None:
         iprice = PR.price_identity_plan(ipl, iest, nq, _p,
                                         {"constants": len(simp.removed_constants),
                                          "splits": len(simp.split_pairs)},
-                                        checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table))
+                                        checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table),
+                                        support=(iprog.get("support") if iprog else None), support_price=_support_note)
         isup = PT.supported("identity")
         iprops = PT.PlanProperties()
         iprops.set("mathematically_certified")          # exact elimination
@@ -1502,6 +1512,10 @@ def executable_identity(kind, prog_json, request=None):
                   "arithmetic": {k: str(v) for k, v in (raw.get("arithmetic") or {}).items()},
                   "checker": {k: str(v) for k, v in (raw.get("checker") or {}).items()},
                   "queries": sorted(int(v) for v in (raw.get("queries") or []))}
+    if raw.get("support"):
+        # a support-compiled identity is a DIFFERENT executable from the dense identity of the
+        # same order (3 Nov 2026 pilot): its rows are part of its identity
+        executable["support"] = {"digest": str(raw["support"].get("digest")), "rows_total": int(raw["support"].get("rows_total") or 0)}
     # the REQUEST identity (model, evidence, requested set, width) is part of
     # the key: a program is an executable FOR one request
     if request is not None:
@@ -1969,10 +1983,34 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
         # bits occupies about 32 + p/8 bytes (64 at the default 64..256 bits)
         est = P.byte_estimate(pl, max(64, 32 + (int(prog["precision"]) + 7) // 8))
         _chk = CAPX.checker_plan(r)          # the checker's OWN schedule prices the checker
+        _sp = None
+        if prog.get("support"):
+            # the declared support is re-derived (cached within the invocation; a fresh replay
+            # compiles and charges it) and must BE the declared one, else the record is ineligible
+            from mdi import support as _SP
+            try:
+                _sup, _fresh = _SP.compile_support_cached(pl, r.factors, r.card,
+                                                          deadline=(bg.deadline_fn("reprice:support compilation") if bg else None),
+                                                          charge=(lambda n: bg.charge("pricing_entries", n, "support compilation")) if bg else None)
+                if _sup.digest() == str(prog["support"].get("digest")):
+                    _sp = _SP.support_price(pl, _sup)
+                    if list(_chk.order) != list(pl.order):
+                        _supc, _f2 = _SP.compile_support_cached(_chk, r.factors, r.card,
+                                                                deadline=(bg.deadline_fn("reprice:support compilation (checker order)") if bg else None),
+                                                                charge=(lambda n: bg.charge("pricing_entries", n, "support compilation")) if bg else None)
+                        _sp["checker"] = _SP.support_price(_chk, _supc)
+                    else:
+                        _sp["checker"] = _sp
+            except _SP.SupportError:
+                _sp = None
         price = PR.price_identity_plan(pl, est, nq, prog["precision"],
                                        {"constants": len(simp.removed_constants),
                                         "splits": len(simp.split_pairs)},
-                                       checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table))
+                                       checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table),
+                                       support=prog.get("support"), support_price=_sp)
+        if prog.get("support") and _sp is None and price.eligible:
+            price.eligible = False
+            price.ineligible_reason = "the record's declared support could not be re-derived as declared at binding"
         feas = PR.identity_checker_feasibility(pl, r, bg, wall_remaining_s=(bg.remaining() if bg is not None else None),
                                                rss_cap_bytes=cap_bytes, rss_now_bytes=CAPX.rss_current_bytes(),
                                                rss_baseline_bytes=CAPX.invocation_baseline_bytes(), checker_plan=_chk,
@@ -2084,7 +2122,8 @@ EPS_FOR_RECORD = [K.MAX_WIDTH]  # the current request width, set by _solve befor
 _BG_FOR_RECORDS = [None]       # the invocation budget whose effective limits every record carries
 _LAW_CURRENT = [None]          # the frozen law of the running invocation (attached to its terminal outcome)
 _LEDGER_CURRENT = [None]       # the invocation ledger already built (attached to EVERY terminal, incl. stops)
-_DIAGNOSTIC_SHARED_ONLY = [False]   # the explicitly selected shared-aggregation-only diagnostic of THIS invocation (3 Nov 2026)
+_DIAGNOSTIC_SHARED_ONLY = [False]   # the explicitly selected shared-aggregation-only diagnostic of THIS invocation
+_SUPPORT_ENABLED = [False]          # the bounded pilot's EXPLICIT selection (3 Nov 2026): compile the global support and run the identity sparsely when admitted (3 Nov 2026)
 
 
 def _begin_invocation():
@@ -2099,8 +2138,14 @@ def _begin_invocation():
     _LEDGER_CURRENT[0] = None
     _BG_FOR_RECORDS[0] = None
     _DIAGNOSTIC_SHARED_ONLY[0] = False
+    _SUPPORT_ENABLED[0] = False
     CAPX.INVOCATION_BASELINE[0] = None
     CAPX._OCCUPANCY_CACHE.clear()          # each invocation is charged its own (single) occupancy probe
+    try:
+        from mdi import support as _SP
+        _SP._SUPPORT_CACHE.clear()         # ... and its own (single) support compilation
+    except ImportError:
+        pass
     EPS_FOR_RECORD[0] = K.MAX_WIDTH
     for attr in ("_ledger", "_admit", "_shared", "_phase_stop"):
         if hasattr(_discover_programs, attr):
@@ -2277,6 +2322,55 @@ def _attempt_end(a, status, **info):
             led["recognizer_runs_declined"] += 1
         elif status in ("failed", "budget"):
             led["recognizer_runs_failed"] += 1
+
+
+def _support_admission(ipl, r, bg, iprog, rejected, checker_plan=None):
+    """The pilot's admission rule, applied in discovery when the support route is
+    explicitly enabled: (1) a law without hard zeros bypasses the mechanism after the input
+    scan; (2) the Boolean working set is forecast against its cap BEFORE any allocation;
+    (3) the compilation runs under its own wall / storage caps and the invocation's
+    deadline, charged to the shared pricing counter; (4) the sparse schedule is priced from
+    the ACTUAL counts and selected only when the enumerated dense/sparse row ratio is at
+    least `support.MIN_REDUCTION_RATIO`. Any other outcome leaves the dense identity program
+    in place with the attempt recorded and charged. Returns the support price (or None)."""
+    from mdi import support as SP
+    if not SP.has_hard_zeros(r.factors):
+        rejected.append({"name": "identity+support", "typed": "SUPPORT_BYPASS", "phase": "discover",
+                         "reason": "the restricted law has no exact zeros: every assignment is feasible, support compilation cannot reduce the schedule"})
+        return None
+    t0 = time.monotonic()
+    try:
+        sup, fresh = SP.compile_support_cached(ipl, r.factors, r.card, deadline=bg.deadline_fn("discover:support compilation"),
+                                              charge=lambda n: bg.charge("pricing_entries", n, "support compilation"))
+    except SP.SupportError as e:
+        rejected.append({"name": "identity+support", "typed": "SUPPORT_REFUSAL", "phase": "discover",
+                         "reason": "support compilation did not complete: %s (%.3f s charged)" % (e, time.monotonic() - t0)})
+        return None
+    price = SP.support_price(ipl, sup)
+    price["compile_wall_s"] = round(time.monotonic() - t0, 4)
+    if price["admitted"] and checker_plan is not None and list(checker_plan.order) != list(ipl.order):
+        # the checker runs its OWN min-fill order: its sparse figures are priced from a
+        # compilation on that order (charged like the producer's; cached by content + order)
+        try:
+            sup_c, _f2 = SP.compile_support_cached(checker_plan, r.factors, r.card, deadline=bg.deadline_fn("discover:support compilation (checker order)"),
+                                                   charge=lambda n: bg.charge("pricing_entries", n, "support compilation"))
+            price["checker"] = SP.support_price(checker_plan, sup_c)
+        except SP.SupportError as e:
+            rejected.append({"name": "identity+support", "typed": "SUPPORT_REFUSAL", "phase": "discover",
+                             "reason": "support compilation on the checker's order did not complete: %s" % e})
+            return None
+    else:
+        price["checker"] = price
+    if not price["admitted"]:
+        rejected.append({"name": "identity+support", "typed": "SUPPORT_NOT_ADMITTED", "phase": "discover",
+                         "reason": "the sparse schedule enumerates %d rows against %d dense (ratio %.1f), below the required %.0f-fold reduction; "
+                                   "the dense identity stands and the compilation (%.3f s, %d Boolean positions) is charged"
+                                   % (price["counts"]["enumerated_schedule_rows"], price["dense_enumerated_schedule_rows"], price["reduction_ratio"],
+                                      SP.MIN_REDUCTION_RATIO, price["compile_wall_s"], price["counts"]["scan_positions"]),
+                         "support_price": {k: v for k, v in price.items() if k != "counts"}})
+        return None
+    iprog["support"] = sup.declaration()
+    return price
 
 
 def _discover_programs(r, queries, nq, mh, eh, qh, simp, bg, wall_s, records,

@@ -22,7 +22,7 @@ def _identity_checker(model, evidence, iv, eps, deadline_s=None,
                                 deadline_s=deadline_s, cap_bytes=cap_bytes,
                                 checker_precision=(program["checker"]["precision"]
                                                    if program is not None else None),
-                                charge=charge)
+                                charge=charge, program=program)
 
 
 # ---- pipeline executors ----
@@ -42,6 +42,8 @@ def pipeline_identity_executor(ctx):
     if prog is not None:
         sub = {"order": prog["order"], "precision": prog["precision"],
                "emin": prog["arithmetic"]["emin"], "emax": prog["arithmetic"]["emax"]}
+        if prog.get("support"):
+            sub["support"] = prog["support"]            # the declared compiled support governs the sparse executor
     bg = ctx.get("budget")
     charge = (lambda n: bg.charge("local_mass_entries", n, "identity producer message entries")) if bg else None
     res = S.solve(ctx["model"], ctx["evidence"], eps=ctx["eps"], mode="P",
@@ -52,7 +54,8 @@ def pipeline_identity_executor(ctx):
         raise PT.ExecutorRefusal(res["outcome"], res.get("reason", ""))
     ctx["meta"] = {"evaluator": "identity", "ops": res.get("ops"),
                    "peak_live_message_entries": res.get("peak_live_message_entries"),
-                   "settings": res.get("program_settings")}
+                   "settings": res.get("program_settings"), "layout": res.get("engine_layout"),
+                   "support": res.get("support")}
     return res["intervals"]
 
 
@@ -70,7 +73,7 @@ def pipeline_identity_checker(model, evidence, iv, eps, deadline_s=None,
                                 deadline_s=deadline_s, cap_bytes=cap_bytes,
                                 checker_precision=(program["checker"]["precision"]
                                                    if program is not None else None),
-                                charge=charge)
+                                charge=charge, program=program)
 
 
 def pipeline_program_executor(ctx):

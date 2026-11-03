@@ -245,6 +245,11 @@ def collective_from_jsonable(d: dict) -> dict:
 
 PROGRAM_KEYS = ("kind", "scales", "collective", "order", "precision",
                 "queries", "research", "arithmetic", "checker")
+# support (OPTIONAL, identity only; bounded pilot 3 November 2026): the compiled global
+# support the sparse executor and the sparse checkers run on -- the checker reconstructs
+# it independently and refuses unless rows_per_bag / rows_total / digest agree exactly
+SUPPORT_KEYS = ("compiled", "digest", "rows_total", "max_rows", "rows_per_bag", "sep_entries", "method")
+OPTIONAL_PROGRAM_KEYS = ("support",)
 # arithmetic: {"emin": int|None, "emax": int|None, "mode": "P"|"E"}
 # checker:    {"strategy": "min_fill"|"dense_min_fill", "precision": int}
 ARITH_KEYS = ("emin", "emax", "mode")
@@ -256,8 +261,28 @@ def validate_program(prog: dict) -> dict:
     with exact rationals and typed structures."""
     if not isinstance(prog, dict):
         raise ProgramError("program must be a mapping")
-    _need(prog, PROGRAM_KEYS, "program")
+    _need({k: v for k, v in prog.items() if k not in OPTIONAL_PROGRAM_KEYS}, PROGRAM_KEYS, "program")
     kind = prog["kind"]
+    support = None
+    if "support" in prog and prog["support"] is not None:
+        if kind != "identity":
+            raise ProgramError("only an identity program may carry a compiled support")
+        sup = prog["support"]
+        if not isinstance(sup, dict):
+            raise ProgramError("support must be a mapping")
+        _need(sup, SUPPORT_KEYS, "support")
+        if sup["compiled"] is not True:
+            raise ProgramError("support.compiled must be true when a support block is present")
+        if not isinstance(sup["rows_per_bag"], list) or not all(isinstance(x, int) and x >= 0 for x in sup["rows_per_bag"]):
+            raise ProgramError("support.rows_per_bag must be a list of non-negative integers")
+        if int(sup["rows_total"]) != sum(int(x) for x in sup["rows_per_bag"]):
+            raise ProgramError("support.rows_total %s does not equal the sum of rows_per_bag %d" % (sup["rows_total"], sum(int(x) for x in sup["rows_per_bag"])))
+        if int(sup["max_rows"]) != (max(int(x) for x in sup["rows_per_bag"]) if sup["rows_per_bag"] else 0):
+            raise ProgramError("support.max_rows does not equal the largest rows_per_bag entry")
+        if not (isinstance(sup["digest"], str) and len(sup["digest"]) == 64):
+            raise ProgramError("support.digest must be a 64-hex sha256")
+        support = {"compiled": True, "digest": str(sup["digest"]), "rows_total": int(sup["rows_total"]), "max_rows": int(sup["max_rows"]),
+                   "rows_per_bag": [int(x) for x in sup["rows_per_bag"]], "sep_entries": int(sup["sep_entries"]), "method": str(sup["method"])}
     if kind not in ("identity", "regional", "composed", "statistic",
                     "gaussian", "fourier", "mixed"):
         raise ProgramError("unknown program kind %r" % kind)
@@ -308,8 +333,11 @@ def validate_program(prog: dict) -> dict:
                            % (chk["strategy"], kind))
     if int(chk["precision"]) < 8:
         raise ProgramError("checker precision is not usable")
-    return {"kind": kind, "scales": scales, "collective": coll, "order": order,
-            "precision": prec, "queries": queries, "research": research,
-            "arithmetic": {"emin": arith["emin"], "emax": arith["emax"],
-                           "mode": arith["mode"]},
-            "checker": {"strategy": chk["strategy"], "precision": int(chk["precision"])}}
+    out = {"kind": kind, "scales": scales, "collective": coll, "order": order,
+           "precision": prec, "queries": queries, "research": research,
+           "arithmetic": {"emin": arith["emin"], "emax": arith["emax"],
+                          "mode": arith["mode"]},
+           "checker": {"strategy": chk["strategy"], "precision": int(chk["precision"])}}
+    if support is not None:
+        out["support"] = support
+    return out

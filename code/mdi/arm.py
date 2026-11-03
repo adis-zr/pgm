@@ -53,19 +53,22 @@ class Progress:
             pass
 
 
-def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path=None, evid_path=None):
-    """Run one arm and write a durable record. Returns the record."""
+def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path=None, evid_path=None, support=False):
+    """Run one arm and write a durable record. Returns the record. `support=True` is the
+    bounded pilot's third arm (3 Nov 2026): the identity route with global-support
+    compilation explicitly enabled (research routes disabled), labelled `<problem>_support`."""
     eps = eps or K.MAX_WIDTH
     # the caller's limits, never above the frozen maxima
     wall = min(float(wall or K.RESOURCES["arm_wall_s"]), float(K.RESOURCES["arm_wall_s"]))
     cap = min(int(cap or K.RESOURCES["arm_rss_bytes"]), int(K.RESOURCES["arm_rss_bytes"]))
     os.makedirs(rundir, exist_ok=True)
-    label = "%s_%s" % (problem, "research" if research else "baseline")
+    arm_name = "support" if support else ("research" if research else "baseline")
+    label = "%s_%s" % (problem, arm_name)
     # ONE absolute deadline for the whole invocation, from before any parsing
     t0 = B.DEFAULT_CLOCK[0]()
     t_end = t0 + wall
     prog = Progress(label, rundir, B.DEFAULT_CLOCK[0]() + wall, wall)
-    rec = {"problem": problem, "arm": "research" if research else "baseline",
+    rec = {"problem": problem, "arm": arm_name,
            "label": label, "eps": str(eps), "wall_s": wall, "cap_bytes": cap,
            "threads_declared": K.RESOURCES["threads"], "outcome": "STARTED",
            "spec_sha256": K.SPEC_SHA256, "stages": {}, "rejected_plans": [],
@@ -114,7 +117,8 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
             raise _Exhausted("the complete wall of %.3f s was exhausted before planning" % wall)
         res = PLN.solve(m, ev, queries=set(r.free), max_width=eps,
                         wall_s=remaining,                    # NEVER renewed
-                        cap_bytes=cap, research_enabled=research,
+                        cap_bytes=cap, research_enabled=(research and not support),
+                        support_enabled=bool(support),
                         plan_dir=os.path.join(rundir, "plans_%s" % label),
                         progress=lambda ph, info="": prog(ph, info))
         rec["stages"]["pipeline_s"] = B.DEFAULT_CLOCK[0]() - ts
