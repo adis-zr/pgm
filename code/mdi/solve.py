@@ -1029,7 +1029,8 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             else:
                 _plp = pl2
                 _pscan = _pel = 0
-            _crows, _cscan, _cel = _SC.reconstruct_support(pl2, r.factors, r.card, deadline=dl, charge=charge)
+            _cstats = {}
+            _crows, _cscan, _cel = _SC.reconstruct_support(pl2, r.factors, r.card, deadline=dl, charge=charge, stats=_cstats)
             if _plp is pl2:
                 _bad = _SC.verify_declaration(pl2, _crows, support_declared)
         except _SP.SupportError as e:
@@ -1246,7 +1247,10 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             "shares": "validated decomposition + MPFR primitives" + (" + the sparse engine class over the checker's OWN reconstructed rows" if _crows is not None else ""),
             "borrows_producer_values": False,
             "support_reconstructed": (None if _crows is None else {"rows_total": int(sum(int(x.size) for x in _crows.values())),
-                                                                   "scan_positions": int(_cscan), "seconds": round(_cel, 4), "declared_matches": True}),
+                                                                   "scan_positions": int(_cscan), "seconds": round(_cel, 4), "declared_matches": True,
+                                                                   # the checker reconstruction's own reservation peak (persisted from 3 Nov closeout on;
+                                                                   # the pair's run_record predates it)
+                                                                   "peak_working_bytes": int(_cstats.get("peak_working_bytes", 0))}),
             # every normalizing division above is guarded: a zero upper total
             # is a refusal (raised), and a ratio is formed only when its
             # denominator is proved positive; so reaching this point proves

@@ -239,6 +239,7 @@ def test_pipeline_certifies_through_the_sparse_route_and_labels_the_sparse_circu
     ck = res.checker
     assert ck["independent_aggregation_checked"] is True and "sparse exact integer junction tree" in ck["independent_aggregation_scope"]
     assert ck["support_reconstructed"]["declared_matches"] is True and ck["support_reconstructed"]["scan_positions"] > 0
+    assert 0 < ck["support_reconstructed"]["peak_working_bytes"] <= SP.SUPPORT_MEM_CAP_BYTES     # the checker's own peak is persisted
     assert ck["coordinates_checked"] == sum(m.card[v] for v in range(m.nvars))
     assert all(Fr(res.intervals[v][a][0]) <= pt[v][a] <= Fr(res.intervals[v][a][1]) for v in pt for a in range(len(pt[v])))
     dense = PLN.solve(m, ev, wall_s=120, cap_bytes=1 << 30, plan_dir=tempfile.mkdtemp(), research_enabled=False)
