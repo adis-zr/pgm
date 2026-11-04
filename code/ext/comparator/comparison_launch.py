@@ -10,7 +10,7 @@ itself. Nothing here solves, prices or certifies anything.
     python -m ext.comparator.comparison_launch RUNDIR --bindings B.json --packet P.zip [--prepare-only] [--closeout]
 """
 from __future__ import annotations
-import os, sys, json, time, hashlib
+import os, sys, json, time, hashlib, math
 HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, HERE)
 from mdi import launch as L
@@ -105,42 +105,86 @@ def prepare(rundir, bindings, pin, bindings_path, pin_path, packet, argv=None):
 
 
 def _classify_comparator(sup, rec, wall):
-    """Truthful precedence (repair of 4 Nov 2026): the OUTER supervisor's measured outcome first -- a resource stop keeps its
-    class and a non-zero / launch-failed exit can never become a completion, whatever the child record claims; only a
-    COMPLETED outer process with a readable record that itself reports completion within the wall is `completed_native`."""
+    """Outer resource stops take precedence. A recorded inner resource stop retains its
+    class even when the adapter exits 1, as it is specified to do for that stop.
+    Native completion requires mutually consistent successful outer/inner outcomes."""
     so = sup.get("outcome")
     if so == "TIMEOUT":
         return "comparator_timeout", "killed by the supervisor at its deadline (wall %.1f s plus the declared grace)" % wall
     if so == "MEMORY_STOP":
         return "comparator_memory_stop", "supervisor memory limit"
-    if so in ("NONZERO_EXIT", "LAUNCH_FAILURE") or so != "COMPLETED":
-        return "comparator_failure", "outer process %s (rc=%s); the child record (%s) is not accepted as a completion" % (so, sup.get("returncode"), (rec or {}).get("outcome"))
+    rec = rec if isinstance(rec, dict) else {}
+    child = rec.get("child") or rec.get("supervisor")
+    child = child if isinstance(child, dict) else {}
+    child_out = child.get("outcome")
+    if so in ("COMPLETED", "NONZERO_EXIT") and child_out in ("TIMEOUT", "MEMORY_STOP"):
+        return ("comparator_timeout" if child_out == "TIMEOUT" else "comparator_memory_stop"), "inner %s; outer process %s (rc=%s); no completion accepted" % (child_out, so, sup.get("returncode"))
+    if so != "COMPLETED" or sup.get("returncode") != 0:
+        return "comparator_failure", "outer process %s (rc=%s); the child record (%s) is not accepted as a completion" % (so, sup.get("returncode"), rec.get("outcome"))
     if not rec:
         return "comparator_failure", "no durable / readable comparator record after a completed outer process"
     out = rec.get("outcome")
-    child_out = ((rec.get("child") or rec.get("supervisor")) or {}).get("outcome")
-    if child_out in ("TIMEOUT", "MEMORY_STOP"):
-        return ("comparator_timeout" if child_out == "TIMEOUT" else "comparator_memory_stop"), "the comparator binary was stopped by the adapter's inner %s" % child_out
-    if out == "COMPARATOR_COMPLETED":
+    if out in ("COMPARATOR_COMPLETED", "COMPARATOR_ZERO_EVIDENCE_OR_UNDERFLOW"):
+        val = rec.get("validation")
+        if child_out != "COMPLETED" or child.get("returncode") != 0:
+            return "comparator_failure", "incomplete or inconsistent successful child outcome"
+        if not isinstance(val, dict) or val.get("ok") is not True:
+            return "comparator_failure", "missing or unsuccessful output validation"
+        required = "consistent_evidence" if out == "COMPARATOR_COMPLETED" else "zero_evidence_or_underflow"
+        if val.get(required) is not True:
+            return "comparator_failure", "output validation does not support %s" % out
         if float(sup.get("elapsed_s") or 0) > wall:
             return "comparator_timeout", "completed but not within the %.1f s wall (outer %.3f s)" % (wall, float(sup.get("elapsed_s") or 0))
+    if out == "COMPARATOR_COMPLETED":
         return "comparator_completed_native", "all marginals written and shape-validated; binary64, six decimals; NOT certified"
     if out == "COMPARATOR_ZERO_EVIDENCE_OR_UNDERFLOW":
         return "comparator_zero_evidence_or_underflow", str(rec.get("reason"))[:200]
     return "comparator_failure", "%s: %s" % (out, str(rec.get("reason"))[:200])
 
 
-def conservative_charged_s(led):
-    """Every KNOWN charge plus, for each attempt whose charge is unknown (an attempt interrupted before its terminal
-    record), the supervisor's kill deadline (wall + grace) as the upper bound: unknown expenditure is never zero."""
-    tot = 0.0
+def _measured_charge(value):
+    """A missing/invalid measurement remains unknown; a deadline is not a measurement."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and v >= 0 else None
+
+
+def unknown_expenditure(led):
+    unknown = []
     for c in led["cells"]:
         for a in c["attempts"]:
-            if a.get("charged_s") is not None:
-                tot += float(a["charged_s"])
-            else:
-                tot += float(a.get("supervisor_kill_deadline_s") or a.get("wall_granted_s") or led["cell_wall_s"])
-    return tot
+            if _measured_charge(a.get("charged_s")) is None:
+                unknown.append({"label": c["label"], "attempt": a.get("n"), "dir": a.get("dir")})
+    return unknown
+
+
+def conservative_charged_s(led):
+    """Compatibility name: sum known charges, refusing an unresolved total.
+    The supervisor's kill deadline is not a bound on elapsed time after interruption."""
+    if unknown_expenditure(led):
+        raise L.Refused("unresolved expenditure: total and remaining allowance are unavailable")
+    return sum(float(a["charged_s"]) for c in led["cells"] for a in c["attempts"])
+
+
+def _accounting_state(led):
+    led.pop("unknown_expenditure_bound_s", None)
+    for c in led["cells"]:
+        for a in c["attempts"]:
+            a.pop("charge_unknown_bounded_by_s", None)
+    unknown = unknown_expenditure(led)
+    led["unknown_expenditure_attempts"] = unknown
+    led["accounting_status"] = "UNRESOLVED" if unknown else "COMPLETE"
+    led["carry_forward_available"] = not unknown
+    return unknown
+
+
+def _persist_accounting_or_stop(led, path):
+    unknown = _accounting_state(led)
+    _jdump(led, path)
+    if unknown:
+        raise L.Refused("unresolved expenditure for %s: no further cell may start; recover measured costs and confirm process termination before resuming" % unknown)
 
 
 def _allowance_remaining_conservative(led):
@@ -174,12 +218,10 @@ def run_cells(rundir, bindings, python=None):
     for c in led["cells"]:
         for a in c["attempts"]:
             if a.get("status") in ("STARTED", "TERMINAL_UNCLASSIFIED"):
-                # an attempt without a terminal classification: NEVER rerun; its expenditure, if unknown, is bounded by the
-                # kill deadline in every allowance / session test below (never treated as zero)
+                # An unclassified attempt is never rerun. Unknown expenditure stops
+                # the campaign; a deadline cannot supply a missing measurement.
                 a["status"] = "INTERRUPTED"; c["status"] = "INTERRUPTED"
-                a.setdefault("charge_unknown_bounded_by_s", a.get("supervisor_kill_deadline_s")) if a.get("charged_s") is None else None
-    led["unknown_expenditure_bound_s"] = round(conservative_charged_s(led) - L.charged_cells_s(led), 6)
-    _jdump(led, lp)
+    _persist_accounting_or_stop(led, lp)
     for c in led["cells"]:
         label, arm = c["label"], c["arm"]
         if c["status"] in ("CONSUMED", "INTERRUPTED", "NOT_RUN_CUMULATIVE_STOP", "NOT_RUN_ALLOWANCE_STOP"):
@@ -208,9 +250,9 @@ def run_cells(rundir, bindings, python=None):
         sup = SV.run(cmd, cwd=L.HERE, log_path=os.path.join(adir, "supervisor.log"), deadline_s=wall + grace, mem_limit_kib=cap_bytes // 1024, env=env, label=label)
         # the MEASURED outcome and charge are persisted FIRST (repair of 4 Nov 2026): a missing or truncated child
         # record can no longer erase the cost; classification follows in a second durable step
-        att.update({"status": "TERMINAL_UNCLASSIFIED", "ended": time.strftime("%Y-%m-%d %H:%M:%S"), "charged_s": float(sup.get("elapsed_s") or 0.0),
+        att.update({"status": "TERMINAL_UNCLASSIFIED", "ended": time.strftime("%Y-%m-%d %H:%M:%S"), "charged_s": _measured_charge(sup.get("elapsed_s")),
                     "supervisor": {k: sup.get(k) for k in ("outcome", "returncode", "elapsed_s", "peak_tree_rss_kib", "peak_tree_procs", "mem_samples", "mem_limitation")}})
-        _jdump(led, lp)
+        _persist_accounting_or_stop(led, lp)
         rec = receipt = None
         read_faults = []
 
@@ -218,7 +260,11 @@ def run_cells(rundir, bindings, python=None):
             if not os.path.exists(path):
                 return None
             try:
-                return json.load(open(path))
+                obj = json.load(open(path))
+                if not isinstance(obj, dict):
+                    read_faults.append("%s: expected a JSON object, got %s" % (os.path.basename(path), type(obj).__name__))
+                    return None
+                return obj
             except (ValueError, OSError) as e:
                 read_faults.append("%s: %s: %s" % (os.path.basename(path), type(e).__name__, str(e)[:120])); return None
         if arm in COMPARATOR_ARMS:
@@ -241,6 +287,40 @@ def run_cells(rundir, bindings, python=None):
     return led
 
 
+def closeout(rundir, bindings):
+    """Keep missing expenditure explicit in the published summary and carry-forward.
+    The pinned closeout is used unchanged only when all attempt charges are known."""
+    t0 = time.time()
+    led = L.load_ledger(rundir, bindings)
+    unknown = _accounting_state(led)
+    _jdump(led, os.path.join(rundir, "LEDGER.json"))
+    if not unknown:
+        return L.closeout(rundir, bindings)
+    rows = []
+    known_total = 0.0
+    for c in led["cells"]:
+        known = sum(v for a in c["attempts"] if (v := _measured_charge(a.get("charged_s"))) is not None)
+        missing = sum(_measured_charge(a.get("charged_s")) is None for a in c["attempts"])
+        known_total += known
+        last = c["attempts"][-1] if c["attempts"] else {}
+        rows.append({"label": c["label"], "status": c["status"], "attempts": len(c["attempts"]),
+                     "class": last.get("class"), "arm_outcome": last.get("arm_outcome"),
+                     "charged_s": None if missing else known, "known_charged_s": known,
+                     "unknown_charge_attempts": missing, "final_max_width": last.get("final_max_width")})
+    led["closeout_s"] = float(led["closeout_s"]) + (time.time() - t0)
+    summary = {"cells": rows, "charged_cells_s": None, "known_charged_cells_s": known_total,
+               "accounting_status": "UNRESOLVED", "unknown_expenditure_attempts": unknown,
+               "carry_forward_available": False, "session_remaining_s": None, "allowance_remaining_s": None,
+               "allowance_s": led["allowance_s"], "preparation_s": led["preparation_s"],
+               "closeout_s": led["closeout_s"], "charges": led["charges"],
+               "previous_expenditure_s": led["previous_expenditure_s"], "repair": led["repair"],
+               "note": "Known costs are retained; the unknown total is not bounded by a kill deadline. No further launch or carry-forward until resolved.",
+               "built": time.strftime("%Y-%m-%d %H:%M:%S")}
+    _jdump(led, os.path.join(rundir, "LEDGER.json"))
+    _jdump(summary, os.path.join(rundir, "SUMMARY.json"))
+    return summary
+
+
 def main(argv):
     rundir = os.path.abspath(argv[0])
     opts = {"--bindings": None, "--packet": None}
@@ -254,7 +334,7 @@ def main(argv):
             raise SystemExit("unknown option %s" % argv[i])
     bindings_path = os.path.abspath(opts["--bindings"]); bindings = json.load(open(bindings_path))
     if "--closeout" in flags:
-        print(json.dumps(L.closeout(rundir, bindings), indent=1, default=str)); return 0
+        print(json.dumps(closeout(rundir, bindings), indent=1, default=str)); return 0
     pin_path = os.path.join(L.HERE, bindings["build_pin"]["path"]); pin = json.load(open(pin_path))
     if L.sha256_file(pin_path) != bindings["build_pin"]["sha256"]:
         raise SystemExit("BUILD_PIN does not hash to the bindings' pinned value")

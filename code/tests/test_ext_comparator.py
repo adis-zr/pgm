@@ -33,7 +33,7 @@ def test_adapter_output_validation_rejects_every_named_fault_and_keeps_the_statu
         "cardinality": GOOD.replace("3 0.387200 0.235900 0.376900", "2 0.500000 0.500000"),
         "missing STATUS": "PR\n0.69\nMAR\n3 2 0.500000 0.500000 2 1.000000 0.000000 3 0.387200 0.235900 0.376900\n",
         "unrecognized STATUS": GOOD.replace("true: Consistent evidence", "maybe: who knows"),
-        "non-decimal or non-finite": GOOD.replace("0.500000 0.500000", "nan nan"),
+        "non-decimal or non-finite nan": GOOD.replace("0.500000 0.500000", "nan nan"),
         "non-decimal or non-finite": GOOD.replace("0.500000 0.500000", "inf -inf"),
         "outside [0, 1]": GOOD.replace("0.500000 0.500000", "1.500000 -0.500000"),
         "truncated or malformed": "PR\n0.69\nSTATUS\ntrue: Consistent evidence\nMAR\n3 2 0.500000\n",
@@ -52,7 +52,7 @@ def test_adapter_output_validation_rejects_every_named_fault_and_keeps_the_statu
 
 
 def test_outcome_precedence_outer_stops_and_nonzero_exits_never_become_completion():
-    completed_rec = {"outcome": "COMPARATOR_COMPLETED", "child": {"outcome": "COMPLETED", "elapsed_s": 0.5}, "merlin_process_elapsed_s": 0.5}
+    completed_rec = {"outcome": "COMPARATOR_COMPLETED", "child": {"outcome": "COMPLETED", "returncode": 0, "elapsed_s": 0.5}, "merlin_process_elapsed_s": 0.5, "validation": {"ok": True, "consistent_evidence": True, "zero_evidence_or_underflow": False}}
     assert CL._classify_comparator({"outcome": "NONZERO_EXIT", "returncode": 3, "elapsed_s": 1.0}, completed_rec, 60.0)[0] == "comparator_failure"
     assert CL._classify_comparator({"outcome": "LAUNCH_FAILURE", "returncode": 127, "elapsed_s": 0.1}, completed_rec, 60.0)[0] == "comparator_failure"
     assert CL._classify_comparator({"outcome": "TIMEOUT", "elapsed_s": 70.0}, completed_rec, 60.0)[0] == "comparator_timeout"
@@ -61,39 +61,65 @@ def test_outcome_precedence_outer_stops_and_nonzero_exits_never_become_completio
     assert CL._classify_comparator({"outcome": "COMPLETED", "returncode": 0, "elapsed_s": 1.0}, dict(completed_rec, child={"outcome": "TIMEOUT"}), 60.0)[0] == "comparator_timeout"
     assert CL._classify_comparator({"outcome": "COMPLETED", "returncode": 0, "elapsed_s": 61.0}, completed_rec, 60.0)[0] == "comparator_timeout"
     assert CL._classify_comparator({"outcome": "COMPLETED", "returncode": 0, "elapsed_s": 1.0}, completed_rec, 60.0)[0] == "comparator_completed_native"
-    assert CL._classify_comparator({"outcome": "COMPLETED", "returncode": 0, "elapsed_s": 1.0}, {"outcome": "COMPARATOR_ZERO_EVIDENCE_OR_UNDERFLOW", "reason": "STATUS false"}, 60.0)[0] == "comparator_zero_evidence_or_underflow"
+    assert CL._classify_comparator({"outcome": "COMPLETED", "returncode": 0, "elapsed_s": 1.0}, dict(completed_rec, outcome="COMPARATOR_ZERO_EVIDENCE_OR_UNDERFLOW", reason="STATUS false", validation={"ok": True, "consistent_evidence": False, "zero_evidence_or_underflow": True}), 60.0)[0] == "comparator_zero_evidence_or_underflow"
     assert CL._classify_comparator({"outcome": "COMPLETED", "returncode": 0, "elapsed_s": 1.0}, {"outcome": "COMPARATOR_OUTPUT_INVALID", "reason": "nan"}, 60.0)[0] == "comparator_failure"
 
 
-def test_same_process_group_child_is_reaped_by_an_outer_timeout_and_the_complete_termination_is_charged():
-    """Synthetic processes only: a fake comparator that forks a grandchild and sleeps; the OUTER supervisor's 1.5 s
-    deadline must terminate the adapter's child runner AND every descendant (the pre-repair adapter put the child in a
-    new session, so the outer killpg could not reach it: reproduced in glue_repair/before_cf50af4.out)."""
+@pytest.mark.parametrize("outer_stop", ["TIMEOUT", "MEMORY_STOP", "INNER_MEMORY_STOP"])
+def test_same_process_group_child_is_terminated_by_outer_timeout_and_rss(outer_stop, monkeypatch):
+    """Real synthetic child/grandchild; outer RSS stop uses an injected sampler.
+    No external inference. The frozen supervisor waits for its direct adapter,
+    while group SIGKILL reaches its child and grandchild. Subsequent PID polling
+    verifies disappearance; it is not claimed to be included in charged wall.
+    """
     tmp = tempfile.mkdtemp()
-    fake = os.path.join(tmp, "fake_merlin.sh"); open(fake, "w").write("#!/bin/sh\nsleep 300 &\necho $! > %s/grandchild.pid\nsleep 300\n" % tmp); os.chmod(fake, 0o755)
+    fake = os.path.join(tmp, "fake_merlin.py")
+    gpfile = os.path.join(tmp, "grandchild.pid")
+    cpfile = os.path.join(tmp, "child.pid")
+    grand = "import os,time; open(%r, 'w').write(str(os.getpid())); time.sleep(8)" % gpfile
+    open(fake, "w").write("import os,sys,subprocess,time\nopen(%r,'w').write(str(os.getpid()))\n"
+                           "subprocess.Popen([sys.executable,'-c',%r])\ntime.sleep(8)\n" % (cpfile, grand))
     drv = os.path.join(tmp, "drive.py")
-    open(drv, "w").write("import sys; sys.path.insert(0, %r)\nfrom ext.comparator import merlin_adapter as MA\n"
-                         "MA.run_child_same_group([%r], cwd=%r, log_path=%r, deadline_s=60, mem_limit_kib=1 << 20)\n" % (HERE, fake, tmp, tmp + "/inner.log"))
-    sup = SV.run([sys.executable, drv], cwd=tmp, log_path=tmp + "/outer.log", deadline_s=1.5, mem_limit_kib=1 << 20, label="outer")
-    time.sleep(0.5)
-    assert sup["outcome"] == "TIMEOUT" and sup["elapsed_s"] >= 1.5          # the complete termination is charged to the outer wall
-    gp = int(open(tmp + "/grandchild.pid").read().strip())
-    with pytest.raises(ProcessLookupError):
-        os.kill(gp, 0)
-    left = subprocess.run(["pgrep", "-f", "sleep 300"], capture_output=True, text=True).stdout.split()
-    for p in left:
-        try: os.kill(int(p), signal.SIGKILL)
-        except Exception: pass
-    assert left == [], "descendants survived the outer stop: %s" % left
-    # the inner runner's own limits also kill the child's descendants (synthetic RSS stop: 1 KiB limit)
-    rec = MA.run_child_same_group([fake], cwd=tmp, log_path=tmp + "/inner2.log", deadline_s=60, mem_limit_kib=1)
-    time.sleep(0.3)
-    assert rec["outcome"] == "MEMORY_STOP" and rec["same_process_group_as_adapter"] is True
-    left2 = subprocess.run(["pgrep", "-f", "sleep 300"], capture_output=True, text=True).stdout.split()
-    for p in left2:
-        try: os.kill(int(p), signal.SIGKILL)
-        except Exception: pass
-    assert left2 == []
+    driver = "import sys,json; sys.path.insert(0,%r)\nfrom ext.comparator import merlin_adapter as MA\n" % HERE
+    inner_mem = 1 << 20
+    if outer_stop == "INNER_MEMORY_STOP":
+        driver += "from ext import supervise as SV\nimport os\n"
+        driver += "SV._tree_rss_kib=lambda pid: (2,2) if os.path.exists(%r) else (0,1)\n" % gpfile
+        driver += "MA._descendants=lambda pid: [int(open(%r).read())] if os.path.exists(%r) else []\n" % (gpfile, gpfile)
+        inner_mem = 1
+    driver += "r=MA.run_child_same_group([sys.executable,%r],cwd=%r,log_path=%r,deadline_s=8,mem_limit_kib=%d)\n" % (fake, tmp, tmp + "/inner.log", inner_mem)
+    driver += "json.dump(r,open(%r,'w'))\n" % (tmp + "/inner.json")
+    open(drv, "w").write(driver)
+    if outer_stop == "MEMORY_STOP":
+        # Trigger the outer path only after both descendant PIDs are durable.
+        monkeypatch.setattr(SV, "_tree_rss_kib", lambda pid: ((1 << 20) + 1, 3) if os.path.exists(gpfile) else (0, 1))
+    pids = []
+    try:
+        sup = SV.run([sys.executable, drv], cwd=tmp, log_path=tmp + "/outer.log",
+                     deadline_s=1.0 if outer_stop == "TIMEOUT" else 3.0,
+                     mem_limit_kib=1 << 20, label="outer")
+        assert sup["outcome"] == ("COMPLETED" if outer_stop == "INNER_MEMORY_STOP" else outer_stop) and sup["elapsed_s"] < 10.0
+        if outer_stop == "INNER_MEMORY_STOP":
+            assert json.load(open(tmp + "/inner.json"))["outcome"] == "MEMORY_STOP"
+        pids = [int(open(p).read()) for p in (cpfile, gpfile)]
+        def remains(pid):
+            try:
+                os.kill(pid, 0)
+                return True
+            except ProcessLookupError:
+                return False
+        # SIGKILL delivery/OS reaping may finish just after the adapter exits.
+        end = time.monotonic() + 1.0
+        while any(remains(p) for p in pids) and time.monotonic() < end:
+            time.sleep(0.01)
+        assert not any(remains(p) for p in pids), "descendants survived the outer stop"
+    finally:
+        for pf in (cpfile, gpfile):
+            if os.path.exists(pf):
+                try:
+                    os.kill(int(open(pf).read()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
 
 def _toy_bindings(tmp, model_bytes, evid_bytes, pk, pp, order, extra=None):
@@ -105,7 +131,7 @@ def _toy_bindings(tmp, model_bytes, evid_bytes, pk, pp, order, extra=None):
          "glue": CL.glue_hashes(),
          "engine_limits": {"arm_wall_s": float(K.RESOURCES["arm_wall_s"]), "arm_rss_bytes": int(K.RESOURCES["arm_rss_bytes"]), "threads": int(K.RESOURCES["threads"]),
                            "max_width": str(K.MAX_WIDTH), "phase_limits": dict(B.Budget.PHASE_LIMITS)},
-         "cell_wall_s": 10.0, "durable_grace_s": 2.0, "allowance_s": 40.0, "session_cap_s": 1000.0, "previous_expenditure_s": {"earlier": 1.0},
+         "cell_wall_s": 10.0, "durable_grace_s": 0.0, "allowance_s": 40.0, "session_cap_s": 1000.0, "previous_expenditure_s": {"earlier": 1.0},
          "order": order, "synthetic_control": True, "synthetic_control_mem_cap_bytes": 1 << 30}
     b.update(extra or {})
     return b
@@ -124,7 +150,21 @@ def _toy_packet(tmp):
     return m, ev, model_bytes, evid_bytes, pk, pin, pp
 
 
-def test_glue_hashes_are_enforced_on_preparation_and_revalidation_and_the_packet_hash_first():
+@pytest.fixture
+def synthetic_comparator_pin(monkeypatch, tmp_path):
+    """Preparation-only controls need no installed or executed Merlin binary."""
+    binary = tmp_path / "not_executed_binary"
+    binary.write_bytes(b"synthetic identity fixture; never executed\n")
+    pin = {"binary": {"path": str(binary), "sha256": L.sha256_file(binary)},
+           "source": {"commit": "synthetic"}, "command": "not executed",
+           "guarantee": "synthetic fixture", "structural_mechanism": "synthetic fixture"}
+    pp = tmp_path / "SYNTHETIC_COMPARATOR_PIN.json"
+    pp.write_text(json.dumps(pin))
+    monkeypatch.setattr(MA, "PIN_PATH", str(pp))
+    return pin
+
+
+def test_glue_hashes_are_enforced_on_preparation_and_revalidation_and_the_packet_hash_first(synthetic_comparator_pin):
     tmp = tempfile.mkdtemp(); m, ev, mb, eb, pk, pin, pp = _toy_packet(tmp)
     b = _toy_bindings(tmp, mb, eb, pk, pp, [["Tiny_1", "merlin"]]); bp = os.path.join(tmp, "b.json"); json.dump(b, open(bp, "w"))
     # the packet's whole-file hash is tested FIRST: nothing is restored before it
@@ -144,10 +184,10 @@ def test_glue_hashes_are_enforced_on_preparation_and_revalidation_and_the_packet
         CL.run_cells(os.path.join(tmp, "run_ok"), b_bad)
 
 
-def test_charges_persist_before_child_artifacts_are_parsed_and_unknown_expenditure_is_never_zero(monkeypatch):
+def test_charges_persist_before_child_artifacts_are_parsed_and_unknown_expenditure_is_never_zero(monkeypatch, synthetic_comparator_pin):
     """A child that exits 0 but leaves a TRUNCATED record: the attempt's measured charge and outcome are durable, the
-    cell is classified as a failure with the read fault named, and a restart neither retries nor treats an interrupted
-    attempt's unknown expenditure as zero (it is bounded by the kill deadline in the allowance / session tests)."""
+    cell is classified as a failure with the read fault named. An unknown interrupted charge
+    stops resumption and leaves the total and carry-forward unavailable; a deadline is not a measurement."""
     tmp = tempfile.mkdtemp(); m, ev, mb, eb, pk, pin, pp = _toy_packet(tmp)
     b = _toy_bindings(tmp, mb, eb, pk, pp, [["Tiny_1", "merlin"], ["Tiny_1", "merlin"]], {"allowance_s": 30.0})
     b["order"] = [["Tiny_1", "merlin"], ["Tiny_2", "merlin"]]; b["inputs"]["Tiny_2.uai"] = b["inputs"]["Tiny_1.uai"]; b["inputs"]["Tiny_2.uai.evid"] = b["inputs"]["Tiny_1.uai.evid"]
@@ -170,16 +210,29 @@ def test_charges_persist_before_child_artifacts_are_parsed_and_unknown_expenditu
     assert a["class"] == "comparator_failure" and a["record_read_faults"] and "JSONDecodeError" in a["record_read_faults"][0]
     assert a["arm_outcome"] is None and a["component_elapsed_s"] is None
     # restart semantics: an attempt left without a terminal classification is INTERRUPTED, never rerun, and its unknown charge is
-    # bounded by the kill deadline (not zero) in the conservative allowance test
-    led["cells"][1]["attempts"] = [{"n": 1, "kind": "initial", "dir": "cells/Tiny_2_merlin/attempt_1", "wall_granted_s": 10.0, "supervisor_kill_deadline_s": 12.0,
+    # unresolved: a kill deadline is not a measurement or a safe elapsed-time bound
+    led["cells"][1]["attempts"] = [{"n": 1, "kind": "initial", "dir": "cells/Tiny_2_merlin/attempt_1", "wall_granted_s": 10.0, "supervisor_kill_deadline_s": 10.0,
                                     "command": ["x"], "status": "STARTED", "started": "now"}]
     led["cells"][1]["status"] = "STARTED"
     os.makedirs(os.path.join(rd, "cells", "Tiny_2_merlin", "attempt_1"), exist_ok=True)
     json.dump(led, open(os.path.join(rd, "LEDGER.json"), "w"), indent=1)
-    assert CL.conservative_charged_s(led) == pytest.approx(a["charged_s"] + 12.0)
-    led2 = CL.run_cells(rd, b)
-    assert led2["cells"][1]["status"] == "INTERRUPTED" and len(led2["cells"][1]["attempts"]) == 1 and led2["unknown_expenditure_bound_s"] == pytest.approx(12.0)
-    assert L.charged_cells_s(led2) < CL.conservative_charged_s(led2)         # the pinned sum would read the unknown as zero; the orchestrator does not
+    with pytest.raises(L.Refused, match="unresolved expenditure"):
+        CL.conservative_charged_s(led)
+    # The unresolved attempt must refuse before any new child can be spawned.
+    def forbidden_run(*args, **kwargs):
+        pytest.fail("a child was spawned despite unresolved expenditure")
+    monkeypatch.setattr(SV, "run", forbidden_run)
+    with pytest.raises(L.Refused, match="unresolved expenditure"):
+        CL.run_cells(rd, b)
+    led2 = json.load(open(os.path.join(rd, "LEDGER.json")))
+    assert led2["cells"][1]["status"] == "INTERRUPTED" and len(led2["cells"][1]["attempts"]) == 1
+    assert led2["cells"][0]["attempts"][0]["charged_s"] == a["charged_s"]
+    assert led2["accounting_status"] == "UNRESOLVED" and not led2["carry_forward_available"]
+    assert "unknown_expenditure_bound_s" not in led2
+    summary = CL.closeout(rd, b)
+    assert summary["charged_cells_s"] is None and summary["session_remaining_s"] is None
+    assert summary["allowance_remaining_s"] is None and not summary["carry_forward_available"]
+    assert summary["known_charged_cells_s"] == a["charged_s"]
 
 
 @pytest.mark.skipif(not MERLIN_PRESENT, reason="the pinned Merlin binary is not installed on this host")
@@ -192,7 +245,7 @@ def test_mixed_arm_orchestrator_toy_run_under_the_configured_caps_one_mdi_child_
     led = CL.run_cells(rd, b)
     assert [c["status"] for c in led["cells"]] == ["CONSUMED", "CONSUMED"], json.dumps(led, indent=1)[:1500]
     a_sel, a_mer = led["cells"][0]["attempts"][0], led["cells"][1]["attempts"][0]
-    assert a_sel["wall_granted_s"] == 10.0 and a_sel["supervisor_kill_deadline_s"] == 12.0 and a_mer["supervisor"]["mem_limitation"]
+    assert a_sel["wall_granted_s"] == 10.0 and a_sel["supervisor_kill_deadline_s"] == 10.0 and a_mer["supervisor"]["mem_limitation"]
     assert a_sel["class"] == "certified_fallback" and a_sel["kind_of_result"] == "certified_mdi" and a_sel["charged_s"] <= 10.0
     assert a_mer["class"] == "comparator_completed_native" and a_mer["arm_outcome"] == "COMPARATOR_COMPLETED" and a_mer["kind_of_result"] == "native_uncertified"
     assert a_mer["component_elapsed_s"] is not None and a_mer["component_elapsed_s"] <= a_mer["charged_s"]        # a component, never added

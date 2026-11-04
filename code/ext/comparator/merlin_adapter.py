@@ -170,15 +170,16 @@ def _descendants(pid):
 
 def run_child_same_group(cmd, cwd, log_path, deadline_s, mem_limit_kib, env=None):
     """Run the comparator binary as a child in the ADAPTER'S OWN process group (no new session): the outer supervisor's
-    `killpg` on the adapter therefore reaches the binary and every descendant, so no native child can be orphaned by an
-    outer timeout or RSS stop (repair of 4 Nov 2026). The adapter's own deadline / tree-RSS polling reuses the pinned
+    `killpg` on the adapter therefore reaches the binary and every descendant, so an
+    outer timeout or RSS stop signals all members of that group (repair of 4 Nov 2026).
+    The outer supervisor waits for its direct adapter child; it does not individually reap grandchildren. The adapter's own deadline / tree-RSS polling reuses the pinned
     supervisor's sampler and kills the child AND its descendants itself when its inner limits are breached."""
     from ext import supervise as SV
     rec = {"cmd": cmd, "cwd": cwd, "deadline_s": deadline_s, "mem_limit_kib": mem_limit_kib, "same_process_group_as_adapter": True}
     t0 = time.time()
     e = dict(os.environ); e.update(env or {})
     lf = open(log_path, "w", buffering=1)
-    lf.write("# cmd: %s\n# cwd: %s\n# started: %s\n# NOTE: same process group as the adapter (outer killpg reaps this tree)\n" % (" ".join(cmd), cwd, time.strftime("%Y-%m-%dT%H:%M:%S%z")))
+    lf.write("# cmd: %s\n# cwd: %s\n# started: %s\n# NOTE: same process group as the adapter (outer killpg signals this process group)\n" % (" ".join(cmd), cwd, time.strftime("%Y-%m-%dT%H:%M:%S%z")))
     try:
         proc = subprocess.Popen(cmd, cwd=cwd, stdout=lf, stderr=subprocess.STDOUT, env=e)
     except OSError as ex:
