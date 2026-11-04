@@ -83,7 +83,8 @@ def score_run(rundir, packet, refdir=None, input_dir="/tmp/tep/three_external_pr
     refdir = refdir or os.path.join(rundir, "references_read_after_all_cells")
     assert os.path.realpath(refdir) != os.path.realpath(input_dir), "references must not enter the solver input directory"
     led = json.load(open(os.path.join(rundir, "LEDGER.json")))
-    pending = [c["label"] for c in led["cells"] if c["status"] not in ("CONSUMED", "NOT_RUN_CUMULATIVE_STOP")]
+    TERMINAL = ("CONSUMED", "NOT_RUN_CUMULATIVE_STOP", "NOT_RUN_ALLOWANCE_STOP")      # every status the launcher leaves a cell in for good
+    pending = [c["label"] for c in led["cells"] if c["status"] not in TERMINAL]
     assert not pending, "cells still pending: %s -- the scorer runs only after every invocation" % pending
     refs = extract_refs(packet, refdir)
     out = {"note": "post-publication empirical diagnostics (contract SS6); references read AFTER every cell finished, from %s; "
@@ -91,6 +92,8 @@ def score_run(rundir, packet, refdir=None, input_dir="/tmp/tep/three_external_pr
     for c in led["cells"]:
         label, problem = c["label"], c["problem"]
         rows = {"status": c["status"], "attempts": []}
+        if not c["attempts"]:
+            rows["diagnostics"] = "not applicable: the cell never ran (%s)" % c["status"]
         for i, att in enumerate(c["attempts"], 1):
             adir = os.path.join(rundir, "cells", label, "attempt_%d" % i)
             rec = {"attempt": i, "class": att.get("class"), "arm_outcome": att.get("arm_outcome"), "charged_s": att.get("charged_s")}
@@ -123,6 +126,8 @@ if __name__ == "__main__":
     rf = os.path.abspath(sys.argv[3]) if len(sys.argv) > 3 else None
     r = score_run(rd, pk, rf)
     for lab, c in r["cells"].items():
+        if not c["attempts"]:
+            print("%-24s %s" % (lab, c.get("diagnostics")))
         for a in c["attempts"]:
             if "point_vector" in a:
                 print("%-24s attempt %d %-22s maxH %.6f meanH %.6f | containment %d/%d inside (%d with half-ulp slack)" % (

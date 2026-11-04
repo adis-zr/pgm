@@ -152,17 +152,23 @@ def global_separator_counts(plan, card, rows, account=None, release=None, tick=N
         if r.size == 0:
             out[b.idx] = 0
             continue
-        tmp = 8 * int(r.size) * (len(bvars) + 1)                 # the unravelled coordinates and the key array
+        n = int(r.size)
+        # the SIMULTANEOUS temporaries, reserved before any of them exists: the unravelled
+        # coordinates (one int64 array per bag variable), the key array, unique's sorted
+        # copy and its output, and its Boolean mask
+        tmp = 8 * n * (len(bvars) + 3) + n
         if account is not None:
             account(tmp)
         coords = np.unravel_index(r, tuple(int(card[v]) for v in bvars))
         st = _strides_for(sep, card)
-        key = np.zeros(r.size, dtype=np.int64)
+        key = np.zeros(n, dtype=np.int64)
         for v in sep:
             key += coords[bvars.index(v)] * int(st[v])
-        out[b.idx] = int(np.unique(key).size)
+        uniq = np.unique(key)
+        out[b.idx] = int(uniq.size)
         if tick is not None:
-            tick(int(r.size))
+            tick(n)
+        del coords, key, uniq                               # the last references go before the release
         if release is not None:
             release(tmp)
     return out
@@ -200,11 +206,6 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
         raise SupportError("support compilation refused before allocation: the Boolean working set forecasts %d bytes "
                            "against its %d-byte cap" % (fc, mem_cap))
     bags = plan.bags
-    fac = {}
-    for fi, f in enumerate(factors):
-        shape = tuple(int(c) for c in f.card)
-        m = np.fromiter((Fr(x) != 0 for x in f.table), dtype=bool, count=len(f.table))
-        fac[fi] = m.reshape(shape) if shape else m.reshape(())
     scan = 0
     live = 0
     peak = 0
@@ -223,15 +224,26 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
             deadline()
 
     def _account(nbytes):
+        """RESERVE storage BEFORE the allocation it describes; refuse when the reservation
+        would exceed the cap (so no array above the cap is ever allocated)."""
         nonlocal live, peak
+        if live + int(nbytes) > mem_cap:
+            raise SupportError("support compilation exceeded its %d-byte working-storage cap (%d live + %d requested)" % (mem_cap, live, int(nbytes)))
         live += int(nbytes)
         peak = max(peak, live)
-        if live > mem_cap:
-            raise SupportError("support compilation exceeded its %d-byte working-storage cap (%d live)" % (mem_cap, live))
 
     def _release(nbytes):
+        """Release a reservation only AFTER the last reference to its storage is dropped."""
         nonlocal live
         live -= int(nbytes)
+
+    # the factor indicator masks: retained for the whole compilation (reserved first)
+    fac = {}
+    _account(sum(len(f.table) for f in factors))
+    for fi, f in enumerate(factors):
+        shape = tuple(int(c) for c in f.card)
+        m = np.fromiter((Fr(x) != 0 for x in f.table), dtype=bool, count=len(f.table))
+        fac[fi] = m.reshape(shape) if shape else m.reshape(())
 
     # ---- upward: subtree feasibility ----
     roots = [b.idx for b in bags if b.parent == -1]
@@ -286,29 +298,45 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
                 sep = _sep_of(plan, c, x)
                 axes = tuple(k for k, v in enumerate(bxv) if v not in sep)
                 sd = bc.sep_domain(plan.card)
-                _account(sd)                                # the projection temporary
-                proj = np.any(gx, axis=axes) if axes else gx
+                _account(sd)                                # the projection temporary, reserved before it exists
+                proj = np.any(gx, axis=axes) if axes else gx.copy()
                 _tick(gx.size)
                 gc = up_mask.pop(c)                         # becomes the child's global mask in place
                 np.logical_and(gc, _bag_view(proj, sep, bcv), out=gc)
                 _tick(gc.size)
+                del proj                                    # the last reference goes BEFORE the release
                 _release(sd)
-                del proj
                 glob[c] = gc
                 stack.append(c)
-            r = np.flatnonzero(gx).astype(np.int64)
-            _account(r.nbytes)                              # the int64 rows: an OUTPUT, counted while the compilation runs
+            n_rows = int(np.count_nonzero(gx))             # no allocation; sizes the reservation
+            _account(8 * n_rows)                            # the int64 rows: an OUTPUT, reserved before flatnonzero allocates it
+            r = np.flatnonzero(gx)
+            if r.dtype != np.int64:                         # a second buffer only where intp is not int64, reserved first
+                _account(8 * n_rows)
+                r2 = r.astype(np.int64)
+                del r
+                _release(8 * n_rows)
+                r = r2
             rows[x] = r
             _tick(gx.size)
-            _release(gx.nbytes)                             # the mask is freed
-            del glob[x]
+            del glob[x]                                     # the mask's last reference ...
+            gx_bytes = gx.nbytes
+            del gx                                          # ... and the local name, then the release
+            _release(gx_bytes)
             if x in up_msg:
-                _release(up_msg[x][1].nbytes)               # its upward separator mask has served its last use
-                del up_msg[x]
+                mb = up_msg[x][1].nbytes
+                del up_msg[x]                               # its upward separator mask has served its last use
+                _release(mb)
     passes_s = time.monotonic() - t0
     # ---- metadata (inside the timed / capped boundary): the global separator populations ----
     sep_counts = global_separator_counts(plan, card, rows, account=_account, release=_release, tick=_tick)
     elapsed = time.monotonic() - t0
+    # the FINAL deadline check: the cap and the invocation deadline are tested on the complete
+    # elapsed time, after the last operation, so a compilation never returns past its cap
+    if elapsed > wall_cap_s:
+        raise SupportError("support compilation exceeded its %.1f s cap (%.3f s elapsed at completion)" % (wall_cap_s, elapsed))
+    if deadline is not None:
+        deadline()
     return Support(plan, card, rows, up_counts, scan, elapsed, peak, sep_counts=sep_counts,
                    metadata_s=elapsed - passes_s, passes_s=passes_s)
 

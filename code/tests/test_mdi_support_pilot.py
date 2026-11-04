@@ -500,3 +500,105 @@ def test_launcher_never_exceeds_the_run_allowance_including_grace():
     rd2 = os.path.join(tmp2, "run"); L.prepare(rd2, b2, pin2, bp2, pp2, packet=pk2)
     led2 = L.run_cells(rd2, b2, cmd_factory=_factory(dummy2), supervisor=mocked)
     assert [c["status"] for c in led2["cells"]] == ["CONSUMED", "CONSUMED"] and L.charged_cells_s(led2) == 1220.0
+
+
+def test_support_storage_reservation_precedes_allocation_counts_every_buffer_and_the_final_deadline_is_checked():
+    """(second pilot review) One eight-state variable with one zero (a single 8-entry bag, 7
+    rows): the producer accepted a 64-byte cap and the checker an 80-byte cap while two
+    56-byte row buffers, the factor masks and placement temporaries were simultaneously
+    live. Now every buffer is RESERVED before it is allocated (factor masks, the running
+    mask, placement offsets and gathered copies, projection copies, the int64 rows sized by
+    count_nonzero before flatnonzero, the metadata's simultaneous temporaries), reservations
+    are released only after the last reference is dropped, and both caps refuse. A virtual
+    clock that advances only after the last operation shows the FINAL deadline check: a
+    compilation whose complete elapsed time exceeds its cap never returns."""
+    m = M.Model(nvars=1, card=[8], factors=[M.Factor(scope=(0,), card=(8,), table=[Fr(1)] * 7 + [Fr(0)], origin=0)]).validate()
+    r = _restricted(m, {})
+    pl = CAP.checker_plan(r)
+    with pytest.raises(SP.SupportError) as e1:
+        SP.compile_support(pl, r.factors, r.card, mem_cap_bytes=64)
+    assert "working-storage cap" in str(e1.value) and "requested" in str(e1.value)
+    with pytest.raises(SP.SupportError) as e2:
+        SC.reconstruct_support(pl, r.factors, r.card, mem_cap_bytes=80)
+    assert "working-storage cap" in str(e2.value) and "requested" in str(e2.value)
+    # with a cap that covers the true simultaneous peak both complete and agree; the producer's peak names it
+    sup = SP.compile_support(pl, r.factors, r.card, mem_cap_bytes=4096)
+    rows, _s, _e = SC.reconstruct_support(pl, r.factors, r.card, mem_cap_bytes=4096)
+    assert SC.verify_declaration(pl, rows, sup.declaration()) == [] and sup.rows_total() == 7
+    assert sup.peak_working_bytes >= 8 + 8 + 56                       # factor mask + running mask + the rows, simultaneously
+    # the final deadline check, both implementations: the clock advances only after the last tick
+    import mdi.support as SPm, mdi.support_check as SCm
+    for mod, fn in ((SPm, lambda: SP.compile_support(pl, r.factors, r.card, wall_cap_s=0.5)),
+                    (SCm, lambda: SC.reconstruct_support(pl, r.factors, r.card, wall_cap_s=0.5))):
+        state = {"t": 0.0, "n": 0}
+
+        def vclock():
+            state["n"] += 1
+            return state["t"]
+        orig = mod.time.monotonic
+        mod.time.monotonic = vclock
+        try:
+            og = SPm.global_separator_counts
+            if mod is SPm:
+                def meta(*a, **k):
+                    out = og(*a, **k)
+                    state["t"] = 1.0
+                    return out
+                SPm.global_separator_counts = meta
+            else:
+                # the checker has no metadata stage: count its clock reads on a dry run, then
+                # advance the clock on the FINAL read only (every tick sees 0.0)
+                mod.time.monotonic = orig
+                probe = []
+
+                def counting():
+                    probe.append(1)
+                    return 0.0
+                mod.time.monotonic = counting
+                SC.reconstruct_support(pl, r.factors, r.card, wall_cap_s=0.5)
+                n_reads = len(probe)
+                reads = []
+
+                def vclock2():
+                    reads.append(1)
+                    return 1.0 if len(reads) >= n_reads else 0.0
+                mod.time.monotonic = vclock2
+            try:
+                with pytest.raises(SP.SupportError) as e3:
+                    fn()
+                assert "elapsed at completion" in str(e3.value) or "exceeded its 0.5 s cap" in str(e3.value), str(e3.value)
+            finally:
+                SPm.global_separator_counts = og
+        finally:
+            mod.time.monotonic = orig
+
+
+def test_scorer_treats_the_allowance_stop_as_terminal_and_reports_a_never_run_cell():
+    """(second pilot review) `ext.score_cells` treated NOT_RUN_ALLOWANCE_STOP as still pending
+    and refused to score a stopped pair; it is terminal, and a never-run cell is reported as
+    such (optional closeout only; certification is unaffected)."""
+    from ext import score_cells as SCO
+    led = {"cells": [{"label": "Promedus_12_baseline", "problem": "Promedus_12", "arm": "baseline", "status": "CONSUMED",
+                      "attempts": [{"class": "resource_refusal", "arm_outcome": None, "charged_s": 610.0, "status": "TERMINAL"}]},
+                     {"label": "Promedus_12_support", "problem": "Promedus_12", "arm": "support", "status": "NOT_RUN_ALLOWANCE_STOP", "attempts": []}]}
+    rd = tempfile.mkdtemp()
+    json.dump(led, open(os.path.join(rd, "LEDGER.json"), "w"))
+    orig = SCO.extract_refs
+    SCO.extract_refs = lambda packet, refdir: {}
+    try:
+        out = SCO.score_run(rd, "/nonexistent.zip", refdir=os.path.join(rd, "refs"))
+    finally:
+        SCO.extract_refs = orig
+    assert out["cells"]["Promedus_12_support"]["status"] == "NOT_RUN_ALLOWANCE_STOP"
+    assert "never ran" in out["cells"]["Promedus_12_support"]["diagnostics"]
+    assert out["cells"]["Promedus_12_baseline"]["attempts"][0]["diagnostics"].startswith("not applicable")
+    assert os.path.exists(os.path.join(rd, "SCORES.json"))
+    # a genuinely pending cell still refuses
+    led["cells"][1]["status"] = "PENDING"
+    json.dump(led, open(os.path.join(rd, "LEDGER.json"), "w"))
+    SCO.extract_refs = lambda packet, refdir: {}
+    try:
+        with pytest.raises(AssertionError):
+            SCO.score_run(rd, "/nonexistent.zip", refdir=os.path.join(rd, "refs"))
+    finally:
+        SCO.extract_refs = orig

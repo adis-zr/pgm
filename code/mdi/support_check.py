@@ -73,7 +73,6 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
     if fc > mem_cap:
         raise SP.SupportError("support reconstruction refused before allocation: %d bytes forecast against the %d-byte cap" % (fc, mem_cap))
     bags = plan.bags
-    flat = {fi: np.fromiter((Fr(x) != 0 for x in f.table), dtype=bool, count=len(f.table)) for fi, f in enumerate(factors)}
     scan = 0
     live = 0
     peak = 0
@@ -89,36 +88,50 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
             deadline()
 
     def _account(nbytes):
+        """RESERVE before the allocation; refuse when the reservation would exceed the cap."""
         nonlocal live, peak
+        if live + int(nbytes) > mem_cap:
+            raise SP.SupportError("support reconstruction exceeded its %d-byte working-storage cap (%d live + %d requested)" % (mem_cap, live, int(nbytes)))
         live += int(nbytes)
         peak = max(peak, live)
-        if live > mem_cap:
-            raise SP.SupportError("support reconstruction exceeded its %d-byte working-storage cap (%d live)" % (mem_cap, live))
 
     def _release(nbytes):
+        """Release only after the last reference to the storage is dropped."""
         nonlocal live
         live -= int(nbytes)
 
+    # the flat factor indicator masks: retained for the whole reconstruction (reserved first)
+    _account(sum(len(f.table) for f in factors))
+    flat = {fi: np.fromiter((Fr(x) != 0 for x in f.table), dtype=bool, count=len(f.table)) for fi, f in enumerate(factors)}
+
     def placed(mask_flat, scope, bag_vars, shape):
+        n = 1
+        for v in bag_vars:
+            n *= int(card[v]) if v in scope else 1
+        # the int64 offsets (and the intermediate sums of _offsets_on_bag: at most two int64
+        # arrays of the placement live at once) and the gathered Boolean copy, reserved first
+        _account(17 * n)
         offs = _offsets_on_bag(scope, card, bag_vars, shape)
-        n = int(offs.size)
-        _account(9 * n)                                   # the int64 offsets and the gathered Boolean copy (temporaries)
         out = mask_flat[offs]                             # gathered by the checker's own offsets
+        del offs
+        _release(8 * n)                                   # the offsets' extra buffer is gone; 9n stays with `out`
         return out, 9 * n
 
     def project(mask, bag_vars, sep):
         keep = [k for k, v in enumerate(bag_vars) if v in sep]
         drop = [k for k, v in enumerate(bag_vars) if v not in sep]
         if not drop:
-            _account(mask.size)
+            _account(int(mask.size))
             return mask.copy(), int(mask.size)
-        t = mask.transpose(keep + drop)
-        _account(int(mask.size))                          # the reshape of a transposed view copies the bag
-        t = t.reshape(tuple(mask.shape[k] for k in keep) + (-1,))
+        out_n = 1
+        for k in keep:
+            out_n *= int(mask.shape[k])
+        _account(int(mask.size) + out_n)                  # the reshape copy of the transposed view AND the output, reserved first
+        t = mask.transpose(keep + drop).reshape(tuple(mask.shape[k] for k in keep) + (-1,))
         out = np.any(t, axis=-1)
+        del t                                             # the copy's last reference goes before its release
         _release(int(mask.size))
-        _account(int(out.size))
-        return out, int(out.size)
+        return out, out_n
 
     # upward, by explicit recursion depth order (leaves first) rather than a reversed stack
     depth = {}
@@ -143,12 +156,14 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
         for fi in b.factors:
             pl_, nb = placed(flat[fi], tuple(factors[fi].scope), bvars, shape)
             acc &= pl_
+            del pl_
             _release(nb)
             _tick(acc.size)
         for c in b.children:
             sep, m = upmsg[c]
             pl_, nb = placed(m.reshape(-1), sep, bvars, shape)
             acc &= pl_
+            del pl_
             _release(nb)
             _tick(acc.size)
         up[x] = acc
@@ -172,8 +187,15 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
             bx = bags[x]
             bxv = tuple(bx.vars)
             gx = glob[x]
-            r = np.flatnonzero(gx.reshape(-1)).astype(np.int64)
-            _account(r.nbytes)                            # the int64 rows: an output, counted while the reconstruction runs
+            n_rows = int(np.count_nonzero(gx))           # no allocation; sizes the reservation
+            _account(8 * n_rows)                          # the int64 rows: an output, reserved before flatnonzero allocates it
+            r = np.flatnonzero(gx.reshape(-1))
+            if r.dtype != np.int64:
+                _account(8 * n_rows)
+                r2 = r.astype(np.int64)
+                del r
+                _release(8 * n_rows)
+                r = r2
             rows[x] = r
             _tick(gx.size)
             for c in bx.children:
@@ -183,19 +205,29 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
                 pr, nb = project(gx, bxv, sep)
                 _tick(gx.size)
                 pl_, nb2 = placed(pr.reshape(-1), sep, bcv, tuple(int(card[v]) for v in bcv))
+                del pr
+                _release(nb)
                 gc = up.pop(c)
                 gc &= pl_
+                del pl_
                 _release(nb2)
-                _release(nb)
                 _tick(gc.size)
                 glob[c] = gc
                 frontier.append(c)
-            _release(int(gx.size))                        # the mask is freed
+            gx_bytes = int(gx.size)
             del glob[x]
+            del gx                                        # the mask's last reference, then the release
+            _release(gx_bytes)
             if x in upmsg:
-                _release(int(upmsg[x][1].size))           # its upward separator mask has served its last use
+                mb = int(upmsg[x][1].size)
                 del upmsg[x]
-    return rows, scan, time.monotonic() - t0
+                _release(mb)
+    elapsed = time.monotonic() - t0
+    if elapsed > wall_cap_s:                              # the FINAL deadline check on the complete elapsed time
+        raise SP.SupportError("support reconstruction exceeded its %.1f s cap (%.3f s elapsed at completion)" % (wall_cap_s, elapsed))
+    if deadline is not None:
+        deadline()
+    return rows, scan, elapsed
 
 
 def support_digest(plan, rows):
