@@ -1,0 +1,48 @@
+{
+ "comparator": "Merlin (radum2275/merlin)",
+ "role": "exact dense clique-tree elimination for NATIVE PERFORMANCE CONTEXT (see QUALIFICATION.md); not a structural comparator unless qualified there",
+ "source": {
+  "repository": "https://github.com/radum2275/merlin",
+  "commit": "ad37783ea99f0de492f0f0e16bd3236e9e9d9e51",
+  "committed": "2026-07-17T19:35:40Z",
+  "version_file": "1.7.0",
+  "license": "BSD-3-Clause",
+  "archive": "merlin_ad37783.tar.gz",
+  "archive_sha256": "da7840835a7a2df7a8a365dbbb598cde8f6b0cd3924f6fdef48534868a5d7e6a",
+  "archive_url": "https://github.com/radum2275/merlin/archive/ad37783ea99f0de492f0f0e16bd3236e9e9d9e51.tar.gz"
+ },
+ "build": {
+  "command": [
+   "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release",
+   "cmake --build build -j 6"
+  ],
+  "compiler": "/usr/bin/c++",
+  "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+  "build_type": "Release",
+  "boost": "boost 1.90.0_1",
+  "host": "macOS-26.6.2-arm64-arm-64bit",
+  "cmake": "cmake version 4.3.3",
+  "install_location": "/Users/adis/Workspace/comparators/merlin (separate from the MDI tree; nothing of MDI is linked or imported by the binary)"
+ },
+ "binary": {
+  "path": "/Users/adis/Workspace/comparators/merlin/build/merlin",
+  "sha256": "25201ad680b9ba8cca928b1dab059d12e0422ebb56082214cf4dfc7f83d635e5",
+  "bytes": 1008760
+ },
+ "adapter": {
+  "path": "code/ext/comparator/merlin_adapter.py",
+  "role": "thin input/output/supervision glue; no solver, kernel or certificate"
+ },
+ "command": "merlin --input-file <model.uai> --evidence-file <model.uai.evid> --task MAR --algorithm cte --output-format uai --output-file <prefix>   (exact clique-tree elimination; fresh process; the model and evidence files are the pool bytes, unconverted)",
+ "threads": "the binary is single-threaded (no std::thread / OpenMP use found in src/); the adapter still exports the six-thread environment the MDI cells use",
+ "numerics": {
+  "value_type": "double (binary64; include/factor.h typedef double value)",
+  "partition_function": "log-space m_logz = log(sum of root belief); PR line prints log Z and Z",
+  "marginals": "normalized beliefs (belief / Z) printed std::fixed setprecision(6)",
+  "zero_evidence": "STATUS 'false: Inconsistent evidence or underflow' when the root belief sum is 0.0 (no distinction between exact zero and underflow)",
+  "input_parsing": "decimal tokens parsed as double; zero-arity factors multiplied into a global constant"
+ },
+ "guarantee": "exact variable-elimination ALGORITHM executed in binary64 floating point; output = normalized marginals rounded to six decimals; NO error enclosure, NO independent check, NO certificate; agreement with references or conversion to rationals does not certify it",
+ "structural_mechanism": "none beyond dense table elimination along a heuristic ordering: no determinism exploitation, no sparse/zero-skipping tables, no constraint propagation, no compilation of local structure (src/cte.cpp, include/factor.h inspected: dense std::vector<double> tables; zeros handled only as normalization guards)",
+ "pinned": "2026-11-04"
+}
