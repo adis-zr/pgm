@@ -32,6 +32,22 @@ def mdi_view(bindings):
     return v
 
 
+def glue_hashes():
+    return {"orchestrator_sha256": L.sha256_file(os.path.abspath(__file__)), "adapter_sha256": L.sha256_file(os.path.abspath(MA.__file__)),
+            "merlin_pin_sha256": L.sha256_file(MA.PIN_PATH)}
+
+
+def validate_glue(bindings):
+    """The orchestrator, the adapter and the comparator pin file must hash to the bindings' `glue` values (enforced on
+    preparation AND before every run / revalidation; repair of 4 Nov 2026)."""
+    want = bindings.get("glue") or {}
+    have = glue_hashes()
+    bad = [k for k in ("orchestrator_sha256", "adapter_sha256", "merlin_pin_sha256") if want.get(k) != have[k]]
+    if bad:
+        raise L.Refused("glue hash mismatch against the bindings: %s (have %s)" % (bad, {k: have[k][:12] for k in bad}))
+    return have
+
+
 def validate_comparator(bindings):
     pin = MA.load_pin()
     want = bindings["comparator"]
@@ -69,10 +85,12 @@ def prepare(rundir, bindings, pin, bindings_path, pin_path, packet, argv=None):
         L.restore_inputs(packet, input_dir, bindings["inputs"])
         view = mdi_view(bindings)
         resolved = L.validate_bindings(view, pin, L.HERE, input_dir, None)
+        glue = validate_glue(bindings)
         cmp_res = validate_comparator(bindings)
         man = L.write_manifest(rundir, view, pin, resolved, argv or sys.argv, os.path.abspath(__file__), bindings_path, pin_path, input_dir,
-                               extra={"orchestrator": {"path": "ext/comparator/comparison_launch.py", "sha256": L.sha256_file(os.path.abspath(__file__))},
-                                      "adapter": {"path": "ext/comparator/merlin_adapter.py", "sha256": L.sha256_file(os.path.abspath(MA.__file__))},
+                               extra={"orchestrator": {"path": "ext/comparator/comparison_launch.py", "sha256": glue["orchestrator_sha256"], "verified_against_bindings": True},
+                                      "adapter": {"path": "ext/comparator/merlin_adapter.py", "sha256": glue["adapter_sha256"], "verified_against_bindings": True},
+                                      "merlin_pin_file_sha256": glue["merlin_pin_sha256"],
                                       "comparator": cmp_res, "full_order": [list(x) for x in bindings["order"]],
                                       "packet": {"path": os.path.abspath(packet), "sha256": ph, "pinned_sha256": pinned_pk, "whole_file_verified": True},
                                       "mdi_cells_validated_through": "mdi.launch.validate_bindings on the bindings with the comparator cells filtered out (the pinned launcher refuses unknown arm names)"})
@@ -87,22 +105,50 @@ def prepare(rundir, bindings, pin, bindings_path, pin_path, packet, argv=None):
 
 
 def _classify_comparator(sup, rec, wall):
+    """Truthful precedence (repair of 4 Nov 2026): the OUTER supervisor's measured outcome first -- a resource stop keeps its
+    class and a non-zero / launch-failed exit can never become a completion, whatever the child record claims; only a
+    COMPLETED outer process with a readable record that itself reports completion within the wall is `completed_native`."""
     so = sup.get("outcome")
     if so == "TIMEOUT":
         return "comparator_timeout", "killed by the supervisor at its deadline (wall %.1f s plus the declared grace)" % wall
     if so == "MEMORY_STOP":
         return "comparator_memory_stop", "supervisor memory limit"
+    if so in ("NONZERO_EXIT", "LAUNCH_FAILURE") or so != "COMPLETED":
+        return "comparator_failure", "outer process %s (rc=%s); the child record (%s) is not accepted as a completion" % (so, sup.get("returncode"), (rec or {}).get("outcome"))
     if not rec:
-        return "comparator_failure", "no durable comparator record (%s rc=%s)" % (so, sup.get("returncode"))
+        return "comparator_failure", "no durable / readable comparator record after a completed outer process"
     out = rec.get("outcome")
+    child_out = ((rec.get("child") or rec.get("supervisor")) or {}).get("outcome")
+    if child_out in ("TIMEOUT", "MEMORY_STOP"):
+        return ("comparator_timeout" if child_out == "TIMEOUT" else "comparator_memory_stop"), "the comparator binary was stopped by the adapter's inner %s" % child_out
     if out == "COMPARATOR_COMPLETED":
-        inner = (rec.get("supervisor") or {}).get("elapsed_s") or 0.0
-        if float(sup.get("elapsed_s") or 0) > wall or inner > wall:
-            return "comparator_timeout", "completed but not within the %.1f s wall" % wall
+        if float(sup.get("elapsed_s") or 0) > wall:
+            return "comparator_timeout", "completed but not within the %.1f s wall (outer %.3f s)" % (wall, float(sup.get("elapsed_s") or 0))
         return "comparator_completed_native", "all marginals written and shape-validated; binary64, six decimals; NOT certified"
-    if out == "COMPARATOR_ZERO_EVIDENCE_REPORTED":
-        return "comparator_zero_evidence_reported", str(rec.get("reason"))[:200]
+    if out == "COMPARATOR_ZERO_EVIDENCE_OR_UNDERFLOW":
+        return "comparator_zero_evidence_or_underflow", str(rec.get("reason"))[:200]
     return "comparator_failure", "%s: %s" % (out, str(rec.get("reason"))[:200])
+
+
+def conservative_charged_s(led):
+    """Every KNOWN charge plus, for each attempt whose charge is unknown (an attempt interrupted before its terminal
+    record), the supervisor's kill deadline (wall + grace) as the upper bound: unknown expenditure is never zero."""
+    tot = 0.0
+    for c in led["cells"]:
+        for a in c["attempts"]:
+            if a.get("charged_s") is not None:
+                tot += float(a["charged_s"])
+            else:
+                tot += float(a.get("supervisor_kill_deadline_s") or a.get("wall_granted_s") or led["cell_wall_s"])
+    return tot
+
+
+def _allowance_remaining_conservative(led):
+    return float(led["allowance_s"]) - conservative_charged_s(led)
+
+
+def _session_remaining_conservative(led):
+    return led["session_cap_s"] - sum(float(v) for v in led["previous_expenditure_s"].values()) - conservative_charged_s(led) - L.other_charges_s(led)
 
 
 def run_cells(rundir, bindings, python=None):
@@ -111,31 +157,39 @@ def run_cells(rundir, bindings, python=None):
     man_path = os.path.join(rundir, "EXECUTION_MANIFEST.json")
     if not os.path.exists(man_path):
         raise L.Refused("no EXECUTION_MANIFEST.json in %s: prepare before running" % rundir)
+    validate_glue(bindings)                                  # REVALIDATION before every run: the glue must still hash to the bindings
+    validate_comparator(bindings)
     lp = os.path.join(rundir, "LEDGER.json")
     led = json.load(open(lp))
     want = ["%s_%s" % (p, a) for p, a in bindings["order"]]
     if [c["label"] for c in led["cells"]] != want:
         raise L.Refused("LEDGER.json carries cells %s, the bindings' frozen order is %s" % ([c["label"] for c in led["cells"]], want))
     cap_bytes = int(bindings["engine_limits"]["arm_rss_bytes"])
+    if bindings.get("synthetic_control") and bindings.get("synthetic_control_mem_cap_bytes"):
+        cap_bytes = min(cap_bytes, int(bindings["synthetic_control_mem_cap_bytes"]))        # tiny controls: the configured 1 GiB cap
     input_dir = bindings["input_dir"]
     mdi_cmd = L.default_cmd_factory(python, input_dir)
     env = dict(L.THREAD_ENV); env["PYTHONPATH"] = L.HERE
     grace = float(bindings.get("durable_grace_s", 0.0))
     for c in led["cells"]:
         for a in c["attempts"]:
-            if a.get("status") == "STARTED":
+            if a.get("status") in ("STARTED", "TERMINAL_UNCLASSIFIED"):
+                # an attempt without a terminal classification: NEVER rerun; its expenditure, if unknown, is bounded by the
+                # kill deadline in every allowance / session test below (never treated as zero)
                 a["status"] = "INTERRUPTED"; c["status"] = "INTERRUPTED"
+                a.setdefault("charge_unknown_bounded_by_s", a.get("supervisor_kill_deadline_s")) if a.get("charged_s") is None else None
+    led["unknown_expenditure_bound_s"] = round(conservative_charged_s(led) - L.charged_cells_s(led), 6)
     _jdump(led, lp)
     for c in led["cells"]:
         label, arm = c["label"], c["arm"]
         if c["status"] in ("CONSUMED", "INTERRUPTED", "NOT_RUN_CUMULATIVE_STOP", "NOT_RUN_ALLOWANCE_STOP"):
             print("  [compare] %-24s %s: not rerun" % (label, c["status"]), flush=True); continue
         wall = led["cell_wall_s"]
-        if L.session_remaining_s(led) < wall:
-            c["status"] = "NOT_RUN_CUMULATIVE_STOP"; c["cumulative_stop"] = {"session_remaining_s": L.session_remaining_s(led), "needed_s": wall}
+        if _session_remaining_conservative(led) < wall:
+            c["status"] = "NOT_RUN_CUMULATIVE_STOP"; c["cumulative_stop"] = {"session_remaining_conservative_s": _session_remaining_conservative(led), "needed_s": wall}
             _jdump(led, lp); print("  [compare] %-24s NOT RUN: cumulative session cap" % label, flush=True); continue
-        if L.allowance_remaining_s(led) < wall + grace:
-            c["status"] = "NOT_RUN_ALLOWANCE_STOP"; c["allowance_stop"] = {"allowance_remaining_s": L.allowance_remaining_s(led), "needed_s": wall + grace}
+        if _allowance_remaining_conservative(led) < wall + grace:
+            c["status"] = "NOT_RUN_ALLOWANCE_STOP"; c["allowance_stop"] = {"allowance_remaining_conservative_s": _allowance_remaining_conservative(led), "needed_s": wall + grace}
             _jdump(led, lp); print("  [compare] %-24s NOT RUN: the run's allowance" % label, flush=True); continue
         n = len(c["attempts"]) + 1
         adir = os.path.join(rundir, "cells", label, "attempt_%d" % n)
@@ -152,24 +206,36 @@ def run_cells(rundir, bindings, python=None):
         c["attempts"].append(att); c["status"] = "STARTED"; _jdump(led, lp)
         print("  [compare] %-24s initial attempt %d wall %.1f s ..." % (label, n, wall), flush=True)
         sup = SV.run(cmd, cwd=L.HERE, log_path=os.path.join(adir, "supervisor.log"), deadline_s=wall + grace, mem_limit_kib=cap_bytes // 1024, env=env, label=label)
+        # the MEASURED outcome and charge are persisted FIRST (repair of 4 Nov 2026): a missing or truncated child
+        # record can no longer erase the cost; classification follows in a second durable step
+        att.update({"status": "TERMINAL_UNCLASSIFIED", "ended": time.strftime("%Y-%m-%d %H:%M:%S"), "charged_s": float(sup.get("elapsed_s") or 0.0),
+                    "supervisor": {k: sup.get(k) for k in ("outcome", "returncode", "elapsed_s", "peak_tree_rss_kib", "peak_tree_procs", "mem_samples", "mem_limitation")}})
+        _jdump(led, lp)
         rec = receipt = None
+        read_faults = []
+
+        def _load(path):
+            if not os.path.exists(path):
+                return None
+            try:
+                return json.load(open(path))
+            except (ValueError, OSError) as e:
+                read_faults.append("%s: %s: %s" % (os.path.basename(path), type(e).__name__, str(e)[:120])); return None
         if arm in COMPARATOR_ARMS:
-            p = os.path.join(adir, "comparator_%s.json" % label)
-            rec = json.load(open(p)) if os.path.exists(p) else None
+            rec = _load(os.path.join(adir, "comparator_%s.json" % label))
             cls, why = _classify_comparator(sup, rec, wall)
-            outcome = (rec or {}).get("outcome")
-            width = None
+            outcome = (rec or {}).get("outcome"); width = None
+            inner = (rec or {}).get("merlin_process_elapsed_s")
         else:
-            pa, pr = os.path.join(adir, "arm_%s.json" % label), os.path.join(adir, "arm_%s.receipt.json" % label)
-            rec = json.load(open(pa)) if os.path.exists(pa) else None
-            receipt = json.load(open(pr)) if os.path.exists(pr) else None
+            rec = _load(os.path.join(adir, "arm_%s.json" % label)); receipt = _load(os.path.join(adir, "arm_%s.receipt.json" % label))
             cls, why = L._classify(sup, rec, receipt, wall)
-            outcome = (rec or {}).get("outcome"); width = (rec or {}).get("final_max_width")
-        att.update({"status": "TERMINAL", "ended": time.strftime("%Y-%m-%d %H:%M:%S"), "charged_s": float(sup.get("elapsed_s") or 0.0),
-                    "supervisor": {k: sup.get(k) for k in ("outcome", "returncode", "elapsed_s", "peak_tree_rss_kib", "peak_tree_procs", "mem_samples", "mem_limitation")},
-                    "arm_outcome": outcome, "arm_reason": str((rec or {}).get("reason") or "")[:300],
-                    "arm_elapsed_s": (rec or {}).get("elapsed_s") if arm not in COMPARATOR_ARMS else ((rec or {}).get("supervisor") or {}).get("elapsed_s"),
-                    "final_max_width": width, "receipt": receipt, "class": cls, "class_reason": why, "kind_of_result": ("native_uncertified" if arm in COMPARATOR_ARMS else "certified_mdi")})
+            outcome = (rec or {}).get("outcome"); width = (rec or {}).get("final_max_width"); inner = (rec or {}).get("elapsed_s")
+        if read_faults:
+            why = "%s; record read faults: %s" % (why, "; ".join(read_faults))[:400]
+        att.update({"status": "TERMINAL", "arm_outcome": outcome, "arm_reason": str((rec or {}).get("reason") or "")[:300],
+                    "component_elapsed_s": inner, "component_elapsed_note": "the child's own wall as it recorded it: a COMPONENT of charged_s (the outer spawn-to-exit wall), never added to it",
+                    "final_max_width": width, "receipt": receipt, "record_read_faults": read_faults or None, "class": cls, "class_reason": why,
+                    "kind_of_result": ("native_uncertified" if arm in COMPARATOR_ARMS else "certified_mdi")})
         c["status"] = "CONSUMED"; _jdump(led, lp)
         print("  [compare] %-24s initial: %s (%s) charged %.1f s; cumulative %.1f of %.0f s" % (label, cls, outcome, att["charged_s"], L.charged_cells_s(led), led["allowance_s"]), flush=True)
     return led
