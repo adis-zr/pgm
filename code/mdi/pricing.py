@@ -284,12 +284,16 @@ def _exact_reduction_ops(plan):
 
 
 def _quotient_scan_bounds(dense_factors, n_free_dense):
-    """Upper bounds on the table entries the recognizer (producer, every factor every pass, at most
-    n_free + 2 passes) and the checker's worklist re-derivation (each factor re-examined once per
-    touch of a scope variable; a variable is touched at most n_free + 1 times) scan."""
+    """Upper bounds on the table entries the recognizer (producer: every factor every pass, at most
+    n_free + 2 passes) and the checker's worklist re-derivation scan. The checker re-examines a factor
+    once initially, once more in the confirming full pass, and once per touch of a scope variable; a
+    variable is touched when it is fixed (once) and whenever its CLASS merges with another (at most
+    n_free - 1 merges), so at most n_free touches; the confirming pass can repeat at most once per change
+    (bounded by the touches themselves)."""
     tot = sum(f.size() for f in dense_factors)
-    prod = tot * (int(n_free_dense) + 2)
-    chk = sum(f.size() * (1 + len(f.scope) * (int(n_free_dense) + 1)) for f in dense_factors)
+    n = int(n_free_dense)
+    prod = tot * (n + 2)
+    chk = sum(f.size() * (2 + len(f.scope) * (n + 1)) for f in dense_factors) + tot * (n + 1)
     return int(prod), int(chk)
 
 

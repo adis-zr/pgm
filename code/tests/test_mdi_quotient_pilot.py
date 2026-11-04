@@ -302,3 +302,61 @@ def test_recognition_is_bounded_and_an_unsuccessful_attempt_is_charged_and_falls
     charged = []
     QT.recognize(r.factors, r.free, r.card, charge=charged.append)
     assert sum(charged) == decl["recognition"]["entries_scanned"] == sum(f.size() for f in r.factors) * decl["recognition"]["passes"]
+
+
+def test_checker_reschedules_every_member_of_a_merged_class_under_any_factor_order_and_both_paths_honour_the_deadline():
+    """(pilot review) Three equality factors imply x0 = x1 = x2 = x3 and a factor over (x0, x3, x4) then
+    forces x4 = 0. The checker re-queued only the two merge arguments, so under a factor order whose last
+    merge touches neither x0 nor x3 the forced state was missed and a CORRECT quotient was rejected
+    (NUMERICAL_REFUSAL where the baseline certified ten coordinates). Now every member of the merged
+    classes reschedules its factors and a confirming full pass closes the fixpoint: all factor orders
+    agree with the producer, the pipeline certifies on the quotient with the truth contained, and the
+    checker's scan stays within its priced bound. A virtual clock whose last read is past the cap shows
+    the FINAL deadline check in both recognition paths."""
+    ind = [Fr(0)] * 8
+    for a in range(2):
+        for b in range(2):
+            for c in range(2):
+                if c == (1 if a != b else 0):
+                    ind[a * 4 + b * 2 + c] = Fr(1 + a + 2 * b)
+    f_ind = M.Factor(scope=(0, 3, 4), card=(2, 2, 2), table=ind, origin=7)
+    parts = {"e01": _eq(0, 1, 2, 3), "e23": _eq(2, 3, 1, 5), "e12": _eq(1, 2), "ind": f_ind,
+             "u4": M.Factor(scope=(4,), card=(2,), table=[Fr(1), Fr(1)], origin=8)}
+    names = list(parts)
+    orders = list(itertools.permutations(names))
+    random.Random(3).shuffle(orders)
+    for order in orders[:24] + [("e12", "e23", "e01", "ind", "u4")]:
+        m = M.Model(nvars=5, card=[2] * 5, factors=[parts[k] for k in order]).validate()
+        r = _restricted(m, {})
+        decl = QT.recognize(r.factors, r.free, r.card)
+        assert decl["fixed"] == {"4": 0} and set(decl["merged"]) == {"1", "2", "3"}
+        cl = QC.rederive(r.factors, r.free, r.card)
+        assert QC.verify_declaration(cl, decl, r.free, r.card) == [], order
+        _p, chk_bound = PR._quotient_scan_bounds(r.factors, len(r.free))
+        assert cl.scanned <= chk_bound, (cl.scanned, chk_bound)
+    m = M.Model(nvars=5, card=[2] * 5, factors=[parts[k] for k in ("e12", "e23", "e01", "ind", "u4")]).validate()
+    res = _solve_q(m, {})
+    assert res.status == "CERTIFIED_FALLBACK_ONLY", (res.status, res.reason)
+    assert res.plan["executed"]["quotient"]["fixed"] == 1 and res.plan["executed"]["quotient"]["merged"] == 3
+    assert _contained(res, m, {}) and sum(len(v) for v in res.intervals.values()) == 10
+    # the final deadline check in both paths (virtual clock: every read 0.0 but the last, which is 1.0)
+    import mdi.quotient as QTm, mdi.quotient_check as QCm
+    r = _restricted(_chain_model(11), {})
+    for mod, fn in ((QTm, lambda: QT.recognize(r.factors, r.free, r.card, wall_cap_s=0.5)),
+                    (QCm, lambda: QC.rederive(r.factors, r.free, r.card, wall_cap_s=0.5))):
+        orig = mod.time.monotonic
+        probe = []
+        mod.time.monotonic = lambda: probe.append(1) or 0.0
+        try:
+            fn()
+        finally:
+            mod.time.monotonic = orig
+        n = len(probe)
+        reads = []
+        mod.time.monotonic = lambda: reads.append(1) or (1.0 if len(reads) >= n else 0.0)
+        try:
+            with pytest.raises(QT.QuotientError) as e:
+                fn()
+            assert "at completion" in str(e.value) or "exceeded" in str(e.value)
+        finally:
+            mod.time.monotonic = orig

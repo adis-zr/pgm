@@ -178,7 +178,7 @@ def recognize(factors, free, card, deadline=None, charge=None, wall_cap_s=None):
                     elif pairs <= {(0, 1), (1, 0)}:
                         if uf.union(a, b, 1):
                             changed = True
-        # a forced member forces its class
+        # a forced member forces its class (polled: this loop is quadratic in the binary variables)
         for v in list(uf.parent):
             if v in fixed:
                 rt, pr = uf.find(v)
@@ -193,7 +193,11 @@ def recognize(factors, free, card, deadline=None, charge=None, wall_cap_s=None):
                         else:
                             fixed[u] = want
                             changed = True
-    # the declaration: merged = non-representative, non-fixed members of classes of size > 1
+                if time.monotonic() - t0 > wall_cap_s:
+                    raise QuotientError("recognition exceeded its %.1f s cap" % wall_cap_s)
+                if deadline is not None:
+                    deadline()
+    # the declaration (inside the timed boundary): merged = non-representative, non-fixed class members
     merged = {}
     for v in sorted(uf.parent):
         if v in fixed:
@@ -202,7 +206,16 @@ def recognize(factors, free, card, deadline=None, charge=None, wall_cap_s=None):
         if rt != v:
             merged[v] = (rt, pr)
     n_free_q = len([v for v in free if v not in fixed and v not in merged])
-    return declaration(fixed, merged, n_free_q, scanned, passes, time.monotonic() - t0)
+    decl = declaration(fixed, merged, n_free_q, scanned, passes, 0.0)
+    elapsed = time.monotonic() - t0
+    decl["recognition"]["seconds"] = round(elapsed, 4)
+    # the FINAL deadline check: the cap and the invocation deadline on the complete elapsed time, after
+    # the declaration and its digest are built, so a recognition never returns past its cap
+    if elapsed > wall_cap_s:
+        raise QuotientError("recognition exceeded its %.1f s cap (%.3f s at completion)" % (wall_cap_s, elapsed))
+    if deadline is not None:
+        deadline()
+    return decl
 
 
 def _digest(fixed, merged):

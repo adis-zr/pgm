@@ -22,6 +22,7 @@ class _Closure:
     def __init__(self):
         self.fixed = {}
         self.rep = {}        # var -> (root, parity) by repeated lookup (no path compression; a different structure)
+        self.members = {}    # root -> set of ALL class members (the root included), for rescheduling after a merge
 
     def root(self, v):
         p = 0
@@ -36,15 +37,21 @@ class _Closure:
         return v, p
 
     def relate(self, a, b, rel):
+        """Relate a XOR b == rel. Returns the set of ALL members of the two classes when they merge
+        (every one of them may now make a factor's consistent set smaller), None when nothing changed."""
         ra, pa = self.root(a)
         rb, pb = self.root(b)
         if ra == rb:
             if (pa ^ pb) != rel:
                 raise A.NumericalRefusal("checker: inconsistent parity between %d and %d (zero evidence weight)" % (a, b))
-            return False
+            return None
         hi, lo = (ra, rb) if ra > rb else (rb, ra)
         self.rep[hi] = (lo, pa ^ pb ^ rel)
-        return True
+        ma = self.members.pop(hi, {hi})
+        mb = self.members.get(lo, {lo})
+        merged = set(ma) | set(mb)
+        self.members[lo] = merged
+        return merged
 
 
 def rederive(factors, free, card, deadline=None, charge=None, wall_cap_s=None):
@@ -64,7 +71,14 @@ def rederive(factors, free, card, deadline=None, charge=None, wall_cap_s=None):
     work = list(range(len(factors)))
     inq = set(work)
     scanned = 0
-    while work:
+    final_pass_done = False
+    while work or not final_pass_done:
+        if not work:
+            # the worklist is empty: ONE confirming full pass (every factor once more); if it changes
+            # anything the worklist refills and the loop continues, else the fixpoint is confirmed
+            final_pass_done = True
+            work = list(range(len(factors)))
+            inq = set(work)
         fi = work.pop()
         inq.discard(fi)
         f = factors[fi]
@@ -121,8 +135,10 @@ def rederive(factors, free, card, deadline=None, charge=None, wall_cap_s=None):
                     continue
                 pairs = set((e[j1], e[j2]) for e in live)
                 rel = 0 if pairs <= {(0, 0), (1, 1)} else (1 if pairs <= {(0, 1), (1, 0)} else None)
-                if rel is not None and cl.relate(a, b, rel):
-                    touched.add(a); touched.add(b)
+                if rel is not None:
+                    merged = cl.relate(a, b, rel)
+                    if merged:
+                        touched |= merged                 # EVERY member of the merged classes, not only a and b
         # a forced member forces its class (and re-examines the class's factors)
         for v in list(cl.fixed):
             if int(card.get(v, 0)) == 2:
@@ -143,8 +159,14 @@ def rederive(factors, free, card, deadline=None, charge=None, wall_cap_s=None):
                 if g not in inq:
                     work.append(g)
                     inq.add(g)
+                    final_pass_done = False               # something changed: the confirming pass is owed again
     cl.scanned = scanned
     cl.seconds = time.monotonic() - t0
+    # the FINAL deadline check, on the complete elapsed time after the last operation
+    if cl.seconds > wall_cap_s:
+        raise QT.QuotientError("checker's re-derivation exceeded its %.1f s cap (%.3f s at completion)" % (wall_cap_s, cl.seconds))
+    if deadline is not None:
+        deadline()
     return cl
 
 
