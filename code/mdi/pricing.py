@@ -283,8 +283,18 @@ def _exact_reduction_ops(plan):
     return tot
 
 
+def _quotient_scan_bounds(dense_factors, n_free_dense):
+    """Upper bounds on the table entries the recognizer (producer, every factor every pass, at most
+    n_free + 2 passes) and the checker's worklist re-derivation (each factor re-examined once per
+    touch of a scope variable; a variable is touched at most n_free + 1 times) scan."""
+    tot = sum(f.size() for f in dense_factors)
+    prod = tot * (int(n_free_dense) + 2)
+    chk = sum(f.size() * (1 + len(f.scope) * (int(n_free_dense) + 1)) for f in dense_factors)
+    return int(prod), int(chk)
+
+
 def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=None, checker_plan=None, hard_zeros=None,
-                        support=None, support_price=None):
+                        support=None, support_price=None, quotient=None, quotient_price=None, dense_factors=None):
     """Price the identity route from its compiled schedule.
 
     `plan` is the PRODUCER's schedule (the saved order). The independent checker
@@ -345,6 +355,24 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
             rec.put("support_reconstruction_scan_bound", recon, UPPER,
                     "Boolean positions the checker's independent reconstruction scans (charged to the checker's meter; on the "
                     "checker's order, plus the producer's order when the two differ)")
+    q_prod_scan = q_chk_scan = 0
+    if quotient is not None:
+        # ---- the quotienting pilot (3 Nov 2026): `plan` and `cp` are schedules over the QUOTIENT's
+        # representatives; the recognition (producer) and the checker's re-derivation scan the ORIGINAL
+        # tables and are bounded here in table entries (charged in the meters' unit)
+        if quotient_price is None or dense_factors is None:
+            rec.eligible = False
+            rec.ineligible_reason = "the program declares a constraint quotient but no quotient price / dense factors were supplied"
+        else:
+            n_dense_free = int(quotient_price["dense_free"])
+            q_prod_scan, q_chk_scan = _quotient_scan_bounds(dense_factors, n_dense_free)
+            rec.put("quotient_fixed_variables", len(quotient["fixed"]), EXACT, "original variables forced to one state by the factor zeros")
+            rec.put("quotient_merged_variables", len(quotient["merged"]), EXACT, "binary variables identified with a representative (equality / complement)")
+            rec.put("quotient_free_variables", int(quotient["n_free"]), EXACT)
+            rec.put("quotient_dense_schedule_rows", int(quotient_price["dense_schedule_rows"]), EXACT, "the dense identity's enumerated schedule rows")
+            rec.put("quotient_schedule_rows", int(quotient_price["quotient_schedule_rows"]), EXACT, "the quotient identity's enumerated schedule rows")
+            rec.put("quotient_recognition_scan_bound", q_prod_scan, UPPER, "table entries the recognizer scans (every factor per pass, <= n_free + 2 passes)")
+            rec.put("quotient_rederivation_scan_bound", q_chk_scan, UPPER, "table entries the checker's worklist re-derivation scans")
     rec.put("weighted_bag_visits", weighted_bag, UPPER,
             "bag domain times owned factors plus every incident message")
     rec.put("weighted_separator_entries", weighted_sep, EXACT)
@@ -459,7 +487,10 @@ def price_identity_plan(plan, est, n_requested, precision, preprocess_counts=Non
         p_entries = int(sparse["producer_metered_entries"])
         probe_entries = 0
         c_entries = int(sparse_c["interval_checker_metered_entries"]) + (joint or 0) + int(sparse_c["exact_checker_metered_entries"]) + recon
-    rec.put("producer_metered_entries", p_entries, UPPER, "identity producer message entries on the shared meter")
+    p_entries += q_prod_scan                 # a fresh executor (replay) recognizes the quotient itself and charges the scan
+    c_entries += q_chk_scan                  # the checker re-derives the closure and charges the scan
+    rec.put("producer_metered_entries", p_entries, UPPER, "identity producer message entries on the shared meter"
+            + (" + the quotient recognition scan bound" if quotient is not None else ""))
     rec.put("checker_metered_entries", c_entries, UPPER,
             "identity checker on its own schedule (%s): interval messages + enumeration assignments + exact aggregation "
             "reductions (upward, root, downward per child, readout per home variable; each a full bag domain) + one "

@@ -249,7 +249,11 @@ PROGRAM_KEYS = ("kind", "scales", "collective", "order", "precision",
 # support the sparse executor and the sparse checkers run on -- the checker reconstructs
 # it independently and refuses unless rows_per_bag / rows_total / digest agree exactly
 SUPPORT_KEYS = ("compiled", "digest", "rows_total", "max_rows", "rows_per_bag", "sep_entries", "method")
-OPTIONAL_PROGRAM_KEYS = ("support",)
+# quotient (OPTIONAL, identity only; bounded pilot 3 November 2026): the exact constraint quotient the
+# identity executes on -- fixed states and binary equality / complement merges derived from the factor
+# zeros; the checker re-derives the closure from the original factors and refuses any undeclared relation
+QUOTIENT_KEYS = ("fixed", "merged", "n_free", "digest", "method")
+OPTIONAL_PROGRAM_KEYS = ("support", "quotient")
 # arithmetic: {"emin": int|None, "emax": int|None, "mode": "P"|"E"}
 # checker:    {"strategy": "min_fill"|"dense_min_fill", "precision": int}
 ARITH_KEYS = ("emin", "emax", "mode")
@@ -340,4 +344,27 @@ def validate_program(prog: dict) -> dict:
            "checker": {"strategy": chk["strategy"], "precision": int(chk["precision"])}}
     if support is not None:
         out["support"] = support
+    if "quotient" in prog and prog["quotient"] is not None:
+        if kind != "identity":
+            raise ProgramError("only an identity program may carry a constraint quotient")
+        q = prog["quotient"]
+        if not isinstance(q, dict):
+            raise ProgramError("quotient must be a mapping")
+        _need(q, QUOTIENT_KEYS, "quotient")
+        if not isinstance(q["fixed"], dict) or not all(isinstance(int(k), int) and isinstance(v, int) and v >= 0 for k, v in q["fixed"].items()):
+            raise ProgramError("quotient.fixed must map variables to non-negative states")
+        if not isinstance(q["merged"], dict) or not all(isinstance(v, list) and len(v) == 2 and int(v[1]) in (0, 1) for v in q["merged"].values()):
+            raise ProgramError("quotient.merged must map variables to [representative, parity in {0,1}]")
+        for k, v in q["merged"].items():
+            if str(v[0]) in q["fixed"] or str(v[0]) in q["merged"]:
+                raise ProgramError("quotient representative %s is itself fixed or merged" % v[0])
+            if str(k) in q["fixed"]:
+                raise ProgramError("quotient variable %s is both fixed and merged" % k)
+        if not (isinstance(q["digest"], str) and len(q["digest"]) == 64):
+            raise ProgramError("quotient.digest must be a 64-hex sha256")
+        if int(q["n_free"]) < 0:
+            raise ProgramError("quotient.n_free must be non-negative")
+        out["quotient"] = {"fixed": {str(int(k)): int(v) for k, v in q["fixed"].items()},
+                           "merged": {str(int(k)): [int(v[0]), int(v[1])] for k, v in q["merged"].items()},
+                           "n_free": int(q["n_free"]), "digest": str(q["digest"]), "method": str(q["method"])}
     return out

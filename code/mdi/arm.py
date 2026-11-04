@@ -53,7 +53,7 @@ class Progress:
             pass
 
 
-def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path=None, evid_path=None, support=False):
+def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path=None, evid_path=None, support=False, quotient=False):
     """Run one arm and write a durable record. Returns the record. `support=True` is the
     bounded pilot's third arm (3 Nov 2026): the identity route with global-support
     compilation explicitly enabled (research routes disabled), labelled `<problem>_support`."""
@@ -62,7 +62,7 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
     wall = min(float(wall or K.RESOURCES["arm_wall_s"]), float(K.RESOURCES["arm_wall_s"]))
     cap = min(int(cap or K.RESOURCES["arm_rss_bytes"]), int(K.RESOURCES["arm_rss_bytes"]))
     os.makedirs(rundir, exist_ok=True)
-    arm_name = "support" if support else ("research" if research else "baseline")
+    arm_name = "quotient" if quotient else ("support" if support else ("research" if research else "baseline"))
     label = "%s_%s" % (problem, arm_name)
     # ONE absolute deadline for the whole invocation, from before any parsing
     t0 = B.DEFAULT_CLOCK[0]()
@@ -117,8 +117,8 @@ def run_arm(problem, research, rundir, eps=None, wall=None, cap=None, model_path
             raise _Exhausted("the complete wall of %.3f s was exhausted before planning" % wall)
         res = PLN.solve(m, ev, queries=set(r.free), max_width=eps,
                         wall_s=remaining,                    # NEVER renewed
-                        cap_bytes=cap, research_enabled=(research and not support),
-                        support_enabled=bool(support),
+                        cap_bytes=cap, research_enabled=(research and not support and not quotient),
+                        support_enabled=bool(support), quotient_enabled=bool(quotient),
                         plan_dir=os.path.join(rundir, "plans_%s" % label),
                         progress=lambda ph, info="": prog(ph, info))
         rec["stages"]["pipeline_s"] = B.DEFAULT_CLOCK[0]() - ts

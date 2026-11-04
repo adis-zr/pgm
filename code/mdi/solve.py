@@ -255,6 +255,36 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
 
     from mdi.guard import numerical_entry
     numerical_entry("solve.solve:identity-producer")
+    # ---------- the quotienting pilot (3 Nov 2026): the declared constraint quotient governs ----------
+    _r_orig = r
+    _qdecl = (program or {}).get("quotient") if program is not None else None
+    if _qdecl:
+        from mdi import quotient as QT
+        ts_q = _BUDGET.DEFAULT_CLOCK[0]()
+        try:
+            _d, _fresh = QT.recognize_cached(r.factors, r.free, r.card, deadline=dl, charge=charge)
+        except QT.Contradiction as e:
+            out.update({"outcome": "NUMERICAL_REFUSAL", "reason": "the declared quotient's recognition found a contradiction: %s" % e,
+                        "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
+            return out
+        except QT.QuotientError as e:
+            out.update({"outcome": "NUMERICAL_REFUSAL", "reason": "the executor could not recognize the declared quotient: %s" % e,
+                        "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
+            return out
+        if _d["digest"] != str(_qdecl.get("digest")) or _d["fixed"] != {str(k): int(v) for k, v in _qdecl["fixed"].items()} \
+                or _d["merged"] != {str(k): [int(v[0]), int(v[1])] for k, v in _qdecl["merged"].items()}:
+            out.update({"outcome": "NUMERICAL_REFUSAL", "reason": "the executor's recognition differs from the program's declared quotient",
+                        "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
+            return out
+        try:
+            r = QT.build_quotient(r, _d)
+        except QT.Contradiction as e:
+            out.update({"outcome": "NUMERICAL_REFUSAL", "reason": "quotient construction: %s" % e, "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
+            return out
+        stages["quotient_s"] = _BUDGET.DEFAULT_CLOCK[0]() - ts_q
+        out["quotient"] = {"fixed": len(_d["fixed"]), "merged": len(_d["merged"]), "free": len(r.free), "recognition": _d["recognition"],
+                           "reused_from_discovery": not _fresh, "constant_after_quotient": str(r.constant)}
+        prog("quotient", "%d fixed, %d merged, %d free" % (len(_d["fixed"]), len(_d["merged"]), len(r.free)))
     # ---------- stage: planning ----------
     ts = _BUDGET.DEFAULT_CLOCK[0]()
     bpe = plan_bytes_per_entry or (64 if mode == "P" else 128)
@@ -561,6 +591,12 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                             "raw producer width %s exceeds eps/2 at var %d" % (hi - lo, v))
                     pub.append(A.publish(lo, hi, expand, eps))
             iv[v] = pub
+        if _qdecl:
+            # RESTORE every original free variable from the quotient's rows: the representative keeps its
+            # row, a merged variable's state s is the representative's s XOR parity, a fixed variable is
+            # the exact point mass (zero approximation; the checker verifies this exactly)
+            from mdi import quotient as QT
+            iv = QT.restore(iv, _d, _r_orig.free, _r_orig.card)
         # restore observed variables as exact point masses (positivity established)
         for v, st in evidence.items():
             iv[v] = [(Fr(1), Fr(1)) if s == st else (Fr(0), Fr(0))
@@ -942,7 +978,7 @@ def validate_output_schema(model, evidence, iv, eps):
 
 
 def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
-           checker_precision=None, charge=None, support_declared=None, producer_order=None):
+           checker_precision=None, charge=None, support_declared=None, producer_order=None, quotient_declared=None):
     """Independent interval contraction, rebuilt from the ORIGINAL model.
 
     Shares the validated decomposition and MPFR primitives (permitted), but
@@ -979,6 +1015,33 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
         raise A.NumericalRefusal(
             "checker refuses: a fully pinned factor evaluates to exactly zero, "
             "so the conditioning event has probability zero")
+    _r_orig = r
+    _qmeta = None
+    if quotient_declared:
+        # the quotienting pilot (3 Nov 2026): the checker RE-DERIVES the closure of forced states and
+        # binary relations from the ORIGINAL restricted, preprocessed factors with its own implementation,
+        # refuses any declared relation it cannot derive, REBUILDS the quotient tables itself, checks the
+        # restoration of every original row exactly, and runs its numerical verification on ITS quotient
+        from mdi import quotient as _QT, quotient_check as _QC
+        _dl0 = _mk_deadline(t_end, cap_bytes, _rss_bytes())
+        try:
+            _cl = _QC.rederive(r.factors, r.free, r.card, deadline=_dl0, charge=charge)
+        except _QT.QuotientError as e:
+            raise A.NumericalRefusal("checker could not re-derive the declared quotient: %s" % e)
+        _bad = _QC.verify_declaration(_cl, quotient_declared, r.free, r.card)
+        if _bad:
+            raise A.NumericalRefusal("checker refuses: the program's declared quotient is not implied by the original factors (%s)" % "; ".join(_bad[:4]))
+        _rfails = _QC.check_restoration(iv, quotient_declared, r.free, r.card)
+        if _rfails:
+            raise A.NumericalRefusal("checker refuses: %d published rows are not the exact restoration of their representative (%s)"
+                                     % (len(_rfails), str(_rfails[:2])[:200]))
+        r = _QC.build_quotient(r, quotient_declared)
+        _qmeta = {"rederived_fixed": len(_cl.fixed), "rederived_relations": len(_cl.rep), "entries_scanned": int(_cl.scanned),
+                  "seconds": round(_cl.seconds, 4), "declared_matches": True, "quotient_free": len(r.free),
+                  "restoration_checked_rows": len(_r_orig.free)}
+        # the checker's OWN min-fill schedule over the quotient's representatives
+        _adjq = P.primal_graph(r.free, r.card, r.factors)
+        pl = P.build_plan("min_fill", P.order_min_fill(r.free, r.card, _adjq), r.free, r.card, r.factors)
     # independent re-derivation of the bag tree from the same order
     adj = P.primal_graph(r.free, r.card, r.factors)
     pl2 = P.build_plan(pl.name, list(pl.order), r.free, r.card, r.factors)
@@ -1236,6 +1299,9 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
     for v in range(model.nvars):
         if v not in iv or len(iv[v]) != model.card[v]:
             fails.append({"var": v, "reason": "missing or wrong-length output row"})
+    if _qmeta is not None:
+        # the merged / fixed variables' coordinates, checked EXACTLY against their representatives' rows
+        nchk += sum(int(_r_orig.card[v]) for v in _r_orig.free if v not in set(r.free))
     # The independent AGGREGATION cross-check only runs below the declared
     # enumeration cap. Above it, producer and checker share C.Engine's
     # aggregate logic, so a common-mode fault is invisible: the same injected
@@ -1246,6 +1312,7 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
             "independent_plan_rebuilt": True, "mode": "I",
             "shares": "validated decomposition + MPFR primitives" + (" + the sparse engine class over the checker's OWN reconstructed rows" if _crows is not None else ""),
             "borrows_producer_values": False,
+            "quotient_rederived": _qmeta,
             "support_reconstructed": (None if _crows is None else {"rows_total": int(sum(int(x.size) for x in _crows.values())),
                                                                    "scan_positions": int(_cscan), "seconds": round(_cel, 4), "declared_matches": True,
                                                                    # the checker reconstruction's own reservation peak (persisted from 3 Nov closeout on;
@@ -1313,7 +1380,8 @@ def verify_publication(model, evidence, iv, eps=Fr(1, 100), mode="I",
                                   _end, lambda *a: None,
                                   checker_precision=checker_precision, charge=charge,
                                   support_declared=((program or {}).get("support") if program is not None else None),
-                                  producer_order=((program or {}).get("order") if program is not None else None))
+                                  producer_order=((program or {}).get("order") if program is not None else None),
+                                  quotient_declared=((program or {}).get("quotient") if program is not None else None))
     except A.NumericalRefusal as e:
         # A refusal is a REJECTION of the publication, reported as such. Letting
         # it propagate made a caller see an exception rather than "not verified",

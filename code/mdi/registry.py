@@ -44,6 +44,8 @@ def pipeline_identity_executor(ctx):
                "emin": prog["arithmetic"]["emin"], "emax": prog["arithmetic"]["emax"]}
         if prog.get("support"):
             sub["support"] = prog["support"]            # the declared compiled support governs the sparse executor
+        if prog.get("quotient"):
+            sub["quotient"] = prog["quotient"]          # the declared constraint quotient governs the executor's restriction
     bg = ctx.get("budget")
     charge = (lambda n: bg.charge("local_mass_entries", n, "identity producer message entries")) if bg else None
     res = S.solve(ctx["model"], ctx["evidence"], eps=ctx["eps"], mode="P",
@@ -55,7 +57,7 @@ def pipeline_identity_executor(ctx):
     ctx["meta"] = {"evaluator": "identity", "ops": res.get("ops"),
                    "peak_live_message_entries": res.get("peak_live_message_entries"),
                    "settings": res.get("program_settings"), "layout": res.get("engine_layout"),
-                   "support": res.get("support")}
+                   "support": res.get("support"), "quotient": res.get("quotient")}
     return res["intervals"]
 
 

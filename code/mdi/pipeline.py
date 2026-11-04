@@ -62,7 +62,7 @@ class Outcome:
 def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
           cap_bytes=None, research_enabled=True, plan_dir=None,
           progress=None, plan_only=False, phase_limits=None, diagnostic_shared_only=False,
-          support_enabled=False):
+          support_enabled=False, quotient_enabled=False):
     """The single public entry point. `plan_only=True` is the bounded planning
     observation: the SAME code runs discovery, persisted binding, pricing and
     selection, then stops with an explicit terminal record and never enters an
@@ -76,6 +76,7 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     _begin_invocation()
     _DIAGNOSTIC_SHARED_ONLY[0] = bool(diagnostic_shared_only)   # explicit diagnostic selection travels with this invocation
     _SUPPORT_ENABLED[0] = bool(support_enabled)                 # the pilot's explicit selection travels with this invocation
+    _QUOTIENT_ENABLED[0] = bool(quotient_enabled)               # the quotienting pilot's explicit selection (kept separate from support)
     wall_arg, cap_arg = wall_s, cap_bytes
     # (1) the CHEAP scalar limits are validated first (no model work yet) ...
     lim, bad = normalize_limits(max_width, wall_s, cap_bytes)
@@ -591,6 +592,15 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     # route whose reduced model fits may still certify. Identity's
     # infeasibility used to end the invocation before any research candidate
     # was examined.
+    # ---- the quotienting pilot (3 Nov 2026): when explicitly enabled, derive the exact constraint
+    # quotient (charged, capped) and, when admitted, plan / admit / price / record the identity on it
+    _r_dense = r
+    _qdecl = None
+    _qprice = None
+    if _QUOTIENT_ENABLED[0]:
+        _qres = _quotient_admission(r, bg, rejected, cap_bytes)
+        if _qres is not None:
+            r, _qdecl, _qprice = _qres
     sel = P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes)
     if sel["chosen"] is None:
         best = sel["candidates"][0] if sel["candidates"] else None
@@ -640,6 +650,8 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
             from mdi import routes as _RT
             iprog = _RT.identity_program(ipl.order, _p, _emin, _emax, queries,
                                          max(80, _p + 16))
+            if _qdecl is not None:
+                iprog["quotient"] = {k: _qdecl[k] for k in ("fixed", "merged", "n_free", "digest", "method")}
     _support_note = None
     if ipl is not None and _p is not None and _SUPPORT_ENABLED[0]:
         # ---- the bounded pilot (3 Nov 2026): compile the global support of the identity
@@ -652,7 +664,8 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                                         {"constants": len(simp.removed_constants),
                                          "splits": len(simp.split_pairs)},
                                         checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table),
-                                        support=(iprog.get("support") if iprog else None), support_price=_support_note)
+                                        support=(iprog.get("support") if iprog else None), support_price=_support_note,
+                                        quotient=_qdecl, quotient_price=_qprice, dense_factors=_r_dense.factors)
         isup = PT.supported("identity")
         iprops = PT.PlanProperties()
         iprops.set("mathematically_certified")          # exact elimination
@@ -661,6 +674,7 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
         if isup["checker_supported"]:
             iprops.set("checker_supported")
         iprops.set("complete_cost_priced")
+        r = _r_dense                              # the record describes the ORIGINAL restricted factors
         irec = PT.PlanRecord(
             request=PT.make_request(mh, eh, qh, queries, r.evidence, r.model.card,
                                     eps if eps is not None else K.MAX_WIDTH,
@@ -1516,6 +1530,8 @@ def executable_identity(kind, prog_json, request=None):
         # a support-compiled identity is a DIFFERENT executable from the dense identity of the
         # same order (3 Nov 2026 pilot): its rows are part of its identity
         executable["support"] = {"digest": str(raw["support"].get("digest")), "rows_total": int(raw["support"].get("rows_total") or 0)}
+    if raw.get("quotient"):
+        executable["quotient"] = {"digest": str(raw["quotient"].get("digest")), "n_free": int(raw["quotient"].get("n_free") or 0)}
     # the REQUEST identity (model, evidence, requested set, width) is part of
     # the key: a program is an executable FOR one request
     if request is not None:
@@ -1978,6 +1994,29 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
     from mdi import routes as RT, marked as MK, collective_route as CR
     prog = rec.parsed_program
     if rec.kind == "identity":
+        _r_dense = r
+        _qdecl = _qprice = None
+        if prog.get("quotient"):
+            # the declared quotient is re-derived from the original factors (cached within the
+            # invocation; charged) and must BE the declared one, else the record is ineligible
+            from mdi import quotient as _QT
+            try:
+                _d, _fresh = _QT.recognize_cached(r.factors, r.free, r.card,
+                                                  deadline=(bg.deadline_fn("reprice:quotient recognition") if bg else None),
+                                                  charge=(lambda n: bg.charge("pricing_entries", n, "quotient recognition")) if bg else None)
+                if _d["digest"] == str(prog["quotient"].get("digest")):
+                    _qdecl = _d
+                    _rq = _QT.build_quotient(r, _d)
+                    _qprice = _QT.quotient_price(P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes)["chosen"][0],
+                                                 P.build_plan("program", prog["order"], _rq.free, _rq.card, _rq.factors))
+                    r = _rq
+            except (_QT.QuotientError, P.PlanError, KeyError, TypeError):
+                _qdecl = None
+            if _qdecl is None:
+                price = PR.CostRecord(kind="identity", name="identity")
+                price.eligible = False
+                price.ineligible_reason = "the record's declared constraint quotient could not be re-derived as declared at binding"
+                return price
         pl = P.build_plan("program", prog["order"], r.free, r.card, r.factors)
         # the ACTUAL saved precision prices the storage: an MPFR point of p
         # bits occupies about 32 + p/8 bytes (64 at the default 64..256 bits)
@@ -2007,7 +2046,8 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
                                        {"constants": len(simp.removed_constants),
                                         "splits": len(simp.split_pairs)},
                                        checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table),
-                                       support=prog.get("support"), support_price=_sp)
+                                       support=prog.get("support"), support_price=_sp,
+                                       quotient=_qdecl, quotient_price=_qprice, dense_factors=_r_dense.factors)
         if prog.get("support") and _sp is None and price.eligible:
             price.eligible = False
             price.ineligible_reason = "the record's declared support could not be re-derived as declared at binding"
@@ -2123,7 +2163,8 @@ _BG_FOR_RECORDS = [None]       # the invocation budget whose effective limits ev
 _LAW_CURRENT = [None]          # the frozen law of the running invocation (attached to its terminal outcome)
 _LEDGER_CURRENT = [None]       # the invocation ledger already built (attached to EVERY terminal, incl. stops)
 _DIAGNOSTIC_SHARED_ONLY = [False]   # the explicitly selected shared-aggregation-only diagnostic of THIS invocation
-_SUPPORT_ENABLED = [False]          # the bounded pilot's EXPLICIT selection (3 Nov 2026): compile the global support and run the identity sparsely when admitted (3 Nov 2026)
+_SUPPORT_ENABLED = [False]          # the bounded pilot's EXPLICIT selection (3 Nov 2026): compile the global support and run the identity sparsely when admitted
+_QUOTIENT_ENABLED = [False]         # the quotienting pilot's EXPLICIT selection (3 Nov 2026): solve the identity on the exact constraint quotient when admitted (3 Nov 2026)
 
 
 def _begin_invocation():
@@ -2139,6 +2180,12 @@ def _begin_invocation():
     _BG_FOR_RECORDS[0] = None
     _DIAGNOSTIC_SHARED_ONLY[0] = False
     _SUPPORT_ENABLED[0] = False
+    _QUOTIENT_ENABLED[0] = False
+    try:
+        from mdi import quotient as _QT
+        _QT._RECOGNITION_CACHE.clear()     # each invocation is charged its own recognition
+    except ImportError:
+        pass
     CAPX.INVOCATION_BASELINE[0] = None
     CAPX._OCCUPANCY_CACHE.clear()          # each invocation is charged its own (single) occupancy probe
     try:
@@ -2322,6 +2369,59 @@ def _attempt_end(a, status, **info):
             led["recognizer_runs_declined"] += 1
         elif status in ("failed", "budget"):
             led["recognizer_runs_failed"] += 1
+
+
+def _quotient_admission(r, bg, rejected, cap_bytes):
+    """The quotienting pilot's admission (3 Nov 2026): recognize the exact constraint quotient of
+    the restricted, preprocessed law (charged to the shared pricing counter; capped), build the
+    quotient, plan both and select the quotient only when the dense / quotient enumerated-row ratio
+    is at least `quotient.MIN_REDUCTION_RATIO`; a contradiction is left to the pipeline's
+    zero-evidence terminal; any other outcome keeps the dense identity with the attempt recorded and
+    charged. Returns (quotient restriction, declaration, price) or None."""
+    from mdi import quotient as QT
+    t0 = time.monotonic()
+    try:
+        decl, fresh = QT.recognize_cached(r.factors, r.free, r.card, deadline=bg.deadline_fn("discover:quotient recognition"),
+                                          charge=lambda n: bg.charge("pricing_entries", n, "quotient recognition"))
+    except QT.Contradiction as e:
+        rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_CONTRADICTION", "phase": "discover",
+                         "reason": "the derived relations admit no positive configuration (%s): the zero-evidence proof decides; "
+                                   "the dense identity stands (%.3f s charged)" % (e, time.monotonic() - t0)})
+        return None
+    except QT.QuotientError as e:
+        rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_REFUSAL", "phase": "discover",
+                         "reason": "recognition did not complete: %s (%.3f s charged)" % (e, time.monotonic() - t0)})
+        return None
+    if QT.eliminated(decl) == 0:
+        rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover",
+                         "reason": "no forced state and no binary equality / complement relation is implied by the factor zeros; "
+                                   "the dense identity stands (recognition %.3f s, %d entries scanned, charged)"
+                                   % (time.monotonic() - t0, decl["recognition"]["entries_scanned"])})
+        return None
+    try:
+        rq = QT.build_quotient(r, decl)
+    except QT.Contradiction as e:
+        rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_CONTRADICTION", "phase": "discover", "reason": str(e)})
+        return None
+    sel_d = P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes)
+    sel_q = P.choose_plan(rq.free, rq.card, rq.factors, 64, cap_bytes) if rq.free else None
+    if sel_q is None or sel_q["chosen"] is None or sel_d["chosen"] is None:
+        rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover",
+                         "reason": "no generic ordering fits the byte cap on the quotient (or the quotient has no free variable); the dense identity stands"})
+        return None
+    price = QT.quotient_price(sel_d["chosen"][0], sel_q["chosen"][0])
+    price["recognition"] = decl["recognition"]
+    price["eliminated"] = {"fixed": len(decl["fixed"]), "merged": len(decl["merged"])}
+    price["admission_wall_s"] = round(time.monotonic() - t0, 4)
+    if not price["admitted"]:
+        rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover",
+                         "reason": "the quotient's schedule enumerates %d rows against %d dense (ratio %.2f), below the required %.0f-fold reduction; "
+                                   "the dense identity stands and the recognition (%d entries) is charged"
+                                   % (price["quotient_schedule_rows"], price["dense_schedule_rows"], price["reduction_ratio"],
+                                      QT.MIN_REDUCTION_RATIO, decl["recognition"]["entries_scanned"]),
+                         "quotient_price": price})
+        return None
+    return rq, decl, price
 
 
 def _support_admission(ipl, r, bg, iprog, rejected, checker_plan=None):
