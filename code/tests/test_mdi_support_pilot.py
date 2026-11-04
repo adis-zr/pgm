@@ -585,7 +585,7 @@ def test_scorer_treats_the_allowance_stop_as_terminal_and_reports_a_never_run_ce
     rd = tempfile.mkdtemp()
     json.dump(led, open(os.path.join(rd, "LEDGER.json"), "w"))
     orig = SCO.extract_refs
-    SCO.extract_refs = lambda packet, refdir: {}
+    SCO.extract_refs = lambda packet, refdir, problems=None: {}
     try:
         out = SCO.score_run(rd, "/nonexistent.zip", refdir=os.path.join(rd, "refs"))
     finally:
@@ -597,7 +597,7 @@ def test_scorer_treats_the_allowance_stop_as_terminal_and_reports_a_never_run_ce
     # a genuinely pending cell still refuses
     led["cells"][1]["status"] = "PENDING"
     json.dump(led, open(os.path.join(rd, "LEDGER.json"), "w"))
-    SCO.extract_refs = lambda packet, refdir: {}
+    SCO.extract_refs = lambda packet, refdir, problems=None: {}
     try:
         with pytest.raises(AssertionError):
             SCO.score_run(rd, "/nonexistent.zip", refdir=os.path.join(rd, "refs"))

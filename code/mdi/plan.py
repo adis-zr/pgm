@@ -33,12 +33,16 @@ def order_descending(free, card, adj):
     return sorted(free, reverse=True)
 
 
-def _simulate(adj, card, key):
-    """Generic greedy elimination under a per-step lexicographic key."""
+def _simulate(adj, card, key, deadline=None):
+    """Generic greedy elimination under a per-step lexicographic key. `deadline`
+    (zero-argument; raises) is polled once per eliminated variable (the selector's
+    probe window and the invocation budget, 3 Nov 2026)."""
     a = {v: set(ns) for v, ns in adj.items()}
     remaining = set(a)
     order = []
     while remaining:
+        if deadline is not None:
+            deadline()
         best, bestk = None, None
         for v in remaining:
             k = key(v, a, card)
@@ -57,7 +61,7 @@ def _simulate(adj, card, key):
     return order
 
 
-def order_min_fill(free, card, adj):
+def order_min_fill(free, card, adj, deadline=None):
     """Spec's min-fill profile: minimize (missing neighbor pairs, product of
     cardinalities in the candidate bag, degree, original variable ID)."""
     def key(v, a, card):
@@ -71,10 +75,10 @@ def order_min_fill(free, card, adj):
         for x in nb:
             prod *= card[x]
         return (miss, prod, len(nb), v)
-    return _simulate(adj, card, key)
+    return _simulate(adj, card, key, deadline=deadline)
 
 
-def order_min_degree(free, card, adj):
+def order_min_degree(free, card, adj, deadline=None):
     """Min-degree with deterministic cardinality/ID ties."""
     def key(v, a, card):
         nb = sorted(a[v])
@@ -82,7 +86,13 @@ def order_min_degree(free, card, adj):
         for x in nb:
             prod *= card[x]
         return (len(nb), prod, v)
-    return _simulate(adj, card, key)
+    return _simulate(adj, card, key, deadline=deadline)
+
+
+def _is_deadline_stop(e):
+    """A budget / probe-window stop raised by a deadline callback (typed by its class name so
+    this module imports neither the budget nor the pipeline)."""
+    return any(c.__name__ in ("BudgetExceeded", "ProbeExhausted") for c in type(e).__mro__)
 
 
 PORTFOLIO = [("ascending_ids", order_ascending), ("descending_ids", order_descending),
@@ -443,17 +453,24 @@ def byte_estimate(plan, bytes_per_entry, both_directions=True):
                     "NOT included: these are entry counts, not an RSS bound."}
 
 
-def choose_plan(free, card, factors, bytes_per_entry, cap_bytes, charge=None):
-    """Evaluate the fixed generic portfolio; pick the cheapest that fits."""
+def choose_plan(free, card, factors, bytes_per_entry, cap_bytes, charge=None, deadline=None):
+    """Evaluate the fixed generic portfolio; pick the cheapest that fits. `deadline`
+    (zero-argument; raises) is polled before every portfolio order and inside the greedy
+    simulations; a deadline's exception is NEVER swallowed by the portfolio's robustness
+    guard (the selector's probe window and the invocation budget, 3 Nov 2026)."""
     adj = primal_graph(free, card, factors)
     cands, errs = [], []
     for name, fn in PORTFOLIO:
+        if deadline is not None:
+            deadline()
         try:
-            order = fn(free, card, adj)
+            order = fn(free, card, adj, deadline=deadline) if fn in (order_min_fill, order_min_degree) else fn(free, card, adj)
             p = build_plan(name, order, free, card, factors)
             est = byte_estimate(p, bytes_per_entry)
             cands.append((p, est))
-        except Exception as e:                      # keep the portfolio robust
+        except Exception as e:                      # keep the portfolio robust ...
+            if _is_deadline_stop(e):                # ... but a budget / probe stop is an OUTCOME, re-raised
+                raise
             errs.append({"order": name, "error": "%s: %s" % (type(e).__name__, e)})
     if not cands:
         raise PlanError("no ordering produced a valid plan: %s" % errs)

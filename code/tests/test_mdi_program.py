@@ -782,9 +782,9 @@ def test_discovery_is_not_gated_on_identity_feasibility():
     orig = P.choose_plan
     calls = {"n": 0}
 
-    def no_fit(free, card, factors, bpe, cap_bytes, charge=None):
+    def no_fit(free, card, factors, bpe, cap_bytes, charge=None, **kw):       # `deadline=` is forwarded (planner polling, 4 Nov 2026)
         calls["n"] += 1
-        out = orig(free, card, factors, bpe, cap_bytes, charge=charge)
+        out = orig(free, card, factors, bpe, cap_bytes, charge=charge, **kw)
         if calls["n"] == 1:              # the identity planning call
             out = dict(out)
             out["chosen"] = None

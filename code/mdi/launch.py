@@ -26,7 +26,7 @@ kills descendants). It adds only orchestration:
                                 [--packet PACKET.zip] [--input-dir DIR]
                                 [--prepare-only] [--repair LABEL]
                                 [--closeout] [--charge WHAT SECONDS]
-    python -m mdi.launch --cell PROBLEM baseline|research|support|quotient ATTEMPT_DIR WALL_S   (the child)
+    python -m mdi.launch --cell PROBLEM baseline|research|support|quotient|selector ATTEMPT_DIR WALL_S [INPUT_DIR]   (the child)
 """
 from __future__ import annotations
 import sys, os, json, time, hashlib, zipfile, subprocess, shutil
@@ -149,6 +149,10 @@ def validate_bindings(bindings, pin, root, input_dir, python=None):
         problems.append("cell wall %s differs from the frozen arm wall %s" % (bindings["cell_wall_s"], K.RESOURCES["arm_wall_s"]))
     # 3. inputs in the arm's input directory
     inputs = {}
+    if not bindings.get("synthetic_control"):
+        for p_, a_ in bindings["order"]:
+            if a_ not in ARMS:
+                problems.append("cell %s_%s names an unknown arm (one of %s)" % (p_, a_, ARMS))
     for name, want_h in bindings["inputs"].items():
         p = os.path.join(input_dir, name)
         if not os.path.exists(p):
@@ -239,9 +243,18 @@ def _classify(sup, arm_rec, receipt, wall):
 
 # ------------------------------------------------------------- the run
 
-def default_cmd_factory(python):
+ARMS = ("baseline", "research", "support", "quotient", "selector")
+
+
+def default_cmd_factory(python, input_dir=None):
+    """The child's exact command. `input_dir` (the bindings' solver input directory) is passed
+    as the optional fifth cell argument so a run on a separate input directory (the generalization
+    panel) never reads the pinned default; the four-argument form keeps its meaning."""
     def f(problem, arm, attempt_dir, wall):
-        return [python, "-m", "mdi.launch", "--cell", problem, arm, attempt_dir, "%.3f" % wall]
+        cmd = [python, "-m", "mdi.launch", "--cell", problem, arm, attempt_dir, "%.3f" % wall]
+        if input_dir:
+            cmd.append(input_dir)
+        return cmd
     return f
 
 
@@ -334,7 +347,7 @@ def run_cells(rundir, bindings, repair=None, cmd_factory=None, python=None, supe
     from ext import supervise as SV
     sup_run = supervisor or SV.run
     python = python or sys.executable
-    cmd_factory = cmd_factory or default_cmd_factory(python)
+    cmd_factory = cmd_factory or default_cmd_factory(python, bindings.get("input_dir") or DEFAULT_INPUT_DIR)
     man_path = os.path.join(rundir, "EXECUTION_MANIFEST.json")
     if manifest_required and not os.path.exists(man_path):
         raise Refused("no EXECUTION_MANIFEST.json in %s: prepare (validate bindings) before running" % rundir)
@@ -488,7 +501,14 @@ def _cell_main(argv):
     from mdi import arm as ARM
     import mdi.registry            # noqa: F401
     problem, arm, adir, wall = argv[0], argv[1], os.path.abspath(argv[2]), float(argv[3])
-    rec = ARM.run_arm(problem, arm == "research", adir, wall=wall, support=(arm == "support"), quotient=(arm == "quotient"))
+    if arm not in ARMS:
+        raise Refused("unknown arm %r (one of %s)" % (arm, ARMS))
+    input_dir = os.path.abspath(argv[4]) if len(argv) > 4 and argv[4] else None
+    kw = {}
+    if input_dir:
+        kw = {"model_path": os.path.join(input_dir, problem + ".uai"), "evid_path": os.path.join(input_dir, problem + ".uai.evid")}
+    rec = ARM.run_arm(problem, arm == "research", adir, wall=wall, support=(arm == "support"), quotient=(arm == "quotient"),
+                      selector=(arm == "selector"), **kw)
     print(json.dumps({k: rec.get(k) for k in ("problem", "arm", "outcome", "reason", "elapsed_s", "final_max_width")}, default=str))
     return 0
 

@@ -239,13 +239,15 @@ def eliminated(decl):
     return len(decl["fixed"]) + len(decl["merged"])
 
 
-def build_quotient(r, decl):
+def build_quotient(r, decl, deadline=None, charge=None):
     """The QUOTIENT restricted model under the declaration: every factor occurrence has each fixed
     variable replaced by its state and each merged variable by (representative XOR parity); the
     table over the distinct representatives is read from the original table at the mapped assignment
     (so every positive weight is preserved exactly; inconsistent entries never occur). A factor with
     no free variable left becomes a scalar multiplied into `constant`. Returns a Restricted over the
-    representatives, or raises Contradiction when a scalar is zero."""
+    representatives, or raises Contradiction when a scalar is zero. `deadline` (zero-argument;
+    raises) is polled once per factor and `charge(n)` receives the quotient entries written
+    (the selector's probe window, 3 Nov 2026)."""
     fixed = {int(v): int(s) for v, s in decl["fixed"].items()}
     merged = {int(v): (int(a[0]), int(a[1])) for v, a in decl["merged"].items()}
     card = dict(r.card)
@@ -253,6 +255,8 @@ def build_quotient(r, decl):
     const = Fr(r.constant)
     facs = []
     for f in r.factors:
+        if deadline is not None:
+            deadline()
         scope = tuple(f.scope)
         strides = f.strides()
         reps = []
@@ -284,7 +288,11 @@ def build_quotient(r, decl):
                 else:
                     idx.append(q[pos[v]])
             tab.append(Fr(f.table[sum(idx[j] * strides[j] for j in range(len(scope)))]))
+        if charge is not None:
+            charge(len(tab))
         facs.append(M.Factor(scope=tuple(reps), card=qcard, table=tab, origin=f.origin, scale=f.scale))
+    if deadline is not None:
+        deadline()
     return M.Restricted(model=r.model, evidence=dict(r.evidence), factors=facs, free=free_q,
                         card={v: int(card[v]) for v in free_q}, constant=const, impossible_factor=None)
 

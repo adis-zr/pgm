@@ -12,15 +12,39 @@ from fractions import Fraction as Fr
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ext import uai, score
 
-PROBLEMS = ("Grids_11", "Pedigree_11", "Promedus_12")
+# the problems scored are the LEDGER's cells (panel-driven; the development triple is no longer
+# hardcoded -- generalization implementation pass, 3-4 Nov 2026); the packet member layout is the
+# launcher's constant, so the scorer and the launcher read the same packet
+def _member_prefix():
+    try:
+        from mdi.launch import PACKET_MEMBER_PREFIX
+        return PACKET_MEMBER_PREFIX
+    except ImportError:                                   # pragma: no cover
+        return "three_external_problems/inputs/"
 
 
-def extract_refs(packet, refdir):
+def ledger_problems(led):
+    """The distinct problems of a launcher ledger, in cell order."""
+    seen = []
+    for c in led["cells"]:
+        if c["problem"] not in seen:
+            seen.append(c["problem"])
+    return tuple(seen)
+
+
+def extract_refs(packet, refdir, problems):
+    """Extract ONLY the `.uai.MAR` members of `problems` into `refdir` (never into the solver
+    inputs). Called by the scorer AFTER every cell is terminal; a missing member is reported
+    as None (that problem is then unscored), never a failure of the run."""
     os.makedirs(refdir, exist_ok=True)
     out = {}
     with zipfile.ZipFile(packet) as z:
-        for p in PROBLEMS:
-            member = "three_external_problems/inputs/%s.uai.MAR" % p
+        names = set(z.namelist())
+        for p in problems:
+            member = "%s%s.uai.MAR" % (_member_prefix(), p)
+            if member not in names:
+                out[p] = None
+                continue
             dest = os.path.join(refdir, "%s.uai.MAR" % p)
             with z.open(member) as src, open(dest, "wb") as dst:
                 dst.write(src.read())
@@ -77,18 +101,31 @@ def containment(intervals_rows, ref_rows, ev, raw_tokens=None):
                                                             "interval": [worst[3], worst[4]], "reference": worst[5]})}
 
 
-def score_run(rundir, packet, refdir=None, input_dir="/tmp/tep/three_external_problems/inputs"):
+def score_run(rundir, packet, refdir=None, input_dir=None):
+    """Score every cell of a launcher run against the packet's references. The problems come
+    from the run's LEDGER (panel-driven); the solver input directory comes from the run's
+    EXECUTION_MANIFEST (the directory the cells actually read) unless given."""
     import time
     t0 = time.time()
     refdir = refdir or os.path.join(rundir, "references_read_after_all_cells")
+    if input_dir is None:
+        mp = os.path.join(rundir, "EXECUTION_MANIFEST.json")
+        if os.path.exists(mp):
+            input_dir = json.load(open(mp)).get("input_dir")
+        if not input_dir:
+            from mdi.launch import DEFAULT_INPUT_DIR
+            input_dir = DEFAULT_INPUT_DIR
     assert os.path.realpath(refdir) != os.path.realpath(input_dir), "references must not enter the solver input directory"
     led = json.load(open(os.path.join(rundir, "LEDGER.json")))
     TERMINAL = ("CONSUMED", "NOT_RUN_CUMULATIVE_STOP", "NOT_RUN_ALLOWANCE_STOP")      # every status the launcher leaves a cell in for good
     pending = [c["label"] for c in led["cells"] if c["status"] not in TERMINAL]
     assert not pending, "cells still pending: %s -- the scorer runs only after every invocation" % pending
-    refs = extract_refs(packet, refdir)
+    problems = ledger_problems(led)
+    refs = extract_refs(packet, refdir, problems)
     out = {"note": "post-publication empirical diagnostics (contract SS6); references read AFTER every cell finished, from %s; "
-                   "they neither grant nor revoke certification" % refdir, "cells": {}}
+                   "they neither grant nor revoke certification" % refdir, "cells": {},
+           "problems": list(problems), "input_dir": input_dir,
+           "references_missing": sorted(p for p, d in refs.items() if d is None)}
     for c in led["cells"]:
         label, problem = c["label"], c["problem"]
         rows = {"status": c["status"], "attempts": []}
@@ -101,6 +138,9 @@ def score_run(rundir, packet, refdir=None, input_dir="/tmp/tep/three_external_pr
             iv = os.path.join(adir, "intervals_%s.json" % label)
             if not (os.path.exists(pm) and os.path.exists(iv)):
                 rec["diagnostics"] = "not applicable: nothing published"
+                rows["attempts"].append(rec); continue
+            if refs.get(problem) is None:
+                rec["diagnostics"] = "not scored: the packet carries no reference for %s" % problem
                 rows["attempts"].append(rec); continue
             m = uai.read_model(os.path.join(input_dir, problem + ".uai"))
             ev = uai.read_evidence(os.path.join(input_dir, problem + ".uai.evid"))

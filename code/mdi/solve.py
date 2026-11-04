@@ -277,7 +277,7 @@ def solve(model, evidence, eps=Fr(1, 100), mode="P", cap_bytes=8 * (1 << 30),
                         "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
         try:
-            r = QT.build_quotient(r, _d)
+            r = QT.build_quotient(r, _d, deadline=dl)        # polled; the meter's saved bound covers the recognition scan, construction is not metered
         except QT.Contradiction as e:
             out.update({"outcome": "NUMERICAL_REFUSAL", "reason": "quotient construction: %s" % e, "elapsed_s": _BUDGET.DEFAULT_CLOCK[0]() - t0})
             return out
@@ -1035,7 +1035,7 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
         if _rfails:
             raise A.NumericalRefusal("checker refuses: %d published rows are not the exact restoration of their representative (%s)"
                                      % (len(_rfails), str(_rfails[:2])[:200]))
-        r = _QC.build_quotient(r, quotient_declared)
+        r = _QC.build_quotient(r, quotient_declared, deadline=_dl0)
         _qmeta = {"rederived_fixed": len(_cl.fixed), "rederived_relations": len(_cl.rep), "entries_scanned": int(_cl.scanned),
                   "seconds": round(_cl.seconds, 4), "declared_matches": True, "quotient_free": len(r.free),
                   "restoration_checked_rows": len(_r_orig.free)}

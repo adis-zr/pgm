@@ -63,6 +63,16 @@ def replay(model_path, evidence_path, plan_path, eps=None, wall_s=600.0, wrap=No
     cap_bytes = cap_eff
     from mdi import capacity as CAPX
     CAPX.INVOCATION_BASELINE[0] = CAPX.rss_current_bytes()      # the replay's own invocation baseline
+    # the replay is ITS OWN invocation: the content-keyed caches of the occupancy probe, the support
+    # compilation and the quotient recognition are cleared so an in-process replay after a pipeline
+    # call is charged its own recognition / compilation exactly as a fresh process is (3-4 Nov 2026)
+    CAPX._OCCUPANCY_CACHE.clear()
+    try:
+        from mdi import support as _SP, quotient as _QT
+        _SP._SUPPORT_CACHE.clear()
+        _QT._RECOGNITION_CACHE.clear()
+    except ImportError:                                        # pragma: no cover
+        pass
     try:
         out = _replay(model_path, evidence_path, plan_path, eps, wrap, cap_bytes, bg, t0)
     except Exception as e:                       # an implementation fault is a typed terminal, not a crash

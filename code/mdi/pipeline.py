@@ -62,7 +62,7 @@ class Outcome:
 def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
           cap_bytes=None, research_enabled=True, plan_dir=None,
           progress=None, plan_only=False, phase_limits=None, diagnostic_shared_only=False,
-          support_enabled=False, quotient_enabled=False):
+          support_enabled=False, quotient_enabled=False, route_policy=None):
     """The single public entry point. `plan_only=True` is the bounded planning
     observation: the SAME code runs discovery, persisted binding, pricing and
     selection, then stops with an explicit terminal record and never enters an
@@ -75,8 +75,21 @@ def solve(model, evidence=None, queries=None, max_width=None, wall_s=600.0,
     # ledger, the budget or the width of a previous call (r26)
     _begin_invocation()
     _DIAGNOSTIC_SHARED_ONLY[0] = bool(diagnostic_shared_only)   # explicit diagnostic selection travels with this invocation
+    # the ROUTE POLICY (generalization experiment, 3-4 Nov 2026): `route_policy` names ONE of
+    # dense | support | quotient | selector; None keeps the two pilot flags' meaning (route-call
+    # compatibility: support_enabled -> "support", quotient_enabled -> "quotient", else "dense")
+    if route_policy is not None and route_policy not in ROUTE_POLICIES:
+        return Outcome(status="INVALID_INPUT", reason="route_policy %r is not one of %s" % (route_policy, ROUTE_POLICIES))
+    if route_policy == "support":
+        support_enabled, quotient_enabled = True, False
+    elif route_policy == "quotient":
+        support_enabled, quotient_enabled = False, True
+    elif route_policy in ("dense", "selector"):
+        support_enabled = quotient_enabled = False                 # the selector drives both mechanisms itself
     _SUPPORT_ENABLED[0] = bool(support_enabled)                 # the pilot's explicit selection travels with this invocation
     _QUOTIENT_ENABLED[0] = bool(quotient_enabled)               # the quotienting pilot's explicit selection (kept separate from support)
+    _ROUTE_POLICY[0] = (route_policy if route_policy is not None else
+                        ("quotient" if quotient_enabled else ("support" if support_enabled else "dense")))
     wall_arg, cap_arg = wall_s, cap_bytes
     # (1) the CHEAP scalar limits are validated first (no model work yet) ...
     lim, bad = normalize_limits(max_width, wall_s, cap_bytes)
@@ -418,6 +431,10 @@ def finalize_terminal(out, bg):
     if _LEDGER_CURRENT[0] is not None and not (out.plan or {}).get("invocation_ledger"):
         out.plan = dict(out.plan or {})
         out.plan["invocation_ledger"] = dict(_LEDGER_CURRENT[0])
+    # the selector's attempt record (every probe, its wall and its charge) is likewise never dropped
+    if _SELECTOR_CURRENT[0] is not None and not (out.plan or {}).get("selector"):
+        out.plan = dict(out.plan or {})
+        out.plan["selector"] = _SELECTOR_CURRENT[0]
     return out
 
 
@@ -592,111 +609,60 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     # route whose reduced model fits may still certify. Identity's
     # infeasibility used to end the invocation before any research candidate
     # was examined.
-    # ---- the quotienting pilot (3 Nov 2026): when explicitly enabled, derive the exact constraint
-    # quotient (charged, capped) and, when admitted, plan / admit / price / record the identity on it
+    # ---- the identity CANDIDATES under the invocation's route policy (3-4 Nov 2026) ----
+    # dense: the generic identity. support / quotient: the two accepted pilots' explicit arms (one
+    # mechanism, its admission rule, charged fallback). selector: the ONE selection policy of the
+    # generalization experiment (exact-zero gate -> quotient -> support -> dense, first sufficiently
+    # profitable, one absolute probe window, the dense candidate preserved) in `_select_route`.
     _r_dense = r
-    _qdecl = None
-    _qprice = None
-    if _QUOTIENT_ENABLED[0]:
-        _qres = _quotient_admission(r, bg, rejected, cap_bytes)
-        if _qres is not None:
-            r, _qdecl, _qprice = _qres
-    sel = P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes)
-    if sel["chosen"] is None:
-        best = sel["candidates"][0] if sel["candidates"] else None
-        rejected.append({"name": "identity",
-                         "reason": "no generic ordering fits the byte cap; "
-                                   "best forecast %s" % (best[1] if best else None)})
-        ipl = iest = None
-    else:
-        ipl, iest = sel["chosen"]
-    if ipl is not None:
-        # the independent checker's applicability is established BEFORE any
-        # producer work, against the PHYSICAL budget (config.AMENDMENTS[0]):
-        # the producer's saved order and the checker's OWN min-fill plan are
-        # forecast at the calibrated rates of the layout that executes; the
-        # refusal names the stage and the figures
-        _chk = CAPX.checker_plan(r)          # the checker's OWN schedule: admission AND pricing describe it
+    out.plan["route_policy"] = _ROUTE_POLICY[0]
+    if _ROUTE_POLICY[0] == "selector":
         try:
-            ifeas = PR.identity_checker_feasibility(ipl, r, bg, wall_remaining_s=bg.remaining(),
-                                                    rss_cap_bytes=cap_bytes, rss_now_bytes=CAPX.rss_current_bytes(),
-                                                    rss_baseline_bytes=CAPX.invocation_baseline_bytes(), checker_plan=_chk,
-                                                    diagnostic_shared_only=_DIAGNOSTIC_SHARED_ONLY[0])
+            _sel = _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps, records, prices)
+        except B.BudgetExceeded as e:
+            return Outcome(status="RESOURCE_STOP",
+                           reason="the shared work budget was exhausted during the selector's probes: %s" % e,
+                           rejected=rejected, stages=stages, budget=bg.report())
+        out.plan["selector"] = _sel
+        _SELECTOR_CURRENT[0] = _sel
+    else:
+        _qdecl = None
+        _qprice = None
+        if _QUOTIENT_ENABLED[0]:
+            # the quotienting pilot's arm: derive the exact constraint quotient (charged, capped) and,
+            # when admitted, plan / admit / price / record the identity on it
+            try:
+                _qres = _quotient_admission(r, bg, rejected, cap_bytes)
+            except B.BudgetExceeded as e:
+                return Outcome(status="RESOURCE_STOP",
+                               reason="the shared work budget was exhausted during the quotient admission: %s" % e,
+                               rejected=rejected, stages=stages, budget=bg.report())
+            if _qres is not None:
+                r, _qdecl, _qprice = _qres
+        try:
+            _dp = _dense_identity_plan(r, bg, cap_bytes, rejected)
         except B.BudgetExceeded as e:
             return Outcome(status="RESOURCE_STOP",
                            reason="the shared work budget was exhausted by the identity checker's "
                                   "capacity forecast: %s" % e,
                            rejected=rejected, stages=stages, budget=bg.report())
-        if ifeas["checker"] != "FEASIBLE":
-            rejected.append({"name": "identity", "typed": "PRICE_REFUSAL", "phase": "discover",
-                             "feasibility": ifeas,
-                             "reason": "identity refused before admission: %s (%s; forecast %s s, peak %.2f GiB)"
-                                       % (ifeas["checker"], ifeas.get("checker_reason"),
-                                          ifeas["forecast_seconds"].get("producer_and_checker"),
-                                          ifeas["forecast_bytes"].get("peak_producer_and_checker", 0) / 2 ** 30)})
-            ipl = None
-    if ipl is not None:
-        # the identity PROGRAM: the chosen order, the precision its depth bound
-        # requires and the input-derived exponent range -- recorded, not rechosen
-        _E = S._compiled_depth_bound(ipl, r)
-        try:
-            _p = A.choose_precision(_E, eps, 64)
-        except A.NumericalRefusal as e:
-            _p = None
-            rejected.append({"name": "identity", "reason": "no usable precision: %s" % e})
-        if _p is not None:
-            _B, _Q, _T = S._exponent_bounds(r)
-            _emin, _emax = -(_B + _Q + 256), (_T + _Q + 256)
-            from mdi import routes as _RT
-            iprog = _RT.identity_program(ipl.order, _p, _emin, _emax, queries,
-                                         max(80, _p + 16))
-            if _qdecl is not None:
-                iprog["quotient"] = {k: _qdecl[k] for k in ("fixed", "merged", "n_free", "digest", "method")}
-    _support_note = None
-    if ipl is not None and _p is not None and _SUPPORT_ENABLED[0]:
-        # ---- the bounded pilot (3 Nov 2026): compile the global support of the identity
-        # decomposition, price the sparse schedule from the ACTUAL counts, and emit the
-        # identity program WITH its support only when the admission rule holds; every
-        # other path falls back to the dense identity with the attempt charged
-        _support_note = _support_admission(ipl, r, bg, iprog, rejected, checker_plan=_chk)
-    if ipl is not None and _p is not None:
-        iprice = PR.price_identity_plan(ipl, iest, nq, _p,
-                                        {"constants": len(simp.removed_constants),
-                                         "splits": len(simp.split_pairs)},
-                                        checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table),
-                                        support=(iprog.get("support") if iprog else None), support_price=_support_note,
-                                        quotient=_qdecl, quotient_price=_qprice, dense_factors=_r_dense.factors)
-        isup = PT.supported("identity")
-        iprops = PT.PlanProperties()
-        iprops.set("mathematically_certified")          # exact elimination
-        if isup["executor_supported"]:
-            iprops.set("executor_supported")
-        if isup["checker_supported"]:
-            iprops.set("checker_supported")
-        iprops.set("complete_cost_priced")
-        r = _r_dense                              # the record describes the ORIGINAL restricted factors
-        irec = PT.PlanRecord(
-            request=PT.make_request(mh, eh, qh, queries, r.evidence, r.model.card,
-                                    eps if eps is not None else K.MAX_WIDTH,
-                                    {"precision": _p, "mode": "P", "emin": _emin, "emax": _emax}, iprog["order"],
-                                    iprog.get("checker"), bg.effective_limits()),
-            kind="identity", name="identity", model_sha256=mh, evidence_sha256=eh,
-            query_sha256=qh, preprocess_identity=simp.identity(),
-            factor_ownership=[(f.origin, "bag") for f in r.factors],
-            factor_scopes=[(f.origin, tuple(f.scope), tuple(f.card))
-                           for f in r.factors],
-            region_membership=[], cell_membership=[],
-            allocations={"transformation": Fr(0)},
-            executor_id="mdi.registry:pipeline_identity_executor",
-            checker_id="mdi.registry:pipeline_identity_checker",
-            numerical={"precision": _p, "mode": "P", "emin": _emin, "emax": _emax},
-            cost_counters={k: c.as_dict() for k, c in iprice.counters.items()},
-            storage_schedule={"peak_live_entries": iest["peak_live_entries"],
-                              "identity": executable_identity("identity", iprog, request=(mh, eh, qh, eps))},
-            rejected_alternatives=[], properties=iprops, program=iprog)
-        irec.identity_key = irec.storage_schedule["identity"]
-        records.append((irec, iprice, {"plan": ipl, "est": iest}))
-        prices.append(iprice)
+        ipl, iest, _chk = (_dp["plan"], _dp["est"], _dp["chk"]) if _dp["admitted"] else (None, None, None)
+        _built = _identity_program(ipl, r, eps, queries, rejected) if ipl is not None else None
+        _support_note = None
+        if _built is not None and _SUPPORT_ENABLED[0]:
+            # the support pilot's arm: compile the global support of the identity decomposition, price
+            # the sparse schedule from the ACTUAL counts, and emit the identity program WITH its support
+            # only when the admission rule holds; every other path falls back to the dense identity
+            # with the attempt charged
+            _support_note = _support_admission(ipl, r, bg, _built[0], rejected, checker_plan=_chk)
+        if _built is not None:
+            iprog, _p, _emin, _emax = _built
+            irec, iprice, _payload = _identity_record("identity", _r_dense, r, ipl, iest, _chk, iprog, _p, _emin, _emax,
+                                                      nq, simp, mh, eh, qh, queries, eps, bg,
+                                                      support_note=_support_note, qdecl=_qdecl, qprice=_qprice)
+            records.append((irec, iprice, _payload))
+            prices.append(iprice)
+        r = _r_dense                              # every later stage describes the ORIGINAL restricted factors
 
     # ---- every research route, as a PERSISTED PROGRAM ----
     # Each candidate is BUILT here (discovery is paid work) and recorded as a
@@ -850,7 +816,30 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
             t_b = time.monotonic()
             bown = law.restriction()
             stages["binding_restriction_s"] = stages.get("binding_restriction_s", 0.0) + (time.monotonic() - t_b)
-            rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes, bg=bg, eps=eps)
+            # the selector's TRANSFORMED record binds under the SAME absolute probe deadline its
+            # discovery ran under (the re-derivation of its declared transformation is part of the
+            # complete attempt); the preserved dense record binds under the invocation budget alone
+            _transformed = bool((back.program or {}).get("support") or (back.program or {}).get("quotient"))
+            _bind_bg = _SELECTOR_PROBE[0] if (_transformed and _SELECTOR_PROBE[0] is not None) else bg
+            t_bind = time.monotonic()
+            rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes, bg=_bind_bg, eps=eps)
+            if _transformed and _SELECTOR_CURRENT[0] is not None:
+                _SELECTOR_CURRENT[0]["transformed_binding_s"] = round(time.monotonic() - t_bind, 4)
+                if not rprice.eligible:
+                    _SELECTOR_CURRENT[0]["late_refusal"] = ("binding: %s" % rprice.ineligible_reason)[:300]
+                    rejected.append({"name": rec.name, "typed": "SELECTOR_LATE_REFUSAL", "phase": "persist",
+                                     "reason": "the admitted transformed record is ineligible at binding: %s; the preserved "
+                                               "dense identity stands" % rprice.ineligible_reason})
+        except ProbeExhausted as e:
+            # the LATE-REFUSAL transition: the probe window ran out while the transformed record was
+            # re-deriving its transformation at binding; the record is dropped (its charges stand) and
+            # the preserved dense identity candidate proceeds -- never a terminal
+            rejected.append({"name": rec.name, "typed": "SELECTOR_LATE_REFUSAL", "phase": "persist",
+                             "reason": "the transformed record's binding exceeded the selector's probe window: %s; the preserved "
+                                       "dense identity stands (every charge of the attempt is kept)" % e})
+            if _SELECTOR_CURRENT[0] is not None:
+                _SELECTOR_CURRENT[0]["late_refusal"] = ("binding: %s" % e)[:300]
+            continue
         except (PT.PlanError, ValueError, OSError) as e:
             rejected.append({"name": rec.name, "reason": "plan record failed persist/reload/binding: %s" % e})
             continue
@@ -931,7 +920,22 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                 "discovery_complete": _discovery_complete,
                 # the ledger of the discovery work ACTUALLY done in this
                 # invocation travels with the plan (repricing never rebuilds it)
-                "invocation_ledger": out.plan.get("invocation_ledger")}
+                "invocation_ledger": out.plan.get("invocation_ledger"),
+                "route_policy": out.plan.get("route_policy"),
+                "selector": out.plan.get("selector")}
+    if out.plan["selector"] is not None:
+        # the selector's recommendation against the route the complete-cost comparison selected: the
+        # engine's existing rule (lowest remaining priced arithmetic among eligible bound records
+        # within the byte cap) is the FINAL admission; a disagreement is a recorded late refusal
+        _blk = out.plan["selector"]
+        _pg = crec.program or {}
+        _blk["executed_route"] = "quotient" if _pg.get("quotient") else ("support" if _pg.get("support") else "dense")
+        _blk["selected_name"] = chosen_name
+        _blk["agreement"] = (_blk.get("recommended") == _blk["executed_route"])
+        if not _blk["agreement"] and not _blk.get("late_refusal"):
+            _why = next((x for x in cmp["all"] if x["name"] == "identity" and (x["ineligible_reason"] or x["admission_refusal"])), None)
+            _blk["late_refusal"] = ("selection: " + (_why["ineligible_reason"] or _why["admission_refusal"]))[:300] if _why else \
+                "selection: the admitted transformed record was eligible but priced above the preserved dense candidate (remaining arithmetic)"
     prog("select", "%s (%s)" % (chosen_name, crec.kind))
     if plan_only:
         # the GENUINE stop of the planning observation: discovery, persisted
@@ -2006,14 +2010,15 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
                                                   charge=(lambda n: bg.charge("pricing_entries", n, "quotient recognition")) if bg else None)
                 if _d["digest"] == str(prog["quotient"].get("digest")):
                     _qdecl = _d
-                    _rq = _QT.build_quotient(r, _d)
-                    _qprice = _QT.quotient_price(P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes)["chosen"][0],
+                    _rq = _QT.build_quotient(r, _d, deadline=(bg.deadline_fn("reprice:quotient construction") if bg else None))
+                    _qprice = _QT.quotient_price(P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes,
+                                                               deadline=(bg.deadline_fn("reprice:dense reference planning") if bg else None))["chosen"][0],
                                                  P.build_plan("program", prog["order"], _rq.free, _rq.card, _rq.factors))
                     r = _rq
             except (_QT.QuotientError, P.PlanError, KeyError, TypeError):
                 _qdecl = None
             if _qdecl is None:
-                price = PR.CostRecord(kind="identity", name="identity")
+                price = PR.CostRecord(kind="identity", name=rec.name)
                 price.eligible = False
                 price.ineligible_reason = "the record's declared constraint quotient could not be re-derived as declared at binding"
                 return price
@@ -2048,6 +2053,7 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
                                        checker_plan=_chk, hard_zeros=any(Fr(x) == 0 for f in r.factors for x in f.table),
                                        support=prog.get("support"), support_price=_sp,
                                        quotient=_qdecl, quotient_price=_qprice, dense_factors=_r_dense.factors)
+        price.name = rec.name                 # "identity", or "identity:dense" for the selector's preserved fallback
         if prog.get("support") and _sp is None and price.eligible:
             price.eligible = False
             price.ineligible_reason = "the record's declared support could not be re-derived as declared at binding"
@@ -2165,6 +2171,10 @@ _LEDGER_CURRENT = [None]       # the invocation ledger already built (attached t
 _DIAGNOSTIC_SHARED_ONLY = [False]   # the explicitly selected shared-aggregation-only diagnostic of THIS invocation
 _SUPPORT_ENABLED = [False]          # the bounded pilot's EXPLICIT selection (3 Nov 2026): compile the global support and run the identity sparsely when admitted
 _QUOTIENT_ENABLED = [False]         # the quotienting pilot's EXPLICIT selection (3 Nov 2026): solve the identity on the exact constraint quotient when admitted (3 Nov 2026)
+ROUTE_POLICIES = ("dense", "support", "quotient", "selector")
+_ROUTE_POLICY = ["dense"]           # the route policy of THIS invocation (generalization experiment, 3-4 Nov 2026)
+_SELECTOR_CURRENT = [None]          # the selector's attempt block of THIS invocation (attached to EVERY terminal, stops included)
+_SELECTOR_PROBE = [None]            # the selector's probe-deadline budget view (stage 4 binds the transformed record under it)
 
 
 def _begin_invocation():
@@ -2181,6 +2191,9 @@ def _begin_invocation():
     _DIAGNOSTIC_SHARED_ONLY[0] = False
     _SUPPORT_ENABLED[0] = False
     _QUOTIENT_ENABLED[0] = False
+    _ROUTE_POLICY[0] = "dense"
+    _SELECTOR_CURRENT[0] = None
+    _SELECTOR_PROBE[0] = None
     try:
         from mdi import quotient as _QT
         _QT._RECOGNITION_CACHE.clear()     # each invocation is charged its own recognition
@@ -2371,6 +2384,387 @@ def _attempt_end(a, status, **info):
             led["recognizer_runs_failed"] += 1
 
 
+# ======================= the identity candidates and the SELECTOR (3-4 Nov 2026) =======================
+
+SELECTOR_PROBE_WINDOW_S = 20.0       # ONE absolute window for every probe of an invocation (recognition, construction, planning,
+                                     # pricing, both support compilations) AND the transformed record's binding re-derivation
+SELECTOR_DENSE_RESERVE_S = 5.0       # the part of the construction allowance kept for the dense candidate's own pricing / record
+SELECTOR_WALL_MARGIN_S = 30.0        # the remaining-wall precondition's margin over window + dense forecast
+
+
+class ProbeExhausted(Exception):
+    """The selector's probe window is spent: a CHARGED FALLBACK to the preserved dense candidate,
+    never a terminal (the invocation's wall / memory / counter stops stay `BudgetExceeded`)."""
+
+
+_PROBE_CLOCK = [time.monotonic]      # the probe window's clock (injectable by the lifecycle controls; production: monotonic)
+
+
+class _ProbeBudget:
+    """A view of the invocation budget whose deadline callbacks ALSO enforce the selector's absolute
+    probe window. Every other attribute (charge, remaining, limits, tighten, used ...) is the real
+    budget's: the charges land on the shared counters as usual. A `phase:construction` stop raised
+    inside a probe becomes ProbeExhausted (the construction allowance's exhaustion ends discovery and
+    the dense fallback proceeds, as the budget contract says); wall / rss / counter stops propagate."""
+
+    def __init__(self, bg, probe_end, window_s):
+        self._bg = bg
+        self._end = probe_end
+        self.window_s = window_s
+
+    def deadline_fn(self, where=""):
+        bg, end, win = self._bg, self._end, self.window_s
+
+        def _dl():
+            try:
+                bg.check(where)
+            except B.BudgetExceeded as e:
+                if str(e.kind).startswith("phase:"):
+                    raise ProbeExhausted("the construction allowance is spent during %s (%s)" % (where, e))
+                raise
+            if _PROBE_CLOCK[0]() > end:
+                raise ProbeExhausted("the selector's %.1f s probe window is spent at %s" % (win, where))
+        return _dl
+
+    def check(self, where=""):
+        self.deadline_fn(where)()
+
+    def remaining_window_s(self):
+        return self._end - _PROBE_CLOCK[0]()
+
+    def __getattr__(self, k):
+        return getattr(self._bg, k)
+
+
+def _dense_identity_plan(r, bg, cap_bytes, rejected, deadline_bg=None, name="identity"):
+    """The dense identity's generic plan, its checker's OWN plan and the PHYSICAL admission
+    forecast (config.AMENDMENTS[0]), with the refusals recorded exactly as before. Returns a dict:
+    plan / est / chk / feasibility / admitted (False with the typed rejection appended when no
+    ordering fits the byte cap or the checker is not admissible). `deadline_bg` (a budget or
+    probe view) supplies the deadline callbacks of the planning and the occupancy probe."""
+    dbg = deadline_bg if deadline_bg is not None else bg
+    sel = P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes, deadline=dbg.deadline_fn("discover:identity planning"))
+    if sel["chosen"] is None:
+        best = sel["candidates"][0] if sel["candidates"] else None
+        rejected.append({"name": name,
+                         "reason": "no generic ordering fits the byte cap; "
+                                   "best forecast %s" % (best[1] if best else None)})
+        return {"plan": None, "est": None, "chk": None, "feasibility": None, "admitted": False, "selection": sel}
+    ipl, iest = sel["chosen"]
+    # the independent checker's applicability is established BEFORE any producer work, against the
+    # PHYSICAL budget: the producer's saved order and the checker's OWN min-fill plan are forecast at
+    # the calibrated rates of the layout that executes; the refusal names the stage and the figures
+    _chk = CAPX.checker_plan(r)          # the checker's OWN schedule: admission AND pricing describe it
+    ifeas = PR.identity_checker_feasibility(ipl, r, dbg, wall_remaining_s=bg.remaining(),
+                                            rss_cap_bytes=cap_bytes, rss_now_bytes=CAPX.rss_current_bytes(),
+                                            rss_baseline_bytes=CAPX.invocation_baseline_bytes(), checker_plan=_chk,
+                                            diagnostic_shared_only=_DIAGNOSTIC_SHARED_ONLY[0])
+    if ifeas["checker"] != "FEASIBLE":
+        rejected.append({"name": name, "typed": "PRICE_REFUSAL", "phase": "discover",
+                         "feasibility": ifeas,
+                         "reason": "identity refused before admission: %s (%s; forecast %s s, peak %.2f GiB)"
+                                   % (ifeas["checker"], ifeas.get("checker_reason"),
+                                      ifeas["forecast_seconds"].get("producer_and_checker"),
+                                      ifeas["forecast_bytes"].get("peak_producer_and_checker", 0) / 2 ** 30)})
+        return {"plan": ipl, "est": iest, "chk": _chk, "feasibility": ifeas, "admitted": False, "selection": sel}
+    return {"plan": ipl, "est": iest, "chk": _chk, "feasibility": ifeas, "admitted": True, "selection": sel}
+
+
+def _identity_program(ipl, r, eps, queries, rejected, name="identity"):
+    """The identity PROGRAM: the chosen order, the precision its depth bound requires and the
+    input-derived exponent range -- recorded, not rechosen. Returns (program, precision, emin,
+    emax) or None (no usable precision; the refusal recorded)."""
+    _E = S._compiled_depth_bound(ipl, r)
+    try:
+        _p = A.choose_precision(_E, eps, 64)
+    except A.NumericalRefusal as e:
+        rejected.append({"name": name, "reason": "no usable precision: %s" % e})
+        return None
+    _B, _Q, _T = S._exponent_bounds(r)
+    _emin, _emax = -(_B + _Q + 256), (_T + _Q + 256)
+    from mdi import routes as _RT
+    iprog = _RT.identity_program(ipl.order, _p, _emin, _emax, queries, max(80, _p + 16))
+    return iprog, _p, _emin, _emax
+
+
+def _identity_record(name, r_dense, r_work, ipl, iest, chk, iprog, p, emin, emax, nq, simp, mh, eh, qh, queries, eps, bg,
+                     support_note=None, qdecl=None, qprice=None):
+    """Price and record ONE identity candidate (dense, with a compiled support, or on a constraint
+    quotient). The record describes the ORIGINAL restricted factors (`r_dense`); the plan runs on
+    `r_work` (the quotient when declared). Returns (record, price, payload)."""
+    if qdecl is not None:
+        iprog["quotient"] = {k: qdecl[k] for k in ("fixed", "merged", "n_free", "digest", "method")}
+    iprice = PR.price_identity_plan(ipl, iest, nq, p,
+                                    {"constants": len(simp.removed_constants),
+                                     "splits": len(simp.split_pairs)},
+                                    checker_plan=chk, hard_zeros=any(Fr(x) == 0 for f in r_work.factors for x in f.table),
+                                    support=(iprog.get("support") if iprog else None), support_price=support_note,
+                                    quotient=qdecl, quotient_price=qprice, dense_factors=r_dense.factors)
+    iprice.name = name
+    isup = PT.supported("identity")
+    iprops = PT.PlanProperties()
+    iprops.set("mathematically_certified")          # exact elimination
+    if isup["executor_supported"]:
+        iprops.set("executor_supported")
+    if isup["checker_supported"]:
+        iprops.set("checker_supported")
+    iprops.set("complete_cost_priced")
+    r = r_dense                                     # the record describes the ORIGINAL restricted factors
+    irec = PT.PlanRecord(
+        request=PT.make_request(mh, eh, qh, queries, r.evidence, r.model.card,
+                                eps if eps is not None else K.MAX_WIDTH,
+                                {"precision": p, "mode": "P", "emin": emin, "emax": emax}, iprog["order"],
+                                iprog.get("checker"), bg.effective_limits()),
+        kind="identity", name=name, model_sha256=mh, evidence_sha256=eh,
+        query_sha256=qh, preprocess_identity=simp.identity(),
+        factor_ownership=[(f.origin, "bag") for f in r.factors],
+        factor_scopes=[(f.origin, tuple(f.scope), tuple(f.card))
+                       for f in r.factors],
+        region_membership=[], cell_membership=[],
+        allocations={"transformation": Fr(0)},
+        executor_id="mdi.registry:pipeline_identity_executor",
+        checker_id="mdi.registry:pipeline_identity_checker",
+        numerical={"precision": p, "mode": "P", "emin": emin, "emax": emax},
+        cost_counters={k: c.as_dict() for k, c in iprice.counters.items()},
+        storage_schedule={"peak_live_entries": iest["peak_live_entries"],
+                          "identity": executable_identity("identity", iprog, request=(mh, eh, qh, eps))},
+        rejected_alternatives=[], properties=iprops, program=iprog)
+    irec.identity_key = irec.storage_schedule["identity"]
+    return irec, iprice, {"plan": ipl, "est": iest}
+
+
+def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps, records, prices):
+    """The ONE selection policy of the generalization experiment (GENERALIZATION_DESIGN SS1, as
+    corrected by the overseer's review of 3 Nov 2026), run in discovery:
+
+      gate      exact zeros of the restricted, preprocessed tables == 0  ->  no probe (dense)
+      dense     the dense candidate is planned and forecast FIRST (its plan is the ratio reference
+                of every probe; its feasibility is the fallback's estimated time) and PRESERVED
+      budget    probes start only inside ONE absolute window = min(SELECTOR_PROBE_WINDOW_S,
+                construction allowance remaining - SELECTOR_DENSE_RESERVE_S), and only when the
+                remaining wall >= window + dense forecast (an ESTIMATE, reserved, never a guarantee)
+                + SELECTOR_WALL_MARGIN_S; otherwise the probes are skipped and recorded
+      quotient  recognition -> construction -> planning -> ratio (>= quotient.MIN_REDUCTION_RATIO)
+                -> checker plan / capacity forecast -> program -> price; a contradiction ends
+                probing (the support would be empty) and the dense candidate's zero-evidence proof
+                decides (ZERO_EVIDENCE_PROVED or ZERO_SUPPORT_UNCHECKED; no new proof mechanism)
+      support   (only when the quotient was not admitted) compilation on the producer's order ->
+                ratio (>= support.MIN_REDUCTION_RATIO) -> compilation on the checker's order when it
+                differs (the complete attempt: both charged, both inside the window) -> program ->
+                price; a refusal after the first compilation is an explicit late refusal
+      stop      first sufficiently profitable; both applicable -> quotient (probed first)
+
+    Every probe is recorded (mechanism, verdict, wall, charged entries, detail) in the returned
+    block and, when not admitted, as a typed rejection. ProbeExhausted (the window or the
+    construction allowance) is a charged fallback; BudgetExceeded (wall / rss / counter) propagates
+    as the invocation's terminal. The admitted transformed record AND the dense record are both
+    appended (the dense one named "identity:dense"); the engine's existing complete-cost comparison
+    among the eligible bound records is the FINAL admission (SS3), with a disagreement recorded."""
+    from mdi import quotient as QT, support as SP
+    t_sel = time.monotonic()
+    blk = {"policy": "selector", "attempts": [], "recommended": "dense", "transformed_record": None,
+           "dense_candidate": None, "late_refusal": None,
+           "window_rule": "min(%.1f s, construction allowance remaining - %.1f s reserve); one absolute deadline for every probe "
+                          "and the transformed record's binding re-derivation" % (SELECTOR_PROBE_WINDOW_S, SELECTOR_DENSE_RESERVE_S),
+           "precondition_rule": "remaining wall >= window + dense forecast total (estimate; reserved, not guaranteed) + %.1f s" % SELECTOR_WALL_MARGIN_S,
+           "units": {"wall_s": "monotonic seconds of the attempt", "charged_entries": "table entries / scan positions charged to the shared "
+                     "pricing counter by the attempt (recognition scans, quotient entries written, Boolean scan positions, occupancy probe)"}}
+    _SELECTOR_CURRENT[0] = blk            # a stop during the probes still carries every attempt recorded so far
+    # ---- the exact-zero gate (one input scan, charged)
+    zeros = 0
+    total = 0
+    for f in r.factors:
+        n = int(f.size())
+        total += n
+        zeros += sum(1 for x in f.table if x == 0)
+    bg.charge("pricing_entries", total, "selector gate")
+    blk["gate"] = {"zero_entries": zeros, "table_entries": total, "verdict": "bypass" if zeros == 0 else "probe"}
+    # ---- the dense candidate FIRST (planned, forecast, preserved)
+    dp = _dense_identity_plan(r, bg, cap_bytes, rejected)
+    ipl, iest, chk, feas = dp["plan"], dp["est"], dp["chk"], dp["feasibility"]
+    dense_total_s = float((feas or {}).get("forecast_seconds", {}).get("total") or 0.0) if dp["admitted"] else None
+    blk["dense_candidate"] = ("admitted (forecast %.1f s)" % dense_total_s if dp["admitted"] else
+                              ("refused: %s" % (rejected[-1].get("reason") if rejected else "no plan"))[:240])
+    built = _identity_program(ipl, r, eps, queries, rejected) if ipl is not None and dp["admitted"] else None
+    if zeros == 0:
+        blk["skipped"] = "gate: the restricted law has no exact zero; neither transformation can apply"
+    elif ipl is None:
+        blk["skipped"] = "no dense reference plan fits the byte cap: the probes' ratios have no reference (a recorded limitation, not a refusal of the transformations)"
+    else:
+        # ---- the probe window and the remaining-wall precondition
+        cons_left = float(bg.phase_limits.get("construction", 0.0)) - bg.phase_used("construction")
+        window = min(SELECTOR_PROBE_WINDOW_S, cons_left - SELECTOR_DENSE_RESERVE_S)
+        need = window + (dense_total_s or 0.0) + SELECTOR_WALL_MARGIN_S
+        blk["window_s"] = round(window, 3)
+        blk["precondition"] = {"remaining_wall_s": round(bg.remaining(), 3), "needed_s": round(need, 3),
+                               "dense_forecast_total_s": dense_total_s, "construction_allowance_left_s": round(cons_left, 3)}
+        if window <= 0:
+            blk["skipped"] = "insufficient construction allowance: %.3f s left, %.1f s reserved for the dense candidate" % (cons_left, SELECTOR_DENSE_RESERVE_S)
+        elif bg.remaining() < need:
+            blk["skipped"] = ("insufficient remaining wall: %.1f s < window %.1f s + dense forecast %s s + %.1f s margin"
+                              % (bg.remaining(), window, dense_total_s, SELECTOR_WALL_MARGIN_S))
+    if blk.get("skipped"):
+        rejected.append({"name": "selector", "typed": "SELECTOR_SKIPPED", "phase": "discover", "reason": blk["skipped"]})
+    transformed = None
+    if not blk.get("skipped"):
+        probe_end = _PROBE_CLOCK[0]() + window
+        pb = _ProbeBudget(bg, probe_end, window)
+        _SELECTOR_PROBE[0] = pb
+
+        def _attempt(mech, t0, used0, verdict, detail, **extra):
+            a = {"mechanism": mech, "verdict": verdict, "wall_s": round(time.monotonic() - t0, 4),
+                 "charged_entries": int(bg.used.get("pricing_entries", 0)) - used0, "detail": str(detail)[:300]}
+            a.update(extra)
+            blk["attempts"].append(a)
+            return a
+
+        def _charge(where):
+            return lambda n: bg.charge("pricing_entries", n, where)
+
+        # ================= probe 1: the exact constraint quotient =================
+        t0 = time.monotonic()
+        used0 = int(bg.used.get("pricing_entries", 0))
+        contradiction = False
+        try:
+            decl, _fresh = QT.recognize_cached(r.factors, r.free, r.card, deadline=pb.deadline_fn("selector:quotient recognition"),
+                                               charge=_charge("quotient recognition"))
+            if QT.eliminated(decl) == 0:
+                a = _attempt("quotient", t0, used0, "NOT_ADMITTED", "no forced state and no binary equality / complement relation is implied by the factor zeros",
+                             recognition=decl["recognition"])
+                rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"]})
+            else:
+                rq = QT.build_quotient(r, decl, deadline=pb.deadline_fn("selector:quotient construction"), charge=_charge("quotient construction"))
+                sel_q = P.choose_plan(rq.free, rq.card, rq.factors, 64, cap_bytes, deadline=pb.deadline_fn("selector:quotient planning")) if rq.free else None
+                if sel_q is None or sel_q["chosen"] is None:
+                    a = _attempt("quotient", t0, used0, "NOT_ADMITTED", "no generic ordering fits the byte cap on the quotient (or it has no free variable)",
+                                 eliminated={"fixed": len(decl["fixed"]), "merged": len(decl["merged"])})
+                    rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"]})
+                else:
+                    qpl, qest = sel_q["chosen"]
+                    qprice = QT.quotient_price(ipl, qpl)
+                    qprice["recognition"] = decl["recognition"]
+                    qprice["eliminated"] = {"fixed": len(decl["fixed"]), "merged": len(decl["merged"])}
+                    if not qprice["admitted"]:
+                        a = _attempt("quotient", t0, used0, "NOT_ADMITTED",
+                                     "schedule rows %d quotient vs %d dense (ratio %.2f) below the required %.0f-fold reduction"
+                                     % (qprice["quotient_schedule_rows"], qprice["dense_schedule_rows"], qprice["reduction_ratio"], QT.MIN_REDUCTION_RATIO),
+                                     reduction_ratio=qprice["reduction_ratio"], eliminated=qprice["eliminated"])
+                        rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"],
+                                         "quotient_price": qprice})
+                    else:
+                        # the quotient identity's OWN checker plan and physical admission, program and price
+                        rej_q = []
+                        dq = _dense_identity_plan(rq, bg, cap_bytes, rej_q, deadline_bg=pb, name="identity")
+                        if not dq["admitted"]:
+                            a = _attempt("quotient", t0, used0, "NOT_ADMITTED", "ratio %.2f admitted but the quotient identity is refused by the physical admission: %s"
+                                         % (qprice["reduction_ratio"], (rej_q[-1].get("reason") if rej_q else "no plan")), reduction_ratio=qprice["reduction_ratio"])
+                            rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"]})
+                        else:
+                            bq = _identity_program(dq["plan"], rq, eps, queries, rej_q)
+                            if bq is None:
+                                a = _attempt("quotient", t0, used0, "NOT_ADMITTED", "no usable precision on the quotient: %s" % (rej_q[-1].get("reason") if rej_q else ""))
+                                rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"]})
+                            else:
+                                qprice["admission_wall_s"] = round(time.monotonic() - t0, 4)
+                                qprog, qp, qemin, qemax = bq
+                                pb.check("selector:quotient pricing")
+                                transformed = _identity_record("identity", r, rq, dq["plan"], dq["est"], dq["chk"], qprog, qp, qemin, qemax,
+                                                               nq, simp, mh, eh, qh, queries, eps, bg, qdecl=decl, qprice=qprice)
+                                a = _attempt("quotient", t0, used0, "ADMITTED", "ratio %.2f (%d fixed, %d merged, %d free of %d)"
+                                             % (qprice["reduction_ratio"], len(decl["fixed"]), len(decl["merged"]), decl["n_free"], len(r.free)),
+                                             reduction_ratio=qprice["reduction_ratio"], eliminated=qprice["eliminated"], recognition=decl["recognition"])
+                                blk["recommended"] = "quotient"
+        except QT.Contradiction as e:
+            contradiction = True
+            a = _attempt("quotient", t0, used0, "CONTRADICTION", "NOT a certificate: the derived relations admit no positive configuration (%s); "
+                         "probing stops (the support would be empty); the dense candidate's zero-evidence proof decides: ZERO_EVIDENCE_PROVED when "
+                         "the original-factor proof establishes it, else ZERO_SUPPORT_UNCHECKED" % str(e)[:120])
+            rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_CONTRADICTION", "phase": "discover", "reason": a["detail"]})
+        except QT.QuotientError as e:
+            a = _attempt("quotient", t0, used0, "REFUSAL", "recognition did not complete: %s" % e)
+            rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_REFUSAL", "phase": "discover", "reason": a["detail"]})
+        except ProbeExhausted as e:
+            a = _attempt("quotient", t0, used0, "PROBE_EXHAUSTED", str(e))
+            rejected.append({"name": "identity+quotient", "typed": "SELECTOR_PROBE_EXHAUSTED", "phase": "discover", "reason": a["detail"]})
+        # ================= probe 2: the compiled global support (only when the quotient was not admitted) =================
+        if transformed is None and not contradiction and built is not None:
+            t0 = time.monotonic()
+            used0 = int(bg.used.get("pricing_entries", 0))
+            try:
+                if pb.remaining_window_s() <= 0:
+                    raise ProbeExhausted("the selector's %.1f s probe window is spent before the support probe" % window)
+                sup, _f1 = SP.compile_support_cached(ipl, r.factors, r.card, deadline=pb.deadline_fn("selector:support compilation"),
+                                                     charge=_charge("support compilation"))
+                sprice = SP.support_price(ipl, sup)
+                if not sprice["admitted"]:
+                    a = _attempt("support", t0, used0, "NOT_ADMITTED",
+                                 "schedule rows %d sparse vs %d dense (ratio %.1f) below the required %.0f-fold reduction"
+                                 % (sprice["counts"]["enumerated_schedule_rows"], sprice["dense_enumerated_schedule_rows"], sprice["reduction_ratio"], SP.MIN_REDUCTION_RATIO),
+                                 reduction_ratio=sprice["reduction_ratio"])
+                    rejected.append({"name": "identity+support", "typed": "SUPPORT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"],
+                                     "support_price": {k: v for k, v in sprice.items() if k not in ("counts", "checker")}})
+                else:
+                    if list(chk.order) != list(ipl.order):
+                        # the COMPLETE attempt: the checker reconstructs on ITS order, so its figures come from a
+                        # second compilation (charged, inside the same window); a refusal here is a late refusal
+                        # of an attempt whose first compilation was admitted
+                        try:
+                            sup_c, _f2 = SP.compile_support_cached(chk, r.factors, r.card, deadline=pb.deadline_fn("selector:support compilation (checker order)"),
+                                                                   charge=_charge("support compilation"))
+                        except SP.SupportError as e:
+                            raise _LateSupportRefusal("the checker-order compilation did not complete after the producer-order compilation was admitted (ratio %.1f): %s"
+                                                      % (sprice["reduction_ratio"], e))
+                        sprice["checker"] = SP.support_price(chk, sup_c)
+                        sprice["checker_compiled_separately"] = True
+                    else:
+                        sprice["checker"] = {k: v for k, v in sprice.items() if k != "checker"}      # a copy, never a self-reference
+                        sprice["checker_compiled_separately"] = False
+                    sprice["compile_wall_s"] = round(time.monotonic() - t0, 4)
+                    pb.check("selector:support pricing")
+                    sprog, sp_, semin, semax = built
+                    sprog = dict(sprog)
+                    sprog["support"] = sup.declaration()
+                    transformed = _identity_record("identity", r, r, ipl, iest, chk, sprog, sp_, semin, semax,
+                                                   nq, simp, mh, eh, qh, queries, eps, bg, support_note=sprice)
+                    a = _attempt("support", t0, used0, "ADMITTED", "ratio %.1f (%d sparse rows vs %d dense; checker order %s)"
+                                 % (sprice["reduction_ratio"], sprice["counts"]["enumerated_schedule_rows"], sprice["dense_enumerated_schedule_rows"],
+                                    "compiled separately" if sprice["checker_compiled_separately"] else "same as the producer's"),
+                                 reduction_ratio=sprice["reduction_ratio"], checker_compiled_separately=sprice["checker_compiled_separately"])
+                    blk["recommended"] = "support"
+            except _LateSupportRefusal as e:
+                a = _attempt("support", t0, used0, "LATE_REFUSAL", str(e))
+                rejected.append({"name": "identity+support", "typed": "SUPPORT_REFUSAL", "phase": "discover", "reason": a["detail"]})
+            except SP.SupportError as e:
+                a = _attempt("support", t0, used0, "REFUSAL", "support compilation did not complete: %s" % e)
+                rejected.append({"name": "identity+support", "typed": "SUPPORT_REFUSAL", "phase": "discover", "reason": a["detail"]})
+            except ProbeExhausted as e:
+                a = _attempt("support", t0, used0, "PROBE_EXHAUSTED", str(e))
+                rejected.append({"name": "identity+support", "typed": "SELECTOR_PROBE_EXHAUSTED", "phase": "discover", "reason": a["detail"]})
+        elif transformed is None and not contradiction and built is None:
+            blk["attempts"].append({"mechanism": "support", "verdict": "NOT_PROBED", "wall_s": 0.0, "charged_entries": 0,
+                                    "detail": "no admitted dense identity program to compile the support of (the dense candidate was refused)"})
+    # ---- the records: the admitted transformed candidate AND the preserved dense candidate
+    if transformed is not None:
+        records.append(transformed)
+        prices.append(transformed[1])
+        blk["transformed_record"] = transformed[0].identity_key
+    if built is not None:
+        dprog, dp_, demin, demax = built
+        dname = "identity:dense" if transformed is not None else "identity"
+        drec, dprice, dpay = _identity_record(dname, r, r, ipl, iest, chk, dict(dprog), dp_, demin, demax,
+                                              nq, simp, mh, eh, qh, queries, eps, bg)
+        records.append((drec, dprice, dpay))
+        prices.append(dprice)
+        blk["dense_record"] = drec.identity_key
+    blk["selector_wall_s"] = round(time.monotonic() - t_sel, 4)
+    blk["probes_charged_entries"] = sum(int(a.get("charged_entries", 0)) for a in blk["attempts"])
+    return blk
+
+
+class _LateSupportRefusal(Exception):
+    """The support attempt's second (checker-order) compilation refused after the first was admitted."""
+
+
 def _quotient_admission(r, bg, rejected, cap_bytes):
     """The quotienting pilot's admission (3 Nov 2026): recognize the exact constraint quotient of
     the restricted, preprocessed law (charged to the shared pricing counter; capped), build the
@@ -2399,12 +2793,13 @@ def _quotient_admission(r, bg, rejected, cap_bytes):
                                    % (time.monotonic() - t0, decl["recognition"]["entries_scanned"])})
         return None
     try:
-        rq = QT.build_quotient(r, decl)
+        rq = QT.build_quotient(r, decl, deadline=bg.deadline_fn("discover:quotient construction"),
+                               charge=lambda n: bg.charge("pricing_entries", n, "quotient construction"))
     except QT.Contradiction as e:
         rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_CONTRADICTION", "phase": "discover", "reason": str(e)})
         return None
-    sel_d = P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes)
-    sel_q = P.choose_plan(rq.free, rq.card, rq.factors, 64, cap_bytes) if rq.free else None
+    sel_d = P.choose_plan(r.free, r.card, r.factors, 64, cap_bytes, deadline=bg.deadline_fn("discover:dense reference planning"))
+    sel_q = P.choose_plan(rq.free, rq.card, rq.factors, 64, cap_bytes, deadline=bg.deadline_fn("discover:quotient planning")) if rq.free else None
     if sel_q is None or sel_q["chosen"] is None or sel_d["chosen"] is None:
         rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover",
                          "reason": "no generic ordering fits the byte cap on the quotient (or the quotient has no free variable); the dense identity stands"})

@@ -209,17 +209,20 @@ def verify_declaration(cl, decl, free, card):
     return bad
 
 
-def build_quotient(r, decl):
+def build_quotient(r, decl, deadline=None, charge=None):
     """The checker's OWN quotient construction: scatter every original positive entry that is
     consistent with the declaration into the quotient table (indexed by the representatives'
     assignment); a slot written twice with different values is a refusal; a factor with no free
-    variable left multiplies its scalar into the constant (zero -> refusal)."""
+    variable left multiplies its scalar into the constant (zero -> refusal). `deadline` is polled
+    once per factor; `charge(n)` receives the original entries scanned."""
     fixed = {int(v): int(s) for v, s in decl["fixed"].items()}
     merged = {int(v): (int(a[0]), int(a[1])) for v, a in decl["merged"].items()}
     free_q = [v for v in r.free if v not in fixed and v not in merged]
     const = Fr(r.constant)
     facs = []
     for f in r.factors:
+        if deadline is not None:
+            deadline()
         scope = tuple(f.scope)
         st = f.strides()
         reps = []
@@ -269,6 +272,8 @@ def build_quotient(r, decl):
                 raise A.NumericalRefusal("checker: the quotient slot of factor %d receives two different values" % f.origin)
         if any(t is None for t in tab):
             raise A.NumericalRefusal("checker: a quotient slot of factor %d has no consistent original entry" % f.origin)
+        if charge is not None:
+            charge(int(f.size()))
         facs.append(M.Factor(scope=tuple(reps), card=qcard, table=tab, origin=f.origin, scale=f.scale))
     return M.Restricted(model=r.model, evidence=dict(r.evidence), factors=facs, free=free_q,
                         card={v: int(r.card[v]) for v in free_q}, constant=const, impossible_factor=None)
