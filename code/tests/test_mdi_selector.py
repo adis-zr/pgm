@@ -449,3 +449,169 @@ def test_scorer_takes_its_problems_from_the_ledger_and_reports_a_missing_referen
     out = SCO.score_run(rd, pk, refdir=os.path.join(tmp, "refs2"), input_dir=os.path.join(tmp, "inputs"))
     assert out["problems"] == ["Alpha_1", "Beta_2"] and out["references_missing"] == ["Beta_2"]
     assert all("never ran" in c["diagnostics"] for c in out["cells"].values())
+
+
+# ================================================================ repairs of 4 November 2026 (overseer's review of f05698e)
+_M5Q = M.Model(nvars=5, card=[2] * 5, factors=[_eq(0, 1, 3, 5), _ne(1, 2, 2, 7), _eq(2, 3), _ne(3, 4),
+                                                M.Factor(scope=(0,), card=(2,), table=[Fr(2), Fr(3)], origin=9)]).validate()
+_M5S = M.Model(nvars=5, card=[2] * 5, factors=[M.Factor(scope=(i, j), card=(2, 2), table=[Fr(1), Fr(1), Fr(1), Fr(0)], origin=10 * i + j)
+                                                for i in range(5) for j in range(i + 1, 5)] +
+               [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(2 + v)], origin=v) for v in range(5)]).validate()
+
+
+def _late_refusal_ok(res, m, where):
+    assert res.status == "CERTIFIED_FALLBACK_ONLY" and _contained(res, m, {}), (res.status, res.reason)
+    blk = res.plan["selector"]
+    assert res.plan["chosen"] == "identity:dense" and blk["executed_route"] == "dense" and blk["recommended"] == "quotient"
+    assert blk["agreement"] is False and blk["late_refusal"].startswith("binding:") and where in blk["late_refusal"], blk["late_refusal"]
+    assert "priced above" not in blk["late_refusal"] and "arithmetic" not in blk["late_refusal"]        # no invented comparison loss
+    assert [a["verdict"] for a in blk["attempts"]] == ["ADMITTED"] and blk["attempts"][0]["charged_entries"] > 0   # the attempt's charge stands
+    typed = [x.get("typed") for x in res.rejected]
+    assert "SELECTOR_LATE_REFUSAL" in typed and not any(x.get("typed") is None and "binding" in str(x.get("reason")) for x in res.rejected)
+    assert [p["name"] for p in res.prices] == ["identity:dense"]                                          # the transformed record never reached selection
+    return blk
+
+
+def test_repair_inner_callback_probe_exhaustion_during_binding_keeps_its_type_and_is_a_typed_late_refusal(monkeypatch):
+    """(f05698e defect 1 / 3) ProbeExhausted raised by the INNER deadline callback inside `_reprice_loaded`
+    (the per-factor poll of the binding-time quotient construction) was wrapped by `bind_loaded` into a
+    PlanError: the record was dropped UNTYPED and the select stage invented a price-comparison loss.
+    Now the type survives to the typed handler; raising at the outer `bind_loaded` boundary would not
+    exercise this path."""
+    clock = [0.0]
+    monkeypatch.setattr(PLN, "_PROBE_CLOCK", [lambda: time.monotonic() + clock[0]])
+    # (a) the clock crosses the window just before the binding re-derivation: the FIRST inner poll fires
+    orig = PLN._reprice_loaded
+
+    def jump_then_reprice(rec, *a, **k):
+        if (rec.program or {}).get("quotient"):
+            clock[0] = 1000.0
+        return orig(rec, *a, **k)
+    monkeypatch.setattr(PLN, "_reprice_loaded", jump_then_reprice)
+    res = _run(_M5Q, {})
+    blk = _late_refusal_ok(res, _M5Q, "reprice:")
+    assert blk.get("transformed_binding_s") is None            # the binding never completed; its wall is not invented
+    monkeypatch.setattr(PLN, "_reprice_loaded", orig)
+    # (b) the clock crosses the window INSIDE the mechanism: the second quotient construction of the
+    # invocation is the binding-time one; its per-factor poll raises from within `_reprice_loaded`
+    clock[0] = 0.0
+    orig_bq = QT.build_quotient
+    calls = []
+
+    def jump_inside(r, decl, deadline=None, charge=None):
+        calls.append(deadline is not None)
+        if len(calls) == 2:
+            clock[0] = 1000.0                                   # strictly inside the binding re-derivation
+        return orig_bq(r, decl, deadline=deadline, charge=charge)
+    monkeypatch.setattr(QT, "build_quotient", jump_inside)
+    res2 = _run(_M5Q, {})
+    assert len(calls) >= 2
+    _late_refusal_ok(res2, _M5Q, "reprice:quotient construction")
+
+
+def test_repair_window_crossed_during_the_final_binding_primitive_is_refused_before_eligibility(monkeypatch):
+    """(f05698e defect 2) the window crossed AFTER the last inner poll -- during the final primitive of the
+    binding (the recorded-counter comparison) -- let the transformed record become eligible and run.
+    The complete-binding deadline check now refuses it (SELECTOR_LATE_REFUSAL), the elapsed time and
+    charges stand, the window is neither reset nor extended, the preserved dense candidate runs."""
+    clock = [0.0]
+    monkeypatch.setattr(PLN, "_PROBE_CLOCK", [lambda: time.monotonic() + clock[0]])
+    orig = PLN._price_disagrees
+    seen = []
+
+    def jump_in_final_primitive(counters, price):
+        if "quotient_fixed_variables" in price.counters:
+            clock[0] = 1000.0                                   # the LAST primitive of bind_loaded; nothing polls after it
+            seen.append(1)
+        return orig(counters, price)
+    monkeypatch.setattr(PLN, "_price_disagrees", jump_in_final_primitive)
+    res = _run(_M5Q, {})
+    assert seen, "the final primitive ran for the transformed record"
+    blk = _late_refusal_ok(res, _M5Q, "bind:complete transformed binding")
+    assert blk.get("transformed_binding_s") is None            # eligibility was refused before the binding wall was recorded
+    # the window was not reset: the deadline view is still past its end after the refusal
+    assert PLN._SELECTOR_PROBE[0] is not None and PLN._SELECTOR_PROBE[0].remaining_window_s() < 0
+    # the same crossing on the SUPPORT route's final primitive
+    m = _perm_chain(8, k=4, seed=1)
+    clock[0] = 0.0
+    seen.clear()
+
+    def jump_support(counters, price):
+        if "support_rows_total" in price.counters:
+            clock[0] = 1000.0
+            seen.append(1)
+        return orig(counters, price)
+    monkeypatch.setattr(PLN, "_price_disagrees", jump_support)
+    res2 = _run(m, {})
+    assert seen and res2.status == "CERTIFIED_FALLBACK_ONLY" and _contained(res2, m, {})
+    b2 = res2.plan["selector"]
+    assert res2.plan["chosen"] == "identity:dense" and b2["late_refusal"].startswith("binding:") and "bind:complete" in b2["late_refusal"]
+    assert res2.plan["executed"]["layout"] != "sparse-support"
+
+
+def test_repair_global_stop_inside_a_mechanism_retains_the_started_attempt_and_stays_terminal(monkeypatch):
+    """(f05698e defect 4) a shared-counter stop raised INSIDE the recognizer after charged work (the
+    seven-position control) left NO attempt record. The attempt is now registered before the mechanism
+    runs and finalized on the stop with its mechanism, stop kind, known elapsed time and known counter
+    delta; unknown measurements stay None (never 0); the stop remains terminal -- no next probe."""
+    orig_charge = B.Budget.charge
+    limited = ["quotient recognition"]
+
+    def seven(self, name, amount=1, where=""):
+        cur = orig_charge(self, name, amount, where)
+        key = "%s@%s" % (name, where)
+        if where in limited and self.used_by_source.get(key, 0) > 7:
+            raise B.BudgetExceeded(name, self.used_by_source[key], 7, where)
+        return cur
+    monkeypatch.setattr(B.Budget, "charge", seven)
+    res = _run(_M5Q, {})
+    assert res.status == "RESOURCE_STOP" and "selector's probes" in res.reason and not res.intervals
+    blk = res.plan["selector"]
+    assert len(blk["attempts"]) == 1
+    a = blk["attempts"][0]
+    assert a["mechanism"] == "quotient" and a["verdict"] == "GLOBAL_STOP" and a["stop_kind"] == "pricing_entries"
+    assert a["charged_entries"] == 8 and a["wall_s"] is not None and a["wall_s"] >= 0          # the KNOWN delta: 8 positions before the stop
+    assert blk["probes_charged_entries"] == 8 and blk["probes_charged_entries_unknown"] == 0
+    assert not any(x["mechanism"] == "support" for x in blk["attempts"])                        # no next probe after a global stop
+    # the equivalent SUPPORT path: the quotient probe completes (nothing eliminated), the support compiler stops
+    limited[:] = ["support compilation"]
+    res2 = _run(_M5S, {})
+    assert res2.status == "RESOURCE_STOP" and not res2.intervals
+    atts = res2.plan["selector"]["attempts"]
+    assert [(x["mechanism"], x["verdict"]) for x in atts] == [("quotient", "NOT_ADMITTED"), ("support", "GLOBAL_STOP")]
+    assert atts[1]["stop_kind"] == "pricing_entries" and atts[1]["charged_entries"] is not None and atts[1]["charged_entries"] >= 8
+    assert atts[0]["charged_entries"] > 0
+    # a wall stop inside the recognizer: the started attempt is retained with the wall kind; unknown charge is None, not 0
+    monkeypatch.undo()
+
+    def wall_inside(*a, **k):
+        raise B.BudgetExceeded("wall", 1.0, 0.5, "injected inside the recognizer")
+    monkeypatch.setattr(QT, "recognize_cached", wall_inside)
+    res3 = _run(_M5Q, {})
+    assert res3.status == "RESOURCE_STOP"
+    a3 = res3.plan["selector"]["attempts"][0]
+    assert a3["mechanism"] == "quotient" and a3["verdict"] == "GLOBAL_STOP" and a3["stop_kind"] == "wall" and a3["charged_entries"] == 0 and a3["wall_s"] is not None
+    # a STARTED record that is never finalized reports None, and the aggregate counts it as unknown rather than zero
+    blk_fake = {"attempts": [{"mechanism": "quotient", "verdict": "STARTED", "wall_s": None, "charged_entries": None}]}
+    known = [x["charged_entries"] for x in blk_fake["attempts"] if x.get("charged_entries") is not None]
+    assert sum(known) == 0 and len(blk_fake["attempts"]) - len(known) == 1
+
+
+def test_repair_policy_constants_are_frozen_by_a_recorded_amendment_and_the_packet_is_verified_whole():
+    from mdi import config as K
+    assert len(K.AMENDMENTS) == 2 and K.AMENDMENTS[1]["date"] == "2026-11-04" and "SELECTOR_POLICY" in K.AMENDMENTS[1]["change"]
+    assert K.SELECTOR_POLICY == {"probe_window_s": 20.0, "dense_reserve_s": 5.0, "wall_margin_s": 30.0}
+    assert (PLN.SELECTOR_PROBE_WINDOW_S, PLN.SELECTOR_DENSE_RESERVE_S, PLN.SELECTOR_WALL_MARGIN_S) == (20.0, 5.0, 30.0)
+    assert K.AMENDMENTS[0]["date"] == "2026-11-02"                                   # the capacity amendment unchanged
+    # the launcher verifies the physical packet's WHOLE-FILE sha256 against the bindings' pin, before any member is read
+    from test_mdi_launch import _synthetic
+    tmp = tempfile.mkdtemp()
+    pk, pp, pin, bp, b, dummy = _synthetic(tmp)
+    b2 = dict(b, packet={"name": os.path.basename(pk), "sha256": "0" * 64})
+    with pytest.raises(L.Refused) as ei:
+        L.prepare(os.path.join(tmp, "run_bad"), b2, pin, bp, pp, packet=pk, argv=["launch", "control"])
+    assert "the packet" in str(ei.value) and "bindings pin" in str(ei.value)
+    assert not os.path.exists(os.path.join(tmp, "inputs"))                             # nothing was restored before the refusal
+    b3 = dict(b, packet={"name": os.path.basename(pk), "sha256": L.sha256_file(pk)})
+    man, idir = L.prepare(os.path.join(tmp, "run_ok"), b3, pin, bp, pp, packet=pk, argv=["launch", "control"])
+    assert man["packet"]["whole_file_verified"] is True and man["packet"]["sha256"] == L.sha256_file(pk) == man["packet"]["pinned_sha256"]

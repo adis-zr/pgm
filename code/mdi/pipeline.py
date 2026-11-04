@@ -431,10 +431,13 @@ def finalize_terminal(out, bg):
     if _LEDGER_CURRENT[0] is not None and not (out.plan or {}).get("invocation_ledger"):
         out.plan = dict(out.plan or {})
         out.plan["invocation_ledger"] = dict(_LEDGER_CURRENT[0])
-    # the selector's attempt record (every probe, its wall and its charge) is likewise never dropped
+    # the selector's attempt record (every probe, its wall and its charge) is likewise never dropped,
+    # and a partial block (a stop inside a probe) is summarized here with its unknowns kept unknown
     if _SELECTOR_CURRENT[0] is not None and not (out.plan or {}).get("selector"):
         out.plan = dict(out.plan or {})
         out.plan["selector"] = _SELECTOR_CURRENT[0]
+    if (out.plan or {}).get("selector") is not None:
+        _summarize_selector_block(out.plan["selector"])
     return out
 
 
@@ -823,6 +826,13 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
             _bind_bg = _SELECTOR_PROBE[0] if (_transformed and _SELECTOR_PROBE[0] is not None) else bg
             t_bind = time.monotonic()
             rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes, bg=_bind_bg, eps=eps)
+            if _transformed and _SELECTOR_PROBE[0] is not None:
+                # the COMPLETE binding deadline (repair of 4 Nov 2026): binding, repricing and identity
+                # validation have returned; the probe budget is tested once more BEFORE the record can
+                # become eligible for selection -- a window spent during the final primitive (after the
+                # last inner poll) is a late refusal, never a selected record; the window is neither
+                # reset nor extended, the elapsed time and the charges stand
+                _SELECTOR_PROBE[0].check("bind:complete transformed binding")
             if _transformed and _SELECTOR_CURRENT[0] is not None:
                 _SELECTOR_CURRENT[0]["transformed_binding_s"] = round(time.monotonic() - t_bind, 4)
                 if not rprice.eligible:
@@ -933,9 +943,18 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
         _blk["selected_name"] = chosen_name
         _blk["agreement"] = (_blk.get("recommended") == _blk["executed_route"])
         if not _blk["agreement"] and not _blk.get("late_refusal"):
-            _why = next((x for x in cmp["all"] if x["name"] == "identity" and (x["ineligible_reason"] or x["admission_refusal"])), None)
-            _blk["late_refusal"] = ("selection: " + (_why["ineligible_reason"] or _why["admission_refusal"]))[:300] if _why else \
-                "selection: the admitted transformed record was eligible but priced above the preserved dense candidate (remaining arithmetic)"
+            # the transformed record is named "identity" when it exists; the reason names what ACTUALLY
+            # happened to it: refused by the comparison's admission rule, out-priced in the comparison it
+            # took part in, or never bound (dropped before selection -- then the stage-4 handler already
+            # recorded the late refusal and this branch is not reached)
+            _tx = next((x for x in cmp["all"] if x["name"] == "identity"), None) if _blk.get("transformed_record") else None
+            if _tx is None:
+                _blk["late_refusal"] = "binding: the admitted transformed record did not reach the selection (dropped at binding; see rejected)"
+            elif _tx["ineligible_reason"] or _tx["admission_refusal"]:
+                _blk["late_refusal"] = ("selection: " + (_tx["ineligible_reason"] or _tx["admission_refusal"]))[:300]
+            else:
+                _blk["late_refusal"] = ("selection: the admitted transformed record was eligible and compared, and the preserved dense "
+                                        "candidate's remaining priced arithmetic was lower (%s vs %s)" % (_tx["total_arithmetic"], cmp["chosen"]["total_arithmetic"]))[:300]
     prog("select", "%s (%s)" % (chosen_name, crec.kind))
     if plan_only:
         # the GENUINE stop of the planning observation: discovery, persisted
@@ -1632,8 +1651,8 @@ def bind_loaded(back, mh, eh, qh, r, simp, queries, nq, cap_bytes, bg=None, eps=
                            "the current request")
     try:
         rprice = _reprice_loaded(back, r, queries, nq, simp, cap_bytes, bg=bg)
-    except (PT.PlanError, B.BudgetExceeded):
-        raise
+    except (PT.PlanError, B.BudgetExceeded, ProbeExhausted):
+        raise                                  # typed stops keep their type (the selector's probe window included; repair of 4 Nov 2026)
     except Exception as e:
         # an undercharged or inconsistent record does not RE-DERIVE (the
         # residual's recomputed certificate exceeds the recorded allowance, a
@@ -2386,10 +2405,12 @@ def _attempt_end(a, status, **info):
 
 # ======================= the identity candidates and the SELECTOR (3-4 Nov 2026) =======================
 
-SELECTOR_PROBE_WINDOW_S = 20.0       # ONE absolute window for every probe of an invocation (recognition, construction, planning,
-                                     # pricing, both support compilations) AND the transformed record's binding re-derivation
-SELECTOR_DENSE_RESERVE_S = 5.0       # the part of the construction allowance kept for the dense candidate's own pricing / record
-SELECTOR_WALL_MARGIN_S = 30.0        # the remaining-wall precondition's margin over window + dense forecast
+# the selector's three policy constants are FROZEN by config.AMENDMENTS[1] (overseer, 4 Nov 2026): ONE absolute window for
+# every probe of an invocation (recognition, construction, planning, pricing, both support compilations) AND the transformed
+# record's binding; the part of the construction allowance kept for the dense candidate; the remaining-wall margin
+SELECTOR_PROBE_WINDOW_S = float(K.SELECTOR_POLICY["probe_window_s"])
+SELECTOR_DENSE_RESERVE_S = float(K.SELECTOR_POLICY["dense_reserve_s"])
+SELECTOR_WALL_MARGIN_S = float(K.SELECTOR_POLICY["wall_margin_s"])
 
 
 class ProbeExhausted(Exception):
@@ -2569,6 +2590,7 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
            "precondition_rule": "remaining wall >= window + dense forecast total (estimate; reserved, not guaranteed) + %.1f s" % SELECTOR_WALL_MARGIN_S,
            "units": {"wall_s": "monotonic seconds of the attempt", "charged_entries": "table entries / scan positions charged to the shared "
                      "pricing counter by the attempt (recognition scans, quotient entries written, Boolean scan positions, occupancy probe)"}}
+    blk["selector_started_monotonic"] = t_sel
     _SELECTOR_CURRENT[0] = blk            # a stop during the probes still carries every attempt recorded so far
     # ---- the exact-zero gate (one input scan, charged)
     zeros = 0
@@ -2611,11 +2633,25 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
         pb = _ProbeBudget(bg, probe_end, window)
         _SELECTOR_PROBE[0] = pb
 
-        def _attempt(mech, t0, used0, verdict, detail, **extra):
-            a = {"mechanism": mech, "verdict": verdict, "wall_s": round(time.monotonic() - t0, 4),
-                 "charged_entries": int(bg.used.get("pricing_entries", 0)) - used0, "detail": str(detail)[:300]}
-            a.update(extra)
+        def _start(mech):
+            # the attempt is REGISTERED before its mechanism runs (repair of 4 Nov 2026): a stop raised
+            # inside the mechanism -- a global wall / RSS / counter stop after charged work included --
+            # finds the record and finalizes it; measurements not known at that point stay None
+            a = {"mechanism": mech, "verdict": "STARTED", "wall_s": None, "charged_entries": None, "detail": "started; not finalized"}
             blk["attempts"].append(a)
+            return a
+
+        def _attempt(a, t0, used0, verdict, detail, **extra):
+            try:
+                elapsed = round(time.monotonic() - t0, 4)
+            except Exception:                                     # pragma: no cover
+                elapsed = None
+            try:
+                charged = int(bg.used.get("pricing_entries", 0)) - used0
+            except Exception:                                     # pragma: no cover
+                charged = None                                    # UNKNOWN stays None, never 0
+            a.update({"verdict": verdict, "wall_s": elapsed, "charged_entries": charged, "detail": str(detail)[:300]})
+            a.update(extra)
             return a
 
         def _charge(where):
@@ -2625,18 +2661,19 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
         t0 = time.monotonic()
         used0 = int(bg.used.get("pricing_entries", 0))
         contradiction = False
+        aq = _start("quotient")
         try:
             decl, _fresh = QT.recognize_cached(r.factors, r.free, r.card, deadline=pb.deadline_fn("selector:quotient recognition"),
                                                charge=_charge("quotient recognition"))
             if QT.eliminated(decl) == 0:
-                a = _attempt("quotient", t0, used0, "NOT_ADMITTED", "no forced state and no binary equality / complement relation is implied by the factor zeros",
+                a = _attempt(aq, t0, used0, "NOT_ADMITTED", "no forced state and no binary equality / complement relation is implied by the factor zeros",
                              recognition=decl["recognition"])
                 rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"]})
             else:
                 rq = QT.build_quotient(r, decl, deadline=pb.deadline_fn("selector:quotient construction"), charge=_charge("quotient construction"))
                 sel_q = P.choose_plan(rq.free, rq.card, rq.factors, 64, cap_bytes, deadline=pb.deadline_fn("selector:quotient planning")) if rq.free else None
                 if sel_q is None or sel_q["chosen"] is None:
-                    a = _attempt("quotient", t0, used0, "NOT_ADMITTED", "no generic ordering fits the byte cap on the quotient (or it has no free variable)",
+                    a = _attempt(aq, t0, used0, "NOT_ADMITTED", "no generic ordering fits the byte cap on the quotient (or it has no free variable)",
                                  eliminated={"fixed": len(decl["fixed"]), "merged": len(decl["merged"])})
                     rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"]})
                 else:
@@ -2645,7 +2682,7 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
                     qprice["recognition"] = decl["recognition"]
                     qprice["eliminated"] = {"fixed": len(decl["fixed"]), "merged": len(decl["merged"])}
                     if not qprice["admitted"]:
-                        a = _attempt("quotient", t0, used0, "NOT_ADMITTED",
+                        a = _attempt(aq, t0, used0, "NOT_ADMITTED",
                                      "schedule rows %d quotient vs %d dense (ratio %.2f) below the required %.0f-fold reduction"
                                      % (qprice["quotient_schedule_rows"], qprice["dense_schedule_rows"], qprice["reduction_ratio"], QT.MIN_REDUCTION_RATIO),
                                      reduction_ratio=qprice["reduction_ratio"], eliminated=qprice["eliminated"])
@@ -2656,13 +2693,13 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
                         rej_q = []
                         dq = _dense_identity_plan(rq, bg, cap_bytes, rej_q, deadline_bg=pb, name="identity")
                         if not dq["admitted"]:
-                            a = _attempt("quotient", t0, used0, "NOT_ADMITTED", "ratio %.2f admitted but the quotient identity is refused by the physical admission: %s"
+                            a = _attempt(aq, t0, used0, "NOT_ADMITTED", "ratio %.2f admitted but the quotient identity is refused by the physical admission: %s"
                                          % (qprice["reduction_ratio"], (rej_q[-1].get("reason") if rej_q else "no plan")), reduction_ratio=qprice["reduction_ratio"])
                             rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"]})
                         else:
                             bq = _identity_program(dq["plan"], rq, eps, queries, rej_q)
                             if bq is None:
-                                a = _attempt("quotient", t0, used0, "NOT_ADMITTED", "no usable precision on the quotient: %s" % (rej_q[-1].get("reason") if rej_q else ""))
+                                a = _attempt(aq, t0, used0, "NOT_ADMITTED", "no usable precision on the quotient: %s" % (rej_q[-1].get("reason") if rej_q else ""))
                                 rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_NOT_ADMITTED", "phase": "discover", "reason": a["detail"]})
                             else:
                                 qprice["admission_wall_s"] = round(time.monotonic() - t0, 4)
@@ -2670,26 +2707,36 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
                                 pb.check("selector:quotient pricing")
                                 transformed = _identity_record("identity", r, rq, dq["plan"], dq["est"], dq["chk"], qprog, qp, qemin, qemax,
                                                                nq, simp, mh, eh, qh, queries, eps, bg, qdecl=decl, qprice=qprice)
-                                a = _attempt("quotient", t0, used0, "ADMITTED", "ratio %.2f (%d fixed, %d merged, %d free of %d)"
+                                a = _attempt(aq, t0, used0, "ADMITTED", "ratio %.2f (%d fixed, %d merged, %d free of %d)"
                                              % (qprice["reduction_ratio"], len(decl["fixed"]), len(decl["merged"]), decl["n_free"], len(r.free)),
                                              reduction_ratio=qprice["reduction_ratio"], eliminated=qprice["eliminated"], recognition=decl["recognition"])
                                 blk["recommended"] = "quotient"
         except QT.Contradiction as e:
             contradiction = True
-            a = _attempt("quotient", t0, used0, "CONTRADICTION", "NOT a certificate: the derived relations admit no positive configuration (%s); "
+            a = _attempt(aq, t0, used0, "CONTRADICTION", "NOT a certificate: the derived relations admit no positive configuration (%s); "
                          "probing stops (the support would be empty); the dense candidate's zero-evidence proof decides: ZERO_EVIDENCE_PROVED when "
                          "the original-factor proof establishes it, else ZERO_SUPPORT_UNCHECKED" % str(e)[:120])
             rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_CONTRADICTION", "phase": "discover", "reason": a["detail"]})
         except QT.QuotientError as e:
-            a = _attempt("quotient", t0, used0, "REFUSAL", "recognition did not complete: %s" % e)
+            a = _attempt(aq, t0, used0, "REFUSAL", "recognition did not complete: %s" % e)
             rejected.append({"name": "identity+quotient", "typed": "QUOTIENT_REFUSAL", "phase": "discover", "reason": a["detail"]})
         except ProbeExhausted as e:
-            a = _attempt("quotient", t0, used0, "PROBE_EXHAUSTED", str(e))
+            a = _attempt(aq, t0, used0, "PROBE_EXHAUSTED", str(e))
             rejected.append({"name": "identity+quotient", "typed": "SELECTOR_PROBE_EXHAUSTED", "phase": "discover", "reason": a["detail"]})
+        except B.BudgetExceeded as e:
+            # a GLOBAL stop (wall / RSS / counter) inside the mechanism after charged work: the started
+            # attempt is finalized with its stop kind, known elapsed time and known counter delta, then the
+            # stop stays TERMINAL -- no next probe, no retry
+            _attempt(aq, t0, used0, "GLOBAL_STOP", "terminal %s stop inside the quotient probe: %s" % (e.kind, e), stop_kind=str(e.kind))
+            raise
+        except Exception as e:
+            _attempt(aq, t0, used0, "IMPLEMENTATION_FAULT", "%s: %s" % (type(e).__name__, e))
+            raise
         # ================= probe 2: the compiled global support (only when the quotient was not admitted) =================
         if transformed is None and not contradiction and built is not None:
             t0 = time.monotonic()
             used0 = int(bg.used.get("pricing_entries", 0))
+            asup = _start("support")
             try:
                 if pb.remaining_window_s() <= 0:
                     raise ProbeExhausted("the selector's %.1f s probe window is spent before the support probe" % window)
@@ -2697,7 +2744,7 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
                                                      charge=_charge("support compilation"))
                 sprice = SP.support_price(ipl, sup)
                 if not sprice["admitted"]:
-                    a = _attempt("support", t0, used0, "NOT_ADMITTED",
+                    a = _attempt(asup, t0, used0, "NOT_ADMITTED",
                                  "schedule rows %d sparse vs %d dense (ratio %.1f) below the required %.0f-fold reduction"
                                  % (sprice["counts"]["enumerated_schedule_rows"], sprice["dense_enumerated_schedule_rows"], sprice["reduction_ratio"], SP.MIN_REDUCTION_RATIO),
                                  reduction_ratio=sprice["reduction_ratio"])
@@ -2726,20 +2773,26 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
                     sprog["support"] = sup.declaration()
                     transformed = _identity_record("identity", r, r, ipl, iest, chk, sprog, sp_, semin, semax,
                                                    nq, simp, mh, eh, qh, queries, eps, bg, support_note=sprice)
-                    a = _attempt("support", t0, used0, "ADMITTED", "ratio %.1f (%d sparse rows vs %d dense; checker order %s)"
+                    a = _attempt(asup, t0, used0, "ADMITTED", "ratio %.1f (%d sparse rows vs %d dense; checker order %s)"
                                  % (sprice["reduction_ratio"], sprice["counts"]["enumerated_schedule_rows"], sprice["dense_enumerated_schedule_rows"],
                                     "compiled separately" if sprice["checker_compiled_separately"] else "same as the producer's"),
                                  reduction_ratio=sprice["reduction_ratio"], checker_compiled_separately=sprice["checker_compiled_separately"])
                     blk["recommended"] = "support"
             except _LateSupportRefusal as e:
-                a = _attempt("support", t0, used0, "LATE_REFUSAL", str(e))
+                a = _attempt(asup, t0, used0, "LATE_REFUSAL", str(e))
                 rejected.append({"name": "identity+support", "typed": "SUPPORT_REFUSAL", "phase": "discover", "reason": a["detail"]})
             except SP.SupportError as e:
-                a = _attempt("support", t0, used0, "REFUSAL", "support compilation did not complete: %s" % e)
+                a = _attempt(asup, t0, used0, "REFUSAL", "support compilation did not complete: %s" % e)
                 rejected.append({"name": "identity+support", "typed": "SUPPORT_REFUSAL", "phase": "discover", "reason": a["detail"]})
             except ProbeExhausted as e:
-                a = _attempt("support", t0, used0, "PROBE_EXHAUSTED", str(e))
+                a = _attempt(asup, t0, used0, "PROBE_EXHAUSTED", str(e))
                 rejected.append({"name": "identity+support", "typed": "SELECTOR_PROBE_EXHAUSTED", "phase": "discover", "reason": a["detail"]})
+            except B.BudgetExceeded as e:
+                _attempt(asup, t0, used0, "GLOBAL_STOP", "terminal %s stop inside the support probe: %s" % (e.kind, e), stop_kind=str(e.kind))
+                raise
+            except Exception as e:
+                _attempt(asup, t0, used0, "IMPLEMENTATION_FAULT", "%s: %s" % (type(e).__name__, e))
+                raise
         elif transformed is None and not contradiction and built is None:
             blk["attempts"].append({"mechanism": "support", "verdict": "NOT_PROBED", "wall_s": 0.0, "charged_entries": 0,
                                     "detail": "no admitted dense identity program to compile the support of (the dense candidate was refused)"})
@@ -2756,8 +2809,21 @@ def _select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps
         records.append((drec, dprice, dpay))
         prices.append(dprice)
         blk["dense_record"] = drec.identity_key
-    blk["selector_wall_s"] = round(time.monotonic() - t_sel, 4)
-    blk["probes_charged_entries"] = sum(int(a.get("charged_entries", 0)) for a in blk["attempts"])
+    _summarize_selector_block(blk)
+    return blk
+
+
+def _summarize_selector_block(blk):
+    """The block's aggregates, computed on the normal return AND on every terminal that carries a
+    partial block (a global stop inside a probe): known charges summed, UNKNOWN charges counted
+    separately (never as 0), the selector's wall from its registered start."""
+    if "probes_charged_entries" in blk:
+        return blk
+    t0 = blk.pop("selector_started_monotonic", None)
+    blk["selector_wall_s"] = round(time.monotonic() - t0, 4) if t0 is not None else None
+    _known = [a["charged_entries"] for a in blk.get("attempts", []) if a.get("charged_entries") is not None]
+    blk["probes_charged_entries"] = sum(int(x) for x in _known)
+    blk["probes_charged_entries_unknown"] = len(blk.get("attempts", [])) - len(_known)      # attempts whose charge is NOT known (never counted as 0)
     return blk
 
 

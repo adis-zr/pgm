@@ -3001,7 +3001,7 @@ def test_r4_declared_assignment_cap_is_4096():
                 "aggregated_kernel_entries", "level2_contraction_space",
                 "checker_contraction_space"):
         assert K.CAPS[key] == 4096, (key, K.CAPS[key])
-    assert len(K.AMENDMENTS) == 1 and K.AMENDMENTS[0]["date"] == "2026-11-02", "a cap change must be a recorded amendment"
+    assert len(K.AMENDMENTS) >= 1 and K.AMENDMENTS[0]["date"] == "2026-11-02", "a cap change must be a recorded amendment"
     assert "PHYSICAL" in K.AMENDMENTS[0]["change"] and K.CAPS["local_mass_entries"] == 60_000_000_000
 
 

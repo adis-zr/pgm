@@ -197,7 +197,7 @@ def test_request_v4_names_the_capacity_policy_and_the_amendment_is_recorded():
     assert PT.REQUEST_VERSION == 4 and "capacity" in PT.REQUEST_KEYS
     pol = PT.capacity_policy()
     assert pol["policy"] == "physical-2026-11-02" and pol["calibration"] == CAP.CALIBRATION["version"] and pol["layout"] == "vectorized"
-    assert len(K.AMENDMENTS) == 1 and K.AMENDMENTS[0]["date"] == "2026-11-02" and K.CAPS["local_mass_entries"] == 60_000_000_000
+    assert len(K.AMENDMENTS) >= 1 and K.AMENDMENTS[0]["date"] == "2026-11-02" and K.CAPS["local_mass_entries"] == 60_000_000_000
     assert K.CAPS["checker_contraction_space"] == 4096
     m = _rnd_model(6, 2, False, 10)
     from mdi.matrix import _write_uai

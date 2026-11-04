@@ -324,10 +324,18 @@ def prepare(rundir, bindings, pin, bindings_path, pin_path, packet=None, input_d
     led = load_ledger(rundir, bindings)
     input_dir = input_dir or bindings.get("input_dir") or DEFAULT_INPUT_DIR
     try:
+        packet_hash = None
+        pinned_pk = (bindings.get("packet") or {}).get("sha256") if isinstance(bindings.get("packet"), dict) else None
         if packet:
+            packet_hash = sha256_file(packet)
+            if pinned_pk and packet_hash != pinned_pk:
+                # the WHOLE-FILE hash of the physical packet, in addition to the per-member input hashes (4 Nov 2026)
+                raise Refused("the packet %s hashes %s, the bindings pin %s" % (os.path.basename(packet), packet_hash[:16], pinned_pk[:16]))
             restore_inputs(packet, input_dir, bindings["inputs"])
         resolved = validate_bindings(bindings, pin, HERE, input_dir, python)
-        man = write_manifest(rundir, bindings, pin, resolved, argv or sys.argv, os.path.abspath(__file__), bindings_path, pin_path, input_dir)
+        man = write_manifest(rundir, bindings, pin, resolved, argv or sys.argv, os.path.abspath(__file__), bindings_path, pin_path, input_dir,
+                             extra=({"packet": {"path": os.path.abspath(packet), "sha256": packet_hash, "pinned_sha256": pinned_pk,
+                                                "whole_file_verified": bool(pinned_pk)}} if packet else None))
     except Refused as e:
         _jdump({"refused": str(e), "at": time.strftime("%Y-%m-%d %H:%M:%S"), "no_child_spawned": True},
                os.path.join(rundir, "REFUSED_%d.json" % int(time.time())))

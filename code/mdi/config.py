@@ -63,7 +63,21 @@ AMENDMENTS = [
                "of the width-1/100 guarantee; under them no candidate reached by discovery was admitted on Grids_11, "
                "Pedigree_11 or Promedus_12 and the intended comparison was never reached; measurements in "
                "runs/mdi_2026-10-28/CAPACITY_2026-11-02/"},
+    {"date": "2026-11-04",
+     "authority": "overseer review of the selector implementation (build f05698e): 'I accept the 20-second shared probe window, "
+                  "5-second dense construction reserve and 30-second wall margin for this pilot. Record them as an explicit prelaunch "
+                  "policy amendment and freeze them.'",
+     "change": "SELECTOR_POLICY frozen for the generalization pilot: probe_window_s 20.0 (ONE absolute deadline for every selector probe "
+               "-- recognition, quotient construction, planning, pricing, both support compilations -- and the transformed record's "
+               "binding), dense_reserve_s 5.0 (the part of the 30 s construction allowance kept for the dense candidate), wall_margin_s "
+               "30.0 (the remaining-wall precondition: window + dense forecast + margin). No cap, tolerance, threshold (2x / 10x), "
+               "mechanism cap (5 s / 512 MiB), cell limit or allowance changes.",
+     "reason": "the selector needs explicit, frozen budget semantics (the 3 Nov design left them UNIMPLEMENTED); the values were "
+               "implemented in the 3-4 Nov pass and accepted by the overseer before launch; frozen here so they cannot be tuned "
+               "against the panel"},
 ]
+
+SELECTOR_POLICY = {"probe_window_s": 20.0, "dense_reserve_s": 5.0, "wall_margin_s": 30.0}     # AMENDMENTS[1]; read by mdi.pipeline
 
 # ---------------- section 13: resource contract ----------------
 RESOURCES = {
