@@ -602,3 +602,87 @@ def test_scorer_treats_the_allowance_stop_as_terminal_and_reports_a_never_run_ce
             SCO.score_run(rd, "/nonexistent.zip", refdir=os.path.join(rd, "refs"))
     finally:
         SCO.extract_refs = orig
+
+
+NUMPY_TRACEMALLOC_DOMAIN = 389047          # numpy registers its array data allocations under this tracemalloc domain
+
+
+def _observe_live_numpy(fn):
+    """Run `fn(probe)` under tracemalloc and, at EVERY probe point the implementation offers
+    (every tick, every release, every placement allocation), compare numpy's ACTUAL live array
+    bytes (above the pre-call baseline) with the implementation's accounted live set. Returns
+    (result, list of (observed, accounted) violations where observed > accounted, max observed)."""
+    import tracemalloc
+    tracemalloc.start()
+
+    def live():
+        snap = tracemalloc.take_snapshot().filter_traces([tracemalloc.DomainFilter(True, NUMPY_TRACEMALLOC_DOMAIN)])
+        return sum(t.size for t in snap.traces)
+    base = live()
+    viol, mx = [], [0]
+
+    def probe(accounted):
+        obs = live() - base
+        mx[0] = max(mx[0], obs)
+        if obs > accounted:
+            viol.append((obs, accounted))
+    try:
+        out = fn(probe)
+    finally:
+        tracemalloc.stop()
+    return out, viol, mx[0]
+
+
+def test_storage_accounting_bounds_the_actual_numpy_buffers_at_every_probe_point():
+    """(third pilot review) The checker accepted a 152-byte cap on one eight-state variable
+    while 272 bytes of array data were live (the offset construction's index and product
+    temporaries were not reserved), and some mask reservations were released while local
+    aliases still held the buffers. Now the placement reserves a conservative 32 n before any
+    of it exists, offsets accumulate in place, and every alias is dropped before its release.
+    The control OBSERVES numpy's actual live array bytes (tracemalloc, numpy's domain) at
+    every probe point of both implementations on several tiny models and requires observed
+    <= accounted everywhere; and the 152-byte cap is refused."""
+    eight = M.Model(nvars=1, card=[8], factors=[M.Factor(scope=(0,), card=(8,), table=[Fr(1)] * 7 + [Fr(0)], origin=0)]).validate()
+    r8 = _restricted(eight, {})
+    pl8 = CAP.checker_plan(r8)
+    with pytest.raises(SP.SupportError) as e:
+        SC.reconstruct_support(pl8, r8.factors, r8.card, mem_cap_bytes=152)
+    assert "working-storage cap" in str(e.value)
+    cases = [(eight, {}),
+             (M.Model(nvars=3, card=[2, 2, 2], factors=[M.Factor(scope=(v, v + 1), card=(2, 2), table=[Fr(1), Fr(0), Fr(1), Fr(1)], origin=v) for v in range(2)]).validate(), {}),
+             (_perm_chain(7, k=3, seed=91), {3: 1}), (_perm_chain(6, k=3, seed=92, isolated=True), {}), (_band_chain(6, k=5, band=2, seed=93), {})]
+    r0 = random.Random(94)
+    cards = [2, 3, 4, 2, 3]
+    facs = [M.Factor(scope=(v,), card=(cards[v],), table=[Fr(r0.randint(0, 2)) or Fr(1) for _ in range(cards[v])], origin=v) for v in range(5)]
+    for sc in ((1, 0), (2, 3), (3, 1, 4), (4, 0)):
+        tab = [Fr(r0.randint(0, 3)) for _ in range(int(np.prod([cards[v] for v in sc])))]
+        tab[0] = Fr(1)
+        facs.append(M.Factor(scope=sc, card=tuple(cards[v] for v in sc), table=tab, origin=100 + len(facs)))
+    cases.append((M.Model(nvars=5, card=cards, factors=facs).validate(), {2: 1}))
+    checked = 0
+    for m, ev in cases:
+        r = _restricted(m, ev)
+        pl = CAP.checker_plan(r)
+        sup, viol_p, mx_p = _observe_live_numpy(lambda probe: SP.compile_support(pl, r.factors, r.card, probe=probe))
+        assert viol_p == [], ("producer: observed live numpy bytes above the accounted set", viol_p[:3])
+        assert sup.peak_working_bytes >= mx_p
+        stats = {}
+        (rows, _s, _e), viol_c, mx_c = _observe_live_numpy(lambda probe: SC.reconstruct_support(pl, r.factors, r.card, probe=probe, stats=stats))
+        assert viol_c == [], ("checker: observed live numpy bytes above the accounted set", viol_c[:3])
+        assert stats["peak_working_bytes"] >= mx_c
+        assert SC.verify_declaration(pl, rows, sup.declaration()) == []
+        checked += 1
+    assert checked == len(cases)
+    # the placement reservation bounds the offset construction's actual peak (32 n), observed directly
+    import tracemalloc
+    tracemalloc.start()
+    try:
+        def live():
+            snap = tracemalloc.take_snapshot().filter_traces([tracemalloc.DomainFilter(True, NUMPY_TRACEMALLOC_DOMAIN)])
+            return sum(t.size for t in snap.traces)
+        base = live()
+        mx = [0]
+        offs = SC._offsets_on_bag((0, 1), {0: 3, 1: 4}, (0, 1, 2), (3, 4, 2), probe=lambda: mx.__setitem__(0, max(mx[0], live() - base)))
+        assert offs.size == 12 and mx[0] <= 32 * 12
+    finally:
+        tracemalloc.stop()

@@ -184,7 +184,7 @@ def dense_enumerated_schedule_rows(plan):
     return int(sum(b.domain(plan.card) * (1 + len(b.children) + n_home.get(b.idx, 0)) for b in plan.bags))
 
 
-def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=None, mem_cap_bytes=None):
+def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=None, mem_cap_bytes=None, probe=None):
     """The producer's support compilation (see the module docstring). Capped in wall
     (`wall_cap_s`, default SUPPORT_WALL_CAP_S) and in its own working storage
     (`mem_cap_bytes`, default SUPPORT_MEM_CAP_BYTES): the Boolean forecast is tested BEFORE
@@ -213,6 +213,10 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
     up_mask = {}         # bag idx -> upward mask (retained until its global mask is formed)
     up_counts = {}
 
+    def _probe():
+        if probe is not None:
+            probe(live)                                   # the accounted live set, for a control to compare with the actual buffers
+
     def _tick(n_positions):
         nonlocal scan
         scan += int(n_positions)
@@ -222,6 +226,7 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
             raise SupportError("support compilation exceeded its %.1f s cap" % wall_cap_s)
         if deadline is not None:
             deadline()
+        _probe()
 
     def _account(nbytes):
         """RESERVE storage BEFORE the allocation it describes; refuse when the reservation
@@ -233,9 +238,12 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
         peak = max(peak, live)
 
     def _release(nbytes):
-        """Release a reservation only AFTER the last reference to its storage is dropped."""
+        """Release a reservation only AFTER the last reference to its storage is dropped
+        (every alias is `del`eted first); probed so a control can catch a release that
+        outruns the buffers."""
         nonlocal live
         live -= int(nbytes)
+        _probe()
 
     # the factor indicator masks: retained for the whole compilation (reserved first)
     fac = {}
@@ -266,6 +274,7 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
             for c in b.children:
                 sep, m = up_msg[c]
                 np.logical_and(acc, _bag_view(m, sep, bvars), out=acc)
+                del m
                 _tick(dom)
             up_mask[x] = acc
             if b.parent >= 0:
@@ -279,8 +288,10 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
                 up_counts[x] = int(np.count_nonzero(m))
                 if up_counts[x] == 0:
                     raise SupportError("bag %d has no feasible assignment in its subtree: the evidence has zero weight" % x)
+                del m                                       # no alias outlives the dict's reference
             elif not bool(np.any(acc)):
                 raise SupportError("component root %d has empty support: the evidence has zero weight" % x)
+            del acc
     # ---- downward: compatibility with the rest of the model ----
     glob = {}
     rows = {}
@@ -307,6 +318,7 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
                 del proj                                    # the last reference goes BEFORE the release
                 _release(sd)
                 glob[c] = gc
+                del gc                                      # no alias outlives the dict's reference
                 stack.append(c)
             n_rows = int(np.count_nonzero(gx))             # no allocation; sizes the reservation
             _account(8 * n_rows)                            # the int64 rows: an OUTPUT, reserved before flatnonzero allocates it

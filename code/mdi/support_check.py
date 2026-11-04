@@ -35,24 +35,33 @@ class SupportMismatch(A.NumericalRefusal):
     """The producer's declared support and the checker's reconstruction differ."""
 
 
-def _offsets_on_bag(scope, card, bag_vars, shape):
+def _offsets_on_bag(scope, card, bag_vars, shape, probe=None):
     """The checker's OWN placement: for a table over `scope`, the flat table offset of
     every bag coordinate (UAI order: first scope variable most significant), as a dense
-    int64 array over the bag's shape (axes of variables outside the scope have size 1)."""
+    int64 array over the bag's shape (axes of variables outside the scope have size 1).
+    Accumulated IN PLACE (one int64 array of the placement plus one per-variable index
+    temporary and its product at a time; never a second full-size array); `probe()` is
+    called after every allocation so a control can observe the actual buffers."""
     strides = {}
     acc = 1
     for v in reversed(scope):
         strides[v] = acc
         acc *= int(card[v])
     offs = np.zeros(tuple(int(card[v]) if v in strides else 1 for v in bag_vars), dtype=np.int64)
+    if probe is not None:
+        probe()
     for k, v in enumerate(bag_vars):
         if v in strides:
             idx = np.arange(int(card[v]), dtype=np.int64).reshape([int(card[v]) if j == k else 1 for j in range(len(bag_vars))])
-            offs = offs + idx * strides[v]
+            term = idx * strides[v]
+            if probe is not None:
+                probe()
+            np.add(offs, term, out=offs)                  # broadcasting add in place: no second full-size array
+            del idx, term
     return offs
 
 
-def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=None, mem_cap_bytes=None):
+def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=None, mem_cap_bytes=None, probe=None, stats=None):
     """The checker's reconstruction of the global support: the same AND / OR / intersect
     recurrences, written independently (table placement by explicit offsets gathered from
     the flat table; separator projections by `np.any` over the eliminated axes after an
@@ -77,6 +86,10 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
     live = 0
     peak = 0
 
+    def _probe():
+        if probe is not None:
+            probe(live)                                   # the accounted live set at this moment, for a control to compare with the actual buffers
+
     def _tick(n):
         nonlocal scan
         scan += int(n)
@@ -86,6 +99,7 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
             raise SP.SupportError("support reconstruction exceeded its %.1f s cap" % wall_cap_s)
         if deadline is not None:
             deadline()
+        _probe()
 
     def _account(nbytes):
         """RESERVE before the allocation; refuse when the reservation would exceed the cap."""
@@ -96,9 +110,11 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
         peak = max(peak, live)
 
     def _release(nbytes):
-        """Release only after the last reference to the storage is dropped."""
+        """Release only after the last reference to the storage is dropped (the caller `del`s
+        every alias first); probed so a control can catch a release that outruns the buffers."""
         nonlocal live
         live -= int(nbytes)
+        _probe()
 
     # the flat factor indicator masks: retained for the whole reconstruction (reserved first)
     _account(sum(len(f.table) for f in factors))
@@ -108,14 +124,17 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
         n = 1
         for v in bag_vars:
             n *= int(card[v]) if v in scope else 1
-        # the int64 offsets (and the intermediate sums of _offsets_on_bag: at most two int64
-        # arrays of the placement live at once) and the gathered Boolean copy, reserved first
-        _account(17 * n)
-        offs = _offsets_on_bag(scope, card, bag_vars, shape)
+        # reserved BEFORE any of it exists: the int64 offsets (8n), every index / product
+        # temporary of the offset construction (each at most 8n; two live at a time -> 16n),
+        # the gather's internal index copy (8n) and the gathered Boolean copy (n): 32n is a
+        # conservative bound on the simultaneous peak of this operation
+        _account(32 * n)
+        offs = _offsets_on_bag(scope, card, bag_vars, shape, probe=_probe)
         out = mask_flat[offs]                             # gathered by the checker's own offsets
+        _probe()
         del offs
-        _release(8 * n)                                   # the offsets' extra buffer is gone; 9n stays with `out`
-        return out, 9 * n
+        _release(31 * n)                                  # everything but the gathered copy is gone
+        return out, n
 
     def project(mask, bag_vars, sep):
         keep = [k for k, v in enumerate(bag_vars) if v in sep]
@@ -129,6 +148,7 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
         _account(int(mask.size) + out_n)                  # the reshape copy of the transposed view AND the output, reserved first
         t = mask.transpose(keep + drop).reshape(tuple(mask.shape[k] for k in keep) + (-1,))
         out = np.any(t, axis=-1)
+        _probe()
         del t                                             # the copy's last reference goes before its release
         _release(int(mask.size))
         return out, out_n
@@ -162,6 +182,7 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
         for c in b.children:
             sep, m = upmsg[c]
             pl_, nb = placed(m.reshape(-1), sep, bvars, shape)
+            del m
             acc &= pl_
             del pl_
             _release(nb)
@@ -174,8 +195,10 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
             upmsg[x] = (sep, m)
             if not bool(m.any()):
                 raise SP.SupportError("checker: bag %d has no feasible subtree assignment (zero evidence weight)" % x)
+            del m                                         # no alias outlives the dict's reference
         elif not bool(acc.any()):
             raise SP.SupportError("checker: component root %d has empty support (zero evidence weight)" % x)
+        del acc
     # downward, breadth first
     rows = {}
     glob = {}
@@ -213,6 +236,7 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
                 _release(nb2)
                 _tick(gc.size)
                 glob[c] = gc
+                del gc                                    # no alias outlives the dict's reference
                 frontier.append(c)
             gx_bytes = int(gx.size)
             del glob[x]
@@ -222,6 +246,9 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
                 mb = int(upmsg[x][1].size)
                 del upmsg[x]
                 _release(mb)
+    if stats is not None:
+        stats["peak_working_bytes"] = peak
+        stats["scan_positions"] = scan
     elapsed = time.monotonic() - t0
     if elapsed > wall_cap_s:                              # the FINAL deadline check on the complete elapsed time
         raise SP.SupportError("support reconstruction exceeded its %.1f s cap (%.3f s elapsed at completion)" % (wall_cap_s, elapsed))
