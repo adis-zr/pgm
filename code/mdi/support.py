@@ -63,46 +63,37 @@ def _sep_of(plan, child, parent):
 
 
 def forecast_boolean_bytes(plan, card):
-    """Working storage the Boolean compilation needs before any array is allocated:
-    three dense Boolean arrays of the largest bag (the running AND, one placed operand,
-    the reduction's output or the global mask) plus every retained upward separator
-    mask; a conservative estimate measured against the cap BEFORE allocation."""
+    """Boolean working storage the compilation needs, tested against the cap BEFORE any
+    array is allocated: the upward mask of EVERY bag (all are retained until the downward
+    pass reaches them: sum of the bag domains, one byte each), every upward separator mask
+    (sum of the separator domains) and one bag-sized projection temporary (the largest bag).
+    The index arrays the compilation produces (int64 rows, coordinate temporaries) cannot
+    be known before it runs; they are enforced LIVE by the allocation accounting."""
     bags = plan.bags
     big = max((b.domain(plan.card) for b in bags), default=0)
-    seps = sum(b.sep_domain(plan.card) for b in bags if b.parent >= 0)
-    return 3 * big + seps
+    return int(plan.sum_bag_entries + plan.sum_sep_entries + big)
 
 
 class Support:
     """The compiled global support of a plan: per bag the sorted int64 flat indices (UAI
     order over the bag's sorted variables) of the globally feasible rows."""
 
-    def __init__(self, plan, card, rows, up_counts, scan_positions, elapsed_s, peak_working_bytes, method=METHOD):
+    def __init__(self, plan, card, rows, up_counts, scan_positions, elapsed_s, peak_working_bytes, method=METHOD,
+                 sep_counts=None, metadata_s=0.0, passes_s=None):
         self.plan = plan
         self.card = dict(card)
         self.rows = rows                        # bag idx -> np.int64 array (sorted)
         self.up_counts = up_counts              # nonroot bag idx -> feasible separator entries of its UPWARD (subtree) support
         # the GLOBAL separator populations: the projection of the global rows onto each
         # nonroot separator (identical from the child's and the parent's side), which is
-        # exactly the size of every message the sparse engines send over that separator
-        self.sep_counts = {}
-        for b in plan.bags:
-            if b.parent < 0:
-                continue
-            sep = _sep_of(plan, b.idx, b.parent)
-            bvars = tuple(b.vars)
-            r = rows[b.idx]
-            if r.size == 0:
-                self.sep_counts[b.idx] = 0
-                continue
-            coords = np.unravel_index(r, tuple(int(card[v]) for v in bvars))
-            st = _strides_for(sep, card)
-            key = np.zeros(r.size, dtype=np.int64)
-            for v in sep:
-                key += coords[bvars.index(v)] * int(st[v])
-            self.sep_counts[b.idx] = int(np.unique(key).size)
+        # exactly the size of every message the sparse engines send over that separator;
+        # computed INSIDE the compilation's timed / capped boundary (`compile_support`) and
+        # passed in, or here (uncapped) for a Support built by a caller that has its own caps
+        self.sep_counts = sep_counts if sep_counts is not None else global_separator_counts(plan, card, rows)
         self.scan_positions = int(scan_positions)
         self.elapsed_s = float(elapsed_s)
+        self.metadata_s = float(metadata_s)
+        self.passes_s = float(elapsed_s - metadata_s if passes_s is None else passes_s)
         self.peak_working_bytes = int(peak_working_bytes)
         self.method = method
 
@@ -148,6 +139,35 @@ class Support:
                 "rows_per_bag": c["rows_per_bag"], "sep_entries": c["sep_entries"], "method": self.method}
 
 
+def global_separator_counts(plan, card, rows, account=None, release=None, tick=None):
+    """{nonroot bag: number of distinct separator entries its global rows project onto}; the
+    coordinate temporaries are accounted through `account` / `release` when given."""
+    out = {}
+    for b in plan.bags:
+        if b.parent < 0:
+            continue
+        sep = _sep_of(plan, b.idx, b.parent)
+        bvars = tuple(b.vars)
+        r = rows[b.idx]
+        if r.size == 0:
+            out[b.idx] = 0
+            continue
+        tmp = 8 * int(r.size) * (len(bvars) + 1)                 # the unravelled coordinates and the key array
+        if account is not None:
+            account(tmp)
+        coords = np.unravel_index(r, tuple(int(card[v]) for v in bvars))
+        st = _strides_for(sep, card)
+        key = np.zeros(r.size, dtype=np.int64)
+        for v in sep:
+            key += coords[bvars.index(v)] * int(st[v])
+        out[b.idx] = int(np.unique(key).size)
+        if tick is not None:
+            tick(int(r.size))
+        if release is not None:
+            release(tmp)
+    return out
+
+
 def dense_enumerated_schedule_rows(plan):
     """The dense counterpart of `Support.counts()['enumerated_schedule_rows']`: every bag's
     domain once per reduction (upward or root, one per child downward, one per home
@@ -161,11 +181,14 @@ def dense_enumerated_schedule_rows(plan):
 def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=None, mem_cap_bytes=None):
     """The producer's support compilation (see the module docstring). Capped in wall
     (`wall_cap_s`, default SUPPORT_WALL_CAP_S) and in its own working storage
-    (`mem_cap_bytes`, default SUPPORT_MEM_CAP_BYTES; the forecast is tested BEFORE any
-    allocation and the live set during the passes); polls `deadline()` per bag; charges
-    every scanned Boolean position through `charge(n)`. Raises SupportError on a cap or
-    when a component root has empty support (zero evidence weight: no normalized result
-    exists, the caller's zero-evidence proof decides)."""
+    (`mem_cap_bytes`, default SUPPORT_MEM_CAP_BYTES): the Boolean forecast is tested BEFORE
+    any allocation and EVERY allocation of the passes is accounted live -- the retained
+    upward masks, the upward separator masks, the projection temporaries, the int64 row
+    arrays and the metadata's coordinate temporaries -- and released when freed; the wall
+    cap and `deadline()` are polled per operation, including during the metadata (global
+    separator populations) that completes the compilation. Charges every scanned Boolean
+    position through `charge(n)`. Raises SupportError on a cap or when a component root has
+    empty support (zero evidence weight: the caller's zero-evidence proof decides)."""
     if not AVAILABLE:
         raise SupportError("numpy is not available for support compilation")
     from mdi.vec_engine import _bag_view
@@ -206,6 +229,10 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
         if live > mem_cap:
             raise SupportError("support compilation exceeded its %d-byte working-storage cap (%d live)" % (mem_cap, live))
 
+    def _release(nbytes):
+        nonlocal live
+        live -= int(nbytes)
+
     # ---- upward: subtree feasibility ----
     roots = [b.idx for b in bags if b.parent == -1]
     for rt in roots:
@@ -219,8 +246,8 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
             dom = 1
             for c in shape:
                 dom *= c
+            _account(dom)                                   # the bag's mask, retained until its global mask is formed
             acc = np.ones(shape, dtype=bool)
-            _account(acc.nbytes)
             for fi in b.factors:
                 np.logical_and(acc, _bag_view(fac[fi], tuple(factors[fi].scope), bvars), out=acc)
                 _tick(dom)
@@ -232,8 +259,9 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
             if b.parent >= 0:
                 sep = _sep_of(plan, x, b.parent)
                 axes = tuple(k for k, v in enumerate(bvars) if v not in sep)
+                sd = b.sep_domain(plan.card)
+                _account(sd)                                # the upward separator mask, retained for the parent
                 m = np.any(acc, axis=axes) if axes else acc.copy()
-                _account(m.nbytes)
                 _tick(dom)
                 up_msg[x] = (sep, m)
                 up_counts[x] = int(np.count_nonzero(m))
@@ -257,21 +285,32 @@ def compile_support(plan, factors, card, deadline=None, charge=None, wall_cap_s=
                 bcv = tuple(bc.vars)
                 sep = _sep_of(plan, c, x)
                 axes = tuple(k for k, v in enumerate(bxv) if v not in sep)
+                sd = bc.sep_domain(plan.card)
+                _account(sd)                                # the projection temporary
                 proj = np.any(gx, axis=axes) if axes else gx
                 _tick(gx.size)
-                gc = up_mask.pop(c)
+                gc = up_mask.pop(c)                         # becomes the child's global mask in place
                 np.logical_and(gc, _bag_view(proj, sep, bcv), out=gc)
                 _tick(gc.size)
+                _release(sd)
+                del proj
                 glob[c] = gc
                 stack.append(c)
-            rows[x] = np.flatnonzero(gx).astype(np.int64)
+            r = np.flatnonzero(gx).astype(np.int64)
+            _account(r.nbytes)                              # the int64 rows: an OUTPUT, counted while the compilation runs
+            rows[x] = r
             _tick(gx.size)
-            live -= gx.nbytes
+            _release(gx.nbytes)                             # the mask is freed
             del glob[x]
-            if bx.parent >= 0 and x in up_msg:
-                live -= up_msg[x][1].nbytes
+            if x in up_msg:
+                _release(up_msg[x][1].nbytes)               # its upward separator mask has served its last use
                 del up_msg[x]
-    return Support(plan, card, rows, up_counts, scan, time.monotonic() - t0, peak)
+    passes_s = time.monotonic() - t0
+    # ---- metadata (inside the timed / capped boundary): the global separator populations ----
+    sep_counts = global_separator_counts(plan, card, rows, account=_account, release=_release, tick=_tick)
+    elapsed = time.monotonic() - t0
+    return Support(plan, card, rows, up_counts, scan, elapsed, peak, sep_counts=sep_counts,
+                   metadata_s=elapsed - passes_s, passes_s=passes_s)
 
 
 # ======================= the sparse two-pass engine (modes P and I) =======================

@@ -58,7 +58,11 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
     the flat table; separator projections by `np.any` over the eliminated axes after an
     explicit transpose to [separator axes, eliminated axes]; a breadth-first downward pass).
     Returns {bag idx: sorted int64 rows}, the scan-position count and the elapsed seconds.
-    Capped like the producer's compilation."""
+    Capped like the producer's compilation: the Boolean forecast BEFORE any allocation and
+    EVERY allocation of the passes accounted live -- the retained upward masks, the upward
+    separator masks, the int64 offset arrays and gathered copies of every placement, the
+    projection's reshape copy and output, the int64 rows -- released when freed; the wall
+    cap and `deadline()` polled per operation."""
     from mdi import support as SP
     if not AVAILABLE:
         raise SP.SupportError("numpy is not available for support reconstruction")
@@ -71,6 +75,8 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
     bags = plan.bags
     flat = {fi: np.fromiter((Fr(x) != 0 for x in f.table), dtype=bool, count=len(f.table)) for fi, f in enumerate(factors)}
     scan = 0
+    live = 0
+    peak = 0
 
     def _tick(n):
         nonlocal scan
@@ -82,18 +88,37 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
         if deadline is not None:
             deadline()
 
+    def _account(nbytes):
+        nonlocal live, peak
+        live += int(nbytes)
+        peak = max(peak, live)
+        if live > mem_cap:
+            raise SP.SupportError("support reconstruction exceeded its %d-byte working-storage cap (%d live)" % (mem_cap, live))
+
+    def _release(nbytes):
+        nonlocal live
+        live -= int(nbytes)
+
     def placed(mask_flat, scope, bag_vars, shape):
         offs = _offsets_on_bag(scope, card, bag_vars, shape)
-        return mask_flat[offs]                       # gathered by the checker's own offsets
+        n = int(offs.size)
+        _account(9 * n)                                   # the int64 offsets and the gathered Boolean copy (temporaries)
+        out = mask_flat[offs]                             # gathered by the checker's own offsets
+        return out, 9 * n
 
     def project(mask, bag_vars, sep):
         keep = [k for k, v in enumerate(bag_vars) if v in sep]
         drop = [k for k, v in enumerate(bag_vars) if v not in sep]
         if not drop:
-            return mask.copy()
+            _account(mask.size)
+            return mask.copy(), int(mask.size)
         t = mask.transpose(keep + drop)
+        _account(int(mask.size))                          # the reshape of a transposed view copies the bag
         t = t.reshape(tuple(mask.shape[k] for k in keep) + (-1,))
-        return np.any(t, axis=-1)
+        out = np.any(t, axis=-1)
+        _release(int(mask.size))
+        _account(int(out.size))
+        return out, int(out.size)
 
     # upward, by explicit recursion depth order (leaves first) rather than a reversed stack
     depth = {}
@@ -113,18 +138,23 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
         b = bags[x]
         bvars = tuple(b.vars)
         shape = tuple(int(card[v]) for v in bvars)
+        _account(int(np.prod(shape)) if shape else 1)     # the bag's upward mask, retained until its global mask is formed
         acc = np.ones(shape, dtype=bool)
         for fi in b.factors:
-            acc &= placed(flat[fi], tuple(factors[fi].scope), bvars, shape)
+            pl_, nb = placed(flat[fi], tuple(factors[fi].scope), bvars, shape)
+            acc &= pl_
+            _release(nb)
             _tick(acc.size)
         for c in b.children:
             sep, m = upmsg[c]
-            acc &= placed(m.reshape(-1), sep, bvars, shape)
+            pl_, nb = placed(m.reshape(-1), sep, bvars, shape)
+            acc &= pl_
+            _release(nb)
             _tick(acc.size)
         up[x] = acc
         if b.parent >= 0:
             sep = tuple(sorted(set(bvars) & set(bags[b.parent].vars)))
-            m = project(acc, bvars, sep)
+            m, _nb = project(acc, bvars, sep)             # retained for the parent (accounted inside)
             _tick(acc.size)
             upmsg[x] = (sep, m)
             if not bool(m.any()):
@@ -135,26 +165,36 @@ def reconstruct_support(plan, factors, card, deadline=None, charge=None, wall_ca
     rows = {}
     glob = {}
     for rt in roots:
-        glob[rt] = up[rt]
+        glob[rt] = up.pop(rt)
         frontier = [rt]
         while frontier:
             x = frontier.pop(0)
             bx = bags[x]
             bxv = tuple(bx.vars)
             gx = glob[x]
-            rows[x] = np.flatnonzero(gx.reshape(-1)).astype(np.int64)
+            r = np.flatnonzero(gx.reshape(-1)).astype(np.int64)
+            _account(r.nbytes)                            # the int64 rows: an output, counted while the reconstruction runs
+            rows[x] = r
             _tick(gx.size)
             for c in bx.children:
                 bc = bags[c]
                 bcv = tuple(bc.vars)
                 sep = tuple(sorted(set(bcv) & set(bxv)))
-                pr = project(gx, bxv, sep)
+                pr, nb = project(gx, bxv, sep)
                 _tick(gx.size)
-                gc = up[c] & placed(pr.reshape(-1), sep, bcv, tuple(int(card[v]) for v in bcv))
+                pl_, nb2 = placed(pr.reshape(-1), sep, bcv, tuple(int(card[v]) for v in bcv))
+                gc = up.pop(c)
+                gc &= pl_
+                _release(nb2)
+                _release(nb)
                 _tick(gc.size)
                 glob[c] = gc
                 frontier.append(c)
+            _release(int(gx.size))                        # the mask is freed
             del glob[x]
+            if x in upmsg:
+                _release(int(upmsg[x][1].size))           # its upward separator mask has served its last use
+                del upmsg[x]
     return rows, scan, time.monotonic() - t0
 
 

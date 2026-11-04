@@ -397,3 +397,106 @@ def test_program_parser_refuses_malformed_support_and_binding_refuses_a_tampered
     p2 = os.path.join(d, "tampered.plan.json"); json.dump(rec2, open(p2, "w"))
     rr2 = RP.replay(mp, ep, p2)
     assert rr2["status"] != "REPLAY_VERIFIED", rr2
+
+
+def test_declined_support_persists_a_durable_terminal_record_through_the_public_arm():
+    """(pilot review, 3 Nov) A SUPPORT_NOT_ADMITTED rejection record carried a self-referential
+    price (`price['checker'] = price`); the arm completed the dense inference and then raised
+    RecursionError while saving its terminal record, leaving the durable status STARTED with
+    no receipt. The record is now acyclic and JSON-serialisable; the public arm persists the
+    terminal record and the receipt; the rejection still names the ratio and the charge."""
+    from mdi import arm as ARM
+    from mdi.matrix import _write_uai
+    facs = [M.Factor(scope=(v,), card=(2,), table=[Fr(1), Fr(1 + v % 3)], origin=v) for v in range(12)]
+    facs += [M.Factor(scope=(v, v + 1), card=(2, 2), table=[Fr(2), Fr(1), Fr(1), Fr(3)], origin=100 + v) for v in range(11)]
+    facs[-1] = M.Factor(scope=(10, 11), card=(2, 2), table=[Fr(2), Fr(0), Fr(1), Fr(3)], origin=111)
+    m = M.Model(nvars=12, card=[2] * 12, factors=facs).validate()
+    mp = _write_uai(m)
+    ep = mp + ".evid"
+    open(ep, "w").write("0\n")
+    rd = tempfile.mkdtemp()
+    rec = ARM.run_arm("tiny", False, rd, wall=60, model_path=mp, evid_path=ep, support=True)
+    assert rec["outcome"] == "CERTIFIED_FALLBACK_ONLY" and rec["arm"] == "support"
+    saved = json.load(open(os.path.join(rd, "arm_tiny_support.json")))
+    assert saved["outcome"] == "CERTIFIED_FALLBACK_ONLY"
+    assert os.path.exists(os.path.join(rd, "arm_tiny_support.receipt.json"))
+    rj = [x for x in saved["pipeline"]["rejected"] if x.get("name") == "identity+support"]
+    assert rj and rj[0]["typed"] == "SUPPORT_NOT_ADMITTED" and "checker" not in rj[0]["support_price"]
+    json.dumps(saved)                                                 # acyclic
+    # the admitted case persists too, and its price's checker figures are a copy, not the price itself
+    m2 = _perm_chain(10, k=3, seed=61)
+    mp2 = _write_uai(m2); ep2 = mp2 + ".evid"; open(ep2, "w").write("1 5 1\n")
+    rd2 = tempfile.mkdtemp()
+    rec2 = ARM.run_arm("tiny2", False, rd2, wall=60, model_path=mp2, evid_path=ep2, support=True)
+    assert rec2["outcome"] == "CERTIFIED_FALLBACK_ONLY" and rec2["pipeline"]["plan"]["executed"]["layout"] == "sparse-support"
+    assert json.load(open(os.path.join(rd2, "arm_tiny2_support.json")))["outcome"] == "CERTIFIED_FALLBACK_ONLY"
+
+
+def test_support_caps_are_enforced_live_in_both_implementations_and_cover_the_metadata():
+    """(pilot review) The Boolean forecast counts every retained upward mask, every upward
+    separator mask and a projection temporary; both implementations account every allocation
+    LIVE (masks, offsets and gathered copies, projection temporaries, int64 rows, metadata
+    temporaries) and refuse when the live set exceeds the cap; a cap below the retained masks
+    is refused before allocation; the compilation's elapsed time includes its metadata."""
+    m = M.Model(nvars=4, card=[2] * 4, factors=[M.Factor(scope=(v, v + 1), card=(2, 2), table=[Fr(1), Fr(0), Fr(1), Fr(1)], origin=v) for v in range(3)]).validate()
+    r = _restricted(m, {})
+    pl = CAP.checker_plan(r)
+    fc = SP.forecast_boolean_bytes(pl, r.card)
+    assert fc >= pl.sum_bag_entries + pl.sum_sep_entries           # every retained mask is in the forecast
+    with pytest.raises(SP.SupportError) as e1:
+        SC.reconstruct_support(pl, r.factors, r.card, mem_cap_bytes=24)
+    assert "before allocation" in str(e1.value)
+    with pytest.raises(SP.SupportError):
+        SP.compile_support(pl, r.factors, r.card, mem_cap_bytes=24)
+    # a cap that passes the Boolean forecast but not the live set (int64 rows and temporaries) is refused LIVE
+    with pytest.raises(SP.SupportError) as e2:
+        SP.compile_support(pl, r.factors, r.card, mem_cap_bytes=fc)
+    assert "working-storage cap" in str(e2.value)
+    with pytest.raises(SP.SupportError) as e3:
+        SC.reconstruct_support(pl, r.factors, r.card, mem_cap_bytes=fc)
+    assert "working-storage cap" in str(e3.value)
+    # with room, both complete, agree, and the compilation reports a peak above the Boolean forecast
+    sup = SP.compile_support(pl, r.factors, r.card)
+    rows, scan, el = SC.reconstruct_support(pl, r.factors, r.card)
+    assert SC.verify_declaration(pl, rows, sup.declaration()) == []
+    assert sup.peak_working_bytes > fc and sup.elapsed_s >= sup.passes_s and sup.metadata_s >= 0
+    # the metadata (global separator populations) is inside the wall cap: an expired cap trips during it too
+    import time as _t
+    big = _perm_chain(10, k=3, seed=71)
+    rb = _restricted(big, {})
+    plb = CAP.checker_plan(rb)
+    with pytest.raises(SP.SupportError):
+        SP.compile_support(plb, rb.factors, rb.card, wall_cap_s=0.0)
+
+
+def test_launcher_never_exceeds_the_run_allowance_including_grace():
+    """(pilot review) Initial cells did not check the remaining allowance: with the declared
+    10 s durable-write grace, two supervisor timeouts charged 1,220 s against a 1,200 s
+    allowance. Now a cell whose full wall plus grace no longer fits the remaining allowance is
+    NOT started and marked NOT_RUN_ALLOWANCE_STOP; an initial cell is never shortened."""
+    sys.path.insert(0, os.path.join(HERE, "tests"))
+    from test_mdi_launch import _synthetic, _factory
+    from mdi import launch as L
+    tmp = tempfile.mkdtemp()
+    pk, pp, pin, bp, b, dummy = _synthetic(tmp, cell_wall=600.0, allowance=1200.0, session_cap=7200.0)
+    b["order"] = b["order"][:2]
+    b["durable_grace_s"] = 10.0
+    json.dump(b, open(bp, "w"))
+    rd = os.path.join(tmp, "run")
+    L.prepare(rd, b, pin, bp, pp, packet=pk)
+
+    def mocked(cmd, cwd, log_path, deadline_s, mem_limit_kib, env=None, label=""):
+        return {"outcome": "TIMEOUT", "returncode": None, "elapsed_s": float(deadline_s), "peak_tree_rss_kib": 1024,
+                "peak_tree_procs": 1, "mem_samples": 1, "mem_limitation": None}
+    led = L.run_cells(rd, b, cmd_factory=_factory(dummy), supervisor=mocked)
+    assert L.charged_cells_s(led) <= led["allowance_s"]
+    assert led["cells"][0]["status"] == "CONSUMED" and led["cells"][0]["attempts"][0]["wall_granted_s"] == 600.0
+    assert led["cells"][1]["status"] == "NOT_RUN_ALLOWANCE_STOP" and not led["cells"][1]["attempts"]
+    assert led["cells"][1]["allowance_stop"]["needed_s"] == 610.0
+    # with enough allowance both cells run their full wall
+    tmp2 = tempfile.mkdtemp()
+    pk2, pp2, pin2, bp2, b2, dummy2 = _synthetic(tmp2, cell_wall=600.0, allowance=1300.0, session_cap=7200.0)
+    b2["order"] = b2["order"][:2]; b2["durable_grace_s"] = 10.0; json.dump(b2, open(bp2, "w"))
+    rd2 = os.path.join(tmp2, "run"); L.prepare(rd2, b2, pin2, bp2, pp2, packet=pk2)
+    led2 = L.run_cells(rd2, b2, cmd_factory=_factory(dummy2), supervisor=mocked)
+    assert [c["status"] for c in led2["cells"]] == ["CONSUMED", "CONSUMED"] and L.charged_cells_s(led2) == 1220.0

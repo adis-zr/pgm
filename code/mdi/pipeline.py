@@ -2000,7 +2000,7 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
                                                                 charge=(lambda n: bg.charge("pricing_entries", n, "support compilation")) if bg else None)
                         _sp["checker"] = _SP.support_price(_chk, _supc)
                     else:
-                        _sp["checker"] = _sp
+                        _sp["checker"] = {k: v for k, v in _sp.items() if k != "checker"}
             except _SP.SupportError:
                 _sp = None
         price = PR.price_identity_plan(pl, est, nq, prog["precision"],
@@ -2348,7 +2348,17 @@ def _support_admission(ipl, r, bg, iprog, rejected, checker_plan=None):
         return None
     price = SP.support_price(ipl, sup)
     price["compile_wall_s"] = round(time.monotonic() - t0, 4)
-    if price["admitted"] and checker_plan is not None and list(checker_plan.order) != list(ipl.order):
+    if not price["admitted"]:
+        rejected.append({"name": "identity+support", "typed": "SUPPORT_NOT_ADMITTED", "phase": "discover",
+                         "reason": "the sparse schedule enumerates %d rows against %d dense (ratio %.1f), below the required %.0f-fold reduction; "
+                                   "the dense identity stands and the compilation (%.3f s, %d Boolean positions) is charged"
+                                   % (price["counts"]["enumerated_schedule_rows"], price["dense_enumerated_schedule_rows"], price["reduction_ratio"],
+                                      SP.MIN_REDUCTION_RATIO, price["compile_wall_s"], price["counts"]["scan_positions"]),
+                         # a JSON-serialisable, acyclic summary (the review of 3 Nov found a self-reference here that broke the
+                         # arm's durable terminal write with RecursionError, leaving the record STARTED)
+                         "support_price": {k: v for k, v in price.items() if k not in ("counts", "checker")}})
+        return None
+    if checker_plan is not None and list(checker_plan.order) != list(ipl.order):
         # the checker runs its OWN min-fill order: its sparse figures are priced from a
         # compilation on that order (charged like the producer's; cached by content + order)
         try:
@@ -2360,15 +2370,7 @@ def _support_admission(ipl, r, bg, iprog, rejected, checker_plan=None):
                              "reason": "support compilation on the checker's order did not complete: %s" % e})
             return None
     else:
-        price["checker"] = price
-    if not price["admitted"]:
-        rejected.append({"name": "identity+support", "typed": "SUPPORT_NOT_ADMITTED", "phase": "discover",
-                         "reason": "the sparse schedule enumerates %d rows against %d dense (ratio %.1f), below the required %.0f-fold reduction; "
-                                   "the dense identity stands and the compilation (%.3f s, %d Boolean positions) is charged"
-                                   % (price["counts"]["enumerated_schedule_rows"], price["dense_enumerated_schedule_rows"], price["reduction_ratio"],
-                                      SP.MIN_REDUCTION_RATIO, price["compile_wall_s"], price["counts"]["scan_positions"]),
-                         "support_price": {k: v for k, v in price.items() if k != "counts"}})
-        return None
+        price["checker"] = {k: v for k, v in price.items() if k != "checker"}      # a copy, never a self-reference
     iprog["support"] = sup.declaration()
     return price
 

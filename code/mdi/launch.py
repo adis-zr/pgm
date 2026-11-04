@@ -206,10 +206,15 @@ def session_remaining_s(led):
     return led["session_cap_s"] - sum(float(v) for v in led["previous_expenditure_s"].values()) - charged_cells_s(led) - other_charges_s(led)
 
 
+def allowance_remaining_s(led):
+    """The run's own allowance less every attempt charged so far."""
+    return float(led["allowance_s"]) - charged_cells_s(led)
+
+
 def repair_balance_s(led, label):
     """Unused time inside the six-cell allowance after 600 s is reserved for
     every UNSTARTED initial cell (never the cell being repaired)."""
-    unstarted = sum(1 for c in led["cells"] if not c["attempts"] and c["label"] != label and c["status"] not in ("NOT_RUN_CUMULATIVE_STOP",))
+    unstarted = sum(1 for c in led["cells"] if not c["attempts"] and c["label"] != label and c["status"] not in ("NOT_RUN_CUMULATIVE_STOP", "NOT_RUN_ALLOWANCE_STOP"))
     return led["allowance_s"] - charged_cells_s(led) - led["cell_wall_s"] * unstarted
 
 
@@ -359,8 +364,8 @@ def run_cells(rundir, bindings, repair=None, cmd_factory=None, python=None, supe
         if c["status"] == "INTERRUPTED" and not is_repair:
             print("  [launch] %-24s INTERRUPTED earlier: not rerun without an explicit --repair" % label, flush=True)
             continue
-        if c["status"] == "NOT_RUN_CUMULATIVE_STOP" and not is_repair:
-            print("  [launch] %-24s not run (cumulative stop recorded earlier)" % label, flush=True)
+        if c["status"] in ("NOT_RUN_CUMULATIVE_STOP", "NOT_RUN_ALLOWANCE_STOP") and not is_repair:
+            print("  [launch] %-24s not run (%s recorded earlier)" % (label, c["status"]), flush=True)
             continue
         if is_repair:
             if not c["attempts"]:
@@ -389,6 +394,17 @@ def run_cells(rundir, bindings, repair=None, cmd_factory=None, python=None, supe
             c["cumulative_stop"] = {"session_remaining_s": session_remaining_s(led), "needed_s": wall, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
             _jdump(led, lp)
             print("  [launch] %-24s NOT RUN: cumulative session cap (remaining %.1f s < %.1f s)" % (label, session_remaining_s(led), wall), flush=True)
+            continue
+        grace = float(bindings.get("durable_grace_s", 0.0))
+        if not is_repair and allowance_remaining_s(led) < wall + grace:
+            # the run's own allowance (3 Nov pilot review): an initial cell is never shortened, so a
+            # cell whose full wall plus the durable-write grace no longer fits the remaining allowance
+            # is NOT started and marked explicitly; the allowance can then never be exceeded by a
+            # supervisor timeout charging wall + grace
+            c["status"] = "NOT_RUN_ALLOWANCE_STOP"
+            c["allowance_stop"] = {"allowance_remaining_s": allowance_remaining_s(led), "needed_s": wall + grace, "at": time.strftime("%Y-%m-%d %H:%M:%S")}
+            _jdump(led, lp)
+            print("  [launch] %-24s NOT RUN: the run's allowance (remaining %.1f s < %.1f s wall + grace)" % (label, allowance_remaining_s(led), wall + grace), flush=True)
             continue
         n = len(c["attempts"]) + 1
         adir = os.path.join(rundir, "cells", label, "attempt_%d" % n)
