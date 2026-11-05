@@ -438,6 +438,8 @@ def finalize_terminal(out, bg):
         out.plan["selector"] = _SELECTOR_CURRENT[0]
     if (out.plan or {}).get("selector") is not None:
         _summarize_selector_block(out.plan["selector"])
+    if _PILOT_HOOKS.get("terminal"):
+        _PILOT_HOOKS["terminal"](out)
     return out
 
 
@@ -770,95 +772,16 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
     for rec, price, payload in records:
         if id(rec) in admitted_ids:
             continue
-        if rec.kind != "identity":
-            bg._enter_raw("persist")
-            try:
-                _persist_bind_one(rec, plan_dir, law, mh, eh, qh, queries, nq, cap_bytes, bg, eps,
-                                  stages, rejected, reloaded)
-            except B.BudgetExceeded as e:
-                return Outcome(status="RESOURCE_STOP",
-                               reason="the shared budget was exhausted while re-pricing "
-                                      "loaded programs: %s" % e,
-                               rejected=rejected, stages=stages, budget=bg.report())
-            bg._enter_raw("bind_identity")
-            continue
-        bg._enter_raw("bind_identity")
-        ident = (rec.storage_schedule or {}).get("identity") or rec.name.replace(":", "_")
-        path = os.path.join(plan_dir, "%s.plan.json" % ident)
+        if _PILOT_HOOKS.get("record_begin"):
+            _PILOT_HOOKS["record_begin"](rec)
+        _rec_status = ["unknown"]
         try:
-            txt = rec.to_json()
-            if os.path.exists(path):
-                with open(path, "r") as fh:
-                    prior = fh.read()
-                if prior != txt:
-                    typed = "COLLISION"
-                    try:
-                        a, b = json.loads(prior), json.loads(txt)
-                        for d in (a, b):
-                            d.pop("name", None); d.pop("rejected_alternatives", None)
-                        if a == b:
-                            typed = "DUPLICATE"
-                    except ValueError:
-                        pass
-                    rejected.append({"name": rec.name, "typed": typed, "phase": "persist",
-                                     "reason": ("an equivalent program already occupies %s (duplicate under one identity); "
-                                                "not written again" if typed == "DUPLICATE" else
-                                                "a completed program already occupies %s and this executable "
-                                                "differs; a different executable never overwrites a "
-                                                "completed program") % os.path.basename(path)})
-                    continue
-            with open(path, "w") as fh:
-                fh.write(txt)
-            with open(path, "r") as fh:
-                ondisk = fh.read()
-            if ondisk != txt:
-                raise PT.PlanError("the persisted plan does not match what was written")
-            back = PT.PlanRecord.from_json(ondisk)
-            if back.to_json() != ondisk:
-                raise PT.PlanError("plan record is not byte-identical after a round trip through disk")
-            t_b = time.monotonic()
-            bown = law.restriction()
-            stages["binding_restriction_s"] = stages.get("binding_restriction_s", 0.0) + (time.monotonic() - t_b)
-            # the selector's TRANSFORMED record binds under the SAME absolute probe deadline its
-            # discovery ran under (the re-derivation of its declared transformation is part of the
-            # complete attempt); the preserved dense record binds under the invocation budget alone
-            _transformed = bool((back.program or {}).get("support") or (back.program or {}).get("quotient"))
-            _bind_bg = _SELECTOR_PROBE[0] if (_transformed and _SELECTOR_PROBE[0] is not None) else bg
-            t_bind = time.monotonic()
-            rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes, bg=_bind_bg, eps=eps)
-            if _transformed and _SELECTOR_PROBE[0] is not None:
-                # the COMPLETE binding deadline (repair of 4 Nov 2026): binding, repricing and identity
-                # validation have returned; the probe budget is tested once more BEFORE the record can
-                # become eligible for selection -- a window spent during the final primitive (after the
-                # last inner poll) is a late refusal, never a selected record; the window is neither
-                # reset nor extended, the elapsed time and the charges stand
-                _SELECTOR_PROBE[0].check("bind:complete transformed binding")
-            if _transformed and _SELECTOR_CURRENT[0] is not None:
-                _SELECTOR_CURRENT[0]["transformed_binding_s"] = round(time.monotonic() - t_bind, 4)
-                if not rprice.eligible:
-                    _SELECTOR_CURRENT[0]["late_refusal"] = ("binding: %s" % rprice.ineligible_reason)[:300]
-                    rejected.append({"name": rec.name, "typed": "SELECTOR_LATE_REFUSAL", "phase": "persist",
-                                     "reason": "the admitted transformed record is ineligible at binding: %s; the preserved "
-                                               "dense identity stands" % rprice.ineligible_reason})
-        except ProbeExhausted as e:
-            # the LATE-REFUSAL transition: the probe window ran out while the transformed record was
-            # re-deriving its transformation at binding; the record is dropped (its charges stand) and
-            # the preserved dense identity candidate proceeds -- never a terminal
-            rejected.append({"name": rec.name, "typed": "SELECTOR_LATE_REFUSAL", "phase": "persist",
-                             "reason": "the transformed record's binding exceeded the selector's probe window: %s; the preserved "
-                                       "dense identity stands (every charge of the attempt is kept)" % e})
-            if _SELECTOR_CURRENT[0] is not None:
-                _SELECTOR_CURRENT[0]["late_refusal"] = ("binding: %s" % e)[:300]
-            continue
-        except (PT.PlanError, ValueError, OSError) as e:
-            rejected.append({"name": rec.name, "reason": "plan record failed persist/reload/binding: %s" % e})
-            continue
-        except B.BudgetExceeded as e:
-            return Outcome(status="RESOURCE_STOP",
-                           reason="the shared budget was exhausted while binding the identity: %s" % e,
-                           rejected=rejected, stages=stages, budget=bg.report())
-        back.source_path = path
-        reloaded.append((back, rprice, None))
+            _persist_bind_identity_record(rec, price, payload, admitted_ids, plan_dir, law, mh, eh, qh, queries, nq, cap_bytes, bg, eps, stages, rejected, reloaded, _rec_status)
+        finally:
+            if _PILOT_HOOKS.get("record_end"):
+                _PILOT_HOOKS["record_end"](rec, _rec_status[0])
+        if _rec_status[0] == "RESOURCE_STOP":
+            return _rec_status[1]
     del records
     bg._enter_raw("bind_identity")
     stages["persist_s"] = time.monotonic() - t
@@ -875,6 +798,115 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                        prices=out.prices, rejected=rejected, stages=stages,
                        budget=bg.report())
     t = time.monotonic()
+    if _PILOT_HOOKS.get("select_begin"):
+        _PILOT_HOOKS["select_begin"]()
+    return _select_and_run(reloaded, out, rejected, stages, bg, cap_bytes, law, queries, eps, prog, plan_only, _discovery_complete, t)
+
+
+def _persist_bind_identity_record(rec, price, payload, admitted_ids, plan_dir, law, mh, eh, qh, queries, nq, cap_bytes, bg, eps, stages, rejected, reloaded, status):
+    """Stage 4 for ONE record (extracted verbatim from the loop so the pilot's begin/end hooks enclose every exit). `status[0]`
+    reports 'bound' | 'bound_ineligible' | 'research' | 'refused' | 'late_refusal' | 'skipped' | 'RESOURCE_STOP' (then status[1]
+    is the Outcome)."""
+    if rec.kind != "identity":
+        bg._enter_raw("persist")
+        try:
+            _persist_bind_one(rec, plan_dir, law, mh, eh, qh, queries, nq, cap_bytes, bg, eps,
+                              stages, rejected, reloaded)
+        except B.BudgetExceeded as e:
+            status[:] = ["RESOURCE_STOP", Outcome(status="RESOURCE_STOP",
+                           reason="the shared budget was exhausted while re-pricing "
+                                  "loaded programs: %s" % e,
+                           rejected=rejected, stages=stages, budget=bg.report())]
+            return
+        bg._enter_raw("bind_identity")
+        status[0] = "research"
+        return
+    bg._enter_raw("bind_identity")
+    ident = (rec.storage_schedule or {}).get("identity") or rec.name.replace(":", "_")
+    path = os.path.join(plan_dir, "%s.plan.json" % ident)
+    try:
+        txt = rec.to_json()
+        if os.path.exists(path):
+            with open(path, "r") as fh:
+                prior = fh.read()
+            if prior != txt:
+                typed = "COLLISION"
+                try:
+                    a, b = json.loads(prior), json.loads(txt)
+                    for d in (a, b):
+                        d.pop("name", None); d.pop("rejected_alternatives", None)
+                    if a == b:
+                        typed = "DUPLICATE"
+                except ValueError:
+                    pass
+                rejected.append({"name": rec.name, "typed": typed, "phase": "persist",
+                                 "reason": ("an equivalent program already occupies %s (duplicate under one identity); "
+                                            "not written again" if typed == "DUPLICATE" else
+                                            "a completed program already occupies %s and this executable "
+                                            "differs; a different executable never overwrites a "
+                                            "completed program") % os.path.basename(path)})
+                status[0] = "skipped"
+                return
+        with open(path, "w") as fh:
+            fh.write(txt)
+        with open(path, "r") as fh:
+            ondisk = fh.read()
+        if ondisk != txt:
+            raise PT.PlanError("the persisted plan does not match what was written")
+        back = PT.PlanRecord.from_json(ondisk)
+        if back.to_json() != ondisk:
+            raise PT.PlanError("plan record is not byte-identical after a round trip through disk")
+        t_b = time.monotonic()
+        bown = law.restriction()
+        stages["binding_restriction_s"] = stages.get("binding_restriction_s", 0.0) + (time.monotonic() - t_b)
+        # the selector's TRANSFORMED record binds under the SAME absolute probe deadline its
+        # discovery ran under (the re-derivation of its declared transformation is part of the
+        # complete attempt); the preserved dense record binds under the invocation budget alone
+        _transformed = bool((back.program or {}).get("support") or (back.program or {}).get("quotient"))
+        _bind_bg = _SELECTOR_PROBE[0] if (_transformed and _SELECTOR_PROBE[0] is not None) else bg
+        t_bind = time.monotonic()
+        rprice = bind_loaded(back, mh, eh, qh, bown.r, bown.simp, queries, nq, cap_bytes, bg=_bind_bg, eps=eps)
+        if _transformed and _SELECTOR_PROBE[0] is not None:
+            # the COMPLETE binding deadline (repair of 4 Nov 2026): binding, repricing and identity
+            # validation have returned; the probe budget is tested once more BEFORE the record can
+            # become eligible for selection -- a window spent during the final primitive (after the
+            # last inner poll) is a late refusal, never a selected record; the window is neither
+            # reset nor extended, the elapsed time and the charges stand
+            _SELECTOR_PROBE[0].check("bind:complete transformed binding")
+        if _transformed and _SELECTOR_CURRENT[0] is not None:
+            _SELECTOR_CURRENT[0]["transformed_binding_s"] = round(time.monotonic() - t_bind, 4)
+            if not rprice.eligible:
+                _SELECTOR_CURRENT[0]["late_refusal"] = ("binding: %s" % rprice.ineligible_reason)[:300]
+                rejected.append({"name": rec.name, "typed": "SELECTOR_LATE_REFUSAL", "phase": "persist",
+                                 "reason": "the admitted transformed record is ineligible at binding: %s; the preserved "
+                                           "dense identity stands" % rprice.ineligible_reason})
+    except ProbeExhausted as e:
+        # the LATE-REFUSAL transition: the probe window ran out while the transformed record was
+        # re-deriving its transformation at binding; the record is dropped (its charges stand) and
+        # the preserved dense identity candidate proceeds -- never a terminal
+        rejected.append({"name": rec.name, "typed": "SELECTOR_LATE_REFUSAL", "phase": "persist",
+                         "reason": "the transformed record's binding exceeded the selector's probe window: %s; the preserved "
+                                   "dense identity stands (every charge of the attempt is kept)" % e})
+        if _SELECTOR_CURRENT[0] is not None:
+            _SELECTOR_CURRENT[0]["late_refusal"] = ("binding: %s" % e)[:300]
+        status[0] = "late_refusal"
+        return
+    except (PT.PlanError, ValueError, OSError) as e:
+        rejected.append({"name": rec.name, "reason": "plan record failed persist/reload/binding: %s" % e})
+        status[0] = "refused"
+        return
+    except B.BudgetExceeded as e:
+        status[:] = ["RESOURCE_STOP", Outcome(status="RESOURCE_STOP",
+                       reason="the shared budget was exhausted while binding the identity: %s" % e,
+                       rejected=rejected, stages=stages, budget=bg.report())]
+        return
+    back.source_path = path
+    reloaded.append((back, rprice, None))
+    status[0] = ("bound_ineligible" if not rprice.eligible else "bound")
+
+
+def _select_and_run(reloaded, out, rejected, stages, bg, cap_bytes, law, queries, eps, prog, plan_only, _discovery_complete, t):
+    """Stage 5 (price and select) and the execution boundary (extracted verbatim so the pilot's select / selected hooks enclose them)."""
     for rec, price, payload in reloaded:
         bad = loaded_admission(rec, price, cap_bytes=cap_bytes, bg=bg)
         if bad and price.eligible:
@@ -911,6 +943,8 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
                        stages=stages, budget=bg.report())
     chosen_name = cmp["chosen"]["name"]
     chosen_rec = cmp["chosen"]["record"]
+    if _PILOT_HOOKS.get("select_end"):
+        _PILOT_HOOKS["select_end"](cmp)
     chosen = next(x for x in reloaded if x[1] is chosen_rec)
     crec, cprice, cpayload = chosen
     crec.properties.set("selected")
@@ -979,9 +1013,12 @@ def _solve(model, evidence, queries, eps, wall_s, cap_bytes, research_enabled, p
 
     # ---------------- stages 6-7: the ONE loaded-object boundary ----------------
     out.plan["executed_kind"] = crec.kind
+    if _PILOT_HOOKS.get("selected"):
+        _PILOT_HOOKS["selected"](crec)
     res = run_loaded(crec, law, queries, bg, eps, cap_bytes, prog,
                      out=out, rejected=rejected, stages=stages)
     return res
+
 
 
 def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None,
@@ -2076,7 +2113,9 @@ def _reprice_loaded(rec, r, queries, nq, simp, cap_bytes, bg=None):
         if prog.get("support") and _sp is None and price.eligible:
             price.eligible = False
             price.ineligible_reason = "the record's declared support could not be re-derived as declared at binding"
-        feas = PR.identity_checker_feasibility(pl, r, bg, wall_remaining_s=(bg.remaining() if bg is not None else None),
+        _hook = _PILOT_HOOKS.get("admission") if (prog.get("quotient") or prog.get("support")) else None
+        _hooked = _hook(pl, r, _chk, bg, cap_bytes, prog) if _hook is not None else None
+        feas = _hooked if _hooked is not None else PR.identity_checker_feasibility(pl, r, bg, wall_remaining_s=(bg.remaining() if bg is not None else None),
                                                rss_cap_bytes=cap_bytes, rss_now_bytes=CAPX.rss_current_bytes(),
                                                rss_baseline_bytes=CAPX.invocation_baseline_bytes(), checker_plan=_chk,
                                                diagnostic_shared_only=_DIAGNOSTIC_SHARED_ONLY[0])
@@ -2191,6 +2230,11 @@ _DIAGNOSTIC_SHARED_ONLY = [False]   # the explicitly selected shared-aggregation
 _SUPPORT_ENABLED = [False]          # the bounded pilot's EXPLICIT selection (3 Nov 2026): compile the global support and run the identity sparsely when admitted
 _QUOTIENT_ENABLED = [False]         # the quotienting pilot's EXPLICIT selection (3 Nov 2026): solve the identity on the exact constraint quotient when admitted (3 Nov 2026)
 ROUTE_POLICIES = ("dense", "support", "quotient", "selector")
+# OPT-IN lifecycle hooks of the selector PILOT (4 Nov 2026): empty by default (no behaviour change); mdi.selector_pilot.enable()
+# installs callables for "admission" (binding-time admission of a transformed record), "record_begin"/"record_end" (stage 4 per
+# record, incl. failed exits), "select_begin"/"select_end"/"selected" (stage 5), "terminal" (every terminal). Every call is guarded
+# by a presence test so the accepted path pays nothing when the dict is empty.
+_PILOT_HOOKS = {}
 _ROUTE_POLICY = ["dense"]           # the route policy of THIS invocation (generalization experiment, 3-4 Nov 2026)
 _SELECTOR_CURRENT = [None]          # the selector's attempt block of THIS invocation (attached to EVERY terminal, stops included)
 _SELECTOR_PROBE = [None]            # the selector's probe-deadline budget view (stage 4 binds the transformed record under it)
