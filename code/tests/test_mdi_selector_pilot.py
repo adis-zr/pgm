@@ -4,7 +4,7 @@ check -- runs in a FRESH child process (tests/_pilot_control_child.py) under the
 A receipt (supervisor outcome, charged wall, peak tree RSS, child result) is persisted for EVERY control -- failures and timeouts
 included -- before any assertion. Injected values are labelled by the child and are not elapsed time. The default path is asserted
 restored after each control; the accepted pin is asserted intact."""
-import os, sys, json, tempfile, time, hashlib
+import os, sys, json, tempfile, time, hashlib, math
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(HERE, "tests"))
 import pytest
@@ -12,7 +12,7 @@ from mdi import pipeline as PLN, selector_pilot as SPL
 from ext import supervise as SV
 
 CHILD = os.path.join(HERE, "tests", "_pilot_control_child.py")
-RECEIPTS_DIR = os.path.join(HERE, "runs/mdi_2026-10-28/GENERALIZATION_2026-11-03/COMPARISON_2026-11-04/pilot/receipts")
+RECEIPTS_DIR = os.environ.get("MDI_PILOT_RECEIPTS_DIR", os.path.join(HERE, "runs/mdi_2026-10-28/GENERALIZATION_2026-11-03/COMPARISON_2026-11-04/pilot/receipts"))
 LIMITS = {"deadline_s": 10.0, "mem_limit_kib": 1 << 20, "grace_s": 0.0, "max_oracle_states": 4096}
 
 
@@ -22,10 +22,38 @@ def _control(name):
     cmd = [sys.executable, CHILD, name, out_path]
     sup = SV.run(cmd, cwd=HERE, log_path=os.path.join(tmp, "supervisor.log"), deadline_s=LIMITS["deadline_s"], mem_limit_kib=LIMITS["mem_limit_kib"],
                  env={"PYTHONPATH": HERE}, label="pilot:" + name)
-    res = json.load(open(out_path)) if os.path.exists(out_path) else None
+    receipt_path = os.path.join(RECEIPTS_DIR, "%s.json" % name)
     receipt = {"control": name, "command": cmd, "limits": LIMITS, "supervisor": {k: sup.get(k) for k in ("outcome", "returncode", "elapsed_s", "peak_tree_rss_kib", "mem_samples")},
-               "charged_s": sup.get("elapsed_s"), "child": res, "supervisor_log": open(os.path.join(tmp, "supervisor.log")).read()[-1500:], "recorded": time.strftime("%Y-%m-%d %H:%M:%S")}
-    json.dump(receipt, open(os.path.join(RECEIPTS_DIR, "%s.json" % name), "w"), indent=1, default=str)      # persisted BEFORE any assertion
+               "charged_s": sup.get("elapsed_s"), "child": None, "child_read_status": "pending", "supervisor_log": None, "recorded": time.strftime("%Y-%m-%d %H:%M:%S")}
+    def persist():
+        with open(receipt_path + ".tmp", "w") as f:
+            json.dump(receipt, f, indent=1, default=str)
+            f.flush(); os.fsync(f.fileno())
+        os.replace(receipt_path + ".tmp", receipt_path)
+    persist()       # retain the supervisor's known charge BEFORE parsing any child artifact
+    res = None
+    try:
+        if os.path.exists(out_path):
+            with open(out_path) as f:
+                parsed = json.load(f)
+            if not isinstance(parsed, dict):
+                raise ValueError("child result is not a JSON object")
+            res = parsed
+            receipt["child"] = res
+            receipt["child_read_status"] = "parsed"
+        else:
+            receipt["child_read_status"] = "missing"
+    except (OSError, ValueError) as e:
+        receipt["child_read_status"] = "invalid"
+        receipt["child_read_error"] = {"type": type(e).__name__, "message": str(e)}
+    try:
+        with open(os.path.join(tmp, "supervisor.log")) as f:
+            receipt["supervisor_log"] = f.read()[-1500:]
+    except OSError as e:
+        receipt["supervisor_log_error"] = {"type": type(e).__name__, "message": str(e)}
+    finally:
+        persist()
+    assert isinstance(receipt["charged_s"], (int, float)) and math.isfinite(receipt["charged_s"]) and receipt["charged_s"] >= 0, (name, "unknown or invalid supervisor charge")
     assert sup["outcome"] == "COMPLETED", (name, sup["outcome"], (res or {}).get("error"))
     assert res is not None and res["ok"], (name, (res or {}).get("error"))
     assert PLN._select_route.__module__ == "mdi.pipeline" and PLN._PILOT_HOOKS == {}
@@ -140,7 +168,9 @@ def test_static_prospective_figures_distinguish_operand_multiplicity():
 
 def test_receipts_total():
     recs = [json.load(open(os.path.join(RECEIPTS_DIR, f))) for f in sorted(os.listdir(RECEIPTS_DIR)) if f.endswith(".json") and f != "SUMMARY.json"]
-    tot = sum(float(r["charged_s"] or 0) for r in recs)
+    charges = [r.get("charged_s") for r in recs]
+    assert all(isinstance(c, (int, float)) and math.isfinite(c) and c >= 0 for c in charges), "unknown or invalid supervisor charge; no total available"
+    tot = sum(charges)
     json.dump({"controls": len(recs), "supervised_wall_total_s": round(tot, 4), "limits": LIMITS, "scope": "each control = one fresh child incl. its tiny invocation AND its oracle check, supervised by ext.supervise.run (unchanged); the supervisor's spawn-to-exit wall is the charge",
                "outcomes": {r["control"]: r["supervisor"]["outcome"] for r in recs}, "built": time.strftime("%Y-%m-%d %H:%M:%S")}, open(os.path.join(RECEIPTS_DIR, "SUMMARY.json"), "w"), indent=1)
     assert tot < 60 and all(r["supervisor"]["outcome"] == "COMPLETED" for r in recs)

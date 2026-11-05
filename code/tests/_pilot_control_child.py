@@ -40,18 +40,18 @@ def perm6():    # 4,096 restricted assignments; support ratio ~10.5; producer an
     return _perm_chain(6, k=4, seed=1)
 
 
-def restricted_states(m, ev):
-    r = M.restrict(m, ev); s = PRE.simplify(r)
+def restricted_states(restricted):
     n = 1
-    for v in (s.free if s.impossible is None else []):
-        n *= int(s.card[v])
+    for v in restricted.free:
+        n *= int(restricted.card[v])
     return n
 
 
 def oracle_contained(res, m, ev):
-    n = restricted_states(m, ev)
+    restricted = M.restrict(m, ev)
+    n = restricted_states(restricted)
     assert n <= MAX_STATES, "oracle refused: %d restricted states > %d" % (n, MAX_STATES)
-    Z, pt = O.exact_all_marginals(M.restrict(m, ev))
+    Z, pt = O.exact_all_marginals(restricted)
     ok = set(res.intervals) == set(range(m.nvars)) and all(Fr(res.intervals[v][a][0]) <= pt[v][a] <= Fr(res.intervals[v][a][1]) for v in pt for a in range(len(pt[v])))
     return ok, n
 

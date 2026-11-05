@@ -1,18 +1,22 @@
-"""OPT-IN PILOT (4 November 2026; disabled by default; NOT part of the accepted selector): complete optional-discovery
+"""OPT-IN PILOT (4 November 2026; disabled by default; NOT part of the accepted selector): observed planning-cost
 accounting, pre-allocation refusal and optional-state lifetime for the frozen selector policy.
 
-Nothing of the accepted snapshot is edited. `enable()` replaces two attributes of `mdi.pipeline` that `_solve` looks up at call
+This separately pinned pilot changes pipeline.py through opt-in hooks; the accepted snapshot remains separate. `enable()` replaces two attributes of `mdi.pipeline` that `_solve` looks up at call
 time -- `_select_route` (the selector) and `run_loaded` (the execution boundary) -- with the pilot's versions; `disable()` (or the
 `enabled()` context manager) restores them. The admission RULES and the frozen `SELECTOR_POLICY` constants are read, never
-changed; the pilot adds (1) NON-OVERLAPPING cost scopes for every optional step -- the pre-window gate, recognition, quotient
+changed; the pilot adds (1) NON-OVERLAPPING observations for named planning steps -- the pre-window gate, recognition, quotient
 construction / planning / pricing / preflight / admission, both support compilations, pricing, program and record creation, the
-post-poll tail -- each with its wall, its shared-counter charge delta and the bytes the mechanism reports; (2) a PREFLIGHT before
+discovery gap -- named scopes report wall, shared-counter charge delta and the bytes the mechanism reports; the enclosing interval retains unassigned time; (2) a PREFLIGHT before
 the quotient's optional dense occupancy probe: a conservative full-occupancy forecast (every message entry at full bits) that, when
-it already admits, makes the probe unnecessary, and otherwise a prospective work / byte estimate derived from the checker plan that
-DECLINES the candidate before allocating when it exceeds an explicit finite allowance (a missed opportunity, reported);
+it already admits, makes the probe unnecessary, and otherwise DECLINES the candidate without starting that occupancy probe (a missed opportunity, reported);
+prospective work / byte estimates are context only, not storage bounds;
 (3) an optional-state manifest (cache keys created by the probes) and a cleanup before execution that releases every optional
 object the selected record does not need, charged and RSS-sampled (an observation: freeing references does not guarantee the
 allocator returns pages).
+
+The optional scopes form a diagnostic subtotal, not exact incremental E. The planning envelope includes mandatory
+work and unassigned gaps from selector entry to cleanup completion before execution (or at pre-execution abandonment).
+Complete supervised invocation time remains the experimental outcome.
 
 This is infrastructure for LOSS PROTECTION, not a new inference advantage: a complete one-second optional window is an EMPIRICAL
 pilot target, not a wall-time theorem; the frozen 20 s window stays the policy; unresolved physical overshoot terms are named in
@@ -200,20 +204,21 @@ def _hook_admission(pl, r, chk, bg, cap_bytes, prog):
 
 
 def select_route(r, bg, rejected, cap_bytes, nq, simp, mh, eh, qh, queries, eps, records, prices):
-    """The pilot's selector: the frozen policy's decisions with complete, non-overlapping optional cost scopes, the preflight
+    """The pilot's selector: the frozen constants with scoped planning-cost observations, an enclosing planning interval, the preflight
     and the optional-state manifest. Returns the selector block (compatible with the frozen reporter). Every exit -- normal,
     probe fallback, global stop, fault -- passes through `_finish` (try / finally)."""
     t_sel = time.monotonic()
     sc = _Scopes(bg)
     ctx = {"keys0": None}
-    _STATE.update({"baseline_keys": None, "released": False, "open_record": None})
-    blk = {"policy": "selector", "pilot": "selector_pilot (opt-in; complete optional accounting, preflight, state lifetime)", "attempts": [], "recommended": "dense",
+    _STATE.update({"baseline_keys": None, "released": False, "open_record": None,
+                   "phase_started_monotonic": t_sel})
+    blk = {"policy": "selector", "pilot": "selector_pilot (opt-in; scoped accounting, planning envelope, preflight, state lifetime)", "attempts": [], "recommended": "dense",
            "transformed_record": None, "dense_candidate": None, "late_refusal": None, "scopes": sc.rows,
            "pilot_parameters": {"optional_occupancy_probe": "never started by the pilot: conservative full-occupancy forecast admits or the candidate is declined", "frozen_policy": dict(PLN.K.SELECTOR_POLICY)},
            "window_rule": "the FROZEN policy's window (min(%.1f s, construction allowance remaining - %.1f s)); the pilot changes no constant" % (PLN.SELECTOR_PROBE_WINDOW_S, PLN.SELECTOR_DENSE_RESERVE_S),
            "units": {"wall_s": "monotonic seconds per scope (non-overlapping)", "charged_entries": "shared pricing counter delta per scope (table entries / Boolean positions; a work quota, not a wall)", "bytes": "bytes the mechanism reports or the preflight estimates (never a measured RSS)"},
            "unresolved_overshoot": ["unpolled spans inside scopes: content keys (recognition_key, support_cache_key), build_plan per order, byte_estimate, quotient/support pricing, price_identity_plan, _identity_record / executable_identity, persistence (stage 4), compare (stage 5)",
-                                    "the dense occupancy probe's per-bag object-array allocation / multiply / reduce between polls (width-exponential) -- the preflight refuses it above the allowance but does not make it interruptible",
+                                    "the mandatory dense occupancy probe remains unchanged; the quotient occupancy probe is never started by the pilot; other unpolled primitives are measured, not bounded",
                                     "pre-window optional work (the gate scan) and the post-poll tail (record creation, summary) are measured, not bounded"]}
     PLN._SELECTOR_CURRENT[0] = blk; _STATE["blk"] = blk
     try:
@@ -421,7 +426,7 @@ def _finish(blk, sc, keys0, t_sel):
                                       "note": "cache entries created by the probes during DISCOVERY; entries created later (binding re-derivation) are added by the record hooks; everything not needed by the selected record is released by the cleanup hook before execution or on the terminal"}
     blk["optional_cost"] = {"optional_wall_s": sc.total("optional"), "mandatory_prefix_wall_s": sc.total("mandatory"),
                             "post_poll_tail_s": round(time.monotonic() - t_sel - sum(r["wall_s"] for r in sc.rows), 6),
-                            "note": "optional_wall_s = sum of the optional scopes measured in DISCOVERY; binding-time scopes (`binding_scopes`, per record incl. failed exits), the selection scope and the cleanup are recorded by the lifecycle hooks; `total_optional_wall_s` is added at the terminal; charges are quotas, not walls; unknown measurements stay null"}
+                            "note": "optional_wall_s = sum of the optional scopes measured in DISCOVERY; binding-time scopes (`binding_scopes`, per record incl. failed exits), the selection scope and the cleanup are recorded by the lifecycle hooks; `total_optional_wall_s` is added at the terminal; charges are quotas, not walls; unknown measurements stay null; legacy post_poll_tail_s is the aggregate discovery gap, not an isolated post-poll primitive"}
     PLN._summarize_selector_block(blk)
 
 
@@ -488,8 +493,9 @@ def _hook_terminal(out):
     ss = (blk.get("selection_scope") or {}).get("wall_s", 0.0) if (blk.get("selection_scope") or {}).get("kind") == "optional" else 0.0
     cl = (blk.get("cleanup") or {}).get("wall_s", 0.0)
     blk["total_optional_wall_s"] = round(opt + rs + ss + cl, 6)
-    blk["total_optional_note"] = ("discovery optional scopes + optional stage-4 record scopes (the transformed record's; the dense record's when a transformed record existed) + the selection scope when two records were compared + cleanup; "
-                                  "binding_scopes are INSIDE the stage-4 record scopes and are not added again; walls only")
+    blk["optional_scopes_subtotal_wall_s"] = blk["total_optional_wall_s"]
+    blk["total_optional_note"] = ("Legacy field: a scoped subtotal, NOT complete incremental optional cost E. It omits inter-scope gaps and can include mandatory dense binding after a transformed record fails. "
+                                  "Binding scopes are inside record scopes and are not added again. planning_envelope_wall_s measures the enclosing planning interval, including mandatory work and unassigned gaps; neither field is a counterfactual overhead theorem.")
     _STATE["blk"] = None
 
 
@@ -524,11 +530,26 @@ def _release(pg, reason):
             else:
                 del CAPX._OCCUPANCY_CACHE[k]; dropped["occupancy"] += 1
     gc.collect()
+    after = _retained_bytes_estimate(); rss1 = CAPX.rss_current_bytes()
     blk["cleanup"] = {"reason": reason, "wall_s": round(time.monotonic() - t0, 6), "dropped_cache_entries": dropped, "kept_for_execution": kept,
-                      "retained_bytes_estimate_before": before, "retained_bytes_estimate_after": _retained_bytes_estimate(), "rss_before_bytes": rss0, "rss_after_bytes": CAPX.rss_current_bytes(),
+                      "retained_bytes_estimate_before": before, "retained_bytes_estimate_after": after, "rss_before_bytes": rss0, "rss_after_bytes": rss1,
                       "baseline_known": base is not None,
                       "note": "LOGICAL release of every optional cache entry (created after the dense candidate, in discovery OR at binding) not needed by the selected record; freeing references and collecting does not guarantee the allocator returns pages -- the RSS figures are an observation, the byte estimate is the objects' own sizes"}
     _STATE["released"] = True
+    # Close before execution, or at pre-execution abandonment. This enclosing interval includes
+    # mandatory dense work, inter-scope bookkeeping, and both cleanup observations above.
+    # It does not isolate counterfactual E or prove a time/space bound.
+    ended = time.monotonic()
+    started = _STATE.get("phase_started_monotonic")
+    envelope = None if started is None else ended - started
+    known = (sum(r["wall_s"] for r in blk.get("scopes", [])) +
+             sum(r["wall_s"] for r in blk.get("record_scopes", [])) +
+             (blk.get("selection_scope") or {}).get("wall_s", 0.0) + blk["cleanup"]["wall_s"])
+    blk["planning_envelope_wall_s"] = None if envelope is None else round(envelope, 6)
+    blk["planning_scopes_wall_s"] = round(known, 6)
+    blk["planning_unassigned_wall_s"] = None if envelope is None else round(envelope - known, 6)
+    blk["planning_envelope_note"] = ("Observed selector-entry to cleanup-completion interval, before execution or at pre-execution abandonment. Includes mandatory work and all gaps; not complete invocation time or exact optional E. "
+                                     "Unassigned is the enclosing interval minus non-overlapping top-level scopes; tiny signed residuals can reflect six-decimal scope rounding. Nested binding scopes are not added.")
 
 
 def run_loaded(crec, law, queries, bg, eps, cap_bytes, prog=None, out=None, rejected=None, stages=None, wrap=None):
