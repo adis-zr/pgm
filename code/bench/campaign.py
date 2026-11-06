@@ -105,7 +105,10 @@ def stage_spent(rows, stage):
 
 
 def run_cell(S, cell, cfgp, stage_key, label_extra=None, out_root=None, deadline=None):
-    out = os.path.join(S, out_root or "cells", cell["stage"], "%s__%s__%s" % (cell["case"], cell["arm"], cell["cell_id"])); os.makedirs(out, exist_ok=True)
+    # labelled runs (diagnostics, amended reruns) get their own directory: the label is part of the name so probes / repetitions never overwrite
+    # each other's artifacts (amendment 3: the first diagnostics pass wrote every DBN_15 probe into one directory)
+    sub = "%s__%s__%s" % (cell["case"], cell["arm"], cell["cell_id"]) + (("__" + label_extra.replace("/", "_")) if label_extra else "")
+    out = os.path.join(S, out_root or "cells", cell["stage"], sub); os.makedirs(out, exist_ok=True)
     deadline = deadline or cell["budget_s"]
     cmd = [PY, os.path.join(HERE, "bench", "cells.py"), cell["arm"], os.path.join(S, cell["model_path"]), os.path.join(S, cell["evidence_path"]), out, "%.3f" % deadline, cfgp]
     env = dict(os.environ); env.update(THREAD_ENV); env["PYTHONPATH"] = HERE

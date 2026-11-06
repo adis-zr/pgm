@@ -100,7 +100,12 @@ def main(S):
     # ---- 3. accuracy track
     w("\n## 3. Accuracy track — empirical point error at fixed budgets on cases with a qualified reference (R0 / R1 separated from R2)\n")
     w("Point estimates: heuristics' output vectors; certified arms' declared midpoints. Errors are bounded by the reference enclosure (R1: binary64 exact-algorithm output; the enclosure is the half-ulp of the 10-decimal print only, the binary64 computation error is NOT enclosed, so R1 errors are numerical comparisons; R2: official 6-significant-digit files, provenance undocumented). `met` = upper error bound ≤ 0.005; `missed` = lower bound > 0.005; otherwise unresolved. R1/R2 distances are numerical comparisons, not rigorous error claims. Heuristics' certification track is NOT_OFFERED.\n")
-    rc = SC["reference_classes"]; w("Reference classes over the panel: %s. Cross-reference consistency (independent R1 vs R2 boxes disjoint on any coordinate): %s.\n" % (dict(collections.Counter(v["class"] for v in rc.values())), {k: v["cross_reference_disjoint_coordinates"] for k, v in rc.items() if v.get("cross_reference_disjoint_coordinates")} or "no disjoint coordinates found"))
+    rc = SC["reference_classes"]
+    # repeat counts and distinct case / variable / coordinate counts, separately (spec section 8)
+    for stage in ("breadth", "depth"):
+        sc_ = [c for c in prim if c["stage"] == stage and c.get("accuracy") and rc.get(c["case"], {}).get("class") in ("R0", "R1")]
+        w("Scored against R0/R1 in the %s stage: %d cells (ONE observation each) over %d distinct cases; %d variables and %d coordinates per arm-case summed = %d variable-scores, %d coordinate-scores." % (stage, len(sc_), len({c["case"] for c in sc_}), sum(c["accuracy"]["variables"] for c in sc_) // max(1, len({c["arm"] for c in sc_})), sum(c["accuracy"]["coordinates"] for c in sc_) // max(1, len({c["arm"] for c in sc_})), sum(c["accuracy"]["variables"] for c in sc_), sum(c["accuracy"]["coordinates"] for c in sc_)))
+    w("Reference classes over the panel: %s. Cross-reference consistency (independent R1 vs R2 boxes disjoint on any coordinate): %s.\n" % (dict(collections.Counter(v["class"] for v in rc.values())), {k: v["cross_reference_disjoint_coordinates"] for k, v in rc.items() if v.get("cross_reference_disjoint_coordinates")} or "no disjoint coordinates found"))
     for stage in ("breadth", "depth"):
         w("\n### %s stage (%s s): max |error| upper bound · mean Hellinger (at reference midpoint) per arm, cases with R0/R1 references\n" % (stage, "20" if stage == "breadth" else "120"))
         cases = sorted({c["case"] for c in prim if c["stage"] == stage and rc.get(c["case"], {}).get("class") in ("R0", "R1")})
@@ -193,6 +198,22 @@ def main(S):
             w("**%s** (%s, %d blocks, %s): regional enclosure width before transport max %.1e; transport radius z saturated at 1 on %d/%d blocks; crossing influence d_v at the query node %s, over the region boundary max %.1f; influence θ over %d edges median %.2f (fraction > 0.5: %.2f); escalations %s. Attribution: %s\n" % (
                 case, a["stage"], a["blocks"], a["status"], a["regional_enclosure_width_before_transport"]["max"] or 0, a["transport_radius_z"]["saturated_at_1"], a["blocks"], a["crossing_influence_d_v"]["at_query_node"], a["crossing_influence_d_v"]["max_over_region_boundary"]["max"],
                 a["influence_theta_over_edges"]["edges"], a["influence_theta_over_edges"]["median"], a["influence_theta_over_edges"]["fraction_above_0.5"], json.dumps(a["escalations_and_refusals"])[:300], a["attribution"]))
+    # breadth -> depth status changes (budget effect)
+    w("\n### Effect of the 120 s budget: cells whose status changed from breadth (20 s) to depth (120 s), same case and arm\n")
+    w("| case | arm | breadth | depth | depth complete response s | depth peak RSS MB | note |"); w("|---|---|---|---|---|---|---|"); nchg = 0
+    for c in prim:
+        if c["stage"] != "depth":
+            continue
+        b = next((x for x in prim if x["stage"] == "breadth" and x["case"] == c["case"] and x["arm"] == c["arm"]), None)
+        if b and b["status"] != c["status"]:
+            note = ""
+            if c["arm"] == "MDI_EXISTING" and c["status"] == "CERTIFIED":
+                note = "refused at 20 s by the engine's checker-wall forecast; admitted and certified at 120 s (identity route)"
+            elif c["status"].startswith("KILLED_MEMORY"):
+                note = "a higher i-bound step of the ladder crossed the 8 GiB budget; the last complete lower-i-bound output is retained (scored separately)"
+            w("| %s | %s | %s | %s | %s | %.0f | %s |" % (c["case"], c["arm"], b["status"], c["status"], ("%.2f" % c["complete_response_s"]) if c.get("complete_response_s") else "—", (c.get("peak_tree_rss_bytes") or 0) / 1e6, note)); nchg += 1
+    if nchg == 0:
+        w("| (none) | | | | | | |")
     # ---- 5. anchors
     w("\n## 5. Previously seen anchors (Grids_11, Pedigree_11, Promedus_12), reported separately\n")
     w("| case | arm | stage | status | complete response s | accuracy (max err upper) |"); w("|---|---|---|---|---|---|")
@@ -211,9 +232,19 @@ def main(S):
     if DG:
         w("Width probes / rooted probe cases: %s. %s\n" % (DG.get("A_width_probes_cases"), " ".join(DG.get("notes", []))))
         if DG.get("A_rows"):
-            w("| case | probe | status | wall s |"); w("|---|---|---|---|")
+            w("| case | probe | status | wall s | detail |"); w("|---|---|---|---|---|")
             for r in DG["A_rows"]:
-                w("| %s | %s | %s | %.2f |" % (r["case"], r["label"], r["status"], r["supervisor_wall_s"]))
+                det = ""; cj = os.path.join(S, r["out_dir"], "cell.json") if r.get("out_dir") else None
+                if cj and os.path.exists(cj):
+                    d = json.load(open(cj))
+                    if d.get("single_query"):
+                        sq = d["single_query"]; det = "var %s: %s, proof kind %s (region certificate for the one requested node, radius-1 region of %d nodes; the forest rooted schedule does not apply to a cyclic DBN component); interval of state 1 %s" % (sq["var"], sq["status"], sq["proof_kind"], len(sq["H"] or []), [("%.4f" % float(__import__("fractions").Fraction(x))) for x in (sq["interval_state1"] or [])])
+                    elif d.get("certified"):
+                        det = "max width %s over %d blocks" % (d["certified"]["max_width"], d["certified"]["free_vars_total"])
+                w("| %s | %s | %s | %.2f | %s |" % (r["case"], r["label"], r["status"], r["supervisor_wall_s"], det))
+            w("\nRooted vs all-query correctness on DBN_15 (var 25): the single-query certificate and the all-query certificate both carry transport radius z = 1 and publish the trivial interval [0, 1] for the probed state; they agree and are both valid. The single-query dispatch certified one region (0.20 s complete response) instead of 42 (1.95 s). The forest rooted-inward schedule itself was exercised and validated on the saved forest controls (REPLAY4, section 7), not on an external case: no external case was a forest.")
+        if load(S, "DIAGNOSTICS_FIRST_PASS_ROWS.json"):
+            w("\nA first diagnostics pass wrote all DBN_15 probes into one directory (amendment 3); its ledger rows are retained in CELLS_LEDGER.jsonl and listed in DIAGNOSTICS_FIRST_PASS_ROWS.json; the table above is the labelled rerun with preserved artifacts.")
         if DG.get("B_repetitions"):
             w("\nConditional repetition subset (%s):\n" % DG["B_repetitions"][0]["label"].rsplit("_rep", 1)[0]); w("| case | arm | rep | status | complete response s | peak RSS MB |"); w("|---|---|---|---|---|---|")
             for r in DG["B_repetitions"]:
@@ -227,21 +258,24 @@ def main(S):
     w("\n## 8. Coverage-gap note (outside measured tables)\n")
     w("Arm availability resolved before outcomes: %s\n" % json.dumps(AV["hierarchy_resolved_before_outcomes"], indent=0)[:1800])
     w("Unavailable winning solvers: uai14-mar (2022 leaderboard leader at 1,200 / 3,600 s) and IBIA-MAR have no public runnable artifact; SampleSearch (author code) could not be run or built here after six bounded attempts. Paper-reported runtimes are not compared with these laptop measurements. Emulated arms: none remained in the panel (the only x86-64 binaries aborted at startup under emulation).\n")
-    # ---- 10. decision
-    w("\n## 10. Decision and prioritized next steps (from the observed bottlenecks)\n")
-    cb = [c for c in prim if c["arm"] == "CBI_NATIVE"]; un = sum(1 for c in cb if c["status"] == "UNSUPPORTED_REPRESENTATION"); ad = [c for c in cb if c["status"] in ("CERTIFIED", "VALID_BUT_TOO_WIDE")]
-    md = [c for c in prim if c["arm"] == "MDI_EXISTING"]; mdc = [c for c in md if c["status"] == "CERTIFIED"]
-    w("1. **Most CBI_NATIVE failures are representation failures** (%d of %d cells refused by the adapter; %d admitted, %d certified). The blockers are, in order of cells: %s. The smallest independently justified extension that would unlock the largest block is a NONBINARY / higher-arity port into blocks (a coordinate map from k-state variables and arity-3 CPT rows to multi-coordinate blocks), which this pass was not authorized to add; it would address the %s families. The frustrated-gauge blocker (Grids, DBN) needs a two-sign kernel or a per-edge sign in the product kernel, a theory question (the single-sign K_r cannot represent repulsive and attractive edges around an odd cycle)." % (un, len(cb), len(ad), sum(1 for c in ad if c["status"] == "CERTIFIED"), ", ".join("%s ×%d" % kv for kv in sorted((BK.get("cbi_native", {}).get("by_class") or {}).items(), key=lambda kv: -kv[1])) if BK else "see BLOCKERS.json", ", ".join(f for f, d in (BK.get("cbi_native", {}).get("by_family_class") or {}).items() if "nonbinary domains" in d or "remaining high arity" in d) if BK else "—"))
-    w("2. **Where CBI_NATIVE was admitted (DBN_15, DBN_16) the bounds are wide while reference errors of exact arms are small**: a theory / certificate question, not an implementation cost. The regional solves are exact; the Theorem-1 original-law transport saturates because 20-neighbour nodes have crossing influence sums of order 10 (d = 1 blocks, θ = r). A certificate that does not sum crossing influence linearly over a dense neighbourhood (nonbacktracking transport, Theorem 2, or an anchored transfer, Theorem 4) is the concrete question; both remain unimplemented.")
-    w("3. **MDI_EXISTING certifies %d of %d cases** (all by the dense identity route, every one within %s s) and refuses the rest before admission by its checker-wall forecast or byte cap; on the Protein family its exact preprocessing refuses 6,561-entry factors above the locally verifiable cap. Its certified answers are useful AND fast where its admission accepts; the measured implementation cost that blocks the rest is the exact-aggregation checker forecast, a candidate for the next bounded engineering pass." % (len(mdc), len({c["case"] for c in md if c["stage"] == "breadth"}), ("%.1f" % max(c["complete_response_s"] for c in mdc)) if mdc else "—"))
-    w("4. **Our methods work where baselines are already cheap**: every case certified by MDI_EXISTING was also solved by libDAI junction tree (R1) in under a second, and WMB / IJGP reached exact-by-i-bound outputs on most of them. No case in this panel shows a certified answer that an exact baseline could not produce within the same budget. This is stated as the finding; no held-out follow-up is proposed for a family that showed promise, because none did.")
-    w("5. Recommended order: (a) the nonbinary / arity-3 block port with its own factor-identity checker (unlocks bnlearn, Promedus, Pedigree, GridBN, CSP / ObjectDetection / Protein as far as binary-encodable), measured on a held-out subset of the same families; (b) the two-sign kernel question for Grids / DBN; (c) a transport certificate for dense neighbourhoods. None of these is a claim that the library will then be competitive; the exact arms set the bar at sub-second on every admitted case here.")
     # ---- 9. budget
     if BL:
         w("\n## 9. Budget ledger (28,800 s envelope)\n"); w("| scope | allocated s | charged s |"); w("|---|---|---|")
         for k, v in BL["allocation_s"].items():
             w("| %s | %.0f | %.1f |" % (k, v, BL["charged_s"].get(k, 0)))
         w("\nTotal charged incl. stage overheads %.1f s; remaining %.1f s; over-allocation: %s." % (BL["total_charged_incl_overheads_s"], BL["remaining_s"], BL.get("over_allocation") or "none"))
+    # ---- 10. decision
+    w("\n## 10. Decision and prioritized next steps (from the observed bottlenecks)\n")
+    cb = [c for c in prim if c["arm"] == "CBI_NATIVE"]; un = sum(1 for c in cb if c["status"] == "UNSUPPORTED_REPRESENTATION"); ad = [c for c in cb if c["status"] in ("CERTIFIED", "VALID_BUT_TOO_WIDE")]
+    md = [c for c in prim if c["arm"] == "MDI_EXISTING"]; mdc = [c for c in md if c["status"] == "CERTIFIED"]; mdc_cases = sorted({c["case"] for c in mdc}); mdc_b = sorted({c["case"] for c in mdc if c["stage"] == "breadth"})
+    def ex_of(case):
+        e = next((x for x in prim if x["arm"] == "EXACT" and x["case"] == case and x["stage"] == "breadth"), None); return (e["status"], e.get("complete_response_s")) if e else (None, None)
+    ex_rows = {case: ex_of(case) for case in mdc_cases}; ex_ok = [c for c, (st_, t) in ex_rows.items() if st_ == "COMPLETE"]; ex_not = [c for c, (st_, t) in ex_rows.items() if st_ != "COMPLETE"]
+    w("1. **Most CBI_NATIVE failures are representation failures** (%d of %d cells refused by the adapter; %d admitted, %d certified). The blockers are, in order of cells: %s. The smallest independently justified extension that would unlock the largest block is a NONBINARY / higher-arity port into blocks (a coordinate map from k-state variables and arity-3 CPT rows to multi-coordinate blocks), which this pass was not authorized to add; it would address the %s families. The frustrated-gauge blocker (Grids, DBN) needs a two-sign kernel or a per-edge sign in the product kernel, a theory question (the single-sign K_r cannot represent repulsive and attractive edges around an odd cycle)." % (un, len(cb), len(ad), sum(1 for c in ad if c["status"] == "CERTIFIED"), ", ".join("%s ×%d" % kv for kv in sorted((BK.get("cbi_native", {}).get("by_class") or {}).items(), key=lambda kv: -kv[1])) if BK else "see BLOCKERS.json", ", ".join(f for f, d in (BK.get("cbi_native", {}).get("by_family_class") or {}).items() if "nonbinary domains" in d or "remaining high arity" in d) if BK else "—"))
+    w("2. **Where CBI_NATIVE was admitted (DBN_15, DBN_16) the bounds are wide while reference errors of exact arms are small**: a theory / certificate question, not an implementation cost. The regional solves are exact; the Theorem-1 original-law transport saturates because 20-neighbour nodes have crossing influence sums of order 10 (d = 1 blocks, θ = r). A certificate that does not sum crossing influence linearly over a dense neighbourhood (nonbacktracking transport, Theorem 2, or an anchored transfer, Theorem 4) is the concrete question; both remain unimplemented.")
+    w("3. **MDI_EXISTING certifies %d distinct cases of %d** (%d at 20 s; %s only at 120 s), all by the dense identity route, the slowest in %s s; it refuses the rest before admission by its checker-wall forecast or byte cap, and on the Protein family and three bnlearn networks its exact preprocessing refuses factors above the locally verifiable cap. Its certified answers are useful AND fast where its admission accepts; the measured implementation cost that blocks the rest is the exact-aggregation checker forecast, a candidate for the next bounded engineering pass." % (len(mdc_cases), len({c["case"] for c in md if c["stage"] == "breadth"}), len(mdc_b), ", ".join(c for c in mdc_cases if c not in mdc_b) or "none", ("%.1f" % max(c["complete_response_s"] for c in mdc)) if mdc else "—"))
+    w("4. **Our methods work where baselines are already cheap**: of the %d cases MDI_EXISTING certified, libDAI junction tree (R1) completed %d within the 20 s breadth budget (%s)%s, and WMB / IJGP reached exact-by-i-bound outputs on most of them. No case in this panel shows a certified answer that an exact baseline could not produce within the same budget. This is stated as the finding; no held-out follow-up is proposed for a family that showed promise, because none did." % (len(mdc_cases), len(ex_ok), ", ".join("%s %.2f s" % (c, ex_rows[c][1]) for c in ex_ok), ("; EXACT did not complete on %s" % ", ".join("%s (%s)" % (c, ex_rows[c][0]) for c in ex_not)) if ex_not else ""))
+    w("5. Recommended order: (a) the nonbinary / arity-3 block port with its own factor-identity checker (unlocks bnlearn, Promedus, Pedigree, GridBN, CSP / ObjectDetection / Protein as far as binary-encodable), measured on a held-out subset of the same families; (b) the two-sign kernel question for Grids / DBN; (c) a transport certificate for dense neighbourhoods. None of these is a claim that the library will then be competitive; the exact arms set the bar at sub-second on every admitted case here.")
     open(os.path.join(S, "REPORT.md"), "w").write("\n".join(L) + "\n"); print("REPORT.md written (%d lines)" % len(L))
 
 
