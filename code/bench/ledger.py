@@ -22,7 +22,9 @@ def main(S):
             detail.setdefault("other_setup_scopes", {})[j["job"]] = j["wall_s"]
     for r in cells:
         w = r.get("supervisor_wall_s", 0.0) or 0.0
-        if r.get("label") is not None:
+        if r.get("label") is not None and str(r["label"]).startswith("amendment"):
+            sc[r["stage"]] += w                                   # amended reruns of primary cells are charged to their stage
+        elif r.get("label") is not None:
             sc["diagnostics"] += w
         elif r["stage"] == "breadth":
             sc["breadth"] += w

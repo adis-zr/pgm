@@ -34,14 +34,33 @@ def main(S):
     for c in prim:
         if c["stage"] == "breadth":
             fam_cases[c["family"]].add(c["case"])
+    amended = [c for c in cells if str(c.get("label") or "").startswith("amendment")]
     for fam in FAMS:
         if fam not in fam_cases:
             continue
         row = []
         for arm in ARMS:
             cnt = collections.Counter(short(c["status"]) for c in prim if c["stage"] == "breadth" and c["family"] == fam and c["arm"] == arm)
-            row.append(" ".join("%s×%d" % (k, v) for k, v in sorted(cnt.items(), key=lambda kv: -kv[1])))
+            cell = " ".join("%s×%d" % (k, v) for k, v in sorted(cnt.items(), key=lambda kv: -kv[1]))
+            am = collections.Counter(short(c["status"]) for c in amended if c["stage"] == "breadth" and c["family"] == fam and c["arm"] == arm)
+            if am:
+                cell += " [amend.1 rerun: %s]" % " ".join("%s×%d" % kv for kv in am.items())
+            row.append(cell)
         w("| %s (%d) | %s |" % (fam, len(fam_cases[fam]), " | ".join(row)))
+    if amended:
+        w("\nOriginal rows are the frozen run; bracketed values are the labelled reruns after amendment 1 (PGMax wrapper merges identical-scope factors). Both are kept in the ledger.")
+    # checkpoint coverage
+    w("\n### Checkpoint coverage — fraction of breadth cells with a COMPLETE output already available at 1 / 5 / 20 s (snapshots were copies of the latest complete output, never fresh runs)\n")
+    w("| arm | at 1 s | at 5 s | at 20 s | median time to first complete output s |"); w("|---|---|---|---|---|")
+    ledger = [json.loads(l) for l in open(os.path.join(S, "CELLS_LEDGER.jsonl"))]
+    for arm in ARMS:
+        rs = [r for r in ledger if r["stage"] == "breadth" and r["arm"] == arm and r.get("label") is None and r.get("snapshots")]
+        if not rs:
+            continue
+        def frac(cp):
+            vals = [any(sn.get("checkpoint_s") == cp and sn.get("complete_output") for sn in r["snapshots"]) for r in rs]; return "%.2f" % (sum(vals) / len(vals))
+        tf = [r["t_first_complete_output_s"] for r in rs if r.get("t_first_complete_output_s")]
+        w("| %s | %s | %s | %s | %s |" % (arm, frac(1.0), frac(5.0), frac(20.0), ("%.2f" % st.median(tf)) if tf else "—"))
     tot = collections.defaultdict(collections.Counter)
     for c in prim:
         if c["stage"] == "breadth":
@@ -63,15 +82,15 @@ def main(S):
         w("| %s | %.2f | %.2f |" % (arm, st.mean(fr) if fr else 0, (sum(1 for c in allc if c["status"] in GOOD) / len(allc)) if allc else 0))
     # ---- 2. service track
     w("\n## 2. Service track — original-model verified coverage and time to width ≤ 1/100\n")
-    w("| arm | stage | certified (width met) | valid but too wide | zero-partition proofs | admission / resource refusals | representation refusals | other | median time-to-verified-width s (certified cells) |"); w("|---|---|---|---|---|---|---|---|---|")
+    w("| arm | stage | certified (width met) | valid but too wide | zero-partition proofs | admission / resource refusals | representation refusals | preprocessing refusals (MDI) | other | median time-to-verified-width s (certified cells) |"); w("|---|---|---|---|---|---|---|---|---|---|")
     for arm in ("CBI_NATIVE", "MDI_EXISTING"):
         for stage in ("breadth", "depth"):
             cs = [c for c in prim if c["arm"] == arm and c["stage"] == stage]
             if not cs:
                 continue
             cert = [c for c in cs if c["status"] == "CERTIFIED"]; tt = [c["t_first_verified_width_met_s"] for c in cert if c.get("t_first_verified_width_met_s")]
-            w("| %s | %s | %d | %d | %d | %d | %d | %d | %s |" % (arm, stage, len(cert), sum(c["status"] == "VALID_BUT_TOO_WIDE" for c in cs), sum(c["status"] in ("INFEASIBLE_CERTIFIED", "INFEASIBLE_ADAPTER") for c in cs),
-                                                          sum(c["status"] == "RESOURCE_LIMIT" for c in cs), sum(c["status"] == "UNSUPPORTED_REPRESENTATION" for c in cs), sum(c["status"] not in ("CERTIFIED", "VALID_BUT_TOO_WIDE", "INFEASIBLE_CERTIFIED", "INFEASIBLE_ADAPTER", "RESOURCE_LIMIT", "UNSUPPORTED_REPRESENTATION") for c in cs), ("%.2f" % st.median(tt)) if tt else "—"))
+            w("| %s | %s | %d | %d | %d | %d | %d | %d | %d | %s |" % (arm, stage, len(cert), sum(c["status"] == "VALID_BUT_TOO_WIDE" for c in cs), sum(c["status"] in ("INFEASIBLE_CERTIFIED", "INFEASIBLE_ADAPTER") for c in cs),
+                                                          sum(c["status"] == "RESOURCE_LIMIT" for c in cs), sum(c["status"] == "UNSUPPORTED_REPRESENTATION" for c in cs), sum(c["status"] == "ENGINE_REFUSED_PREPROCESSING" for c in cs), sum(c["status"] not in ("CERTIFIED", "VALID_BUT_TOO_WIDE", "INFEASIBLE_CERTIFIED", "INFEASIBLE_ADAPTER", "RESOURCE_LIMIT", "UNSUPPORTED_REPRESENTATION", "ENGINE_REFUSED_PREPROCESSING") for c in cs), ("%.2f" % st.median(tt)) if tt else "—"))
     certs = [c for c in prim if c["arm"] in ("CBI_NATIVE", "MDI_EXISTING") and c["status"] in ("CERTIFIED", "VALID_BUT_TOO_WIDE")]
     if certs:
         w("\nCertified / valid cells:\n"); w("| case | family | arm | stage | status | complete response s | peak RSS MB | reference class | max abs error upper bound vs reference |"); w("|---|---|---|---|---|---|---|---|---|")
@@ -113,6 +132,18 @@ def main(S):
                 w("| %s | %s | %s |" % (case, INV[case]["family"], " | ".join(row)))
         else:
             w("(none)")
+    # per-case tradeoff table for the depth stage (full status + time + error for every arm)
+    w("\n### Depth stage (120 s): per-case status · complete response s · max |error| upper bound (R0/R1/R2 reference as marked); every entry is ONE observation\n")
+    w("| case | ref | " + " | ".join(ARMS) + " |"); w("|---|---|" + "---|" * len(ARMS))
+    for case in sorted({c["case"] for c in prim if c["stage"] == "depth"}, key=lambda x: (INV[x]["family"], x)):
+        row = []
+        for arm in ARMS:
+            c = next((x for x in prim if x["stage"] == "depth" and x["case"] == case and x["arm"] == arm), None)
+            if c is None:
+                row.append("—"); continue
+            acc = c.get("accuracy"); t = ("%.1fs" % c["complete_response_s"]) if c.get("complete_response_s") else ""
+            row.append("%s %s%s" % (short(c["status"]), t, (" e≤%.0e" % acc["max_abs_error_upper"]) if acc else ""))
+        w("| %s (%s) | %s | %s |" % (case, INV[case]["family"], rc.get(case, {}).get("class", "R3"), " | ".join(row)))
     # paired time where both arms meet the same quality requirement
     w("\n### Paired time and memory where two arms meet the SAME declared quality (max error upper bound ≤ 0.005 against an R0/R1 reference, same case and stage)\n")
     w("| case | stage | arm A | time A s | RSS A MB | arm B | time B s | RSS B MB |"); w("|---|---|---|---|---|---|---|---|"); n_pairs = 0
@@ -147,6 +178,21 @@ def main(S):
                 v = [c["phases_s"].get(k) for c in cs if isinstance(c["phases_s"].get(k), (int, float))]; return ("%.3f" % st.median(v)) if v else "—"
             cr = [c["complete_response_s"] for c in cs if c.get("complete_response_s")]
             w("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %.0f |" % (arm, stage, len(cs), med("startup_imports"), med("parse"), med("convert"), med("plan"), med("solve"), med("verify"), med("serialize"), ("%.2f" % st.median(cr)) if cr else "—", st.median([c["peak_tree_rss_bytes"] / 1e6 for c in cs])))
+    BK = load(S, "BLOCKERS.json", {}); AT = load(S, "ADMITTED_FAILURE_ATTRIBUTION.json", {})
+    if BK:
+        w("\n### Structural refusals of the native adapter, with one witness per blocker class\n")
+        w("| blocker class | cells | families | witness |"); w("|---|---|---|---|")
+        for cls, n in sorted(BK["cbi_native"]["by_class"].items(), key=lambda kv: -kv[1]):
+            fams = [f for f, d in BK["cbi_native"]["by_family_class"].items() if cls in d]; wt = BK["cbi_native"]["witnesses"].get(cls, {})
+            desc = {k: v for k, v in wt.items() if k in ("case", "factor", "scope", "cards", "free_after_slicing", "variable", "states", "pair", "cross_ratio", "attractive_pairs", "repulsive_pairs")}
+            w("| %s | %d | %s | %s |" % (cls, n, ", ".join(fams), json.dumps(desc)[:220]))
+        w("\nMDI_EXISTING refusals by typed reason: %s\n" % json.dumps(BK["mdi_existing"]["by_typed_reason"])[:900])
+    if AT and AT.get("cells"):
+        w("\n### Admitted CBI_NATIVE cells that stayed too wide: error-budget components\n")
+        for case, a in AT["cells"].items():
+            w("**%s** (%s, %d blocks, %s): regional enclosure width before transport max %.1e; transport radius z saturated at 1 on %d/%d blocks; crossing influence d_v at the query node %s, over the region boundary max %.1f; influence θ over %d edges median %.2f (fraction > 0.5: %.2f); escalations %s. Attribution: %s\n" % (
+                case, a["stage"], a["blocks"], a["status"], a["regional_enclosure_width_before_transport"]["max"] or 0, a["transport_radius_z"]["saturated_at_1"], a["blocks"], a["crossing_influence_d_v"]["at_query_node"], a["crossing_influence_d_v"]["max_over_region_boundary"]["max"],
+                a["influence_theta_over_edges"]["edges"], a["influence_theta_over_edges"]["median"], a["influence_theta_over_edges"]["fraction_above_0.5"], json.dumps(a["escalations_and_refusals"])[:300], a["attribution"]))
     # ---- 5. anchors
     w("\n## 5. Previously seen anchors (Grids_11, Pedigree_11, Promedus_12), reported separately\n")
     w("| case | arm | stage | status | complete response s | accuracy (max err upper) |"); w("|---|---|---|---|---|---|")
@@ -181,6 +227,15 @@ def main(S):
     w("\n## 8. Coverage-gap note (outside measured tables)\n")
     w("Arm availability resolved before outcomes: %s\n" % json.dumps(AV["hierarchy_resolved_before_outcomes"], indent=0)[:1800])
     w("Unavailable winning solvers: uai14-mar (2022 leaderboard leader at 1,200 / 3,600 s) and IBIA-MAR have no public runnable artifact; SampleSearch (author code) could not be run or built here after six bounded attempts. Paper-reported runtimes are not compared with these laptop measurements. Emulated arms: none remained in the panel (the only x86-64 binaries aborted at startup under emulation).\n")
+    # ---- 10. decision
+    w("\n## 10. Decision and prioritized next steps (from the observed bottlenecks)\n")
+    cb = [c for c in prim if c["arm"] == "CBI_NATIVE"]; un = sum(1 for c in cb if c["status"] == "UNSUPPORTED_REPRESENTATION"); ad = [c for c in cb if c["status"] in ("CERTIFIED", "VALID_BUT_TOO_WIDE")]
+    md = [c for c in prim if c["arm"] == "MDI_EXISTING"]; mdc = [c for c in md if c["status"] == "CERTIFIED"]
+    w("1. **Most CBI_NATIVE failures are representation failures** (%d of %d cells refused by the adapter; %d admitted, %d certified). The blockers are, in order of cells: %s. The smallest independently justified extension that would unlock the largest block is a NONBINARY / higher-arity port into blocks (a coordinate map from k-state variables and arity-3 CPT rows to multi-coordinate blocks), which this pass was not authorized to add; it would address the %s families. The frustrated-gauge blocker (Grids, DBN) needs a two-sign kernel or a per-edge sign in the product kernel, a theory question (the single-sign K_r cannot represent repulsive and attractive edges around an odd cycle)." % (un, len(cb), len(ad), sum(1 for c in ad if c["status"] == "CERTIFIED"), ", ".join("%s ×%d" % kv for kv in sorted((BK.get("cbi_native", {}).get("by_class") or {}).items(), key=lambda kv: -kv[1])) if BK else "see BLOCKERS.json", ", ".join(f for f, d in (BK.get("cbi_native", {}).get("by_family_class") or {}).items() if "nonbinary domains" in d or "remaining high arity" in d) if BK else "—"))
+    w("2. **Where CBI_NATIVE was admitted (DBN_15, DBN_16) the bounds are wide while reference errors of exact arms are small**: a theory / certificate question, not an implementation cost. The regional solves are exact; the Theorem-1 original-law transport saturates because 20-neighbour nodes have crossing influence sums of order 10 (d = 1 blocks, θ = r). A certificate that does not sum crossing influence linearly over a dense neighbourhood (nonbacktracking transport, Theorem 2, or an anchored transfer, Theorem 4) is the concrete question; both remain unimplemented.")
+    w("3. **MDI_EXISTING certifies %d of %d cases** (all by the dense identity route, every one within %s s) and refuses the rest before admission by its checker-wall forecast or byte cap; on the Protein family its exact preprocessing refuses 6,561-entry factors above the locally verifiable cap. Its certified answers are useful AND fast where its admission accepts; the measured implementation cost that blocks the rest is the exact-aggregation checker forecast, a candidate for the next bounded engineering pass." % (len(mdc), len({c["case"] for c in md if c["stage"] == "breadth"}), ("%.1f" % max(c["complete_response_s"] for c in mdc)) if mdc else "—"))
+    w("4. **Our methods work where baselines are already cheap**: every case certified by MDI_EXISTING was also solved by libDAI junction tree (R1) in under a second, and WMB / IJGP reached exact-by-i-bound outputs on most of them. No case in this panel shows a certified answer that an exact baseline could not produce within the same budget. This is stated as the finding; no held-out follow-up is proposed for a family that showed promise, because none did.")
+    w("5. Recommended order: (a) the nonbinary / arity-3 block port with its own factor-identity checker (unlocks bnlearn, Promedus, Pedigree, GridBN, CSP / ObjectDetection / Protein as far as binary-encodable), measured on a held-out subset of the same families; (b) the two-sign kernel question for Grids / DBN; (c) a transport certificate for dense neighbourhoods. None of these is a claim that the library will then be competitive; the exact arms set the bar at sub-second on every admitted case here.")
     # ---- 9. budget
     if BL:
         w("\n## 9. Budget ledger (28,800 s envelope)\n"); w("| scope | allocated s | charged s |"); w("|---|---|---|")

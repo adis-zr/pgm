@@ -144,8 +144,16 @@ def main(S):
                     except Exception:
                         snaps[f[len("snapshot_"):-4]] = "invalid"
             out["snapshot_max_abs_error_upper"] = snaps
+        elif mar and os.path.exists(mar) and r.get("outcome") in ("MEMORY_KILL", "TIMEOUT_KILL") and ref is not None:
+            # the supervisor killed the cell AFTER an earlier ladder step had atomically published a complete output: scored SEPARATELY as a
+            # retained-before-kill output (time to that output unknown; the cell itself stays censored / killed)
+            pts = read_points(mar); card = ref["card"]; ev = ref["ev"]
+            ok = len(pts) == len(card) and all(len(p) == card[v] for v, p in enumerate(pts)) and all(abs(float(sum(p)) - 1) <= 1e-5 * max(1, card[v]) for v, p in enumerate(pts))
+            out["output_valid"] = False; out["retained_output_before_kill"] = {"valid": ok, "accuracy": (score_points_vs_enclosure(pts, ref["rows"], card, ev) if ok and ref["rows"] is not None else None), "note": "not a completed cell; time-to-output unknown"}; out["accuracy"] = None
         else:
             out["output_valid"] = False; out["accuracy"] = None
+        if r["arm"] == "PGMAX_SUMPRODUCT_BP" and r.get("status") == "INVALID_OUTPUT":
+            out["failure_primary"] = "PGMax marginals not normalized on 81-state variables (rows of 0/1 entries summing to the state count): solver-side numerical failure with excluded zero configurations; output rejected, not clipped"
         if r["arm"] == "MDI_EXISTING" and r.get("out_dir"):
             ap = os.path.join(S, r["out_dir"], "arm_case_selector.json")
             if os.path.exists(ap):
