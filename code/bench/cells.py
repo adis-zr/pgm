@@ -99,7 +99,13 @@ def cell_cbi(mp, ep, out, deadline, cfg, rec, snaps):
     t = now(); remaining = max(0.05, deadline - now() - 0.5)
     limits = dict(cfg.get("cbi_limits") or {}); limits["max_time_s"] = min(limits.get("max_time_s", 120.0), remaining)
     rec["effective_limits"] = {"cbi": limits, "requested_width": cfg.get("width", "1/100")}
-    result = api.solve(native, "all", cfg.get("width", "1/100"), limits)
+    sq = cfg.get("single_query_var")                                   # DIAGNOSTIC probe only (spec section 9): one original variable
+    if sq is not None:
+        sq = int(sq)
+        if str(sq) in cert["fixed"]:
+            rec["status"] = "SINGLE_QUERY_VARIABLE_FIXED"; rec["reason"] = "probe variable %d is fixed by evidence / propagation: point mass, no solve" % sq; rec["phases_s"]["solve"] = 0.0; return
+        rec["single_query_var"] = sq
+    result = api.solve(native, ("all" if sq is None else [sq]), cfg.get("width", "1/100"), limits)
     tot = now() - t; tm = result["timings"]; plan = sum(tm.get(k, 0.0) for k in ("validate", "reduce_hard", "coarsen_propose", "build_systems"))
     rec["phases_s"]["plan"] = plan; rec["phases_s"]["solve"] = tot - plan                      # non-overlapping: plan = validation + reductions + systems; solve = dispatch + numerics + publication
     rec["solve_phases_s"] = tm; rec["cbi_status"] = result["status"]; rec["reason"] = result.get("reason")
@@ -130,6 +136,11 @@ def cell_cbi(mp, ep, out, deadline, cfg, rec, snaps):
     json.dump({"intervals": iv_out, "grid": "exact rationals; CBI grid 2^-%d" % result["grid_bits"]}, open(os.path.join(out, "intervals.json"), "w"))
     json.dump(result, open(os.path.join(out, "cbi_result.json"), "w"), default=str)
     rec["phases_s"]["serialize_pre"] = now() - t
+    if sq is not None:
+        pr = result["proofs"].get(result["certificate"].get(str(sq), {}).get("proof"), {}) if result.get("certificate") else {}
+        rec["single_query"] = {"var": sq, "status": result["statuses_per_query"].get(str(sq)), "interval_state1": [str(x) for x in rows[sq][1]] if rows.get(sq) else None, "proof_kind": pr.get("kind"), "schedule": pr.get("schedule"), "directed_transfers": pr.get("directed_transfers"), "H": pr.get("H")}
+        rec["phases_s"]["serialize"] = rec["phases_s"].pop("serialize_pre"); rec["status"] = (result["statuses_per_query"].get(str(sq)) or result["status"]) + "_SINGLE_QUERY"
+        rec["coverage"] = {"variables_covered": 1, "variables_free": len(cert["free"])}; return
     if all(p is not None for p in pts) and rec["verify_accepted"] and rec["adapter_check_accepted"]:
         t = now(); write_mar_points(os.path.join(out, "output.MAR"), pts); snaps.publish(os.path.join(out, "output.MAR")); rec["t_first_complete_output_s"] = now()
         rec["phases_s"]["serialize"] = rec["phases_s"].pop("serialize_pre") + (now() - t)

@@ -77,7 +77,14 @@ def freeze(S):
                 man["cells"].append({"cell_id": cid, "stage": stage, "case": c["case"], "family": c["family"], "anchor": c.get("anchor", False), "arm": arm, "budget_s": budget, "model_path": row["model_path"], "evidence_path": row["evidence_path"],
                                      "raw_model_sha256": row["raw_model_sha256"], "raw_evidence_sha256": row["raw_evidence_sha256"], "canonical_model_sha256": row["canonical_model_sha256"], "canonical_evidence_sha256": row["canonical_evidence_sha256"]})
     man["counts"] = {"breadth": sum(1 for c in man["cells"] if c["stage"] == "breadth"), "depth": sum(1 for c in man["cells"] if c["stage"] == "depth"), "cases": len(sel["selected"]), "target_denominator": 48}
-    json.dump(man, open(os.path.join(S, "CAMPAIGN_MANIFEST.json"), "w"), indent=1); print("frozen:", man["counts"], "commit", man["commit"], "code_hash", ch[:12])
+    mp = os.path.join(S, "CAMPAIGN_MANIFEST.json")
+    if os.path.exists(mp):                                   # a re-freeze (amendment) preserves the prior manifest and records the code-hash history
+        prior = json.load(open(mp))
+        if prior.get("code_hash") != ch:
+            os.replace(mp, os.path.join(S, "CAMPAIGN_MANIFEST_prior_%s.json" % prior["code_hash"][:12])); man["code_hash_history"] = (prior.get("code_hash_history") or []) + [{"code_hash": prior["code_hash"], "frozen_utc": prior["frozen_utc"], "commit": prior.get("commit")}]
+        else:
+            man["code_hash_history"] = prior.get("code_hash_history") or []
+    json.dump(man, open(mp, "w"), indent=1); print("frozen:", man["counts"], "commit", man["commit"], "code_hash", ch[:12])
 
 
 def tree_rss(p):
@@ -121,7 +128,7 @@ def run_cell(S, cell, cfgp, stage_key, label_extra=None, out_root=None, deadline
            "status": rec.get("status") if rec else ("KILLED_" + outcome if outcome in ("MEMORY_KILL", "TIMEOUT_KILL") else "NO_RECORD"), "complete_response_s": rec.get("complete_response_s"), "within_deadline": rec.get("within_deadline"),
            "censored": bool(rec.get("censored")) or outcome in ("MEMORY_KILL", "TIMEOUT_KILL"), "t_first_complete_output_s": rec.get("t_first_complete_output_s"), "t_first_verified_width_met_s": rec.get("t_first_verified_width_met_s"),
            "output_bytes": rec.get("output_bytes"), "phases_s": rec.get("phases_s"), "reason": (rec.get("reason") or "")[:300] if isinstance(rec.get("reason"), str) else rec.get("reason"), "failure_primary": rec.get("failure_primary"),
-           "snapshots": rec.get("snapshots"), "label": label_extra}
+           "snapshots": rec.get("snapshots"), "label": label_extra, "code_hash": code_hash()[0]}
     with open(os.path.join(S, "CELLS_LEDGER.jsonl"), "a") as f:
         f.write(json.dumps(row, default=str) + "\n")
     return row
@@ -130,8 +137,10 @@ def run_cell(S, cell, cfgp, stage_key, label_extra=None, out_root=None, deadline
 def run(S, stage):
     man = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); cfgp = os.path.join(S, "CONFIG.json"); json.dump(man["config"], open(cfgp, "w"))
     ch, _ = code_hash(); assert ch == man["code_hash"], "code hash differs from the frozen manifest: re-freeze or restore the code"
-    rows = ledger_rows(S); done = {r["cell_id"] for r in rows if r.get("label") is None}
-    cells = [c for c in man["cells"] if c["stage"] == stage and c["cell_id"] not in done]
+    # a cell is DONE when a primary (unlabelled) row exists for the same (case, arm, stage, budget) -- across code-hash re-freezes; every row
+    # records the code hash it ran under, so amended reruns (labelled) and the original rows stay distinguishable
+    rows = ledger_rows(S); done = {(r["case"], r["arm"], r["stage"], r["budget_s"]) for r in rows if r.get("label") is None}
+    cells = [c for c in man["cells"] if c["stage"] == stage and (c["case"], c["arm"], c["stage"], c["budget_s"]) not in done]
     allowance = BUDGET[stage]; n = 0
     for c in cells:
         if c["arm"] in UNAVAILABLE:

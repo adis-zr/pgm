@@ -22,21 +22,28 @@ def main():
     vg = {c: vgroup.NDVarArray(num_states=c, shape=(len(vs),)) for c, vs in groups.items()}
     slot = {v: (m.card[v], groups[m.card[v]].index(v)) for v in free}
     fg = fgraph.FactorGraph(variable_groups=list(vg.values()))
-    n_fac = 0; zero_Z = False
+    n_fac = 0; zero_Z = False; n_merged = 0
+    # AMENDMENT 1: PGMax refuses two factors on the same variable set -> sliced tables with identical scopes are multiplied entrywise in EXACT
+    # rationals first (an exact operation; merge order is the file order; scope key = sorted variables, tables permuted to that order)
+    merged = {}
     for f in m.factors:
         fixed = {v: ev[v] for v in f.scope if v in ev}; sc = [v for v in f.scope if v not in ev]
         if not sc:
             if f.at(fixed) == 0:
                 zero_Z = True
             continue
-        configs = []; logp = []
+        key = tuple(sorted(sc)); tab = {}
         for conf in itertools.product(*[range(m.card[v]) for v in sc]):
-            a = dict(zip(sc, conf)); a.update(fixed); val = f.at(a)
-            if val > 0:
-                configs.append(conf); logp.append(math.log(float(val)))
+            a = dict(zip(sc, conf)); a.update(fixed); tab[tuple(a[v] for v in key)] = f.at(a)
+        if key in merged:
+            merged[key] = {c: merged[key][c] * tab[c] for c in tab}; n_merged += 1
+        else:
+            merged[key] = tab
+    for key, tab in merged.items():
+        configs = [c for c, val in tab.items() if val > 0]; logp = [math.log(float(tab[c])) for c in configs]
         if not configs:
             zero_Z = True; continue
-        fg.add_factors(fgroup.EnumFactorGroup(variables_for_factors=[[vg[slot[v][0]][slot[v][1]] for v in sc]], factor_configs=np.array(configs, dtype=int), log_potentials=np.array(logp, dtype=np.float32)))
+        fg.add_factors(fgroup.EnumFactorGroup(variables_for_factors=[[vg[slot[v][0]][slot[v][1]] for v in key]], factor_configs=np.array(configs, dtype=int), log_potentials=np.array(logp, dtype=np.float32)))
         n_fac += 1
     t_build = time.monotonic() - t
     if zero_Z:
@@ -55,7 +62,7 @@ def main():
     txt = "MAR\n%d " % m.nvars + " ".join("%d %s" % (len(r), " ".join("%.10g" % x for x in r)) for r in rows) + "\n"
     tmp = outp + ".w"; open(tmp, "w").write(txt); os.replace(tmp, outp); t_ser = time.monotonic() - t
     json.dump({"phases_s": {"startup_imports": t_imp, "parse": t_parse, "convert": t_build, "plan": t_compile0, "solve": t_run, "serialize": t_ser, "total": time.monotonic() - T0},
-               "config": {"temperature": 1.0, "num_iters": iters, "damping": damping, "dtype": str(np.asarray(list(marg.values())[0]).dtype) if marg else None, "jax": jax.__version__, "device": str(jax.devices()[0]), "factors": n_fac, "free_vars": len(free)}}, open(sidep, "w"))
+               "config": {"temperature": 1.0, "num_iters": iters, "damping": damping, "identical_scope_factors_merged": n_merged, "dtype": str(np.asarray(list(marg.values())[0]).dtype) if marg else None, "jax": jax.__version__, "device": str(jax.devices()[0]), "factors": n_fac, "free_vars": len(free)}}, open(sidep, "w"))
 
 
 if __name__ == "__main__":
