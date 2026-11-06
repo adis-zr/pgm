@@ -136,7 +136,7 @@ def ones(n):
 LIMB = 30
 
 
-def hist_by_distance(src_rows, src_ints, tgt_rows, mask, dprime, chunk=256):
+def hist_by_distance(src_rows, src_ints, tgt_rows, mask, dprime, chunk=256, deadline=None):
     """Exact per-target histograms H[y][dist] = sum_{x: popcount((x ^ y) & mask) = dist} src_ints[x], for Python-int weights of any size:
     the weights are split into base-2^30 limbs, each limb histogrammed with float64 bincount (exact: count * 2^30 < 2^53 needs
     len(src) < 2^23), then recombined. Returns a list (per target) of lists (per distance) of ints."""
@@ -149,6 +149,8 @@ def hist_by_distance(src_rows, src_ints, tgt_rows, mask, dprime, chunk=256):
         limbs.append(np.array([w & ((1 << LIMB) - 1) for w in rem], dtype=np.float64)); rem = [w >> LIMB for w in rem]
     out = []
     for s in range(0, len(tgt), chunk):
+        if deadline is not None:
+            deadline()
         ys = tgt[s:s + chunk]
         D = np.bitwise_count((ys[:, None] ^ src[None, :]) & m).astype(np.int64)
         ids = (np.arange(len(ys), dtype=np.int64)[:, None] * (dprime + 1) + D).ravel()

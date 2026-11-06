@@ -1,16 +1,18 @@
-"""INDEPENDENT verifier. From the ORIGINAL model and the producer's result it reconstructs: the hard-component contraction and its
-infeasibility proof, the cluster premises and rho_i (own cut enumeration), the separable reductions and effective couplings, the region,
-crossing edges and fixed outside states, every analytic coefficient (theta, d, eta, beta, b), the Theorem-1 iteration (or supersolution),
-the regional solve [l,u] with ITS OWN transfer implementations (matmul-by-distance exact transfer; subset-axis character moments for
-fourier/poly; target-side popcount filtering for sparse; min-degree-ordered VE) and the published rounding. It accepts iff the published
-grid interval of every coordinate CONTAINS the verifier's own enclosure and every structural claim is reproduced. It never reads
-producer moments, residuals or coefficients as inputs -- they are only compared. Shared proof-critical helpers: cbi.arith (kappa_int,
-theta_edge, tail, IVec, publish), cbi.model parsing / reductions (re-run, then compared), cbi.transfer.subsets_of_mask (enumeration)."""
+"""INDEPENDENT verifier. From the ORIGINAL model and the producer's result it reconstructs, with ITS OWN code: the hard-component contraction
+(own union-find / intersection), every used cluster's premises and rho_i (own connectivity, own intersection, own C_i, own exhaustive cut
+enumeration, own Omega over the ORIGINAL supports of the seam members), the original-law influence thetas (own exp2L products over original
+supports), the simplified computational graph (own fusion / absorption), the region, its influence crossing set, the fixed outside states,
+d / eta / beta / b, the Theorem-1 iteration, the regional solve (own transfers: distance-major bincount exact transfer, subset-axis character
+moments, min-degree VE), and the published rounding. Accepts iff every requested query is present with a per-query status consistent with
+its width, every published interval CONTAINS the verifier's own enclosure, and every structural claim is reproduced. Shared proof-critical
+helpers (listed): cbi.arith.kappa_int / tail / IVec / publish / normalize_event, the JSON parser cbi.model.Model.from_json, and the
+constants in cbi.coarse (R_STRONG, MAX_CLUSTER) and cbi.transfer.surrogate_eta (the eta formula)."""
 from __future__ import annotations
 from fractions import Fraction as Fr
 from math import comb
+from itertools import combinations
 import numpy as np
-from cbi import model as M, arith as A, transfer as T, coarse as CO, region as RG
+from cbi import model as M, arith as A, transfer as T, coarse as CO
 
 
 class Rejected(Exception):
@@ -22,11 +24,147 @@ def _req(c, msg):
         raise Rejected(msg)
 
 
+# ------------------------------------------------------------------ own reductions
+def v_contract_hard(m):
+    """Own union-find over r = 1 edges; returns (blocks, edges(full masks, parallel fused), o2r, infeasible)."""
+    rep = {b: b for b in m.blocks}
+    def root(x):
+        while rep[x] != x:
+            x = rep[x]
+        return x
+    for e in m.edges:
+        if e.r == 1:
+            a, b = root(e.u), root(e.v)
+            if a != b:
+                rep[max(a, b)] = min(a, b)
+    o2r = {b: root(b) for b in m.blocks}
+    groups = {}
+    for b, r_ in o2r.items():
+        groups.setdefault(r_, []).append(b)
+    blocks = {}
+    for r_, mem in groups.items():
+        mem = sorted(mem)
+        if len(mem) == 1:
+            blocks[r_] = M.Block(r_, list(m.blocks[r_].rows), list(m.blocks[r_].w)); continue
+        inter = set(m.blocks[mem[0]].rows)
+        for b in mem[1:]:
+            inter &= set(m.blocks[b].rows)
+        if not inter:
+            return None, None, o2r, mem
+        rows = sorted(inter); w = []
+        for z in rows:
+            p = 1
+            for b in mem:
+                p *= dict(zip(m.blocks[b].rows, m.blocks[b].w))[z]
+            w.append(p)
+        blocks[r_] = M.Block(r_, rows, w)
+    acc = {}
+    for e in m.edges:
+        a, b = o2r[e.u], o2r[e.v]
+        if a == b:
+            continue
+        k = (min(a, b), max(a, b)); acc.setdefault(k, []).append(Fr(e.r))
+    edges = []
+    for k, rs in sorted(acc.items()):
+        r_ = rs[0]
+        for s_ in rs[1:]:
+            r_ = (r_ + s_) / (1 + r_ * s_)
+        edges.append(M.Edge(k[0], k[1], r_, (1 << m.d) - 1))
+    return blocks, edges, o2r, None
+
+
+def _vary(rows):
+    o = 0; a = (1 << 63) - 1
+    for x in rows:
+        o |= x; a &= x
+    return o & ~a
+
+
+def v_cluster(blocks, edges, C):
+    """Own Theorem-3 certificate: returns rho_i (Fraction), the coarse rows and weights; raises Rejected on a failed premise."""
+    C = sorted(C); cs = set(C)
+    _req(2 <= len(C) <= CO.MAX_CLUSTER, "cluster size")
+    internal = [e for e in edges if e.u in cs and e.v in cs]; leaving = [e for e in edges if (e.u in cs) != (e.v in cs)]
+    _req(all(e.r < 1 for e in internal), "hard edge inside a cluster")
+    seen = {C[0]}; stack = [C[0]]
+    while stack:
+        x = stack.pop()
+        for e in internal:
+            for y in ((e.v,) if e.u == x else ((e.u,) if e.v == x else ())):
+                if y not in seen:
+                    seen.add(y); stack.append(y)
+    _req(seen == cs, "cluster not connected internally")
+    inter = set(blocks[C[0]].rows)
+    for v in C[1:]:
+        inter &= set(blocks[v].rows)
+    _req(bool(inter), "empty intersection")
+    rows = sorted(inter); wd = {v: dict(zip(blocks[v].rows, blocks[v].w)) for v in C}; tot = {v: sum(blocks[v].w) for v in C}
+    Ci = sum((Fr(1) * np.prod([Fr(wd[v][z], tot[v]) for v in C]) for z in rows), Fr(0))
+    w = [int(np.prod([wd[v][z] for v in C])) for z in rows]
+    gamma = Fr(0)
+    for k in range(len(C) - 1):
+        for sub in combinations(C[1:], k):
+            S = set(sub) | {C[0]}
+            prod = Fr(1)
+            for e in internal:
+                if (e.u in S) != (e.v in S):
+                    prod *= (1 - e.r) / (1 + e.r)
+            gamma = max(gamma, prod)
+    expO = Fr(1)
+    for e in leaving:
+        u = e.u if e.u in cs else e.v
+        expO *= ((1 + e.r) / (1 - e.r)) ** bin(e.mask & _vary(blocks[u].rows)).count("1")      # ORIGINAL support of the seam member
+    x = (1 - Ci) / Ci * gamma * expO
+    return x / (1 + x), rows, w, {"C_i": Ci, "Gamma_i": gamma, "expOmega": expO}
+
+
+def v_influence(blocks, edges, cmap, rho):
+    vary = {b: _vary(blk.rows) for b, blk in blocks.items()}; acc = {}
+    for e in edges:
+        a, b = cmap[e.u], cmap[e.v]
+        if a == b or e.r == 0:
+            continue
+        s = bin(vary[e.u] & vary[e.v] & e.mask).count("1")
+        if s == 0:
+            continue
+        k = (min(a, b), max(a, b))
+        if e.r >= 1:
+            acc[k] = None
+        elif acc.get(k, Fr(1)) is not None:
+            acc[k] = acc.get(k, Fr(1)) * ((1 + e.r) / (1 - e.r)) ** s
+    theta = {k: (Fr(1) if E is None else (E - 1) / (E + 1)) for k, E in acc.items()}
+    adj = {n: {} for n in set(cmap.values())}
+    for (a, b), th in theta.items():
+        adj[a][b] = th; adj[b][a] = th
+    return theta, adj
+
+
+def v_computational(blocks, edges, d):
+    """Own simplification of Q: separable absorption (tilts multiplied in as integers), edge masks = coordinates varying on both sides."""
+    full = (1 << d) - 1; vary = {b: _vary(blk.rows) for b, blk in blocks.items()}; cval = {b: blk.rows[0] & ~vary[b] for b, blk in blocks.items()}
+    out_blocks = {b: M.Block(b, list(blk.rows), list(blk.w)) for b, blk in blocks.items()}; out_edges = []
+    for e in edges:
+        if e.r == 0:
+            continue
+        both = vary[e.u] & vary[e.v] & e.mask; u_, v_ = e.r.numerator, e.r.denominator
+        for side, other in ((e.u, e.v), (e.v, e.u)):
+            only = vary[side] & ~vary[other] & e.mask
+            if only:
+                blk = out_blocks[side]; nw = []
+                for x, w in zip(blk.rows, blk.w):
+                    f = 1
+                    for j in range(d):
+                        if (only >> j) & 1:
+                            f *= v_ + u_ * (1 if (x >> j) & 1 else -1) * (1 if (cval[other] >> j) & 1 else -1)
+                    nw.append(w * f)
+                out_blocks[side] = M.Block(blk.id, blk.rows, nw)
+        if both:
+            out_edges.append(M.Edge(e.u, e.v, e.r, both))
+    return out_blocks, out_edges
+
+
 # ------------------------------------------------------------------ own transfer implementations
 def v_exact(cav, src, tgt, mask, r, chunk=512):
-    """Own exact transfer: SOURCE-major chunks with distance-major keys (dist * n_tgt + target), limbs of 30 bits (float64 exact), the
-    per-limb histogram by numpy's bincount (the library primitive; the producer's code is target-major with target-major keys and its
-    own limb handling). Independently written; shares no code with cbi.transfer.transfer_exact / cbi.arith.hist_by_distance."""
     dp = bin(mask).count("1"); u, v = A.uv(r); kap = [A.kappa_int(dp, u, v, dd) for dd in range(dp + 1)]
     X = np.asarray(src, dtype=np.uint64); Y = np.asarray(tgt, dtype=np.uint64); nt = len(tgt)
     same = all(int(a) == int(b) for a, b in zip(cav.lo.tolist(), cav.hi.tolist()))
@@ -34,7 +172,7 @@ def v_exact(cav, src, tgt, mask, r, chunk=512):
     acc = [[0] * ((dp + 1) * nt) for _ in vals_list]
     for s0 in range(0, len(src), chunk):
         xs = X[s0:s0 + chunk]
-        D = np.bitwise_count((xs[:, None] ^ Y[None, :]) & np.uint64(mask)).astype(np.int64)          # (chunk, nt)
+        D = np.bitwise_count((xs[:, None] ^ Y[None, :]) & np.uint64(mask)).astype(np.int64)
         key = (D * nt + np.arange(nt, dtype=np.int64)[None, :]).ravel()
         for vi, vals in enumerate(vals_list):
             vs = vals[s0:s0 + chunk]; nl = max(1, (max(vs).bit_length() + 29) // 30)
@@ -51,12 +189,10 @@ def v_exact(cav, src, tgt, mask, r, chunk=512):
 
 
 def _moments_subset_axis(rows, lo, hi, Sarr):
-    """q_T in [lo_T, hi_T] for all T in Sarr, vectorized over subsets per row."""
     S64 = Sarr.astype(np.uint64); pT = np.array([bin(int(S)).count("1") for S in Sarr.tolist()], dtype=np.int64)
     qlo = np.zeros(len(Sarr), dtype=object); qhi = np.zeros(len(Sarr), dtype=object)
     for x, l, h in zip(rows, lo.tolist(), hi.tolist()):
-        par = ((pT - np.bitwise_count(np.uint64(x) & S64).astype(np.int64)) & 1).astype(bool).tolist()
-        l, h = int(l), int(h)
+        par = ((pT - np.bitwise_count(np.uint64(x) & S64).astype(np.int64)) & 1).astype(bool).tolist(); l, h = int(l), int(h)
         qlo = qlo + np.array([-h if p_ else l for p_ in par], dtype=object); qhi = qhi + np.array([-l if p_ else h for p_ in par], dtype=object)
     return qlo, qhi
 
@@ -68,24 +204,19 @@ def v_fourier(cav, src, tgt, mask, r, k, poly=False):
     subs = T.subsets_of_mask(mask, k); Sarr = np.array([S for j in subs for S in subs[j]], dtype=np.uint64)
     deg = np.array([bin(int(S)).count("1") for S in Sarr.tolist()], dtype=np.int64)
     qlo, qhi = _moments_subset_axis(src, cav.lo, cav.hi, Sarr)
-    coef = np.array([u ** int(j) * v ** (dp - int(j)) for j in deg.tolist()], dtype=object)
-    lo = []; hi = []
-    ql = qlo.tolist(); qh = qhi.tolist(); cf = coef.tolist()
+    cf = [u ** int(j) * v ** (dp - int(j)) for j in deg.tolist()]; ql = qlo.tolist(); qh = qhi.tolist(); lo = []; hi = []
     for y in tgt:
-        par = ((deg - np.bitwise_count(np.uint64(y) & Sarr).astype(np.int64)) & 1).astype(bool).tolist()      # chi_T(y) = -1 where par
+        par = ((deg - np.bitwise_count(np.uint64(y) & Sarr).astype(np.int64)) & 1).astype(bool).tolist()
         lo.append(sum((-qh[i] if par[i] else ql[i]) * cf[i] for i in range(len(cf)))); hi.append(sum((-ql[i] if par[i] else qh[i]) * cf[i] for i in range(len(cf))))
     if poly:
         return A.IVec([max(0, x) for x in lo], hi, cav.exp).normalize()
-    Qlo, Qhi = cav.mass()
-    # antipodal defect on the S-projected cavity (own aggregation)
-    agg_lo = {}; agg_hi = {}
+    Qlo, Qhi = cav.mass(); agg_lo = {}; agg_hi = {}
     for x, l, h in zip(src, cav.lo.tolist(), cav.hi.tolist()):
         p = x & mask; agg_lo[p] = agg_lo.get(p, 0) + int(l); agg_hi[p] = agg_hi.get(p, 0) + int(h)
     D_up = max(0, sum(agg_hi.values()) - sum(min(l, agg_lo.get(p ^ mask, 0)) for p, l in agg_lo.items()))
     te = sum(comb(dp, j) * u ** j * v ** (dp - j) for j in range(k + 1, dp + 1) if j % 2 == 0); to = sum(comb(dp, j) * u ** j * v ** (dp - j) for j in range(k + 1, dp + 1) if j % 2 == 1)
     E = Qhi * te + D_up * to
-    lo = [max(Qlo * (v - u) ** dp, x - E) for x in lo]; hi = [min(Qhi * (v + u) ** dp, x + E) for x in hi]
-    return A.IVec(lo, hi, cav.exp).normalize()
+    return A.IVec([max(Qlo * (v - u) ** dp, x - E) for x in lo], [min(Qhi * (v + u) ** dp, x + E) for x in hi], cav.exp).normalize()
 
 
 def v_sparse(cav, src, tgt, mask, r, h):
@@ -95,8 +226,7 @@ def v_sparse(cav, src, tgt, mask, r, h):
     kap = [A.kappa_int(dp, u, v, dd) for dd in range(dp + 1)]
     X = np.asarray(src, dtype=np.uint64); L = cav.lo.tolist(); Hh = cav.hi.tolist(); Qlo, Qhi = cav.mass(); lo = []; hi = []
     for y in tgt:
-        D = np.bitwise_count((X ^ np.uint64(y)) & np.uint64(mask)).astype(np.int64)
-        Clo = Chi = Blo = Bhi = 0
+        D = np.bitwise_count((X ^ np.uint64(y)) & np.uint64(mask)).astype(np.int64); Clo = Chi = Blo = Bhi = 0
         for i in np.nonzero(D <= h)[0].tolist():
             Clo += L[i] * kap[int(D[i])]; Chi += Hh[i] * kap[int(D[i])]; Blo += L[i]; Bhi += Hh[i]
         lo.append(Clo + kap[dp] * (Qlo - Blo)); hi.append(Chi + kap[h + 1] * (Qhi - Bhi))
@@ -117,35 +247,36 @@ def v_apply(op, cav, src, tgt, mask, r):
 
 
 def v_tree_belief(blocks, edges, ops, root):
-    """Own recursion (explicit stack, source-major), own cavity products."""
     adj = {b: [] for b in blocks}
     for e in edges:
         adj[e.u].append(e.v); adj[e.v].append(e.u)
     emap = {(min(e.u, e.v), max(e.u, e.v)): e for e in edges}
-    memo = {}
-    def msg(frm, to):
-        if (frm, to) in memo:
-            return memo[(frm, to)]
-        cav = A.IVec.exact(blocks[frm].w).normalize()
-        for w in adj[frm]:
-            if w != to:
-                cav = cav.mul(msg(w, frm))
-        e = emap[(min(frm, to), max(frm, to))]; m = v_apply(ops[(min(frm, to), max(frm, to))], cav, blocks[frm].rows, blocks[to].rows, e.mask, e.r)
-        memo[(frm, to)] = m; return m
+    order = []; stack = [(root, None)]
+    while stack:
+        x, p = stack.pop(); order.append((x, p))
+        for w in adj[x]:
+            if w != p:
+                stack.append((w, x))
+    msg = {}
+    for x, p in reversed(order):
+        if p is None:
+            continue
+        cav = A.IVec.exact(blocks[x].w).normalize()
+        for w in adj[x]:
+            if w != p:
+                cav = cav.mul(msg[(w, x)])
+        e = emap[(min(x, p), max(x, p))]; msg[(x, p)] = v_apply(ops[(min(x, p), max(x, p))], cav, blocks[x].rows, blocks[p].rows, e.mask, e.r)
     b = A.IVec.exact(blocks[root].w).normalize()
     for w in adj[root]:
-        b = b.mul(msg(w, root))
+        b = b.mul(msg[(w, root)])
     return b
 
 
 def v_dense(blocks, edges, ops, root, max_entries):
-    """Own dense elimination: min-DEGREE order (the producer uses min-fill), tables built by explicit per-pair evaluation."""
-    import itertools
     rem = [b for b in blocks if b != root]; adj = {b: set() for b in blocks}
     for e in edges:
         adj[e.u].add(e.v); adj[e.v].add(e.u)
-    order = []
-    rs = set(rem)
+    order = []; rs = set(rem)
     while rs:
         x = min(rs, key=lambda b: (len([y for y in adj[b] if y in rs or y == root]), b)); nb = [y for y in adj[x] if y in rs or y == root]
         for a in nb:
@@ -154,8 +285,7 @@ def v_dense(blocks, edges, ops, root, max_entries):
                     adj[a].add(b)
         rs.discard(x); order.append(x)
     def ktab(e):
-        op = ops[(min(e.u, e.v), max(e.u, e.v))]; dp = e.s(); u, v = A.uv(e.r)
-        bu, bv = blocks[e.u], blocks[e.v]; tab = np.zeros((len(bu.rows), len(bv.rows)), dtype=object)
+        op = ops[(min(e.u, e.v), max(e.u, e.v))]; dp = e.s(); u, v = A.uv(e.r); bu, bv = blocks[e.u], blocks[e.v]; tab = np.zeros((len(bu.rows), len(bv.rows)), dtype=object)
         if op[0] == "poly" and int(op[1]) < dp:
             subs = T.subsets_of_mask(e.mask, int(op[1]))
             for i, x in enumerate(bu.rows):
@@ -169,8 +299,7 @@ def v_dense(blocks, edges, ops, root, max_entries):
         return tab
     facs = [((b,), np.array(blk.w, dtype=object)) for b, blk in blocks.items()] + [((e.u, e.v), ktab(e)) for e in edges]
     for x in order:
-        inv = [f for f in facs if x in f[0]]; rest = [f for f in facs if x not in f[0]]
-        scope = []
+        inv = [f for f in facs if x in f[0]]; rest = [f for f in facs if x not in f[0]]; scope = []
         for s, _ in inv:
             for y in s:
                 if y not in scope:
@@ -194,85 +323,137 @@ def v_dense(blocks, edges, ops, root, max_entries):
     return A.IVec.exact([int(x) * sc for x in out.tolist()])
 
 
+def _parse_op(v, dp):
+    _req(isinstance(v, (list, tuple)) and v and v[0] in ("exact", "poly", "fourier", "sparse"), "unknown operator %r" % (v,))
+    if v[0] == "exact":
+        _req(len(v) == 1, "exact takes no parameter"); return ("exact",)
+    _req(len(v) == 2 and isinstance(v[1], int) and not isinstance(v[1], bool) and v[1] >= 0, "operator %r: parameter must be a nonnegative integer" % (v,))
+    return (v[0], int(v[1]))
+
+
 # ------------------------------------------------------------------ the verification
 def verify(model, result):
     reasons = []
     try:
-        m = model if isinstance(model, M.Model) else M.Model.from_json(model)
-        eps = Fr(result["requested_width"])
-        _req(result.get("grid_bits") == A.GRID_BITS, "grid bits differ")
-        m2, o2r, members, log, scalars, infeasible = M.contract_hard(m)
+        m = (model if isinstance(model, M.Model) else M.Model.from_json(model)).validate()
+        eps = Fr(result["requested_width"]); _req(result.get("grid_bits") == A.GRID_BITS, "grid bits differ")
+        req = result.get("requested_queries"); _req(isinstance(req, list) and req, "requested query set missing from the result")
+        req = sorted(int(q) for q in req); _req(all(q in m.blocks for q in req), "requested queries name unknown blocks")
+        blocks, edges, o2r, bad = v_contract_hard(m)
         if result["status"] == "INFEASIBLE":
-            _req(infeasible is not None or M.reduce_model(m2).infeasible is not None, "INFEASIBLE claimed but the reconstruction finds no empty hard intersection")
-            return {"accepted": True, "reasons": ["zero-partition proof reproduced: %s" % (infeasible or M.reduce_model(m2).infeasible)["reason"]]}
-        if result["status"] in ("UNSUPPORTED_INPUT",):
-            return {"accepted": False, "reasons": ["nothing to verify: status %s" % result["status"]]}
-        _req(infeasible is None, "the model is infeasible but the result claims otherwise")
-        # clusters: re-verify every cluster the producer used; recompute rho
-        cl_log = result["plan"]["clusters"]; used = [c["cluster"] for c in cl_log.get("verified", [])]
-        certs = {}; rho = {}; cmap = {b: b for b in m2.blocks}; coarse = m2
+            _req(bad is not None, "INFEASIBLE claimed but every hard component has a nonempty intersection"); return {"accepted": True, "reasons": ["zero-partition proof reproduced: hard component %s has an empty intersection" % bad]}
+        if result["status"] == "UNSUPPORTED_INPUT":
+            return {"accepted": False, "reasons": ["nothing to verify: status UNSUPPORTED_INPUT"]}
+        _req(bad is None, "model infeasible but the result claims otherwise")
+        _req(result["status"] in ("CERTIFIED", "VALID_BUT_TOO_WIDE", "RESOURCE_LIMIT"), "unknown status")
+        sps = result.get("statuses_per_query") or {}
+        _req(sorted(int(q) for q in sps) == req, "per-query statuses do not cover exactly the requested queries")
+        _req(sorted(int(q) for q in result.get("intervals", {})) == [q for q in req if sps[str(q)] != "RESOURCE_LIMIT"], "interval records do not match the per-query statuses")
+        vals = list(sps.values()); agg = "CERTIFIED" if all(v == "CERTIFIED" for v in vals) else ("VALID_BUT_TOO_WIDE" if any(v == "VALID_BUT_TOO_WIDE" for v in vals) else "RESOURCE_LIMIT")
+        _req(result["status"] == agg, "aggregate status %s inconsistent with per-query statuses" % result["status"])
+        # clusters used (per system)
+        used = [c["cluster"] for c in (result["plan"]["clusters"].get("verified") or [])]
+        systems = {}
         if used:
-            coarse, cmap, certs, rho = CO.coarsen(m2, used)
-            for c in cl_log["verified"]:
-                mine = certs[c["cluster"][0]]
-                _req(Fr(mine["rho_i"]) == Fr(c["rho_i"]) and mine["Gamma_i"] == c["Gamma_i"] and mine["C_i"] == c["C_i"], "cluster %s: rho / Gamma / C differ from the reconstruction" % c["cluster"])
-        red = M.reduce_model(coarse)
-        _req(red.infeasible is None, "reduced model infeasible")
-        adj = M.adjacency(red)
-        for q, iv in result["intervals"].items():
-            q = int(q); cert = result["certificate"][str(q)]; rq = cmap[o2r[q]]
-            _req(cert["query_block"] == rq and iv["coarse_block"] == rq, "query %d maps to reduced block %d, result says %s" % (q, rq, cert["query_block"]))
-            H = set(int(x) for x in cert["H"]); _req(rq in H, "query block not in its region")
-            comp_ok = all(u in red.blocks for u in H); _req(comp_ok, "region names unknown blocks")
-            outside = sorted({u for v in H for u in adj[v] if u not in H})
+            cmap = {b: b for b in blocks}; rho = {}; cblocks = dict(blocks)
+            for C in used:
+                r_i, rows, w, info = v_cluster(blocks, edges, C)
+                rep = min(C)
+                for v in C:
+                    cmap[v] = rep
+                    if v != rep:
+                        cblocks.pop(v, None)
+                cblocks[rep] = M.Block(rep, rows, w); rho[rep] = r_i
+                mine = next(c for c in result["plan"]["clusters"]["verified"] if c["cluster"] == C)
+                _req(Fr(mine["rho_i"]) == r_i, "cluster %s: rho_i %s differs from the verifier's %s" % (C, mine["rho_i"], r_i))
+                _req(Fr(mine["C_i"]) == info["C_i"] and Fr(mine["Gamma_i"]) == info["Gamma_i"] and Fr(mine["expOmega_i"]) == info["expOmega"], "cluster %s: C_i / Gamma_i / expOmega_i differ from the verifier's" % C)
+            acc = {}
+            for e in edges:
+                a, b = cmap[e.u], cmap[e.v]
+                if a != b:
+                    acc.setdefault((min(a, b), max(a, b)), []).append(e.r)
+            cedges = []
+            for k, rs in sorted(acc.items()):
+                r_ = rs[0]
+                for s_ in rs[1:]:
+                    r_ = (r_ + s_) / (1 + r_ * s_)
+                cedges.append(M.Edge(k[0], k[1], r_, (1 << m.d) - 1))
+            theta, iadj = v_influence(blocks, edges, cmap, rho); rb, re_ = v_computational(cblocks, cedges, m.d)
+            systems["coarse"] = (cmap, rho, theta, iadj, rb, re_)
+        theta0, iadj0 = v_influence(blocks, edges, {b: b for b in blocks}, {}); rb0, re0 = v_computational(blocks, edges, m.d)
+        systems["plain"] = ({b: b for b in blocks}, {}, theta0, iadj0, rb0, re0)
+        q_grid = 1 << A.GRID_BITS
+        for q in req:
+            if sps[str(q)] == "RESOURCE_LIMIT":
+                continue
+            iv = result["intervals"][str(q)]; cert = result["certificate"][str(q)]
+            sysk = cert.get("system"); _req(sysk in systems, "unknown system %r" % sysk)
+            cmap, rho, theta, iadj, rb, re_ = systems[sysk]
+            node = cmap[o2r[q]]; _req(cert["query_block"] == node and iv.get("node") == node, "query %d maps to node %d, result says %s" % (q, node, cert["query_block"]))
+            H = set(int(x) for x in cert["H"]); _req(node in H and all(v in rb for v in H), "region malformed")
+            cadj = {b: {} for b in rb}
+            for e in re_:
+                cadj[e.u][e.v] = e; cadj[e.v][e.u] = e
+            outside_comp = sorted({u for v in H for u in cadj[v] if u not in H})
             xi = {int(k): int(v) for k, v in cert["xi"].items()}
-            _req(sorted(xi) == outside, "fixed outside states do not cover exactly the crossing neighbours")
+            _req(sorted(xi) == outside_comp, "fixed outside states do not cover exactly the computational crossing neighbours")
             for u, x in xi.items():
-                _req(x in set(red.blocks[u].rows), "fixed state of outside block %d is not an allowed row" % u)
-            inside = [e for e in red.edges if e.u in H and e.v in H]
+                _req(x in set(rb[u].rows), "fixed state %d of block %d is not an allowed row" % (x, u))
+            inside = [e for e in re_ if e.u in H and e.v in H]
             ops = {}
             for k, v in cert["inside_ops"].items():
-                a, b = (int(t) for t in k.split("-")); ops[(a, b)] = tuple(v) if isinstance(v, list) else v
-                ops[(a, b)] = (ops[(a, b)][0],) if len(ops[(a, b)]) == 1 else (ops[(a, b)][0], int(ops[(a, b)][1]))
+                a, b = (int(t) for t in k.split("-")); ops[(a, b)] = _parse_op(v, 0)
             _req(set(ops) == {(min(e.u, e.v), max(e.u, e.v)) for e in inside}, "operator list does not match the inside edges")
-            # coefficients and transport
-            rho_H = {v: rho[v] for v in H if v in rho}
-            coef = RG.coefficients(red, H, ops, rho_H)
-            for k, v in cert["theta"].items():
-                a, b = (int(t) for t in k.split("-")); _req(coef["theta"][(a, b)] == Fr(v), "theta %s differs" % k)
+            # coefficients on the influence system
+            d = {v: sum((th for u, th in iadj[v].items() if u not in H), Fr(0)) for v in H}
+            beta = {}; b = {}
             for v in H:
-                _req(coef["d"][v] == Fr(cert["d"][str(v)]) and coef["b"][v] == Fr(cert["b"][str(v)]), "d / b at %d differ" % v)
-            if RG.transport_needed(H, xi, ops, rho_H):
-                _req(int(cert["iterations"]) >= 1, "transport is needed (boundary / surrogate / coarsening) but no Theorem-1 iteration was declared")
-                z, t = RG.iterate(red, H, coef, int(cert["iterations"]))
-                _req(t == int(cert["iterations"]) and all(z[v] == Fr(cert["z"][str(v)]) for v in H), "Theorem-1 iterates differ")
+                etas = []
+                for u, e in cadj[v].items():
+                    if u in H:
+                        op = ops[(min(u, v), max(u, v))]
+                        if op[0] == "poly":
+                            et = T.surrogate_eta(e.s(), e.r, int(op[1])); _req(et is not None, "poly operator with eta >= 1 is not a positive surrogate"); etas.append(et)
+                beta[v] = min(Fr(1), sum((et / (1 - et) for et in etas), Fr(0)) / 2)
+                rv = rho.get(v, Fr(0)); b[v] = rv + (1 - rv) * beta[v]
+            for k, v in cert["theta"].items():
+                a_, b_ = (int(t) for t in k.split("-")); _req(theta.get((a_, b_)) == Fr(v), "theta %s differs (%s vs verifier %s)" % (k, v, theta.get((a_, b_))))
+            for v in H:
+                _req(Fr(cert["d"][str(v)]) == d[v] and Fr(cert["b"][str(v)]) == b[v], "d / b at %d differ" % v)
+            crossing = any(u not in H for v in H for u in iadj[v])
+            needed = crossing or any(op[0] == "poly" for op in ops.values()) or any(rho.get(v, Fr(0)) > 0 for v in H)
+            if needed:
+                z = {v: Fr(1) for v in H}; T_ = int(cert["iterations"]); _req(T_ >= 1, "transport needed but no Theorem-1 iteration declared")
+                for _ in range(T_):
+                    z = {v: min(Fr(1), d[v] + b[v] + sum((th * z[u] for u, th in iadj[v].items() if u in H), Fr(0))) for v in H}
+                _req(all(z[v] == Fr(cert["z"][str(v)]) for v in H), "Theorem-1 iterates differ")
             else:
-                z = {v: Fr(0) for v in H}
-                _req(all(Fr(cert["z"][str(v)]) == 0 for v in H), "zero transport claimed inconsistently")
-            zq = z[rq]
-            # own regional solve
-            blocks = RG.tilt_weights(red, H, xi)
-            sub = M.Reduced(red.d, blocks, inside, {}, {})
-            if M.is_forest(sub):
-                bel = v_tree_belief(blocks, inside, ops, rq)
-            else:
-                bel = v_dense(blocks, inside, ops, rq, 1 << 22)
-            rows = np.asarray(red.blocks[rq].rows, dtype=np.uint64)
-            q_grid = 1 << A.GRID_BITS
-            for j in range(red.d):
+                z = {v: Fr(0) for v in H}; _req(all(Fr(cert["z"][str(v)]) == 0 for v in H), "zero transport claimed inconsistently")
+            zq = z[node]
+            # own regional solve (tilts multiplied in with own loop)
+            tb = {}
+            for v in H:
+                blk = rb[v]; ws = list(blk.w)
+                for u, e in cadj[v].items():
+                    if u not in H:
+                        dp = e.s(); un, vn = A.uv(e.r)
+                        ws = [w * A.kappa_int(dp, un, vn, bin((x ^ xi[u]) & e.mask).count("1")) for x, w in zip(blk.rows, ws)]
+                tb[v] = M.Block(v, list(blk.rows), ws)
+            forest = len(inside) == len(H) - 1 and M.is_forest(M.Reduced(m.d, tb, inside, {}, {}))
+            bel = v_tree_belief(tb, inside, ops, node) if forest else v_dense(tb, inside, ops, node, 1 << 22)
+            rows = np.asarray(rb[node].rows, dtype=np.uint64)
+            for j in range(m.d):
                 sel = ((rows >> np.uint64(j)) & np.uint64(1)).astype(bool)
-                LA, UA = bel.masked_mass(sel); LC, UC = bel.masked_mass(~sel)
-                l, u = A.normalize_event(LA, UA, LC, UC)
+                LA, UA = bel.masked_mass(sel); LC, UC = bel.masked_mass(~sel); l, u = A.normalize_event(LA, UA, LC, UC)
                 vlo, vhi = max(Fr(0), l - zq), min(Fr(1), u + zq)
                 row = iv["coordinates"][j]; plo, phi = Fr(int(row["lo"]), q_grid), Fr(int(row["hi"]), q_grid)
-                _req(plo <= vlo and vhi <= phi, "query %d coordinate %d: published [%s, %s] does not contain the verifier's enclosure [%s, %s]" % (q, j, float(plo), float(phi), float(vlo), float(vhi)))
                 _req(0 <= int(row["lo"]) <= int(row["hi"]) <= q_grid, "published endpoints off the grid")
-                elo, ehi = Fr(row["exact"][0]), Fr(row["exact"][1])
-                _req(A.publish(elo, ehi) == (int(row["lo"]), int(row["hi"])), "published endpoints are not the declared rounding of the stated exact interval")
+                _req(plo <= vlo and vhi <= phi, "query %d coordinate %d: published [%s, %s] does not contain the verifier's enclosure [%s, %s]" % (q, j, float(plo), float(phi), float(vlo), float(vhi)))
+                _req(A.publish(Fr(row["exact"][0]), Fr(row["exact"][1])) == (int(row["lo"]), int(row["hi"])), "published endpoints are not the declared rounding of the stated exact interval")
+            _req(len(iv["coordinates"]) == m.d, "coordinate coverage")
             wmax = max(Fr(int(r_["hi"]) - int(r_["lo"]), q_grid) for r_ in iv["coordinates"])
-            _req(bool(wmax <= eps) == bool(iv["width_met"]), "width_met flag is wrong")
-            _req((result["statuses_per_query"][str(q)] == "CERTIFIED") == bool(wmax <= eps), "per-query status inconsistent with the width")
-            reasons.append("query %d: region %s, %d coordinates contained, max width %.3g, z = %.3g" % (q, sorted(H), red.d, float(wmax), float(zq)))
+            _req(Fr(iv["max_width"]) == wmax and bool(wmax <= eps) == bool(iv["width_met"]) and (sps[str(q)] == "CERTIFIED") == bool(wmax <= eps), "width / status fields inconsistent")
+            reasons.append("query %d: system %s, region %s, %d coordinates contained, max width %.3g, z = %.3g" % (q, sysk, sorted(H), m.d, float(wmax), float(zq)))
         return {"accepted": True, "reasons": reasons}
     except Rejected as ex:
         return {"accepted": False, "reasons": reasons + [str(ex)]}

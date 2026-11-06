@@ -6,7 +6,7 @@ sys.path.insert(0, HERE)
 from fractions import Fraction as Fr
 import pytest
 import numpy as np
-from cbi import model as M, api, exact as EX, arith as A, transfer as T, tree as TR, region as RG, coarse as CO, generators as G, plan as PL
+from cbi import model as M, api, exact as EX, arith as A, transfer as T, tree as TR, region as RG, coarse as CO, generators as G, plan as PL, influence as IN
 
 Q = 1 << A.GRID_BITS
 
@@ -134,26 +134,29 @@ def test_separable_absorption_is_exact():
 
 def test_region_surrogate_theorem1_and_supersolution_semantics():
     obj = G.mesh(3, 3, 6, 8, Fr(1, 64), 3); m = M.Model.from_json(obj); red = M.reduce_model(m); tr = truth(obj)
+    m2, o2r, _, _, _, _ = M.contract_hard(m); infl = IN.Influence(m2, {b: b for b in m2.blocks}, {})
     H = {4, 1, 3, 5, 7}; adj = M.adjacency(red); xi = {u: RG.fixed_outside_state(red.blocks[u]) for v in H for u in adj[v] if u not in H}
     ops = {(min(e.u, e.v), max(e.u, e.v)): ("poly", 1) for e in red.edges if e.u in H and e.v in H}
-    cert = RG.certify(red, H, xi, ops, 4)
+    cert = RG.certify(infl, red, H, xi, ops, 4)
     assert all(lo <= tr[4][j] <= hi for j, (lo, hi) in enumerate(cert["intervals_exact"])) and cert["iterations"] > 0
-    coef = RG.coefficients(red, H, ops)
-    z, _ = RG.iterate(red, H, coef); assert RG.check_supersolution(red, H, coef, z)[0]
+    coef = RG.coefficients(infl, red, H, ops)
+    z, _ = RG.iterate(infl, H, coef); assert RG.check_supersolution(infl, H, coef, z)[0]
     # a valid certificate with saturated leaves z = 1 and a smaller root error
-    z1 = {v: (Fr(1) if v != 4 else Fr(1, 2)) for v in H}; assert RG.check_supersolution(red, H, coef, z1)[0]
+    z1 = {v: (Fr(1) if v != 4 else Fr(1, 2)) for v in H}; assert RG.check_supersolution(infl, H, coef, z1)[0]
     # an unfinished iteration starting at ZERO is NOT a certificate (not a supersolution)
-    z0 = {v: Fr(0) for v in H}; assert not RG.check_supersolution(red, H, coef, z0)[0]
+    z0 = {v: Fr(0) for v in H}; assert not RG.check_supersolution(infl, H, coef, z0)[0]
     # every iterate from one is nonincreasing and valid
     zs = [{v: Fr(1) for v in H}]
     for _ in range(5):
-        zs.append(RG.F_apply(red, H, coef, zs[-1]))
+        zs.append(RG.F_apply(infl, H, coef, zs[-1]))
     for a, b in zip(zs, zs[1:]):
         assert all(b[v] <= a[v] for v in H)
     # a hard / nonpositive surrogate is rejected: degree-0 truncation at r = 1/2 on 6 coordinates has tau >= (1-r)^6
     assert T.surrogate_eta(6, Fr(1, 2), 0) is None
-    with pytest.raises(ValueError):
-        RG.coefficients(red, H, {k: ("poly", 0) for k in ops}) if any(T.surrogate_eta(6, Fr(1, 64), 0) is None for _ in [0]) else (_ for _ in ()).throw(ValueError("degree-0 at 1/64 is positive: use a stronger coupling"))
+    strong_edge = M.Edge(0, 1, Fr(1, 2), 63)
+    with pytest.raises(RG.SurrogateError):
+        red_s = M.Reduced(6, {0: red.blocks[0], 1: red.blocks[1]}, [strong_edge], {}, {}); infl_s = IN.Influence(M.Model(6, {0: m.blocks[0], 1: m.blocks[1]}, [strong_edge]), {0: 0, 1: 1}, {})
+        RG.coefficients(infl_s, red_s, {0, 1}, {(0, 1): ("poly", 0)})
     # the exact-identity case with strong interactions bypasses the vacuous influence bound: no transport when nothing is approximated
     strong = rnd(5, 4, [(0, 1, Fr(9, 10)), (1, 2, Fr(19, 20)), (2, 3, Fr(9, 10))], 12, m=5)
     res, trs = run(strong); assert res["status"] == "CERTIFIED" and all(Fr(c["z_query"]) == 0 for c in res["certificate"].values())
@@ -237,5 +240,54 @@ def test_movement_case_and_width_adaptation():
     pi = {b: [Fr(sum(w for x, w in zip(blk.rows, blk.w) if (x >> j) & 1), sum(blk.w)) for j in range(m.d)] for b, blk in m.blocks.items()}
     mv = max(abs(tr[b][j] - pi[b][j]) for b in tr for j in range(m.d)); assert mv > Fr(1, 200), float(mv)
     r1, _ = run(obj, "1/100", {"exact_direct_entries": 1}); r2, _ = run(obj, "1/20", {"exact_direct_entries": 1})
-    a1 = r1["plan"]["queries"]["4"]["attempts"]; a2 = r2["plan"]["queries"]["4"]["attempts"]
+    a1 = [a for t in r1["plan"]["queries"]["4"]["trials"] for a in t["attempts"]]; a2 = [a for t in r2["plan"]["queries"]["4"]["trials"] for a in t["attempts"]]
     assert len(a1) >= len(a2)                                                   # the stricter width needs at least as many attempts
+
+
+# ------------------------------------------------------------------ the reviewer's counterexamples (6 Nov 2026 review) must be contained AFTER the repair
+CE = json.load(open(os.path.join(HERE, "runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json")))
+
+
+def test_review_counterexamples_contained_and_verified():
+    for name, (q, j) in (("CE1", (0, 0)), ("CE2", (2, 0)), ("CE3", (2, 0))):
+        obj = CE[name]; res = api.solve(obj, [q], "1/100"); tr = brute_truth(obj)[q][j]
+        row = res["intervals"][str(q)]["coordinates"][j]; lo, hi = Fr(int(row["lo"]), Q), Fr(int(row["hi"]), Q)
+        assert lo <= tr <= hi, (name, float(lo), float(hi), float(tr))
+        assert api.verify(obj, res)["accepted"], name
+    # CE1: Omega over the ORIGINAL support gives rho = 1/2 and the cluster is accepted but the coarse certificate is wide; the plain
+    # system certifies exactly through the whole component
+    res = api.solve(CE["CE1"], [0], "1/100"); c = res["certificate"]["0"]
+    assert res["status"] == "CERTIFIED" and c["system"] == "plain" and Fr(res["intervals"]["0"]["coordinates"][0]["exact"][0]) <= Fr(1, 2) <= Fr(res["intervals"]["0"]["coordinates"][0]["exact"][1])
+    assert any(Fr(x["rho_i"]) == Fr(1, 2) for x in res["plan"]["clusters"]["verified"])
+    # CE2: the influence edge 0-2 survives although Q's edge is absorbed; transport is needed for the outside query
+    res = api.solve(CE["CE2"], [2], "1/100"); c = res["certificate"]["2"]
+    trial_coarse = next(t for t in res["plan"]["queries"]["2"]["trials"] if t["system"] == "coarse")
+    assert any(Fr(a.get("z_query", "0")) > 0 for a in trial_coarse["attempts"] if a["status"] == "OK")
+
+
+def test_verifier_rejects_malformed_operator_and_missing_queries():
+    obj = rnd(5, 2, [(0, 1, Fr(1, 2))], 3, m=2); obj["blocks"][0]["weights"] = [1, 1]; obj["blocks"][1]["weights"] = [1, 3]
+    res, tr = run(obj, queries=[0])
+    bad = json.loads(json.dumps(res, default=str)); bad["certificate"]["0"]["inside_ops"] = {k: ["sparse", -2] for k in bad["certificate"]["0"]["inside_ops"]}
+    assert not api.verify(obj, bad)["accepted"]
+    bad = json.loads(json.dumps(res, default=str)); bad["intervals"] = {}
+    assert not api.verify(obj, bad)["accepted"]
+    bad = json.loads(json.dumps(res, default=str)); bad["requested_queries"] = []
+    assert not api.verify(obj, bad)["accepted"]
+    bad = json.loads(json.dumps(res, default=str)); bad["statuses_per_query"] = {}
+    assert not api.verify(obj, bad)["accepted"]
+    # every requested query must be present with a consistent status
+    res2, _ = run(obj, queries=[0, 1]); bad = json.loads(json.dumps(res2, default=str)); del bad["intervals"]["1"]
+    assert not api.verify(obj, bad)["accepted"]
+
+
+def test_parser_rejects_silent_reinterpretation():
+    for bad in ({"d": 3, "blocks": [{"id": 0, "rows": [0, 1], "weights": [1]}], "edges": []},
+                {"d": 3, "blocks": [{"id": 0, "rows": [0, 1], "weights": []}], "edges": []},
+                {"d": 3, "blocks": [{"id": 0, "rows": [0.5, 1], "weights": [1, 1]}], "edges": []},
+                {"d": 3, "blocks": [{"id": 0, "rows": ["1", 2], "weights": [1, 1]}], "edges": []},
+                {"d": 3, "blocks": [{"id": 0, "rows": [1], "weights": [1]}, {"id": 1, "rows": [2], "weights": [1]}], "edges": [{"u": 0, "v": 1, "r": "1/2"}], "meta": {"cluster_hints": [[0, 1, 2, 3, 4, 5, 6, 7, 8]]}}):
+        assert api.solve(bad, "all", "1/100")["status"] == "UNSUPPORTED_INPUT", bad
+    # a Model object supplied directly is validated too
+    mm = M.Model(3, {0: M.Block(0, [1, 1], [1, 1])}, [])
+    assert api.solve(mm, "all", "1/100")["status"] == "UNSUPPORTED_INPUT"

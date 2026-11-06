@@ -33,12 +33,12 @@ def chi(masks, T):
     return 1 - 2 * ((pT - np.bitwise_count(masks & np.uint64(T)).astype(np.int64)) & 1)
 
 
-def transfer_exact(cav, src_rows, tgt_rows, mask, r):
+def transfer_exact(cav, src_rows, tgt_rows, mask, r, deadline=None):
     dp = bin(mask).count("1"); u, v = A.uv(r)
     kap = [A.kappa_int(dp, u, v, dd) for dd in range(dp + 1)]
-    Hlo = A.hist_by_distance(src_rows, cav.lo.tolist(), tgt_rows, mask, dp)
+    Hlo = A.hist_by_distance(src_rows, cav.lo.tolist(), tgt_rows, mask, dp, deadline=deadline)
     same = all(int(a) == int(b) for a, b in zip(cav.lo.tolist(), cav.hi.tolist()))
-    Hhi = Hlo if same else A.hist_by_distance(src_rows, cav.hi.tolist(), tgt_rows, mask, dp)
+    Hhi = Hlo if same else A.hist_by_distance(src_rows, cav.hi.tolist(), tgt_rows, mask, dp, deadline=deadline)
     lo = [sum(h[dd] * kap[dd] for dd in range(dp + 1)) for h in Hlo]
     hi = lo if same else [sum(h[dd] * kap[dd] for dd in range(dp + 1)) for h in Hhi]
     return A.IVec(lo, list(hi), cav.exp).normalize(), {"operator": "exact", "pairs": len(src_rows) * len(tgt_rows)}
@@ -142,12 +142,32 @@ def surrogate_eta(dp, r, k):
     return None if t >= lo else t / lo
 
 
-def apply(op, cav, src_rows, tgt_rows, mask, r):
+class Deadline(Exception):
+    pass
+
+
+def validate_op(op, dp):
+    """Operator domain: kind in {exact, poly, fourier, sparse}; degree / radius a nonnegative int; poly only with eta < 1."""
+    if not isinstance(op, (tuple, list)) or not op or op[0] not in ("exact", "poly", "fourier", "sparse"):
+        raise ValueError("unknown operator %r" % (op,))
+    if op[0] == "exact":
+        if len(op) != 1:
+            raise ValueError("exact takes no parameter")
+        return ("exact",)
+    if len(op) != 2 or isinstance(op[1], bool) or not isinstance(op[1], int) or op[1] < 0:
+        raise ValueError("operator %r needs one nonnegative integer parameter" % (op,))
+    return (op[0], int(op[1]))
+
+
+def apply(op, cav, src_rows, tgt_rows, mask, r, deadline=None):
+    op = validate_op(op, bin(mask).count("1"))
+    if deadline is not None:
+        deadline()
     kind = op[0]
     if kind == "poly":
         return transfer_poly(cav, src_rows, tgt_rows, mask, r, int(op[1]))
     if kind == "exact":
-        return transfer_exact(cav, src_rows, tgt_rows, mask, r)
+        return transfer_exact(cav, src_rows, tgt_rows, mask, r, deadline=deadline)
     if kind == "sparse":
         return transfer_sparse(cav, src_rows, tgt_rows, mask, r, int(op[1]))
     if kind == "fourier":

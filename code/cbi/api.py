@@ -1,8 +1,14 @@
-"""Public API: solve(model, queries, requested_width, limits) and verify(model, result)."""
+"""Public API: solve(model, queries, requested_width, limits) and verify(model, result).
+
+solve keeps TWO structures: the ORIGINAL-LAW influence system (hard-contracted blocks with verified clusters merged; theta from original
+supports; retention defects rho) for every transport / connectivity decision, and the simplified computational graph of Q (parallel fusion,
+separable absorption) for solving. Queries mapped to the same node are solved once; exact whole-forest components are solved with one
+two-pass message schedule for all their queries. When coarsening is available but a query's coarse certificate misses the width, the
+uncoarsened plan is tried as a second complete candidate and the narrower certificate is kept (both attempts recorded)."""
 from __future__ import annotations
 from fractions import Fraction as Fr
-import time, json
-from cbi import model as M, arith as A, coarse as CO, plan as PL, tree as TR
+import time
+from cbi import model as M, arith as A, coarse as CO, plan as PL, tree as TR, region as RG, influence as IN
 
 STATUSES = ("CERTIFIED", "VALID_BUT_TOO_WIDE", "INFEASIBLE", "UNSUPPORTED_INPUT", "RESOURCE_LIMIT")
 
@@ -11,80 +17,86 @@ def _timed(timings, name, t0):
     timings[name] = timings.get(name, 0.0) + (time.monotonic() - t0)
 
 
+def _systems(m2, clusters, eps, limits, cluster_log, timings):
+    """(influence, computational reduced graph, node map) for the coarse and the plain variants."""
+    t0 = time.monotonic(); out = {}
+    good = []
+    if clusters and not limits.get("no_coarsening"):
+        for C in clusters:
+            try:
+                c = CO.verify_cluster(m2, C); good.append(C)
+            except ValueError as ex:
+                cluster_log["rejected"].append({"cluster": C, "reason": str(ex)})
+    if good:
+        coarse, cmap, certs, rho = CO.coarsen(m2, good)
+        cluster_log["verified"] = [{k: v for k, v in c.items() if k not in ("coarse_rows", "coarse_weights")} for c in certs.values()]
+        red = M.reduce_model(coarse)
+        if red.infeasible is None:
+            out["coarse"] = (IN.Influence(m2, cmap, rho), red, cmap)
+    red0 = M.reduce_model(m2)
+    if red0.infeasible is None:
+        out["plain"] = (IN.Influence(m2, {b: b for b in m2.blocks}, {}), red0, {b: b for b in m2.blocks})
+    _timed(timings, "build_systems", t0)
+    return out
+
+
 def solve(model, queries="all", requested_width="1/100", limits=None):
-    """model: cbi.model.Model or a JSON-like dict; queries: "all" or a list of block ids; requested_width: rational string / Fraction.
-    Returns a plain dict: status, intervals {block: {coord: {"lo","hi" (grid ints on 2^-80), "exact": [lo, hi]}}}, certificate, plan, timings."""
     T0 = time.monotonic(); timings = {}; eps = Fr(requested_width); limits = dict(limits or {})
-    out = {"status": None, "requested_width": str(eps), "grid_bits": A.GRID_BITS, "intervals": {}, "certificate": {}, "plan": {}, "timings": timings, "statuses_per_query": {}}
+    out = {"status": None, "requested_width": str(eps), "grid_bits": A.GRID_BITS, "intervals": {}, "certificate": {}, "plan": {}, "timings": timings, "statuses_per_query": {}, "requested_queries": None}
     try:
         t0 = time.monotonic()
-        m = model if isinstance(model, M.Model) else M.Model.from_json(model)
-        qs = sorted(m.blocks) if queries == "all" else sorted(int(q) for q in queries)
+        m = (model if isinstance(model, M.Model) else M.Model.from_json(model)).validate()
+        qs = sorted(m.blocks) if queries == "all" else sorted(set(int(q) for q in queries))
         for q in qs:
             if q not in m.blocks:
                 raise M.UnsupportedInput("query block %d does not exist" % q)
+        out["requested_queries"] = qs; out["model_sha256"] = m.sha256()
         _timed(timings, "validate", t0)
-        # --- exact reductions I: hard components
-        t0 = time.monotonic()
-        m2, o2r, members, log, scalars, infeasible = M.contract_hard(m)
-        _timed(timings, "reduce_hard", t0)
+        t0 = time.monotonic(); m2, o2r, members, log, scalars, infeasible = M.contract_hard(m); _timed(timings, "reduce_hard", t0)
         if infeasible:
             out.update({"status": "INFEASIBLE", "certificate": {"zero_partition_proof": infeasible}, "plan": {"reductions": log}}); return _finish(out, T0)
-        # --- coarsening (Theorem 3)
         t0 = time.monotonic()
         clusters, how = ([], "disabled by limits.no_coarsening") if limits.get("no_coarsening") else CO.propose_clusters(m2, m.meta.get("cluster_hints"))
-        certs = {}; rho = {}; cmap = {b: b for b in m2.blocks}; coarse = m2; cluster_log = {"proposal": how, "proposed": clusters, "verified": [], "rejected": []}
-        rho_max = eps / 8                                   # a cluster whose retention defect alone would consume more than an eighth of the width is not coarsened
-        if clusters:
-            good = []
-            for C in clusters:
-                try:
-                    c = CO.verify_cluster(m2, C)
-                    if Fr(c["rho_i"]) > rho_max:
-                        cluster_log["rejected"].append({"cluster": C, "reason": "retention defect rho_i = %.3g exceeds the acceptance threshold eps/8 = %.3g (premises verified; coarsening not useful at this width)" % (float(Fr(c["rho_i"])), float(rho_max)), "rho_i": c["rho_i"]})
-                        continue
-                    good.append(C)
-                except ValueError as ex:
-                    cluster_log["rejected"].append({"cluster": C, "reason": str(ex)})
-            if good:
-                coarse, cmap, certs, rho = CO.coarsen(m2, good); cluster_log["verified"] = [{k: v for k, v in c.items() if k not in ("coarse_rows", "coarse_weights")} for c in certs.values()]
-        _timed(timings, "coarsen", t0)
-        # --- exact reductions II: parallel fusion + separable absorption on the (coarse) graph
-        t0 = time.monotonic()
-        red = M.reduce_model(coarse)
-        _timed(timings, "reduce_separable", t0)
-        if red.infeasible:
-            out.update({"status": "INFEASIBLE", "certificate": {"zero_partition_proof": red.infeasible}}); return _finish(out, T0)
-        out["plan"] = {"reductions": log + red.log, "dropped_scalars": len(scalars) + len(red.scalars), "clusters": cluster_log, "queries": {}, "map": {"orig_to_hard": o2r, "hard_to_coarse": cmap}}
-        # --- per query
-        planner = PL.Planner(red, eps, limits, rho=rho)
-        statuses = {}
+        cluster_log = {"proposal": how, "proposed": clusters, "verified": [], "rejected": []}
+        _timed(timings, "coarsen_propose", t0)
+        systems = _systems(m2, clusters, eps, limits, cluster_log, timings)
+        if not systems:
+            out.update({"status": "INFEASIBLE", "certificate": {"zero_partition_proof": M.reduce_model(m2).infeasible}}); return _finish(out, T0)
+        out["plan"] = {"reductions": log, "dropped_scalars": len(scalars), "clusters": cluster_log, "queries": {}, "systems": {k: {"nodes": len(v[0].nodes), "influence_edges": len(v[0].theta), "computational_edges": len(v[1].edges), "influence": v[0].record()} for k, v in systems.items()},
+                       "map": {"orig_to_hard": o2r}}
+        planners = {k: PL.Planner(v[0], v[1], eps, limits, t_start=T0) for k, v in systems.items()}
+        order = [k for k in ("coarse", "plain") if k in systems]
+        statuses = {}; cache = {}                                 # (system, node) -> (best, attempts)
         for q in qs:
             t0 = time.monotonic()
-            rq = cmap[o2r[q]]
-            best, attempts = planner.solve_query(rq)
+            trials = []
+            for k in order:
+                node = systems[k][2][o2r[q]]
+                if (k, node) not in cache:
+                    cache[(k, node)] = planners[k].solve_query(node)
+                best, attempts = cache[(k, node)]
+                trials.append({"system": k, "node": node, "best_width": (str(best["width"]) if best else None), "attempts": attempts})
+                if best is not None and best["width"] + A.EPS_PUBLISH_SLACK <= eps:
+                    break                                          # certified: no need for the second candidate system
             _timed(timings, "plan_and_solve", t0)
-            out["plan"]["queries"][str(q)] = {"reduced_block": rq, "attempts": attempts}
-            if best is None:
+            cands = [(t["system"], cache[(t["system"], t["node"])][0]) for t in trials if cache[(t["system"], t["node"])][0] is not None]
+            out["plan"]["queries"][str(q)] = {"trials": trials}
+            if not cands:
                 statuses[q] = "RESOURCE_LIMIT"; continue
+            sysk, best = min(cands, key=lambda kb: kb[1]["width"])
             t0 = time.monotonic()
             rows = []
-            for j, (lo, hi) in enumerate(best["intervals_exact"]):
+            for lo, hi in best["intervals_exact"]:
                 lg, hg = A.publish(lo, hi); rows.append({"lo": lg, "hi": hg, "exact": [str(lo), str(hi)], "width": str(Fr(hg - lg, 1 << A.GRID_BITS))})
             wmax = max(Fr(r["hi"] - r["lo"], 1 << A.GRID_BITS) for r in rows)
-            out["intervals"][str(q)] = {"coordinates": rows, "max_width": str(wmax), "max_width_float": float(wmax), "width_met": bool(wmax <= eps), "coarse_block": rq}
-            c = dict(best["cert"]); c.pop("intervals_exact", None); c["xi"] = {str(k): v for k, v in best["xi"].items()}; c["mode"] = best["mode"]
+            out["intervals"][str(q)] = {"coordinates": rows, "max_width": str(wmax), "max_width_float": float(wmax), "width_met": bool(wmax <= eps), "system": sysk, "node": systems[sysk][2][o2r[q]]}
+            c = dict(best["cert"]); c.pop("intervals_exact", None); c["xi"] = {str(k): v for k, v in best["xi"].items()}; c["mode"] = best["mode"]; c["system"] = sysk
             out["certificate"][str(q)] = c
             statuses[q] = "CERTIFIED" if wmax <= eps else "VALID_BUT_TOO_WIDE"
             _timed(timings, "publish", t0)
         out["statuses_per_query"] = {str(k): v for k, v in statuses.items()}
-        if all(v == "CERTIFIED" for v in statuses.values()):
-            out["status"] = "CERTIFIED"
-        elif any(v in ("CERTIFIED", "VALID_BUT_TOO_WIDE") for v in statuses.values()):
-            out["status"] = "VALID_BUT_TOO_WIDE" if any(v == "VALID_BUT_TOO_WIDE" for v in statuses.values()) else "RESOURCE_LIMIT"
-        else:
-            out["status"] = "RESOURCE_LIMIT"
-        out["model_sha256"] = m.sha256()
+        vals = list(statuses.values())
+        out["status"] = "CERTIFIED" if vals and all(v == "CERTIFIED" for v in vals) else ("VALID_BUT_TOO_WIDE" if any(v == "VALID_BUT_TOO_WIDE" for v in vals) else "RESOURCE_LIMIT")
     except M.UnsupportedInput as ex:
         out.update({"status": "UNSUPPORTED_INPUT", "reason": str(ex)})
     return _finish(out, T0)

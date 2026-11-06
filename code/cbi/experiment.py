@@ -101,6 +101,8 @@ def run():
             row.update({"outer_wall_s": time.monotonic() - t0, "returncode": None, "outcome": "TIMEOUT", "note": "work limit, not a mathematical statement"})
         if os.path.exists(out):
             rec = json.load(open(out)); row["status"] = rec.get("status"); row["verify_accepted"] = rec.get("verify_accepted"); row["child_high_water_rss_bytes"] = rec.get("child_high_water_rss_bytes")
+            if (rec.get("child_high_water_rss_bytes") or 0) > MEM_CAP:
+                row["outcome"] = "MEMORY_CAP_EXCEEDED_AT_EXIT"; row["note"] = "ru_maxrss above the 8 GiB cap (RLIMIT_AS is best-effort on this platform)"
         led["charges"].append(row); json.dump(led, open(lp, "w"), indent=1); state["done"].append(c["id"]); json.dump(state, open(st_p, "w"))
         print("%3d %-28s %-16s %-6s rep%d  %-10s %-20s verify=%s  outer %.2fs  remaining %.0fs" % (c["id"], c["instance"], c["mode"], c["width"], c["rep"], row["outcome"], row.get("status"), row.get("verify_accepted"), row["outer_wall_s"], led["allowance_s"] - charged()), flush=True)
 

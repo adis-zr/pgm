@@ -35,58 +35,66 @@ def tilt_weights(red, H, xi):
     return out
 
 
-def coefficients(red, H, inside_ops, rho=None):
-    """theta per edge (true kernels), d_v, beta_v (from the surrogate etas), b_v; returns dict."""
-    adj = M.adjacency(red); rho = rho or {}
-    theta = {}; eta = {}
-    for e in red.edges:
-        theta[(min(e.u, e.v), max(e.u, e.v))] = A.theta_edge(e.r, e.s())
-    d = {}; beta = {}; b = {}
+def coefficients(infl, red, H, inside_ops):
+    """Transport coefficients on the ORIGINAL-LAW influence system `infl` (never on the simplified graph): theta from original supports,
+    d_v = sum of theta over influence edges leaving H (whether or not the solver kept them), beta_v from the surrogate etas of the
+    COMPUTATIONAL inside edges (the approximated kernels), b_v = rho_v + (1 - rho_v) beta_v."""
+    cadj = M.adjacency(red)
+    eta = {}; beta = {}; b = {}; d = {}
     for v in H:
-        d[v] = sum((theta[(min(u, v), max(u, v))] for u in adj[v] if u not in H), Fr(0))
+        d[v] = sum((th for u, th in infl.adj[v].items() if u not in H), Fr(0))
         etas = []
-        for u, e in adj[v].items():
+        for u, e in cadj.get(v, {}).items():
             if u in H:
-                op = inside_ops[(min(u, v), max(u, v))]
+                k = (min(u, v), max(u, v)); op = inside_ops[k]
                 if op[0] == "poly":
                     et = T.surrogate_eta(e.s(), e.r, int(op[1]))
                     if et is None:
                         raise SurrogateError("degree-%d truncation is not a positive surrogate on edge %s" % (int(op[1]), (u, v)))
-                    etas.append(et); eta[(min(u, v), max(u, v))] = et
+                    etas.append(et); eta[k] = et
                 else:
-                    eta[(min(u, v), max(u, v))] = Fr(0)
+                    eta[k] = Fr(0)
         beta[v] = A.tanh_half_sum_atanh(etas)
-        rv = Fr(rho.get(v, 0)); b[v] = rv + (1 - rv) * beta[v]
+        rv = infl.rho.get(v, Fr(0)); b[v] = rv + (1 - rv) * beta[v]
+    theta = {k: th for k, th in infl.theta.items() if k[0] in H or k[1] in H}
     return {"theta": theta, "d": d, "beta": beta, "b": b, "eta": eta}
 
 
-def F_apply(red, H, coef, z):
-    adj = M.adjacency(red); out = {}
+def F_apply(infl, H, coef, z):
+    out = {}
     for v in H:
-        s = coef["d"][v] + coef["b"][v]
-        for u in adj[v]:
+        s_ = coef["d"][v] + coef["b"][v]
+        for u, th in infl.adj[v].items():
             if u in H:
-                s += coef["theta"][(min(u, v), max(u, v))] * z[u]
-        out[v] = min(Fr(1), s)
+                s_ += th * z[u]
+        out[v] = min(Fr(1), s_)
     return out
 
 
-def iterate(red, H, coef, T_max=64, tol=Fr(1, 2 ** 64)):
+def iterate(infl, H, coef, T_max=64, tol=Fr(1, 2 ** 64)):
     z = {v: Fr(1) for v in H}; t = 0
     while t < T_max:
-        z2 = F_apply(red, H, coef, z); t += 1
+        z2 = F_apply(infl, H, coef, z); t += 1
         if all(z[v] - z2[v] <= tol for v in H):
             z = z2; break
         z = z2
     return z, t
 
 
-def check_supersolution(red, H, coef, z):
-    Fz = F_apply(red, H, coef, z)
+def check_supersolution(infl, H, coef, z):
+    Fz = F_apply(infl, H, coef, z)
     return all(Fz[v] <= z[v] for v in H), Fz
 
 
-def solve_region(red, H, xi, inside_ops, query_block, max_entries=1 << 20, log=None):
+def transport_needed(infl, H, inside_ops):
+    """Theorem 1 is needed iff an ORIGINAL-LAW influence edge leaves H (boundary replacement, even if the solver absorbed that edge),
+    some inside kernel is a surrogate, or some node of H carries a retention defect. Otherwise the regional enclosure encloses the exact
+    law of the whole influence component and z = 0."""
+    crossing = any(u not in H for v in H for u in infl.adj[v])
+    return crossing or any(op[0] == "poly" for op in inside_ops.values()) or any(infl.rho.get(v, Fr(0)) > 0 for v in H)
+
+
+def solve_region(red, H, xi, inside_ops, query_block, max_entries=1 << 20, deadline=None):
     """Exact solve of Q (tilted region) for the query block's row belief: tree messages when the region graph is a forest, else dense VE
     with the surrogate / exact kernel tables. Returns (IVec belief or exact marginal ints, info)."""
     blocks = tilt_weights(red, H, xi)
@@ -94,7 +102,7 @@ def solve_region(red, H, xi, inside_ops, query_block, max_entries=1 << 20, log=N
     sub = M.Reduced(red.d, blocks, edges, {}, {})
     if M.is_forest(sub):
         ops = {(min(e.u, e.v), max(e.u, e.v)): inside_ops[(min(e.u, e.v), max(e.u, e.v))] for e in edges}
-        ts = TR.TreeSolver(blocks, edges, ops)
+        ts = TR.TreeSolver(blocks, edges, ops, deadline=deadline)
         bel = ts.belief(query_block)
         return bel, {"regional_solver": "tree", "messages": {"%d->%d" % k: v for k, v in ts.minfo.items()}}
     # dense VE with explicit kernel tables (exact kernels or the truncated polynomial kernels)
@@ -105,11 +113,11 @@ def solve_region(red, H, xi, inside_ops, query_block, max_entries=1 << 20, log=N
             tabs.append(e)
         else:
             tabs.append(("poly", e, int(op[1])))
-    marg, info = _ve_with_poly(blocks, tabs, query_block, max_entries)
+    marg, info = _ve_with_poly(blocks, tabs, query_block, max_entries, deadline)
     return A.IVec.exact(marg), {"regional_solver": "dense_ve", **info}
 
 
-def _ve_with_poly(blocks, tabs, keep, max_entries):
+def _ve_with_poly(blocks, tabs, keep, max_entries, deadline=None):
     """Dense VE where some edge tables are the truncated polynomial kernels (exact integers at scale v^d')."""
     import numpy as np
     edges = [t if isinstance(t, M.Edge) else t[1] for t in tabs]
@@ -132,6 +140,8 @@ def _ve_with_poly(blocks, tabs, keep, max_entries):
             facs.append(((e.u, e.v), tab))
     # eliminate
     for x in order:
+        if deadline is not None:
+            deadline()
         inv = [f for f in facs if x in f[0]]; rest = [f for f in facs if x not in f[0]]
         scope = []
         for s, _ in inv:
@@ -155,28 +165,21 @@ def _ve_with_poly(blocks, tabs, keep, max_entries):
     return [int(x) * scalar for x in out.tolist()], {"largest_table_entries": worst, "order": order}
 
 
-def transport_needed(H, xi, inside_ops, rho):
-    """Theorem 1 is needed iff some outside block is fixed (boundary replacement), some inside kernel is a SURROGATE (poly), or some
-    region block carries a coarsening defect rho > 0. Otherwise the regional enclosure is a rigorous enclosure of the EXACT law restricted
-    to its component (exact or enclosure operators) and the approximation error is zero: z = 0 (a loose influence matrix never blocks it)."""
-    return bool(xi) or any(op[0] == "poly" for op in inside_ops.values()) or any(Fr((rho or {}).get(v, 0)) > 0 for v in H)
-
-
-def certify(red, H, xi, inside_ops, query_block, rho=None, T_max=64, max_entries=1 << 20):
-    """Full REGION_SURROGATE certificate for the query block's coordinate events. Returns a dict with the regional enclosures [l,u],
-    the transport radius z_v, the coefficients and the published (unrounded) intervals."""
-    coef = coefficients(red, H, inside_ops, rho)
-    if transport_needed(H, xi, inside_ops, rho):
-        z, t = iterate(red, H, coef, T_max)
+def certify(infl, red, H, xi, inside_ops, query_block, T_max=64, max_entries=1 << 20, deadline=None):
+    """REGION certificate: regional enclosure [l,u] of Q (computational graph `red`, fixed outside states xi, operators), transport radius
+    from the influence system, published (unrounded) intervals [l - z, u + z]."""
+    coef = coefficients(infl, red, H, inside_ops)
+    if transport_needed(infl, H, inside_ops):
+        z, t = iterate(infl, H, coef, T_max)
     else:
         z, t = {v: Fr(0) for v in H}, 0
-    bel, info = solve_region(red, H, xi, inside_ops, query_block, max_entries)
+    bel, info = solve_region(red, H, xi, inside_ops, query_block, max_entries, deadline)
     lu = TR.coordinate_intervals(bel, red.blocks[query_block].rows, red.d)
     zq = z[query_block]
     pub = [(max(Fr(0), l - zq), min(Fr(1), u + zq)) for l, u in lu]
     return {"H": sorted(H), "xi": {str(k): v for k, v in xi.items()}, "inside_ops": {"%d-%d" % k: list(v) for k, v in inside_ops.items()},
-            "theta": {"%d-%d" % k: str(v) for k, v in coef["theta"].items() if k[0] in H or k[1] in H}, "d": {str(k): str(v) for k, v in coef["d"].items()},
+            "theta": {"%d-%d" % k: str(v) for k, v in coef["theta"].items()}, "d": {str(k): str(v) for k, v in coef["d"].items()},
             "beta": {str(k): str(v) for k, v in coef["beta"].items()}, "b": {str(k): str(v) for k, v in coef["b"].items()}, "eta": {"%d-%d" % k: str(v) for k, v in coef["eta"].items()},
-            "rho": {str(k): str(Fr(v)) for k, v in (rho or {}).items()}, "z": {str(k): str(v) for k, v in z.items()}, "iterations": t, "z_query": str(zq),
-            "transport": ("theorem1_iteration" if t > 0 else "none (exact law of the component; enclosure operators only)"),
+            "rho": {str(k): str(v) for k, v in infl.rho.items() if k in H and v > 0}, "z": {str(k): str(v) for k, v in z.items()}, "iterations": t, "z_query": str(zq),
+            "transport": ("theorem1_iteration" if t > 0 else "none (exact law of the whole influence component; enclosure operators only)"),
             "regional_lu": [[str(l), str(u)] for l, u in lu], "intervals_exact": pub, "solver_info": info, "query_block": query_block}

@@ -62,8 +62,14 @@ class Model:
             if bid in blocks:
                 raise UnsupportedInput("duplicate block id %d" % bid)
             rows, ws, seen = [], [], set()
-            for x, w in zip(b["rows"], b.get("weights") or [1] * len(b["rows"])):
-                x = int(x)
+            wlist = b.get("weights")
+            if wlist is None:
+                wlist = [1] * len(b["rows"])
+            if len(wlist) != len(b["rows"]):
+                raise UnsupportedInput("block %d: %d weights for %d rows (lengths must match; no silent truncation or defaults)" % (bid, len(wlist), len(b["rows"])))
+            for x, w in zip(b["rows"], wlist):
+                if isinstance(x, bool) or not isinstance(x, int):
+                    raise UnsupportedInput("block %d: row %r is not an integer mask" % (bid, x))
                 if not (0 <= x < (1 << d)):
                     raise UnsupportedInput("block %d: row %d outside [0, 2^d)" % (bid, x))
                 if x in seen:
@@ -103,6 +109,22 @@ class Model:
         data = open(path, "rb").read()
         m = Model.from_json(json.loads(data)); m.meta["sha256"] = hashlib.sha256(data).hexdigest(); m.meta["path"] = path
         return m
+
+    def validate(self):
+        """Re-check a Model object supplied directly (not through from_json): same contract."""
+        if not (1 <= self.d <= MAX_D):
+            raise UnsupportedInput("d must be in 1..%d" % MAX_D)
+        for bid, b in self.blocks.items():
+            if b.id != bid or not b.rows or len(b.rows) != len(b.w) or len(set(b.rows)) != len(b.rows):
+                raise UnsupportedInput("block %s: inconsistent id / rows / weights or duplicate rows" % bid)
+            if any((isinstance(x, bool) or not isinstance(x, int) or not (0 <= x < (1 << self.d))) for x in b.rows):
+                raise UnsupportedInput("block %s: a row is not an integer mask in [0, 2^d)" % bid)
+            if any((not isinstance(w, int) or isinstance(w, bool) or w <= 0) for w in b.w):
+                raise UnsupportedInput("block %s: weights must be positive integers" % bid)
+        for e in self.edges:
+            if e.u not in self.blocks or e.v not in self.blocks or e.u == e.v or not (0 <= Fr(e.r) <= 1) or e.mask != (1 << self.d) - 1:
+                raise UnsupportedInput("edge (%s,%s): unknown block, self-loop, coupling outside [0,1] or a non-full mask" % (e.u, e.v))
+        return self
 
     def to_json(self):
         return {"d": self.d, "bit_convention": BIT_CONVENTION, "blocks": [{"id": b.id, "rows": list(b.rows), "weights": list(b.w)} for b in self.blocks.values()],

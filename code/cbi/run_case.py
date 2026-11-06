@@ -14,6 +14,14 @@ from cbi import model as M, api, exact as EX, arith as A
 MAX_REF_ENTRIES = 1 << 23
 
 
+def set_mem_cap(cap_bytes):
+    """Best-effort address-space cap (RLIMIT_AS; macOS may ignore it) plus a hard check of ru_maxrss at exit. Documented limitation."""
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (cap_bytes, cap_bytes)); return "RLIMIT_AS set"
+    except Exception as ex:
+        return "RLIMIT_AS unavailable: %s" % ex
+
+
 def rss():
     r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return int(r) if sys.platform == "darwin" else int(r) * 1024
@@ -22,7 +30,7 @@ def rss():
 def main(argv):
     mp, qarg, width, mode, limits, out = argv[:6]; truth_p = argv[6] if len(argv) > 6 else None
     limits = json.loads(limits); qs = "all" if qarg == "all" else [int(x) for x in qarg.split(",")]
-    rec = {"model": os.path.basename(mp), "mode": mode, "width": width, "queries": qarg, "status": "STARTED", "timings": {}}
+    rec = {"model": os.path.basename(mp), "mode": mode, "width": width, "queries": qarg, "status": "STARTED", "timings": {}, "mem_cap": set_mem_cap(8 * (1 << 30))}
     t0 = time.monotonic(); m = M.Model.load(mp); rec["timings"]["load_model_s"] = time.monotonic() - t0
     rec["model_sha256"] = m.meta["sha256"]; rec["blocks"] = len(m.blocks); rec["edges"] = len(m.edges); rec["d"] = m.d
     qlist = sorted(m.blocks) if qs == "all" else qs
@@ -53,14 +61,15 @@ def main(argv):
                         rec["status"] = "RESOURCE_LIMIT"; rec["reason"] = "exact comparator needs %d dense entries > %d: not launched" % (worst, MAX_REF_ENTRIES)
                         json.dump(rec, open(out, "w"), indent=1, default=str); print(json.dumps({k: rec.get(k) for k in ("model", "mode", "status", "reason")})); return 0
             t0 = time.monotonic(); res = api.solve(m, qs, width, lim); t1 = time.monotonic(); ver = api.verify(m, res); t2 = time.monotonic()
-            rec["timings"].update({"solve_s": t1 - t0, "verify_s": t2 - t1, "cold_solve_plus_verify_s": t2 - t0, "solve_phases_s": res["timings"]})
+            rec["timings"].update({"solve_s": t1 - t0, "verify_s": t2 - t1, "cold_solve_plus_verify_s": t2 - t0, "cold_incl_load_s": (t2 - t0) + rec["timings"]["load_model_s"], "solve_phases_s": res["timings"]})
             rec["status"] = res["status"]; rec["verify_accepted"] = ver["accepted"]; rec["verify_reasons"] = ver["reasons"][-3:]
             rec["per_query"] = {}
             for q in qlist:
                 iv = res["intervals"].get(str(q)); c = res["certificate"].get(str(q)) if isinstance(res["certificate"], dict) else None
-                row = {"status": res["statuses_per_query"].get(str(q)), "max_width": (iv or {}).get("max_width_float"), "width_met": (iv or {}).get("width_met"), "mode": (c or {}).get("mode"),
+                trials = (res.get("plan", {}).get("queries", {}).get(str(q)) or {}).get("trials") or []
+                row = {"status": res["statuses_per_query"].get(str(q)), "max_width": (iv or {}).get("max_width_float"), "width_met": (iv or {}).get("width_met"), "mode": (c or {}).get("mode"), "system": (c or {}).get("system"),
                        "region": (c or {}).get("H"), "z": (c or {}).get("z_query"), "ops": (c or {}).get("inside_ops"), "transport": (c or {}).get("transport"), "iterations": (c or {}).get("iterations"),
-                       "attempts": [{k: a.get(k) for k in ("mode", "status", "width_float", "escalation", "radius")} for a in res["plan"]["queries"][str(q)]["attempts"]] if "queries" in res.get("plan", {}) and str(q) in res["plan"]["queries"] else None}
+                       "attempts": [{k: a.get(k) for k in ("mode", "status", "width_float", "escalation", "radius", "batched")} | {"system": t["system"]} for t in trials for a in t["attempts"]]}
                 if iv:
                     mv = max(max(abs(Fr(r_["exact"][0]) - pi[q][j]), abs(Fr(r_["exact"][1]) - pi[q][j])) for j, r_ in enumerate(iv["coordinates"]))
                     row["max_movement_bound_from_pi"] = float(mv)

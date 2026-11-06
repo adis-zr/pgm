@@ -12,7 +12,7 @@ def _key(a, b):
 
 
 class TreeSolver:
-    def __init__(self, blocks, edges, ops, log=None):
+    def __init__(self, blocks, edges, ops, log=None, deadline=None):
         """blocks: {id: Block}; edges: [Edge]; ops: {(min,max): op} with op = ("exact",) | ("sparse", h) | ("fourier", k)."""
         self.blocks = blocks; self.edges = {_key(e.u, e.v): e for e in edges}; self.ops = ops
         self.adj = {b: [] for b in blocks}
@@ -21,7 +21,7 @@ class TreeSolver:
         self.msg = {}                 # (from, to) -> IVec over `to` rows
         self.minfo = {}
         self.weights = {b: A.IVec.exact(blk.w).normalize() for b, blk in blocks.items()}
-        self.log = log if log is not None else []
+        self.log = log if log is not None else []; self.deadline = deadline
 
     def _send(self, frm, to):
         if (frm, to) in self.msg:
@@ -31,14 +31,30 @@ class TreeSolver:
             if w != to:
                 cav = cav.mul(self._send(w, frm))
         e = self.edges[_key(frm, to)]; op = self.ops[_key(frm, to)]
-        m, info = T.apply(op, cav, self.blocks[frm].rows, self.blocks[to].rows, e.mask, e.r)
+        m, info = T.apply(op, cav, self.blocks[frm].rows, self.blocks[to].rows, e.mask, e.r, deadline=self.deadline)
         self.msg[(frm, to)] = m; self.minfo[(frm, to)] = {**info, "cavity_bits": cav.bits(), "msg_bits": m.bits()}
         return m
 
     def belief(self, v):
+        """Root belief with an EXPLICIT post-order (no recursion): inward messages toward v in leaf-to-root order."""
+        order = []; stack = [(v, None)]
+        while stack:
+            x, p = stack.pop(); order.append((x, p))
+            for w in self.adj[x]:
+                if w != p:
+                    stack.append((w, x))
+        for x, p in reversed(order):
+            if p is not None and (x, p) not in self.msg:
+                cav = self.weights[x]
+                for w in self.adj[x]:
+                    if w != p:
+                        cav = cav.mul(self.msg[(w, x)])
+                e = self.edges[_key(x, p)]; op = self.ops[_key(x, p)]
+                m, info = T.apply(op, cav, self.blocks[x].rows, self.blocks[p].rows, e.mask, e.r, deadline=self.deadline)
+                self.msg[(x, p)] = m; self.minfo[(x, p)] = {**info, "cavity_bits": cav.bits(), "msg_bits": m.bits()}
         b = self.weights[v]
         for w in self.adj[v]:
-            b = b.mul(self._send(w, v))
+            b = b.mul(self.msg[(w, v)])
         return b
 
     def all_beliefs(self):
@@ -71,7 +87,7 @@ class TreeSolver:
                     if (x, w) not in self.msg:
                         cav = pre[i].mul(suf[i + 1])
                         e = self.edges[_key(x, w)]; op = self.ops[_key(x, w)]
-                        m, info = T.apply(op, cav, self.blocks[x].rows, self.blocks[w].rows, e.mask, e.r)
+                        m, info = T.apply(op, cav, self.blocks[x].rows, self.blocks[w].rows, e.mask, e.r, deadline=self.deadline)
                         self.msg[(x, w)] = m; self.minfo[(x, w)] = {**info, "cavity_bits": cav.bits(), "msg_bits": m.bits()}
         return out
 

@@ -63,7 +63,7 @@ def price(blocks, edges, keep):
     return worst, order
 
 
-def marginal(blocks, edges, keep, max_entries=1 << 20):
+def marginal(blocks, edges, keep, max_entries=1 << 20, deadline=None):
     """Exact unnormalized marginal over the rows of block `keep` (Python ints; common positive scale) and the log."""
     worst, order = price(blocks, edges, keep)
     if worst > max_entries:
@@ -73,6 +73,8 @@ def marginal(blocks, edges, keep, max_entries=1 << 20):
     for e in edges:
         facs.append(((e.u, e.v), _kernel_table(blocks[e.u], blocks[e.v], e.mask, e.r)))
     for x in order:
+        if deadline is not None:
+            deadline()
         inv = [f for f in facs if x in f[0]]; rest = [f for f in facs if x not in f[0]]
         scope = []
         for s, _ in inv:
