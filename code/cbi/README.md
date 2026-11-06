@@ -1,4 +1,4 @@
-# cbi — coupled-block inference (first usable pass, 6 November 2026)
+# cbi — coupled-block inference (first usable pass, 6 November 2026; repaired after review the same day)
 
 Certified singleton marginals for models made of **binary block tables joined by the full-coordinate product kernel**
 K_r(x, y) = Π_j (1 + r x_j y_j), 0 ≤ r ≤ 1 (r = 1 is hard equality). Every published interval is an exact rational enclosure of the
@@ -49,8 +49,11 @@ python -m cbi.cli verify examples/example_model.json result.json
 1. **Exact reductions**: hard components (r = 1) contracted (empty intersection ⇒ INFEASIBLE proof); parallel edges fused; coordinates
    constant on one endpoint's support absorbed as exact unary tilts; separable edges removed. All exact; scalars dropped.
 2. **Coarsening (Theorem 3)**: clusters (hints or components of r ≥ 1 − 2^−8, ≤ 8 blocks) verified — connectivity, nonempty intersection,
-   C_i, Γ_i over ALL nontrivial internal cuts (enumerated exactly), exp(Ω_i) from the seam coordinates that vary, ρ_i; accepted when
-   ρ_i ≤ ε/8; the coarse law has one block per island.
+   C_i, Γ_i over ALL nontrivial internal cuts (enumerated exactly), exp(Ω_i) from the kernel coordinates varying on the ORIGINAL support of
+   each seam member (retained and discarded states), ρ_i; the coarse law has one block per island. Both the coarse and the plain candidate
+   systems are considered; the narrower complete certificate is published.
+2b. **Influence system** (`cbi/influence.py`): the ORIGINAL-LAW influence graph (every seam kept, θ from original supports, ρ per node) is kept
+   separate from the simplified computational graph of Q and is the only input to components, regions, boundary terms and the zero-transport test.
 3. **Planning** (input only, never a reference): forest components and cheaply priced components are solved exactly on the whole component
    (zero transport); otherwise a radius-1 region (Theorem 1) with fixed outside states, crossing factors kept exactly as tilts, and the
    cheapest prospectively qualified operator per inside edge (exact / positive degree-k surrogate / degree-k enclosure / sparse radius-h);
@@ -59,9 +62,10 @@ python -m cbi.cli verify examples/example_model.json result.json
    iterate valid); published [l − z_v, u + z_v].
 5. **Arithmetic**: positive integer weights; kernels as integers at scale v^d'; messages as dyadic interval vectors rounded outward to
    96 bits; distance histograms by 30-bit limb splitting (float64 exact); publication on the 2^−80 grid.
-6. **Verification**: separate code paths (sorted/source-major exact transfer, subset-axis moments via the §3 identities, min-degree VE,
-   own cluster certificates) re-derive everything from the raw model and accept iff every published interval contains the verifier's
-   own enclosure. Shared proof-critical helpers are listed in `cbi/verify.py`'s docstring.
+6. **Verification**: own code paths for hard contraction, cluster certificates (own cuts, own Ω over original supports), influence θ,
+   simplification, tilts, Theorem-1 iteration, transfers (distance-major bincount exact transfer, subset-axis moments, min-degree VE); operator
+   domains validated; every requested query must be covered with consistent statuses; accepts iff every published interval contains the
+   verifier's own enclosure. Shared proof-critical helpers are listed in `cbi/verify.py`'s docstring.
 
 Not implemented in this pass: the anchored Theorem-4 transfer, the nonbacktracking (Theorem-2) comparison, hard surrogate factors,
 coordinate maps, non-product kernels. See the pass report under `runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/`.
