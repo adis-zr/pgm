@@ -58,11 +58,12 @@ def overlap_fraction(red, cadj, u, v):
 
 
 class Planner:
-    def __init__(self, infl, red, eps, limits, t_start=None):
+    def __init__(self, infl, red, eps, limits, t_start=None, requested=None):
         self.infl = infl; self.red = red; self.eps = Fr(eps); self.limits = dict(DEFAULT_LIMITS); self.limits.update(limits or {})
         self.cadj = M.adjacency(red); self.t0 = t_start if t_start is not None else time.monotonic()
         self.comps = infl.components(); self.comp_of = {b: i for i, c in enumerate(self.comps) for b in c}
-        self._price = {}; self.batched = {}                      # component index -> {node: IVec belief} for exact whole-forest solves
+        self.requested = set(requested) if requested is not None else set(infl.nodes)      # QUERY-AWARE dispatch: the nodes actually asked for
+        self._price = {}; self.batched = {}                      # (component index, root-or-None) -> forest solve record; ("proof", ci, root) -> proof
 
     def deadline(self):
         if time.monotonic() - self.t0 > self.limits["max_time_s"]:
@@ -75,18 +76,30 @@ class Planner:
             self._price[ci] = (0, forest) if forest else (EX.price({v: self.red.blocks[v] for v in comp}, edges, comp[0])[0], False)
         return self._price[ci]
 
-    def batched_forest(self, ci):
-        """All node beliefs of a whole-forest component in ONE two-pass schedule. Two candidates: the cheapest prospectively qualified
-        ENCLOSURE operator per edge (fourier / sparse by the menu) when its total work estimate is below the exact one, and the exact
-        operators. The approximate candidate is kept iff every node's width meets the requested width; otherwise the exact candidate.
-        Both attempts are recorded. Returns (beliefs, ops, minfo, attempts) or None when exact exceeds the pair cap and nothing qualifies."""
-        if ci in self.batched:
-            return self.batched[ci]
-        comp = self.comps[ci]; edges = [e for e in self.red.edges if e.u in comp and e.v in comp]; blocks = {v: self.red.blocks[v] for v in comp}
+    def forest_solve(self, ci):
+        """Exact-law forest component. QUERY-AWARE schedule: when exactly one requested node lies in the component, the INWARD rooted
+        schedule at that node (n_c - 1 directed transfers over the root's computational component; the approximate candidate is qualified
+        on the requested node only); otherwise the two-pass batched schedule for all nodes (2 x inside edges). Two candidates: the cheapest
+        prospectively qualified ENCLOSURE operator per edge when its work estimate is below the exact one, then the exact operators. EVERY
+        paid attempt is recorded (an approximate candidate that misses the width AND an exact candidate refused by the pair cap both stay in
+        the record). Returns (beliefs | None, ops, minfo, attempts, root, directed_transfers)."""
+        comp = self.comps[ci]; R = [v for v in comp if v in self.requested]
+        root = R[0] if len(R) == 1 else None
+        key = (ci, root)
+        if key in self.batched:
+            return self.batched[key]
+        edges = [e for e in self.red.edges if e.u in comp and e.v in comp]; blocks = {v: self.red.blocks[v] for v in comp}
         exact_ops = {_edge_key(e): ("exact",) for e in edges}
         exact_ok = all(len(self.red.blocks[e.u].rows) * len(self.red.blocks[e.v].rows) <= self.limits["max_pairs_per_edge"] for e in edges)
         work_exact = sum(T.work_estimate(("exact",), len(blocks[e.u].rows), len(blocks[e.v].rows), e.s()) for e in edges)
+        sched = "rooted_inward" if root is not None else "two_pass_batched"
         attempts = []
+        def run(ops):
+            self.deadline()
+            ts = TR.TreeSolver(blocks, edges, ops, deadline=self.deadline)
+            bel = {root: ts.belief(root)} if root is not None else ts.all_beliefs()
+            wmax = max(max(hi - lo for lo, hi in TR.coordinate_intervals(bel[v], blocks[v].rows, self.red.d)) for v in bel)
+            return bel, ts, wmax
         approx = {}; work_approx = 0; eps_edge = self.eps / (4 * max(1, len(edges)))
         if not self.limits["force_exact"]:
             for e in edges:
@@ -96,39 +109,46 @@ class Planner:
                     approx = None; break
                 approx[_edge_key(e)] = op; work_approx += T.work_estimate(op, mu["m"], mv["m"], e.s())
         if approx and any(v[0] != "exact" for v in approx.values()) and work_approx < work_exact:
-            ts = TR.TreeSolver(blocks, edges, approx, deadline=self.deadline); bel = ts.all_beliefs()
-            wmax = max(max(hi - lo for lo, hi in TR.coordinate_intervals(bel[v], blocks[v].rows, self.red.d)) for v in comp)
-            attempts.append({"candidate": "approximate", "ops": {"%d-%d" % k: list(v) for k, v in approx.items()}, "work_estimate": work_approx, "width_float": float(wmax), "met": bool(wmax + A.EPS_PUBLISH_SLACK <= self.eps), "elapsed_s": time.monotonic() - self.t0})
-            if wmax + A.EPS_PUBLISH_SLACK <= self.eps:
-                self.batched[ci] = (bel, approx, ts.minfo, attempts); return self.batched[ci]
+            t_a = time.monotonic(); bel, ts, wmax = run(approx)
+            att = {"candidate": "approximate", "schedule": sched, "requested_nodes": R, "ops": {"%d-%d" % k: list(v) for k, v in approx.items()}, "work_estimate": work_approx,
+                   "directed_transfers": len(ts.minfo), "width_float": float(wmax), "met": bool(wmax + A.EPS_PUBLISH_SLACK <= self.eps), "paid_s": time.monotonic() - t_a, "elapsed_s": time.monotonic() - self.t0}
+            attempts.append(att)
+            if att["met"]:
+                self.batched[key] = (bel, approx, ts.minfo, attempts, root, len(ts.minfo)); return self.batched[key]
         if not exact_ok:
-            attempts.append({"candidate": "exact", "status": "RESOURCE_LIMIT", "reason": "an exact transfer exceeds max_pairs_per_edge"})
-            self.batched[ci] = None; self.batched_attempts = attempts; return None
-        ts = TR.TreeSolver(blocks, edges, exact_ops, deadline=self.deadline); bel = ts.all_beliefs()
-        attempts.append({"candidate": "exact", "ops": {"%d-%d" % k: ["exact"] for k in exact_ops}, "work_estimate": work_exact, "elapsed_s": time.monotonic() - self.t0})
-        self.batched[ci] = (bel, exact_ops, ts.minfo, attempts); return self.batched[ci]
+            attempts.append({"candidate": "exact", "schedule": sched, "requested_nodes": R, "status": "RESOURCE_LIMIT", "reason": "an exact transfer exceeds max_pairs_per_edge", "paid_s": 0.0, "elapsed_s": time.monotonic() - self.t0})
+            self.batched[key] = (None, None, None, attempts, root, 0); return self.batched[key]
+        t_a = time.monotonic(); bel, ts, wmax = run(exact_ops)
+        attempts.append({"candidate": "exact", "schedule": sched, "requested_nodes": R, "ops": {"%d-%d" % k: ["exact"] for k in exact_ops}, "work_estimate": work_exact,
+                         "directed_transfers": len(ts.minfo), "width_float": float(wmax), "met": bool(wmax + A.EPS_PUBLISH_SLACK <= self.eps), "paid_s": time.monotonic() - t_a, "elapsed_s": time.monotonic() - self.t0})
+        self.batched[key] = (bel, exact_ops, ts.minfo, attempts, root, len(ts.minfo)); return self.batched[key]
 
     def solve_query(self, q):
         ci = self.comp_of[q]; comp = self.comps[ci]; attempts = []; best = None
         comp_price, forest = self.comp_price(ci)
         if forest and not any(self.infl.rho.get(v, Fr(0)) > 0 for v in comp) and not any(u not in comp for v in comp for u in self.infl.adj[v]):
-            # exact law of the whole component: shared two-pass messages, zero transport
+            # exact law of the whole component: rooted inward (one requested node) or two-pass batched (several), zero transport
             try:
-                bt = self.batched_forest(ci)
+                bel, ops, minfo, batt, root, ntr = self.forest_solve(ci)
             except TimeLimit as ex:
                 return None, [{"mode": "TREE_MESSAGE", "status": "RESOURCE_LIMIT", "reason": str(ex)}]
-            if bt is not None:
-                bel, ops, minfo, batt = bt
+            if bel is not None:
                 lu = TR.coordinate_intervals(bel[q], self.red.blocks[q].rows, self.red.d)
-                # ONE component-level proof shared by every query of the component (node intervals listed once)
-                if ("proof", ci) not in self.batched:
-                    self.batched[("proof", ci)] = {"kind": "forest_batched", "H": sorted(comp), "xi": {}, "inside_ops": {"%d-%d" % k: list(v) for k, v in ops.items()}, "transport": "none (exact law of the whole influence component; batched two-pass schedule)",
-                                                   "z_grid_bits": RG.Z_BITS, "z_grid": {str(v): 0 for v in comp}, "iterations": 0, "candidates": batt,
-                                                   "nodes": {str(v): [[str(l), str(u)] for l, u in TR.coordinate_intervals(bel[v], self.red.blocks[v].rows, self.red.d)] for v in comp},
-                                                   "messages": {"%d->%d" % k: {kk: vv for kk, vv in v.items() if kk in ("operator", "k", "h", "pairs", "features", "lookups")} for k, v in minfo.items()}}
+                kind = "forest_rooted" if root is not None else "forest_batched"
+                # ONE component-level proof shared by every query of the component; candidates / operator maps / membership stored ONCE here
+                pk = ("proof", ci, root)
+                if pk not in self.batched:
+                    self.batched[pk] = {"kind": kind, "H": sorted(comp), "xi": {}, "inside_ops": {"%d-%d" % k: list(v) for k, v in ops.items()},
+                                        "transport": "none (exact law of the whole influence component; %s schedule)" % ("rooted inward" if root is not None else "two-pass batched"),
+                                        "schedule": "rooted_inward" if root is not None else "two_pass_batched", "root": root, "directed_transfers": ntr, "requested_nodes": [v for v in comp if v in self.requested],
+                                        "z_grid_bits": RG.Z_BITS, "z_grid": {str(v): 0 for v in comp}, "iterations": 0, "candidates": batt,
+                                        "nodes": {str(v): [[str(l), str(u)] for l, u in TR.coordinate_intervals(bel[v], self.red.blocks[v].rows, self.red.d)] for v in bel},
+                                        "messages": {"%d->%d" % k: {kk: vv for kk, vv in v.items() if kk in ("operator", "k", "h", "pairs", "features", "lookups")} for k, v in minfo.items()}}
                 width = max(hi - lo for lo, hi in lu)
-                attempts.append({"mode": "TREE_MESSAGE", "H": sorted(comp), "radius": len(comp), "ops": {"%d-%d" % k: list(v) for k, v in ops.items()}, "width": str(width), "width_float": float(width), "z_query": "0", "iterations": 0, "status": "OK", "batched": True, "candidates": batt, "elapsed_s": time.monotonic() - self.t0})
-                return {"mode": "TREE_MESSAGE", "H": sorted(comp), "xi": {}, "ops": ops, "proof": self.batched[("proof", ci)], "proof_key": ("forest", ci), "intervals_exact": lu, "width": width, "attempt": 1}, attempts
+                attempts.append({"mode": "TREE_MESSAGE", "H": sorted(comp), "radius": len(comp), "schedule": self.batched[pk]["schedule"], "width": str(width), "width_float": float(width), "z_query": "0", "iterations": 0, "status": "OK",
+                                 "candidates": "recorded once in the shared proof record (%d attempts)" % len(batt), "elapsed_s": time.monotonic() - self.t0})
+                return {"mode": "TREE_MESSAGE", "H": sorted(comp), "xi": {}, "ops": ops, "proof": self.batched[pk], "proof_key": ("forest", ci, root), "intervals_exact": lu, "width": width, "attempt": 1}, attempts
+            attempts.extend(batt)                                     # PRESERVED: every paid forest attempt stays in the record before any fallback
         whole_ok = forest or comp_price <= self.limits["max_entries"]
         radius = len(comp) if (forest or comp_price <= self.limits["exact_direct_entries"] or self.limits["force_exact"]) else 1
         while len(attempts) < self.limits["max_attempts"]:

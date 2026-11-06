@@ -47,20 +47,43 @@ class Edge:
 @dataclass
 class Model:
     d: int
-    blocks: dict                 # id -> Block
-    edges: list                  # Edge
+    blocks: dict                 # INTERNAL id (0..n-1, canonical) -> Block
+    edges: list                  # Edge (internal ids)
     meta: dict = field(default_factory=dict)
+    ext_ids: list = None         # internal id i <-> external id ext_ids[i]; a checked bijection (external ids may be negative / sparse)
+
+    def __post_init__(self):
+        if self.ext_ids is None:
+            self.ext_ids = sorted(self.blocks)
+
+    def ext(self, i):
+        return self.ext_ids[i]
+
+    def internal(self, e):
+        try:
+            return self._int_of[e]
+        except AttributeError:
+            self._int_of = {x: i for i, x in enumerate(self.ext_ids)}; return self._int_of[e]
 
     @staticmethod
     def from_json(obj):
         d = int(obj["d"])
         if not (1 <= d <= MAX_D):
             raise UnsupportedInput("d must be in 1..%d" % MAX_D)
+        # canonical internal ids: external ids (any integers, negative or sparse) are sorted and relabelled 0..n-1; the map is kept and
+        # published with every result (no signed-id string parsing anywhere: hyphenated keys only ever carry internal nonnegative ids)
+        raw_ids = []
+        for b in obj["blocks"]:
+            x = b.get("id")
+            if isinstance(x, bool) or not isinstance(x, int):
+                raise UnsupportedInput("block id %r is not an integer" % (x,))
+            raw_ids.append(x)
+        if len(set(raw_ids)) != len(raw_ids):
+            raise UnsupportedInput("duplicate block id %d" % next(x for x in raw_ids if raw_ids.count(x) > 1))
+        ext_ids = sorted(raw_ids); int_of = {x: i for i, x in enumerate(ext_ids)}
         blocks = {}
         for b in obj["blocks"]:
-            bid = int(b["id"])
-            if bid in blocks:
-                raise UnsupportedInput("duplicate block id %d" % bid)
+            bid = int_of[b["id"]]
             rows, ws, seen = [], [], set()
             wlist = b.get("weights")
             if wlist is None:
@@ -89,9 +112,11 @@ class Model:
             blocks[bid] = Block(bid, rows, [int(w * den) for w in ws])          # rational weights scaled to integers (a positive scalar)
         edges = []
         for e in obj["edges"]:
-            u, v = int(e["u"]), int(e["v"])
-            if u not in blocks or v not in blocks:
-                raise UnsupportedInput("edge (%d,%d) references an unknown block" % (u, v))
+            if any(isinstance(e.get(k), bool) or not isinstance(e.get(k), int) for k in ("u", "v")):
+                raise UnsupportedInput("edge endpoints must be integer block ids")
+            if e["u"] not in int_of or e["v"] not in int_of:
+                raise UnsupportedInput("edge (%d,%d) references an unknown block" % (e["u"], e["v"]))
+            u, v = int_of[e["u"]], int_of[e["v"]]
             if u == v:
                 raise UnsupportedInput("self-loop edge on block %d is not supported" % u)
             try:
@@ -108,7 +133,13 @@ class Model:
         for k in obj:
             if k not in ("d", "blocks", "edges", "meta", "bit_convention", "name"):
                 raise UnsupportedInput("unsupported top-level field %r" % k)
-        return Model(d, blocks, edges, dict(obj.get("meta") or {}))
+        meta = dict(obj.get("meta") or {})
+        if meta.get("cluster_hints") is not None:                      # hints name EXTERNAL ids: mapped once here
+            try:
+                meta["cluster_hints"] = [[int_of[int(x)] for x in c] for c in meta["cluster_hints"]]
+            except (KeyError, TypeError, ValueError):
+                raise UnsupportedInput("cluster hints must be lists of existing block ids")
+        return Model(d, blocks, edges, meta, ext_ids)
 
     @staticmethod
     def load(path):
@@ -120,6 +151,11 @@ class Model:
         """Re-check a Model object supplied directly (not through from_json): same contract."""
         if not (1 <= self.d <= MAX_D):
             raise UnsupportedInput("d must be in 1..%d" % MAX_D)
+        if sorted(self.blocks) != list(range(len(self.blocks))):
+            raise UnsupportedInput("internal block ids must be canonical 0..n-1 (use Model.from_json for external ids)")
+        if not (isinstance(self.ext_ids, list) and len(self.ext_ids) == len(self.blocks) and len(set(self.ext_ids)) == len(self.ext_ids)
+                and all(isinstance(x, int) and not isinstance(x, bool) for x in self.ext_ids)):
+            raise UnsupportedInput("external id map must be a bijection onto the blocks")
         for bid, b in self.blocks.items():
             if b.id != bid or not b.rows or len(b.rows) != len(b.w) or len(set(b.rows)) != len(b.rows):
                 raise UnsupportedInput("block %s: inconsistent id / rows / weights or duplicate rows" % bid)
@@ -137,8 +173,12 @@ class Model:
         return self
 
     def to_json(self):
-        return {"d": self.d, "bit_convention": BIT_CONVENTION, "blocks": [{"id": b.id, "rows": list(b.rows), "weights": list(b.w)} for b in self.blocks.values()],
-                "edges": [{"u": e.u, "v": e.v, "r": str(e.r)} for e in self.edges], "meta": {k: v for k, v in self.meta.items() if k not in ("sha256", "path")}}
+        """External ids are restored (the canonical relabelling is invisible in the serialized form; sha256 is over this form)."""
+        meta = {k: v for k, v in self.meta.items() if k not in ("sha256", "path")}
+        if meta.get("cluster_hints") is not None:
+            meta["cluster_hints"] = [[self.ext_ids[x] for x in c] for c in meta["cluster_hints"]]
+        return {"d": self.d, "bit_convention": BIT_CONVENTION, "blocks": [{"id": self.ext_ids[b.id], "rows": list(b.rows), "weights": list(b.w)} for b in self.blocks.values()],
+                "edges": [{"u": self.ext_ids[e.u], "v": self.ext_ids[e.v], "r": str(e.r)} for e in self.edges], "meta": meta}
 
     def sha256(self):
         return hashlib.sha256(json.dumps(self.to_json(), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -163,23 +203,29 @@ class Reduced:
     scalars: list = field(default_factory=list)      # dropped positive scalars (as strings) -- irrelevant for marginals
 
 
-def contract_hard(model: Model):
+def contract_hard(model: Model, deadline=None):
     """Stage 1+2 as a MODEL (full masks): hard components contracted, internal edges dropped as scalars, parallel edges fused by (A).
-    Returns (Model, orig_to_red, members, log, scalars, infeasible)."""
-    red = _reduce(model, absorb=False)
+    Returns (Model, orig_to_red, members, log, scalars, infeasible). `deadline` (callable raising) is polled per block / edge loop."""
+    red = _reduce(model, absorb=False, deadline=deadline)
     if red.infeasible:
         return None, red.orig_to_red, red.members, red.log, red.scalars, red.infeasible
     m2 = Model(model.d, {b: Block(b, list(blk.rows), list(blk.w)) for b, blk in red.blocks.items()}, [Edge(e.u, e.v, e.r, e.mask) for e in red.edges], dict(model.meta))
     return m2, red.orig_to_red, red.members, red.log, red.scalars, None
 
 
-def reduce_model(model: Model) -> Reduced:
-    return _reduce(model, absorb=True)
+def reduce_model(model: Model, deadline=None) -> Reduced:
+    return _reduce(model, absorb=True, deadline=deadline)
 
 
-def _reduce(model: Model, absorb=True) -> Reduced:
+def _poll(deadline, counter):
+    counter[0] += 1
+    if deadline is not None and counter[0] % 64 == 0:
+        deadline()
+
+
+def _reduce(model: Model, absorb=True, deadline=None) -> Reduced:
     d = model.d; full = (1 << d) - 1
-    log = []; scalars = []
+    log = []; scalars = []; _cnt = [0]
     # --- hard components (r = 1) by union-find
     parent = {b: b for b in model.blocks}
     def find(x):
@@ -196,6 +242,7 @@ def _reduce(model: Model, absorb=True) -> Reduced:
         comps.setdefault(find(b), []).append(b)
     blocks = {}; orig_to_red = {}; members = {}
     for root, mem in sorted(comps.items()):
+        _poll(deadline, _cnt)
         mem = sorted(mem); rid = mem[0]
         for b in mem:
             orig_to_red[b] = rid
@@ -241,6 +288,7 @@ def _reduce(model: Model, absorb=True) -> Reduced:
         const_val[rid] = blk.rows[0] & ~vary[rid]           # the constant bits' values
     out_edges = []
     for e in edges:
+        _poll(deadline, _cnt)
         if e.r == 0:
             log.append({"edge_removed": [e.u, e.v], "reason": "r = 0 (constant kernel)"}); continue
         both = vary[e.u] & vary[e.v]

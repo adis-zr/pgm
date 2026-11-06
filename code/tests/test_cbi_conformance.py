@@ -214,7 +214,10 @@ def test_tampering_detected_by_verifier():
     assert Fr(res["certificate"][q]["z_query"]) > 0 and res["certificate"][q]["mode"] == "REGION_SURROGATE"      # a genuine transport certificate
     assert res["proofs"][res["certificate"][q]["proof"]]["iterations"] > 1
     # EXTRA iterations of a stationary recurrence reproduce the same z: that is a legitimate certificate, not a tamper
-    more = json.loads(json.dumps(res, default=str)); more["proofs"][res["certificate"][q]["proof"]]["iterations"] += 5; assert api.verify(obj, more)["accepted"]
+    more = json.loads(json.dumps(res, default=str)); pr_ = more["proofs"][res["certificate"][q]["proof"]]; pr_["iterations"] += 5
+    assert not api.verify(obj, more)["accepted"]                 # ... but the declared rounding DIAGNOSTIC must be re-derived for the declared count
+    gap, upd = RG.rounding_diagnostic(Fr(pr_["dyadic"]["L_up"]), Fr(pr_["dyadic"]["epsilon_coef"]), pr_["iterations"]); pr_["dyadic"]["rounding_gap_bound"] = str(gap); pr_["dyadic"]["update_rounding_only_bound"] = str(upd)
+    assert api.verify(obj, more)["accepted"]
     pid = res["certificate"][q]["proof"]
     muts = {"interval_lo": lambda r: r["intervals"][q]["coordinates"][0].__setitem__("lo", r["intervals"][q]["coordinates"][0]["lo"] + 1),
             "interval_hi": lambda r: r["intervals"][q]["coordinates"][1].__setitem__("hi", r["intervals"][q]["coordinates"][1]["hi"] - 1),
@@ -367,3 +370,98 @@ def test_hints_mapped_through_hard_contraction_and_malformed_arguments():
     assert api.solve(base, "all", "1/100", {"degrees": [-1]})["status"] == "UNSUPPORTED_INPUT"
     assert api.solve(base, ["x"], "1/100")["status"] == "UNSUPPORTED_INPUT"
     assert api.solve(obj, [0], "1/100", {"max_time_s": 1e-9})["status"] == "RESOURCE_LIMIT"
+
+
+# ------------------------------------------------------------- campaign-spec repairs (6 November 2026, section 2)
+def test_external_ids_negative_nonconsecutive_permuted_and_query_mapping():
+    """Negative and sparse external ids, a permuted block order and external-id queries: results keyed by external ids, verifier binds the map,
+    intervals identical to the canonical 0..n-1 model's (relabelling is invisible)."""
+    base = rnd(4, 5, [(0, 1, Fr(1, 3)), (1, 2, Fr(1, 2)), (2, 3, Fr(1, 5)), (3, 4, Fr(1, 7))], 11)
+    ext = [-7, 3, 100, -1, 42]
+    obj = json.loads(json.dumps(base)); obj["blocks"] = [dict(b, id=ext[b["id"]]) for b in obj["blocks"]][::-1]; obj["edges"] = [dict(e, u=ext[e["u"]], v=ext[e["v"]]) for e in obj["edges"]]
+    r0 = api.solve(base, "all", "1/100", {}); r1 = api.solve(obj, "all", "1/100", {})
+    assert r1["status"] == "CERTIFIED" and sorted(int(k) for k in r1["intervals"]) == sorted(ext) and r1["requested_queries"] == sorted(ext)
+    for i, e in enumerate(ext):
+        assert [(c["lo"], c["hi"]) for c in r1["intervals"][str(e)]["coordinates"]] == [(c["lo"], c["hi"]) for c in r0["intervals"][str(i)]["coordinates"]]
+    assert api.verify(obj, r1)["accepted"]
+    r2 = api.solve(obj, [100, -7], "1/100", {}); assert sorted(r2["intervals"]) == ["-7", "100"] and api.verify(obj, r2)["accepted"]
+    assert api.solve(obj, [5], "1/100", {})["status"] == "UNSUPPORTED_INPUT"                     # 5 is not an external id
+    bad = json.loads(json.dumps(r1, default=str)); bad["id_map"]["external_ids"] = sorted(ext)[::-1]; assert not api.verify(obj, bad)["accepted"]   # tampered binding
+    # a model whose external ids happen to be a permutation of 0..n-1 but listed out of order: canonical sort, identical intervals
+    perm = json.loads(json.dumps(base)); perm["blocks"] = perm["blocks"][::-1]; r3 = api.solve(perm, "all", "1/100", {})
+    assert all(r3["intervals"][k]["coordinates"] == r0["intervals"][k]["coordinates"] for k in r0["intervals"]) and api.verify(perm, r3)["accepted"]
+
+
+def test_query_aware_forest_dispatch_rooted_vs_batched():
+    """One requested node in a forest component -> rooted inward schedule with n-1 directed transfers and a forest_rooted proof; all nodes ->
+    two-pass batched with 2(n-1); both verified by the independent (rooted / batched) checker; rooted enclosure contains the truth and equals
+    the batched enclosure's containment of the same node."""
+    obj = G.tree(7, 10, 24, [Fr(1, 64), Fr(1, 2), Fr(1, 1024)], 3, "t7"); tr = truth(obj)
+    r_all = api.solve(obj, "all", "1/100", {}); r_one = api.solve(obj, [3], "1/100", {})
+    pa = r_all["proofs"][r_all["certificate"]["3"]["proof"]]; po = r_one["proofs"][r_one["certificate"]["3"]["proof"]]
+    assert pa["kind"] == "forest_batched" and pa["directed_transfers"] == 2 * 6 and po["kind"] == "forest_rooted" and po["directed_transfers"] == 6 and po["root"] == 3
+    assert api.verify(obj, r_all)["accepted"] and api.verify(obj, r_one)["accepted"]
+    assert contained(r_one, tr) == (obj["d"], 0) and contained(r_all, tr)[1] == 0
+    # a rooted proof may not be reused for a second requested node of the same component (checker binds the request scope)
+    tam = json.loads(json.dumps(r_one, default=str)); tam["requested_queries"] = [3, 4]; tam["statuses_per_query"]["4"] = "CERTIFIED"; tam["intervals"]["4"] = tam["intervals"]["3"]; tam["certificate"]["4"] = dict(tam["certificate"]["3"], node=4)
+    assert not api.verify(obj, tam)["accepted"]
+    # transfer-count tamper
+    tam2 = json.loads(json.dumps(r_one, default=str)); tam2["proofs"][r_one["certificate"]["3"]["proof"]]["directed_transfers"] = 12; assert not api.verify(obj, tam2)["accepted"]
+    # disconnected forest, two requested nodes in different components: each component rooted at its own node
+    dis = G.tree(7, 10, 24, [Fr(1, 64), Fr(1, 2), Fr(1, 1024)], 3, "t7"); dis["edges"] = [e for e in dis["edges"] if {e["u"], e["v"]} != {0, 1}]
+    r_d = api.solve(dis, [1, 2], "1/100", {}); kinds = {r_d["proofs"][r_d["certificate"][q]["proof"]]["kind"] for q in ("1", "2")}
+    assert r_d["status"] == "CERTIFIED" and api.verify(dis, r_d)["accepted"] and kinds <= {"forest_rooted"} and contained(r_d, truth(dis))[1] == 0
+
+
+def test_every_paid_forest_attempt_is_preserved():
+    """An approximate batched candidate that misses the width followed by an exact candidate refused by the pair cap: both attempts stay in
+    the record (paid_s, work estimates, reason) and the query ends RESOURCE_LIMIT, never a silent fallback."""
+    obj = G.chain(4, 12, 64, [Fr(1, 2)], 5, "c4")
+    # force the planner to TRY a degree-0 enclosure candidate it would not normally qualify (selection is not under test; the record is):
+    orig = PL.prospective_op; PL.prospective_op = lambda e, mu, mv, eps_edge, limits, surrogate_allowed=False: (("fourier", 0), {"('fourier', 0)": 1})
+    try:
+        res = api.solve(obj, "all", "1/1000000", {"max_pairs_per_edge": 500, "degrees": [0, 1]})
+    finally:
+        PL.prospective_op = orig
+    pq = res["plan"]["queries"]["0"]["trials"][0]["attempts"]; cands = [a for a in pq if a.get("candidate")]
+    assert [a["candidate"] for a in cands][:2] == ["approximate", "exact"] and cands[0]["met"] is False and cands[0]["paid_s"] >= 0 and cands[0]["directed_transfers"] == 6
+    assert cands[1]["status"] == "RESOURCE_LIMIT"
+    # the eventual fallback (a generic region / tree attempt) is recorded AFTER the two paid forest attempts, never instead of them
+    assert len(pq) >= 3 and pq[2].get("mode") is not None and res["statuses_per_query"]["0"] in ("RESOURCE_LIMIT", "VALID_BUT_TOO_WIDE")
+    if res["status"] != "RESOURCE_LIMIT":
+        assert api.verify(obj, res)["accepted"]
+    # and when the exact candidate IS admitted after a missed approximate candidate, both stay in the shared proof record
+    PL.prospective_op = lambda e, mu, mv, eps_edge, limits, surrogate_allowed=False: (("fourier", 0), {})
+    try:
+        res2 = api.solve(obj, "all", "1/1000000", {"degrees": [0]})
+    finally:
+        PL.prospective_op = orig
+    c2 = res2["proofs"][res2["certificate"]["0"]["proof"]]["candidates"]
+    assert [a["candidate"] for a in c2] == ["approximate", "exact"] and c2[0]["met"] is False and c2[1]["met"] is True and api.verify(obj, res2)["accepted"]
+
+
+def test_cooperative_deadline_polled_outside_edge_transfers():
+    """A deadline that has already passed is detected at parsing / reductions / dispatch (not only inside transfers): RESOURCE_LIMIT, no
+    partial CERTIFIED claim, and never INFEASIBLE."""
+    obj = G.chain(6, 10, 24, [Fr(1, 3)], 1, "c6")
+    res = api.solve(obj, "all", "1/100", {"max_time_s": 1e-9})
+    assert res["status"] == "RESOURCE_LIMIT" and res["status"] != "INFEASIBLE" and not res["intervals"]
+
+
+def test_rounding_diagnostic_two_node_witness_and_checker_recomputation():
+    """Section 12 witness: A_12 = A_21 = delta/4, c = delta/4. Exact first iterate delta/2; rounded first iterate 2 delta (coefficients each
+    round up to delta, 2 delta + ... clipped); gap 3 delta / 2 > delta = the old update-only diagnostic. The published radius is the rounded
+    iterate (never plus the gap); the checker recomputes eps_coef and the complete bound."""
+    delta = Fr(1, 1 << RG.Z_BITS)
+    class Infl:                       # minimal influence stub for the recurrence
+        theta = {(0, 1): delta / 4}; adj = {0: {1: delta / 4}, 1: {0: delta / 4}}; rho = {}
+    coef = {"d": {0: delta / 4, 1: delta / 4}, "b": {0: Fr(0), 1: Fr(0)}}
+    z, t, dy = RG.iterate_dyadic(Infl, {0, 1}, coef, T_max=1)
+    exact1 = RG.F_apply(Infl, {0, 1}, coef, {0: Fr(1), 1: Fr(1)})
+    assert exact1[0] == delta / 2 and Fr(z[0], 1 << RG.Z_BITS) == 2 * delta
+    gap = Fr(z[0], 1 << RG.Z_BITS) - exact1[0]; assert gap == 3 * delta / 2
+    assert Fr(dy["update_rounding_only_bound"]) == delta < gap <= Fr(dy["rounding_gap_bound"])           # old term too small; complete bound valid
+    assert Fr(dy["epsilon_coef"]) == (delta - delta / 4) + (delta - delta / 4)
+    # on a real region certificate the checker recomputes the diagnostic: tampering epsilon_coef is rejected
+    obj = G.mesh(3, 3, 6, 8, Fr(1, 64), 3); res, _ = run(obj, limits={"exact_direct_entries": 1, "max_entries": 2000, "max_region_radius": 1})
+    pid = res["certificate"]["4"]["proof"]; bad = json.loads(json.dumps(res, default=str)); bad["proofs"][pid]["dyadic"]["epsilon_coef"] = "0"; assert not api.verify(obj, bad)["accepted"]

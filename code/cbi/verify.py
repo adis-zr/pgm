@@ -380,8 +380,14 @@ def verify(model, result):
     try:
         m = (model if isinstance(model, M.Model) else M.Model.from_json(model)).validate()
         eps = Fr(result["requested_width"]); _req(result.get("grid_bits") == A.GRID_BITS, "grid bits differ")
+        # EXTERNAL <-> INTERNAL id binding: the result's declared map must be exactly the model's bijection; every result key is an external id
+        idm = (result.get("id_map") or {}).get("external_ids"); _req(isinstance(idm, list) and idm == list(m.ext_ids), "result id_map is not the model's external-id bijection")
+        X = lambda i: str(m.ext_ids[i])                                                                   # internal -> external key
         req = result.get("requested_queries"); _req(isinstance(req, list) and req, "requested query set missing from the result")
-        req = sorted(int(q) for q in req); _req(all(q in m.blocks for q in req), "requested queries name unknown blocks")
+        try:
+            req = sorted(m.internal(int(q)) for q in req)
+        except (KeyError, ValueError, TypeError):
+            raise Rejected("requested queries name unknown blocks")
         blocks, edges, o2r, bad = v_contract_hard(m)
         if result["status"] == "INFEASIBLE":
             _req(bad is not None, "INFEASIBLE claimed but every hard component has a nonempty intersection"); return {"accepted": True, "reasons": ["zero-partition proof reproduced: hard component %s has an empty intersection" % bad]}
@@ -390,8 +396,11 @@ def verify(model, result):
         _req(bad is None, "model infeasible but the result claims otherwise")
         _req(result["status"] in ("CERTIFIED", "VALID_BUT_TOO_WIDE", "RESOURCE_LIMIT"), "unknown status")
         sps = result.get("statuses_per_query") or {}
-        _req(sorted(int(q) for q in sps) == req, "per-query statuses do not cover exactly the requested queries")
-        _req(sorted(int(q) for q in result.get("intervals", {})) == [q for q in req if sps[str(q)] != "RESOURCE_LIMIT"], "interval records do not match the per-query statuses")
+        try:
+            _req(sorted(m.internal(int(q)) for q in sps) == req, "per-query statuses do not cover exactly the requested queries")
+            _req(sorted(m.internal(int(q)) for q in result.get("intervals", {})) == [q for q in req if sps[X(q)] != "RESOURCE_LIMIT"], "interval records do not match the per-query statuses")
+        except (KeyError, ValueError):
+            raise Rejected("a result key is not an external block id")
         vals = list(sps.values()); agg = "CERTIFIED" if all(v == "CERTIFIED" for v in vals) else ("VALID_BUT_TOO_WIDE" if any(v == "VALID_BUT_TOO_WIDE" for v in vals) else "RESOURCE_LIMIT")
         _req(result["status"] == agg, "aggregate status %s inconsistent with per-query statuses" % result["status"])
         # clusters used (per system)
@@ -488,7 +497,14 @@ def verify(model, result):
                         _req(Fr(pr["rho"][str(v)]) == rho[v], "proof %s: declared rho at %d differs" % (pid, v))
             else:
                 z = {v: 0 for v in H}; _req(all(int(pr["z_grid"][str(v)]) == 0 for v in H), "proof %s: zero transport claimed inconsistently" % pid)
-            # own regional solve: tilts, then batched forest (all nodes) or dense (one root)
+            # complete rounding DIAGNOSTIC (section 12) recomputed when declared: eps_coef and (delta + eps_coef) sum_{j<t} L_up^j; never added to z
+            dy = pr.get("dyadic")
+            if needed and isinstance(dy, dict) and "rounding_gap_bound" in dy:
+                L_up = max((sum((Fr(th[(min(u, v), max(u, v))], qB) for u in iadj[v] if u in H), Fr(0)) for v in H), default=Fr(0))
+                e_coef = max(((Fr(c[v], qB) - (d[v] + b[v])) + sum((Fr(th[(min(u, v), max(u, v))], qB) - theta[(min(u, v), max(u, v))] for u in iadj[v] if u in H), Fr(0)) for v in H), default=Fr(0))
+                geo = sum((L_up ** j for j in range(T_)), Fr(0))
+                _req(Fr(dy["L_up"]) == L_up and Fr(dy["epsilon_coef"]) == e_coef and Fr(dy["rounding_gap_bound"]) == (Fr(1, qB) + e_coef) * geo, "proof %s: dyadic rounding diagnostic differs from the reconstruction" % pid)
+            # own regional solve: tilts, then forest (rooted inward for ONE requested node / two-pass batched for all) or dense (one root)
             tb = {}
             for v in H:
                 blk = rb[v]; ws = list(blk.w)
@@ -499,20 +515,40 @@ def verify(model, result):
             forest = M.is_forest(M.Reduced(m.d, tb, inside, {}, {}))
             nodes = {int(k): v for k, v in pr["nodes"].items()}; _req(all(n in H for n in nodes), "proof %s: a listed node is outside the region" % pid)
             if forest:
-                bel_all = v_forest_all_beliefs(tb, inside, ops) if pr.get("kind") == "forest_batched" else {n: v_tree_belief(tb, inside, ops, n) for n in nodes}
+                if pr.get("kind") == "forest_batched":
+                    bel_all = v_forest_all_beliefs(tb, inside, ops)
+                    _req(int(pr.get("directed_transfers", 2 * len(inside))) == 2 * len(inside), "proof %s: a two-pass batched schedule sends 2 x inside edges directed transfers" % pid)
+                elif pr.get("kind") == "forest_rooted":
+                    root = int(pr["root"]); _req(set(nodes) == {root} and root in H, "proof %s: a rooted proof covers exactly its root" % pid)
+                    # the root's computational component inside H: an inward schedule sends exactly (its size - 1) transfers
+                    seen = {root}; stack = [root]
+                    while stack:
+                        x = stack.pop()
+                        for e in inside:
+                            for a, b_ in ((e.u, e.v), (e.v, e.u)):
+                                if a == x and b_ not in seen:
+                                    seen.add(b_); stack.append(b_)
+                    _req(int(pr["directed_transfers"]) == len(seen) - 1, "proof %s: a rooted inward schedule sends (component size - 1) directed transfers" % pid)
+                    bel_all = {root: v_tree_belief(tb, inside, ops, root)}
+                else:
+                    bel_all = {n: v_tree_belief(tb, inside, ops, n) for n in nodes}
             else:
                 _req(all(op[0] in ("exact", "poly") for op in ops.values()), "cyclic region with an enclosure operator cannot be verified by dense elimination")
                 bel_all = {n: v_dense(tb, inside, ops, n, 1 << 22) for n in nodes}
             verified[pid] = {n: (bel_all[n], Fr(z[n], qB)) for n in nodes}
             return verified[pid]
+        rooted_req = {}                                                      # a rooted proof may only serve the single requested node of its component
         for q in req:
-            if sps[str(q)] == "RESOURCE_LIMIT":
+            if sps[X(q)] == "RESOURCE_LIMIT":
                 continue
-            iv = result["intervals"][str(q)]; cert = result["certificate"][str(q)]
+            iv = result["intervals"][X(q)]; cert = result["certificate"][X(q)]
             pid = cert.get("proof"); _req(pid in proofs, "query %d: unknown proof %r" % (q, pid))
             sysk = proofs[pid].get("system"); cmap = systems[sysk][0]; node = cmap[o2r[q]]
             _req(cert.get("node") == node and iv.get("node") == node, "query %d maps to node %d, result says %s" % (q, node, cert.get("node")))
             nodes = verify_proof(pid); _req(node in nodes, "query %d: its node is not covered by proof %s" % (q, pid))
+            if proofs[pid].get("kind") == "forest_rooted":
+                others = [q2 for q2 in req if q2 != q and systems[sysk][0][o2r[q2]] in set(int(x) for x in proofs[pid]["H"])]
+                _req(not others, "query %d: a rooted forest proof is used although other requested queries lie in the same component" % q)
             bel, zq = nodes[node]
             rows = np.asarray(systems[sysk][4][node].rows, dtype=np.uint64)
             for j in range(m.d):
@@ -525,9 +561,9 @@ def verify(model, result):
                 _req(A.publish(Fr(row["exact"][0]), Fr(row["exact"][1])) == (int(row["lo"]), int(row["hi"])), "published endpoints are not the declared rounding of the stated exact interval")
             _req(len(iv["coordinates"]) == m.d, "coordinate coverage")
             wmax = max(Fr(int(r_["hi"]) - int(r_["lo"]), q_grid) for r_ in iv["coordinates"])
-            _req(Fr(iv["max_width"]) == wmax and bool(wmax <= eps) == bool(iv["width_met"]) and (sps[str(q)] == "CERTIFIED") == bool(wmax <= eps), "width / status fields inconsistent")
+            _req(Fr(iv["max_width"]) == wmax and bool(wmax <= eps) == bool(iv["width_met"]) and (sps[X(q)] == "CERTIFIED") == bool(wmax <= eps), "width / status fields inconsistent")
             reasons.append("query %d: proof %s (%s), node %d, %d coordinates contained, max width %.3g, z = %.3g" % (q, pid, proofs[pid].get("kind"), node, m.d, float(wmax), float(zq)))
-        reasons.append("%d proofs verified once for %d queries" % (len(verified), len([q for q in req if sps[str(q)] != "RESOURCE_LIMIT"])))
+        reasons.append("%d proofs verified once for %d queries" % (len(verified), len([q for q in req if sps[X(q)] != "RESOURCE_LIMIT"])))
         return {"accepted": True, "reasons": reasons}
     except Rejected as ex:
         return {"accepted": False, "reasons": reasons + [str(ex)]}

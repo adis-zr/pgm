@@ -87,6 +87,12 @@ def round_up_coefficients(infl, H, coef, B=Z_BITS):
     return th, c
 
 
+def rounding_diagnostic(L_up, eps_coef, t, B=Z_BITS):
+    """(complete gap bound (delta + eps_coef) * sum_{j<t} L_up^j, update-rounding-only term delta * sum_{j<t} L_up^j) for t declared iterations."""
+    geo = sum((Fr(L_up) ** j for j in range(int(t))), Fr(0))
+    return (Fr(1, 1 << B) + Fr(eps_coef)) * geo, Fr(1, 1 << B) * geo
+
+
 def iterate_dyadic(infl, H, coef, T_max=64, B=Z_BITS):
     """z_0 = 1 (= 2^B); z_{t+1} = min(2^B, ceil(c_v + sum_u theta_vu z_u)) on the grid, with upward-rounded coefficients; stop when stationary.
     Returns (z as ints over 2^B, iterations, L_up = max row sum of the rounded A, the rounding-error bound delta * sum_{j<t} L^j)."""
@@ -105,8 +111,14 @@ def iterate_dyadic(infl, H, coef, T_max=64, B=Z_BITS):
             break
         z = z2
     L = max((sum(Fr(th[(min(u, v), max(u, v))], q) for u in infl.adj[v] if u in H) for v in H), default=Fr(0))
-    bound = Fr(1, q) * sum((L ** j for j in range(t)), Fr(0))
-    return z, t, {"grid_bits": B, "L_up": str(L), "rounding_error_bound": str(bound), "theta_up": {"%d-%d" % k: v for k, v in th.items()}, "c_up": {str(v): c[v] for v in H}}
+    # DIAGNOSTIC gap between the rounded and the exact recurrence (never added to the published radius, which is already the conservative
+    # rounded iterate): e_{t+1} <= (delta + eps_coef) + L_up e_t, e_0 = 0, where eps_coef = max_v [(c_v^ - c_v) + sum_u (A_vu^ - A_vu)] is the
+    # one-step coefficient discrepancy relative to the ORIGINAL map on [0,1]^H and delta = 2^-B the update rounding (campaign spec section 12).
+    eps_coef = max(((Fr(c[v], q) - (coef["d"][v] + coef["b"][v])) + sum((Fr(th[(min(u, v), max(u, v))], q) - infl.theta[(min(u, v), max(u, v))] for u in infl.adj[v] if u in H), Fr(0)) for v in H), default=Fr(0))
+    gap, upd = rounding_diagnostic(L, eps_coef, t, B)
+    return z, t, {"grid_bits": B, "L_up": str(L), "epsilon_coef": str(eps_coef), "rounding_gap_bound": str(gap),
+                  "update_rounding_only_bound": str(upd), "theta_up": {"%d-%d" % k: v for k, v in th.items()}, "c_up": {str(v): c[v] for v in H},
+                  "note": "rounding_gap_bound bounds ||G^t(1) - F^t(1)||_inf incl. coefficient rounding; update_rounding_only_bound is the former delta*sum L^j term (update rounding relative to the already-rounded map only); neither is added to the published radius"}
 
 
 def iterate(infl, H, coef, T_max=64, tol=Fr(1, 2 ** 64)):

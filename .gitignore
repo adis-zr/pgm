@@ -4,3 +4,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 code/runs/*/attempts/*/tmp/
+# external benchmark sweep (6 Nov 2026): separate PGMax venv, raw source archives / extracted corpora / third-party software (hashes in
+# EXTERNAL_SWEEP_2026-11-06/SOURCES_HASHES.json; the 46 selected inputs are committed under EXTERNAL_SWEEP_2026-11-06/inputs/)
+code/.venv-pgmax/
+code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/sources/
+code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/setup/emul/
+code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/setup/ibia/*.pdf
