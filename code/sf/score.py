@@ -67,13 +67,18 @@ for r in C.R_PRIORITY:
         # F0 width outcome and selector regret
         f0 = next((x for x in cell["routes"] if x["route"] == "F0" and x["status"] == "OK"), None)
         cell["F0_width_met"] = (f0 or {}).get("width_met")
-        complete = [(x["complete_supervisor_wall_s"], x["route"], x["file"]) for x in cell["routes"] if x["status"] == "OK" and x["complete_supervisor_wall_s"] is not None and x["checker"] == "VERIFIED"]
-        fastest = min(complete) if complete else None
-        cell["fastest_complete_verified_route"] = {"s": fastest[0], "route": fastest[1], "file": fastest[2]} if fastest else None
+        # CORRECTED metric (the first scoring pass compared against the fastest verified route regardless of width; preserved as
+        # SCORES_prior_regret_metric.json): the regret baseline is the fastest COMPLETE, VERIFIED route on the cell that MEETS the
+        # requested width eps (any kind: selected, diagnostic or reference; rep 0 only)
+        def fastest_meeting(eps):
+            cand = [(x["complete_supervisor_wall_s"], x["route"], x["file"]) for x in cell["routes"] if x["status"] == "OK" and x["rep"] == 0 and x["complete_supervisor_wall_s"] is not None and x["checker"] == "VERIFIED" and (x.get("width_met") or {}).get(eps)]
+            return min(cand) if cand else None
+        cell["fastest_complete_verified_route_meeting_width"] = {e: ({"s": f_[0], "route": f_[1], "file": f_[2]} if f_ else None) for e, f_ in ((str(e), fastest_meeting(str(e))) for e in C.WIDTHS)}
         cell["selector"] = {}
         for x in cell["routes"]:
             if x["kind"] == "select" and x["rep"] == 0:
-                cell["selector"][x["eps"]] = {"route": x["route"], "status": x["status"], "complete_s": x["complete_supervisor_wall_s"], "width_met": (x.get("width_met") or {}).get(x["eps"]),
+                fastest = fastest_meeting(x["eps"])
+                cell["selector"][x["eps"]] = {"route": x["route"], "status": x["status"], "complete_s": x["complete_supervisor_wall_s"], "producer_only_s": x["producer_only_s"], "width_met": (x.get("width_met") or {}).get(x["eps"]),
                                              "regret_s": (x["complete_supervisor_wall_s"] - fastest[0]) if (fastest and x["complete_supervisor_wall_s"] is not None) else None,
                                              "fastest_route": fastest[1] if fastest else None,
                                              "diagnostics_passing_width_but_not_qualified": [y["route"] for y in cell["routes"] if y["kind"] == "route" and y["status"] == "OK" and (y.get("width_met") or {}).get(x["eps"]) and y["route"] not in (x.get("qualified") or []) and y["route"] not in ("E", "W")]}

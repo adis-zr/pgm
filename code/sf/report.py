@@ -11,12 +11,12 @@ L.append("## Panels\n\n| panel | n | m_A = m_B | kind | p | seed | A∩B rows | 
 for k, v in P["panels"].items():
     L.append("| %s | %d | %d | %s | %s | %d | %d | %s… |" % (k, v["n"], v["m"], v["kind"], v["p"], v["seed"], v["intersection"], v["sha256"][:16]))
 L.append("\n## Selected runs (online selector; complete = supervised child spawn-to-exit wall, incl. parse, recognition, overlap scan, scouts, route, certificate, independent checker, publication)\n")
-L.append("| panel | r | ε | selected | status | width met | max width | complete s | producer-only s | fastest verified route on cell (s) | regret s | diagnostics passing ε but not prospectively qualified |")
+L.append("| panel | r | ε | selected | status | width met | max width | complete s | producer-only s | fastest verified route on the cell MEETING ε (s) | regret s | diagnostics passing ε but not prospectively qualified |")
 L.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
 for c in S["cells"]:
     for eps, sel in sorted(c["selector"].items()):
         row = next((x for x in c["routes"] if x["kind"] == "select" and x["eps"] == eps and x["rep"] == 0), {})
-        fr = c["fastest_complete_verified_route"] or {}
+        fr = (c["fastest_complete_verified_route_meeting_width"] or {}).get(eps) or {}
         L.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s (%s) | %s | %s |" % (c["panel"], c["r_label"], eps, sel["route"], sel["status"], sel["width_met"], g(row.get("max_width_float")), f(sel["complete_s"]), f(row.get("producer_only_s")), fr.get("route", "—"), f(fr.get("s")), f(sel["regret_s"]), ", ".join(sel["diagnostics_passing_width_but_not_qualified"]) or "—"))
 L.append("\n## Every attempted route per cell (route-by-route cost table)\n")
 L.append("| panel | r | kind | ε | route | status | checker | max width | met 1/100 | met 1/20 | complete s | producer-only s | route walls s (construction / evaluation / certificate) | checker s | peak tree RSS KiB | max bits | ref containment failures | max |shift| bound from π |")
