@@ -56,10 +56,16 @@ def main(argv):
                 lim.update({"force_exact": True, "no_coarsening": True, "exact_direct_entries": MAX_REF_ENTRIES, "max_entries": MAX_REF_ENTRIES})
                 red = M.reduce_model(m)
                 if red.infeasible is None:
-                    worst = max(EX.price(red.blocks, red.edges, red.orig_to_red[q])[0] for q in qlist); rec["price_entries"] = worst
-                    if worst > MAX_REF_ENTRIES:
-                        rec["status"] = "RESOURCE_LIMIT"; rec["reason"] = "exact comparator needs %d dense entries > %d: not launched" % (worst, MAX_REF_ENTRIES)
-                        json.dump(rec, open(out, "w"), indent=1, default=str); print(json.dumps({k: rec.get(k) for k in ("model", "mode", "status", "reason")})); return 0
+                    if M.is_forest(red):                                       # price the algorithm the comparator actually runs: streaming tree transfers
+                        worst = max((len(red.blocks[e.u].rows) * len(red.blocks[e.v].rows) for e in red.edges), default=0); rec["price_pairs_per_edge"] = worst
+                        if worst > (1 << 25):
+                            rec["status"] = "RESOURCE_LIMIT"; rec["reason"] = "exact tree comparator needs %d pairs on one edge > 2^25: not launched" % worst
+                            json.dump(rec, open(out, "w"), indent=1, default=str); print(json.dumps({k: rec.get(k) for k in ("model", "mode", "status", "reason")})); return 0
+                    else:
+                        worst = max(EX.price(red.blocks, red.edges, red.orig_to_red[q])[0] for q in qlist); rec["price_entries"] = worst
+                        if worst > MAX_REF_ENTRIES:
+                            rec["status"] = "RESOURCE_LIMIT"; rec["reason"] = "exact comparator needs %d dense entries > %d: not launched" % (worst, MAX_REF_ENTRIES)
+                            json.dump(rec, open(out, "w"), indent=1, default=str); print(json.dumps({k: rec.get(k) for k in ("model", "mode", "status", "reason")})); return 0
             t0 = time.monotonic(); res = api.solve(m, qs, width, lim); t1 = time.monotonic(); ver = api.verify(m, res); t2 = time.monotonic()
             rec["timings"].update({"solve_s": t1 - t0, "verify_s": t2 - t1, "cold_solve_plus_verify_s": t2 - t0, "cold_incl_load_s": (t2 - t0) + rec["timings"]["load_model_s"], "solve_phases_s": res["timings"]})
             rec["status"] = res["status"]; rec["verify_accepted"] = ver["accepted"]; rec["verify_reasons"] = ver["reasons"][-3:]

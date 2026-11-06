@@ -126,6 +126,8 @@ def _ve_with_poly(blocks, tabs, keep, max_entries, deadline=None):
         raise EX.TooLarge("largest intermediate table %d entries exceeds the limit %d" % (worst, max_entries))
     facs = [((b,), np.array(blk.w, dtype=object)) for b, blk in blocks.items()]
     for t in tabs:
+        if deadline is not None:
+            deadline()
         if isinstance(t, M.Edge):
             facs.append(((t.u, t.v), EX._kernel_table(blocks[t.u], blocks[t.v], t.mask, t.r)))
         else:

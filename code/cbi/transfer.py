@@ -44,29 +44,31 @@ def transfer_exact(cav, src_rows, tgt_rows, mask, r, deadline=None):
     return A.IVec(lo, list(hi), cav.exp).normalize(), {"operator": "exact", "pairs": len(src_rows) * len(tgt_rows)}
 
 
-def transfer_sparse(cav, src_rows, tgt_rows, mask, r, h):
+def transfer_sparse(cav, src_rows, tgt_rows, mask, r, h, deadline=None):
     dp = bin(mask).count("1"); u, v = A.uv(r)
     if h >= dp:
-        return transfer_exact(cav, src_rows, tgt_rows, mask, r)
+        return transfer_exact(cav, src_rows, tgt_rows, mask, r, deadline=deadline)
     kap = [A.kappa_int(dp, u, v, dd) for dd in range(dp + 1)]
-    idx = {x: i for i, x in enumerate(src_rows)}
     flips = subsets_of_mask(mask, h)                      # EVERY distance 0..h is enumerated
     Qlo, Qhi = cav.mass(); lo = []; hi = []; looked = 0
     L = cav.lo.tolist(); Hh = cav.hi.tolist()
-    # rows of the source may share an S-projection with several rows differing outside S: enumerate by projection
-    proj = {}
+    # AGGREGATE the cavity per S-projected state ONCE (rows differing only outside S share a projection): one (lo, hi) per projection
+    agg = {}
     for i, x in enumerate(src_rows):
-        proj.setdefault(x & mask, []).append(i)
-    for y in tgt_rows:
+        p = x & mask; a = agg.get(p)
+        agg[p] = (L[i], Hh[i]) if a is None else (a[0] + L[i], a[1] + Hh[i])
+    for t, y in enumerate(tgt_rows):
+        if deadline is not None and (t & 255) == 0:
+            deadline()
         yp = y & mask; Clo = Chi = Blo = Bhi = 0
         for dd in range(h + 1):
+            kd = kap[dd]
             for f in flips[dd]:
-                rows = proj.get(yp ^ f)
-                if rows:
-                    for i in rows:
-                        looked += 1; Clo += L[i] * kap[dd]; Chi += Hh[i] * kap[dd]; Blo += L[i]; Bhi += Hh[i]
+                a = agg.get(yp ^ f)
+                if a is not None:
+                    looked += 1; Clo += a[0] * kd; Chi += a[1] * kd; Blo += a[0]; Bhi += a[1]
         lo.append(Clo + kap[dp] * (Qlo - Blo)); hi.append(Chi + kap[h + 1] * (Qhi - Bhi))
-    return A.IVec(lo, hi, cav.exp).normalize(), {"operator": "sparse", "h": h, "lookups": looked, "flip_masks": sum(len(flips[j]) for j in flips)}
+    return A.IVec(lo, hi, cav.exp).normalize(), {"operator": "sparse", "h": h, "lookups": looked, "flip_masks": sum(len(flips[j]) for j in flips), "projected_states": len(agg)}
 
 
 def antipodal_defect_upper(cav, src_rows, mask):
@@ -80,10 +82,10 @@ def antipodal_defect_upper(cav, src_rows, mask):
     return max(0, Qhi - s), {"projected_rows": len(agg_lo), "exact_antipodal": (Qhi - s) == 0 and all(int(a) == int(b) for a, b in zip(cav.lo.tolist(), cav.hi.tolist()))}
 
 
-def transfer_fourier(cav, src_rows, tgt_rows, mask, r, k):
+def transfer_fourier(cav, src_rows, tgt_rows, mask, r, k, deadline=None):
     dp = bin(mask).count("1"); u, v = A.uv(r)
     if k >= dp:
-        return transfer_exact(cav, src_rows, tgt_rows, mask, r)
+        return transfer_exact(cav, src_rows, tgt_rows, mask, r, deadline=deadline)
     subs = subsets_of_mask(mask, k)
     X = np.asarray(src_rows, dtype=np.uint64); Y = np.asarray(tgt_rows, dtype=np.uint64)
     lo_arr = cav.lo; hi_arr = cav.hi
@@ -94,6 +96,8 @@ def transfer_fourier(cav, src_rows, tgt_rows, mask, r, k):
         c = u ** j * v ** (dp - j)
         for T in subs[j]:
             nfeat += 1
+            if deadline is not None and (nfeat & 63) == 0:
+                deadline()
             sx = chi(X, T)
             pos = sx > 0
             qlo = int(lo_arr[pos].sum()) - int(hi_arr[~pos].sum()); qhi = int(hi_arr[pos].sum()) - int(lo_arr[~pos].sum())
@@ -111,12 +115,12 @@ def transfer_fourier(cav, src_rows, tgt_rows, mask, r, k):
     return A.IVec(lo, hi, cav.exp).normalize(), {"operator": "fourier", "k": k, "features": nfeat, "residual_scaled": str(E), "antipodal_defect_upper": str(D_up), **dinfo}
 
 
-def transfer_poly(cav, src_rows, tgt_rows, mask, r, k):
+def transfer_poly(cav, src_rows, tgt_rows, mask, r, k, deadline=None):
     """EXACT transfer of the degree-k truncated kernel K~_k = sum_{|T|<=k} r^|T| chi_T(x) chi_T(y) (the REGION_SURROGATE factor):
     no residual term; the enclosure only carries the dyadic rounding of the cavity. Scaled by v^d' like the others."""
     dp = bin(mask).count("1"); u, v = A.uv(r)
     if k >= dp:
-        return transfer_exact(cav, src_rows, tgt_rows, mask, r)
+        return transfer_exact(cav, src_rows, tgt_rows, mask, r, deadline=deadline)
     subs = subsets_of_mask(mask, k)
     X = np.asarray(src_rows, dtype=np.uint64); Y = np.asarray(tgt_rows, dtype=np.uint64)
     hlo = np.array([0] * len(tgt_rows), dtype=object); hhi = np.array([0] * len(tgt_rows), dtype=object); nfeat = 0
@@ -124,6 +128,8 @@ def transfer_poly(cav, src_rows, tgt_rows, mask, r, k):
         c = u ** j * v ** (dp - j)
         for T in subs[j]:
             nfeat += 1
+            if deadline is not None and (nfeat & 63) == 0:
+                deadline()
             pos = chi(X, T) > 0
             qlo = int(cav.lo[pos].sum()) - int(cav.hi[~pos].sum()); qhi = int(cav.hi[pos].sum()) - int(cav.lo[~pos].sum())
             sy = chi(Y, T) > 0
@@ -165,13 +171,13 @@ def apply(op, cav, src_rows, tgt_rows, mask, r, deadline=None):
         deadline()
     kind = op[0]
     if kind == "poly":
-        return transfer_poly(cav, src_rows, tgt_rows, mask, r, int(op[1]))
+        return transfer_poly(cav, src_rows, tgt_rows, mask, r, int(op[1]), deadline=deadline)
     if kind == "exact":
         return transfer_exact(cav, src_rows, tgt_rows, mask, r, deadline=deadline)
     if kind == "sparse":
-        return transfer_sparse(cav, src_rows, tgt_rows, mask, r, int(op[1]))
+        return transfer_sparse(cav, src_rows, tgt_rows, mask, r, int(op[1]), deadline=deadline)
     if kind == "fourier":
-        return transfer_fourier(cav, src_rows, tgt_rows, mask, r, int(op[1]))
+        return transfer_fourier(cav, src_rows, tgt_rows, mask, r, int(op[1]), deadline=deadline)
     raise ValueError(op)
 
 

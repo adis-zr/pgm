@@ -291,3 +291,71 @@ def test_parser_rejects_silent_reinterpretation():
     # a Model object supplied directly is validated too
     mm = M.Model(3, {0: M.Block(0, [1, 1], [1, 1])}, [])
     assert api.solve(mm, "all", "1/100")["status"] == "UNSUPPORTED_INPUT"
+
+
+# ------------------------------------------------------------------ the second review (6 Nov 2026): checker arithmetic range, cluster partition, disconnected forests, final-plan admission, hints, arguments
+def _tamper_near_one(res, q, rho):
+    bad = json.loads(json.dumps(res, default=str)); elo, ehi = 1 - rho, Fr(1); lg, hg = A.publish(elo, ehi)
+    bad["intervals"][q]["coordinates"][0] = {"lo": lg, "hi": hg, "exact": [str(elo), str(ehi)], "width": str(Fr(hg - lg, Q))}
+    w = Fr(hg - lg, Q); bad["intervals"][q]["max_width"] = str(w); bad["intervals"][q]["max_width_float"] = float(w); bad["intervals"][q]["width_met"] = bool(w <= Fr(1, 100))
+    return bad
+
+
+def test_checker_arbitrary_precision_products_across_fixed_width_boundaries():
+    for Mw in (1 << 31, 1 << 32, (1 << 63) - 1, 1 << 64):
+        obj = {"d": 1, "blocks": [{"id": 0, "rows": [0, 1], "weights": [Mw, 1]}, {"id": 1, "rows": [0, 1], "weights": [Mw, 1]}], "edges": [{"u": 0, "v": 1, "r": "1/2"}], "meta": {"cluster_hints": [[0, 1]]}}
+        res = api.solve(obj, [0], "1/100"); tr = brute_truth(obj)[0][0]
+        row = res["intervals"]["0"]["coordinates"][0]; assert Fr(int(row["lo"]), Q) <= tr <= Fr(int(row["hi"]), Q)
+        assert api.verify(obj, res)["accepted"], Mw                                            # the honest near-zero interval verifies
+        if res["certificate"]["0"]["system"] == "coarse":
+            assert not api.verify(obj, _tamper_near_one(res, "0", Fr(res["certificate"]["0"]["z_query"])))["accepted"], Mw     # the near-one tamper is rejected
+
+
+def test_checker_rejects_overlapping_or_malformed_certificate_clusters():
+    obj = {"d": 1, "blocks": [{"id": 0, "rows": [0, 1], "weights": [1, 1]}, {"id": 1, "rows": [0, 1], "weights": [1, 3]}, {"id": 2, "rows": [0, 1], "weights": [1, 1]}], "edges": [{"u": 0, "v": 1, "r": "1/2"}, {"u": 0, "v": 2, "r": "4095/4097"}]}
+    res = api.solve(obj, [0], "1/100"); assert brute_truth(obj)[0][0] == Fr(5, 8) and api.verify(obj, res)["accepted"]
+    m2 = M.Model.from_json(obj); c1 = CO.verify_cluster(m2, [0, 1]); c2 = CO.verify_cluster(m2, [0, 2]); rho2 = Fr(c2["rho_i"])
+    bad = json.loads(json.dumps(res, default=str)); bad["plan"]["clusters"]["verified"] = [{k: v for k, v in c.items() if k not in ("coarse_rows", "coarse_weights")} for c in (c1, c2)]
+    c = bad["certificate"]["0"]; c.update({"system": "coarse", "query_block": 0, "H": [0], "xi": {}, "inside_ops": {}, "theta": {}, "d": {"0": "0"}, "beta": {"0": "0"}, "b": {"0": str(rho2)}, "eta": {}, "rho": {"0": str(rho2)}, "z": {"0": str(rho2)}, "iterations": 1, "z_query": str(rho2), "mode": "COARSE_REGION"})
+    bad["intervals"]["0"]["node"] = 0; elo, ehi = Fr(1, 2) - rho2, Fr(1, 2) + rho2; lg, hg = A.publish(elo, ehi)
+    bad["intervals"]["0"]["coordinates"][0] = {"lo": lg, "hi": hg, "exact": [str(elo), str(ehi)], "width": str(Fr(hg - lg, Q))}
+    w = Fr(hg - lg, Q); bad["intervals"]["0"]["max_width"] = str(w); bad["intervals"]["0"]["max_width_float"] = float(w); bad["intervals"]["0"]["width_met"] = True; bad["statuses_per_query"] = {"0": "CERTIFIED"}; bad["status"] = "CERTIFIED"
+    assert not api.verify(obj, bad)["accepted"]
+    # duplicate member inside one cluster, unknown member, oversized cluster
+    for cl in ([[0, 0, 1]], [[0, 9]], [list(range(9))]):
+        b2 = json.loads(json.dumps(res, default=str)); b2["plan"]["clusters"]["verified"] = [{"cluster": c_, "rho_i": "1/2", "C_i": "1/2", "Gamma_i": "1", "expOmega_i": "1"} for c_ in cl]
+        assert not api.verify(obj, b2)["accepted"], cl
+
+
+def test_disconnected_computational_forest_verifies():
+    obj = {"d": 6, "blocks": [{"id": 0, "rows": [0, 1], "weights": [1, 1]}, {"id": 1, "rows": [0, 2], "weights": [1, 1]}, {"id": 2, "rows": list(range(64)), "weights": [1] * 64}, {"id": 3, "rows": list(range(64)), "weights": [1] * 64}],
+           "edges": [{"u": 0, "v": 1, "r": "4095/4097"}, {"u": 0, "v": 2, "r": "1/4"}, {"u": 2, "v": 3, "r": "1/4096"}]}
+    res = api.solve(obj, [2], "1/100"); tr = truth(obj)
+    assert res["status"] == "CERTIFIED" and any(v[0] in ("fourier", "sparse") for v in res["certificate"]["2"]["inside_ops"].values())
+    assert contained(res, tr)[1] == 0 and api.verify(obj, res)["accepted"]
+
+
+def test_final_plan_admission_cannot_be_bypassed():
+    obj = {"d": 1, "blocks": [{"id": 0, "rows": [0, 1], "weights": [1, 1]}, {"id": 1, "rows": [0, 1], "weights": [1, 2]}], "edges": [{"u": 0, "v": 1, "r": "1/2"}]}
+    res = api.solve(obj, [0], "1/100", {"max_pairs_per_edge": 1, "force_exact": True}); assert res["status"] == "RESOURCE_LIMIT"
+    res = api.solve(obj, [0], "1/100", {"max_pairs_per_edge": 1}); assert res["status"] in ("RESOURCE_LIMIT", "VALID_BUT_TOO_WIDE", "CERTIFIED")
+    for t in res["plan"]["queries"]["0"]["trials"]:
+        for a in t["attempts"]:
+            if a["status"] == "OK":
+                assert all(v[0] != "exact" for v in a["ops"].values())
+
+
+def test_hints_mapped_through_hard_contraction_and_malformed_arguments():
+    obj = {"d": 2, "blocks": [{"id": 0, "rows": [0, 1], "weights": [1, 1]}, {"id": 1, "rows": [0, 1], "weights": [1, 1]}, {"id": 2, "rows": [0, 2], "weights": [1, 1]}], "edges": [{"u": 0, "v": 1, "r": "1"}, {"u": 1, "v": 2, "r": "4095/4097"}], "meta": {"cluster_hints": [[0, 1, 2]]}}
+    res = api.solve(obj, [0], "1/100"); assert res["status"] == "CERTIFIED" and res["plan"]["clusters"]["proposed"] == [[0, 2]] and api.verify(obj, res)["accepted"]
+    tr = truth(obj); assert contained(res, tr)[1] == 0
+    base = {"d": 1, "blocks": [{"id": 0, "rows": [0], "weights": [1]}], "edges": []}
+    assert api.solve(base, "all", "1/0")["status"] == "UNSUPPORTED_INPUT"
+    assert api.solve(base, "all", "abc")["status"] == "UNSUPPORTED_INPUT"
+    assert api.solve(base, "all", "2")["status"] == "UNSUPPORTED_INPUT"
+    assert api.solve({"d": 1, "blocks": [{"id": 0, "rows": [0], "weights": ["x"]}], "edges": []}, "all", "1/100")["status"] == "UNSUPPORTED_INPUT"
+    assert api.solve({"d": 1, "blocks": [{"id": 0, "rows": [0], "weights": [1]}, {"id": 1, "rows": [0], "weights": [1]}], "edges": [{"u": 0, "v": 1, "r": "1/0"}]}, "all", "1/100")["status"] == "UNSUPPORTED_INPUT"
+    assert api.solve(base, "all", "1/100", {"bogus": 1})["status"] == "UNSUPPORTED_INPUT"
+    assert api.solve(base, "all", "1/100", {"degrees": [-1]})["status"] == "UNSUPPORTED_INPUT"
+    assert api.solve(base, ["x"], "1/100")["status"] == "UNSUPPORTED_INPUT"
+    assert api.solve(obj, [0], "1/100", {"max_time_s": 1e-9})["status"] == "RESOURCE_LIMIT"

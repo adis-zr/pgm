@@ -15,12 +15,22 @@ R_STRONG = Fr(1) - Fr(1, 2 ** 8)
 MAX_CLUSTER = 8
 
 
-def propose_clusters(model: M.Model, hints=None):
+def propose_clusters(model: M.Model, hints=None, o2r=None):
+    """hints name ORIGINAL block ids; they are mapped through the hard contraction (o2r), deduplicated, trivial (< 2 members) clusters dropped;
+    overlapping mapped clusters are rejected explicitly."""
     if hints:
-        cl = [sorted(int(x) for x in c) for c in hints]
+        try:
+            raw = [[int(x) for x in c] for c in hints]
+        except (TypeError, ValueError):
+            raise M.UnsupportedInput("cluster hints must be lists of block ids")
+        o2r = o2r or {b: b for b in model.blocks}
+        if any(x not in o2r for c in raw for x in c):
+            raise M.UnsupportedInput("cluster hints name unknown original block ids")
+        cl = [sorted(set(o2r[x] for x in c)) for c in raw]
+        cl = [c for c in cl if len(c) >= 2]
         flat = [x for c in cl for x in c]
-        if len(flat) != len(set(flat)) or any(x not in model.blocks for x in flat):
-            raise M.UnsupportedInput("cluster hints must partition a subset of the block ids")
+        if len(flat) != len(set(flat)):
+            raise M.UnsupportedInput("cluster hints overlap after the hard contraction: they must partition a subset of the blocks")
         if any(len(c) > MAX_CLUSTER or len(c) < 2 for c in cl):
             raise M.UnsupportedInput("cluster hints must have 2..%d blocks each (exact cut enumeration is 2^(|C|-1) - 1 cuts)" % MAX_CLUSTER)
         return cl, "hints"

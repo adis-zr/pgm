@@ -74,7 +74,10 @@ class Model:
                     raise UnsupportedInput("block %d: row %d outside [0, 2^d)" % (bid, x))
                 if x in seen:
                     raise UnsupportedInput("block %d: duplicate row %d (combine rows before supplying the model)" % (bid, x))
-                w = Fr(w)
+                try:
+                    w = Fr(w)
+                except (ValueError, ZeroDivisionError, TypeError):
+                    raise UnsupportedInput("block %d: weight %r is not a rational" % (bid, w))
                 if w <= 0:
                     raise UnsupportedInput("block %d: non-positive weight %s" % (bid, w))
                 seen.add(x); rows.append(x); ws.append(w)
@@ -91,7 +94,10 @@ class Model:
                 raise UnsupportedInput("edge (%d,%d) references an unknown block" % (u, v))
             if u == v:
                 raise UnsupportedInput("self-loop edge on block %d is not supported" % u)
-            r = Fr(e["r"])
+            try:
+                r = Fr(e["r"])
+            except (ValueError, ZeroDivisionError, TypeError, KeyError):
+                raise UnsupportedInput("edge (%d,%d): coupling %r is not a rational" % (u, v, e.get("r")))
             if not (0 <= r <= 1):
                 raise UnsupportedInput("edge (%d,%d): coupling %s outside [0,1]" % (u, v, r))
             if e.get("kernel", "product") != "product":
@@ -122,7 +128,11 @@ class Model:
             if any((not isinstance(w, int) or isinstance(w, bool) or w <= 0) for w in b.w):
                 raise UnsupportedInput("block %s: weights must be positive integers" % bid)
         for e in self.edges:
-            if e.u not in self.blocks or e.v not in self.blocks or e.u == e.v or not (0 <= Fr(e.r) <= 1) or e.mask != (1 << self.d) - 1:
+            try:
+                e.r = Fr(e.r)
+            except (ValueError, ZeroDivisionError, TypeError):
+                raise UnsupportedInput("edge (%s,%s): coupling %r is not a rational" % (e.u, e.v, e.r))
+            if e.u not in self.blocks or e.v not in self.blocks or e.u == e.v or not (0 <= e.r <= 1) or e.mask != (1 << self.d) - 1:
                 raise UnsupportedInput("edge (%s,%s): unknown block, self-loop, coupling outside [0,1] or a non-full mask" % (e.u, e.v))
         return self
 

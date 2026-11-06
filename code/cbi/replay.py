@@ -3,13 +3,14 @@ truth files are the FROZEN run's truth_ve records (exact VE is unchanged by the 
 import sys, os, json, time, subprocess
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 E = os.path.join(HERE, "runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06"); PY = sys.executable; CAP_S = 120.0
-man = json.load(open(os.path.join(E, "REPLAY_MANIFEST.json"))); frozen = json.load(open(os.path.join(E, "MANIFEST.json")))
-lp = os.path.join(E, "REPLAY_LEDGER.json"); led = json.load(open(lp)) if os.path.exists(lp) else {"charges": [], "commit": man["commit"]}
-os.makedirs(os.path.join(E, "replay"), exist_ok=True); done = {c["id"] for c in led["charges"]}
+TAG = os.environ.get("CBI_REPLAY_TAG", "")                      # "" -> REPLAY_MANIFEST.json / replay/ ; "2" -> REPLAY2_MANIFEST.json / replay2/
+man = json.load(open(os.path.join(E, "REPLAY%s_MANIFEST.json" % TAG))); frozen = json.load(open(os.path.join(E, "MANIFEST.json")))
+lp = os.path.join(E, "REPLAY%s_LEDGER.json" % TAG); led = json.load(open(lp)) if os.path.exists(lp) else {"charges": [], "commit": man["commit"]}
+os.makedirs(os.path.join(E, "replay%s" % TAG), exist_ok=True); done = {c["id"] for c in led["charges"]}
 for c in man["cases"]:
     if c["id"] in done:
         continue
-    out = os.path.join(E, "replay", "%03d_%s_%s_%s_q%s_rep%d.json" % (c["id"], c["instance"], c["mode"], c["width"].replace("/", "_"), c["queries"], c["rep"]))
+    out = os.path.join(E, "replay%s" % TAG, "%03d_%s_%s_%s_q%s_rep%d.json" % (c["id"], c["instance"], c["mode"], c["width"].replace("/", "_"), c["queries"], c["rep"]))
     truth = ""
     if c["truth"]:
         t = next((x for x in frozen["cases"] if x["instance"] == c["instance"] and x["mode"] == "truth_ve"), None)

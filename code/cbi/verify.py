@@ -99,8 +99,12 @@ def v_cluster(blocks, edges, C):
         inter &= set(blocks[v].rows)
     _req(bool(inter), "empty intersection")
     rows = sorted(inter); wd = {v: dict(zip(blocks[v].rows, blocks[v].w)) for v in C}; tot = {v: sum(blocks[v].w) for v in C}
-    Ci = sum((Fr(1) * np.prod([Fr(wd[v][z], tot[v]) for v in C]) for z in rows), Fr(0))
-    w = [int(np.prod([wd[v][z] for v in C])) for z in rows]
+    Ci = Fr(0); w = []
+    for z in rows:                                            # ARBITRARY-PRECISION products (Python ints / Fractions; never a fixed-width reduction)
+        pq = Fr(1); pw = 1
+        for v in C:
+            pq *= Fr(wd[v][z], tot[v]); pw *= int(wd[v][z])
+        Ci += pq; w.append(pw)
     gamma = Fr(0)
     for k in range(len(C) - 1):
         for sub in combinations(C[1:], k):
@@ -352,7 +356,13 @@ def verify(model, result):
         vals = list(sps.values()); agg = "CERTIFIED" if all(v == "CERTIFIED" for v in vals) else ("VALID_BUT_TOO_WIDE" if any(v == "VALID_BUT_TOO_WIDE" for v in vals) else "RESOURCE_LIMIT")
         _req(result["status"] == agg, "aggregate status %s inconsistent with per-query statuses" % result["status"])
         # clusters used (per system)
-        used = [c["cluster"] for c in (result["plan"]["clusters"].get("verified") or [])]
+        used = [sorted(int(x) for x in c["cluster"]) for c in (result["plan"]["clusters"].get("verified") or [])]
+        # the certificate clusters must form a PARTITION of a subset of the contracted blocks: known ids, no duplicate member, pairwise disjoint,
+        # 2..MAX_CLUSTER members each (the producer rejects overlaps; the checker enforces the premise independently)
+        flat = [x for C in used for x in C]
+        _req(all(x in blocks for x in flat), "a certificate cluster names an unknown or non-representative block")
+        _req(len(flat) == len(set(flat)), "certificate clusters overlap or repeat a member: not a partition")
+        _req(all(2 <= len(C) <= CO.MAX_CLUSTER and len(set(C)) == len(C) for C in used), "certificate cluster size / duplicate member")
         systems = {}
         if used:
             cmap = {b: b for b in blocks}; rho = {}; cblocks = dict(blocks)
@@ -439,7 +449,9 @@ def verify(model, result):
                         dp = e.s(); un, vn = A.uv(e.r)
                         ws = [w * A.kappa_int(dp, un, vn, bin((x ^ xi[u]) & e.mask).count("1")) for x, w in zip(blk.rows, ws)]
                 tb[v] = M.Block(v, list(blk.rows), ws)
-            forest = len(inside) == len(H) - 1 and M.is_forest(M.Reduced(m.d, tb, inside, {}, {}))
+            forest = M.is_forest(M.Reduced(m.d, tb, inside, {}, {}))              # ACYCLIC (a disconnected forest is a forest)
+            if not forest:
+                _req(all(op[0] in ("exact", "poly") for op in ops.values()), "a cyclic region with an enclosure operator (fourier / sparse) cannot be verified by dense elimination")
             bel = v_tree_belief(tb, inside, ops, node) if forest else v_dense(tb, inside, ops, node, 1 << 22)
             rows = np.asarray(rb[node].rows, dtype=np.uint64)
             for j in range(m.d):

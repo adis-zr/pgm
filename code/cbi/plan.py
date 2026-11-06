@@ -144,6 +144,10 @@ class Planner:
                     attempts.append({"mode": "REGION_SURROGATE" if H != set(comp) else "EXACT_VE", "H": sorted(H), "status": "RESOURCE_LIMIT", "radius": radius,
                                      "reason": "the region graph has cycles and its dense elimination needs %d entries > limit %d" % (worst, self.limits["max_entries"])}); break
                 ops = {_edge_key(e): ("exact",) for e in inside}
+            # FINAL-PLAN ADMISSION: whatever the path (menu, force_exact, cyclic override, escalation), an exact operator may not exceed the pair cap
+            over = [k for k, v in ops.items() if v[0] == "exact" and len(self.red.blocks[k[0]].rows) * len(self.red.blocks[k[1]].rows) > self.limits["max_pairs_per_edge"]]
+            if over:
+                attempts.append({"mode": "-", "H": sorted(H), "status": "RESOURCE_LIMIT", "reason": "final plan needs exact transfers above max_pairs_per_edge on edges %s (no override bypasses the allowance)" % over[:4], "ops": {"%d-%d" % k: list(v) for k, v in ops.items()}}); break
             if H == set(comp):
                 mode = "TREE_MESSAGE" if sub_forest else "EXACT_VE"
             else:
