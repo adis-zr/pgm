@@ -59,15 +59,22 @@ python -m cbi.cli verify examples/example_model.json result.json
 3. **Planning** (input only, never a reference): forest components and cheaply priced components are solved exactly on the whole component
    (zero transport); otherwise a radius-1 region (Theorem 1) with fixed outside states, crossing factors kept exactly as tilts, and the
    cheapest prospectively qualified operator per inside edge (exact / positive degree-k surrogate / degree-k enclosure / sparse radius-h);
-   escalation raises degrees, enlarges the region, or goes exact while limits permit. Every attempt is recorded and counted.
-4. **Transport (Theorem 1)**: θ_e = tanh(s_e atanh r_e) on the TRUE kernels, d_v, b_v ≤ ρ_v + (1−ρ_v)β_v, F(z) iterated from 1 (every
-   iterate valid); published [l − z_v, u + z_v].
+   escalation raises degrees, enlarges the region, or goes exact while limits permit. Every attempt is recorded and counted. Forest
+   components are solved in one batched two-pass schedule for all their queries; an APPROXIMATE candidate (cheapest prospectively
+   qualified operator per edge) is tried first when its work estimate is below the exact candidate's and kept iff every node meets the
+   width, otherwise the exact candidate is used; both candidates are recorded in the proof.
+4. **Transport (Theorem 1)**: θ_e = tanh(s_e atanh r_e) on the TRUE kernels, d_v, b_v ≤ ρ_v + (1−ρ_v)β_v, F(z) = min(1, c + Az) iterated
+   from 1 as the DYADIC recurrence on the 2^−64 grid: coefficients rounded UP to the grid, every coordinate of every iterate rounded UP
+   (clipped at 1), so every rounded iterate is a valid bound (monotone G ≥ F, G(1) ≤ 1); the rounding bound δ Σ_j L^j (+ coefficient
+   rounding) is recorded in `proofs[id].dyadic`; published [l − z_v, u + z_v] with z_v the final grid iterate. Zero transport when the
+   whole influence component is solved exactly.
 5. **Arithmetic**: positive integer weights; kernels as integers at scale v^d'; messages as dyadic interval vectors rounded outward to
    96 bits; distance histograms by 30-bit limb splitting (float64 exact); publication on the 2^−80 grid.
 6. **Verification**: own code paths for hard contraction, cluster certificates (own cuts, own Ω over original supports), influence θ,
    simplification, tilts, Theorem-1 iteration, transfers (distance-major bincount exact transfer, subset-axis moments, min-degree VE); operator
    domains validated; every requested query must be covered with consistent statuses; accepts iff every published interval contains the
-   verifier's own enclosure. Shared proof-critical helpers are listed in `cbi/verify.py`'s docstring.
+   verifier's own enclosure. Each shared proof record is verified ONCE (own batched two-pass forest schedule; own dyadic replay with
+   independently reconstructed coefficients) and reused for every query that points to it. Shared proof-critical helpers are listed in `cbi/verify.py`'s docstring.
 
 Not implemented in this pass: the anchored Theorem-4 transfer, the nonbacktracking (Theorem-2) comparison, hard surrogate factors,
 coordinate maps, non-product kernels. See the pass report under `runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/`.
