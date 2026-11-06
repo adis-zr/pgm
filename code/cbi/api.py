@@ -42,7 +42,8 @@ def _systems(m2, clusters, eps, limits, cluster_log, timings, deadline=None):
 
 def solve(model, queries="all", requested_width="1/100", limits=None):
     T0 = time.monotonic(); timings = {}
-    out = {"status": None, "requested_width": None, "grid_bits": A.GRID_BITS, "intervals": {}, "certificate": {}, "plan": {}, "timings": timings, "statuses_per_query": {}, "requested_queries": None}
+    out = {"status": None, "requested_width": None, "grid_bits": A.GRID_BITS, "intervals": {}, "certificate": {}, "proofs": {}, "plan": {}, "timings": timings, "statuses_per_query": {}, "requested_queries": None}
+    proof_ids = {}
     try:
         try:
             eps = Fr(requested_width)
@@ -120,8 +121,12 @@ def solve(model, queries="all", requested_width="1/100", limits=None):
                 lg, hg = A.publish(lo, hi); rows.append({"lo": lg, "hi": hg, "exact": [str(lo), str(hi)], "width": str(Fr(hg - lg, 1 << A.GRID_BITS))})
             wmax = max(Fr(r["hi"] - r["lo"], 1 << A.GRID_BITS) for r in rows)
             out["intervals"][str(q)] = {"coordinates": rows, "max_width": str(wmax), "max_width_float": float(wmax), "width_met": bool(wmax <= eps), "system": sysk, "node": systems[sysk][2][o2r[q]]}
-            c = dict(best["cert"]); c.pop("intervals_exact", None); c["xi"] = {str(k): v for k, v in best["xi"].items()}; c["mode"] = best["mode"]; c["system"] = sysk
-            out["certificate"][str(q)] = c
+            pk = (sysk,) + best["proof_key"]
+            if pk not in proof_ids:
+                pid = "P%d" % len(proof_ids); proof_ids[pk] = pid
+                pr = dict(best["proof"]); pr["system"] = sysk; pr["mode"] = best["mode"]; out["proofs"][pid] = pr
+            out["certificate"][str(q)] = {"proof": proof_ids[pk], "node": systems[sysk][2][o2r[q]], "system": sysk, "mode": best["mode"], "H": best["H"],
+                                          "z_query": str(Fr(best["proof"]["z_grid"][str(systems[sysk][2][o2r[q]])], 1 << best["proof"]["z_grid_bits"])), "iterations": best["proof"]["iterations"]}
             statuses[q] = "CERTIFIED" if wmax <= eps else "VALID_BUT_TOO_WIDE"
             _timed(timings, "publish", t0)
         out["statuses_per_query"] = {str(k): v for k, v in statuses.items()}

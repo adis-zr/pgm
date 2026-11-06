@@ -250,6 +250,45 @@ def v_apply(op, cav, src, tgt, mask, r):
     raise Rejected("unknown operator %r" % (op,))
 
 
+def v_forest_all_beliefs(blocks, edges, ops):
+    """Own two-pass schedule over every component of a forest: inward to each component's smallest node, outward with prefix / suffix
+    products. Returns {node: IVec}. Independent of cbi.tree (different traversal order and cavity assembly)."""
+    adj = {b: [] for b in blocks}
+    for e in edges:
+        adj[e.u].append(e.v); adj[e.v].append(e.u)
+    emap = {(min(e.u, e.v), max(e.u, e.v)): e for e in edges}
+    def send(frm, to, cav):
+        e = emap[(min(frm, to), max(frm, to))]; return v_apply(ops[(min(frm, to), max(frm, to))], cav, blocks[frm].rows, blocks[to].rows, e.mask, e.r)
+    msg = {}; out = {}; seen = set()
+    for root in sorted(blocks):
+        if root in seen:
+            continue
+        order = []; stack = [(root, None)]
+        while stack:
+            x, p = stack.pop(); seen.add(x); order.append((x, p))
+            for w in sorted(adj[x], reverse=True):
+                if w != p:
+                    stack.append((w, x))
+        for x, p in reversed(order):
+            if p is not None:
+                cav = A.IVec.exact(blocks[x].w).normalize()
+                for w in adj[x]:
+                    if w != p:
+                        cav = cav.mul(msg[(w, x)])
+                msg[(x, p)] = send(x, p, cav)
+        for x, p in order:
+            nb = sorted(adj[x]); inc = [msg[(w, x)] for w in nb]
+            suf = [A.ones(len(blocks[x].rows))] * (len(nb) + 1)
+            for i in range(len(nb) - 1, -1, -1):
+                suf[i] = inc[i].mul(suf[i + 1])
+            pre = A.IVec.exact(blocks[x].w).normalize(); out[x] = pre.mul(suf[0])
+            for i, w in enumerate(nb):
+                if (x, w) not in msg:
+                    msg[(x, w)] = send(x, w, pre.mul(suf[i + 1]))
+                pre = pre.mul(inc[i])
+    return out
+
+
 def v_tree_belief(blocks, edges, ops, root):
     adj = {b: [] for b in blocks}
     for e in edges:
@@ -393,67 +432,89 @@ def verify(model, result):
         theta0, iadj0 = v_influence(blocks, edges, {b: b for b in blocks}, {}); rb0, re0 = v_computational(blocks, edges, m.d)
         systems["plain"] = ({b: b for b in blocks}, {}, theta0, iadj0, rb0, re0)
         q_grid = 1 << A.GRID_BITS
-        for q in req:
-            if sps[str(q)] == "RESOURCE_LIMIT":
-                continue
-            iv = result["intervals"][str(q)]; cert = result["certificate"][str(q)]
-            sysk = cert.get("system"); _req(sysk in systems, "unknown system %r" % sysk)
+        proofs = result.get("proofs") or {}; verified = {}            # proof id -> {node: (belief IVec, z Fraction)}
+        def verify_proof(pid):
+            if pid in verified:
+                return verified[pid]
+            pr = proofs[pid]; sysk = pr.get("system"); _req(sysk in systems, "proof %s: unknown system %r" % (pid, sysk))
             cmap, rho, theta, iadj, rb, re_ = systems[sysk]
-            node = cmap[o2r[q]]; _req(cert["query_block"] == node and iv.get("node") == node, "query %d maps to node %d, result says %s" % (q, node, cert["query_block"]))
-            H = set(int(x) for x in cert["H"]); _req(node in H and all(v in rb for v in H), "region malformed")
+            H = set(int(x) for x in pr["H"]); _req(all(v in rb for v in H), "proof %s: region names unknown nodes" % pid)
             cadj = {b: {} for b in rb}
             for e in re_:
                 cadj[e.u][e.v] = e; cadj[e.v][e.u] = e
-            outside_comp = sorted({u for v in H for u in cadj[v] if u not in H})
-            xi = {int(k): int(v) for k, v in cert["xi"].items()}
-            _req(sorted(xi) == outside_comp, "fixed outside states do not cover exactly the computational crossing neighbours")
+            outside_comp = sorted({u for v in H for u in cadj[v] if u not in H}); xi = {int(k): int(v) for k, v in pr["xi"].items()}
+            _req(sorted(xi) == outside_comp, "proof %s: fixed outside states do not cover exactly the computational crossing neighbours" % pid)
             for u, x in xi.items():
                 _req(x in set(rb[u].rows), "fixed state %d of block %d is not an allowed row" % (x, u))
             inside = [e for e in re_ if e.u in H and e.v in H]
             ops = {}
-            for k, v in cert["inside_ops"].items():
+            for k, v in pr["inside_ops"].items():
                 a, b = (int(t) for t in k.split("-")); ops[(a, b)] = _parse_op(v, 0)
-            _req(set(ops) == {(min(e.u, e.v), max(e.u, e.v)) for e in inside}, "operator list does not match the inside edges")
-            # coefficients on the influence system
-            d = {v: sum((th for u, th in iadj[v].items() if u not in H), Fr(0)) for v in H}
-            beta = {}; b = {}
-            for v in H:
-                etas = []
-                for u, e in cadj[v].items():
-                    if u in H:
-                        op = ops[(min(u, v), max(u, v))]
-                        if op[0] == "poly":
-                            et = T.surrogate_eta(e.s(), e.r, int(op[1])); _req(et is not None, "poly operator with eta >= 1 is not a positive surrogate"); etas.append(et)
-                beta[v] = min(Fr(1), sum((et / (1 - et) for et in etas), Fr(0)) / 2)
-                rv = rho.get(v, Fr(0)); b[v] = rv + (1 - rv) * beta[v]
-            for k, v in cert["theta"].items():
-                a_, b_ = (int(t) for t in k.split("-")); _req(theta.get((a_, b_)) == Fr(v), "theta %s differs (%s vs verifier %s)" % (k, v, theta.get((a_, b_))))
-            for v in H:
-                _req(Fr(cert["d"][str(v)]) == d[v] and Fr(cert["b"][str(v)]) == b[v], "d / b at %d differ" % v)
+            _req(set(ops) == {(min(e.u, e.v), max(e.u, e.v)) for e in inside}, "proof %s: operator list does not match the inside edges" % pid)
+            # transport on the influence system with the DYADIC upward-rounded recurrence (own replay)
             crossing = any(u not in H for v in H for u in iadj[v])
             needed = crossing or any(op[0] == "poly" for op in ops.values()) or any(rho.get(v, Fr(0)) > 0 for v in H)
+            B = int(pr["z_grid_bits"]); qB = 1 << B
             if needed:
-                z = {v: Fr(1) for v in H}; T_ = int(cert["iterations"]); _req(T_ >= 1, "transport needed but no Theorem-1 iteration declared")
+                d = {v: sum((th for u, th in iadj[v].items() if u not in H), Fr(0)) for v in H}; b = {}
+                for v in H:
+                    etas = []
+                    for u, e in cadj[v].items():
+                        if u in H:
+                            op = ops[(min(u, v), max(u, v))]
+                            if op[0] == "poly":
+                                et = T.surrogate_eta(e.s(), e.r, int(op[1])); _req(et is not None, "poly operator with eta >= 1"); etas.append(et)
+                    beta = min(Fr(1), sum((et / (1 - et) for et in etas), Fr(0)) / 2); rv = rho.get(v, Fr(0)); b[v] = rv + (1 - rv) * beta
+                ceil_ = lambda x: -((-Fr(x) * qB).numerator // (-Fr(x) * qB).denominator)
+                th = {k: ceil_(v) for k, v in theta.items() if k[0] in H and k[1] in H}; c = {v: ceil_(d[v] + b[v]) for v in H}
+                T_ = int(pr["iterations"]); _req(T_ >= 1, "proof %s: transport needed but no iteration declared" % pid)
+                z = {v: qB for v in H}
                 for _ in range(T_):
-                    z = {v: min(Fr(1), d[v] + b[v] + sum((th * z[u] for u, th in iadj[v].items() if u in H), Fr(0))) for v in H}
-                _req(all(z[v] == Fr(cert["z"][str(v)]) for v in H), "Theorem-1 iterates differ")
+                    z2 = {}
+                    for v in H:
+                        acc = c[v] * qB
+                        for u in iadj[v]:
+                            if u in H:
+                                acc += th[(min(u, v), max(u, v))] * z[u]
+                        z2[v] = min(qB, -((-acc) // qB))
+                    z = z2
+                _req(all(int(pr["z_grid"][str(v)]) == z[v] for v in H), "proof %s: dyadic Theorem-1 iterates differ" % pid)
+                for k, v in (pr.get("theta") or {}).items():
+                    a_, b_ = (int(t) for t in k.split("-")); _req(theta.get((a_, b_)) == Fr(v), "proof %s: theta %s differs" % (pid, k))
+                for v in H:
+                    if "d" in pr:
+                        _req(Fr(pr["d"][str(v)]) == d[v] and Fr(pr["b"][str(v)]) == b[v], "proof %s: declared d / b at %d differ from the reconstruction" % (pid, v))
+                    if "rho" in pr and rho.get(v, Fr(0)) > 0:
+                        _req(Fr(pr["rho"][str(v)]) == rho[v], "proof %s: declared rho at %d differs" % (pid, v))
             else:
-                z = {v: Fr(0) for v in H}; _req(all(Fr(cert["z"][str(v)]) == 0 for v in H), "zero transport claimed inconsistently")
-            zq = z[node]
-            # own regional solve (tilts multiplied in with own loop)
+                z = {v: 0 for v in H}; _req(all(int(pr["z_grid"][str(v)]) == 0 for v in H), "proof %s: zero transport claimed inconsistently" % pid)
+            # own regional solve: tilts, then batched forest (all nodes) or dense (one root)
             tb = {}
             for v in H:
                 blk = rb[v]; ws = list(blk.w)
                 for u, e in cadj[v].items():
                     if u not in H:
-                        dp = e.s(); un, vn = A.uv(e.r)
-                        ws = [w * A.kappa_int(dp, un, vn, bin((x ^ xi[u]) & e.mask).count("1")) for x, w in zip(blk.rows, ws)]
+                        dp = e.s(); un, vn = A.uv(e.r); ws = [w * A.kappa_int(dp, un, vn, bin((x ^ xi[u]) & e.mask).count("1")) for x, w in zip(blk.rows, ws)]
                 tb[v] = M.Block(v, list(blk.rows), ws)
-            forest = M.is_forest(M.Reduced(m.d, tb, inside, {}, {}))              # ACYCLIC (a disconnected forest is a forest)
-            if not forest:
-                _req(all(op[0] in ("exact", "poly") for op in ops.values()), "a cyclic region with an enclosure operator (fourier / sparse) cannot be verified by dense elimination")
-            bel = v_tree_belief(tb, inside, ops, node) if forest else v_dense(tb, inside, ops, node, 1 << 22)
-            rows = np.asarray(rb[node].rows, dtype=np.uint64)
+            forest = M.is_forest(M.Reduced(m.d, tb, inside, {}, {}))
+            nodes = {int(k): v for k, v in pr["nodes"].items()}; _req(all(n in H for n in nodes), "proof %s: a listed node is outside the region" % pid)
+            if forest:
+                bel_all = v_forest_all_beliefs(tb, inside, ops) if pr.get("kind") == "forest_batched" else {n: v_tree_belief(tb, inside, ops, n) for n in nodes}
+            else:
+                _req(all(op[0] in ("exact", "poly") for op in ops.values()), "cyclic region with an enclosure operator cannot be verified by dense elimination")
+                bel_all = {n: v_dense(tb, inside, ops, n, 1 << 22) for n in nodes}
+            verified[pid] = {n: (bel_all[n], Fr(z[n], qB)) for n in nodes}
+            return verified[pid]
+        for q in req:
+            if sps[str(q)] == "RESOURCE_LIMIT":
+                continue
+            iv = result["intervals"][str(q)]; cert = result["certificate"][str(q)]
+            pid = cert.get("proof"); _req(pid in proofs, "query %d: unknown proof %r" % (q, pid))
+            sysk = proofs[pid].get("system"); cmap = systems[sysk][0]; node = cmap[o2r[q]]
+            _req(cert.get("node") == node and iv.get("node") == node, "query %d maps to node %d, result says %s" % (q, node, cert.get("node")))
+            nodes = verify_proof(pid); _req(node in nodes, "query %d: its node is not covered by proof %s" % (q, pid))
+            bel, zq = nodes[node]
+            rows = np.asarray(systems[sysk][4][node].rows, dtype=np.uint64)
             for j in range(m.d):
                 sel = ((rows >> np.uint64(j)) & np.uint64(1)).astype(bool)
                 LA, UA = bel.masked_mass(sel); LC, UC = bel.masked_mass(~sel); l, u = A.normalize_event(LA, UA, LC, UC)
@@ -465,7 +526,8 @@ def verify(model, result):
             _req(len(iv["coordinates"]) == m.d, "coordinate coverage")
             wmax = max(Fr(int(r_["hi"]) - int(r_["lo"]), q_grid) for r_ in iv["coordinates"])
             _req(Fr(iv["max_width"]) == wmax and bool(wmax <= eps) == bool(iv["width_met"]) and (sps[str(q)] == "CERTIFIED") == bool(wmax <= eps), "width / status fields inconsistent")
-            reasons.append("query %d: system %s, region %s, %d coordinates contained, max width %.3g, z = %.3g" % (q, sysk, sorted(H), m.d, float(wmax), float(zq)))
+            reasons.append("query %d: proof %s (%s), node %d, %d coordinates contained, max width %.3g, z = %.3g" % (q, pid, proofs[pid].get("kind"), node, m.d, float(wmax), float(zq)))
+        reasons.append("%d proofs verified once for %d queries" % (len(verified), len([q for q in req if sps[str(q)] != "RESOURCE_LIMIT"])))
         return {"accepted": True, "reasons": reasons}
     except Rejected as ex:
         return {"accepted": False, "reasons": reasons + [str(ex)]}

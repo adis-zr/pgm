@@ -73,14 +73,18 @@ def main(argv):
             for q in qlist:
                 iv = res["intervals"].get(str(q)); c = res["certificate"].get(str(q)) if isinstance(res["certificate"], dict) else None
                 trials = (res.get("plan", {}).get("queries", {}).get(str(q)) or {}).get("trials") or []
+                pr = (res.get("proofs") or {}).get((c or {}).get("proof")) or {}
                 row = {"status": res["statuses_per_query"].get(str(q)), "max_width": (iv or {}).get("max_width_float"), "width_met": (iv or {}).get("width_met"), "mode": (c or {}).get("mode"), "system": (c or {}).get("system"),
-                       "region": (c or {}).get("H"), "z": (c or {}).get("z_query"), "ops": (c or {}).get("inside_ops"), "transport": (c or {}).get("transport"), "iterations": (c or {}).get("iterations"),
+                       "region": (c or {}).get("H"), "z": (c or {}).get("z_query"), "ops": pr.get("inside_ops"), "transport": pr.get("transport"), "iterations": (c or {}).get("iterations"), "proof": (c or {}).get("proof"), "proof_kind": pr.get("kind"),
                        "attempts": [{k: a.get(k) for k in ("mode", "status", "width_float", "escalation", "radius", "batched")} | {"system": t["system"]} for t in trials for a in t["attempts"]]}
                 if iv:
                     mv = max(max(abs(Fr(r_["exact"][0]) - pi[q][j]), abs(Fr(r_["exact"][1]) - pi[q][j])) for j, r_ in enumerate(iv["coordinates"]))
                     row["max_movement_bound_from_pi"] = float(mv)
                 rec["per_query"][str(q)] = row
             rec["clusters"] = res.get("plan", {}).get("clusters"); rec["reductions"] = res.get("plan", {}).get("reductions")
+            rec["proofs"] = len(res.get("proofs") or {}); rec["certificate_bytes"] = len(json.dumps(res.get("proofs") or {}, default=str)) + len(json.dumps(res.get("certificate") or {}, default=str))
+            rec["max_z_grid_bits"] = max([int(v) for pr_ in (res.get("proofs") or {}).values() for v in pr_.get("z_grid", {}).values()] + [0]).bit_length()
+            rec["distinct_proofs_by_kind"] = {k: sum(1 for pr_ in (res.get("proofs") or {}).values() if pr_.get("kind") == k) for k in ("forest_batched", "region")}
             if truth_p and os.path.exists(truth_p):
                 tr = json.load(open(truth_p)).get("truth")
                 if tr:

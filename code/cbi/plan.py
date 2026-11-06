@@ -76,17 +76,37 @@ class Planner:
         return self._price[ci]
 
     def batched_forest(self, ci):
-        """All node beliefs of an exact whole-forest component in ONE two-pass schedule (exact operators; no transport unless a node carries
-        rho, in which case the per-query certificate is built from the shared beliefs). Returns {node: IVec} or None."""
+        """All node beliefs of a whole-forest component in ONE two-pass schedule. Two candidates: the cheapest prospectively qualified
+        ENCLOSURE operator per edge (fourier / sparse by the menu) when its total work estimate is below the exact one, and the exact
+        operators. The approximate candidate is kept iff every node's width meets the requested width; otherwise the exact candidate.
+        Both attempts are recorded. Returns (beliefs, ops, minfo, attempts) or None when exact exceeds the pair cap and nothing qualifies."""
         if ci in self.batched:
             return self.batched[ci]
-        comp = self.comps[ci]; edges = [e for e in self.red.edges if e.u in comp and e.v in comp]
-        ops = {_edge_key(e): ("exact",) for e in edges}
-        for e in edges:
-            if len(self.red.blocks[e.u].rows) * len(self.red.blocks[e.v].rows) > self.limits["max_pairs_per_edge"]:
-                self.batched[ci] = None; return None
-        ts = TR.TreeSolver({v: self.red.blocks[v] for v in comp}, edges, ops, deadline=self.deadline)
-        self.batched[ci] = (ts.all_beliefs(), ops, ts.minfo); return self.batched[ci]
+        comp = self.comps[ci]; edges = [e for e in self.red.edges if e.u in comp and e.v in comp]; blocks = {v: self.red.blocks[v] for v in comp}
+        exact_ops = {_edge_key(e): ("exact",) for e in edges}
+        exact_ok = all(len(self.red.blocks[e.u].rows) * len(self.red.blocks[e.v].rows) <= self.limits["max_pairs_per_edge"] for e in edges)
+        work_exact = sum(T.work_estimate(("exact",), len(blocks[e.u].rows), len(blocks[e.v].rows), e.s()) for e in edges)
+        attempts = []
+        approx = {}; work_approx = 0; eps_edge = self.eps / (4 * max(1, len(edges)))
+        if not self.limits["force_exact"]:
+            for e in edges:
+                ov = overlap_fraction(self.red, self.cadj, e.u, e.v); mu = {"m": len(blocks[e.u].rows), "ov": ov}; mv = {"m": len(blocks[e.v].rows), "ov": ov}
+                op, menu = prospective_op(e, mu, mv, eps_edge, self.limits)
+                if op is None:
+                    approx = None; break
+                approx[_edge_key(e)] = op; work_approx += T.work_estimate(op, mu["m"], mv["m"], e.s())
+        if approx and any(v[0] != "exact" for v in approx.values()) and work_approx < work_exact:
+            ts = TR.TreeSolver(blocks, edges, approx, deadline=self.deadline); bel = ts.all_beliefs()
+            wmax = max(max(hi - lo for lo, hi in TR.coordinate_intervals(bel[v], blocks[v].rows, self.red.d)) for v in comp)
+            attempts.append({"candidate": "approximate", "ops": {"%d-%d" % k: list(v) for k, v in approx.items()}, "work_estimate": work_approx, "width_float": float(wmax), "met": bool(wmax + A.EPS_PUBLISH_SLACK <= self.eps), "elapsed_s": time.monotonic() - self.t0})
+            if wmax + A.EPS_PUBLISH_SLACK <= self.eps:
+                self.batched[ci] = (bel, approx, ts.minfo, attempts); return self.batched[ci]
+        if not exact_ok:
+            attempts.append({"candidate": "exact", "status": "RESOURCE_LIMIT", "reason": "an exact transfer exceeds max_pairs_per_edge"})
+            self.batched[ci] = None; self.batched_attempts = attempts; return None
+        ts = TR.TreeSolver(blocks, edges, exact_ops, deadline=self.deadline); bel = ts.all_beliefs()
+        attempts.append({"candidate": "exact", "ops": {"%d-%d" % k: ["exact"] for k in exact_ops}, "work_estimate": work_exact, "elapsed_s": time.monotonic() - self.t0})
+        self.batched[ci] = (bel, exact_ops, ts.minfo, attempts); return self.batched[ci]
 
     def solve_query(self, q):
         ci = self.comp_of[q]; comp = self.comps[ci]; attempts = []; best = None
@@ -98,15 +118,17 @@ class Planner:
             except TimeLimit as ex:
                 return None, [{"mode": "TREE_MESSAGE", "status": "RESOURCE_LIMIT", "reason": str(ex)}]
             if bt is not None:
-                bel, ops, minfo = bt
+                bel, ops, minfo, batt = bt
                 lu = TR.coordinate_intervals(bel[q], self.red.blocks[q].rows, self.red.d)
-                cert = {"H": sorted(comp), "xi": {}, "inside_ops": {"%d-%d" % k: list(v) for k, v in ops.items()}, "theta": {"%d-%d" % k: str(v) for k, v in self.infl.theta.items() if k[0] in comp or k[1] in comp},
-                        "d": {str(v): "0" for v in comp}, "beta": {str(v): "0" for v in comp}, "b": {str(v): "0" for v in comp}, "eta": {"%d-%d" % k: "0" for k in ops}, "rho": {}, "z": {str(v): "0" for v in comp}, "iterations": 0,
-                        "z_query": "0", "transport": "none (exact law of the whole influence component; exact operators, batched two-pass schedule)", "regional_lu": [[str(l), str(u)] for l, u in lu],
-                        "intervals_exact": lu, "solver_info": {"regional_solver": "tree_batched", "messages": {"%d->%d" % k: v for k, v in minfo.items()}}, "query_block": q}
+                # ONE component-level proof shared by every query of the component (node intervals listed once)
+                if ("proof", ci) not in self.batched:
+                    self.batched[("proof", ci)] = {"kind": "forest_batched", "H": sorted(comp), "xi": {}, "inside_ops": {"%d-%d" % k: list(v) for k, v in ops.items()}, "transport": "none (exact law of the whole influence component; batched two-pass schedule)",
+                                                   "z_grid_bits": RG.Z_BITS, "z_grid": {str(v): 0 for v in comp}, "iterations": 0, "candidates": batt,
+                                                   "nodes": {str(v): [[str(l), str(u)] for l, u in TR.coordinate_intervals(bel[v], self.red.blocks[v].rows, self.red.d)] for v in comp},
+                                                   "messages": {"%d->%d" % k: {kk: vv for kk, vv in v.items() if kk in ("operator", "k", "h", "pairs", "features", "lookups")} for k, v in minfo.items()}}
                 width = max(hi - lo for lo, hi in lu)
-                attempts.append({"mode": "TREE_MESSAGE", "H": sorted(comp), "radius": len(comp), "ops": cert["inside_ops"], "width": str(width), "width_float": float(width), "z_query": "0", "iterations": 0, "status": "OK", "batched": True, "elapsed_s": time.monotonic() - self.t0})
-                return {"mode": "TREE_MESSAGE", "H": sorted(comp), "xi": {}, "ops": ops, "cert": cert, "intervals_exact": lu, "width": width, "attempt": 1}, attempts
+                attempts.append({"mode": "TREE_MESSAGE", "H": sorted(comp), "radius": len(comp), "ops": {"%d-%d" % k: list(v) for k, v in ops.items()}, "width": str(width), "width_float": float(width), "z_query": "0", "iterations": 0, "status": "OK", "batched": True, "candidates": batt, "elapsed_s": time.monotonic() - self.t0})
+                return {"mode": "TREE_MESSAGE", "H": sorted(comp), "xi": {}, "ops": ops, "proof": self.batched[("proof", ci)], "proof_key": ("forest", ci), "intervals_exact": lu, "width": width, "attempt": 1}, attempts
         whole_ok = forest or comp_price <= self.limits["max_entries"]
         radius = len(comp) if (forest or comp_price <= self.limits["exact_direct_entries"] or self.limits["force_exact"]) else 1
         while len(attempts) < self.limits["max_attempts"]:
@@ -167,7 +189,8 @@ class Planner:
             att = {"mode": mode, "H": sorted(H), "radius": radius, "ops": {"%d-%d" % k: list(v) for k, v in ops.items()}, "menus": menus, "width": str(width), "width_float": float(width),
                    "z_query": cert["z_query"], "iterations": cert["iterations"], "status": "OK", "elapsed_s": time.monotonic() - self.t0}
             attempts.append(att)
-            res = {"mode": mode, "H": sorted(H), "xi": xi, "ops": ops, "cert": cert, "intervals_exact": cert["intervals_exact"], "width": width, "attempt": len(attempts)}
+            proof = {k: v for k, v in cert.items() if k not in ("intervals_exact", "query_block")}; proof["kind"] = "region"; proof["nodes"] = {str(q): cert["regional_lu"]}
+            res = {"mode": mode, "H": sorted(H), "xi": xi, "ops": ops, "proof": proof, "proof_key": ("region", q, tuple(sorted(H)), tuple(sorted(ops.items()))), "intervals_exact": cert["intervals_exact"], "width": width, "attempt": len(attempts)}
             if best is None or width < best["width"]:
                 best = res
             if width + A.EPS_PUBLISH_SLACK <= self.eps:

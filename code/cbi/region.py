@@ -71,6 +71,44 @@ def F_apply(infl, H, coef, z):
     return out
 
 
+Z_BITS = 64                                   # dyadic grid 2^-Z_BITS for the transport recurrence
+
+
+def _ceil_grid(x, B=Z_BITS):
+    x = Fr(x); q = 1 << B
+    return -((-x * q).numerator // (-x * q).denominator)          # ceil(x * 2^B) as an int
+
+
+def round_up_coefficients(infl, H, coef, B=Z_BITS):
+    """Upward-rounded dyadic coefficients (ints over 2^B). Replacing A, c by larger values makes F larger, so the iterates from 1 under the
+    rounded recurrence dominate the exact ones: every rounded iterate is a valid bound (the review's precision note)."""
+    th = {k: _ceil_grid(v, B) for k, v in infl.theta.items() if k[0] in H and k[1] in H}
+    c = {v: _ceil_grid(coef["d"][v] + coef["b"][v], B) for v in H}
+    return th, c
+
+
+def iterate_dyadic(infl, H, coef, T_max=64, B=Z_BITS):
+    """z_0 = 1 (= 2^B); z_{t+1} = min(2^B, ceil(c_v + sum_u theta_vu z_u)) on the grid, with upward-rounded coefficients; stop when stationary.
+    Returns (z as ints over 2^B, iterations, L_up = max row sum of the rounded A, the rounding-error bound delta * sum_{j<t} L^j)."""
+    th, c = round_up_coefficients(infl, H, coef, B); q = 1 << B
+    z = {v: q for v in H}; t = 0
+    while t < T_max:
+        z2 = {}
+        for v in H:
+            acc = c[v] * q                                                            # scale 2^(2B)
+            for u in infl.adj[v]:
+                if u in H:
+                    acc += th[(min(u, v), max(u, v))] * z[u]
+            z2[v] = min(q, -((-acc) // q))                                            # ceil(acc / 2^B), clipped at 1
+        t += 1
+        if z2 == z:
+            break
+        z = z2
+    L = max((sum(Fr(th[(min(u, v), max(u, v))], q) for u in infl.adj[v] if u in H) for v in H), default=Fr(0))
+    bound = Fr(1, q) * sum((L ** j for j in range(t)), Fr(0))
+    return z, t, {"grid_bits": B, "L_up": str(L), "rounding_error_bound": str(bound), "theta_up": {"%d-%d" % k: v for k, v in th.items()}, "c_up": {str(v): c[v] for v in H}}
+
+
 def iterate(infl, H, coef, T_max=64, tol=Fr(1, 2 ** 64)):
     z = {v: Fr(1) for v in H}; t = 0
     while t < T_max:
@@ -172,9 +210,10 @@ def certify(infl, red, H, xi, inside_ops, query_block, T_max=64, max_entries=1 <
     from the influence system, published (unrounded) intervals [l - z, u + z]."""
     coef = coefficients(infl, red, H, inside_ops)
     if transport_needed(infl, H, inside_ops):
-        z, t = iterate(infl, H, coef, T_max)
+        zg, t, dy = iterate_dyadic(infl, H, coef, T_max)
+        z = {v: Fr(zg[v], 1 << Z_BITS) for v in H}
     else:
-        z, t = {v: Fr(0) for v in H}, 0
+        z, t, dy, zg = {v: Fr(0) for v in H}, 0, None, {v: 0 for v in H}
     bel, info = solve_region(red, H, xi, inside_ops, query_block, max_entries, deadline)
     lu = TR.coordinate_intervals(bel, red.blocks[query_block].rows, red.d)
     zq = z[query_block]
@@ -182,6 +221,6 @@ def certify(infl, red, H, xi, inside_ops, query_block, T_max=64, max_entries=1 <
     return {"H": sorted(H), "xi": {str(k): v for k, v in xi.items()}, "inside_ops": {"%d-%d" % k: list(v) for k, v in inside_ops.items()},
             "theta": {"%d-%d" % k: str(v) for k, v in coef["theta"].items()}, "d": {str(k): str(v) for k, v in coef["d"].items()},
             "beta": {str(k): str(v) for k, v in coef["beta"].items()}, "b": {str(k): str(v) for k, v in coef["b"].items()}, "eta": {"%d-%d" % k: str(v) for k, v in coef["eta"].items()},
-            "rho": {str(k): str(v) for k, v in infl.rho.items() if k in H and v > 0}, "z": {str(k): str(v) for k, v in z.items()}, "iterations": t, "z_query": str(zq),
-            "transport": ("theorem1_iteration" if t > 0 else "none (exact law of the whole influence component; enclosure operators only)"),
+            "rho": {str(k): str(v) for k, v in infl.rho.items() if k in H and v > 0}, "z_grid": {str(k): zg[k] for k in H}, "z_grid_bits": Z_BITS, "dyadic": dy, "iterations": t, "z_query": str(zq),
+            "transport": ("theorem1_dyadic_iteration" if t > 0 else "none (exact law of the whole influence component; enclosure operators only)"),
             "regional_lu": [[str(l), str(u)] for l, u in lu], "intervals_exact": pub, "solver_info": info, "query_block": query_block}

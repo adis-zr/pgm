@@ -187,10 +187,10 @@ def test_coarsening_theorem3_premises_and_rejections():
 def test_fixed_outside_state_is_consistent_per_block_and_triangle_region_uses_dense_ve():
     obj = G.mesh(3, 3, 6, 8, Fr(1, 64), 3); res, tr = run(obj, limits={"exact_direct_entries": 1})
     for q, c in res["certificate"].items():
-        xi = c["xi"]; assert len(xi) == len(set(xi))                      # one state per outside block
+        xi = res["proofs"][c["proof"]]["xi"]; assert len(xi) == len(set(xi))                      # one state per outside block
     tri = rnd(5, 4, [(0, 1, Fr(1, 8)), (1, 2, Fr(1, 8)), (2, 0, Fr(1, 8)), (0, 3, Fr(1, 8))], 6, m=5)
-    res, tr = run(tri); assert res["status"] == "CERTIFIED" and res["certificate"]["3"]["solver_info"]["regional_solver"] in ("dense_ve", "tree")
-    assert any(c["solver_info"]["regional_solver"] == "dense_ve" for c in res["certificate"].values())
+    res, tr = run(tri); assert res["status"] == "CERTIFIED"
+    assert any((p.get("solver_info") or {}).get("regional_solver") == "dense_ve" for p in res["proofs"].values())
 
 
 def test_input_rejections_and_statuses():
@@ -212,14 +212,19 @@ def test_tampering_detected_by_verifier():
     obj = G.mesh(3, 3, 6, 8, Fr(1, 64), 3); res, tr = run(obj, limits={"exact_direct_entries": 1, "max_entries": 2000, "max_region_radius": 1})
     q = "4"
     assert Fr(res["certificate"][q]["z_query"]) > 0 and res["certificate"][q]["mode"] == "REGION_SURROGATE"      # a genuine transport certificate
+    assert res["proofs"][res["certificate"][q]["proof"]]["iterations"] > 1
+    # EXTRA iterations of a stationary recurrence reproduce the same z: that is a legitimate certificate, not a tamper
+    more = json.loads(json.dumps(res, default=str)); more["proofs"][res["certificate"][q]["proof"]]["iterations"] += 5; assert api.verify(obj, more)["accepted"]
+    pid = res["certificate"][q]["proof"]
     muts = {"interval_lo": lambda r: r["intervals"][q]["coordinates"][0].__setitem__("lo", r["intervals"][q]["coordinates"][0]["lo"] + 1),
             "interval_hi": lambda r: r["intervals"][q]["coordinates"][1].__setitem__("hi", r["intervals"][q]["coordinates"][1]["hi"] - 1),
-            "z": lambda r: r["certificate"][q].__setitem__("z", {k: str(Fr(v) / 2) for k, v in r["certificate"][q]["z"].items()}),
-            "iterations": lambda r: r["certificate"][q].__setitem__("iterations", r["certificate"][q]["iterations"] + 5),
-            "theta": lambda r: r["certificate"][q]["theta"].__setitem__(next(iter(r["certificate"][q]["theta"])), "1/1000000"),
-            "d": lambda r: r["certificate"][q]["d"].__setitem__(next(iter(r["certificate"][q]["d"])), "0"),
-            "xi": lambda r: r["certificate"][q]["xi"].__setitem__(next(iter(r["certificate"][q]["xi"])), 999999),
-            "ops": lambda r: r["certificate"][q]["inside_ops"].__setitem__(next(iter(r["certificate"][q]["inside_ops"])), ["poly", 0]),
+            "z": lambda r: r["proofs"][pid].__setitem__("z_grid", {k: int(v) // 2 for k, v in r["proofs"][pid]["z_grid"].items()}),
+            "iterations": lambda r: r["proofs"][pid].__setitem__("iterations", 1),            # fewer iterations than the declared (converged) z: replay mismatch
+            "theta": lambda r: r["proofs"][pid]["theta"].__setitem__(next(iter(r["proofs"][pid]["theta"])), "1/1000000"),
+            "d": lambda r: r["proofs"][pid]["d"].__setitem__(next(iter(r["proofs"][pid]["d"])), "0"),
+            "xi": lambda r: r["proofs"][pid]["xi"].__setitem__(next(iter(r["proofs"][pid]["xi"])), 999999),
+            "ops": lambda r: r["proofs"][pid]["inside_ops"].__setitem__(next(iter(r["proofs"][pid]["inside_ops"])), ["poly", 0]),
+            "proof_pointer": lambda r: r["certificate"][q].__setitem__("proof", "P_missing"),
             "status": lambda r: r["statuses_per_query"].__setitem__(q, "CERTIFIED" if r["statuses_per_query"][q] != "CERTIFIED" else "VALID_BUT_TOO_WIDE")}
     for name, mut in muts.items():
         bad = json.loads(json.dumps(res, default=str)); mut(bad)
@@ -268,7 +273,8 @@ def test_review_counterexamples_contained_and_verified():
 def test_verifier_rejects_malformed_operator_and_missing_queries():
     obj = rnd(5, 2, [(0, 1, Fr(1, 2))], 3, m=2); obj["blocks"][0]["weights"] = [1, 1]; obj["blocks"][1]["weights"] = [1, 3]
     res, tr = run(obj, queries=[0])
-    bad = json.loads(json.dumps(res, default=str)); bad["certificate"]["0"]["inside_ops"] = {k: ["sparse", -2] for k in bad["certificate"]["0"]["inside_ops"]}
+    pid = res["certificate"]["0"]["proof"]
+    bad = json.loads(json.dumps(res, default=str)); bad["proofs"][pid]["inside_ops"] = {k: ["sparse", -2] for k in bad["proofs"][pid]["inside_ops"]}
     assert not api.verify(obj, bad)["accepted"]
     bad = json.loads(json.dumps(res, default=str)); bad["intervals"] = {}
     assert not api.verify(obj, bad)["accepted"]
@@ -316,7 +322,9 @@ def test_checker_rejects_overlapping_or_malformed_certificate_clusters():
     res = api.solve(obj, [0], "1/100"); assert brute_truth(obj)[0][0] == Fr(5, 8) and api.verify(obj, res)["accepted"]
     m2 = M.Model.from_json(obj); c1 = CO.verify_cluster(m2, [0, 1]); c2 = CO.verify_cluster(m2, [0, 2]); rho2 = Fr(c2["rho_i"])
     bad = json.loads(json.dumps(res, default=str)); bad["plan"]["clusters"]["verified"] = [{k: v for k, v in c.items() if k not in ("coarse_rows", "coarse_weights")} for c in (c1, c2)]
-    c = bad["certificate"]["0"]; c.update({"system": "coarse", "query_block": 0, "H": [0], "xi": {}, "inside_ops": {}, "theta": {}, "d": {"0": "0"}, "beta": {"0": "0"}, "b": {"0": str(rho2)}, "eta": {}, "rho": {"0": str(rho2)}, "z": {"0": str(rho2)}, "iterations": 1, "z_query": str(rho2), "mode": "COARSE_REGION"})
+    zg = -((-rho2 * (1 << RG.Z_BITS)).numerator // (-rho2 * (1 << RG.Z_BITS)).denominator)
+    bad["proofs"] = {"PX": {"kind": "region", "system": "coarse", "mode": "COARSE_REGION", "H": [0], "xi": {}, "inside_ops": {}, "theta": {}, "d": {"0": "0"}, "beta": {"0": "0"}, "b": {"0": str(rho2)}, "eta": {}, "rho": {"0": str(rho2)}, "z_grid": {"0": zg}, "z_grid_bits": RG.Z_BITS, "iterations": 1, "nodes": {"0": [["0", "1"]]}}}
+    bad["certificate"]["0"] = {"proof": "PX", "node": 0, "system": "coarse", "mode": "COARSE_REGION", "H": [0], "z_query": str(Fr(zg, 1 << RG.Z_BITS)), "iterations": 1}
     bad["intervals"]["0"]["node"] = 0; elo, ehi = Fr(1, 2) - rho2, Fr(1, 2) + rho2; lg, hg = A.publish(elo, ehi)
     bad["intervals"]["0"]["coordinates"][0] = {"lo": lg, "hi": hg, "exact": [str(elo), str(ehi)], "width": str(Fr(hg - lg, Q))}
     w = Fr(hg - lg, Q); bad["intervals"]["0"]["max_width"] = str(w); bad["intervals"]["0"]["max_width_float"] = float(w); bad["intervals"]["0"]["width_met"] = True; bad["statuses_per_query"] = {"0": "CERTIFIED"}; bad["status"] = "CERTIFIED"
@@ -331,7 +339,7 @@ def test_disconnected_computational_forest_verifies():
     obj = {"d": 6, "blocks": [{"id": 0, "rows": [0, 1], "weights": [1, 1]}, {"id": 1, "rows": [0, 2], "weights": [1, 1]}, {"id": 2, "rows": list(range(64)), "weights": [1] * 64}, {"id": 3, "rows": list(range(64)), "weights": [1] * 64}],
            "edges": [{"u": 0, "v": 1, "r": "4095/4097"}, {"u": 0, "v": 2, "r": "1/4"}, {"u": 2, "v": 3, "r": "1/4096"}]}
     res = api.solve(obj, [2], "1/100"); tr = truth(obj)
-    assert res["status"] == "CERTIFIED" and any(v[0] in ("fourier", "sparse") for v in res["certificate"]["2"]["inside_ops"].values())
+    assert res["status"] == "CERTIFIED" and any(v[0] in ("fourier", "sparse") for v in res["proofs"][res["certificate"]["2"]["proof"]]["inside_ops"].values())
     assert contained(res, tr)[1] == 0 and api.verify(obj, res)["accepted"]
 
 

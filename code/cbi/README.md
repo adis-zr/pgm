@@ -28,8 +28,10 @@ check  = api.verify(m, result)                                               # {
 ```
 `result["status"]` ∈ {CERTIFIED, VALID_BUT_TOO_WIDE, INFEASIBLE (with a zero-partition proof), UNSUPPORTED_INPUT, RESOURCE_LIMIT};
 `result["intervals"][block]["coordinates"][j]` = `{"lo", "hi"}` grid integers (divide by 2^80) plus the exact rational endpoints;
-`result["certificate"][block]` = mode (TREE_MESSAGE / EXACT_VE / REGION_SURROGATE / COARSE_REGION[+SURROGATE]), region H, fixed outside
-states ξ, operators per inside edge, θ / d / b / η / ρ coefficients, the Theorem-1 iterates z, the regional [l,u] and the solver info;
+`result["certificate"][block]` = a pointer to a shared proof record plus the block's node, mode and transport radius; `result["proofs"][id]` =
+the proof itself (one per component or region, shared by every query it covers): kind (forest_batched / region), region H, fixed outside
+states ξ, operators per inside edge, θ / d / b / η / ρ coefficients, the DYADIC Theorem-1 iterates z (upward-rounded on the 2^−64 grid, with
+the recorded rounding bound), the node intervals and the solver info;
 `result["plan"]` = reductions, cluster proposals (verified / rejected with reasons), every attempt with its escalation;
 `result["timings"]` = phase walls. A timeout or RESOURCE_LIMIT is a work limit, never a mathematical statement.
 
