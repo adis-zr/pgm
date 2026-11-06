@@ -5,7 +5,9 @@ event / complement normalization (B)."""
 from __future__ import annotations
 from fractions import Fraction as Fr
 from math import comb
+import sys
 import numpy as np
+sys.set_int_max_str_digits(0)                     # exact rationals with thousands of digits are serialized as strings
 
 GRID_BITS = 80
 P_BITS = 96                                       # mantissa bits of the dyadic enclosures

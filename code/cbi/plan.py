@@ -116,7 +116,7 @@ class Planner:
                 cert = RG.certify(self.red, H, xi, ops, q, rho=self.rho, T_max=self.limits["T_iterations"], max_entries=self.limits["max_entries"])
             except EX.TooLarge as ex:
                 attempts.append({"mode": mode, "H": sorted(H), "status": "RESOURCE_LIMIT", "reason": str(ex)}); break
-            except ValueError as ex:
+            except RG.SurrogateError as ex:
                 attempts.append({"mode": mode, "H": sorted(H), "status": "REJECTED_SURROGATE", "reason": str(ex), "ops": {"%d-%d" % k: list(v) for k, v in ops.items()}})
                 ops = {k: (("exact",) if v[0] == "poly" else v) for k, v in ops.items()}; attempts[-1]["escalate_ops"] = ops; continue
             width = max(hi - lo for lo, hi in cert["intervals_exact"])

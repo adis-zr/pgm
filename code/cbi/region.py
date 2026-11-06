@@ -9,6 +9,10 @@ from fractions import Fraction as Fr
 from cbi import model as M, arith as A, transfer as T, tree as TR, exact as EX
 
 
+class SurrogateError(ValueError):
+    """The requested truncation is not a positive surrogate kernel (eta >= 1)."""
+
+
 def fixed_outside_state(block):
     """Deterministic allowed state: the first row of maximal weight."""
     i = max(range(len(block.rows)), key=lambda i: (block.w[i], -i))
@@ -47,7 +51,7 @@ def coefficients(red, H, inside_ops, rho=None):
                 if op[0] == "poly":
                     et = T.surrogate_eta(e.s(), e.r, int(op[1]))
                     if et is None:
-                        raise ValueError("degree-%d truncation is not a positive surrogate on edge %s" % (int(op[1]), (u, v)))
+                        raise SurrogateError("degree-%d truncation is not a positive surrogate on edge %s" % (int(op[1]), (u, v)))
                     etas.append(et); eta[(min(u, v), max(u, v))] = et
                 else:
                     eta[(min(u, v), max(u, v))] = Fr(0)
