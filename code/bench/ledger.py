@@ -29,12 +29,27 @@ def main(S):
             nested["diagnostic_cells_s"] += w
     # ---- the separate prospective REPAIR ledger (review of 7 Nov 2026): 1,800 s allowance from the unspent campaign envelope
     rep_total = sum(j["wall_s"] for j in repair)
-    out = {"envelope_s": 28800.0, "allocation_s": ALLOC, "charged_s": {k: round(v, 6) for k, v in sc.items()}, "nonnested_receipts": len(receipts), "total_charged_s": round(total, 9),
-           "remaining_s": round(28800.0 - total - rep_total, 6), "nested_cell_sums_s_not_added": {k: round(v, 3) for k, v in nested.items()},
+    # ---- the DIAGNOSTIC campaign (7 Nov 2026): nonnested receipts = DIAG_LEDGER jobs (census, controls, overhead) + every diagnostic cell row
+    # (the family runner is not a receipt; its cells are) -- 22,000 s ceiling; aggregate ceiling 28,800 s over campaign + repairs + diagnostics
+    dp = os.path.join(S, "diag_2026-11-07", "DIAG_LEDGER.jsonl"); diag_jobs = [json.loads(l) for l in open(dp)] if os.path.exists(dp) else []
+    dcp = os.path.join(S, "diag_2026-11-07", "DIAG_CELLS_LEDGER.jsonl"); diag_cells = [json.loads(l) for l in open(dcp)] if os.path.exists(dcp) else []
+    dscope = {}
+    for j in diag_jobs:
+        dscope[j["scope"]] = dscope.get(j["scope"], 0.0) + j["wall_s"]
+    dfam = {}
+    for r in diag_cells:
+        dfam[r.get("family_code")] = dfam.get(r.get("family_code"), 0.0) + (r.get("supervisor_wall_s") or 0.0)
+    diag_total = sum(dscope.values()) + sum(dfam.values())
+    aggregate = total + rep_total + diag_total
+    out = {"envelope_s": 28800.0, "aggregate_ceiling_rule": "campaign (nonnested receipts) + repair receipts + diagnostic receipts (DIAG_LEDGER jobs + diagnostic cell rows) <= 28,800 s; diagnostic receipts alone <= 22,000 s",
+           "aggregate_charged_s": round(aggregate, 6), "aggregate_remaining_s": round(28800.0 - aggregate, 6),
+           "diagnostic_2026-11-07": {"ceiling_s": 22000.0, "charged_s": round(diag_total, 6), "by_scope_jobs": {k: round(v, 3) for k, v in dscope.items()}, "by_family_cells": {k: round(v, 3) for k, v in dfam.items()}, "cells": len(diag_cells), "jobs": len(diag_jobs),
+                                     "family_caps_s": {"A": 6440, "B": 2760, "C": 6440, "D": 2280, "E": 240}, "closeout_reserve_s": 1200}, "allocation_s": ALLOC, "charged_s": {k: round(v, 6) for k, v in sc.items()}, "nonnested_receipts": len(receipts), "total_charged_s": round(total, 9),
+           "remaining_s_after_campaign_and_repairs": round(28800.0 - total - rep_total, 6), "nested_cell_sums_s_not_added": {k: round(v, 3) for k, v in nested.items()},
            "accounting_rule": "every top-level supervised receipt in SETUP_LEDGER.jsonl and REFERENCE_LEDGER.jsonl counted exactly once (spawn-to-reap of its process tree); cells run INSIDE a stage supervisor are nested detail and are not added again",
            "repair_ledger_2026-11-07": {"allowance_s": 1800.0, "charged_s": round(rep_total, 6), "receipts": len(repair), "jobs": [{"job": j["job"], "wall_s": round(j["wall_s"], 3), "outcome": j["outcome"]} for j in repair]},
            "over_allocation": {k: round(v - ALLOC[k], 1) for k, v in sc.items() if v > ALLOC[k]}, "receipts": receipts}
-    json.dump(out, open(os.path.join(S, "BUDGET_LEDGER.json"), "w"), indent=1); print(json.dumps({k: out[k] for k in ("charged_s", "nonnested_receipts", "total_charged_s", "remaining_s", "nested_cell_sums_s_not_added", "over_allocation")}, indent=1)); print("repair ledger: %.3f s of 1800 in %d receipts" % (rep_total, len(repair)))
+    json.dump(out, open(os.path.join(S, "BUDGET_LEDGER.json"), "w"), indent=1); print(json.dumps({k: out[k] for k in ("charged_s", "nonnested_receipts", "total_charged_s", "aggregate_charged_s", "aggregate_remaining_s", "over_allocation")}, indent=1)); print("repair ledger: %.3f s of 1800 in %d receipts | diagnostic: %.3f s of 22000 (%d jobs + %d cells)" % (rep_total, len(repair), diag_total, len(diag_jobs), len(diag_cells)))
 
 
 if __name__ == "__main__":
