@@ -32,6 +32,22 @@ def hellinger(p, q):
     return math.sqrt(0.5 * sum((math.sqrt(float(a)) - math.sqrt(float(b))) ** 2 for a, b in zip(p, q)))
 
 
+def transformation_payload(od, plans_dir):
+    """The ACTUAL executed transformation of an MDI run, read from the persisted plan record's program (the generic kind/name 'identity' labels
+    do not identify it): program.quotient = {fixed, merged, ...} when a quotient was executed; program.support when a compiled support was."""
+    import glob
+    out = {"plan_files": [], "quotient": None, "support": None, "label": "untransformed dense identity"}
+    for pf in sorted(glob.glob(os.path.join(od, plans_dir, "*.plan.json"))):
+        d = load(pf) or {}; prog = d.get("program") or {}; out["plan_files"].append(os.path.basename(pf))
+        q = prog.get("quotient") if isinstance(prog, dict) else None
+        if q:
+            out["quotient"] = {"digest": q.get("digest"), "fixed": len(q.get("fixed") or {}), "merged": len(q.get("merged") or {}), "plan_file": os.path.basename(pf)}; out["label"] = "QUOTIENT executed (%d fixed, %d merged)" % (out["quotient"]["fixed"], out["quotient"]["merged"])
+        sp = prog.get("support") if isinstance(prog, dict) else None
+        if sp:
+            out["support"] = {"keys": list(sp.keys())[:8] if isinstance(sp, dict) else str(sp)[:80], "plan_file": os.path.basename(pf)}; out["label"] = "SUPPORT executed"
+    return out
+
+
 def score_vec(points, ref_rows, card, ev):
     """points / ref_rows per variable (Fr); returns per-variable records + summary (max abs error, TV, Hellinger) against a POINT or enclosure reference."""
     per = []; mx = Fr(0); worst = None
@@ -97,6 +113,8 @@ def main(S):
     for r in hist:
         kind = "historical_primary" if r.get("label") is None else ("historical_amendment_rerun" if str(r["label"]).startswith("amendment") else "historical_diagnostic")
         extra = {"phases_s": r.get("phases_s"), "reason": r.get("reason"), "failure_primary": r.get("failure_primary"), "mdi": mdi_saved.get(r["cell_id"]), "baseline": base_saved.get(r["cell_id"]), "selector_gate_class": (gates.get("%s|%s" % (r["case"], r["stage"])) or {}).get("class") if r["arm"] == "MDI_EXISTING" else None}
+        if r["arm"] == "MDI_EXISTING" and r.get("out_dir") and extra["mdi"] is not None:
+            extra["mdi"] = dict(extra["mdi"], executed_transformation=transformation_payload(os.path.join(S, r["out_dir"]), "plans_case_selector"))
         if r["arm"] == "MDI_EXISTING" and not r.get("out_dir"):
             miss(r["cell_id"], "mdi.arm_record", "early_termination", "killed before a record")
         add_inv(kind, r, extra)
@@ -122,7 +140,8 @@ def main(S):
                 ap = os.path.join(od, "arm_case_selector.json")
                 if r["arm"] == "MDI_EXISTING" and os.path.exists(ap):
                     a = load(ap); p = a.get("pipeline") or {}; pl = p.get("plan") or {}; sel = pl.get("selector") if isinstance(pl, dict) else None
-                    extra["mdi"] = {"outcome": a.get("outcome"), "pipeline_stages_s": p.get("stages"), "route": {"chosen": pl.get("chosen"), "executed_kind": pl.get("executed_kind"), "executed_route": (sel or {}).get("executed_route")}, "selector": ({k: sel.get(k) for k in ("gate", "skipped", "precondition", "dense_candidate", "attempts", "window_s", "selector_wall_s")} if sel else None), "rejected_typed": [(x.get("name"), x.get("typed")) for x in (p.get("rejected") or [])], "executed_ops": (pl.get("executed") or {}).get("ops") if isinstance(pl.get("executed"), dict) else None, "contract_met": a.get("contract_met")}
+                    extra["mdi"] = {"outcome": a.get("outcome"), "pipeline_stages_s": p.get("stages"), "route": {"chosen": pl.get("chosen"), "executed_kind": pl.get("executed_kind"), "executed_route": (sel or {}).get("executed_route")}, "selector": ({k: sel.get(k) for k in ("gate", "skipped", "precondition", "dense_candidate", "attempts", "window_s", "selector_wall_s")} if sel else None), "rejected_typed": [(x.get("name"), x.get("typed")) for x in (p.get("rejected") or [])], "executed_ops": (pl.get("executed") or {}).get("ops") if isinstance(pl.get("executed"), dict) else None, "contract_met": a.get("contract_met"),
+                                    "executed_transformation": transformation_payload(od, "plans_case_selector")}
             else:
                 miss(r["cell_id"], "cell.json", "early_termination" if r["outcome"] in ("TIMEOUT_KILL", "MEMORY_KILL") else "lost_artifact", r["outcome"])
             # scoring of a complete output (A: complete MAR; D: complete MAR; C: single row) against ORIGINAL and EXPANDED references
@@ -162,6 +181,12 @@ def main(S):
             pj = load(os.path.join(od, "probe.json")) if od else None
             if pj:
                 extra.update({"probe_status": pj.get("status"), "structural": pj.get("structural"), "execution": pj.get("execution"), "gates_intervened": pj.get("gates_intervened"), "gates_remaining": pj.get("gates_remaining"), "sizes": pj.get("sizes"), "probe_phases_s": pj.get("phases_s")})
+                extra["executed_transformation"] = transformation_payload(od, "plans_probe_%s" % r.get("mechanism"))
+                ap = os.path.join(od, "arm_probe_%s.json" % r.get("mechanism"))
+                if os.path.exists(ap):                                   # the EXECUTION phase's engine record: pipeline stage timers, executed ops, refusals
+                    a = load(ap); p = a.get("pipeline") or {}; pl = p.get("plan") or {}
+                    extra["execution_engine"] = {"outcome": a.get("outcome"), "pipeline_stages_s": p.get("stages"), "arm_stages_s": a.get("stages"), "executed_ops": (pl.get("executed") or {}).get("ops") if isinstance(pl.get("executed"), dict) else None, "executed_kind": pl.get("executed_kind"), "route_policy": pl.get("route_policy"),
+                                                 "rejected": [(x.get("name"), x.get("typed"), str(x.get("reason"))[:160]) for x in (p.get("rejected") or [])], "contract_met": a.get("contract_met"), "final_max_width": a.get("final_max_width"), "peak_rss_bytes": a.get("peak_rss_bytes"), "independently_verified": a.get("independently_verified")}
             else:
                 miss(r["cell_id"], "probe.json", "early_termination" if r["outcome"] in ("TIMEOUT_KILL", "MEMORY_KILL") else "lost_artifact", r["outcome"])
         elif fam == "E":
