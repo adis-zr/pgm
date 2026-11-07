@@ -63,7 +63,7 @@ class Planner:
         self.cadj = M.adjacency(red); self.t0 = t_start if t_start is not None else time.monotonic()
         self.comps = infl.components(); self.comp_of = {b: i for i, c in enumerate(self.comps) for b in c}
         self.requested = set(requested) if requested is not None else set(infl.nodes)      # QUERY-AWARE dispatch: the nodes actually asked for
-        self._price = {}; self.batched = {}                      # (component index, root-or-None) -> forest solve record; ("proof", ci, root) -> proof
+        self._price = {}; self.batched = {}; self.partial_attempts = {}      # (component index, root-or-None) -> forest solve record; ("proof", ci, root) -> proof
 
     def deadline(self):
         if time.monotonic() - self.t0 > self.limits["max_time_s"]:
@@ -94,12 +94,19 @@ class Planner:
         work_exact = sum(T.work_estimate(("exact",), len(blocks[e.u].rows), len(blocks[e.v].rows), e.s()) for e in edges)
         sched = "rooted_inward" if root is not None else "two_pass_batched"
         attempts = []
-        def run(ops):
-            self.deadline()
-            ts = TR.TreeSolver(blocks, edges, ops, deadline=self.deadline)
-            bel = {root: ts.belief(root)} if root is not None else ts.all_beliefs()
-            wmax = max(max(hi - lo for lo, hi in TR.coordinate_intervals(bel[v], blocks[v].rows, self.red.d)) for v in bel)
-            return bel, ts, wmax
+        self.partial_attempts[ci] = attempts                        # visible to solve_query even if a TimeLimit escapes below
+        def run(ops, label):
+            t_a = time.monotonic()
+            try:
+                self.deadline()
+                ts = TR.TreeSolver(blocks, edges, ops, deadline=self.deadline)
+                bel = {root: ts.belief(root)} if root is not None else ts.all_beliefs()
+                wmax = max(max(hi - lo for lo, hi in TR.coordinate_intervals(bel[v], blocks[v].rows, self.red.d)) for v in bel)
+                return bel, ts, wmax
+            except TimeLimit as ex:
+                # the paid work of the interrupted candidate is RECORDED before the exception propagates (never a silent disappearance)
+                attempts.append({"candidate": label, "schedule": sched, "requested_nodes": R, "ops": {"%d-%d" % k: list(v) for k, v in ops.items()}, "status": "RESOURCE_LIMIT", "reason": str(ex), "paid_s": time.monotonic() - t_a, "elapsed_s": time.monotonic() - self.t0})
+                self.batched[key] = (None, None, None, attempts, root, 0); raise
         approx = {}; work_approx = 0; eps_edge = self.eps / (4 * max(1, len(edges)))
         if not self.limits["force_exact"]:
             for e in edges:
@@ -109,7 +116,7 @@ class Planner:
                     approx = None; break
                 approx[_edge_key(e)] = op; work_approx += T.work_estimate(op, mu["m"], mv["m"], e.s())
         if approx and any(v[0] != "exact" for v in approx.values()) and work_approx < work_exact:
-            t_a = time.monotonic(); bel, ts, wmax = run(approx)
+            t_a = time.monotonic(); bel, ts, wmax = run(approx, "approximate")
             att = {"candidate": "approximate", "schedule": sched, "requested_nodes": R, "ops": {"%d-%d" % k: list(v) for k, v in approx.items()}, "work_estimate": work_approx,
                    "directed_transfers": len(ts.minfo), "width_float": float(wmax), "met": bool(wmax + A.EPS_PUBLISH_SLACK <= self.eps), "paid_s": time.monotonic() - t_a, "elapsed_s": time.monotonic() - self.t0}
             attempts.append(att)
@@ -118,7 +125,7 @@ class Planner:
         if not exact_ok:
             attempts.append({"candidate": "exact", "schedule": sched, "requested_nodes": R, "status": "RESOURCE_LIMIT", "reason": "an exact transfer exceeds max_pairs_per_edge", "paid_s": 0.0, "elapsed_s": time.monotonic() - self.t0})
             self.batched[key] = (None, None, None, attempts, root, 0); return self.batched[key]
-        t_a = time.monotonic(); bel, ts, wmax = run(exact_ops)
+        t_a = time.monotonic(); bel, ts, wmax = run(exact_ops, "exact")
         attempts.append({"candidate": "exact", "schedule": sched, "requested_nodes": R, "ops": {"%d-%d" % k: ["exact"] for k in exact_ops}, "work_estimate": work_exact,
                          "directed_transfers": len(ts.minfo), "width_float": float(wmax), "met": bool(wmax + A.EPS_PUBLISH_SLACK <= self.eps), "paid_s": time.monotonic() - t_a, "elapsed_s": time.monotonic() - self.t0})
         self.batched[key] = (bel, exact_ops, ts.minfo, attempts, root, len(ts.minfo)); return self.batched[key]
@@ -131,7 +138,8 @@ class Planner:
             try:
                 bel, ops, minfo, batt, root, ntr = self.forest_solve(ci)
             except TimeLimit as ex:
-                return None, [{"mode": "TREE_MESSAGE", "status": "RESOURCE_LIMIT", "reason": str(ex)}]
+                # every paid candidate attempt recorded so far is returned ahead of the terminal row
+                return None, list(self.partial_attempts.get(ci, [])) + [{"mode": "TREE_MESSAGE", "status": "RESOURCE_LIMIT", "reason": str(ex)}]
             if bel is not None:
                 lu = TR.coordinate_intervals(bel[q], self.red.blocks[q].rows, self.red.d)
                 kind = "forest_rooted" if root is not None else "forest_batched"

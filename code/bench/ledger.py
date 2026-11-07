@@ -8,40 +8,33 @@ def main(S):
     setup = [json.loads(l) for l in open(os.path.join(S, "SETUP_LEDGER.jsonl"))]
     cells = [json.loads(l) for l in open(os.path.join(S, "CELLS_LEDGER.jsonl"))] if os.path.exists(os.path.join(S, "CELLS_LEDGER.jsonl")) else []
     refs = [json.loads(l) for l in open(os.path.join(S, "REFERENCE_LEDGER.jsonl"))] if os.path.exists(os.path.join(S, "REFERENCE_LEDGER.jsonl")) else []
-    sc = {k: 0.0 for k in ALLOC}; detail = {}
-    for j in setup:
-        if j["scope"] in ("setup_acquisition", "setup_builds"):
-            sc["setup (acquisition, builds, wrapper smoke)"] += j["wall_s"]
-        elif j["scope"] == "repair_regression":
-            sc["repair/adapter regression + saved-panel replay"] += j["wall_s"]
-        elif j["scope"].endswith("_stage_supervisor"):
-            detail.setdefault("stage_supervisor_outer_walls_s (NOT added: the cells inside are charged individually; the difference is scheduling / reaping overhead)", {})[j["job"]] = j["wall_s"]
-        elif j["scope"] == "packaging":
-            sc["packaging/closeout"] += j["wall_s"]
-        else:
-            detail.setdefault("other_setup_scopes", {})[j["job"]] = j["wall_s"]
+    rp = os.path.join(S, "repair_2026-11-07", "REPAIR_LEDGER.jsonl"); repair = [json.loads(l) for l in open(rp)] if os.path.exists(rp) else []
+    # ---- the campaign total = EVERY nonnested top-level receipt exactly once (stage supervisors are the receipts for their cells)
+    scope_of = {"setup_acquisition": "setup (acquisition, builds, wrapper smoke)", "setup_builds": "setup (acquisition, builds, wrapper smoke)", "repair_regression": "repair/adapter regression + saved-panel replay",
+                "breadth_stage_supervisor": "breadth", "depth_stage_supervisor": "depth", "diagnostics_supervisor": "diagnostics", "packaging": "packaging/closeout", "reference": "reference"}
+    sc = {k: 0.0 for k in ALLOC}; receipts = []
+    for j in setup + refs:
+        k = scope_of.get(j["scope"]); assert k is not None, "unmapped scope %r" % j["scope"]
+        sc[k] += j["wall_s"]; receipts.append({"job": j["job"], "scope": j["scope"], "wall_s": j["wall_s"], "outcome": j["outcome"]})
+    total = sum(sc.values())
+    # ---- nested detail: cells inside the stage supervisors (NOT added to the total)
+    nested = {"breadth_cells_s": 0.0, "breadth_amendment_rerun_cells_s": 0.0, "depth_cells_s": 0.0, "diagnostic_cells_s": 0.0}
     for r in cells:
-        w = r.get("supervisor_wall_s", 0.0) or 0.0
-        if r.get("label") is not None and str(r["label"]).startswith("amendment"):
-            sc[r["stage"]] += w                                   # amended reruns of primary cells are charged to their stage
-        elif r.get("label") is not None:
-            sc["diagnostics"] += w
-        elif r["stage"] == "breadth":
-            sc["breadth"] += w
-        elif r["stage"] == "depth":
-            sc["depth"] += w
-    for j in refs:
-        sc["reference"] += j.get("wall_s", 0.0) or 0.0
-    # reaping overhead = supervisor outer wall - sum of cell walls, per stage
-    ov = {}
-    for k, v in (detail.get("stage_supervisor_outer_walls_s (NOT added: the cells inside are charged individually; the difference is scheduling / reaping overhead)") or {}).items():
-        st = "breadth" if "breadth" in k else "depth" if "depth" in k else k
-        ov[k] = {"outer_wall_s": v, "cells_sum_s": sc.get(st, 0.0), "overhead_s": v - sc.get(st, 0.0)}
-    total = sum(sc.values()) + sum(o["overhead_s"] for o in ov.values() if o["overhead_s"] > 0)
-    out = {"envelope_s": 28800.0, "allocation_s": ALLOC, "charged_s": {k: round(v, 2) for k, v in sc.items()}, "stage_overheads": ov, "total_charged_incl_overheads_s": round(total, 2), "remaining_s": round(28800.0 - total, 2),
-           "counts": {"setup_jobs": len(setup), "cells": len(cells), "reference_jobs": len(refs)}, "accounting_rule": "each top-level supervised job once (spawn-to-reap of its process tree); stage supervisors are not added on top of their cells, only their scheduling / reaping overhead is",
-           "over_allocation": {k: round(v - ALLOC[k], 1) for k, v in sc.items() if v > ALLOC[k]}}
-    json.dump(out, open(os.path.join(S, "BUDGET_LEDGER.json"), "w"), indent=1); print(json.dumps({k: out[k] for k in ("charged_s", "total_charged_incl_overheads_s", "remaining_s", "over_allocation")}, indent=1))
+        w = r.get("supervisor_wall_s", 0.0) or 0.0; lab = r.get("label")
+        if lab is None:
+            nested[("breadth" if r["stage"] == "breadth" else "depth") + "_cells_s"] += w
+        elif str(lab).startswith("amendment"):
+            nested["breadth_amendment_rerun_cells_s"] += w
+        else:
+            nested["diagnostic_cells_s"] += w
+    # ---- the separate prospective REPAIR ledger (review of 7 Nov 2026): 1,800 s allowance from the unspent campaign envelope
+    rep_total = sum(j["wall_s"] for j in repair)
+    out = {"envelope_s": 28800.0, "allocation_s": ALLOC, "charged_s": {k: round(v, 6) for k, v in sc.items()}, "nonnested_receipts": len(receipts), "total_charged_s": round(total, 9),
+           "remaining_s": round(28800.0 - total - rep_total, 6), "nested_cell_sums_s_not_added": {k: round(v, 3) for k, v in nested.items()},
+           "accounting_rule": "every top-level supervised receipt in SETUP_LEDGER.jsonl and REFERENCE_LEDGER.jsonl counted exactly once (spawn-to-reap of its process tree); cells run INSIDE a stage supervisor are nested detail and are not added again",
+           "repair_ledger_2026-11-07": {"allowance_s": 1800.0, "charged_s": round(rep_total, 6), "receipts": len(repair), "jobs": [{"job": j["job"], "wall_s": round(j["wall_s"], 3), "outcome": j["outcome"]} for j in repair]},
+           "over_allocation": {k: round(v - ALLOC[k], 1) for k, v in sc.items() if v > ALLOC[k]}, "receipts": receipts}
+    json.dump(out, open(os.path.join(S, "BUDGET_LEDGER.json"), "w"), indent=1); print(json.dumps({k: out[k] for k in ("charged_s", "nonnested_receipts", "total_charged_s", "remaining_s", "nested_cell_sums_s_not_added", "over_allocation")}, indent=1)); print("repair ledger: %.3f s of 1800 in %d receipts" % (rep_total, len(repair)))
 
 
 if __name__ == "__main__":

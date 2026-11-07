@@ -93,12 +93,14 @@ def rounding_diagnostic(L_up, eps_coef, t, B=Z_BITS):
     return (Fr(1, 1 << B) + Fr(eps_coef)) * geo, Fr(1, 1 << B) * geo
 
 
-def iterate_dyadic(infl, H, coef, T_max=64, B=Z_BITS):
+def iterate_dyadic(infl, H, coef, T_max=64, B=Z_BITS, deadline=None):
     """z_0 = 1 (= 2^B); z_{t+1} = min(2^B, ceil(c_v + sum_u theta_vu z_u)) on the grid, with upward-rounded coefficients; stop when stationary.
     Returns (z as ints over 2^B, iterations, L_up = max row sum of the rounded A, the rounding-error bound delta * sum_{j<t} L^j)."""
     th, c = round_up_coefficients(infl, H, coef, B); q = 1 << B
     z = {v: q for v in H}; t = 0
     while t < T_max:
+        if deadline is not None:
+            deadline()                                                            # cooperative poll per transport iteration
         z2 = {}
         for v in H:
             acc = c[v] * q                                                            # scale 2^(2B)
@@ -222,7 +224,7 @@ def certify(infl, red, H, xi, inside_ops, query_block, T_max=64, max_entries=1 <
     from the influence system, published (unrounded) intervals [l - z, u + z]."""
     coef = coefficients(infl, red, H, inside_ops)
     if transport_needed(infl, H, inside_ops):
-        zg, t, dy = iterate_dyadic(infl, H, coef, T_max)
+        zg, t, dy = iterate_dyadic(infl, H, coef, T_max, deadline=deadline)
         z = {v: Fr(zg[v], 1 << Z_BITS) for v in H}
     else:
         z, t, dy, zg = {v: Fr(0) for v in H}, 0, None, {v: 0 for v in H}

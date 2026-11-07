@@ -37,6 +37,10 @@ int main(int argc, char* argv[]) {
             if (f.vars().contains(v)) f = f.slice(VarSet(v), it->second);   // partial evaluation at the observed state
         }
         if (f.vars().size() > 0) clamped.push_back(f);
+        else if ((double)f[0] == 0.0) {                                  // an EMPTY-scope factor that is ZERO at the observed states: Z = 0 exactly
+            ofstream side(argv[4]); side << "{\"status\": \"ZERO_PARTITION\", \"reason\": \"factor " << I << " is zero at the observed assignment: the evidence has probability zero; no marginal exists\", \"factor\": " << I << "}" << endl;
+            cerr << "ZERO_PARTITION: factor " << I << " is zero at the observed assignment" << endl; return 5;
+        }
     }
     // variables that appear in no remaining factor (isolated after clamping) need a uniform factor so their marginal is defined
     { std::set<size_t> present; for (size_t I = 0; I < clamped.size(); ++I) for (VarSet::const_iterator v = clamped[I].vars().begin(); v != clamped[I].vars().end(); ++v) present.insert(v->label());

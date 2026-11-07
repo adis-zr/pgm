@@ -25,9 +25,8 @@ def hellinger(p, q):
 
 
 def score_points_vs_enclosure(points, ref_rows, card, ev):
-    """points: list of rows (Fr); ref_rows: per var list of [L, U] (Fr) per state. Returns lower / upper bounds on max abs error, per-variable TV
-    and Hellinger bounds (TV / Hellinger computed at the nearest and farthest reference points coordinatewise is NOT exact for a box; we report
-    the midpoint-based value with the box half-width as its uncertainty, flagged)."""
+    """points: list of rows (Fr); ref_rows: per var list of [L, U] (Fr) per state (R0 may be a genuine enclosure; R1 / R2 are points, L = U).
+    Returns lower / upper bounds on max abs error (equal for point references), per-variable TV and Hellinger at the reference point."""
     lo_err = Fr(0); hi_err = Fr(0); tv_mid = []; hel_mid = []; nvars = 0; ncoord = 0; halfw = Fr(0)
     for v, row in enumerate(points):
         if v in ev or ref_rows[v] is None:
@@ -43,28 +42,17 @@ def score_points_vs_enclosure(points, ref_rows, card, ev):
             "target_0.005": ("met" if hi_err <= Fr(1, 200) else ("missed" if lo_err > Fr(1, 200) else "unresolved"))}
 
 
-def enclosure_from_points(rows, decimals):
-    """A documented rounded print (decimals significant / fixed digits) -> enclosure [q - 0.5 ulp, q + 0.5 ulp] with ulp from the printed string."""
-    out = []
-    for r in rows:
-        out.append([[max(Fr(0), x - Fr(1, 2 * 10 ** decimals)), min(Fr(1), x + Fr(1, 2 * 10 ** decimals))] for x in r])
-    return out
+def enclosure_from_points(rows, decimals=None):
+    """A floating-point / printed reference vector is used AS THE POINT (zero-width box). No uncertainty interval is inferred from printed
+    digits (amendment 5 of the external sweep: the earlier half-ulp boxes were not a documented reference error rule). Distances to such a
+    reference are approximate-reference numerical comparisons, never rigorous error claims."""
+    return [[[x, x] for x in r] for r in rows]
 
 
 def enclosure_from_official(path):
-    """official 6-significant-digit .MAR: ulp from each printed token's own digits."""
-    toks = open(path).read().split(); k = toks.index("MAR"); n = int(toks[k + 1]); p = k + 2; rows = []
-    for _ in range(n):
-        c = int(toks[p]); p += 1; row = []
-        for _ in range(c):
-            t = toks[p]; p += 1; x = Fr(t)
-            if "e" in t.lower():
-                mant, ex = t.lower().split("e"); dec = len(mant.split(".")[1]) if "." in mant else 0; ulp = Fr(10) ** (int(ex) - dec)
-            else:
-                dec = len(t.split(".")[1]) if "." in t else 0; ulp = Fr(1, 10 ** dec)
-            row.append([max(Fr(0), x - ulp / 2), min(Fr(1), x + ulp / 2)])
-        rows.append(row)
-    return rows
+    """official UAI 2014 .MAR solution vector (6 significant digits, provenance undocumented) -> POINT reference (zero width)."""
+    rows, _ = U.read_mar(path)
+    return [[[Fr(x), Fr(x)] for x in r] for r in rows]
 
 
 def main(S):
@@ -88,32 +76,34 @@ def main(S):
         for stage in ("depth", "breadth"):
             c = cells.get((case, "EXACT", stage, None))
             if c and c.get("status") == "COMPLETE" and not c.get("censored"):
-                cands.append(("R1", "libDAI junction tree (binary64 exact algorithm; enclosure = half-ulp of the 10-decimal print ONLY, the binary64 computation error is not enclosed; stage %s)" % stage, enclosure_from_points(read_points(os.path.join(S, c["out_dir"], "output.MAR")), R1_DECIMALS_LIBDAI))); break
+                cands.append(("R1", "libDAI junction tree (exact algorithm in binary64, printed to 10 significant digits; used as a POINT reference, no enclosure; stage %s)" % stage, enclosure_from_points(read_points(os.path.join(S, c["out_dir"], "output.MAR")), R1_DECIMALS_LIBDAI))); break
         for arm in ("WMB", "IJGP"):
             for stage in ("depth", "breadth"):
                 c = cells.get((case, arm, stage, None))
                 if c and c.get("status") == "COMPLETE" and not c.get("censored"):
                     cj = json.load(open(os.path.join(S, c["out_dir"], "cell.json")))
                     if cj.get("exact_by_ibound"):
-                        cands.append(("R1", "Merlin %s with i-bound >= induced width (exact elimination, binary64, printed to 6 decimals)" % arm, enclosure_from_points(read_points(os.path.join(S, c["out_dir"], "output.MAR")), 6)))
+                        cands.append(("R1", "Merlin %s with i-bound >= induced width (exact elimination in binary64, printed to 6 decimals; POINT reference)" % arm, enclosure_from_points(read_points(os.path.join(S, c["out_dir"], "output.MAR")), 6)))
         op = os.path.join(official, case + ".uai.MAR")
         if os.path.exists(op) and row["archive"] == "uai2022_tuning":
             try:
-                cands.append(("R2", "official UAI 2014 MAR solution file (6 significant digits; the source does not state how it was computed)", enclosure_from_official(op)))
+                cands.append(("R2", "official UAI 2014 MAR solution file (6 significant digits; provenance undocumented; POINT reference)", enclosure_from_official(op)))
             except Exception as ex:
                 pass
         order = {"R0": 0, "R1": 1, "R2": 2}; cands.sort(key=lambda c: order[c[0]])
         refs[case] = {"class": cands[0][0] if cands else "R3", "source": cands[0][1] if cands else "no qualified reference", "rows": cands[0][2] if cands else None, "all_candidates": [(c[0], c[1]) for c in cands], "card": card, "ev": ev}
         # consistency between independent rigorous / exact references: overlapping boxes
         if len(cands) >= 2:
-            a, b = cands[0][2], cands[1][2]; disjoint = 0
+            a, b = cands[0][2], cands[1][2]; dmax = Fr(0); disjoint = 0
             for v in range(m.nvars):
                 if a[v] is None or b[v] is None or v in ev:
                     continue
                 for s in range(card[v]):
                     if a[v][s][1] < b[v][s][0] or b[v][s][1] < a[v][s][0]:
                         disjoint += 1
-            refs[case]["cross_reference_disjoint_coordinates"] = disjoint; refs[case]["cross_reference_pair"] = (cands[0][0], cands[1][0])
+                    dmax = max(dmax, abs((a[v][s][0] + a[v][s][1]) / 2 - (b[v][s][0] + b[v][s][1]) / 2))
+            refs[case]["cross_reference_pair"] = (cands[0][0], cands[1][0]); refs[case]["cross_reference_sources"] = (cands[0][1][:60], cands[1][1][:60])
+            refs[case]["cross_reference_max_coordinate_distance"] = float(dmax); refs[case]["cross_reference_disjoint_coordinates"] = disjoint if cands[0][0] == "R0" else None
     # ---- per cell scoring
     scored = []; reclass = []
     for r in rows:
@@ -183,7 +173,7 @@ def main(S):
     summary = {"frozen_commit": man["commit"], "cases": man["counts"], "arms": ARMS, "unavailable": man["unavailable_arms"],
                "applicability_breadth": agg("breadth"), "applicability_depth": agg("depth"), "family_case_counts": dict(fam_cases),
                "service_track": {k: {"%s|%s" % kk: vv for kk, vv in v.items()} for k, v in service.items()},
-               "reference_classes": {c: {"class": v["class"], "source": v["source"], "candidates": v["all_candidates"], "cross_reference_disjoint_coordinates": v.get("cross_reference_disjoint_coordinates"), "cross_reference_pair": v.get("cross_reference_pair")} for c, v in refs.items()},
+               "reference_classes": {c: {"class": v["class"], "source": v["source"], "candidates": v["all_candidates"], "cross_reference_disjoint_coordinates": v.get("cross_reference_disjoint_coordinates"), "cross_reference_pair": v.get("cross_reference_pair"), "cross_reference_sources": v.get("cross_reference_sources"), "cross_reference_max_coordinate_distance": v.get("cross_reference_max_coordinate_distance")} for c, v in refs.items()},
                "reclassified_cells": reclass, "reclassification_note": "MDI_EXISTING cells whose engine outcome was NUMERICAL_REFUSAL with an explicit preprocessing-admission REFUSED reason are reported as ENGINE_REFUSED_PREPROCESSING (wrapper status CHECK_FAILED retained in status_original)",
                "cells": scored}
     json.dump(summary, open(os.path.join(S, "SCORES.json"), "w"), indent=1, default=str)

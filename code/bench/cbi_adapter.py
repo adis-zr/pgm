@@ -220,16 +220,72 @@ def map_intervals(model, ev, cert, result):
 
 
 # ------------------------------------------------------------------ INDEPENDENT checker
+def prove_forced(m, ev):
+    """Replays, from the RAW factors and the evidence only, every state exclusion the adapter may rely on: a variable v is FORCED to state s
+    when, after slicing every factor at the currently justified fixed set, the product over the factors whose remaining scope is exactly {v}
+    is zero at every other state; a variable with no positive state proves Z = 0. Iterated to a fixpoint. Returns (fixed, zero_partition_witness)."""
+    import itertools
+    fixed = dict(ev); witness = None; changed = True
+    def zero_constant():
+        for f in m.factors:
+            if all(u in fixed for u in f.scope) and f.at({u: fixed[u] for u in f.scope}) == 0:
+                return {"factor": f.index, "reason": "factor is zero at the fixed / observed assignment"}
+        return None
+    while changed:
+        witness = zero_constant()
+        if witness is not None:
+            return fixed, witness
+        changed = False
+        for v in range(m.nvars):
+            if v in fixed:
+                continue
+            prod = [Fr(1)] * m.card[v]; touched = False
+            for f in m.factors:
+                if v not in f.scope:
+                    continue
+                others = [u for u in f.scope if u != v and u not in fixed]
+                if others:
+                    continue                                                     # not a unary slice yet
+                touched = True
+                for sv in range(m.card[v]):
+                    a = {u: fixed[u] for u in f.scope if u in fixed}; a[v] = sv; prod[sv] *= f.at(a)
+            if not touched:
+                continue
+            pos = [sv for sv in range(m.card[v]) if prod[sv] > 0]
+            if not pos:
+                return fixed, {"var": v, "reason": "no positive state after slicing at the proved fixed set"}
+            if len(pos) == 1:
+                fixed[v] = pos[0]; changed = True
+    return fixed, zero_constant()
+
+
 def check_adapter(model_path, evid_path, native, cert, result=None):
     """Re-derives the global weight identity from the RAW files: W_external(x, e) = const * W_native(T(x)) over all allowed assignments, as a
-    product of checked LOCAL identities, plus the bijection T (bit flips, fixed variables) and the query mapping. Raises AssertionError."""
+    product of checked LOCAL identities, plus the bijection T (bit flips, PROVED fixed variables) and the query mapping. Nothing declared by the
+    producer is taken as a premise: fixed states are re-proved (prove_forced), the native edge list must correspond EXACTLY (as a list, with
+    multiplicities) to the non-separable merged pairwise scopes, blocks must be exactly the free variables with valid rows / weights, flips
+    must be bits, and every original factor occurrence must be consumed exactly once. Raises AssertionError on the first failure."""
     m = U.read_model(model_path); ev = U.read_evidence(evid_path)
-    fixed = {int(k): v for k, v in cert["fixed"].items()}; flip = {int(k): v for k, v in cert["flip"].items()}; free = list(cert["free"])
-    assert all(ev[k] == fixed[k] for k in ev), "evidence not contained in the fixed set"
-    assert sorted(free) == sorted(v for v in range(m.nvars) if v not in fixed), "free set is not the complement of the fixed set"
+    # --- declared structure must be well-formed before anything is trusted
+    assert isinstance(cert.get("fixed"), dict) and isinstance(cert.get("flip"), dict) and isinstance(cert.get("free"), list), "certificate structure"
+    fixed = {int(k): int(v) for k, v in cert["fixed"].items()}; flip = {int(k): int(v) for k, v in cert["flip"].items()}; free = [int(v) for v in cert["free"]]
+    assert all(0 <= v < m.nvars and 0 <= s < m.card[v] for v, s in fixed.items()), "a fixed state is out of range"
+    assert all(ev[k] == fixed.get(k) for k in ev), "evidence not contained in the fixed set"
+    # --- FORCED states are PROVED from the raw factors, never read from the certificate
+    proved, zw = prove_forced(m, ev)
+    assert zw is None, "the original model has Z = 0 under the evidence (%s); no marginal certificate may be published" % zw
+    assert fixed == proved, "declared fixed set %s differs from the independently proved fixed set %s" % (sorted(fixed.items()), sorted(proved.items()))
+    assert sorted(free) == sorted(v for v in range(m.nvars) if v not in fixed) and len(set(free)) == len(free), "free set is not the complement of the fixed set"
     assert all(m.card[v] == 2 for v in free), "a free variable is not binary"
-    blocks = {b["id"]: b for b in native["blocks"]}; assert sorted(blocks) == sorted(free), "blocks are not the free variables"
-    # every factor occurrence accounted for exactly once
+    assert sorted(flip) == sorted(free) and all(x in (0, 1) for x in flip.values()), "flip map must assign a bit to exactly the free variables"
+    # --- native blocks: exactly the free variables, unique, rows a nonempty subset of {0,1}, positive integer weights
+    assert native.get("d") == 1, "native d must be 1 for this adapter"
+    ids = [b["id"] for b in native["blocks"]]; assert len(ids) == len(set(ids)) and sorted(ids) == sorted(free), "blocks are not exactly the free variables (duplicates or mismatch)"
+    blocks = {b["id"]: b for b in native["blocks"]}
+    for v, b in blocks.items():
+        assert b["rows"] and all(r in (0, 1) for r in b["rows"]) and len(set(b["rows"])) == len(b["rows"]), "block %d rows" % v
+        assert len(b["weights"]) == len(b["rows"]) and all(isinstance(w, int) and not isinstance(w, bool) and w > 0 for w in b["weights"]), "block %d weights" % v
+    # --- every original factor occurrence consumed exactly once (counted over the DECLARED lists, before any dict construction)
     seen = {}
     for c in cert["consumed"]:
         if "factor" in c:
@@ -238,7 +294,7 @@ def check_adapter(model_path, evid_path, native, cert, result=None):
         for fi in i["factors"]:
             seen[fi] = seen.get(fi, 0) + 1
     assert sorted(seen) == list(range(len(m.factors))) and all(v == 1 for v in seen.values()), "factor occurrences are not covered exactly once"
-    # rebuild the unary product per free variable from the RAW factors (own slicing) and the declared gauges
+    # --- rebuild the unary product per free variable from the RAW factors (own slicing) and the declared gauges
     import itertools
     unary = {v: [Fr(1), Fr(1)] for v in free}
     def sliced(f):
@@ -258,10 +314,20 @@ def check_adapter(model_path, evid_path, native, cert, result=None):
             u, v = sc; key = (min(u, v), max(u, v))
             t = [tab[(x, y)] if u < v else tab[(y, x)] for x in range(2) for y in range(2)]
             pairs.setdefault(key, []).append((f.index, t))
-    # declared identities, one per merged scope, checked ENTRYWISE in original coordinates
-    decl = {tuple(i["scope"]): i for i in cert["identities"]}
+    # --- declared identities: exactly one per merged scope (as a LIST: duplicates rejected), each checked ENTRYWISE in original coordinates
+    scopes_decl = [tuple(int(x) for x in i["scope"]) for i in cert["identities"]]
+    assert len(scopes_decl) == len(set(scopes_decl)) and all(len(sc) == 2 and sc[0] < sc[1] for sc in scopes_decl), "declared identity scopes must be distinct ordered pairs"
+    decl = {sc: i for sc, i in zip(scopes_decl, cert["identities"])}
     assert set(decl) == set(pairs), "declared pair identities do not match the raw pairwise scopes after slicing"
-    edges = {(min(e["u"], e["v"]), max(e["u"], e["v"])): Fr(e["r"]) for e in native["edges"]}
+    # --- native edge LIST must correspond exactly to the non-separable identities: valid endpoints, no self-loops, no duplicates, no extras
+    raw_edges = native["edges"]
+    for e in raw_edges:
+        assert isinstance(e.get("u"), int) and isinstance(e.get("v"), int) and e["u"] in blocks and e["v"] in blocks and e["u"] != e["v"], "native edge with invalid endpoints %r" % (e,)
+    edge_keys = [(min(e["u"], e["v"]), max(e["u"], e["v"])) for e in raw_edges]
+    assert len(edge_keys) == len(set(edge_keys)), "duplicate native edge occurrence"
+    expected_edges = {sc for sc, i in decl.items() if i["kind"] in ("coupling", "equality")}
+    assert set(edge_keys) == expected_edges, "native edge set %s differs from the declared non-separable pair scopes %s (extra or missing interactions)" % (sorted(set(edge_keys) - expected_edges), sorted(expected_edges - set(edge_keys)))
+    edges = {k: Fr(e["r"]) for k, e in zip(edge_keys, raw_edges)}
     for (u, v), lst in pairs.items():
         assert sorted(fi for fi, _ in lst) == sorted(decl[(u, v)]["factors"]), "factor list for (%d,%d)" % (u, v)
         t = [Fr(1)] * 4
@@ -274,29 +340,33 @@ def check_adapter(model_path, evid_path, native, cert, result=None):
                 for y in range(2):
                     assert t[(x << 1) | y] == gu[x] * gv[y], "separable identity (%d,%d)" % (u, v)
             unary[u] = [unary[u][s] * gu[s] for s in range(2)]; unary[v] = [unary[v][s] * gv[s] for s in range(2)]
-            assert (u, v) not in edges, "separable pair must not be an edge"
         elif i["kind"] == "equality":
             a, b, c, d = t; assert b == 0 and c == 0 and a > 0 and d > 0 and edges.get((u, v)) == 1, "equality identity (%d,%d)" % (u, v)
             assert [Fr(x) for x in i["gauge_u"]] == [a, d]; unary[u] = [unary[u][0] * a, unary[u][1] * d]
             assert flip[u] == flip[v], "equality endpoints must share the flip (x == y preserved)"
-        else:
+        elif i["kind"] == "coupling":
             r = Fr(i["r"]); assert edges.get((u, v)) == r and 0 <= r < 1, "coupling edge (%d,%d)" % (u, v)
             g = [Fr(x) for x in i["gauge_u_flipped"]]; h = [Fr(x) for x in i["gauge_v_flipped"]]; fu, fv = flip[u], flip[v]
+            assert all(x > 0 for x in g + h), "gauges must be positive"
             for x in range(2):
                 for y in range(2):
                     K = (1 + r) if ((x ^ fu) == (y ^ fv)) else (1 - r)              # kernel acts on FLIPPED states
                     assert t[(x << 1) | y] == g[x ^ fu] * h[y ^ fv] * K, "coupling identity (%d,%d) at (%d,%d)" % (u, v, x, y)
             unary[u] = [unary[u][s] * g[s ^ fu] for s in range(2)]; unary[v] = [unary[v][s] * h[s ^ fv] for s in range(2)]
-    # block weights = the rebuilt unary products up to one positive scalar per block, rows = flipped positive states
+        else:
+            raise AssertionError("unknown identity kind %r" % i["kind"])
+    # --- block weights = the rebuilt unary products up to one positive scalar per block, rows = flipped positive states
     for v in free:
         b = blocks[v]; w = unary[v]; rows = [s ^ flip[v] for s in range(2) if w[s] > 0]
         assert b["rows"] == rows, "block %d rows" % v
         ws = [w[s] for s in range(2) if w[s] > 0]; bw = [Fr(x) for x in b["weights"]]
         assert len(ws) == len(bw) and all(ws[k] * bw[0] == ws[0] * bw[k] for k in range(len(ws))), "block %d weights are not proportional to the unary product" % v
-    assert native["d"] == 1 and sorted(edges) == sorted(set(edges)), "native shape"
-    out = {"factors_checked": len(m.factors), "pairs_checked": len(pairs), "free": len(free), "fixed": len(fixed)}
+    out = {"factors_checked": len(m.factors), "pairs_checked": len(pairs), "free": len(free), "fixed": len(fixed), "forced_states_proved": len(fixed) - len(ev), "native_edges": len(raw_edges)}
     if result is not None:
-        # query mapping: published per-original-state intervals must be the flip-mapped CBI coordinate intervals; fixed vars point masses
+        # query BINDING: the native result must be for exactly the free variables (external ids), and the published per-original-state
+        # intervals must be the flip-mapped CBI coordinate intervals; fixed variables are point masses
+        assert sorted(int(q) for q in result.get("requested_queries", [])) == sorted(free), "native result was not requested for exactly the free variables"
+        assert (result.get("id_map") or {}).get("external_ids") == sorted(free), "native id map is not the free-variable list"
         rows = map_intervals(m, ev, cert, result); Q = 1 << result["grid_bits"]
         for v in free:
             if str(v) not in result["intervals"]:

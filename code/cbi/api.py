@@ -30,10 +30,10 @@ def _systems(m2, clusters, eps, limits, cluster_log, timings, deadline=None):
     if good:
         coarse, cmap, certs, rho = CO.coarsen(m2, good, deadline)
         cluster_log["verified"] = [{k: v for k, v in c.items() if k not in ("coarse_rows", "coarse_weights")} for c in certs.values()]
-        red = M.reduce_model(coarse)
+        red = M.reduce_model(coarse, deadline)
         if red.infeasible is None:
             out["coarse"] = (IN.Influence(m2, cmap, rho), red, cmap)
-    red0 = M.reduce_model(m2)
+    red0 = M.reduce_model(m2, deadline)
     if red0.infeasible is None:
         out["plain"] = (IN.Influence(m2, {b: b for b in m2.blocks}, {}), red0, {b: b for b in m2.blocks})
     _timed(timings, "build_systems", t0)

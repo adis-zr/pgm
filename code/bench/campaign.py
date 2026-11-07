@@ -44,7 +44,10 @@ def code_hash():
     return h.hexdigest(), files
 
 
-def freeze(S):
+def freeze(S, amendment=None):
+    """amendment = {"name": ..., "arms_with_changed_numerical_semantics": [...], "note": ...} on a RE-freeze: every new cell records its predecessor
+    cell id from the prior manifest; a cell whose arm's numerical semantics are unchanged INHERITS its predecessor's primary row (recorded, never
+    silent); a cell whose arm changed must be rerun under the new id."""
     sel = json.load(open(os.path.join(S, "PANEL_SELECTION.json"))); inv = {c["case"]: c for c in json.load(open(os.path.join(S, "INVENTORY.json")))["cases"]}
     cfg = {"width": "1/100", "cbi_limits": {}, "pgmax_iters": 200, "pgmax_damping": 0.5}
     ch, files = code_hash(); cfg_hash = hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()
@@ -78,12 +81,31 @@ def freeze(S):
                                      "raw_model_sha256": row["raw_model_sha256"], "raw_evidence_sha256": row["raw_evidence_sha256"], "canonical_model_sha256": row["canonical_model_sha256"], "canonical_evidence_sha256": row["canonical_evidence_sha256"]})
     man["counts"] = {"breadth": sum(1 for c in man["cells"] if c["stage"] == "breadth"), "depth": sum(1 for c in man["cells"] if c["stage"] == "depth"), "cases": len(sel["selected"]), "target_denominator": 48}
     mp = os.path.join(S, "CAMPAIGN_MANIFEST.json")
-    if os.path.exists(mp):                                   # a re-freeze (amendment) preserves the prior manifest and records the code-hash history
+    if os.path.exists(mp):                                   # a re-freeze preserves the prior manifest and binds every cell to its predecessors
         prior = json.load(open(mp))
         if prior.get("code_hash") != ch:
+            assert amendment and "arms_with_changed_numerical_semantics" in amendment, "a re-freeze with a changed code hash needs an explicit amendment declaration"
             os.replace(mp, os.path.join(S, "CAMPAIGN_MANIFEST_prior_%s.json" % prior["code_hash"][:12])); man["code_hash_history"] = (prior.get("code_hash_history") or []) + [{"code_hash": prior["code_hash"], "frozen_utc": prior["frozen_utc"], "commit": prior.get("commit")}]
+            man["amendment"] = amendment
         else:
-            man["code_hash_history"] = prior.get("code_hash_history") or []
+            man["code_hash_history"] = prior.get("code_hash_history") or []; man["amendment"] = prior.get("amendment")
+        amendment = man.get("amendment") or {}
+        # LINEAGE from EVERY preserved prior manifest (newest first): the chain of predecessor ids for the same (case, arm, stage, budget)
+        priors = []
+        for f in sorted(os.listdir(S)):
+            if f.startswith("CAMPAIGN_MANIFEST_prior_") and f.endswith(".json"):
+                pm = json.load(open(os.path.join(S, f))); priors.append((pm.get("frozen_utc", ""), pm))
+        priors.sort(key=lambda x: x[0], reverse=True)
+        chains = {}
+        for _, pm in priors:
+            for c in pm["cells"]:
+                chains.setdefault((c["case"], c["arm"], c["stage"], c["budget_s"]), []).append({"cell_id": c["cell_id"], "code_hash": pm["code_hash"], "frozen_utc": pm.get("frozen_utc")})
+        changed = set(amendment.get("arms_with_changed_numerical_semantics") or [])
+        for c in man["cells"]:
+            ch_ = chains.get((c["case"], c["arm"], c["stage"], c["budget_s"]), [])
+            if ch_:
+                c["supersedes"] = ch_[0]["cell_id"]; c["predecessor_chain"] = [x["cell_id"] for x in ch_]; c["predecessor_code_hashes"] = [x["code_hash"] for x in ch_]
+                c["numerical_semantics_changed"] = c["arm"] in changed; c["amendment"] = amendment.get("name")
     json.dump(man, open(mp, "w"), indent=1); print("frozen:", man["counts"], "commit", man["commit"], "code_hash", ch[:12])
 
 
@@ -140,10 +162,15 @@ def run_cell(S, cell, cfgp, stage_key, label_extra=None, out_root=None, deadline
 def run(S, stage):
     man = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); cfgp = os.path.join(S, "CONFIG.json"); json.dump(man["config"], open(cfgp, "w"))
     ch, _ = code_hash(); assert ch == man["code_hash"], "code hash differs from the frozen manifest: re-freeze or restore the code"
-    # a cell is DONE when a primary (unlabelled) row exists for the same (case, arm, stage, budget) -- across code-hash re-freezes; every row
-    # records the code hash it ran under, so amended reruns (labelled) and the original rows stay distinguishable
-    rows = ledger_rows(S); done = {(r["case"], r["arm"], r["stage"], r["budget_s"]) for r in rows if r.get("label") is None}
-    cells = [c for c in man["cells"] if c["stage"] == stage and (c["case"], c["arm"], c["stage"], c["budget_s"]) not in done]
+    # IDENTITY: a cell is DONE when a primary row carries its own cell_id (input + evidence + arm + budget + code + config), or the id of a
+    # predecessor in its explicitly declared chain AND the amendment declared the arm's numerical semantics unchanged (an inherited row, listed
+    # in RECONCILIATION.json). Names alone never match a row.
+    rows = ledger_rows(S); have = {r["cell_id"] for r in rows if r.get("label") is None}
+    def satisfied(c):
+        if c["cell_id"] in have:
+            return True
+        return (not c.get("numerical_semantics_changed", False)) and any(p in have for p in (c.get("predecessor_chain") or []))
+    cells = [c for c in man["cells"] if c["stage"] == stage and not satisfied(c)]
     allowance = BUDGET[stage]; n = 0
     for c in cells:
         if c["arm"] in UNAVAILABLE:
@@ -165,6 +192,33 @@ def status(S):
         print(st, len(rs), "rows; spent %.1f s;" % stage_spent(rows, st), dict(collections.Counter(r["status"] for r in rs)))
 
 
+def reconcile(S):
+    """RECONCILIATION.json: for every cell of the current manifest, the primary row that satisfies it (own id or an inherited predecessor row),
+    with the amendment relation made explicit; unsatisfied cells are listed."""
+    man = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); rows = {r["cell_id"]: r for r in ledger_rows(S) if r.get("label") is None}
+    out = {"manifest_code_hash": man["code_hash"], "cells": [], "unsatisfied": [], "inherited": 0, "own": 0}
+    for c in man["cells"]:
+        if c["cell_id"] in rows:
+            out["cells"].append({"cell_id": c["cell_id"], "case": c["case"], "arm": c["arm"], "stage": c["stage"], "row": c["cell_id"], "relation": "own", "row_code_hash": rows[c["cell_id"]].get("code_hash")}); out["own"] += 1; continue
+        pred = next((p for p in (c.get("predecessor_chain") or []) if p in rows), None)
+        if pred and not c.get("numerical_semantics_changed", False):
+            out["cells"].append({"cell_id": c["cell_id"], "case": c["case"], "arm": c["arm"], "stage": c["stage"], "row": pred, "relation": "inherited (amendment %s: arm semantics unchanged)" % c.get("amendment"), "row_code_hash": rows[pred].get("code_hash")}); out["inherited"] += 1
+        else:
+            out["unsatisfied"].append({"cell_id": c["cell_id"], "case": c["case"], "arm": c["arm"], "stage": c["stage"]})
+    # amendment 1 (PGMax duplicate-scope merge) changed PGMax's computation ONLY on inputs with repeated sliced scopes: those primary rows are the
+    # pre-amendment FAILED rows and their labelled reruns are the valid outputs -- stated explicitly, never silently inherited as unchanged
+    aff = json.load(open(os.path.join(S, "repair_2026-11-07", "PGMAX_AMENDMENT1_AFFECTED_INPUTS.json")))["cases"] if os.path.exists(os.path.join(S, "repair_2026-11-07", "PGMAX_AMENDMENT1_AFFECTED_INPUTS.json")) else []
+    lab = [r for r in ledger_rows(S) if str(r.get("label") or "").startswith("amendment_1")]
+    for c in out["cells"]:
+        if c["arm"] == "PGMAX_SUMPRODUCT_BP" and c["case"] in aff and c["stage"] == "breadth":
+            rr = [r for r in lab if r["case"] == c["case"]]; c["relation"] += "; amendment_1 CHANGED this arm's computation on this input (duplicate sliced scopes): the primary row is the pre-amendment FAILED outcome, the labelled rerun row(s) %s are the valid outputs" % [(r["cell_id"], r["status"]) for r in rr]
+    out["note"] = "Amendment 1 changed the PGMax wrapper's computation only on %s (repeated sliced factor scopes); their breadth primary rows are pre-amendment FAILED outcomes with labelled reruns; every other inherited row ran code whose numerical semantics the amendments left unchanged." % aff
+    json.dump(out, open(os.path.join(S, "RECONCILIATION.json"), "w"), indent=1); print("reconciliation: own %d, inherited %d, unsatisfied %d" % (out["own"], out["inherited"], len(out["unsatisfied"])))
+
+
 if __name__ == "__main__":
     cmd, S = sys.argv[1], os.path.abspath(sys.argv[2])
-    {"freeze": lambda: freeze(S), "run": lambda: run(S, sys.argv[3]), "status": lambda: status(S)}[cmd]()
+    if cmd == "freeze":
+        freeze(S, json.loads(sys.argv[3]) if len(sys.argv) > 3 else None)
+    else:
+        {"run": lambda: run(S, sys.argv[3]), "status": lambda: status(S), "reconcile": lambda: reconcile(S)}[cmd]()

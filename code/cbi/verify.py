@@ -547,8 +547,10 @@ def verify(model, result):
             _req(cert.get("node") == node and iv.get("node") == node, "query %d maps to node %d, result says %s" % (q, node, cert.get("node")))
             nodes = verify_proof(pid); _req(node in nodes, "query %d: its node is not covered by proof %s" % (q, pid))
             if proofs[pid].get("kind") == "forest_rooted":
-                others = [q2 for q2 in req if q2 != q and systems[sysk][0][o2r[q2]] in set(int(x) for x in proofs[pid]["H"])]
-                _req(not others, "query %d: a rooted forest proof is used although other requested queries lie in the same component" % q)
+                # several ORIGINAL queries may denote the same reduced node (equality contraction / coarsening): the rooted proof is valid for
+                # all of them; it is rejected only when a DIFFERENT reduced node of the same component is also requested
+                Hset = set(int(x) for x in proofs[pid]["H"]); other_nodes = {systems[sysk][0][o2r[q2]] for q2 in req if systems[sysk][0][o2r[q2]] in Hset} - {node}
+                _req(not other_nodes, "query %d: a rooted forest proof is used although other requested reduced nodes %s lie in the same component" % (q, sorted(other_nodes)))
             bel, zq = nodes[node]
             rows = np.asarray(systems[sysk][4][node].rows, dtype=np.uint64)
             for j in range(m.d):

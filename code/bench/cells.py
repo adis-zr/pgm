@@ -237,6 +237,8 @@ def cell_libdai(mp, ep, out, deadline, cfg, rec, snaps, alg_template):
             rec["reference_class_candidate"] = "R1 (exact algorithm, binary64)"
     elif r["timed_out"]:
         rec["status"] = "TIMEOUT"; rec["censored"] = True
+    elif r["returncode"] == 5:
+        rec["status"] = "INFEASIBLE_EVIDENCE"; rec["reason"] = (json.load(open(os.path.join(out, "side.json"))).get("reason") if os.path.exists(os.path.join(out, "side.json")) else "zero partition"); rec["output_bytes"] = 0
     else:
         tail = open(os.path.join(out, "libdai.log"), errors="replace").read()[-600:]; rec["status"] = "FAILED"; rec["reason"] = tail
         if "maxmem" in tail.lower() or "exceed" in tail.lower() or "memory" in tail.lower():

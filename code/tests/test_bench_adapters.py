@@ -165,3 +165,113 @@ def test_cell_runner_output_validation_rejects_bad_vectors(tmp_path):
     rows, faults = CE.validate_mar(p, [2, 3], {}); assert rows is None and any("row sum" in f for f in faults)
     open(p, "w").write("MAR\n2 2 0.3 0.7 3 0.2 0.3 0.5\n"); rows, faults = CE.validate_mar(p, [2, 3], {1: 2}); assert rows is None and any("point mass" in f for f in faults)
     rows, faults = CE.validate_mar(p, [2, 3], {}); assert rows is not None and faults == []
+
+
+# ------------------------------------------------------------- review of the external sweep (7 Nov 2026): adapter checker must PROVE, not trust
+def _xy(tmp_path, ev=None, unaries=(("1", "3"), ("1", "3"))):
+    p = str(tmp_path / "xy.uai"); write_uai(p, [2, 2], [((0,), list(unaries[0])), ((1,), list(unaries[1]))], ev or {}); return p
+
+
+def test_checker_rejects_added_native_edge_and_invented_fixation(tmp_path):
+    """The reviewer's two witnesses: X, Y independent, unaries [1,3], P = 3/4."""
+    p = _xy(tmp_path); m = U.read_model(p); ev = {}; native, cert = AD.adapt(m, ev)
+    bad = copy.deepcopy(native); bad["edges"].append({"u": 0, "v": 1, "r": "1/2"}); res = api.solve(bad, "all", "1/100", {})
+    with pytest.raises(AssertionError, match="native edge set"):
+        AD.check_adapter(p, p + ".evid", bad, cert, res)
+    cert2 = copy.deepcopy(cert); cert2["fixed"] = {"0": 0}; cert2["free"] = [1]; cert2["flip"] = {"1": 0}; cert2["consumed"] = [c for c in cert2["consumed"] if c.get("var") != 0] + [{"factor": 0, "role": "constant", "value": "1", "fixed_at": {"0": 0}}]
+    nat2 = {"d": 1, "bit_convention": native["bit_convention"], "blocks": [b for b in native["blocks"] if b["id"] == 1], "edges": [], "meta": native["meta"]}; res2 = api.solve(nat2, "all", "1/100", {})
+    with pytest.raises(AssertionError, match="independently proved fixed set"):
+        AD.check_adapter(p, p + ".evid", nat2, cert2, res2)
+    # the honest conversion still passes, and the published intervals contain 3/4
+    AD.check_adapter(p, p + ".evid", native, cert, api.solve(native, "all", "1/100", {})); rows = AD.map_intervals(m, ev, cert, api.solve(native, "all", "1/100", {}))
+    assert rows[0][1][0] <= Fr(3, 4) <= rows[0][1][1]
+
+
+def test_checker_structural_rejections(tmp_path):
+    p = str(tmp_path / "m.uai"); write_uai(p, *ADMISSIBLE); m = U.read_model(p); ev = U.read_evidence(p + ".evid"); native, cert = AD.adapt(m, ev); res = api.solve(native, "all", "1/100", {})
+    def bad(mut, match):
+        n2, c2 = copy.deepcopy(native), copy.deepcopy(cert); mut(n2, c2)
+        with pytest.raises(AssertionError, match=match):
+            AD.check_adapter(p, p + ".evid", n2, c2, res)
+    bad(lambda n, c: n["edges"].append(dict(n["edges"][0])), "duplicate native edge")                                   # duplicate edge occurrence
+    bad(lambda n, c: n["edges"].append({"u": n["edges"][0]["u"], "v": n["edges"][0]["u"], "r": "1/3"}), "invalid endpoints")   # self-loop
+    bad(lambda n, c: n["blocks"].append(dict(n["blocks"][0])), "duplicates or mismatch")                                  # duplicate block
+    bad(lambda n, c: n["blocks"][0].__setitem__("rows", [0, 2]), "rows")                                                   # state out of {0,1}
+    bad(lambda n, c: c["flip"].__setitem__(str(c["free"][0]), 2), "flip map")                                              # flip not a bit
+    bad(lambda n, c: n["edges"].pop(), "native edge set")                                                                  # missing interaction
+    bad(lambda n, c: c["identities"].append(dict(c["identities"][0])), "covered exactly once|distinct ordered pairs")      # duplicated identity (caught by occurrence count or scope uniqueness)
+    bad(lambda n, c: c["identities"][0]["factors"].append(c["identities"][0]["factors"][0]), "covered exactly once")        # duplicated factor occurrence
+    bad(lambda n, c: c["fixed"].__setitem__("0", 1), "independently proved fixed set")                                    # invented fixation on a free var
+    # result binding: a result for a different query set is rejected
+    res2 = api.solve(native, [native["blocks"][0]["id"]], "1/100", {})
+    with pytest.raises(AssertionError, match="exactly the free variables"):
+        AD.check_adapter(p, p + ".evid", native, cert, res2)
+
+
+def test_checker_honest_controls_evidence_forced_separable_duplicates_signed_ids(tmp_path):
+    """Honest conversions that MUST pass: evidence; a truly forced state (unary zero); a separable pair; duplicate source factor occurrences on
+    one scope; a correctly transformed (flipped) query; and the checker's own forced-state proof agrees with brute force."""
+    card, facs, _ = ADMISSIBLE
+    # evidence + a forced state + duplicate occurrences of the same scope
+    p = str(tmp_path / "h.uai"); write_uai(p, card, facs + [((1,), ["0", "1"]), ((0, 1), ["1", "1", "1", "1"])], {2: 0})
+    m = U.read_model(p); ev = U.read_evidence(p + ".evid"); native, cert = AD.adapt(m, ev); res = api.solve(native, "all", "1/100", {})
+    chk = AD.check_adapter(p, p + ".evid", native, cert, res); assert chk["forced_states_proved"] >= 1 and chk["query_map_checked"]
+    proved, zw = AD.prove_forced(m, ev); assert zw is None and proved == {int(k): v for k, v in cert["fixed"].items()}
+    Z, tr = brute(p); rows = AD.map_intervals(m, ev, cert, res); assert all(rows[v][s][0] <= tr[v][s] <= rows[v][s][1] for v in range(5) for s in range(2))
+    # separable pair (cross-ratio 1) absorbed as unaries; no edge
+    q = str(tmp_path / "s.uai"); write_uai(q, [2, 2], [((0, 1), ["1", "2", "3", "6"]), ((1,), ["1", "1"])], {}); m = U.read_model(q); native, cert = AD.adapt(m, {}); res = api.solve(native, "all", "1/100", {})
+    assert native["edges"] == [] and cert["identities"][0]["kind"] == "separable"; AD.check_adapter(q, q + ".evid", native, cert, res)
+    # impossible evidence is proved as Z = 0 by the checker's own replay
+    z = str(tmp_path / "z.uai"); write_uai(z, [2, 2], [((0,), ["1", "0"]), ((1,), ["1", "1"])], {0: 1}); m = U.read_model(z)
+    out = AD.adapt(m, U.read_evidence(z + ".evid")); assert out[0] == "INFEASIBLE"; _, zw = AD.prove_forced(m, U.read_evidence(z + ".evid")); assert zw is not None
+
+
+def test_rooted_proof_valid_for_aliased_queries_after_equality_contraction():
+    """Reviewer's false rejection: two d = 1 blocks [0,1] with weights [1,1] and [1,3], equality edge; both original queries map to one reduced
+    node and both marginals are 3/4; the rooted CERTIFIED result must be ACCEPTED; a request for two DISTINCT reduced nodes must still be rejected."""
+    obj = {"d": 1, "blocks": [{"id": 0, "rows": [0, 1], "weights": [1, 1]}, {"id": 1, "rows": [0, 1], "weights": [1, 3]}], "edges": [{"u": 0, "v": 1, "r": "1"}]}
+    res = api.solve(obj, "all", "1/100", {}); assert res["status"] == "CERTIFIED"
+    for q in ("0", "1"):
+        c = res["intervals"][q]["coordinates"][0]; assert Fr(int(c["lo"]), 1 << 80) <= Fr(3, 4) <= Fr(int(c["hi"]), 1 << 80)
+    ver = api.verify(obj, res); assert ver["accepted"], ver["reasons"][-2:]
+    assert res["proofs"][res["certificate"]["0"]["proof"]]["kind"] in ("forest_rooted", "forest_batched")
+    # distinct reduced nodes under one rooted proof: rejected
+    obj2 = {"d": 1, "blocks": [{"id": 0, "rows": [0, 1], "weights": [1, 1]}, {"id": 1, "rows": [0, 1], "weights": [1, 3]}, {"id": 2, "rows": [0, 1], "weights": [2, 1]}], "edges": [{"u": 0, "v": 1, "r": "1"}, {"u": 1, "v": 2, "r": "1/3"}]}
+    r1 = api.solve(obj2, [0], "1/100", {}); assert r1["proofs"][r1["certificate"]["0"]["proof"]]["kind"] == "forest_rooted" and api.verify(obj2, r1)["accepted"]
+    tam = json.loads(json.dumps(r1, default=str)); tam["requested_queries"] = [0, 2]; tam["statuses_per_query"]["2"] = "CERTIFIED"; tam["intervals"]["2"] = tam["intervals"]["0"]; tam["certificate"]["2"] = dict(tam["certificate"]["0"], node=2)
+    assert not api.verify(obj2, tam)["accepted"]
+
+
+def test_paid_attempt_preserved_when_timeout_follows_a_paid_candidate():
+    """Deterministic: a too-wide degree-0 approximate candidate is paid, then the deadline fires during the exact candidate. Both attempts
+    must remain in the record (the approximate one with its paid_s), followed by the terminal resource row."""
+    from cbi import plan as PL, generators as G
+    obj = G.chain(4, 12, 64, [Fr(1, 2)], 5, "c4"); orig_op = PL.prospective_op; orig_dl = PL.Planner.deadline; state = {"n": 0}
+    PL.prospective_op = lambda e, mu, mv, eps_edge, limits, surrogate_allowed=False: (("fourier", 0), {})
+    def dl(self):
+        # polls during the approximate candidate pass; the first poll AFTER the approximate attempt has been recorded (start of the exact
+        # candidate) times out
+        if any(a.get("candidate") == "approximate" and "met" in a for at in self.partial_attempts.values() for a in at):
+            raise PL.TimeLimit("injected timeout")
+    PL.Planner.deadline = dl
+    try:
+        res = api.solve(obj, "all", "1/1000000", {"degrees": [0]})
+    finally:
+        PL.prospective_op = orig_op; PL.Planner.deadline = orig_dl
+    att = res["plan"]["queries"]["0"]["trials"][0]["attempts"]; cands = [a for a in att if a.get("candidate")]
+    assert cands and cands[0]["candidate"] == "approximate" and cands[0]["met"] is False and cands[0]["paid_s"] > 0
+    assert any(a.get("candidate") == "exact" and a.get("status") == "RESOURCE_LIMIT" for a in cands) or att[-1]["status"] == "RESOURCE_LIMIT"
+    assert res["statuses_per_query"]["0"] == "RESOURCE_LIMIT"
+
+
+def test_libdai_driver_zero_evidence_witness():
+    """Observed X = 1 with unary [1,0] and a free Y: the sliced constant is ZERO (Z = 0); the driver must refuse (exit 5) instead of printing an
+    ordinary Y marginal; positive sliced constants still pass."""
+    import subprocess
+    drv = os.path.join(HERE, "bench", "libdai", "libdai_mar"); C = os.path.join(HERE, "bench", "controls")
+    if not os.path.exists(drv):
+        pytest.skip("libDAI driver not built")
+    r = subprocess.run([drv, os.path.join(C, "impossible_evidence.uai"), os.path.join(C, "impossible_evidence.uai.evid"), "/tmp/_ie.MAR", "/tmp/_ie.json", "JTREE[inference=SUMPROD,updates=HUGIN]"], capture_output=True, text=True)
+    assert r.returncode == 5 and json.load(open("/tmp/_ie.json"))["status"] == "ZERO_PARTITION"
+    r2 = subprocess.run([drv, os.path.join(C, "tiny_asym.uai"), os.path.join(C, "tiny_asym.uai.evid"), "/tmp/_ta.MAR", "/tmp/_ta.json", "JTREE[inference=SUMPROD,updates=HUGIN]"], capture_output=True, text=True)
+    assert r2.returncode == 0 and open("/tmp/_ta.MAR").read().startswith("MAR")
