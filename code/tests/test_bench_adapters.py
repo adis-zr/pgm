@@ -38,11 +38,16 @@ ADMISSIBLE = ([2, 2, 2, 2, 2],
               {4: 1})
 
 
+def _contract(path):
+    """the invocation contract of the primary task: every unobserved original variable"""
+    mm = U.read_model(path); e = U.read_evidence(path + ".evid"); return [v for v in range(mm.nvars) if v not in e]
+
+
 def solve_native(path, width="1/100"):
     m = U.read_model(path); ev = U.read_evidence(path + ".evid"); out = AD.adapt(m, ev)
     assert out[0] != "INFEASIBLE", out
     native, cert = out; res = api.solve(native, "all", width, {}); assert res["status"] in ("CERTIFIED", "VALID_BUT_TOO_WIDE"), res.get("reason")
-    assert api.verify(native, res)["accepted"]; AD.check_adapter(path, path + ".evid", native, cert, res)
+    assert api.verify(native, res)["accepted"]; AD.check_adapter(path, path + ".evid", native, cert, res, expected_queries=_contract(path))
     return m, ev, native, cert, res, AD.map_intervals(m, ev, cert, res)
 
 
@@ -121,20 +126,20 @@ def test_reference_pointer_and_certificate_tampering_rejected(tmp_path):
     p = str(tmp_path / "m.uai"); write_uai(p, *ADMISSIBLE); m, ev, native, cert, res, rows = solve_native(p)
     bad = copy.deepcopy(cert); bad["identities"][0]["factors"] = [bad["identities"][0]["factors"][0]] + [99]           # points at a nonexistent factor
     with pytest.raises(AssertionError):
-        AD.check_adapter(p, p + ".evid", native, bad, res)
+        AD.check_adapter(p, p + ".evid", native, bad, res, expected_queries=_contract(p))
     bad = copy.deepcopy(cert); bad["flip"] = {k: 1 - v for k, v in bad["flip"].items()}                              # wrong bijection
     with pytest.raises(AssertionError):
-        AD.check_adapter(p, p + ".evid", native, bad, res)
+        AD.check_adapter(p, p + ".evid", native, bad, res, expected_queries=_contract(p))
     bad = copy.deepcopy(native); bad["blocks"][0]["weights"] = [7, 1]                                                  # weights not the gauge product
     with pytest.raises(AssertionError):
-        AD.check_adapter(p, p + ".evid", bad, cert, res)
+        AD.check_adapter(p, p + ".evid", bad, cert, res, expected_queries=_contract(p))
     bad = copy.deepcopy(native); bad["edges"][0]["r"] = str(Fr(bad["edges"][0]["r"]) + Fr(1, 1000))                    # coupling changed
     with pytest.raises(AssertionError):
-        AD.check_adapter(p, p + ".evid", bad, cert, res)
+        AD.check_adapter(p, p + ".evid", bad, cert, res, expected_queries=_contract(p))
     # a different model file behind the same certificate (reference-pointer swap)
     q = str(tmp_path / "other.uai"); card, facs, e = ADMISSIBLE; write_uai(q, card, [facs[0]] + [((0, 1), ["3", "1", "1", "3"])] + facs[2:], e)
     with pytest.raises(AssertionError):
-        AD.check_adapter(q, q + ".evid", native, cert, res)
+        AD.check_adapter(q, q + ".evid", native, cert, res, expected_queries=_contract(q))
 
 
 def test_bif_conversion_roundtrip_and_verification_detects_axis_swap(tmp_path):
@@ -177,13 +182,13 @@ def test_checker_rejects_added_native_edge_and_invented_fixation(tmp_path):
     p = _xy(tmp_path); m = U.read_model(p); ev = {}; native, cert = AD.adapt(m, ev)
     bad = copy.deepcopy(native); bad["edges"].append({"u": 0, "v": 1, "r": "1/2"}); res = api.solve(bad, "all", "1/100", {})
     with pytest.raises(AssertionError, match="native edge set"):
-        AD.check_adapter(p, p + ".evid", bad, cert, res)
+        AD.check_adapter(p, p + ".evid", bad, cert, res, expected_queries=_contract(p))
     cert2 = copy.deepcopy(cert); cert2["fixed"] = {"0": 0}; cert2["free"] = [1]; cert2["flip"] = {"1": 0}; cert2["consumed"] = [c for c in cert2["consumed"] if c.get("var") != 0] + [{"factor": 0, "role": "constant", "value": "1", "fixed_at": {"0": 0}}]
     nat2 = {"d": 1, "bit_convention": native["bit_convention"], "blocks": [b for b in native["blocks"] if b["id"] == 1], "edges": [], "meta": native["meta"]}; res2 = api.solve(nat2, "all", "1/100", {})
     with pytest.raises(AssertionError, match="independently proved fixed set"):
-        AD.check_adapter(p, p + ".evid", nat2, cert2, res2)
+        AD.check_adapter(p, p + ".evid", nat2, cert2, res2, expected_queries=_contract(p))
     # the honest conversion still passes, and the published intervals contain 3/4
-    AD.check_adapter(p, p + ".evid", native, cert, api.solve(native, "all", "1/100", {})); rows = AD.map_intervals(m, ev, cert, api.solve(native, "all", "1/100", {}))
+    AD.check_adapter(p, p + ".evid", native, cert, api.solve(native, "all", "1/100", {}), expected_queries=_contract(p)); rows = AD.map_intervals(m, ev, cert, api.solve(native, "all", "1/100", {}))
     assert rows[0][1][0] <= Fr(3, 4) <= rows[0][1][1]
 
 
@@ -192,20 +197,20 @@ def test_checker_structural_rejections(tmp_path):
     def bad(mut, match):
         n2, c2 = copy.deepcopy(native), copy.deepcopy(cert); mut(n2, c2)
         with pytest.raises(AssertionError, match=match):
-            AD.check_adapter(p, p + ".evid", n2, c2, res)
+            AD.check_adapter(p, p + ".evid", n2, c2, res, expected_queries=_contract(p))
     bad(lambda n, c: n["edges"].append(dict(n["edges"][0])), "duplicate native edge")                                   # duplicate edge occurrence
     bad(lambda n, c: n["edges"].append({"u": n["edges"][0]["u"], "v": n["edges"][0]["u"], "r": "1/3"}), "invalid endpoints")   # self-loop
     bad(lambda n, c: n["blocks"].append(dict(n["blocks"][0])), "duplicates or mismatch")                                  # duplicate block
     bad(lambda n, c: n["blocks"][0].__setitem__("rows", [0, 2]), "rows")                                                   # state out of {0,1}
-    bad(lambda n, c: c["flip"].__setitem__(str(c["free"][0]), 2), "flip map")                                              # flip not a bit
+    bad(lambda n, c: c["flip"].__setitem__(str(c["free"][0]), 2), "flip of variable|flip map")                                              # flip not a bit
     bad(lambda n, c: n["edges"].pop(), "native edge set")                                                                  # missing interaction
     bad(lambda n, c: c["identities"].append(dict(c["identities"][0])), "covered exactly once|distinct ordered pairs")      # duplicated identity (caught by occurrence count or scope uniqueness)
     bad(lambda n, c: c["identities"][0]["factors"].append(c["identities"][0]["factors"][0]), "covered exactly once")        # duplicated factor occurrence
     bad(lambda n, c: c["fixed"].__setitem__("0", 1), "independently proved fixed set")                                    # invented fixation on a free var
     # result binding: a result for a different query set is rejected
     res2 = api.solve(native, [native["blocks"][0]["id"]], "1/100", {})
-    with pytest.raises(AssertionError, match="exactly the free variables"):
-        AD.check_adapter(p, p + ".evid", native, cert, res2)
+    with pytest.raises(AssertionError, match="requested set"):
+        AD.check_adapter(p, p + ".evid", native, cert, res2, expected_queries=_contract(p))
 
 
 def test_checker_honest_controls_evidence_forced_separable_duplicates_signed_ids(tmp_path):
@@ -215,12 +220,12 @@ def test_checker_honest_controls_evidence_forced_separable_duplicates_signed_ids
     # evidence + a forced state + duplicate occurrences of the same scope
     p = str(tmp_path / "h.uai"); write_uai(p, card, facs + [((1,), ["0", "1"]), ((0, 1), ["1", "1", "1", "1"])], {2: 0})
     m = U.read_model(p); ev = U.read_evidence(p + ".evid"); native, cert = AD.adapt(m, ev); res = api.solve(native, "all", "1/100", {})
-    chk = AD.check_adapter(p, p + ".evid", native, cert, res); assert chk["forced_states_proved"] >= 1 and chk["query_map_checked"]
+    chk = AD.check_adapter(p, p + ".evid", native, cert, res, expected_queries=_contract(p)); assert chk["forced_states_proved"] >= 1 and chk["query_map_checked"]
     proved, zw = AD.prove_forced(m, ev); assert zw is None and proved == {int(k): v for k, v in cert["fixed"].items()}
     Z, tr = brute(p); rows = AD.map_intervals(m, ev, cert, res); assert all(rows[v][s][0] <= tr[v][s] <= rows[v][s][1] for v in range(5) for s in range(2))
     # separable pair (cross-ratio 1) absorbed as unaries; no edge
     q = str(tmp_path / "s.uai"); write_uai(q, [2, 2], [((0, 1), ["1", "2", "3", "6"]), ((1,), ["1", "1"])], {}); m = U.read_model(q); native, cert = AD.adapt(m, {}); res = api.solve(native, "all", "1/100", {})
-    assert native["edges"] == [] and cert["identities"][0]["kind"] == "separable"; AD.check_adapter(q, q + ".evid", native, cert, res)
+    assert native["edges"] == [] and cert["identities"][0]["kind"] == "separable"; AD.check_adapter(q, q + ".evid", native, cert, res, expected_queries=_contract(q))
     # impossible evidence is proved as Z = 0 by the checker's own replay
     z = str(tmp_path / "z.uai"); write_uai(z, [2, 2], [((0,), ["1", "0"]), ((1,), ["1", "1"])], {0: 1}); m = U.read_model(z)
     out = AD.adapt(m, U.read_evidence(z + ".evid")); assert out[0] == "INFEASIBLE"; _, zw = AD.prove_forced(m, U.read_evidence(z + ".evid")); assert zw is not None
@@ -275,3 +280,106 @@ def test_libdai_driver_zero_evidence_witness():
     assert r.returncode == 5 and json.load(open("/tmp/_ie.json"))["status"] == "ZERO_PARTITION"
     r2 = subprocess.run([drv, os.path.join(C, "tiny_asym.uai"), os.path.join(C, "tiny_asym.uai.evid"), "/tmp/_ta.MAR", "/tmp/_ta.json", "JTREE[inference=SUMPROD,updates=HUGIN]"], capture_output=True, text=True)
     assert r2.returncode == 0 and open("/tmp/_ta.MAR").read().startswith("MAR")
+
+
+# ------------------------------------------------------------- review of the r2 package (7 Nov 2026): canonical fixed states, contract binding, harness identity
+def test_fixed_state_value_variants_one_interpretation(tmp_path):
+    """X with unary [0,1] is FORCED to state 1 (P(X=1) = 1); Y [1,3]. The honest integer certificate passes; string / float / fraction / bool /
+    out-of-range / wrong-state variants are rejected by the checker AND refused by the publication mapper (one canonical interpretation)."""
+    p = str(tmp_path / "f.uai"); write_uai(p, [2, 2], [((0,), ["0", "1"]), ((1,), ["1", "3"])], {})
+    m = U.read_model(p); native, cert = AD.adapt(m, {}); res = api.solve(native, "all", "1/100", {}); contract = [0, 1]
+    assert cert["fixed"] == {"0": 1}
+    AD.check_adapter(p, p + ".evid", native, cert, res, expected_queries=contract); rows = AD.map_intervals(m, {}, cert, res); assert rows[0] == [[Fr(0), Fr(0)], [Fr(1), Fr(1)]]
+    for bad in ("1", 1.0, "1/1", True, 2, -1, "0", 0):
+        c2 = copy.deepcopy(cert); c2["fixed"]["0"] = bad
+        with pytest.raises(AssertionError):
+            AD.check_adapter(p, p + ".evid", native, c2, res, expected_queries=contract)
+        if bad != 0:
+            with pytest.raises(AD.BadCertificate):
+                AD.map_intervals(m, {}, c2, res)
+    # the two original exploits still rejected under the contract interface
+    q = str(tmp_path / "xy.uai"); write_uai(q, [2, 2], [((0,), ["1", "3"]), ((1,), ["1", "3"])], {}); m2 = U.read_model(q); n2, c2 = AD.adapt(m2, {})
+    bad = copy.deepcopy(n2); bad["edges"].append({"u": 0, "v": 1, "r": "1/2"})
+    with pytest.raises(AssertionError, match="native edge set"):
+        AD.check_adapter(q, q + ".evid", bad, c2, api.solve(bad, "all", "1/100", {}), expected_queries=[0, 1])
+    c3 = copy.deepcopy(c2); c3["fixed"] = {"0": 0}; c3["free"] = [1]; c3["flip"] = {"1": 0}; c3["consumed"] = [c for c in c3["consumed"] if c.get("var") != 0] + [{"factor": 0, "role": "constant", "value": "1", "fixed_at": {"0": 0}}]
+    n3 = {"d": 1, "bit_convention": n2["bit_convention"], "blocks": [b for b in n2["blocks"] if b["id"] == 1], "edges": [], "meta": n2["meta"]}
+    with pytest.raises(AssertionError, match="proved fixed set"):
+        AD.check_adapter(q, q + ".evid", n3, c3, api.solve(n3, "all", "1/100", {}), expected_queries=[0, 1])
+
+
+def test_contract_binding_subset_and_mismatch(tmp_path):
+    """The caller binds the expected query set: a prescribed single query is accepted when the native result was requested for exactly it; a
+    native result for a different set (producer choosing the task) is rejected; a contract naming a proved-fixed variable validates its point row."""
+    p = str(tmp_path / "m.uai"); write_uai(p, *ADMISSIBLE); m = U.read_model(p); ev = U.read_evidence(p + ".evid"); native, cert = AD.adapt(m, ev)
+    free = list(cert["free"]); v = free[1]
+    r1 = api.solve(native, [v], "1/100", {}); AD.check_adapter(p, p + ".evid", native, cert, r1, expected_queries=[v])
+    with pytest.raises(AssertionError, match="requested set"):
+        AD.check_adapter(p, p + ".evid", native, cert, r1, expected_queries=free)                 # contract = all, result = one
+    rall = api.solve(native, "all", "1/100", {})
+    with pytest.raises(AssertionError, match="requested set"):
+        AD.check_adapter(p, p + ".evid", native, cert, rall, expected_queries=[v])                # contract = one, result = all
+    with pytest.raises(AssertionError, match="caller must supply"):
+        AD.check_adapter(p, p + ".evid", native, cert, rall)
+    # a forced variable in the contract: its published row must be the point mass at the PROVED state
+    q = str(tmp_path / "f.uai"); write_uai(q, [2, 2], [((0,), ["0", "1"]), ((1,), ["1", "3"])], {}); m2 = U.read_model(q); n2, c2 = AD.adapt(m2, {}); r2 = api.solve(n2, "all", "1/100", {})
+    out = AD.check_adapter(q, q + ".evid", n2, c2, r2, expected_queries=[0, 1]); assert out["contract_queries"] == 2 and out["contract_queries_native"] == 1
+
+
+def test_harness_identity_reuse_rules(tmp_path):
+    """Metadata-only control of bench/campaign.freeze / reconcile (no solver runs): legitimate reuse; changed model / evidence / config / query
+    scope / budget never inherit; a changed-then-unchanged code history never inherits across the changed transition; a same-code input
+    revision preserves the prior manifest."""
+    import shutil
+    from bench import campaign as C
+    S0 = "/Users/adis/Workspace/pgm/code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06"; S = str(tmp_path / "S"); os.makedirs(S)
+    for f in ("PANEL_SELECTION.json", "INVENTORY.json"):
+        shutil.copy(os.path.join(S0, f), S)
+    os.makedirs(os.path.join(S, "inputs")); 
+    for f in os.listdir(os.path.join(S0, "inputs")):
+        shutil.copy(os.path.join(S0, "inputs", f), os.path.join(S, "inputs", f))
+    C.freeze(S); man = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json")))
+    asia = next(c for c in man["cells"] if c["case"] == "ASIA" and c["arm"] == "EXACT" and c["stage"] == "breadth")
+    # a primary row for ASIA/EXACT under the current code
+    open(os.path.join(S, "CELLS_LEDGER.jsonl"), "w").write(json.dumps({**{k: asia[k] for k in ("cell_id", "stage", "case", "family", "arm", "budget_s", "anchor")}, "label": None, "status": "COMPLETE", "supervisor_wall_s": 1.0, "code_hash": man["code_hash"]}) + "\n")
+    # (1) legitimate reuse: same code, re-freeze -> own row
+    C.freeze(S); C.reconcile(S); rc = json.load(open(os.path.join(S, "RECONCILIATION.json")))
+    assert any(x["case"] == "ASIA" and x["arm"] == "EXACT" and x["relation"] == "own" for x in rc["cells"])
+    # (2) changed MODEL content (same names): metadata-only hash change in INVENTORY -> new task_id, predecessor NOT reusable
+    inv = json.load(open(os.path.join(S, "INVENTORY.json")))
+    for c in inv["cases"]:
+        if c["case"] == "ASIA":
+            c["canonical_model_sha256"] = "0" * 64; c["raw_model_sha256"] = C.sha_file(os.path.join(S, c["committed_model_path"]))
+    json.dump(inv, open(os.path.join(S, "INVENTORY.json"), "w"))
+    C.freeze(S); man2 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); a2 = next(c for c in man2["cells"] if c["case"] == "ASIA" and c["arm"] == "EXACT" and c["stage"] == "breadth")
+    assert a2["cell_id"] != asia["cell_id"] and a2["task_id"] != asia["task_id"] and not a2.get("predecessor_chain")
+    C.reconcile(S); rc = json.load(open(os.path.join(S, "RECONCILIATION.json"))); assert any(u["case"] == "ASIA" and u["arm"] == "EXACT" for u in rc["unsatisfied"])
+    assert len([f for f in os.listdir(S) if f.startswith("CAMPAIGN_MANIFEST_prior_")]) >= 2       # same-code input revision preserved the prior manifest
+    # (3) changed-then-unchanged code history: simulate a prior manifest whose code hash differs and whose transition declared EXACT changed
+    man3 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); man3["code_hash"] = "deadbeef" * 8; man3["frozen_utc"] = "2000-01-01T00:00:00Z"
+    for c in man3["cells"]:
+        c["cell_id"] = "old_" + c["task_id"][:12]
+    json.dump(man3, open(os.path.join(S, "CAMPAIGN_MANIFEST_prior_deadbeef_old.json"), "w"))
+    cur = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); cur["code_hash_history"] = [{"code_hash": "deadbeef" * 8, "frozen_utc": "2000-01-01T00:00:00Z", "transition_to": cur["code_hash"], "amendment": {"name": "changed", "arms_with_changed_numerical_semantics": ["EXACT"]}}]
+    json.dump(cur, open(os.path.join(S, "CAMPAIGN_MANIFEST.json"), "w"))
+    old_row = {**{k: a2[k] for k in ("stage", "case", "family", "arm", "budget_s", "anchor")}, "cell_id": "old_" + a2["task_id"][:12], "label": None, "status": "COMPLETE", "supervisor_wall_s": 1.0, "code_hash": "deadbeef" * 8}
+    open(os.path.join(S, "CELLS_LEDGER.jsonl"), "a").write(json.dumps(old_row) + "\n")
+    C.freeze(S); man4 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); a4 = next(c for c in man4["cells"] if c["case"] == "ASIA" and c["arm"] == "EXACT" and c["stage"] == "breadth")
+    preds = {p["cell_id"]: p for p in a4.get("predecessors", [])}
+    assert "old_" + a2["task_id"][:12] in preds and preds["old_" + a2["task_id"][:12]]["reusable"] is False and "changed EXACT" in preds["old_" + a2["task_id"][:12]]["why"]
+    # the same old row for an arm whose semantics were declared unchanged (LBP) IS reusable
+    l4 = next(c for c in man4["cells"] if c["case"] == "ASIA" and c["arm"] == "LBP" and c["stage"] == "breadth")
+    assert all(p["reusable"] for p in l4.get("predecessors", []) if p["code_hash"] == "deadbeef" * 8)
+    # (4) changed EVIDENCE, changed CONFIGURATION, changed BUDGET / query scope each give a different task_id -> no predecessor
+    base_t = next(c for c in man4["cells"] if c["case"] == "CHILD" and c["arm"] == "LBP" and c["stage"] == "breadth")
+    inv = json.load(open(os.path.join(S, "INVENTORY.json")))
+    for c in inv["cases"]:
+        if c["case"] == "CHILD":
+            c["canonical_evidence_sha256"] = "1" * 64
+    json.dump(inv, open(os.path.join(S, "INVENTORY.json"), "w")); C.freeze(S); m5 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json")))
+    t5 = next(c for c in m5["cells"] if c["case"] == "CHILD" and c["arm"] == "LBP" and c["stage"] == "breadth"); assert t5["task_id"] != base_t["task_id"] and not t5.get("predecessor_chain")
+    C.freeze(S, cfg_override={"width": "1/50", "cbi_limits": {}, "pgmax_iters": 200, "pgmax_damping": 0.5}); m6 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json")))
+    t6 = next(c for c in m6["cells"] if c["case"] == "ALARM" and c["arm"] == "LBP" and c["stage"] == "breadth"); t6b = next(c for c in m4["cells"] if c["case"] == "ALARM" and c["arm"] == "LBP" and c["stage"] == "breadth") if False else next(c for c in man4["cells"] if c["case"] == "ALARM" and c["arm"] == "LBP" and c["stage"] == "breadth")
+    assert t6["task_id"] != t6b["task_id"] and not t6.get("predecessor_chain")
+    d4 = next(c for c in man4["cells"] if c["case"] == "ASIA" and c["arm"] == "LBP" and c["stage"] == "depth"); b4 = next(c for c in man4["cells"] if c["case"] == "ASIA" and c["arm"] == "LBP" and c["stage"] == "breadth")
+    assert d4["task_id"] != b4["task_id"]                                                               # budget is part of the task

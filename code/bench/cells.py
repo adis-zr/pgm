@@ -116,11 +116,15 @@ def cell_cbi(mp, ep, out, deadline, cfg, rec, snaps):
         rec["status"] = "INFEASIBLE_CERTIFIED"; return
     t = now(); ver = api.verify(native, result); rec["phases_s"]["verify"] = now() - t; rec["verify_accepted"] = bool(ver["accepted"]); rec["verify_reasons_tail"] = ver["reasons"][-2:]
     t = now()
+    contract = [sq] if sq is not None else [v for v in range(m.nvars) if v not in ev]        # the invocation contract, independent of the producer
     try:
-        chk = AD.check_adapter(mp, ep, native, cert, result); rec["adapter_check"] = chk; rec["adapter_check_accepted"] = True
-    except AssertionError as ex:
+        chk = AD.check_adapter(mp, ep, native, cert, result, expected_queries=contract); rec["adapter_check"] = chk; rec["adapter_check_accepted"] = True
+    except (AssertionError, AD.BadCertificate) as ex:
         rec["adapter_check"] = {"error": str(ex)}; rec["adapter_check_accepted"] = False
-    rows = AD.map_intervals(m, ev, cert, result)
+    try:
+        rows = AD.map_intervals(m, ev, cert, result)
+    except AD.BadCertificate as ex:
+        rec["status"] = "CHECK_FAILED"; rec["reason"] = "publication refused: %s" % ex; rec["phases_s"]["serialize"] = 0.0; return
     iv_out = []; pts = []; wmax = Fr(0); covered = 0
     for v in range(m.nvars):
         r = rows[v]
@@ -160,7 +164,34 @@ def collections_counter(it):
 
 
 # ------------------------------------------------------------------ MDI_EXISTING (pinned accepted engine; selector policy)
+def cell_mdi_single(mp, ep, out, deadline, cfg, rec, snaps, var):
+    """GENUINE native single-query interface of the engine: mdi.pipeline.solve(queries={var}) with the selector policy (the arm wrapper
+    mdi.arm.run_arm fixes queries = all free variables, so this diagnostic calls the pipeline directly and records that difference)."""
+    from mdi import model as MM, pipeline as PLN, config as K
+    rec["phases_s"]["startup_imports"] = now(); t = now()
+    m = MM.read_uai(mp); ev = MM.read_evidence(ep, m); r = MM.restrict(m, ev); rec["phases_s"]["parse"] = now() - t
+    rec["single_query_var"] = var; rec["query_interface"] = "native: mdi.pipeline.solve(queries={var}); wrapper differs from run_arm (no arm record / receipt files)"
+    if var in ev:
+        rec["status"] = "SINGLE_QUERY_VARIABLE_OBSERVED"; rec["reason"] = "probe variable is observed"; return
+    wall = max(0.1, deadline - now() - 0.3); t = now()
+    res = PLN.solve(m, ev, queries={var}, max_width=Fr(cfg.get("width", "1/100")), wall_s=wall, cap_bytes=8 * (1 << 30), research_enabled=False, route_policy="selector", plan_dir=os.path.join(out, "plans_single"))
+    rec["phases_s"]["solve"] = now() - t; rec["mdi_outcome"] = res.status; rec["reason"] = res.reason; rec["mdi_stages"] = res.stages
+    pl = res.plan if isinstance(res.plan, dict) else {}; rec["route"] = {"chosen": pl.get("chosen"), "executed_kind": pl.get("executed_kind"), "selector_executed_route": ((pl.get("selector") or {}).get("executed_route") if isinstance(pl.get("selector"), dict) else None)}
+    rec["effective_limits"] = {"wall_s": wall, "cap_bytes": 8 * (1 << 30), "width": str(Fr(cfg.get("width", "1/100")))}
+    if res.status in ("CERTIFIED_RESEARCH_ROUTE", "CERTIFIED_FALLBACK_ONLY") and res.intervals and var in res.intervals:
+        t = now(); rows = res.intervals[var]; w = max(Fr(hi) - Fr(lo) for lo, hi in rows)
+        rec["single_query"] = {"var": var, "intervals": [[str(lo), str(hi)] for lo, hi in rows], "max_width": str(w), "width_met": bool(w <= Fr(cfg.get("width", "1/100"))), "independently_verified": bool(res.properties.get("independently_verified"))}
+        json.dump({"var": var, "intervals": [[str(lo), str(hi)] for lo, hi in rows]}, open(os.path.join(out, "single_query_intervals.json"), "w"))
+        rec["status"] = ("CERTIFIED" if rec["single_query"]["width_met"] else "VALID_BUT_TOO_WIDE") + "_SINGLE_QUERY"; rec["t_first_verified_width_met_s"] = now() if rec["single_query"]["width_met"] else None; rec["phases_s"]["serialize"] = now() - t
+    elif res.status == "ZERO_EVIDENCE_PROVED":
+        rec["status"] = "INFEASIBLE_CERTIFIED"
+    else:
+        rec["status"] = {"RESOURCE_STOP": "RESOURCE_LIMIT", "PRICE_REFUSAL": "RESOURCE_LIMIT", "NUMERICAL_REFUSAL": "ENGINE_REFUSED_PREPROCESSING"}.get(res.status, "UNSUPPORTED_" + str(res.status)); rec["failure_primary"] = str(res.status) + ": " + str(res.reason)[:200]
+
+
 def cell_mdi(mp, ep, out, deadline, cfg, rec, snaps):
+    if cfg.get("single_query_var") is not None:
+        return cell_mdi_single(mp, ep, out, deadline, cfg, rec, snaps, int(cfg["single_query_var"]))
     from mdi import arm as ARM, config as K
     rec["phases_s"]["startup_imports"] = now()
     wall = max(0.1, deadline - now() - 0.3); label = "case"
@@ -208,6 +239,19 @@ def cell_mdi(mp, ep, out, deadline, cfg, rec, snaps):
 
 
 # ------------------------------------------------------------------ external arms
+def extract_single(out, rec, cfg, card):
+    """FAMILY C for arms without a native single-variable interface: the complete MAR output is produced by the same algorithm and the
+    requested variable's row is extracted afterwards; the ENTIRE cost is the cell's; labelled as such."""
+    var = cfg.get("single_query_var")
+    if var is None or not os.path.exists(os.path.join(out, "output.MAR")):
+        return
+    from ext import uai as U
+    t = now(); rows, _ = U.read_mar(os.path.join(out, "output.MAR")); var = int(var)
+    rec["single_query_var"] = var; rec["query_interface"] = "complete MAR followed by extraction (no native single-query path in this arm's interface); entire cost charged"
+    rec["single_query"] = {"var": var, "row": [str(x) for x in rows[var]] if var < len(rows) else None}; rec["phases_s"]["extract_single"] = now() - t
+    json.dump(rec["single_query"], open(os.path.join(out, "single_query_row.json"), "w"))
+
+
 def _run(cmd, out, name, timeout, env=None):
     t = now(); log = open(os.path.join(out, name + ".log"), "ab")
     e = dict(os.environ); e.update({"OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "VECLIB_MAXIMUM_THREADS": "1"}); e.update(env or {})
@@ -226,6 +270,7 @@ def cell_libdai(mp, ep, out, deadline, cfg, rec, snaps, alg_template):
     remaining = deadline - now() - 0.3
     alg = alg_template.replace("{maxtime}", "%.3f" % max(0.1, remaining - 0.5))
     rec["effective_limits"] = {"algorithm": alg, "cooperative_maxtime_s": (max(0.1, remaining - 0.5) if "{maxtime}" in alg_template else None), "maxmem_bytes": (8 << 30) if "maxmem" in alg else None}
+    rec["progress_hooks"] = "none: the libDAI driver writes its output once at the end (BP maxtime makes a timeout return the current beliefs, flagged unconverged); a kill before that leaves no partial output -- recorded as not instrumented"
     r = _run([LIBDAI, mp, ep, os.path.join(out, "output.MAR.tmp"), os.path.join(out, "side.json"), alg], out, "libdai", remaining)
     rec["runs"] = [r]
     if r["returncode"] == 0 and os.path.exists(os.path.join(out, "output.MAR.tmp")):
@@ -233,6 +278,7 @@ def cell_libdai(mp, ep, out, deadline, cfg, rec, snaps, alg_template):
         side = json.load(open(os.path.join(out, "side.json"))); rec["solver_side"] = side; rec["phases_s"].update({"parse": side["phases_s"]["parse"], "convert": side["phases_s"]["clamp_build"], "plan": side["phases_s"]["construct"], "solve": side["phases_s"]["run"], "serialize": side["phases_s"]["serialize"]})
         rows, faults = validate_mar(os.path.join(out, "output.MAR"), card, ev); rec["output_faults"] = faults; rec["output_bytes"] = os.path.getsize(os.path.join(out, "output.MAR"))
         rec["status"] = ("COMPLETE" if side.get("converged", True) else "COMPLETE_UNCONVERGED") if rows is not None else "INVALID_OUTPUT"
+        extract_single(out, rec, cfg, card)
         if "JTREE" in alg:
             rec["reference_class_candidate"] = "R1 (exact algorithm, binary64)"
     elif r["timed_out"]:
@@ -277,7 +323,7 @@ def cell_merlin_ladder(mp, ep, out, deadline, cfg, rec, snaps, algorithm, ladder
         if r.get("exact_by_ibound"):
             break                                                    # the ladder is exhausted once the bound makes inference exact
     if last is not None:
-        rec["status"] = "COMPLETE"; rec["final_ibound"] = last; rec["output_bytes"] = os.path.getsize(os.path.join(out, "output.MAR"))
+        rec["status"] = "COMPLETE"; rec["final_ibound"] = last; rec["output_bytes"] = os.path.getsize(os.path.join(out, "output.MAR")); extract_single(out, rec, cfg, card)
         rec["exact_by_ibound"] = any(r.get("exact_by_ibound") for r in rec["runs"] if r.get("ibound") == last)
         if rec["exact_by_ibound"]:
             rec["reference_class_candidate"] = "R1 (mini-bucket bound >= induced width: exact elimination, binary64)"
@@ -317,7 +363,7 @@ def cell_pgmax(mp, ep, out, deadline, cfg, rec, snaps):
         os.replace(os.path.join(out, "output.MAR.tmp"), os.path.join(out, "output.MAR")); snaps.publish(os.path.join(out, "output.MAR")); rec["t_first_complete_output_s"] = now()
         side = json.load(open(os.path.join(out, "side.json"))); rec["solver_side"] = side; rec["phases_s"].update(side.get("phases_s", {}))
         rows, faults = validate_mar(os.path.join(out, "output.MAR"), card, ev); rec["output_faults"] = faults; rec["output_bytes"] = os.path.getsize(os.path.join(out, "output.MAR"))
-        rec["status"] = "COMPLETE" if rows is not None else "INVALID_OUTPUT"
+        rec["status"] = "COMPLETE" if rows is not None else "INVALID_OUTPUT"; extract_single(out, rec, cfg, card)
     elif r["timed_out"]:
         rec["status"] = "TIMEOUT"; rec["censored"] = True
     else:
@@ -343,6 +389,16 @@ def main():
     os.makedirs(out, exist_ok=True)
     rec = {"arm": arm, "model": mp, "evidence": ep, "deadline_s": deadline, "phases_s": {}, "status": None, "pid": os.getpid(), "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     snaps = Snapshots(out, CHECKPOINTS.get(deadline, [1.0, 5.0, deadline]))
+    # PROGRESS HOOK (diagnostic campaign, 7 Nov 2026): every 0.5 s the partial record is flushed atomically to progress.json so a supervisor kill
+    # leaves the last known phase; numerical algorithms, settings and stopping rules are untouched (overhead measured on the fixed controls)
+    def _flush():
+        while not snaps.stop:
+            try:
+                atomic_write(os.path.join(out, "progress.json"), json.dumps({"t_s": now(), "phases_s": rec.get("phases_s"), "status": rec.get("status"), "runs": len(rec.get("runs") or [])}, default=str))
+            except Exception:
+                pass
+            time.sleep(0.5)
+    threading.Thread(target=_flush, daemon=True).start()
     try:
         fn = ARMS.get(arm)
         if fn is None:

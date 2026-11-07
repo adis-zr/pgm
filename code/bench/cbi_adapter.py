@@ -200,9 +200,53 @@ def adapt(model: U.Model, ev: dict):
     return native, cert
 
 
+_ID_RE = __import__("re").compile(r"0|[1-9][0-9]*")
+
+
+class BadCertificate(ValueError):
+    pass
+
+
+def canonical_fixed(cert, model):
+    """The ONE validated interpretation of cert['fixed'] used by BOTH the checker and the publication mapper (review of 7 Nov 2026, third
+    witness: a JSON string "1" was accepted by the checker as 1 and compared as a string by the mapper). Contract: keys are canonical decimal
+    variable ids (no leading zeros, no aliases), values are JSON INTEGERS (bool, str, float, fraction rejected), in the variable's state range."""
+    fx = cert.get("fixed")
+    if not isinstance(fx, dict):
+        raise BadCertificate("fixed must be a JSON object")
+    out = {}
+    for k, v in fx.items():
+        if not isinstance(k, str) or not _ID_RE.fullmatch(k):
+            raise BadCertificate("fixed key %r is not a canonical variable id" % (k,))
+        vi = int(k)
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise BadCertificate("fixed state of variable %d is %r (%s), not a JSON integer" % (vi, v, type(v).__name__))
+        if not (0 <= vi < model.nvars) or not (0 <= v < model.card[vi]):
+            raise BadCertificate("fixed state %r of variable %d is out of range" % (v, vi))
+        out[vi] = v
+    return out
+
+
+def canonical_flip(cert, model, free):
+    fl = cert.get("flip")
+    if not isinstance(fl, dict):
+        raise BadCertificate("flip must be a JSON object")
+    out = {}
+    for k, v in fl.items():
+        if not isinstance(k, str) or not _ID_RE.fullmatch(k):
+            raise BadCertificate("flip key %r is not a canonical variable id" % (k,))
+        if isinstance(v, bool) or not isinstance(v, int) or v not in (0, 1):
+            raise BadCertificate("flip of variable %s is %r, not the integer 0 or 1" % (k, v))
+        out[int(k)] = v
+    if sorted(out) != sorted(free):
+        raise BadCertificate("flip map does not cover exactly the free variables")
+    return out
+
+
 def map_intervals(model, ev, cert, result):
-    """Original-variable MAR intervals from the CBI result: rows per original variable, [lo, hi] per original state (Fractions)."""
-    Q = 1 << result["grid_bits"]; fixed = {int(k): v for k, v in cert["fixed"].items()}; flip = {int(k): v for k, v in cert["flip"].items()}
+    """Original-variable MAR intervals from the CBI result: rows per original variable, [lo, hi] per original state (Fractions). Uses the SAME
+    canonical fixed / flip interpretation as the checker; a malformed certificate raises (never a silently wrong row)."""
+    Q = 1 << result["grid_bits"]; free = [int(v) for v in cert["free"]]; fixed = canonical_fixed(cert, model); flip = canonical_flip(cert, model, free)
     rows = {}
     for v in range(model.nvars):
         if v in fixed:
@@ -259,17 +303,20 @@ def prove_forced(m, ev):
     return fixed, zero_constant()
 
 
-def check_adapter(model_path, evid_path, native, cert, result=None):
+def check_adapter(model_path, evid_path, native, cert, result=None, expected_queries=None):
     """Re-derives the global weight identity from the RAW files: W_external(x, e) = const * W_native(T(x)) over all allowed assignments, as a
     product of checked LOCAL identities, plus the bijection T (bit flips, PROVED fixed variables) and the query mapping. Nothing declared by the
     producer is taken as a premise: fixed states are re-proved (prove_forced), the native edge list must correspond EXACTLY (as a list, with
     multiplicities) to the non-separable merged pairwise scopes, blocks must be exactly the free variables with valid rows / weights, flips
     must be bits, and every original factor occurrence must be consumed exactly once. Raises AssertionError on the first failure."""
     m = U.read_model(model_path); ev = U.read_evidence(evid_path)
-    # --- declared structure must be well-formed before anything is trusted
-    assert isinstance(cert.get("fixed"), dict) and isinstance(cert.get("flip"), dict) and isinstance(cert.get("free"), list), "certificate structure"
-    fixed = {int(k): int(v) for k, v in cert["fixed"].items()}; flip = {int(k): int(v) for k, v in cert["flip"].items()}; free = [int(v) for v in cert["free"]]
-    assert all(0 <= v < m.nvars and 0 <= s < m.card[v] for v, s in fixed.items()), "a fixed state is out of range"
+    # --- declared structure must be well-formed before anything is trusted; ONE canonical interpretation shared with map_intervals
+    assert isinstance(cert.get("free"), list) and all(isinstance(v, int) and not isinstance(v, bool) for v in cert["free"]), "free must be a list of integer ids"
+    free = [int(v) for v in cert["free"]]
+    try:
+        fixed = canonical_fixed(cert, m); flip = canonical_flip(cert, m, free)
+    except BadCertificate as ex:
+        raise AssertionError("certificate not canonical: %s" % ex)
     assert all(ev[k] == fixed.get(k) for k in ev), "evidence not contained in the fixed set"
     # --- FORCED states are PROVED from the raw factors, never read from the certificate
     proved, zw = prove_forced(m, ev)
@@ -277,7 +324,6 @@ def check_adapter(model_path, evid_path, native, cert, result=None):
     assert fixed == proved, "declared fixed set %s differs from the independently proved fixed set %s" % (sorted(fixed.items()), sorted(proved.items()))
     assert sorted(free) == sorted(v for v in range(m.nvars) if v not in fixed) and len(set(free)) == len(free), "free set is not the complement of the fixed set"
     assert all(m.card[v] == 2 for v in free), "a free variable is not binary"
-    assert sorted(flip) == sorted(free) and all(x in (0, 1) for x in flip.values()), "flip map must assign a bit to exactly the free variables"
     # --- native blocks: exactly the free variables, unique, rows a nonempty subset of {0,1}, positive integer weights
     assert native.get("d") == 1, "native d must be 1 for this adapter"
     ids = [b["id"] for b in native["blocks"]]; assert len(ids) == len(set(ids)) and sorted(ids) == sorted(free), "blocks are not exactly the free variables (duplicates or mismatch)"
@@ -363,16 +409,22 @@ def check_adapter(model_path, evid_path, native, cert, result=None):
         assert len(ws) == len(bw) and all(ws[k] * bw[0] == ws[0] * bw[k] for k in range(len(ws))), "block %d weights are not proportional to the unary product" % v
     out = {"factors_checked": len(m.factors), "pairs_checked": len(pairs), "free": len(free), "fixed": len(fixed), "forced_states_proved": len(fixed) - len(ev), "native_edges": len(raw_edges)}
     if result is not None:
-        # query BINDING: the native result must be for exactly the free variables (external ids), and the published per-original-state
-        # intervals must be the flip-mapped CBI coordinate intervals; fixed variables are point masses
-        assert sorted(int(q) for q in result.get("requested_queries", [])) == sorted(free), "native result was not requested for exactly the free variables"
+        # query BINDING to the INVOCATION CONTRACT supplied by the caller (primary MAR: every unobserved original variable; a diagnostic: the
+        # prescribed variable set). The producer's own requested set is checked against it, never used to define the task.
+        assert expected_queries is not None, "the caller must supply the expected original query set (the invocation contract)"
+        exp = sorted(set(int(q) for q in expected_queries)); assert all(0 <= q < m.nvars for q in exp), "expected query out of range"
+        assert all(q not in ev for q in exp), "an expected query is an observed variable"
+        exp_free = [q for q in exp if q in set(free)]                           # expected variables that are fixed by proof have no native query
+        assert sorted(int(q) for q in result.get("requested_queries", [])) == exp_free, "native result's requested set %s is not the contract's free part %s" % (sorted(result.get("requested_queries", [])), exp_free)
         assert (result.get("id_map") or {}).get("external_ids") == sorted(free), "native id map is not the free-variable list"
+        assert all(str(q) in result.get("intervals", {}) for q in exp_free), "a contracted query has no published interval"
         rows = map_intervals(m, ev, cert, result); Q = 1 << result["grid_bits"]
-        for v in free:
-            if str(v) not in result["intervals"]:
-                continue
+        for v in exp_free:
             c = result["intervals"][str(v)]["coordinates"][0]; l, u = Fr(int(c["lo"]), Q), Fr(int(c["hi"]), Q)
             exp1 = [l, u] if flip[v] == 0 else [1 - u, 1 - l]
             assert rows[v][1] == exp1 and rows[v][0] == [1 - exp1[1], 1 - exp1[0]], "query map for variable %d" % v
-        out["query_map_checked"] = True
+        for v in exp:
+            if v in fixed:                                                      # fixed-variable OUTPUT rows validated against the PROVED state
+                assert rows[v] == [[Fr(1 if s == fixed[v] else 0)] * 2 for s in range(m.card[v])], "fixed variable %d: published row is not the point mass at its proved state %d" % (v, fixed[v])
+        out["query_map_checked"] = True; out["contract_queries"] = len(exp); out["contract_queries_native"] = len(exp_free)
     return out
