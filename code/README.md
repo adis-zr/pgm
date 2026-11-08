@@ -46,3 +46,26 @@ Fresh positive-real implementation of `docs/normalization-free-diagnostic-v1/CLA
 checks), `nf/validate.py` + `tests/test_nf_small.py` (fixtures vs 256-bit enumeration, rejection suite), `nf/run.py` (driver: stages A/B/C, external
 deadlines, durable records), `nf/report.py`, `nf/replay.py`, `nf/closeout.py`. Outcome in `runs/nf_diag_2026-10-26/REPORT.md`:
 **OLD_CHEAP_ALREADY_SUFFICIENT** (both cheap certificates pass at width 1/100; Stage C not run). Reproduce: `runs/nf_diag_2026-10-26/REPRODUCE.md`.
+
+## AGGREGATE_DP_V1 (7–8 November 2026) — `adp/`, branch `aggregate-dp-2026-11-07`
+
+Implements the overseer's decision `AGGREGATE_DP_DESIGN_AND_EVIDENCE_2026-11-07/algorithm_design/ALGORITHM_DECISION.txt` (packet sha256
+0423e3db…): ONE lazy sum-product bucket-elimination program over the exactly reduced model, source-certified response views (class maps +
+exact scales per axis, intersected and multiplied inductively; never inferred from evaluated values), three execution formats of the same
+recurrence (dense streamed blocks / native sparse complete-support rows / lazy per-entry conditioning with a bounded memo), a shared
+division-free backward pass returning every marker derivative, and an INDEPENDENT checker. New code only; the accepted `mdi/` pins are
+read-only (reused: `mdi.model` exact parsing, `mdi.arith` directed-MPFR primitives).
+
+Layout: `adp/source.py` (exact reductions with witnesses + original-query decoders), `adp/engine.py` (order, views, program, executor),
+`adp/publish.py` (robust-center point on the exact dyadic grid; exact decimal re-verification), `adp/checker.py` (separate process: own parser
+`ext.uai`, re-derives every step, PROVES every declared view, own structure validation / index arithmetic / hash joins / complete supports,
+outward interval replay forward and reverse, cancellation-safe normalization, `--verify-point` mode re-parses the delivered MAR),
+`adp/cell.py` (fresh-process cell; precision ladder; publication only after the checker), `adp/campaign.py` (frozen 736-cell harness),
+`adp/oracle.py` (tiny exact oracles), `adp/closeout/` (scoring, ledger, report, conclusions, package — outside the frozen code hash),
+`tests/test_adp_v1.py` (23 controls: exhaustive enumeration on 600 random models × 9 configurations, every original coordinate; the
+3/4-vs-1/2 equal-message counterexample; normalized-leaf; zero normalizer; tiny denominators; nonuniform quotient decoder; repeated-use
+adjoints; width-only publication counterexample; 12 adversarial mutant certificates rejected for their specific condition; altered MAR rejected).
+
+Run one cell: `PYTHONPATH=. .venv/bin/python -m adp.cell MODEL.uai EVID.uai.evid OUT_DIR 20 '{}'` (ablations: `'{"rules": []}'`,
+`'{"views": false}'`, `'{"sparse": false}'`, `'{"memo": false, "batched": false}'`, `'{"batched": false}'`). Campaign records under
+`runs/mdi_2026-10-28/AGGREGATE_DP_2026-11-07/` (REPORT.md leads with coverage; CAMPAIGN_MANIFEST.json frozen before any outcome).
