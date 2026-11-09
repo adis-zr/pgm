@@ -17,18 +17,18 @@ def test_supervisor_start_record_and_finally_receipt_survive_kill(tmp_path):
     L = str(tmp_path / "L.jsonl")
     # (a) a normal job: START then RECEIPT, same jid, COMPLETED
     subprocess.run([PY, "-m", "adp.census.supervise", "--ledger", L, "--scope", "t", "--job", "ok", "--", PY, "-c", "print(1)"], cwd=HERE, env=ENV, capture_output=True)
-    rows = [json.loads(l) for l in open(L)]; assert [r["kind"] for r in rows] == ["START", "RECEIPT"] and rows[0]["jid"] == rows[1]["jid"] and rows[1]["outcome"] == "COMPLETED"
+    rows = [json.loads(l) for l in open(L)]; assert [r["kind"] for r in rows] == ["START", "SPAWNED", "RECEIPT"] and len({r["jid"] for r in rows}) == 1 and rows[-1]["outcome"] == "COMPLETED"   # (repaired supervisor: SPAWNED after a successful launch)
     # (b) a timeout: the child is killed by its RECORDED pgid; receipt TIMEOUT_KILL with wall ~ timeout + grace
     subprocess.run([PY, "-m", "adp.census.supervise", "--ledger", L, "--scope", "t", "--job", "slow", "--timeout", "0.5", "--", PY, "-c", "import time; time.sleep(30)"], cwd=HERE, env=ENV, capture_output=True)
     rows = [json.loads(l) for l in open(L)]; r = rows[-1]; assert r["kind"] == "RECEIPT" and r["job"] == "slow" and r["outcome"] == "TIMEOUT_KILL" and r["wall_s"] < 8
     # (c) the SUPERVISOR itself is SIGTERMed: the START record is already on disk and the finally path still writes a receipt
     p = subprocess.Popen([PY, "-m", "adp.census.supervise", "--ledger", L, "--scope", "t", "--job", "killed_sup", "--timeout", "60", "--", PY, "-c", "import time; time.sleep(60)"], cwd=HERE, env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5); os.kill(p.pid, signal.SIGTERM); p.wait(timeout=20)
-    rows = [json.loads(l) for l in open(L)]; starts = [r for r in rows if r["kind"] == "START" and r["job"] == "killed_sup"]; rcpt = [r for r in rows if r["kind"] == "RECEIPT" and r["job"] == "killed_sup"]
-    assert len(starts) == 1 and len(rcpt) == 1 and rcpt[0]["outcome"].startswith("SUPERVISOR_SIGNAL") and rcpt[0]["wall_s"] < 10
+    rows = [json.loads(l) for l in open(L)]; starts = [r for r in rows if r["kind"] == "START" and r["job"] == "killed_sup"]; sp = [r for r in rows if r["kind"] == "SPAWNED" and r["job"] == "killed_sup"]; rcpt = [r for r in rows if r["kind"] == "RECEIPT" and r["job"] == "killed_sup"]
+    assert len(starts) == 1 and len(sp) == 1 and len(rcpt) == 1 and rcpt[0]["outcome"].startswith("SUPERVISOR_SIGNAL") and rcpt[0]["wall_s"] < 10
     # the child's process group is gone
     import psutil
-    assert not any(q.pid == starts[0]["pid"] for q in psutil.process_iter())
+    time.sleep(0.3); assert not any(q.pid == sp[0]["pid"] and q.is_running() for q in psutil.process_iter())
 
 
 def _toy():
@@ -101,3 +101,55 @@ def test_diag_cell_persists_plan_before_numerics_and_certifies_like_the_plain_ce
     plan = json.load(open(os.path.join(o2, "plan_record.json"))); assert len(plan["node_metrics"]) == len(plan["nodes"]) == 4
     ev = [json.loads(l) for l in open(os.path.join(o2, "nodes.jsonl"))]; assert sum(1 for e in ev if e["phase"] == "forward") == 4 and sum(1 for e in ev if e["phase"] == "backward") == 4
     assert r2["reduced_hash"] == json.load(open(os.path.join(o1, "certificate.json")))["reduced"]["reduced_hash"]
+
+
+# ---------------------------------------------------------------------------- review of 8 Nov 2026: prospective supervisor repair controls
+def _rows(L):
+    return [json.loads(l) for l in open(L)] if os.path.exists(L) else []
+
+
+def test_review_supervisor_absent_executable_writes_start_and_launch_failed_receipt(tmp_path):
+    L = str(tmp_path / "L.jsonl")
+    r = subprocess.run([PY, "-m", "adp.census.supervise", "--ledger", L, "--scope", "t", "--job", "absent", "--timeout", "2", "--", str(tmp_path / "nonexistent_executable")], cwd=HERE, env=ENV, capture_output=True, text=True)
+    rows = _rows(L); kinds = [x["kind"] for x in rows]
+    assert kinds == ["START", "RECEIPT"], kinds
+    assert rows[1]["outcome"] == "LAUNCH_FAILED" and rows[1]["jid"] == rows[0]["jid"] and rows[1]["pid"] is None and "FileNotFoundError" in (rows[1]["launch_error"] or "") and r.returncode == 1
+
+
+def test_review_supervisor_successful_launch_has_start_spawned_receipt_in_order(tmp_path):
+    L = str(tmp_path / "L.jsonl")
+    subprocess.run([PY, "-m", "adp.census.supervise", "--ledger", L, "--scope", "t", "--job", "ok", "--timeout", "10", "--", PY, "-c", "print(7)"], cwd=HERE, env=ENV, capture_output=True)
+    rows = _rows(L); assert [x["kind"] for x in rows] == ["START", "SPAWNED", "RECEIPT"] and len({x["jid"] for x in rows}) == 1
+    assert rows[1]["pid"] == rows[2]["pid"] and rows[1]["pgid"] == rows[2]["pgid"] and rows[2]["outcome"] == "COMPLETED" and rows[2]["returncode"] == 0
+    assert "pid" not in rows[0]                                                  # the START is written before any child exists
+
+
+def test_review_supervisor_timeout_and_interruption_around_launch(tmp_path):
+    import psutil
+    L = str(tmp_path / "L.jsonl")
+    subprocess.run([PY, "-m", "adp.census.supervise", "--ledger", L, "--scope", "t", "--job", "slow", "--timeout", "0.5", "--", PY, "-c", "import time; time.sleep(30)"], cwd=HERE, env=ENV, capture_output=True)
+    rows = _rows(L); r = rows[-1]; assert r["kind"] == "RECEIPT" and r["outcome"] == "TIMEOUT_KILL" and r["wall_s"] < 8 and not psutil.pid_exists(rows[-2]["pid"]) or not any(q.pid == rows[-2]["pid"] and q.is_running() for q in psutil.process_iter())
+    # SIGTERM to the supervisor immediately after launch: START + SPAWNED + RECEIPT, child gone
+    p = subprocess.Popen([PY, "-m", "adp.census.supervise", "--ledger", L, "--scope", "t", "--job", "interrupted", "--timeout", "60", "--", PY, "-c", "import time; time.sleep(60)"], cwd=HERE, env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.8); os.kill(p.pid, signal.SIGTERM); p.wait(timeout=20)
+    rows = [x for x in _rows(L) if x["job"] == "interrupted"]; kinds = [x["kind"] for x in rows]
+    assert kinds == ["START", "SPAWNED", "RECEIPT"], kinds
+    assert rows[2]["outcome"].startswith("SUPERVISOR_SIGNAL") and rows[2]["wall_s"] < 10
+    time.sleep(0.3); assert not any(q.pid == rows[1]["pid"] and q.is_running() for q in psutil.process_iter())
+    # SIGTERM BEFORE the launch can complete (race): START exists; if the child was never spawned the receipt says so; never a live orphan
+    p = subprocess.Popen([PY, "-m", "adp.census.supervise", "--ledger", L, "--scope", "t", "--job", "early", "--timeout", "60", "--", PY, "-c", "import time; time.sleep(60)"], cwd=HERE, env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.05); os.kill(p.pid, signal.SIGTERM); p.wait(timeout=20)
+    rows = [x for x in _rows(L) if x["job"] == "early"]; assert rows[0]["kind"] == "START" and rows[-1]["kind"] == "RECEIPT"
+    spawned = [x for x in rows if x["kind"] == "SPAWNED"]
+    if spawned:
+        time.sleep(0.3); assert not any(q.pid == spawned[0]["pid"] and q.is_running() for q in psutil.process_iter())
+
+
+def test_review_frozen_supervisor_reproduces_the_launch_gap(tmp_path):
+    """The BEFORE copy (commit 580e0fbe) on an absent executable: no START, no RECEIPT (the gap the review found)."""
+    before = os.path.join(HERE, "runs", "mdi_2026-10-28", "AGGREGATE_DP_CENSUS_2026-11-08", "review_2026-11-08", "supervisor_controls", "supervise_BEFORE_580e0fbe.py")
+    if not os.path.exists(before):
+        import pytest; pytest.skip("before-copy not present")
+    L = str(tmp_path / "Lb.jsonl")
+    r = subprocess.run([PY, before, "--ledger", L, "--scope", "t", "--job", "absent", "--timeout", "2", "--", str(tmp_path / "nonexistent_executable")], cwd=HERE, env=ENV, capture_output=True, text=True)
+    assert r.returncode != 0 and "FileNotFoundError" in r.stderr and not os.path.exists(L)
