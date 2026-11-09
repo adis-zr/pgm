@@ -33,7 +33,9 @@ def read_points(p):
 
 # ---------------------------------------------------------------------------------------------------------------- ledgers
 def cells_ledger(D, man):
-    led = jl(os.path.join(D, "GB_LEDGER.jsonl")); rc_by_job = {r["job"]: r for r in led if r["kind"] == "RECEIPT" and r["job"].startswith("cell:")}; out = []
+    led = jl(os.path.join(D, "GB_LEDGER.jsonl")); frozen = man["frozen_utc"]
+    rc_by_job = {r["job"]: r for r in led if r["kind"] == "RECEIPT" and r["job"].startswith("cell:") and r["start_utc"] >= frozen}       # attempt-1 receipts (before the final freeze) are excluded from the cell match (kept in the budget)
+    out = []
     for c in man["cells"]:
         od = os.path.join(D, c["out_dir"]); cj = os.path.join(od, "cell.json"); job = "cell:%03d:%s:%s:%s:%ds" % (c["index"], c["stage"], c["case"], c["arm"], int(c["budget_s"])); rc = rc_by_job.get(job)
         row = dict(c, job=job, family=man["cases"][c["case"]]["family"], supervisor_outcome=(rc or {}).get("outcome"), supervisor_wall_s=(rc or {}).get("wall_s"), peak_tree_rss_bytes=(rc or {}).get("peak_tree_rss_bytes"), rss_samples=(rc or {}).get("rss_samples"), returncode=(rc or {}).get("returncode"))
@@ -59,9 +61,11 @@ def budget(D, man, cells):
             continue
         rc = rec.get(r["jid"])
         if r["scope"].startswith("stage_outer"):
-            outer[r["job"]] = {"receipt": bool(rc), "wall_s": (rc or {}).get("wall_s"), "outcome": (rc or {}).get("outcome"), "note": "outer stage-runner receipt: DIAGNOSTIC; its children are the charged units; the parent-only remainder is measured below"}; continue
+            key = r["job"] if r["start_utc"] >= man["frozen_utc"] else r["job"] + " (attempt 1, aborted; START without receipt: the outer supervisor was SIGKILLed with its group -- see amendment_1)"
+            outer[key] = {"receipt": bool(rc), "wall_s": (rc or {}).get("wall_s"), "outcome": (rc or {}).get("outcome"), "note": "outer stage-runner receipt: DIAGNOSTIC; its children are the charged units; the parent-only remainder is measured below"}; continue
+        scope = r["scope"] if (not r["scope"].startswith("matrix_") or r["start_utc"] >= man["frozen_utc"]) else "attempt1_aborted_" + r["scope"]
         if rc is not None and not rc.get("cleanup_unresolved"):
-            total += rc["wall_s"]; by[r["scope"]] = by.get(r["scope"], 0.0) + rc["wall_s"]; jobs.append({"job": r["job"], "scope": r["scope"], "wall_s": round(rc["wall_s"], 3), "outcome": rc["outcome"]})
+            total += rc["wall_s"]; by[scope] = by.get(scope, 0.0) + rc["wall_s"]; jobs.append({"job": r["job"], "scope": scope, "wall_s": round(rc["wall_s"], 3), "outcome": rc["outcome"]})
         elif rc is not None:
             unresolved.append(r["job"]); total += max(rc["wall_s"], r.get("max_permitted_charge_s") or 0.0)
         else:
@@ -69,14 +73,14 @@ def budget(D, man, cells):
     # stage-parent remainder: outer receipt wall minus the sum of its children's receipts (nonnegative), charged ONCE per stage
     stage_rem = {}
     for s, _, _ in PI.STAGES:
-        o = outer.get("stage_runner:%s" % s); kids = by.get("matrix_" + s, 0.0)
+        o = outer.get("stage_runner:%s" % s); kids = by.get("matrix_" + s, 0.0)                                     # final-run children only (outer receipt of the final run)
         if o and o.get("wall_s") is not None:
             stage_rem[s] = {"outer_wall_s": o["wall_s"], "children_receipts_s": kids, "parent_remainder_s": max(0.0, o["wall_s"] - kids)}
         else:
             stage_rem[s] = {"outer_wall_s": None, "children_receipts_s": kids, "parent_remainder_s": None, "note": "outer receipt missing: parent remainder UNKNOWN"}
     rem = sum(v["parent_remainder_s"] or 0.0 for v in stage_rem.values())
     return {"ceiling_s": man["ceiling_s"], "rule": "nonnested: every non-outer job receipt once; outer stage receipts are diagnostic; the parent-only remainder (outer wall - children) is added once per stage; a START without receipt or with unresolved cleanup is charged at max permitted and listed", "total_charged_s": round(total + rem, 3), "jobs_total_s": round(total, 3), "stage_parent_remainders": stage_rem, "by_scope_s": {k: round(v, 3) for k, v in by.items()}, "unresolved": unresolved, "outer_receipts": outer, "jobs": jobs,
-            "attempt1_aborted_cells_s": round(sum(j["wall_s"] for j in jobs if j["job"].startswith("cell:") and os.path.exists(os.path.join(D, "attempt1_aborted"))) - sum((c.get("supervisor_wall_s") or 0) for c in cells), 3),
+            "attempt1_aborted_cells_s": round(sum(v for k, v in by.items() if k.startswith("attempt1_aborted_")), 3),
             "compliance": "QUALIFIED" if (unresolved or any(v["parent_remainder_s"] is None for v in stage_rem.values())) else "all non-outer starts receipted; parent remainders measured; uncharged: read-only shell inspections, git, file copies, the disclosed pre-freeze development smoke runs",
             "within_ceiling": total + rem <= man["ceiling_s"]}
 
