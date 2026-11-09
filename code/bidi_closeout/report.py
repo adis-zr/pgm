@@ -180,6 +180,22 @@ def main(D):
             ratio_l = ("%.3f" % (rb["complete_response_s"] / rl["complete_response_s"])) if rb.get("status") == "CERTIFIED" and rl.get("status") == "COMPLETE" else "censored"
             L.append("| %s | %d | %s | %s | %s | %s | %s |" % (c, b, cell_s(rb), cell_s(ra), cell_s(rl), ratio_a, ratio_l))
     L.append("\nNew versus old ADP changes schedule, substrate and protocol together: it measures an end-to-end implementation/coverage difference on these four cases, not an isolated algorithmic effect. A native port of old ADP would be a separate experiment. Historical context (not rerun here): the repaired ADP census recorded RESOURCE_STOP [DEADLINE] for all four DBNs at both budgets; libDAI's junction tree refused the DBNs on its 8 GiB admission forecast in the 7 Nov campaign.\n")
+    # ---------------------------------------------------------------------------------------------------- agreement diagnostics (not independence, not the guarantee)
+    L.append("### Agreement diagnostics (diagnostic only; the guarantee is the executor's certificate)\n")
+    ag = []
+    for c in cases:
+        n20 = by.get(("BIDI_NATIVE_CERT", c, 20), {}); n120 = by.get(("BIDI_NATIVE_CERT", c, 120), {}); mref = by.get(("BIDI_MPFR53_CERT", c, 120), {}); d = by.get(("BIDI_NATIVE_DUPLICATE_WORK", c, 120), {})
+        zn = (n120.get("values_hex") or {}).get("Z"); ag.append("| %s | %s | %s | %s |" % (c, (n20.get("values_hex") or {}).get("Z") == zn, ((mref.get("values_hex") or {}).get("Z") == zn) if mref.get("values_hex") else "censored (%s)" % (mref.get("status")), ((d.get("first_pass") or {}).get("Z_hex") == (d.get("values_hex") or {}).get("Z")) if d.get("values_hex") else "—"))
+    L.append("| case | native 20 s == native 120 s (bitwise Z) | MPFR-53 == native (bitwise Z, same schedule) | duplicate-work first pass == authoritative (bitwise Z) |\n|---|---|---|---|"); L += ag
+    try:
+        from ext import uai as U
+        l = by[("EXACT_LIBDAI", "DBN_11", 120)]; n = by[("BIDI_NATIVE_CERT", "DBN_11", 120)]
+        if l.get("status") == "COMPLETE" and n.get("status") == "CERTIFIED":
+            rl, _ = U.read_mar(os.path.join(D, l["out_dir"], "output.MAR")); rb, _ = U.read_mar(os.path.join(D, n["out_dir"], "output.MAR")); rec = json.load(open(os.path.join(D, n["out_dir"], "checked_record.json")))
+            nv = len(rb); md = max(abs(float(rl[v][s]) - float(rb[v][s])) for v in range(nv) for s in range(2)); w = max(float(Fr(b) - Fr(a)) for v in range(nv) for a, b in rec["certified_intervals"][str(v)])
+            L.append("\nlibDAI's UNCERTIFIED DBN_11 answer (6-decimal MAR) vs the BIDI certified point: max coordinate difference %.2e; BIDI certified interval widths ≤ %.2e. Agreement to the printed precision is a diagnostic, not evidence for either side's correctness.\n" % (md, w))
+    except Exception as ex:
+        L.append("\n(libDAI agreement diagnostic unavailable: %s)\n" % ex)
     # ---------------------------------------------------------------------------------------------------- Q7
     s = app["summary"]
     L.append("## 7. Full-panel applicability, unknowns, and what remains unimplemented\n")
