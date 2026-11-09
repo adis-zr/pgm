@@ -302,15 +302,15 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
                 ivs[v] = row
             for v, row in ivs.items():                                                                 # simplex bracket: the exact row sums to 1; an enclosure whose lower sum exceeds 1 or upper sum is below 1 is unsound
                 if sum(a for a, _ in row) > 1 or sum(b for _, b in row) < 1:
-                    att["outcome"] = "ENCLOSURE_UNSOUND_ROW_%d" % v; attempts.append(att); raise Refuse("REJECTED", "enclosure of variable %d does not bracket a simplex row (route %s, precision %s): unsound arithmetic premise" % (v, route, prec))
+                    att["outcome"] = "ENCLOSURE_UNSOUND_ROW_%d" % v; raise Refuse("UNSOUND_ROUTE", "enclosure of variable %d does not bracket a simplex row (route %s, precision %s): unsound arithmetic premise; route abandoned" % (v, route, prec))
             w = max((b - a) for row in ivs.values() for a, b in row); att["max_width"] = str(w); att["outcome"] = "INTERVALS" if w <= PB.MAX_WIDTH else "TOO_WIDE"; attempts.append(att)
             rec["values_hex"] = {"Z": [toks[0], toks[1]]}
             if w <= PB.MAX_WIDTH:
                 result = ("OK", ivs, att); break
         except Refuse as ex:
             att["refused"] = {"kind": ex.kind, "reason": ex.reason}; attempts.append(att)
-            if ex.kind == "RANGE":
-                continue
+            if ex.kind in ("RANGE", "UNSOUND_ROUTE"):
+                continue                                                                              # typed route limitation: the next (more rigorous) route runs inside the same deadline
             raise
     rec["attempts"] = attempts; mark("numerics")
     if result is None:
