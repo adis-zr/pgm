@@ -46,6 +46,40 @@ def _thash(table):
     return h.hexdigest()
 
 
+# ===================================================================================================== step typing
+def _int(x, what):
+    if type(x) is not int or isinstance(x, bool):
+        raise Reject("%s must be a JSON integer, got %r" % (what, x))
+    return x
+
+
+def validate_steps(steps):
+    """Every step is a list with the declared arity and INTEGER identifiers / states (bool, str, float, list rejected by type)."""
+    arity = {"pinned": 3, "exclude": 4, "fix": 3, "const": 5, "separate": 7, "alias": 5, "quotient": 5}
+    for st in steps:
+        if not isinstance(st, list) or not st or st[0] not in arity:
+            raise Reject("malformed step %r" % (st,))
+        if len(st) != arity[st[0]]:
+            raise Reject("step %s has %d fields, expected %d" % (st[0], len(st), arity[st[0]]))
+        k = st[0]
+        if k == "exclude":
+            _int(st[1], "exclude variable"); _int(st[2], "exclude state"); _int(st[3], "exclude witness fid")
+        elif k == "fix":
+            _int(st[1], "fix variable"); _int(st[2], "fix state")
+        elif k == "const":
+            _int(st[1], "const fid"); _int(st[4], "const entries")
+        elif k == "separate":
+            _int(st[1], "separate fid"); _int(st[3], "separate axis"); _int(st[4], "separate axis index"); _int(st[5], "separate unary fid")
+        elif k == "alias":
+            _int(st[1], "alias w"); _int(st[2], "alias u"); _int(st[4], "alias witness fid")
+            if not isinstance(st[3], list) or not all(type(s) is int for s in st[3]):
+                raise Reject("alias state map must be a list of integers")
+        elif k == "quotient":
+            _int(st[1], "quotient variable"); _int(st[4], "quotient W fid")
+            if not isinstance(st[2], dict) or not isinstance(st[3], dict):
+                raise Reject("quotient classes / ratios must be objects")
+
+
 # ===================================================================================================== exact source replay
 def _take(arr, idx, axis):
     """np.take that always returns an object ndarray (a 1-D take of a scalar index would collapse to a Fraction)."""
@@ -373,7 +407,7 @@ class IntervalReplay:
             for i, q in enumerate(flat):
                 lo[i], hi[i] = self.ctx.ienc(q)
             self.flo[fid] = lo.reshape(f.arr.shape); self.fhi[fid] = hi.reshape(f.arr.shape); self.fzero[fid] = np.array([q == 0 for q in flat], dtype=bool).reshape(f.arr.shape)
-        self.cores = {}; self.scale_lo = {}; self.scale_hi = {}; self.bytes = 0; self.mp = 8 + sys.getsizeof(mpfr(1, p)); self.specs = {}
+        self.cores = {}; self.scale_lo = {}; self.scale_hi = {}; self.bytes = 0; self.mp = 8 + sys.getsizeof(mpfr(1, p)); self.specs = {}; self.frame = None; self.pending = []; self.memo_order = __import__('collections').OrderedDict()
 
     def tick(self):
         if self.deadline is not None and time.monotonic() > self.deadline:
@@ -508,12 +542,15 @@ class IntervalReplay:
             if k == "F":
                 idx = tuple(coords); lo = self.flo[i][idx]; hi = self.fhi[i][idx]; zero = self.fzero[i][idx]
             else:
-                core = self.cores[i]; lo, hi, zero = self.lookup(core, self.nodes[i], coords)
+                core = self.cores[i]
+                if xzero is not None and xzero.any():
+                    keep = ~xzero; l2, h2, z2 = self.lookup(core, self.nodes[i], [cc[keep] for cc in coords]); n = len(xzero)
+                    lo = np.full(n, mpfr(0), dtype=object); hi = np.full(n, mpfr(0), dtype=object); zero = np.ones(n, dtype=bool); lo[keep] = l2; hi[keep] = h2; zero[keep] = z2
+                else:
+                    lo, hi, zero = self.lookup(core, self.nodes[i], coords)
                 if slo is not None:
                     gmpy2.set_context(self.D); lo = lo * slo
                     gmpy2.set_context(self.Uc); hi = hi * shi
-                if xzero is not None:
-                    zero = zero | xzero; lo = np.where(xzero, mpfr(0), lo); hi = np.where(xzero, mpfr(0), hi)
             out.append((lo, hi, zero))
         return out
 
@@ -533,11 +570,18 @@ class IntervalReplay:
                 d = core["index"]; hit_pos = np.array([d.get(int(k), -1) for k in flat], dtype=np.int64); hit = hit_pos >= 0
                 lo[hit] = core["lo"][hit_pos[hit]]; hi[hit] = core["hi"][hit_pos[hit]]; zero[hit] = False
             return lo, hi, zero
-        # lazy
+        # lazy: memo, then the current frame's resolved children, else an iterative evaluation
         flat = np.ravel_multi_index(tuple(coords), shape) if shape else np.zeros(len(coords[0]) if coords else 1, dtype=np.int64)
-        n = len(flat); lo = np.empty(n, dtype=object); hi = np.empty(n, dtype=object); zero = np.empty(n, dtype=bool)
+        n = len(flat); lo = np.empty(n, dtype=object); hi = np.empty(n, dtype=object); zero = np.empty(n, dtype=bool); fr = getattr(self, "frame", None)
         for j in range(n):
-            lo[j], hi[j], zero[j] = self.eval_lazy(core, chnd, int(flat[j]))
+            k = int(flat[j]); r = core["cache"].get(k)
+            if r is None and fr is not None:
+                r = fr.get((id(core), k))
+                if r is None:
+                    raise Reject("checker: unresolved lazy child entry inside an evaluation frame")
+            if r is None:
+                r = self.eval_lazy(core, chnd, k)
+            lo[j], hi[j], zero[j] = r
         return lo, hi, zero
 
     def bag_term(self, nd, x_pos, cls_cols):
@@ -597,7 +641,10 @@ class IntervalReplay:
     def forward_dense(self, nd):
         size = nd["size"]; nx = len(self.dom[nd["v"]])
         if self.bytes + 2 * size * self.mp > self.caps["value_bytes_cap"]:
-            raise TimeoutError("checker value cap at node %d" % nd["nid"])
+            nd["_fmt_checker"] = "lazy"; self.cores[nd["nid"]] = {"fmt": "lazy", "cache": {}, "nid": nd["nid"]}; self.c["downgraded_to_lazy"] = self.c.get("downgraded_to_lazy", 0) + 1
+            if nd["parent"] is None:
+                self.eval_lazy(self.cores[nd["nid"]], nd, 0)
+            return
         chunk = max(1, self.caps["dense_bag_cap_entries"] // nx); lo = np.empty(size, dtype=object); hi = np.empty(size, dtype=object); zero = np.empty(size, dtype=bool)
         for a in range(0, size, chunk):
             self.tick(); b = min(size, a + chunk); x_pos, cls_cols, groups = self.bag_rows_dense(nd, a, b)
@@ -682,19 +729,63 @@ class IntervalReplay:
         if self.bytes > self.caps["value_bytes_cap"]:
             raise TimeoutError("checker value cap (sparse)")
 
+    def lazy_child_keys(self, nd, x_pos, cls_cols):
+        out = []
+        for ref in nd["inputs"]:
+            k, i = ref
+            if k != "M" or self.cores[i]["fmt"] != "lazy":
+                continue
+            coords, _, _, xzero = self.coords_for_input(nd, tuple(ref), x_pos, cls_cols); shape = self.core_shape(self.nodes[i])
+            flat = np.ravel_multi_index(tuple(coords), shape) if shape else np.zeros(len(x_pos), dtype=np.int64)
+            if xzero is not None:
+                flat = flat[~xzero]
+            out.append((self.cores[i], self.nodes[i], np.unique(flat)))
+        return out
+
     def eval_lazy(self, core, nd, key):
+        """Explicit-stack evaluation (no host recursion): a frame pushes one missing lazy-child entry at a time and receives its value
+        into a frame-local dict (`self.frame`), which `lookup` consults when the memo misses."""
         hit = core["cache"].get(key)
         if hit is not None:
             return hit
-        self.tick(); shape = self.core_shape(nd); nx = len(self.dom[nd["v"]])
-        coords = np.unravel_index(np.array([key]), shape) if shape else ()
-        cls_cols = {w: np.repeat(coords[j], nx) for j, w in enumerate(nd["scope"])}; x_pos = np.arange(nx, dtype=np.int64)
-        tlo, thi, tz, _ = self.bag_term(nd, x_pos, cls_cols); slo, shi, allz = self.sum_groups(tlo, thi, tz, np.zeros(nx, dtype=np.int64), 1, dense_nx=nx)
-        res = (slo[0], shi[0], bool(allz[0])); self.c["entries"] += 1
-        if len(core["cache"]) >= self.caps["lazy_cache_entries"]:
-            core["cache"].pop(next(iter(core["cache"])))
-        core["cache"][key] = res
-        return res
+        stack = [[core, nd, key, {}]]; result = None
+        while stack:
+            c, n, k, resolved = stack[-1]
+            hit = c["cache"].get(k)
+            if hit is not None and len(stack) > 1:
+                stack.pop(); stack[-1][3][(id(c), k)] = hit; continue
+            shape = self.core_shape(n); nx = len(self.dom[n["v"]]); coords = np.unravel_index(np.array([k]), shape) if shape else ()
+            cls_cols = {w: np.repeat(coords[j], nx) for j, w in enumerate(n["scope"])}; x_pos = np.arange(nx, dtype=np.int64)
+            pushed = False
+            for ccore, cnd, keys in self.lazy_child_keys(n, x_pos, cls_cols):
+                for kk in keys.tolist():
+                    if (id(ccore), kk) in resolved:
+                        continue
+                    hit = ccore["cache"].get(kk)
+                    if hit is not None:
+                        resolved[(id(ccore), kk)] = hit; continue
+                    stack.append([ccore, cnd, kk, {}]); pushed = True; break
+                if pushed:
+                    break
+            if pushed:
+                continue
+            self.tick(); self.frame = resolved
+            tlo, thi, tz, _ = self.bag_term(n, x_pos, cls_cols); self.frame = None
+            slo, shi, allz = self.sum_groups(tlo, thi, tz, np.zeros(nx, dtype=np.int64), 1, dense_nx=nx)
+            res = (slo[0], shi[0], bool(allz[0])); self.c["entries"] += 1
+            eb = 2 * self.mp + 96
+            while c["cache"] and len(c["cache"]) >= self.caps["lazy_cache_entries"]:
+                k0 = next(iter(c["cache"])); c["cache"].pop(k0); self.memo_order.pop((id(c), k0), None); self.bytes -= eb
+            while self.memo_order and self.bytes + eb > self.caps["value_bytes_cap"]:
+                (cid, k0), c0 = self.memo_order.popitem(last=False); c0["cache"].pop(k0, None); self.bytes -= eb
+            if self.bytes + eb <= self.caps["value_bytes_cap"]:
+                c["cache"][k] = res; self.memo_order[(id(c), k)] = c; self.bytes += eb
+            stack.pop()
+            if stack:
+                stack[-1][3][(id(c), k)] = res
+            else:
+                result = res
+        return result
 
     # --- backward (interval adjoints)
     def backward(self):
@@ -703,10 +794,11 @@ class IntervalReplay:
             self.seed(self.cores[r], self.nodes[r], 0, mpfr(1), mpfr(1))
         for nd in reversed(self.nodes):
             self.tick(); core = self.cores[nd["nid"]]
+            self.drain()
             if core["fmt"] == "lazy":
                 pend = core.get("adj") or {}
                 while pend:
-                    key, (alo, ahi) = pend.popitem(); self.pullback_entry(nd, core, key, alo, ahi)
+                    key, (alo, ahi) = pend.popitem(); self.pullback_entry(nd, core, key, alo, ahi); self.drain()
             elif core.get("adj_lo") is not None:
                 if core["fmt"] == "dense":
                     size = nd["size"]; nx = len(self.dom[nd["v"]]); chunk = max(1, self.caps["dense_bag_cap_entries"] // nx)
@@ -715,6 +807,8 @@ class IntervalReplay:
                         self.reverse_rows(nd, x_pos, cls_cols, core["adj_lo"][a + groups], core["adj_hi"][a + groups], dense_shape=(nx, b - a))
                 else:
                     x_pos, cls_cols, groups = core["rows"]; self.reverse_rows(nd, x_pos, cls_cols, core["adj_lo"][groups], core["adj_hi"][groups], dense_shape=None)
+            if core.get("adj"):
+                raise Reject("checker: lazy adjoint deltas left unconsumed at the frontier")
             core["adj_lo"] = core["adj_hi"] = None; core["adj"] = None
             if core["fmt"] != "lazy":
                 core["lo"] = core["hi"] = None                                      # frontier release (its parent's step already consumed it)
@@ -797,7 +891,7 @@ class IntervalReplay:
                 else:
                     core["adj"][kk] = (a, b)
                 if len(core["adj"]) > self.caps["lazy_cache_entries"]:
-                    k2, (a2, b2) = core["adj"].popitem(); self.pullback_entry(ch, core, k2, a2, b2)
+                    k2, (a2, b2) = core["adj"].popitem(); self.pending.append((ch, core, k2, a2, b2))
             return
         if core["fmt"] == "dense":
             if core["lo"].size == 0:
@@ -813,6 +907,10 @@ class IntervalReplay:
         gmpy2.set_context(self.D); core["adj_lo"][tgt] = core["adj_lo"][tgt] + np.add.reduceat(clo[order], starts)
         gmpy2.set_context(self.Uc); core["adj_hi"][tgt] = core["adj_hi"][tgt] + np.add.reduceat(chi[order], starts)
         self.c["interval_adds"] += 2 * len(idx)
+
+    def drain(self):
+        while self.pending:
+            n, cr, k, a, b = self.pending.pop(); self.pullback_entry(n, cr, k, a, b)
 
     def pullback_entry(self, nd, core, key, alo, ahi):
         shape = self.core_shape(nd); nx = len(self.dom[nd["v"]])
@@ -865,8 +963,11 @@ def normalize_rows(mlo, mhi, dom):
 
 def check(cert, model_path, evid_path, expected_queries, deadline, caps):
     """Returns the checker record. Raises Reject for a specific violated condition; TimeoutError when its own work ran out."""
-    t0 = time.monotonic(); counters = {"bag_rows": 0, "interval_mults": 0, "interval_adds": 0, "entries": 0, "support_rows": 0}; rec = {"checker": "adp.checker v1", "phases_s": {}}
+    t0 = time.monotonic(); counters = {"bag_rows": 0, "interval_mults": 0, "interval_adds": 0, "entries": 0, "support_rows": 0}; rec = {"checker": "adp.checker v1.1", "phases_s": {}}
+    validate_steps(cert["reduced"]["steps"])
     S = SourceReplay(cert, model_path, evid_path, deadline); S.replay(cert["reduced"]["steps"]); rec["phases_s"]["source_replay"] = time.monotonic() - t0
+    rec["source"] = {"raw_model_sha256": _raw_hash(model_path), "raw_evidence_sha256": _raw_hash(evid_path), "canonical_model_sha256": _canon_hash(model_path), "canonical_evidence_sha256": _canon_hash(evid_path)}
+    rec["nvars"] = S.nvars; rec["orig_card"] = list(S.card); rec["precision"] = cert.get("precision")
     if S.zero is not None or cert["reduced"]["zero_proof"] is not None:
         if S.zero is None or cert["reduced"]["zero_proof"] is None:
             raise Reject("zero proof declared by only one side")
@@ -909,14 +1010,35 @@ def check(cert, model_path, evid_path, expected_queries, deadline, caps):
 
 def verify_point_mode(checker_json, mar_path, model_path, out_path):
     """Second, separate checker invocation: re-parse the delivered MAR (ext.uai) and verify every row exactly against the
-    grid-widened certified intervals of the FIRST invocation's record (which bound the source by hash)."""
-    T0 = time.monotonic(); chk = json.load(open(checker_json)); m = U.read_model(model_path); card = list(m.card)
-    ivs = {int(v): [(Fr(a), Fr(b)) for a, b in row] for v, row in chk["certified_intervals"].items()}
-    if sorted(ivs) != list(range(len(card))):
-        rec = {"status": "POINT_REJECTED", "reason": "interval rows do not cover every original variable"}
-    else:
+    grid-widened certified intervals of the FIRST invocation's record. The record must (1) be a completed INTERVALS_OK record,
+    (2) be bound by raw + canonical hash to THE model file named here, (3) carry one full interval row per original variable."""
+    T0 = time.monotonic(); chk = json.load(open(checker_json)); rec = {"status": "POINT_REJECTED"}
+    try:
+        if chk.get("status") != "INTERVALS_OK":
+            raise Reject("checker record status is %r, not INTERVALS_OK" % chk.get("status"))
+        src = chk.get("source") or {}
+        if src.get("raw_model_sha256") != _raw_hash(model_path) or src.get("canonical_model_sha256") != _canon_hash(model_path):
+            raise Reject("checker record is bound to a different model (source hash mismatch)")
+        m = U.read_model(model_path); m.check(); card = list(m.card)
+        if chk.get("nvars") != m.nvars or list(chk.get("orig_card") or []) != card:
+            raise Reject("checker record variable count / cardinalities differ from the model")
+        ivs = {}
+        for v in range(m.nvars):
+            row = (chk.get("certified_intervals") or {}).get(str(v))
+            if row is None or len(row) != card[v]:
+                raise Reject("interval row of variable %d missing or of wrong length" % v)
+            ivs[v] = [(Fr(a), Fr(b)) for a, b in row]
+            for L, Uu in ivs[v]:
+                if not (0 <= L <= Uu <= 1):
+                    raise Reject("malformed interval in row %d" % v)
+        if set(ivs) != set(range(m.nvars)):
+            raise Reject("interval rows do not cover every original variable")
         ok, why = PB.verify_mar_against_intervals(mar_path, ivs, card)
-        rec = {"status": "POINT_VERIFIED" if ok else "POINT_REJECTED", "reason": why, "mar_sha256": _raw_hash(mar_path), "grid_bits": PB.grid_bits(max(card))}
+        rec = {"status": "POINT_VERIFIED" if ok else "POINT_REJECTED", "reason": why, "mar_sha256": _raw_hash(mar_path), "model_sha256": src["raw_model_sha256"], "grid_bits": PB.grid_bits(max(card))}
+    except Reject as ex:
+        rec = {"status": "POINT_REJECTED", "reason": str(ex)}
+    except Exception as ex:
+        rec = {"status": "POINT_REJECTED", "reason": "malformed record or input: %s: %s" % (type(ex).__name__, ex)}
     rec["wall_s"] = time.monotonic() - T0; json.dump(rec, open(out_path, "w")); print(json.dumps(rec))
 
 

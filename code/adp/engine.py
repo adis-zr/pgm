@@ -290,7 +290,7 @@ class Executor:
             for i, t in enumerate(f.table):
                 arr[i] = self.ctx.down(t)
             self.ftab[f.fid] = arr; self.fzero[f.fid] = np.fromiter((t == 0 for t in f.table), dtype=bool, count=len(f.table))
-        self.scale_cache = {}; self.spec_cache = {}
+        self.scale_cache = {}; self.spec_cache = {}; self.lazy_entry_bytes = self.mp + 96; self.pending = []; self.memo_order = __import__('collections').OrderedDict()
 
     # --- helpers
     def tick(self):
@@ -351,8 +351,9 @@ class Executor:
             self.cores[nd.nid].stats["forward_s"] = time.monotonic() - t
         self.rootvals = self.root_values()
 
-    def gather_inputs(self, nd, x_idx, c_keys):
-        """For bag rows (x position array, output flat key array): per input (values object array, E, exact-zero mask)."""
+    def gather_inputs(self, nd, x_idx, c_keys, resolved=None):
+        """For bag rows (x position array, output flat key array): per input (values object array, E, exact-zero mask).
+        `resolved`: frame-local {(core id, key): (val, zero)} of lazy child entries already evaluated by the iterative evaluator."""
         decode = self.decode_keys(nd, c_keys); out = []; Es = []; zs = []
         for ref in nd.inputs:
             kind, spec, nscale = self.input_states(nd, ref)
@@ -377,14 +378,36 @@ class Executor:
                         _, w, cls_in, sc, st = item; ci = decode[w]; flat += cls_in[ci] * st
                         if sc is not None:
                             s = sc[ci]; scale = s if scale is None else scale * s
-                vals, zero = self.lookup(core, flat); E = core.E
+                if xzero is not None and xzero.any():                       # zero CLASS along the eliminated variable: exactly zero, no lookup
+                    keep = ~xzero; v2, z2 = self.lookup(core, flat[keep], resolved)
+                    vals = np.full(len(flat), mpfr(0), dtype=object); vals[keep] = v2; zero = np.ones(len(flat), dtype=bool); zero[keep] = z2
+                else:
+                    vals, zero = self.lookup(core, flat, resolved)
+                E = core.E if core.E is not None else 0                      # a lazy child with no computed entry yet contributed only exact zeros
                 if scale is not None:
                     vals = vals * scale; E += 2 * nscale; self.c["forward_mults"] += len(vals) * nscale
-                if xzero is not None:
-                    zero = zero | xzero
                 self.c["lookups"] += len(flat)
             out.append(vals); Es.append(E); zs.append(zero)
         return out, Es, zs
+
+    def lazy_child_keys(self, nd, x_idx, c_keys):
+        """Flat keys demanded from every LAZY child input at these bag rows (no values are read)."""
+        decode = self.decode_keys(nd, c_keys); out = []
+        for ref in nd.inputs:
+            if ref[0] != "M" or self.cores[ref[1]].fmt != "lazy":
+                continue
+            kind, spec, nscale = self.input_states(nd, ref); flat = np.zeros(len(c_keys), dtype=np.int64); xzero = None
+            for item in spec:
+                if item[0] == "x":
+                    flat += item[1][x_idx] * item[4]
+                    if item[3] is not None:
+                        xzero = item[3][x_idx]
+                else:
+                    flat += item[2][decode[item[1]]] * item[4]
+            if xzero is not None:
+                flat = flat[~xzero]                                           # zero-class rows need no child value
+            out.append((self.cores[ref[1]], np.unique(flat)))
+        return out
 
     def decode_keys(self, nd, keys):
         out = {}; rem = keys
@@ -392,8 +415,9 @@ class Executor:
             out[w] = rem % r; rem = rem // r
         return out
 
-    def lookup(self, core, flat):
-        """(values, exact-zero mask) of core entries at flat keys. Missing sparse rows are PROVED zeros (complete support)."""
+    def lookup(self, core, flat, resolved=None):
+        """(values, exact-zero mask) of core entries at flat keys. Missing sparse rows are PROVED zeros (complete support).
+        Lazy cores: memo, then the frame-local `resolved` dict, else a fresh ITERATIVE evaluation (never recursive)."""
         if core.fmt == "dense":
             if len(core.vals) == 0:                                      # a node whose output view has NO positive class: identically zero
                 return np.full(len(flat), mpfr(0), dtype=object), np.ones(len(flat), dtype=bool)
@@ -405,7 +429,15 @@ class Executor:
             out = np.full(len(flat), mpfr(0), dtype=object); out[hit] = core.vals[pos_c[hit]]; return out, ~hit
         uniq, inv = np.unique(flat, return_inverse=True); vals = np.empty(len(uniq), dtype=object); zero = np.zeros(len(uniq), dtype=bool)
         for i, k in enumerate(uniq):
-            vals[i], zero[i] = self.eval_lazy(core, int(k))
+            k = int(k); hit = self.memo_hit(core, k)
+            if hit is not None:
+                vals[i], zero[i] = hit[0], hit[2]; continue
+            if resolved is not None:
+                r = resolved.get((id(core), k))
+                if r is None:
+                    raise Stop("FAULT", "unresolved lazy child entry inside an evaluation frame")
+                vals[i], zero[i] = r; continue
+            vals[i], zero[i] = self.eval_lazy(core, k)
         return vals[inv], zero[inv]
 
     def product_sum(self, nd, vals, Es, zs, n):
@@ -430,6 +462,8 @@ class Executor:
                 term = vals[j]; E = Es[j]
             else:
                 term = term * vals[j]; E = E + Es[j] + 1; self.c["forward_mults"] += n
+        if zero.any():
+            term = np.where(zero, mpfr(0), term)                             # exact-zero rows are exactly zero whatever the looked-up values
         self.c["bag_rows"] += n
         return term, E, zero, F, EF, msg
 
@@ -438,7 +472,8 @@ class Executor:
         most `dense_bag_cap_entries` rows so the transient product array is bounded (reserve-before-allocate against the scratch cap)."""
         v = nd.v; nx = len(self.P.dom[v]); size = nd.size
         if size * self.mp + self.bytes_vals > self.cfg["value_bytes_cap"]:
-            raise Stop("VALUE_CAP", "core of node %d (%d entries) does not fit the resident value cap" % (nd.nid, size))
+            self.c["downgraded_to_lazy"] = self.c.get("downgraded_to_lazy", 0) + 1; nd.fmt = "lazy"
+            self.forward_lazy_node(nd, abandoned="dense core of %d entries does not fit the resident value cap (%d bytes used)" % (size, self.bytes_vals)); return
         chunk = max(1, self.cfg["dense_bag_cap_entries"] // nx)
         if chunk * nx * (8 * 4 + self.mp) > self.cfg["scratch_bytes_cap"]:
             chunk = max(1, self.cfg["scratch_bytes_cap"] // (nx * (8 * 4 + self.mp)))
@@ -455,9 +490,10 @@ class Executor:
         self.commit(nd, core)
 
     def commit(self, nd, core):
+        if self.bytes_vals + core.bytes > self.cfg["value_bytes_cap"]:        # computed but not storable: discard (work charged) and serve lazily
+            self.c["downgraded_to_lazy"] = self.c.get("downgraded_to_lazy", 0) + 1; nd.fmt = "lazy"
+            self.forward_lazy_node(nd, abandoned="%s core of %d entries does not fit the resident value cap" % (core.fmt, len(core.vals))); return
         self.bytes_vals += core.bytes; self.c["peak_scratch_bytes"] = max(self.c["peak_scratch_bytes"], self.bytes_vals)
-        if self.bytes_vals > self.cfg["value_bytes_cap"]:
-            raise Stop("VALUE_CAP", "resident core values %d bytes exceed the cap" % self.bytes_vals)
         self.cores[nd.nid] = core
 
     # --- sparse: native join of complete input supports in bag coordinates, projected over x
@@ -563,35 +599,73 @@ class Executor:
 
     # --- lazy per-entry conditioning (the universal fallback; also ablations A4 / A5)
     def forward_lazy_node(self, nd, abandoned=None):
-        core = Core("lazy"); core.lazy = {}; core.E = None; core.stats["abandoned_sparse"] = abandoned; self.cores[nd.nid] = core; self.c["lazy_nodes"] += 1
+        core = Core("lazy"); core.lazy = {} if self.cfg["memo"] else None; core.E = None; core.stats["abandoned_sparse"] = abandoned; self.cores[nd.nid] = core; self.c["lazy_nodes"] += 1
         core.stats["node"] = nd.nid
         if nd.parent is None:                                                  # a root: its single entry is demanded now
             self.eval_lazy(core, 0)
 
+    def memo_put(self, core, key, val, E, z):
+        """Bounded, byte-accounted memo: per-node FIFO cap (lazy_cache_entries) and a GLOBAL LRU across every lazy node against the
+        resident value cap (the oldest-used entry of ANY lazy node is evicted first). Eviction changes cost, never the answer."""
+        if core.lazy is None:
+            return
+        eb = self.lazy_entry_bytes
+        while core.lazy and len(core.lazy) >= self.cfg["lazy_cache_entries"]:
+            k0 = next(iter(core.lazy)); core.lazy.pop(k0); self.memo_order.pop((id(core), k0), None); self.bytes_vals -= eb; core.bytes -= eb; self.c["lazy_evictions"] += 1
+        while self.memo_order and self.bytes_vals + eb > self.cfg["value_bytes_cap"]:
+            (cid, k0), c0 = self.memo_order.popitem(last=False); c0.lazy.pop(k0, None); self.bytes_vals -= eb; c0.bytes -= eb; self.c["lazy_evictions"] += 1
+        if self.bytes_vals + eb > self.cfg["value_bytes_cap"]:
+            return                                                             # no room anywhere (dense cores hold the cap): returned uncached
+        core.lazy[key] = (val, E, z); self.memo_order[(id(core), key)] = core; self.bytes_vals += eb; core.bytes += eb
+
+    def memo_hit(self, core, key):
+        hit = core.lazy.get(key) if core.lazy is not None else None
+        if hit is not None:
+            self.memo_order.move_to_end((id(core), key), last=True); self.c["lazy_hits"] += 1
+        return hit
+
     def eval_lazy(self, core, key):
-        """Eval(node, key): exhaustive sum over the eliminated variable with every input looked up through its view (recursive
-        requests only descend to children, so dependency rank strictly decreases). Memoized in a bounded FIFO dict."""
-        nd = self.P.nodes[core.stats["node"]]
-        if self.cfg["memo"]:
-            hit = core.lazy.get(key)
-            if hit is not None:
-                self.c["lazy_hits"] += 1; return hit[0], hit[2]
-        self.tick(); self.c["lazy_evals"] += 1
-        nx = len(self.P.dom[nd.v]); c_keys = np.full(nx, key, dtype=np.int64); x_idx = np.arange(nx, dtype=np.int64)
-        vals, Es, zs = self.gather_inputs(nd, x_idx, c_keys)
-        term, E, zero, _, _, _ = self.product_sum(nd, vals, Es, zs, nx)
-        tot = term[0]
-        for t in term[1:]:
-            tot = tot + t
-        z = bool(zero.all())
-        E = E + (nx - 1); self.c["forward_adds"] += nx - 1; self.c["entries_computed"] += 1
-        if core.E is None or E > core.E:
-            core.E = E
-        if self.cfg["memo"]:
-            if len(core.lazy) >= self.cfg["lazy_cache_entries"]:
-                core.lazy.pop(next(iter(core.lazy))); self.c["lazy_evictions"] += 1
-            core.lazy[key] = (tot, E, z)
-        return tot, z
+        """Eval(node, key) by an EXPLICIT STACK of frames (no host recursion). A frame holds one demanded entry; it pushes ONE missing
+        lazy-child entry at a time and receives the child's value into its frame-local `resolved` dict, so correctness never depends on
+        the memo retaining anything. Dependency rank strictly decreases down the stack, so the evaluation is finite."""
+        hit = self.memo_hit(core, key)
+        if hit is not None:
+            return hit[0], hit[2]
+        stack = [[core, key, {}]]; result = None
+        while stack:
+            c, k, resolved = stack[-1]
+            hit = self.memo_hit(c, k)
+            if hit is not None and len(stack) > 1:
+                stack.pop(); stack[-1][2][(id(c), k)] = (hit[0], hit[2]); continue
+            nd = self.P.nodes[c.stats["node"]]; nx = len(self.P.dom[nd.v]); c_keys = np.full(nx, k, dtype=np.int64); x_idx = np.arange(nx, dtype=np.int64)
+            pushed = False
+            for ccore, keys in self.lazy_child_keys(nd, x_idx, c_keys):
+                for kk in keys.tolist():
+                    if (id(ccore), kk) in resolved:
+                        continue
+                    hit = self.memo_hit(ccore, kk)
+                    if hit is not None:
+                        resolved[(id(ccore), kk)] = (hit[0], hit[2]); continue      # copied NOW: a later eviction cannot remove it from this frame
+                    stack.append([ccore, kk, {}]); pushed = True; break
+                if pushed:
+                    break
+            if pushed:
+                continue
+            self.tick(); self.c["lazy_evals"] += 1
+            vals, Es, zs = self.gather_inputs(nd, x_idx, c_keys, resolved)
+            term, E, zero, _, _, _ = self.product_sum(nd, vals, Es, zs, nx)
+            tot = term[0]
+            for t in term[1:]:
+                tot = tot + t
+            z = bool(zero.all()); E = E + (nx - 1); self.c["forward_adds"] += nx - 1; self.c["entries_computed"] += 1
+            if c.E is None or E > c.E:
+                c.E = E
+            self.memo_put(c, k, tot, E, z); stack.pop()
+            if stack:
+                stack[-1][2][(id(c), k)] = (tot, z)
+            else:
+                result = (tot, z)
+        return result
 
     # --- backward
     def backward(self):
@@ -607,17 +681,24 @@ class Executor:
             if core.fmt == "lazy":
                 self.backward_lazy(nd, core)
             else:
-                self.backward_block(nd, core)
+                self.backward_block(nd, core); self.drain()
             core.stats["backward_s"] = time.monotonic() - t
             if core.adj is not None and core.fmt != "lazy":
                 self.bytes_adj -= len(core.vals) * self.mp
+            elif core.adj:
+                raise Stop("FAULT", "lazy adjoint deltas left unconsumed at the frontier")
             core.adj = None                                               # frontier release: every parent contribution has been consumed
             if not self.cfg.get("keep_values_after_reverse", False):
-                self.bytes_vals -= core.bytes; core.vals = None; core.keys = None; core.lazy = None; core.rows_rel = None   # its own step was the last reader
+                if core.fmt == "lazy" and core.lazy:
+                    for k0 in list(core.lazy):
+                        self.memo_order.pop((id(core), k0), None)
+                self.bytes_vals -= core.bytes; core.bytes = 0; core.vals = None; core.keys = None; core.lazy = None; core.rows_rel = None   # its own step was the last reader
 
     def seed(self, core, key, val, E):
         if core.fmt == "lazy":
             core.adj = core.adj or {}; cur = core.adj.get(key)
+            if cur is None:
+                self.bytes_adj += self.lazy_entry_bytes
             core.adj[key] = ((cur[0] + val) if cur else val, max(E, cur[1] if cur else 0) + (1 if cur else 0))
         else:
             if len(core.vals) == 0:
@@ -702,11 +783,15 @@ class Executor:
         if zero is not None:
             keep = ~zero; flat = flat[keep]; contrib = contrib[keep]
         if ccore.fmt == "lazy":
-            ccore.adj = ccore.adj or {}
+            ccore.adj = ccore.adj or {}; eb = self.lazy_entry_bytes
             for kk, cv in zip(flat.tolist(), contrib):
-                cur = ccore.adj.get(kk); ccore.adj[kk] = ((cur[0] + cv) if cur else cv, (max(cur[1], E) + 1) if cur else E)
-                if len(ccore.adj) > self.cfg["lazy_cache_entries"]:
-                    kk2, (dv, dE) = ccore.adj.popitem(); self.pullback_lazy(ch, ccore, kk2, dv, dE)      # flush ONE pending delta; consumed exactly once
+                cur = ccore.adj.get(kk)
+                if cur:
+                    ccore.adj[kk] = (cur[0] + cv, max(cur[1], E) + 1); self.c["reverse_adds"] += 1
+                else:
+                    ccore.adj[kk] = (cv, E); self.bytes_adj += eb
+                while ccore.adj and (len(ccore.adj) > self.cfg["lazy_cache_entries"] or self.bytes_adj > self.cfg["adjoint_bytes_cap"]):
+                    kk2, (dv, dE) = ccore.adj.popitem(); self.bytes_adj -= eb; self.pending.append((ch, ccore, kk2, dv, dE))   # flush ONE pending delta (consumed exactly once) to the queue
             return
         if ccore.fmt == "dense":
             if len(ccore.vals) == 0:
@@ -728,10 +813,14 @@ class Executor:
         ccore.adjE = max(ccore.adjE, E) + len(idx) + 1                 # conservative: up to len(idx) sequential additions into one entry
 
     def backward_lazy(self, nd, core):
-        if not core.adj:
-            return
+        self.drain()
         while core.adj:
-            key, (dv, dE) = core.adj.popitem(); self.pullback_lazy(nd, core, key, dv, dE)
+            key, (dv, dE) = core.adj.popitem(); self.bytes_adj -= self.lazy_entry_bytes; self.pullback_lazy(nd, core, key, dv, dE); self.drain()
+
+    def drain(self):
+        """Process every queued flushed delta (each consumed exactly once); the queue replaces recursion and may refill while draining."""
+        while self.pending:
+            nd, core, key, dv, dE = self.pending.pop(); self.pullback_lazy(nd, core, key, dv, dE)
 
     def pullback_lazy(self, nd, core, key, alpha, E):
         """Pullback(node, key, alpha): revisit the eliminated states of this entry, recomputing input values (through their caches or

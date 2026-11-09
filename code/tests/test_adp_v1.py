@@ -303,3 +303,106 @@ def test_noncanonical_fixed_state_values_rejected_in_steps(good):
         c = copy.deepcopy(cert); v = int(sorted(c["reduced"]["dom"])[0]); fid = int(c["reduced"]["factors"][0]["fid"])
         c["reduced"]["steps"].insert(len([s for s in c["reduced"]["steps"] if s[0] == "pinned"]), ["exclude", v, bad, fid])
         r = _run_checker_on(c, cert["model_path"], cert["evidence_path"]); assert r["status"] in ("REJECTED", "CHECKER_FAULT"), (bad, r)
+
+
+# ---------------------------------------------------------------------------- review 2026-11-08: regression controls for the four findings
+REVIEW_CONFIGS = {"no_rules_no_sparse": dict(EN.DEFAULTS, rules=[], sparse=False), "no_rules_lazy": dict(EN.DEFAULTS, rules=[], batched=False),
+                  "no_rules_lazy_tiny_cache": dict(EN.DEFAULTS, rules=[], batched=False, lazy_cache_entries=2), "no_rules_tiny_value_cap": dict(EN.DEFAULTS, rules=[], sparse=False, value_bytes_cap=4096),
+                  "no_rules_no_memo": dict(EN.DEFAULTS, rules=[], batched=False, memo=False)}
+
+
+def test_review_F2_zero_class_along_eliminated_variable_masks_values():
+    """f(X=0,B=0)=1, f(X=0,B=1)=0, f(X=1,B=0)=2, f(X=1,B=1)=0: eliminating X then B, the message along B has a zero class at B=1 with
+    unit ratios; the producer must return Z = 3 and P(B) = [1, 0] in every non-sparse format (was Z = 6, [1/2, 1/2])."""
+    m = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(1), Fr(0), Fr(2), Fr(0)], origin=0)]); m.validate(); Z, N = O.brute(m, {})
+    for name, cfg in REVIEW_CONFIGS.items():
+        st, R, P, X, enc, roots = solve_exact_check(m, {}, cfg); zp = R.scale
+        for z, _ in roots.values():
+            zp *= A.exact_fr(z)
+        assert 0 < zp <= Z and Z - zp < Fr(1, 10 ** 12), (name, zp, Z)
+        rows = original_rows(R, enc)
+        for v in range(2):
+            for s in range(2):
+                assert rows[v][s][0] <= N[v][s] / Z <= rows[v][s][1], (name, v, s, rows[v][s])
+
+
+@pytest.mark.parametrize("name", sorted(REVIEW_CONFIGS))
+def test_review_zero_bearing_random_models_in_non_sparse_formats(name):
+    """The zero-class path is reachable only with the exclude rule off and the sparse format off (or abandoned): 400 random models."""
+    cfg = REVIEW_CONFIGS[name]; n_ok = 0
+    for seed in range(400):
+        m, ev = O.gen(seed); Z, N = O.brute(m, ev); st, R, P, X, enc, roots = solve_exact_check(m, ev, cfg)
+        if Z == 0:
+            if st == "OK":
+                zp = R.scale
+                for z, _ in roots.values():
+                    zp *= A.exact_fr(z)
+                assert zp == 0
+            continue
+        assert st == "OK"; rows = original_rows(R, enc)
+        for v in range(m.nvars):
+            for s in range(m.card[v]):
+                L, U = rows[v][s]; t = N[v][s] / Z; assert L <= t <= U, (name, seed, v, s)
+        n_ok += 1
+    assert n_ok > 300
+
+
+def test_review_F3_forced_lazy_400_chain_no_recursion_and_tiny_value_cap_downgrade():
+    n = 400; facs = [M.Factor(scope=(i, i + 1), card=(2, 2), table=[Fr(3, 10), Fr(7, 10), Fr(3, 5), Fr(2, 5)], origin=i) for i in range(n - 1)]
+    ch = M.Model(nvars=n, card=[2] * n, factors=facs); ch.validate()
+    # memo of 2 entries per node = the fan-out of a binary chain: linear time. A value cap that dense cores exhaust leaves the downgraded tail
+    # of the chain WITHOUT memo room, so its cost is exponential in the number of uncached nodes (allowed by the contract: eviction changes cost,
+    # never the answer); the cap below admits ~388 dense cores and downgrades ~12 nodes (2^12 recomputations).
+    mp = EN.mpfr_bytes(64)
+    for cfg in (dict(EN.DEFAULTS, rules=[], batched=False), dict(EN.DEFAULTS, rules=[], batched=False, lazy_cache_entries=2), dict(EN.DEFAULTS, rules=[], sparse=False, value_bytes_cap=388 * 2 * mp)):
+        R = SRC.Reduced(ch, {}); R.reduce(cfg["rules"]); P = EN.Program(R, cfg); X = EN.Executor(P, 64, cfg); X.forward(); X.backward(); enc, roots, _ = X.enclosures()
+        for v in (0, 199, 399):
+            for a in range(2):
+                assert enc[v][a][1] - enc[v][a][0] < Fr(1, 10 ** 12)
+        if "value_bytes_cap" in cfg and cfg["value_bytes_cap"] != EN.DEFAULTS["value_bytes_cap"]:
+            assert X.c.get("downgraded_to_lazy", 0) >= 10 and X.c["peak_scratch_bytes"] <= cfg["value_bytes_cap"]
+    # the SAME chain through the fresh-process cell with the checker (checker lazy path is iterative too)
+    with tempfile.TemporaryDirectory() as d:
+        rec, out = _cell(d, ch, {}, json.dumps({"rules": [], "batched": False}), deadline=300)
+        assert rec["status"] == "CERTIFIED", (rec["status"], rec.get("reason"), rec.get("stop"))
+
+
+def test_review_one_entry_memo_still_exact_on_a_short_chain():
+    """memo of ONE entry per node (maximal eviction + recomputation) on a 12-variable chain: exact answer, exponential work bounded by 2^12."""
+    n = 12; facs = [M.Factor(scope=(i, i + 1), card=(2, 2), table=[Fr(3, 10), Fr(7, 10), Fr(3, 5), Fr(2, 5)], origin=i) for i in range(n - 1)]
+    ch = M.Model(nvars=n, card=[2] * n, factors=facs); ch.validate(); Z, N = O.brute(ch, {})
+    cfg = dict(EN.DEFAULTS, rules=[], batched=False, lazy_cache_entries=1); R = SRC.Reduced(ch, {}); R.reduce([]); P = EN.Program(R, cfg); X = EN.Executor(P, 64, cfg); X.forward(); X.backward(); enc, roots, _ = X.enclosures()
+    rows = original_rows(R, enc)
+    for v in range(n):
+        for s in range(2):
+            assert rows[v][s][0] <= N[v][s] / Z <= rows[v][s][1]
+    assert X.c["lazy_evictions"] > 0
+
+
+def test_review_lazy_memo_and_adjoint_bytes_are_accounted():
+    m, ev = O.gen(5); cfg = dict(EN.DEFAULTS, rules=[], batched=False); R = SRC.Reduced(m, ev); R.reduce([]); P = EN.Program(R, cfg); X = EN.Executor(P, 64, cfg); X.forward()
+    entries = sum(len(c.lazy or {}) for c in X.cores.values() if c.fmt == "lazy"); assert entries > 0 and X.bytes_vals == entries * X.lazy_entry_bytes
+    X.backward(); assert X.bytes_adj == 0 and not X.pending
+
+
+def test_review_F1_point_verifier_binds_source_and_requires_full_intervals_ok_record(tmp_path):
+    m1 = M.Model(nvars=1, card=[2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(1, 4), Fr(3, 4)], origin=0)]); m1.validate()
+    m2 = M.Model(nvars=1, card=[2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(3, 4), Fr(1, 4)], origin=0)]); m2.validate()
+    d1 = tmp_path / "a"; d1.mkdir(); d2 = tmp_path / "b"; d2.mkdir(); r1, o1 = _cell(str(d1), m1, {}); r2, o2 = _cell(str(d2), m2, {}); assert r1["status"] == r2["status"] == "CERTIFIED"
+    chk = [f for f in os.listdir(o1) if f.startswith("checker_p") and f.endswith(".json")][0]; mp2 = os.path.join(str(d2), "m.uai"); mp1 = os.path.join(str(d1), "m.uai")
+    def vp(chk_json, mar, model, tag):
+        op = str(tmp_path / ("pc_%s.json" % tag)); subprocess.run([PY, "-m", "adp.checker", "--verify-point", chk_json, mar, model, op], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True); return json.load(open(op))
+    r = vp(os.path.join(o1, chk), os.path.join(o1, "output.MAR"), mp2, "wrong"); assert r["status"] == "POINT_REJECTED" and "different model" in r["reason"]
+    rej = json.load(open(os.path.join(o1, chk))); rej["status"] = "REJECTED"; rp = str(tmp_path / "rej.json"); json.dump(rej, open(rp, "w"))
+    r = vp(rp, os.path.join(o1, "output.MAR"), mp1, "rej"); assert r["status"] == "POINT_REJECTED" and "INTERVALS_OK" in r["reason"]
+    emp = json.load(open(os.path.join(o1, chk))); emp["certified_intervals"]["0"] = []; ep = str(tmp_path / "emp.json"); json.dump(emp, open(ep, "w"))
+    r = vp(ep, os.path.join(o1, "output.MAR"), mp1, "emp"); assert r["status"] == "POINT_REJECTED" and "wrong length" in r["reason"]
+    assert vp(os.path.join(o1, chk), os.path.join(o1, "output.MAR"), mp1, "ok")["status"] == "POINT_VERIFIED"
+
+
+def test_review_step_type_validation_rejects_with_specific_reason(good):
+    m, ev, cert, out = good
+    for bad in ("1", 1.0, True, [1], {"a": 1}):
+        c = copy.deepcopy(cert); v = int(sorted(c["reduced"]["dom"])[0]); fid = int(c["reduced"]["factors"][0]["fid"])
+        c["reduced"]["steps"].insert(len([s for s in c["reduced"]["steps"] if s[0] == "pinned"]), ["exclude", v, bad, fid])
+        r = _run_checker_on(c, cert["model_path"], cert["evidence_path"]); assert r["status"] == "REJECTED" and "JSON integer" in (r.get("reason") or ""), (bad, r)
