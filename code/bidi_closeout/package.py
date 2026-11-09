@@ -19,10 +19,16 @@ def sha(p):
 
 def main(D, out):
     man = json.load(open(os.path.join(D, "PILOT_MANIFEST.json")))
-    src = sorted(set(list(man["source_files_sha256"]) + ["bidi/BUILD_RECORD.json", man["kernel_binary"]] + sorted("bidi_closeout/" + f for f in os.listdir(os.path.join(HERE, "bidi_closeout")) if f.endswith(".py")) + ["tests/test_adp_v1.py", "tests/test_adp_census.py", "tests/test_adp_census_correction.py", "adp/census/diag_cell.py", "ext/supervise.py", "bench/charge.py"]))
+    # review of 9 Nov 2026: include every module the shipped tests / closeout tools import (adp/oracle.py, adp/campaign.py, the whole adp/ and mdi/ packages),
+    # the exact frozen ADP configuration, and the census extractors referenced by the regression suite
+    extra = sorted("adp/" + f for f in os.listdir(os.path.join(HERE, "adp")) if f.endswith(".py")) + sorted("adp/census/" + f for f in os.listdir(os.path.join(HERE, "adp", "census")) if f.endswith(".py")) + sorted("adp/census_closeout/" + f for f in os.listdir(os.path.join(HERE, "adp", "census_closeout")) if f.endswith(".py")) + sorted("adp/closeout/" + f for f in os.listdir(os.path.join(HERE, "adp", "closeout")) if f.endswith(".py")) + sorted("mdi/" + f for f in os.listdir(os.path.join(HERE, "mdi")) if f.endswith(".py")) + [man["config_adp_repaired_path"], "bench/charge.py", "ext/supervise.py", "ext/__init__.py", "bidi/__init__.py", "bidi_closeout/__init__.py"]
+    src = sorted(set(list(man["source_files_sha256"]) + ["bidi/BUILD_RECORD.json", man["kernel_binary"]] + sorted("bidi_closeout/" + f for f in os.listdir(os.path.join(HERE, "bidi_closeout")) if f.endswith(".py")) + ["tests/test_adp_v1.py", "tests/test_adp_census.py", "tests/test_adp_census_correction.py"] + extra))
     src = [f for f in src if os.path.exists(os.path.join(HERE, f))]
+    changed = sorted(f for f, h in man["source_files_sha256"].items() if sha(os.path.join(HERE, f)) != h)
     lineage = {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=HERE).decode().strip(), "branch": subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=HERE).decode().strip(), "frozen_commit": man["commit"], "source_files_sha256": {f: sha(os.path.join(HERE, f)) for f in src},
-               "frozen_files_identical_to_manifest": all(sha(os.path.join(HERE, f)) == h for f, h in man["source_files_sha256"].items()), "kernel_binary_sha256": sha(os.path.join(HERE, man["kernel_binary"])), "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+               "frozen_files_identical_to_manifest": not changed, "frozen_files_changed_since_freeze": changed, "note_on_changes": "the review REPAIR (commit af5c1485, amendment_1) changed these files AFTER the frozen matrix; the matrix was run on the frozen commit / frozen binary (preserved in review_2026-11-09/before/); the repaired binary's performance is UNMEASURED",
+               "config_adp_repaired_sha256_matches_manifest": sha(os.path.join(HERE, man["config_adp_repaired_path"])) == man["config_adp_repaired_sha256"],
+               "kernel_binary_sha256_now_repaired": sha(os.path.join(HERE, man["kernel_binary"])), "kernel_binary_sha256_frozen": man["kernel_binary_sha256"], "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                "dependencies": {"python": sys.version.split()[0], "compiler": man["kernel_build"]["compiler_version"].split("\n")[0], "flags": man["kernel_build"]["flags"]}}
     try:
         import gmpy2, numpy, psutil
@@ -37,7 +43,7 @@ def main(D, out):
         for root, dirs, files in os.walk(D):
             for fn in files:
                 p = os.path.join(root, fn)
-                if fn.endswith(".tmp") or fn == "PACKAGE_RECORD.json":
+                if fn.endswith(".tmp") or fn.startswith("PACKAGE_RECORD"):
                     continue
                 z.write(p, "BIDI_NATIVE_PILOT_2026-11-09/" + os.path.relpath(p, D)); members += 1
         for c in man["cases"].values():
@@ -51,7 +57,7 @@ def main(D, out):
         bad = z.testzip(); crcs = {i.filename: i.CRC for i in z.infolist()}
     rec = {"zip": out, "bytes": os.path.getsize(out), "sha256": sha(out), "members": members, "testzip_first_bad": bad, "crc32_of_member_crc_table": "%08x" % (zlib.crc32(json.dumps(sorted(crcs.items())).encode()) & 0xffffffff), "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
            "note": "archive INTEGRITY record written OUTSIDE the archive; NOT the supervisory job receipt (that is in PILOT_LEDGER.jsonl and the sidecar <zip>.PACKAGE_JOB_RECEIPT.json)"}
-    json.dump(rec, open(os.path.join(D, "PACKAGE_RECORD.json"), "w"), indent=1); json.dump(rec, open(out + ".PACKAGE_RECORD.json", "w"), indent=1); print(json.dumps(rec))
+    tag = os.path.basename(out).replace(".zip", ""); json.dump(rec, open(os.path.join(D, "PACKAGE_RECORD_%s.json" % tag), "w"), indent=1); json.dump(rec, open(out + ".PACKAGE_RECORD.json", "w"), indent=1); print(json.dumps(rec))
 
 
 if __name__ == "__main__":
