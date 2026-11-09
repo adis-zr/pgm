@@ -109,14 +109,35 @@ def main(D):
         opp.append({"case": case, "inspection": "response_partition_stop", "question": "where do response partitions cease to compress, and which input is responsible?", "state": ("WITNESS_FOUND" if stops else ("NO_WITNESS_IN_COMPLETED_SCAN" if allax else "NOT_REACHED")), "extent": {"axes_inspected": allax, "axes_compressed": comp},
                     "witnesses": stops[:30], "count": len(stops), "note": "exact: an axis stays uncompressed iff some input has every state in its own class (finest_inputs); numerical equality of generated values is never used"})
         # 5. deterministic / zero source structure
-        sc = cj.get("source_census") or {}; red = cj.get("reductions") or {}
+        sc = dict(cj.get("source_census") or {}); red = cj.get("reductions") or {}
+        # the diagnostic cell's `deterministic_factors` counted UNARY factors (trivially one nonzero per 'row'): recompute for arity >= 2 from the source bytes
+        try:
+            from mdi import model as MM
+            mm = MM.read_uai(os.path.join(HERE, cases[case]["model_path"])); det2 = 0
+            for f in mm.factors:
+                if len(f.scope) < 2:
+                    continue
+                st = f.strides()
+                for k in range(len(f.scope)):
+                    others = [j for j in range(len(f.scope)) if j != k]; ok = True
+                    import itertools
+                    for idx in itertools.product(*[range(f.card[j]) for j in others]):
+                        base = sum(idx[i] * st[others[i]] for i in range(len(others)))
+                        if sum(1 for a in range(f.card[k]) if f.table[base + a * st[k]] != 0) != 1:
+                            ok = False; break
+                    if ok:
+                        det2 += 1; break
+            sc["deterministic_factors_arity_ge2"] = det2; sc["deterministic_factors_note"] = "the diagnostic cell's field counted unary factors too (superseded); this value is recomputed in extraction for arity >= 2: along some axis every column has exactly one nonzero"
+        except Exception as ex:
+            sc["deterministic_factors_arity_ge2"] = None; sc["deterministic_factors_note"] = "recomputation failed: %s" % ex
         opp.append({"case": case, "inspection": "deterministic_source_structure", "question": "does the source carry deterministic mappings / zeros that exact reductions exploited or left?", "state": ("WITNESS_FOUND" if (sc.get("deterministic_factors") or sc.get("zeros")) else "NO_WITNESS_IN_COMPLETED_SCAN"),
-                    "source": {"factors": sc.get("factors"), "entries": sc.get("entries"), "zeros": sc.get("zeros"), "deterministic_factors": sc.get("deterministic_factors")}, "reductions_applied": red.get("steps"), "free_vars": [red.get("free_original"), red.get("free_reduced")], "remaining": {"factors": red.get("factors_remaining"), "entries": red.get("entries_remaining")}, "recognition_capped": (red.get("recognition") or {}).get("capped")})
+                    "source": {"factors": sc.get("factors"), "entries": sc.get("entries"), "zeros": sc.get("zeros"), "deterministic_factors_arity_ge2": sc.get("deterministic_factors_arity_ge2"), "deterministic_factors_diag_field_incl_unary_SUPERSEDED": sc.get("deterministic_factors"), "note": sc.get("deterministic_factors_note")}, "reductions_applied": red.get("steps"), "free_vars": [red.get("free_original"), red.get("free_reduced")], "remaining": {"factors": red.get("factors_remaining"), "entries": red.get("entries_remaining")}, "recognition_capped": (red.get("recognition") or {}).get("capped")})
         # 6. cost classification (observational)
         tot_fw = sum(e["wall_s"] for e in fw.values()); recomp = sum((e["counters_delta"] or {}).get("lazy_evictions", 0) for e in fw.values()); lazy = sum((e["counters_delta"] or {}).get("lazy_evals", 0) for e in fw.values())
-        att = (cj.get("attempts") or [{}])[-1]; ph = att.get("phases_s", {}); chk = (cj.get("checker") or {})
-        opp.append({"case": case, "inspection": "cost_classification", "state": ("OBSERVED" if fw else "NOT_REACHED"), "status": r["status"], "planned_volume": {"core_entries": sum(m["planned_core_entries"] for m in met), "bag_rows": sum(m["planned_bag_rows"] for m in met), "raw_boundary_products": sum(m["raw_boundary_domain_product"] for m in met)},
-                    "realized": {"nodes_forward_observed": observed, "of": total, "forward_wall_s": tot_fw, "entries_computed": sum((e["counters_delta"] or {}).get("entries_computed", 0) for e in fw.values()), "bag_rows_visited": sum((e["counters_delta"] or {}).get("bag_rows", 0) for e in fw.values()), "lazy_evals": lazy, "lazy_evictions_recompute_pressure": recomp, "downgraded_to_lazy": sum((e["counters_delta"] or {}).get("downgraded_to_lazy", 0) for e in fw.values())},
+        att = (cj.get("attempts") or [{}])[-1]; ph = att.get("phases_s", {}); chk = (cj.get("checker") or {}); cstop = att.get("counters") or {}
+        prog = json.load(open(os.path.join(od, "progress.json"))) if os.path.exists(os.path.join(od, "progress.json")) else {}
+        opp.append({"case": case, "inspection": "cost_classification", "state": ("OBSERVED" if fw else "NOT_REACHED"), "status": r["status"], "counters_at_stop_or_end": cstop, "current_operation_at_stop": (cj.get("stop") or {}).get("current"), "last_snapshot": {k: prog.get(k) for k in ("t_s", "phase", "label", "current", "bytes_vals", "bytes_adj", "pending_flushes")}, "planned_volume": {"core_entries": sum(m["planned_core_entries"] for m in met), "bag_rows": sum(m["planned_bag_rows"] for m in met), "raw_boundary_products": sum(m["raw_boundary_domain_product"] for m in met)},
+                    "realized": {"nodes_forward_observed": observed, "of": total, "forward_wall_s_completed_nodes": tot_fw, "forward_wall_s_incl_partial_node": (ph.get("forward") if ph.get("forward") is not None else (ph.get("total") if ph.get("total") is not None else tot_fw)), "entries_computed": sum((e["counters_delta"] or {}).get("entries_computed", 0) for e in fw.values()), "bag_rows_visited": sum((e["counters_delta"] or {}).get("bag_rows", 0) for e in fw.values()), "lazy_evals_completed_nodes": lazy, "lazy_evictions_completed_nodes": recomp, "lazy_evals_at_stop": cstop.get("lazy_evals", 0), "lazy_hits_at_stop": cstop.get("lazy_hits", 0), "lazy_evictions_at_stop": cstop.get("lazy_evictions", 0), "downgraded_to_lazy_at_stop": cstop.get("downgraded_to_lazy", 0), "entries_computed_at_stop": cstop.get("entries_computed", 0), "bag_rows_at_stop": cstop.get("bag_rows", 0)},
                     "setup": {"source_reductions_s": (cj.get("phases_s") or {}).get("source_reductions"), "plan_s": (cj.get("phases_s") or {}).get("plan")}, "checker": {"status": chk.get("status"), "wall_s": chk.get("wall_s"), "counters": chk.get("counters")}, "phases_s": {"forward": ph.get("forward"), "backward": ph.get("backward"), "checker": ph.get("checker")},
                     "largest_observed_node": (max(fw.values(), key=lambda e: e["wall_s"])["nid"] if fw else None), "earliest_sharp_rise": _earliest_rise(fw, met), "classification_note": "observational: 'unavoidable under the CURRENT representation' = planned volume; 'repeated work' = lazy evictions / recomputation; 'residency' = bytes_vals/adj trajectories in nodes.jsonl; 'setup' = reductions + plan; 'checker' = its record; not a lower bound"})
     with open(os.path.join(D, "OPPORTUNITIES.jsonl"), "w") as f:

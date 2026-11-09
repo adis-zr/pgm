@@ -44,19 +44,19 @@ def main(D):
     # ---------------------------------------------------------------- C
     P("## C. Where observed work, memory and checking concentrate (diagnostic cells, 20 s)\n")
     cost = {o["case"]: o for o in OPP if o["inspection"] == "cost_classification"}
-    P("| case | diag status | nodes observed / planned | planned core entries | planned bag rows | realized bag visits | entries computed | lazy evals | evictions | forward s | backward s | checker s | checker status | largest node (nid) | earliest sharp rise |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    P("| case | diag status | nodes observed / planned | planned core entries | planned bag rows | bag visits at stop/end | entries computed at stop/end | lazy evals (hits) at stop/end | downgrades | forward s (incl. partial node) | backward s | checker s | checker status | largest completed node (nid) | earliest sharp rise | operation at stop |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for c in acc:
         o = cost.get(c["slot"])
         if not o or o["state"] != "OBSERVED":
             P("| %s | %s | — | — | — | — | — | — | — | — | — | — | %s | — | %s |" % (c["slot"], c["diagnostic_20s"]["status"], (o or {}).get("checker", {}).get("status") if o else "—", (o or {}).get("state", "NOT_REACHED"))); continue
         r = o["realized"]; pv = o["planned_volume"]; ph = o["phases_s"]; er = o.get("earliest_sharp_rise")
-        P("| %s | %s | %d / %d | %d | %d | %d | %d | %d | %d | %s | %s | %s | %s | %s | %s |" % (c["slot"], o["status"], r["nodes_forward_observed"], r["of"], pv["core_entries"], pv["bag_rows"], r["bag_rows_visited"], r["entries_computed"], r["lazy_evals"], r["lazy_evictions_recompute_pressure"], fmt(ph.get("forward")), fmt(ph.get("backward")), fmt(ph.get("checker")), o["checker"]["status"], o["largest_observed_node"], ("%s@nid %s" % (er["kind"], er["nid"])) if er else "none"))
+        P("| %s | %s | %d / %d | %d | %d | %d | %d | %d (%d) | %d | %s | %s | %s | %s | %s | %s | %s |" % (c["slot"], o["status"], r["nodes_forward_observed"], r["of"], pv["core_entries"], pv["bag_rows"], r["bag_rows_at_stop"], r["entries_computed_at_stop"], r["lazy_evals_at_stop"], r["lazy_hits_at_stop"], r["downgraded_to_lazy_at_stop"], fmt(r["forward_wall_s_incl_partial_node"]), fmt(ph.get("backward")), fmt(ph.get("checker")), o["checker"]["status"], o["largest_observed_node"], ("%s@nid %s" % (er["kind"], er["nid"])) if er else "none", json.dumps(o.get("current_operation_at_stop"))))
     P("\nSeparation of the four quantities: PLAN SIZE (planned core entries / bag rows, exact from the plan), REALIZED WORK (bag visits and entries computed in the observed prefix), REPEATED WORK (lazy evaluations beyond stored entries and evictions; a lazy entry re-evaluated after eviction is counted again in lazy evals, so unique counts are not derivable from these totals), PARTIAL TRACES (nodes observed / planned < 1 means the suffix is UNSEEN: the observed prefix is not evidence about the unseen suffix's cost). Checker work is from the checker's own record (its internals were not instrumented; per-node checker work is unavailable).\n")
     P("### Per-family concentration (sums over the observed prefixes of the diagnostic cells)\n")
     P("| family | cases | diag certified | planned core entries (sum) | planned bag rows (sum) | realized bag visits (sum) | forward s (sum) | checker s (sum) | nodes observed / planned |\n|---|---|---|---|---|---|---|---|---|")
     for f in fams:
         cs = [c for c in acc if c["family"] == f]; os_ = [cost[c["slot"]] for c in cs if c["slot"] in cost and cost[c["slot"]]["state"] == "OBSERVED"]
-        P("| %s | %d | %d | %d | %d | %d | %s | %s | %d / %d |" % (f, len(cs), sum(1 for c in cs if c["diagnostic_20s"]["status"] == "CERTIFIED"), sum(o["planned_volume"]["core_entries"] for o in os_), sum(o["planned_volume"]["bag_rows"] for o in os_), sum(o["realized"]["bag_rows_visited"] for o in os_), fmt(sum(o["phases_s"].get("forward") or 0 for o in os_)), fmt(sum(o["phases_s"].get("checker") or 0 for o in os_)), sum(o["realized"]["nodes_forward_observed"] for o in os_), sum(o["realized"]["of"] for o in os_)))
+        P("| %s | %d | %d | %d | %d | %d | %s | %s | %d / %d |" % (f, len(cs), sum(1 for c in cs if c["diagnostic_20s"]["status"] == "CERTIFIED"), sum(o["planned_volume"]["core_entries"] for o in os_), sum(o["planned_volume"]["bag_rows"] for o in os_), sum(o["realized"]["bag_rows_at_stop"] for o in os_), fmt(sum((o["realized"]["forward_wall_s_incl_partial_node"] or 0) for o in os_)), fmt(sum(o["phases_s"].get("checker") or 0 for o in os_)), sum(o["realized"]["nodes_forward_observed"] for o in os_), sum(o["realized"]["of"] for o in os_)))
     P("")
     # ---------------------------------------------------------------- D
     P("## D. Exact simplification opportunities: concrete evidence, empty scans, unobserved\n")
@@ -97,12 +97,12 @@ def main(D):
                 P("| %s | %s | %d | %d | %d | %s |" % (c["slot"], o["state"], o["extent"]["axes_inspected"], o["extent"]["axes_compressed"], o["count"], ("nid %d axis %d: %s finest %s" % (w["nid"], w["axis"], w["classes_per_input"], w["finest_inputs"])) if w else "—"))
             P("\nExact: an output axis stays at full width iff some input already distinguishes every state of that variable (the 'finest input'); the certified view is the intersection, so one fine input defeats the compression of all the others. Numerical equality of generated message values is NOT used and would not be a valid merge (their marker derivatives can differ).\n")
         else:
-            P("| case | factors | entries | exact zeros | deterministic factors | reductions applied | free vars original → reduced | remaining factors / entries | recognition capped |\n|---|---|---|---|---|---|---|---|---|")
+            P("| case | factors | entries | exact zeros | deterministic factors (arity ≥ 2; recomputed) | reductions applied | free vars original → reduced | remaining factors / entries | recognition capped |\n|---|---|---|---|---|---|---|---|---|")
             for c in acc:
                 o = rows.get(c["slot"])
                 if not o:
                     P("| %s | — | — | — | — | — | — | — | — |" % c["slot"]); continue
-                s = o["source"]; P("| %s | %s | %s | %s | %s | %s | %s → %s | %s / %s | %s |" % (c["slot"], s["factors"], s["entries"], s["zeros"], s["deterministic_factors"], json.dumps(o["reductions_applied"]), o["free_vars"][0], o["free_vars"][1], o["remaining"]["factors"], o["remaining"]["entries"], o["recognition_capped"]))
+                s = o["source"]; P("| %s | %s | %s | %s | %s | %s | %s → %s | %s / %s | %s |" % (c["slot"], s["factors"], s["entries"], s["zeros"], s.get("deterministic_factors_arity_ge2"), json.dumps(o["reductions_applied"]), o["free_vars"][0], o["free_vars"][1], o["remaining"]["factors"], o["remaining"]["entries"], o["recognition_capped"]))
             P("")
     P("### D6. No-op and missingness summary over all inspection × case pairs\n")
     cnt = collections.Counter((o["inspection"], o["state"]) for o in OPP)
@@ -111,8 +111,11 @@ def main(D):
         P("| %s | %s |" % (insp, " | ".join(str(cnt.get((insp, s), 0)) for s in sorted({s for _, s in cnt}))))
     P("\nSCAN_CAPPED and NOT_REACHED never mean 'no useful structure'; NO_WITNESS_IN_COMPLETED_SCAN excludes only the named narrow rule on the completed extent; RULE_APPLIES_NO_VOLUME_GAIN means the identity holds but the representation it yields is not smaller.\n")
     # ---------------------------------------------------------------- E
-    P("## E. Mathematical questions whose answers would most improve the algorithm (examples and counterexamples; no implementation recommendation)\n")
-    P("Written after the census tables above; see the handoff for the labelled list (observation / inferred bottleneck / proposed rule / unproved claim).\n")
+    ap = os.path.join(D, "ANALYSIS_E.md")
+    if os.path.exists(ap):
+        P(open(ap).read())
+    else:
+        P("## E. (analysis file ANALYSIS_E.md missing)\n")
     # ---------------------------------------------------------------- budget
     P("## Budget (separate 10,800 s ceiling; every executed process job charged)\n")
     P("Total charged %s s (%s); by scope %s; envelopes %s; unresolved starts %d; within ceiling: %s. Disclosed uncharged: %s.\n" % (B["total_charged_s"], B["exact_compliance"], json.dumps(B["by_scope_s"]), json.dumps(B["envelopes_s"]), len(B["unresolved_starts"]), B["within_ceiling"], B["disclosed_uncharged"]))
