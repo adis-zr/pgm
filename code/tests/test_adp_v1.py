@@ -189,7 +189,7 @@ def test_cell_end_to_end_certified_against_brute_force(tmp_path):
 def _run_checker_on(cert, mp, ep):
     with tempfile.TemporaryDirectory() as d:
         cp = os.path.join(d, "c.json"); op = os.path.join(d, "o.json"); json.dump(cert, open(cp, "w"), default=str)
-        subprocess.run([PY, "-m", "adp.checker", cp, op, "60"], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True)
+        subprocess.run([PY, "-m", "adp.checker", cp, op, "60", mp, ep, "ALL"], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True)
         return json.load(open(op))
 
 
@@ -221,7 +221,7 @@ def _mutants(cert):
     outs = []
     outs.append(("missing_factor_occurrence", mut(lambda c: c["plan"]["nodes"][0]["inputs"].pop(0) if c["plan"]["nodes"][0]["inputs"] else None), "bucket inputs"))
     outs.append(("extra_duplicated_occurrence", mut(lambda c: c["plan"]["nodes"][0]["inputs"].append(c["plan"]["nodes"][0]["inputs"][0])), "bucket inputs"))
-    outs.append(("wrong_source_bytes", mut(lambda c: c["source"].__setitem__("raw_model_sha256", "0" * 64)), "different source bytes"))
+    outs.append(("wrong_source_bytes", mut(lambda c: c["source"].__setitem__("raw_model_sha256", "0" * 64)), "source"))
     outs.append(("wrong_domain_cardinality", mut(lambda c: c["reduced"]["orig_card"].__setitem__(0, c["reduced"]["orig_card"][0] + 1)), "cardinalities"))
     outs.append(("invented_fixation", mut(lambda c: c["reduced"]["steps"].insert(len([s for s in c["reduced"]["steps"] if s[0] == "pinned"]), ["exclude", int(sorted(c["reduced"]["dom"])[0]), int(c["reduced"]["dom"][sorted(c["reduced"]["dom"])[0]][0]), int(c["reduced"]["factors"][0]["fid"])])), "exclude"))
     outs.append(("evidence_version", mut(lambda c: c["reduced"]["evidence"].__setitem__(str(sorted(c["reduced"]["dom"])[0]), 0)), "evidence"))
@@ -247,7 +247,7 @@ def _mutants(cert):
     outs.append(("order_not_matching_nodes", mut(tamper_order), "eliminated variable"))
     def tamper_queries(c):
         c["expected_queries"] = c["expected_queries"][:-1]
-    outs.append(("caller_query_list_truncated", mut(tamper_queries), "query contract"))
+    outs.append(("caller_query_list_truncated", mut(tamper_queries), "query"))
     def tamper_const(c):
         for s in c["reduced"]["steps"]:
             if s[0] == "const":
@@ -274,10 +274,10 @@ def test_point_verification_rejects_altered_mar(good):
     i = next(k for k in range(3, len(txt)) if "." in txt[k] and 0.02 < float(txt[k]) < 0.98); q = Fr(txt[i]) + Fr(1, 50); txt[i] = PB.dyadic_decimal(PB.floor_grid(q, 60), 60) if False else str(float(q))
     bad = os.path.join(out, "bad.MAR"); open(bad, "w").write(" ".join(txt[:2]) + "\n" + " ".join(txt[2:]) + "\n")
     op = os.path.join(out, "pc_bad.json")
-    subprocess.run([PY, "-m", "adp.checker", "--verify-point", os.path.join(out, chk), bad, cert["model_path"], op], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True)
+    subprocess.run([PY, "-m", "adp.checker", "--verify-point", os.path.join(out, chk), bad, cert["model_path"], cert["evidence_path"], op], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True)
     r = json.load(open(op)); assert r["status"] == "POINT_REJECTED", r
     op2 = os.path.join(out, "pc_good.json")
-    subprocess.run([PY, "-m", "adp.checker", "--verify-point", os.path.join(out, chk), mar, cert["model_path"], op2], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True)
+    subprocess.run([PY, "-m", "adp.checker", "--verify-point", os.path.join(out, chk), mar, cert["model_path"], cert["evidence_path"], op2], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True)
     assert json.load(open(op2))["status"] == "POINT_VERIFIED"
 
 
@@ -390,9 +390,9 @@ def test_review_F1_point_verifier_binds_source_and_requires_full_intervals_ok_re
     m2 = M.Model(nvars=1, card=[2], factors=[M.Factor(scope=(0,), card=(2,), table=[Fr(3, 4), Fr(1, 4)], origin=0)]); m2.validate()
     d1 = tmp_path / "a"; d1.mkdir(); d2 = tmp_path / "b"; d2.mkdir(); r1, o1 = _cell(str(d1), m1, {}); r2, o2 = _cell(str(d2), m2, {}); assert r1["status"] == r2["status"] == "CERTIFIED"
     chk = [f for f in os.listdir(o1) if f.startswith("checker_p") and f.endswith(".json")][0]; mp2 = os.path.join(str(d2), "m.uai"); mp1 = os.path.join(str(d1), "m.uai")
-    def vp(chk_json, mar, model, tag):
-        op = str(tmp_path / ("pc_%s.json" % tag)); subprocess.run([PY, "-m", "adp.checker", "--verify-point", chk_json, mar, model, op], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True); return json.load(open(op))
-    r = vp(os.path.join(o1, chk), os.path.join(o1, "output.MAR"), mp2, "wrong"); assert r["status"] == "POINT_REJECTED" and "different model" in r["reason"]
+    def vp(chk_json, mar, model, tag, evid=None):
+        op = str(tmp_path / ("pc_%s.json" % tag)); subprocess.run([PY, "-m", "adp.checker", "--verify-point", chk_json, mar, model, evid or (model + ".evid"), op], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), capture_output=True); return json.load(open(op))
+    r = vp(os.path.join(o1, chk), os.path.join(o1, "output.MAR"), mp2, "wrong"); assert r["status"] == "POINT_REJECTED" and "different task" in r["reason"]
     rej = json.load(open(os.path.join(o1, chk))); rej["status"] = "REJECTED"; rp = str(tmp_path / "rej.json"); json.dump(rej, open(rp, "w"))
     r = vp(rp, os.path.join(o1, "output.MAR"), mp1, "rej"); assert r["status"] == "POINT_REJECTED" and "INTERVALS_OK" in r["reason"]
     emp = json.load(open(os.path.join(o1, chk))); emp["certified_intervals"]["0"] = []; ep = str(tmp_path / "emp.json"); json.dump(emp, open(ep, "w"))
@@ -406,3 +406,30 @@ def test_review_step_type_validation_rejects_with_specific_reason(good):
         c = copy.deepcopy(cert); v = int(sorted(c["reduced"]["dom"])[0]); fid = int(c["reduced"]["factors"][0]["fid"])
         c["reduced"]["steps"].insert(len([s for s in c["reduced"]["steps"] if s[0] == "pinned"]), ["exclude", v, bad, fid])
         r = _run_checker_on(c, cert["model_path"], cert["evidence_path"]); assert r["status"] == "REJECTED" and "JSON integer" in (r.get("reason") or ""), (bad, r)
+
+
+def test_review2_cross_evidence_substitution_is_refused_at_checking_and_publication(tmp_path):
+    """Same model, two evidence files (x=0 / x=1). A genuine, unchanged checker record for evidence x=0 must be refused by publish() for the
+    x=1 task, by the point verifier for the x=1 task, and by the checker CLI when the caller names evidence x=1 for the x=0 certificate."""
+    from adp import cell as CELL
+    m = M.Model(nvars=2, card=[2, 2], factors=[M.Factor(scope=(0, 1), card=(2, 2), table=[Fr(1), Fr(2), Fr(3), Fr(4)], origin=0)]); m.validate()
+    mp = str(tmp_path / "m.uai"); O.write_uai(mp, m, {0: 0}); ep0 = mp + ".evid"; ep1 = str(tmp_path / "m1.uai.evid"); open(ep1, "w").write("1 0 1\n")
+    env = dict(os.environ, PYTHONPATH=HERE); o0 = str(tmp_path / "out0"); o1 = str(tmp_path / "out1")
+    subprocess.run([PY, "-m", "adp.cell", mp, ep0, o0, "60", "{}"], cwd=HERE, env=env, capture_output=True); assert json.load(open(os.path.join(o0, "cell.json")))["status"] == "CERTIFIED"
+    subprocess.run([PY, "-m", "adp.cell", mp, ep1, o1, "60", "{}"], cwd=HERE, env=env, capture_output=True); r1 = json.load(open(os.path.join(o1, "cell.json"))); assert r1["status"] == "CERTIFIED"
+    from ext import uai as U
+    assert [float(x) for x in U.read_mar(os.path.join(o1, "output.MAR"))[0][0]] == [0.0, 1.0]            # the x=1 task's own answer
+    chk0 = json.load(open(os.path.join(o0, "checker_p64.json")))
+    # (a) publication for the x=1 task with the x=0 record
+    rec = {"model": mp, "evidence": ep1, "phases_s": {}, "source": SRC.canonical_source_hashes(mp, ep1)}; rec["task"] = CELL.task_of(rec, m); o2 = str(tmp_path / "out2"); os.makedirs(o2)
+    st = CELL.publish(o2, m, chk0, rec, "_p64"); assert st == "CHECK_FAILED" and "bound to the caller's task" in rec["reason"] and not os.path.exists(os.path.join(o2, "output.MAR"))
+    # (b) point verifier for the x=1 task with the x=0 record and the x=0 answer
+    op = str(tmp_path / "pc.json"); subprocess.run([PY, "-m", "adp.checker", "--verify-point", os.path.join(o0, "checker_p64.json"), os.path.join(o0, "output.MAR"), mp, ep1, op], cwd=HERE, env=env, capture_output=True)
+    r = json.load(open(op)); assert r["status"] == "POINT_REJECTED" and "different task" in r["reason"]
+    # (c) checker CLI: the x=0 certificate checked against the caller's x=1 evidence
+    op2 = str(tmp_path / "chk.json"); subprocess.run([PY, "-m", "adp.checker", os.path.join(o0, "certificate.json"), op2, "60", mp, ep1, "ALL"], cwd=HERE, env=env, capture_output=True)
+    r = json.load(open(op2)); assert r["status"] == "REJECTED" and ("different model / evidence file" in r["reason"] or "source binding" in r["reason"])
+    # (d) a stale record left in the output directory is removed before the checker runs
+    o3 = str(tmp_path / "out3"); os.makedirs(o3); json.dump(chk0, open(os.path.join(o3, "checker_p64.json"), "w"))
+    subprocess.run([PY, "-m", "adp.cell", mp, ep1, o3, "60", "{}"], cwd=HERE, env=env, capture_output=True); r3 = json.load(open(os.path.join(o3, "cell.json")))
+    assert r3["status"] == "CERTIFIED" and [float(x) for x in U.read_mar(os.path.join(o3, "output.MAR"))[0][0]] == [0.0, 1.0] and r3["checker"]["task"]["raw_evidence_sha256"] == rec["task"]["raw_evidence_sha256"]

@@ -29,8 +29,8 @@ def main(D):
            "total_charged_s": (round(total, 3) if not (unresolved or rr_unres) else None), "total_lower_bound_s": round(total, 3), "total_with_estimates_s": round(qt + ct + zt + rt_est, 3),
            "total_status": ("EXACT" if not (unresolved or rr_unres) else "UNRESOLVED: %d cell receipts lack a wall; %d review-repair receipts lost (estimated %.0f s)" % (len(unresolved), len(rr_unres), sum((j.get("wall_s_estimate") or 0.0) for j in rr_unres))),
            "remaining_s": (round(CEILING - total, 3) if not (unresolved or rr_unres) else None), "remaining_s_with_estimates": round(CEILING - (qt + ct + zt + rt_est), 3),
-           "within_ceiling": (qt + ct + zt + rt_est) <= CEILING, "unresolved_receipts": [r.get("cell_id") for r in unresolved] + [j["job"] for j in rr_unres]}
-    json.dump(out, open(os.path.join(D, "BUDGET_LEDGER.json"), "w"), indent=1); print(json.dumps({k: out[k] for k in ("qualification_s", "cells_s", "cells_by_stage_s", "closeout_s", "total_charged_s", "remaining_s", "within_ceiling", "total_status")}))
+           "within_ceiling_of_charged_receipts_with_estimates": (qt + ct + zt + rt_est) <= CEILING, "exact_compliance": "UNPROVED: two review-repair receipts were lost (estimated) and pre-freeze development executions were never charged (review_2026-11-08/UNCHARGED_DEVELOPMENT_RUNS.json); the charged lower bound and the estimate are both below the ceiling", "unresolved_receipts": [r.get("cell_id") for r in unresolved] + [j["job"] for j in rr_unres]}
+    json.dump(out, open(os.path.join(D, "BUDGET_LEDGER.json"), "w"), indent=1); print(json.dumps({k: out[k] for k in ("qualification_s", "cells_s", "cells_by_stage_s", "closeout_s", "total_charged_s", "remaining_s", "within_ceiling_of_charged_receipts_with_estimates", "total_status")}))
 
 
 if __name__ == "__main__":

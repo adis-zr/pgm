@@ -724,10 +724,14 @@ class IntervalReplay:
         if tz.any():
             raise Reject("checker: a supported bag row is an exact zero (join is not a complete positive support)")
         slo, shi, _ = self.sum_groups(tlo, thi, tz, groups, len(uniq))
+        need = 2 * len(uniq) * self.mp + rows.nbytes; self.c["entries"] += len(uniq); self.c["support_rows"] += len(rows)
+        if self.bytes + need > self.caps["value_bytes_cap"]:                      # computed but not storable: serve lazily (work charged), as the producer does
+            nd["_fmt_checker"] = "lazy"; self.cores[nd["nid"]] = {"fmt": "lazy", "cache": {}, "nid": nd["nid"]}; self.c["downgraded_to_lazy"] = self.c.get("downgraded_to_lazy", 0) + 1
+            if nd["parent"] is None:
+                self.eval_lazy(self.cores[nd["nid"]], nd, 0)
+            return
         self.cores[nd["nid"]] = {"fmt": "sparse", "keys": uniq, "index": {int(k): j for j, k in enumerate(uniq.tolist())}, "lo": slo, "hi": shi, "rows": (x_pos, cls_cols, groups), "nid": nd["nid"]}
-        self.bytes += 2 * len(uniq) * self.mp + rows.nbytes; self.c["entries"] += len(uniq); self.c["support_rows"] += len(rows)
-        if self.bytes > self.caps["value_bytes_cap"]:
-            raise TimeoutError("checker value cap (sparse)")
+        self.bytes += need
 
     def lazy_child_keys(self, nd, x_pos, cls_cols):
         out = []
@@ -1008,20 +1012,19 @@ def check(cert, model_path, evid_path, expected_queries, deadline, caps):
     return rec
 
 
-def verify_point_mode(checker_json, mar_path, model_path, out_path):
+def verify_point_mode(checker_json, mar_path, model_path, evid_path, out_path):
     """Second, separate checker invocation: re-parse the delivered MAR (ext.uai) and verify every row exactly against the
     grid-widened certified intervals of the FIRST invocation's record. The record must (1) be a completed INTERVALS_OK record,
-    (2) be bound by raw + canonical hash to THE model file named here, (3) carry one full interval row per original variable."""
+    (2) carry a task binding equal to the CALLER's task (model AND evidence by raw + canonical hash, variable count, cardinalities,
+    query contract = every original variable), (3) carry one full interval row per original variable."""
     T0 = time.monotonic(); chk = json.load(open(checker_json)); rec = {"status": "POINT_REJECTED"}
     try:
         if chk.get("status") != "INTERVALS_OK":
             raise Reject("checker record status is %r, not INTERVALS_OK" % chk.get("status"))
-        src = chk.get("source") or {}
-        if src.get("raw_model_sha256") != _raw_hash(model_path) or src.get("canonical_model_sha256") != _canon_hash(model_path):
-            raise Reject("checker record is bound to a different model (source hash mismatch)")
-        m = U.read_model(model_path); m.check(); card = list(m.card)
-        if chk.get("nvars") != m.nvars or list(chk.get("orig_card") or []) != card:
-            raise Reject("checker record variable count / cardinalities differ from the model")
+        m = U.read_model(model_path); m.check(); card = list(m.card); tb = task_binding(model_path, evid_path, list(range(m.nvars))); got = chk.get("task") or {}
+        for k in ("raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256", "nvars", "orig_card", "queries_sha256"):
+            if got.get(k) != tb[k]:
+                raise Reject("checker record is bound to a different task (%s differs: model / evidence / query contract)" % k)
         ivs = {}
         for v in range(m.nvars):
             row = (chk.get("certified_intervals") or {}).get(str(v))
@@ -1031,10 +1034,8 @@ def verify_point_mode(checker_json, mar_path, model_path, out_path):
             for L, Uu in ivs[v]:
                 if not (0 <= L <= Uu <= 1):
                     raise Reject("malformed interval in row %d" % v)
-        if set(ivs) != set(range(m.nvars)):
-            raise Reject("interval rows do not cover every original variable")
         ok, why = PB.verify_mar_against_intervals(mar_path, ivs, card)
-        rec = {"status": "POINT_VERIFIED" if ok else "POINT_REJECTED", "reason": why, "mar_sha256": _raw_hash(mar_path), "model_sha256": src["raw_model_sha256"], "grid_bits": PB.grid_bits(max(card))}
+        rec = {"status": "POINT_VERIFIED" if ok else "POINT_REJECTED", "reason": why, "mar_sha256": _raw_hash(mar_path), "task": tb, "grid_bits": PB.grid_bits(max(card))}
     except Reject as ex:
         rec = {"status": "POINT_REJECTED", "reason": str(ex)}
     except Exception as ex:
@@ -1042,14 +1043,31 @@ def verify_point_mode(checker_json, mar_path, model_path, out_path):
     rec["wall_s"] = time.monotonic() - T0; json.dump(rec, open(out_path, "w")); print(json.dumps(rec))
 
 
+def task_binding(model_path, evid_path, queries):
+    """The CALLER's task identity, computed from the caller's own files and query contract (never from the certificate)."""
+    m = U.read_model(model_path); m.check()
+    return {"raw_model_sha256": _raw_hash(model_path), "raw_evidence_sha256": _raw_hash(evid_path), "canonical_model_sha256": _canon_hash(model_path), "canonical_evidence_sha256": _canon_hash(evid_path),
+            "nvars": m.nvars, "orig_card": list(m.card), "queries": queries, "queries_sha256": hashlib.sha256(json.dumps(queries).encode()).hexdigest()}
+
+
 def main():
     if sys.argv[1] == "--verify-point":
-        verify_point_mode(*sys.argv[2:6]); return
-    cert_path, out_path, deadline_s = sys.argv[1], sys.argv[2], float(sys.argv[3]); T0 = time.monotonic()
+        verify_point_mode(*sys.argv[2:7]); return
+    # usage: adp.checker CERT.json OUT.json DEADLINE_S MODEL.uai EVID.uai.evid QUERIES   (QUERIES = "ALL" or a JSON list) -- the task comes from the CALLER
+    cert_path, out_path, deadline_s, model_path, evid_path, qspec = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6]; T0 = time.monotonic()
     cert = json.load(open(cert_path)); deadline = T0 + deadline_s if deadline_s > 0 else None
     caps = cert.get("checker_caps") or {"dense_core_cap_entries": 1 << 23, "dense_bag_cap_entries": 1 << 21, "sparse_rows_cap": 1 << 23, "lazy_cache_entries": 1 << 20, "value_bytes_cap": int(2.0 * (1 << 30))}
     try:
-        rec = check(cert, cert["model_path"], cert["evidence_path"], cert["expected_queries"], deadline, caps)
+        m0 = U.read_model(model_path); m0.check(); queries = list(range(m0.nvars)) if qspec == "ALL" else sorted(int(x) for x in json.loads(qspec))
+        tb = task_binding(model_path, evid_path, queries)
+        if os.path.abspath(cert.get("model_path", "")) != os.path.abspath(model_path) or os.path.abspath(cert.get("evidence_path", "")) != os.path.abspath(evid_path):
+            raise Reject("certificate names a different model / evidence file than the caller's task")
+        for k in ("raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256"):
+            if (cert.get("source") or {}).get(k) != tb[k]:
+                raise Reject("certificate source binding differs from the caller's %s" % k)
+        if sorted(cert.get("expected_queries") or []) != queries:
+            raise Reject("certificate query list differs from the caller's query contract")
+        rec = check(cert, model_path, evid_path, queries, deadline, caps); rec["task"] = tb
     except Reject as ex:
         rec = {"status": "REJECTED", "reason": str(ex)}
     except TimeoutError as ex:

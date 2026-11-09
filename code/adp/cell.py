@@ -35,7 +35,7 @@ def run_cell(mp, ep, out, deadline, cfg, rec):
     T_DL = T_START + deadline
     rec["phases_s"]["startup_imports"] = now(); t = now()
     m, ev = SRC.load(mp, ep); rec["phases_s"]["parse"] = now() - t
-    rec["source"] = SRC.canonical_source_hashes(mp, ep); rec["n_vars"] = m.nvars; rec["n_evidence"] = len(ev); rec["requested_coordinates"] = sum(m.card)
+    rec["source"] = SRC.canonical_source_hashes(mp, ep); rec["n_vars"] = m.nvars; rec["n_evidence"] = len(ev); rec["requested_coordinates"] = sum(m.card); rec["task"] = task_of(rec, m)
     expected = list(range(m.nvars))                                        # the CALLER's contract: every original variable
     rec["expected_queries"] = "all %d original variables (observed as point masses)" % m.nvars
     # ---- exact source reductions (bounded: wall fraction of the cell + work cap)
@@ -150,10 +150,27 @@ def decode_rows(R, enc):
     return orig
 
 
+def task_of(rec, m):
+    """The caller's task identity, from the caller's own model / evidence files and the campaign query contract (every original variable)."""
+    src = rec["source"]; queries = list(range(m.nvars))
+    return {**{k: src[k] for k in ("raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256")}, "nvars": m.nvars, "orig_card": list(m.card), "queries": queries,
+            "queries_sha256": hashlib.sha256(json.dumps(queries).encode()).hexdigest()}
+
+
+def bound_to_task(chk, task):
+    """A checker record is usable only if its task binding equals the caller's task in every field."""
+    got = chk.get("task") or {}
+    return all(got.get(k) == task[k] for k in ("raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256", "nvars", "orig_card", "queries_sha256"))
+
+
 def run_checker(out, remaining, rec, suffix=""):
-    """Separate process; its wall is part of the cell; its RSS is part of the supervised tree."""
+    """Separate process; its wall is part of the cell; its RSS is part of the supervised tree. The caller passes ITS model, evidence and
+    query contract on the command line; the checker binds the certificate to them. A stale record file is removed before launch and the
+    returned record is accepted only if its task binding equals the caller's."""
     outp = os.path.join(out, "checker%s.json" % suffix); remaining = max(0.05, remaining)
-    cmd = [sys.executable, "-m", "adp.checker", os.path.join(out, "certificate.json"), outp, "%.3f" % remaining]
+    if os.path.exists(outp):
+        os.remove(outp)
+    cmd = [sys.executable, "-m", "adp.checker", os.path.join(out, "certificate.json"), outp, "%.3f" % remaining, os.path.abspath(rec["model"]), os.path.abspath(rec["evidence"]), "ALL"]
     env = dict(os.environ); env["PYTHONPATH"] = HERE
     with open(os.path.join(out, "checker%s.log" % suffix), "ab") as log:
         try:
@@ -162,13 +179,20 @@ def run_checker(out, remaining, rec, suffix=""):
         except subprocess.TimeoutExpired:
             rc = None
     if os.path.exists(outp):
-        r = json.load(open(outp)); r["returncode"] = rc; return r
+        r = json.load(open(outp)); r["returncode"] = rc
+        if r.get("status") not in ("REJECTED", "CHECKER_INCOMPLETE", "CHECKER_NUMERIC_REFUSAL", "CHECKER_FAULT") and not bound_to_task(r, rec["task"]):
+            return {"status": "REJECTED", "reason": "checker record is not bound to the caller's task (model / evidence / query contract)", "returncode": rc}
+        return r
     return {"status": "CHECKER_INCOMPLETE", "reason": "checker produced no record (rc=%s)" % rc, "returncode": rc}
 
 
 def publish(out, m, chk, rec, suffix):
     """Point from the CHECKER's intervals (authoritative) on the exact grid; delivered decimals re-verified exactly here AND by a
-    separate checker process that re-parses the MAR file."""
+    separate checker process that re-parses the MAR file. REFUSES any record not bound to the caller's task."""
+    if chk.get("status") != "INTERVALS_OK" or not bound_to_task(chk, rec.get("task") or task_of(rec, m)):
+        rec["reason"] = "publication refused: checker record is not an INTERVALS_OK record bound to the caller's task (model, evidence, query contract)"; return "CHECK_FAILED"
+    if sorted(int(v) for v in chk["certified_intervals"]) != list(range(m.nvars)) or any(len(chk["certified_intervals"][str(v)]) != m.card[v] for v in range(m.nvars)):
+        rec["reason"] = "publication refused: interval rows do not match the caller's variables / cardinalities"; return "CHECK_FAILED"
     ivs = {int(v): [(Fr(a), Fr(b)) for a, b in row] for v, row in chk["certified_intervals"].items()}
     pts, prep = PB.publish_rows(ivs, m.card); rec["publication"] = {k: prep[k] for k in ("grid_bits", "eps", "max_width", "max_width_observed", "width_met", "point_feasible_all_rows", "status")}
     rec["certified"] = {"max_width": prep["max_width_observed"], "max_width_float": float(Fr(prep["max_width_observed"])), "width_met": prep["width_met"], "point_target_met": False, "precision": chk.get("precision")}
@@ -177,7 +201,7 @@ def publish(out, m, chk, rec, suffix):
         return prep["status"]
     tmp = os.path.join(out, "output%s.MAR" % suffix); PB.write_mar(tmp, pts, m.card)
     vp = os.path.join(out, "point_check%s.json" % suffix)
-    cmd = [sys.executable, "-m", "adp.checker", "--verify-point", os.path.join(out, "checker%s.json" % suffix), tmp, os.path.abspath(rec["model"]), vp]
+    cmd = [sys.executable, "-m", "adp.checker", "--verify-point", os.path.join(out, "checker%s.json" % suffix), tmp, os.path.abspath(rec["model"]), os.path.abspath(rec["evidence"]), vp]
     env = dict(os.environ); env["PYTHONPATH"] = HERE
     with open(os.path.join(out, "point_check%s.log" % suffix), "ab") as log:
         subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=env, cwd=HERE, timeout=600)

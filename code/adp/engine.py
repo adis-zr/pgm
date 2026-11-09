@@ -790,8 +790,8 @@ class Executor:
                     ccore.adj[kk] = (cur[0] + cv, max(cur[1], E) + 1); self.c["reverse_adds"] += 1
                 else:
                     ccore.adj[kk] = (cv, E); self.bytes_adj += eb
-                while ccore.adj and (len(ccore.adj) > self.cfg["lazy_cache_entries"] or self.bytes_adj > self.cfg["adjoint_bytes_cap"]):
-                    kk2, (dv, dE) = ccore.adj.popitem(); self.bytes_adj -= eb; self.pending.append((ch, ccore, kk2, dv, dE))   # flush ONE pending delta (consumed exactly once) to the queue
+                while ccore.adj and (len(ccore.adj) > self.cfg["lazy_cache_entries"] or self.bytes_adj > self.cfg["adjoint_bytes_cap"] + self.pending_bytes()):
+                    kk2, (dv, dE) = ccore.adj.popitem(); self.pending.append((ch, ccore, kk2, dv, dE))   # moved to the flush queue: still resident, still counted, consumed exactly once when drained
             return
         if ccore.fmt == "dense":
             if len(ccore.vals) == 0:
@@ -817,10 +817,14 @@ class Executor:
         while core.adj:
             key, (dv, dE) = core.adj.popitem(); self.bytes_adj -= self.lazy_entry_bytes; self.pullback_lazy(nd, core, key, dv, dE); self.drain()
 
+    def pending_bytes(self):
+        return len(self.pending) * self.lazy_entry_bytes
+
     def drain(self):
-        """Process every queued flushed delta (each consumed exactly once); the queue replaces recursion and may refill while draining."""
+        """Process every queued flushed delta (each consumed exactly once); the queue replaces recursion and may refill while draining.
+        A queued delta is released from the adjoint byte counter only when it is consumed."""
         while self.pending:
-            nd, core, key, dv, dE = self.pending.pop(); self.pullback_lazy(nd, core, key, dv, dE)
+            nd, core, key, dv, dE = self.pending.pop(); self.bytes_adj -= self.lazy_entry_bytes; self.pullback_lazy(nd, core, key, dv, dE)
 
     def pullback_lazy(self, nd, core, key, alpha, E):
         """Pullback(node, key, alpha): revisit the eliminated states of this entry, recomputing input values (through their caches or
