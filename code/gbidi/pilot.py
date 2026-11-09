@@ -115,6 +115,8 @@ def run(D, stage):
         out = os.path.join(D, c["out_dir"])
         if os.path.exists(os.path.join(out, "cell.json")) or os.path.exists(os.path.join(out, "NOT_LAUNCHED.json")):
             continue
+        if os.path.exists(os.path.join(D, "STOP_REQUESTED")):                                          # graceful stop between cells (preserves every receipt; never SIGKILL a supervisor)
+            json.dump({"status": "STOP_REQUESTED", "at_index": c["index"], "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, open(os.path.join(D, "RUN_STOPPED.json"), "w")); print("STOP: requested"); return
         total, by, unresolved = charged(D); remaining_commit = sum(x["max_permitted_charge_s"] for x in man["cells"] if not os.path.exists(os.path.join(D, x["out_dir"], "cell.json")))
         if unresolved:
             json.dump({"status": "NOT_LAUNCHED_UNRESOLVED_CLEANUP", "unresolved": [u["job"] for u in unresolved]}, open(os.path.join(D, "RUN_STOPPED.json"), "w")); print("STOP: unresolved start/cleanup"); return

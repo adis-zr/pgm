@@ -146,9 +146,16 @@ def binary64_admission(P):
             for kind, ref in nd.inputs:
                 e += (1 if kind == "F" else E[ref] + 2)                                              # child core value (+1 scale multiply +1)
             e += len(nd.inputs) + nd.x_card; E[nd.nid] = e
-        E_fwd = max(E.values()) if E else 1; E_rev = 2 * E_fwd + len(P.roots) + 4
-        e_total = 2 * (E_rev + 2); delta = Fr(e_total) * U53
-        rec.update({"log2_lo": PL.math.log2(lo.numerator) - PL.math.log2(lo.denominator), "log2_hi": PL.math.log2(hi.numerator) - PL.math.log2(hi.denominator) + logK, "E_fwd": E_fwd, "E_rev": E_rev, "e": e_total, "delta": float(delta)})
+        E_fwd = max(E.values()) if E else 1
+        # ACCUMULATION labels (review-found omission, attempt 1 of the broad round, BARLEY cell 010): a K-term sequential sum has label E_term + K.
+        # Every N[x][a] accumulator receives one increment per entry of its node; every materialized adjoint slot receives one increment per consumer
+        # row that reads it; the fused re-evaluation nests inside those rows. Conservative: + the largest row count of any node, for the adjoint and
+        # again for the numerator; the forward value sums x_card rows (already in E) and Z multiplies the roots (+ roots).
+        K_acc = max([nd.cost["rows"] for nd in P.nodes] + [1])
+        E_rev = 2 * E_fwd + len(P.roots) + 4 + K_acc
+        E_N = E_rev + K_acc; E_Z = E_fwd + len(P.roots) + 1
+        e_total = E_N + E_Z + 2; delta = Fr(e_total) * U53
+        rec.update({"log2_lo": PL.math.log2(lo.numerator) - PL.math.log2(lo.denominator), "log2_hi": PL.math.log2(hi.numerator) - PL.math.log2(hi.denominator) + logK, "E_fwd": E_fwd, "E_rev": E_rev, "K_acc": K_acc, "E_N": E_N, "E_Z": E_Z, "e": e_total, "delta": float(delta)})
         if delta > Fr(1, 2):
             rec["checks"].append("delta > 1/2"); return False, rec
         if lo / 2 < DBL_MIN or (hi * (2 ** logK)) * 2 > DBL_MAX:
@@ -293,6 +300,9 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
                     else:
                         y, s, eta = e[1], e[2], e[3]; iv = red[y][R.dom[y].index(s)]; row.append((min(Fr(1), eta * iv[0]), min(Fr(1), eta * iv[1])))
                 ivs[v] = row
+            for v, row in ivs.items():                                                                 # simplex bracket: the exact row sums to 1; an enclosure whose lower sum exceeds 1 or upper sum is below 1 is unsound
+                if sum(a for a, _ in row) > 1 or sum(b for _, b in row) < 1:
+                    att["outcome"] = "ENCLOSURE_UNSOUND_ROW_%d" % v; attempts.append(att); raise Refuse("REJECTED", "enclosure of variable %d does not bracket a simplex row (route %s, precision %s): unsound arithmetic premise" % (v, route, prec))
             w = max((b - a) for row in ivs.values() for a, b in row); att["max_width"] = str(w); att["outcome"] = "INTERVALS" if w <= PB.MAX_WIDTH else "TOO_WIDE"; attempts.append(att)
             rec["values_hex"] = {"Z": [toks[0], toks[1]]}
             if w <= PB.MAX_WIDTH:

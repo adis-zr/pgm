@@ -329,3 +329,32 @@ def test_fusion_policy_prices_the_fused_subtree_and_declines_many_reads(tmp_path
     card = [2] * 9; facs = [((0, 1), [Fr(1), Fr(2), Fr(3), Fr(4)]), ((1, 2, 3, 4, 5, 6, 7, 8), [Fr(i % 5 + 1) for i in range(256)])]; mp, ep = write_uai(str(tmp_path / "m.uai"), card, facs)
     m = U.read_model(mp); R = SRC.Reduced(EX._ModelAdapter(m), {}); R.reduce([], deadline=None); P, _ = PL.plan(R, dict(EX.ARMS["GENERAL_BIDI_V1"], bytes_per_entry=96))
     n0 = next(nd for nd in P.nodes if nd.x == 0); assert not n0.fused and P.mechanisms["fusion"]["edges_offered"] >= 1
+
+
+def test_binary64_enclosures_are_consistent_with_rigorous_mpfr_and_bracket_the_simplex_on_a_medium_model(tmp_path):
+    """Regression (attempt 1 of the broad round, BARLEY cell 010): the binary64 depth label omitted the sequential accumulation counts; the
+    enclosure was unsound (disjoint from the MPFR intervals at 6 coordinates) and only the infeasible simplex point exposed it. Controls: (a) on a
+    model with > 10^5 accumulated rows, every binary64 interval must INTERSECT the rigorous MPFR interval and every row must bracket 1; (b) on a
+    2^16-joint grid the binary64 enclosure contains the exact truth; (c) the executor refuses an enclosure that fails the bracket (mutant)."""
+    card = [4] * 10; facs = rnd_model(31, card, [(0, 1, 2), (2, 3, 4), (4, 5, 6), (6, 7, 8), (8, 9, 0), (1, 5, 9), (3, 7)]); mp, ep = write_uai(str(tmp_path / "m.uai"), card, facs)   # 4^10 joint; buckets up to 4^5 x 4 rows
+    for arm in ("NATIVE_PLAIN_V1", "GENERAL_BIDI_V1"):
+        b = run(arm, mp, ep, str(tmp_path / (arm + "_b")), b64=True, rules=[]); m = run(arm, mp, ep, str(tmp_path / (arm + "_m")), b64=False, rules=[])
+        assert b["route"] == "binary64" and m["route"] == "mpfr" and b["attempts"][-1]["counters"]["rows"] > 10 ** 3, b["attempts"][-1]["counters"]["rows"]   # thousands of accumulated rows (the planner picks a cheap order)
+        for v, row in b["certified_intervals"].items():
+            assert sum(Fr(a) for a, _ in row) <= 1 <= sum(Fr(x) for _, x in row)
+            for s, (a, x) in enumerate(row):
+                ma, mb = [Fr(t) for t in m["certified_intervals"][v][s]]; assert not (Fr(x) < ma or Fr(a) > mb), (arm, v, s)
+    card = [2] * 16; facs = rnd_model(32, card, [(i, i + 1) for i in range(15)] + [(i, i + 4) for i in range(12)] + [(v,) for v in range(16)]); mp, ep = write_uai(str(tmp_path / "g.uai"), card, facs); model = U.read_model(mp)
+    rec = run("GENERAL_BIDI_V1", mp, ep, str(tmp_path / "g"), b64=True, rules=[]); assert rec["route"] == "binary64" and truth_inside(rec, model, {})
+    # (c) mutant: shrink delta to zero by monkeypatching the admission -> the executor's bracket check must refuse before publication
+    import gbidi.executor as EXm
+    orig = EXm.binary64_admission
+    def tight(P):
+        ok, a = orig(P); a["delta_fr"] = Fr(0); return ok, a
+    EXm.binary64_admission = tight
+    try:
+        card = [4] * 10; facs = rnd_model(31, card, [(0, 1, 2), (2, 3, 4), (4, 5, 6), (6, 7, 8), (8, 9, 0), (1, 5, 9), (3, 7)]); mp, ep = write_uai(str(tmp_path / "t.uai"), card, facs)
+        rec = run("NATIVE_PLAIN_V1", mp, ep, str(tmp_path / "t"), b64=True, rules=[])
+        assert rec["route"] == "mpfr" and any(str(a.get("outcome", "")).startswith("ENCLOSURE_UNSOUND") or a.get("refused") for a in rec["attempts"]), [a.get("outcome") for a in rec["attempts"]]
+    finally:
+        EXm.binary64_admission = orig
