@@ -58,12 +58,16 @@ def ledger_rows(D):
 
 
 def charged(D):
-    """Nonnested accounting: every RECEIPT once; every START without a RECEIPT counts its max permitted charge (UNRESOLVED)."""
+    """Nonnested accounting: every RECEIPT once; every START without a RECEIPT counts its max permitted charge (UNRESOLVED); a RECEIPT whose
+    cleanup is unresolved (outcome CLEANUP_UNRESOLVED: the child could not be reaped; second review of 8 Nov 2026) is open-ended and is charged at
+    max(receipt wall, max permitted charge) and listed as unresolved too."""
     rows = ledger_rows(D); rec = {r["jid"]: r for r in rows if r["kind"] == "RECEIPT"}; total = 0.0; unresolved = []
     for r in rows:
         if r["kind"] == "START":
-            if r["jid"] in rec:
+            if r["jid"] in rec and not rec[r["jid"]].get("cleanup_unresolved"):
                 total += rec[r["jid"]]["wall_s"]
+            elif r["jid"] in rec:
+                unresolved.append(dict(r, cleanup_unresolved=True)); total += max(rec[r["jid"]]["wall_s"], r.get("max_permitted_charge_s") or 0.0)
             else:
                 unresolved.append(r); total += (r.get("max_permitted_charge_s") or 0.0)
     by_scope = {}

@@ -143,6 +143,9 @@ def test_review_supervisor_timeout_and_interruption_around_launch(tmp_path):
     spawned = [x for x in rows if x["kind"] == "SPAWNED"]
     if spawned:
         time.sleep(0.3); assert not any(q.pid == spawned[0]["pid"] and q.is_running() for q in psutil.process_iter())
+    if rows[-1]["pid"] is not None:                                             # second review: the receipt pid must be checked even without a SPAWNED record
+        assert rows[-1]["pgid"] == rows[-1]["pid"] and rows[-1]["cleanup_unresolved"] is False
+        time.sleep(0.3); assert not any(q.pid == rows[-1]["pid"] and q.is_running() for q in psutil.process_iter())
 
 
 def test_review_frozen_supervisor_reproduces_the_launch_gap(tmp_path):
@@ -153,3 +156,124 @@ def test_review_frozen_supervisor_reproduces_the_launch_gap(tmp_path):
     L = str(tmp_path / "Lb.jsonl")
     r = subprocess.run([PY, before, "--ledger", L, "--scope", "t", "--job", "absent", "--timeout", "2", "--", str(tmp_path / "nonexistent_executable")], cwd=HERE, env=ENV, capture_output=True, text=True)
     assert r.returncode != 0 and "FileNotFoundError" in r.stderr and not os.path.exists(L)
+
+
+# ---------------------------------------------------------------------------- second review of 8 Nov 2026: deterministic launch-boundary controls (real psutil, real signals)
+TRACE_RUNNER = r"""
+import sys, os, signal, time, runpy
+target, marker, ledger, mode, job = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+src = open(target).read().splitlines(); line = next(i for i, t in enumerate(src, 1) if marker in t)
+cmd = [sys.executable, "-c", "import time; time.sleep(60)"]
+sys.argv = [target, "--ledger", ledger, "--scope", "t", "--job", job, "--timeout", "60", "--stdout", os.devnull, "--stderr", os.devnull, "--"] + cmd
+fired = False
+def tracer(frame, event, arg):
+    global fired
+    if not fired and event == "line" and os.path.realpath(frame.f_code.co_filename) == os.path.realpath(target) and frame.f_lineno == line:
+        fired = True
+        if mode == "signal":
+            os.kill(os.getpid(), signal.SIGTERM)                       # a REAL SIGTERM delivered exactly at the marked line (before it executes)
+        elif mode == "spawned_write_failure":
+            orig = frame.f_globals["append"]
+            def failing(path, rec):
+                if rec["kind"] == "SPAWNED":
+                    raise OSError("injected SPAWNED append failure")
+                return orig(path, rec)
+            frame.f_globals["append"] = failing
+            proc = frame.f_locals["proc"]; w = proc.wait
+            def slow_wait(*a, **k):
+                time.sleep(0.2); return w(*a, **k)
+            proc.wait = slow_wait
+    return tracer
+sys.settrace(tracer)
+runpy.run_path(target, run_name="__main__")
+"""
+
+
+def _trace_run(tmp_path, target, marker, mode, job, timeout):
+    runner = tmp_path / "trace_runner.py"; runner.write_text(TRACE_RUNNER); L = str(tmp_path / ("L_%s.jsonl" % job))
+    t = time.monotonic(); r = subprocess.run([PY, str(runner), target, marker, L, mode, job], cwd=HERE, env=ENV, capture_output=True, text=True, timeout=timeout); outer = time.monotonic() - t
+    return _rows(L), r, outer
+
+
+def _alive(pid):
+    import psutil
+    try:
+        q = psutil.Process(pid); return q.is_running() and q.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
+
+
+def _killpg_quiet(pid):
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+SUP = os.path.join(HERE, "adp", "census", "supervise.py")
+
+
+def test_review2_sigterm_between_popen_and_identity_is_deferred_child_killed_wall_after_cleanup(tmp_path):
+    """SIGTERM delivered after Popen returned and BEFORE the group identity is assigned (the reviewer's reproduced window): the repaired supervisor
+    defers it, records SPAWNED, then kills and reaps the owned child and charges the wall AFTER cleanup; no live child survives the exit."""
+    rows, r, outer = _trace_run(tmp_path, SUP, "group identity without a syscall", "signal", "boundary_sigterm", timeout=30)
+    kinds = [x["kind"] for x in rows]; assert kinds == ["START", "SPAWNED", "RECEIPT"], kinds
+    rc = rows[-1]; pid = rc["pid"]
+    try:
+        assert rc["outcome"] == "SUPERVISOR_SIGNAL_15" and rc["pending_signal"] == 15 and rc["returncode"] == -9 and rc["cleanup_unresolved"] is False
+        assert rc["pgid"] == pid == rows[1]["pid"] and pid is not None
+        assert not _alive(pid), "child survived the supervisor exit"
+        assert rc["wall_s"] < 5 and outer < 15, (rc["wall_s"], outer)        # the before-version waited 2 x 10 s and charged only 10 of them
+    finally:
+        _killpg_quiet(pid)
+
+
+def test_review2_sigterm_before_launch_is_deferred_across_the_start_record_no_child(tmp_path):
+    """SIGTERM at the START write: deferred until the attempt record is durable, then acted upon before any launch; START + RECEIPT, pid None."""
+    rows, r, outer = _trace_run(tmp_path, SUP, '{"kind": "START"', "signal", "prelaunch_sigterm", timeout=30)
+    kinds = [x["kind"] for x in rows]; assert kinds == ["START", "RECEIPT"], kinds
+    rc = rows[-1]; assert rc["outcome"] == "SUPERVISOR_SIGNAL_15" and rc["pid"] is None and rc["pgid"] is None and rc["cleanup_unresolved"] is False and rc["wall_s"] < 5
+
+
+def test_review2_spawned_write_failure_after_launch_kills_child_and_charges_cleanup(tmp_path):
+    """The SPAWNED append fails (injected) after a successful launch: the owned child is killed and reaped BEFORE the receipt; the charged wall
+    includes the (slowed, 0.2 s) reap; the outcome names the error; the receipt pid/pgid identify the child even though no SPAWNED record exists."""
+    rows, r, outer = _trace_run(tmp_path, SUP, "group identity without a syscall", "spawned_write_failure", "spawned_write_failure", timeout=30)
+    kinds = [x["kind"] for x in rows]; assert kinds == ["START", "RECEIPT"], kinds
+    rc = rows[-1]; pid = rc["pid"]
+    try:
+        assert rc["outcome"] == "SUPERVISOR_ERROR_AFTER_LAUNCH" and "injected SPAWNED append failure" in (rc["error"] or "") and rc["returncode"] == -9
+        assert rc["pgid"] == pid and pid is not None and rc["cleanup_unresolved"] is False and rc["wall_s"] >= 0.2
+        assert not _alive(pid)
+    finally:
+        _killpg_quiet(pid)
+
+
+def test_review2_before_copy_3414b222_reproduces_the_launch_boundary_gap(tmp_path):
+    """The BEFORE copy (commit 3414b222): the same SIGTERM between Popen and `pgid = os.getpgid(...)` leaves the child ALIVE at supervisor exit
+    and charges ~10 s of a ~20 s exit (the reviewer's finding, reproduced here with real signals / real psutil). Costs ~20 s."""
+    before = os.path.join(HERE, "runs", "mdi_2026-10-28", "AGGREGATE_DP_CENSUS_2026-11-08", "review_2026-11-08", "supervisor_controls", "supervise_BEFORE_3414b222.py")
+    if not os.path.exists(before):
+        import pytest; pytest.skip("before-copy not present")
+    rows, r, outer = _trace_run(tmp_path, before, "pgid = os.getpgid(proc.pid)", "signal", "before_boundary_sigterm", timeout=60)
+    rc = rows[-1]; pid = rc["pid"]
+    try:
+        assert [x["kind"] for x in rows] == ["START", "RECEIPT"] and rc["outcome"] == "SUPERVISOR_SIGNAL_15" and rc["pgid"] is None and rc["returncode"] is None
+        assert _alive(pid), "expected the BEFORE copy to leave the child alive (the gap)"
+        assert 9 < rc["wall_s"] < 12 and outer > 18, (rc["wall_s"], outer)   # charged 10 s, exited after ~20 s
+    finally:
+        _killpg_quiet(pid)
+
+
+def test_review2_ledger_tool_charges_unresolved_cleanup_at_max_permitted(tmp_path):
+    """A RECEIPT with cleanup_unresolved (the child could not be reaped) is open-ended: charged at max(wall, max permitted) and listed unresolved."""
+    from adp.census import run as R
+    D = str(tmp_path); L = os.path.join(D, "CENSUS_LEDGER.jsonl")
+    rows = [{"kind": "START", "jid": "a|1", "scope": "s", "job": "a", "max_permitted_charge_s": 24.0}, {"kind": "RECEIPT", "jid": "a|1", "scope": "s", "job": "a", "wall_s": 1.0, "outcome": "COMPLETED", "cleanup_unresolved": False},
+            {"kind": "START", "jid": "b|1", "scope": "s", "job": "b", "max_permitted_charge_s": 24.0}, {"kind": "RECEIPT", "jid": "b|1", "scope": "s", "job": "b", "wall_s": 10.5, "outcome": "CLEANUP_UNRESOLVED", "cleanup_unresolved": True},
+            {"kind": "START", "jid": "c|1", "scope": "s", "job": "c", "max_permitted_charge_s": 64.0}]
+    with open(L, "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    total, by_scope, unresolved = R.charged(D)
+    assert total == 1.0 + 24.0 + 64.0 and sorted(u["job"] for u in unresolved) == ["b", "c"] and [u for u in unresolved if u["job"] == "b"][0]["cleanup_unresolved"] is True
