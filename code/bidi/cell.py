@@ -80,6 +80,16 @@ def main():
         rec["status"] = "FAULT"; rec["reason"] = "%s: %s" % (type(ex).__name__, ex); rec["traceback"] = traceback.format_exc()[-2500:]
     stop[0] = True
     rec["complete_response_s"] = now(); rec["within_deadline"] = rec["complete_response_s"] <= deadline
+    # review of 9 Nov 2026 (timing boundary): if the launcher recorded CLOCK_MONOTONIC before Popen in BIDI_LAUNCH_MONO, report the elapsed time from
+    # BEFORE PROCESS LAUNCH to this point (interpreter start-up and imports before T_START included). complete_response_s stays the in-process figure.
+    lm = os.environ.get("BIDI_LAUNCH_MONO")
+    if lm:
+        try:
+            rec["launch_mono"] = float(lm); rec["complete_response_from_launch_s"] = time.monotonic() - float(lm); rec["within_deadline_from_launch"] = rec["complete_response_from_launch_s"] <= deadline
+            rec["t_start_after_launch_s"] = T_START - float(lm)
+        except ValueError:
+            rec["launch_mono"] = "unparsable"
+    rec["timing_note"] = "complete_response_s: in-process, from the module's T_START (after interpreter start-up) to before the final record write; complete_response_from_launch_s: from the launcher's pre-Popen monotonic timestamp (when supplied); the supervisor RECEIPT wall (launch through reap) is the conservative whole-job figure"
     if rec["status"] in ("CERTIFIED", "CERTIFIED_TOO_WIDE", "CERTIFIED_WIDTH_ONLY_POINT_INFEASIBLE", "INCONSISTENT_EVIDENCE_CERTIFIED") and not rec["within_deadline"]:
         rec["censored"] = True; rec["status_before_deadline_check"] = rec["status"]; rec["status"] = "LATE_OUTPUT"
     rec["maxrss_self_bytes"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; rec["maxrss_children_bytes"] = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss

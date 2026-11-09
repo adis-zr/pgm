@@ -34,7 +34,7 @@ class Ref:
                     self._leaf_set(q, j, l, mpfr(1))
             T = self.tree[q]
             for t in range(P - 1, 0, -1):
-                T[t] = [T[2 * t][l] * T[2 * t + 1][l] for l in range(self.L)]
+                T[t] = [T[2 * t][l] * T[2 * t + 1][l] for l in range(self.L)]; self.mults += self.L
 
     def _leaf_set(self, q, leaf, l, v):
         self.tree[q][self.P + leaf][l] = v
@@ -42,7 +42,7 @@ class Ref:
     def _update_ancestors(self, q, leaf):
         T = self.tree[q]; t = (self.P + leaf) >> 1
         while t >= 1:
-            T[t] = [T[2 * t][l] * T[2 * t + 1][l] for l in range(self.L)]
+            T[t] = [T[2 * t][l] * T[2 * t + 1][l] for l in range(self.L)]; self.mults += self.L
             if t == 1:
                 break
             t >>= 1
@@ -58,21 +58,21 @@ class Ref:
     def _accumulate(self):
         m, L = self.m, self.L
         A0 = [self.tree[2 * i][1] for i in range(m)]; A1 = [self.tree[2 * i + 1][1] for i in range(m)]
-        H = [[A0[i][l] + A1[i][l] for l in range(L)] for i in range(m)]
+        H = [[A0[i][l] + A1[i][l] for l in range(L)] for i in range(m)]; self.adds += m * L
         pre = [[mpfr(1)] * L]
         for i in range(m):
-            pre.append([pre[i][l] * H[i][l] for l in range(L)])
+            pre.append([pre[i][l] * H[i][l] for l in range(L)]); self.mults += L
         suf = [None] * (m + 1); suf[m] = [mpfr(1)] * L
         for i in range(m, 0, -1):
-            suf[i - 1] = [H[i - 1][l] * suf[i][l] for l in range(L)]
-        B = self.tree[2 * m][1]; T = [B[l] * pre[m][l] for l in range(L)]
-        self.ZL = [self.ZL[l] + T[l] for l in range(L)]
+            suf[i - 1] = [H[i - 1][l] * suf[i][l] for l in range(L)]; self.mults += L
+        B = self.tree[2 * m][1]; T = [B[l] * pre[m][l] for l in range(L)]; self.mults += L
+        self.ZL = [self.ZL[l] + T[l] for l in range(L)]; self.adds += L
         for j in range(self.nlow):
-            yj = (self.ylow >> j) & 1; acc = self.NYlow[j][yj]; self.NYlow[j][yj] = [acc[l] + T[l] for l in range(L)]
+            yj = (self.ylow >> j) & 1; acc = self.NYlow[j][yj]; self.NYlow[j][yj] = [acc[l] + T[l] for l in range(L)]; self.adds += L
         for i in range(m):
             for l in range(L):
                 c = pre[i][l] * suf[i + 1][l]; bc = B[l] * c
-                self.NX[i][0][l] = self.NX[i][0][l] + bc * A0[i][l]; self.NX[i][1][l] = self.NX[i][1][l] + bc * A1[i][l]
+                self.NX[i][0][l] = self.NX[i][0][l] + bc * A0[i][l]; self.NX[i][1][l] = self.NX[i][1][l] + bc * A1[i][l]; self.mults += 4; self.adds += 2
         self.configs_visited += L
 
     def step_n(self, max_steps):
@@ -90,13 +90,13 @@ class Ref:
         gmpy2.set_context(self.ctx); m, n, L = self.m, self.n, self.L
         Z = mpfr(0)
         for l in range(L):
-            Z = Z + self.ZL[l]
+            Z = Z + self.ZL[l]; self.adds += 1
         NX = []
         for i in range(m):
             for a in range(2):
                 acc = mpfr(0)
                 for l in range(L):
-                    acc = acc + self.NX[i][a][l]
+                    acc = acc + self.NX[i][a][l]; self.adds += 1
                 NX.append(acc)
         NY = []
         for j in range(n):
@@ -104,11 +104,11 @@ class Ref:
                 acc = mpfr(0)
                 if j < self.nlow:
                     for l in range(L):
-                        acc = acc + self.NYlow[j][b][l]
+                        acc = acc + self.NYlow[j][b][l]; self.adds += 1
                 else:
                     for l in range(L):
                         if ((l >> (j - self.nlow)) & 1) == b:
-                            acc = acc + self.ZL[l]
+                            acc = acc + self.ZL[l]; self.adds += 1
                 NY.append(acc)
         complete = (self.step == self.steps_total and self.configs_visited == (self.steps_total << self.k))
-        return Z, NX, NY, {"configs": self.configs_visited, "lanes": L}, complete
+        return Z, NX, NY, {"configs": self.configs_visited, "lanes": L, "mults": self.mults, "adds": self.adds}, complete

@@ -118,9 +118,10 @@ def run(D):
             inner = [PY, "-m", "adp.cell", mp, ep, out, "%.3f" % c["budget_s"], cfg_adp]
         else:
             inner = [PY, "-m", "bench.cells", "EXACT", mp, ep, out, "%.3f" % c["budget_s"], "{}"]
+        t = time.monotonic()                                                                          # pre-launch CLOCK_MONOTONIC, handed to BIDI cells (review: explicit before-launch timing boundary; prospective)
         cmd = [PY, "-m", "adp.census.supervise", "--ledger", ledger, "--scope", "matrix_" + c["kind"], "--job", "cell:%02d:%s:%s:%ds" % (c["index"], c["case"], c["arm"], int(c["budget_s"])), "--timeout", "%.3f" % c["budget_s"], "--mem-gib", str(MEM_GIB), "--cwd", HERE,
-               "--stdout", os.path.join(out, "supervisor.log"), "--stderr", os.path.join(out, "supervisor.log")] + [x for k, v in THREAD_ENV.items() for x in ("--env", "%s=%s" % (k, v))] + ["--env", "PYTHONPATH=" + HERE, "--"] + inner
-        t = time.monotonic(); subprocess.run(cmd, cwd=HERE); wall = time.monotonic() - t
+               "--stdout", os.path.join(out, "supervisor.log"), "--stderr", os.path.join(out, "supervisor.log")] + [x for k, v in THREAD_ENV.items() for x in ("--env", "%s=%s" % (k, v))] + ["--env", "PYTHONPATH=" + HERE, "--env", "BIDI_LAUNCH_MONO=%.9f" % t, "--"] + inner
+        subprocess.run(cmd, cwd=HERE); wall = time.monotonic() - t
         rec = None
         if os.path.exists(os.path.join(out, "cell.json")):
             rec = json.load(open(os.path.join(out, "cell.json")))

@@ -1,7 +1,9 @@
-"""Qualification at full size on a SYNTHETIC input (not a benchmark model): a seeded random positive K_{22,22} written as a UAI file, run as a
-complete BIDI_NATIVE_CERT cell (recognize -> executor -> publish -> point verifier) with a 60 s budget, then checked against a brute-force
-oracle? No -- 2^44 assignments are out of reach; instead the exact-oracle check is on a K_{10,10} slice run both natively and through the
-MPFR-53 reference, and the K_{22,22} run exercises deadline polling, publication and timing at the pilot's size. Records to D/synthetic/.
+"""Scale / integration qualification on SYNTHETIC inputs (not benchmark models): a seeded random positive K_{22,22} run as a complete
+BIDI_NATIVE_CERT cell (recognize -> executor -> publish -> point verifier) -- this exercises the pilot-size tree/lane structure, deadline polling
+and publication; it has NO exact-truth oracle (2^44 joint assignments) and its CERTIFIED status is the executor accepting its own premises. A
+K_{12,12} run natively and through the same-schedule MPFR-53 reference is a backend-agreement control (Z compared bitwise here; the review
+confirmed all NX/NY and intervals agree too), not an exact oracle. Exact-truth checks are the tiny-model tests in tests/test_bidi_pilot.py.
+(Review of 9 Nov 2026: the earlier docstring wrongly spoke of an exact-oracle check on a K_{10,10} slice.) Records to D/synthetic/.
     python -m bidi.synthetic_fullsize D"""
 from __future__ import annotations
 import os, sys, json, random, subprocess, time

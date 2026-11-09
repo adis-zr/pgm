@@ -20,7 +20,9 @@
 
 extern "C" {
 
-static const char* SCHEDULE_ID = "BIDI_NATIVE_CERT/gray-lanes-currentleaf-tree-prefixsuffix/v1";
+static const char* SCHEDULE_ID = "BIDI_NATIVE_CERT/gray-lanes-currentleaf-tree-prefixsuffix/v1";   // arithmetic schedule UNCHANGED by the 9 Nov review repair (scratch allocation + diagnostic counters only)
+static const char* KERNEL_REVISION = "r2-2026-11-09-review-repair";
+const char* bidi_kernel_revision() { return KERNEL_REVISION; }
 
 const char* bidi_schedule_id() { return SCHEDULE_ID; }
 
@@ -69,13 +71,19 @@ struct State {
     double* ZL;        // [lanes]
     double* NYlow;     // [nlow*2*lanes]  index ((j*2)+b)*lanes + lane
     double* NX;        // [m*2*lanes]     index ((i*2)+a)*lanes + lane
-    // scratch per lane
-    double* H; double* pre; double* suf; double* BC; double* A0; double* A1;   // [m*lanes] each (pre/suf: (m+1)*lanes)
+    // scratch per lane: T is lanes-wide regardless of m (review F2: BC was aliased as T and had only max(1, m*lanes) entries -> heap overflow for m = 0, lanes > 1)
+    double* H; double* pre; double* suf; double* BC; double* A0; double* A1; double* T;   // H/BC/A0/A1: max(1,m)*lanes; pre/suf: (m+1)*lanes; T: lanes
     // counters (analytic)
     uint64_t configs_visited, mults, adds, leaf_updates;
 };
 
 static double* alloc_d(size_t n) { double* p = (double*)std::malloc(sizeof(double) * (n ? n : 1)); if (p) std::memset(p, 0, sizeof(double) * (n ? n : 1)); return p; }
+
+static void free_state(State* S) {
+    if (!S) return;
+    std::free(S->phi); std::free(S->rho); std::free(S->psi); std::free(S->tree); std::free(S->ZL); std::free(S->NYlow); std::free(S->NX);
+    std::free(S->H); std::free(S->pre); std::free(S->suf); std::free(S->BC); std::free(S->A0); std::free(S->A1); std::free(S->T); std::free(S);
+}
 
 static inline uint32_t next_pow2(uint32_t x) { uint32_t p = 1; while (p < x) p <<= 1; return p; }
 
@@ -96,9 +104,10 @@ static inline void update_ancestors(State* S, uint32_t q, uint32_t leaf) {
 }
 
 // Build all trees for the current y (initial configuration of every lane): full recompute of every internal node.
-static void build_trees(State* S) {
+static bool build_trees(State* S) {
     const uint32_t L = S->lanes, P = S->P, nodes = S->nodes, m = S->m, n = S->n;
     double* tmp = (double*)std::malloc(sizeof(double) * L);
+    if (!tmp) return false;
     for (uint32_t q = 0; q <= 2 * m; ++q) {
         // leaf 0
         for (uint32_t l = 0; l < L; ++l) tmp[l] = (q < 2 * m) ? S->phi[(q >> 1) * 2 + (q & 1)] : S->kappa;
@@ -120,6 +129,7 @@ static void build_trees(State* S) {
     }
     std::free(tmp);
     S->mults += (uint64_t)(2 * m + 1) * (P - 1) * L;                 // initialization products are counted too
+    return true;
 }
 
 // m, n <= 60; k <= n; returns NULL on invalid sizes or allocation failure.
@@ -133,20 +143,17 @@ State* bidi_create(uint32_t m, uint32_t n, uint32_t k, const double* phi, const 
     S->phi = alloc_d((size_t)m * 2); S->rho = alloc_d((size_t)n * 2); S->psi = alloc_d((size_t)m * n * 4);
     S->tree = alloc_d((size_t)(2 * m + 1) * S->nodes * L);
     S->ZL = alloc_d(L); S->NYlow = alloc_d((size_t)S->nlow * 2 * L); S->NX = alloc_d((size_t)m * 2 * L);
-    S->H = alloc_d((size_t)m * L); S->pre = alloc_d((size_t)(m + 1) * L); S->suf = alloc_d((size_t)(m + 1) * L); S->BC = alloc_d((size_t)m * L); S->A0 = alloc_d((size_t)m * L); S->A1 = alloc_d((size_t)m * L);
-    if (!S->phi || !S->rho || !S->psi || !S->tree || !S->ZL || !S->NYlow || !S->NX || !S->H || !S->pre || !S->suf || !S->BC || !S->A0 || !S->A1) { return nullptr; }
+    const size_t m1 = m ? m : 1;                                      // every per-row scratch has at least one row; T is lanes-wide independently of m
+    S->H = alloc_d(m1 * L); S->pre = alloc_d((size_t)(m + 1) * L); S->suf = alloc_d((size_t)(m + 1) * L); S->BC = alloc_d(m1 * L); S->A0 = alloc_d(m1 * L); S->A1 = alloc_d(m1 * L); S->T = alloc_d(L);
+    if (!S->phi || !S->rho || !S->psi || !S->tree || !S->ZL || !S->NYlow || !S->NX || !S->H || !S->pre || !S->suf || !S->BC || !S->A0 || !S->A1 || !S->T) { free_state(S); return nullptr; }
     if (m) std::memcpy(S->phi, phi, sizeof(double) * m * 2);
     if (n) std::memcpy(S->rho, rho, sizeof(double) * n * 2);
     if (m && n) std::memcpy(S->psi, psi, sizeof(double) * m * n * 4);
-    build_trees(S);
+    if (!build_trees(S)) { free_state(S); return nullptr; }
     return S;
 }
 
-void bidi_destroy(State* S) {
-    if (!S) return;
-    std::free(S->phi); std::free(S->rho); std::free(S->psi); std::free(S->tree); std::free(S->ZL); std::free(S->NYlow); std::free(S->NX);
-    std::free(S->H); std::free(S->pre); std::free(S->suf); std::free(S->BC); std::free(S->A0); std::free(S->A1); std::free(S);
-}
+void bidi_destroy(State* S) { free_state(S); }
 
 // process the CURRENT configuration of every lane: accumulate Z, NY (low bits), NX
 static inline void accumulate_current(State* S) {
@@ -170,7 +177,7 @@ static inline void accumulate_current(State* S) {
     }
     // T = B * pre[m]; Z, NY
     const double* B = S->tree + ((size_t)(2 * m) * nodes + 1) * L; const double* pm = S->pre + (size_t)m * L;
-    double* T = S->BC;                                                   // reuse BC as T scratch for this block
+    double* T = S->T;                                                    // dedicated lanes-wide scratch (review F2)
     for (uint32_t l = 0; l < L; ++l) { T[l] = B[l] * pm[l]; S->ZL[l] = S->ZL[l] + T[l]; }
     for (uint32_t j = 0; j < S->nlow; ++j) {
         uint32_t yj = (uint32_t)((S->ylow >> j) & 1u); double* acc = S->NYlow + ((size_t)j * 2 + yj) * L;
@@ -185,8 +192,8 @@ static inline void accumulate_current(State* S) {
     (void)troot;
     S->configs_visited += L;
     // analytic operation count for this configuration block (per lane): H adds m; pre m mults; suf m mults; T 1 mult; Z 1 add; NY nlow adds;
-    // NX: per i: c (1 mult), bc (1 mult), 2 mults, 2 adds
-    S->mults += (uint64_t)L * (3ull * m + 1ull + 4ull * m); S->adds += (uint64_t)L * (m + 1ull + S->nlow + 2ull * m);
+    // NX per i: c (1 mult), bc (1 mult), 2 mults, 2 adds  => 6m+1 mults, 3m+1+nlow adds  (review K2: the frozen kernel counted 7m+1 mults)
+    S->mults += (uint64_t)L * (6ull * m + 1ull); S->adds += (uint64_t)L * (3ull * m + 1ull + S->nlow);
 }
 
 // Gray step: flip low bit j (j = ctz(step)) in every tree (leaf 1+j), recompute ancestors.
@@ -230,15 +237,17 @@ int bidi_finish(State* S, double* Z, double* NX, double* NY, uint64_t* counters 
         else { for (uint32_t l = 0; l < L; ++l) if (((l >> (j - S->nlow)) & 1u) == b) acc = acc + S->ZL[l]; }
         NY[j * 2 + b] = acc;
     }
-    uint64_t red_adds = L + (uint64_t)m * 2 * L + (uint64_t)n * 2 * L;   // conservative: every reduction counted as L adds
+    // exact reduction count: Z: L adds; NX: 2m rows x L; low-bit NY: 2(n-k) rows x L; top-bit NY: each of the k bits visits L/2 lanes per state = L adds per bit
+    uint64_t red_adds = L + (uint64_t)m * 2 * L + (uint64_t)S->nlow * 2 * L + (uint64_t)S->k * L;   // (review K2: the frozen kernel counted 2L per top bit)
     counters[0] = S->configs_visited; counters[1] = S->mults; counters[2] = S->adds + red_adds; counters[3] = S->leaf_updates; counters[4] = L;
     return (S->step == S->steps_total && S->configs_visited == (S->steps_total << S->k)) ? 1 : 0;
 }
 
 uint64_t bidi_configs_visited(State* S) { return S ? S->configs_visited : 0; }
+// FORMULA ESTIMATE of the kernel's double storage (not malloc accounting, not RSS): trees + accumulators + scratch + source tables
 uint64_t bidi_bytes_allocated(State* S) {
-    if (!S) return 0; size_t L = S->lanes, m = S->m, n = S->n;
-    return sizeof(double) * ((size_t)(2 * m + 1) * S->nodes * L + L + (size_t)S->nlow * 2 * L + (size_t)m * 2 * L + 6 * (size_t)(m + 1) * L + m * 2 + n * 2 + (size_t)m * n * 4);
+    if (!S) return 0; size_t L = S->lanes, m = S->m, n = S->n, m1 = m ? m : 1;
+    return sizeof(double) * ((size_t)(2 * m + 1) * S->nodes * L + L + (size_t)S->nlow * 2 * L + (size_t)m * 2 * L + 4 * m1 * L + 2 * (size_t)(m + 1) * L + L + (m ? m * 2 : 1) + (n ? n * 2 : 1) + ((m && n) ? (size_t)m * n * 4 : 1));
 }
 
 // Debug aid for qualification only: the current low-bit assignment (so a test can record the visited configurations)

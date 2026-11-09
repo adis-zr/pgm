@@ -330,3 +330,95 @@ def test_kernel_refuses_out_of_range_sizes():
         K.create(61, 2, 0, [1.0] * 122, [1.0] * 4, [1.0] * (61 * 2 * 4), 1.0)
     with pytest.raises(EX.Refuse):
         K.create(2, 2, 3, [1.0] * 4, [1.0] * 4, [1.0] * 16, 1.0)                                                # k > n
+
+
+# ============================================================================================ review of 9 Nov 2026: F1 / F2 / K2 / timing controls
+REV = os.path.join(HERE, "runs", "mdi_2026-10-28", "BIDI_NATIVE_PILOT_2026-11-09", "review_2026-11-09", "fixtures")
+
+
+def _fixture(name):
+    return os.path.join(REV, name + ".uai"), os.path.join(REV, name + ".evid")
+
+
+@pytest.mark.skipif(not os.path.exists(REV), reason="review fixtures not present")
+@pytest.mark.parametrize("arm", ["BIDI_MPFR53_CERT", "BIDI_NATIVE_CERT"])
+def test_review_F1_out_of_range_sources_are_typed_limitations_not_wrong_certificates(tmp_path, arm):
+    """F1(a): scalar 1e-200 x unary [3e-124, 7e-124]; exact marginal [0.3, 0.7]; the frozen MPFR arm published ~[0.5, 0.5] CERTIFIED + POINT_VERIFIED
+    (binary64 narrowing into the subnormal range). F1(b): two unaries [1e-200, 1e-200]; exact Z = 4e-400 > 0; the frozen MPFR arm published
+    INCONSISTENT_EVIDENCE_CERTIFIED. After the repair every binary64-returning backend must pass the exact normal-range predicate first."""
+    for name, truth in (("subnormal_wrong_marginal", [Fr(3, 10), Fr(7, 10)]), ("positive_underflow", None)):
+        mp, ep = _fixture(name); out = str(tmp_path / (arm + "_" + name)); r = _cell(arm, mp, ep, out)
+        assert r["status"] == "ROUTE_LIMITATION" and "RANGE" in (r.get("reason") or ""), (arm, name, r.get("status"), r.get("reason"))
+        assert not os.path.exists(os.path.join(out, "output.MAR")) and not os.path.exists(os.path.join(out, "checked_record.json"))
+        assert r["status"] != "INCONSISTENT_EVIDENCE_CERTIFIED"
+        Z, N = OR.brute(U.read_model(mp), {}); assert Z > 0                                            # the exact truth has positive mass: a false inconsistency would be wrong
+    # safe-range positive control on the same arm still certifies within eps of the exact marginal
+    mp, ep = _fixture("normal_control"); out = str(tmp_path / (arm + "_normal")); r = _cell(arm, mp, ep, out); assert r["status"] == "CERTIFIED", r.get("reason")
+    rows, _ = U.read_mar(os.path.join(out, "output.MAR")); assert abs(Fr(rows[0][0]) - Fr(3, 10)) < Fr(1, 200) and abs(Fr(rows[0][1]) - Fr(7, 10)) < Fr(1, 200)
+    # a GENUINE zero-mass model (structural: a factor without a positive entry after evidence) still proves inconsistency on this arm
+    facs = [((0,), [Fr(1, 2), Fr(0)]), ((1,), [Fr(1, 4), Fr(3, 4)]), ((0, 1), [Fr(1, 8), Fr(1, 8), Fr(1, 8), Fr(1, 8)])]
+    mp2, ep2 = write_uai(str(tmp_path / "z.uai"), 2, facs, {0: 1}); r = _cell(arm, mp2, ep2, str(tmp_path / (arm + "_zero"))); assert r["status"] == "INCONSISTENT_EVIDENCE_CERTIFIED"
+    Z, _ = OR.brute(U.read_model(mp2), {0: 1}); assert Z == 0
+
+
+def test_review_F2_explicit_empty_X_plan_with_multiple_lanes_through_validation_and_native_setup(tmp_path):
+    """F2: the valid plan X = [], Y = [0, 1] (two binary unaries [1,2], [3,4], scalar 1) passed validate_structure and overflowed the native T scratch
+    for k >= 1 (frozen kernel: BC aliased as T with max(1, m*lanes) = 1 entry). Repaired: lanes-wide T; exact truth Z = 21, NY_0 = (7, 14), NY_1 = (9, 12)."""
+    facs = [((), [Fr(1)]), ((0,), [Fr(1), Fr(2)]), ((1,), [Fr(3), Fr(4)])]
+    mp, ep = write_uai(str(tmp_path / "m.uai"), 2, facs); model = U.read_model(mp)
+    for k in (1, 2, 0):
+        plan = {"kind": RZ.PLAN_KIND, "x_side": [], "y_side": [0, 1]}                                   # EXPLICIT plan: the default recognizer would put the isolated variables on X
+        r = run_exec(mp, ep, str(tmp_path / ("k%d" % k)), k=min(k, 2), block=1, plan=plan)
+        assert r["structure"]["m"] == 0 and r["structure"]["n"] == 2 and r["kernel"]["lanes"] == (1 << min(k, 2)) and r["kernel"]["complete"]
+        assert float.fromhex(r["values_hex"]["Z"]) == 21.0 and [float.fromhex(x) for x in r["values_hex"]["NY"]] == [7.0, 14.0, 9.0, 12.0] and r["values_hex"]["NX"] == []
+        assert truth_inside(r, model, {})
+        for v, row in r["certified_intervals"].items():
+            for s, (a, b) in enumerate(row):
+                assert Fr(a) <= OR.brute(model, {})[1][int(v)][s] / Fr(21) <= Fr(b)
+    # empty Y (n = 0, k must be 0) and the empty model
+    plan = {"kind": RZ.PLAN_KIND, "x_side": [0, 1], "y_side": []}; r = run_exec(mp, ep, str(tmp_path / "ey"), k=0, block=1, plan=plan)
+    assert r["structure"]["n"] == 0 and float.fromhex(r["values_hex"]["Z"]) == 21.0 and [float.fromhex(x) for x in r["values_hex"]["NX"]] == [7.0, 14.0, 9.0, 12.0]
+    K = EX.NativeKernel(); K.create(0, 0, 0, [], [], [], 2.5); assert not K.done(); assert K.step(5) == 1 and K.done()                # the empty model has ONE configuration (2^0)
+    Z, NX, NY, c, ok = K.finish(); K.destroy(); assert ok and Z == 2.5 and NX == [] and NY == [] and c["configs"] == 1
+    mp0 = str(tmp_path / "empty.uai"); open(mp0, "w").write("MARKOV\n0\n\n1\n0\n1 2.5\n"); open(mp0 + ".evid", "w").write("0\n")
+    with pytest.raises(EX.Refuse) as e:
+        EX.execute(mp0, mp0 + ".evid", {"kind": RZ.PLAN_KIND, "x_side": [], "y_side": []}, str(tmp_path / "e0"), time.monotonic() + 10, {"lanes_k": 0, "block_steps": 1})
+    assert "no variables" in e.value.reason
+
+
+def _closed_form_ops(m, n, k):
+    K = 1 << n; L = 1 << k; P = 1
+    while P < n + 1:
+        P <<= 1
+    d = P.bit_length() - 1
+    return L * (2 * m + 1) * (P - 1) + (K - L) * (2 * m + 1) * d + K * (6 * m + 1), K * (3 * m + 1 + n - k) + L * (1 + 2 * m + 2 * (n - k) + k)
+
+
+@pytest.mark.parametrize("m,n,k", [(1, 1, 0), (2, 3, 1), (3, 2, 2), (0, 2, 1), (4, 4, 3), (3, 5, 0), (22, 3, 3), (1, 0, 0)])
+def test_review_K2_native_counters_equal_independent_mpfr_counts_and_closed_form(tmp_path, m, n, k):
+    """The frozen kernel over-counted 7m+1 (not 6m+1) multiplications per configuration and 2L (not L) additions per top Y bit. The repaired
+    counters must equal (a) the MPFR reference's independently counted operations (it increments at every arithmetic statement) and (b) the
+    closed form of the source schedule including initialization and final reductions."""
+    r = random.Random(100 + m * 7 + n * 3 + k); phi = [r.uniform(0.5, 1.5) for _ in range(2 * m)]; rho = [r.uniform(0.5, 1.5) for _ in range(2 * n)]; psi = [r.uniform(0.5, 1.5) for _ in range(m * n * 4)]
+    K = EX.NativeKernel(); K.create(m, n, k, phi, rho, psi, 1.0)
+    while not K.done():
+        K.step(3)
+    Zn, NXn, NYn, cn, okn = K.finish(); K.destroy()
+    M = EX.MpfrKernel(); M.create(m, n, k, phi, rho, psi, 1.0)
+    while not M.done():
+        M.step(3)
+    Zm, NXm, NYm, cm, okm = M.finish()
+    assert okn and okm and cn["configs"] == cm["configs"] == (1 << n)
+    assert (cn["mults"], cn["adds"]) == (cm["mults"], cm["adds"]) == _closed_form_ops(m, n, k), ((cn["mults"], cn["adds"]), (cm["mults"], cm["adds"]), _closed_form_ops(m, n, k))
+    assert Zn.hex() == float(Zm).hex() and [x.hex() for x in NXn] == [float(x).hex() for x in NXm] and [x.hex() for x in NYn] == [float(x).hex() for x in NYm]
+
+
+def test_review_timing_boundary_from_before_process_launch_is_recorded(tmp_path):
+    """Prospective: the launcher's pre-Popen CLOCK_MONOTONIC (BIDI_LAUNCH_MONO) yields complete_response_from_launch_s >= in-process complete_response_s;
+    interpreter start-up + imports before T_START are positive; both within the deadline on tiny work."""
+    mp, ep = write_uai(str(tmp_path / "m.uai"), 5, rnd_bipartite(5, [0, 1, 2], [3, 4])); out = str(tmp_path / "o")
+    t0 = time.monotonic(); env = dict(ENV, BIDI_LAUNCH_MONO="%.9f" % t0)
+    subprocess.run([PY, "-m", "bidi.cell", "BIDI_NATIVE_CERT", mp, ep, out, "30", "{}"], cwd=HERE, env=env, capture_output=True, timeout=120); outer = time.monotonic() - t0
+    r = json.load(open(os.path.join(out, "cell.json"))); assert r["status"] == "CERTIFIED"
+    assert r["t_start_after_launch_s"] > 0 and r["complete_response_from_launch_s"] >= r["complete_response_s"] + r["t_start_after_launch_s"] - 1e-6
+    assert r["complete_response_from_launch_s"] <= outer and r["within_deadline_from_launch"]

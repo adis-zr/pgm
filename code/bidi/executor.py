@@ -1,7 +1,7 @@
 """TRUSTED certifying executor of the BIDI pilot (the ONE authoritative numerical pass).
 
-It re-parses the caller's model / evidence with ext.uai (the OTHER parser), validates the untrusted recognizer's structural plan against
-its own parse (binary variables, pairwise factors, bipartite sides, exact single consumption of every factor occurrence, orientation),
+It re-parses the caller's model / evidence ITSELF with ext.uai (the recognizer also uses ext.uai: this is a trusted-executor boundary
+against the untrusted PLAN, not parser-implementation diversity), validates the untrusted recognizer's structural plan against its own parse (binary variables, pairwise factors, bipartite sides, exact single consumption of every factor occurrence, orientation),
 absorbs evidence as exact indicator unaries, proves the exact normal-range bound and the error-depth bound for the ACTUAL schedule,
 converts every source rational to binary64 and VERIFIES each conversion by exact rational comparison, runs the frozen native kernel (or
 the MPFR-53 reference) in bounded blocks with deadline polling, checks completion/finiteness/positivity, forms the rigorous enclosure
@@ -300,7 +300,7 @@ class MpfrKernel:
 
     def finish(self):
         Z, NX, NY, c, complete = self.R.finish()
-        return float(Z), [float(x) for x in NX], [float(x) for x in NY], {"configs": c["configs"], "lanes": c["lanes"], "mults": None, "adds": None, "leaf_updates": None, "bytes_allocated": None, "tree_leaves": self.R.P}, complete
+        return float(Z), [float(x) for x in NX], [float(x) for x in NY], {"configs": c["configs"], "lanes": c["lanes"], "mults": c["mults"], "adds": c["adds"], "leaf_updates": None, "bytes_allocated": None, "tree_leaves": self.R.P}, complete
 
     def destroy(self):
         self.R = None
@@ -322,13 +322,22 @@ def execute(model_path, evid_path, plan, out, deadline_mono, cfg, kernel_factory
         if not (0 <= v < m.nvars and 0 <= s < m.card[v]):
             raise Refuse("REJECTED", "evidence outside the model")
     rec["task"] = task_binding(model_path, evid_path, m); mark("parse_bind")
+    if m.nvars == 0:
+        raise Refuse("ROUTE_LIMITATION", "model has no variables: no singleton row to publish (Z would be the scalar product)")
     if not isinstance(plan, dict) or plan.get("kind") != "BINARY_BIPARTITE_PAIRWISE_CONDITIONED_STREAM":
         raise Refuse("ROUTE_LIMITATION", "recognizer proposed no bipartite stream plan: %s" % (plan.get("reason") if isinstance(plan, dict) else plan))
     S = validate_structure(m, ev, plan); rec["structure"] = {"m": S["m"], "n": S["n"], "x_side": S["X"], "y_side": S["Y"], "owned": S["owned"], "pair_factors_present": len(S["psi"]), "n_evidence": len(ev)}; mark("validate_structure")
     rb = range_bounds(S)
     if rb["all_zero_factor"]:
         rec.update({"status": "ZERO_EVIDENCE_PROVED", "reason": "a factor occurrence (after evidence) has no positive entry: every assignment weight is exactly zero"}); _write(out, record_prefix, rec); return rec
-    rec["range_proof"] = check_binary64_range(rb) if kernel_factory is not MpfrKernel else {"log2_L": log2_fr(rb["L"]), "log2_2v_U": log2_fr(rb["upper_2v_U"]), "backend": "MPFR (exponent range not a constraint; traps on)"}
+    # Review of 9 Nov 2026 (F1): EVERY backend returns binary64 Z / N to the enclosure, so the exact normal-range predicate is a premise of the
+    # certificate for every backend. For the MPFR-53 reference the proof is: under the range theorem every exact intermediate is a normal binary64
+    # magnitude, MPFR precision-53 nearest rounding of a normal-range value coincides with binary64 nearest rounding, so the MPFR computation is
+    # bitwise the binary64 computation and the final float() conversion is exact. Outside the range the conversion can lose bits (subnormals) or
+    # positive mass (zero): the frozen code skipped the predicate for MPFR and published a wrong marginal / a false inconsistency.
+    rec["range_proof"] = check_binary64_range(rb)
+    if kernel_factory is MpfrKernel:
+        rec["range_proof"]["backend_note"] = "MPFR-53 nearest == binary64 nearest on normal-range values; the final binary64 narrowing is therefore exact under this predicate"
     k = int(cfg["lanes_k"]); k = min(k, S["n"])
     P = 1
     while P < S["n"] + 1:
@@ -399,6 +408,8 @@ def publish(out, model_path, evid_path, rec, cell_rec, record_prefix="checked_re
     if pts is None:
         return prep["status"]
     tmp = os.path.join(out, "output.MAR.tmp"); PB.write_mar(tmp, pts, m.card)
+    with open(tmp, "rb") as fh:
+        os.fsync(fh.fileno())                                                                       # review: the delivered MAR is fsynced before the rename (checked_record / cell.json already were)
     vp = os.path.join(out, "point_check.json")
     if os.path.exists(vp):
         os.remove(vp)
