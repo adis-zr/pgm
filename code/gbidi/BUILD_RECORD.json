@@ -45,17 +45,17 @@
  ],
  "returncode": 0,
  "stderr": "",
- "build_wall_s": 1.9273967500776052,
+ "build_wall_s": 1.8475122088566422,
  "source": "gbidi/kernel.cpp",
- "source_sha256": "f765d1ca66e2d9215a96a1084de529e823aa1fcad96e7ea526ca575689999943",
+ "source_sha256": "3638aa57efaaecd6e722d5aa4c435ae4ae0ec07e971b5773f35c0c7b1cb7eefd",
  "binary": "gbidi/libgbidi_kernel.dylib",
- "binary_sha256": "6ce91bc4a35c592c9bfcff36e84a3cdcdf0eb6996f33c0fe8073cf90abaa00dd",
+ "binary_sha256": "a894550e94c73f63dea50be9b44a56a96490d4a3ee3a8b0dc22a691d6c23c661",
  "linked_libraries_sha256": {
   "/opt/homebrew/opt/mpfr/lib/libmpfr.6.dylib": "ee2da0c9af31774e88f40622b8b0c377bed74c32c98160d3efcf4c75c47c9675",
   "/opt/homebrew/opt/gmp/lib/libgmp.10.dylib": "1bb9184824b82f40bd50279634290d6cbdf9c1a371c045c7b10815e7955cd696"
  },
  "platform": "macOS-26.6.2-arm64-arm-64bit",
  "machine": "arm64",
- "utc": "2026-11-10T01:08:37Z",
+ "utc": "2026-11-10T02:13:12Z",
  "arithmetic": "general route: outward MPFR intervals (RNDD/RNDU) in native pools; optional route: binary64 nearest-even (admitted per plan by the executor's range/depth proof); no division; -ffp-model=strict -ffp-contract=off"
 }

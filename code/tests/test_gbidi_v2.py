@@ -112,7 +112,9 @@ def test_F1_streamed_chain_binary64_contains_truth_with_kernel_labels(tmp_path, 
     assert contained(rec, truth)
     st, cell = publish(str(tmp_path / "o"), mp, ep, rec); assert st == "CERTIFIED" and cell["point_check"]["status"] == "POINT_VERIFIED"
     deliv = {str(r["var"]): r["intervals"] for r in json.load(open(tmp_path / "o" / "intervals.json"))["intervals"]}; assert contained({"certified_intervals": deliv}, truth)
-    m = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "m"), b64=False, rules=list(PL.COMMON_RULES)); assert contained(m, truth)             # rigorous route on the same schedule
+    m = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "m"), b64=False, rules=list(PL.COMMON_RULES)); assert contained(m, truth) and m["route"] == "mpfr"      # rigorous route on the SAME streamed schedule under the same cap
+    assert sum(1 for nd in m["plan"]["nodes"] if nd["downgrade"]) >= 10 and m["attempts"][-1]["counters"]["used_values_bytes"] <= 1150
+    f = EX.execute("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "f"), time.monotonic() + 60, {"budget_s": 60, "allow_binary64": False, "rules": list(PL.COMMON_RULES)}, test_hooks={"force_stream": True}); assert contained(f, truth)
     for v, row in rec["certified_intervals"].items():
         for s, (a, x) in enumerate(row):
             ma, mb = [Fr(t) for t in m["certified_intervals"][v][s]]; assert not (Fr(x) < ma or Fr(a) > mb)
@@ -130,8 +132,8 @@ def test_F2_mutated_proposals_are_rejected_before_execution_and_unchanged_certif
     mp, ep = write_uai(str(tmp_path / "t.uai"), [2, 2], [((0, 1), [1, 2, 3, 4]), ((0, 1), [1, 1, 1, 2])]); model = U.read_model(mp); Z, T = truth_rows(model, {}); assert Z == 14
     orig = PL.plan
     def mutant(mode):
-        def proposed(R, cfg, deadline=None, caps=None):
-            P, table = orig(R, cfg, deadline, caps)
+        def proposed(R, cfg, deadline=None, caps=None, **kw):
+            P, table = orig(R, cfg, deadline, caps, **kw)
             if mode == "omit_factor":
                 nd = next(n for n in P.nodes if sum(k == "F" for k, r in n.inputs) >= 2); nd.inputs.pop(next(i for i in reversed(range(len(nd.inputs))) if nd.inputs[i][0] == "F"))
             elif mode == "duplicate_factor":
@@ -161,8 +163,8 @@ def test_F2_mutated_proposals_are_rejected_before_execution_and_unchanged_certif
 def test_F2_wrong_storage_set_changes_work_not_the_answer(tmp_path):
     """a forged stored set (a STORAGE decision) is served by streaming: reads_outside_demand > 0 and the answer is still exact"""
     mp, ep = write_uai(str(tmp_path / "t.uai"), [2, 3, 2], rnd_model(5, [2, 3, 2], [(0, 1), (1, 2), (0, 2)])); model = U.read_model(mp); Z, T = truth_rows(model, {}); orig = PL.plan
-    def proposed(R, cfg, deadline=None, caps=None):
-        P, table = orig(R, cfg, deadline, caps); nd = next(n for n in P.nodes if n.scope and n.materialize); nd.demand = [0]; nd.demand_prov = "FORGED"; return P, table
+    def proposed(R, cfg, deadline=None, caps=None, **kw):
+        P, table = orig(R, cfg, deadline, caps, **kw); nd = next(n for n in P.nodes if n.scope and n.materialize); nd.demand = [0]; nd.demand_prov = "FORGED"; return P, table
     PL.plan = proposed
     try:
         rec = run("A2_NO_FUSION", mp, ep, str(tmp_path / "f"), b64=False, rules=[])
@@ -174,27 +176,52 @@ def test_F2_wrong_storage_set_changes_work_not_the_answer(tmp_path):
 def test_F2_validator_accepts_every_normal_plan_and_detects_each_corruption_class(tmp_path):
     card = [2, 3, 2, 2]; facs = rnd_model(31, card, [(0, 1), (1, 2), (2, 3), (0, 3), (1, 3)], zeros=0.2); mp, ep = write_uai(str(tmp_path / "v.uai"), card, facs)
     from adp import source as SRC
-    m = U.read_model(mp); R = SRC.Reduced(EX._ModelAdapter(m), {}); R.reduce([], deadline=None); P, _ = PL.plan(R, dict(EX.ARMS["GENERAL_BIDI_V2"], bytes_per_entry=96)); assert GV.validate(P, R)["status"] == "VALID"
+    m = U.read_model(mp); R = SRC.Reduced(EX._ModelAdapter(m), {}); R.reduce([], deadline=None); T = GV.TrustedReduced(R); P, _ = PL.plan(R, dict(EX.ARMS["GENERAL_BIDI_V2"], bytes_per_entry=96)); assert GV.validate(P, T).record["status"] == "VALID" and T.unchanged(R)
     nd = next(n for n in P.nodes if n.scope); w = nd.scope[0]; v = nd.views[w]; bad = View(list(v.cls), list(v.reps), [q * 2 if i == 0 else q for i, q in enumerate(v.ratio)])
     old = nd.views[w]; nd.views[w] = bad
     with pytest.raises(GV.Invalid):
-        GV.validate(P, R)
-    nd.views[w] = old; assert GV.validate(P, R)["status"] == "VALID"
+        GV.validate(P, T)
+    nd.views[w] = old; assert GV.validate(P, T).record["status"] == "VALID"
+    R.factors[0].table[0] += 1; assert not T.unchanged(R)                                                      # an in-place mutation of the live object is detected
 
 
 # ============================================================================================================ F3 / R2-05: resource categories, exceptions, frames
 @pytest.mark.parametrize("kind", ["frames_scratch_publication", "pending_adjoints", "source_ir_maps_output", "reverse_pinned", "value_cache"])
 def test_F3_every_category_cap_is_enforced_with_a_typed_memory_stop(tmp_path, monkeypatch, kind):
+    """ORDINARY FULL-storage plan (no forged LIST): a one-byte cap on ANY category stops the native route with a typed MEMORY stop. The exact
+    fallback is capped by the SAME categories (values: tables + accumulators; scratch: IR + odometer + product + export): with a one-byte value or
+    scratch cap it cannot run either and the cell ends in a typed RESOURCE_STOP with its diagnostics; pending / reverse / index caps do not bind the
+    fallback, which then completes exactly."""
     mp, ep = write_uai(str(tmp_path / "t.uai"), [2, 2], [((0, 1), [1, 2, 3, 4]), ((0,), [2, 1])]); model = U.read_model(mp); Z, T = truth_rows(model, {})
     monkeypatch.setattr(PL, "CAPS", dict(PL.CAPS, **{kind: 1}))
-    if kind == "source_ir_maps_output":                                                       # index maps exist only with a LIST storage set: force one
-        orig = PL.plan
-        def proposed(R, cfg, deadline=None, caps=None):
-            P, table = orig(R, cfg, deadline, caps); nd = next(n for n in P.nodes if n.scope); nd.demand = [0]; nd.materialize = True; nd.fused = False; return P, table
-        monkeypatch.setattr(PL, "plan", proposed)
-    rec = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / kind), b64=False, rules=[])
-    assert rec.get("stop", {}).get("kind") == "MEMORY", (kind, rec.get("stop"), rec["attempts"])
-    assert rec["precision"] == "exact_integer_reference" and contained(rec, T)                 # typed stop -> predeclared exact fallback inside the deadline
+    if kind in ("pending_adjoints", "reverse_pinned", "source_ir_maps_output"):
+        rec = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / kind), b64=False, rules=[])
+        assert rec["attempts"][0]["stop"] == "MEMORY" and rec.get("stop", {}).get("kind") == "MEMORY", (kind, rec.get("stop"), rec["attempts"])
+        assert rec["precision"] == "exact_integer_reference" and contained(rec, T) and rec["reference_fallback"]["used_bytes"]["values"] > 0
+    else:
+        with pytest.raises(EX.Refuse) as e:
+            run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / kind), b64=False, rules=[])
+        r = e.value.rec; assert e.value.kind == "RESOURCE_STOP" and r["attempts"][0]["stop"] == "MEMORY" and r["stop"]["phase"] == "reference_fallback" and r["stop"]["kind"] == "MEMORY", (kind, r.get("stop"))
+        assert "diagnostic_record.json" in os.listdir(tmp_path / kind) and not os.path.exists(tmp_path / kind / "checked_record.json")
+
+
+def test_F3_ordinary_full_plan_index_category_is_charged(tmp_path, monkeypatch):
+    """the parsed IR of an ordinary FULL plan is reserved in the source/IR category before parsing: a one-byte cap stops at create (V1/V2 reported 0 index bytes)"""
+    mp, ep = write_uai(str(tmp_path / "t.uai"), [2, 2], [((0, 1), [1, 2, 3, 4]), ((0,), [2, 1])]); model = U.read_model(mp); Z, T = truth_rows(model, {})
+    rec = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "n"), b64=False, rules=[]); assert rec["attempts"][-1]["counters"]["used_index_bytes"] > 0 and contained(rec, T)
+    monkeypatch.setattr(PL, "CAPS", dict(PL.CAPS, source_ir_maps_output=1)); rec = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "c"), b64=False, rules=[])
+    assert rec["attempts"][0]["stop"] == "MEMORY" and rec["attempts"][0]["stop_phase"] == "create" and rec["precision"] == "exact_integer_reference" and contained(rec, T)
+
+
+def test_F3_fallback_reserves_tables_accumulators_and_export(tmp_path, monkeypatch):
+    """the exact fallback's own reservations: value category = tables + accumulators (bound), scratch = IR + odometer + product + export (exact size)"""
+    from gbidi import validate as GV
+    card = [3, 2, 2]; facs = rnd_model(5, card, [(0, 1), (1, 2), (0, 2)], zeros=0.2); mp, ep = write_uai(str(tmp_path / "r.uai"), card, facs); model = U.read_model(mp)
+    from adp import source as SRC
+    R = SRC.Reduced(EX._ModelAdapter(model), {}); R.reduce([], deadline=time.monotonic() + 1); T = GV.TrustedReduced(R)
+    fb = EX.reference_stream(T, time.monotonic() + 10, dict(PL.CAPS)); assert fb["status"] == "COMPLETE" and fb["used_bytes"]["values"] > 0 and fb["used_bytes"]["export"] > 0
+    fb2 = EX.reference_stream(T, time.monotonic() + 10, dict(PL.CAPS, value_cache=fb["used_bytes"]["values"] - 1)); assert fb2["status"] == "MEMORY"
+    fb3 = EX.reference_stream(T, time.monotonic() + 10, dict(PL.CAPS, frames_scratch_publication=fb["used_bytes"]["scratch"] + fb["used_bytes"]["export"] - 1)); assert fb3["status"] == "MEMORY"
 
 
 def test_R2_05_bad_alloc_is_a_typed_memory_stop_not_a_process_abort(tmp_path):
@@ -207,12 +234,20 @@ def test_R2_05_bad_alloc_is_a_typed_memory_stop_not_a_process_abort(tmp_path):
 
 
 def test_R2_04_deep_streamed_chain_runs_on_explicit_frames_under_the_default_stack(tmp_path):
-    """the reviewer's 50,000-node cardinality-1 chain segfaulted the recursive kernel under an 8 MiB stack; the frame machine completes it"""
+    """the reviewer's 50,000-node cardinality-1 chain segfaulted the recursive kernel under an 8 MiB stack. DETERMINISTIC activation: the qualification
+    hook forces every non-root node to be streamed (a legal storage choice; the validator still checks the plan), so frame depth = chain length on
+    every platform regardless of the optional discovery clock."""
     child = tmp_path / "child.py"; n = 50000; mp = str(tmp_path / "chain.uai")
     open(mp, "w").write("\n".join(["MARKOV", str(n), " ".join(["1"] * n), str(n - 1)] + ["2 %d %d" % (i, i + 1) for i in range(n - 1)] + ["1 1"] * (n - 1)) + "\n"); open(mp + ".evid", "w").write("0\n")
-    child.write_text("import sys,json,time,resource; sys.path.insert(0,%r); sys.set_int_max_str_digits(0)\nfrom gbidi import executor as E\nr=E.execute('GENERAL_BIDI_V2',%r,%r,%r,time.monotonic()+60,{'budget_s':60,'allow_binary64':False,'reference_fallback':False,'rules':[]})\nprint(json.dumps({'status':r['status'],'depth':r['attempts'][-1]['counters']['max_frame_depth'],'fused':r['plan']['totals']['fused'],'stack':resource.getrlimit(resource.RLIMIT_STACK)[0]}))\n" % (HERE, mp, mp + ".evid", str(tmp_path / "out")))
-    r = subprocess.run([PY, str(child)], capture_output=True, text=True, timeout=180, env=ENV); assert r.returncode == 0, r.stderr[-500:]
-    o = json.loads(r.stdout.strip().splitlines()[-1]); assert o["status"] == "INTERVALS_OK" and o["depth"] >= n - 1 and o["fused"] == n - 1 and o["stack"] <= 16 << 20
+    child.write_text("import sys,json,time,resource; sys.path.insert(0,%r); sys.set_int_max_str_digits(0)\nfrom gbidi import executor as E\nr=E.execute('GENERAL_BIDI_V2',%r,%r,%r,time.monotonic()+90,{'budget_s':90,'allow_binary64':False,'reference_fallback':False,'rules':[]},test_hooks={'force_stream':True})\nprint(json.dumps({'status':r['status'],'depth':r['attempts'][-1]['counters']['max_frame_depth'],'fused':r['plan']['totals']['fused'],'stack':resource.getrlimit(resource.RLIMIT_STACK)[0],'valid':r['plan_validation']['status'],'rows_one':all(a=='1' and b=='1' for row in r['certified_intervals'].values() for a,b in row)}))\n" % (HERE, mp, mp + ".evid", str(tmp_path / "out")))
+    r = subprocess.run([PY, str(child)], capture_output=True, text=True, timeout=300, env=ENV); assert r.returncode == 0, r.stderr[-500:]
+    o = json.loads(r.stdout.strip().splitlines()[-1]); assert o["status"] == "INTERVALS_OK" and o["depth"] == n and o["fused"] == n - 1 and o["valid"] == "VALID" and o["rows_one"] and o["stack"] <= 16 << 20
+
+
+def test_R2_04_policy_observation_deep_chain_without_forcing(tmp_path):
+    """the SAME source under the normal policy: whatever the optional clock decides, the answer is exact and typed (a policy observation, not the depth control)"""
+    n = 5000; mp = str(tmp_path / "chain.uai"); open(mp, "w").write("\n".join(["MARKOV", str(n), " ".join(["1"] * n), str(n - 1)] + ["2 %d %d" % (i, i + 1) for i in range(n - 1)] + ["1 1"] * (n - 1)) + "\n"); open(mp + ".evid", "w").write("0\n")
+    rec = run("GENERAL_BIDI_V2", mp, mp + ".evid", str(tmp_path / "o"), b64=False, rules=[], fallback=False); assert rec["status"] == "INTERVALS_OK" and all(a == "1" == b for row in rec["certified_intervals"].values() for a, b in row) and rec["plan_validation"]["status"] == "VALID"
 
 
 def test_R2_05_source_free_bucket_polls_the_deadline():
@@ -395,8 +430,8 @@ def test_R2_02_metadata_cap_during_adjacency_keeps_the_original_candidate(tmp_pa
 def test_SB_02_interrupted_view_pass_leaves_consistent_metadata(tmp_path, monkeypatch):
     from adp import source as SRC
     mp, ep = write_uai(str(tmp_path / "t.uai"), [2, 2, 2], [((0, 1, 2), [Fr(x) for x in [1, 2, 2, 4, 3, 7, 6, 14]])]); m = U.read_model(mp); R = SRC.Reduced(EX._ModelAdapter(m), {}); R.reduce([], deadline=None)
-    monkeypatch.setattr(PL, "ROW_INSPECTION_CAP", 8); P, _ = PL.plan(R, dict(EX.ARMS["GENERAL_BIDI_V2"], orders=["original"], bytes_per_entry=96)); nd = P.nodes[0]
-    assert tuple(nd.radix) == tuple(len(nd.views[w].reps) for w in nd.scope) and nd.core_entries == PL.prod(nd.radix) and GV.validate(P, R)["status"] == "VALID"
+    monkeypatch.setattr(PL, "ROW_INSPECTION_CAP", 8); T = GV.TrustedReduced(R); P, _ = PL.plan(R, dict(EX.ARMS["GENERAL_BIDI_V2"], orders=["original"], bytes_per_entry=96)); nd = P.nodes[0]
+    assert tuple(nd.radix) == tuple(len(nd.views[w].reps) for w in nd.scope) and nd.core_entries == PL.prod(nd.radix) and GV.validate(P, T).record["status"] == "VALID"
 
 
 # ============================================================================================================ R2-06: numerical environment
@@ -435,16 +470,16 @@ def test_R2_06_mpfr_exponent_overflow_and_underflow_are_typed_range_stops_withou
 def test_reference_stream_is_a_resumable_odometer_with_growable_export(tmp_path, monkeypatch):
     from adp import source as SRC
     card = [3, 2, 2]; facs = rnd_model(5, card, [(0, 1), (1, 2), (0, 2)], zeros=0.2); mp, ep = write_uai(str(tmp_path / "r.uai"), card, facs); model = U.read_model(mp)
-    R = SRC.Reduced(EX._ModelAdapter(model), {}); R.reduce([], deadline=time.monotonic() + 1); fb = EX.reference_stream(R, time.monotonic() + 10); Z, N = OR.brute(model, {}); assert fb["status"] == "COMPLETE"
+    R = SRC.Reduced(EX._ModelAdapter(model), {}); R.reduce([], deadline=time.monotonic() + 1); fb = EX.reference_stream(GV.TrustedReduced(R), time.monotonic() + 10); Z, N = OR.brute(model, {}); assert fb["status"] == "COMPLETE"
     assert all(fb["N"][v][s] / fb["Z"] == N[v][s] / Z for v in range(3) for s in range(card[v]))
     # 63 isolated binary variables (2^63 assignments): typed DEADLINE with a visited count, not a false 'visited None' nor a count gate
-    mp2, ep2 = write_uai(str(tmp_path / "c63.uai"), [2] * 63, []); monkeypatch.setattr(PL, "CAPS", dict(PL.CAPS, value_cache=1))
+    mp2, ep2 = write_uai(str(tmp_path / "c63.uai"), [2] * 63, []); monkeypatch.setattr(PL, "CAPS", dict(PL.CAPS, reverse_pinned=1))
     with pytest.raises(EX.Refuse) as e:
         EX.execute("NATIVE_PLAIN_V2", mp2, ep2, str(tmp_path / "c63"), time.monotonic() + 1.0, {"budget_s": 1.0, "allow_binary64": False, "reference_fallback": True, "rules": []})
     st = e.value.rec["stop"]; assert st["phase"] == "reference_fallback" and st["kind"] == "DEADLINE" and "visited None" not in st["detail"] and e.value.rec["reference_fallback"]["visited"] > 0
     # 16,000-state unary with 1e300 entries: the 4 MiB V1 export buffer overflowed into an IndexError; now growable -> COMPLETE and exact
     n = 16000; mp3 = str(tmp_path / "big.uai"); open(mp3, "w").write("MARKOV\n1\n%d\n1\n1 0\n%d %s\n" % (n, n, " ".join(["1e300"] * n))); open(mp3 + ".evid", "w").write("0\n")
-    rec = EX.execute("NATIVE_PLAIN_V2", mp3, mp3 + ".evid", str(tmp_path / "big"), time.monotonic() + 30, {"budget_s": 30, "allow_binary64": False, "reference_fallback": True, "rules": []})
+    monkeypatch.setattr(PL, "CAPS", dict(PL.CAPS, reverse_pinned=1)); rec = EX.execute("NATIVE_PLAIN_V2", mp3, mp3 + ".evid", str(tmp_path / "big"), time.monotonic() + 30, {"budget_s": 30, "allow_binary64": False, "reference_fallback": True, "rules": []})
     assert rec["precision"] == "exact_integer_reference" and all(Fr(a) == Fr(1, n) for a, _ in rec["certified_intervals"]["0"])
 
 
@@ -545,19 +580,70 @@ def test_R2_09_manifest_identity_reconciliation_rejects_forged_ids_aliases_and_d
     mut = copy.deepcopy(man); mut["config_adp_repaired_sha256"] = "g" * 64; assert PI.reconcile_manifest(mut) is not None                     # the configuration is part of the task identity
 
 
-def test_R2_09_closeout_ledger_requires_a_bound_record_and_a_matching_receipt(tmp_path):
+def _plan_cell(arm, budget=20.0, cell_id="c1", case="X"):
+    return {"index": 0, "stage": "primary_breadth", "arm": arm, "case": case, "budget_s": budget, "kind": "primary", "task_id": "t", "cell_id": cell_id, "out_dir": "cells/a", "max_permitted_charge_s": budget + 6}
+
+
+def _ledger_chain(D, job, outcome="COMPLETED", start="2026-11-10T00:00:01Z", out_dir="cells/a", model="m.uai", wall=0.5, pieces=("START", "SPAWNED", "RECEIPT")):
+    rows = []
+    if "START" in pieces:
+        rows.append({"kind": "START", "jid": "j1", "job": job, "scope": "matrix_primary_breadth", "start_utc": start, "cmd": ["python", "-m", "x", model, "e", out_dir], "max_permitted_charge_s": 26})
+    if "SPAWNED" in pieces:
+        rows.append({"kind": "SPAWNED", "jid": "j1", "job": job, "pid": 1, "pgid": 1})
+    if "RECEIPT" in pieces:
+        rows.append({"kind": "RECEIPT", "jid": "j1", "job": job, "scope": "matrix_primary_breadth", "start_utc": start, "outcome": outcome, "wall_s": wall, "returncode": 0, "cleanup_unresolved": False, "group_empty_at_receipt": True, "nested_groups_live_at_receipt": 0})
+    open(os.path.join(D, "GB_LEDGER.jsonl"), "w").write("".join(json.dumps(r) + "\n" for r in rows))
+
+
+def test_R2_09_closeout_reconciler_accepts_only_a_fully_bound_attempt(tmp_path):
+    """the ONE reconciler (resume + closeout): same-arm same-input stale 120 s record for a 20 s task, wrong queries, missing expected ids, receipt
+    without START/SPAWNED, output substitution, in-process clock -> NOT accepted with reasons; the fully bound attempt -> accepted; comparators go
+    through the adapter mapping (AGGREGATE_DP_V1 / EXACT producers) with launch-relative delivery."""
+    from gbidi import reconcile as RC
     from gbidi_closeout import report as R
+    import hashlib
+    D = str(tmp_path); od = os.path.join(D, "cells", "a"); os.makedirs(od); rm, re_ = "rm", "re"; nvars = 2; qsha = hashlib.sha256(json.dumps([0, 1]).encode()).hexdigest()
+    case = {"family": "F", "raw_model_sha256": rm, "raw_evidence_sha256": re_, "canonical_model_sha256": "cm", "canonical_evidence_sha256": "ce", "variables": nvars, "model_path": "m.uai"}
+    man = {"frozen_utc": "2026-11-10T00:00:00Z", "cases": {"X": case}, "cells": [_plan_cell("NATIVE_PLAIN_V2")], "kernel_binary_sha256": "kb", "config_adp_repaired_sha256": "cfg", "common_rules": list(PL.COMMON_RULES)}
+    task = {"raw_model_sha256": rm, "raw_evidence_sha256": re_, "canonical_model_sha256": "cm", "canonical_evidence_sha256": "ce", "nvars": nvars, "queries_sha256": qsha}
+    open(os.path.join(od, "output.MAR"), "w").write("MAR\n2 2 0.5 0.5 2 0.5 0.5\n"); osha = RC.sha(os.path.join(od, "output.MAR")); job = RC.job_name(man["cells"][0])
+    good = {"arm": "NATIVE_PLAIN_V2", "status": "CERTIFIED", "deadline_s": 20.0, "task": task, "expected_task": {"cell_id": "c1"}, "complete_response_s": 0.2, "complete_response_from_launch_s": 0.3, "deadline_classification_clock": "launch-relative", "output_sha256": osha, "backend": {"build": {"binary_sha256": "kb"}}, "config": {"allow_binary64": True}}
+    def check(rec, ledger_kw=None, **man_kw):
+        json.dump(rec, open(os.path.join(od, "cell.json"), "w")); _ledger_chain(D, job, **(ledger_kw or {})); m2 = dict(man, **man_kw); return R.cells_ledger(D, m2)[0]
+    row = check(good); assert row["accepted"] and row["status"] == "CERTIFIED" and row["resolution"] == "ACCEPTED" and row["delivered_valid_output"], row["reasons"]
+    stale = dict(good, deadline_s=120.0, complete_response_s=99.0, complete_response_from_launch_s=99.1, task=dict(task, queries_sha256="wrong"), config={"rules": []}); del stale["expected_task"]
+    row = check(stale, ledger_kw={"pieces": ("RECEIPT",)}); assert not row["accepted"] and row["status"] == "NOT_ACCEPTED" and any("budget" in r for r in row["reasons"]) and any("query" in r for r in row["reasons"]) and any("cell id" in r for r in row["reasons"]) and any("START/SPAWNED/RECEIPT" in r for r in row["reasons"])
+    row = check(dict(good, arm="OTHER_ARM")); assert not row["accepted"] and any("arm" in r for r in row["reasons"])
+    row = check(dict(good, task=dict(task, raw_model_sha256="other"))); assert not row["accepted"]
+    row = check(dict(good, output_sha256="0" * 64)); assert not row["accepted"] and any("output.MAR" in r for r in row["reasons"])
+    row = check(dict(good, deadline_classification_clock="in-process (no launch timestamp)")); assert not row["accepted"]
+    row = check(good, ledger_kw={"outcome": "LAUNCH_FAILED"}); assert not row["accepted"] and any("outcome" in r for r in row["reasons"])
+    row = check(good, ledger_kw={"start": "2026-11-09T00:00:00Z"}); assert not row["accepted"]
+    row = check(good, kernel_binary_sha256="other"); assert not row["accepted"] and any("kernel" in r for r in row["reasons"])
+    # comparator through the adapter
+    man["cells"] = [_plan_cell("ADP_REPAIRED")]; job = RC.job_name(man["cells"][0])
+    prod = {"arm": "AGGREGATE_DP_V1", "status": "CERTIFIED", "deadline_s": 20.0, "complete_response_s": 0.2}; json.dump(prod, open(os.path.join(od, "cell.json"), "w"))
+    _ledger_chain(D, job); row = R.cells_ledger(D, man)[0]; assert not row["accepted"] and any("adapter" in r for r in row["reasons"])                 # no adapter record -> not accepted (V2 before: UNBOUND)
+    ad = {"planned_arm": "ADP_REPAIRED", "producer_arm": "AGGREGATE_DP_V1", "budget_s": 20.0, "task": task, "expected_task": {"cell_id": "c1"}, "status": "CERTIFIED", "delivery_from_launch_s": 0.4, "output_sha256": osha, "config_sha256": "cfg"}
+    json.dump(ad, open(os.path.join(od, "adapter.json"), "w")); row = R.cells_ledger(D, man)[0]; assert row["accepted"] and row["status"] == "CERTIFIED" and row["delivery_from_launch_s"] == 0.4, row["reasons"]
+    json.dump(dict(ad, delivery_from_launch_s=20.5), open(os.path.join(od, "adapter.json"), "w")); row = R.cells_ledger(D, man)[0]; assert not row["accepted"] and any("delivery" in r for r in row["reasons"])
+    json.dump(dict(ad, config_sha256="other"), open(os.path.join(od, "adapter.json"), "w")); row = R.cells_ledger(D, man)[0]; assert not row["accepted"]
+    man["cells"] = [_plan_cell("EXACT_LIBDAI")]; job = RC.job_name(man["cells"][0]); json.dump({"arm": "EXACT", "status": "COMPLETE", "deadline_s": 20.0}, open(os.path.join(od, "cell.json"), "w")); _ledger_chain(D, job)
+    json.dump(dict(ad, planned_arm="EXACT_LIBDAI", producer_arm="EXACT", status="COMPLETE"), open(os.path.join(od, "adapter.json"), "w")); row = R.cells_ledger(D, man)[0]; assert row["accepted"] and row["status"] == "COMPLETE", row["reasons"]
+
+
+def test_H4_repeated_stage_attempts_are_each_charged_once_with_their_own_children(tmp_path):
     from gbidi import pilot as PI
-    man = {"frozen_utc": "2026-11-10T00:00:00Z", "cases": {"X": {"family": "F", "raw_model_sha256": "rm", "raw_evidence_sha256": "re"}}, "cells": [{"index": 0, "stage": "primary_breadth", "arm": "NATIVE_PLAIN_V2", "case": "X", "budget_s": 20.0, "kind": "primary", "task_id": "t", "cell_id": "c1", "out_dir": "cells/a", "max_permitted_charge_s": 26.0}]}
-    D = str(tmp_path); od = os.path.join(D, "cells", "a"); os.makedirs(od)
-    json.dump({"status": "CERTIFIED", "arm": "OTHER_ARM", "task": {"raw_model_sha256": "other", "raw_evidence_sha256": "re"}, "deadline_s": 999, "complete_response_s": 0.1, "within_deadline": True}, open(os.path.join(od, "cell.json"), "w"))
-    row = R.cells_ledger(D, man)[0]; assert row["status"] == "UNBOUND_RECORD" and row["resolution"] == "RECORD_NOT_BOUND_TO_TASK"
-    json.dump({"status": "CERTIFIED", "arm": "NATIVE_PLAIN_V2", "task": {"raw_model_sha256": "rm", "raw_evidence_sha256": "re"}, "deadline_s": 20.0, "complete_response_s": 0.1, "within_deadline": True, "expected_task": {"cell_id": "c1"}}, open(os.path.join(od, "cell.json"), "w"))
-    row = R.cells_ledger(D, man)[0]; assert row["status"] == "CERTIFIED" and row["resolution"] == "RECORD_WITHOUT_RECEIPT" and row["accepted"] is False
-    open(os.path.join(D, "GB_LEDGER.jsonl"), "w").write(json.dumps({"kind": "RECEIPT", "job": "cell:000:primary_breadth:X:NATIVE_PLAIN_V2:20s:c1", "jid": "j", "start_utc": "2026-11-10T00:00:01Z", "outcome": "LAUNCH_FAILED", "wall_s": 0.002, "returncode": None, "cleanup_unresolved": False}) + "\n")
-    row = R.cells_ledger(D, man)[0]; assert row["accepted"] is False and row["resolution"] == "RECEIPT_CONTRADICTS_RECORD"
-    open(os.path.join(D, "GB_LEDGER.jsonl"), "w").write(json.dumps({"kind": "RECEIPT", "job": "cell:000:primary_breadth:X:NATIVE_PLAIN_V2:20s:c1", "jid": "j", "start_utc": "2026-11-10T00:00:01Z", "outcome": "COMPLETED", "wall_s": 0.5, "returncode": 0, "cleanup_unresolved": False, "group_empty_at_receipt": True}) + "\n")
-    row = R.cells_ledger(D, man)[0]; assert row["accepted"] is True and row["resolution"] == "COMPLETED_RECORD"
+    from gbidi_closeout import report as R
+    D = str(tmp_path); rows = []
+    for jid, scope, job, wall, beg, end, parent in (("o1", "stage_outer_primary_breadth", "stage_runner:primary_breadth", 10.0, 0, 10, None), ("c1", "matrix_primary_breadth", "cell:one", 5.0, 1, 6, "o1"), ("o2", "stage_outer_primary_breadth", "stage_runner:primary_breadth", 8.0, 20, 28, None), ("c2", "matrix_primary_breadth", "cell:two", 4.0, 21, 25, "o2")):
+        b = "2026-11-10T00:00:%02dZ" % beg; e = "2026-11-10T00:00:%02dZ" % end
+        rows += [{"kind": "START", "jid": jid, "scope": scope, "job": job, "start_utc": b, "max_permitted_charge_s": 30, "parent_jid": parent}, {"kind": "RECEIPT", "jid": jid, "scope": scope, "job": job, "start_utc": b, "end_utc": e, "wall_s": wall, "outcome": "COMPLETED", "cleanup_unresolved": False, "parent_jid": parent}]
+    open(os.path.join(D, "GB_LEDGER.jsonl"), "w").write("".join(json.dumps(x) + "\n" for x in rows))
+    total, by, unresolved, extra = PI.charged(D); assert total == 18.0 and not unresolved and [o["parent_remainder_s"] for o in extra["outer_attempts"]] == [5.0, 4.0]
+    B = R.budget(D, {"frozen_utc": "2026-11-10T00:00:00Z", "ceiling_s": 100}, []); assert B["total_charged_s"] == 18.0 and B["compliance"].startswith("every start")
+    rows2 = [r for r in rows if not (r["kind"] == "RECEIPT" and r["jid"] == "o1")]; open(os.path.join(D, "GB_LEDGER.jsonl"), "w").write("".join(json.dumps(x) + "\n" for x in rows2))
+    total, by, unresolved, extra = PI.charged(D); assert unresolved and total == 5 + 4 + 4 + 30 and R.budget(D, {"frozen_utc": "2026-11-10T00:00:00Z", "ceiling_s": 100}, [])["compliance"] == "QUALIFIED"   # an outer attempt without receipt: max permitted, QUALIFIED
 
 
 def test_median_is_the_ordinary_median():
@@ -600,3 +686,179 @@ def test_synthetic_memory_downgrade_transition_fires_and_stays_exact(tmp_path, m
     card = [2] * 12; facs = rnd_model(8, card, [(i, i + 1) for i in range(11)] + [(i, i + 3) for i in range(9)]); mp, ep = write_uai(str(tmp_path / "m.uai"), card, facs); model = U.read_model(mp)
     monkeypatch.setattr(PL, "CAPS", dict(PL.CAPS, value_cache=3000))
     rec = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "o"), b64=False, rules=[]); assert rec["plan"]["totals"]["fused_by_memory"] >= 1 and rec["attempts"][-1]["counters"]["stream_reevals"] > 0 and truth_inside(rec, model, {})
+
+
+# ============================================================================================================ third review: V2-V1 .. H4 controls
+def test_V2_V1_proposal_payload_substitution_cannot_reach_execution(tmp_path):
+    """validation and execution read the SAME immutable trusted payload: a proposal whose factor table / scale / scope / cardinality were replaced is
+    simply not what gets executed (the trusted snapshot is), an in-place mutation of the live reduced object is detected and REJECTED, and the
+    unchanged proposal certifies exactly."""
+    mp, ep = write_uai(str(tmp_path / "t.uai"), [2, 2], [((0, 1), [1, 2, 3, 4]), ((0, 1), [1, 1, 1, 2])]); truth = {0: [Fr(3, 14), Fr(11, 14)], 1: [Fr(2, 7), Fr(5, 7)]}; orig = PL.plan
+    for mode in ("unchanged", "replace_factor_table", "replace_scale_zero", "replace_scope", "replace_card", "mutate_R_in_place"):
+        def altered(R, *a, mode=mode, **k):
+            P, T = orig(R, *a, **k)
+            if mode == "replace_factor_table":
+                fid = sorted(P.fac)[1]; f = copy.deepcopy(P.fac[fid]); f.table = [Fr(1)] * 4; P.fac = dict(P.fac); P.fac[fid] = f
+            elif mode == "replace_scale_zero":
+                P.R = copy.deepcopy(P.R); P.R.scale = Fr(0)
+            elif mode == "replace_scope":
+                fid = sorted(P.fac)[1]; f = copy.deepcopy(P.fac[fid]); f.scope = (1, 0); P.fac = dict(P.fac); P.fac[fid] = f
+            elif mode == "replace_card":
+                fid = sorted(P.fac)[1]; f = copy.deepcopy(P.fac[fid]); f.card = (1, 4); P.fac = dict(P.fac); P.fac[fid] = f
+            elif mode == "mutate_R_in_place":
+                R.factors[1].table[:] = [Fr(1)] * 4
+            return P, T
+        PL.plan = altered
+        try:
+            if mode == "mutate_R_in_place":
+                with pytest.raises(EX.Refuse) as e:
+                    run("GENERAL_BIDI_V2", mp, ep, str(tmp_path / mode), b64=False)
+                assert e.value.kind == "REJECTED" and "mutated" in e.value.reason; continue
+            rec = run("GENERAL_BIDI_V2", mp, ep, str(tmp_path / mode), b64=False); assert rec["status"] == "INTERVALS_OK" and contained(rec, truth), mode
+            st, cell = publish(str(tmp_path / mode), mp, ep, rec); assert st == "CERTIFIED" and cell["point_check"]["status"] == "POINT_VERIFIED"
+            assert rec["plan_validation"]["trusted_content_sha256"] == rec["trusted_source"]["content_sha256"]
+        finally:
+            PL.plan = orig
+
+
+def test_V2_V2_product_zero_classes_with_different_zero_witnesses_are_valid(tmp_path):
+    mp, ep = write_uai(str(tmp_path / "z.uai"), [2, 3], [((0, 1), [0, 1, 1, 0, 2, 2]), ((0, 1), [1, 0, 3, 2, 0, 4])]); model = U.read_model(mp); Z, T = truth_rows(model, {}); assert Z == 11
+    for rules in ([], list(PL.COMMON_RULES)):
+        rec = run("GENERAL_BIDI_V2", mp, ep, str(tmp_path / ("r%d" % len(rules))), b64=False, rules=rules); assert contained(rec, T) and (rec.get("plan_validation") or {"status": "VALID"})["status"] == "VALID"   # the common rules may fold everything (no plan)
+    # but a zero state merged with a NONZERO state is still rejected
+    orig = PL.plan
+    def forged(R, *a, **k):
+        P, Tb = orig(R, *a, **k); nd = next(n for n in P.nodes if n.scope); w = nd.scope[0]; n = len(R.dom[w]); nd.views[w] = View([0] * n, [0], [Fr(1)] * n); nd.radix = tuple(len(nd.views[x].reps) for x in nd.scope); nd.core_entries = 1; nd.demand = "FULL"; nd._support_out = None; return P, Tb
+    PL.plan = forged
+    try:
+        with pytest.raises(EX.Refuse) as e:
+            run("GENERAL_BIDI_V2", mp, ep, str(tmp_path / "forged"), b64=False, rules=[])
+        assert e.value.kind == "REJECTED"
+    finally:
+        PL.plan = orig
+
+
+def test_V2_P1_mandatory_orders_survive_an_expired_optional_clock_above_the_poll_boundary(tmp_path):
+    from adp import source as SRC
+    for n in (65, 80):
+        mp, ep, truth = star_model(str(tmp_path / ("s%d.uai" % n)), n); m = U.read_model(mp); R = SRC.Reduced(EX._ModelAdapter(m), {}); R.reduce([], deadline=None)
+        P, table = PL.plan(R, dict(EX.ARMS["GENERAL_BIDI_V2"], bytes_per_entry=80), deadline=time.monotonic() - 1, hard_deadline=time.monotonic() + 30)
+        tab = {c["order"]: c for c in table}; assert P.order_info["name"] == "min_prospective_bag_volume" and P.order_info["updates"] > PL.POLL_UNITS and tab["min_fill"]["state"] == "ORDER_INCOMPLETE_DISCOVERY_WALL" and tab["original"]["mandatory_representable"] is False
+        with pytest.raises(PL.PlanStop) as e:
+            PL.plan(R, dict(EX.ARMS["GENERAL_BIDI_V2"], bytes_per_entry=80), deadline=None, hard_deadline=time.monotonic() - 1)
+        assert e.value.kind == "CELL_DEADLINE"
+    # end to end: the reductions consume the shared allowance, planning still finds the cheap order within the cell deadline
+    mp, ep, truth = star_model(str(tmp_path / "s80e.uai"), 80); orig = EX.SRC.Reduced.reduce
+    def slow(self, *a, **k):
+        r = orig(self, *a, **k); time.sleep(1.1); return r
+    EX.SRC.Reduced.reduce = slow
+    try:
+        rec = EX.execute("GENERAL_BIDI_V2", mp, ep, str(tmp_path / "e2e"), time.monotonic() + 20, {"budget_s": 20, "allow_binary64": False, "reference_fallback": True})
+    finally:
+        EX.SRC.Reduced.reduce = orig
+    assert rec["status"] == "INTERVALS_OK" and rec["plan"]["order"]["name"] == "min_prospective_bag_volume" and contained(rec, truth) and {c["order"]: c.get("state") for c in rec["plan_candidates"]}["min_fill"] == "ORDER_INCOMPLETE_DISCOVERY_WALL"
+
+
+def test_RT_poll_quantum_holds_on_a_3000_unary_program():
+    L = EX.Lib.get(); c = ctypes; nf = 3000; prog = [nf]
+    for i in range(nf):
+        prog += [1, 0, 1, 1, i]
+    prog += [1, 0, 1, nf]
+    for i in range(nf):
+        prog += [0, i]
+    prog += [0, 1, -1, 1, 0, 0, 1, 0]
+    a = (c.c_int64 * len(prog))(*prog); qs = (c.c_char_p * (nf + 1))(*([b"1/1"] * (nf + 1))); d = (c.c_double * (nf + 1))(*([1.0] * (nf + 1))); caps = (c.c_uint64 * 5)(*([1 << 28] * 5)); err = c.c_int()
+    h = L.gb_create(1, 53, a, len(prog), qs, d, nf, 0, caps, 0.0, c.byref(err)); assert h, err.value
+    st = L.gb_forward(h); cnt = EX._counters(L, h); L.gb_destroy(h)
+    assert st == 1 and cnt["polls"] >= 1 and cnt["lookups"] + nf + 1 + 1 <= 4096 + 1, cnt                                 # conversion units (nf+1) + push (1) + loads before the first poll <= quantum
+
+
+def test_native_label_cap_and_range_fault_branches_fire(tmp_path):
+    """genuine native label / range controls: (a) forced leaf labels of 2^51 make the kernel's label cap fault -> typed RANGE -> MPFR; (b) with the
+    range envelope bypassed (qualification hook), 1e-200 leaves multiplied four times underflow -> the kernel's per-operation range check faults ->
+    RANGE -> MPFR certifies; (c) a forced leaf label making (E_N + E_Z) u >= 1/2 is refused as UNSOUND_ROUTE -> MPFR."""
+    L = EX.Lib.get(); card = [2, 2, 2]; facs = rnd_model(3, card, [(0, 1), (1, 2), (0, 2)]); mp, ep = write_uai(str(tmp_path / "m.uai"), card, facs); model = U.read_model(mp); Z, T = truth_rows(model, {})
+    L.gb_test_leaf_label(1 << 51)
+    try:
+        rec = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "cap"), b64=True, rules=[], fallback=False)
+    finally:
+        L.gb_test_leaf_label(1)
+    assert rec["route"] == "mpfr" and rec["attempts"][0]["route"] == "binary64" and rec["attempts"][0].get("refused", {}).get("kind") == "RANGE" and rec["attempts"][0].get("stop") == "RANGE" and contained(rec, T)
+    L.gb_test_leaf_label(1 << 49)
+    try:
+        rec = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "void"), b64=True, rules=[], fallback=False)
+    finally:
+        L.gb_test_leaf_label(1)
+    assert rec["route"] == "mpfr" and rec["attempts"][0].get("refused", {}).get("kind") == "UNSOUND_ROUTE" and rec["attempts"][0]["labels"]["E_N_max"] >= (1 << 49) and rec["attempts"][0]["delta_max"] >= 0.5 and contained(rec, T)
+    L.gb_test_leaf_label(1 << 48)                                                                      # delta 0.44 < 1/2: admitted but TOO_WIDE -> MPFR (the enclosure stays sound, just useless)
+    try:
+        rec = run("NATIVE_PLAIN_V2", mp, ep, str(tmp_path / "wide"), b64=True, rules=[], fallback=False)
+    finally:
+        L.gb_test_leaf_label(1)
+    assert rec["route"] == "mpfr" and rec["attempts"][0]["outcome"] == "TOO_WIDE" and 0.4 < rec["attempts"][0]["delta_max"] < 0.5 and contained(rec, T)
+    tiny = ["%s" % Fr(1, 10 ** 200)] * 4; mp2, ep2 = write_uai(str(tmp_path / "u.uai"), [2, 2, 2], [((0, 1), [Fr(1)] * 4), ((1, 2), [Fr(1)] * 4), ((0, 2), [Fr(1)] * 4), ((0, 1), [Fr(1)] * 4)], tokens=[tiny, tiny, tiny, tiny]); model2 = U.read_model(mp2); Z2, T2 = truth_rows(model2, {})
+    rec = EX.execute("NATIVE_PLAIN_V2", mp2, ep2, str(tmp_path / "under"), time.monotonic() + 60, {"budget_s": 60, "allow_binary64": True, "rules": [], "reference_fallback": False}, test_hooks={"skip_range_envelope": True})
+    assert rec["attempts"][0]["route"] == "binary64" and rec["attempts"][0].get("stop") == "RANGE" and rec["attempts"][0]["stop_phase"] == "forward" and rec["route"] == "mpfr" and contained(rec, T2)
+
+
+def test_H3_nested_supervisors_owned_tree_is_reconciled(tmp_path):
+    """the reviewer's two-real-supervisor control: the outer leader exits while the inner supervisor's worker (own session) is alive; the ROOT owner
+    kills + reaps the registered nested group and writes the missing nested receipt (PARENT_CLEANUP_KILL); nothing survives the outer receipt."""
+    import psutil
+    leaf = str(tmp_path / "leaf.json"); outer_led = str(tmp_path / "outer.jsonl"); inner_led = str(tmp_path / "inner.jsonl")
+    leafcode = "import os,time,json;open(%r,'w').write(json.dumps({'pid':os.getpid(),'pgid':os.getpgrp()}));time.sleep(4)" % leaf
+    inner = [PY, "-m", "gbidi.supervise", "--ledger", inner_led, "--scope", "inner", "--job", "inner", "--timeout", "1", "--", PY, "-c", leafcode]
+    leadercode = "import subprocess,time,os;subprocess.Popen(%r,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);p=%r\nt=time.monotonic()\nwhile not os.path.exists(p) and time.monotonic()-t<2:time.sleep(.01)\ntime.sleep(.1)\n" % (inner, leaf)
+    r = subprocess.run([PY, "-m", "gbidi.supervise", "--ledger", outer_led, "--scope", "stage_outer_test", "--job", "stage_runner:test", "--timeout", "3", "--", PY, "-c", leadercode], capture_output=True, text=True, timeout=40, cwd=HERE, env=ENV)
+    ident = json.load(open(leaf)); pid = ident["pid"]
+    alive = psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    if alive:
+        os.kill(pid, signal.SIGKILL)
+    rc = [json.loads(x) for x in open(outer_led) if json.loads(x)["kind"] == "RECEIPT"][-1]; inner_rows = [json.loads(x) for x in open(inner_led)]
+    assert not alive and ident["pgid"] != rc["pgid"] and rc["nested_groups_registered"] == 1 and rc["nested_groups_killed"] == 1 and rc["nested_groups_live_at_receipt"] == 0 and rc["cleanup_unresolved"] is False
+    assert [x["kind"] for x in inner_rows] == ["START", "SPAWNED", "RECEIPT"] and inner_rows[-1]["outcome"] == "PARENT_CLEANUP_KILL" and inner_rows[-1]["written_by_parent"] == rc["jid"]
+    # the ordinary nested completion: both receipts, parent_jid linkage, nothing killed
+    o2 = str(tmp_path / "o2.jsonl"); i2 = str(tmp_path / "i2.jsonl")
+    subprocess.run([PY, "-m", "gbidi.supervise", "--ledger", o2, "--scope", "stage_outer_test", "--job", "stage_runner:ok", "--timeout", "10", "--", PY, "-m", "gbidi.supervise", "--ledger", i2, "--scope", "inner", "--job", "inner", "--timeout", "5", "--", PY, "-c", "print(1)"], capture_output=True, timeout=40, cwd=HERE, env=ENV)
+    ro = [json.loads(x) for x in open(o2) if json.loads(x)["kind"] == "RECEIPT"][-1]; ri = [json.loads(x) for x in open(i2) if json.loads(x)["kind"] == "RECEIPT"][-1]
+    assert ro["outcome"] == "COMPLETED" and ro["nested_groups_killed"] == 0 and ri["outcome"] == "COMPLETED" and ri["parent_jid"] == ro["jid"]
+
+
+def test_H1_all_primary_arms_end_to_end_through_harness_resume_and_closeout(tmp_path):
+    """tiny qualification manifest (marked qualification_unfrozen; never a campaign): one tiny case x the four primary arms + the three ablation arms,
+    run by gbidi.pilot.run under a REAL outer gbidi.supervise (the production composition), then resumed (no relaunch, no RESUME_CONFLICT), then
+    closed out: every row ACCEPTED through the one reconciler with launch-relative delivery; comparators via the adapter with their pinned producers."""
+    from gbidi import pilot as PI, reconcile as RC
+    from gbidi_closeout import report as R
+    D = str(tmp_path / "run"); os.makedirs(D); inputs = tmp_path / "inputs"; inputs.mkdir()
+    card = [2, 3, 2]; facs = rnd_model(12, card, [(0, 1), (1, 2), (0, 2)]); dec = lambda q: "%d.%02d" % divmod(q.numerator * (100 // q.denominator), 100)      # the pinned producers read DECIMAL tokens (as the panel inputs are)
+    mp, ep = write_uai(str(inputs / "X.uai"), card, facs, {2: 1}, tokens=[[dec(x) for x in tab] for _, tab in facs]); model = U.read_model(mp); Z, N = OR.brute(model, {2: 1})
+    cfg_adp = os.path.join(HERE, "runs", "mdi_2026-10-28", "AGGREGATE_DP_CENSUS_2026-11-08", "CONFIG_new_arm.json"); br = json.load(open(os.path.join(HERE, "gbidi", "BUILD_RECORD.json")))
+    import hashlib
+    canon = lambda p: hashlib.sha256((" ".join(open(p).read().split())).encode()).hexdigest()
+    case = {"family": "F", "model_path": mp, "evidence_path": ep, "raw_model_sha256": EX.sha_file(mp), "raw_evidence_sha256": EX.sha_file(ep), "canonical_model_sha256": canon(mp), "canonical_evidence_sha256": canon(ep), "variables": 3}
+    src = ["gbidi/executor.py", "gbidi/kernel.cpp", "gbidi/pilot.py", "gbidi/reconcile.py", "gbidi/arm_adapter.py", "gbidi/supervise.py", "adp/cell.py", "bench/cells.py"]
+    man = {"pass": "QUALIFICATION_E2E", "qualification_unfrozen": True, "frozen_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 2)), "commit": "unfrozen", "branch": "test", "seed": PI.SEED, "source_files_sha256": {f: EX.sha_file(os.path.join(HERE, f)) for f in src}, "kernel_binary_sha256": br["binary_sha256"], "config_adp_repaired_path": os.path.relpath(cfg_adp, HERE), "config_adp_repaired_sha256": EX.sha_file(cfg_adp), "common_rules": list(PL.COMMON_RULES),
+           "ceiling_s": 28800.0, "closeout_reserve_s": 0.0, "cases": {"X": case}, "unavailable_slots": [], "cells": []}
+    arms = ["GENERAL_BIDI_V2", "NATIVE_PLAIN_V2", "ADP_REPAIRED", "EXACT_LIBDAI", "A1_NO_DEMAND_MASKS", "A2_NO_FUSION", "A3_NO_RESPONSE_VIEWS"]
+    for i, arm in enumerate(arms):
+        c = {"stage": "primary_breadth" if i < 4 else "ablation_breadth", "arm": arm, "case": "X", "budget_s": 20.0, "kind": "primary" if i < 4 else "ablation"}; tid, cid = PI.canonical_task(case, c, man["config_adp_repaired_sha256"], br["binary_sha256"], man["commit"])
+        man["cells"].append(dict(c, index=i, task_id=tid, cell_id=cid, producer_arm=arm if arm in PI.GB_ARMS else PI.PRODUCER_ARM[arm], out_dir="cells/%s/%03d__X__%s__20s__%s" % (c["stage"], i, arm, tid), max_permitted_charge_s=26.0))
+    json.dump(man, open(os.path.join(D, "GB_MANIFEST.json"), "w")); assert PI.reconcile_manifest(man) is None
+    def stage(name):
+        return subprocess.run([PY, "-m", "gbidi.supervise", "--ledger", os.path.join(D, "GB_LEDGER.jsonl"), "--scope", "stage_outer_" + name, "--job", "stage_runner:" + name, "--timeout", "600", "--cwd", HERE, "--env", "PYTHONPATH=" + HERE, "--", PY, "-m", "gbidi.pilot", "run", D, name], capture_output=True, text=True, timeout=900, cwd=HERE, env=ENV)
+    r1 = stage("primary_breadth"); assert "STOP" not in r1.stdout, r1.stdout[-800:] + r1.stderr[-800:]
+    r2 = stage("ablation_breadth"); assert "STOP" not in r2.stdout, r2.stdout[-800:]
+    rows = R.cells_ledger(D, man); assert all(r["accepted"] for r in rows), [(r["arm"], r["reasons"]) for r in rows if not r["accepted"]]
+    assert {r["arm"]: r["status"] for r in rows} == {a: ("COMPLETE" if a == "EXACT_LIBDAI" else "CERTIFIED") for a in arms} and all(r["delivery_from_launch_s"] is not None and r["delivery_from_launch_s"] <= 20 for r in rows)
+    for r in rows:                                                                                    # every arm's delivered rows are within 1/200 of the exact posterior
+        pts, _ = U.read_mar(os.path.join(D, r["out_dir"], "output.MAR")); assert all(abs(Fr(pts[v][s]) - N[v][s] / Z) < Fr(1, 200) for v in range(3) for s in range(card[v])), r["arm"]
+    led1 = open(os.path.join(D, "GB_LEDGER.jsonl")).read()
+    r3 = stage("primary_breadth"); assert "RESUME_CONFLICT" not in r3.stdout and "STOP" not in r3.stdout, r3.stdout[-500:]                # resume: nothing relaunched
+    led2 = open(os.path.join(D, "GB_LEDGER.jsonl")).read(); assert led2.count('"kind": "START"') == led1.count('"kind": "START"') + 1       # only the new outer start
+    rows2 = R.cells_ledger(D, man); assert all(r["accepted"] for r in rows2)
+    total, by, unresolved, extra = PI.charged(D); assert not unresolved and len(extra["outer_attempts"]) == 3 and all(o["parent_remainder_s"] is not None for o in extra["outer_attempts"]) and all(o["receipt"] for o in extra["outer_attempts"])
+    B = R.budget(D, man, rows2); assert B["compliance"].startswith("every start") and B["total_charged_s"] == pytest.approx(total, abs=2e-3)
+    # a stale record for the wrong budget (same arm, same inputs) is a RESUME_CONFLICT, never silently reused
+    cj = os.path.join(D, man["cells"][1]["out_dir"], "cell.json"); rec1 = json.load(open(cj)); rec1["deadline_s"] = 120.0; json.dump(rec1, open(cj, "w"))
+    r4 = stage("primary_breadth"); assert "RESUME_CONFLICT" in r4.stdout and json.load(open(os.path.join(D, "RUN_STOPPED.json")))["status"] == "RESUME_CONFLICT"

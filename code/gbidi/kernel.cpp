@@ -21,6 +21,10 @@
 //   * counters are DEFINED events (see Counters below and gbidi/executor.py COUNTER_DEFINITIONS); a live snapshot (atomics written at each poll)
 //     is readable from another thread while the kernel runs (F5 / R2-10).
 //   * exact integer reference stream: mixed-radix odometer (no assignment-count gate), checked / growable export (R3, R4).
+// Closeout of 10 Nov 2026 (third review): the parsed program IR, the per-node containers, frame-vector CAPACITY growth and the mpq conversion
+// temporaries are reserved before allocation (index / scratch categories); the reference stream takes the same five caps and reserves its tables,
+// accumulators and a conservative bound on every product before running; every bulk loop polls PER PRIMITIVE (the deadline is checked within
+// 4,096 charged units + one indivisible MPFR/GMP primitive); a qualification hook forces an initial leaf label (native label-cap branch control).
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -113,7 +117,7 @@ struct Counters {
     uint64_t root_ops;               // root prefix/suffix/Z multiplications (included in mults as well)
 };
 
-static long test_emin = 0, test_emax = 0; static int test_bad_alloc = 0;
+static long test_emin = 0, test_emax = 0; static int test_bad_alloc = 0; static uint64_t test_leaf_label = 1;
 template <class P> struct Exec {
     typedef typename P::T Num;
     int prec; std::vector<FactorD> F; std::vector<NodeD> N; std::vector<Num> fvals, ratios;
@@ -153,7 +157,7 @@ template <class P> struct Exec {
     // child core index + view scale for consumer n's row (d, a); the scale (product over the child's scope axes of the view ratios) is written into sc
     void child_index_scale(int cn, const NodeD& n, const std::vector<int>& d, int a, int64_t& cidx, Num& sc) {
         const NodeD& c = N[cn]; cidx = 0; P::set_one(sc);
-        for (size_t k = 0; k < c.scope.size(); ++k) { int raw = raw_of(n, d, a, c.scope[k]); const AxisD& ax = c.axes[k]; cidx = cidx * c.radix[k] + ax.cls[raw]; P::mul(sc, sc, ratios[ax.ratio_off + raw]); ++C.mults; }
+        for (size_t k = 0; k < c.scope.size(); ++k) { int raw = raw_of(n, d, a, c.scope[k]); const AxisD& ax = c.axes[k]; cidx = cidx * c.radix[k] + ax.cls[raw]; P::mul(sc, sc, ratios[ax.ratio_off + raw]); ++C.mults; ops_since_poll++; }
     }
     int64_t child_index(int cn, const NodeD& n, const std::vector<int>& d, int a) const { const NodeD& c = N[cn]; int64_t cidx = 0; for (size_t k = 0; k < c.scope.size(); ++k) { int raw = raw_of(n, d, a, c.scope[k]); cidx = cidx * c.radix[k] + c.axes[k].cls[raw]; } return cidx; }
 
@@ -165,10 +169,11 @@ template <class P> struct Exec {
         if (!frame_alloc(need, f.base)) return false;
         digits(n, idx, f.d);
         if (mode == 0) { P::set_zero(at(f.base + k + 1)); ++C.value_frames; } else { P::copy(at(f.base + 3 * k + 5), *h); P::set_zero(at(f.base + 3 * k + 6)); ++C.pullback_frames; if (mode == 2) ++C.value_frames; }
+        if (frames.size() == frames.capacity()) { size_t ncap = frames.capacity() ? 2 * frames.capacity() : 16; if (!reserve(used_scratch, caps.scratch, (uint64_t)(ncap - frames.capacity()) * sizeof(Frame))) return false; frames.reserve(ncap); }   // CAPACITY growth is charged (retained after pop)
         frames.push_back(std::move(f)); if (frames.size() > C.max_frame_depth) C.max_frame_depth = frames.size();
         return poll(1, nn);
     }
-    void pop() { Frame& f = frames.back(); top = f.saved_top; used_scratch -= sizeof(Frame) + (N[f.nn].radix.size() + N[f.nn].inputs.size()) * sizeof(int); frames.pop_back(); }
+    void pop() { Frame& f = frames.back(); top = f.saved_top; used_scratch -= sizeof(Frame) + (N[f.nn].radix.size() + N[f.nn].inputs.size()) * sizeof(int); frames.pop_back(); }   // the vector capacity stays reserved
 
     // run the frame machine until the stack is empty; returns false on a typed stop
     bool run() {
@@ -189,8 +194,9 @@ template <class P> struct Exec {
                 const InputD& in = n.inputs[i]; Num& dst = at(f.base + i); f.unresolved[i] = 0;
                 if (in.kind == 0) { const FactorD& fa = F[in.ref]; int64_t off = 0; for (size_t q = 0; q < fa.scope.size(); ++q) off += (int64_t)raw_of(n, f.d, f.a, fa.scope[q]) * fa.stride[q]; ++C.lookups; P::copy(dst, fvals[fa.val_off + off]); if (P::is_zero(dst)) skip = true; }
                 else { int64_t cidx = child_index(in.ref, n, f.d, f.a); int64_t s = slot_of(in.ref, cidx); if (s >= 0) { Num& sc = at(SC); child_index_scale(in.ref, n, f.d, f.a, cidx, sc); ++C.lookups; P::mul(dst, sc, values[in.ref][s]); ++C.mults; if (P::is_zero(dst)) skip = true; } else f.unresolved[i] = 1; }
+                if (!poll(1, f.nn)) return false;                                                   // PER input: the quantum is checked within 4096 charged units
             }
-            if (!poll(k + 1, f.nn)) return false;
+            if (!poll(1, f.nn)) return false;
             if (skip) { ++C.rows_skipped_zero; f.a++; f.i = 0; return true; }
             f.phase = 1; f.i = 0;
         }
@@ -213,22 +219,22 @@ template <class P> struct Exec {
         }
         if (f.phase == 3) {                                                                     // every input of row f.a is resolved
             if (f.mode == 0) {
-                Num& row = at(ROW); P::set_one(row); for (size_t i = 0; i < k; ++i) { P::mul(row, row, at(f.base + i)); ++C.mults; }
-                P::add(at(f.base + k + 1), at(f.base + k + 1), row); ++C.adds; ++C.primal_rows; f.a++; f.i = 0; f.phase = 0; return poll(k + 1, f.nn);
+                Num& row = at(ROW); P::set_one(row); for (size_t i = 0; i < k; ++i) { P::mul(row, row, at(f.base + i)); ++C.mults; if (!poll(1, f.nn)) return false; }
+                P::add(at(f.base + k + 1), at(f.base + k + 1), row); ++C.adds; ++C.primal_rows; f.a++; f.i = 0; f.phase = 0; return poll(1, f.nn);
             }
             const size_t PRE = f.base + k, SUF = f.base + 2 * k + 1, G = f.base + 3 * k + 2, H = f.base + 3 * k + 5, ACC = f.base + 3 * k + 6;
             if (f.last >= 0) {                                                                  // combined frame for the last streamed child: g = h * prod(other inputs) * view scale
                 const InputD& in = n.inputs[f.last]; P::set_one(at(f.base + f.last));
-                P::set_one(at(PRE)); for (size_t i = 0; i < k; ++i) { P::mul(at(PRE + i + 1), at(PRE + i), at(f.base + i)); ++C.mults; }
+                P::set_one(at(PRE)); for (size_t i = 0; i < k; ++i) { P::mul(at(PRE + i + 1), at(PRE + i), at(f.base + i)); ++C.mults; if (!poll(1, f.nn)) return false; }
                 int64_t cidx; child_index_scale(in.ref, n, f.d, f.a, cidx, at(SC)); P::mul(at(G), at(H), at(PRE + k)); P::mul(at(G), at(G), at(SC)); C.mults += 2;
                 if (N[in.ref].materialize) ++C.reads_outside_demand; ++C.stream_reevals; f.phase = 6;
                 return push(2, in.ref, cidx, &at(f.base + f.last), &at(G));
             }
-            P::set_one(at(PRE)); for (size_t i = 0; i < k; ++i) { P::mul(at(PRE + i + 1), at(PRE + i), at(f.base + i)); ++C.mults; }
-            P::set_one(at(SUF + k)); for (size_t i = k; i >= 1; --i) { P::mul(at(SUF + i - 1), at(f.base + i - 1), at(SUF + i)); ++C.mults; }
+            P::set_one(at(PRE)); for (size_t i = 0; i < k; ++i) { P::mul(at(PRE + i + 1), at(PRE + i), at(f.base + i)); ++C.mults; if (!poll(1, f.nn)) return false; }
+            P::set_one(at(SUF + k)); for (size_t i = k; i >= 1; --i) { P::mul(at(SUF + i - 1), at(f.base + i - 1), at(SUF + i)); ++C.mults; if (!poll(1, f.nn)) return false; }
             if (f.mode == 2) { P::add(at(ACC), at(ACC), at(PRE + k)); ++C.adds; ++C.primal_rows; }
             P::mul(at(ROW), at(H), at(PRE + k)); ++C.mults; P::add(Nx[f.nn][f.a], Nx[f.nn][f.a], at(ROW)); ++C.adds; ++C.numerator_adds; ++C.reverse_rows;
-            f.phase = 4; f.i = 0; if (!poll(3 * k + 2, f.nn)) return false;
+            f.phase = 4; f.i = 0; if (!poll(2, f.nn)) return false;
         }
         if (f.phase == 6) {                                                                     // the combined child frame returned its value into inp[last] (unscaled): scale it, then finish the row normally
             Num& dst = at(f.base + f.last); P::mul(dst, at(SC), dst); ++C.mults; int done = f.last; f.last = -1; f.unresolved[done] = 2; f.phase = 3;
@@ -246,11 +252,12 @@ template <class P> struct Exec {
                     int64_t s = slot_of(in.ref, cidx);
                     if (s >= 0) { P::add(adj[in.ref][s], adj[in.ref][s], at(G)); ++C.adds; ++C.adjoint_adds; }
                     else { if (N[in.ref].materialize) ++C.reads_outside_demand; f.phase = 5; return push(1, in.ref, cidx, nullptr, &at(G)); }
+                    if (!poll(4, f.nn)) return false;
                 }
                 f.i++;
             }
             for (auto& u : f.unresolved) if (u == 2) u = 0;
-            f.a++; f.i = 0; f.phase = 0; return poll(k, f.nn);
+            f.a++; f.i = 0; f.phase = 0; return poll(1, f.nn);
         }
         return true;
     }
@@ -261,6 +268,7 @@ template <class P> struct Exec {
 
     int forward() {
         phase_tag = 1;
+        if (!reserve(used_scratch, caps.scratch, (uint64_t)N.size() * (3 * sizeof(std::vector<Num>) + sizeof(std::unordered_map<int64_t, int64_t>)) + (uint64_t)N.size() * sizeof(std::vector<Num>))) return stop;   // per-node containers (values, dpos, Nx, adj)
         values.assign(N.size(), {}); dpos.assign(N.size(), {}); Nx.assign(N.size(), {});
         for (size_t nn = 0; nn < N.size(); ++nn) {
             NodeD& n = N[nn];
@@ -280,8 +288,7 @@ template <class P> struct Exec {
             }
         }
         P::copy(Z, scale);                                                                      // Z = scale * prod roots (roots: materialized scalar nodes, validated by parse_prog)
-        for (int r : roots) { int64_t s = slot_of(r, 0); if (s < 0) return stop = GB_BADPROG; P::mul(Z, Z, values[r][s]); ++C.mults; ++C.root_ops; }
-        if (!poll(roots.size() + 1, -1)) return stop;
+        for (int r : roots) { int64_t s = slot_of(r, 0); if (s < 0) return stop = GB_BADPROG; P::mul(Z, Z, values[r][s]); ++C.mults; ++C.root_ops; if (!poll(1, -1)) return stop; }
         snapshot(-1); return GB_OK;
     }
 
@@ -293,9 +300,9 @@ template <class P> struct Exec {
         std::vector<Num> rv(R), pre(R + 1), suf(R + 1); for (auto& x : rv) P::init(x, prec); for (auto& x : pre) P::init(x, prec); for (auto& x : suf) P::init(x, prec);
         auto release = [&]() { for (auto& x : rv) P::clear(x); for (auto& x : pre) P::clear(x); for (auto& x : suf) P::clear(x); };
         for (size_t i = 0; i < R; ++i) { int64_t s = slot_of(roots[i], 0); if (s < 0) { release(); return stop = GB_BADPROG; } P::copy(rv[i], values[roots[i]][s]); }
-        P::set_one(pre[0]); for (size_t i = 0; i < R; ++i) { P::mul(pre[i + 1], pre[i], rv[i]); ++C.mults; ++C.root_ops; } P::set_one(suf[R]); for (size_t i = R; i >= 1; --i) { P::mul(suf[i - 1], rv[i - 1], suf[i]); ++C.mults; ++C.root_ops; }
-        for (size_t i = 0; i < R; ++i) { Num h; P::init(h, prec); P::mul(h, pre[i], suf[i + 1]); P::mul(h, h, scale); C.mults += 2; C.root_ops += 2; int64_t s = slot_of(roots[i], 0); P::add(adj[roots[i]][s], adj[roots[i]][s], h); ++C.adds; ++C.adjoint_adds; P::clear(h); }
-        release(); if (!poll(3 * R + 3, -1)) return stop;
+        P::set_one(pre[0]); for (size_t i = 0; i < R; ++i) { P::mul(pre[i + 1], pre[i], rv[i]); ++C.mults; ++C.root_ops; if (!poll(1, -1)) { release(); return stop; } } P::set_one(suf[R]); for (size_t i = R; i >= 1; --i) { P::mul(suf[i - 1], rv[i - 1], suf[i]); ++C.mults; ++C.root_ops; if (!poll(1, -1)) { release(); return stop; } }
+        for (size_t i = 0; i < R; ++i) { Num h; P::init(h, prec); P::mul(h, pre[i], suf[i + 1]); P::mul(h, h, scale); C.mults += 2; C.root_ops += 2; int64_t s = slot_of(roots[i], 0); P::add(adj[roots[i]][s], adj[roots[i]][s], h); ++C.adds; ++C.adjoint_adds; P::clear(h); if (!poll(3, -1)) { release(); return stop; } }
+        release();
         for (int nn = (int)N.size() - 1; nn >= 0; --nn) {                                       // each stored adjoint slot is drained exactly once, after its single consumer finished
             if (!N[nn].materialize) continue;
             for (size_t s = 0; s < values[nn].size(); ++s) {
@@ -310,11 +317,12 @@ template <class P> struct Exec {
 
 // ------------------------------------------------------------------------------------------------------------ C API (type-erased)
 struct Handle { int mode; Exec<Ival>* I; Exec<Dbl>* D; long emin, emax; };
-static void set_from_double(Dbl::T& dst, double v) { dst.v = v; dst.e = (v == 0.0 ? 0 : 1); }
+static void set_from_double(Dbl::T& dst, double v) { dst.v = v; dst.e = (v == 0.0 ? 0 : test_leaf_label); }
 static void set_from_double(Ival::T& dst, double v) { mpfr_set_d(dst.lo, v, MPFR_RNDD); mpfr_set_d(dst.hi, v, MPFR_RNDU); }
 
 struct Reader { const int64_t* p; int64_t n; int64_t i = 0; int64_t rd() { if (i >= n) throw BadProg("program truncated"); return p[i++]; } int rdi() { int64_t v = rd(); if (v < -1 || v > 2147483647LL) throw BadProg("program field outside int32"); return (int)v; } int64_t rdn() { int64_t v = rd(); if (v < 0) throw BadProg("negative count"); return v; } };
 
+static uint64_t ir_bytes_bound(int64_t plen) { return (uint64_t)plen * (sizeof(int64_t) + sizeof(int)) + (uint64_t)plen * 4 * sizeof(std::vector<int>) / 8 + 4096; }   // conservative: every word -> one int64 stride/one int + amortised vector headers
 static void parse_prog(const int64_t* prog, int64_t plen, std::vector<FactorD>& F, std::vector<NodeD>& N, std::vector<int>& roots, int64_t nfac_vals, int64_t nratio_vals) {
     // flat int64 program: [nF] per factor: arity, scope..., card..., entries, val_off ; [nN] per node: x, xc, nin, (kind, ref)*nin, nscope, scope..., per axis: nraw, cls[nraw], nreps, reps[nreps], ratio_off ; core, consumer, materialize, demand_kind, ndemand, demand... ; [nroots] roots...
     Reader r{prog, plen}; int64_t nF = r.rdn(); if (nF > plen) throw BadProg("factor count"); F.resize(nF);
@@ -335,8 +343,10 @@ static void parse_prog(const int64_t* prog, int64_t plen, std::vector<FactorD>& 
 }
 
 template <class P> static int load_values(Exec<P>& E, const char* const* qs, int64_t nfac_vals, int64_t nratio_vals, const double* dbl_vals) {
-    uint64_t bytes = (uint64_t)(nfac_vals + nratio_vals + 1) * P::bytes(E.prec);
-    if (!E.reserve(E.used_scratch, E.caps.scratch, bytes)) return GB_MEMORY;                                             // source values live in the frames/scratch/source category
+    uint64_t bytes = (uint64_t)(nfac_vals + nratio_vals + 1) * P::bytes(E.prec); uint64_t maxlen = 0;
+    if (!dbl_vals) for (int64_t i = 0; i < nfac_vals + nratio_vals + 1; ++i) { uint64_t l = std::strlen(qs[i]); if (l > maxlen) maxlen = l; if (!E.poll(1, -1)) return GB_DEADLINE; }
+    bytes += 2 * (maxlen + 64) + 2 * sizeof(mpq_t);                                                                    // the mpq conversion temporary (digits -> limbs; bounded by the longest token)
+    if (!E.reserve(E.used_scratch, E.caps.scratch, bytes)) return GB_MEMORY;                                             // source values + conversion temporary live in the frames/scratch/source category
     E.fvals.resize(nfac_vals); E.ratios.resize(nratio_vals); mpq_t q; mpq_init(q);
     for (int64_t i = 0; i < nfac_vals + nratio_vals + 1; ++i) {
         typename P::T* dst = i < nfac_vals ? &E.fvals[i] : (i < nfac_vals + nratio_vals ? &E.ratios[i - nfac_vals] : &E.scale);
@@ -360,6 +370,7 @@ extern "C" int gb_fp_env_ok() { return fp_env_ok(); }
 // qualification hooks (process-local; never used by cells): override the exponent range configured at the next MPFR create; inject one std::bad_alloc
 extern "C" void gb_test_exponent_range(long emin, long emax) { test_emin = emin; test_emax = emax; }
 extern "C" void gb_test_inject_bad_alloc(int on) { test_bad_alloc = on; }
+extern "C" void gb_test_leaf_label(unsigned long long e) { test_leaf_label = e ? (uint64_t)e : 1; }   // qualification: forces the label of every converted leaf (native label-cap branch)
 
 extern "C" {
 
@@ -370,16 +381,16 @@ Handle* gb_create(int mode, int prec, const int64_t* prog, int64_t plen, const c
         h = new Handle(); h->mode = mode; h->I = nullptr; h->D = nullptr; Caps caps{caps5[0], caps5[1], caps5[2], caps5[3], caps5[4]}; double deadline_mono = now_mono() + remaining_s;
         if (mode == 0) {
             mpfr_set_emin(test_emin ? test_emin : mpfr_get_emin_min()); mpfr_set_emax(test_emax ? test_emax : mpfr_get_emax_max()); mpfr_clear_flags(); h->emin = (long)mpfr_get_emin(); h->emax = (long)mpfr_get_emax();
-            h->I = new Exec<Ival>(prec); h->I->caps = caps; h->I->deadline = deadline_mono; parse_prog(prog, plen, h->I->F, h->I->N, h->I->roots, nfac_vals, nratio_vals); err = load_values(*h->I, qs, nfac_vals, nratio_vals, nullptr);
+            h->I = new Exec<Ival>(prec); h->I->caps = caps; h->I->deadline = deadline_mono; if (!h->I->reserve(h->I->used_index, caps.index, ir_bytes_bound(plen))) throw std::runtime_error("ir"); parse_prog(prog, plen, h->I->F, h->I->N, h->I->roots, nfac_vals, nratio_vals); err = load_values(*h->I, qs, nfac_vals, nratio_vals, nullptr);
         } else {
             if (!fp_env_ok()) throw std::runtime_error("fpenv"); Dbl::range_fault = false;
-            h->D = new Exec<Dbl>(53); h->D->caps = caps; h->D->deadline = deadline_mono; parse_prog(prog, plen, h->D->F, h->D->N, h->D->roots, nfac_vals, nratio_vals); err = load_values(*h->D, qs, nfac_vals, nratio_vals, dbl_vals);
+            h->D = new Exec<Dbl>(53); h->D->caps = caps; h->D->deadline = deadline_mono; if (!h->D->reserve(h->D->used_index, caps.index, ir_bytes_bound(plen))) throw std::runtime_error("ir"); parse_prog(prog, plen, h->D->F, h->D->N, h->D->roots, nfac_vals, nratio_vals); err = load_values(*h->D, qs, nfac_vals, nratio_vals, dbl_vals);
         }
         if (err != GB_OK) throw std::runtime_error("load");
         return h;
     } catch (const BadProg&) { err = GB_BADPROG; }
       catch (const std::bad_alloc&) { err = GB_MEMORY; }
-      catch (const std::runtime_error& ex) { if (std::strcmp(ex.what(), "fpenv") == 0) err = GB_FPENV; else if (err == GB_OK) err = GB_FAULT; }
+      catch (const std::runtime_error& ex) { if (std::strcmp(ex.what(), "fpenv") == 0) err = GB_FPENV; else if (std::strcmp(ex.what(), "ir") == 0) err = GB_MEMORY; else if (err == GB_OK) err = GB_FAULT; }
       catch (...) { err = GB_FAULT; }
     if (h) { delete h->I; delete h->D; delete h; }
     if (err_out) *err_out = err; return nullptr;
@@ -398,6 +409,17 @@ int gb_num_nodes(Handle* h) { return (int)(h->mode == 0 ? h->I->N.size() : h->D-
 
 // results: Z (lo,hi) then every node's N[x][a] (lo,hi) as EXACT hex strings (';' separated). Returns bytes written, -1 if buflen is insufficient
 // (the caller retries with a larger buffer), -2 if an endpoint is not a finite nonnegative number (typed RANGE failure: nothing is exported).
+// exact export size needed by gb_results_hex (bytes incl. separators and the terminator); -2 on a non-finite endpoint
+int64_t gb_results_size(Handle* h) {
+    try {
+        int64_t total = 1;
+        if (h->mode == 0) { Exec<Ival>& E = *h->I; auto len = [&](mpfr_t x) -> int64_t { if (!mpfr_number_p(x) || mpfr_sgn(x) < 0) return -1; if (mpfr_zero_p(x)) return 2; return (int64_t)((mpfr_get_prec(x) + 3) / 4) + 32; };
+            if (!Ival::finite(E.Z)) return -2; total += len(E.Z.lo) + len(E.Z.hi);
+            for (size_t nn = 0; nn < E.N.size(); ++nn) for (int a = 0; a < E.N[nn].xc; ++a) { if (!Ival::finite(E.Nx[nn][a])) return -2; total += len(E.Nx[nn][a].lo) + len(E.Nx[nn][a].hi); } }
+        else { Exec<Dbl>& E = *h->D; if (Dbl::range_fault || !Dbl::finite(E.Z)) return -2; total += 2 * 64; for (size_t nn = 0; nn < E.N.size(); ++nn) for (int a = 0; a < E.N[nn].xc; ++a) { if (!Dbl::finite(E.Nx[nn][a])) return -2; total += 2 * 64; } }
+        return total;
+    } catch (...) { return -3; }
+}
 int gb_results_hex(Handle* h, char* buf, int64_t buflen) {
     try {
         int64_t p = 0; char tmp[2048];
@@ -445,35 +467,51 @@ int gb_test_split_root(Handle* h, const char* w1, const char* w2, int evict) {
 // Mixed-radix odometer over the reduced variables (no assignment-count gate; the visited counter saturates at UINT64_MAX), every factor occurrence
 // multiplied in mpz after per-factor denominator clearing; Z and every N[x][a] in mpz. Polls charged per factor visit.
 struct Mz { mpz_t z; };
-struct RefState { int nv; std::vector<int> card; std::vector<FactorD> F; std::vector<Mz> tabs; mpz_t Z; std::vector<std::vector<Mz>> Nx; uint64_t visited; bool done; std::vector<int> x; double deadline; };
-RefState* gb_ref_create(const int64_t* prog, int64_t plen, const char* const* int_vals, double remaining_s, int* err_out) {
+struct RefState { int nv; std::vector<int> card; std::vector<FactorD> F; std::vector<Mz> tabs; mpz_t Z; std::vector<std::vector<Mz>> Nx; uint64_t visited; bool done; std::vector<int> x; double deadline; uint64_t used_values, used_scratch, cap_values, cap_scratch, acc_bits_bound; };
+// caps5 as for gb_create: tables + accumulators are charged to the VALUE category, the IR / odometer / product temporary / export to the SCRATCH category;
+// every mpz is reserved at its CONSERVATIVE bound before allocation: table entry <= digits*0.42+1 limbs; product w <= sum over factors of max entry bits;
+// accumulators <= product bits + bits(total assignments) + 1. The export buffer size is computed exactly by gb_ref_results_size (Python reserves it).
+RefState* gb_ref_create(const int64_t* prog, int64_t plen, const char* const* int_vals, double remaining_s, const uint64_t* caps5, int* err_out) {
     RefState* S = nullptr;
     try {
         double deadline = now_mono() + remaining_s; Reader r{prog, plen};
-        S = new RefState(); S->nv = r.rdi(); if (S->nv < 0) throw BadProg("nv"); S->card.resize(S->nv); for (int i = 0; i < S->nv; ++i) { S->card[i] = r.rdi(); if (S->card[i] < 1) throw BadProg("card"); }
+        S = new RefState(); S->used_values = S->used_scratch = 0; S->cap_values = caps5 ? caps5[0] : UINT64_MAX; S->cap_scratch = caps5 ? caps5[4] : UINT64_MAX;
+        auto reserve = [&](uint64_t& used, uint64_t cap, uint64_t bytes) { if (bytes > cap || used > cap - bytes) throw std::runtime_error("refmem"); used += bytes; };
+        reserve(S->used_scratch, S->cap_scratch, ir_bytes_bound(plen) + sizeof(RefState));
+        S->nv = r.rdi(); if (S->nv < 0) throw BadProg("nv"); S->card.resize(S->nv); for (int i = 0; i < S->nv; ++i) { S->card[i] = r.rdi(); if (S->card[i] < 1) throw BadProg("card"); }
         int64_t nF = r.rdn(); S->F.resize(nF); int64_t tot = 0;
         for (int64_t i = 0; i < nF; ++i) { FactorD& f = S->F[i]; int ar = r.rdi(); if (ar < 0) throw BadProg("arity"); f.scope.resize(ar); f.card.resize(ar); f.stride.resize(ar); for (int k = 0; k < ar; ++k) { f.scope[k] = r.rdi(); if (f.scope[k] < 0 || f.scope[k] >= S->nv) throw BadProg("scope"); } for (int k = 0; k < ar; ++k) f.card[k] = r.rdi(); f.entries = r.rdn(); f.val_off = tot; tot += f.entries; int64_t st = 1; for (int k = ar - 1; k >= 0; --k) { f.stride[k] = st; st *= f.card[k]; } if (st != f.entries) throw BadProg("entries"); }
         if (r.i != plen) throw BadProg("trailing");
-        S->tabs.resize(tot); for (int64_t i = 0; i < tot; ++i) { mpz_init(S->tabs[i].z); if (mpz_set_str(S->tabs[i].z, int_vals[i], 10) != 0 || mpz_sgn(S->tabs[i].z) < 0) throw BadProg("value"); }
+        // table bytes bound from the decimal token lengths; product bound from the per-factor maximum entry bits
+        uint64_t tab_bytes = 0; uint64_t prod_bits = 64; int64_t idx = 0;
+        for (int64_t i = 0; i < nF; ++i) { uint64_t fmax = 0; for (int64_t e = 0; e < S->F[i].entries; ++e, ++idx) { uint64_t l = std::strlen(int_vals[idx]); tab_bytes += sizeof(mpz_t) + 8 * (l * 42 / 100 / 8 + 2); uint64_t bits = l * 3322 / 1000 + 1; if (bits > fmax) fmax = bits; } prod_bits += fmax; }
+        uint64_t total_bits = 1; for (int v = 0; v < S->nv; ++v) { total_bits += 64 - __builtin_clzll((unsigned long long)S->card[v]); }
+        S->acc_bits_bound = prod_bits + total_bits + 1; uint64_t acc_bytes = sizeof(mpz_t) + 8 * (S->acc_bits_bound / 64 + 2); uint64_t nacc = 1; for (int v = 0; v < S->nv; ++v) nacc += (uint64_t)S->card[v];
+        reserve(S->used_values, S->cap_values, tab_bytes + nacc * acc_bytes);
+        reserve(S->used_scratch, S->cap_scratch, (uint64_t)S->nv * sizeof(int) + sizeof(mpz_t) + 8 * (prod_bits / 64 + 2) + nacc * sizeof(Mz));
+        S->tabs.resize(tot); for (int64_t i = 0; i < tot; ++i) { mpz_init(S->tabs[i].z); if (mpz_set_str(S->tabs[i].z, int_vals[i], 10) != 0 || mpz_sgn(S->tabs[i].z) < 0) throw BadProg("value"); if (((i + 1) & 4095) == 0 && now_mono() > deadline) throw std::runtime_error("refdeadline"); }
         mpz_init_set_ui(S->Z, 0); S->Nx.resize(S->nv); for (int v = 0; v < S->nv; ++v) { S->Nx[v].resize(S->card[v]); for (auto& z : S->Nx[v]) mpz_init_set_ui(z.z, 0); }
         S->visited = 0; S->done = false; S->x.assign(S->nv, 0); S->deadline = deadline; return S;
-    } catch (const BadProg&) { if (err_out) *err_out = GB_BADPROG; } catch (const std::bad_alloc&) { if (err_out) *err_out = GB_MEMORY; } catch (...) { if (err_out) *err_out = GB_FAULT; }
+    } catch (const BadProg&) { if (err_out) *err_out = GB_BADPROG; } catch (const std::bad_alloc&) { if (err_out) *err_out = GB_MEMORY; }
+      catch (const std::runtime_error& ex) { if (err_out) *err_out = (std::strcmp(ex.what(), "refmem") == 0) ? GB_MEMORY : (std::strcmp(ex.what(), "refdeadline") == 0 ? GB_DEADLINE : GB_FAULT); } catch (...) { if (err_out) *err_out = GB_FAULT; }
     if (S) { for (auto& z : S->tabs) mpz_clear(z.z); delete S; }
     return nullptr;
 }
+uint64_t gb_ref_used_values(RefState* S) { return S->used_values; }
+uint64_t gb_ref_used_scratch(RefState* S) { return S->used_scratch; }
+int64_t gb_ref_results_size(RefState* S) { try { int64_t t = 1 + (int64_t)mpz_sizeinbase(S->Z, 10) + 2; for (int v = 0; v < S->nv; ++v) for (int a = 0; a < S->card[v]; ++a) t += (int64_t)mpz_sizeinbase(S->Nx[v][a].z, 10) + 2; return t; } catch (...) { return -3; } }
 int gb_ref_run(RefState* S) {
     try {
         if (S->done) return GB_OK;
         mpz_t w; mpz_init(w); uint64_t ops = 0;
         for (;;) {
             mpz_set_ui(w, 1); bool zero = false;
-            for (const FactorD& f : S->F) { int64_t off = 0; for (size_t k = 0; k < f.scope.size(); ++k) off += (int64_t)S->x[f.scope[k]] * f.stride[k]; const Mz& e = S->tabs[f.val_off + off]; if (mpz_sgn(e.z) == 0) { zero = true; break; } mpz_mul(w, w, e.z); }
-            if (!zero) { mpz_add(S->Z, S->Z, w); for (int v = 0; v < S->nv; ++v) mpz_add(S->Nx[v][S->x[v]].z, S->Nx[v][S->x[v]].z, w); }
+            for (const FactorD& f : S->F) { int64_t off = 0; for (size_t k = 0; k < f.scope.size(); ++k) off += (int64_t)S->x[f.scope[k]] * f.stride[k]; const Mz& e = S->tabs[f.val_off + off]; if (mpz_sgn(e.z) == 0) { zero = true; break; } mpz_mul(w, w, e.z); if (++ops >= POLL_OPS) { ops = 0; if (now_mono() > S->deadline) { mpz_clear(w); return GB_DEADLINE; } } }
+            if (!zero) { mpz_add(S->Z, S->Z, w); for (int v = 0; v < S->nv; ++v) { mpz_add(S->Nx[v][S->x[v]].z, S->Nx[v][S->x[v]].z, w); if (++ops >= POLL_OPS) { ops = 0; if (now_mono() > S->deadline) { mpz_clear(w); return GB_DEADLINE; } } } }
             if (S->visited != UINT64_MAX) ++S->visited;
             int v = S->nv - 1; while (v >= 0) { if (++S->x[v] < S->card[v]) break; S->x[v] = 0; --v; }      // odometer (resumable: S->x persists across deadline returns)
             if (v < 0) { S->done = true; break; }
-            ops += S->F.size() + S->nv + 1;
-            if (ops >= POLL_OPS) { ops = 0; if (now_mono() > S->deadline) { mpz_clear(w); return GB_DEADLINE; } }
+            if (++ops >= POLL_OPS) { ops = 0; if (now_mono() > S->deadline) { mpz_clear(w); return GB_DEADLINE; } }
         }
         mpz_clear(w); return GB_OK;
     } catch (const std::bad_alloc&) { return GB_MEMORY; } catch (...) { return GB_FAULT; }

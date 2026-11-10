@@ -42,7 +42,9 @@ NOT_IMPLEMENTED = {"shared_dag_multi_consumer_nodes": "every message has exactly
                    "bounded_output_blocks": "a stored node is allocated whole (reserved before allocation); the bounded alternative is streaming (zero memo), not 1,024-entry blocks",
                    "value_cache_lru_checkpoints": "no production cache / eviction policy: a node is either stored whole or streamed; eviction + regeneration is exercised only by the qualification hook",
                    "specialized_bipartite_component_kernel": "optional; not integrated",
-                   "demand_passes": "ONE monotone support/demand pass (not three)"}
+                   "demand_passes": "ONE monotone support/demand pass (not three)",
+                   "python_side_memory_accounting": "the five internal categories cover the NATIVE route (IR, source values + conversion temporaries, stored values, index maps, numerators + root scratch, pending adjoints, frames + scratch + export) and the exact fallback (tables, accumulators, odometer, product, export); Python-side storage (input bytes, Fraction tables, the planner's numpy support masks, records) is NOT charged: the external sampled process-tree RSS (8 GiB) is the only bound on it; GMP/MPFR allocation failure is not catchable (GMP aborts): the caps bound what the kernel asks GMP for",
+                   "polling_quantum": "the deadline is checked within 4,096 charged primitive units PLUS one indivisible MPFR/GMP primitive (a single multiprecision operation is not interruptible); the external supervisor remains the backstop"}
 
 
 class PlanStop(Exception):
@@ -58,12 +60,17 @@ def prod(xs):
 
 
 class Inspect:
-    """the SHARED optional-discovery allowance: row-inspection cap + wall deadline; the clock is checked every POLL_UNITS charged units (not calls)."""
-    def __init__(self, cap, deadline=None):
-        self.cap = cap; self.used = 0; self.deadline = deadline; self._since = 0; self.expired = False
+    """the SHARED optional-discovery allowance (row-inspection cap + optional wall) AND the cell's hard cancellation deadline. Optional phases
+    (spend, tick(optional=True)) are stopped by either limit; MANDATORY construction (tick(optional=False)) is stopped only by the hard deadline.
+    Clocks are checked every POLL_UNITS charged units (not calls)."""
+    def __init__(self, cap, deadline=None, hard_deadline=None):
+        self.cap = cap; self.used = 0; self.deadline = deadline; self.hard_deadline = hard_deadline; self._since = 0; self.expired = False
 
-    def check_clock(self):
-        if self.deadline is not None and time.monotonic() > self.deadline:
+    def check_clock(self, optional=True):
+        now = time.monotonic()
+        if self.hard_deadline is not None and now > self.hard_deadline:
+            raise PlanStop("CELL_DEADLINE", "cell deadline reached during planning")
+        if optional and self.deadline is not None and now > self.deadline:
             self.expired = True; raise PlanStop("DISCOVERY_WALL", "optional discovery wall exhausted")
 
     def spend(self, n=1):
@@ -71,28 +78,28 @@ class Inspect:
         if self.used > self.cap:
             raise PlanStop("ROW_INSPECTION_CAP", "row inspection cap %d exhausted" % self.cap)
         if self._since >= POLL_UNITS:
-            self._since = 0; self.check_clock()
+            self._since = 0; self.check_clock(optional=True)
 
-    def tick(self, n=1):
-        """time-only charge (metadata work): checks the clock every POLL_UNITS units without consuming rows"""
+    def tick(self, n=1, optional=True):
+        """time-only charge (metadata work): checks the clocks every POLL_UNITS units without consuming rows"""
         self._since += n
         if self._since >= POLL_UNITS:
-            self._since = 0; self.check_clock()
+            self._since = 0; self.check_clock(optional=optional)
 
     def remaining(self):
         return max(0, self.cap - self.used)
 
 
 class Budget:
-    """the SHARED metadata-update cap across every heuristic order"""
-    def __init__(self, cap, inspect):
-        self.cap = cap; self.used = 0; self.inspect = inspect
+    """the SHARED metadata-update cap across every heuristic order; `optional` selects which clock governs the construction"""
+    def __init__(self, cap, inspect, optional):
+        self.cap = cap; self.used = 0; self.inspect = inspect; self.optional = optional
 
     def spend(self, n=1):
         self.used += n
         if self.used > self.cap:
             raise PlanStop("METADATA_CAP", "metadata update cap %d exhausted" % self.cap)
-        self.inspect.tick(n)
+        self.inspect.tick(n, optional=self.optional)
 
 
 # ------------------------------------------------------------------------------------------------------------------- elimination orders (metadata only)
@@ -208,7 +215,7 @@ class Program:
             stack = [r]
             while stack:
                 n = stack.pop(); self.nodes[n].component = r; stack += [ref for kind, ref in self.nodes[n].inputs if kind == "M"]
-            self.inspect.tick(1)
+            self.inspect.tick(1, optional=False)
 
     def restore_mandatory(self):
         """the mandatory program: identity views, FULL storage, no fusion, every node materialized (then memory downgrades)."""
@@ -231,6 +238,8 @@ class Program:
                 self._views()
             self._supports_and_demand()
         except PlanStop as ex:
+            if ex.kind == "CELL_DEADLINE":
+                raise
             self.discovery_stop = ex.kind
             for nd in self.nodes:                                                                 # provenance of what was never reached
                 for w in nd.scope:
@@ -286,7 +295,7 @@ class Program:
                     nd.support = None; nd._support_out = None; nd.support_prov = "MEMORY"
             else:
                 nd.support_prov = "SKIPPED_ROW_CAP"
-            self.inspect.tick(1)
+            self.inspect.tick(1, optional=True)
         if not self.cfg["demand_masks"]:
             for nd in self.nodes:
                 nd.demand_prov = "FULL_MANDATORY"
@@ -305,6 +314,9 @@ class Program:
 
     def _finish_support_provenance(self):
         m = self.mechanisms["demand"]
+        for k in list(m):
+            if k.startswith("support_"):
+                m[k] = 0
         for nd in self.nodes:
             m["support_%s_nodes" % {"EXHAUSTIVE": "exhaustive", "SKIPPED_ROW_CAP": "skipped_row_cap", "SKIPPED_WALL": "skipped_wall", "MEMORY": "memory", "NOT_ATTEMPTED": "not_attempted"}[nd.support_prov]] += 1
 
@@ -350,8 +362,9 @@ class Program:
         3k+2 (prefix/suffix, numerator, scatter). Fusion (bottom-up, in elimination order so a fused child's EFFECTIVE per-row costs are known):
         fuse c into its consumer n iff the complete fused cost  n.rows x |D_c| x (per_row(c) [forward regeneration] + per_row_rev(c) + regen_rev)
         is <= the complete stored cost  c.rows x (per_row(c) + per_row_rev(c)) + stored entries, where regen_rev = per_row(c) unless c is the LAST
-        message input of n (the kernel's combined frame regenerates it once for both its value and its pullback). Reviewer's F4 control: this prices
-        the actual extra arithmetic of fusion instead of asserting 'no extra arithmetic'."""
+        STREAMED message input of n (the kernel's combined frame regenerates it once for both its value and its pullback). This is an operation-count
+        PROXY of the static plan (storage-set misses change which inputs are unresolved per row at run time); indexing / hashing / publication are
+        not counted. Reviewer's F4 control: it prices the actual extra arithmetic of fusion instead of asserting 'no extra arithmetic'."""
         bpe = self.cfg["bytes_per_entry"]
         for nd in self.nodes:
             if nd._support_out is not None and nd.demand != "FULL":
@@ -371,15 +384,16 @@ class Program:
     def _recompute_eff(self, decide_fusion=False):
         for nd in self.nodes:
             k = len(nd.inputs); per_row = nd.cost["per_row"]; per_row_rev = nd.cost["per_row_rev"]; msgs = [ref for kind, ref in nd.inputs if kind == "M"]
+            streamed = [ref for ref in msgs if self.nodes[ref].fused]
             for ref in msgs:
                 c = self.nodes[ref]
                 if c.fused:
-                    regen_rev = 0 if ref == msgs[-1] else c.cost["eff_per_row"]
+                    regen_rev = 0 if ref == streamed[-1] else c.cost["eff_per_row"]                 # the kernel's combined frame regenerates the LAST STREAMED input once for value + pullback
                     per_row += c.x_card * c.cost["eff_per_row"]; per_row_rev += c.x_card * (c.cost["eff_per_row_rev"] + regen_rev)
             nd.cost["eff_per_row"] = per_row; nd.cost["eff_per_row_rev"] = per_row_rev; nd.cost["eff_fwd"] = nd.cost["rows"] * per_row; nd.cost["eff_rev"] = nd.cost["rows"] * per_row_rev
             if decide_fusion and nd.consumer is not None:
-                c = self.nodes[nd.consumer]; cm = [ref for kind, ref in c.inputs if kind == "M"]; self.mechanisms["fusion"]["edges_offered"] += 1
-                regen_rev = 0 if cm[-1] == nd.nid else per_row
+                c = self.nodes[nd.consumer]; cm = [ref for kind, ref in c.inputs if kind == "M" and (self.nodes[ref].fused or ref == nd.nid)]; self.mechanisms["fusion"]["edges_offered"] += 1
+                regen_rev = 0 if cm[-1] == nd.nid else per_row                                        # price AS IF fused: nd would be the last streamed input iff no later message input of c is streamed
                 fused_cost = c.cost["rows"] * nd.x_card * (per_row + per_row_rev + regen_rev); stored_cost = nd.cost["eff_fwd"] + nd.cost["eff_rev"] + nd.cost["entries"]
                 nd.cost["fusion_price"] = {"fused": fused_cost, "stored": stored_cost}
                 if fused_cost <= stored_cost:
@@ -391,11 +405,12 @@ class Program:
         """at most ONE precompiled downgrade per node: a stored node whose values + index + adjoint do not fit the remaining category caps becomes
         streamed (zero memo). Roots are always stored (one entry). Returns the downgraded node ids."""
         vals = caps["value_cache"]; idxb = caps["source_ir_maps_output"]; adjb = caps["pending_adjoints"]; used_v = used_i = used_a = 0; down = []
+        for nd in self.nodes:                                                                        # roots FIRST (always stored; one entry each): their bytes count against the caps the other nodes see
+            if nd.consumer is None and nd.materialize:
+                used_v += nd.cost["bytes_values"]; used_a += nd.cost["bytes_adjoint"]
         for nd in sorted(self.nodes, key=lambda n: -n.cost["bytes_values"]):
-            if not nd.materialize:
+            if not nd.materialize or nd.consumer is None:
                 continue
-            if nd.consumer is None:
-                used_v += nd.cost["bytes_values"]; used_a += nd.cost["bytes_adjoint"]; continue
             if used_v + nd.cost["bytes_values"] > vals or used_i + nd.cost["bytes_index"] > idxb or used_a + nd.cost["bytes_adjoint"] > adjb:
                 nd.materialize = False; nd.fused = True; nd.fused_by = "MEMORY"; nd.downgrade = "MATERIALIZED_TO_STREAM"; down.append(nd.nid); self.mechanisms["fusion"]["edges_fused_by_memory"] += 1
             else:
@@ -430,24 +445,30 @@ class Program:
                 "roots": self.roots, "unconsumed_scalars": self.unconsumed_scalars, "totals": self.totals(), "mechanisms": self.mechanisms}
 
 
-def plan(R, cfg, deadline=None, caps=None):
-    """Baseline-first candidate construction under ONE shared allowance; returns (chosen Program, candidate table).
-    1. every order under the SHARED metadata cap (original + min_volume are mandatory orders: never wall-gated; min_fill is also under the wall); 2. the MANDATORY program of every complete order, memory caps applied,
-    representability checked -> the BASELINE is the cheapest representable mandatory program (chosen before any optional work; never lost);
-    3. optional discovery per candidate (cheapest mandatory first) under the REMAINING shared wall; a candidate whose optional result is not
-    representable falls back to its mandatory program; 4. rank complete representable candidates by (cold-work proxy, peak bytes, candidate index)."""
-    caps = caps or CAPS; scopes = [f.scope for f in R.factors if f.scope]; inspect = Inspect(ROW_INSPECTION_CAP, deadline); B = Budget(METADATA_UPDATE_CAP, inspect); table = []; cands = []
+def plan(R, cfg, deadline=None, caps=None, hard_deadline=None):
+    """Baseline-first candidate construction; returns (chosen Program, candidate table).
+    `deadline` = the SHARED optional-discovery allowance (rows + wall); `hard_deadline` = the cell's cancellation deadline.
+    1. MANDATORY orders (original, min_volume) under the shared metadata cap and the HARD deadline only; min_fill under the optional allowance too;
+    2. the MANDATORY program of every complete order, memory caps applied, representability checked -> the BASELINE is the cheapest representable
+       mandatory program (chosen before any optional work; never lost); 3. optional discovery per candidate (cheapest mandatory first) under the
+       REMAINING optional allowance; a candidate whose optional result is not representable falls back to its mandatory program;
+    4. rank complete representable candidates by (cold-work proxy, peak bytes, candidate index). Every candidate's state / reason is recorded."""
+    caps = caps or CAPS; scopes = [f.scope for f in R.factors if f.scope]; inspect = Inspect(ROW_INSPECTION_CAP, deadline, hard_deadline); table = []; cands = []
+    B_mand = Budget(METADATA_UPDATE_CAP, inspect, optional=False); B_opt = Budget(METADATA_UPDATE_CAP, inspect, optional=True); B_opt.used = 0
     wanted = list(cfg["orders"]); names = [n for n in CONSTRUCTION_ORDER if n in wanted]
     for name in names:
-        idx = wanted.index(name); row = {"candidate": idx, "order": name}
+        idx = wanted.index(name); row = {"candidate": idx, "order": name, "mandatory_order": name in MANDATORY_ORDERS}
         try:
+            B = B_mand if name in MANDATORY_ORDERS else B_opt; B_opt.used = B_mand.used = max(B_mand.used, B_opt.used)                      # ONE shared metadata cap
             if name not in MANDATORY_ORDERS:
-                inspect.check_clock()
+                inspect.check_clock(optional=True)
             order, info = ORDER_FN[name](R.dom, scopes, B); row["order_updates"] = B.used
             P = Program(R, order, info, cfg, inspect, idx); P.apply_memory_caps(caps); rep = P.representable()
             row.update({"mandatory_totals": P.totals(), "mandatory_representable": rep is None, "mandatory_not_representable_reason": rep}); cands.append((P, row))
         except PlanStop as ex:
-            row.update({"state": "ORDER_INCOMPLETE_" + ex.kind, "reason": ex.reason, "metadata_updates": B.used})
+            if ex.kind == "CELL_DEADLINE":
+                raise
+            row.update({"state": "ORDER_INCOMPLETE_" + ex.kind, "reason": ex.reason, "metadata_updates": max(B_mand.used, B_opt.used)})
             if ex.kind == "DISCOVERY_WALL":
                 inspect.expired = True
         table.append(row)
@@ -455,12 +476,18 @@ def plan(R, cfg, deadline=None, caps=None):
     if not base:
         for P, row in cands:
             row["state"] = "NOT_REPRESENTABLE"
-        if cands:
-            raise PlanStop("NOT_REPRESENTABLE", "no candidate order yields an executable program on this kernel: " + "; ".join(str(r.get("mandatory_not_representable_reason")) for _, r in cands))
-        raise PlanStop("METADATA_CAP", "no candidate order completed under the metadata cap: " + "; ".join(str(r.get("reason")) for r in table))
+        detail = "; ".join("%s: %s" % (r["order"], r.get("mandatory_not_representable_reason") or r.get("state")) for r in table)
+        raise PlanStop("NOT_REPRESENTABLE" if cands else "METADATA_CAP", ("no complete candidate order yields an executable program on this kernel: " if cands else "no candidate order completed under the metadata cap: ") + detail)
     baseline = base[0][3]; baseline_row = next(r for P, r in cands if P is baseline); baseline_row["baseline"] = True
     for P, row in sorted(cands, key=lambda pr: (pr[0].totals()["cold_work_proxy"], pr[0].index)):
         if inspect.expired or (deadline is not None and time.monotonic() > deadline):
+            for nd in P.nodes:                                                                   # typed provenance: optional discovery never started for this candidate
+                nd.support_prov = "SKIPPED_WALL"
+                if cfg["views"]:
+                    nd.view_prov = {w: "SKIPPED_WALL" for w in nd.scope}
+                if cfg["demand_masks"] and nd.consumer is not None:
+                    nd.demand_prov = "FULL_SKIPPED_WALL"
+            P._finish_support_provenance(); P.discovery_stop = "DISCOVERY_WALL"
             row["state"] = "COMPLETE_MANDATORY_ONLY"; row["discovery"] = "DISCOVERY_WALL_EXHAUSTED_BEFORE_START"; row["totals"] = P.totals(); row["representable"] = P.representable() is None; continue
         if not (cfg["views"] or cfg["demand_masks"] or cfg["fusion"]):
             row["state"] = "COMPLETE_MANDATORY_ONLY"; row["discovery"] = "NO_OPTIONAL_MECHANISM_ENABLED"; row["totals"] = P.totals(); row["representable"] = P.representable() is None; continue

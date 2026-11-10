@@ -1,9 +1,17 @@
-"""Charging SUPERVISOR for the GENERAL_BIDI_V2 round (review R2-08 / H1 repair of adp/census/supervise.py, which stays unchanged as the pinned
-census harness). Identical START / SPAWNED / RECEIPT protocol, deferred cancellation, kill-and-reap before the charged wall; PLUS: completion means
-the OWNED PROCESS GROUP is empty, not merely that the leader exited. After the leader exits (or after a kill) the supervisor enumerates the live
-processes whose process group is the recorded pgid; survivors are killed (SIGKILL to the group) and reaped by polling until the group is empty or
-a bounded wait expires; the receipt records `descendants_after_leader_exit` and `group_empty_at_receipt`; a group that cannot be emptied is
-CLEANUP_UNRESOLVED (charged at max permitted by the ledger tool). Only processes in the RECORDED group are ever signalled.
+"""Charging SUPERVISOR for the GENERAL_BIDI_V2 round (the pinned adp/census/supervise.py is unchanged). START / SPAWNED / RECEIPT protocol, deferred
+cancellation, kill-and-reap before the charged wall, completion = the OWNED WORK is gone:
+  * the immediate child runs in its own session / process group (start_new_session); after the leader exits (or after a kill) every live process of
+    that RECORDED group is killed and reaped;
+  * NESTED OWNERSHIP (third review H3): the ROOT supervisor creates an ownership directory `<ledger>.owned/<jid>/` and passes it to the child's
+    environment (GBIDI_OWNER_DIR) together with its own attempt id (GBIDI_PARENT_JID). Every nested gbidi.supervise appends {jid, parent_jid, ledger,
+    pid, pgid} to `<dir>/groups.jsonl` right after its SPAWNED record and forwards the SAME directory to its own child, so the whole tree registers in
+    one place. At finalisation EVERY supervisor reconciles ITS OWN SUBTREE (the registrations whose parent chain leads to its jid): it kills + reaps
+    every registered group of the subtree that is still alive, writes a RECEIPT stamped written_by_parent into the nested ledger for any registered
+    attempt whose own receipt is missing (outcome PARENT_CLEANUP_KILL), and records nested_groups_registered / killed / live_at_receipt; any owned
+    process that cannot be shown gone makes the attempt CLEANUP_UNRESOLVED.
+  * parent_jid is recorded in START and RECEIPT so the closeout accounts each outer attempt with ITS OWN children (H4).
+Only processes whose recorded group ids were registered by this job's tree are ever signalled; a recycled pid is never killed by pid alone (group
+membership is re-checked with os.getpgid immediately before the signal).
 
     python -m gbidi.supervise --ledger L.jsonl --scope S --job NAME [--timeout S] [--mem-gib G] [--cwd DIR] [--stdout F] [--stderr F] [--env K=V]... -- cmd..."""
 from __future__ import annotations
@@ -21,7 +29,6 @@ def tree_rss(p):
 
 
 def group_members(pgid, exclude_pid=None):
-    """live, non-zombie processes whose process group is pgid (the recorded group only)"""
     out = []
     for pid in psutil.pids():
         if pid == exclude_pid:
@@ -36,9 +43,32 @@ def group_members(pgid, exclude_pid=None):
     return out
 
 
-def append(ledger, rec):
-    with open(ledger, "a") as f:
+def append(path, rec):
+    with open(path, "a") as f:
         f.write(json.dumps(rec, default=str) + "\n"); f.flush(); os.fsync(f.fileno())
+
+
+def kill_group_and_wait(pgid, wait_s=GROUP_WAIT_S):
+    """SIGKILL every live member of the recorded group (membership re-checked at signal time), reap by polling; returns the survivors"""
+    for pid in group_members(pgid):
+        try:
+            if os.getpgid(pid) == pgid:
+                os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    t_end = time.monotonic() + wait_s
+    while time.monotonic() < t_end and group_members(pgid):
+        for pid in group_members(pgid):
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                pass
+        time.sleep(0.02)
+    return group_members(pgid)
 
 
 def main():
@@ -52,9 +82,12 @@ def main():
         k, v = kv.split("=", 1); env[k] = v
     so = open(a.stdout, "ab") if a.stdout else None; se = open(a.stderr, "ab") if a.stderr else None
     jid = "%s|%s|%d" % (a.job, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()), os.getpid()); t0 = time.time(); m0 = time.monotonic()
+    parent_jid = os.environ.get("GBIDI_PARENT_JID"); root_owner_dir = os.environ.get("GBIDI_OWNER_DIR")
+    own_dir = root_owner_dir or (a.ledger + ".owned/" + jid.replace("|", "_").replace(":", "_").replace("/", "_")); os.makedirs(own_dir, exist_ok=True)
+    groups_file = os.path.join(own_dir, "groups.jsonl"); env["GBIDI_OWNER_DIR"] = own_dir; env["GBIDI_PARENT_JID"] = jid
     maxcharge = (a.timeout + GRACE_S) if a.timeout is not None else None
-    proc = None; pgid = None; launching = False; pending_signal = None; cleanup_unresolved = False; error = None
-    peak = 0; overshoot = 0; outcome = "COMPLETED"; samples = 0; rc = None; survivors = 0; group_empty = None
+    proc = None; pgid = None; launching = False; pending_signal = None; error = None
+    peak = 0; overshoot = 0; outcome = "COMPLETED"; samples = 0; rc = None; survivors = 0; group_empty = None; nested = {"registered": 0, "killed": 0, "live_at_receipt": 0, "receipts_written_by_parent": 0}
     def killgroup():
         nonlocal pgid
         if pgid is None and proc is not None:
@@ -75,7 +108,7 @@ def main():
         stop("SUPERVISOR_SIGNAL_%d" % signum); raise KeyboardInterrupt()
     launching = True
     signal.signal(signal.SIGTERM, on_term); signal.signal(signal.SIGINT, on_term)
-    append(a.ledger, {"kind": "START", "jid": jid, "scope": a.scope, "job": a.job, "cmd": cmd, "cwd": a.cwd or os.getcwd(), "start_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)), "supervisor_pid": os.getpid(), "timeout_s": a.timeout, "mem_cap_gib": a.mem_gib, "max_permitted_charge_s": maxcharge, "supervisor": "gbidi.supervise v2 (group-empty completion)"})
+    append(a.ledger, {"kind": "START", "jid": jid, "scope": a.scope, "job": a.job, "cmd": cmd, "cwd": a.cwd or os.getcwd(), "start_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)), "supervisor_pid": os.getpid(), "timeout_s": a.timeout, "mem_cap_gib": a.mem_gib, "max_permitted_charge_s": maxcharge, "parent_jid": parent_jid, "owner_dir": own_dir, "supervisor": "gbidi.supervise v3 (owned-tree completion)"})
     try:
         if pending_signal is not None:
             launching = False; on_term(pending_signal, None)
@@ -85,7 +118,8 @@ def main():
             except (OSError, ValueError) as ex:
                 outcome = "LAUNCH_FAILED"; error = "%s: %s" % (type(ex).__name__, ex); raise
             pgid = proc.pid
-            append(a.ledger, {"kind": "SPAWNED", "jid": jid, "job": a.job, "pid": proc.pid, "pgid": pgid, "spawn_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+            append(a.ledger, {"kind": "SPAWNED", "jid": jid, "job": a.job, "pid": proc.pid, "pgid": pgid, "spawn_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "parent_jid": parent_jid})
+            append(groups_file, {"jid": jid, "parent_jid": parent_jid, "ledger": os.path.abspath(a.ledger), "job": a.job, "pid": proc.pid, "pgid": pgid, "supervisor_pid": os.getpid(), "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})      # register in the tree's ownership file
         finally:
             launching = False
         if pending_signal is not None:
@@ -122,26 +156,52 @@ def main():
                 pass
             rc = proc.returncode
         leader_alive = proc is not None and proc.poll() is None
-        # the OWNED GROUP must be empty: the leader's exit is not the job's end (review R2-08)
         if pgid is not None:
-            rest = group_members(pgid, exclude_pid=None); survivors = len(rest)
+            rest = group_members(pgid); survivors = len(rest)
             if rest:
                 if outcome == "COMPLETED":
                     outcome = "COMPLETED_LEADER_EXIT_SURVIVORS_KILLED"
-                killgroup(); t_end = time.monotonic() + GROUP_WAIT_S
-                while time.monotonic() < t_end and group_members(pgid):
-                    time.sleep(0.02)
+                kill_group_and_wait(pgid)
             group_empty = not group_members(pgid)
-        cleanup_unresolved = leader_alive or (group_empty is False)
+        # ---- nested ownership: EVERY supervisor reconciles its own subtree (registrations whose parent chain leads to this jid)
+        nested_live = []
+        if os.path.exists(groups_file):
+            allregs = [json.loads(l) for l in open(groups_file)]; parent_of = {g["jid"]: g.get("parent_jid") for g in allregs}
+            def in_subtree(j):
+                seen = set()
+                while j is not None and j not in seen:
+                    seen.add(j); j = parent_of.get(j)
+                    if j == jid:
+                        return True
+                return False
+            regs = [g for g in allregs if g["jid"] != jid and in_subtree(g["jid"])]; nested["registered"] = len(regs)
+            for g in regs:
+                members = group_members(g["pgid"])
+                if members:
+                    nested["killed"] += 1; kill_group_and_wait(g["pgid"])
+                    if outcome == "COMPLETED":
+                        outcome = "COMPLETED_NESTED_SURVIVORS_KILLED"
+                    still = group_members(g["pgid"])
+                    if still:
+                        nested_live.append({"jid": g["jid"], "pgid": g["pgid"], "pids": still})
+                try:
+                    led = g["ledger"]; have = any(json.loads(l).get("kind") == "RECEIPT" and json.loads(l).get("jid") == g["jid"] for l in open(led)) if os.path.exists(led) else False
+                    if not have:
+                        append(led, {"kind": "RECEIPT", "jid": g["jid"], "scope": "nested", "job": g["job"], "start_utc": g["utc"], "end_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "wall_s": None, "returncode": None, "outcome": "PARENT_CLEANUP_KILL", "outcome_before_cleanup": None, "cleanup_unresolved": bool(group_members(g["pgid"])), "written_by_parent": jid, "parent_jid": jid, "pgid": g["pgid"], "pid": g["pid"], "note": "the nested supervisor left no receipt; its registered group was killed and reaped by the root owner; wall UNKNOWN -> charged at max permitted by the ledger tool"})
+                        nested["receipts_written_by_parent"] += 1
+                except OSError:
+                    pass
+            nested["live_at_receipt"] = len(nested_live)
+        cleanup_unresolved = leader_alive or (group_empty is False) or bool(nested_live)
         outcome_before_cleanup = outcome
         if cleanup_unresolved:
             outcome = "CLEANUP_UNRESOLVED"
         wall = time.monotonic() - m0
-        append(a.ledger, {"kind": "RECEIPT", "jid": jid, "scope": a.scope, "job": a.job, "start_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)), "end_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                           "wall_s": wall, "returncode": rc, "outcome": outcome, "outcome_before_cleanup": outcome_before_cleanup, "cleanup_unresolved": cleanup_unresolved, "descendants_after_leader_exit": survivors, "group_empty_at_receipt": group_empty, "launch_error": (error if outcome_before_cleanup == "LAUNCH_FAILED" else None), "error": error, "pending_signal": pending_signal,
+        append(a.ledger, {"kind": "RECEIPT", "jid": jid, "scope": a.scope, "job": a.job, "start_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)), "end_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "parent_jid": parent_jid,
+                           "wall_s": wall, "returncode": rc, "outcome": outcome, "outcome_before_cleanup": outcome_before_cleanup, "cleanup_unresolved": cleanup_unresolved, "descendants_after_leader_exit": survivors, "group_empty_at_receipt": group_empty, "nested_groups_registered": nested["registered"], "nested_groups_killed": nested["killed"], "nested_groups_live_at_receipt": nested["live_at_receipt"], "nested_receipts_written_by_parent": nested["receipts_written_by_parent"], "nested_live": nested_live, "owner_dir": own_dir, "launch_error": (error if outcome_before_cleanup == "LAUNCH_FAILED" else None), "error": error, "pending_signal": pending_signal,
                            "peak_tree_rss_bytes": peak, "rss_samples": samples, "sampling_interval_s": a.interval, "mem_cap_gib": a.mem_gib, "mem_overshoot_bytes": overshoot, "timeout_s": a.timeout, "pid": (proc.pid if proc is not None else None), "pgid": pgid,
-                           "enforcement": "sampled process-tree RSS (best effort, not an allocator cap); SIGKILL of the RECORDED process group on threshold, deadline + grace, supervisor signal or survivors after the leader's exit; cancellation deferred across the launch boundary; completion = recorded group empty; wall measured after cleanup"})
-        print(json.dumps({"job": a.job, "wall_s": round(wall, 3), "rc": rc, "outcome": outcome, "peak_MB": round(peak / 1e6, 1), "survivors": survivors}), file=sys.stderr)
+                           "enforcement": "sampled process-tree RSS (best effort, not an allocator cap); SIGKILL of RECORDED groups only (membership re-checked at signal time) on threshold, deadline + grace, supervisor signal, survivors after the leader's exit or registered nested groups still alive; cancellation deferred across the launch boundary; completion = every owned group empty; wall measured after cleanup"})
+        print(json.dumps({"job": a.job, "wall_s": round(wall, 3), "rc": rc, "outcome": outcome, "peak_MB": round(peak / 1e6, 1), "survivors": survivors, "nested": nested}), file=sys.stderr)
     sys.exit(0 if outcome == "COMPLETED" else 1)
 
 

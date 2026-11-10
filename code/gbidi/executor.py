@@ -2,7 +2,10 @@
 
 Pipeline per cell: SNAPSHOT (gbidi.source: model + evidence bytes read ONCE; strict grammar; hashes and parse from the same bytes) -> shared qualified
 source reductions (adp.source; recorded) -> plan (gbidi.plan: UNTRUSTED proposals; cheap representable baseline first; one shared discovery allowance)
--> VALIDATE the chosen proposal against the reduced model (gbidi.validate: ownership, scopes, consumers, every view identity entrywise) -> flatten
+-> take the IMMUTABLE trusted snapshot of the reduced source (gbidi.validate.TrustedReduced; the planner only ever sees the live object and an
+in-place mutation is detected afterwards) -> VALIDATE the chosen proposal against the snapshot (ownership, scopes, consumers, every view identity
+entrywise incl. product-zero classes) -> the VALIDATED EXECUTABLE REPRESENTATION (snapshot payload + validated structure) is the ONLY object the
+serializer, the reference stream and the decoder read (third review V2-V1) -> flatten
 -> numerical routes (binary64 only when the leaves convert exactly-checked and the range envelope passes; the KERNEL tracks an exact error label on
 every value through every performed operation and range-checks every rounded result, so the enclosure (E_N + E_Z) u is the whole-execution proof;
 else outward MPFR at p in 64,128,256,512 with the widest exponent range configured and the flags checked) -> exact enclosures per ORIGINAL (variable,
@@ -91,7 +94,8 @@ class Lib:
             L.gb_destroy.argtypes = [c.c_void_p]; L.gb_forward.argtypes = [c.c_void_p]; L.gb_forward.restype = c.c_int; L.gb_reverse.argtypes = [c.c_void_p]; L.gb_reverse.restype = c.c_int; L.gb_mpfr_flags.argtypes = [c.c_void_p]; L.gb_mpfr_flags.restype = c.c_int
             L.gb_counters.argtypes = [c.c_void_p, c.POINTER(c.c_uint64)]; L.gb_snapshot.argtypes = [c.c_void_p, c.POINTER(c.c_uint64)]; L.gb_results_hex.argtypes = [c.c_void_p, c.c_char_p, c.c_int64]; L.gb_results_hex.restype = c.c_int
             L.gb_test_split_root.argtypes = [c.c_void_p, c.c_char_p, c.c_char_p, c.c_int]; L.gb_test_split_root.restype = c.c_int
-            L.gb_ref_create.restype = c.c_void_p; L.gb_ref_create.argtypes = [c.POINTER(c.c_int64), c.c_int64, c.POINTER(c.c_char_p), c.c_double, c.POINTER(c.c_int)]; L.gb_ref_run.argtypes = [c.c_void_p]; L.gb_ref_run.restype = c.c_int
+            L.gb_ref_create.restype = c.c_void_p; L.gb_ref_create.argtypes = [c.POINTER(c.c_int64), c.c_int64, c.POINTER(c.c_char_p), c.c_double, c.POINTER(c.c_uint64), c.POINTER(c.c_int)]; L.gb_ref_run.argtypes = [c.c_void_p]; L.gb_ref_run.restype = c.c_int
+            L.gb_results_size.argtypes = [c.c_void_p]; L.gb_results_size.restype = c.c_int64; L.gb_ref_results_size.argtypes = [c.c_void_p]; L.gb_ref_results_size.restype = c.c_int64; L.gb_ref_used_values.argtypes = [c.c_void_p]; L.gb_ref_used_values.restype = c.c_uint64; L.gb_ref_used_scratch.argtypes = [c.c_void_p]; L.gb_ref_used_scratch.restype = c.c_uint64; L.gb_test_leaf_label.argtypes = [c.c_ulonglong]
             L.gb_ref_visited.argtypes = [c.c_void_p]; L.gb_ref_visited.restype = c.c_uint64; L.gb_ref_results.argtypes = [c.c_void_p, c.c_char_p, c.c_int64]; L.gb_ref_results.restype = c.c_int; L.gb_ref_destroy.argtypes = [c.c_void_p]
             if L.gb_schedule_id().decode() != SCHEDULE_ID:
                 raise Refuse("FP_ENV", "kernel schedule id mismatch")
@@ -99,21 +103,24 @@ class Lib:
         return cls._lib
 
 
-def flatten_program(P):
-    """Flat int64 program + rational value strings. Every index is checked against int64 (the planner's representability check makes this a
-    consistency assertion, never the first point of failure). demand_kind: 0 FULL, 1 LIST, 2 EMPTY (distinct serialization: review P5)."""
-    R = P.R; prog = []; qs = []; fid_pos = {}; facs = sorted(P.fac.values(), key=lambda f: f.fid)
+def flatten_program(V):
+    """Flat int64 program + rational value strings from the VALIDATED representation only (gbidi.validate.Validated): tables, scopes, cardinalities
+    and the scale come from the immutable TrustedReduced snapshot; views / storage sets / materialization from the validated structure. The planner's
+    objects (P.fac, P.R) are never read here (third review V2-V1). demand_kind: 0 FULL, 1 LIST, 2 EMPTY."""
+    if not isinstance(V, GV.Validated):
+        raise Refuse("REJECTED", "flatten_program requires a Validated representation")
+    T = V.T; prog = []; qs = []; fid_pos = {}; facs = T.factors
     prog.append(len(facs))
     for f in facs:
         fid_pos[f.fid] = len(fid_pos); prog += [len(f.scope)] + list(f.scope) + list(f.card) + [len(f.table), len(qs)]; qs += ["%d/%d" % (x.numerator, x.denominator) for x in f.table]
-    nfac = len(qs); prog.append(len(P.nodes))
-    for nd in P.nodes:
+    nfac = len(qs); prog.append(len(V.nodes))
+    for nd in V.nodes:
         prog += [nd.x, nd.x_card, len(nd.inputs)]
         for kind, ref in nd.inputs:
             prog += [0 if kind == "F" else 1, fid_pos[ref] if kind == "F" else ref]
         prog += [len(nd.scope)] + list(nd.scope)
         for w in nd.scope:
-            v = nd.views[w]; prog += [len(v.cls)] + list(v.cls) + [len(v.reps)] + list(v.reps) + [len(qs) - nfac]; qs += ["%d/%d" % (r.numerator, r.denominator) for r in v.ratio]
+            cls, reps, ratio = nd.views[w]; prog += [len(cls)] + list(cls) + [len(reps)] + list(reps) + [len(qs) - nfac]; qs += ["%d/%d" % (r.numerator, r.denominator) for r in ratio]
         if nd.demand == "FULL":
             dk, dem = 0, []
         elif len(nd.demand) == 0:
@@ -121,7 +128,7 @@ def flatten_program(P):
         else:
             dk, dem = 1, list(nd.demand)
         prog += [nd.core_entries, -1 if nd.consumer is None else nd.consumer, 1 if nd.materialize else 0, dk, len(dem)] + dem
-    prog += [len(P.roots)] + list(P.roots); qs.append("%d/%d" % (R.scale.numerator, R.scale.denominator)); nratio = len(qs) - nfac - 1
+    prog += [len(V.roots)] + list(V.roots); qs.append("%d/%d" % (T.scale.numerator, T.scale.denominator)); nratio = len(qs) - nfac - 1
     for x in prog:
         if not (-(2 ** 63) <= x < 2 ** 63):
             raise Refuse("REJECTED", "program index exceeds int64 (planner representability check failed to catch it)")
@@ -129,26 +136,26 @@ def flatten_program(P):
 
 
 # ----------------------------------------------------------------------------------------------------------------------- binary64 admission (range envelope only; the kernel proves the labels)
-def binary64_admission(P):
-    """Cheap PRE-check: every leaf converts within (1 +- u) (exact comparison) and a conservative range envelope of all positive intermediates lies
-    inside normal binary64. The error labels are NOT forecast here: the kernel tracks the exact label of every value through every performed
-    operation and range-checks every rounded result; the enclosure uses those labels (whole-execution proof, review F1)."""
-    R = P.R; rec = {"route": "binary64", "checks": []}
+def binary64_admission(V):
+    """Cheap PRE-check on the VALIDATED representation: a conservative range envelope of all positive intermediates lies inside normal binary64
+    (leaf conversions are checked exactly at conversion time). The error labels are NOT forecast here: the kernel tracks the exact label of every
+    value through every performed operation and range-checks every rounded result; the enclosure uses those labels (whole-execution proof, F1)."""
+    T = V.T; rec = {"route": "binary64", "checks": []}
     try:
         lo = Fr(1); hi = Fr(1)
-        for f in P.fac.values():
+        for f in T.factors:
             pos = [x for x in f.table if x > 0]
             if not pos:
                 rec["checks"].append("all-zero factor"); return False, rec
             lo *= min(Fr(1), min(pos)); hi *= max(Fr(1), max(f.table))
-        for nd in P.nodes:
+        for nd in V.nodes:
             for w in nd.scope:
-                for r in nd.views[w].ratio:
+                for r in nd.views[w][2]:
                     if r > 0:
                         lo *= min(Fr(1), r); hi *= max(Fr(1), r)
-        if R.scale > 0:
-            lo *= min(Fr(1), R.scale); hi *= max(Fr(1), R.scale)
-        logK = sum(math.ceil(math.log2(len(d))) for d in R.dom.values())
+        if T.scale > 0:
+            lo *= min(Fr(1), T.scale); hi *= max(Fr(1), T.scale)
+        logK = sum(math.ceil(math.log2(len(d))) for d in T.dom.values())
         rec.update({"log2_lo": math.log2(lo.numerator) - math.log2(lo.denominator), "log2_hi": math.log2(hi.numerator) - math.log2(hi.denominator) + logK, "labels": "tracked exactly by the kernel per value (sum max+1, product sum+1, leaf 1); each rounded result range-checked"})
         if lo / 2 < DBL_MIN or (hi * (2 ** logK)) * 2 > DBL_MAX:
             rec["checks"].append("range envelope outside normal binary64"); return False, rec
@@ -196,6 +203,29 @@ def _set_live(H, L, attempt, stage):
         LIVE["handle"] = H; LIVE["lib"] = L; LIVE["attempt"] = attempt; LIVE["stage"] = stage
 
 
+def plan_only(arm, model_path, evid_path, budget_s, cfg=None):
+    """READ-ONLY planning with EXACTLY the cell policy (gbidi.inspect_panel): snapshot -> reductions and planning under ONE shared optional allowance
+    min(1 s, 0.05 budget) -> trusted snapshot -> validation; the kernel's per-entry byte size; no numerics, nothing allocated. Returns a record."""
+    cfg = dict(cfg or {}); S = GS.Snapshot(model_path, evid_path); m = S.model; ev = S.ev; rec = {"arm": arm, "task": dict(S.task), "policy": "same entry point as execute (shared reductions + planning allowance; kernel bytes_per_entry); no numerics"}
+    if m.nvars == 0:
+        rec["plan"] = "NONE_NEEDED"; return rec
+    R = SRC.Reduced(_ModelAdapter(m), dict(ev)); disc_wall = min(1.0, 0.05 * budget_s); disc_deadline = time.monotonic() + disc_wall; rules = list(cfg.get("rules", PL.COMMON_RULES)); t = time.monotonic()
+    rrec = R.reduce(rules, deadline=disc_deadline); rec["reductions"] = {"rules": rules, "steps": {k: sum(1 for s in R.steps if s[0] == k) for k in set(s[0] for s in R.steps)}, "recognition": rrec, "free_reduced": len(R.dom), "zero_proof": R.zero_proof, "seconds": time.monotonic() - t}
+    if R.zero_proof is not None or not R.dom:
+        rec["plan"] = "NONE_NEEDED"; return rec
+    L0 = Lib.get(); acfg = dict(ARMS[arm]); acfg["bytes_per_entry"] = int(L0.gb_bytes_per_entry(0, PRECISIONS[0])); T = GV.TrustedReduced(R); t = time.monotonic()
+    try:
+        P, table = PL.plan(R, acfg, deadline=disc_deadline, hard_deadline=time.monotonic() + budget_s)
+    except PL.PlanStop as ex:
+        rec["plan"] = {"state": "PLAN_STOP_" + ex.kind, "reason": ex.reason}; return rec
+    rec["plan_s"] = time.monotonic() - t; rec["plan"] = P.record(); rec["plan_candidates"] = table; rec["mechanisms"] = P.mechanisms
+    try:
+        V = GV.validate(P, T, deadline=time.monotonic() + budget_s); rec["plan_validation"] = V.record; ok64, a64 = binary64_admission(V); rec["binary64_admission"] = a64
+    except GV.Invalid as ex:
+        rec["plan_validation"] = {"status": "INVALID", "reason": ex.reason}
+    return rec
+
+
 def _counters(L, H):
     cnt = (ctypes.c_uint64 * 32)(); L.gb_counters(H, cnt); return {COUNTER_NAMES[i]: int(cnt[i]) for i in range(len(COUNTER_NAMES))}
 
@@ -235,24 +265,38 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     if not R.dom:
         Z = R.scale; ivs = {v: [(Fr(e[1]), Fr(e[1])) if e[0] == "C" else (Fr(0), Fr(1)) for e in R.dec[v]] for v in range(m.nvars)}
         rec.update({"status": "INTERVALS_OK", "certified_intervals": {str(v): [[str(a), str(b)] for a, b in ivs[v]] for v in range(m.nvars)}, "Z_exact": str(Z), "precision": "exact", "plan": {"nodes": 0}, "certifying": True}); _write(out, record_prefix, rec); return rec
-    # ---- plan (untrusted; baseline first; ONE shared allowance continues from the reductions' clock)
+    # ---- the IMMUTABLE trusted source (taken BEFORE the untrusted planner sees R); plan (baseline first; optional allowance shared with the reductions; mandatory work under the cell deadline)
     _set_live(None, None, None, "plan")
     try:
-        P, table = PL.plan(R, acfg, deadline=disc_deadline)
+        T = GV.TrustedReduced(R)
+    except GV.Invalid as ex:
+        refuse("REJECTED", "trusted reduced source malformed: %s" % ex.reason)
+    rec["trusted_source"] = {"content_sha256": T.content_hash, "factors": len(T.factors), "reduced_vars": len(T.dom)}
+    try:
+        P, table = PL.plan(R, acfg, deadline=disc_deadline, hard_deadline=deadline_mono)
     except PL.PlanStop as ex:
         rec["plan_candidates_error"] = {"kind": ex.kind, "reason": ex.reason}; refuse("ROUTE_LIMITATION" if ex.kind == "NOT_REPRESENTABLE" else "RESOURCE_STOP", "planner: %s: %s" % (ex.kind, ex.reason))
+    if test_hooks and test_hooks.get("force_stream"):                                                                   # qualification: deterministic streaming activation (storage choice only; validated below)
+        for nd in P.nodes:
+            if nd.consumer is not None:
+                nd.materialize = False; nd.fused = True; nd.fused_by = "QUALIFICATION_FORCED"
     rec["plan"] = P.record(); rec["plan_candidates"] = table; rec["mechanisms"] = P.mechanisms; rec["not_implemented"] = PL.NOT_IMPLEMENTED; mark("plan")
-    # ---- independent validation of the untrusted proposal
+    if not T.unchanged(R):
+        rec["plan_validation"] = {"status": "INVALID", "reason": "the live reduced source was mutated during planning"}; refuse("REJECTED", "untrusted planner mutated the reduced source in place (trusted snapshot differs)")
+    # ---- independent validation of the untrusted proposal against the immutable snapshot -> the executable representation
     try:
-        rec["plan_validation"] = GV.validate(P, R, deadline=deadline_mono)
+        V = GV.validate(P, T, deadline=deadline_mono); rec["plan_validation"] = V.record
     except GV.Invalid as ex:
         rec["plan_validation"] = {"status": "INVALID", "reason": ex.reason}; refuse("REJECTED", "untrusted plan rejected by validation: %s" % ex.reason)
-    mark("validate")
-    prog, qs, nfac, nratio = flatten_program(P); mark("flatten"); diag("planned")
+    mark("validate"); del P                                                                                              # nothing below may read the proposal
+    prog, qs, nfac, nratio = flatten_program(V); mark("flatten"); diag("planned")
     # ---- numerical policy
     L = Lib.get(); rec["backend"] = {"build": {k: Lib.build[k] for k in ("binary_sha256", "source_sha256", "compiler_version", "flags", "linked_libraries_sha256")}, "mpfr": L.gb_mpfr_version().decode(), "gmp": L.gb_gmp_version().decode(), "emin_default": L.gb_mpfr_emin(), "emax_default": L.gb_mpfr_emax(), "emin_min": L.gb_mpfr_emin_min(), "emax_max": L.gb_mpfr_emax_max(), "fp_env_nearest_no_ftz": bool(L.gb_fp_env_ok())}
     caps = (ctypes.c_uint64 * 5)(PL.CAPS["value_cache"], PL.CAPS["source_ir_maps_output"], PL.CAPS["reverse_pinned"], PL.CAPS["pending_adjoints"], PL.CAPS["frames_scratch_publication"])
-    ok64, a64 = binary64_admission(P) if cfg.get("allow_binary64", True) else (False, {"route": "binary64", "checks": ["disabled by config"]}); rec["binary64_admission"] = a64; mark("numeric_policy")
+    ok64, a64 = binary64_admission(V) if cfg.get("allow_binary64", True) else (False, {"route": "binary64", "checks": ["disabled by config"]})
+    if test_hooks and test_hooks.get("skip_range_envelope") and cfg.get("allow_binary64", True):
+        ok64 = True; a64 = dict(a64, checks=a64["checks"] + ["QUALIFICATION: range envelope bypassed to exercise the kernel's per-operation range check"])
+    rec["binary64_admission"] = a64; mark("numeric_policy")
     attempts = rec["attempts"]; result = None; routes = ([("binary64", 53)] if ok64 else []) + [("mpfr", p) for p in PRECISIONS]
     prog_arr = (ctypes.c_int64 * len(prog))(*prog); qs_arr = (ctypes.c_char_p * len(qs))(*[q.encode() for q in qs])
     for route, prec in routes:
@@ -303,23 +347,27 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
                     if st in (4, 7):
                         raise Refuse("RANGE" if st == 4 else "FP_ENV", "typed numerical-range / environment failure in reverse (%s)" % att["stop"])
                     raise Refuse("REJECTED", "kernel reverse stop %s" % att["stop"])
-                size = 1 << 20; toks = None
-                while True:
-                    buf = ctypes.create_string_buffer(size); n = L.gb_results_hex(H, buf, size)
-                    if n >= 0:
-                        toks = buf.value.decode().split(";")[:-1]; break
-                    if n == -1 and size < (1 << 31):
-                        size *= 4; continue
-                    att["stop_phase"] = "export"; raise Refuse("RANGE", "an exported endpoint is not a finite nonnegative number (typed range failure)" if n == -2 else "result export failed (%d)" % n)
+                need = L.gb_results_size(H)                                                                             # exact export size; reserved against the scratch category before allocation
+                if need == -2:
+                    att["stop_phase"] = "export"; raise Refuse("RANGE", "an exported endpoint is not a finite nonnegative number (typed range failure)")
+                if need < 0:
+                    att["stop_phase"] = "export"; raise Refuse("REJECTED", "result export size failed (%d)" % need)
+                used_scratch = att["counters"]["used_scratch_bytes"]
+                if used_scratch + need > PL.CAPS["frames_scratch_publication"]:
+                    att["stop"] = "MEMORY"; att["stop_phase"] = "export"; rec["stop"] = {"kind": "MEMORY", "phase": "export", "detail": "result export of %d bytes exceeds the remaining scratch category" % need}; break
+                buf = ctypes.create_string_buffer(need + 1); n = L.gb_results_hex(H, buf, need + 1); att["export_bytes"] = need
+                if n < 0:
+                    att["stop_phase"] = "export"; raise Refuse("RANGE" if n == -2 else "REJECTED", "result export failed (%d)" % n)
+                toks = buf.value.decode().split(";")[:-1]
                 if route == "binary64":
                     ZL, EZ = dbl_hex_to_fr(toks[0]); ZU = ZL; k = 2; Nn = {}
-                    for nd in P.nodes:
+                    for nd in V.nodes:
                         Nn[nd.x] = []
                         for a in range(nd.x_card):
                             v, e = dbl_hex_to_fr(toks[k]); Nn[nd.x].append((v, v, e)); k += 2
                 else:
                     ZL, ZU = mpfr_hex_to_fr(toks[0]), mpfr_hex_to_fr(toks[1]); k = 2; Nn = {}
-                    for nd in P.nodes:
+                    for nd in V.nodes:
                         Nn[nd.x] = []
                         for a in range(nd.x_card):
                             Nn[nd.x].append((mpfr_hex_to_fr(toks[k]), mpfr_hex_to_fr(toks[k + 1]), None)); k += 2
@@ -344,11 +392,11 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
             red = {x: [encl(lo, hi, e) for lo, hi, e in row] for x, row in Nn.items()}; ivs = {}
             for v in range(m.nvars):
                 row = []
-                for e in R.dec[v]:
+                for e in T.dec[v]:
                     if e[0] == "C":
                         row.append((Fr(e[1]), Fr(e[1])))
                     else:
-                        y, s, eta = e[1], e[2], e[3]; iv = red[y][R.dom[y].index(s)]; row.append((min(Fr(1), eta * iv[0]), min(Fr(1), eta * iv[1])))
+                        y, s, eta = e[1], e[2], e[3]; iv = red[y][T.dom[y].index(s)]; row.append((min(Fr(1), eta * iv[0]), min(Fr(1), eta * iv[1])))
                 ivs[v] = row
             for v, row in ivs.items():                                                                 # consistency check only (necessary, not sufficient): an unsound route is caught by the labels, not here
                 if sum(a for a, _ in row) > 1 or sum(b for _, b in row) < 1:
@@ -368,16 +416,16 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     _set_live(None, None, None, "after_attempts"); mark("numerics")
     if result is None:
         if "stop" in rec and rec["stop"]["kind"] == "MEMORY" and cfg.get("reference_fallback", True) and time.monotonic() < deadline_mono:
-            fb = reference_stream(R, deadline_mono); rec["reference_fallback"] = {k: (str(v) if k in ("Z",) else v) for k, v in fb.items() if k != "N"}; mark("reference_fallback")
+            fb = reference_stream(T, deadline_mono, PL.CAPS); rec["reference_fallback"] = {k: (str(v) if k in ("Z",) else v) for k, v in fb.items() if k != "N"}; mark("reference_fallback")
             if fb["status"] == "COMPLETE":
                 Z = fb["Z"]; ivs = {}
                 for v in range(m.nvars):
                     row = []
-                    for e in R.dec[v]:
+                    for e in T.dec[v]:
                         if e[0] == "C":
                             row.append((Fr(e[1]), Fr(e[1])))
                         else:
-                            q = Fr(e[3]) * fb["N"][e[1]][R.dom[e[1]].index(e[2])] / Z if Z > 0 else Fr(0); row.append((q, q))
+                            q = Fr(e[3]) * fb["N"][e[1]][T.dom[e[1]].index(e[2])] / Z if Z > 0 else Fr(0); row.append((q, q))
                     ivs[v] = row
                 if Z == 0:
                     rec.update({"status": "ZERO_EVIDENCE_PROVED", "reason": "exact reference stream: Z = 0", "certifying": True}); _write(out, record_prefix, rec); return rec
@@ -391,40 +439,50 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     _write(out, record_prefix, rec); return rec
 
 
-def reference_stream(R, deadline_mono):
-    """exact integer reference over the REDUCED model (GB-07): mixed-radix odometer (no assignment-count gate; resumable); per-factor denominator
-    clearing; growable export. Returns COMPLETE / DEADLINE / MEMORY / ROUTE_LIMITATION."""
-    L = Lib.get(); facs = sorted(R.factors, key=lambda f: f.fid); vars_ = sorted(R.dom); pos = {v: i for i, v in enumerate(vars_)}
-    prog = [len(vars_)] + [len(R.dom[v]) for v in vars_] + [len(facs)]; ints = []
+def reference_stream(T, deadline_mono, caps=None):
+    """exact integer reference over the TRUSTED reduced source (GB-07): mixed-radix odometer (resumable, polled per primitive); per-factor denominator
+    clearing; every table / accumulator / product temporary RESERVED at a conservative bound against the value / scratch categories before allocation;
+    the export buffer sized exactly and reserved against the scratch category. Returns COMPLETE / DEADLINE / MEMORY / ROUTE_LIMITATION."""
+    if not isinstance(T, GV.TrustedReduced):
+        raise Refuse("REJECTED", "reference_stream requires the TrustedReduced snapshot")
+    caps = caps or PL.CAPS; L = Lib.get(); facs = T.factors; vars_ = sorted(T.dom); pos = {v: i for i, v in enumerate(vars_)}
+    prog = [len(vars_)] + [len(T.dom[v]) for v in vars_] + [len(facs)]; ints = []; conv_bytes = 0
     for f in facs:
         den = 1
         for x in f.table:
             den = den * x.denominator // math.gcd(den, x.denominator)
-        prog += [len(f.scope)] + [pos[v] for v in f.scope] + list(f.card) + [len(f.table)]; ints += [str(int(x * den)) for x in f.table]
-    total = 1
-    for v in vars_:
-        total *= len(R.dom[v])
+        prog += [len(f.scope)] + [pos[v] for v in f.scope] + list(f.card) + [len(f.table)]; strs = [str(int(x * den)) for x in f.table]; ints += strs; conv_bytes += sum(len(z) + 64 for z in strs)
+    if conv_bytes > caps["frames_scratch_publication"]:
+        return {"status": "MEMORY", "reason": "denominator-cleared integer tables (%d bytes) exceed the scratch category" % conv_bytes, "total": str(_prod_dom(T, vars_))}
+    total = _prod_dom(T, vars_)
     arr = (ctypes.c_int64 * len(prog))(*prog); sarr = (ctypes.c_char_p * max(1, len(ints)))(*[s.encode() for s in ints]); err = ctypes.c_int(0)
-    S = L.gb_ref_create(arr, len(prog), sarr, max(0.0, deadline_mono - time.monotonic()), ctypes.byref(err))
+    caps5 = (ctypes.c_uint64 * 5)(caps["value_cache"], caps["source_ir_maps_output"], caps["reverse_pinned"], caps["pending_adjoints"], max(0, caps["frames_scratch_publication"] - conv_bytes))
+    S = L.gb_ref_create(arr, len(prog), sarr, max(0.0, deadline_mono - time.monotonic()), caps5, ctypes.byref(err))
     if not S:
-        return {"status": "MEMORY" if err.value == 2 else "ROUTE_LIMITATION", "reason": "reference stream could not be created (%s)" % STOP_NAMES.get(err.value, err.value), "total": str(total)}
-    st = L.gb_ref_run(S); vis = L.gb_ref_visited(S)
+        return {"status": {1: "DEADLINE", 2: "MEMORY"}.get(err.value, "ROUTE_LIMITATION"), "reason": "reference stream could not be created (%s)" % STOP_NAMES.get(err.value, err.value), "total": str(total)}
+    st = L.gb_ref_run(S); vis = L.gb_ref_visited(S); used = {"values": int(L.gb_ref_used_values(S)), "scratch": int(L.gb_ref_used_scratch(S)) + conv_bytes}
     if st != 0:
-        L.gb_ref_destroy(S); return {"status": STOP_NAMES.get(st, "FAULT") if st in (1, 2) else "ROUTE_LIMITATION", "visited": vis, "total": str(total), "reason": "stream stop %s" % STOP_NAMES.get(st, st)}
-    size = 1 << 22
-    while True:
-        buf = ctypes.create_string_buffer(size); n = L.gb_ref_results(S, buf, size)
-        if n >= 0:
-            break
-        if n == -1 and size < (1 << 31):
-            size *= 4; continue
-        L.gb_ref_destroy(S); return {"status": "ROUTE_LIMITATION", "reason": "reference export failed (%d)" % n, "visited": vis, "total": str(total)}
-    L.gb_ref_destroy(S); toks = buf.value.decode().split(";")[:-1]; Z = Fr(int(toks[0])); N = {}; k = 1
+        L.gb_ref_destroy(S); return {"status": STOP_NAMES.get(st, "FAULT") if st in (1, 2) else "ROUTE_LIMITATION", "visited": vis, "total": str(total), "reason": "stream stop %s" % STOP_NAMES.get(st, st), "used_bytes": used}
+    need = L.gb_ref_results_size(S)
+    if need < 0 or used["scratch"] + need > caps["frames_scratch_publication"]:
+        L.gb_ref_destroy(S); return {"status": "MEMORY", "reason": "reference export of %d bytes exceeds the remaining scratch category" % need, "visited": vis, "total": str(total), "used_bytes": used}
+    buf = ctypes.create_string_buffer(need + 1); n = L.gb_ref_results(S, buf, need + 1); L.gb_ref_destroy(S)
+    if n < 0:
+        return {"status": "ROUTE_LIMITATION", "reason": "reference export failed (%d)" % n, "visited": vis, "total": str(total)}
+    toks = buf.value.decode().split(";")[:-1]; Z = Fr(int(toks[0])); N = {}; k = 1
     for v in vars_:
         N[v] = []
-        for a in range(len(R.dom[v])):
+        for a in range(len(T.dom[v])):
             N[v].append(Fr(int(toks[k]))); k += 1
-    return {"status": "COMPLETE", "Z": Z, "N": N, "visited": vis, "total": str(total)}
+    used["export"] = need
+    return {"status": "COMPLETE", "Z": Z, "N": N, "visited": vis, "total": str(total), "used_bytes": used}
+
+
+def _prod_dom(T, vars_):
+    total = 1
+    for v in vars_:
+        total *= len(T.dom[v])
+    return total
 
 
 def _write(out, prefix, rec):

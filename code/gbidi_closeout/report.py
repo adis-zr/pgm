@@ -1,7 +1,7 @@
-"""GENERAL_BIDI_V2 closeout (repair of the V1 closeout after reviews H3 / R2-09 / empirical §3,7,8): CELLS_LEDGER.jsonl (every planned row JOINED to
-its bound record AND its receipt; `accepted` only when the record is bound to the planned task / arm / cell id AND exactly one matching receipt
-says COMPLETED with an empty group), BUDGET_LEDGER.json (nonnested; every repeated launch kept; outer stage receipts diagnostic; parent remainders
-once per stage; unknown outer receipts keep compliance QUALIFIED), MISSINGNESS.json (typed), SCORES.json (raw vs DELIVERED widths), MECHANISMS.json
+"""GENERAL_BIDI_V2 closeout (third review H1-H4): CELLS_LEDGER.jsonl (every planned row through gbidi.reconcile, the ONE strict reconciler shared with
+resume: bound record + adapter mapping for comparators + full task / query / budget / config / pin identity + exactly one START/SPAWNED/RECEIPT chain
++ output hash + launch-relative delivery), BUDGET_LEDGER.json (= gbidi.pilot.charged: every attempt once, every outer attempt's parent-only remainder
+once by parent_jid; unresolved at max permitted; QUALIFIED while anything is unresolved), MISSINGNESS.json (typed), SCORES.json (raw vs DELIVERED widths), MECHANISMS.json
 (typed provenance per node: APPLIED / CHECKED_NO_OP / SKIPPED_ROW_CAP / SKIPPED_WALL / NOT_ATTEMPTED / UNKNOWN / DISABLED -- a FULL-safe fallback is
 never a no-op proof), REPORT.md and HANDOFF.md. Statistics use the ordinary median on unrounded observations and launch-relative timing for
 deadline classification. Reads only saved artifacts; never modifies a cell.    python -m gbidi_closeout.report D"""
@@ -42,78 +42,25 @@ def read_points(p):
 
 
 # ---------------------------------------------------------------------------------------------------------------- ledgers
+from gbidi import reconcile as RC
+
+
 def cells_ledger(D, man):
-    led = jl(os.path.join(D, "GB_LEDGER.jsonl")); frozen = man["frozen_utc"]
-    receipts = collections.defaultdict(list)
-    for r in led:
-        if r["kind"] == "RECEIPT" and r["job"].startswith("cell:") and r.get("start_utc", "") >= frozen:
-            receipts[r["job"]].append(r)
-    out = []
-    for c in man["cells"]:
-        od = os.path.join(D, c["out_dir"]); cj = os.path.join(od, "cell.json"); job = "cell:%03d:%s:%s:%s:%ds:%s" % (c["index"], c["stage"], c["case"], c["arm"], int(c["budget_s"]), c["cell_id"]); rcs = receipts.get(job, []); cs = man["cases"][c["case"]]
-        row = dict(c, job=job, family=cs["family"], receipts=len(rcs), accepted=False)
-        rc = rcs[-1] if rcs else None
-        row.update(supervisor_outcome=(rc or {}).get("outcome"), supervisor_wall_s=(rc or {}).get("wall_s"), peak_tree_rss_bytes=(rc or {}).get("peak_tree_rss_bytes"), returncode=(rc or {}).get("returncode"), group_empty_at_receipt=(rc or {}).get("group_empty_at_receipt"))
-        if os.path.exists(cj):
-            r = json.load(open(cj)); t_ = r.get("task") or {}
-            bound = (r.get("arm") == c["arm"] and (r.get("status") == "NO_RECORD" or c["arm"] not in PI.GB_ARMS or (t_.get("raw_model_sha256") == cs["raw_model_sha256"] and t_.get("raw_evidence_sha256") == cs["raw_evidence_sha256"] and (r.get("expected_task") or {}).get("cell_id") in (None, c["cell_id"]))))
-            if c["arm"] not in PI.GB_ARMS and r.get("status") != "NO_RECORD":
-                tsrc = r.get("task") or r.get("source") or {}
-                bound = bound and (not tsrc or tsrc.get("raw_model_sha256") == cs["raw_model_sha256"])
-            if not bound:
-                row.update({"status": "UNBOUND_RECORD", "resolution": "RECORD_NOT_BOUND_TO_TASK", "record_arm": r.get("arm"), "record_status": r.get("status")}); out.append(row); continue
-            row.update({"status": r.get("status"), "reason": (r.get("reason") or "")[:300] if isinstance(r.get("reason"), str) else r.get("reason"), "complete_response_s": r.get("complete_response_s"), "complete_response_from_launch_s": r.get("complete_response_from_launch_s"), "within_deadline": r.get("within_deadline"), "within_deadline_from_launch": r.get("within_deadline_from_launch"), "deadline_classification_clock": r.get("deadline_classification_clock"), "t_first_complete_output_s": r.get("t_first_complete_output_s"), "phases_s": r.get("phases_s"), "stop": r.get("stop"), "censored": r.get("censored", False), "maxrss_self_bytes": r.get("maxrss_self_bytes")})
-            if c["arm"] in PI.GB_ARMS:
-                src = r if "plan" in r else (r.get("diagnostic") or {})
-                row.update({"route": r.get("route"), "precision": r.get("precision"), "max_width_raw": r.get("max_width"), "delivered_max_width": (r.get("certified") or {}).get("delivered_max_width"), "reductions": (src.get("reductions") or {}).get("steps"), "free_reduced": (src.get("reductions") or {}).get("free_reduced"), "plan_totals": (src.get("plan") or {}).get("totals"), "plan_order": ((src.get("plan") or {}).get("order") or {}).get("name"), "plan_candidates": [{k: x.get(k) for k in ("order", "state", "baseline", "chosen", "mandatory_representable")} for x in (src.get("plan_candidates") or [])], "mechanisms": src.get("mechanisms"), "node_provenance": [{k: nd.get(k) for k in ("nid", "support_prov", "demand_prov", "view_prov", "fused_by", "downgrade")} for nd in (src.get("plan") or {}).get("nodes", [])], "binary64_admission": (src.get("binary64_admission") or {}).get("checks"),
-                            "attempts": [{k: a.get(k) for k in ("route", "precision", "outcome", "stop", "stop_phase", "create_s", "forward_s", "reverse_s", "refused", "labels", "delta_max", "wall_s")} | {"counters": a.get("counters"), "counters_after_forward": a.get("counters_after_forward")} for a in (src.get("attempts") or [])], "reference_fallback": (src.get("reference_fallback") or {}).get("status"), "discovery_stop": (src.get("plan") or {}).get("discovery_stop"), "diagnostic_present": "diagnostic" in r, "live_at_stop": (r.get("diagnostic") or {}).get("live")})
-            row["resolution"] = "COMPLETED_RECORD" if r.get("status") != "NO_RECORD" else "KILLED_NO_RECORD"
-        elif os.path.exists(os.path.join(od, "NOT_LAUNCHED.json")):
-            row.update(json.load(open(os.path.join(od, "NOT_LAUNCHED.json")))); row["resolution"] = "NOT_LAUNCHED"; out.append(row); continue
-        else:
-            row.update({"status": "UNLAUNCHED", "resolution": "EXPLICITLY_UNLAUNCHED"}); out.append(row); continue
-        if rc is None:
-            row["resolution"] = "RECORD_WITHOUT_RECEIPT"
-        elif len(rcs) > 1:
-            row["resolution"] = "MULTIPLE_RECEIPTS"; row["all_receipts"] = [{k: x.get(k) for k in ("jid", "start_utc", "outcome", "wall_s")} for x in rcs]
-        elif rc.get("outcome") not in ("COMPLETED", "NONZERO_EXIT", "TIMEOUT_KILL", "MEMORY_KILL") or rc.get("cleanup_unresolved") or rc.get("group_empty_at_receipt") is False:
-            row["resolution"] = "RECEIPT_CONTRADICTS_RECORD" if row["resolution"] == "COMPLETED_RECORD" else row["resolution"]
-        if row["resolution"] == "COMPLETED_RECORD" and rc is not None and len(rcs) == 1:
-            row["accepted"] = True                                                              # bound record + exactly one compatible receipt
-        out.append(row)
-    return out
+    """every planned row through the ONE strict reconciler (gbidi.reconcile; the same one gbidi.pilot uses on resume)"""
+    idx = RC.ledger_index(D); return [RC.reconcile(D, man, c, idx) for c in man["cells"]]
 
 
 def budget(D, man, cells):
-    led = jl(os.path.join(D, "GB_LEDGER.jsonl")); rec = collections.defaultdict(list)
-    for r in led:
-        if r["kind"] == "RECEIPT":
-            rec[r["jid"]].append(r)
-    total = 0.0; by = collections.OrderedDict(); unresolved = []; jobs = []; outer = []
-    for r in led:
-        if r["kind"] != "START":
-            continue
-        rcs = rec.get(r["jid"], []); rc = rcs[-1] if rcs else None
-        if r["scope"].startswith("stage_outer"):
-            outer.append({"job": r["job"], "start_utc": r["start_utc"], "receipt": bool(rc), "wall_s": (rc or {}).get("wall_s"), "outcome": (rc or {}).get("outcome"), "in_final_run": r["start_utc"] >= man["frozen_utc"]}); continue
-        scope = r["scope"] if r["start_utc"] >= man["frozen_utc"] else "pre_freeze_" + r["scope"]
-        if rc is not None and not rc.get("cleanup_unresolved") and len(rcs) == 1:
-            total += rc["wall_s"]; by[scope] = by.get(scope, 0.0) + rc["wall_s"]; jobs.append({"job": r["job"], "jid": r["jid"], "scope": scope, "wall_s": round(rc["wall_s"], 3), "outcome": rc["outcome"]})
-        else:
-            unresolved.append({"job": r["job"], "jid": r["jid"], "reason": "no receipt" if rc is None else ("duplicate receipts" if len(rcs) > 1 else "cleanup unresolved")}); total += max((rc or {}).get("wall_s") or 0.0, r.get("max_permitted_charge_s") or 0.0)
-    stage_rem = {}
-    for s, _, _ in PI.STAGES:
-        o = [x for x in outer if x["job"] == "stage_runner:%s" % s and x["in_final_run"]]; kids = by.get("matrix_" + s, 0.0)
-        if o and o[-1].get("wall_s") is not None:
-            stage_rem[s] = {"outer_wall_s": o[-1]["wall_s"], "children_receipts_s": kids, "parent_remainder_s": max(0.0, o[-1]["wall_s"] - kids)}
-        else:
-            stage_rem[s] = {"outer_wall_s": None, "children_receipts_s": kids, "parent_remainder_s": None, "note": "outer receipt missing or stage not run: parent remainder UNKNOWN"}
-    rem = sum(v["parent_remainder_s"] or 0.0 for v in stage_rem.values()); unknown_outer = [o for o in outer if not o["receipt"]]
-    qualified = bool(unresolved) or bool(unknown_outer) or any(v["parent_remainder_s"] is None and v["children_receipts_s"] > 0 for v in stage_rem.values())
-    return {"ceiling_s": man["ceiling_s"], "rule": "nonnested: every non-outer START once (receipt wall; no receipt / duplicate receipts / unresolved cleanup -> max permitted, listed); outer stage receipts diagnostic; parent-only remainder once per stage where its outer receipt exists; an outer START without receipt keeps compliance QUALIFIED (its parent overhead is UNKNOWN)",
-            "total_charged_s": round(total + rem, 3), "jobs_total_s": round(total, 3), "stage_parent_remainders": stage_rem, "by_scope_s": {k: round(v, 3) for k, v in by.items()}, "unresolved": unresolved, "outer_starts": outer, "outer_without_receipt": unknown_outer, "jobs": jobs,
-            "compliance": "QUALIFIED" if qualified else "all non-outer starts receipted exactly once; parent remainders measured; uncharged: read-only shell inspections, git, file copies",
-            "within_ceiling_known_charges": total + rem <= man["ceiling_s"], "uncharged_exposure_disclosed": True}
+    """nonnested accounting = gbidi.pilot.charged (shared with the live guard): every non-outer attempt once; each OUTER attempt's parent-only
+    remainder once (outer wall - its own children by parent_jid); unresolved starts / outer starts without receipt at max permitted and listed;
+    compliance QUALIFIED while anything is unresolved."""
+    total, by, unresolved, extra = PI.charged(D); led = jl(os.path.join(D, "GB_LEDGER.jsonl"))
+    jobs = [{"job": r["job"], "jid": r["jid"], "scope": r["scope"], "wall_s": round(r["wall_s"], 3), "outcome": r["outcome"], "parent_jid": r.get("parent_jid")} for r in led if r["kind"] == "RECEIPT" and r.get("wall_s") is not None]
+    pre = sum(r["wall_s"] for r in led if r["kind"] == "RECEIPT" and r.get("wall_s") and r.get("start_utc", "") < man["frozen_utc"] and not r["scope"].startswith("stage_outer"))
+    return {"ceiling_s": man["ceiling_s"], "rule": "nonnested (gbidi.pilot.charged): every non-outer START once (receipt wall; no receipt / duplicate receipts / unresolved cleanup -> max permitted, listed); every outer attempt's parent-only remainder once (outer wall - its OWN children by parent_jid); an outer START without receipt is unresolved (max permitted); pre-freeze jobs are charged too",
+            "total_charged_s": round(total, 3), "by_scope_s": {k: round(v, 3) for k, v in by.items()}, "pre_freeze_jobs_s": round(pre, 3), "unresolved": [{"job": u["job"], "jid": u["jid"], "outer": u.get("outer", False)} for u in unresolved], "outer_attempts": extra["outer_attempts"], "duplicate_receipts": extra["duplicate_receipts"], "jobs": jobs,
+            "compliance": "QUALIFIED" if unresolved or extra["duplicate_receipts"] else "every start receipted exactly once; every outer attempt's parent remainder measured; uncharged: read-only shell inspections, git, file copies",
+            "within_ceiling_known_charges": total <= man["ceiling_s"]}
 
 
 # ---------------------------------------------------------------------------------------------------------------- references / scores
@@ -190,7 +137,7 @@ def main(D):
             f.write(json.dumps(r, default=str) + "\n")
     json.dump(B, open(os.path.join(D, "BUDGET_LEDGER.json"), "w"), indent=1); json.dump({"reference_classes": {c: {k: v for k, v in refs[c].items() if k != "_pts"} for c in refs}, "frozen_source": "AGGREGATE_DP_2026-11-07/SCORES.json sha256 %s" % sha(os.path.join(ADP, "SCORES.json")), "cells": S}, open(os.path.join(D, "SCORES.json"), "w"), indent=1, default=str)
     res = collections.Counter(r["resolution"] for r in cells)
-    miss = {"planned": len(cells), "accepted": sum(1 for r in cells if r["accepted"]), "resolutions": dict(res), "not_accepted_rows": [{"job": r["job"], "resolution": r["resolution"], "status": r.get("status")} for r in cells if not r["accepted"] and r["resolution"] not in ("EXPLICITLY_UNLAUNCHED",)], "unavailable_slots": man["unavailable_slots"],
+    miss = {"planned": len(cells), "accepted": sum(1 for r in cells if r["accepted"]), "delivered_valid_output_not_accepted": [r["job"] for r in cells if r.get("delivered_valid_output") and not r["accepted"]], "resolutions": dict(res), "not_accepted_rows": [{"job": r["job"], "resolution": r["resolution"], "record_status": r.get("record_status"), "reasons": r.get("reasons")} for r in cells if not r["accepted"] and r["resolution"] not in ("EXPLICITLY_UNLAUNCHED",)], "unavailable_slots": man["unavailable_slots"],
             "stopped_cells_with_diagnostic": sum(1 for r in cells if r.get("status") == "RESOURCE_STOP" and r.get("diagnostic_present")), "stopped_cells_without_diagnostic": [r["job"] for r in cells if r.get("status") == "RESOURCE_STOP" and r["arm"] in PI.GB_ARMS and not r.get("diagnostic_present")],
             "uncharged_disclosed": ["read-only shell inspections, git, file copies", "development smoke runs before the freeze are charged under scope qualification where they ran under the supervisor; any that did not are disclosed in the handoff"]}
     json.dump(miss, open(os.path.join(D, "MISSINGNESS.json"), "w"), indent=1)
@@ -201,13 +148,13 @@ def main(D):
     json.dump(MECH, open(os.path.join(D, "MECHANISMS.json"), "w"), indent=1)
     by = {(r["stage"], r["arm"], r["case"]): r for r in cells}; cases = PI.inventory(); fam = {c: man["cases"][c]["family"] for c in cases}; families = [f for f, _ in PI.FAMILY_ORDER]
     def st(stage, arm, case):
-        r = by.get((stage, arm, case), {}); return r.get("status") if r.get("accepted") or r.get("resolution") in ("NOT_LAUNCHED", "EXPLICITLY_UNLAUNCHED") else ("NOT_ACCEPTED:" + str(r.get("resolution")) if r else None)
+        r = by.get((stage, arm, case), {}); return r.get("status") if r.get("accepted") or r.get("resolution") in ("NOT_LAUNCHED", "EXPLICITLY_UNLAUNCHED") else ("NOT_ACCEPTED:" + str(r.get("record_status")) if r else None)
     def cert(stage, arm):
         return [c for c in cases if st(stage, arm, c) in CERT]
     def comp(stage, arm):
         return [c for c in cases if st(stage, arm, c) in DONE_UNCERT]
     def tm(stage, arm, c):
-        r = by.get((stage, arm, c), {}); return r.get("complete_response_from_launch_s") or r.get("complete_response_s")
+        r = by.get((stage, arm, c), {}); return r.get("delivery_from_launch_s")                                           # launch-relative for EVERY arm (adapter for comparators)
     L = ["# %s broad round — %d planned cells on the 46-case panel\n" % (man["pass"], len(cells)), "Branch `%s`, frozen commit `%s` (kernel `%s`). Seed %d; order per empirical_plan.txt §3 (reconciled incl. task / cell identities). One observation per cell. Coverage counts use ACCEPTED rows only (record bound to the planned task + exactly one compatible receipt); non-accepted rows are listed in MISSINGNESS.json. Timing uses the launch-relative clock.\n" % (man["branch"], man["commit"][:12], man["kernel_binary_sha256"][:12], man["seed"])]
     L.append("## 1. Coverage by arm / stage (accepted rows)\n\n| arm / stage | certified | complete (uncertified) | typed stops | late | not accepted | other |\n|---|---|---|---|---|---|---|")
     for stage, arms, b in PI.STAGES:
@@ -240,8 +187,8 @@ def main(D):
             a = (r.get("attempts") or [{}])[-1]; c_ = a.get("counters") or {}
             L.append("| %s | %s | %s | %s | %s | %s | %s | %s |" % (r["job"].split(":", 2)[2][:40], r["status"], json.dumps(r.get("stop"))[:50], [(x.get("route"), x.get("stop") or x.get("outcome")) for x in (r.get("attempts") or [])], c_.get("primal_rows"), c_.get("reverse_rows"), c_.get("max_frame_depth"), r.get("plan_order")))
     L.append("\n## 6. Reconciliation\n")
-    L.append("Charged (nonnested): **%.1f s of %.0f s** = jobs %.1f s (by scope %s) + stage-parent remainders %s. Unresolved starts: %s. Outer starts without receipt: %s. Compliance: %s. Rows: %s; accepted %d of %d. Inputs equal the census hashes: %s; comparator config unchanged: %s. Width statistics report raw and delivered widths separately (SCORES.json).\n"
-             % (B["total_charged_s"], B["ceiling_s"], B["jobs_total_s"], B["by_scope_s"], {k: (round(v["parent_remainder_s"], 1) if v["parent_remainder_s"] is not None else "UNKNOWN") for k, v in B["stage_parent_remainders"].items()}, B["unresolved"] or "none", [o["job"] for o in B["outer_without_receipt"]] or "none", B["compliance"], miss["resolutions"], miss["accepted"], miss["planned"], all(v["model_ok"] and v["evidence_ok"] for v in UH["inputs"].values()), UH["config_adp_ok"]))
+    L.append("Charged (nonnested; = the live guard): **%.1f s of %.0f s** by scope %s (outer attempts: %s). Unresolved: %s. Compliance: %s. Rows: %s; accepted %d of %d; delivered valid output but not accepted: %s. Inputs equal the census hashes: %s; comparator config unchanged: %s. Width statistics report raw and delivered widths separately (SCORES.json).\n"
+             % (B["total_charged_s"], B["ceiling_s"], B["by_scope_s"], [(o["job"], o.get("parent_remainder_s")) for o in B["outer_attempts"]], B["unresolved"] or "none", B["compliance"], miss["resolutions"], miss["accepted"], miss["planned"], miss["delivered_valid_output_not_accepted"] or "none", all(v["model_ok"] and v["evidence_ok"] for v in UH["inputs"].values()), UH["config_adp_ok"]))
     L.append("Permitted conclusions: coverage counts on accepted rows are the primary result; ratios are exploratory, matched-cell only; one observation per cell. STOPPED FOR REVIEW.\n")
     open(os.path.join(D, "REPORT.md"), "w").write("\n".join(L))
     print(json.dumps({"G20": len(g20), "P20": len(p20), "ADP20": len(a20), "libDAI20": len(comp("primary_breadth", "EXACT_LIBDAI")), "G120": len(g120), "P120": len(p120), "ablations": {a: len(cert("ablation_breadth", a)) for a in ARMS_A}, "charged_s": B["total_charged_s"], "compliance": B["compliance"][:40], "accepted": miss["accepted"], "planned": miss["planned"]}))

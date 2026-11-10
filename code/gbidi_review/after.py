@@ -37,8 +37,8 @@ def main(out):
     # F2
     mp, ep = write_uai(os.path.join(out, "f2.uai"), [2, 2], [((0, 1), ["1", "2", "3", "4"]), ((0, 1), ["1", "1", "1", "2"])]); m = U.read_model(mp); Z, N = OR.brute(m, {}); truth2 = {v: [N[v][s] / Z for s in range(2)] for v in range(2)}; orig = PL.plan; f2 = {}
     for mode in ("unchanged", "omit_factor_occurrence", "forge_response_view", "drop_message_consumer", "forge_storage_set"):
-        def proposed(R, cfg, deadline=None, caps=None, mode=mode):
-            P, table = orig(R, cfg, deadline, caps)
+        def proposed(R, cfg, deadline=None, caps=None, mode=mode, **kw):
+            P, table = orig(R, cfg, deadline, caps, **kw)
             if mode == "omit_factor_occurrence":
                 nd = next(x for x in P.nodes if sum(k == "F" for k, r in x.inputs) >= 2); nd.inputs.pop(next(i for i in reversed(range(len(nd.inputs))) if nd.inputs[i][0] == "F"))
             elif mode == "forge_response_view":
@@ -63,15 +63,15 @@ def main(out):
         PL.CAPS.clear(); PL.CAPS.update(old); PL.CAPS[kind] = 1
         try:
             if kind == "source_ir_maps_output":
-                def proposed(R, cfg, deadline=None, caps=None):
-                    P, table = orig(R, cfg, deadline, caps); nd = next(x for x in P.nodes if x.scope); nd.demand = [0]; nd.materialize = True; nd.fused = False; return P, table
+                def proposed(R, cfg, deadline=None, caps=None, **kw):
+                    P, table = orig(R, cfg, deadline, caps, **kw); nd = next(x for x in P.nodes if x.scope); nd.demand = [0]; nd.materialize = True; nd.fused = False; return P, table
                 PL.plan = proposed
             rec = run("NATIVE_PLAIN_V2", mp, ep, os.path.join(out, "f3_" + kind), {"allow_binary64": False, "rules": [], "reference_fallback": True}); f3[kind] = {"stop": rec.get("stop"), "route": rec.get("route"), "truth_contained": not contain(rec["certified_intervals"], truth3)}
         except EX.Refuse as ex:
             f3[kind] = {"REFUSED": ex.kind, "reason": ex.reason[:120]}
         finally:
             PL.plan = orig; PL.CAPS.clear(); PL.CAPS.update(old)
-    rep["F3_category_caps"] = {"BEFORE": "scratch / pending / source caps of 1 byte ignored (INTERVALS_OK, 1040 B scratch used)", "AFTER": f3}
+    rep["F3_category_caps"] = {"BEFORE": "scratch / pending / source caps of 1 byte ignored (INTERVALS_OK, 1040 B scratch used)", "AFTER": f3, "note": "closeout: the exact fallback is capped by the same categories, so a 1-byte value / scratch cap ends in a typed RESOURCE_STOP (REFUSED here) instead of an uncapped fallback"}
     # F4
     mp, ep = write_uai(os.path.join(out, "f4.uai"), [2, 2], [((0, 1), ["1", "2", "3", "5"]), ((1,), ["7", "11"])]); f4 = {}
     for arm in ("GENERAL_BIDI_V2", "A2_NO_FUSION"):

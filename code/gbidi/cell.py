@@ -53,7 +53,7 @@ def run_cell(arm, mp, ep, out, deadline, cfg, rec, expected):
         rec["status"] = "INCONSISTENT_EVIDENCE_CERTIFIED"; rec["reason"] = r.get("reason"); return
     t = now(); st = EX.publish(out, mp, ep, r, rec, T_DL, snapshot=S); rec["phases_s"]["publish"] = now() - t; rec["status"] = st
     if st == "CERTIFIED":
-        rec["t_first_complete_output_s"] = now()
+        rec["t_first_complete_output_s"] = now(); rec["output_sha256"] = EX.sha_file(os.path.join(out, "output.MAR"))
 
 
 def main():

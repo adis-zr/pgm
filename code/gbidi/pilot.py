@@ -13,6 +13,8 @@ from __future__ import annotations
 import os, sys, json, time, hashlib, random, subprocess, fcntl
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, HERE)
 from adp.census import run as CR
+from gbidi import reconcile as RC
+from gbidi.arm_adapter import PRODUCER_ARM
 PY = sys.executable
 CEILING_S = 28800.0; CLOSEOUT_RESERVE_S = 1200.0; GRACE_S = 4.0; LAUNCH_OVERHEAD_S = 2.0; MEM_GIB = 8.0; SEED = 20261109
 THREAD_ENV = {"OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "VECLIB_MAXIMUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1", "PYTHONHASHSEED": "0"}
@@ -37,8 +39,10 @@ def ledger_path(D):
 
 
 def charged(D):
-    """nonnested: every non-outer START once (receipt wall; unresolved cleanup or missing receipt -> max permitted); outer stage-runner starts are
-    listed separately (diagnostic; their parent-only remainder is computed at closeout)."""
+    """nonnested accounting shared by the live guard and the closeout: every non-outer START once (receipt wall; no receipt / duplicate receipts /
+    unresolved cleanup -> max permitted, listed as unresolved); every OUTER attempt's parent-only remainder once = outer wall - sum of the receipts
+    of ITS OWN children (linked by parent_jid); an outer START without receipt is UNRESOLVED (charged at max permitted) and blocks launches, EXCEPT
+    the outer attempt this runner is itself executing inside (GBIDI_PARENT_JID), whose parent remainder SO FAR (elapsed - its children) is charged live."""
     p = ledger_path(D); rows = [json.loads(l) for l in open(p)] if os.path.exists(p) else []
     rec = {}; dup = []
     for r in rows:
@@ -46,20 +50,37 @@ def charged(D):
             if r["jid"] in rec:
                 dup.append(r["jid"])
             rec[r["jid"]] = r
-    total = 0.0; unresolved = []; by = {}; outer = []
+    total = 0.0; unresolved = []; by = {}; outer = []; children_of = {}
     for r in rows:
-        if r["kind"] != "START":
+        if r["kind"] != "START" or r["scope"].startswith("stage_outer"):
             continue
-        if r["scope"].startswith("stage_outer"):
-            outer.append({"job": r["job"], "receipt": r["jid"] in rec}); continue
         rc = rec.get(r["jid"])
-        if rc is not None and not rc.get("cleanup_unresolved"):
+        if rc is not None and not rc.get("cleanup_unresolved") and r["jid"] not in dup:
             total += rc["wall_s"]; by[r["scope"]] = by.get(r["scope"], 0.0) + rc["wall_s"]
+            pj = r.get("parent_jid") or rc.get("parent_jid")
+            if pj:
+                children_of[pj] = children_of.get(pj, 0.0) + rc["wall_s"]
         elif rc is not None:
             unresolved.append(dict(r, cleanup_unresolved=True)); total += max(rc["wall_s"], r.get("max_permitted_charge_s") or 0.0)
         else:
             unresolved.append(r); total += (r.get("max_permitted_charge_s") or 0.0)
-    return total, by, unresolved, {"outer_starts": outer, "duplicate_receipts": dup}
+    live_parent = os.environ.get("GBIDI_PARENT_JID")                                                   # the outer attempt this runner is executing INSIDE (its receipt comes after us)
+    for r in rows:
+        if r["kind"] != "START" or not r["scope"].startswith("stage_outer"):
+            continue
+        rc = rec.get(r["jid"])
+        if rc is None and r["jid"] == live_parent:
+            try:
+                elapsed = max(0.0, time.time() - time.mktime(time.strptime(r["start_utc"], "%Y-%m-%dT%H:%M:%SZ")) + time.timezone)
+            except Exception:
+                elapsed = 0.0
+            rem = max(0.0, elapsed - children_of.get(r["jid"], 0.0)); total += rem; by["parent_remainder_live:" + r["scope"]] = by.get("parent_remainder_live:" + r["scope"], 0.0) + rem
+            outer.append({"job": r["job"], "jid": r["jid"], "receipt": False, "live": True, "parent_remainder_so_far_s": rem}); continue
+        if rc is None or rc.get("cleanup_unresolved"):
+            unresolved.append(dict(r, outer=True)); total += (r.get("max_permitted_charge_s") or 0.0); outer.append({"job": r["job"], "jid": r["jid"], "receipt": rc is not None, "parent_remainder_s": None}); continue
+        rem = max(0.0, rc["wall_s"] - children_of.get(r["jid"], 0.0)); total += rem; by["parent_remainder:" + r["scope"]] = by.get("parent_remainder:" + r["scope"], 0.0) + rem
+        outer.append({"job": r["job"], "jid": r["jid"], "receipt": True, "wall_s": rc["wall_s"], "children_s": children_of.get(r["jid"], 0.0), "parent_remainder_s": rem})
+    return total, by, unresolved, {"outer_attempts": outer, "duplicate_receipts": dup}
 
 
 def inventory():
@@ -96,7 +117,7 @@ def freeze(D):
     commit = CR.git_head()
     man = {"pass": PASS + "_2026-11-10", "frozen_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "commit": commit, "branch": subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=HERE).decode().strip(), "python": sys.version.split()[0],
            "parent_lineage": {"v1_round": "GENERAL_BIDI_V1_2026-11-09 (paused after cell 219 at the overseer's request; preserved as evidence)", "v1_final_freeze": "a62625e66a05", "reviews": ["GENERAL_BIDI_V1_INTERIM_FULL_REVIEW_2026-11-09", "GENERAL_BIDI_FULL_ADVERSARIAL_REVIEW_R2_2026-11-09"], "repaired_adp_commit": "ec4ae4274d120bccc6ea41f826a124743ace9d7a", "frozen_numerical_set_code_hash": fsh},
-           "source_files_sha256": {f: sha(os.path.join(HERE, f)) for f in src}, "kernel_build": br, "kernel_binary_sha256": br["binary_sha256"], "kernel_binary": br["binary"], "supervisor": "gbidi/supervise.py (group-empty completion)",
+           "source_files_sha256": {f: sha(os.path.join(HERE, f)) for f in src}, "kernel_build": br, "kernel_binary_sha256": br["binary_sha256"], "kernel_binary": br["binary"], "supervisor": "gbidi/supervise.py v3 (owned-tree completion; parent_jid linkage)", "arm_adapter": {"module": "gbidi/arm_adapter.py", "planned_to_producer": PRODUCER_ARM, "timing": "launch-relative delivery observed by the adapter (cell.json / output.MAR appearance) for comparators; GBIDI_LAUNCH_MONO for new arms"},
            "arms_config": EX.ARMS, "planner_constants": {"metadata_update_cap": PL.METADATA_UPDATE_CAP, "row_inspection_cap": PL.ROW_INSPECTION_CAP, "poll_units": PL.POLL_UNITS, "caps_bytes": PL.CAPS, "discovery_wall": "min(1 s, 0.05 x budget), ONE shared allowance from the start of the reductions through all candidate orders, views, supports and demand", "precisions": list(EX.PRECISIONS), "candidate_construction_order": PL.CONSTRUCTION_ORDER},
            "not_implemented": PL.NOT_IMPLEMENTED, "common_rules": list(PL.COMMON_RULES), "common_rules_note": PL.COMMON_RULES_NOTE, "counter_definitions": EX.COUNTER_DEFINITIONS,
            "shared_vs_different": {"shared_by_all_new_arms": ["gbidi.source snapshot + strict grammar + task binding", "adp.source reductions (exclude, constants, separate, alias, quotient) with the marked decoder", "gbidi.validate (untrusted-plan validation)", "gbidi/kernel.cpp explicit-frame executor (MPFR outward / binary64 with kernel-tracked labels), reserved category caps, charged polling, zero-safe local reverse", "binary64 admission (range envelope) + kernel labels", "exact enclosures through the decoder", "adp.publish dyadic grid + gbidi.verify separate task-bound verifier (incl. the pinned adp.checker point mode)", "one-pass protocol", "exact integer reference fallback on memory stop", "durable noncertifying diagnostics"],
@@ -107,7 +128,7 @@ def freeze(D):
            "cases": {c: {k: cases[c][k] for k in ("family", "model_path", "evidence_path", "raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256", "variables")} for c in inventory()}, "unavailable_slots": [{"case": c, "family": f, "status": "INPUT_UNAVAILABLE"} for c, f in UNAVAILABLE], "cells": []}
     for i, c in enumerate(order()):
         cs = cases[c["case"]]; tid, cid = canonical_task(cs, c, cfg_sha, br["binary_sha256"], commit)
-        man["cells"].append(dict(c, index=i, task_id=tid, cell_id=cid, out_dir="cells/%s/%03d__%s__%s__%ds__%s" % (c["stage"], i, c["case"], c["arm"], int(c["budget_s"]), tid), max_permitted_charge_s=c["budget_s"] + GRACE_S + LAUNCH_OVERHEAD_S))
+        man["cells"].append(dict(c, index=i, task_id=tid, cell_id=cid, producer_arm=(c["arm"] if c["arm"] in GB_ARMS else PRODUCER_ARM[c["arm"]]), out_dir="cells/%s/%03d__%s__%s__%ds__%s" % (c["stage"], i, c["case"], c["arm"], int(c["budget_s"]), tid), max_permitted_charge_s=c["budget_s"] + GRACE_S + LAUNCH_OVERHEAD_S))
     man["counts"] = {"cells": len(man["cells"]), "nominal_s": sum(c["budget_s"] for c in man["cells"]), "max_permitted_s": sum(c["max_permitted_charge_s"] for c in man["cells"]), "per_stage": {s: sum(1 for c in man["cells"] if c["stage"] == s) for s, _, _ in STAGES}}
     assert man["counts"]["cells"] == 414 and man["counts"]["nominal_s"] == 17480.0 and man["counts"]["max_permitted_s"] == 19964.0
     assert reconcile_manifest(man) is None
@@ -115,8 +136,9 @@ def freeze(D):
 
 
 def reconcile_manifest(man):
-    """independent reconstruction of the order AND of every task_id / cell_id from the canonical task; uniqueness of cell ids and output dirs. Returns None or the reason."""
-    o = order(man["seed"])
+    """independent reconstruction of the order AND of every task_id / cell_id from the canonical task; uniqueness of cell ids and output dirs. Returns None or the reason.
+    A manifest marked qualification_unfrozen (tiny end-to-end harness controls on unfrozen source; NEVER a campaign) skips only the 414-cell order check."""
+    o = man["cells"] if man.get("qualification_unfrozen") else order(man["seed"])
     if len(o) != len(man["cells"]):
         return "cell count"
     for a, b in zip(man["cells"], o):
@@ -138,10 +160,11 @@ def reconcile_order(D):
 
 def preflight(D, man):
     head = CR.git_head()
-    if subprocess.run(["git", "diff", "--quiet", man["commit"], head, "--"] + list(man["source_files_sha256"]), cwd=HERE).returncode != 0:
-        raise SystemExit("a frozen source file differs between the frozen commit %s and HEAD %s" % (man["commit"], head))
-    if subprocess.run(["git", "status", "--porcelain", "--"] + list(man["source_files_sha256"]), cwd=HERE, capture_output=True, text=True).stdout.strip():
-        raise SystemExit("uncommitted change to a frozen source file")
+    if not man.get("qualification_unfrozen"):                                                            # a campaign manifest: the frozen commit must be HEAD's content for every frozen file and the tree clean
+        if subprocess.run(["git", "diff", "--quiet", man["commit"], head, "--"] + list(man["source_files_sha256"]), cwd=HERE).returncode != 0:
+            raise SystemExit("a frozen source file differs between the frozen commit %s and HEAD %s" % (man["commit"], head))
+        if subprocess.run(["git", "status", "--porcelain", "--"] + list(man["source_files_sha256"]), cwd=HERE, capture_output=True, text=True).stdout.strip():
+            raise SystemExit("uncommitted change to a frozen source file")
     bad = [f for f, h in man["source_files_sha256"].items() if sha(os.path.join(HERE, f)) != h]
     if bad:
         raise SystemExit("frozen source hashes differ: %s" % bad)
@@ -161,7 +184,7 @@ def inputs_match(man, case):
 
 
 def run(D, stage):
-    man = json.load(open(os.path.join(D, "GB_MANIFEST.json"))); head = preflight(D, man)
+    man = json.load(open(os.path.join(D, "GB_MANIFEST.json"))); head = preflight(D, man); idx = RC.ledger_index(D)
     lock = open(os.path.join(D, "RUN_LOCK"), "a+")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -177,9 +200,9 @@ def run(D, stage):
             continue
         out = os.path.join(D, c["out_dir"]); cs = man["cases"][c["case"]]
         if os.path.exists(os.path.join(out, "cell.json")):
-            r = json.load(open(os.path.join(out, "cell.json"))); t_ = r.get("task") or {}
-            if r.get("arm") != c["arm"] or (r.get("status") not in ("NO_RECORD",) and (t_.get("raw_model_sha256") != cs["raw_model_sha256"] or t_.get("raw_evidence_sha256") != cs["raw_evidence_sha256"]) and c["arm"] in GB_ARMS):
-                return stopfile("RESUME_CONFLICT", at_index=c["index"], detail="existing cell.json is not bound to the planned task / arm")
+            row = RC.reconcile(D, man, c, idx)                                                       # the SAME reconciler as the closeout: an existing record is done only if ACCEPTED (or a typed, bound non-success)
+            if not row["accepted"] and not (row.get("record_status") not in RC.SUCCESS and not [x for x in row["reasons"] if not x.startswith(("launch-relative", "success"))]):
+                return stopfile("RESUME_CONFLICT", at_index=c["index"], detail="existing record is not reconciled to the planned attempt: %s" % row["reasons"][:4])
             continue
         if os.path.exists(os.path.join(out, "NOT_LAUNCHED.json")):
             continue
@@ -200,24 +223,23 @@ def run(D, stage):
         mp = os.path.join(HERE, cs["model_path"]); ep = os.path.join(HERE, cs["evidence_path"]); t = time.monotonic(); expected = json.dumps({"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "task_id": c["task_id"], "cell_id": c["cell_id"]})
         if c["arm"] in GB_ARMS:
             inner = [PY, "-m", "gbidi.cell", c["arm"], mp, ep, out, "%.3f" % c["budget_s"], "{}", expected]
-        elif c["arm"] == "ADP_REPAIRED":
-            inner = [PY, "-m", "adp.cell", mp, ep, out, "%.3f" % c["budget_s"], cfg_adp]
         else:
-            inner = [PY, "-m", "bench.cells", "EXACT", mp, ep, out, "%.3f" % c["budget_s"], "{}"]
-        job = "cell:%03d:%s:%s:%s:%ds:%s" % (c["index"], stage, c["case"], c["arm"], int(c["budget_s"]), c["cell_id"])
+            inner = [PY, "-m", "gbidi.arm_adapter", c["arm"], mp, ep, out, "%.3f" % c["budget_s"], cfg_adp if c["arm"] == "ADP_REPAIRED" else "{}", expected]     # frozen adapter around the PINNED producer
+        job = RC.job_name(c)
         cmd = [PY, "-m", "gbidi.supervise", "--ledger", ledger, "--scope", "matrix_" + stage, "--job", job, "--timeout", "%.3f" % c["budget_s"], "--mem-gib", str(MEM_GIB), "--cwd", HERE,
                "--stdout", os.path.join(out, "supervisor.log"), "--stderr", os.path.join(out, "supervisor.log")] + [x for k, v in THREAD_ENV.items() for x in ("--env", "%s=%s" % (k, v))] + ["--env", "PYTHONPATH=" + HERE, "--env", "GBIDI_LAUNCH_MONO=%.9f" % t, "--"] + inner
-        subprocess.run(cmd, cwd=HERE); wall = time.monotonic() - t
+        subprocess.run(cmd, cwd=HERE); wall = time.monotonic() - t; idx = RC.ledger_index(D)
         rec = json.load(open(os.path.join(out, "cell.json"))) if os.path.exists(os.path.join(out, "cell.json")) else None
         if rec is None:
-            json.dump({"status": "NO_RECORD", "arm": c["arm"], "note": "the cell process left no cell.json (killed before writing); see supervisor.log / progress.json / diagnostic_record.json"}, open(os.path.join(out, "cell.json"), "w"))
-        print("%-3d %-22s %-20s %4ds  %-36s %7.2fs  parent+child %.2fs" % (c["index"], c["arm"], c["case"], int(c["budget_s"]), (rec or {}).get("status", "NO_RECORD"), (rec or {}).get("complete_response_s") or 0, wall), flush=True)
+            json.dump({"status": "NO_RECORD", "arm": c["arm"] if c["arm"] in GB_ARMS else PRODUCER_ARM[c["arm"]], "note": "the cell process left no cell.json (killed before writing); see supervisor.log / progress.json / diagnostic_record.json / adapter.json"}, open(os.path.join(out, "cell.json"), "w"))
+        row = RC.reconcile(D, man, c, idx)
+        print("%-3d %-22s %-20s %4ds  %-28s %-10s %7.2fs  parent+child %.2fs %s" % (c["index"], c["arm"], c["case"], int(c["budget_s"]), row.get("record_status") or "NO_RECORD", "ACCEPTED" if row["accepted"] else "NOT_ACC", row.get("delivery_from_launch_s") or 0, wall, "" if row["accepted"] else row["reasons"][:2]), flush=True)
     open(os.path.join(D, "stage_%s_finished.txt" % stage), "a").write("finished %s parent_wall_s %.3f\n" % (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), time.monotonic() - t_stage))
     total, by, unresolved, extra = charged(D); print("stage %s done; charged total %.1f s of %.0f; unresolved %d" % (stage, total, CEILING_S, len(unresolved)))
 
 
 def status(D):
-    total, by, unresolved, extra = charged(D); print(json.dumps({"charged_s": round(total, 3), "by_scope": {k: round(v, 3) for k, v in by.items()}, "unresolved": [u["job"] for u in unresolved], "outer_starts": extra["outer_starts"], "duplicate_receipts": extra["duplicate_receipts"]}))
+    total, by, unresolved, extra = charged(D); print(json.dumps({"charged_s": round(total, 3), "by_scope": {k: round(v, 3) for k, v in by.items()}, "unresolved": [u["job"] for u in unresolved], "outer_attempts": extra["outer_attempts"], "duplicate_receipts": extra["duplicate_receipts"]}))
 
 
 if __name__ == "__main__":
