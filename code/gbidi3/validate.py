@@ -15,7 +15,7 @@ Returns the VALIDATED EXECUTABLE REPRESENTATION `Validated`: the only object gbi
   constant    at most one CONSTANT node, equal to the trusted scale, a root; then the executor applies scale 1 (never twice).
 Validation reads complete source witnesses; it never reconstructs a dense intermediate to check a lawful streamed representation."""
 from __future__ import annotations
-import time
+import time, copy
 from fractions import Fraction as Fr
 from gbidi3 import ir as IR
 from gbidi3.trusted import TrustedReduced, Invalid, TFactor
@@ -65,6 +65,66 @@ def _check_product_split(parent, u, g, axis_k):
             rest += ((i // st[k]) % card[k]) * rst[j]; j += 1
         if parent.table[i] != u[a] * g[rest]:
             raise Invalid("derived split of factor %d: entry %d is %s but u*g gives %s" % (parent.fid, i, parent.table[i], u[a] * g[rest]))
+
+
+def _tree_coverage(P, T, all_occ, reduced_vars, tick):
+    """linear-time coverage check for a TREE program (every non-root node has exactly one consumer, no ADD, no derived tables):
+    (1) every effective occurrence is a SOURCE leaf exactly once and every reduced variable a MARKER leaf exactly once; the CONSTANT (if any) is a root;
+    (2) every reduced variable is eliminated by exactly one REDUCE; (3) every node whose axes contain v (SOURCE scopes, MARKER(v), intermediates) is a strict
+    descendant of the REDUCE eliminating v (DFS intervals), so all v-dependent operands and v's marker are multiplied in before v is summed out and no
+    sibling operand of another branch mentions v; (4) roots are scalar. With (1)-(4) each root equals the sum over its eliminated variables of the product
+    of its leaves, each exactly once (brief proof notes P1, P2, P7)."""
+    src = {}; mk = {}
+    for n in P.nodes:
+        if n.kind == IR.SOURCE:
+            if n.fid in src:
+                raise Invalid("occurrence %s appears in two SOURCE leaves" % (n.fid,))
+            src[n.fid] = n.nid
+        elif n.kind == IR.MARKER:
+            if n.var in mk:
+                raise Invalid("marker of variable %s appears twice" % n.var)
+            mk[n.var] = n.nid
+    if set(src) != set(all_occ):
+        raise Invalid("leaves cover occurrences %s; expected %s (missing %s, extra %s)" % (sorted(src, key=str)[:6], sorted(all_occ, key=str)[:6], sorted(set(all_occ) - set(src), key=str)[:6], sorted(set(src) - set(all_occ), key=str)[:6]))
+    if set(mk) != set(reduced_vars):
+        raise Invalid("markers do not cover every reduced variable exactly once (missing %s)" % sorted(set(reduced_vars) - set(mk))[:6])
+    elim_node = {}
+    for n in P.nodes:
+        if n.kind == IR.REDUCE:
+            child = P.nodes[n.children[0]]
+            for k, r in enumerate(n.rmap):
+                if r < 0:
+                    v = child.axes[k]
+                    if v in elim_node:
+                        raise Invalid("variable %s is eliminated twice" % v)
+                    elim_node[v] = n.nid
+    if set(elim_node) != set(reduced_vars):
+        raise Invalid("eliminations do not cover every reduced variable exactly once (missing %s)" % sorted(set(reduced_vars) - set(elim_node))[:6])
+    for r in P.roots:
+        if P.nodes[r].axes:
+            raise Invalid("root %d is not scalar" % r)
+    # DFS intervals over the forest (iterative)
+    pre = [0] * len(P.nodes); post = [0] * len(P.nodes); t = 0
+    for r in P.roots:
+        stack = [(r, 0)]
+        while stack:
+            nid, state = stack.pop()
+            if state == 0:
+                pre[nid] = t; t += 1; stack.append((nid, 1)); stack.extend((c, 0) for c in reversed(P.nodes[nid].children))
+            else:
+                post[nid] = t; t += 1
+            tick()
+    def inside(a, b):
+        return pre[b] < pre[a] and post[a] < post[b]
+    for n in P.nodes:
+        for v in n.axes:
+            e = elim_node[v]
+            if n.nid == e or not inside(n.nid, e):
+                raise Invalid("node %d mentions variable %s outside the subtree of the REDUCE (%d) that eliminates it" % (n.nid, v, e))
+        tick()
+    for v, m in mk.items():
+        if not inside(m, elim_node[v]):
+            raise Invalid("marker of variable %s is not inside the subtree of its REDUCE" % v)
 
 
 def validate(P, T, deadline=None, poll_every=4096):
@@ -119,12 +179,15 @@ def validate(P, T, deadline=None, poll_every=4096):
             raise Invalid("unknown derived witness kind %r" % d["kind"])
     # ---------------------------------------------------------------- structure per node
     seen_const = []; reduced_vars = set(dom)
-    for n in P.nodes:
-        if n.nid != P.nodes.index(n):
+    for pos_i, n in enumerate(P.nodes):
+        if n.nid != pos_i:
             raise Invalid("node ids are not positional")
         for a, c in zip(n.axes, n.card):
             if a not in dom:
                 raise Invalid("node %d: axis %s is not a reduced variable" % (n.nid, a))
+            compressed = n.kind == IR.REDUCE and n.reps is not None and any(r is not None and n.rmap[i] == n.axes.index(a) for i, r in enumerate(n.reps))
+            if not compressed and c != len(dom[a]):
+                raise Invalid("node %d: axis %s has cardinality %d but the reduced domain has %d" % (n.nid, a, c, len(dom[a])))
         if len(set(n.axes)) != len(n.axes):
             raise Invalid("node %d repeats an axis" % n.nid)
         if n.volume > IR.INT64_MAX:
@@ -216,13 +279,20 @@ def validate(P, T, deadline=None, poll_every=4096):
     if seen_const and seen_const[0] not in P.roots:
         raise Invalid("the scale CONSTANT must be a root")
     # ---------------------------------------------------------------- coverage and roots
-    try:
-        cov = IR.coverage(P, occ_of, additive_parent)
-    except IR.IRError as ex:
-        raise Invalid("coverage: %s" % ex.reason)
     all_occ = set(effective)
+    cons = P.consumers(); is_tree = all(len(cons[n.nid]) == (0 if n.nid in P.roots else 1) for n in P.nodes) and not any(n.kind == IR.ADD for n in P.nodes) and not P.derived
+    if is_tree:
+        _tree_coverage(P, T, all_occ, reduced_vars, tick)                                            # linear-time check (the planner's programs are trees)
+        cov = None
+    else:
+        try:
+            cov = IR.coverage(P, occ_of, additive_parent)                                            # exact set-based coverage for shared / additive programs
+        except IR.IRError as ex:
+            raise Invalid("coverage: %s" % ex.reason)
     try:
-        if seen_const:
+        if cov is None:
+            pass
+        elif seen_const:
             IR.check_roots(P, cov, all_occ, reduced_vars)
         else:
             O = set(); M = set(); E = set()
@@ -302,5 +372,6 @@ def validate(P, T, deadline=None, poll_every=4096):
                     raise Invalid("node %d axis %s: ratio of state %d is %s, inputs give %s" % (n.nid, w, a, ratio[a], q))
     # ---------------------------------------------------------------- done
     factor_order = sorted(tables)
+    P = copy.deepcopy(P)                                                                   # the EXECUTABLE representation is a frozen copy: a later mutation of the planner's object cannot reach execution (C20)
     rec = {"status": "VALID", "nodes": len(P.nodes), "roots": len(P.roots), "effective_occurrences": len(all_occ), "derived_tables": len(P.derived), "view_entries_inspected": view_entries, "entrywise_checks": view_checks, "checks": checks[0], "trusted_content_sha256": T.content_hash, "scale_applied_by": scale_applied_by, "seconds": time.monotonic() - t0}
     return Validated(T, P, factor_order, tables, scopes, rec, scale_applied_by)

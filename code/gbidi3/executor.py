@@ -153,7 +153,7 @@ def _counters(L, h):
 # ------------------------------------------------------------------------------------------------------------ the executor
 def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, record_prefix="checked_record", test_hooks=None, snapshot=None, ledger=None):
     """returns the checked record (dict, also written to out/<record_prefix>.json) or raises Refuse (typed stop with the diagnostic record attached)"""
-    hooks = test_hooks or {}; phases = phases if phases is not None else {}; t_start = time.monotonic(); led = ledger or GM.Ledger(); cfgA = dict(ARMS[arm])
+    hooks = test_hooks or {}; phases = phases if phases is not None else {}; t_start = time.monotonic(); led = ledger or GM.Ledger(); cfgA = dict(ARMS[arm]); os.makedirs(out, exist_ok=True)
     for p in (os.path.join(out, record_prefix + ".json"), os.path.join(out, "output.MAR"), os.path.join(out, "output.MAR.tmp"), os.path.join(out, "intervals.json"), os.path.join(out, "point_check.json"), os.path.join(out, "diagnostic_record.json")):
         if os.path.exists(p):
             os.remove(p)
@@ -166,7 +166,7 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
             json.dump(dict(rec, NOTE="NONCERTIFYING diagnostic record"), f, default=str); f.flush(); os.fsync(f.fileno())
         os.replace(tmp, os.path.join(out, "diagnostic_record.json"))
     def refuse(kind, reason):
-        rec["status"] = kind; rec["reason"] = reason; rec["stop"] = {"kind": kind, "reason": reason}; diag("typed_stop"); raise Refuse(kind, reason, rec)
+        rec["status"] = kind; rec["reason"] = reason; rec["stop"] = {"kind": kind, "reason": reason, "cause": rec.get("stop")}; diag("typed_stop"); raise Refuse(kind, reason, rec)
     def remaining():
         return deadline_mono - time.monotonic()
     def check_deadline(where):
@@ -193,7 +193,12 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
             rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "zero model mass (zero scalar factor)"; rec["Z"] = "0"; return _write(out, record_prefix, rec)
         rec["status"] = "INTERVALS_OK"; rec["certified_intervals"] = {}; rec["max_width"] = "0"; rec["route"] = "exact_scalar"; rec["precision"] = "exact"; rec["Z"] = str(Z); return _write(out, record_prefix, rec)
     # ---------------- 2. common reductions (shared rule list; the optional allowance bounds their wall)
-    t = time.monotonic(); rules = tuple(cfg.get("rules", PL.COMMON_RULES)); clock = GC.Clock(deadline_mono, budget_s); clock.begin_optional()
+    t = time.monotonic(); rules = tuple(cfg.get("rules", PL.COMMON_RULES)); clock = GC.Clock(deadline_mono, budget_s)
+    if "_optional_allowance_s" in cfg:
+        clock.optional_allowance_s = float(cfg["_optional_allowance_s"])                   # qualification only (C23): an expired / zero optional clock
+    if "_row_cap" in cfg:
+        clock.row_cap = int(cfg["_row_cap"])                                               # qualification only (C13): interrupted optional discovery
+    clock.begin_optional()
     R = SRC.Reduced(_ModelAdapter(S.model), dict(S.ev)); red = R.reduce(rules, deadline=clock.optional_deadline)
     rec["reductions"] = dict(red, rules=list(rules), free_reduced=len(R.dom), scale=str(R.scale)); phases["reductions"] = time.monotonic() - t; check_deadline("reductions")
     if R.zero_proof is not None:
@@ -238,6 +243,8 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
                 n.storage = IR.STREAM; n.demand = "FULL"
     if hooks.get("mutate_program") and plan is not None:
         hooks["mutate_program"](plan.program)
+    if hooks.get("mutate_reduced"):
+        hooks["mutate_reduced"](R)                                                            # qualification (C20): a planner that mutates the LIVE reduced object
     # ---------------- 5. validate -> the executable representation
     V = None
     if plan is not None:
@@ -251,6 +258,8 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
                 refuse("RESOURCE_STOP", ex.reason)
             rec["plan_validation"] = {"status": "REJECTED", "reason": ex.reason}; refuse("REJECTED", "plan validation: %s" % ex.reason)
         rec["plan_validation"] = V.record; rec["plan"] = _plan_record(plan, V); rec["mechanisms"] = plan.mechanisms; phases["validate"] = time.monotonic() - t
+        if hooks.get("after_validate"):
+            hooks["after_validate"](plan.program)                                             # qualification (C20): the planner payload changes AFTER validation; execution uses the validated copy
         del plan
     diag("planned"); check_deadline("validation")
     # ---------------- 6. numerical routes
@@ -299,6 +308,8 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
                     att["outcome"] = "FORWARD_" + STOP_NAMES.get(st, str(st)); att["stop"] = STOP_NAMES.get(st); att["stop_phase"] = "forward"
                     if st in (1, 2):
                         rec["stop"] = {"kind": STOP_NAMES[st], "phase": "forward"}; break
+                    if st == 4 and route == "mpfr":
+                        att["outcome"] = "MPFR_EXPONENT_RANGE_FAULT"; att["mpfr_flags"] = L.gb3_mpfr_flags(ctypes.c_void_p(h)); rec["stop"] = {"kind": "RANGE", "phase": "forward", "route": "mpfr"}; break      # mantissa precision does not cure exponent-range exhaustion: no ladder
                     if st in (4, 7, 8):
                         att["outcome"] = "ROUTE_FAULT_" + STOP_NAMES[st]; continue
                     refuse("REJECTED", "kernel fault in forward: %s" % STOP_NAMES.get(st))
@@ -312,6 +323,8 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
                     att["outcome"] = "REVERSE_" + STOP_NAMES.get(st, str(st)); att["stop"] = STOP_NAMES.get(st); att["stop_phase"] = "reverse"
                     if st in (1, 2):
                         rec["stop"] = {"kind": STOP_NAMES[st], "phase": "reverse"}; break
+                    if st == 4 and route == "mpfr":
+                        att["outcome"] = "MPFR_EXPONENT_RANGE_FAULT"; rec["stop"] = {"kind": "RANGE", "phase": "reverse", "route": "mpfr"}; break
                     if st in (4, 7, 8):
                         att["outcome"] = "ROUTE_FAULT_" + STOP_NAMES[st]; continue
                     refuse("REJECTED", "kernel fault in reverse: %s" % STOP_NAMES.get(st))
@@ -393,6 +406,8 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
             refuse("RESOURCE_STOP", "DEADLINE in phase %s" % st.get("phase"))
         if st.get("kind") == "MEMORY":
             refuse("RESOURCE_STOP", "MEMORY_CATEGORY in phase %s (fallback: %s)" % (st.get("phase"), (rec.get("exact_fallback") or {}).get("status")))
+        if st.get("kind") == "RANGE":
+            refuse("NUMERIC_RANGE", "MPFR exponent-range fault in phase %s (flags %s); no precision ladder cures exponent exhaustion" % (st.get("phase"), rec["attempts"][-1].get("mpfr_flags")))
         if rec.get("plan_stop"):
             refuse("ROUTE_LIMITATION", "plan: %s; fallback: %s" % (rec["plan_stop"], (rec.get("exact_fallback") or {}).get("status")))
         outs = [a.get("outcome") for a in rec["attempts"]]
@@ -454,10 +469,11 @@ def plan_only(arm, model_path, evid_path, budget_s, cfg=None, hard_deadline=None
     out["memory_ledger"] = led.report(); out["status"] = "PLANNED"; out["phases_s"]["total"] = time.monotonic() - t0; return out
 
 
-def _plan_record(plan, V):
-    P = V.P
-    return {"order": plan.order_name, "nodes": len(P.nodes), "roots": list(P.roots), "totals": plan.totals, "discovery_stop": plan.discovery_stop,
-            "node_table": [{"nid": n.nid, "kind": n.kind, "axes": list(n.axes), "card": list(n.card), "storage": n.storage, "demand": ("FULL" if n.demand == "FULL" else ("EMPTY" if n.demand == "EMPTY" else len(n.demand))), "children": list(n.children), "prov": {k: (v if isinstance(v, (str, int, bool, list)) else str(v)) for k, v in (n.prov or {}).items()}} for n in P.nodes]}
+def _plan_record(plan, V, table_cap=4000):
+    P = V.P; rows = [{"nid": n.nid, "kind": n.kind, "axes": list(n.axes), "card": list(n.card), "storage": n.storage, "demand": ("FULL" if n.demand == "FULL" else ("EMPTY" if n.demand == "EMPTY" else len(n.demand))), "children": list(n.children), "prov": {k: (v if isinstance(v, (str, int, bool, list)) else str(v)) for k, v in (n.prov or {}).items()}} for n in P.nodes]
+    summary = {"kinds": {k: sum(1 for n in P.nodes if n.kind == k) for k in IR.KIND_CODE}, "storage": {k: sum(1 for n in P.nodes if n.kind == IR.REDUCE and n.storage == k) for k in IR.STORAGE_CODE}, "demand_restricted": sum(1 for n in P.nodes if n.demand not in ("FULL", "EMPTY")), "compressed_axes": sum(1 for n in P.nodes if n.kind == IR.REDUCE and any(r is not None for r in n.reps))}
+    return {"order": plan.order_name, "nodes": len(P.nodes), "roots": list(P.roots), "totals": plan.totals, "discovery_stop": plan.discovery_stop, "summary": summary,
+            "node_table": rows if len(rows) <= table_cap else rows[:table_cap], "node_table_truncated": len(rows) > table_cap}
 
 
 def _write(out, prefix, rec):
@@ -528,7 +544,13 @@ def exact_fallback(S, deadline_mono, led, test_hooks=None):
 
 # ------------------------------------------------------------------------------------------------------------ publication (brief §15)
 def publish(out, model_path, evid_path, rec, cell_rec, deadline_mono, record_prefix="checked_record", snapshot=None):
-    S = snapshot or GS.Snapshot(model_path, evid_path); card = list(S.model.card)
+    try:
+        S = snapshot or GS.Snapshot(model_path, evid_path)
+    except GS.InvalidInput as ex:
+        cell_rec["publication"] = {"status": "NOT_PUBLISHED", "reason": "the caller's files are not a valid task at publication: %s" % ex.reason}; return "CHECK_FAILED"
+    if snapshot is not None and not S.path_still_matches():
+        cell_rec["publication"] = {"status": "NOT_PUBLISHED", "reason": "the caller's files changed after the snapshot"}; return "CHECK_FAILED"
+    card = list(S.model.card)
     if rec.get("status") != "INTERVALS_OK":
         cell_rec["publication"] = {"status": "NOT_PUBLISHED", "reason": "record status %r" % rec.get("status")}; return "CHECK_FAILED"
     if not GS.bound_to_task(rec.get("task"), S.task):

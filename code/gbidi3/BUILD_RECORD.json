@@ -44,18 +44,18 @@
   "/Users/adis/Workspace/pgm/code/gbidi3/kernel3.cpp"
  ],
  "returncode": 0,
- "stderr": "/Users/adis/Workspace/pgm/code/gbidi3/kernel3.cpp:310:169: warning: unused variable 'ACC' [-Wunused-variable]\n            const size_t PRE = f.base + k, SUF = f.base + 2 * k + 1, G = f.base + 3 * k + 2, ROW = f.base + 3 * k + 3, SC = f.base + 3 * k + 4, H = f.base + 3 * k + 5, ACC = f.base + 3 * k + 6; (void)SC;\n                                                                                                                                                                        ^\n1 warning generated.\n",
- "build_wall_s": 2.2828050423413515,
+ "stderr": "/Users/adis/Workspace/pgm/code/gbidi3/kernel3.cpp:322:169: warning: unused variable 'ACC' [-Wunused-variable]\n            const size_t PRE = f.base + k, SUF = f.base + 2 * k + 1, G = f.base + 3 * k + 2, ROW = f.base + 3 * k + 3, SC = f.base + 3 * k + 4, H = f.base + 3 * k + 5, ACC = f.base + 3 * k + 6; (void)SC;\n                                                                                                                                                                        ^\n1 warning generated.\n",
+ "build_wall_s": 2.365588250104338,
  "source": "gbidi3/kernel3.cpp",
- "source_sha256": "0fb8e16affb6d3182d21f65ed40e52674129609a9cee7f43344d7995b9ecd2c7",
+ "source_sha256": "ecb4ede4cb4c096ce6c94a83da282764a26b278c2438a6742f8b4fe913a17271",
  "binary": "gbidi3/libgbidi3_kernel.dylib",
- "binary_sha256": "69690f1c937149b4b18de17cb721847a485d92066f888bb2b30d3378ff0378a6",
+ "binary_sha256": "21bc74e94b6ae7e995cea02a0c4e8bdd9b35260b3418262a0c8fe127d097fcde",
  "linked_libraries_sha256": {
   "/opt/homebrew/opt/mpfr/lib/libmpfr.6.dylib": "ee2da0c9af31774e88f40622b8b0c377bed74c32c98160d3efcf4c75c47c9675",
   "/opt/homebrew/opt/gmp/lib/libgmp.10.dylib": "1bb9184824b82f40bd50279634290d6cbdf9c1a371c045c7b10815e7955cd696"
  },
  "platform": "macOS-26.6.2-arm64-arm-64bit",
  "machine": "arm64",
- "utc": "2026-11-10T05:39:05Z",
+ "utc": "2026-11-10T07:06:05Z",
  "arithmetic": "general route: outward MPFR intervals (RNDD/RNDU); optional route: binary64 nearest-even with per-value exact error labels and a per-operation range check; no division; -ffp-model=strict -ffp-contract=off"
 }

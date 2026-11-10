@@ -55,6 +55,11 @@ class Node:
         self.gaxes = gaxes; self.proj = proj; self.rmap = rmap; self.reps = reps; self.storage = storage; self.demand = demand; self.prov = prov or {}; self.witness = witness; self.notes = []; self.cost = None
         if len(self.axes) != len(self.card) or any(c < 1 for c in self.card):
             raise IRError("node %d: axes / cardinalities malformed" % nid)
+        if prod(self.card) > INT64_MAX:
+            raise IRError("node %d: volume exceeds int64 (symbolic domain too large for an indexed route)" % nid)
+        nch = len(self.children)
+        if (kind in (SOURCE, MARKER, CONSTANT) and nch != 0) or (kind in (GATHER, REDUCE) and nch != 1) or (kind in (ADD, MUL) and nch < 1):
+            raise IRError("node %d: %s with %d children" % (nid, kind, nch))
 
     @property
     def volume(self):

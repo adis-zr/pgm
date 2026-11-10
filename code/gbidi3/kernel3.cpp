@@ -218,6 +218,18 @@ template <class P> struct Exec {
         if (c.storage != S_STREAM) ++C.stream_reevals; if (c.storage == S_DENSE || c.storage == S_SPARSE) ++C.regenerated_values;
         return push(0, cn, cidx, &dst, nullptr) ? 1 : -1;
     }
+    // VALUE and PULLBACK of child cn at cidx in ONE pass (combined frame, mode 2): stored -> value from storage + delta to its slot; leaf -> direct; else push mode 2
+    int child_both(int cn, int64_t cidx, Num& dst, const Num& h) {
+        int r = lookup(cn, cidx, dst);
+        if (r == 1) return child_pull(cn, cidx, h);
+        if (r == 2) { P::set_zero(dst); return 0; }                                                  // complete-sparse absence: an exactly-zero nonnegative polynomial, all its marker derivatives vanish (P3)
+        const NodeD& c = N[cn];
+        if (c.kind == K_MARKER) { P::set_one(dst); P::add(Nx[c.var][cidx], Nx[c.var][cidx], h); ++C.adds; ++C.numerator_adds; ++C.marker_updates; return 0; }
+        if (c.kind == K_CONSTANT) { P::copy(dst, consts[c.val_off]); ++C.lookups; return 0; }
+        if (c.kind == K_SOURCE) { P::copy(dst, fvals[F[c.fid].val_off + cidx]); ++C.lookups; ++C.source_reads; return 0; }
+        if (c.storage != S_STREAM) ++C.stream_reevals; if (c.storage == S_DENSE || c.storage == S_SPARSE) ++C.regenerated_values;
+        return push(2, cn, cidx, &dst, &h) ? 1 : -1;
+    }
     // deliver a delta h to child cn at cidx: pending slot (materialized) or immediate PULLBACK frame (returns 1 pushed, 0 done, -1 stop)
     int child_pull(int cn, int64_t cidx, const Num& h) {
         const NodeD& c = N[cn];
@@ -267,22 +279,22 @@ template <class P> struct Exec {
         case K_MARKER: { if (f.mode != 1) P::set_one(*f.dst); if (f.mode != 0) { P::add(Nx[n.var][f.idx], Nx[n.var][f.idx], at(f.base)); ++C.adds; ++C.numerator_adds; ++C.marker_updates; } done = true; return poll(1); }
         case K_GATHER: {
             const size_t SC = f.base, H = f.base + 1, TMP = f.base + 2; int cn = n.children[0];
-            if (f.phase == 0) { ++C.gather_visits; int64_t cidx = gather_child_index(n, f.d, at(SC)); f.t = cidx;
-                if (f.mode != 1) { f.phase = 1; int r = child_value(cn, cidx, at(TMP)); if (r < 0) return false; if (r == 1) return true; }
-                else f.phase = 1; }
-            if (f.phase == 1) { if (f.mode != 1) { P::mul(*f.dst, at(SC), at(TMP)); ++C.mults; }
-                f.phase = 2;
-                if (f.mode != 0) { P::mul(at(TMP), at(H), at(SC)); ++C.mults; int64_t t = f.t; int r = child_pull(cn, t, at(TMP)); if (r < 0) return false; if (r == 1) return true; } }
+            if (f.phase == 0) { ++C.gather_visits; int64_t cidx = gather_child_index(n, f.d, at(SC)); f.t = cidx; f.phase = 1;
+                if (f.mode == 2) { P::mul(at(H), at(H), at(SC)); ++C.mults; int r = child_both(cn, cidx, at(TMP), at(H)); if (r < 0) return false; if (r == 1) return true; }
+                else if (f.mode == 0) { int r = child_value(cn, cidx, at(TMP)); if (r < 0) return false; if (r == 1) return true; } }
+            if (f.phase == 1) { f.phase = 2;
+                if (f.mode != 1) { P::mul(*f.dst, at(SC), at(TMP)); ++C.mults; }
+                if (f.mode == 1) { P::mul(at(TMP), at(H), at(SC)); ++C.mults; int64_t t = f.t; int r = child_pull(cn, t, at(TMP)); if (r < 0) return false; if (r == 1) return true; } }
             done = true; return poll(1);
         }
         case K_ADD: {
             const size_t ACC = f.base, H = f.base + 1, TMP = f.base + 2; ++C.add_visits;
             // phase 0: values of children one by one (mode 0/2); phase 1: pullbacks (mode 1/2)
             while (f.phase == 0) {
-                if (f.i >= (int)k) { if (f.mode != 1) P::copy(*f.dst, at(ACC)); f.phase = 1; f.i = 0; break; }
+                if (f.i >= (int)k) { if (f.mode != 1) P::copy(*f.dst, at(ACC)); f.phase = (f.mode == 2 ? 2 : 1); f.i = 0; break; }
                 if (f.mode == 1) { f.phase = 1; f.i = 0; break; }
                 if (f.last == 1) { P::add(at(ACC), at(ACC), at(TMP)); ++C.adds; f.last = -1; f.i++; continue; }
-                f.last = 1; int r = child_value(n.children[f.i], f.idx, at(TMP)); if (r < 0) return false; if (r == 1) return true;
+                f.last = 1; int r = (f.mode == 2) ? child_both(n.children[f.i], f.idx, at(TMP), at(H)) : child_value(n.children[f.i], f.idx, at(TMP)); if (r < 0) return false; if (r == 1) return true;
             }
             while (f.phase == 1) {
                 if (f.mode == 0 || f.i >= (int)k) { done = true; return poll(1); }
@@ -295,10 +307,10 @@ template <class P> struct Exec {
             // phase 0: sum child values over eliminated tuples t (mode 0/2); phase 1: pullbacks over t (mode 1/2)
             while (f.phase == 0) {
                 if (f.mode == 1) { f.phase = 1; f.t = 0; break; }
-                if (f.last == 1) { P::add(at(ACC), at(ACC), at(TMP)); ++C.adds; ++C.reduce_terms; f.last = -1; f.t++; if (!poll(1)) return false; }
-                if (f.t >= n.elim_volume) { P::copy(*f.dst, at(ACC)); f.phase = 1; f.t = 0; break; }
-                int64_t cidx = reduce_child_index(n, f.d, f.t); if (test_branch_fault == 1 && f.t == 0) { ++C.reduce_terms; f.t++; continue; } f.last = 1; int r = child_value(cn, cidx, at(TMP)); if (r < 0) return false; if (r == 1) return true;
-                if (test_branch_fault == 2 && f.t == 0) { P::add(at(ACC), at(ACC), at(TMP)); }                           // qualification fault: the first eliminated tuple is added twice while the counter is forged unchanged
+                if (f.last == 1) { P::add(at(ACC), at(ACC), at(TMP)); if (test_branch_fault == 2 && f.t == 0) P::add(at(ACC), at(ACC), at(TMP)); ++C.adds; ++C.reduce_terms; f.last = -1; f.t++; if (!poll(1)) return false; }   // fault 2: the first tuple added twice, counter unchanged
+                if (f.t >= n.elim_volume) { P::copy(*f.dst, at(ACC)); f.phase = (f.mode == 2 ? 2 : 1); f.t = 0; break; }
+                if (test_branch_fault == 1 && f.t == 0) { ++C.reduce_terms; f.t++; continue; }                            // fault 1: the first tuple omitted, counter forged as visited
+                int64_t cidx = reduce_child_index(n, f.d, f.t); f.last = 1; int r = (f.mode == 2) ? child_both(cn, cidx, at(TMP), at(H)) : child_value(cn, cidx, at(TMP)); if (r < 0) return false; if (r == 1) return true;
             }
             while (f.phase == 1) {
                 if (f.mode == 0 || f.t >= n.elim_volume) { done = true; return poll(1); }
@@ -524,9 +536,9 @@ template <class P> static int load_values(Exec<P>& E, const char* const* qs, int
     bytes += 2 * (maxlen + 64) + 2 * sizeof(mpq_t);
     if (!E.reserve(E.used_scratch, E.caps.scratch, bytes)) return GB_MEMORY;
     E.fvals.resize(nfac); E.ratios.resize(nratio); E.consts.resize(nconst); mpq_t q; mpq_init(q);
+    for (auto& x : E.fvals) P::init(x, E.prec); for (auto& x : E.ratios) P::init(x, E.prec); for (auto& x : E.consts) P::init(x, E.prec);      // K2: EVERY value is initialised BEFORE the (pollable) conversion loop, so a DEADLINE return mid-loop leaves no uninitialised mpfr_t for the destructor
     for (int64_t i = 0; i < total; ++i) {
         typename P::T* dst = i < nfac ? &E.fvals[i] : (i < nfac + nratio ? &E.ratios[i - nfac] : (i < nfac + nratio + nconst ? &E.consts[i - nfac - nratio] : &E.scale));
-        if (i < total - 1) P::init(*dst, E.prec);
         if (dbl_vals) set_from_double(*dst, dbl_vals[i]); else { if (mpq_set_str(q, qs[i], 10) != 0) { mpq_clear(q); return GB_BADPROG; } mpq_canonicalize(q); if (mpq_sgn(q) < 0) { mpq_clear(q); return GB_BADPROG; } P::set_q(*dst, q, E.prec); }
         if (!E.poll(1)) { mpq_clear(q); return GB_DEADLINE; }
     }

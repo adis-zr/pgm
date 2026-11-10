@@ -69,3 +69,15 @@ adjoints; width-only publication counterexample; 12 adversarial mutant certifica
 Run one cell: `PYTHONPATH=. .venv/bin/python -m adp.cell MODEL.uai EVID.uai.evid OUT_DIR 20 '{}'` (ablations: `'{"rules": []}'`,
 `'{"views": false}'`, `'{"sparse": false}'`, `'{"memo": false, "batched": false}'`, `'{"batched": false}'`). Campaign records under
 `runs/mdi_2026-10-28/AGGREGATE_DP_2026-11-07/` (REPORT.md leads with coverage; CAMPAIGN_MANIFEST.json frozen before any outcome).
+
+## GENERAL_BIDI_COMPLETE_V3 (10 November 2026) — `gbidi3/`, `gbidi3_closeout/`, branch `general-bidi-complete-v3-2026-11-10`
+
+Complete implementation of the mandatory general bidirectional design (brief COMPLETE-1, sha256 af2e29bf…) on the V2 repaired foundation; qualified
+(126 V3 controls C01–C26 + 236 existing regressions) and stopped at READY_FOR_REVIEW with a PROPOSED (not frozen) 414-cell manifest. Layout: `gbidi3/source.py`
+(strict grammar, canonical_v2 identity), `trusted.py` (frozen snapshot + independent replay), `ir.py` (canonical indexed IR + coverage calculus), `orders.py` /
+`clock.py` / `planner.py` (untrusted planner), `validate.py` (-> executable representation), `kernel3.cpp` (native: frames, blocks, sparse joins, stream, LRU,
+deltas, MPFR / binary64 labels, categories, polling, exact fallback), `executor.py` (one authoritative pass, decoder, publication with the delivered-width
+check), `verify.py` (separate verifier), `cell.py`, `arm_adapter.py`, `reconcile.py`, `pilot.py` (propose / freeze / run / status), `inspect_panel.py`,
+`memory.py`, `requirements.py`, `oracle.py`; `tests/test_gbidi3_complete.py`. Records: `runs/mdi_2026-10-28/GENERAL_BIDI_COMPLETE_V3_2026-11-10/`
+(REPORT.md, HANDOFF.md, REQUIREMENTS.md, …). Build: `python -m gbidi3.build`. One cell: `python -m gbidi3.cell ARM MODEL.uai EVID.uai.evid OUT 20 '{}'`.
+No benchmark cell has run on this code.

@@ -3,7 +3,10 @@ trusted snapshot before execution. It works on a proposal VIEW (plain tuples) an
 
 Structure. A region is a set of interior variables with an elimination order; the planner picks a CUTSET at the region's top (the LAST remaining
 variable of the order, or the last TWO when their joint domain is <= 4,096: frozen local rule, tie toward one), splits the residual factor hypergraph
-into connected components, and recurses. The emitted node is REDUCE_D( MUL( MARKER(v) for v in D, SOURCE(f) for every factor fully inside D + boundary,
+into connected components, and recurses. The regions are built from ONE bucket-elimination simulation along the order: the children of the bucket of x
+(the buckets whose message is consumed at x) are exactly the connected components of the residual hypergraph after conditioning on x and the region's
+boundary (a factor joining two sibling subtrees would place one subtree's variable in the other's bag, making it an ancestor, contradiction); so the
+bucket tree IS the region tree and is compiled once per order, never per cutset assignment. The emitted node is REDUCE_D( MUL( MARKER(v) for v in D, SOURCE(f) for every factor fully inside D + boundary,
 one child node per residual component ) ). With every component root DENSE this is exactly bucket elimination along the order (the bucket program is
 one candidate); a STREAM component root is recursive conditioning (recomputed per cutset assignment); mixtures are chosen under the memory caps. Topology
 is compiled once per region (nodes), never per cutset assignment.
@@ -93,80 +96,75 @@ class Builder:
     def __init__(self, view, cfg, clock):
         self.dom = view["dom"]; self.factors = {f[0]: f for f in view["factors"]}; self.scale = view["scale"]; self.cfg = cfg; self.clock = clock; self.next_bid = 0
         self.fscope = {fid: tuple(f[1]) for fid, f in self.factors.items()}; self.fcard = {fid: tuple(f[2]) for fid, f in self.factors.items()}; self.ftable = {fid: f[3] for fid, f in self.factors.items()}
-        self._zero_rows = {}; self.sim = None
+        self._zero_rows = {}; self.sim = None; self.sim_updates = 0
 
     def simulate(self, order):
-        """ONE bucket-elimination simulation along `order` over the whole reduced model (metadata only): per variable its bag (set of variables), operand
-        count and bag volume. Valid for every region of the recursion because bucket elimination along a fixed order does not depend on the region split;
-        a two-axis cutset only replaces the two top buckets by their joint bag."""
-        live = [set(self.fscope[f]) for f in sorted(self.factors) if self.fscope[f]]; msgs = []; sim = {}
+        """ONE bucket-elimination simulation along `order` (metadata only; indexed by variable so the cost is linear in the total scope size touched):
+        sim[v] = (bag frozenset, operand count, bag volume, owned factor ids, child message ids); messages are indexed like factors."""
+        index = {v: set() for v in self.dom}; scope_of = {}; owner_fids = {}
+        for f in sorted(self.factors):
+            sc = set(self.fscope[f])
+            if sc:
+                scope_of[("F", f)] = sc
+                for v in sc:
+                    index[v].add(("F", f))
+        sim = {}; msg_of = {}
         for v in order:
-            bag = {v}; ops = 0; nl = []
-            for sc in live:
-                if v in sc:
-                    bag |= sc; ops += 1
-                else:
-                    nl.append(sc)
-            nm = []
-            for sc in msgs:
-                if v in sc:
-                    bag |= sc; ops += 1
-                else:
-                    nm.append(sc)
-            self.clock.spend_meta(1 + ops)
-            sim[v] = (frozenset(bag), ops + 1, prod(len(self.dom[u]) for u in bag)); live = nl; msgs = nm + [bag - {v}]
+            items = sorted(index[v], key=str); bag = {v}; fids = []; kids = []
+            for it in items:
+                bag |= scope_of[it]
+                (fids if it[0] == "F" else kids).append(it[1])
+                for u in scope_of[it]:
+                    if u != v:
+                        index[u].discard(it)
+                self.clock.tick(len(scope_of[it])); self.sim_updates += len(scope_of[it])
+            index[v] = set(); msc = bag - {v}; mid = ("M", v); scope_of[mid] = msc
+            for u in msc:
+                index[u].add(mid)
+            sim[v] = (frozenset(bag), len(items) + 1, prod(len(self.dom[u]) for u in bag), fids, kids); msg_of[v] = msc; self.clock.tick(1); self.sim_updates += 1
         self.sim = sim; return sim
 
     def build(self, order, plan):
-        """region recursion from the whole reduced model; returns the list of root buckets"""
-        all_vars = set(self.dom); fids = sorted(self.factors); self.simulate(order)
-        roots = []
-        for comp in _components(all_vars, [self.fscope[f] for f in fids]):
-            cf = [f for f in fids if set(self.fscope[f]) & comp]
-            roots.append(self._region(comp, (), cf, order, plan))
-        # scope-free factors (none after reductions, but rules=[] keeps them): fold each into a scalar root bucket
-        for f in fids:
+        """bucket tree along `order` (children = the buckets whose message is consumed here; they are exactly the connected components of the residual
+        hypergraph after conditioning on this bucket's variable, see the module docstring), then the frozen two-axis cutset rule applied top-down
+        (iteratively): the LAST child in the order of a region may be merged into the region's top bucket when their joint domain is <= 4,096 and the
+        cold estimate (two top buckets separately vs the joint bucket) favours it. Returns the root buckets."""
+        self.simulate(order); pos = {v: i for i, v in enumerate(order)}; bucket_of = {}
+        for v in order:
+            bag, ops, vol, fids, kids = self.sim[v]; scope = tuple(sorted(bag - {v})); card = tuple(len(self.dom[u]) for u in scope)
+            children = [bucket_of[u] for u in sorted(kids, key=lambda u: pos[u])]
+            b = self._new_bucket([v], fids, children, scope, card, plan); b.prov["cutset"] = "ONE_AXIS"; bucket_of[v] = b
+        roots = [bucket_of[v] for v in order if not (self.sim[v][0] - {v})]
+        for f in sorted(self.factors):                                                        # scope-free factors (rules = []): one scalar root bucket each
             if not self.fscope[f]:
-                b = self._new_bucket([], [f], [], (), (), plan); roots.append(b)
+                roots.append(self._new_bucket([], [f], [], (), (), plan))
+        if self.cfg["two_axis"]:
+            stack = list(roots)
+            while stack:
+                b = stack.pop(); self.clock.tick(1)
+                if b.children and len(b.elim) == 1:
+                    y_b = max(b.children, key=lambda c: pos[c.elim[-1]]); x = b.elim[0]; y = y_b.elim[-1]
+                    if len(y_b.elim) == 1 and len(self.dom[x]) * len(self.dom[y]) <= TWO_AXIS_JOINT_MAX:
+                        bx, ox, vx, _, _ = self.sim[x]; by, oy, vy, _, _ = self.sim[y]; joint = bx | by; vj = prod(len(self.dom[u]) for u in joint)
+                        w1, m1 = vx * ox + vy * oy, prod(len(self.dom[u]) for u in bx - {x}) + prod(len(self.dom[u]) for u in by - {y})
+                        w2, m2 = vj * (ox + oy - 1), prod(len(self.dom[u]) for u in joint - {x, y}); self.clock.tick(2)
+                        if (w2, m2) < (w1, m1):
+                            b.elim = [y, x]; b.fids = list(y_b.fids) + list(b.fids); b.children = [c for c in b.children if c is not y_b] + list(y_b.children)
+                            for c in y_b.children:
+                                c.consumer = b
+                            b.scope = tuple(sorted(joint - {x, y})); b.card = tuple(len(self.dom[u]) for u in b.scope); b.raw_scope_card = b.card; b.core_card = b.card
+                            b.prov["cutset"] = "TWO_AXIS_POLICY"; b.two_axis = True; plan.buckets.remove(y_b); plan.mechanisms["two_axis"]["chosen"] += 1
+                        else:
+                            plan.mechanisms["two_axis"]["declined"] += 1
+                    elif len(y_b.elim) == 1:
+                        plan.mechanisms["two_axis"]["ineligible"] += 1
+                stack.extend(b.children)
         return roots
 
     def _new_bucket(self, elim, fids, children, scope, card, plan):
         b = Bucket(self.next_bid, elim, fids, children, scope, card); self.next_bid += 1; plan.buckets.append(b)
         for c in children:
             c.consumer = b
-        return b
-
-    def _region(self, interior, boundary, fids, order, plan):
-        """interior: set of vars; boundary: tuple of external vars this region may depend on; fids: factors with scope inside interior+boundary"""
-        self.clock.tick(1)
-        order_in = [v for v in order if v in interior]
-        x = order_in[-1]; D = [x]; prov = "ONE_AXIS"
-        if self.cfg["two_axis"] and len(order_in) >= 2:
-            y = order_in[-2]
-            if len(self.dom[x]) * len(self.dom[y]) <= TWO_AXIS_JOINT_MAX:
-                bx, ox, vx = self.sim[x]; by, oy, vy = self.sim[y]; joint = bx | by; vj = prod(len(self.dom[u]) for u in joint)
-                w1, m1 = vx * ox + vy * oy, prod(len(self.dom[u]) for u in bx - {x}) + prod(len(self.dom[u]) for u in by - {y})       # the two top buckets separately (the rest of the region is identical)
-                w2, m2 = vj * (ox + oy - 1), prod(len(self.dom[u]) for u in joint - {x, y}); self.clock.spend_meta(2)
-                if (w2, m2) < (w1, m1):
-                    D = [y, x]; prov = "TWO_AXIS_POLICY"; plan.mechanisms["two_axis"]["chosen"] += 1
-                else:
-                    plan.mechanisms["two_axis"]["declined"] += 1
-            else:
-                plan.mechanisms["two_axis"]["ineligible"] += 1
-        rest = set(interior) - set(D)
-        alpha = [f for f in fids if not (set(self.fscope[f]) & rest)]        # fully instantiated by D + boundary: owned here
-        residual = [f for f in fids if set(self.fscope[f]) & rest]
-        children = []
-        for comp in _components(rest, [self.fscope[f] for f in residual]):
-            cf = [f for f in residual if set(self.fscope[f]) & comp]
-            cb = set()
-            for f in cf:
-                cb |= set(self.fscope[f]) - comp
-            children.append(self._region(comp, tuple(sorted(cb)), cf, order, plan))
-        scope = set(boundary) & (set().union(*[set(self.fscope[f]) for f in alpha]) | set().union(*[set(c.scope) for c in children]) | set())
-        # the region's own free axes: boundary variables actually mentioned by its operands (others are irrelevant)
-        scope = tuple(sorted(scope)); card = tuple(len(self.dom[v]) for v in scope)
-        b = self._new_bucket(D, alpha, children, scope, card, plan); b.prov["cutset"] = prov; b.two_axis = len(D) > 1
         return b
 
     # ------------------------------------------------------------------ zero rows of a source along an axis (exact; cached)
@@ -273,7 +271,7 @@ class Builder:
         passes = 0
         while passes < MAX_DEMAND_PASSES:
             passes += 1; changed = False
-            for b in plan.buckets:
+            for b in sorted(plan.buckets, key=lambda q: -q.bid):             # parents first: a restricted consumer restricts its children in the same pass
                 self.clock.check_optional()
                 if b.consumer is None:
                     b.demand = "FULL"; b.demand_prov = "ROOT_FULL"; continue
@@ -442,6 +440,7 @@ def totals(B, plan, bytes_per_entry):
 
 # ---------------------------------------------------------------------------------------------------------------- emission to the IR
 def emit(B, plan):
+    """emit the IR program: buckets in ascending bid (children before parents, since a child is created before its consumer); no recursion"""
     P = IR.Program(); node_of = {}; src_nodes = {}; marker_nodes = {}
     def src(fid):
         if fid not in src_nodes:
@@ -451,12 +450,12 @@ def emit(B, plan):
         if v not in marker_nodes:
             marker_nodes[v] = P.marker(v, len(B.dom[v]))
         return marker_nodes[v]
-    def emit_bucket(b):
+    for b in sorted(plan.buckets, key=lambda q: q.bid):
         ops = [src(f) for f in b.fids] + [marker(v) for v in b.elim]
         for c in b.children:
-            cn = emit_bucket(c)
+            cn = P.nodes[node_of[c.bid]]
             if c.views:
-                gaxes = []                                                        # one descriptor per CHILD axis, in the child's axis order; output axes = the same variables (raw cardinalities)
+                gaxes = []
                 for k, w in enumerate(cn.axes):
                     if w in c.views:
                         reps, cls, ratio = c.views[w]; gaxes.append({"out_pos": k, "cls": tuple(cls), "ratio": tuple(ratio)})
@@ -465,16 +464,15 @@ def emit(B, plan):
                 cn = P.gather(cn, cn.axes, tuple(len(B.dom[w]) for w in cn.axes), gaxes, prov={"expands": c.bid})
             ops.append(cn)
         if not ops:
-            return None
+            continue
         axes = list(b.elim) + list(b.scope); card = [len(B.dom[v]) for v in axes]
         m = P.mul(ops, axes=axes, card=card)
         reps = {w: v for w, v in b.views.items()} if b.views else None
         n = P.reduce(m, set(b.elim), reps=reps, storage=b.storage, demand=b.demand, prov=dict(b.prov, bucket=b.bid, support=b.support_prov, demand=b.demand_prov, two_axis=b.two_axis, fused_from=list(b.fused_from)))
-        node_of[b.bid] = n.nid; return n
+        node_of[b.bid] = n.nid
     for r in plan.roots:
-        n = emit_bucket(r)
-        if n is not None:
-            P.roots.append(n.nid)
+        if r.bid in node_of:
+            P.roots.append(node_of[r.bid])
     plan.program = P; plan.node_of_bucket = node_of; return P
 
 
@@ -483,12 +481,17 @@ def plan(view, cfg, clock, bytes_per_entry, caps=None):
     """returns (chosen Plan, candidates record). view = TrustedReduced.proposal_view(); cfg = ARMS[arm]."""
     caps = caps or CAPS; B = Builder(view, cfg, clock); dom = B.dom; scopes = [B.fscope[f] for f in sorted(B.factors)]
     cands = []; plans = []
-    names = cfg["orders"] if cfg["general_planner"] else ("min_volume",)
-    orders = ORD.candidate_orders(dom, scopes, clock, names)
+    names = list(cfg["orders"]) if cfg["general_planner"] else ["min_volume"]
+    orders = []
+    for name in names:                                                         # construction priority: original-id (never capped) first, then min-volume, then min-fill
+        try:
+            o, info = ORD.ORDER_FN[name](dom, scopes, clock); orders.append((name, o, dict(info, state="COMPLETE")))
+        except PlanStop as ex:
+            if ex.kind == "CELL_DEADLINE":
+                raise
+            orders.append((name, None, {"name": name, "state": "ORDER_INCOMPLETE_" + ex.kind, "reason": ex.reason}))
     if not any(o is not None for _, o, _ in orders):
-        orders.append(("original_id", sorted(dom), {"name": "original_id", "state": "COMPLETE", "fallback": True}))
-    if not cfg["general_planner"] and all(o is None for n, o, _ in orders if n == "min_volume"):
-        orders.append(("original_id", sorted(dom), {"name": "original_id", "state": "COMPLETE", "fallback": "PLAIN original-order fallback"}))
+        orders.append(("original_id", sorted(dom), {"name": "original_id", "state": "COMPLETE", "fallback": "original-order baseline after heuristic cap exhaustion"}))
     for idx, (name, order, info) in enumerate(orders):
         if order is None:
             cands.append({"candidate": idx, "order": name, "state": info.get("state"), "reason": info.get("reason")}); continue
@@ -515,6 +518,7 @@ def plan(view, cfg, clock, bytes_per_entry, caps=None):
             pl.discovery_stop = {"kind": ex.kind, "reason": ex.reason}
             for b in pl.buckets:                 # a partial pass must not leave half-updated structure: views are per bucket atomic; demand stays conservative
                 pass
+        pl.mechanisms["views"]["compressed_axes"] = sum(len(b.views) for b in pl.buckets)          # recount on the FINAL topology (fusion resets merged buckets)
         B.storage_pass(pl, bytes_per_entry, caps)
         try:
             emit(B, pl)
@@ -524,7 +528,7 @@ def plan(view, cfg, clock, bytes_per_entry, caps=None):
         if big:
             cands.append({"candidate": idx, "order": name, "state": "NOT_REPRESENTABLE", "reason": "node %d: volume exceeds int64 (symbolic domain too large for an indexed route)" % big[0].nid, "order_info": info, "mechanisms": pl.mechanisms, "discovery_stop": pl.discovery_stop}); continue
         pl.totals = totals(B, pl, bytes_per_entry)
-        plans.append(pl); cands.append({"candidate": idx, "order": name, "state": "COMPLETE", "order_info": info, "totals": pl.totals, "mechanisms": pl.mechanisms, "discovery_stop": pl.discovery_stop})
+        plans.append(pl); cands.append({"candidate": idx, "order": name, "state": "COMPLETE", "order_info": info, "simulation_updates": B.sim_updates, "totals": pl.totals, "mechanisms": pl.mechanisms, "discovery_stop": pl.discovery_stop})
     if not plans:
         raise PlanStop("NOT_REPRESENTABLE", "no complete representable candidate order: %s" % [(c.get("order"), c.get("state"), (c.get("reason") or "")[:80]) for c in cands])
     best = min(range(len(plans)), key=lambda i: (plans[i].totals["cold_work_proxy"], plans[i].totals["peak_reserved_bytes_estimate"], i))
