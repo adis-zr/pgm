@@ -15,6 +15,7 @@ Proxies (documented; conservative for CPython 3.12 arm64): Fraction 128 B + 32 B
 from __future__ import annotations
 
 GIB = 1 << 30; MIB = 1 << 20
+RATIONAL_BYTES_FALLBACK = 160      # documented proxy per source entry during fallback preparation (sliced Fraction copy + integer + decimal string + list slots)
 CATEGORIES = ("source_ir_maps_output", "value_cache_blocks", "reverse_pinned", "pending_adjoints", "frames_scratch_pub")
 CAPS = {"source_ir_maps_output": 2 * GIB, "value_cache_blocks": 2 * GIB, "reverse_pinned": 1 * GIB, "pending_adjoints": 512 * MIB, "frames_scratch_pub": 512 * MIB}
 KERNEL_ORDER = ("value_cache_blocks", "source_ir_maps_output", "reverse_pinned", "pending_adjoints", "frames_scratch_pub")   # caps5 order of kernel3: values, index, reverse, pending, scratch

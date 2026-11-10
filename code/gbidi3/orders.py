@@ -31,7 +31,7 @@ def _greedy(dom, scopes, clock, score_fn, name):
     while remaining:
         best = None
         for v in sorted(remaining):
-            s = score_fn(v, adj, dom); clock.spend_meta(1)
+            s = score_fn(v, adj, dom, clock) if score_fn is _fill_score else score_fn(v, adj, dom); clock.spend_meta(1)
             if best is None or s < best[0] or (s == best[0] and v < best[1]):
                 best = (s, v)
         v = best[1]; nb = sorted(adj[v])
@@ -45,12 +45,14 @@ def _greedy(dom, scopes, clock, score_fn, name):
     return order, {"name": name, "updates": clock.meta - updates0}
 
 
-def _fill_score(v, adj, dom):
+def _fill_score(v, adj, dom, clock=None):
     nb = sorted(adj[v]); missing = 0
     for i in range(len(nb)):
         for j in range(i + 1, len(nb)):
             if nb[j] not in adj[nb[i]]:
                 missing += 1
+        if clock is not None:
+            clock.spend_meta(max(1, len(nb) - i - 1))                      # every neighbour-pair inspection is a metadata update (polled)
     return missing
 
 

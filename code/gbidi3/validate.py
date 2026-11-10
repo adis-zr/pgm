@@ -128,6 +128,18 @@ def _tree_coverage(P, T, all_occ, reduced_vars, tick):
 
 
 def validate(P, T, deadline=None, poll_every=4096):
+    """FAIL-CLOSED entry: a proposal that makes the checker itself fail (malformed container, wrong types, out-of-range indices) is REJECTED, never executed"""
+    try:
+        return _validate(P, T, deadline, poll_every)
+    except Invalid:
+        raise
+    except IR.IRError as ex:
+        raise Invalid(ex.reason)
+    except Exception as ex:                                                                    # noqa: BLE001 (deliberate: unknown failure of the checker = rejection)
+        raise Invalid("malformed proposal (%s: %s)" % (type(ex).__name__, str(ex)[:160]))
+
+
+def _validate(P, T, deadline=None, poll_every=4096):
     if not isinstance(T, TrustedReduced):
         raise Invalid("validation requires the immutable TrustedReduced snapshot")
     if not isinstance(P, IR.Program):
@@ -138,62 +150,71 @@ def validate(P, T, deadline=None, poll_every=4096):
         if deadline is not None and checks[0] % poll_every < n and time.monotonic() > deadline:
             raise Invalid("DEADLINE during plan validation")
     dom = T.dom; trusted = {f.fid: f for f in T.factors}
-    # ---------------------------------------------------------------- derived tables (finite witnesses re-checked entrywise)
+    # ---------------------------------------------------------------- 0. complete LOCAL semantics of every node, unconditionally (review R1a / R1b)
+    try:
+        IR.local_semantics(P, dom, tick)
+    except IR.IRError as ex:
+        raise Invalid(ex.reason)
+    # ---------------------------------------------------------------- 1. derived tables validated as coherent replacement GROUPS (review R1d)
     tables = {f.fid: f.table for f in T.factors}; scopes = {f.fid: f.scope for f in T.factors}; cards = {f.fid: f.card for f in T.factors}
     occ_of = {}; effective = set(trusted); additive_parent = {}
+    if not isinstance(P.derived, dict):
+        raise Invalid("derived table registry malformed")
+    groups = {}
     for dfid, d in P.derived.items():
         if dfid in trusted:
             raise Invalid("derived table id %s collides with a trusted occurrence" % (dfid,))
-        parent = d.get("parent")
-        if parent not in trusted:
-            raise Invalid("derived table %s names unknown parent %s" % (dfid, parent))
-        pf = trusted[parent]
-        if d["kind"] == "product_split":
-            k = d["axis_k"]
-            if not (0 <= k < len(pf.scope)):
+        if not isinstance(d, dict) or d.get("parent") not in trusted or d.get("kind") not in ("product_split", "additive_split"):
+            raise Invalid("derived table %s: malformed witness or unknown parent" % (dfid,))
+        groups.setdefault(d["parent"], []).append((dfid, d))
+    for parent, members in groups.items():
+        pf = trusted[parent]; kinds = {d["kind"] for _, d in members}
+        if len(kinds) != 1:
+            raise Invalid("occurrence %s: mixed decompositions (%s)" % (parent, sorted(kinds)))
+        kind = next(iter(kinds))
+        if kind == "product_split":
+            if len(members) != 2 or {d.get("part") for _, d in members} != {"u", "g"}:
+                raise Invalid("occurrence %s: a product split must register exactly its two complementary pieces u and g" % parent)
+            w0 = members[0][1]; k = w0.get("axis_k")
+            if not isinstance(k, int) or not (0 <= k < len(pf.scope)):
                 raise Invalid("derived split axis out of range")
-            u = tuple(Fr(x) for x in d["u"]); g = tuple(Fr(x) for x in d["g"])
+            u = tuple(Fr(x) for x in w0["u"]); g = tuple(Fr(x) for x in w0["g"])
+            for _, d in members[1:]:
+                if d.get("axis_k") != k or tuple(Fr(x) for x in d["u"]) != u or tuple(Fr(x) for x in d["g"]) != g:
+                    raise Invalid("occurrence %s: the two pieces of a product split carry different witnesses" % parent)
             if any(x < 0 for x in u) or any(x < 0 for x in g):
                 raise Invalid("derived split with a negative table")
             _check_product_split(pf, u, g, k); tick(len(pf.table))
-            if d["part"] == "u":
-                tables[dfid] = u; scopes[dfid] = (pf.scope[k],); cards[dfid] = (pf.card[k],)
-            elif d["part"] == "g":
-                tables[dfid] = g; scopes[dfid] = pf.scope[:k] + pf.scope[k + 1:]; cards[dfid] = pf.card[:k] + pf.card[k + 1:]
-            else:
-                raise Invalid("derived split part must be u or g")
-            occ_of[dfid] = dfid; effective.discard(parent); effective.add(dfid)
-        elif d["kind"] == "additive_split":
-            parts = [tuple(Fr(x) for x in t) for t in d["parts"]]
+            for dfid, d in members:
+                if d["part"] == "u":
+                    tables[dfid] = u; scopes[dfid] = (pf.scope[k],); cards[dfid] = (pf.card[k],)
+                else:
+                    tables[dfid] = g; scopes[dfid] = pf.scope[:k] + pf.scope[k + 1:]; cards[dfid] = pf.card[:k] + pf.card[k + 1:]
+                occ_of[dfid] = dfid; effective.add(dfid)
+            effective.discard(parent)
+        else:
+            parts0 = members[0][1].get("parts")
+            if not isinstance(parts0, (list, tuple)) or not parts0:
+                raise Invalid("additive split of occurrence %s: no parts" % parent)
+            parts = [tuple(Fr(x) for x in t) for t in parts0]
+            for _, d in members[1:]:
+                if [tuple(Fr(x) for x in t) for t in d.get("parts", [])] != parts:
+                    raise Invalid("occurrence %s: additive split members carry different witnesses" % parent)
             if any(len(t) != len(pf.table) for t in parts) or any(x < 0 for t in parts for x in t):
-                raise Invalid("additive split of factor %d malformed" % parent)
+                raise Invalid("additive split of occurrence %s malformed" % parent)
             for i in range(len(pf.table)):
                 if sum(t[i] for t in parts) != pf.table[i]:
-                    raise Invalid("additive split of factor %d: entry %d does not sum to the source" % (parent, i))
+                    raise Invalid("additive split of occurrence %s: entry %d does not sum to the source" % (parent, i))
             tick(len(pf.table))
-            j = d["index"]
-            if not (0 <= j < len(parts)):
-                raise Invalid("additive split index")
-            tables[dfid] = parts[j]; scopes[dfid] = pf.scope; cards[dfid] = pf.card; occ_of[dfid] = dfid; additive_parent[dfid] = parent
-        else:
-            raise Invalid("unknown derived witness kind %r" % d["kind"])
-    # ---------------------------------------------------------------- structure per node
-    seen_const = []; reduced_vars = set(dom)
-    for pos_i, n in enumerate(P.nodes):
-        if n.nid != pos_i:
-            raise Invalid("node ids are not positional")
-        for a, c in zip(n.axes, n.card):
-            if a not in dom:
-                raise Invalid("node %d: axis %s is not a reduced variable" % (n.nid, a))
-            compressed = n.kind == IR.REDUCE and n.reps is not None and any(r is not None and n.rmap[i] == n.axes.index(a) for i, r in enumerate(n.reps))
-            if not compressed and c != len(dom[a]):
-                raise Invalid("node %d: axis %s has cardinality %d but the reduced domain has %d" % (n.nid, a, c, len(dom[a])))
-        if len(set(n.axes)) != len(n.axes):
-            raise Invalid("node %d repeats an axis" % n.nid)
-        if n.volume > IR.INT64_MAX:
-            raise Invalid("node %d: volume exceeds int64" % n.nid)
-        if n.storage not in IR.STORAGE_CODE:
-            raise Invalid("node %d: unknown storage" % n.nid)
+            idxs = sorted(d.get("index") for _, d in members)
+            if idxs != list(range(len(parts))):
+                raise Invalid("occurrence %s: additive split must register every part index exactly once (got %s of %d parts)" % (parent, idxs, len(parts)))
+            for dfid, d in members:
+                tables[dfid] = parts[d["index"]]; scopes[dfid] = pf.scope; cards[dfid] = pf.card; occ_of[dfid] = dfid; additive_parent[dfid] = parent
+            # the PARENT stays the effective occurrence: the ONE ADD of all its parts covers it (ir.coverage ADD rule); a part used outside that ADD is an extra atom -> rejected
+    # ---------------------------------------------------------------- 2. per-node binding rules beyond the local semantics
+    seen_const = []; reduced_vars = set(dom); mk_below = IR.marked_axes_below(P)
+    for n in P.nodes:
         if n.kind in (IR.SOURCE, IR.MARKER, IR.CONSTANT) and n.storage != IR.STREAM:
             raise Invalid("node %d: leaves are STREAM" % n.nid)
         if n.demand != "FULL":
@@ -201,36 +222,19 @@ def validate(P, T, deadline=None, poll_every=4096):
                 raise Invalid("node %d: a demand hint requires DENSE storage" % n.nid)
             if n.demand != "EMPTY":
                 dl = list(n.demand)
-                if any(not isinstance(x, int) or not (0 <= x < n.volume) for x in dl) or sorted(set(dl)) != dl:
+                if any(not isinstance(x, int) or isinstance(x, bool) or not (0 <= x < n.volume) for x in dl) or sorted(set(dl)) != dl:
                     raise Invalid("node %d: demand list must be sorted, unique, inside the volume" % n.nid)
         if n.kind == IR.SOURCE:
             if n.fid not in tables:
                 raise Invalid("node %d names unknown factor %s" % (n.nid, n.fid))
             if n.axes != tuple(scopes[n.fid]) or n.card != tuple(cards[n.fid]):
                 raise Invalid("node %d: SOURCE axes %s / cards %s differ from the trusted factor %s" % (n.nid, n.axes, n.card, n.fid))
-            for a, c in zip(n.axes, n.card):
-                if len(dom[a]) != c:
-                    raise Invalid("node %d: axis %s cardinality %d != reduced domain %d" % (n.nid, a, c, len(dom[a])))
-        elif n.kind == IR.MARKER:
-            if n.var not in dom or n.axes != (n.var,) or n.card != (len(dom[n.var]),):
-                raise Invalid("node %d: MARKER malformed" % n.nid)
         elif n.kind == IR.CONSTANT:
-            if Fr(n.value) != T.scale or n.axes:
+            if Fr(n.value) != T.scale:
                 raise Invalid("node %d: the only admissible CONSTANT is the trusted scale %s (got %s)" % (n.nid, T.scale, n.value))
             seen_const.append(n.nid)
         elif n.kind == IR.GATHER:
             child = P.nodes[n.children[0]]
-            for k, g in enumerate(n.gaxes):
-                if not isinstance(g, dict) or "out_pos" not in g:
-                    raise Invalid("node %d: gather axis descriptor malformed" % n.nid)
-                if g["out_pos"] < 0 or g["out_pos"] >= len(n.axes):
-                    raise Invalid("node %d: gather out_pos out of range" % n.nid)
-            if len(set(g["out_pos"] for g in n.gaxes)) != len(n.gaxes):
-                raise Invalid("node %d: gather reads one output axis twice" % n.nid)
-            for a, c in zip(n.axes, n.card):
-                if len(dom[a]) != c:
-                    raise Invalid("node %d: gather output axis %s cardinality %d != reduced domain %d" % (n.nid, a, c, len(dom[a])))
-            # compressed child axes must be expanded with the child's own class witness; uncompressed axes are identities
             if child.kind == IR.REDUCE:
                 for k, g in enumerate(n.gaxes):                                                  # k = CHILD axis; its class witness sits at the MUL axis m with child.rmap[m] == k
                     m = next((i for i, r in enumerate(child.rmap) if r == k), None); rep = child.reps[m] if m is not None else None
@@ -240,29 +244,12 @@ def validate(P, T, deadline=None, poll_every=4096):
                     elif g.get("cls") is not None:
                         raise Invalid("node %d: class map on an uncompressed axis %s" % (n.nid, n.axes[g["out_pos"]]))
             elif any(g.get("cls") is not None for g in n.gaxes):
-                raise Invalid("node %d: class map on a non-REDUCE child" % n.nid)
-        elif n.kind == IR.ADD:
-            if len(n.children) < 1:
-                raise Invalid("node %d: empty ADD" % n.nid)
+                raise Invalid("node %d: class map on a non-REDUCE child (no producer witness)" % n.nid)
         elif n.kind == IR.MUL:
-            if len(n.children) < 1 or len(n.proj) != len(n.children):
-                raise Invalid("node %d: MUL malformed" % n.nid)
-            for ci, c in enumerate(n.children):
-                ch = P.nodes[c]
-                if len(n.proj[ci]) != len(ch.axes) or len(set(n.proj[ci])) != len(n.proj[ci]):
-                    raise Invalid("node %d: operand %d projection is not total / injective" % (n.nid, ci))
-            covered = set(p for pr in n.proj for p in pr)
-            if covered != set(range(len(n.axes))):
-                raise Invalid("node %d: output axis not produced by any operand" % n.nid)
             if n.storage == IR.SPARSE:
                 raise Invalid("node %d: SPARSE storage is a REDUCE(MUL) representation" % n.nid)
         elif n.kind == IR.REDUCE:
             child = P.nodes[n.children[0]]
-            if len(n.rmap) != len(child.axes) or len(n.reps) != len(child.axes):
-                raise Invalid("node %d: REDUCE map length" % n.nid)
-            kept = [r for r in n.rmap if r >= 0]
-            if sorted(kept) != list(range(len(n.axes))):
-                raise Invalid("node %d: REDUCE kept axes are not a bijection onto the output" % n.nid)
             if n.storage == IR.SPARSE:
                 if child.kind != IR.MUL:
                     raise Invalid("node %d: SPARSE requires a MUL child" % n.nid)
@@ -270,8 +257,9 @@ def validate(P, T, deadline=None, poll_every=4096):
                     raise Invalid("node %d: SPARSE REDUCE cannot carry compressed axes" % n.nid)
             if len([r for r in n.rmap if r < 0]) > 64:
                 raise Invalid("node %d: more than 64 eliminated axes in one REDUCE" % n.nid)
-        else:
-            raise Invalid("node %d: unknown kind %s" % (n.nid, n.kind))
+            for k, r in enumerate(n.rmap):
+                if r >= 0 and n.reps[k] is not None and child.axes[k] in mk_below[child.nid]:                     # the marker of this still-live axis is inside the message
+                    raise Invalid("node %d: axis %s is compressed although its original marker occurs inside the message (value-at-one is not polynomial preservation)" % (n.nid, child.axes[k]))
         tick()
     if len(seen_const) > 1:
         raise Invalid("more than one CONSTANT node")
@@ -340,10 +328,10 @@ def validate(P, T, deadline=None, poll_every=4096):
                 elif op.kind == IR.GATHER and op.gaxes and any(g["out_pos"] == pos_in_op and g.get("cls") is not None for g in op.gaxes):
                     g = next(g for g in op.gaxes if g["out_pos"] == pos_in_op); mviews.append((tuple(g["cls"]), tuple(Fr(x) for x in g["ratio"])))
                 elif op.kind == IR.MARKER:
-                    continue                                                    # the marker is 1 at every state: proportional with ratio 1
+                    raise Invalid("node %d axis %s: the marker of the compressed axis is an operand of the message" % (n.nid, w))
                 else:
                     raise Invalid("node %d axis %s: operand %d is neither a trusted table nor a class-expanded message along the axis" % (n.nid, w, ci))
-            if not frows and not mviews and not any(P.nodes[cn].kind == IR.MARKER and w in P.nodes[cn].axes for cn in child.children):
+            if not frows and not mviews:
                 raise Invalid("node %d axis %s: no operand contains the axis" % (n.nid, w))
             zero = [any(all(x == 0 for x in rows[a]) for rows in frows) for a in range(nraw)]
             for a in range(nraw):

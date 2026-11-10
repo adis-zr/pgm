@@ -27,6 +27,11 @@ def write_uai(path, card, factors, ev=None, tokens=None):
     open(path + ".evid", "w").write("%d %s\n" % (len(ev), " ".join("%d %d" % (v, s) for v, s in ev.items())) if ev else ""); return path, path + ".evid"
 
 
+def fixture_seed(name):
+    """DETERMINISTIC fixture seed (review F6): sha256 of the case name, independent of PYTHONHASHSEED (hash(name) differed between interpreter runs)"""
+    return int(hashlib.sha256(name.encode()).hexdigest()[:8], 16) % 1000
+
+
 def rnd_model(seed, card, scopes, zeros=0.0, lo=1, hi=99):
     r = random.Random(seed); facs = []
     for sc in scopes:
@@ -74,8 +79,8 @@ def truth_inside(rec, mp, ep):
     return all(len(rec["certified_intervals"][str(v)]) == S.model.card[v] for v in range(S.model.nvars)) and contained(rec, rows)
 
 
-def publish(out, mp, ep, rec):
-    cell = {"phases_s": {}}; st = EX.publish(out, mp, ep, rec, cell, time.monotonic() + 30); return st, cell
+def publish(out, mp, ep, rec, arm=None, cfg=None):
+    cell = {"phases_s": {}}; st = EX.publish(out, mp, ep, rec, cell, time.monotonic() + 30, arm=arm or rec.get("arm"), cfg=cfg or rec.get("config")); return st, cell
 
 
 def counters(rec):
@@ -136,7 +141,7 @@ MODES = {"policy": ({}, RULES_ALL), "forced_stream": ({"force_stream": True}, RU
 @pytest.mark.parametrize("name", list(CASES))
 @pytest.mark.parametrize("arm", ARMS)
 def test_every_arm_encloses_exact_truth_on_every_input_class(tmp_path, name, arm):
-    card, scopes, zeros, ev = CASES[name]; facs = rnd_model(hash(name) % 1000, card, scopes, zeros)
+    card, scopes, zeros, ev = CASES[name]; facs = rnd_model(fixture_seed(name), card, scopes, zeros)
     mp, ep = write_uai(str(tmp_path / (name + ".uai")), card, facs, ev)
     for mode, (hooks, rules) in MODES.items():
         rec = run(arm, mp, ep, str(tmp_path / mode), hooks=hooks, rules=rules)
@@ -149,7 +154,7 @@ def test_every_arm_encloses_exact_truth_on_every_input_class(tmp_path, name, arm
 
 @pytest.mark.parametrize("name", list(CASES))
 def test_every_execution_mode_matches_the_oracle_rows_exactly_when_run_through_the_exact_fallback(tmp_path, name):
-    card, scopes, zeros, ev = CASES[name]; facs = rnd_model(hash(name) % 1000 + 7, card, scopes, zeros); mp, ep = write_uai(str(tmp_path / "m.uai"), card, facs, ev); S, Z, N, rows = truth(mp, ep)
+    card, scopes, zeros, ev = CASES[name]; facs = rnd_model(fixture_seed(name) + 7, card, scopes, zeros); mp, ep = write_uai(str(tmp_path / "m.uai"), card, facs, ev); S, Z, N, rows = truth(mp, ep)
     rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "fb"), hooks={"force_fallback": True}, rules=[])
     if Z == 0:
         assert rec["status"] == "ZERO_EVIDENCE_PROVED"; return
@@ -253,6 +258,11 @@ def test_C04_dead_representative_live_class_preserved(tmp_path):
     mp, ep = write_uai(str(tmp_path / "c04.uai"), [2, 2], [((0, 1), [1, 1, 2, 2]), ((1,), [0, 1])]); S, Z, N, rows = truth(mp, ep); assert Z == 3 and N[0] == [1, 2] and N[1] == [0, 3]
     rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "o"), rules=[], b64=False)
     assert rec["status"] == "INTERVALS_OK" and exact_rows(rec, rows)
+    # FIXTURE CHANGE (repair 2026-11-10, D2): under the ONE whole-path cost the default arm FUSES this two-variable chain (cheaper; recorded decision), which leaves
+    # no boundary axis to compress; the class formation is asserted on the production A2_NO_FUSION arm (identical except the fusion switch)
+    if rec["mechanisms"]["fusion"]["merged"]:
+        assert any(d.get("merged") and d["cost_fused"] < d["cost_unfused"] for d in rec["plan_candidates"][0].get("fusion_decisions") or []), rec["plan_candidates"][0].get("fusion_decisions")
+        rec = run("A2_NO_FUSION", mp, ep, str(tmp_path / "o_nofusion"), rules=[], b64=False); assert rec["status"] == "INTERVALS_OK" and exact_rows(rec, rows)
     assert rec["mechanisms"]["views"]["compressed_axes"] >= 1 and rec["plan_validation"]["entrywise_checks"] > 0, rec["mechanisms"]       # the class {S=0, S=1} IS formed (rows (1,2) proportional) and lifted whole
 
 
@@ -299,7 +309,10 @@ def test_C07_zero_safety_inconsistency_zero_numerators_empty_sparse_zero_scalar_
     mp, ep = write_uai(str(tmp_path / "es.uai"), [2, 2], [((0, 1), [0, 3, 0, 5]), ((1,), [1, 0])]); S, Z, N, rows = truth(mp, ep); assert Z == 0
     rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "e"), rules=[], hooks={"mutate_program": set_storage(IR.SPARSE)}); assert rec["status"] == "ZERO_EVIDENCE_PROVED" and counters(rec).get("sparse_output_rows", 0) >= 0
     mp, ep = write_uai(str(tmp_path / "es2.uai"), [2, 2, 2], [((0, 1), [0, 3, 0, 5]), ((1, 2), [1, 0, 2, 4])]); S, Z, N, rows = truth(mp, ep)
-    rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "e2"), rules=[], hooks={"mutate_program": set_storage(IR.SPARSE)}, b64=False); assert exact_rows(rec, rows) and counters(rec)["sparse_output_rows"] >= 1 and counters(rec)["zero_skips"] >= 1
+    rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "e2"), rules=[], hooks={"mutate_program": set_storage(IR.SPARSE)}, b64=False); cc = counters(rec)
+    # FIXTURE CHANGE (repair 2026-11-10, D3): the sparse reverse is now support-indexed, so absent (zero) rows are never visited in reverse; the former witness
+    # `zero_skips >= 1` (zero rows met by the generic reverse enumeration) is replaced by the honest one: support-based reverse deliveries, no generic fallback
+    assert exact_rows(rec, rows) and cc["sparse_output_rows"] >= 1 and cc["sparse_reverse_rows"] >= 1 and cc["sparse_reverse_generic"] == 0, cc
     # product-zero classes with DIFFERENT zero-witness factors: in the bucket eliminating A (operands f1(A,S), f2(A,S), M_A) S=0 is a zero row of f1 and S=1 a zero
     # row of f2 -> both states have a zero complete product and share the ZERO class (any ratio is exact); S=2 is separate; h(S,B) keeps S a boundary axis
     mp, ep = write_uai(str(tmp_path / "pz.uai"), [2, 3, 2], [((0, 1), [0, 1, 2, 0, 3, 4]), ((0, 1), [1, 0, 5, 1, 0, 7]), ((1, 2), [1, 2, 3, 4, 5, 6])]); S, Z, N, rows = truth(mp, ep)
@@ -632,7 +645,7 @@ def test_C20_every_corruption_class_is_rejected_or_cannot_reach_execution(tmp_pa
     rejects(lambda Q: setattr(Q.nodes[mul.nid], "card", tuple(c + 1 for c in Q.nodes[mul.nid].card)))                                            # changed cardinality
     rejects(lambda Q: setattr([n for n in Q.nodes if n.kind == IR.SOURCE][0], "fid", 999), "unknown factor")                                      # changed table identity
     rejects(lambda Q: setattr([n for n in Q.nodes if n.kind == IR.SOURCE][0], "axes", tuple(reversed([n for n in Q.nodes if n.kind == IR.SOURCE][0].axes))) if len([n for n in Q.nodes if n.kind == IR.SOURCE][0].axes) == 2 else setattr(Q.nodes[mul.nid], "card", (1,) * len(Q.nodes[mul.nid].card)))  # changed scope orientation
-    rejects(lambda Q: Q.roots.append(Q.roots[0]), "duplicate root")
+    rejects(lambda Q: Q.roots.append(Q.roots[0]), "duplicate")
     rejects(lambda Q: setattr(Q.nodes[0], "nid", 1), "positional")
     with pytest.raises(IR.IRError):
         Q = IR.Program(); Q.add(IR.ADD, (0,), (3,), children=(5,))                                                                               # a child that does not precede: cycles are unrepresentable
@@ -676,7 +689,7 @@ def test_C21_task_and_publication_attacks(tmp_path):
     rec1 = run("GENERAL_BIDI_COMPLETE_V3", mp1, ep1, out1, rules=[], b64=False); st, cell = publish(out1, mp1, ep1, rec1); assert st == "CERTIFIED" and U.read_mar(os.path.join(out1, "output.MAR"))[0][0] == [Fr(0), Fr(1)]
     # mutated records: wrong eps / queries / nvars / status / missing rows / extra rows / malformed interval / width-passing but point-infeasible / stale REJECTED
     def mutated(mutator):
-        r2 = copy.deepcopy(rec0); mutator(r2); o = str(tmp_path / ("m%d" % abs(hash(str(mutator))))); os.makedirs(o, exist_ok=True); return publish(o, mp, ep, r2)[0], o
+        r2 = copy.deepcopy(rec0); mutator(r2); mutated.k = getattr(mutated, "k", 0) + 1; o = str(tmp_path / ("m%d" % mutated.k)); os.makedirs(o, exist_ok=True); return publish(o, mp, ep, r2)[0], o
     for mut in (lambda r: r["task"].__setitem__("eps", "1/100"), lambda r: r["task"].__setitem__("queries_sha256", "x"), lambda r: r["task"].__setitem__("nvars", 3), lambda r: r.__setitem__("status", "REJECTED"), lambda r: r["certified_intervals"].pop("1"), lambda r: r["certified_intervals"].__setitem__("1", r["certified_intervals"]["1"][:2]), lambda r: r["task"].pop("raw_evidence_sha256")):
         st, o = mutated(mut); assert st == "CHECK_FAILED" and not os.path.exists(os.path.join(o, "output.MAR")), mut
     def infeasible(r):
@@ -690,7 +703,7 @@ def test_C21_task_and_publication_attacks(tmp_path):
         r["certified_intervals"]["1"] = [["1/3", "1/3"], ["1/3", "1/3"], ["1/3", "1/3"]]
         r["certified_intervals"]["1"] = [[str(Fr(1, 3) - Fr(1, 200)), str(Fr(1, 3) + Fr(1, 200))], ["1/3", "1/3"], ["1/3", "1/3"]]      # width exactly 1/100, endpoints not on the dyadic grid
     st, o = mutated(boundary); assert st in ("CERTIFIED_TOO_WIDE_DELIVERED", "CERTIFIED_WIDTH_ONLY_POINT_INFEASIBLE") and not os.path.exists(os.path.join(o, "output.MAR")), st
-    r2 = copy.deepcopy(rec0); boundary(r2); cell = {"phases_s": {}}; EX.publish(str(tmp_path / "bw"), mp, ep, r2, cell, time.monotonic() + 30)
+    r2 = copy.deepcopy(rec0); boundary(r2); cell = {"phases_s": {}}; os.makedirs(str(tmp_path / "bw"), exist_ok=True); EX.publish(str(tmp_path / "bw"), mp, ep, r2, cell, time.monotonic() + 30, arm=r2["arm"], cfg=r2["config"])
     assert cell["publication"]["delivered_width_met"] is False and Fr(cell["publication"]["max_width_observed"]) <= Fr(1, 100) < Fr(cell["publication"]["delivered_max_width"])     # pre-grid width passes, DELIVERED width does not: refused
     # the delivered MAR is corrupted after checking -> the separate verifier rejects (malformed decimal / extra row / wrong sum)
     for body in ("MAR\n2 2 1 0 3 0.3 0.3 0.4\n", "MAR\n2 2 1 0 3 0.3 0.3 0.3 2 1 0\n", "MAR\n2 2 1 0 3 0.3 abc 0.4\n", "MAR\n2 2 1 0 3 0.33 0.33 0.33\n", "MAR\n1 2 1 0\n"):
@@ -758,9 +771,11 @@ def test_C22_every_category_cap_python_storage_pending_transfers_fallback_export
         nodes += [6, 0, 1, 0, 0, 2 * nf + i, -1, -1]                                     # REDUCE_i over i -> scalar root (DENSE)
     prog += [4 * nf] + nodes + [nf] + [3 * nf + i for i in range(nf)]
     a = (c_.c_int64 * len(prog))(*prog); qs = (c_.c_char_p * (nf + 1))(*([b"1/1"] * (nf + 1))); dv = (c_.c_double * (nf + 1))(*([1.0] * (nf + 1))); caps = (c_.c_uint64 * 5)(*([1 << 28] * 5)); err = c_.c_int()
-    h = L.gb3_create(1, 53, a, len(prog), qs, dv, nf, 0, 0, caps, 0.0, c_.byref(err)); assert h, err.value
-    st = L.gb3_forward(c_.c_void_p(h)); cnt = EX._counters(L, h); L.gb3_destroy(c_.c_void_p(h))
-    assert st == 1 and cnt["polls"] == 1 and cnt["source_reads"] + cnt["mults"] + cnt["adds"] + cnt["value_frames"] + cnt["pullback_frames"] + nf + 1 <= 4096 + 8, cnt   # the first poll within the quantum (3,001 load units + forward units)
+    h0 = L.gb3_create(1, 53, a, len(prog), qs, dv, nf, 0, 0, caps, 0.0, c_.byref(err)); assert not h0 and err.value == 1, err.value                  # FIXTURE CHANGE (repair E5): program parsing polls -> an already-expired deadline is refused AT CREATE (typed DEADLINE, clean teardown)
+    h = L.gb3_create(1, 53, a, len(prog), qs, dv, nf, 0, 0, caps, 0.6, c_.byref(err)); assert h, err.value
+    c0 = EX._counters(L, h); time.sleep(0.7); st = L.gb3_forward(c_.c_void_p(h)); cnt = EX._counters(L, h); L.gb3_destroy(c_.c_void_p(h))
+    fw = {k: cnt[k] - c0[k] for k in ("polls", "source_reads", "mults", "adds", "value_frames", "pullback_frames")}
+    assert st == 1 and fw["polls"] == 1 and fw["source_reads"] + fw["mults"] + fw["adds"] + fw["value_frames"] + fw["pullback_frames"] <= 4096 + 8, (c0["polls"], fw)   # the first FORWARD poll within one quantum of forward work (create's own polls counted separately)
     # K2 (repaired latent defect): a DEADLINE that fires DURING value loading (MPFR mode: strlen + conversion polls) must not crash in the destructor
     qs2 = (c_.c_char_p * (nf + 1))(*([b"1/1"] * (nf + 1))); h2 = L.gb3_create(0, 64, a, len(prog), qs2, None, nf, 0, 0, caps, 0.0, c_.byref(err)); assert not h2 and err.value == 1, err.value   # DEADLINE at create, clean teardown
     # bad_alloc at the C ABI is a typed MEMORY stop, not a process abort; the fallback completes
@@ -882,9 +897,10 @@ def test_C24_all_seven_arms_end_to_end_through_the_real_harness_resume_and_close
     card = [2, 3, 2]; facs = rnd_model(12, card, [(0, 1), (1, 2), (0, 2)]); dec = lambda q: "%d.%02d" % divmod(q.numerator * (100 // q.denominator), 100)
     mp, ep = write_uai(str(inputs / "X.uai"), card, facs, {2: 1}, tokens=[[dec(x) for x in tab] for _, tab in facs]); S, Z, N, rows = truth(mp, ep)
     cfg_adp = os.path.join(HERE, "runs", "mdi_2026-10-28", "AGGREGATE_DP_CENSUS_2026-11-08", "CONFIG_new_arm.json"); br = json.load(open(os.path.join(HERE, "gbidi3", "BUILD_RECORD.json")))
-    case = {"family": "F", "model_path": mp, "evidence_path": ep, "raw_model_sha256": EX.sha_file(mp), "raw_evidence_sha256": EX.sha_file(ep), "canonical_model_sha256": S.task["canonical_model_sha256"], "canonical_evidence_sha256": S.task["canonical_evidence_sha256"], "canonical_v2_model_sha256": S.task["canonical_v2_model_sha256"], "canonical_v2_evidence_sha256": S.task["canonical_v2_evidence_sha256"], "variables": 3}
+    from gbidi3 import identity as ID
+    case = dict({k: S.task[k] for k in GS.TASK_BINDING_FIELDS}, family="F", model_path=mp, evidence_path=ep, variables=3)
     src = ["gbidi3/executor.py", "gbidi3/kernel3.cpp", "gbidi3/pilot.py", "gbidi3/reconcile.py", "gbidi3/arm_adapter.py", "gbidi/supervise.py", "adp/cell.py", "bench/cells.py"]
-    man = {"pass": "QUALIFICATION_E2E", "manifest_status": "FROZEN", "qualification_unfrozen": True, "frozen_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 2)), "commit": "unfrozen", "branch": "test", "seed": PI.SEED, "source_files_sha256": {f: EX.sha_file(os.path.join(HERE, f)) for f in src}, "kernel_binary_sha256": br["binary_sha256"], "config_adp_repaired_path": os.path.relpath(cfg_adp, HERE), "config_adp_repaired_sha256": EX.sha_file(cfg_adp), "common_rules": list(PL.COMMON_RULES),
+    man = {"pass": "QUALIFICATION_E2E", "manifest_status": "FROZEN", "qualification_unfrozen": True, "frozen_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 2)), "commit": "unfrozen", "branch": "test", "seed": PI.SEED, "source_files_sha256": {f: EX.sha_file(os.path.join(HERE, f)) for f in src}, "kernel_binary_sha256": br["binary_sha256"], "kernel_build": br, "python_sources_sha256": ID.python_sources_sha256(), "protocol": ID.PROTOCOL, "config_adp_repaired_path": os.path.relpath(cfg_adp, HERE), "config_adp_repaired_sha256": EX.sha_file(cfg_adp), "common_rules": list(PL.COMMON_RULES),
            "arms_config": {a: dict(PL.ARMS[a], cell_config=PI.CELL_CONFIG) for a in PL.ARMS}, "ceiling_s": 28800.0, "closeout_reserve_s": 0.0, "cases": {"X": case}, "unavailable_slots": [], "cells": []}
     arms = ["GENERAL_BIDI_COMPLETE_V3", "NATIVE_PLAIN_COMPLETE_V3", "ADP_REPAIRED", "EXACT_LIBDAI", "A1_NO_DEMAND_MASKS", "A2_NO_FUSION", "A3_NO_RESPONSE_VIEWS"]
     for i, arm in enumerate(arms):
@@ -909,8 +925,11 @@ def test_C24_all_seven_arms_end_to_end_through_the_real_harness_resume_and_close
         rec = copy.deepcopy(good); mut(rec); json.dump(rec, open(cj, "w")); r = RC.reconcile(D, man, man["cells"][1], idx); json.dump(good, open(cj, "w")); return r
     r = row_with(lambda rec: rec.__setitem__("deadline_s", 120.0)); assert not r["accepted"] and any("budget" in x for x in r["reasons"])
     r = row_with(lambda rec: rec["config"].__setitem__("allow_binary64", False)); assert not r["accepted"] and any("configuration" in x for x in r["reasons"])
-    r = row_with(lambda rec: rec.__setitem__("backend", {})); assert not r["accepted"] and any("kernel" in x for x in r["reasons"])
+    r = row_with(lambda rec: rec["execution"]["implementation"].__setitem__("binary_sha256", "0" * 64) if rec["execution"]["route"] in ("binary64", "mpfr", "exact_fallback") else rec["execution"]["implementation"].__setitem__("python_sources_sha256", {})); assert not r["accepted"] and any("execution identity" in x for x in r["reasons"])
+    r = row_with(lambda rec: rec.__setitem__("execution", {})); assert not r["accepted"] and any("execution identity" in x for x in r["reasons"])
     r = row_with(lambda rec: rec["task"].__setitem__("canonical_v2_model_sha256", "0" * 64)); assert not r["accepted"] and any("canonical_v2" in x for x in r["reasons"])
+    for k in ("orig_card", "eps", "max_width", "canonical_version"):
+        r = row_with(lambda rec, k=k: rec["task"].pop(k)); assert not r["accepted"] and any(k in x for x in r["reasons"]), k
     led_rows = [json.loads(x) for x in open(os.path.join(D, "GB_LEDGER.jsonl"))]; dup = [x for x in led_rows if x["kind"] == "RECEIPT" and x["job"] == RC.job_name(man["cells"][1])][0]
     open(os.path.join(D, "GB_LEDGER.jsonl"), "a").write(json.dumps(dup) + "\n"); r = RC.reconcile(D, man, man["cells"][1], RC.ledger_index(D)); assert not r["accepted"] and any("START/SPAWNED/RECEIPT" in x for x in r["reasons"])
     total2, by2, unresolved2, extra2 = PI.charged(D); assert extra2["duplicate_receipts"]

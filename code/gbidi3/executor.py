@@ -11,7 +11,7 @@ from __future__ import annotations
 import os, sys, json, time, math, ctypes, hashlib, subprocess, resource
 from fractions import Fraction as Fr
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-from gbidi3 import source as GS, ir as IR, planner as PL, validate as GV, memory as GM, clock as GC
+from gbidi3 import source as GS, ir as IR, planner as PL, validate as GV, memory as GM, clock as GC, identity as ID, demand as DM
 from gbidi3.trusted import TrustedReduced, Invalid
 from adp import source as SRC, publish as PB
 
@@ -20,8 +20,9 @@ LIB = os.path.join(HERE, "gbidi3", "libgbidi3_kernel.dylib"); BUILD_RECORD = os.
 PRECISIONS = (64, 128, 256, 512)
 ARMS = PL.ARMS
 STOP_NAMES = {0: "OK", 1: "DEADLINE", 2: "MEMORY", 3: "OVERFLOW", 4: "RANGE", 5: "BADPROG", 6: "FAULT", 7: "FPENV", 8: "LABEL"}
-COUNTER_NAMES = ("value_frames", "pullback_frames", "frames_combined", "max_frame_depth", "polls", "mults", "adds", "lookups", "zero_skips", "source_reads", "marker_updates", "gather_visits", "add_visits", "mul_rows", "reduce_terms", "stream_reevals", "reads_outside_demand", "regenerated_values", "dense_blocks", "entries_materialized", "entries_stored_planned", "sparse_rows_joined", "sparse_output_rows", "sparse_join_discarded", "cache_hits", "cache_misses", "cache_evictions", "cache_inserts", "adjoint_adds", "slots_drained", "early_flushes", "late_increments", "pending_peak_bytes", "downgrades", "root_ops", "numerator_adds", "used_values_bytes", "used_index_bytes", "used_reverse_bytes", "used_pending_bytes", "used_scratch_bytes", "peak_scratch_bytes", "cache_bytes")
-COUNTER_DEFINITIONS = {"units": "exact event counts of the implemented schedule (one logical interval operation = two MPFR endpoint operations); *_bytes are reserved capacities (not RSS)", "status": "EXACT (kernel counters) unless the record says otherwise", "source": "gbidi3/kernel3.cpp Counters + reservation manager"}
+COUNTER_NAMES = ("value_frames", "pullback_frames", "frames_combined", "max_frame_depth", "polls", "mults", "adds", "lookups", "zero_skips", "source_reads", "marker_updates", "gather_visits", "add_visits", "mul_rows", "reduce_terms", "stream_reevals", "reads_outside_demand", "regenerated_values", "dense_blocks", "entries_materialized", "entries_stored_planned", "sparse_rows_joined", "sparse_output_rows", "sparse_join_discarded", "cache_hits", "cache_misses", "cache_evictions", "cache_inserts", "adjoint_adds", "slots_drained", "early_flushes", "late_increments", "pending_peak_bytes", "downgrades", "root_ops", "numerator_adds", "used_values_bytes", "used_index_bytes", "used_reverse_bytes", "used_pending_bytes", "used_scratch_bytes", "peak_scratch_bytes", "cache_bytes", "reverse_tuples", "sparse_reverse_rows", "sparse_reverse_generic")
+COUNTER_DEFINITIONS = {"units": "exact event counts of the implemented schedule (one logical interval operation = two MPFR endpoint operations); *_bytes are reserved capacities (not RSS)", "status": "EXACT (kernel counters) unless the record says otherwise", "source": "gbidi3/kernel3.cpp Counters + reservation manager",
+                       "reduce_terms": "FORWARD eliminated tuples summed (stream evaluation and sparse join); never counts reverse work", "reverse_tuples": "REVERSE work: eliminated tuples visited by the GENERIC REDUCE pullback (never counted in reduce_terms)", "sparse_reverse_rows": "support-indexed reverse deliveries (retained join rows) of SPARSE nodes", "sparse_reverse_generic": "SPARSE nodes whose reverse ran through the generic tuple loop (labelled fallback; not a completed sparse reverse)", "source_reads": "source table loads in VALUE / PULLBACK / join (forward and reverse)"}
 LIVE = {"handle": None, "lib": None}
 
 
@@ -79,7 +80,7 @@ class Lib:
             L.gb3_mpfr_version.restype = ctypes.c_char_p; L.gb3_gmp_version.restype = ctypes.c_char_p; L.gb3_mpfr_emin.restype = ctypes.c_long; L.gb3_mpfr_emax.restype = ctypes.c_long; L.gb3_mpfr_emin_min.restype = ctypes.c_long; L.gb3_mpfr_emax_max.restype = ctypes.c_long
             L.gb3_bytes_per_entry.argtypes = [ctypes.c_int, ctypes.c_int]; L.gb3_bytes_per_entry.restype = ctypes.c_int64; L.gb3_block_entries.restype = ctypes.c_int64
             cls._lib = L; cls._build = b
-            if L.gb3_schedule_id().decode() != "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3":
+            if L.gb3_schedule_id().decode() != "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.1-sparse-reverse":
                 raise Refuse("FP_ENV", "kernel schedule id differs")
         return cls._lib
 
@@ -159,6 +160,9 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
             os.remove(p)
     rec = {"arm": arm, "schedule": "GENERAL_BIDI_COMPLETE_V3", "status": None, "model_path": os.path.abspath(model_path), "evidence_path": os.path.abspath(evid_path), "config": cfg, "mechanisms_enabled": {k: cfgA[k] for k in ("views", "demand_masks", "fusion", "general_planner", "two_axis")}, "attempts": [], "phases_s": phases, "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     budget_s = float(cfg.get("budget_s", max(0.0, deadline_mono - t_start)))
+    def bind_execution(route, attempt_id):
+        """execution identity of the route that produced this record (native routes bind the kernel; python exact routes bind their implementation files)"""
+        rec["execution"] = ID.execution_identity(arm, budget_s, cfg, route, attempt_id, build_record=(Lib._build if route in ID.NATIVE_ROUTES else None))
     def diag(stage):
         rec["diagnostic_stage"] = stage; rec["live"] = live_snapshot(); rec["memory_ledger"] = led.report()
         tmp = os.path.join(out, "diagnostic_record.json.tmp")
@@ -172,25 +176,31 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     def check_deadline(where):
         if remaining() <= 0:
             refuse("RESOURCE_STOP", "DEADLINE at %s" % where)
-    # ---------------- 1. snapshot
+    # ---------------- 1. snapshot (parsed under the ledger and the ONE deadline: every table is reserved BEFORE its rationals are built)
     t = time.monotonic()
     try:
-        S = snapshot or GS.Snapshot(model_path, evid_path)
+        if snapshot is not None:
+            S = snapshot
+            if getattr(S, "ledger_ref", None) is not led:
+                led.reserve("source_ir_maps_output", GM.model_bytes_estimate(S.model, len(S.model_bytes) + len(S.evid_bytes)), "caller snapshot handed in by the caller (built outside this ledger; charged on entry)")
+        else:
+            S = GS.Snapshot(model_path, evid_path, ledger=led, deadline=deadline_mono)
     except GS.InvalidInput as ex:
         rec["status"] = "INVALID_INPUT"; rec["reason"] = ex.reason; diag("invalid_input"); raise Refuse("INVALID_INPUT", ex.reason, rec)
-    rec["task"] = dict(S.task)
-    try:
-        led.reserve("source_ir_maps_output", GM.model_bytes_estimate(S.model, len(S.model_bytes) + len(S.evid_bytes)), "caller snapshot (bytes + parsed exact rationals)")
+    except GS.ParseStop as ex:
+        rec["memory_ledger"] = led.report(); refuse("RESOURCE_STOP", "%s during snapshot parsing: %s" % (ex.kind, ex.reason))
     except GM.MemoryStop as ex:
         refuse("RESOURCE_STOP", "MEMORY_CATEGORY: %s" % ex)
+    rec["task"] = dict(S.task)
     phases["snapshot"] = time.monotonic() - t; check_deadline("snapshot")
     if S.model.nvars == 0:
         Z = Fr(1)
         for f in S.model.factors:
             Z *= f.table[0]
         rec["reductions"] = {"steps": 0, "note": "zero-variable task: Z is the product of the scalar factors"}
+        bind_execution("exact_scalar", "exact_scalar|0")
         if Z == 0:
-            rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "zero model mass (zero scalar factor)"; rec["Z"] = "0"; return _write(out, record_prefix, rec)
+            rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "zero model mass (zero scalar factor)"; rec["Z"] = "0"; rec["route"] = "exact_scalar"; return _write(out, record_prefix, rec)
         rec["status"] = "INTERVALS_OK"; rec["certified_intervals"] = {}; rec["max_width"] = "0"; rec["route"] = "exact_scalar"; rec["precision"] = "exact"; rec["Z"] = str(Z); return _write(out, record_prefix, rec)
     # ---------------- 2. common reductions (shared rule list; the optional allowance bounds their wall)
     t = time.monotonic(); rules = tuple(cfg.get("rules", PL.COMMON_RULES)); clock = GC.Clock(deadline_mono, budget_s)
@@ -199,9 +209,14 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     if "_row_cap" in cfg:
         clock.row_cap = int(cfg["_row_cap"])                                               # qualification only (C13): interrupted optional discovery
     clock.begin_optional()
-    R = SRC.Reduced(_ModelAdapter(S.model), dict(S.ev)); red = R.reduce(rules, deadline=clock.optional_deadline)
+    try:
+        led.reserve("source_ir_maps_output", 2 * GM.model_bytes_estimate(S.model, 0) + 4096, "reduced model (adapter copy + reduced tables, bounded by twice the source)")   # the pinned reducer copies every table once; reductions never grow a table
+    except GM.MemoryStop as ex:
+        refuse("RESOURCE_STOP", "MEMORY_CATEGORY: %s" % ex)
+    R = SRC.Reduced(_ModelAdapter(S.model), dict(S.ev)); red = R.reduce(rules, deadline=min(clock.optional_deadline, deadline_mono))
     rec["reductions"] = dict(red, rules=list(rules), free_reduced=len(R.dom), scale=str(R.scale)); phases["reductions"] = time.monotonic() - t; check_deadline("reductions")
     if R.zero_proof is not None:
+        bind_execution("exact_decoder", "exact_decoder|0"); rec["route"] = "exact_decoder"
         rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "the common reductions proved Z = 0: %s" % json.dumps(R.zero_proof); rec["zero_proof"] = R.zero_proof; return _write(out, record_prefix, rec)
     # ---------------- 3. trusted snapshot + independent replay of the recorded steps
     t = time.monotonic()
@@ -212,6 +227,10 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     except Invalid as ex:
         refuse("REJECTED", "trusted snapshot: %s" % ex.reason)
     try:
+        led.reserve("source_ir_maps_output", 2 * GM.model_bytes_estimate(S.model, len(S.model_bytes) + len(S.evid_bytes)) + 4096, "independent replay (pinned checker's own parse + tables; bounded wrapper reserved BEFORE the call)")
+    except GM.MemoryStop as ex:
+        refuse("RESOURCE_STOP", "MEMORY_CATEGORY: %s" % ex)
+    try:
         rec["source_replay"] = T.independent_replay(model_path, evid_path, R.record(), deadline=deadline_mono)
     except Invalid as ex:
         refuse("REJECTED", ex.reason)
@@ -221,8 +240,9 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     L = Lib.get(); rec["backend"] = backend_record(); bpe_mpfr = {p: L.gb3_bytes_per_entry(0, p) for p in PRECISIONS}; bpe_dbl = L.gb3_bytes_per_entry(1, 53)
     if not T.dom:
         # every variable fixed / aliased away: the posterior is the decoder (constants) once Z = scale > 0
+        bind_execution("exact_decoder", "exact_decoder|0")
         if T.scale == 0:
-            rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "scale is zero"; return _write(out, record_prefix, rec)
+            rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "scale is zero"; rec["route"] = "exact_decoder"; return _write(out, record_prefix, rec)
         ivs = {}
         for v in range(T.nvars):
             ivs[str(v)] = [[str(e[1]), str(e[1])] for e in T.dec[v]]
@@ -230,7 +250,9 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     # ---------------- 4. plan (untrusted) on the proposal view, under the cell clock + optional allowance
     t = time.monotonic(); view = T.proposal_view()
     try:
-        plan, cands = PL.plan(view, cfgA, clock, bpe_mpfr[64], caps=led.caps)
+        plan, cands = PL.plan(view, cfgA, clock, bpe_mpfr[64], caps=led.caps, ledger=led)
+    except GM.MemoryStop as ex:
+        rec["clock"] = clock.record(); refuse("RESOURCE_STOP", "MEMORY_CATEGORY during planning: %s" % ex)
     except GC.PlanStop as ex:
         rec["plan_candidates"] = []; rec["clock"] = clock.record()
         if ex.kind == "CELL_DEADLINE":
@@ -245,12 +267,30 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
         hooks["mutate_program"](plan.program)
     if hooks.get("mutate_reduced"):
         hooks["mutate_reduced"](R)                                                            # qualification (C20): a planner that mutates the LIVE reduced object
+    # ---------------- 4b. SHARED programs (a node with several consumer use edges): the all-consumer demand compiler restricts DENSE storage only to the UNION of
+    # every consumer's reads (review F3); tree programs (the production planner's) are complete under the bucket-level pass and are left untouched
+    if plan is not None and any(len(u) > 1 for u in plan.program.consumers().values()):
+        t = time.monotonic(); cap = min(clock.remaining_rows(), 1_000_000)
+        try:
+            led.reserve("source_ir_maps_output", 48 * min(cap, sum(n.volume for n in plan.program.nodes)) + 4096, "all-consumer demand sets (bounded by the row cap; reserved BEFORE compilation)")
+            rec["demand_all_consumers"] = DM.compile_demand(plan.program, row_cap=cap, tick=lambda n=1: clock.tick(n), tables={f.fid: f.table for f in T.factors})
+        except GM.MemoryStop as ex:
+            rec["demand_all_consumers"] = {"status": "SKIPPED_MEMORY", "reason": str(ex)}                 # conservative: every node keeps its FULL / declared demand
+        except GC.PlanStop as ex:
+            if ex.kind == "CELL_DEADLINE":
+                refuse("RESOURCE_STOP", "DEADLINE during all-consumer demand compilation")
+            rec["demand_all_consumers"] = {"status": "SKIPPED_" + ex.kind}
+        phases["demand_all_consumers"] = time.monotonic() - t
     # ---------------- 5. validate -> the executable representation
     V = None
     if plan is not None:
         t = time.monotonic()
         if not T.unchanged(R):
             refuse("REJECTED", "the live reduced object was mutated during planning")
+        try:
+            led.reserve("source_ir_maps_output", IR.program_bytes_bound(plan.program) + 64 * len(plan.program.nodes) + 4096, "validated executable copy + validator tables (reserved BEFORE validation)")
+        except GM.MemoryStop as ex:
+            refuse("RESOURCE_STOP", "MEMORY_CATEGORY: %s" % ex)
         try:
             V = GV.validate(plan.program, T, deadline=deadline_mono)
         except Invalid as ex:
@@ -267,13 +307,15 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     if V is not None:
         t = time.monotonic()
         try:
-            prog, qs, nfac, nratio, nconst = IR.flatten(V)
-        except IR.IRError as ex:
-            refuse("REJECTED", "flatten: %s" % ex.reason)
-        try:
-            led.reserve("source_ir_maps_output", 8 * len(prog) + sum(len(s) + 56 for s in qs) + 64 * len(V.P.nodes), "flat program + value strings")
+            led.reserve("source_ir_maps_output", IR.flatten_bytes_bound(V), "flat program + value strings + ctypes arrays (bound computed BEFORE flattening)")
         except GM.MemoryStop as ex:
             refuse("RESOURCE_STOP", "MEMORY_CATEGORY: %s" % ex)
+        try:
+            prog, qs, nfac, nratio, nconst = IR.flatten(V, deadline=deadline_mono)
+        except IR.IRError as ex:
+            if "DEADLINE" in ex.reason:
+                refuse("RESOURCE_STOP", ex.reason)
+            refuse("REJECTED", "flatten: %s" % ex.reason)
         phases["flatten"] = time.monotonic() - t
         routes = []
         if cfg.get("allow_binary64", True) and not hooks.get("no_binary64"):
@@ -366,7 +408,7 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
                         row.append((mpfr_hex_to_fr(toks[i]), mpfr_hex_to_fr(toks[i + 1]))); i += 2
                     red[v] = row
                 if ZU == 0:
-                    att["outcome"] = "Z_UPPER_ZERO_PROVED"; rec["Z"] = ["0", "0"]; rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "complete outward execution proved Z = 0 (Z_U = 0)"; rec["route"] = route; rec["precision"] = prec; return _write(out, record_prefix, rec)
+                    att["outcome"] = "Z_UPPER_ZERO_PROVED"; rec["Z"] = ["0", "0"]; rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "complete outward execution proved Z = 0 (Z_U = 0)"; rec["route"] = route; rec["precision"] = prec; bind_execution(route, att["attempt_id"]); return _write(out, record_prefix, rec)
                 if ZL == 0:
                     att["outcome"] = "POSITIVITY_UNRESOLVED"; continue
                 encl = {v: [(nlo / ZU, nhi / ZL) for nlo, nhi in red[v]] for v in T.reduced_vars}
@@ -388,7 +430,7 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
             att["max_width"] = str(wmax); att["wall_s"] = time.monotonic() - t0
             if wmax > PB.MAX_WIDTH:
                 att["outcome"] = "TOO_WIDE"; continue
-            att["outcome"] = "INTERVALS"; result = (route, prec, ivs, wmax, ZL, ZU); break
+            att["outcome"] = "INTERVALS"; result = (route, prec, ivs, wmax, ZL, ZU, att["attempt_id"]); break
     # ---------------- 7. exact fallback over the ORIGINAL evidence-restricted factors (memory stop / not representable only; same clock)
     if hooks.get("force_fallback"):
         result = None; rec["stop"] = {"kind": "MEMORY", "phase": "forced_by_qualification_hook"}
@@ -397,9 +439,9 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
         if fb["status"] == "COMPLETE":
             Z = fb["Z"]
             if Z == 0:
-                rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "exact fallback: Z = 0"; rec["route"] = "exact_fallback"; return _write(out, record_prefix, rec)
+                rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "exact fallback: Z = 0"; rec["route"] = "exact_fallback"; bind_execution("exact_fallback", "exact_fallback|0"); return _write(out, record_prefix, rec)
             ivs = {v: [(q, q) for q in [fb["N"][v][a] / Z for a in range(S.model.card[v])]] for v in range(S.model.nvars)}
-            result = ("exact_fallback", "exact_integer", ivs, Fr(0), Z, Z)
+            result = ("exact_fallback", "exact_integer", ivs, Fr(0), Z, Z, "exact_fallback|0")
     if result is None:
         st = rec.get("stop") or {}
         if st.get("kind") == "DEADLINE":
@@ -418,7 +460,7 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
         if any(o and o.startswith("ROUTE_FAULT") for o in outs):
             refuse("NUMERIC_RANGE", "every route faulted: %s" % outs)
         refuse("NUMERIC_UNRESOLVED", "no route produced an enclosure: %s" % outs)
-    route, prec, ivs, wmax, ZL, ZU = result
+    route, prec, ivs, wmax, ZL, ZU, attempt_id = result; bind_execution(route, attempt_id)
     rec.update(status="INTERVALS_OK", route=route, precision=prec, max_width=str(wmax), Z=[str(ZL), str(ZU)], certified_intervals={str(v): [[str(a), str(b)] for a, b in ivs[v]] for v in ivs}, certifying="one authoritative numerical pass of the qualified executor on the validated program; binary64 labels / outward MPFR enclose the exact value; publication and separate task-bound verification follow")
     rec["memory_ledger"] = led.report(); return _write(out, record_prefix, rec)
 
@@ -488,8 +530,16 @@ def exact_fallback(S, deadline_mono, led, test_hooks=None):
     """mixed-radix enumeration of every evidence-compatible assignment of the ORIGINAL variables; every original factor occurrence multiplied once
     after per-factor denominator clearing (D_f = lcm of the restricted table's denominators); Z_int = (prod D_f) Z, N_int likewise; restored exactly."""
     L = Lib.get(); m = S.model; ev = S.ev; free = [v for v in range(m.nvars) if v not in ev]; pos = {v: i for i, v in enumerate(free)}
-    prog = [len(free)] + [m.card[v] for v in free]; vals = []; fdesc = []; scale = Fr(1); zero_scalar = False
+    total_entries = sum(len(f.table) for f in m.factors)
+    try:
+        led.reserve("frames_scratch_pub", 4 * GM.RATIONAL_BYTES_FALLBACK * total_entries + 64 * len(m.factors) + 8 * len(free) + 4096, "fallback preparation (sliced tables, denominators, integer strings) bound BEFORE construction")
+    except GM.MemoryStop as ex:
+        return {"status": "MEMORY", "reason": str(ex), "phase": "preparation", "allocated_before_stop": 0}
+    prog = [len(free)] + [m.card[v] for v in free]; vals = []; fdesc = []; scale = Fr(1); zero_scalar = False; visited_prep = 0
     for f in m.factors:
+        visited_prep += len(f.table)
+        if visited_prep % 4096 < len(f.table) and time.monotonic() > deadline_mono:
+            return {"status": "DEADLINE", "reason": "deadline during fallback preparation", "phase": "preparation", "visited": 0}
         st = f.strides(); keep = [k for k in range(len(f.scope)) if f.scope[k] not in ev]; base = sum(ev[v] * st[k] for k, v in enumerate(f.scope) if v in ev)
         if not keep:
             val = f.table[base]; scale *= val
@@ -510,10 +560,6 @@ def exact_fallback(S, deadline_mono, led, test_hooks=None):
     prog.append(len(fdesc))
     for sc, card, ent in fdesc:
         prog += [len(sc)] + sc + card + [ent]
-    try:
-        led.reserve("frames_scratch_pub", 8 * len(prog) + sum(len(s) + 1 for s in vals) + 8 * len(vals), "fallback program + integer strings")
-    except GM.MemoryStop as ex:
-        return {"status": "MEMORY", "reason": str(ex)}
     caps5 = (ctypes.c_uint64 * 5)(*led.kernel_caps()); parr = (ctypes.c_int64 * len(prog))(*prog); varr = (ctypes.c_char_p * max(1, len(vals)))(*([s.encode() for s in vals] or [b"1"])); err = ctypes.c_int(0)
     L.gb3_test_ref_fault(int((test_hooks or {}).get("ref_fault", 0)))
     Sref = L.gb3_ref_create(parr, len(prog), varr, max(0.0, deadline_mono - time.monotonic()), caps5, ctypes.byref(err))
@@ -543,48 +589,96 @@ def exact_fallback(S, deadline_mono, led, test_hooks=None):
 
 
 # ------------------------------------------------------------------------------------------------------------ publication (brief §15)
-def publish(out, model_path, evid_path, rec, cell_rec, deadline_mono, record_prefix="checked_record", snapshot=None):
+def publish(out, model_path, evid_path, rec, cell_rec, deadline_mono, record_prefix="checked_record", snapshot=None, arm=None, cfg=None, ledger=None):
+    """FAIL-CLOSED publication (review R2 / B): (1) the record must be INTERVALS_OK, bound to the caller's task on every binding field, and carry an
+    execution identity equal to the one the CALLER recomputes (arm, budget, full config, route, attempt, actual implementation files / kernel build);
+    (2) every stale verifier output is removed before launch; the verifier gets a unique attempt-specific output path, the expected task AND expected
+    execution identity, and the SAME absolute deadline; (3) the verifier must exit 0 AND leave a fresh receipt whose status is POINT_VERIFIED, whose
+    task / execution bindings equal the expectations and whose mar_sha256 equals the sha256 of the exact temporary bytes; (4) only those bytes are
+    atomically renamed to output.MAR. On ANY failure the temporary output and every verifier output are removed: no stale success can survive."""
+    def fail(status, reason):
+        for p in (os.path.join(out, "output.MAR.tmp"), os.path.join(out, "output.MAR"), os.path.join(out, "intervals.json")) + tuple(os.path.join(out, f) for f in os.listdir(out) if f.startswith("point_check") or f.startswith("expected_identity")):   # fail-closed: no deliverable survives a refused publication
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        cell_rec.setdefault("publication", {})["status"] = "NOT_PUBLISHED"; cell_rec["publication"]["reason"] = reason; return status
     try:
         S = snapshot or GS.Snapshot(model_path, evid_path)
     except GS.InvalidInput as ex:
-        cell_rec["publication"] = {"status": "NOT_PUBLISHED", "reason": "the caller's files are not a valid task at publication: %s" % ex.reason}; return "CHECK_FAILED"
+        return fail("CHECK_FAILED", "the caller's files are not a valid task at publication: %s" % ex.reason)
     if snapshot is not None and not S.path_still_matches():
-        cell_rec["publication"] = {"status": "NOT_PUBLISHED", "reason": "the caller's files changed after the snapshot"}; return "CHECK_FAILED"
+        return fail("CHECK_FAILED", "the caller's files changed after the snapshot")
     card = list(S.model.card)
     if rec.get("status") != "INTERVALS_OK":
-        cell_rec["publication"] = {"status": "NOT_PUBLISHED", "reason": "record status %r" % rec.get("status")}; return "CHECK_FAILED"
+        return fail("CHECK_FAILED", "record status %r" % rec.get("status"))
     if not GS.bound_to_task(rec.get("task"), S.task):
-        cell_rec["publication"] = {"status": "NOT_PUBLISHED", "reason": "record not bound to the caller's task"}; return "CHECK_FAILED"
+        return fail("CHECK_FAILED", "record not bound to the caller's task")
+    exe = rec.get("execution")
+    if not isinstance(exe, dict) or arm is None or cfg is None:
+        return fail("CHECK_FAILED", "record carries no execution identity or the caller supplied no arm / configuration to bind it")
+    budget_s = float(cfg.get("budget_s", 0.0)); route = exe.get("route")
+    try:
+        expected_exec = ID.execution_identity(arm, budget_s, cfg, route, exe.get("attempt_id"), build_record=(Lib._build or json.load(open(BUILD_RECORD))) if route in ID.NATIVE_ROUTES else None)
+    except Exception as ex:
+        return fail("CHECK_FAILED", "expected execution identity could not be computed: %s" % ex)
+    bad = ID.check_execution(exe, expected_exec)
+    if bad:
+        return fail("CHECK_FAILED", "record execution identity differs from the caller's expectation: %s" % bad[:3])
     ivs = {}
     for v in range(S.model.nvars):
         row = rec["certified_intervals"].get(str(v))
         if row is None or len(row) != card[v]:
-            cell_rec["publication"] = {"status": "NOT_PUBLISHED", "reason": "row %d missing or of wrong length" % v}; return "CHECK_FAILED"
+            return fail("CHECK_FAILED", "row %d missing or of wrong length" % v)
         ivs[v] = [(Fr(a), Fr(b)) for a, b in row]
+    for p in [os.path.join(out, "output.MAR.tmp"), os.path.join(out, "output.MAR"), os.path.join(out, "intervals.json")] + [os.path.join(out, f) for f in os.listdir(out) if f.startswith("point_check") or f.startswith("expected_identity")]:
+        try:
+            os.remove(p)                                                                      # a retry never inherits a stale success: every earlier delivery / receipt is removed BEFORE this attempt publishes
+        except OSError:
+            pass
     tmp = os.path.join(out, "output.MAR.tmp")
     if S.model.nvars == 0:
         with open(tmp, "w") as f:
             f.write("MAR\n0\n"); f.flush(); os.fsync(f.fileno())
         prep = {"status": "CERTIFIED", "grid_bits": None, "max_width_observed": "0", "delivered_max_width": "0", "rows": {}}
     else:
+        if ledger is not None:
+            try:
+                ledger.reserve("frames_scratch_pub", 400 * sum(card) + 4096, "publication rows + decimal strings")
+            except GM.MemoryStop as ex:
+                return fail("RESOURCE_STOP", "MEMORY_CATEGORY at publication: %s" % ex)
         points, prep = PB.publish_rows(ivs, card)
-        prep["delivered_max_width"] = prep.get("max_width_published_grid"); prep["delivered_width_met"] = Fr(prep["delivered_max_width"]) <= PB.MAX_WIDTH      # NEW (brief §15): the DELIVERED grid-widened width must meet the contract too
+        prep["delivered_max_width"] = prep.get("max_width_published_grid"); prep["delivered_width_met"] = Fr(prep["delivered_max_width"]) <= PB.MAX_WIDTH
         if points is None or not prep["delivered_width_met"]:
-            cell_rec["publication"] = prep; return prep["status"] if points is None else "CERTIFIED_TOO_WIDE_DELIVERED"
+            cell_rec["publication"] = {k: v for k, v in prep.items() if k != "widened_intervals"}; return prep["status"] if points is None else "CERTIFIED_TOO_WIDE_DELIVERED"
         PB.write_mar(tmp, points, card)
         with open(tmp, "rb+") as f:
             f.flush(); os.fsync(f.fileno())
         json.dump({str(v): [[str(a), str(b)] for a, b in prep["widened_intervals"][v]] for v in prep["widened_intervals"]}, open(os.path.join(out, "intervals.json"), "w"))
     cell_rec["publication"] = {k: v for k, v in prep.items() if k != "widened_intervals"}
     if not S.path_still_matches():
-        cell_rec["publication"]["status"] = "TASK_MISMATCH"; return "CHECK_FAILED"
-    rem = deadline_mono - time.monotonic(); pc = os.path.join(out, "point_check.json")
+        return fail("CHECK_FAILED", "the caller's files changed before verification")
+    tmp_sha = sha_file(tmp); attempt_tag = hashlib.sha256((str(exe.get("attempt_id")) + "|" + tmp_sha).encode()).hexdigest()[:12]; pc = os.path.join(out, "point_check.%s.json" % attempt_tag); exp_path = os.path.join(out, "expected_identity.%s.json" % attempt_tag)
+    json.dump({"task": S.task, "execution": expected_exec, "mar_sha256": tmp_sha}, open(exp_path, "w"))
+    rem = deadline_mono - time.monotonic()
+    if rem <= 0:
+        return fail("RESOURCE_STOP", "DEADLINE before the separate verification")
     try:
-        subprocess.run([sys.executable, "-m", "gbidi3.verify", os.path.join(out, record_prefix + ".json"), tmp, model_path, evid_path, pc], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), timeout=max(0.05, rem + 1), capture_output=True)
+        r = subprocess.run([sys.executable, "-m", "gbidi3.verify", os.path.join(out, record_prefix + ".json"), tmp, model_path, evid_path, pc, exp_path, "%.6f" % rem], cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), timeout=rem, capture_output=True)
     except subprocess.TimeoutExpired:
-        cell_rec["publication"]["verifier"] = "TIMEOUT"; return "RESOURCE_STOP"
-    ver = json.load(open(pc)) if os.path.exists(pc) else {"status": "MISSING"}; cell_rec["point_verification"] = ver
-    if ver.get("status") != "POINT_VERIFIED" or not S.path_still_matches():
-        return "CHECK_FAILED"
-    os.replace(tmp, os.path.join(out, "output.MAR")); cell_rec["certified"] = {"output_sha256": sha_file(os.path.join(out, "output.MAR")), "delivered_max_width": prep.get("delivered_max_width"), "pre_grid_max_width": prep.get("max_width_observed"), "point_target_met": True}
+        return fail("RESOURCE_STOP", "the separate verifier did not finish before the cell deadline")
+    if r.returncode != 0:
+        return fail("CHECK_FAILED", "the separate verifier exited %d: %s" % (r.returncode, (r.stderr or b"")[-300:].decode(errors="replace")))
+    if not os.path.exists(pc):
+        return fail("CHECK_FAILED", "the separate verifier left no receipt")
+    try:
+        ver = json.load(open(pc))
+    except Exception as ex:
+        return fail("CHECK_FAILED", "unreadable verifier receipt: %s" % ex)
+    cell_rec["point_verification"] = ver
+    if ver.get("status") != "POINT_VERIFIED" or ver.get("mar_sha256") != tmp_sha or not GS.bound_to_task(ver.get("task"), S.task) or ID.check_execution(ver.get("execution"), expected_exec) or ver.get("expected_identity_sha256") != sha_file(exp_path):
+        return fail("CHECK_FAILED", "verifier receipt is not a fresh POINT_VERIFIED receipt for exactly these bytes, this task and this execution")
+    if sha_file(tmp) != tmp_sha or not S.path_still_matches():
+        return fail("CHECK_FAILED", "the delivered bytes or the caller's files changed during verification")
+    os.replace(tmp, os.path.join(out, "output.MAR")); cell_rec["certified"] = {"output_sha256": tmp_sha, "delivered_max_width": prep.get("delivered_max_width"), "pre_grid_max_width": prep.get("max_width_observed"), "point_target_met": True, "verifier_receipt": os.path.basename(pc), "execution": exe}
     return "CERTIFIED"

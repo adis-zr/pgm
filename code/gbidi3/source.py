@@ -13,7 +13,7 @@ Hashes: raw sha256 of the bytes; `canonical_v2` = sha256 of a finite TYPED seria
 with scope and exact reduced numerator/denominator pairs, canonical evidence); `canonical_legacy` = the historical whitespace-normalized text hash of
 gbidi.source (kept under its own name; never compared with v2)."""
 from __future__ import annotations
-import hashlib, json, re
+import hashlib, json, re, time, os
 from fractions import Fraction as Fr
 from ext import uai as U
 
@@ -24,6 +24,38 @@ _INT = re.compile(r"^[0-9]+$")
 class InvalidInput(Exception):
     def __init__(self, reason):
         super().__init__(reason); self.reason = reason
+
+
+class ParseStop(Exception):
+    """typed resource stop raised INSIDE parsing (deadline or host-memory category) before the forbidden payload is built"""
+    def __init__(self, kind, reason):
+        super().__init__("%s: %s" % (kind, reason)); self.kind = kind; self.reason = reason
+
+
+POLL_TOKENS = 4096
+TOKEN_BYTES = 72          # documented proxy per token string (49 B + chars) + list slot
+RATIONAL_BYTES = 128      # documented proxy per parsed Fraction (small numerator / denominator)
+
+
+class _Guard:
+    """reserve-before-build + deadline polling for the parser: every `n` tokens / rationals are charged to the host ledger BEFORE they are materialized"""
+    __slots__ = ("ledger", "deadline", "count", "charged")
+
+    def __init__(self, ledger=None, deadline=None):
+        self.ledger = ledger; self.deadline = deadline; self.count = 0; self.charged = 0
+
+    def reserve(self, nbytes, what):
+        if self.ledger is not None:
+            from gbidi3 import memory as GM
+            try:
+                self.ledger.reserve("source_ir_maps_output", nbytes, what); self.charged += nbytes
+            except GM.MemoryStop as ex:
+                raise ParseStop("MEMORY_CATEGORY", str(ex))
+
+    def tick(self, n=1):
+        self.count += n
+        if self.deadline is not None and (n == 0 or self.count % POLL_TOKENS < n) and time.monotonic() > self.deadline:
+            raise ParseStop("DEADLINE", "deadline during source parsing after %d tokens" % self.count)
 
 
 def _int_token(it, what, lo=0):
@@ -51,12 +83,15 @@ def _rational_token(t, what):
     return q
 
 
-def parse_model_bytes(data: bytes) -> U.Model:
+def parse_model_bytes(data: bytes, guard=None) -> U.Model:
+    g = guard or _Guard(); g.tick(0)                                                             # an already-expired deadline stops BEFORE decoding / tokenization
+    g.reserve(2 * len(data) + 64, "model bytes + decoded text")                                 # the decoded text and the token list are the first allocations: reserved first
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as ex:
         raise InvalidInput("model is not UTF-8: %s" % ex)
-    it = iter(text.split())
+    g.reserve(TOKEN_BYTES * (len(data) // 2 + 1), "token list (upper bound: one token per two bytes)")
+    toks = text.split(); it = iter(toks); g.tick(len(toks))
     try:
         net = next(it)
     except StopIteration:
@@ -80,6 +115,7 @@ def parse_model_bytes(data: bytes) -> U.Model:
             exp *= c
         if n != exp:
             raise InvalidInput("factor %d declares %d entries, scope product is %d" % (i, n, exp))
+        g.reserve(RATIONAL_BYTES * n + 8 * n + 256, "factor %d table (%d exact rationals)" % (i, n))        # the table is reserved BEFORE one rational is parsed
         tab = []
         for j in range(n):
             try:
@@ -87,6 +123,8 @@ def parse_model_bytes(data: bytes) -> U.Model:
             except StopIteration:
                 raise InvalidInput("truncated table of factor %d" % i)
             tab.append(_rational_token(t, "factor %d entry %d" % (i, j)))
+            if j % POLL_TOKENS == POLL_TOKENS - 1:
+                g.tick(POLL_TOKENS)
         factors.append(U.Factor(scope=sc, card=cd, table=tab, index=i))
     rest = list(it)
     if rest:
@@ -94,11 +132,13 @@ def parse_model_bytes(data: bytes) -> U.Model:
     m = U.Model(net_type=net, nvars=nvars, card=card, factors=factors); m.check(); return m
 
 
-def parse_evidence_bytes(data: bytes, m: U.Model) -> dict:
+def parse_evidence_bytes(data: bytes, m: U.Model, guard=None) -> dict:
+    g = guard or _Guard(); g.reserve(2 * len(data) + TOKEN_BYTES * (len(data) // 2 + 1) + 64, "evidence bytes + tokens")
     try:
         toks = data.decode("utf-8").split()
     except UnicodeDecodeError as ex:
         raise InvalidInput("evidence is not UTF-8: %s" % ex)
+    g.tick(len(toks))
     if not toks:
         return {}
     it = iter(toks); n = _int_token(it, "evidence count"); ev = {}
@@ -121,12 +161,14 @@ def canonical_legacy(data: bytes) -> str:
     return hashlib.sha256((" ".join(data.decode("utf-8", "replace").split())).encode()).hexdigest()
 
 
-def canonical_v2_model(m: U.Model) -> str:
-    h = hashlib.sha256(); h.update(("%s|%s|%d|" % (CANONICAL_VERSION, m.net_type, m.nvars)).encode()); h.update((",".join(str(c) for c in m.card) + "|").encode())
+def canonical_v2_model(m: U.Model, guard=None) -> str:
+    g = guard or _Guard(); h = hashlib.sha256(); h.update(("%s|%s|%d|" % (CANONICAL_VERSION, m.net_type, m.nvars)).encode()); h.update((",".join(str(c) for c in m.card) + "|").encode())
     for f in m.factors:
         h.update(("F%d:%s:" % (f.index, ",".join(str(v) for v in f.scope))).encode())
-        for q in f.table:
+        for j, q in enumerate(f.table):
             h.update(("%d/%d," % (q.numerator, q.denominator)).encode())
+            if j % POLL_TOKENS == POLL_TOKENS - 1:
+                g.tick(POLL_TOKENS)                                                           # canonical hashing polls the ONE deadline (review E5)
         h.update(b";")
     return h.hexdigest()
 
@@ -137,18 +179,20 @@ def canonical_v2_evidence(ev: dict) -> str:
 
 class Snapshot:
     """bytes read ONCE; hashes + parsed structures derived from the same bytes; the task identity is the CALLER's (model, evidence, every original variable)"""
-    __slots__ = ("model_path", "evid_path", "model_bytes", "evid_bytes", "model", "ev", "task")
+    __slots__ = ("model_path", "evid_path", "model_bytes", "evid_bytes", "model", "ev", "task", "ledger_charged", "ledger_ref")
 
-    def __init__(self, model_path, evid_path):
-        self.model_path = model_path; self.evid_path = evid_path
+    def __init__(self, model_path, evid_path, ledger=None, deadline=None):
+        self.model_path = model_path; self.evid_path = evid_path; g = _Guard(ledger, deadline); g.tick(0)   # an already-expired deadline stops before one byte is read
+        g.reserve(os.path.getsize(model_path) + os.path.getsize(evid_path) + 128, "raw caller bytes")      # file sizes known before reading: reserved BEFORE the read
         with open(model_path, "rb") as f:
             self.model_bytes = f.read()
         with open(evid_path, "rb") as f:
             self.evid_bytes = f.read()
-        self.model = parse_model_bytes(self.model_bytes); self.ev = parse_evidence_bytes(self.evid_bytes, self.model); q = list(range(self.model.nvars))
+        self.model = parse_model_bytes(self.model_bytes, g); self.ev = parse_evidence_bytes(self.evid_bytes, self.model, g); q = list(range(self.model.nvars))
+        g.reserve(8 * self.model.nvars + 1024, "task identity + query list"); self.ledger_charged = g.charged; self.ledger_ref = ledger
         self.task = {"raw_model_sha256": hashlib.sha256(self.model_bytes).hexdigest(), "raw_evidence_sha256": hashlib.sha256(self.evid_bytes).hexdigest(),
                      "canonical_model_sha256": canonical_legacy(self.model_bytes), "canonical_evidence_sha256": canonical_legacy(self.evid_bytes),      # LEGACY whitespace-normalized text hash (historical field name kept)
-                     "canonical_v2_model_sha256": canonical_v2_model(self.model), "canonical_v2_evidence_sha256": canonical_v2_evidence(self.ev), "canonical_version": CANONICAL_VERSION,
+                     "canonical_v2_model_sha256": canonical_v2_model(self.model, g), "canonical_v2_evidence_sha256": canonical_v2_evidence(self.ev), "canonical_version": CANONICAL_VERSION,
                      "nvars": self.model.nvars, "orig_card": list(self.model.card), "queries": q, "queries_sha256": hashlib.sha256(json.dumps(q).encode()).hexdigest(), "eps": "1/200", "max_width": "1/100",
                      "model_bytes": len(self.model_bytes), "evidence_bytes": len(self.evid_bytes), "factor_occurrences": len(self.model.factors)}
 
@@ -163,7 +207,7 @@ class Snapshot:
         return hm == self.task["raw_model_sha256"] and he == self.task["raw_evidence_sha256"]
 
 
-TASK_BINDING_FIELDS = ("raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256", "canonical_v2_model_sha256", "canonical_v2_evidence_sha256", "nvars", "orig_card", "queries_sha256", "eps", "max_width")
+TASK_BINDING_FIELDS = ("raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256", "canonical_v2_model_sha256", "canonical_v2_evidence_sha256", "canonical_version", "nvars", "orig_card", "queries_sha256", "eps", "max_width")
 
 
 def bound_to_task(rec_task, task):

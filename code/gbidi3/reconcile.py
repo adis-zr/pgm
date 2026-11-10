@@ -1,5 +1,10 @@
-"""ONE strict attempt reconciler for resume (gbidi3.pilot), closeout (gbidi3_closeout.report) and summary extraction (brief §17; protocol of the repaired
-gbidi.reconcile, review H2/H3). A planned cell is ACCEPTED only when every fact below is established from the saved artifacts; a missing field is a reason:
+"""ONE strict attempt reconciler for resume (gbidi3.pilot), closeout (gbidi3_closeout.report) and summary extraction (brief §17; repaired after the 10 Nov
+review R3a-c / C1-C4). Lifecycle FIRST: a cell with a START is a launched attempt; a launched attempt without a producer record is a typed NO_RECORD (or
+LAUNCH_FAILED) row bound to the manifest and its receipt, accepted as a NONCERTIFYING attempt (counted once, never a success); only a cell with no START
+and no record is UNLAUNCHED. Task binding = every field of gbidi3.source.TASK_BINDING_FIELDS by positive equality against the manifest case (incl.
+orig_card, eps, max_width, canonical_version). Execution binding (successes) = gbidi3.identity.check_execution against the manifest's expectation
+(route-specific: native routes bind the kernel binary + source + flags; python exact routes bind their implementation files). START.cmd must equal the
+exact expected launch arguments. A planned cell is ACCEPTED as a success only when every fact below is established; a missing field is a reason:
   record:   cell.json exists and (new arms) its arm == planned arm, or (comparators) adapter.json exists with planned_arm == planned and producer_arm ==
             the frozen producer and cell.json's arm == producer_arm;
   task:     record task raw + canonical (legacy) + canonical_v2 model / evidence hashes == the manifest case; queries_sha256 == sha256(json.dumps(range(nvars)));
@@ -15,6 +20,7 @@ gbidi.reconcile, review H2/H3). A planned cell is ACCEPTED only when every fact 
 from __future__ import annotations
 import os, json, hashlib, collections
 from gbidi3.arm_adapter import PRODUCER_ARM
+from gbidi3 import identity as ID, source as GS
 
 NEW_ARMS = {"GENERAL_BIDI_COMPLETE_V3", "NATIVE_PLAIN_COMPLETE_V3", "A1_NO_DEMAND_MASKS", "A2_NO_FUSION", "A3_NO_RESPONSE_VIEWS"}
 SUCCESS = {"CERTIFIED", "COMPLETE"}
@@ -42,72 +48,122 @@ def ledger_index(D):
     return by_job
 
 
+def expected_execution(man, c, rec_or_none):
+    """the EXPECTED execution identity of a planned new-arm cell, recomputed from the MANIFEST (arm, budget, frozen cell config, kernel build) and the record's
+    declared route / attempt (route and attempt are the record's own declaration; every other field is the manifest's)"""
+    cfg = dict((man.get("arms_config", {}).get(c["arm"], {}) or {}).get("cell_config", {}) or {}); cfg["budget_s"] = c["budget_s"]
+    route = (rec_or_none or {}).get("route") or ((rec_or_none or {}).get("execution") or {}).get("route"); attempt = ((rec_or_none or {}).get("execution") or {}).get("attempt_id")
+    build = man.get("kernel_build") or {}
+    exp = {"protocol": ID.PROTOCOL, "arm": c["arm"], "budget_s": float(c["budget_s"]), "config_sha256": ID.config_sha256(cfg), "rules": list(cfg.get("rules", ["exclude", "constants", "separate", "alias", "quotient"])), "route": route, "attempt_id": attempt}
+    if route in ID.NATIVE_ROUTES:
+        exp["implementation"] = {"kind": "native_kernel", "binary_sha256": man.get("kernel_binary_sha256"), "source_sha256": build.get("source_sha256"), "flags_sha256": ID.sha_bytes(json.dumps(build.get("flags"), sort_keys=True).encode()), "python_sources_sha256": man.get("python_sources_sha256")}
+    else:
+        exp["implementation"] = {"kind": "python_exact", "python_sources_sha256": man.get("python_sources_sha256")}
+    return exp
+
+
+def expected_launch_cmd(D, man, c, py=None):
+    """the EXACT inner command the stage runner launches for this cell (gbidi3.pilot.run); compared argument by argument with START.cmd"""
+    from gbidi3 import pilot as PI
+    cs = man["cases"][c["case"]]; mp = os.path.join(PI.HERE, cs["model_path"]) if not os.path.isabs(cs["model_path"]) else cs["model_path"]; ep = os.path.join(PI.HERE, cs["evidence_path"]) if not os.path.isabs(cs["evidence_path"]) else cs["evidence_path"]
+    out = os.path.join(D, c["out_dir"]); expected = json.dumps({"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "task_id": c["task_id"], "cell_id": c["cell_id"]}); py = py or PI.PY
+    if c["arm"] in NEW_ARMS:
+        return [py, "-m", "gbidi3.cell", c["arm"], mp, ep, out, "%.3f" % c["budget_s"], json.dumps(PI.CELL_CONFIG), expected]
+    cfg_adp = os.path.join(PI.HERE, man["config_adp_repaired_path"]) if man.get("config_adp_repaired_path") else "{}"
+    return [py, "-m", "gbidi3.arm_adapter", c["arm"], mp, ep, out, "%.3f" % c["budget_s"], cfg_adp if c["arm"] == "ADP_REPAIRED" else "{}", expected]
+
+
 def reconcile(D, man, c, idx):
+    """returns the reconciled row for planned cell c (idx = ledger_index(D)). Lifecycle is consulted FIRST: a cell whose START exists is a launched attempt
+    whatever the producer wrote (review C1-C4); only a cell with no START and no record is UNLAUNCHED."""
     od = os.path.join(D, c["out_dir"]); cj = os.path.join(od, "cell.json"); aj = os.path.join(od, "adapter.json"); cs = man["cases"][c["case"]]; job = job_name(c); reasons = []
     row = dict(c, job=job, family=cs["family"], accepted=False, delivered_valid_output=False, status="NOT_ACCEPTED", reasons=reasons)
-    if not os.path.exists(cj):
+    S, P, R = idx.get(job, {"START": [], "SPAWNED": [], "RECEIPT": []}).values() if job in idx else ([], [], [])
+    launched = bool(S)
+    if not os.path.exists(cj) and not launched:
         if os.path.exists(os.path.join(od, "NOT_LAUNCHED.json")):
             row.update(json.load(open(os.path.join(od, "NOT_LAUNCHED.json")))); row["resolution"] = "NOT_LAUNCHED"; return row
         row.update(status="UNLAUNCHED", resolution="EXPLICITLY_UNLAUNCHED"); return row
-    rec = json.load(open(cj)); comparator = c["arm"] not in NEW_ARMS; ad = json.load(open(aj)) if os.path.exists(aj) else None
-    if rec.get("status") == "NO_RECORD":
-        row.update(status="NO_RECORD", resolution="KILLED_NO_RECORD", record_status="NO_RECORD")
+    rec = json.load(open(cj)) if os.path.exists(cj) else None; comparator = c["arm"] not in NEW_ARMS; ad = json.load(open(aj)) if os.path.exists(aj) else None
+    # ---------------- lifecycle (exactly one START; one SPAWNED unless the launch failed; exactly one terminal RECEIPT; exact launch arguments)
+    lifecycle_ok = False; launch_failed = False
+    if len(S) != 1 or len(R) != 1 or len(P) > 1:
+        reasons.append("attempt records START/SPAWNED/RECEIPT = %d/%d/%d (need exactly 1/<=1/1)" % (len(S), len(P), len(R)))
+    else:
+        s, r = S[0], R[0]; p = P[0] if P else None
+        launch_failed = r.get("outcome_before_cleanup", r.get("outcome")) == "LAUNCH_FAILED" or r.get("outcome") == "LAUNCH_FAILED"
+        if not (s["jid"] == r["jid"] and (p is None or p["jid"] == s["jid"])):
+            reasons.append("attempt ids do not match across START/SPAWNED/RECEIPT")
+        if p is None and not launch_failed:
+            reasons.append("no SPAWNED record although the launch did not fail")
+        if s.get("start_utc", "") < man["frozen_utc"]:
+            reasons.append("attempt started before the freeze")
+        try:
+            from gbidi3 import pilot as PI
+            got_py = (s.get("cmd") or [None])[0]
+            if got_py != PI.PY and not launch_failed:
+                reasons.append("attempt launched with interpreter %r, not the harness interpreter" % got_py)      # only a typed LAUNCH_FAILED may carry a foreign interpreter path
+            exp_cmd = expected_launch_cmd(D, man, c, py=got_py)
+            if list(s.get("cmd") or []) != exp_cmd:
+                reasons.append("START command differs from the exact expected launch arguments")
+        except Exception as ex:
+            reasons.append("expected launch command could not be formed: %s" % ex)
+        exp_mem = float(c.get("mem_gib", man.get("mem_gib", 8.0)))
+        if s.get("mem_cap_gib") is None or float(s.get("mem_cap_gib")) != exp_mem or s.get("timeout_s") is None or abs(float(s.get("timeout_s")) - float(c["budget_s"])) > 1e-9:
+            reasons.append("START supervision parameters (memory cap %r / timeout %r) differ from the planned cell" % (s.get("mem_cap_gib"), s.get("timeout_s")))
+        if r.get("cleanup_unresolved") or (r.get("group_empty_at_receipt") is not True and not launch_failed) or (launch_failed and r.get("group_empty_at_receipt") not in (None, True)) or (r.get("nested_groups_live_at_receipt") or 0) != 0:
+            reasons.append("receipt does not establish clean completion of all owned work")
+        if r.get("outcome") not in ("COMPLETED", "NONZERO_EXIT", "TIMEOUT_KILL", "MEMORY_KILL", "LAUNCH_FAILED"):
+            reasons.append("receipt outcome %r is not a terminal attempt outcome" % r.get("outcome"))
+        row.update(supervisor_outcome=r.get("outcome"), supervisor_wall_s=r.get("wall_s"), peak_tree_rss_bytes=r.get("peak_tree_rss_bytes"), returncode=r.get("returncode"), jid=r.get("jid"), parent_jid=r.get("parent_jid"), launch_error=r.get("launch_error"))
+        lifecycle_ok = not reasons
+    # ---------------- a launched attempt without a producer record: a typed NO_RECORD / LAUNCH_FAILED row bound to the manifest and the receipt (noncertifying)
+    if rec is None or rec.get("status") == "NO_RECORD":
+        kind = "LAUNCH_FAILED" if launch_failed else "NO_RECORD"
+        row.update(status=kind, record_status=kind, resolution=("LAUNCH_FAILED" if launch_failed else "KILLED_NO_RECORD") if lifecycle_ok else "NOT_ACCEPTED", producer_diagnostics="UNAVAILABLE (the producer wrote no record)", expected_task={"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "cell_id": c["cell_id"], "task_id": c["task_id"]}, delivered_valid_output=False)
+        row["accepted"] = lifecycle_ok                                                         # ACCEPTED as a reconciled NONCERTIFYING attempt (counted, charged once); never a success
+        return row
+    # ---------------- records with a producer file
     if comparator:
         if ad is None:
             reasons.append("adapter.json missing")
         else:
             if ad.get("planned_arm") != c["arm"] or ad.get("producer_arm") != PRODUCER_ARM.get(c["arm"]):
                 reasons.append("adapter arm mapping mismatch")
-            if rec.get("arm") != PRODUCER_ARM.get(c["arm"]) and rec.get("status") != "NO_RECORD":
+            if rec.get("arm") != PRODUCER_ARM.get(c["arm"]):
                 reasons.append("producer arm %r != frozen producer %r" % (rec.get("arm"), PRODUCER_ARM.get(c["arm"])))
         task = (ad or {}).get("task") or {}; expected = (ad or {}).get("expected_task") or {}; status = (ad or {}).get("status"); delivery = (ad or {}).get("delivery_from_launch_s"); out_sha = (ad or {}).get("output_sha256")
         if c["arm"] == "ADP_REPAIRED" and (ad or {}).get("config_sha256") != man.get("config_adp_repaired_sha256"):
             reasons.append("comparator configuration hash differs from the manifest")
+        if (ad or {}).get("budget_s") != c["budget_s"]:
+            reasons.append("record budget differs from the planned budget")
     else:
         if rec.get("arm") != c["arm"]:
             reasons.append("record arm %r != planned %r" % (rec.get("arm"), c["arm"]))
         task = rec.get("task") or {}; expected = rec.get("expected_task") or {}; status = rec.get("status"); delivery = rec.get("complete_response_from_launch_s"); out_sha = (rec.get("certified") or {}).get("output_sha256") or rec.get("output_sha256")
-        cfg = rec.get("config") or {}
-        if "rules" in cfg and list(cfg["rules"]) != list(man.get("common_rules", [])):
-            reasons.append("record configuration (rules) differs from the frozen common rules")
-        frozen_cfg = dict(man.get("arms_config", {}).get(c["arm"], {}).get("cell_config", {}) or {}); frozen_cfg["budget_s"] = c["budget_s"]
-        cfg_cmp = {k: v for k, v in cfg.items()}
-        if frozen_cfg and {k: v for k, v in cfg_cmp.items() if k != "budget_s"} != {k: v for k, v in frozen_cfg.items() if k != "budget_s"}:
+        frozen_cfg = dict((man.get("arms_config", {}).get(c["arm"], {}) or {}).get("cell_config", {}) or {}); got_cfg = dict(rec.get("config") or {})
+        if {k: v for k, v in got_cfg.items() if k != "budget_s"} != {k: v for k, v in frozen_cfg.items() if k != "budget_s"}:
             reasons.append("record configuration differs from the frozen arm configuration (full equality required)")
-        bk = ((rec.get("backend") or {}).get("build") or {})
-        if rec.get("status") not in ("RESOURCE_STOP", "INVALID_INPUT", "TASK_MISMATCH", "NO_RECORD", "FAULT") and (not bk or bk.get("binary_sha256") != man.get("kernel_binary_sha256")):
-            reasons.append("record kernel binary missing or differs from the manifest")
-        if rec.get("deadline_classification_clock") not in (None, "launch-relative") and status in SUCCESS:
-            reasons.append("success classified on the in-process clock")
-    for k in TASK_KEYS:
-        if k not in cs or task.get(k) != cs.get(k):
-            reasons.append("task %s differs or is missing" % k)
-    exp_q = hashlib.sha256(json.dumps(list(range(int(cs["variables"])))).encode()).hexdigest()
-    if task.get("queries_sha256") != exp_q or task.get("nvars") != int(cs["variables"]):
-        reasons.append("query contract / variable count differs")
+        if rec.get("deadline_s") != c["budget_s"]:
+            reasons.append("record budget differs from the planned budget")
+        if status in SUCCESS or status in ("INCONSISTENT_EVIDENCE_CERTIFIED",):
+            bad = ID.check_execution(rec.get("execution"), expected_execution(man, c, rec))
+            if bad:
+                reasons.extend(["execution identity: " + b for b in bad[:4]])
+            if rec.get("deadline_classification_clock") != "launch-relative":
+                reasons.append("success classified on the in-process clock")
+    if not task and status not in SUCCESS and status not in ("INCONSISTENT_EVIDENCE_CERTIFIED",) and not comparator:
+        raw = rec.get("task_raw") or {}                                                      # the record never parsed a task (INVALID_INPUT / stop before parsing): bound by the streamed raw hashes of the caller's files
+        bad_task = ["raw task hash %s missing or differs (record never parsed its task)" % k for k in ("raw_model_sha256", "raw_evidence_sha256") if raw.get(k) != cs.get(k)]; row["task_binding"] = "RAW_HASHES_ONLY (no parsed task; noncertifying record)"
+    else:
+        bad_task = ID.check_task(task, dict(cs, queries_sha256=hashlib.sha256(json.dumps(list(range(int(cs["variables"])))).encode()).hexdigest(), nvars=int(cs["variables"]), orig_card=list(cs.get("orig_card") or []), eps=cs.get("eps", "1/200"), max_width=cs.get("max_width", "1/100"), canonical_version=cs.get("canonical_version")), GS.TASK_BINDING_FIELDS); row["task_binding"] = "FULL"
+    reasons.extend(bad_task)
     if expected.get("cell_id") != c["cell_id"]:
         reasons.append("expected cell id missing or differs")
-    if (rec.get("deadline_s") if not comparator else (ad or {}).get("budget_s")) != c["budget_s"]:
-        reasons.append("record budget differs from the planned budget")
-    S, P, R = idx.get(job, {"START": [], "SPAWNED": [], "RECEIPT": []}).values() if job in idx else ([], [], [])
-    if len(S) != 1 or len(P) != 1 or len(R) != 1:
-        reasons.append("attempt records START/SPAWNED/RECEIPT = %d/%d/%d (need exactly 1/1/1)" % (len(S), len(P), len(R)))
-    else:
-        s, p, r = S[0], P[0], R[0]
-        if not (s["jid"] == p["jid"] == r["jid"]):
-            reasons.append("attempt ids do not match across START/SPAWNED/RECEIPT")
-        if s.get("start_utc", "") < man["frozen_utc"]:
-            reasons.append("attempt started before the freeze")
-        cmd = " ".join(s.get("cmd") or [])
-        if c["out_dir"].split("/")[-1] not in cmd or os.path.basename(cs["model_path"]) not in cmd:
-            reasons.append("START command does not name this cell's output directory / model")
-        if r.get("cleanup_unresolved") or r.get("group_empty_at_receipt") is not True or (r.get("nested_groups_live_at_receipt") or 0) != 0:
-            reasons.append("receipt does not establish clean completion of all owned work")
+    if lifecycle_ok:
+        r = R[0]
         if status in SUCCESS and r.get("outcome") != "COMPLETED":
             reasons.append("success status with receipt outcome %r" % r.get("outcome"))
-        if status not in SUCCESS and r.get("outcome") not in ("COMPLETED", "NONZERO_EXIT", "TIMEOUT_KILL", "MEMORY_KILL"):
-            reasons.append("receipt outcome %r is not a terminal attempt outcome" % r.get("outcome"))
-        row.update(supervisor_outcome=r.get("outcome"), supervisor_wall_s=r.get("wall_s"), peak_tree_rss_bytes=r.get("peak_tree_rss_bytes"), returncode=r.get("returncode"), jid=r.get("jid"), parent_jid=r.get("parent_jid"))
     mar = os.path.join(od, "output.MAR")
     if status in SUCCESS:
         if not os.path.exists(mar):
@@ -121,7 +177,7 @@ def reconcile(D, man, c, idx):
     if not comparator:
         src = rec if "plan" in rec else (rec.get("diagnostic") or {})
         row.update(route=rec.get("route"), precision=rec.get("precision"), max_width_raw=rec.get("max_width"), delivered_max_width=(rec.get("certified") or {}).get("delivered_max_width"), reductions=(src.get("reductions") or {}).get("steps"), free_reduced=(src.get("reductions") or {}).get("free_reduced"), plan_totals=(src.get("plan") or {}).get("totals"), plan_order=(src.get("plan") or {}).get("order"),
-                   plan_candidates=src.get("plan_candidates"), mechanisms=src.get("mechanisms"), binary64_admission=src.get("binary64_admission"), attempts=[{k: a.get(k) for k in ("route", "precision", "outcome", "stop", "stop_phase", "create_s", "forward_s", "reverse_s", "labels", "delta_max", "wall_s")} | {"counters": a.get("counters"), "counters_after_forward": a.get("counters_after_forward")} for a in (src.get("attempts") or [])], exact_fallback=(src.get("exact_fallback") or {}).get("status"), discovery_stop=(src.get("plan") or {}).get("discovery_stop"), diagnostic_present="diagnostic" in rec, live_at_stop=(rec.get("diagnostic") or {}).get("live"), plan_validation=(src.get("plan_validation") or {}).get("status"), memory_ledger=src.get("memory_ledger"), clock=src.get("clock"))
+                   plan_candidates=src.get("plan_candidates"), mechanisms=src.get("mechanisms"), binary64_admission=src.get("binary64_admission"), attempts=[{k: a.get(k) for k in ("route", "precision", "outcome", "stop", "stop_phase", "create_s", "forward_s", "reverse_s", "labels", "delta_max", "wall_s")} | {"counters": a.get("counters"), "counters_after_forward": a.get("counters_after_forward")} for a in (src.get("attempts") or [])], exact_fallback=(src.get("exact_fallback") or {}).get("status"), discovery_stop=(src.get("plan") or {}).get("discovery_stop"), diagnostic_present="diagnostic" in rec, live_at_stop=(rec.get("diagnostic") or {}).get("live"), plan_validation=(src.get("plan_validation") or {}).get("status"), memory_ledger=src.get("memory_ledger"), clock=src.get("clock"), execution=rec.get("execution"))
     if reasons:
         row["resolution"] = "NOT_ACCEPTED"; return row
     row.update(accepted=True, status=status, resolution="ACCEPTED"); return row

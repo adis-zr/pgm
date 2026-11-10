@@ -121,12 +121,15 @@ def build_manifest(D, proposed):
            "source_files_sha256": {f: sha(os.path.join(HERE, f)) for f in source_set() if os.path.exists(os.path.join(HERE, f))}, "kernel_build": br, "kernel_binary_sha256": br["binary_sha256"], "kernel_binary": br["binary"], "supervisor": "gbidi/supervise.py v3 (owned-tree completion; parent_jid linkage) -- unchanged from the V2 closeout", "arm_adapter": {"module": "gbidi3/arm_adapter.py", "planned_to_producer": PRODUCER_ARM, "timing": "launch-relative delivery observed by the adapter for comparators; GBIDI_LAUNCH_MONO for new arms"},
            "arms_config": {a: dict(PL.ARMS[a], cell_config=CELL_CONFIG) for a in PL.ARMS}, "planner_constants": dict(PL.PLANNER_CONSTANTS, caps_bytes=GM.CAPS, precisions=list(EX.PRECISIONS), optional_allowance="min(1 s, 0.05 x budget), ONE shared allowance from the start of the reductions", poll_units=GC.POLL_UNITS), "common_rules": list(PL.COMMON_RULES), "counter_definitions": EX.COUNTER_DEFINITIONS,
            "shared_vs_different": shared_vs_different(), "config_adp_repaired_path": os.path.relpath(cfg_adp_path, HERE), "config_adp_repaired_sha256": cfg_sha, "libdai_binary_sha256": sha(os.path.join(HERE, "bench", "libdai", "libdai_mar")), "libdai_algorithm": "JTREE[inference=SUMPROD,updates=HUGIN,maxmem=8589934592]",
-           "ceiling_s": CEILING_S, "allocation_s": {"qualification_builds_synthetic": PREPARATION_CAP_S, "matrix_414_cells_plus_launch_cleanup": MATRIX_RESERVE_S, "uniform_inspection_analysis": INSPECTION_RESERVE_S, "closeout_packaging": CLOSEOUT_RESERVE_S, "contingency": CONTINGENCY_S}, "closeout_reserve_s": CLOSEOUT_RESERVE_S, "grace_s": GRACE_S, "launch_overhead_s": LAUNCH_OVERHEAD_S, "memory_budget_gib": MEM_GIB, "thread_env": THREAD_ENV, "seed": SEED, "order_procedure": "brief §20: single continuing random.Random(20261109); per stage copy the ORIGINAL inventory, shuffle once, draw one randrange(number_of_arms) offset; at shuffled position i rotate the stage's arm list left by (i+offset) mod n",
+           "ceiling_s": CEILING_S, "mem_gib": MEM_GIB, "allocation_s": {"qualification_builds_synthetic": PREPARATION_CAP_S, "matrix_414_cells_plus_launch_cleanup": MATRIX_RESERVE_S, "uniform_inspection_analysis": INSPECTION_RESERVE_S, "closeout_packaging": CLOSEOUT_RESERVE_S, "contingency": CONTINGENCY_S}, "closeout_reserve_s": CLOSEOUT_RESERVE_S, "grace_s": GRACE_S, "launch_overhead_s": LAUNCH_OVERHEAD_S, "memory_budget_gib": MEM_GIB, "thread_env": THREAD_ENV, "seed": SEED, "order_procedure": "brief §20: single continuing random.Random(20261109); per stage copy the ORIGINAL inventory, shuffle once, draw one randrange(number_of_arms) offset; at shuffled position i rotate the stage's arm list left by (i+offset) mod n",
            "query_contract": "every original singleton marginal; eps = 1/200; DELIVERED grid max width <= 1/100 (and pre-grid width recorded); exact dyadic-grid point; separate task-bound point verification; LATE_OUTPUT classified on the launch-relative clock",
            "cases": {c: {k: cases[c][k] for k in ("family", "model_path", "evidence_path", "raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256", "variables")} for c in inventory()}, "unavailable_slots": [{"case": c, "family": f, "status": "INPUT_UNAVAILABLE"} for c, f in UNAVAILABLE], "cells": []}
-    from gbidi3 import source as GS
+    from gbidi3 import source as GS, identity as ID
     for c in inventory():
-        S = GS.Snapshot(os.path.join(HERE, cases[c]["model_path"]), os.path.join(HERE, cases[c]["evidence_path"])); man["cases"][c]["canonical_v2_model_sha256"] = S.task["canonical_v2_model_sha256"]; man["cases"][c]["canonical_v2_evidence_sha256"] = S.task["canonical_v2_evidence_sha256"]
+        S = GS.Snapshot(os.path.join(HERE, cases[c]["model_path"]), os.path.join(HERE, cases[c]["evidence_path"]))
+        for k in ("canonical_v2_model_sha256", "canonical_v2_evidence_sha256", "canonical_version", "orig_card", "eps", "max_width", "queries_sha256"):
+            man["cases"][c][k] = S.task[k]
+    man["python_sources_sha256"] = ID.python_sources_sha256(); man["protocol"] = ID.PROTOCOL
     for i, c in enumerate(order()):
         cs = cases[c["case"]]; tid, cid = canonical_task(cs, c, cfg_sha, br["binary_sha256"], commit)
         man["cells"].append(dict(c, index=i, task_id=tid, cell_id=cid, producer_arm=(c["arm"] if c["arm"] in GB_ARMS else PRODUCER_ARM[c["arm"]]), out_dir="cells/%s/%03d__%s__%s__%ds__%s" % (c["stage"], i, c["case"], c["arm"], int(c["budget_s"]), tid), max_permitted_charge_s=c["budget_s"] + GRACE_S + LAUNCH_OVERHEAD_S))
@@ -220,10 +223,11 @@ def run(D, stage):
         if c["stage"] != stage:
             continue
         out = os.path.join(D, c["out_dir"]); cs = man["cases"][c["case"]]
-        if os.path.exists(os.path.join(out, "cell.json")):
-            row = RC.reconcile(D, man, c, idx)
-            if not row["accepted"] and not (row.get("record_status") not in RC.SUCCESS and not [x for x in row["reasons"] if not x.startswith(("launch-relative", "success"))]):
-                return stopfile("RESUME_CONFLICT", at_index=c["index"], detail="existing record is not reconciled to the planned attempt: %s" % row["reasons"][:4])
+        prior = idx.get(RC.job_name(c)); launched_before = bool(prior and prior["START"])
+        if os.path.exists(os.path.join(out, "cell.json")) or launched_before:
+            row = RC.reconcile(D, man, c, idx)                                                        # the ONE reconciler: a reconciled attempt (success OR typed noncertifying NO_RECORD / stop) is done; a genuine identity conflict stops
+            if not row["accepted"]:
+                return stopfile("RESUME_CONFLICT", at_index=c["index"], detail="existing attempt is not reconciled to the planned cell: %s" % row["reasons"][:4])
             continue
         if os.path.exists(os.path.join(out, "NOT_LAUNCHED.json")):
             continue
@@ -242,17 +246,19 @@ def run(D, stage):
             if os.listdir(out):
                 return stopfile("RESUME_CONFLICT", at_index=c["index"], detail="non-empty output directory without cell.json")
         mp = os.path.join(HERE, cs["model_path"]); ep = os.path.join(HERE, cs["evidence_path"]); t = time.monotonic(); expected = json.dumps({"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "task_id": c["task_id"], "cell_id": c["cell_id"]})
+        cell_py = os.environ.get("GBIDI_CELL_PY") or PY                                     # qualification override (launch-failure control, review C4): any attempt launched with another interpreter is accepted ONLY as a typed LAUNCH_FAILED (gbidi3.reconcile)
         if c["arm"] in GB_ARMS:
-            inner = [PY, "-m", "gbidi3.cell", c["arm"], mp, ep, out, "%.3f" % c["budget_s"], json.dumps(CELL_CONFIG), expected]
+            inner = [cell_py, "-m", "gbidi3.cell", c["arm"], mp, ep, out, "%.3f" % c["budget_s"], json.dumps(CELL_CONFIG), expected]
         else:
-            inner = [PY, "-m", "gbidi3.arm_adapter", c["arm"], mp, ep, out, "%.3f" % c["budget_s"], cfg_adp if c["arm"] == "ADP_REPAIRED" else "{}", expected]
+            inner = [cell_py, "-m", "gbidi3.arm_adapter", c["arm"], mp, ep, out, "%.3f" % c["budget_s"], cfg_adp if c["arm"] == "ADP_REPAIRED" else "{}", expected]
         job = RC.job_name(c)
-        cmd = [PY, "-m", "gbidi.supervise", "--ledger", ledger, "--scope", "matrix_" + stage, "--job", job, "--timeout", "%.3f" % c["budget_s"], "--mem-gib", str(MEM_GIB), "--cwd", HERE,
+        mem_gib = float(c.get("mem_gib", man.get("mem_gib", MEM_GIB)))                                   # frozen manifests carry MEM_GIB; qualification manifests may lower it (hard-kill control, review C4)
+        cmd = [PY, "-m", "gbidi.supervise", "--ledger", ledger, "--scope", "matrix_" + stage, "--job", job, "--timeout", "%.3f" % c["budget_s"], "--mem-gib", str(mem_gib), "--cwd", HERE,
                "--stdout", os.path.join(out, "supervisor.log"), "--stderr", os.path.join(out, "supervisor.log")] + [x for k, v in THREAD_ENV.items() for x in ("--env", "%s=%s" % (k, v))] + ["--env", "PYTHONPATH=" + HERE, "--env", "GBIDI_LAUNCH_MONO=%.9f" % t, "--"] + inner
         subprocess.run(cmd, cwd=HERE); wall = time.monotonic() - t; idx = RC.ledger_index(D)
         rec = json.load(open(os.path.join(out, "cell.json"))) if os.path.exists(os.path.join(out, "cell.json")) else None
-        if rec is None:
-            json.dump({"status": "NO_RECORD", "arm": c["arm"] if c["arm"] in GB_ARMS else PRODUCER_ARM[c["arm"]], "note": "the cell process left no cell.json (killed before writing); see supervisor.log / progress.json / diagnostic_record.json / adapter.json"}, open(os.path.join(out, "cell.json"), "w"))
+        if rec is None:                                                                            # a launched attempt without a producer record: typed NO_RECORD row bound to the manifest + receipt (review C2)
+            json.dump({"status": "NO_RECORD", "arm": c["arm"] if c["arm"] in GB_ARMS else PRODUCER_ARM[c["arm"]], "planned_arm": c["arm"], "cell_id": c["cell_id"], "task_id": c["task_id"], "budget_s": c["budget_s"], "expected_task": {"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "cell_id": c["cell_id"], "task_id": c["task_id"]}, "producer_diagnostics": "UNAVAILABLE", "note": "the cell process left no cell.json (killed before writing); see supervisor.log / progress.json / diagnostic_record.json / adapter.json"}, open(os.path.join(out, "cell.json"), "w"))
         row = RC.reconcile(D, man, c, idx)
         print("%-3d %-26s %-20s %4ds  %-30s %-10s %7.2fs  parent+child %.2fs %s" % (c["index"], c["arm"], c["case"], int(c["budget_s"]), row.get("record_status") or "NO_RECORD", "ACCEPTED" if row["accepted"] else "NOT_ACC", row.get("delivery_from_launch_s") or 0, wall, "" if row["accepted"] else row["reasons"][:2]), flush=True)
     open(os.path.join(D, "stage_%s_finished.txt" % stage), "a").write("finished %s parent_wall_s %.3f\n" % (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), time.monotonic() - t_stage))

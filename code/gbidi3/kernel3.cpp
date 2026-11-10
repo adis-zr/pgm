@@ -35,7 +35,7 @@
 #include <gmp.h>
 #include <mpfr.h>
 
-static const char* GB3_SCHEDULE = "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3";
+static const char* GB3_SCHEDULE = "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.1-sparse-reverse";
 extern "C" const char* gb3_schedule_id() { return GB3_SCHEDULE; }
 
 enum Stop : int { GB_OK = 0, GB_DEADLINE = 1, GB_MEMORY = 2, GB_OVERFLOW = 3, GB_RANGE = 4, GB_BADPROG = 5, GB_FAULT = 6, GB_FPENV = 7, GB_LABEL = 8 };
@@ -101,12 +101,13 @@ struct Caps { uint64_t values, index, reverse, pending, scratch; };
 struct Counters {
     uint64_t value_frames, pullback_frames, frames_combined, max_frame_depth, polls;
     uint64_t mults, adds, lookups, zero_skips;
-    uint64_t source_reads, marker_updates, gather_visits, add_visits, mul_rows, reduce_terms;
+    uint64_t source_reads, marker_updates, gather_visits, add_visits, mul_rows, reduce_terms;   // reduce_terms = FORWARD eliminated tuples summed (stream / join); reverse visits are reverse_tuples
     uint64_t stream_reevals, reads_outside_demand, regenerated_values;
     uint64_t dense_blocks, entries_materialized, entries_stored_planned, sparse_rows_joined, sparse_output_rows, sparse_join_discarded;
     uint64_t cache_hits, cache_misses, cache_evictions, cache_inserts;
     uint64_t adjoint_adds, slots_drained, early_flushes, late_increments, pending_peak_bytes;
     uint64_t downgrades, root_ops, numerator_adds;
+    uint64_t reverse_tuples, sparse_reverse_rows, sparse_reverse_generic;   // reverse eliminated-tuple visits (generic REDUCE pullback); support-indexed sparse reverse deliveries; sparse nodes drained through the generic (labelled fallback) path
 };
 static long test_emin = 0, test_emax = 0; static int test_bad_alloc = 0; static uint64_t test_leaf_label = 1; static int test_branch_fault = 0; static int test_ref_fault = 0;
 
@@ -122,6 +123,10 @@ template <class P> struct Exec {
     std::vector<std::vector<Num>> sparse_vals;              // per node: SPARSE row values
     std::vector<std::vector<int64_t>> sparse_idx;           // per node: SPARSE row core indices (sorted after the join)
     std::vector<char> sparse_complete;                      // per node: 1 once the join block finished (absence == exact zero)
+    std::vector<std::vector<int64_t>> sparse_in_off;        // per SPARSE node: CSR offsets (rows+1) into sparse_in_idx: the retained contributing MUL-child indices of each output row
+    std::vector<std::vector<int64_t>> sparse_in_idx;        // per SPARSE node: MUL-child flat indices of every contributing (nonzero) join row, grouped by output row
+    std::vector<char> sparse_reverse_ready;                 // per SPARSE node: 1 when the retained join rows are complete (support-indexed PULLBACK available)
+    std::vector<uint64_t> sparse_cap_values, sparse_cap_index;   // per node: bytes CHARGED for the node's sparse containers (capacity-exact; released on downgrade after actual deallocation)
     std::vector<std::vector<Num>> adj;                      // per node (materialized): pending adjoint per stored slot
     std::vector<std::vector<uint8_t>> adj_state;            // 0 empty, 1 PENDING(nonzero), 2 ACTIVE, 3 DRAINED
     std::vector<char> adj_alloc;                            // adj array allocated for the node
@@ -151,6 +156,13 @@ template <class P> struct Exec {
         top = need; if (used_scratch > peak_scratch) peak_scratch = used_scratch; return true;
     }
     Num& at(size_t i) { return scratch[i]; }
+    // reserve the CAPACITY growth of a vector before it happens (geometric growth, 16 minimum); charges (newcap - oldcap) * elem bytes to `used` against `cap`
+    template <class V> bool grow(V& vec, uint64_t& used, uint64_t cap, uint64_t elem_bytes, uint64_t& charged) {
+        if (vec.size() < vec.capacity()) return true;
+        size_t ncap = vec.capacity() ? 2 * vec.capacity() : 16; uint64_t bytes = (uint64_t)(ncap - vec.capacity()) * elem_bytes;
+        if (!reserve(used, cap, bytes)) return false;
+        vec.reserve(ncap); charged += bytes; return true;
+    }
 
     // ---- indexing helpers
     void digits(const NodeD& n, int64_t idx, std::vector<int64_t>& d) { d.resize(n.card.size()); for (int k = (int)n.card.size() - 1; k >= 0; --k) { d[k] = idx % n.card[k]; idx /= n.card[k]; } }
@@ -279,7 +291,7 @@ template <class P> struct Exec {
         case K_MARKER: { if (f.mode != 1) P::set_one(*f.dst); if (f.mode != 0) { P::add(Nx[n.var][f.idx], Nx[n.var][f.idx], at(f.base)); ++C.adds; ++C.numerator_adds; ++C.marker_updates; } done = true; return poll(1); }
         case K_GATHER: {
             const size_t SC = f.base, H = f.base + 1, TMP = f.base + 2; int cn = n.children[0];
-            if (f.phase == 0) { ++C.gather_visits; int64_t cidx = gather_child_index(n, f.d, at(SC)); f.t = cidx; f.phase = 1;
+            if (f.phase == 0) { ++C.gather_visits; if (!poll(1)) return false; int64_t cidx = gather_child_index(n, f.d, at(SC)); f.t = cidx; f.phase = 1;
                 if (f.mode == 2) { P::mul(at(H), at(H), at(SC)); ++C.mults; int r = child_both(cn, cidx, at(TMP), at(H)); if (r < 0) return false; if (r == 1) return true; }
                 else if (f.mode == 0) { int r = child_value(cn, cidx, at(TMP)); if (r < 0) return false; if (r == 1) return true; } }
             if (f.phase == 1) { f.phase = 2;
@@ -293,12 +305,12 @@ template <class P> struct Exec {
             while (f.phase == 0) {
                 if (f.i >= (int)k) { if (f.mode != 1) P::copy(*f.dst, at(ACC)); f.phase = (f.mode == 2 ? 2 : 1); f.i = 0; break; }
                 if (f.mode == 1) { f.phase = 1; f.i = 0; break; }
-                if (f.last == 1) { P::add(at(ACC), at(ACC), at(TMP)); ++C.adds; f.last = -1; f.i++; continue; }
+                if (f.last == 1) { P::add(at(ACC), at(ACC), at(TMP)); ++C.adds; f.last = -1; f.i++; if (!poll(1)) return false; continue; }
                 f.last = 1; int r = (f.mode == 2) ? child_both(n.children[f.i], f.idx, at(TMP), at(H)) : child_value(n.children[f.i], f.idx, at(TMP)); if (r < 0) return false; if (r == 1) return true;
             }
             while (f.phase == 1) {
                 if (f.mode == 0 || f.i >= (int)k) { done = true; return poll(1); }
-                int ci = f.i; f.i++; int r = child_pull(n.children[ci], f.idx, at(H)); if (r < 0) return false; if (r == 1) return true;
+                int ci = f.i; f.i++; int r = child_pull(n.children[ci], f.idx, at(H)); if (r < 0) return false; if (r == 1) return true; if (!poll(1)) return false;
             }
             done = true; return poll(1);
         }
@@ -314,7 +326,7 @@ template <class P> struct Exec {
             }
             while (f.phase == 1) {
                 if (f.mode == 0 || f.t >= n.elim_volume) { done = true; return poll(1); }
-                int64_t cidx = reduce_child_index(n, f.d, f.t); f.t++; int r = child_pull(cn, cidx, at(H)); if (r < 0) return false; if (r == 1) return true; if (!poll(1)) return false;
+                int64_t cidx = reduce_child_index(n, f.d, f.t); f.t++; ++C.reverse_tuples; int r = child_pull(cn, cidx, at(H)); if (r < 0) return false; if (r == 1) return true; if (!poll(1)) return false;
             }
             done = true; return poll(1);
         }
@@ -322,11 +334,15 @@ template <class P> struct Exec {
             const size_t PRE = f.base + k, SUF = f.base + 2 * k + 1, G = f.base + 3 * k + 2, ROW = f.base + 3 * k + 3, SC = f.base + 3 * k + 4, H = f.base + 3 * k + 5, ACC = f.base + 3 * k + 6; (void)SC;
             if (f.phase == 0) {                                                               // pass 1: stored / leaf inputs; exact zero skips the row (every monomial of the row is zero, so are its marker derivatives)
                 bool skip = false;
-                for (size_t i = 0; i < k && !skip; ++i) {
-                    int cn = n.children[i]; int64_t cidx = mul_child_index(n, (int)i, f.d); Num& dst = at(f.base + i); f.unresolved[i] = 0;
-                    const NodeD& c = N[cn];
-                    if (c.kind == K_SOURCE || c.kind == K_CONSTANT || c.kind == K_MARKER) { child_value(cn, cidx, dst); if (P::is_zero(dst)) skip = true; }
-                    else { int r = lookup(cn, cidx, dst); if (r == 1) { if (P::is_zero(dst)) skip = true; } else if (r == 2) { P::set_zero(dst); skip = true; } else f.unresolved[i] = 1; }
+                for (size_t i = 0; i < k && !skip; ++i) {                                      // leaves FIRST (source / constant / marker): an exact zero leaf skips the row before any stored lookup is spent
+                    int cn = n.children[i]; const NodeD& c = N[cn]; if (!(c.kind == K_SOURCE || c.kind == K_CONSTANT || c.kind == K_MARKER)) continue;
+                    int64_t cidx = mul_child_index(n, (int)i, f.d); Num& dst = at(f.base + i); f.unresolved[i] = 0; child_value(cn, cidx, dst); if (P::is_zero(dst)) skip = true;
+                    if (!poll(1)) return false;
+                }
+                for (size_t i = 0; i < k && !skip; ++i) {                                      // then stored / computed operands
+                    int cn = n.children[i]; const NodeD& c = N[cn]; if (c.kind == K_SOURCE || c.kind == K_CONSTANT || c.kind == K_MARKER) continue;
+                    int64_t cidx = mul_child_index(n, (int)i, f.d); Num& dst = at(f.base + i); f.unresolved[i] = 0;
+                    int r = lookup(cn, cidx, dst); if (r == 1) { if (P::is_zero(dst)) skip = true; } else if (r == 2) { P::set_zero(dst); skip = true; } else f.unresolved[i] = 1;
                     if (!poll(1)) return false;
                 }
                 if (skip) { ++C.zero_skips; done = true; if (f.mode != 1) P::set_zero(*f.dst); return poll(1); }   // an EXACT zero operand: every monomial of this row is zero (P3), so the row's value AND all its marker derivatives are zero; the zero operand itself is a nonnegative polynomial that vanishes at all-one markers, so its own marker derivatives vanish too (no pullback needed)
@@ -395,20 +411,25 @@ template <class P> struct Exec {
     bool materialize_sparse(int nn) {
         NodeD& n = N[nn]; if (n.kind != K_REDUCE) return false; int mn = n.children[0]; const NodeD& m = N[mn]; if (m.kind != K_MUL) return false;
         // known supports: SOURCE children (zeros in the table) and COMPLETE sparse children; choose the driver = smallest known support
-        int drv = -1; int64_t best = INT64_MAX; std::vector<int64_t> drows;
+        int drv = -1; int64_t best = INT64_MAX;
         for (size_t i = 0; i < m.children.size(); ++i) { int cn = m.children[i]; const NodeD& c = N[cn]; int64_t cntz = -1;
-            if (c.kind == K_SOURCE) { cntz = 0; for (int64_t e = 0; e < c.volume; ++e) { if (!P::is_zero(fvals[F[c.fid].val_off + e])) ++cntz; if (!poll(1)) return false; } }
+            if (c.kind == K_SOURCE) { cntz = 0; for (int64_t e = 0; e < c.volume; ++e) { if (!P::is_zero(fvals[F[c.fid].val_off + e])) ++cntz; ++C.source_reads; if (!poll(1)) return false; } }
             else if (c.storage == S_SPARSE && sparse_complete[cn]) cntz = (int64_t)sparse_vals[cn].size();
             if (cntz >= 0 && cntz < best) { best = cntz; drv = (int)i; } }
         if (drv < 0) return false;
-        const NodeD& dc = N[m.children[drv]];
-        if (!reserve(used_index, caps.index, (uint64_t)best * sizeof(int64_t))) return false;
-        if (dc.kind == K_SOURCE) { for (int64_t e = 0; e < dc.volume; ++e) if (!P::is_zero(fvals[F[dc.fid].val_off + e])) drows.push_back(e); } else drows = sparse_idx[m.children[drv]];
-        // axes of the MUL not determined by the driver
+        const NodeD& dc = N[m.children[drv]]; uint64_t& cv = sparse_cap_values[nn]; uint64_t& ci = sparse_cap_index[nn];
+        // temporaries (driver rows, axis masks, digit buffers) charged to the index category at their exact sizes
+        uint64_t tmp_bytes = (uint64_t)best * sizeof(int64_t) + m.card.size() * (1 + 2 * sizeof(int64_t) + sizeof(int)) + dc.card.size() * sizeof(int64_t) + 256;
+        if (!reserve(used_index, caps.index, tmp_bytes)) return false; ci += tmp_bytes;
+        std::vector<int64_t> drows; drows.reserve(best);
+        if (dc.kind == K_SOURCE) { for (int64_t e = 0; e < dc.volume; ++e) { if (!P::is_zero(fvals[F[dc.fid].val_off + e])) drows.push_back(e); if (!poll(1)) return false; } } else drows = sparse_idx[m.children[drv]];
         std::vector<char> det(m.card.size(), 0); for (size_t k = 0; k < dc.card.size(); ++k) det[m.proj[drv][k]] = 1;
         std::vector<int> freeax; int64_t freevol = 1; for (size_t p = 0; p < m.card.size(); ++p) if (!det[p]) { freeax.push_back((int)p); if (freevol > INT64_MAX / m.card[p]) return false; freevol *= m.card[p]; }
         std::vector<int64_t> d(m.card.size()), dd; size_t sl; if (!frame_alloc(2, sl)) return false; Num& row = at(sl); Num& tmp = at(sl + 1);
-        dpos[nn].clear(); sparse_vals[nn].clear(); sparse_idx[nn].clear();
+        dpos[nn].clear(); sparse_vals[nn].clear(); sparse_idx[nn].clear(); sparse_in_off[nn].clear(); sparse_in_idx[nn].clear(); sparse_reverse_ready[nn] = 0;
+        // output rows are appended in join order; contributing MUL indices are collected per output row in a temporary bucket list, then compacted into CSR
+        std::vector<std::vector<int64_t>> contrib;                                     // per output row: contributing MUL child indices (nonzero products only)
+        uint64_t contrib_charged = 0; size_t buckets_before = dpos[nn].bucket_count();
         for (int64_t r = 0; r < (int64_t)drows.size(); ++r) {
             digits(dc, drows[r], dd); for (size_t k = 0; k < dc.card.size(); ++k) d[m.proj[drv][k]] = dd[k];
             for (int64_t t = 0; t < freevol; ++t) {
@@ -417,27 +438,44 @@ template <class P> struct Exec {
                 for (size_t i = 0; i < m.children.size() && !zero; ++i) { int64_t cidx = mul_child_index(m, (int)i, d); if (!value(m.children[i], cidx, tmp)) { top = sl; return false; } if (P::is_zero(tmp)) zero = true; else { P::mul(row, row, tmp); ++C.mults; } if (!poll(1)) { top = sl; return false; } }
                 ++C.sparse_rows_joined;
                 if (zero) { ++C.zero_skips; continue; }
-                // output index of the REDUCE: kept child axes
                 int64_t oidx = 0; for (size_t p = 0; p < n.card.size(); ++p) { int src = -1; for (size_t q = 0; q < m.card.size(); ++q) if (n.proj[0][q] == (int)p) { src = (int)q; break; } oidx = oidx * n.card[p] + d[src]; }
-                auto it = dpos[nn].find(oidx);
-                if (it == dpos[nn].end()) { if (!reserve(used_values, caps.values, P::bytes(prec) + sizeof(int64_t)) || !reserve(used_index, caps.index, 48)) { top = sl; return false; } dpos[nn][oidx] = (int64_t)sparse_vals[nn].size(); sparse_vals[nn].emplace_back(); P::init(sparse_vals[nn].back(), prec); P::copy(sparse_vals[nn].back(), row); sparse_idx[nn].push_back(oidx); ++C.sparse_output_rows; }
-                else { P::add(sparse_vals[nn][it->second], sparse_vals[nn][it->second], row); ++C.adds; }
-                ++C.mul_rows; ++C.reduce_terms;
+                int64_t midx = compose(m.card, d);
+                auto it = dpos[nn].find(oidx); int64_t slot;
+                if (it == dpos[nn].end()) {
+                    if (!grow(sparse_vals[nn], used_values, caps.values, P::bytes(prec), cv) || !grow(sparse_idx[nn], used_index, caps.index, sizeof(int64_t), ci) || !grow(contrib, used_index, caps.index, sizeof(std::vector<int64_t>), contrib_charged)) { top = sl; return false; }
+                    slot = (int64_t)sparse_vals[nn].size(); dpos[nn][oidx] = slot; sparse_vals[nn].emplace_back(); P::init(sparse_vals[nn].back(), prec); P::copy(sparse_vals[nn].back(), row); sparse_idx[nn].push_back(oidx); contrib.emplace_back(); ++C.sparse_output_rows;
+                    size_t b = dpos[nn].bucket_count(); if (b > buckets_before) { if (!reserve(used_index, caps.index, (uint64_t)(b - buckets_before) * 16 + 48)) { top = sl; return false; } ci += (uint64_t)(b - buckets_before) * 16 + 48; buckets_before = b; } else { if (!reserve(used_index, caps.index, 48)) { top = sl; return false; } ci += 48; }
+                } else { slot = it->second; P::add(sparse_vals[nn][slot], sparse_vals[nn][slot], row); ++C.adds; }
+                if (!grow(contrib[slot], used_index, caps.index, sizeof(int64_t), contrib_charged)) { top = sl; return false; }
+                contrib[slot].push_back(midx); ++C.mul_rows; ++C.reduce_terms;
             }
         }
-        top = sl; sparse_complete[nn] = 1; return true;
+        // compact the retained join rows into CSR (offsets + indices), charged exactly; the temporary bucket lists are freed and their charge released
+        uint64_t nrows = sparse_vals[nn].size(), nin = 0; for (auto& v : contrib) nin += v.size();
+        uint64_t csr_bytes = (nrows + 1 + nin) * sizeof(int64_t);
+        if (!reserve(used_index, caps.index, csr_bytes)) { top = sl; return false; } ci += csr_bytes;
+        sparse_in_off[nn].reserve(nrows + 1); sparse_in_idx[nn].reserve(nin); sparse_in_off[nn].push_back(0);
+        for (auto& v : contrib) { for (int64_t x : v) sparse_in_idx[nn].push_back(x); sparse_in_off[nn].push_back((int64_t)sparse_in_idx[nn].size()); if (!poll(1)) { top = sl; return false; } }
+        std::vector<std::vector<int64_t>>().swap(contrib); release(used_index, contrib_charged);
+        release(used_index, tmp_bytes); ci -= tmp_bytes;                                  // drows / det / freeax / d / dd die with this frame
+        top = sl; sparse_complete[nn] = 1; sparse_reverse_ready[nn] = 1; return true;
     }
     bool downgrade_to_stream(int nn) {   // one materialized -> stream downgrade per node per attempt; discards incomplete numerical state of the node
         NodeD& n = N[nn]; if (n.downgraded) return false; n.downgraded = 1; ++C.downgrades; abandon_frames(0);
         for (auto& b : dense[nn]) { for (auto& x : b) P::clear(x); release(used_values, (uint64_t)b.size() * P::bytes(prec) + sizeof(std::vector<Num>)); } dense[nn].clear(); dense_done[nn] = 0;
-        if (n.storage == S_SPARSE) { for (auto& x : sparse_vals[nn]) P::clear(x); release(used_values, (uint64_t)sparse_vals[nn].size() * (P::bytes(prec) + sizeof(int64_t))); release(used_index, (uint64_t)sparse_vals[nn].size() * 48); sparse_vals[nn].clear(); sparse_idx[nn].clear(); sparse_complete[nn] = 0; ++C.sparse_join_discarded; }
-        dpos[nn].clear(); n.storage = S_STREAM; stop = GB_OK; return true;
+        if (n.storage == S_SPARSE) {
+            for (auto& x : sparse_vals[nn]) P::clear(x);
+            std::vector<Num>().swap(sparse_vals[nn]); std::vector<int64_t>().swap(sparse_idx[nn]); std::vector<int64_t>().swap(sparse_in_off[nn]); std::vector<int64_t>().swap(sparse_in_idx[nn]); std::unordered_map<int64_t, int64_t>().swap(dpos[nn]);   // ACTUAL deallocation (swap with empty), then release exactly what was charged
+            release(used_values, sparse_cap_values[nn]); release(used_index, sparse_cap_index[nn]); sparse_cap_values[nn] = 0; sparse_cap_index[nn] = 0; sparse_complete[nn] = 0; sparse_reverse_ready[nn] = 0; ++C.sparse_join_discarded;
+        } else { std::unordered_map<int64_t, int64_t>().swap(dpos[nn]); }
+        std::vector<std::vector<Num>>().swap(dense[nn]); n.storage = S_STREAM; stop = GB_OK; return true;
     }
 
     int forward() {
         phase_tag = 1;
-        if (!reserve(used_scratch, caps.scratch, (uint64_t)N.size() * (3 * sizeof(std::vector<Num>) + sizeof(std::unordered_map<int64_t, int64_t>) + 2 * sizeof(std::vector<int64_t>) + 8))) return stop;
+        if (!reserve(used_scratch, caps.scratch, (uint64_t)N.size() * (3 * sizeof(std::vector<Num>) + sizeof(std::unordered_map<int64_t, int64_t>) + 4 * sizeof(std::vector<int64_t>) + 32))) return stop;
         dense.assign(N.size(), {}); dense_done.assign(N.size(), 0); dpos.assign(N.size(), {}); sparse_vals.assign(N.size(), {}); sparse_idx.assign(N.size(), {}); sparse_complete.assign(N.size(), 0); adj.assign(N.size(), {}); adj_state.assign(N.size(), {}); adj_alloc.assign(N.size(), 0);
+        sparse_in_off.assign(N.size(), {}); sparse_in_idx.assign(N.size(), {}); sparse_reverse_ready.assign(N.size(), 0); sparse_cap_values.assign(N.size(), 0); sparse_cap_index.assign(N.size(), 0);
         Nx.assign(nvars, {}); for (int v = 0; v < nvars; ++v) { if (!reserve(used_reverse, caps.reverse, (uint64_t)vcard[v] * P::bytes(prec))) return stop; Nx[v].resize(vcard[v]); for (auto& x : Nx[v]) P::init(x, prec); }
         cache_cap = caps.values > used_values ? (caps.values - used_values) / 2 : 0;                            // the cache may use at most half of the remaining value category (documented policy)
         for (size_t nn = 0; nn < N.size(); ++nn) {
@@ -458,14 +496,22 @@ template <class P> struct Exec {
         flushing = 0; return true;
     }
     bool drain_node(int nn) {
+        const NodeD& n = N[nn]; bool sparse_rev = (n.storage == S_SPARSE && sparse_complete[nn] && sparse_reverse_ready[nn]);
+        if (n.storage == S_SPARSE && sparse_complete[nn] && !sparse_reverse_ready[nn]) ++C.sparse_reverse_generic;      // labelled: a sparse node drained through the GENERIC tuple loop (retained join rows unavailable)
         for (size_t s = 0; s < adj[nn].size(); ++s) {
             if (adj_state[nn][s] != 1) { if (!poll(1)) return false; continue; }
             adj_state[nn][s] = 2;                                                           // ACTIVE: its byte charge stays until consumed
             size_t sl; if (!frame_alloc(1, sl)) return false; P::copy(at(sl), adj[nn][s]); P::set_zero(adj[nn][s]);
-            int64_t idx = stored_index(nn, (int64_t)s);
-            size_t fl = frames.size();
-            if (!push(1, nn, idx, nullptr, &at(sl))) { top = sl; return false; }
-            if (!run(fl)) { top = sl; return false; }
+            if (sparse_rev) {
+                // SUPPORT-INDEXED PULLBACK: the output row's delta goes to exactly its retained contributing MUL rows (every external-input delta and every
+                // owned marker of those rows is reached through the MUL pullback); absent rows have an exactly-zero product -> zero polynomial -> no pullback (P3)
+                int mn = n.children[0]; int64_t lo = sparse_in_off[nn][s], hi = sparse_in_off[nn][s + 1];
+                for (int64_t q = lo; q < hi; ++q) { ++C.sparse_reverse_rows; int64_t midx = sparse_in_idx[nn][q]; if (!pull(mn, midx, at(sl))) { top = sl; return false; } if (!poll(1)) { top = sl; return false; } }
+            } else {
+                int64_t idx = stored_index(nn, (int64_t)s); size_t fl = frames.size();
+                if (!push(1, nn, idx, nullptr, &at(sl))) { top = sl; return false; }
+                if (!run(fl)) { top = sl; return false; }
+            }
             top = sl; adj_state[nn][s] = 3; ++C.slots_drained;
         }
         return true;
@@ -499,11 +545,11 @@ static uint64_t ir_bytes_bound(int64_t plen) { return (uint64_t)plen * (sizeof(i
 template <class P> static void parse_prog(Exec<P>& E, const int64_t* prog, int64_t plen, int64_t nfac_vals, int64_t nratio_vals, int64_t nconst_vals) {
     Reader r{prog, plen}; if (r.rd() != 3) throw BadProg("magic"); E.nvars = r.rdi(); if (E.nvars < 0) throw BadProg("nvars"); E.vcard.resize(E.nvars); for (int v = 0; v < E.nvars; ++v) { E.vcard[v] = r.rdn(); if (E.vcard[v] < 1) throw BadProg("card"); }
     int64_t nF = r.rdn(); if (nF > plen) throw BadProg("factor count"); E.F.resize(nF);
-    for (int64_t i = 0; i < nF; ++i) { FactorD& f = E.F[i]; int ar = r.rdi(); if (ar < 0) throw BadProg("arity"); f.scope.resize(ar); f.card.resize(ar); f.stride.resize(ar); for (int k = 0; k < ar; ++k) { f.scope[k] = r.rdi(); if (f.scope[k] < 0 || f.scope[k] >= E.nvars) throw BadProg("scope"); f.card[k] = (int)E.vcard[f.scope[k]]; } f.entries = r.rdn(); f.val_off = r.rdn();
+    for (int64_t i = 0; i < nF; ++i) { if (!E.poll(1)) throw std::runtime_error("deadline"); FactorD& f = E.F[i]; int ar = r.rdi(); if (ar < 0) throw BadProg("arity"); f.scope.resize(ar); f.card.resize(ar); f.stride.resize(ar); for (int k = 0; k < ar; ++k) { f.scope[k] = r.rdi(); if (f.scope[k] < 0 || f.scope[k] >= E.nvars) throw BadProg("scope"); f.card[k] = (int)E.vcard[f.scope[k]]; } f.entries = r.rdn(); f.val_off = r.rdn();
         int64_t st = 1; for (int k = ar - 1; k >= 0; --k) { f.stride[k] = st; if (st > INT64_MAX / f.card[k]) throw BadProg("table size overflow"); st *= f.card[k]; } if (st != f.entries || f.val_off > nfac_vals - f.entries) throw BadProg("table size / offset"); }
     int64_t ncls = r.rdn(); if (ncls > plen) throw BadProg("cls count"); E.cls.resize(ncls); for (int64_t i = 0; i < ncls; ++i) E.cls[i] = r.rdn();
     int64_t nN = r.rdn(); if (nN > plen) throw BadProg("node count"); E.N.resize(nN);
-    for (int64_t i = 0; i < nN; ++i) { NodeD& n = E.N[i]; n.kind = r.rdi(); if (n.kind < 0 || n.kind > 6) throw BadProg("kind"); int na = r.rdi(); if (na < 0) throw BadProg("naxes"); n.axes.resize(na); n.card.resize(na); n.volume = 1;
+    for (int64_t i = 0; i < nN; ++i) { if (!E.poll(1)) throw std::runtime_error("deadline"); NodeD& n = E.N[i]; n.kind = r.rdi(); if (n.kind < 0 || n.kind > 6) throw BadProg("kind"); int na = r.rdi(); if (na < 0) throw BadProg("naxes"); n.axes.resize(na); n.card.resize(na); n.volume = 1;
         for (int k = 0; k < na; ++k) { n.axes[k] = r.rdi(); n.card[k] = r.rdn(); if (n.card[k] < 1) throw BadProg("axis card"); if (n.volume > INT64_MAX / n.card[k]) throw BadProg("volume exceeds int64"); n.volume *= n.card[k]; }
         n.storage = r.rdi(); if (n.storage < 0 || n.storage > 3) throw BadProg("storage"); n.demand_kind = r.rdi(); if (n.demand_kind < 0 || n.demand_kind > 2) throw BadProg("demand kind"); int64_t nd = r.rdn(); if (nd > plen) throw BadProg("ndemand"); n.demand.resize(nd); int64_t prev = -1; for (int64_t q = 0; q < nd; ++q) { n.demand[q] = r.rd(); if (n.demand[q] <= prev || n.demand[q] >= n.volume) throw BadProg("demand list must be sorted, unique, < volume"); prev = n.demand[q]; }
         if (n.demand_kind == 1 && nd == 0) n.demand_kind = 2; if (n.demand_kind != 1 && nd != 0) throw BadProg("demand list with non-LIST kind"); if (n.storage != S_DENSE && n.demand_kind != 0) throw BadProg("demand hint on a non-DENSE node");
@@ -570,7 +616,7 @@ Handle* gb3_create(int mode, int prec, const int64_t* prog, int64_t plen, const 
         if (err != GB_OK) throw std::runtime_error("load");
         return h;
     } catch (const BadProg&) { err = GB_BADPROG; } catch (const std::bad_alloc&) { err = GB_MEMORY; }
-      catch (const std::runtime_error& ex) { if (std::strcmp(ex.what(), "fpenv") == 0) err = GB_FPENV; else if (std::strcmp(ex.what(), "ir") == 0) err = GB_MEMORY; else if (err == GB_OK) err = GB_FAULT; } catch (...) { err = GB_FAULT; }
+      catch (const std::runtime_error& ex) { if (std::strcmp(ex.what(), "fpenv") == 0) err = GB_FPENV; else if (std::strcmp(ex.what(), "ir") == 0) err = GB_MEMORY; else if (std::strcmp(ex.what(), "deadline") == 0) err = GB_DEADLINE; else if (err == GB_OK) err = GB_FAULT; } catch (...) { err = GB_FAULT; }
     if (h) { delete h->I; delete h->D; delete h; }
     if (err_out) *err_out = err; return nullptr;
 }
@@ -580,7 +626,7 @@ static int dbl_fault() { return Dbl::label_fault ? GB_LABEL : (Dbl::range_fault 
 int gb3_forward(Handle* h) { try { if (h->mode == 1 && !fp_env_ok()) return GB_FPENV; int st = h->mode == 0 ? h->I->forward() : h->D->forward(); if (st == GB_OK && h->mode == 0) st = mpfr_flags_stop(); if (st == GB_OK && h->mode == 1) { st = dbl_fault(); if (st == GB_OK && !Dbl::finite(h->D->Z)) st = GB_RANGE; } return st; } catch (const std::bad_alloc&) { return GB_MEMORY; } catch (...) { return GB_FAULT; } }
 int gb3_reverse(Handle* h) { try { if (h->mode == 1 && !fp_env_ok()) return GB_FPENV; int st = h->mode == 0 ? h->I->reverse() : h->D->reverse(); if (st == GB_OK && h->mode == 0) st = mpfr_flags_stop(); if (st == GB_OK && h->mode == 1) st = dbl_fault(); return st; } catch (const std::bad_alloc&) { return GB_MEMORY; } catch (...) { return GB_FAULT; } }
 int gb3_mpfr_flags(Handle* h) { (void)h; return (mpfr_overflow_p() ? 1 : 0) | (mpfr_underflow_p() ? 2 : 0) | (mpfr_nanflag_p() ? 4 : 0) | (mpfr_erangeflag_p() ? 8 : 0) | (mpfr_inexflag_p() ? 16 : 0); }
-#define CTRS3(E) uint64_t v[48] = {E.C.value_frames, E.C.pullback_frames, E.C.frames_combined, E.C.max_frame_depth, E.C.polls, E.C.mults, E.C.adds, E.C.lookups, E.C.zero_skips, E.C.source_reads, E.C.marker_updates, E.C.gather_visits, E.C.add_visits, E.C.mul_rows, E.C.reduce_terms, E.C.stream_reevals, E.C.reads_outside_demand, E.C.regenerated_values, E.C.dense_blocks, E.C.entries_materialized, E.C.entries_stored_planned, E.C.sparse_rows_joined, E.C.sparse_output_rows, E.C.sparse_join_discarded, E.C.cache_hits, E.C.cache_misses, E.C.cache_evictions, E.C.cache_inserts, E.C.adjoint_adds, E.C.slots_drained, E.C.early_flushes, E.C.late_increments, E.peak_pending, E.C.downgrades, E.C.root_ops, E.C.numerator_adds, E.used_values, E.used_index, E.used_reverse, E.used_pending, E.used_scratch, E.peak_scratch, E.cache_bytes, 0, 0, 0, 0, 0}; std::memcpy(out48, v, sizeof(v));
+#define CTRS3(E) uint64_t v[48] = {E.C.value_frames, E.C.pullback_frames, E.C.frames_combined, E.C.max_frame_depth, E.C.polls, E.C.mults, E.C.adds, E.C.lookups, E.C.zero_skips, E.C.source_reads, E.C.marker_updates, E.C.gather_visits, E.C.add_visits, E.C.mul_rows, E.C.reduce_terms, E.C.stream_reevals, E.C.reads_outside_demand, E.C.regenerated_values, E.C.dense_blocks, E.C.entries_materialized, E.C.entries_stored_planned, E.C.sparse_rows_joined, E.C.sparse_output_rows, E.C.sparse_join_discarded, E.C.cache_hits, E.C.cache_misses, E.C.cache_evictions, E.C.cache_inserts, E.C.adjoint_adds, E.C.slots_drained, E.C.early_flushes, E.C.late_increments, E.peak_pending, E.C.downgrades, E.C.root_ops, E.C.numerator_adds, E.used_values, E.used_index, E.used_reverse, E.used_pending, E.used_scratch, E.peak_scratch, E.cache_bytes, E.C.reverse_tuples, E.C.sparse_reverse_rows, E.C.sparse_reverse_generic, 0, 0}; std::memcpy(out48, v, sizeof(v));
 void gb3_counters(Handle* h, uint64_t* out48) { if (h->mode == 0) { CTRS3((*h->I)) } else { CTRS3((*h->D)) } }
 void gb3_snapshot(Handle* h, uint64_t* out8) { if (!h) return; if (h->mode == 0) for (int i = 0; i < 8; ++i) out8[i] = h->I->snap[i].load(); else for (int i = 0; i < 8; ++i) out8[i] = h->D->snap[i].load(); }
 // results: Z (lo,hi) then every reduced variable's N[v][a] (lo,hi) as exact tokens (';' separated). MPFR: hex@exp or "0"; binary64: %a@label (Z and N tokens written twice)

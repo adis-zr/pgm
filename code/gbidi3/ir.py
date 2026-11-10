@@ -138,6 +138,147 @@ class Program:
         return cons
 
 
+# ---------------------------------------------------------------------------------------------------------------- local semantics (unconditional, every program)
+def local_semantics(P, dom, tick=lambda n=1: None):
+    """Complete LOCAL kind / type / map validation of every node of an UNTRUSTED proposal, independent of any global coverage route (review R1a).
+    Checks every mutable field: kind, children (ints, precede the node, arity per kind), axes (reduced variables, distinct), cardinalities (positive ints;
+    = reduced domain unless the axis is a compressed REDUCE output), storage / demand, MUL projections (total, injective, child.axes[k] == axes[proj[k]]
+    with equal cardinality), REDUCE maps (kept axes a bijection onto the output with child.axes[k] == axes[rmap[k]]; cardinality equal or compressed
+    through a representative map of the output size), GATHER descriptors (one per child axis, out_pos in range and distinct, n.axes[out_pos] ==
+    child.axes[k]; identity axes have equal cardinality and NO ratio or an all-one ratio of the exact size; class maps need a ratio of the exact size),
+    ADD operands aligned. Raises IRError with the node id and the violated rule."""
+    for pos, n in enumerate(P.nodes):
+        if not isinstance(n, Node) or n.nid != pos:
+            raise IRError("node %d: ids are not positional" % pos)
+        if n.kind not in KIND_CODE:
+            raise IRError("node %d: unknown kind %r" % (n.nid, n.kind))
+        if not isinstance(n.children, tuple) or any(not isinstance(c, int) or isinstance(c, bool) or not (0 <= c < n.nid) for c in n.children):
+            raise IRError("node %d: children must be node ids that precede it" % n.nid)
+        nch = len(n.children)
+        if (n.kind in (SOURCE, MARKER, CONSTANT) and nch != 0) or (n.kind in (GATHER, REDUCE) and nch != 1) or (n.kind in (ADD, MUL) and nch < 1):
+            raise IRError("node %d: %s with %d children" % (n.nid, n.kind, nch))
+        if not isinstance(n.axes, tuple) or not isinstance(n.card, tuple) or len(n.axes) != len(n.card) or len(set(n.axes)) != len(n.axes):
+            raise IRError("node %d: axes / cardinalities malformed" % n.nid)
+        if any(not isinstance(c, int) or isinstance(c, bool) or c < 1 for c in n.card):
+            raise IRError("node %d: cardinalities must be positive ints" % n.nid)
+        if prod(n.card) > INT64_MAX:
+            raise IRError("node %d: volume exceeds int64" % n.nid)
+        if n.storage not in STORAGE_CODE:
+            raise IRError("node %d: unknown storage" % n.nid)
+        for k, (a, c) in enumerate(zip(n.axes, n.card)):
+            if a not in dom:
+                raise IRError("node %d: axis %s is not a reduced variable" % (n.nid, a))
+            compressed = n.kind == REDUCE and n.reps is not None and any(r is not None and n.rmap[i] == k for i, r in enumerate(n.reps))
+            if not compressed and c != len(dom[a]):
+                raise IRError("node %d: axis %s has cardinality %d but the reduced domain has %d" % (n.nid, a, c, len(dom[a])))
+        if n.kind == SOURCE:
+            pass
+        elif n.kind == MARKER:
+            if n.var not in dom or n.axes != (n.var,) or n.card != (len(dom[n.var]),):
+                raise IRError("node %d: MARKER malformed" % n.nid)
+        elif n.kind == CONSTANT:
+            if n.axes:
+                raise IRError("node %d: CONSTANT must be scalar" % n.nid)
+        elif n.kind == GATHER:
+            child = P.nodes[n.children[0]]
+            if not isinstance(n.gaxes, tuple) or len(n.gaxes) != len(child.axes):
+                raise IRError("node %d: GATHER needs exactly one descriptor per child axis" % n.nid)
+            seen = set()
+            for k, g in enumerate(n.gaxes):
+                if not isinstance(g, dict) or not isinstance(g.get("out_pos"), int) or isinstance(g.get("out_pos"), bool):
+                    raise IRError("node %d: gather descriptor malformed" % n.nid)
+                op = g["out_pos"]
+                if not (0 <= op < len(n.axes)) or op in seen:
+                    raise IRError("node %d: gather out_pos out of range or repeated" % n.nid)
+                seen.add(op)
+                if n.axes[op] != child.axes[k]:
+                    raise IRError("node %d: gather axis %d reads variable %s but child axis %d is %s" % (n.nid, op, n.axes[op], k, child.axes[k]))
+                extra = set(g) - {"out_pos", "cls", "ratio", "fixed"}
+                if extra:
+                    raise IRError("node %d: unknown gather fields %s" % (n.nid, sorted(extra)))
+                if g.get("fixed") not in (None, 0):
+                    raise IRError("node %d: fixed-slice gathers are not accepted" % n.nid)
+                cls = g.get("cls"); ratio = g.get("ratio")
+                if cls is None:
+                    if n.card[op] != child.card[k]:
+                        raise IRError("node %d: identity gather axis %s cardinality %d != %d" % (n.nid, n.axes[op], n.card[op], child.card[k]))
+                    if ratio is not None and (len(ratio) != n.card[op] or any(Fr(r) != 1 for r in ratio)):
+                        raise IRError("node %d: an identity gather carries a non-unit weight on axis %s (unproved coefficient)" % (n.nid, n.axes[op]))
+                else:
+                    if len(cls) != n.card[op] or any(not isinstance(x, int) or isinstance(x, bool) or not (0 <= x < child.card[k]) for x in cls):
+                        raise IRError("node %d: class map of axis %s malformed" % (n.nid, n.axes[op]))
+                    if ratio is None or len(ratio) != n.card[op] or any(Fr(r) < 0 for r in ratio):
+                        raise IRError("node %d: class ratios of axis %s malformed" % (n.nid, n.axes[op]))
+            if len(n.axes) != len(n.gaxes):
+                raise IRError("node %d: gather output axes must be exactly the child axes (no broadcast in this round)" % n.nid)
+        elif n.kind == ADD:
+            for ch in n.children:
+                c = P.nodes[ch]
+                if c.axes != n.axes or c.card != n.card:
+                    raise IRError("node %d: ADD operand %d is not aligned" % (n.nid, ch))
+        elif n.kind == MUL:
+            if not isinstance(n.proj, tuple) or len(n.proj) != len(n.children):
+                raise IRError("node %d: MUL projections malformed" % n.nid)
+            covered = set()
+            for ci, ch in enumerate(n.children):
+                c = P.nodes[ch]; pr = n.proj[ci]
+                if not isinstance(pr, tuple) or len(pr) != len(c.axes) or len(set(pr)) != len(pr) or any(not isinstance(x, int) or isinstance(x, bool) or not (0 <= x < len(n.axes)) for x in pr):
+                    raise IRError("node %d: operand %d projection is not a total injective map into the output axes" % (n.nid, ci))
+                for k, x in enumerate(pr):
+                    if n.axes[x] != c.axes[k] or n.card[x] != c.card[k]:
+                        raise IRError("node %d: operand %d axis %d (%s, %d) is mapped to output axis %d (%s, %d)" % (n.nid, ci, k, c.axes[k], c.card[k], x, n.axes[x], n.card[x]))
+                covered |= set(pr)
+            if covered != set(range(len(n.axes))):
+                raise IRError("node %d: output axis not produced by any operand" % n.nid)
+        elif n.kind == REDUCE:
+            c = P.nodes[n.children[0]]
+            if not isinstance(n.rmap, tuple) or not isinstance(n.reps, tuple) or len(n.rmap) != len(c.axes) or len(n.reps) != len(c.axes):
+                raise IRError("node %d: REDUCE maps malformed" % n.nid)
+            kept = [r for r in n.rmap if r != -1]
+            if sorted(kept) != list(range(len(n.axes))) or any(not isinstance(r, int) or isinstance(r, bool) or r < -1 for r in n.rmap):
+                raise IRError("node %d: REDUCE kept axes are not a bijection onto the output" % n.nid)
+            for k, r in enumerate(n.rmap):
+                if r < 0:
+                    if n.reps[k] is not None:
+                        raise IRError("node %d: representative map on an eliminated axis" % n.nid)
+                    continue
+                if n.axes[r] != c.axes[k]:
+                    raise IRError("node %d: kept axis %d is variable %s but the child axis is %s" % (n.nid, r, n.axes[r], c.axes[k]))
+                rep = n.reps[k]
+                if rep is None:
+                    if n.card[r] != c.card[k]:
+                        raise IRError("node %d: kept axis %s cardinality mismatch" % (n.nid, c.axes[k]))
+                else:
+                    if not isinstance(rep, tuple) or len(rep) != 3 or len(rep[0]) != n.card[r] or len(rep[1]) != c.card[k] or len(rep[2]) != c.card[k] or any(not isinstance(x, int) or isinstance(x, bool) or not (0 <= x < c.card[k]) for x in rep[0]):
+                        raise IRError("node %d: representative map of axis %s malformed" % (n.nid, c.axes[k]))
+        tick()
+    if not isinstance(P.roots, list) or any(not isinstance(r, int) or isinstance(r, bool) or not (0 <= r < len(P.nodes)) for r in P.roots) or len(set(P.roots)) != len(P.roots):
+        raise IRError("roots malformed or duplicated")
+    for r in P.roots:
+        if P.nodes[r].axes:
+            raise IRError("root %d is not scalar" % r)
+
+
+def marked_axes_below(P):
+    """marked_axes_below[nid] = the variables that are AXES of node nid and whose MARKER occurs inside its subtree (a marker, once multiplied in, stays an
+    axis until the REDUCE that eliminates it; after that no node above mentions the variable, enforced by the coverage rules). Linear in the total arity of
+    the program (a set of size <= len(axes) per node), unlike a per-node set of ALL markers below, which is quadratic on a deep chain."""
+    below = {}
+    for n in P.nodes:
+        if n.kind == MARKER:
+            s = frozenset((n.var,))
+        elif n.kind == REDUCE:
+            kept = set(n.axes); s = frozenset(v for v in below[n.children[0]] if v in kept)
+        else:
+            s = frozenset()
+            for c in n.children:
+                s |= below[c]
+            if n.kind != ADD:
+                s = frozenset(v for v in s if v in set(n.axes)) if n.kind == GATHER else s
+        below[n.nid] = s
+    return below
+
+
 # ---------------------------------------------------------------------------------------------------------------- coverage calculus
 class Coverage:
     __slots__ = ("A", "O", "M", "E")
@@ -165,28 +306,8 @@ def coverage(P, occurrence_of_derived=None, additive_parent=None):
         elif n.kind == CONSTANT:
             cov[n.nid] = Coverage((), {SCALE}, (), ())
         elif n.kind == GATHER:
-            c = cov[n.children[0]]; child = P.nodes[n.children[0]]; read = set()
-            if len(n.gaxes) != len(child.axes):
-                raise IRError("node %d: gather maps %d child axes, child has %d" % (n.nid, len(n.gaxes), len(child.axes)))
-            for k, g in enumerate(n.gaxes):
-                op = g["out_pos"]
-                if op < 0:
-                    raise IRError("node %d: fixed-slice gathers are not accepted in this round (axis %s)" % (n.nid, child.axes[k]))
-                if n.axes[op] != child.axes[k]:
-                    raise IRError("node %d: gather axis %d reads variable %s but child axis is %s" % (n.nid, op, n.axes[op], child.axes[k]))
-                read.add(op)
-                if g.get("cls") is None:
-                    if n.card[op] != child.card[k]:
-                        raise IRError("node %d: identity gather axis %s cardinality %d != %d" % (n.nid, n.axes[op], n.card[op], child.card[k]))
-                else:
-                    if len(g["cls"]) != n.card[op] or any(not (0 <= x < child.card[k]) for x in g["cls"]):
-                        raise IRError("node %d: class map of axis %s malformed" % (n.nid, n.axes[op]))
-                    if g.get("ratio") is None or len(g["ratio"]) != n.card[op] or any(Fr(r) < 0 for r in g["ratio"]):
-                        raise IRError("node %d: class ratios of axis %s malformed" % (n.nid, n.axes[op]))
-            cov[n.nid] = Coverage(n.axes, c.O, c.M, c.E)                  # broadcast axes (not read) are free axes the value does not depend on
-            for p, a in enumerate(n.axes):
-                if p not in read and (a in c.E or a in c.M):
-                    raise IRError("node %d: broadcast axis %s is already eliminated / marked inside the child" % (n.nid, a))
+            c = cov[n.children[0]]
+            cov[n.nid] = Coverage(n.axes, c.O, c.M, c.E)                  # local map semantics are enforced by local_semantics()
         elif n.kind == ADD:
             cs = [cov[c] for c in n.children]
             for ch in n.children:
@@ -262,13 +383,57 @@ def check_roots(P, cov, all_occurrences, all_vars):
 
 
 # ---------------------------------------------------------------------------------------------------------------- flat serialization for kernel3 (consumes a Validated object only)
-def flatten(V):
+def program_bytes_bound(P):
+    """host bytes of one copy of program P (nodes, axis tuples, projections, maps, demand lists, derived witnesses) from metadata only"""
+    b = 1024 + 64 * len(P.roots)
+    for n in P.nodes:
+        b += 1024 + 48 * (len(n.axes) + len(n.card)) + 16 * len(n.children)
+        if n.kind == MUL:
+            b += 16 * sum(len(pr) for pr in n.proj)
+        elif n.kind == REDUCE:
+            b += 16 * len(n.rmap) + sum(96 + 24 * len(r[0]) + 24 * len(r[1]) + 160 * len(r[2]) for r in n.reps if r is not None)
+        elif n.kind == GATHER:
+            b += sum(160 + (24 * len(g["cls"]) if g.get("cls") is not None else 0) + (160 * len(g["ratio"]) if g.get("ratio") is not None else 0) for g in n.gaxes)
+        if isinstance(n.demand, (list, tuple)):
+            b += 40 * len(n.demand)
+        if n.prov:
+            b += 400
+    for d in (P.derived or {}).values():
+        b += 400 + 160 * sum(len(t) for t in (d.get("parts") or [])) + 160 * (len(d.get("u") or ()) + len(d.get("g") or ()))
+    return b
+
+
+def flatten_bytes_bound(V):
+    """upper bound on the host bytes of flatten(V) + the ctypes arrays built from it (computed from metadata BEFORE anything is built)"""
+    T = V.T; P = V.P; words = 4 + T.nvars_reduced + 2
+    for fid in V.factor_order:
+        words += 4 + len(V.scopes[fid])
+    for n in P.nodes:
+        words += 8 + 2 * len(n.axes) + len(n.children) + (len(n.demand) if isinstance(n.demand, (list, tuple)) else 0)
+        if n.kind == GATHER:
+            words += 4 * len(n.gaxes) + sum(2 * len(g["cls"]) for g in n.gaxes if g.get("cls") is not None)
+        elif n.kind == MUL:
+            words += sum(len(pr) for pr in n.proj)
+        elif n.kind == REDUCE:
+            words += 2 * len(n.rmap) + sum(len(r[0]) for r in n.reps if r is not None)
+    nvals = sum(len(V.tables[fid]) for fid in V.factor_order) + sum(len(g["ratio"]) for n in P.nodes if n.kind == GATHER for g in n.gaxes if g.get("ratio") is not None) + 2
+    return 8 * words * 2 + 160 * nvals + 4096                                        # int64 list + ctypes copy; value strings "num/den" (proxy 160 B incl. list slot and encoded copy)
+
+
+def flatten(V, deadline=None):
     """V: gbidi3.validate.Validated. Returns (prog int64 list, value strings, nfac, nratio, nconst). Value strings: factor tables (trusted + derived),
-    then every ratio table, then constants, then the trusted scale (kernel `scale`; the CONSTANT node value is checked equal to it by the validator)."""
+    then every ratio table, then constants, then the trusted scale (kernel `scale`; the CONSTANT node value is checked equal to it by the validator).
+    Polls the ONE deadline every 4,096 emitted words / strings."""
+    import time as _t
+    emitted = [0]
+    def tick(n=1):
+        emitted[0] += n
+        if deadline is not None and emitted[0] % 4096 < n and _t.monotonic() > deadline:
+            raise IRError("DEADLINE during flattening")
     T = V.T; P = V.P; prog = [3, T.nvars_reduced]; prog += [len(T.dom_of(v)) for v in T.reduced_vars]
     fac_index = {}; qs = []; fdesc = []
     for fid in V.factor_order:
-        tab = V.table(fid); scope = V.scope_positions(fid); fac_index[fid] = len(fdesc); fdesc.append((scope, len(tab), len(qs))); qs.extend("%d/%d" % (q.numerator, q.denominator) for q in tab)
+        tab = V.table(fid); scope = V.scope_positions(fid); fac_index[fid] = len(fdesc); fdesc.append((scope, len(tab), len(qs))); qs.extend("%d/%d" % (q.numerator, q.denominator) for q in tab); tick(len(tab))
     prog.append(len(fdesc))
     for scope, ent, off in fdesc:
         prog += [len(scope)] + list(scope) + [ent, off]
@@ -279,7 +444,7 @@ def flatten(V):
         off = len(ratio_pool); ratio_pool.extend(rs); return off
     node_words = []
     for n in P.nodes:
-        w = [KIND_CODE[n.kind], len(n.axes)]
+        tick(); w = [KIND_CODE[n.kind], len(n.axes)]
         for a, k in zip(n.axes, n.card):
             w += [V.var_position(a), k]
         dk = 0 if n.demand == "FULL" else (2 if n.demand == "EMPTY" or (isinstance(n.demand, (list, tuple)) and len(n.demand) == 0) else 1)

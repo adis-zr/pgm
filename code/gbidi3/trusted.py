@@ -48,7 +48,19 @@ class TFactor:
 
 class TrustedReduced:
     """frozen copy of adp.source.Reduced: the only source of tables / scale / decoder for validation and execution"""
+    @staticmethod
+    def bytes_bound(R):
+        """host bytes of the frozen snapshot (tuples of exact rationals, decoder entries, steps) computed from the LIVE reduced object before any copy is made"""
+        b = 512 + 64 * len(R.steps) + 160 * int(R.nvars) + 80 * len(R.dom) + 8 * sum(len(d) for d in R.dom.values())
+        for f in R.factors:
+            b += 200 + 8 * len(f.table) + 16 * len(f.scope) + sum(fraction_bytes(q) for q in f.table)
+        for es in R.dec.values():
+            b += 80 * len(es)
+        return b
+
     def __init__(self, R, ledger=None):
+        if ledger is not None:
+            ledger.reserve("source_ir_maps_output", TrustedReduced.bytes_bound(R), "trusted reduced snapshot (reserved BEFORE the frozen copies are built)")
         self.nvars = int(R.nvars); self.orig_card = tuple(int(c) for c in R.orig_card); self.ev = {int(v): int(s) for v, s in R.ev.items()}
         self.dom = {int(v): tuple(int(s) for s in d) for v, d in R.dom.items()}
         self.factors = tuple(sorted((TFactor(f.fid, f.scope, f.card, f.table, f.origin) for f in R.factors), key=lambda f: f.fid)); self.scale = Fr(R.scale); self.zero_proof = R.zero_proof
@@ -67,13 +79,6 @@ class TrustedReduced:
         self.reduced_vars = tuple(sorted(self.dom)); self.nvars_reduced = len(self.reduced_vars); self.var_pos = {v: i for i, v in enumerate(self.reduced_vars)}
         self.by_fid = {f.fid: f for f in self.factors}
         self.content_hash = self._hash()
-        if ledger is not None:
-            b = 512 + 64 * len(self.steps) + 160 * self.nvars
-            for f in self.factors:
-                b += 200 + 8 * len(f.table) + sum(fraction_bytes(q) for q in f.table)
-            for es in self.dec.values():
-                b += 80 * len(es)
-            ledger.reserve("source_ir_maps_output", b, "trusted reduced snapshot")
 
     def dom_of(self, v):
         return self.dom[v]

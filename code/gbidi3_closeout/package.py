@@ -5,10 +5,39 @@ archive (sha256, bytes, member count, central-directory and member tests), and -
 built -- a supervisory receipt sidecar written by the caller (gbidi.supervise) next to the zip.
     python -m gbidi3_closeout.package RUN_DIR OUT.zip"""
 from __future__ import annotations
-import os, sys, json, time, hashlib, zipfile
+import os, sys, json, time, hashlib, zipfile, subprocess
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_TREES = ["gbidi3", "gbidi3_closeout"]
-SRC_FILES = ["tests/test_gbidi3_complete.py", "gbidi/supervise.py", "adp/source.py", "adp/publish.py", "adp/checker.py", "adp/cell.py", "adp/census/run.py", "adp/census/supervise.py", "ext/uai.py", "bench/cells.py", "README.md"]
+# the COMPLETE import closure of the production entry points (gbidi3.cell / pilot / arm_adapter / verify / reconcile / inspect_panel / closeout), the comparator
+# producers (adp.cell, bench.cells -> bench/libdai/libdai_mar), and of EVERY test module run in qualification (V3 controls, repair controls, the 236 regressions),
+# with the pinned binaries, build records and frozen configurations they read (review G1). Computed by `closure()` in a fresh interpreter, never by hand.
+ENTRY_MODULES = ["gbidi3.cell", "gbidi3.pilot", "gbidi3.arm_adapter", "gbidi3.verify", "gbidi3.reconcile", "gbidi3.inspect_panel", "gbidi3.demand", "gbidi3.identity", "gbidi3.requirements", "gbidi3.build", "gbidi3_closeout.ready_for_review", "gbidi3_closeout.report", "gbidi3_closeout.package", "gbidi.supervise", "adp.cell", "bench.cells", "adp.census.run", "adp.census.supervise"]
+TEST_FILES = ["tests/test_gbidi3_complete.py", "tests/test_gbidi3_repair_2026_11_10.py", "tests/test_adp_v1.py", "tests/test_adp_census.py", "tests/test_adp_census_correction.py", "tests/test_bidi_pilot.py", "tests/test_gbidi_v2.py"]
+BINARIES_AND_RECORDS = ["gbidi3/libgbidi3_kernel.dylib", "gbidi3/BUILD_RECORD.json", "gbidi/libgbidi_kernel.dylib", "gbidi/BUILD_RECORD.json", "bidi/libbidi_kernel.dylib", "bidi/BUILD_RECORD.json", "bench/libdai/libdai_mar", "bench/libdai/libdai_mar.cpp",
+                        "runs/mdi_2026-10-28/AGGREGATE_DP_CENSUS_2026-11-08/CONFIG_new_arm.json", "runs/mdi_2026-10-28/AGGREGATE_DP_CENSUS_2026-11-08/CENSUS_MANIFEST.json", "runs/mdi_2026-10-28/AGGREGATE_DP_2026-11-07/SCORES.json", "README.md"]
+SRC_FILES = TEST_FILES + BINARIES_AND_RECORDS
+
+
+def closure():
+    """every repository .py file imported when the entry modules and the test modules are imported in a FRESH interpreter (relative paths)"""
+    code = ("import sys, os, importlib, json; HERE=%r; sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(HERE, 'tests')); sys.set_int_max_str_digits(0)\n"
+            "for m in %r + [os.path.splitext(os.path.basename(t))[0] for t in %r]:\n    importlib.import_module(m)\n"
+            "print(json.dumps(sorted(os.path.relpath(m.__file__, HERE) for m in list(sys.modules.values()) if getattr(m, '__file__', None) and m.__file__.startswith(HERE + os.sep) and '.venv' not in m.__file__)))") % (HERE, ENTRY_MODULES, TEST_FILES)
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), timeout=600)
+    if r.returncode != 0:
+        raise SystemExit("import closure failed: " + r.stderr[-2000:])
+    return [f for f in json.loads(r.stdout.strip().splitlines()[-1]) if not f.startswith("tests/")]
+
+
+def extraction_smoke(zip_path, tmp):
+    """clean-extraction smoke (review G2): unzip to a fresh directory; import the entry modules and `pytest --collect-only` every packaged test file from the EXTRACTED tree (PYTHONPATH = extracted code)"""
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(tmp)
+    code_dir = os.path.join(tmp, "code"); env = dict(os.environ, PYTHONPATH=code_dir)
+    imp = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, %r); sys.set_int_max_str_digits(0)\n" % code_dir + "\n".join("import %s" % m for m in ENTRY_MODULES) + "\nfrom gbidi3 import executor as EX; L = EX.Lib.get(); print('kernel', L.gb3_schedule_id().decode())"], capture_output=True, text=True, cwd=code_dir, env=env, timeout=600)
+    col = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"] + TEST_FILES, capture_output=True, text=True, cwd=code_dir, env=env, timeout=600)
+    n = sum(1 for l in col.stdout.splitlines() if "::" in l)
+    return {"extracted_to": tmp, "imports_ok": imp.returncode == 0, "imports_stdout": imp.stdout.strip()[-300:], "imports_stderr": imp.stderr.strip()[-600:], "collect_ok": col.returncode == 0, "collected": n, "collect_tail": col.stdout.strip().splitlines()[-1] if col.stdout.strip() else None, "collect_stderr": col.stderr.strip()[-600:]}
 
 
 def sha(p):
@@ -31,10 +60,16 @@ def main(D, out):
                     continue
                 for f in sorted(files):
                     p = os.path.join(root, f); add(p, "code/" + os.path.relpath(p, HERE))
-        for f in SRC_FILES:
-            p = os.path.join(HERE, f)
-            if os.path.exists(p):
-                add(p, "code/" + f)
+        clo = closure(); seen = set()
+        for f in sorted(set(SRC_FILES) | set(clo)):
+            p = os.path.join(HERE, f); arc = "code/" + f
+            if os.path.exists(p) and arc not in {m["path"] for m in manifest} and arc not in seen:
+                add(p, arc); seen.add(arc)
+        review = os.path.join(os.path.dirname(HERE), "docs", "review-received-2026-11-10-general-bidi-complete-v3")
+        if os.path.isdir(review):
+            for root, _, files in os.walk(review):
+                for f in sorted(files):
+                    pth = os.path.join(root, f); add(pth, "docs/review-received-2026-11-10-general-bidi-complete-v3/" + os.path.relpath(pth, review))
         for root, _, files in os.walk(D):
             if "__pycache__" in root:
                 continue
@@ -43,7 +78,10 @@ def main(D, out):
         z.writestr("PACKAGE_MANIFEST.json", json.dumps({"members": manifest, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}, indent=1)); n += 1
     with zipfile.ZipFile(out) as z:
         bad = z.testzip(); names = z.namelist()
-    rec = {"zip": out, "bytes": os.path.getsize(out), "sha256": sha(out), "members": n, "namelist": len(names), "testzip_first_bad": bad, "central_directory_readable": True, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "note": "integrity record written OUTSIDE the archive; the packaging job's supervisory receipt is a separate sidecar (<zip>.PACKAGE_JOB_RECEIPT.json)"}
+    import tempfile
+    smoke = extraction_smoke(out, tempfile.mkdtemp(prefix="gbidi3_pkg_smoke_"))
+    prov = {"bench/libdai/libdai_mar": {"sha256": sha(os.path.join(HERE, "bench/libdai/libdai_mar")), "pinned_in": "runs/mdi_2026-10-28/AGGREGATE_DP_CENSUS_2026-11-08/CENSUS_MANIFEST.json", "pin_matches": json.load(open(os.path.join(HERE, "runs/mdi_2026-10-28/AGGREGATE_DP_CENSUS_2026-11-08/CENSUS_MANIFEST.json"))).get("bench/libdai/libdai_mar") == sha(os.path.join(HERE, "bench/libdai/libdai_mar")), "source": "bench/libdai/libdai_mar.cpp (libDAI JTREE MAR driver; third-party libDAI linked at build time, not vendored)"}}
+    rec = {"zip": out, "bytes": os.path.getsize(out), "sha256": sha(out), "members": n, "namelist": len(names), "testzip_first_bad": bad, "central_directory_readable": True, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "import_closure_files": clo, "clean_extraction_smoke": smoke, "binary_provenance": prov, "note": "integrity record written OUTSIDE the archive; the packaging job's supervisory receipt is a separate sidecar (<zip>.PACKAGE_JOB_RECEIPT.json)"}
     json.dump(rec, open(out + ".PACKAGE_RECORD.json", "w"), indent=1); json.dump(rec, open(os.path.join(D, "PACKAGE_RECORD.json"), "w"), indent=1); print(json.dumps(rec))
 
 

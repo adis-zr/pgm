@@ -10,7 +10,7 @@ import os, sys, json, time, resource, threading
 T_START = time.monotonic()
 sys.set_int_max_str_digits(0)
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, HERE)
-from gbidi3 import executor as EX, source as GS
+from gbidi3 import memory as GM, executor as EX, source as GS
 
 DEFAULTS = {"allow_binary64": True, "reference_fallback": True}
 DIAG_KEYS = ("task", "reductions", "source_replay", "plan", "plan_candidates", "plan_validation", "plan_stop", "mechanisms", "backend", "binary64_admission", "attempts", "stop", "exact_fallback", "live", "diagnostic_stage", "memory_ledger", "clock", "unsound_witness")
@@ -28,30 +28,44 @@ def atomic_write(path, data):
 
 
 def run_cell(arm, mp, ep, out, deadline, cfg, rec, expected):
-    T_DL = T_START + deadline; rec["phases_s"]["startup_imports"] = now(); ph = {}; t = now(); cfg = dict(cfg, budget_s=deadline)
+    lm = os.environ.get("GBIDI_LAUNCH_MONO")
     try:
-        S = GS.Snapshot(mp, ep)
+        T_DL = float(lm) + deadline if lm else T_START + deadline                      # ONE launch-relative absolute deadline through every layer (review E4)
+    except ValueError:
+        T_DL = T_START + deadline
+    rec["deadline_origin"] = "launch" if lm else "process_start"; rec["phases_s"]["startup_imports"] = now(); ph = {}; t = now(); cfg = dict(cfg, budget_s=deadline)
+    led = GM.Ledger()                                                                        # ONE host memory ledger for the caller's snapshot, execution AND publication (review E1)
+    rec["task_raw"] = {"raw_model_sha256": EX.sha_file(mp), "raw_evidence_sha256": EX.sha_file(ep)}       # streamed hashes (constant memory) BEFORE parsing: every record, even one that never parses, is bound to the caller's bytes
+    if expected:
+        bad = {k: (expected[k], rec["task_raw"].get(k)) for k in ("raw_model_sha256", "raw_evidence_sha256") if k in expected and expected[k] != rec["task_raw"].get(k)}
+        if bad:
+            rec["status"] = "TASK_MISMATCH"; rec["reason"] = "the caller's files do not match the frozen task: %s" % json.dumps(bad); return
+    try:
+        S = GS.Snapshot(mp, ep, ledger=led, deadline=T_DL)
     except GS.InvalidInput as ex:
         rec["status"] = "INVALID_INPUT"; rec["reason"] = ex.reason; return
+    except GS.ParseStop as ex:
+        rec["status"] = "RESOURCE_STOP"; rec["reason"] = "%s during the caller snapshot: %s" % (ex.kind, ex.reason); rec["stop"] = {"phase": "snapshot", "kind": ex.kind, "detail": ex.reason}; rec["memory_ledger"] = led.report(); return
     rec["task"] = dict(S.task)
     if expected:
         bad = {k: (expected[k], S.task.get(k)) for k in ("raw_model_sha256", "raw_evidence_sha256") if k in expected and expected[k] != S.task.get(k)}
         if bad:
             rec["status"] = "TASK_MISMATCH"; rec["reason"] = "the caller's files do not match the frozen task: %s" % json.dumps(bad); return
     try:
-        r = EX.execute(arm, mp, ep, out, T_DL, cfg, phases=ph, snapshot=S)
+        r = EX.execute(arm, mp, ep, out, T_DL, cfg, phases=ph, snapshot=S, ledger=led)
     except EX.Refuse as ex:
         rec["phases_s"].update(ph); rec["status"] = ex.kind; rec["reason"] = ex.reason; rec["stop"] = {"phase": "executor", "kind": ex.kind, "detail": ex.reason}
         if ex.rec:
             rec["diagnostic"] = {k: ex.rec[k] for k in DIAG_KEYS if k in ex.rec}; rec["diagnostic"]["NOTE"] = "NONCERTIFYING diagnostic record of a stopped attempt"
         return
     rec["phases_s"].update(ph); rec["executor_wall_s"] = now() - t
-    for k in ("task", "reductions", "source_replay", "plan", "plan_candidates", "plan_validation", "mechanisms", "backend", "binary64_admission", "attempts", "route", "precision", "max_width", "exact_fallback", "clock", "memory_ledger", "Z"):
+    for k in ("task", "reductions", "source_replay", "plan", "plan_candidates", "plan_validation", "mechanisms", "backend", "binary64_admission", "attempts", "route", "precision", "max_width", "exact_fallback", "clock", "memory_ledger", "Z", "execution"):
         if k in r:
             rec[k] = r[k]
     if r["status"] == "ZERO_EVIDENCE_PROVED":
         rec["status"] = "INCONSISTENT_EVIDENCE_CERTIFIED"; rec["reason"] = r.get("reason"); return
-    t = now(); st = EX.publish(out, mp, ep, r, rec, T_DL, snapshot=S); rec["phases_s"]["publish"] = now() - t; rec["status"] = st
+    t = now(); st = EX.publish(out, mp, ep, r, rec, T_DL, snapshot=S, arm=arm, cfg=cfg, ledger=led); rec["phases_s"]["publish"] = now() - t; rec["status"] = st; rec["memory_ledger"] = led.report()
+    rec["execution"] = r.get("execution")
     if st == "CERTIFIED":
         rec["t_first_complete_output_s"] = now(); rec["output_sha256"] = rec["certified"]["output_sha256"]
 
