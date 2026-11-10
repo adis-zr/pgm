@@ -53,9 +53,11 @@ class _Guard:
                 raise ParseStop("MEMORY_CATEGORY", str(ex))
 
     def tick(self, n=1):
-        self.count += n
-        if self.deadline is not None and (n == 0 or self.count % POLL_TOKENS < n) and time.monotonic() > self.deadline:
-            raise ParseStop("DEADLINE", "deadline during source parsing after %d tokens" % self.count)
+        """ONE cumulative work counter across every parsing / hashing loop: the deadline is polled whenever the counter crosses a multiple of POLL_TOKENS
+        (never reset per factor, review E4) or when n == 0 (an explicit check)"""
+        before = self.count; self.count += n
+        if self.deadline is not None and (n == 0 or self.count // POLL_TOKENS != before // POLL_TOKENS) and time.monotonic() > self.deadline:
+            raise ParseStop("DEADLINE", "deadline during source parsing after %d work units" % self.count)
 
 
 def _int_token(it, what, lo=0):
@@ -98,10 +100,12 @@ def parse_model_bytes(data: bytes, guard=None) -> U.Model:
         raise InvalidInput("empty model file")
     if net not in ("MARKOV", "BAYES"):
         raise InvalidInput("unknown network type %r" % net[:20])
-    nvars = _int_token(it, "variable count"); card = [_int_token(it, "cardinality of variable %d" % v, lo=1) for v in range(nvars)]
+    nvars = _int_token(it, "variable count"); card = []
+    for v in range(nvars):
+        card.append(_int_token(it, "cardinality of variable %d" % v, lo=1)); g.tick()
     nfac = _int_token(it, "factor count"); scopes = []
     for i in range(nfac):
-        k = _int_token(it, "arity of factor %d" % i); sc = tuple(_int_token(it, "scope variable of factor %d" % i) for _ in range(k))
+        k = _int_token(it, "arity of factor %d" % i); sc = tuple(_int_token(it, "scope variable of factor %d" % i) for _ in range(k)); g.tick(k + 1)
         for v in sc:
             if v >= nvars:
                 raise InvalidInput("factor %d names variable %d >= %d" % (i, v, nvars))
@@ -122,10 +126,8 @@ def parse_model_bytes(data: bytes, guard=None) -> U.Model:
                 t = next(it)
             except StopIteration:
                 raise InvalidInput("truncated table of factor %d" % i)
-            tab.append(_rational_token(t, "factor %d entry %d" % (i, j)))
-            if j % POLL_TOKENS == POLL_TOKENS - 1:
-                g.tick(POLL_TOKENS)
-        factors.append(U.Factor(scope=sc, card=cd, table=tab, index=i))
+            tab.append(_rational_token(t, "factor %d entry %d" % (i, j))); g.tick()                   # one unit per rational, cumulative across factors
+        factors.append(U.Factor(scope=sc, card=cd, table=tab, index=i)); g.tick()
     rest = list(it)
     if rest:
         raise InvalidInput("trailing tokens in the model file: %r" % rest[:5])
@@ -143,7 +145,7 @@ def parse_evidence_bytes(data: bytes, m: U.Model, guard=None) -> dict:
         return {}
     it = iter(toks); n = _int_token(it, "evidence count"); ev = {}
     for i in range(n):
-        v = _int_token(it, "evidence variable %d" % i); s = _int_token(it, "evidence state %d" % i)
+        v = _int_token(it, "evidence variable %d" % i); s = _int_token(it, "evidence state %d" % i); g.tick(2)
         if v >= m.nvars:
             raise InvalidInput("evidence names variable %d >= %d" % (v, m.nvars))
         if s >= m.card[v]:
@@ -165,11 +167,9 @@ def canonical_v2_model(m: U.Model, guard=None) -> str:
     g = guard or _Guard(); h = hashlib.sha256(); h.update(("%s|%s|%d|" % (CANONICAL_VERSION, m.net_type, m.nvars)).encode()); h.update((",".join(str(c) for c in m.card) + "|").encode())
     for f in m.factors:
         h.update(("F%d:%s:" % (f.index, ",".join(str(v) for v in f.scope))).encode())
-        for j, q in enumerate(f.table):
-            h.update(("%d/%d," % (q.numerator, q.denominator)).encode())
-            if j % POLL_TOKENS == POLL_TOKENS - 1:
-                g.tick(POLL_TOKENS)                                                           # canonical hashing polls the ONE deadline (review E5)
-        h.update(b";")
+        for q in f.table:
+            h.update(("%d/%d," % (q.numerator, q.denominator)).encode()); g.tick()          # canonical hashing: one cumulative unit per entry (review E4 / E5)
+        h.update(b";"); g.tick()
     return h.hexdigest()
 
 

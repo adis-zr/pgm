@@ -37,8 +37,12 @@ def main(D):
     attempts = []
     for r in rc:
         if r["job"].startswith("pytest:"):
-            name = r["job"].split(":", 1)[1]; out = os.path.join(q, ("pytest_" + name.replace("gbidi3_", "") + ".txt") if not name.startswith("existing") else ("pytest_" + name + ".txt"))
-            if name.startswith("repair_"):
+            name = r["job"].split(":", 1)[1]; out = os.path.join(q, "pytest_" + name + ".txt")
+            if not os.path.exists(out):
+                out = os.path.join(q, ("pytest_" + name.replace("gbidi3_", "") + ".txt") if not name.startswith("existing") else ("pytest_" + name + ".txt"))
+            if name.startswith("repair2_"):
+                out = os.path.join(D, "repairs", "r2_suite", name.replace("repair2_controls_", "repair2_").replace("repair2_suites_", "suites_") + ".out") if not os.path.exists(out) else out
+            elif name.startswith("repair_"):
                 out = os.path.join(D, "repairs", "r1_suite", {"repair_A_1": "pytest_repair_A_1.txt"}.get(name, name.replace("repair_DE_planner_kernel_", "suite_").replace("repair_controls_", "repair_") + ".out"))
                 out = out if os.path.exists(out) else os.path.join(q, "pytest_" + name + ".txt")
             cand = [f for f in os.listdir(q) if f.endswith(".txt") and name.replace("gbidi3_", "") in f] if not os.path.exists(out) else [os.path.basename(out)]
@@ -46,62 +50,67 @@ def main(D):
             attempts.append({"job": r["job"], "jid": r["jid"], "wall_s": r["wall_s"], "outcome": r["outcome"], "returncode": r["returncode"], **s})
     def last(job):
         c = [a for a in attempts if a["job"] == job]; return c[-1] if c else {"job": job, "outcome": "MISSING", "passed": None, "failed": None}
-    final_v3 = last("pytest:gbidi3_full_repair_final2"); final_rep = last("pytest:gbidi3_repair_controls_final2"); final_reg = last("pytest:existing_regressions_repair_final2")
-    superseded = {"v3_controls_before_repair": last("pytest:gbidi3_full_attempt7"), "existing_regressions_before_repair": last("pytest:existing_regressions_1")}
+    def latest_final(prefix):
+        """the final run of a suite family = the pytest job with the greatest attempt number among pytest:<prefix>_<N> (unique stdout per attempt, review G4)"""
+        c = sorted([a for a in attempts if a["job"].startswith("pytest:" + prefix + "_") and a["job"].rsplit("_", 1)[-1].isdigit()], key=lambda a: int(a["job"].rsplit("_", 1)[-1]))
+        return c[-1] if c else {"job": "pytest:" + prefix + "_?", "outcome": "MISSING", "passed": None, "failed": None, "file": None}
+    final_v3 = latest_final("gbidi3_full_final"); final_rep = latest_final("gbidi3_repair_controls_final"); final_rep2 = latest_final("gbidi3_repair2_controls_final"); final_reg = latest_final("existing_regressions_final")
+    superseded = {"v3_controls_before_the_first_review_repair": last("pytest:gbidi3_full_attempt7"), "existing_regressions_before_the_first_review_repair": last("pytest:existing_regressions_1"), "first_repair_final_runs": {"v3": last("pytest:gbidi3_full_repair_final2"), "repair_controls": last("pytest:gbidi3_repair_controls_final2"), "regressions": last("pytest:existing_regressions_repair_final2")}}
     collect = open(os.path.join(q, "pytest_collect_only.txt")).read()
     counts = collections.Counter(l.split("::")[0] for l in collect.splitlines() if "::" in l)
     man = {"utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "suite_v3": "tests/test_gbidi3_complete.py", "suite_v3_def_count": sum(1 for l in open(os.path.join(HERE, "tests/test_gbidi3_complete.py")) if l.startswith("def test_")), "collected_by_file": dict(counts),
-           "final_runs": {"v3_controls": final_v3, "repair_controls": final_rep, "existing_regressions": final_reg}, "superseded_runs_before_the_review_repair": superseded, "suites": ["tests/test_gbidi3_complete.py (126; four disclosed fixture changes: C04, C07, C22, deterministic seeds)", "tests/test_gbidi3_repair_2026_11_10.py (25 repair controls RA-RF)"], "every_pytest_attempt": attempts, "skips": "none (no skip markers; architecture-dependent controls run on this arm64 macOS host: rounding-mode flag 0x400000, guard-malloc not required)",
+           "final_runs": {"v3_controls": final_v3, "repair_controls": final_rep, "repair2_controls": final_rep2, "existing_regressions": final_reg}, "superseded_runs": superseded, "suites": ["tests/test_gbidi3_complete.py (126; four disclosed fixture changes: C04, C07, C22, deterministic seeds)", "tests/test_gbidi3_repair_2026_11_10.py (25 first-review repair controls RA-RF; exact-jet helper corrected after the second review)", "tests/test_gbidi3_repair2_2026_11_10.py (25 second-review repair controls SA-SF)"], "every_pytest_attempt": attempts, "skips": "none (no skip markers; architecture-dependent controls run on this arm64 macOS host: rounding-mode flag 0x400000, guard-malloc not required)",
            "import_dependencies": {"tests/test_gbidi3_complete.py": ["gbidi3.*", "adp.source (pinned reductions)", "adp.publish / adp.checker (pinned publication + point verifier)", "ext.uai (pinned dataclasses / MAR reader)", "gbidi.supervise (unchanged V2 supervisor)", "bench.cells EXACT + adp.cell producers through gbidi3.arm_adapter (C24 end-to-end)"]},
            "fixtures_and_oracle": {"oracle": "gbidi3/oracle.py (brute force over ORIGINAL factors; shares only the parser)", "fixtures": "inline in tests/test_gbidi3_complete.py (write_uai / rnd_model / star_model / chain_exact / _c16_model / _shared_consumer_program / _c15_program)"},
            "repairs_during_qualification": {"K1": rel(os.path.join(D, "repairs/K1_combined_frame")), "K2": rel(os.path.join(D, "repairs/K2_load_values_teardown")), "review_repair_2026-11-10": rel(os.path.join(D, "repairs/r1_suite")), "review_reproductions_unchanged_source": rel(os.path.join(D, "review_repro_r1"))},
-           "note": "every pytest attempt (including the failing fixture-development attempts 1-6 and the repair-stage attempts) is retained with its receipt; a count alone is not qualification: the control bodies assert the named mechanism / transition fired. DISCLOSED: the stdout files of the FIRST final rerun (jobs *_repair_final; receipts in GB_LEDGER.jsonl: 126 / 25 / 236 passed) were overwritten by the second rerun (*_repair_final2, run after the last planner change) because of a shell-script path slip; the final2 files are the qualifying evidence."}
+           "note": "every pytest attempt (including the failing fixture-development attempts and the repair-stage attempts of both reviews) is retained with its receipt; a count alone is not qualification: the control bodies assert the named mechanism / transition fired. DISCLOSED (first repair): the stdout files of the FIRST final rerun (jobs *_repair_final; receipts in GB_LEDGER.jsonl: 126 / 25 / 236 passed) were overwritten by the second rerun (*_repair_final2) because of a shell-script path slip. Since the second repair every attempt writes pytest_<job>_<attempt>.txt (unique path, never overwritten; review G4) and the final run of each suite family is the greatest attempt number."}
     json.dump(man, open(os.path.join(D, "QUALIFICATION_MANIFEST.json"), "w"), indent=1)
     # ---------------------------------------------------------------- requirements matrix: EVERY row qualified INDIVIDUALLY from its own passing evidence (review F1: no bulk promotion)
     # evidence = test node ids (prefix match against the PASSED lines of the FINAL -rA outputs) + record files; a row is QUALIFIED only if every listed test passed in the final
     # run of its suite AND that suite's job receipt is COMPLETED / rc 0; otherwise it is IMPLEMENTED_UNQUALIFIED with the missing evidence named. The regression suite is one block.
-    T = "tests/test_gbidi3_complete.py"; T2 = "tests/test_gbidi3_repair_2026_11_10.py"; F = os.path.join(q, "pytest_full_repair_final2.txt"); F2 = os.path.join(q, "pytest_repair_controls_final2.txt"); R = os.path.join(q, "pytest_existing_regressions_repair_final2.txt")
+    T = "tests/test_gbidi3_complete.py"; T2 = "tests/test_gbidi3_repair_2026_11_10.py"; T3 = "tests/test_gbidi3_repair2_2026_11_10.py"
+    F = os.path.join(HERE, final_v3["file"]) if final_v3.get("file") else os.path.join(q, "missing"); F2 = os.path.join(HERE, final_rep["file"]) if final_rep.get("file") else os.path.join(q, "missing"); F3 = os.path.join(HERE, final_rep2["file"]) if final_rep2.get("file") else os.path.join(q, "missing"); R = os.path.join(HERE, final_reg["file"]) if final_reg.get("file") else os.path.join(q, "missing")
     passed = set()
-    for f in (F, F2):
+    for f in (F, F2, F3):
         if os.path.exists(f):
             passed |= {l.split(" ", 1)[1].strip() for l in open(f) if l.startswith("PASSED ")}
     reg_ok = pytest_summary(R)["failed"] == 0 and pytest_summary(R)["passed"] >= 236
-    receipts_ok = {a["job"]: (a["outcome"] == "COMPLETED" and a["returncode"] == 0 and a["failed"] == 0) for a in attempts}
-    suites_ok = all(receipts_ok.get(j) for j in ("pytest:gbidi3_full_repair_final2", "pytest:gbidi3_repair_controls_final2", "pytest:existing_regressions_repair_final2"))
+    receipts_ok = {a["job"]: (a["outcome"] == "COMPLETED" and a["returncode"] == 0 and (a["failed"] or 0) == 0 and (a["passed"] or 0) > 0) for a in attempts}
+    suites_ok = all(receipts_ok.get(j["job"]) for j in (final_v3, final_rep, final_rep2, final_reg))
     REG = "tests/test_gbidi_v2.py + test_bidi_pilot.py + test_adp_v1.py + test_adp_census.py + test_adp_census_correction.py (236, one block)"
     ev = {"M01": [T + "::test_every_arm_encloses_exact_truth_on_every_input_class", T + "::test_malformed_models_are_typed_invalid_input_through_the_caller_pipeline", T + "::test_malformed_evidence_is_typed_invalid_input", T + "::test_valid_edge_grammar_scalars_duplicates_and_identity_fields", T + "::test_C06", T + "::test_C07", T + "::test_C10", T + "::test_C12", T + "::test_C21", T2 + "::test_RE1"],
-          "M02": [T + "::test_C20", T + "::test_C12", T2 + "::test_RA1", T2 + "::test_RA2", T2 + "::test_RA3", T2 + "::test_RB1"],
-          "M03": [T + "::test_C23", T2 + "::test_RE2"],
-          "M04": [T + "::test_C03", T + "::test_C04", T + "::test_C13", T2 + "::test_RF1", T2 + "::test_RF5"],
-          "M05": [T + "::test_every_arm_encloses_exact_truth_on_every_input_class", T + "::test_C14", T2 + "::test_RF1", T2 + "::test_RF2", T2 + "::test_RF3"],
-          "M06": [T + "::test_C01", T + "::test_C04", T + "::test_C05", T + "::test_C07", T2 + "::test_RF2", T2 + "::test_RA1_five_witnesses_reject_and_their_legal_counterparts_certify[marked_axis_compression]", T2 + "::test_RA1_five_witnesses_reject_and_their_legal_counterparts_certify[forged_identity_gather_scale]"],
+          "M02": [T + "::test_C20", T + "::test_C12", T2 + "::test_RA1", T2 + "::test_RA2", T2 + "::test_RA3", T2 + "::test_RB1", T3 + "::test_SA1", T3 + "::test_SA2", T3 + "::test_SA3", T3 + "::test_SA4", T3 + "::test_SA5"],
+          "M03": [T + "::test_C23", T2 + "::test_RE2", T3 + "::test_SE4"],
+          "M04": [T + "::test_C03", T + "::test_C04", T + "::test_C13", T2 + "::test_RF1", T2 + "::test_RF5", T3 + "::test_SD1", T3 + "::test_SD2"],
+          "M05": [T + "::test_every_arm_encloses_exact_truth_on_every_input_class", T + "::test_C14", T2 + "::test_RF1", T2 + "::test_RF2", T2 + "::test_RF3", T3 + "::test_SD1"],
+          "M06": [T + "::test_C01", T + "::test_C04", T + "::test_C05", T + "::test_C07", T2 + "::test_RF2", T2 + "::test_RA1_five_witnesses_reject_and_their_legal_counterparts_certify[marked_axis_compression]", T2 + "::test_RA1_five_witnesses_reject_and_their_legal_counterparts_certify[forged_identity_gather_scale]", T3 + "::test_SA1", T3 + "::test_SA2", T3 + "::test_SB3"],
           "M07": [T + "::test_C17"],
-          "M08": [T + "::test_C17", T + "::test_C07", T + "::test_C13", T2 + "::test_RD2", T2 + "::test_RE4"],
-          "M09": [T + "::test_C18", T + "::test_C06"],
-          "M10": [T + "::test_C16", T + "::test_C25", T2 + "::test_RF4"],
-          "M11": [T + "::test_C16", T2 + "::test_RF4"],
-          "M12": [T + "::test_C03", T + "::test_C09", T + "::test_C15", T2 + "::test_RF5"],
-          "M13": [T + "::test_C09", T + "::test_C15", T + "::test_C18", T + "::test_C22"],
-          "M14": [T + "::test_every_execution_mode_matches_the_oracle_rows_exactly_when_run_through_the_exact_fallback", T + "::test_C11", T + "::test_C25", T + "::test_C22", T2 + "::test_RE2"],
+          "M08": [T + "::test_C17", T + "::test_C07", T + "::test_C13", T2 + "::test_RD2", T2 + "::test_RE4", T3 + "::test_SC1", T3 + "::test_SE2"],
+          "M09": [T + "::test_C18", T + "::test_C06", T3 + "::test_SB1"],
+          "M10": [T + "::test_C16", T + "::test_C25", T2 + "::test_RF4", T3 + "::test_SB4"],
+          "M11": [T + "::test_C16", T2 + "::test_RF4", T3 + "::test_SB3", T3 + "::test_SB4"],
+          "M12": [T + "::test_C03", T + "::test_C09", T + "::test_C15", T2 + "::test_RF5", T3 + "::test_SC1", T3 + "::test_SD1"],
+          "M13": [T + "::test_C09", T + "::test_C15", T + "::test_C18", T + "::test_C22", T3 + "::test_SC1"],
+          "M14": [T + "::test_every_execution_mode_matches_the_oracle_rows_exactly_when_run_through_the_exact_fallback", T + "::test_C11", T + "::test_C25", T + "::test_C22", T2 + "::test_RE2", T3 + "::test_SE1"],
           "M15": [T + "::test_C11", T + "::test_C19"],
           "M16": [T + "::test_C19"],
           "M17": [T + "::test_C21", T + "::test_C12", T2 + "::test_RB1", T2 + "::test_RB2"],
-          "M18": [T + "::test_C22", T + "::test_C17", T2 + "::test_RE1", T2 + "::test_RE2", T2 + "::test_RE3", T2 + "::test_RE4"],
-          "M19": [T + "::test_C23", T + "::test_C22", T2 + "::test_RB2", T2 + "::test_RE1", T2 + "::test_RE2", T2 + "::test_RE3"],
-          "M20": [T + "::test_C24_supervisor_completion_means_the_owned_group_is_empty", T + "::test_C24_nested_supervisors_owned_tree_is_reconciled", REG],
-          "M21": [T + "::test_C24_manifest_reconciler_and_accounting", T + "::test_C24_all_seven_arms_end_to_end_through_the_real_harness_resume_and_closeout", T2 + "::test_RC1"],
+          "M18": [T + "::test_C22", T + "::test_C17", T2 + "::test_RE1", T2 + "::test_RE2", T2 + "::test_RE3", T2 + "::test_RE4", T3 + "::test_SE1", T3 + "::test_SE2", T3 + "::test_SD2"],
+          "M19": [T + "::test_C23", T + "::test_C22", T2 + "::test_RB2", T2 + "::test_RE1", T2 + "::test_RE2", T2 + "::test_RE3", T3 + "::test_SE3", T3 + "::test_SE4"],
+          "M20": [T + "::test_C24_supervisor_completion_means_the_owned_group_is_empty", T + "::test_C24_nested_supervisors_owned_tree_is_reconciled", T3 + "::test_SF1", REG],
+          "M21": [T + "::test_C24_manifest_reconciler_and_accounting", T + "::test_C24_all_seven_arms_end_to_end_through_the_real_harness_resume_and_closeout", T2 + "::test_RC1", T3 + "::test_SF1", T3 + "::test_SF2"],
           "M22": [T + "::test_C24_manifest_reconciler_and_accounting", rel(os.path.join(D, "GB_MANIFEST_PROPOSED.json")), rel(os.path.join(D, "PANEL_INSPECTION.json"))],
-          "M23": [T + "::test_C14", T + "::test_C16", T2 + "::test_RD1", T2 + "::test_RD3", rel(os.path.join(D, "PANEL_INSPECTION.json"))],
-          "M24": [T + "::test_C01", T + "::test_C02", T + "::test_C05", T + "::test_C10", T + "::test_C14", T + "::test_C20", T2 + "::test_RA1", T2 + "::test_RA2", T2 + "::test_RA3"],
+          "M23": [T + "::test_C14", T + "::test_C16", T2 + "::test_RD1", T2 + "::test_RD3", T3 + "::test_SB1", T3 + "::test_SB2", T3 + "::test_SB3", T3 + "::test_SB4", rel(os.path.join(D, "PANEL_INSPECTION.json"))],
+          "M24": [T + "::test_C01", T + "::test_C02", T + "::test_C05", T + "::test_C10", T + "::test_C14", T + "::test_C20", T2 + "::test_RA1", T2 + "::test_RA2", T2 + "::test_RA3", T3 + "::test_SA1", T3 + "::test_SA2", T3 + "::test_SA5"],
           "M25": [T + "::test_C07", T + "::test_C11", T + "::test_C21", T2 + "::test_RC1"]}
     verdicts = {}
     st_now = RQ._load_state(D)
     for rid in ev:                                                                              # review F1: the pre-review bulk promotion is WITHDRAWN explicitly (once) before any row is re-qualified from its own evidence
         hist = (st_now.get(rid) or {}).get("history", [])
-        if any("bulk promotion withdrawn" in (h.get("note") or "") for h in hist):
-            continue
-        if any("gbidi3_full_attempt7" in (h.get("note") or "") for h in hist):
+        if not any("bulk promotion withdrawn" in (h.get("note") or "") for h in hist) and any("gbidi3_full_attempt7" in (h.get("note") or "") for h in hist):
             RQ.update(D, rid, "IMPLEMENTED_UNQUALIFIED", note="review 2026-11-10 (R7): bulk promotion withdrawn; the row must be re-qualified individually from its own passing controls on the repaired code")
+        if not any("second review" in (h.get("note") or "") for h in hist) and any("individually qualified" in (h.get("note") or "") for h in hist):
+            RQ.update(D, rid, "IMPLEMENTED_UNQUALIFIED", note="second review 2026-11-10 (F1-F6 / G4): qualification WITHDRAWN on the affected rows until the repaired composed-path controls pass on the target build")
     for rid, paths in ev.items():
         missing = []
         for e in paths:
@@ -114,7 +123,7 @@ def main(D):
             elif not os.path.exists(os.path.join(HERE, e)):
                 missing.append(e)
         ok = suites_ok and not missing
-        RQ.update(D, rid, "QUALIFIED" if ok else "IMPLEMENTED_UNQUALIFIED", evidence=paths + [rel(F), rel(F2), rel(R)], note=("individually qualified: every listed control PASSED in the final runs (%s / %s / %s)" % tuple(pytest_summary(x)["summary_line"] for x in (F, F2, R))) if ok else ("NOT qualified: missing evidence %s" % missing[:4]))
+        RQ.update(D, rid, "QUALIFIED" if ok else "IMPLEMENTED_UNQUALIFIED", evidence=paths + [rel(F), rel(F2), rel(F3), rel(R)], note=("individually qualified: every listed control PASSED in the final runs (%s / %s / %s / %s)" % tuple(pytest_summary(x)["summary_line"] for x in (F, F2, F3, R))) if ok else ("NOT qualified: missing evidence %s" % missing[:4]))
         verdicts[rid] = {"qualified": ok, "missing": missing}
     doc = RQ.write(D); json.dump({"rule": "per-row: every listed test node PASSED in the final -rA outputs and every final suite receipt COMPLETED rc 0; otherwise IMPLEMENTED_UNQUALIFIED", "passed_nodes": len(passed), "suites_ok": suites_ok, "regressions_ok": reg_ok, "verdicts": verdicts}, open(os.path.join(D, "REQUIREMENTS_EVIDENCE_CHECK.json"), "w"), indent=1)
     # ---------------------------------------------------------------- budget ledger (one authoritative total; every START reconciled)
@@ -124,7 +133,8 @@ def main(D):
     # file is written) + the packaging job's wall (its receipt is the outside-archive sidecar).
     self_jid = os.environ.get("GBIDI_PARENT_JID"); live_self = [u for u in unresolved if u.get("jid") == self_jid]; other_unresolved = [u for u in unresolved if u.get("jid") != self_jid]
     receipted_total = total - sum((u.get("max_permitted_charge_s") or 0.0) for u in live_self)
-    budget = {"envelope_s": PI.CEILING_S, "preparation_cap_s": PI.PREPARATION_CAP_S, "receipted_total_s": receipted_total, "live_closeout_job": [{"job": u.get("job"), "jid": u.get("jid"), "note": "receipt pending while this file is written; its wall is the next RECEIPT in GB_LEDGER.jsonl"} for u in live_self],
+    all_receipts = [r for r in rc]; raw_sum = sum(r["wall_s"] for r in all_receipts if isinstance(r.get("wall_s"), (int, float)) and not isinstance(r.get("wall_s"), bool))
+    budget = {"envelope_s": PI.CEILING_S, "preparation_cap_s": PI.PREPARATION_CAP_S, "receipted_total_s": receipted_total, "measured_s": extra.get("measured_s"), "envelope_charges_s": extra.get("envelope_s"), "unknown_wall_receipts": extra.get("unknown_wall_receipts"), "raw_receipt_sum_s_all_receipts": raw_sum, "receipts_in_ledger": len(all_receipts), "live_closeout_job": [{"job": u.get("job"), "jid": u.get("jid"), "note": "receipt pending while this file is written; its wall is the next RECEIPT in GB_LEDGER.jsonl"} for u in live_self],
               "final_total_rule": "receipted_total_s + this closeout job's receipt wall + the packaging job's receipt wall (sidecar next to the archive); recomputable from GB_LEDGER.jsonl alone", "rule": "nonnested: children + measured nonnegative parent-only remainder (gbidi3.pilot.charged); every START reconciled to exactly one RECEIPT", "total_charged_s": total, "by_scope": by, "receipts": len(rc), "starts": len(st), "unresolved": [u.get("job") for u in unresolved], "duplicate_receipts": extra["duplicate_receipts"],
               "remaining_preparation_s": PI.PREPARATION_CAP_S - total, "remaining_envelope_s": PI.CEILING_S - total, "reservations_proposed_s": {"matrix_414_plus_launch_cleanup": PI.MATRIX_RESERVE_S, "inspection_analysis": PI.INSPECTION_RESERVE_S, "closeout_packaging": PI.CLOSEOUT_RESERVE_S, "contingency": PI.CONTINGENCY_S},
               "compliance": ("EXACT over receipted jobs: every other START has exactly one RECEIPT, no unresolved cleanup, no duplicate receipts; the only receipt pending is this closeout job's own" if not other_unresolved and not extra["duplicate_receipts"] else "QUALIFIED: unresolved %s / duplicates %s" % ([u.get("job") for u in other_unresolved], extra["duplicate_receipts"])),
@@ -134,7 +144,15 @@ def main(D):
     json.dump(budget, open(os.path.join(D, "BUDGET_LEDGER.json"), "w"), indent=1)
     # ---------------------------------------------------------------- code lineage
     files = sorted(set(PI.source_set() + ["gbidi3_closeout/" + f for f in os.listdir(os.path.join(HERE, "gbidi3_closeout")) if f.endswith(".py")] + ["gbidi3/libgbidi3_kernel.dylib", "gbidi3/BUILD_RECORD.json"]))
-    lineage = {"branch": git("rev-parse", "--abbrev-ref", "HEAD"), "head_before_closeout_commit": git("rev-parse", "HEAD"), "parent_v2_closeout": "88a3e325e159b92eb6655ef31dd5bba9f9e1e58c", "parent_v2_package_record": "16c79e67eae569d4e998d51333aaabfe442e6853", "parent_prose_handoff_commit": "faa88a2ec96500e8eeb7ce9b0e59ee628afbb270",
+    prev_lin = os.path.join(D, "CODE_LINEAGE.json")
+    if os.path.exists(prev_lin):
+        try:
+            pl = json.load(open(prev_lin)); asof = os.path.join(D, "CODE_LINEAGE_asof_%s_snapshot.json" % (pl.get("head_before_closeout_commit", "unknown")[:12]))
+            if not os.path.exists(asof):
+                os.replace(prev_lin, asof)                                                       # the previous lineage is kept as an as-of snapshot (review G2); the new record is computed from the CURRENT files
+        except Exception:
+            pass
+    lineage = {"branch": git("rev-parse", "--abbrev-ref", "HEAD"), "head_before_closeout_commit": git("rev-parse", "HEAD"), "note": "computed from the files as they are at this closeout run (after the last source edit); a later edit of any listed file makes this record stale -- the packager re-checks every listed hash at packaging time (PACKAGE_RECORD.lineage_check)", "parent_v2_closeout": "88a3e325e159b92eb6655ef31dd5bba9f9e1e58c", "parent_v2_package_record": "16c79e67eae569d4e998d51333aaabfe442e6853", "parent_prose_handoff_commit": "faa88a2ec96500e8eeb7ce9b0e59ee628afbb270",
                "repaired_adp": {"commit": "ec4ae4274d120bccc6ea41f826a124743ace9d7a", "package_record_commit": "3a0648fbf47f3c80051c001c7c681644a12d122c", "code_hash_expected": "da5b2c49b1bd34d181fa1a18f123304d1cfb4f651a995c5f82081dff05500404", "code_hash_now": __import__("adp.census.run", fromlist=["x"]).frozen_set_hash()[0]},
                "v2_closeout_archive": {"path": "/Users/adis/Workspace/GENERAL_BIDI_V2_CLOSEOUT_REVIEW_2026-11-10.zip", "sha256": "407b1b2f601af3d1f7661f2220febd5dd437304d359cf749d240a7c7cd51dfba", "bytes": 2318210, "members": 616, "verified_by": rel(os.path.join(D, "preparation/verify_closeout_archive.out"))},
                "brief": {"path": "~/Downloads/GENERAL_BIDI_COMPLETE_IMPLEMENTATION_SPEC.txt", "sha256": "af2e29bf13c2527bb9db55e9b321ad7aaf73766827b8177d0aa26ba12d12ef20", "bytes": 104238, "words": 13707},
@@ -156,7 +174,8 @@ def main(D):
                                {"id": "amendment_3_canonical_v2_identity_2026-11-10", "scope": "task identity adds canonical_v2 model / evidence hashes (typed serialization); the legacy whitespace-normalized hash keeps its historical field name; never compared across versions"},
                                {"id": "amendment_4_repairs_during_qualification_2026-11-10", "scope": "K1 (combined frames single-pass; quadratic frame count on streamed chains) and K2 (value-loading teardown after a mid-loop DEADLINE: segmentation fault) repaired with before/after reproductions under repairs/; both found by the new controls before any benchmark cell"},
                                {"id": "amendment_5_conditioning_order_policy_2026-11-10", "scope": "GLOBAL policy clarification (review F4): the region tree conditions on variables in the REVERSE of the elimination order -- the last eliminated variable is the outermost cutset, its bucket's children are the residual components, recursively; a region's cutset is its top bucket's eliminated variable(s) (one axis, or two under the frozen two-axis rule). Documented in gbidi3.planner.Builder.build; not case-specific tuning."},
-                               {"id": "amendment_6_review_repair_2026-11-10", "scope": "integrated correction pass after the 10 Nov adversarial review (branch general-bidi-complete-v3-repair-2026-11-10): complete local / global semantic validator (the five witnesses reject), fail-closed publication with complete execution identity binding, reconcilable NO_RECORD / LAUNCH_FAILED attempts, ONE whole-path cost for fusion and ranking with the unfused candidate retained, support-indexed sparse pullback with honest reverse counters, reserve-before-build through parsing / replay / planning / validation / flattening / fallback, polling of parsing / hashing / order scoring / gather / ADD, per-row qualification (no bulk promotion), deterministic fixture seeds. Four disclosed fixture changes in tests/test_gbidi3_complete.py (C04: the views witness is asserted on A2_NO_FUSION when the default arm fuses the two-variable chain; C07: the sparse witness zero_skips -> sparse_reverse_rows; C22: parse polling refuses an already-expired deadline at create; hash(name) seeds -> sha256 seeds). Kernel rebuilt (schedule v3.1-sparse-reverse). Historical records untouched; no freeze, no benchmark cell."}]}, open(os.path.join(D, "AMENDMENTS.json"), "w"), indent=1)
+                               {"id": "amendment_6_review_repair_2026-11-10", "scope": "integrated correction pass after the 10 Nov adversarial review (branch general-bidi-complete-v3-repair-2026-11-10): complete local / global semantic validator (the five witnesses reject), fail-closed publication with complete execution identity binding, reconcilable NO_RECORD / LAUNCH_FAILED attempts, ONE whole-path cost for fusion and ranking with the unfused candidate retained, support-indexed sparse pullback with honest reverse counters, reserve-before-build through parsing / replay / planning / validation / flattening / fallback, polling of parsing / hashing / order scoring / gather / ADD, per-row qualification (no bulk promotion), deterministic fixture seeds. Four disclosed fixture changes in tests/test_gbidi3_complete.py (C04: the views witness is asserted on A2_NO_FUSION when the default arm fuses the two-variable chain; C07: the sparse witness zero_skips -> sparse_reverse_rows; C22: parse polling refuses an already-expired deadline at create; hash(name) seeds -> sha256 seeds). Kernel rebuilt (schedule v3.1-sparse-reverse). Historical records untouched; no freeze, no benchmark cell."},
+                               {"id": "amendment_7_second_review_repair_2026-11-10", "scope": "integrated correction pass after the SECOND adversarial review (branch general-bidi-complete-v3-repair2-2026-11-10): coordinate-domain typing of every axis (a class-space message is never consumed as raw; proof note I12), compositional cold VALUE / PULLBACK / combined recurrences with reverse-phase reconstruction counters (I13), the one-axis and two-axis trees both kept as complete candidates ranked by the ONE cost, one support-indexed sparse pullback for queued AND immediate deliveries (labelled generic path), the all-consumer demand compiler honouring the arm switch under one aggregate row / wall budget with reserve-before-build, fallback bit-length reservations before growth, native reallocation peaks and scoped temporary charges, strided polled validation with a final deadline check, cumulative parser / hashing polling, binary64 admission and trusted re-check under the deadline, zero proof accepted only after the independent replay, one terminal-receipt contract for parent cleanup realized on the consumer side with the pinned supervisor unchanged (the owner's receipt is the evidence reference; unknown wall = envelope charge, never arithmetic on null), dynamic provenance closure + lineage check in the package, unique per-attempt qualification logs, qualification withdrawn and re-established per row. Disclosed fixture changes: C17 / C22 (the plan streams a non-fitting root itself), RD1-RD3 (split reverse counters; plan-side root streaming), jet_rows corrected (roots multiply), reps_perm mutation class added. Kernel schedule v3.2-sparse-immediate-reverse-counters. Historical records untouched; no freeze, no benchmark cell."}]}, open(os.path.join(D, "AMENDMENTS.json"), "w"), indent=1)
     print(json.dumps({"requirements": doc["overall"], "counts": doc["mandatory_counts"], "charged_s": round(total, 3), "receipts": len(rc)}))
 
 

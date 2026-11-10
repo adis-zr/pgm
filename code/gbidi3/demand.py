@@ -24,10 +24,40 @@ def _compose(card, d):
     return idx
 
 
-def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None):
-    """mutates the DENSE nodes' demand hints of program P in place; returns {"restricted": [...], "entries_saved": n, "skipped_cap": [...], "consumers": {nid: uses}}.
-    `tables` (fid -> exact table) lets the MUL lift skip rows where a SIBLING SOURCE operand is exactly zero (the product row is zero: nothing is read)."""
-    cons = P.consumers(); tables = dict(tables or {}); rec = {"restricted": [], "entries_saved": 0, "skipped_cap": [], "consumers": {n.nid: len(cons[n.nid]) for n in P.nodes}, "shared_nodes": [n.nid for n in P.nodes if len(cons[n.nid]) > 1]}
+class Budget:
+    """ONE aggregate optional budget for the compiler (review F5 / D3): every lifted index is a ROW inspection charged to the shared row cap (clock.spend_rows,
+    which also polls the OPTIONAL discovery wall); every live demand set / union / copy is RESERVED on the host ledger (48 B per index + 64 per set) before it is
+    built and released when it dies. Exhaustion raises PlanStop (caught by the caller: every node keeps FULL or its safely completed hint)."""
+    def __init__(self, clock=None, ledger=None, tick=None):
+        self.clock = clock; self.ledger = ledger; self.tick = tick or (lambda n=1: None); self.live = 0; self.peak = 0; self.rows = 0
+    def rows_(self, n):
+        self.rows += n
+        if self.clock is not None:
+            self.clock.spend_rows(n)                                                  # shared row cap + optional wall, polled
+        else:
+            self.tick(n)
+    def reserve_set(self, n):
+        b = 48 * n + 64
+        if self.ledger is not None:
+            self.ledger.reserve("source_ir_maps_output", b, "demand set (%d indices)" % n)
+        self.live += b; self.peak = max(self.peak, self.live); return b
+    def release_set(self, b):
+        if self.ledger is not None:
+            self.ledger.release("source_ir_maps_output", b)
+        self.live -= b
+
+
+def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None, clock=None, ledger=None, optional=True):
+    """mutates the DENSE nodes' demand hints of program P in place; returns the compiler's own record {"restricted": [...], "entries_saved": n, "skipped_cap":
+    [...], "consumers": {nid: uses}, "shared_nodes": [...], "rows_inspected", "peak_live_bytes", "stop"}. `optional=False` (arm switch demand_masks off): the
+    compiler runs its MANDATORY conservative part only (no restriction is applied; every analysable node keeps FULL) and records that it was disabled.
+    `tables` (fid -> exact table) lets the MUL lift skip rows where a SIBLING SOURCE operand is exactly zero (the product row is zero: nothing is read).
+    Budget: `row_cap` bounds the AGGREGATE number of lifted indices over all nodes and use edges (not per node); with `clock` the shared row cap and the
+    optional discovery wall are charged / polled through clock.spend_rows; with `ledger` every live set is reserved before it is built."""
+    from gbidi3.clock import PlanStop
+    cons = P.consumers(); tables = dict(tables or {}); rec = {"restricted": [], "entries_saved": 0, "skipped_cap": [], "consumers": {n.nid: len(cons[n.nid]) for n in P.nodes}, "shared_nodes": [n.nid for n in P.nodes if len(cons[n.nid]) > 1], "optional_enabled": bool(optional), "rows_inspected": 0, "peak_live_bytes": 0, "stop": None}
+    if not optional:
+        rec["note"] = "optional demand restriction DISABLED by the arm switch: no hint applied; correctness-critical zeros / supports stay with the kernel's forward support"; return rec
     for dfid, d in (P.derived or {}).items():                                            # derived (split) tables from the registered witnesses: demand is a STORAGE choice only (reads outside are streamed, never assumed zero),
         try:                                                                              # so an unvalidated witness can only cost work, never correctness; the validator checks the witness itself afterwards
             if d.get("kind") == "additive_split":
@@ -36,62 +66,87 @@ def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None):
                 tables[dfid] = tuple(d["u"] if d.get("part") == "u" else d["g"])
         except Exception:
             pass
-    demanded = {}                                                                     # nid -> set of demanded output indices (None = FULL)
-    for r in P.roots:
-        demanded[r] = set(range(P.nodes[r].volume)) if P.nodes[r].volume <= row_cap else None
-    # process in reverse topological order (consumers before producers)
-    for n in reversed(P.nodes):
-        if n.nid not in demanded:
-            demanded[n.nid] = None if not cons[n.nid] else set()
-        own = demanded[n.nid]
-        if own is None and n.nid not in P.roots and n.kind == IR.REDUCE and n.storage == IR.DENSE:
-            pass
-        # lift this node's demand to each child along every USE edge
-        for ci, c in enumerate(n.children):
-            child = P.nodes[c]; cur = demanded.get(c, set() if cons[c] else None)
-            if own is None or cur is None:
-                demanded[c] = None; continue
-            if len(own) * (n.volume and 1) > row_cap:
-                demanded[c] = None; rec["skipped_cap"].append(c); continue
-            lifted = set()
-            if n.kind == IR.ADD:
-                lifted = set(own)
-            elif n.kind == IR.MUL:
-                pr = n.proj[ci]; zsrc = [(n.proj[j], tables[P.nodes[cj].fid], P.nodes[cj].card) for j, cj in enumerate(n.children) if j != ci and P.nodes[cj].kind == IR.SOURCE and P.nodes[cj].fid in tables]
-                for idx in own:
-                    d = _digits(n.card, idx); tick()
-                    if any(tab[_compose(cc, [d[p] for p in pj])] == 0 for pj, tab, cc in zsrc):
-                        continue                                                              # an exactly-zero sibling source entry: this product row is zero, the child entry is never read
-                    lifted.add(_compose(child.card, [d[p] for p in pr]))
-            elif n.kind == IR.GATHER:
-                for idx in own:
-                    d = _digits(n.card, idx); cd = []
-                    for k, g in enumerate(n.gaxes):
-                        raw = d[g["out_pos"]]; cd.append(g["cls"][raw] if g.get("cls") is not None else raw)
-                    lifted.add(_compose(child.card, cd)); tick()
-            elif n.kind == IR.REDUCE:
-                elim = [k for k, r in enumerate(n.rmap) if r < 0]; ev = IR.prod(child.card[k] for k in elim)
-                if len(own) * ev > row_cap:
-                    demanded[c] = None; rec["skipped_cap"].append(c); continue
-                for idx in own:
-                    d = _digits(n.card, idx)
-                    for t in range(ev):
-                        tt = t; cd = [0] * len(child.card)
-                        for k in reversed(elim):
-                            cd[k] = tt % child.card[k]; tt //= child.card[k]
-                        for k, r in enumerate(n.rmap):
-                            if r >= 0:
-                                cd[k] = n.reps[k][0][d[r]] if n.reps[k] is not None else d[r]
-                        lifted.add(_compose(child.card, cd)); tick()
+    bud = Budget(clock, ledger, tick); demanded = {}; charged = {}; total_rows = 0
+    def hold(nid, st):
+        """store a demand set under reservation (release the previous one)"""
+        if nid in charged:
+            bud.release_set(charged.pop(nid))
+        if st is not None:
+            charged[nid] = bud.reserve_set(len(st))
+        demanded[nid] = st
+    try:
+        if clock is not None:
+            clock.check_optional()                                                       # an already-expired optional allowance stops the refinement BEFORE any set is built (nothing restricted)
+        for r in P.roots:
+            vol = P.nodes[r].volume
+            if vol <= row_cap - total_rows:
+                total_rows += vol; bud.rows_(vol); hold(r, set(range(vol)))
             else:
-                demanded[c] = None; continue
-            demanded[c] = cur | lifted                                                # UNION over every consumer use edge
+                hold(r, None)
+        for n in reversed(P.nodes):                                                      # consumers before producers
+            if n.nid not in demanded:
+                hold(n.nid, None if not cons[n.nid] else set())
+            own = demanded[n.nid]
+            for ci, c in enumerate(n.children):
+                child = P.nodes[c]; cur = demanded.get(c, set() if cons[c] else None)
+                if own is None or cur is None:
+                    hold(c, None); continue
+                need = len(own) * (IR.prod(child.card[k] for k, r in enumerate(n.rmap) if r < 0) if n.kind == IR.REDUCE else 1)
+                if need > row_cap - total_rows:
+                    hold(c, None); rec["skipped_cap"].append(c); continue           # AGGREGATE cap: the child stays FULL (conservative), never uninspected-as-dead
+                total_rows += need; bud.rows_(need); lifted = set(); tmp = bud.reserve_set(need)
+                try:
+                    if n.kind == IR.ADD:
+                        lifted = set(own)
+                    elif n.kind == IR.MUL:
+                        pr = n.proj[ci]; zsrc = [(n.proj[j], tables[P.nodes[cj].fid], P.nodes[cj].card) for j, cj in enumerate(n.children) if j != ci and P.nodes[cj].kind == IR.SOURCE and P.nodes[cj].fid in tables]
+                        for idx in own:
+                            d = _digits(n.card, idx)
+                            if any(tab[_compose(cc, [d[p] for p in pj])] == 0 for pj, tab, cc in zsrc):
+                                continue                                                  # an exactly-zero sibling source entry: this product row is zero, the child entry is never read
+                            lifted.add(_compose(child.card, [d[p] for p in pr]))
+                    elif n.kind == IR.GATHER:
+                        for idx in own:
+                            d = _digits(n.card, idx); cd = []
+                            for k, g in enumerate(n.gaxes):
+                                raw = d[g["out_pos"]]; cd.append(g["cls"][raw] if g.get("cls") is not None else raw)
+                            lifted.add(_compose(child.card, cd))
+                    elif n.kind == IR.REDUCE:
+                        elim = [k for k, r in enumerate(n.rmap) if r < 0]; ev = IR.prod(child.card[k] for k in elim)
+                        for idx in own:
+                            d = _digits(n.card, idx)
+                            for t in range(ev):
+                                tt = t; cd = [0] * len(child.card)
+                                for k in reversed(elim):
+                                    cd[k] = tt % child.card[k]; tt //= child.card[k]
+                                for k, r in enumerate(n.rmap):
+                                    if r >= 0:
+                                        cd[k] = n.reps[k][0][d[r]] if n.reps[k] is not None else d[r]
+                                lifted.add(_compose(child.card, cd))
+                    else:
+                        hold(c, None); continue
+                    hold(c, cur | lifted)                                                 # UNION over every consumer use edge
+                finally:
+                    bud.release_set(tmp)                                                  # the lift temporary dies here
+    except PlanStop as ex:
+        rec["stop"] = {"kind": ex.kind, "reason": ex.reason}                            # optional budget exhausted: whatever is not completed stays FULL (below: only completed, fully covered nodes are restricted)
+        if ex.kind == "CELL_DEADLINE":
+            raise
+    except Exception as ex:
+        if type(ex).__name__ == "MemoryStop":
+            rec["stop"] = {"kind": "MEMORY_CATEGORY", "reason": str(ex)[:200]}
+        else:
+            raise
+    # apply: a node is restricted only when EVERY consumer use edge completed its lift (a stopped compiler leaves partial nodes FULL)
+    completed = set(demanded) if rec["stop"] is None else set()                        # a stopped compiler applies NOTHING: every node keeps FULL / its declared hint (conservative)
     for n in P.nodes:
-        if n.nid in P.roots or n.storage != IR.DENSE or n.kind in (IR.SOURCE, IR.MARKER, IR.CONSTANT):
+        if n.nid in P.roots or n.storage != IR.DENSE or n.kind in (IR.SOURCE, IR.MARKER, IR.CONSTANT) or n.nid not in completed:
             continue
         dem = demanded.get(n.nid)
         if dem is None or len(dem) >= n.volume:
             continue
         before = n.volume if n.demand == "FULL" else (0 if n.demand == "EMPTY" else len(n.demand))
         n.demand = tuple(sorted(dem)) if dem else "EMPTY"; n.prov = dict(n.prov or {}, demand="RESTRICTED_ALL_CONSUMERS", consumers=len(cons[n.nid])); rec["restricted"].append(n.nid); rec["entries_saved"] += max(0, before - len(dem))
-    return rec
+    for nid, b in list(charged.items()):
+        bud.release_set(b)                                                               # the demand sets are consumed into the hints: release
+    rec["rows_inspected"] = bud.rows; rec["peak_live_bytes"] = bud.peak; return rec

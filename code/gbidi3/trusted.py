@@ -94,11 +94,26 @@ class TrustedReduced:
             h.update(("X%d:%s;" % (v, "|".join(":".join(map(str, e)) for e in self.dec[v]))).encode())
         return h.hexdigest()
 
-    def unchanged(self, R):
+    def unchanged(self, R, ledger=None, deadline=None):
+        """identity check of the LIVE reduced object against this frozen snapshot: the comparison copy is reserved BEFORE it is built and released after;
+        the deadline is checked before and after (the hash itself is one bounded pass over the reduced tables)"""
+        import time as _t
+        if deadline is not None and _t.monotonic() > deadline:
+            raise TimeoutError
+        b = TrustedReduced.bytes_bound(R)
+        if ledger is not None:
+            ledger.reserve("source_ir_maps_output", b, "trusted identity re-check copy (reserved BEFORE the copy, released after)")
         try:
-            return TrustedReduced(R).content_hash == self.content_hash
-        except Exception:
-            return False
+            try:
+                same = TrustedReduced(R).content_hash == self.content_hash
+            except Exception:
+                return False
+        finally:
+            if ledger is not None:
+                ledger.release("source_ir_maps_output", b)
+        if deadline is not None and _t.monotonic() > deadline:
+            raise TimeoutError
+        return same
 
     def proposal_view(self):
         """what the planner sees: plain data, no reference to this object"""

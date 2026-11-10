@@ -20,9 +20,10 @@ LIB = os.path.join(HERE, "gbidi3", "libgbidi3_kernel.dylib"); BUILD_RECORD = os.
 PRECISIONS = (64, 128, 256, 512)
 ARMS = PL.ARMS
 STOP_NAMES = {0: "OK", 1: "DEADLINE", 2: "MEMORY", 3: "OVERFLOW", 4: "RANGE", 5: "BADPROG", 6: "FAULT", 7: "FPENV", 8: "LABEL"}
-COUNTER_NAMES = ("value_frames", "pullback_frames", "frames_combined", "max_frame_depth", "polls", "mults", "adds", "lookups", "zero_skips", "source_reads", "marker_updates", "gather_visits", "add_visits", "mul_rows", "reduce_terms", "stream_reevals", "reads_outside_demand", "regenerated_values", "dense_blocks", "entries_materialized", "entries_stored_planned", "sparse_rows_joined", "sparse_output_rows", "sparse_join_discarded", "cache_hits", "cache_misses", "cache_evictions", "cache_inserts", "adjoint_adds", "slots_drained", "early_flushes", "late_increments", "pending_peak_bytes", "downgrades", "root_ops", "numerator_adds", "used_values_bytes", "used_index_bytes", "used_reverse_bytes", "used_pending_bytes", "used_scratch_bytes", "peak_scratch_bytes", "cache_bytes", "reverse_tuples", "sparse_reverse_rows", "sparse_reverse_generic")
+COUNTER_NAMES = ("value_frames", "pullback_frames", "frames_combined", "max_frame_depth", "polls", "mults", "adds", "lookups", "zero_skips", "source_reads", "marker_updates", "gather_visits", "add_visits", "mul_rows", "reduce_terms", "stream_reevals", "reads_outside_demand", "regenerated_values", "dense_blocks", "entries_materialized", "entries_stored_planned", "sparse_rows_joined", "sparse_output_rows", "sparse_join_discarded", "cache_hits", "cache_misses", "cache_evictions", "cache_inserts", "adjoint_adds", "slots_drained", "early_flushes", "late_increments", "pending_peak_bytes", "downgrades", "root_ops", "numerator_adds", "used_values_bytes", "used_index_bytes", "used_reverse_bytes", "used_pending_bytes", "used_scratch_bytes", "peak_scratch_bytes", "cache_bytes", "reverse_tuples", "sparse_reverse_rows", "sparse_reverse_generic", "reverse_value_frames", "reverse_pullback_frames", "reverse_combined_frames", "sparse_reverse_immediate", "immediate_pullback_frames", "reverse_value_terms", "combined_terms", "reverse_mul_rows")
 COUNTER_DEFINITIONS = {"units": "exact event counts of the implemented schedule (one logical interval operation = two MPFR endpoint operations); *_bytes are reserved capacities (not RSS)", "status": "EXACT (kernel counters) unless the record says otherwise", "source": "gbidi3/kernel3.cpp Counters + reservation manager",
-                       "reduce_terms": "FORWARD eliminated tuples summed (stream evaluation and sparse join); never counts reverse work", "reverse_tuples": "REVERSE work: eliminated tuples visited by the GENERIC REDUCE pullback (never counted in reduce_terms)", "sparse_reverse_rows": "support-indexed reverse deliveries (retained join rows) of SPARSE nodes", "sparse_reverse_generic": "SPARSE nodes whose reverse ran through the generic tuple loop (labelled fallback; not a completed sparse reverse)", "source_reads": "source table loads in VALUE / PULLBACK / join (forward and reverse)"}
+                       "reduce_terms": "eliminated tuples SUMMED by a VALUE accumulation (stream evaluation, sparse join, AND the backward-phase value reconstruction / combined frames); the forward part alone is counters_after_forward.reduce_terms; the reverse-phase parts are reverse_value_terms (pure VALUE reconstruction) + combined_terms (combined VALUE+PULLBACK frames)",
+                       "reverse_value_terms": "eliminated tuples summed in pure VALUE frames pushed DURING THE REVERSE PHASE = reconstruction of streamed operand values that a product pullback needs (the depth-dependent reverse work omitted by the pre-repair cost model)", "combined_terms": "eliminated tuples summed in combined VALUE+PULLBACK frames (the last streamed operand of a product row in a pullback)", "reverse_mul_rows": "MUL rows evaluated during the reverse phase (any frame mode)", "reverse_tuples": "REVERSE work: eliminated tuples visited by the GENERIC REDUCE pullback (never counted in reduce_terms)", "reverse_value_frames": "VALUE frames pushed during the reverse phase = reconstruction of streamed values that a pullback needs (prefix/suffix weights of earlier streamed siblings); forward-phase value frames = value_frames_after_forward", "reverse_pullback_frames": "pure PULLBACK frames pushed during the reverse phase", "reverse_combined_frames": "combined VALUE+PULLBACK frames pushed during the reverse phase (the last streamed operand of a product row)", "sparse_reverse_immediate": "support-indexed sparse deliveries made immediately because the pending array could not be allocated (same operation as the queued drain)", "immediate_pullback_frames": "generic PULLBACK frames pushed immediately because a pending slot could not be allocated (dense / non-sparse storage)", "sparse_reverse_rows": "support-indexed reverse deliveries (retained join rows) of SPARSE nodes", "sparse_reverse_generic": "SPARSE nodes whose reverse ran through the generic tuple loop (labelled fallback; not a completed sparse reverse)", "source_reads": "source table loads in VALUE / PULLBACK / join (forward and reverse)"}
 LIVE = {"handle": None, "lib": None}
 
 
@@ -80,7 +81,7 @@ class Lib:
             L.gb3_mpfr_version.restype = ctypes.c_char_p; L.gb3_gmp_version.restype = ctypes.c_char_p; L.gb3_mpfr_emin.restype = ctypes.c_long; L.gb3_mpfr_emax.restype = ctypes.c_long; L.gb3_mpfr_emin_min.restype = ctypes.c_long; L.gb3_mpfr_emax_max.restype = ctypes.c_long
             L.gb3_bytes_per_entry.argtypes = [ctypes.c_int, ctypes.c_int]; L.gb3_bytes_per_entry.restype = ctypes.c_int64; L.gb3_block_entries.restype = ctypes.c_int64
             cls._lib = L; cls._build = b
-            if L.gb3_schedule_id().decode() != "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.1-sparse-reverse":
+            if L.gb3_schedule_id().decode() != "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.2-sparse-immediate-reverse-counters":
                 raise Refuse("FP_ENV", "kernel schedule id differs")
         return cls._lib
 
@@ -110,10 +111,12 @@ def to_double_checked(q):
     return d, True
 
 
-def binary64_admission(qs):
-    """convert every value string the kernel will load; the route is admitted only when EVERY positive leaf passes"""
+def binary64_admission(qs, deadline=None):
+    """convert every value string the kernel will load; the route is admitted only when EVERY positive leaf passes; polls the ONE deadline every 4,096 leaves"""
     out = []; failed = 0; first = None
-    for s in qs:
+    for i, s in enumerate(qs):
+        if deadline is not None and i % 4096 == 4095 and time.monotonic() > deadline:
+            raise TimeoutError("DEADLINE during binary64 admission after %d leaves" % (i + 1))
         q = Fr(s); d, ok = to_double_checked(q)
         if not ok:
             failed += 1
@@ -147,7 +150,7 @@ def live_snapshot():
 
 
 def _counters(L, h):
-    buf = (ctypes.c_uint64 * 48)(); L.gb3_counters(ctypes.c_void_p(h), buf); v = list(buf)
+    buf = (ctypes.c_uint64 * 56)(); L.gb3_counters(ctypes.c_void_p(h), buf); v = list(buf)
     return {n: v[i] for i, n in enumerate(COUNTER_NAMES)}
 
 
@@ -215,10 +218,7 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
         refuse("RESOURCE_STOP", "MEMORY_CATEGORY: %s" % ex)
     R = SRC.Reduced(_ModelAdapter(S.model), dict(S.ev)); red = R.reduce(rules, deadline=min(clock.optional_deadline, deadline_mono))
     rec["reductions"] = dict(red, rules=list(rules), free_reduced=len(R.dom), scale=str(R.scale)); phases["reductions"] = time.monotonic() - t; check_deadline("reductions")
-    if R.zero_proof is not None:
-        bind_execution("exact_decoder", "exact_decoder|0"); rec["route"] = "exact_decoder"
-        rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "the common reductions proved Z = 0: %s" % json.dumps(R.zero_proof); rec["zero_proof"] = R.zero_proof; return _write(out, record_prefix, rec)
-    # ---------------- 3. trusted snapshot + independent replay of the recorded steps
+    # ---------------- 3. trusted snapshot + independent replay of the recorded steps (ALSO before a zero-evidence proof is accepted: the proof is a reduction record and is replayed independently like any other step)
     t = time.monotonic()
     try:
         T = TrustedReduced(R, ledger=led)
@@ -237,6 +237,9 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     except TimeoutError:
         refuse("RESOURCE_STOP", "DEADLINE during the independent source replay")
     phases["trusted_snapshot"] = time.monotonic() - t
+    if R.zero_proof is not None:
+        bind_execution("exact_decoder", "exact_decoder|0"); rec["route"] = "exact_decoder"
+        rec["status"] = "ZERO_EVIDENCE_PROVED"; rec["reason"] = "the common reductions proved Z = 0 (independently replayed): %s" % json.dumps(R.zero_proof); rec["zero_proof"] = R.zero_proof; return _write(out, record_prefix, rec)
     L = Lib.get(); rec["backend"] = backend_record(); bpe_mpfr = {p: L.gb3_bytes_per_entry(0, p) for p in PRECISIONS}; bpe_dbl = L.gb3_bytes_per_entry(1, 53)
     if not T.dom:
         # every variable fixed / aliased away: the posterior is the decoder (constants) once Z = scale > 0
@@ -270,22 +273,25 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
     # ---------------- 4b. SHARED programs (a node with several consumer use edges): the all-consumer demand compiler restricts DENSE storage only to the UNION of
     # every consumer's reads (review F3); tree programs (the production planner's) are complete under the bucket-level pass and are left untouched
     if plan is not None and any(len(u) > 1 for u in plan.program.consumers().values()):
-        t = time.monotonic(); cap = min(clock.remaining_rows(), 1_000_000)
+        t = time.monotonic(); cap = clock.remaining_rows()                                  # ONE aggregate optional budget shared with the planner's discovery (rows + optional wall)
         try:
-            led.reserve("source_ir_maps_output", 48 * min(cap, sum(n.volume for n in plan.program.nodes)) + 4096, "all-consumer demand sets (bounded by the row cap; reserved BEFORE compilation)")
-            rec["demand_all_consumers"] = DM.compile_demand(plan.program, row_cap=cap, tick=lambda n=1: clock.tick(n), tables={f.fid: f.table for f in T.factors})
-        except GM.MemoryStop as ex:
-            rec["demand_all_consumers"] = {"status": "SKIPPED_MEMORY", "reason": str(ex)}                 # conservative: every node keeps its FULL / declared demand
+            rec["demand_all_consumers"] = DM.compile_demand(plan.program, row_cap=cap, tables={f.fid: f.table for f in T.factors}, clock=clock, ledger=led, optional=bool(cfgA["demand_masks"]))
         except GC.PlanStop as ex:
             if ex.kind == "CELL_DEADLINE":
                 refuse("RESOURCE_STOP", "DEADLINE during all-consumer demand compilation")
             rec["demand_all_consumers"] = {"status": "SKIPPED_" + ex.kind}
-        phases["demand_all_consumers"] = time.monotonic() - t
+        rec["demand_all_consumers"]["phase_s"] = time.monotonic() - t; phases["demand_all_consumers"] = rec["demand_all_consumers"]["phase_s"]
     # ---------------- 5. validate -> the executable representation
     V = None
     if plan is not None:
         t = time.monotonic()
-        if not T.unchanged(R):
+        try:
+            same = T.unchanged(R, ledger=led, deadline=deadline_mono)
+        except GM.MemoryStop as ex:
+            refuse("RESOURCE_STOP", "MEMORY_CATEGORY: %s" % ex)
+        except TimeoutError:
+            refuse("RESOURCE_STOP", "DEADLINE during the trusted-snapshot identity check")
+        if not same:
             refuse("REJECTED", "the live reduced object was mutated during planning")
         try:
             led.reserve("source_ir_maps_output", IR.program_bytes_bound(plan.program) + 64 * len(plan.program.nodes) + 4096, "validated executable copy + validator tables (reserved BEFORE validation)")
@@ -319,7 +325,10 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
         phases["flatten"] = time.monotonic() - t
         routes = []
         if cfg.get("allow_binary64", True) and not hooks.get("no_binary64"):
-            dvals, adm = binary64_admission(qs); rec["binary64_admission"] = adm
+            try:
+                dvals, adm = binary64_admission(qs, deadline=deadline_mono); rec["binary64_admission"] = adm
+            except TimeoutError as ex:
+                refuse("RESOURCE_STOP", str(ex))
             if adm["admitted"]:
                 routes.append(("binary64", 53, dvals))
         routes += [("mpfr", p, None) for p in PRECISIONS]
@@ -530,37 +539,67 @@ def exact_fallback(S, deadline_mono, led, test_hooks=None):
     """mixed-radix enumeration of every evidence-compatible assignment of the ORIGINAL variables; every original factor occurrence multiplied once
     after per-factor denominator clearing (D_f = lcm of the restricted table's denominators); Z_int = (prod D_f) Z, N_int likewise; restored exactly."""
     L = Lib.get(); m = S.model; ev = S.ev; free = [v for v in range(m.nvars) if v not in ev]; pos = {v: i for i, v in enumerate(free)}
-    total_entries = sum(len(f.table) for f in m.factors)
+    total_entries = sum(len(f.table) for f in m.factors); charged = 0; work = [0]
+    def tick(n=1):
+        """ONE cumulative work counter over every preparation loop (slicing, lcm, clearing, string conversion), polled every 4,096 units"""
+        before = work[0]; work[0] += n
+        if work[0] // 4096 != before // 4096 and time.monotonic() > deadline_mono:
+            raise TimeoutError
+    def reserve(nbytes, what):
+        nonlocal charged
+        led.reserve("frames_scratch_pub", nbytes, what); charged += nbytes
     try:
-        led.reserve("frames_scratch_pub", 4 * GM.RATIONAL_BYTES_FALLBACK * total_entries + 64 * len(m.factors) + 8 * len(free) + 4096, "fallback preparation (sliced tables, denominators, integer strings) bound BEFORE construction")
-    except GM.MemoryStop as ex:
-        return {"status": "MEMORY", "reason": str(ex), "phase": "preparation", "allocated_before_stop": 0}
-    prog = [len(free)] + [m.card[v] for v in free]; vals = []; fdesc = []; scale = Fr(1); zero_scalar = False; visited_prep = 0
-    for f in m.factors:
-        visited_prep += len(f.table)
-        if visited_prep % 4096 < len(f.table) and time.monotonic() > deadline_mono:
-            return {"status": "DEADLINE", "reason": "deadline during fallback preparation", "phase": "preparation", "visited": 0}
-        st = f.strides(); keep = [k for k in range(len(f.scope)) if f.scope[k] not in ev]; base = sum(ev[v] * st[k] for k, v in enumerate(f.scope) if v in ev)
-        if not keep:
-            val = f.table[base]; scale *= val
-            if val == 0:
-                zero_scalar = True
-            continue
-        card = [f.card[k] for k in keep]; n = IR.prod(card); tab = []
+        reserve(64 * len(m.factors) + 8 * len(free) + 4096, "fallback preparation: descriptors")
+        prog = [len(free)] + [m.card[v] for v in free]; vals = []; fdesc = []; scale = Fr(1); zero_scalar = False
         from itertools import product as iproduct
-        for idx in iproduct(*[range(c) for c in card]):
-            tab.append(f.table[base + sum(idx[j] * st[keep[j]] for j in range(len(keep)))])
-        D = 1
-        for q in tab:
-            D = D * q.denominator // math.gcd(D, q.denominator)
-        scale /= D; ints = [q.numerator * (D // q.denominator) for q in tab]
-        fdesc.append(([pos[f.scope[k]] for k in keep], card, len(ints))); vals.extend(str(x) for x in ints)
+        for f in m.factors:
+            st = f.strides(); keep = [k for k in range(len(f.scope)) if f.scope[k] not in ev]; base = sum(ev[v] * st[k] for k, v in enumerate(f.scope) if v in ev); tick(len(f.scope) + 1)
+            if not keep:
+                val = f.table[base]; scale *= val
+                if val == 0:
+                    zero_scalar = True
+                continue
+            card = [f.card[k] for k in keep]; n = IR.prod(card)
+            # BIT-LENGTH BOUNDS computed from the SOURCE rationals BEFORE anything is built (review E1): (1) the per-factor lcm D has at most sum(bitlen(den))
+            # bits -> the lcm accumulation (two live integers of that size) is reserved first; (2) D is computed (polled); (3) every cleared integer
+            # num * (D / den) has at most bitlen(num) + bitlen(D) bits and is held THREE times at once (Python int, decimal string ~0.302 bits per char + 49,
+            # encoded bytes copy for ctypes) next to the sliced Fraction list -> reserved with the ACTUAL bitlen(D) before the first cleared integer exists
+            den_bits = 0; num_bits_max = 0
+            for idx in iproduct(*[range(c) for c in card]):
+                q = f.table[base + sum(idx[j] * st[keep[j]] for j in range(len(keep)))]; den_bits += q.denominator.bit_length(); num_bits_max = max(num_bits_max, q.numerator.bit_length()); tick()
+            lcm_bytes = 3 * (28 + 4 * ((den_bits + 1) // 30 + 1)); reserve(lcm_bytes + n * GM.RATIONAL_BYTES_FALLBACK + 256, "fallback preparation of factor %d: sliced table (%d rationals) + lcm accumulation of <= %d bits" % (f.index, n, den_bits + 1))
+            tab = []
+            for idx in iproduct(*[range(c) for c in card]):
+                tab.append(f.table[base + sum(idx[j] * st[keep[j]] for j in range(len(keep)))]); tick()
+            D = 1
+            for q in tab:
+                D = D * q.denominator // math.gcd(D, q.denominator); tick()
+            int_bits = num_bits_max + D.bit_length(); int_bytes = 28 + 4 * (int_bits // 30 + 1); str_bytes = 49 + int_bits * 302 // 1000 + 2; enc_bytes = 33 + int_bits * 302 // 1000 + 2
+            reserve(n * (int_bytes + str_bytes + enc_bytes + 24) + 256, "fallback preparation of factor %d: %d cleared integers of <= %d bits (actual lcm %d bits) held as int + decimal string + encoded copy" % (f.index, n, int_bits, D.bit_length()))
+            scale /= D; ints = []
+            for q in tab:
+                ints.append(q.numerator * (D // q.denominator)); tick()
+            fdesc.append(([pos[f.scope[k]] for k in keep], card, len(ints)))
+            for x in ints:
+                vals.append(str(x)); tick()
+            del tab, ints
+    except GM.MemoryStop as ex:
+        return {"status": "MEMORY", "reason": str(ex), "phase": "preparation", "allocated_before_stop": charged, "work_units": work[0]}
+    except TimeoutError:
+        return {"status": "DEADLINE", "reason": "deadline during fallback preparation after %d work units" % work[0], "phase": "preparation", "visited": 0}
     if zero_scalar:
         return {"status": "COMPLETE", "Z": Fr(0), "N": None, "visited": 0, "note": "zero scalar factor"}
     prog.append(len(fdesc))
     for sc, card, ent in fdesc:
         prog += [len(sc)] + sc + card + [ent]
-    caps5 = (ctypes.c_uint64 * 5)(*led.kernel_caps()); parr = (ctypes.c_int64 * len(prog))(*prog); varr = (ctypes.c_char_p * max(1, len(vals)))(*([s.encode() for s in vals] or [b"1"])); err = ctypes.c_int(0)
+    try:
+        reserve(8 * len(prog) + 8 * max(1, len(vals)) + 256, "fallback program + pointer arrays")
+    except GM.MemoryStop as ex:
+        return {"status": "MEMORY", "reason": str(ex), "phase": "preparation", "allocated_before_stop": charged}
+    caps5 = (ctypes.c_uint64 * 5)(*led.kernel_caps()); parr = (ctypes.c_int64 * len(prog))(*prog); enc = []
+    for s_ in vals:
+        enc.append(s_.encode()); tick()
+    varr = (ctypes.c_char_p * max(1, len(vals)))(*(enc or [b"1"])); err = ctypes.c_int(0)
     L.gb3_test_ref_fault(int((test_hooks or {}).get("ref_fault", 0)))
     Sref = L.gb3_ref_create(parr, len(prog), varr, max(0.0, deadline_mono - time.monotonic()), caps5, ctypes.byref(err))
     if not Sref:

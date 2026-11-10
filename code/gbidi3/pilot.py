@@ -8,7 +8,7 @@ At the present stop point only `propose` is used (writes GB_MANIFEST_PROPOSED.js
 reviewed round and refuse to act on a proposed manifest without the explicit --authorized flag file FREEZE_AUTHORIZED.txt in the run directory.
     python -m gbidi3.pilot propose D ; python -m gbidi3.pilot freeze D ; python -m gbidi3.pilot run D STAGE ; python -m gbidi3.pilot status D"""
 from __future__ import annotations
-import os, sys, json, time, hashlib, random, subprocess, fcntl
+import os, sys, json, time, math, hashlib, random, subprocess, fcntl
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.insert(0, HERE)
 from adp.census import run as CR
 from gbidi3 import reconcile as RC
@@ -49,20 +49,30 @@ def charged(D):
             if r["jid"] in rec:
                 dup.append(r["jid"])
             rec[r["jid"]] = r
-    total = 0.0; unresolved = []; by = {}; outer = []; children_of = {}
+    total = 0.0; unresolved = []; by = {}; outer = []; children_of = {}; measured = 0.0; envelope = 0.0; unknown_wall = []; parent_unknown_children = {}
+    def finite(x):
+        return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and x >= 0
     for r in rows:
         if r["kind"] != "START" or r["scope"].startswith("stage_outer"):
             continue
-        rc = rec.get(r["jid"])
+        rc = rec.get(r["jid"]); pj = r.get("parent_jid") or (rc or {}).get("parent_jid"); cap = r.get("max_permitted_charge_s")
+        if rc is not None and not finite(rc.get("wall_s")):
+            # a terminal receipt with an UNKNOWN wall (parent-generated PARENT_CLEANUP_KILL): never arithmetic on null; charged at the attempt's envelope, listed separately
+            env = cap if finite(cap) else 0.0; total += env; envelope += env; by["envelope_unknown_wall:" + r["scope"]] = by.get("envelope_unknown_wall:" + r["scope"], 0.0) + env
+            unknown_wall.append({"job": r["job"], "jid": r["jid"], "outcome": rc.get("outcome"), "envelope_s": env, "cleanup_unresolved": bool(rc.get("cleanup_unresolved")), "envelope_known": finite(cap)})
+            if pj:
+                parent_unknown_children[pj] = parent_unknown_children.get(pj, 0) + 1
+            if rc.get("cleanup_unresolved") or not finite(cap):
+                unresolved.append(dict(r, cleanup_unresolved=bool(rc.get("cleanup_unresolved")), wall_unknown=True))
+            continue
         if rc is not None and not rc.get("cleanup_unresolved") and r["jid"] not in dup:
-            total += rc["wall_s"]; by[r["scope"]] = by.get(r["scope"], 0.0) + rc["wall_s"]
-            pj = r.get("parent_jid") or rc.get("parent_jid")
+            total += rc["wall_s"]; measured += rc["wall_s"]; by[r["scope"]] = by.get(r["scope"], 0.0) + rc["wall_s"]
             if pj:
                 children_of[pj] = children_of.get(pj, 0.0) + rc["wall_s"]
         elif rc is not None:
-            unresolved.append(dict(r, cleanup_unresolved=True)); total += max(rc["wall_s"], r.get("max_permitted_charge_s") or 0.0)
+            env = max(rc["wall_s"], cap if finite(cap) else 0.0); unresolved.append(dict(r, cleanup_unresolved=True)); total += env; envelope += env
         else:
-            unresolved.append(r); total += (r.get("max_permitted_charge_s") or 0.0)
+            env = cap if finite(cap) else 0.0; unresolved.append(r); total += env; envelope += env
     live_parent = os.environ.get("GBIDI_PARENT_JID")
     for r in rows:
         if r["kind"] != "START" or not r["scope"].startswith("stage_outer"):
@@ -75,11 +85,15 @@ def charged(D):
                 elapsed = 0.0
             rem = max(0.0, elapsed - children_of.get(r["jid"], 0.0)); total += rem; by["parent_remainder_live:" + r["scope"]] = by.get("parent_remainder_live:" + r["scope"], 0.0) + rem
             outer.append({"job": r["job"], "jid": r["jid"], "receipt": False, "live": True, "parent_remainder_so_far_s": rem}); continue
-        if rc is None or rc.get("cleanup_unresolved"):
-            unresolved.append(dict(r, outer=True)); total += (r.get("max_permitted_charge_s") or 0.0); outer.append({"job": r["job"], "jid": r["jid"], "receipt": rc is not None, "parent_remainder_s": None}); continue
-        rem = max(0.0, rc["wall_s"] - children_of.get(r["jid"], 0.0)); total += rem; by["parent_remainder:" + r["scope"]] = by.get("parent_remainder:" + r["scope"], 0.0) + rem
+        if rc is None or rc.get("cleanup_unresolved") or not finite(rc.get("wall_s")):
+            env = r.get("max_permitted_charge_s") if finite(r.get("max_permitted_charge_s")) else 0.0; unresolved.append(dict(r, outer=True)); total += env; envelope += env; outer.append({"job": r["job"], "jid": r["jid"], "receipt": rc is not None, "parent_remainder_s": None}); continue
+        if parent_unknown_children.get(r["jid"]):
+            # a child of this outer attempt has an UNKNOWN wall: the parent-only remainder cannot be inferred by subtraction; the outer wall is charged WHOLE (conservative, no manufactured remainder)
+            total += rc["wall_s"]; envelope += rc["wall_s"]; by["outer_whole_unknown_child:" + r["scope"]] = by.get("outer_whole_unknown_child:" + r["scope"], 0.0) + rc["wall_s"]
+            outer.append({"job": r["job"], "jid": r["jid"], "receipt": True, "wall_s": rc["wall_s"], "children_s_measured": children_of.get(r["jid"], 0.0), "children_unknown_wall": parent_unknown_children[r["jid"]], "parent_remainder_s": None, "charged": "whole outer wall (an unknown child wall forbids subtraction)"}); continue
+        rem = max(0.0, rc["wall_s"] - children_of.get(r["jid"], 0.0)); total += rem; measured += rem; by["parent_remainder:" + r["scope"]] = by.get("parent_remainder:" + r["scope"], 0.0) + rem
         outer.append({"job": r["job"], "jid": r["jid"], "receipt": True, "wall_s": rc["wall_s"], "children_s": children_of.get(r["jid"], 0.0), "parent_remainder_s": rem})
-    return total, by, unresolved, {"outer_attempts": outer, "duplicate_receipts": dup}
+    return total, by, unresolved, {"outer_attempts": outer, "duplicate_receipts": dup, "measured_s": measured, "envelope_s": envelope, "unknown_wall_receipts": unknown_wall, "rule": "total = measured receipted walls + conservative ENVELOPE charges (unknown / unreceipted / unresolved attempts at max_permitted_charge_s; an outer attempt with an unknown-wall child charged whole); null / nonfinite walls are never used in arithmetic"}
 
 
 def inventory():
@@ -181,7 +195,13 @@ def reconcile_manifest(man):
 
 
 def preflight(D, man):
-    head = CR.git_head()
+    try:
+        head = CR.git_head()
+    except Exception:
+        head = None
+    if head is None and not man.get("qualification_unfrozen"):
+        raise SystemExit("REFUSED: a frozen manifest requires a Git checkout (the frozen commit must be verifiable)")
+    head = head or "NO_GIT_CHECKOUT (qualification manifest; a clean extraction is not a Git checkout)"
     if man.get("manifest_status") != "FROZEN" and not man.get("qualification_unfrozen"):
         raise SystemExit("REFUSED: the manifest is %s, not FROZEN" % man.get("manifest_status"))
     if not man.get("qualification_unfrozen"):
@@ -207,6 +227,10 @@ def inputs_match(man, case):
     cs = man["cases"][case]; return sha(os.path.join(HERE, cs["model_path"])) == cs["raw_model_sha256"] and sha(os.path.join(HERE, cs["evidence_path"])) == cs["raw_evidence_sha256"]
 
 
+def _no_record_stub(out, c, cs):
+    json.dump({"status": "NO_RECORD", "arm": c["arm"] if c["arm"] in GB_ARMS else PRODUCER_ARM[c["arm"]], "planned_arm": c["arm"], "cell_id": c["cell_id"], "task_id": c["task_id"], "budget_s": c["budget_s"], "expected_task": {"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "cell_id": c["cell_id"], "task_id": c["task_id"]}, "producer_diagnostics": "UNAVAILABLE", "note": "the cell process left no cell.json (killed before writing); see supervisor.log / progress.json / diagnostic_record.json / adapter.json"}, open(os.path.join(out, "cell.json"), "w"))
+
+
 def run(D, stage):
     man = json.load(open(os.path.join(D, "GB_MANIFEST.json"))); head = preflight(D, man); idx = RC.ledger_index(D)
     lock = open(os.path.join(D, "RUN_LOCK"), "a+")
@@ -225,6 +249,8 @@ def run(D, stage):
         out = os.path.join(D, c["out_dir"]); cs = man["cases"][c["case"]]
         prior = idx.get(RC.job_name(c)); launched_before = bool(prior and prior["START"])
         if os.path.exists(os.path.join(out, "cell.json")) or launched_before:
+            if launched_before and not os.path.exists(os.path.join(out, "cell.json")):
+                os.makedirs(out, exist_ok=True); _no_record_stub(out, c, cs)                    # resume after an interrupted stage (parent cleanup / kill): the typed stub is written here, never a relaunch
             row = RC.reconcile(D, man, c, idx)                                                        # the ONE reconciler: a reconciled attempt (success OR typed noncertifying NO_RECORD / stop) is done; a genuine identity conflict stops
             if not row["accepted"]:
                 return stopfile("RESUME_CONFLICT", at_index=c["index"], detail="existing attempt is not reconciled to the planned cell: %s" % row["reasons"][:4])
@@ -258,7 +284,7 @@ def run(D, stage):
         subprocess.run(cmd, cwd=HERE); wall = time.monotonic() - t; idx = RC.ledger_index(D)
         rec = json.load(open(os.path.join(out, "cell.json"))) if os.path.exists(os.path.join(out, "cell.json")) else None
         if rec is None:                                                                            # a launched attempt without a producer record: typed NO_RECORD row bound to the manifest + receipt (review C2)
-            json.dump({"status": "NO_RECORD", "arm": c["arm"] if c["arm"] in GB_ARMS else PRODUCER_ARM[c["arm"]], "planned_arm": c["arm"], "cell_id": c["cell_id"], "task_id": c["task_id"], "budget_s": c["budget_s"], "expected_task": {"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "cell_id": c["cell_id"], "task_id": c["task_id"]}, "producer_diagnostics": "UNAVAILABLE", "note": "the cell process left no cell.json (killed before writing); see supervisor.log / progress.json / diagnostic_record.json / adapter.json"}, open(os.path.join(out, "cell.json"), "w"))
+            _no_record_stub(out, c, cs)
         row = RC.reconcile(D, man, c, idx)
         print("%-3d %-26s %-20s %4ds  %-30s %-10s %7.2fs  parent+child %.2fs %s" % (c["index"], c["arm"], c["case"], int(c["budget_s"]), row.get("record_status") or "NO_RECORD", "ACCEPTED" if row["accepted"] else "NOT_ACC", row.get("delivery_from_launch_s") or 0, wall, "" if row["accepted"] else row["reasons"][:2]), flush=True)
     open(os.path.join(D, "stage_%s_finished.txt" % stage), "a").write("finished %s parent_wall_s %.3f\n" % (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), time.monotonic() - t_stage))

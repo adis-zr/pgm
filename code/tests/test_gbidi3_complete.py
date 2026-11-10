@@ -50,11 +50,11 @@ def run(arm, mp, ep, out, b64=True, budget=60, hooks=None, rules=None, fallback=
     return EX.execute(arm, mp, ep, out, time.monotonic() + budget, cfg, test_hooks=hooks, ledger=ledger)
 
 
-def _run_cfg(mp, ep, out, arm="GENERAL_BIDI_COMPLETE_V3", b64=False, rules=(), hooks=None, budget=60, **override):
-    """run the executor with the arm's switches overridden (the arm table is restored afterwards)"""
+def _run_cfg(mp, ep, out, arm="GENERAL_BIDI_COMPLETE_V3", b64=False, rules=(), hooks=None, budget=60, ledger=None, fallback=True, extra_cfg=None, **override):
+    """run the executor with the arm's switches overridden (the arm table is restored afterwards); ledger / fallback / extra_cfg are forwarded to run()"""
     old = dict(PL.ARMS[arm]); PL.ARMS[arm] = dict(old, **override)
     try:
-        return run(arm, mp, ep, out, b64=b64, budget=budget, rules=list(rules), hooks=hooks)
+        return run(arm, mp, ep, out, b64=b64, budget=budget, rules=list(rules), hooks=hooks, ledger=ledger, fallback=fallback, extra_cfg=extra_cfg)
     finally:
         PL.ARMS[arm] = old
 
@@ -559,7 +559,9 @@ def test_C17_dense_blocks_sparse_joins_with_aggregation_stream_downgrade_and_sca
     # an allocation failure is NOT a successful block qualification: under a 1-byte value category NO block is allocated (dense_blocks == 0, nothing materialized);
     # the declared response is the per-node materialized -> stream downgrade (once per node), and the answer is still enclosed
     rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "nomem"), rules=[], b64=False, ledger=GM.Ledger(dict(GM.CAPS, value_cache_blocks=1)), fallback=False); c = counters(rec)
-    assert tight(rec, rows) and c["dense_blocks"] == 0 and c["entries_materialized"] == 0 and c["downgrades"] >= 1 and c["used_values_bytes"] <= 1, c
+    # FIXTURE CHANGE (second review repair, 2026-11-10): under a 1-byte value category the PLAN now streams every bucket including the root (storage_pass), so the kernel
+    # has nothing left to downgrade; the kernel downgrade path itself is exercised by the index-category controls (RE4 / SE2) and by the sparse -> stream part below
+    assert tight(rec, rows) and c["dense_blocks"] == 0 and c["entries_materialized"] == 0 and c["used_values_bytes"] <= 1 and (c["downgrades"] >= 1 or all(n["storage"] in (IR.STREAM, IR.CACHE) for n in rec["plan"]["node_table"] if n["kind"] == "REDUCE")), c
 
 
 # ============================================================================================================ C18 deep / shared work and bounded reuse
@@ -728,7 +730,7 @@ def test_C22_every_category_cap_python_storage_pending_transfers_fallback_export
     assert ex.value.kind == "RESOURCE_STOP" and "MEMORY_CATEGORY source_ir_maps_output" in ex.value.reason and not ex.value.rec.get("attempts")
     # every kernel category at one byte: a typed MEMORY stop of the affected path, never a silent borrow; what follows is the category's declared response
     led = GM.Ledger(dict(GM.CAPS, value_cache_blocks=1)); rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "vc"), rules=[], b64=False, ledger=led)       # value blocks refused -> every stored node downgrades to STREAM (once), no cache; exact fallback if even that fails
-    assert tight(rec, rows) and (rec["route"] == "exact_fallback" or (counters(rec)["downgrades"] >= 1 and counters(rec)["cache_inserts"] == 0 and counters(rec)["used_values_bytes"] <= 1)), rec.get("route")
+    assert tight(rec, rows) and (rec["route"] == "exact_fallback" or (counters(rec)["cache_inserts"] == 0 and counters(rec)["used_values_bytes"] <= 1 and (counters(rec)["downgrades"] >= 1 or all(n["storage"] in (IR.STREAM, IR.CACHE) for n in rec["plan"]["node_table"] if n["kind"] == "REDUCE")))), rec.get("route")   # FIXTURE CHANGE (second review repair): the plan streams everything under the 1-byte value cap; no kernel downgrade is needed
     rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "rp"), rules=[], b64=False, ledger=GM.Ledger(dict(GM.CAPS, reverse_pinned=1)))                 # numerators unreservable -> MEMORY at forward -> exact fallback (values + scratch categories) completes
     assert rec["route"] == "exact_fallback" and exact_rows(rec, rows) and rec["stop"]["kind"] == "MEMORY" and all(a.get("stop") == "MEMORY" for a in rec["attempts"])
     with pytest.raises(EX.Refuse) as ex:

@@ -30,7 +30,9 @@ def work(cc):
 
 
 def jet_rows(V):
-    """exact value + first-derivative evaluation of a VALIDATED program (independent of the kernel): returns the normalized original rows it computes"""
+    """exact value + first-derivative evaluation of a VALIDATED program (independent of the kernel): returns the normalized original rows it computes.
+    Roots are INDEPENDENT factors of Z: Z = scale * prod_r root_r and d Z = scale * sum_r (d root_r) prod_{j != r} root_j (division-free product rule);
+    a constant decoder entry is already a probability (not divided by Z). Corrected after the second review (S2): the first version summed the roots."""
     T = V.T; P = V.P; val = {}; Q_ = [(v, a) for v in T.dom for a in range(len(T.dom[v]))]
     def add(x, y):
         return (x[0] + y[0], {k: x[1].get(k, Fr(0)) + y[1].get(k, Fr(0)) for k in Q_})
@@ -70,15 +72,25 @@ def jet_rows(V):
                     v = add(v, val[ch.nid][ix])
             out[idx] = v
         val[n.nid] = out
-    z = sum((val[r][()][0] for r in P.roots), Fr(0)); z *= (T.scale if V.scale_applied_by == "executor" else 1)
+    sc = T.scale if V.scale_applied_by == "executor" else Fr(1); rv = [val[r][()] for r in P.roots]
+    z = sc
+    for x in rv:
+        z *= x[0]
     nu = {}
     for k in Q_:
-        nu[k] = sum((val[r][()][1].get(k, Fr(0)) for r in P.roots), Fr(0)) * (T.scale if V.scale_applied_by == "executor" else 1)
+        tot = Fr(0)
+        for i, x in enumerate(rv):
+            term = x[1].get(k, Fr(0))
+            for j, y in enumerate(rv):
+                if j != i:
+                    term *= y[0]
+            tot += term
+        nu[k] = tot * sc
     rows = {}
     for v in range(T.nvars):
         rows[v] = []
         for e in T.dec[v]:
-            rows[v].append(e[1] / z if e[0] == "C" else nu[(e[1], e[2])] * e[3] / z)
+            rows[v].append(Fr(e[1]) if e[0] == "C" else nu[(e[1], e[2])] * e[3] / z)
     return rows
 
 
@@ -177,6 +189,14 @@ def _mutations(P):
                     out.append(M("reps_drop@%d.%d" % (i, k), lambda Qp, i=i, k=k: setattr(Qp.nodes[i], "reps", tuple(None if q == k else r for q, r in enumerate(Qp.nodes[i].reps)))))
                 else:
                     out.append(M("reps_forge@%d.%d" % (i, k), lambda Qp, i=i, k=k: setattr(Qp.nodes[i], "reps", tuple(((0,), tuple(0 for _ in range(Qp.nodes[Qp.nodes[i].children[0]].card[k])), tuple(Fr(1) for _ in range(Qp.nodes[Qp.nodes[i].children[0]].card[k]))) if q == k else r for q, r in enumerate(Qp.nodes[i].reps)))))
+                if n.rmap[k] >= 0:
+                    def perm(Qp, i=i, k=k):                                                           # second review F1: a singleton PERMUTATION witness on a kept axis (same cardinality) consumed downstream as raw
+                        c = Qp.nodes[Qp.nodes[i].children[0]].card[k]; reps = tuple((j + 1) % c for j in range(c)); cls = tuple(sorted(range(c), key=lambda s: reps[s]))
+                        inv = [0] * c
+                        for ci_, s in enumerate(reps):
+                            inv[s] = ci_
+                        Qp.nodes[i].reps = tuple((reps, tuple(inv), tuple(Fr(1) for _ in range(c))) if q == k else r for q, r in enumerate(Qp.nodes[i].reps))
+                    out.append(M("reps_perm@%d.%d" % (i, k), perm))
             out.append(M("storage_sparse@%d" % i, lambda Qp, i=i: setattr(Qp.nodes[i], "storage", IR.SPARSE)))
             out.append(M("demand_empty@%d" % i, lambda Qp, i=i: (setattr(Qp.nodes[i], "storage", IR.DENSE), setattr(Qp.nodes[i], "demand", "EMPTY"))))
             out.append(M("demand_bad@%d" % i, lambda Qp, i=i: (setattr(Qp.nodes[i], "storage", IR.DENSE), setattr(Qp.nodes[i], "demand", (Qp.nodes[i].volume,)))))
@@ -427,8 +447,8 @@ def test_RD1_fusion_regression_one_whole_path_cost_decides_and_ranks_and_the_for
     fc = [(c.get("variant"), c["totals"].get("cold_work_proxy_true", c["totals"]["cold_work_proxy"])) for c in forced["plan_candidates"] if c.get("state") == "COMPLETE"]; assert dict(fc)["unfused"] == pu and dict(fc)["fused"] == pf   # both candidates recorded under the forced merge too
     # (3) counters are honest: forward eliminated tuples (reduce_terms) and reverse visits (reverse_tuples / sparse_reverse_rows) are reported separately and both bounded by the predicted visited rows
     for rec in (unf, mod, forced):
-        cc = Q.counters(rec); pred = rec["plan"]["totals"]["predicted"]
-        assert cc["reduce_terms"] == pred["forward_rows"] and cc["reverse_tuples"] + cc["sparse_reverse_rows"] <= pred["forward_rows"] and cc["sparse_reverse_generic"] == 0, (cc, pred)
+        cc = Q.counters(rec); fw = rec["attempts"][-1]["counters_after_forward"]; pred = rec["plan"]["totals"]["predicted"]
+        assert fw["reduce_terms"] == pred["forward_rows"] and cc["reverse_tuples"] + cc["sparse_reverse_rows"] <= pred["reverse_pull_rows"] + pred["sparse_pull_rows"] + pred["reverse_combined_rows"] and cc["sparse_reverse_generic"] == 0, (cc, pred)
 
 
 def test_RD2_sparse_support_indexed_reverse_14_binary_axes_ternary_multi_axis_and_default_policy(tmp_path):
@@ -448,7 +468,7 @@ def test_RD2_sparse_support_indexed_reverse_14_binary_axes_ternary_multi_axis_an
     rec = Q.run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "tern"), rules=[], b64=False); cc = Q.counters(rec); fw = rec["attempts"][-1]["counters_after_forward"]
     assert Q.exact_rows(rec, rows) and fw["sparse_rows_joined"] == 3 and cc["sparse_reverse_rows"] == 3 and cc["reverse_tuples"] == 0 and cc["source_reads"] - fw["source_reads"] <= 6
     # the unchanged-method witness value: a generic reverse over 2^14 tuples would have read 16,384 source entries; the repaired path reads 2
-    assert EX.COUNTER_DEFINITIONS["reduce_terms"].startswith("FORWARD") and EX.COUNTER_DEFINITIONS["reverse_tuples"].startswith("REVERSE") and "sparse_reverse_rows" in EX.COUNTER_DEFINITIONS and "sparse_reverse_generic" in EX.COUNTER_DEFINITIONS
+    assert "forward part alone is counters_after_forward" in EX.COUNTER_DEFINITIONS["reduce_terms"] and EX.COUNTER_DEFINITIONS["reverse_tuples"].startswith("REVERSE") and all(k in EX.COUNTER_DEFINITIONS for k in ("sparse_reverse_rows", "sparse_reverse_generic", "reverse_value_terms", "combined_terms", "sparse_reverse_immediate"))   # (second review B3: the summed-tuple counter is split by phase and frame mode; its forward part is the after-forward snapshot)
 
 
 def test_RD3_predicted_versus_counted_work_on_materialized_sparse_streamed_conditioned_and_regenerated_paths(tmp_path):
@@ -457,12 +477,13 @@ def test_RD3_predicted_versus_counted_work_on_materialized_sparse_streamed_condi
         assert Q.exact_rows(rec, rows) or Q.tight(rec, rows), label
         assert fw["reduce_terms"] == pred["forward_rows"], (label, fw["reduce_terms"], pred)                                                        # forward eliminated tuples == predicted visited rows (exact, not a bound)
         assert fw["entries_materialized"] <= pred["dense_entries"] and fw["sparse_output_rows"] == pred["sparse_rows"] and fw["sparse_rows_joined"] == pred["sparse_joined"], (label, fw, pred)
-        assert cc["reverse_tuples"] + cc["sparse_reverse_rows"] <= pred["forward_rows"], (label, cc, pred)                                           # reverse visits never exceed the forward rows
+        assert cc["reverse_tuples"] + cc["sparse_reverse_rows"] <= pred["reverse_pull_rows"] + pred["sparse_pull_rows"] + pred["reverse_combined_rows"], (label, cc, pred)   # reverse visits never exceed the predicted reverse rows
+        assert cc["reverse_value_terms"] + cc["combined_terms"] <= pred["reverse_value_rows"] + pred["reverse_combined_rows"] + cc["downgrades"] * pred["forward_rows"], (label, cc, pred)   # backward-phase VALUE reconstruction is predicted (second review F2); a KERNEL downgrade (runtime transition the plan cannot foresee) adds at most one forward recomputation
         return fw, cc, pred
     card = [3, 3, 3, 3]; facs = Q.rnd_model(22, card, [(0, 1), (1, 2), (2, 3), (0, 3)]); mp, ep = Q.write_uai(str(tmp_path / "m.uai"), card, facs); S, Z, N, rows = Q.truth(mp, ep)
     fw, cc, pred = check(Q.run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "d"), rules=[], b64=False), rows, "materialized"); assert pred["dense_entries"] >= 10 and fw["entries_materialized"] == pred["dense_entries"]
     fw, cc, pred = check(Q.run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "v"), rules=[], b64=False, ledger=GM.Ledger(dict(GM.CAPS, value_cache_blocks=1))), rows, "streamed+regenerated (value cap)")
-    assert pred["stream_rows"] > 0 and cc["downgrades"] >= 1                                                                                          # the planner streamed under the cap; the kernel downgraded the remaining dense root
+    assert pred["stream_rows"] > 0 and cc["downgrades"] == 0 and pred["dense_entries"] == 0                                                           # the planner streamed EVERYTHING under the cap incl. the root (second review: a root that does not fit is streamed by the PLAN, not left to a kernel downgrade)
     mp2, ep2 = Q._c16_model(str(tmp_path / "c16.uai"), 3); S2, Z2, N2, rows2 = Q.truth(mp2, ep2)
     fw, cc, pred = check(Q.run("GENERAL_BIDI_COMPLETE_V3", mp2, ep2, str(tmp_path / "c"), rules=[], b64=False), rows2, "conditioned (two-axis)")
     n = 3; f = [1 + (i % 17) for i in range(9)]; g = [(1 + a if a == b else 0) for a in range(3) for b in range(3)]; mp3, ep3 = Q.write_uai(str(tmp_path / "sp.uai"), [3, 3, 3], [((0, 1), f), ((1, 2), g), ((2,), [1, 2, 3])]); S3, Z3, N3, rows3 = Q.truth(mp3, ep3)
@@ -487,7 +508,7 @@ def test_RE1_one_byte_cap_and_expired_deadline_stop_before_one_rational_is_parse
             EX.execute("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / label), deadline, {"budget_s": 20}, ledger=led)
         _, peak = tracemalloc.get_traced_memory(); tracemalloc.stop()
         assert ex.value.kind == "RESOURCE_STOP" and calls[0] == 0 and peak < 100_000, (label, ex.value.reason, calls[0], peak)                      # NOTHING read or parsed: no byte buffer, no token list, no rational (the model file alone is 100 KB)
-        assert ("raw caller bytes" in ex.value.reason) if label == "one_byte_source_cap" else ("DEADLINE" in ex.value.reason and "0 tokens" in ex.value.reason)
+        assert ("raw caller bytes" in ex.value.reason) if label == "one_byte_source_cap" else ("DEADLINE" in ex.value.reason and "after 0 " in ex.value.reason)
     # the cell's own snapshot is under the same guard (ParseStop -> typed RESOURCE_STOP record)
     env = dict(ENV, GBIDI_LAUNCH_MONO="%.6f" % (time.monotonic() - 100)); out = str(tmp_path / "cell"); subprocess.run([PY, "-m", "gbidi3.cell", "GENERAL_BIDI_COMPLETE_V3", mp, ep, out, "20", "{}"], capture_output=True, cwd=HERE, env=env, timeout=120)
     c = json.load(open(os.path.join(out, "cell.json"))); assert c["status"] == "RESOURCE_STOP" and c["stop"]["phase"] == "snapshot" and c["stop"]["kind"] == "DEADLINE", c.get("reason")
@@ -590,7 +611,7 @@ def test_RF2_nonbipartite_production_planning_response_views_activate_and_save_w
 def test_RF3_nonbipartite_production_planning_fusion_activates_by_the_one_cost_and_saves_work_versus_A2(tmp_path):
     card, facs = _tri(104); r = _run_arms(tmp_path, "tri_fusion", card, facs, ("GENERAL_BIDI_COMPLETE_V3", "A2_NO_FUSION")); gen, cg = r["GENERAL_BIDI_COMPLETE_V3"]; a2, ca = r["A2_NO_FUSION"]
     assert gen["mechanisms"]["fusion"]["merged"] >= 1 and a2["mechanisms"]["fusion"]["merged"] == 0
-    ch = [c for c in gen["plan_candidates"] if c.get("chosen")][0]; assert ch["variant"] == "fused" and any(c.get("variant") == "unfused" for c in gen["plan_candidates"])            # the unfused complete plan was retained and lost the ranking
+    ch = [c for c in gen["plan_candidates"] if c.get("chosen")][0]; assert ch["variant"].startswith("fused") and any(str(c.get("variant")).startswith("unfused") for c in gen["plan_candidates"])            # the unfused complete plan was retained and lost the ranking
     assert any(n["kind"] == "REDUCE" and n.get("prov", {}).get("fused_from") for n in gen["plan"]["node_table"])                                     # the merged node is in the EXECUTED program
     assert gen["plan"]["totals"]["cold_work_proxy"] < a2["plan"]["totals"]["cold_work_proxy"] and work(cg) < work(ca) and cg["entries_materialized"] < ca["entries_materialized"], (work(cg), work(ca))
     # the price can also DECLINE on a nonbipartite model (every candidate recorded with both costs)

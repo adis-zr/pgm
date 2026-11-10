@@ -259,6 +259,77 @@ def local_semantics(P, dom, tick=lambda n=1: None):
             raise IRError("root %d is not scalar" % r)
 
 
+def coordinate_domains(P, dom):
+    """COORDINATE-DOMAIN typing of every axis of every node (review F1 / A2): an axis is in RAW space (coordinates = reduced states of the variable) or in a
+    CLASS space identified by the exact (representatives, class map, ratio) witness of the REDUCE that compressed it. The type of each output axis is derived
+    from the operands: SOURCE / MARKER axes are RAW; a REDUCE output axis is the class space of its witness if compressed, else its child's type; a GATHER with
+    a class map on an axis EXPANDS that axis to RAW (the map must equal the child's class space witness exactly; an identity gather keeps the child's type);
+    a MUL output axis takes the type of its operands, which must all AGREE (raw-with-raw or the identical class space; a raw MARKER / SOURCE multiplied
+    against a class-space axis is the F1 defect); ADD operands must agree axis by axis. A trivial witness (identity representatives, identity class map,
+    all-one ratios) is normalized to RAW. Returns {nid: tuple(type per axis)} where a type is "RAW" or ("CLS", reps, cls, ratio); raises IRError."""
+    T = {}
+    def canon(rep):
+        reps, cls, ratio = tuple(int(x) for x in rep[0]), tuple(int(x) for x in rep[1]), tuple(Fr(x) for x in rep[2])
+        if reps == tuple(range(len(cls))) and cls == tuple(range(len(cls))) and all(q == 1 for q in ratio):
+            return "RAW"                                                                       # proved trivial identity map: raw coordinates
+        return ("CLS", reps, cls, ratio)
+    for n in P.nodes:
+        if n.kind in (SOURCE, MARKER):
+            T[n.nid] = tuple("RAW" for _ in n.axes)
+        elif n.kind == CONSTANT:
+            T[n.nid] = ()
+        elif n.kind == REDUCE:
+            ct = T[n.children[0]]; out = [None] * len(n.axes)
+            for k, r in enumerate(n.rmap):
+                if r < 0:
+                    if ct[k] != "RAW":
+                        raise IRError("node %d: eliminates axis %s in CLASS coordinates (an eliminated axis must be raw: its marker lives in raw space)" % (n.nid, P.nodes[n.children[0]].axes[k]))
+                    continue
+                if n.reps[k] is not None:
+                    if ct[k] != "RAW":
+                        raise IRError("node %d: compresses axis %s that is already in CLASS coordinates (nested compression is not a proved witness)" % (n.nid, P.nodes[n.children[0]].axes[k]))
+                    out[r] = canon(n.reps[k])
+                else:
+                    out[r] = ct[k]
+            T[n.nid] = tuple(out)
+        elif n.kind == GATHER:
+            ct = T[n.children[0]]; out = [None] * len(n.axes)
+            for k, g in enumerate(n.gaxes):
+                op = g["out_pos"]
+                if g.get("cls") is not None:
+                    if ct[k] == "RAW":
+                        raise IRError("node %d: class-expanding gather on axis %s whose child coordinates are already raw" % (n.nid, n.axes[op]))
+                    _, reps, cls, ratio = ct[k]
+                    if tuple(int(x) for x in g["cls"]) != cls or tuple(Fr(x) for x in g["ratio"]) != ratio:
+                        raise IRError("node %d: gather axis %s does not expand exactly the class space of its child (witness mismatch)" % (n.nid, n.axes[op]))
+                    out[op] = "RAW"
+                else:
+                    out[op] = ct[k]                                                             # identity reindexing keeps the coordinate domain (raw stays raw, class stays class)
+            T[n.nid] = tuple(out)
+        elif n.kind == ADD:
+            t0 = T[n.children[0]]
+            for ch in n.children[1:]:
+                if T[ch] != t0:
+                    raise IRError("node %d: ADD operands disagree in coordinate domains (raw vs class space on some axis)" % n.nid)
+            T[n.nid] = t0
+        elif n.kind == MUL:
+            out = [None] * len(n.axes)
+            for ci, ch in enumerate(n.children):
+                ct = T[ch]
+                for k, x in enumerate(n.proj[ci]):
+                    if out[x] is None:
+                        out[x] = ct[k]
+                    elif out[x] != ct[k]:
+                        raise IRError("node %d: operand %d reads axis %s in %s coordinates but another operand uses %s coordinates (a class-space message consumed as raw states)" % (n.nid, ci, n.axes[x], "RAW" if ct[k] == "RAW" else "CLASS", "RAW" if out[x] == "RAW" else "CLASS"))
+            T[n.nid] = tuple(out)
+        else:
+            raise IRError("node %d: unknown kind" % n.nid)
+    for r in P.roots:
+        if any(t != "RAW" for t in T[r]):
+            raise IRError("root %d carries a class-space axis" % r)
+    return T
+
+
 def marked_axes_below(P):
     """marked_axes_below[nid] = the variables that are AXES of node nid and whose MARKER occurs inside its subtree (a marker, once multiplied in, stays an
     axis until the REDUCE that eliminates it; after that no node above mentions the variable, enforced by the coverage rules). Linear in the total arity of

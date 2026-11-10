@@ -75,7 +75,7 @@ class Plan:
     """the planner's result for one candidate order: buckets + emitted IR program + cost totals + mechanism record"""
     def __init__(self, order_name, order):
         self.order_name = order_name; self.order = list(order); self.buckets = []; self.roots = []; self.program = None; self.totals = {}; self.mechanisms = {"views": {"compressed_axes": 0, "checked_no_op": 0, "skipped": 0}, "demand": {"restricted_nodes": 0, "entries_saved": 0, "passes": 0, "skipped": 0}, "fusion": {"merged": 0, "declined": 0, "candidates": 0}, "two_axis": {"chosen": 0, "declined": 0, "ineligible": 0}, "sparse": {"nodes": 0}, "downgrades": {"to_stream": 0, "to_cache": 0}}
-        self.discovery_stop = None; self.node_of_bucket = {}; self.notes = []; self.fusion_decisions = []; self.variant = "plain"
+        self.discovery_stop = None; self.node_of_bucket = {}; self.notes = []; self.fusion_decisions = []; self.variant = "plain"; self.pos = {}; self.cutset_variant = "one_axis"
 
     def clone(self):
         """ITERATIVE copy of the plan (no recursion: a 50,000-bucket chain of consumer back-links overflows copy.deepcopy); the program is not copied (re-emitted)"""
@@ -84,7 +84,7 @@ class Plan:
             c = b.clone(); by[b.bid] = c; q.buckets.append(c)
         for b in self.buckets:
             c = by[b.bid]; c.children = [by[k.bid] for k in b.children]; c.consumer = by[b.consumer.bid] if b.consumer is not None else None
-        q.roots = [by[r.bid] for r in self.roots]; q.mechanisms = copy.deepcopy(self.mechanisms); q.discovery_stop = copy.deepcopy(self.discovery_stop); q.notes = list(self.notes); q.fusion_decisions = [dict(d) for d in self.fusion_decisions]; q.variant = self.variant; return q
+        q.roots = [by[r.bid] for r in self.roots]; q.mechanisms = copy.deepcopy(self.mechanisms); q.discovery_stop = copy.deepcopy(self.discovery_stop); q.notes = list(self.notes); q.fusion_decisions = [dict(d) for d in self.fusion_decisions]; q.variant = self.variant; q.pos = dict(self.pos); q.cutset_variant = self.cutset_variant; return q
 
 
 # ---------------------------------------------------------------------------------------------------------------- bucket / region construction
@@ -157,7 +157,14 @@ class Builder:
         for f in sorted(self.factors):                                                        # scope-free factors (rules = []): one scalar root bucket each
             if not self.fscope[f]:
                 roots.append(self._new_bucket([], [f], [], (), (), plan))
-        if self.cfg["two_axis"]:
+        plan.pos = pos; return roots
+
+    def apply_two_axis(self, plan):
+        """the frozen two-axis cutset rule applied top-down to a one-axis tree (the LOCAL eligibility / cold pre-estimate of brief section 10). The result is
+        a SEPARATE complete candidate: plan() keeps the one-axis tree too, runs the same discovery / storage on both and ranks them by the ONE whole-path
+        cost (review F3): the local pre-estimate never discards the cheaper complete representation."""
+        pos = plan.pos; roots = plan.roots
+        if True:
             stack = list(roots)
             while stack:
                 b = stack.pop(); self.clock.tick(1)
@@ -178,7 +185,7 @@ class Builder:
                     elif len(y_b.elim) == 1:
                         plan.mechanisms["two_axis"]["ineligible"] += 1
                 stack.extend(b.children)
-        return roots
+        return plan.mechanisms["two_axis"]["chosen"]
 
     def _new_bucket(self, elim, fids, children, scope, card, plan):
         b = Bucket(self.next_bid, elim, fids, children, scope, card); self.next_bid += 1; plan.buckets.append(b)
@@ -350,8 +357,9 @@ class Builder:
             before = _whole_path_cost(self, plan, bytes_per_entry, caps)
             undo = self._merge(b, p, plan)
             after = _whole_path_cost(self, plan, bytes_per_entry, caps)
-            plan.fusion_decisions.append({"child": b.bid, "consumer": p.bid, "cost_unfused": before["cold_work_proxy"], "cost_fused": after["cold_work_proxy"], "merged": after["cold_work_proxy"] < before["cold_work_proxy"]})
-            if after["cold_work_proxy"] < before["cold_work_proxy"]:
+            cheaper = after["cold_work_proxy"] is not None and before["cold_work_proxy"] is not None and after["cold_work_proxy"] < before["cold_work_proxy"]   # UNKNOWN on either side: keep the unfused (declared rule)
+            plan.fusion_decisions.append({"child": b.bid, "consumer": p.bid, "cost_unfused": before["cold_work_proxy"], "cost_fused": after["cold_work_proxy"], "merged": cheaper})
+            if cheaper:
                 p.prov["fusion"] = "FUSION_WHOLE_PATH_COST"; plan.mechanisms["fusion"]["merged"] += 1; merged_set.add(p)
             else:
                 undo(); plan.mechanisms["fusion"]["declined"] += 1
@@ -405,7 +413,7 @@ class Builder:
                     tot += (b.sparse_rows or b.volume()) * (bytes_per_entry + 56)
             return tot
         while reserved() > value_cap:
-            cands = [b for b in plan.buckets if b.consumer is not None and b.storage in (IR.DENSE, IR.SPARSE)]
+            cands = [b for b in plan.buckets if b.consumer is not None and b.storage in (IR.DENSE, IR.SPARSE)] or [b for b in plan.buckets if b.storage in (IR.DENSE, IR.SPARSE)]   # non-roots first; then roots (a scalar root block that does not fit is streamed by the PLAN, not left to a kernel downgrade)
             if not cands:
                 break
             b = max(cands, key=lambda q: (q.stored * bytes_per_entry if q.storage == IR.DENSE else (q.sparse_rows or q.volume()) * (bytes_per_entry + 56), -q.bid))
@@ -450,14 +458,80 @@ def _compute_reads(B, plan):
 
 
 def _rows_of(b, ev):
-    """MUL rows the executor VISITS for bucket b (forward; the reverse visits at most the same rows): DENSE = stored entries x eliminated volume; SPARSE = the
-    JOINED rows (driver nonzeros x free volume, every visited row INCLUDING the ones rejected as zero products: kernel counter sparse_rows_joined);
-    STREAM / CACHE = consumer reads x eliminated volume (regeneration priced at every read; a fitting cache is not assumed)"""
+    """MUL rows the executor VISITS for bucket b in ONE forward VALUE evaluation of all its stored / requested indices (used by the CACHE decision and the
+    forward prediction): DENSE = stored entries x eliminated volume; SPARSE = the JOINED rows (driver nonzeros x free volume, every visited row INCLUDING
+    the ones rejected as zero products: kernel counter sparse_rows_joined); STREAM / CACHE = consumer reads x eliminated volume"""
     if b.storage == IR.DENSE:
         return (b.volume() if b.demand == "FULL" else (0 if b.demand == "EMPTY" else len(b.demand))) * ev
     if b.storage == IR.SPARSE:
         return b.sparse_joined if b.sparse_joined is not None else b.volume() * ev
     return b.reads * ev
+
+
+COUNT_BOUND = 1 << 62                    # count arithmetic beyond this is UNKNOWN (the candidate is ranked after every known one by a deterministic rule)
+
+
+def _streamed(b):
+    return b.storage in (IR.STREAM, IR.CACHE)                                            # cold: zero memo hits outside explicit retention (CACHE counts as STREAM)
+
+
+def cold_recurrences(B, plan):
+    """COMPOSITIONAL cold recurrences of the kernel's actual frame schedule (review F2 / B2). Frames at a bucket come in three modes: VALUE (mode 0),
+    PULLBACK (mode 1) and combined VALUE+PULLBACK (mode 2). One frame at one output index of bucket b visits ev_b MUL rows (one per eliminated tuple).
+    For each row, the kernel reads stored / leaf operands directly; a STREAMED child operand costs a nested frame per row:
+      VALUE row      -> every streamed child gets a VALUE frame;
+      PULLBACK row / combined row -> every streamed child but the LAST (operand order) gets a VALUE frame (its value is needed for the prefix / suffix
+                        weights: the backward-phase VALUE RECONSTRUCTION) and then a PULLBACK frame; the last streamed child gets ONE combined frame.
+    Frame multiplicities (number of frames of each mode at each bucket, forward and reverse separately) are propagated top-down from the entry points:
+      forward: every stored entry of a materialized bucket is one VALUE frame; a streamed root is one VALUE frame (Z);
+      reverse: a streamed root is one VALUE frame (the root value is recomputed) + one PULLBACK frame; every stored entry (DENSE) is drained by one
+               PULLBACK frame; a SPARSE bucket's retained rows are drained through the support-indexed pullback (its joined nonzero rows, no tuple loop).
+    rows(b, mode) = frames(b, mode) x ev_b (SPARSE: joined rows). Rows are the quantities the kernel counts (reduce_terms / reverse_value_terms /
+    combined_terms / reverse_tuples / sparse_reverse_rows); ops weight them per row with the bucket's operand count k. Ideal reuse (every CACHE read a hit)
+    is reported separately. Any count beyond COUNT_BOUND makes the proxy UNKNOWN (None)."""
+    _compute_reads(B, plan)
+    order = sorted(plan.buckets, key=lambda q: -q.bid)                                   # parents before children
+    f0 = {b.bid: 0 for b in plan.buckets}; r0 = dict(f0); r1 = dict(f0); r2 = dict(f0)   # frame multiplicities: forward VALUE, reverse VALUE, reverse PULLBACK, reverse combined
+    rows = {}
+    for b in plan.buckets:
+        ev = b.elim_volume(B.dom)
+        if b.storage == IR.SPARSE:
+            st = b.sparse_rows if b.sparse_rows is not None else b.volume(); rows[b.bid] = (st, b.sparse_joined if b.sparse_joined is not None else st * ev, ev)
+        elif b.storage == IR.DENSE:
+            st = b.volume() if b.demand == "FULL" else (0 if b.demand == "EMPTY" else len(b.demand)); rows[b.bid] = (st, st * ev, ev)
+        else:
+            rows[b.bid] = (0, None, ev)
+    # entry points
+    for b in plan.buckets:
+        st, _, ev = rows[b.bid]
+        if b.storage in (IR.DENSE, IR.SPARSE):
+            f0[b.bid] += 1 if b.storage == IR.SPARSE else st                            # SPARSE: one join (all outputs at once); DENSE: one VALUE frame per stored entry
+            r1[b.bid] += st                                                               # every stored entry drained once (sparse: its retained rows through the support-indexed pull)
+        if b.consumer is None and _streamed(b):
+            f0[b.bid] += 1; r0[b.bid] += 1; r1[b.bid] += 1                              # streamed root: Z in forward, value recomputed in reverse, then its pullback
+    def frame_rows(b, m, frames):
+        st, joined, ev = rows[b.bid]
+        if b.storage == IR.SPARSE:
+            return joined if frames else 0                                                # the join visits its joined rows once (forward); the drain revisits the nonzero ones (bounded by joined)
+        return frames * ev
+    per = {}; unknown = False
+    for b in order:
+        S = [c for c in b.children if _streamed(c)]
+        rf0 = frame_rows(b, 0, f0[b.bid]); rr0 = frame_rows(b, 0, r0[b.bid]); rr1 = frame_rows(b, 1, r1[b.bid]); rr2 = frame_rows(b, 2, r2[b.bid])
+        if b.storage == IR.SPARSE:
+            rr1 = min(rows[b.bid][1], rows[b.bid][1])                                      # support-indexed drain: at most the joined rows
+        per[b.bid] = {"fwd_value_rows": rf0, "rev_value_rows": rr0, "rev_pull_rows": rr1, "rev_combined_rows": rr2, "k": _ops(b), "ev": rows[b.bid][2], "stored": rows[b.bid][0], "streamed": _streamed(b)}
+        if any(x > COUNT_BOUND for x in (rf0, rr0, rr1, rr2)):
+            unknown = True; rf0, rr0, rr1, rr2 = (min(x, COUNT_BOUND + 1) for x in (rf0, rr0, rr1, rr2))   # count arithmetic beyond the declared bound: the proxy is UNKNOWN (clamped, every bucket still recorded)
+        # nested frames: VALUE rows -> VALUE frame per streamed child; PULLBACK / combined rows -> VALUE + PULLBACK for every streamed child but the last, combined for the last
+        for c in S:
+            f0[c.bid] += rf0; r0[c.bid] += rr0
+        pull_rows = rr1 + rr2
+        if S:
+            for c in S[:-1]:
+                r0[c.bid] += pull_rows; r1[c.bid] += pull_rows
+            r2[S[-1].bid] += pull_rows
+    return (None if unknown else {"frames": {"f0": f0, "r0": r0, "r1": r1, "r2": r2}}), per
 
 
 def _ops(b):
@@ -470,27 +544,36 @@ def _whole_path_cost(B, plan, bytes_per_entry, caps):
 
 
 def totals(B, plan, bytes_per_entry):
-    """the ONE whole-path cost proxy (units: primitive operations; a consistent conservative proxy, not predicted seconds). Per bucket with k operands and
-    `rows` visited MUL rows (_rows_of): forward rows x (2k + 1) [k lookups / index steps + k multiplies + 1 accumulate]; reverse rows x (3k + 4) [k pullback
-    multiplies + k adjoint adds + k index steps + frame / delta work]; materialization = stored entries x 2 (write + block / row bookkeeping) + demand-list
-    index entries x 2 (hash insert + lookup) + sparse index rows x 2; construction = every source entry scanned once (support / witness validation) +
-    8 per bucket (IR nodes); publication = 4 per original state. Fusion decisions and the final ranking use this SAME number (review D2)."""
-    _compute_reads(B, plan); fwd = 0; rev = 0; ideal = 0; stored_entries = 0; mem = 0; mat = 0; pred = {"forward_rows": 0, "dense_entries": 0, "sparse_rows": 0, "sparse_joined": 0, "stream_rows": 0}
-    construction = sum(len(B.ftable[f]) for f in B.factors) + 8 * len(plan.buckets)        # source scans + witness validation (entrywise) + IR construction proxies
+    """the ONE whole-path cost proxy (units: primitive operations; a consistent conservative proxy, not predicted seconds) from the compositional cold
+    recurrences (cold_recurrences): per bucket with k operands, VALUE rows x (2k + 1) [k reads / lookups + k multiplies + 1 accumulate], PULLBACK rows x
+    (3k + 4) [k reads + 2k prefix / suffix multiplies + scatter + deliveries], combined rows x (3k + 5); backward-phase VALUE reconstruction rows are
+    included as VALUE rows; materialization = stored entries x 2 + demand-list index entries x 2 + sparse index rows x 2; construction = every source entry
+    scanned once + 8 per bucket; publication = 4 per original state. Fusion decisions, the one-/two-axis comparison and the final ranking use this SAME
+    number (reviews D2 / F3). `predicted` carries the row quantities the kernel counts. UNKNOWN (cold_work_proxy None) when a count exceeds COUNT_BOUND."""
+    rec, per = cold_recurrences(B, plan); fwd = 0; rev = 0; ideal = 0; stored_entries = 0; mem = 0; mat = 0
+    pred = {"forward_rows": 0, "reverse_value_rows": 0, "reverse_pull_rows": 0, "reverse_combined_rows": 0, "sparse_pull_rows": 0, "dense_entries": 0, "sparse_rows": 0, "sparse_joined": 0, "stream_rows": 0}
+    construction = sum(len(B.ftable[f]) for f in B.factors) + 8 * len(plan.buckets)
     publication = 4 * sum(len(B.dom[v]) for v in B.dom) + 64
     for b in plan.buckets:
-        k = _ops(b); ev = b.elim_volume(B.dom); rows = _rows_of(b, ev); pred["forward_rows"] += rows
-        fwd += rows * (2 * k + 1); rev += rows * (3 * k + 4); ideal += b.volume() * ev * (2 * k + 1)
-        if b.storage == IR.DENSE:
-            st = b.volume() if b.demand == "FULL" else (0 if b.demand == "EMPTY" else len(b.demand)); stored_entries += st; mem += st * bytes_per_entry + (len(b.demand) * 48 if b.demand not in ("FULL", "EMPTY") else 0)
-            mat += 2 * st + (2 * len(b.demand) if b.demand not in ("FULL", "EMPTY") else 0); pred["dense_entries"] += st
-        elif b.storage == IR.SPARSE:
-            st = b.sparse_rows if b.sparse_rows is not None else b.volume(); stored_entries += st; mem += st * (bytes_per_entry + 56) + (b.sparse_joined or st) * 8; mat += 4 * st + (b.sparse_joined or st)
-            pred["sparse_rows"] += st; pred["sparse_joined"] += (b.sparse_joined or st)
+        q = per[b.bid]; k = q["k"]
+        fwd += q["fwd_value_rows"] * (2 * k + 1); rev += q["rev_value_rows"] * (2 * k + 1) + q["rev_pull_rows"] * (3 * k + 4) + q["rev_combined_rows"] * (3 * k + 5)
+        pred["forward_rows"] += q["fwd_value_rows"]; pred["reverse_value_rows"] += q["rev_value_rows"]; pred["reverse_combined_rows"] += q["rev_combined_rows"]
+        if b.storage == IR.SPARSE:
+            pred["sparse_pull_rows"] += q["rev_pull_rows"]
         else:
-            pred["stream_rows"] += rows
+            pred["reverse_pull_rows"] += q["rev_pull_rows"]
+        ideal += (q["stored"] if b.storage in (IR.DENSE, IR.SPARSE, IR.CACHE) else 0) * q["ev"] * (2 * k + 1)
+        if b.storage == IR.DENSE:
+            st = q["stored"]; stored_entries += st; mem += st * bytes_per_entry + (len(b.demand) * 48 if b.demand not in ("FULL", "EMPTY") else 0); mat += 2 * st + (2 * len(b.demand) if b.demand not in ("FULL", "EMPTY") else 0); pred["dense_entries"] += st
+        elif b.storage == IR.SPARSE:
+            st = q["stored"]; stored_entries += st; mem += st * (bytes_per_entry + 56) + (b.sparse_joined or st) * 8; mat += 4 * st + (b.sparse_joined or st); pred["sparse_rows"] += st; pred["sparse_joined"] += (b.sparse_joined or st)
+        else:
+            pred["stream_rows"] += q["fwd_value_rows"]
     mem += sum(len(B.dom[v]) for v in B.dom) * bytes_per_entry
-    return {"cold_work_proxy": fwd + rev + mat + construction + publication, "forward_proxy": fwd, "reverse_proxy": rev, "materialization_proxy": mat, "predicted": pred, "construction_proxy": construction, "publication_proxy": publication, "ideal_reuse_proxy": ideal, "stored_entries": stored_entries, "peak_reserved_bytes_estimate": mem, "buckets": len(plan.buckets), "streamed": sum(1 for b in plan.buckets if b.storage in (IR.STREAM, IR.CACHE)), "sparse": sum(1 for b in plan.buckets if b.storage == IR.SPARSE), "max_bucket_volume": max((b.volume() * b.elim_volume(B.dom) for b in plan.buckets), default=0)}
+    cold = (fwd + rev + mat + construction + publication) if rec is not None else None
+    if cold is not None and cold > COUNT_BOUND:
+        cold = None
+    return {"cold_work_proxy": cold, "forward_proxy": fwd, "reverse_proxy": rev, "materialization_proxy": mat, "predicted": pred, "construction_proxy": construction, "publication_proxy": publication, "ideal_reuse_proxy": ideal, "stored_entries": stored_entries, "peak_reserved_bytes_estimate": mem, "buckets": len(plan.buckets), "streamed": sum(1 for b in plan.buckets if _streamed(b)), "sparse": sum(1 for b in plan.buckets if b.storage == IR.SPARSE), "max_bucket_volume": max((b.volume() * b.elim_volume(B.dom) for b in plan.buckets), default=0), "cost_model": "compositional cold VALUE / PULLBACK / combined recurrences v2 (reverse-phase value reconstruction included; zero memo hits outside retention)", "unknown": cold is None}
 
 
 # ---------------------------------------------------------------------------------------------------------------- emission to the IR
@@ -553,52 +636,69 @@ def plan(view, cfg, clock, bytes_per_entry, caps=None, ledger=None):
     for idx, (name, order, info) in enumerate(orders):
         if order is None:
             cands.append({"candidate": idx, "order": name, "state": info.get("state"), "reason": info.get("reason")}); continue
-        pl = Plan(name, order); pl.roots = B.build(order, pl); unfused = None
-        # optional discovery (one shared allowance; a stop keeps the conservative baseline)
-        try:
-            if cfg["views"]:
-                B.views_pass(pl)
-            if cfg["demand_masks"] or cfg["fusion"]:
-                B.support_pass(pl)
-            if cfg["demand_masks"]:
-                B.demand_pass(pl)
-            if cfg["fusion"]:
-                if ledger is not None:
-                    ledger.reserve("source_ir_maps_output", 2048 * len(pl.buckets) + 4096, "retained UNFUSED candidate plan (bucket copies; reserved BEFORE the copy)")
-                unfused = pl.clone()                                             # the complete UNFUSED plan is retained as its own candidate (iterative copy)
-                merged = B.fusion_pass(pl, bytes_per_entry, caps)
-                if merged:
-                    if cfg["views"]:
-                        B.views_pass(pl, only=merged)
-                    B.support_pass(pl)
-                    if cfg["demand_masks"]:
-                        B.demand_pass(pl)
-                    final = _whole_path_cost(B, pl, bytes_per_entry, caps); base = _whole_path_cost(B, unfused, bytes_per_entry, caps)
-                    pl.fusion_decisions.append({"final": True, "cost_unfused": base["cold_work_proxy"], "cost_fused_after_rediscovery": final["cold_work_proxy"], "fused_is_cheaper": final["cold_work_proxy"] < base["cold_work_proxy"], "note": "the ranking below uses these SAME totals; the unfused plan is a retained candidate"})
-                else:
-                    unfused = None
-        except PlanStop as ex:
-            if ex.kind == "CELL_DEADLINE":
-                raise
-            pl.discovery_stop = {"kind": ex.kind, "reason": ex.reason}
-        for variant, q in (("fused" if unfused is not None else "plain", pl),) + ((("unfused", unfused),) if unfused is not None else ()):
-            q.mechanisms["views"]["compressed_axes"] = sum(len(b.views) for b in q.buckets)
-            B.storage_pass(q, bytes_per_entry, caps)
-            try:
-                emit(B, q)
-            except IR.IRError as ex:
-                cands.append({"candidate": idx, "order": name, "variant": variant, "state": "NOT_REPRESENTABLE", "reason": ex.reason, "order_info": info, "mechanisms": q.mechanisms, "discovery_stop": q.discovery_stop}); continue
-            big = [n for n in q.program.nodes if n.volume > IR.INT64_MAX or (n.kind == IR.REDUCE and prod(q.program.nodes[n.children[0]].card) > IR.INT64_MAX)]
-            if big:
-                cands.append({"candidate": idx, "order": name, "variant": variant, "state": "NOT_REPRESENTABLE", "reason": "node %d: volume exceeds int64 (symbolic domain too large for an indexed route)" % big[0].nid, "order_info": info, "mechanisms": q.mechanisms, "discovery_stop": q.discovery_stop}); continue
-            q.totals = totals(B, q, bytes_per_entry); q.variant = variant
-            plans.append(q); cands.append({"candidate": idx, "order": name, "variant": variant, "state": "COMPLETE", "order_info": info, "simulation_updates": B.sim_updates, "totals": q.totals, "mechanisms": q.mechanisms, "fusion_decisions": q.fusion_decisions, "discovery_stop": q.discovery_stop})
+        base = Plan(name, order); base.roots = B.build(order, base); alternatives = [base]
+        if cfg["two_axis"]:
+            if ledger is not None:
+                ledger.reserve("source_ir_maps_output", 2048 * len(base.buckets) + 4096, "two-axis alternative plan (bucket copies; reserved BEFORE the copy)")
+            two = base.clone(); two.cutset_variant = "two_axis"
+            if B.apply_two_axis(two):
+                alternatives.append(two)                                            # the one-axis tree STAYS a complete candidate; the two-axis tree is a second one
+                m2 = two.mechanisms["two_axis"]; base.mechanisms["two_axis"] = {"chosen": 0, "declined": m2["chosen"] + m2["declined"], "ineligible": m2["ineligible"], "alternative_merges": m2["chosen"], "declined_by": "whole-path ranking of the complete one-axis and two-axis candidates"}
+            else:
+                base.mechanisms["two_axis"] = dict(two.mechanisms["two_axis"])      # nothing merged: record the declined / ineligible counts on the only candidate
+        for pl in alternatives:
+          unfused = None
+          # optional discovery (one shared allowance; a stop keeps the conservative baseline)
+          try:
+              if cfg["views"]:
+                  B.views_pass(pl)
+              if cfg["demand_masks"] or cfg["fusion"]:
+                  B.support_pass(pl)
+              if cfg["demand_masks"]:
+                  B.demand_pass(pl)
+              if cfg["fusion"]:
+                  if ledger is not None:
+                      ledger.reserve("source_ir_maps_output", 2048 * len(pl.buckets) + 4096, "retained UNFUSED candidate plan (bucket copies; reserved BEFORE the copy)")
+                  unfused = pl.clone()                                             # the complete UNFUSED plan is retained as its own candidate (iterative copy)
+                  merged = B.fusion_pass(pl, bytes_per_entry, caps)
+                  if merged:
+                      if cfg["views"]:
+                          B.views_pass(pl, only=merged)
+                      B.support_pass(pl)
+                      if cfg["demand_masks"]:
+                          B.demand_pass(pl)
+                      final = _whole_path_cost(B, pl, bytes_per_entry, caps); base = _whole_path_cost(B, unfused, bytes_per_entry, caps)
+                      pl.fusion_decisions.append({"final": True, "cost_unfused": base["cold_work_proxy"], "cost_fused_after_rediscovery": final["cold_work_proxy"], "fused_is_cheaper": (final["cold_work_proxy"] is not None and base["cold_work_proxy"] is not None and final["cold_work_proxy"] < base["cold_work_proxy"]), "note": "the ranking below uses these SAME totals; the unfused plan is a retained candidate"})
+                  else:
+                      unfused = None
+          except PlanStop as ex:
+              if ex.kind == "CELL_DEADLINE":
+                  raise
+              pl.discovery_stop = {"kind": ex.kind, "reason": ex.reason}
+          for variant, q in (("fused" if unfused is not None else "plain", pl),) + ((("unfused", unfused),) if unfused is not None else ()):
+              variant = variant if pl.cutset_variant == "one_axis" else variant + "+two_axis"
+              q.mechanisms["views"]["compressed_axes"] = sum(len(b.views) for b in q.buckets)
+              B.storage_pass(q, bytes_per_entry, caps)
+              try:
+                  emit(B, q)
+              except IR.IRError as ex:
+                  cands.append({"candidate": idx, "order": name, "variant": variant, "state": "NOT_REPRESENTABLE", "reason": ex.reason, "order_info": info, "mechanisms": q.mechanisms, "discovery_stop": q.discovery_stop}); continue
+              big = [n for n in q.program.nodes if n.volume > IR.INT64_MAX or (n.kind == IR.REDUCE and prod(q.program.nodes[n.children[0]].card) > IR.INT64_MAX)]
+              if big:
+                  cands.append({"candidate": idx, "order": name, "variant": variant, "state": "NOT_REPRESENTABLE", "reason": "node %d: volume exceeds int64 (symbolic domain too large for an indexed route)" % big[0].nid, "order_info": info, "mechanisms": q.mechanisms, "discovery_stop": q.discovery_stop}); continue
+              q.totals = totals(B, q, bytes_per_entry); q.variant = variant
+              plans.append(q); cands.append({"candidate": idx, "order": name, "variant": variant, "cutset": pl.cutset_variant, "state": "COMPLETE" if q.totals.get("cold_work_proxy") is not None else "COMPLETE_UNKNOWN_COST", "order_info": info, "simulation_updates": B.sim_updates, "totals": q.totals, "mechanisms": q.mechanisms, "fusion_decisions": q.fusion_decisions, "discovery_stop": q.discovery_stop})
     if not plans:
         raise PlanStop("NOT_REPRESENTABLE", "no complete representable candidate order: %s" % [(c.get("order"), c.get("state"), (c.get("reason") or "")[:80]) for c in cands])
-    best = min(range(len(plans)), key=lambda i: (plans[i].totals["cold_work_proxy"], plans[i].totals["peak_reserved_bytes_estimate"], i))
+    # ranking by the ONE whole-path cost; a candidate whose cost is UNKNOWN (count arithmetic beyond the declared bound) ranks after every known one; if every
+    # cost is UNKNOWN the DETERMINISTIC rule is: first complete candidate in construction priority (original-id order, one-axis, unfused)
+    def key(i):
+        t = plans[i].totals; c = t.get("cold_work_proxy")
+        return (1, 0, 0, i) if c is None else (0, c, t["peak_reserved_bytes_estimate"], i)
+    best = min(range(len(plans)), key=key)
     k = 0
     for c in cands:
-        if c.get("state") == "COMPLETE":
+        if c.get("state") in ("COMPLETE", "COMPLETE_UNKNOWN_COST"):
             c["chosen"] = (k == best); k += 1
         else:
             c["chosen"] = False

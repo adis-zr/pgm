@@ -19,10 +19,13 @@ SRC_FILES = TEST_FILES + BINARIES_AND_RECORDS
 
 
 def closure():
-    """every repository .py file imported when the entry modules and the test modules are imported in a FRESH interpreter (relative paths)"""
+    """every repository .py file imported when the entry modules and the test modules are imported in a FRESH interpreter AND the dynamic / provenance
+    dependencies reached at run time (second review G1): adp.census.run.frozen_set_hash() -> adp.campaign.code_hash() and EVERY file that hash covers
+    (adp/*.py, bench/cells.py, libdai, ext/uai.py, ext/supervise.py, mdi/*.py), plus gbidi3.pilot.source_set() (the lineage set)"""
     code = ("import sys, os, importlib, json; HERE=%r; sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(HERE, 'tests')); sys.set_int_max_str_digits(0)\n"
             "for m in %r + [os.path.splitext(os.path.basename(t))[0] for t in %r]:\n    importlib.import_module(m)\n"
-            "print(json.dumps(sorted(os.path.relpath(m.__file__, HERE) for m in list(sys.modules.values()) if getattr(m, '__file__', None) and m.__file__.startswith(HERE + os.sep) and '.venv' not in m.__file__)))") % (HERE, ENTRY_MODULES, TEST_FILES)
+            "from adp.census import run as CR; from gbidi3 import pilot as PI; h, per = CR.frozen_set_hash(); extra = [f for f in per if f != 'merlin'] + PI.source_set()\n"
+            "print(json.dumps(sorted(set(os.path.relpath(m.__file__, HERE) for m in list(sys.modules.values()) if getattr(m, '__file__', None) and m.__file__.startswith(HERE + os.sep) and '.venv' not in m.__file__) | set(extra))))") % (HERE, ENTRY_MODULES, TEST_FILES)
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=HERE, env=dict(os.environ, PYTHONPATH=HERE), timeout=600)
     if r.returncode != 0:
         raise SystemExit("import closure failed: " + r.stderr[-2000:])
@@ -34,10 +37,11 @@ def extraction_smoke(zip_path, tmp):
     with zipfile.ZipFile(zip_path) as z:
         z.extractall(tmp)
     code_dir = os.path.join(tmp, "code"); env = dict(os.environ, PYTHONPATH=code_dir)
-    imp = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, %r); sys.set_int_max_str_digits(0)\n" % code_dir + "\n".join("import %s" % m for m in ENTRY_MODULES) + "\nfrom gbidi3 import executor as EX; L = EX.Lib.get(); print('kernel', L.gb3_schedule_id().decode())"], capture_output=True, text=True, cwd=code_dir, env=env, timeout=600)
+    imp = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, %r); sys.set_int_max_str_digits(0)\n" % code_dir + "\n".join("import %s" % m for m in ENTRY_MODULES) + "\nfrom gbidi3 import executor as EX; L = EX.Lib.get(); print('kernel', L.gb3_schedule_id().decode())\nfrom adp.census import run as CR; print('frozen_set_hash', CR.frozen_set_hash()[0])"], capture_output=True, text=True, cwd=code_dir, env=env, timeout=600)
+    from adp.census import run as CR0; here_hash = CR0.frozen_set_hash()[0]; ext_hash = (imp.stdout.strip().splitlines()[-1].split()[-1] if imp.returncode == 0 and "frozen_set_hash" in imp.stdout else None)
     col = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"] + TEST_FILES, capture_output=True, text=True, cwd=code_dir, env=env, timeout=600)
     n = sum(1 for l in col.stdout.splitlines() if "::" in l)
-    return {"extracted_to": tmp, "imports_ok": imp.returncode == 0, "imports_stdout": imp.stdout.strip()[-300:], "imports_stderr": imp.stderr.strip()[-600:], "collect_ok": col.returncode == 0, "collected": n, "collect_tail": col.stdout.strip().splitlines()[-1] if col.stdout.strip() else None, "collect_stderr": col.stderr.strip()[-600:]}
+    return {"extracted_to": tmp, "imports_ok": imp.returncode == 0, "imports_stdout": imp.stdout.strip()[-300:], "imports_stderr": imp.stderr.strip()[-600:], "collect_ok": col.returncode == 0, "collected": n, "collect_tail": col.stdout.strip().splitlines()[-1] if col.stdout.strip() else None, "collect_stderr": col.stderr.strip()[-600:], "frozen_set_hash_on_extract": ext_hash, "frozen_set_hash_in_repo": here_hash, "frozen_set_hash_matches": ext_hash == here_hash}
 
 
 def sha(p):
@@ -81,7 +85,11 @@ def main(D, out):
     import tempfile
     smoke = extraction_smoke(out, tempfile.mkdtemp(prefix="gbidi3_pkg_smoke_"))
     prov = {"bench/libdai/libdai_mar": {"sha256": sha(os.path.join(HERE, "bench/libdai/libdai_mar")), "pinned_in": "runs/mdi_2026-10-28/AGGREGATE_DP_CENSUS_2026-11-08/CENSUS_MANIFEST.json", "pin_matches": sha(os.path.join(HERE, "bench/libdai/libdai_mar")) in open(os.path.join(HERE, "runs/mdi_2026-10-28/AGGREGATE_DP_CENSUS_2026-11-08/CENSUS_MANIFEST.json")).read(), "source": "bench/libdai/libdai_mar.cpp (libDAI JTREE MAR driver; third-party libDAI linked at build time, not vendored)"}}
-    rec = {"zip": out, "bytes": os.path.getsize(out), "sha256": sha(out), "members": n, "namelist": len(names), "testzip_first_bad": bad, "central_directory_readable": True, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "import_closure_files": clo, "clean_extraction_smoke": smoke, "binary_provenance": prov, "note": "integrity record written OUTSIDE the archive; the packaging job's supervisory receipt is a separate sidecar (<zip>.PACKAGE_JOB_RECEIPT.json)"}
+    # lineage comparison AT PACKAGING (second review G2): every file named by CODE_LINEAGE must be in the archive with the SAME hash it had at closeout
+    lin = json.load(open(os.path.join(D, "CODE_LINEAGE.json"))) if os.path.exists(os.path.join(D, "CODE_LINEAGE.json")) else {"files_sha256": {}}
+    by_arc = {m["path"]: m["sha256"] for m in manifest}; lineage_check = {"missing_from_archive": [f for f in lin["files_sha256"] if "code/" + f not in by_arc], "hash_differs_since_closeout": [f for f in lin["files_sha256"] if "code/" + f in by_arc and by_arc["code/" + f] != lin["files_sha256"][f]]}
+    lineage_check["consistent"] = not lineage_check["missing_from_archive"] and not lineage_check["hash_differs_since_closeout"]
+    rec = {"zip": out, "bytes": os.path.getsize(out), "sha256": sha(out), "members": n, "namelist": len(names), "testzip_first_bad": bad, "central_directory_readable": True, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "import_closure_files": clo, "clean_extraction_smoke": smoke, "binary_provenance": prov, "lineage_check": lineage_check, "note": "integrity record written OUTSIDE the archive; the packaging job's supervisory receipt is a separate sidecar (<zip>.PACKAGE_JOB_RECEIPT.json)"}
     json.dump(rec, open(out + ".PACKAGE_RECORD.json", "w"), indent=1); json.dump(rec, open(os.path.join(D, "PACKAGE_RECORD.json"), "w"), indent=1); print(json.dumps(rec))
 
 

@@ -45,11 +45,15 @@ def _strides(card):
     return st
 
 
-def _rows_along(table, card, k):
-    st = _strides(card); out = []
-    for a in range(card[k]):
-        out.append(tuple(table[i] for i in range(len(table)) if (i // st[k]) % card[k] == a))
-    return out
+def _rows_along(table, card, k, tick=lambda n=1: None):
+    """rows_along(table, card, k)[a] = the entries with axis k at state a in the flat order of the other axes: ONE strided traversal of the table (each
+    entry visited once, ticked per entry), not one full scan per state (review E3)"""
+    st = _strides(card); n = len(table); stride = st[k]; block = stride * card[k]; rows = [[] for _ in range(card[k])]; i = 0
+    while i < n:
+        for a in range(card[k]):
+            seg = table[i + a * stride:i + (a + 1) * stride]; rows[a].extend(seg)
+        i += block; tick(block)
+    return [tuple(r) for r in rows]
 
 
 def _check_product_split(parent, u, g, axis_k):
@@ -155,6 +159,19 @@ def _validate(P, T, deadline=None, poll_every=4096):
         IR.local_semantics(P, dom, tick)
     except IR.IRError as ex:
         raise Invalid(ex.reason)
+    # ---------------------------------------------------------------- 0b. COORDINATE-DOMAIN typing of every axis on every use edge (review F1): a class-space axis is never consumed as raw
+    try:
+        coord = IR.coordinate_domains(P, dom)
+    except IR.IRError as ex:
+        raise Invalid("coordinate domains: %s" % ex.reason)
+    # every MARKER multiplied into a MUL must meet RAW coordinates of its own variable on that axis (the marker's states ARE the raw states)
+    for n in P.nodes:
+        if n.kind == IR.MUL:
+            for ci, ch in enumerate(n.children):
+                c = P.nodes[ch]
+                if c.kind == IR.MARKER and coord[n.nid][n.proj[ci][0]] != "RAW":
+                    raise Invalid("node %d: the marker of %s is multiplied against a CLASS-space axis (class coordinates are not original states)" % (n.nid, c.var))
+    tick(len(P.nodes))
     # ---------------------------------------------------------------- 1. derived tables validated as coherent replacement GROUPS (review R1d)
     tables = {f.fid: f.table for f in T.factors}; scopes = {f.fid: f.scope for f in T.factors}; cards = {f.fid: f.card for f in T.factors}
     occ_of = {}; effective = set(trusted); additive_parent = {}
@@ -234,17 +251,7 @@ def _validate(P, T, deadline=None, poll_every=4096):
                 raise Invalid("node %d: the only admissible CONSTANT is the trusted scale %s (got %s)" % (n.nid, T.scale, n.value))
             seen_const.append(n.nid)
         elif n.kind == IR.GATHER:
-            child = P.nodes[n.children[0]]
-            if child.kind == IR.REDUCE:
-                for k, g in enumerate(n.gaxes):                                                  # k = CHILD axis; its class witness sits at the MUL axis m with child.rmap[m] == k
-                    m = next((i for i, r in enumerate(child.rmap) if r == k), None); rep = child.reps[m] if m is not None else None
-                    if rep is not None:
-                        if g.get("cls") is None or tuple(g["cls"]) != tuple(rep[1]) or tuple(Fr(x) for x in g["ratio"]) != tuple(Fr(x) for x in rep[2]):
-                            raise Invalid("node %d: gather axis %s does not carry the producer's class witness" % (n.nid, n.axes[g["out_pos"]]))
-                    elif g.get("cls") is not None:
-                        raise Invalid("node %d: class map on an uncompressed axis %s" % (n.nid, n.axes[g["out_pos"]]))
-            elif any(g.get("cls") is not None for g in n.gaxes):
-                raise Invalid("node %d: class map on a non-REDUCE child (no producer witness)" % n.nid)
+            pass                                                                                     # class maps are checked by the coordinate-domain typing above (a class map must equal the child's class type, which propagates through identity pass-throughs; a class map on a raw axis is rejected there)
         elif n.kind == IR.MUL:
             if n.storage == IR.SPARSE:
                 raise Invalid("node %d: SPARSE storage is a REDUCE(MUL) representation" % n.nid)
@@ -324,7 +331,7 @@ def _validate(P, T, deadline=None, poll_every=4096):
                     continue
                 pos_in_op = op.axes.index(w)
                 if op.kind == IR.SOURCE:
-                    frows.append(_rows_along(tables[op.fid], cards[op.fid], pos_in_op)); view_entries += len(tables[op.fid])
+                    frows.append(_rows_along(tables[op.fid], cards[op.fid], pos_in_op, tick)); view_entries += len(tables[op.fid])
                 elif op.kind == IR.GATHER and op.gaxes and any(g["out_pos"] == pos_in_op and g.get("cls") is not None for g in op.gaxes):
                     g = next(g for g in op.gaxes if g["out_pos"] == pos_in_op); mviews.append((tuple(g["cls"]), tuple(Fr(x) for x in g["ratio"])))
                 elif op.kind == IR.MARKER:
@@ -333,7 +340,7 @@ def _validate(P, T, deadline=None, poll_every=4096):
                     raise Invalid("node %d axis %s: operand %d is neither a trusted table nor a class-expanded message along the axis" % (n.nid, w, ci))
             if not frows and not mviews:
                 raise Invalid("node %d axis %s: no operand contains the axis" % (n.nid, w))
-            zero = [any(all(x == 0 for x in rows[a]) for rows in frows) for a in range(nraw)]
+            zero = [any(all(x == 0 for x in rows[a]) for rows in frows) for a in range(nraw)]; tick(sum(len(rows[0]) for rows in frows) * nraw if frows else 1)
             for a in range(nraw):
                 r = reps[cls[a]]
                 if a == r:
@@ -351,14 +358,16 @@ def _validate(P, T, deadline=None, poll_every=4096):
                     ra, rr = rows[a], rows[r]; j = next(i for i, x in enumerate(rr) if x != 0); qi = ra[j] / rr[j]
                     if any(ra[i] != qi * rr[i] for i in range(len(rr))):
                         raise Invalid("node %d axis %s: rows of states %d and %d are not proportional" % (n.nid, w, a, r))
-                    q *= qi; view_checks += len(rr)
+                    q *= qi; view_checks += len(rr); tick(len(rr))                                    # every coefficient comparison is one unit of actual work
                 for mc, mr in mviews:
                     if mc[a] != mc[r]:
                         raise Invalid("node %d axis %s: states %d and %d merged but a message operand separates them" % (n.nid, w, a, r))
                     q *= mr[a] / mr[r]
                 if ratio[a] != q:
                     raise Invalid("node %d axis %s: ratio of state %d is %s, inputs give %s" % (n.nid, w, a, ratio[a], q))
-    # ---------------------------------------------------------------- done
+    # ---------------------------------------------------------------- done: the ONE deadline is checked once more BEFORE the proposal is declared VALID
+    if deadline is not None and time.monotonic() > deadline:
+        raise Invalid("DEADLINE during plan validation (final check)")
     factor_order = sorted(tables)
     P = copy.deepcopy(P)                                                                   # the EXECUTABLE representation is a frozen copy: a later mutation of the planner's object cannot reach execution (C20)
     rec = {"status": "VALID", "nodes": len(P.nodes), "roots": len(P.roots), "effective_occurrences": len(all_occ), "derived_tables": len(P.derived), "view_entries_inspected": view_entries, "entrywise_checks": view_checks, "checks": checks[0], "trusted_content_sha256": T.content_hash, "scale_applied_by": scale_applied_by, "seconds": time.monotonic() - t0}

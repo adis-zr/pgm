@@ -39,6 +39,23 @@ def job_name(c):
     return "cell:%03d:%s:%s:%s:%ds:%s" % (c["index"], c["stage"], c["case"], c["arm"], int(c["budget_s"]), c["cell_id"])
 
 
+def owner_receipt(D, jid):
+    """the RECEIPT with this jid anywhere in the run's ledger (the owner that wrote a parent-cleanup receipt), or None"""
+    if not jid:
+        return None
+    p = os.path.join(D, "GB_LEDGER.jsonl")
+    if not os.path.exists(p):
+        return None
+    for l in open(p):
+        try:
+            r = json.loads(l)
+        except ValueError:
+            continue
+        if r.get("kind") == "RECEIPT" and r.get("jid") == jid:
+            return r
+    return None
+
+
 def ledger_index(D):
     led = [json.loads(l) for l in open(os.path.join(D, "GB_LEDGER.jsonl"))] if os.path.exists(os.path.join(D, "GB_LEDGER.jsonl")) else []
     by_job = collections.defaultdict(lambda: {"START": [], "SPAWNED": [], "RECEIPT": []})
@@ -108,19 +125,34 @@ def reconcile(D, man, c, idx):
                 reasons.append("START command differs from the exact expected launch arguments")
         except Exception as ex:
             reasons.append("expected launch command could not be formed: %s" % ex)
+        parent_cleanup = r.get("outcome") == "PARENT_CLEANUP_KILL"
         exp_mem = float(c.get("mem_gib", man.get("mem_gib", 8.0)))
         if s.get("mem_cap_gib") is None or float(s.get("mem_cap_gib")) != exp_mem or s.get("timeout_s") is None or abs(float(s.get("timeout_s")) - float(c["budget_s"])) > 1e-9:
             reasons.append("START supervision parameters (memory cap %r / timeout %r) differ from the planned cell" % (s.get("mem_cap_gib"), s.get("timeout_s")))
-        if r.get("cleanup_unresolved") or (r.get("group_empty_at_receipt") is not True and not launch_failed) or (launch_failed and r.get("group_empty_at_receipt") not in (None, True)) or (r.get("nested_groups_live_at_receipt") or 0) != 0:
+        if r.get("cleanup_unresolved") or (r.get("group_empty_at_receipt") is not True and not launch_failed and not parent_cleanup) or (launch_failed and r.get("group_empty_at_receipt") not in (None, True)) or (r.get("nested_groups_live_at_receipt") or 0) != 0:
             reasons.append("receipt does not establish clean completion of all owned work")
-        if r.get("outcome") not in ("COMPLETED", "NONZERO_EXIT", "TIMEOUT_KILL", "MEMORY_KILL", "LAUNCH_FAILED"):
+        if r.get("outcome") not in ("COMPLETED", "NONZERO_EXIT", "TIMEOUT_KILL", "MEMORY_KILL", "LAUNCH_FAILED", "PARENT_CLEANUP_KILL"):
             reasons.append("receipt outcome %r is not a terminal attempt outcome" % r.get("outcome"))
+        if parent_cleanup:
+            # ONE terminal-receipt schema (second review F2) WITHOUT changing the pinned supervisor: a parent-generated receipt (wall UNKNOWN, written_by_parent = the
+            # owner's jid) is terminal only together with its EVIDENCE REFERENCE -- the owner's own receipt in the same ledger must positively establish the cleanup
+            # (cleanup_unresolved false, no live nested group, owned group empty) and must have killed at least one registered nested group
+            if r.get("wall_s") is not None:
+                reasons.append("parent-cleanup receipt claims a measured wall (the wall of a parent-cleaned attempt is UNKNOWN)")
+            owner = owner_receipt(D, r.get("written_by_parent"))
+            if owner is None:
+                reasons.append("parent-cleanup receipt names no owner receipt in this ledger (no evidence reference for the cleanup)")
+            elif owner.get("cleanup_unresolved") or owner.get("group_empty_at_receipt") is not True or (owner.get("nested_groups_live_at_receipt") or 0) != 0 or (owner.get("nested_groups_killed") or 0) < 1 or (owner.get("nested_groups_registered") or 0) < 1:
+                reasons.append("the owner receipt does not establish the cleanup of the parent-cleaned attempt")
+            if r.get("cleanup_unresolved"):
+                reasons.append("parent-cleanup receipt reports an unresolved cleanup")
+            row["cleanup_evidence_reference"] = {"owner_jid": r.get("written_by_parent"), "owner_outcome": (owner or {}).get("outcome"), "owner_nested_killed": (owner or {}).get("nested_groups_killed"), "owner_group_empty": (owner or {}).get("group_empty_at_receipt")}
         row.update(supervisor_outcome=r.get("outcome"), supervisor_wall_s=r.get("wall_s"), peak_tree_rss_bytes=r.get("peak_tree_rss_bytes"), returncode=r.get("returncode"), jid=r.get("jid"), parent_jid=r.get("parent_jid"), launch_error=r.get("launch_error"))
         lifecycle_ok = not reasons
     # ---------------- a launched attempt without a producer record: a typed NO_RECORD / LAUNCH_FAILED row bound to the manifest and the receipt (noncertifying)
     if rec is None or rec.get("status") == "NO_RECORD":
-        kind = "LAUNCH_FAILED" if launch_failed else "NO_RECORD"
-        row.update(status=kind, record_status=kind, resolution=("LAUNCH_FAILED" if launch_failed else "KILLED_NO_RECORD") if lifecycle_ok else "NOT_ACCEPTED", producer_diagnostics="UNAVAILABLE (the producer wrote no record)", expected_task={"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "cell_id": c["cell_id"], "task_id": c["task_id"]}, delivered_valid_output=False)
+        kind = "LAUNCH_FAILED" if launch_failed else "NO_RECORD"; pc = bool(S) and len(R) == 1 and R[0].get("outcome") == "PARENT_CLEANUP_KILL"
+        row.update(status=kind, record_status=kind, resolution=("LAUNCH_FAILED" if launch_failed else ("PARENT_CLEANUP_KILLED_NO_RECORD" if pc else "KILLED_NO_RECORD")) if lifecycle_ok else "NOT_ACCEPTED", wall_known=(None if not R else (R[0].get("wall_s") is not None)), producer_diagnostics="UNAVAILABLE (the producer wrote no record)", expected_task={"raw_model_sha256": cs["raw_model_sha256"], "raw_evidence_sha256": cs["raw_evidence_sha256"], "cell_id": c["cell_id"], "task_id": c["task_id"]}, delivered_valid_output=False)
         row["accepted"] = lifecycle_ok                                                         # ACCEPTED as a reconciled NONCERTIFYING attempt (counted, charged once); never a success
         return row
     # ---------------- records with a producer file
