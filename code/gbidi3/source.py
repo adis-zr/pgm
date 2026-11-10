@@ -73,9 +73,39 @@ def _int_token(it, what, lo=0):
     return v
 
 
-def _rational_token(t, what):
+_NUMERAL = re.compile(r"^[+-]?(?:(?P<ip>[0-9]*)(?:\.(?P<fp>[0-9]*))?(?:[eE](?P<ex>[+-]?[0-9]+))?|(?P<num>[0-9]+)/(?P<den>[0-9]+))$")
+
+
+def numeral_bits_bound(t):
+    """upper bound on the bit length of the NUMERATOR and DENOMINATOR that Fraction(t) will build, computed from the TOKEN TEXT before any big integer exists
+    (review R-D2): decimal digits contribute 3.33 bits each; a decimal exponent e contributes e * 3.33 bits to the numerator (e > 0) or to the denominator
+    (e < 0, plus the fractional digits); a/b contributes its digit counts. Returns (num_bits, den_bits) or None when the token is not a grammar numeral."""
+    m = _NUMERAL.match(t)
+    if not m:
+        return None
+    if m.group("num") is not None:
+        return (len(m.group("num")) * 3322 // 1000 + 2, len(m.group("den")) * 3322 // 1000 + 2)
+    ip = m.group("ip") or ""; fp = m.group("fp") or ""; ex = int(m.group("ex") or 0); digits = len(ip) + len(fp)
+    if len(m.group("ex") or "") > 12:
+        return (1 << 62, 1 << 62)                                                               # an exponent text beyond 12 digits is beyond any admissible value: bounded as "enormous"
+    shift = ex - len(fp)                                                                       # value = int(ip + fp) * 10^shift
+    num_bits = digits * 3322 // 1000 + 2 + (shift * 3322 // 1000 + 2 if shift > 0 else 0); den_bits = 2 + ((-shift) * 3322 // 1000 + 2 if shift < 0 else 0)
+    return (num_bits, den_bits)
+
+
+def _rational_token(t, what, guard=None):
     if t.lower() in ("nan", "inf", "-inf", "+inf", "infinity", "-infinity"):
         raise InvalidInput("%s is not finite: %r" % (what, t))
+    bb = numeral_bits_bound(t)
+    if bb is None:
+        raise InvalidInput("%s is not an exact rational numeral of the grammar: %r" % (what, t[:40]))
+    if guard is not None:
+        nb, db = bb; extra = (nb + db) // 8 * 3 + 2 * len(t)                                  # numerator + denominator limbs, the gcd / normalization temporaries (x3) and the token copies, charged BEFORE Fraction(t)
+        if extra > RATIONAL_BYTES:
+            guard.reserve(extra - RATIONAL_BYTES, "exact numeral %r...: %d + %d bits of numerator / denominator (beyond the %d-byte proxy already reserved for the table entry)" % (t[:16], nb, db, RATIONAL_BYTES))
+        if nb + db > 8 * POLL_TOKENS:
+            guard.tick(0)                                                                     # a long conversion is a composite operation: the deadline is checked BEFORE it starts
+        guard.tick(1 + (nb + db) // 4096)                                                     # the conversion work of a long numeral is charged as units of 4,096 bits
     try:
         q = Fr(t)
     except (ValueError, ZeroDivisionError):
@@ -126,7 +156,7 @@ def parse_model_bytes(data: bytes, guard=None) -> U.Model:
                 t = next(it)
             except StopIteration:
                 raise InvalidInput("truncated table of factor %d" % i)
-            tab.append(_rational_token(t, "factor %d entry %d" % (i, j))); g.tick()                   # one unit per rational, cumulative across factors
+            tab.append(_rational_token(t, "factor %d entry %d" % (i, j), g)); g.tick()                # one unit per rational, cumulative across factors; big numerals reserved before expansion
         factors.append(U.Factor(scope=sc, card=cd, table=tab, index=i)); g.tick()
     rest = list(it)
     if rest:
@@ -168,6 +198,9 @@ def canonical_v2_model(m: U.Model, guard=None) -> str:
     for f in m.factors:
         h.update(("F%d:%s:" % (f.index, ",".join(str(v) for v in f.scope))).encode())
         for q in f.table:
+            nb = q.numerator.bit_length() + q.denominator.bit_length()
+            if nb > 4096:
+                g.reserve(nb * 302 // 1000 + 64, "canonical serialization of a %d-bit rational" % nb); g.tick(nb // 4096)   # the decimal text of a big rational is a live temporary: reserved before it is formatted
             h.update(("%d/%d," % (q.numerator, q.denominator)).encode()); g.tick()          # canonical hashing: one cumulative unit per entry (review E4 / E5)
         h.update(b";"); g.tick()
     return h.hexdigest()

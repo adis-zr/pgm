@@ -36,8 +36,9 @@ class Budget:
             self.clock.spend_rows(n)                                                  # shared row cap + optional wall, polled
         else:
             self.tick(n)
+    SET_BYTES_PER_INDEX = 96                                                           # documented proxy: CPython set slot (~16 B at load <= 0.6) + int object (28-32 B) + hash-table growth slack; a RESERVATION proxy, not RSS
     def reserve_set(self, n):
-        b = 48 * n + 64
+        b = Budget.SET_BYTES_PER_INDEX * n + 256
         if self.ledger is not None:
             self.ledger.reserve("source_ir_maps_output", b, "demand set (%d indices)" % n)
         self.live += b; self.peak = max(self.peak, self.live); return b
@@ -67,13 +68,21 @@ def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None, clo
         except Exception:
             pass
     bud = Budget(clock, ledger, tick); demanded = {}; charged = {}; total_rows = 0
-    def hold(nid, st):
-        """store a demand set under reservation (release the previous one)"""
-        if nid in charged:
-            bud.release_set(charged.pop(nid))
+    def hold(nid, st, prereserved=None):
+        """store a demand set under reservation: the NEW set's charge is taken BEFORE the old one is released (both are live until the assignment); a set built
+        under a prior reservation (`prereserved`, the union bound) hands that charge over instead of reserving again"""
+        new = None
         if st is not None:
-            charged[nid] = bud.reserve_set(len(st))
+            new = prereserved if prereserved is not None else bud.reserve_set(len(st))
+        if nid in charged:
+            bud.release_set(charged.pop(nid))                                                 # the previous set dies here (after the new one is charged)
+        if new is not None:
+            charged[nid] = new
         demanded[nid] = st
+    QUANTUM = 4096
+    def lift_tick(i):
+        if i % QUANTUM == QUANTUM - 1:
+            bud.rows_(0) if clock is None else clock.check_optional()                           # poll INSIDE a large lift (bounded quantum), not only before it
     try:
         if clock is not None:
             clock.check_optional()                                                       # an already-expired optional allowance stops the refinement BEFORE any set is built (nothing restricted)
@@ -94,29 +103,29 @@ def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None, clo
                 need = len(own) * (IR.prod(child.card[k] for k, r in enumerate(n.rmap) if r < 0) if n.kind == IR.REDUCE else 1)
                 if need > row_cap - total_rows:
                     hold(c, None); rec["skipped_cap"].append(c); continue           # AGGREGATE cap: the child stays FULL (conservative), never uninspected-as-dead
-                total_rows += need; bud.rows_(need); lifted = set(); tmp = bud.reserve_set(need)
+                total_rows += need; bud.rows_(need); lifted = set(); tmp = bud.reserve_set(need); union_charge = None
                 try:
                     if n.kind == IR.ADD:
                         lifted = set(own)
                     elif n.kind == IR.MUL:
                         pr = n.proj[ci]; zsrc = [(n.proj[j], tables[P.nodes[cj].fid], P.nodes[cj].card) for j, cj in enumerate(n.children) if j != ci and P.nodes[cj].kind == IR.SOURCE and P.nodes[cj].fid in tables]
-                        for idx in own:
-                            d = _digits(n.card, idx)
+                        for i, idx in enumerate(own):
+                            lift_tick(i); d = _digits(n.card, idx)
                             if any(tab[_compose(cc, [d[p] for p in pj])] == 0 for pj, tab, cc in zsrc):
                                 continue                                                  # an exactly-zero sibling source entry: this product row is zero, the child entry is never read
                             lifted.add(_compose(child.card, [d[p] for p in pr]))
                     elif n.kind == IR.GATHER:
-                        for idx in own:
-                            d = _digits(n.card, idx); cd = []
+                        for i, idx in enumerate(own):
+                            lift_tick(i); d = _digits(n.card, idx); cd = []
                             for k, g in enumerate(n.gaxes):
                                 raw = d[g["out_pos"]]; cd.append(g["cls"][raw] if g.get("cls") is not None else raw)
                             lifted.add(_compose(child.card, cd))
                     elif n.kind == IR.REDUCE:
-                        elim = [k for k, r in enumerate(n.rmap) if r < 0]; ev = IR.prod(child.card[k] for k in elim)
+                        elim = [k for k, r in enumerate(n.rmap) if r < 0]; ev = IR.prod(child.card[k] for k in elim); i = 0
                         for idx in own:
                             d = _digits(n.card, idx)
                             for t in range(ev):
-                                tt = t; cd = [0] * len(child.card)
+                                lift_tick(i); i += 1; tt = t; cd = [0] * len(child.card)
                                 for k in reversed(elim):
                                     cd[k] = tt % child.card[k]; tt //= child.card[k]
                                 for k, r in enumerate(n.rmap):
@@ -125,9 +134,14 @@ def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None, clo
                                 lifted.add(_compose(child.card, cd))
                     else:
                         hold(c, None); continue
-                    hold(c, cur | lifted)                                                 # UNION over every consumer use edge
+                    union_charge = bud.reserve_set(len(cur) + len(lifted))              # the UNION is reserved (upper bound |cur| + |lifted|) while cur, lifted and the union are ALL live -- BEFORE it is built
+                    hold(c, cur | lifted, prereserved=union_charge); union_charge = None   # the union takes over its reservation; the old set of c is released after
                 finally:
                     bud.release_set(tmp)                                                  # the lift temporary dies here
+                    if union_charge is not None:
+                        bud.release_set(union_charge)
+        if clock is not None:
+            clock.check_optional()                                                       # the optional allowance is checked once more at COMMITMENT: an expired discovery applies nothing
     except PlanStop as ex:
         rec["stop"] = {"kind": ex.kind, "reason": ex.reason}                            # optional budget exhausted: whatever is not completed stays FULL (below: only completed, fully covered nodes are restricted)
         if ex.kind == "CELL_DEADLINE":

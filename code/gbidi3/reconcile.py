@@ -39,21 +39,58 @@ def job_name(c):
     return "cell:%03d:%s:%s:%s:%ds:%s" % (c["index"], c["stage"], c["case"], c["arm"], int(c["budget_s"]), c["cell_id"])
 
 
-def owner_receipt(D, jid):
-    """the RECEIPT with this jid anywhere in the run's ledger (the owner that wrote a parent-cleanup receipt), or None"""
-    if not jid:
-        return None
+def owner_evidence(D, child_start, child_receipt, by_job):
+    """ATTEMPT-BOUND ownership evidence for a parent-generated terminal receipt (third review H1 / H2). Returns (owner_receipt, reasons). The owner named by
+    `written_by_parent` must (1) be an ANCESTOR of the child attempt in the START parent chain of this ledger, or the registered root owner of the child's
+    ownership registry (`owner_dir/groups.jsonl` records jid -> parent_jid for every nested supervisor; the root owner is the registry's parentless entry);
+    (2) have exactly ONE receipt in this ledger (duplicate / conflicting owner receipts are not evidence); (3) positively establish the closure: its own
+    cleanup resolved, no live nested group, owned group empty, every registered nested group of its subtree accounted (registered >= 1 since the child
+    itself registered); a kill count of zero is LEGITIMATE (the child may have exited naturally before the cleanup); (4) the child's pid / pgid in the receipt
+    must equal its SPAWNED record."""
+    reasons = []; owner_jid = child_receipt.get("written_by_parent")
+    if not owner_jid:
+        return None, ["parent-cleanup receipt names no owner"]
+    rows = []
     p = os.path.join(D, "GB_LEDGER.jsonl")
-    if not os.path.exists(p):
-        return None
-    for l in open(p):
-        try:
-            r = json.loads(l)
-        except ValueError:
-            continue
-        if r.get("kind") == "RECEIPT" and r.get("jid") == jid:
-            return r
-    return None
+    if os.path.exists(p):
+        for l in open(p):
+            try:
+                rows.append(json.loads(l))
+            except ValueError:
+                continue
+    owner_rc = [r for r in rows if r.get("kind") == "RECEIPT" and r.get("jid") == owner_jid]
+    if len(owner_rc) != 1:
+        return None, ["owner receipt %s: expected exactly one in this ledger, found %d (missing, duplicate or conflicting ownership evidence)" % (owner_jid[:40], len(owner_rc))]
+    owner = owner_rc[0]
+    # ancestry: follow START parent links from the child; also accept the registry's root owner of the child's own registration
+    parent_of = {r["jid"]: r.get("parent_jid") for r in rows if r.get("kind") == "START"}
+    chain = []; j = child_start.get("parent_jid"); seen = set()
+    while j and j not in seen:
+        chain.append(j); seen.add(j); j = parent_of.get(j)
+    registry_ok = False; reg_path = os.path.join(child_start.get("owner_dir") or "", "groups.jsonl")
+    if child_start.get("owner_dir") and os.path.exists(reg_path):
+        regs = []
+        for l in open(reg_path):
+            try:
+                regs.append(json.loads(l))
+            except ValueError:
+                continue
+        mine = [g for g in regs if g.get("jid") == child_start.get("jid")]
+        if mine:
+            rp = {g["jid"]: g.get("parent_jid") for g in regs}; j = mine[0].get("parent_jid"); seen = set()
+            while j and j not in seen:
+                if j == owner_jid:
+                    registry_ok = True
+                seen.add(j); j = rp.get(j)
+            if mine[0].get("pid") != child_receipt.get("pid") or mine[0].get("pgid") != child_receipt.get("pgid"):
+                reasons.append("parent-cleanup receipt pid / pgid differ from the child's registration")
+        else:
+            reasons.append("the child attempt is not in its own ownership registry")
+    if owner_jid not in chain and not registry_ok:
+        reasons.append("owner %s is neither an ancestor of the attempt in the START chain nor a registered owner of its group (unrelated ownership evidence)" % owner_jid[:40])
+    if owner.get("cleanup_unresolved") or owner.get("group_empty_at_receipt") is not True or (owner.get("nested_groups_live_at_receipt") or 0) != 0 or (owner.get("nested_groups_registered") or 0) < 1:
+        reasons.append("the owner receipt does not establish the closure of the owned work (cleanup unresolved, live nested groups, non-empty group or no registered nested group)")
+    return owner, reasons
 
 
 def ledger_index(D):
@@ -134,19 +171,17 @@ def reconcile(D, man, c, idx):
         if r.get("outcome") not in ("COMPLETED", "NONZERO_EXIT", "TIMEOUT_KILL", "MEMORY_KILL", "LAUNCH_FAILED", "PARENT_CLEANUP_KILL"):
             reasons.append("receipt outcome %r is not a terminal attempt outcome" % r.get("outcome"))
         if parent_cleanup:
-            # ONE terminal-receipt schema (second review F2) WITHOUT changing the pinned supervisor: a parent-generated receipt (wall UNKNOWN, written_by_parent = the
-            # owner's jid) is terminal only together with its EVIDENCE REFERENCE -- the owner's own receipt in the same ledger must positively establish the cleanup
-            # (cleanup_unresolved false, no live nested group, owned group empty) and must have killed at least one registered nested group
+            # ONE terminal-receipt contract (second / third review F2 / H1 / H2) WITHOUT changing the pinned supervisor: a parent-generated receipt (wall UNKNOWN,
+            # written_by_parent = the owner's jid) is terminal only together with ATTEMPT-BOUND evidence: a UNIQUE owner receipt that is an ancestor / registered
+            # owner of this attempt and positively establishes the closure of the owned work; a kill count of zero is legitimate (naturally exited child)
             if r.get("wall_s") is not None:
                 reasons.append("parent-cleanup receipt claims a measured wall (the wall of a parent-cleaned attempt is UNKNOWN)")
-            owner = owner_receipt(D, r.get("written_by_parent"))
-            if owner is None:
-                reasons.append("parent-cleanup receipt names no owner receipt in this ledger (no evidence reference for the cleanup)")
-            elif owner.get("cleanup_unresolved") or owner.get("group_empty_at_receipt") is not True or (owner.get("nested_groups_live_at_receipt") or 0) != 0 or (owner.get("nested_groups_killed") or 0) < 1 or (owner.get("nested_groups_registered") or 0) < 1:
-                reasons.append("the owner receipt does not establish the cleanup of the parent-cleaned attempt")
+            if p is not None and (r.get("pid") != p.get("pid") or r.get("pgid") != p.get("pgid")):
+                reasons.append("parent-cleanup receipt pid / pgid differ from this attempt's SPAWNED record")
+            owner, oreasons = owner_evidence(D, s, r, idx); reasons.extend(oreasons)
             if r.get("cleanup_unresolved"):
                 reasons.append("parent-cleanup receipt reports an unresolved cleanup")
-            row["cleanup_evidence_reference"] = {"owner_jid": r.get("written_by_parent"), "owner_outcome": (owner or {}).get("outcome"), "owner_nested_killed": (owner or {}).get("nested_groups_killed"), "owner_group_empty": (owner or {}).get("group_empty_at_receipt")}
+            row["cleanup_evidence_reference"] = {"owner_jid": r.get("written_by_parent"), "owner_outcome": (owner or {}).get("outcome"), "owner_nested_registered": (owner or {}).get("nested_groups_registered"), "owner_nested_killed": (owner or {}).get("nested_groups_killed"), "owner_group_empty": (owner or {}).get("group_empty_at_receipt"), "binding": "unique owner receipt + START-chain ancestry or ownership-registry root + pid / pgid of the SPAWNED record"}
         row.update(supervisor_outcome=r.get("outcome"), supervisor_wall_s=r.get("wall_s"), peak_tree_rss_bytes=r.get("peak_tree_rss_bytes"), returncode=r.get("returncode"), jid=r.get("jid"), parent_jid=r.get("parent_jid"), launch_error=r.get("launch_error"))
         lifecycle_ok = not reasons
     # ---------------- a launched attempt without a producer record: a typed NO_RECORD / LAUNCH_FAILED row bound to the manifest and the receipt (noncertifying)

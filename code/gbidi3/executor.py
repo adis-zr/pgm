@@ -81,7 +81,7 @@ class Lib:
             L.gb3_mpfr_version.restype = ctypes.c_char_p; L.gb3_gmp_version.restype = ctypes.c_char_p; L.gb3_mpfr_emin.restype = ctypes.c_long; L.gb3_mpfr_emax.restype = ctypes.c_long; L.gb3_mpfr_emin_min.restype = ctypes.c_long; L.gb3_mpfr_emax_max.restype = ctypes.c_long
             L.gb3_bytes_per_entry.argtypes = [ctypes.c_int, ctypes.c_int]; L.gb3_bytes_per_entry.restype = ctypes.c_int64; L.gb3_block_entries.restype = ctypes.c_int64
             cls._lib = L; cls._build = b
-            if L.gb3_schedule_id().decode() != "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.2-sparse-immediate-reverse-counters":
+            if L.gb3_schedule_id().decode() != "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.3-sparse-pull-frames":
                 raise Refuse("FP_ENV", "kernel schedule id differs")
         return cls._lib
 

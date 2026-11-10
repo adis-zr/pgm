@@ -35,7 +35,7 @@
 #include <gmp.h>
 #include <mpfr.h>
 
-static const char* GB3_SCHEDULE = "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.2-sparse-immediate-reverse-counters";
+static const char* GB3_SCHEDULE = "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.3-sparse-pull-frames";
 extern "C" const char* gb3_schedule_id() { return GB3_SCHEDULE; }
 
 enum Stop : int { GB_OK = 0, GB_DEADLINE = 1, GB_MEMORY = 2, GB_OVERFLOW = 3, GB_RANGE = 4, GB_BADPROG = 5, GB_FAULT = 6, GB_FPENV = 7, GB_LABEL = 8 };
@@ -218,12 +218,12 @@ template <class P> struct Exec {
         if (!reserve(used_scratch, caps.scratch, 2 * sizeof(Frame) + (n.card.size() + n.children.size()) * sizeof(int64_t))) return false;   // frame record + deque block share (proxy)
         Frame f; f.mode = mode; f.nn = nn; f.idx = idx; f.phase = 0; f.i = 0; f.last = -1; f.t = 0; f.saved_top = top; f.dst = dst; f.unresolved.assign(n.children.size(), 0);
         if (!frame_alloc(need, f.base)) return false;
-        digits(n, idx, f.d);
+        if (mode != 3) digits(n, idx, f.d); else f.d.assign(n.card.size(), 0);               // mode 3: idx is a stored SLOT of a sparse node, not an output index
         size_t k = n.children.size();
         if (n.kind == K_MUL) { P::set_zero(at(f.base + 3 * k + 6)); if (mode != 0) P::copy(at(f.base + 3 * k + 5), *h); }
         else if (n.kind == K_GATHER || n.kind == K_ADD || n.kind == K_REDUCE) { P::set_zero(at(f.base)); if (mode != 0) P::copy(at(f.base + 1), *h); }
         if (mode == 0) ++C.value_frames; else { ++C.pullback_frames; if (mode == 2) { ++C.value_frames; ++C.frames_combined; } }
-        if (phase_tag == 2) { if (mode == 0) ++C.reverse_value_frames; else if (mode == 1) ++C.reverse_pullback_frames; else ++C.reverse_combined_frames; }
+        if (phase_tag == 2) { if (mode == 0) ++C.reverse_value_frames; else if (mode == 2) ++C.reverse_combined_frames; else ++C.reverse_pullback_frames; }
         frames.push_back(std::move(f)); if (frames.size() > C.max_frame_depth) C.max_frame_depth = frames.size();
         active_node = nn; return poll(1);
     }
@@ -269,7 +269,7 @@ template <class P> struct Exec {
                 if (!retry) {
                     stop = GB_OK;
                     if (c.storage == S_SPARSE && sparse_complete[cn]) {                            // the SAME support-indexed operation as the queued drain: sparsity is preserved without any pending array
-                        if (sparse_reverse_ready[cn]) { ++C.sparse_reverse_immediate; return sparse_local_pull(cn, slot, h) ? 0 : -1; }
+                        if (sparse_reverse_ready[cn]) { ++C.sparse_reverse_immediate; return sparse_pull_frame(cn, slot, h); }   // an explicit continuation frame (returns 1 = pushed), never a synchronous pull/run
                         ++C.sparse_reverse_generic;                                                // labelled on THIS entry path too: retained join rows unavailable -> generic tuple enumeration
                     }
                     ++C.immediate_pullback_frames; return push(1, cn, cidx, nullptr, &h) ? 1 : -1;
@@ -295,7 +295,7 @@ template <class P> struct Exec {
             Frame& f = frames.back(); const NodeD& n = N[f.nn]; active_node = f.nn;
             bool done = false;
             if (!step(f, n, done)) return false;
-            if (done) { if (f.mode != 1 && n.storage == S_CACHE && f.dst) cache_insert(f.nn, f.idx, *f.dst); pop(); }
+            if (done) { if ((f.mode == 0 || f.mode == 2) && n.storage == S_CACHE && f.dst) cache_insert(f.nn, f.idx, *f.dst); pop(); }
         }
         return true;
     }
@@ -303,6 +303,7 @@ template <class P> struct Exec {
     int flushing = 0;
     bool step(Frame& f, const NodeD& n, bool& done) {
         size_t k = n.children.size();
+        if (f.mode == 3) return step_sparse_pull(f, n, done);
         switch (n.kind) {
         case K_SOURCE: { if (f.mode != 1) { const FactorD& fa = F[n.fid]; P::copy(*f.dst, fvals[fa.val_off + f.idx]); ++C.source_reads; } done = true; return poll(1); }
         case K_CONSTANT: { if (f.mode != 1) P::copy(*f.dst, consts[n.val_off]); done = true; return poll(1); }
@@ -521,10 +522,15 @@ template <class P> struct Exec {
     // when the pending array cannot be allocated): the delta goes to exactly the retained contributing MUL rows (every external-input delta and every owned marker
     // of those rows is reached through the MUL pullback; absent rows have an exactly-zero product -> zero polynomial -> no pullback, P3). Zero-safe and weighted
     // through the ordinary MUL prefix/suffix pullback; late deltas stay exactly-once because each delivery is one complete pullback of its own delta.
-    bool sparse_local_pull(int nn, int64_t slot, const Num& h) {
-        const NodeD& n = N[nn]; int mn = n.children[0]; int64_t lo = sparse_in_off[nn][slot], hi = sparse_in_off[nn][slot + 1];
-        for (int64_t q = lo; q < hi; ++q) { ++C.sparse_reverse_rows; int64_t midx = sparse_in_idx[nn][q]; if (!pull(mn, midx, h)) return false; if (!poll(1)) return false; }
-        return true;
+    // The support-indexed pullback is an EXPLICIT FRAME (mode 3) of the frame machine: f.idx = the stored slot, f.t = the next retained contributing MUL row,
+    // at(f.base + 1) = the delta. Each row's delivery is one child_pull of the MUL (itself a frame when streamed): no C++ recursion, whatever the depth of
+    // the sparse chain (third review K-R2-01). Used by the queued drain AND by the immediate delivery when the pending array cannot be allocated.
+    int sparse_pull_frame(int nn, int64_t slot, const Num& h) { return push(3, nn, slot, nullptr, &h) ? 1 : -1; }
+    bool step_sparse_pull(Frame& f, const NodeD& n, bool& done) {
+        const size_t H = f.base + 1; int mn = n.children[0]; int64_t hi = sparse_in_off[f.nn][f.idx + 1];
+        if (f.phase == 0) { f.t = sparse_in_off[f.nn][f.idx]; f.phase = 1; }
+        while (f.t < hi) { int64_t midx = sparse_in_idx[f.nn][f.t]; f.t++; ++C.sparse_reverse_rows; int r = child_pull(mn, midx, at(H)); if (r < 0) return false; if (r == 1) return true; if (!poll(1)) return false; }
+        done = true; return poll(1);
     }
     bool drain_node(int nn) {
         const NodeD& n = N[nn]; bool sparse_rev = (n.storage == S_SPARSE && sparse_complete[nn] && sparse_reverse_ready[nn]);
@@ -534,7 +540,8 @@ template <class P> struct Exec {
             adj_state[nn][s] = 2;                                                           // ACTIVE: its byte charge stays until consumed
             size_t sl; if (!frame_alloc(1, sl)) return false; P::copy(at(sl), adj[nn][s]); P::set_zero(adj[nn][s]);
             if (sparse_rev) {
-                if (!sparse_local_pull(nn, (int64_t)s, at(sl))) { top = sl; return false; }
+                size_t fl = frames.size(); int r = sparse_pull_frame(nn, (int64_t)s, at(sl)); if (r < 0) { top = sl; return false; }
+                if (!run(fl)) { top = sl; return false; }                                   // one explicit frame per drained slot; nested deliveries are frames too
             } else {
                 int64_t idx = stored_index(nn, (int64_t)s); size_t fl = frames.size();
                 if (!push(1, nn, idx, nullptr, &at(sl))) { top = sl; return false; }

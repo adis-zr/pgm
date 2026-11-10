@@ -260,7 +260,9 @@ def test_SC1_tight_pending_capacity_keeps_the_support_indexed_reverse_on_every_e
     n = 14; K = 1 << n; t = [0] * K; t[0] = 3; t[-1] = 5; mp, ep = Q.write_uai(str(tmp_path / "s.uai"), [2] * n, [(tuple(range(n)), t)]); S, Z, N, rows = Q.truth(mp, ep)
     for cap in (512 << 20, 200, 1):
         r = Q.run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / ("c%d" % cap)), rules=[], b64=False, ledger=GM.Ledger(dict(GM.CAPS, pending_adjoints=cap)), fallback=False); fw = r["attempts"][-1]["counters_after_forward"]; c = Q.counters(r)
-        assert Q.exact_rows(r, rows) and fw["sparse_rows_joined"] == 2 and c["source_reads"] - fw["source_reads"] == 2 and c["pullback_frames"] - fw["pullback_frames"] == 2 and c["sparse_reverse_rows"] == 2 and c["reverse_tuples"] == 0 and c["sparse_reverse_generic"] == 0, (cap, c)
+        # FIXTURE CHANGE (third review repair, 2026-11-10): the support-indexed pullback is now an EXPLICIT frame of the frame machine (one per drained slot), counted as a
+        # pullback frame: 1 sparse-pull frame + 2 MUL pullback frames = 3 reverse frames for the single stored output (the reverse source reads stay exactly 2)
+        assert Q.exact_rows(r, rows) and fw["sparse_rows_joined"] == 2 and c["source_reads"] - fw["source_reads"] == 2 and c["pullback_frames"] - fw["pullback_frames"] == 3 and c["sparse_reverse_rows"] == 2 and c["reverse_tuples"] == 0 and c["sparse_reverse_generic"] == 0, (cap, c)
         if cap == 1:
             assert c["sparse_reverse_immediate"] >= 1 and c["early_flushes"] >= 1                                                                    # the immediate path used the SAME support-indexed operation
     # multiple outputs + external adjoints + shared uses: the diagonal chain's sparse message (3 outputs, consumed by a parent product with other operands) under caps 1 / 200

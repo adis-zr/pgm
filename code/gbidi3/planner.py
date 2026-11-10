@@ -408,7 +408,7 @@ class Builder:
             tot = 0
             for b in plan.buckets:
                 if b.storage == IR.DENSE:
-                    tot += b.stored * bytes_per_entry + (len(b.demand) * 48 if b.demand not in ("FULL", "EMPTY") else 0)
+                    tot += b.stored * bytes_per_entry + 24 * ((b.stored + BLOCK_ENTRIES - 1) // BLOCK_ENTRIES)    # the kernel reserves bl * bytes + sizeof(std::vector) per block (materialize_dense)
                 elif b.storage == IR.SPARSE:
                     tot += (b.sparse_rows or b.volume()) * (bytes_per_entry + 56)
             return tot
@@ -516,21 +516,29 @@ def cold_recurrences(B, plan):
         return frames * ev
     per = {}; unknown = False
     for b in order:
-        S = [c for c in b.children if _streamed(c)]
+        # the EMITTED MUL operands are [sources..., markers..., children in order] (emit()); a child with a response view is wrapped in a STREAM GATHER, so the
+        # kernel sees it as an UNRESOLVED operand even when its bucket is retained (third review P-R2): the "last unresolved operand" that receives the combined
+        # frame is the last child that is streamed OR viewed; a retained viewed child's wrapper frames do lookups (no REDUCE rows at the child)
+        S = [c for c in b.children if _streamed(c) or c.views]
         rf0 = frame_rows(b, 0, f0[b.bid]); rr0 = frame_rows(b, 0, r0[b.bid]); rr1 = frame_rows(b, 1, r1[b.bid]); rr2 = frame_rows(b, 2, r2[b.bid])
         if b.storage == IR.SPARSE:
             rr1 = min(rows[b.bid][1], rows[b.bid][1])                                      # support-indexed drain: at most the joined rows
-        per[b.bid] = {"fwd_value_rows": rf0, "rev_value_rows": rr0, "rev_pull_rows": rr1, "rev_combined_rows": rr2, "k": _ops(b), "ev": rows[b.bid][2], "stored": rows[b.bid][0], "streamed": _streamed(b)}
+        wrapper_rows = (rf0 + rr0 + rr1 + rr2) * sum(1 for c in b.children if c.views)             # GATHER wrapper visits (index + ratio work) per row per viewed child
+        per[b.bid] = {"fwd_value_rows": rf0, "rev_value_rows": rr0, "rev_pull_rows": rr1, "rev_combined_rows": rr2, "k": _ops(b), "ev": rows[b.bid][2], "stored": rows[b.bid][0], "streamed": _streamed(b), "wrapper_rows": wrapper_rows}
         if any(x > COUNT_BOUND for x in (rf0, rr0, rr1, rr2)):
             unknown = True; rf0, rr0, rr1, rr2 = (min(x, COUNT_BOUND + 1) for x in (rf0, rr0, rr1, rr2))   # count arithmetic beyond the declared bound: the proxy is UNKNOWN (clamped, every bucket still recorded)
-        # nested frames: VALUE rows -> VALUE frame per streamed child; PULLBACK / combined rows -> VALUE + PULLBACK for every streamed child but the last, combined for the last
+        # nested frames: VALUE rows -> VALUE frame per STREAMED child (a retained viewed child is a lookup through its wrapper); PULLBACK / combined rows -> VALUE +
+        # PULLBACK for every unresolved operand but the last, combined for the last -- rows arise only at STREAMED children
         for c in S:
-            f0[c.bid] += rf0; r0[c.bid] += rr0
+            if _streamed(c):
+                f0[c.bid] += rf0; r0[c.bid] += rr0
         pull_rows = rr1 + rr2
         if S:
             for c in S[:-1]:
-                r0[c.bid] += pull_rows; r1[c.bid] += pull_rows
-            r2[S[-1].bid] += pull_rows
+                if _streamed(c):
+                    r0[c.bid] += pull_rows; r1[c.bid] += pull_rows
+            if _streamed(S[-1]):
+                r2[S[-1].bid] += pull_rows
     return (None if unknown else {"frames": {"f0": f0, "r0": r0, "r1": r1, "r2": r2}}), per
 
 
@@ -556,7 +564,7 @@ def totals(B, plan, bytes_per_entry):
     publication = 4 * sum(len(B.dom[v]) for v in B.dom) + 64
     for b in plan.buckets:
         q = per[b.bid]; k = q["k"]
-        fwd += q["fwd_value_rows"] * (2 * k + 1); rev += q["rev_value_rows"] * (2 * k + 1) + q["rev_pull_rows"] * (3 * k + 4) + q["rev_combined_rows"] * (3 * k + 5)
+        fwd += q["fwd_value_rows"] * (2 * k + 1); rev += q["rev_value_rows"] * (2 * k + 1) + q["rev_pull_rows"] * (3 * k + 4) + q["rev_combined_rows"] * (3 * k + 5) + 3 * q.get("wrapper_rows", 0)
         pred["forward_rows"] += q["fwd_value_rows"]; pred["reverse_value_rows"] += q["rev_value_rows"]; pred["reverse_combined_rows"] += q["rev_combined_rows"]
         if b.storage == IR.SPARSE:
             pred["sparse_pull_rows"] += q["rev_pull_rows"]
@@ -573,7 +581,9 @@ def totals(B, plan, bytes_per_entry):
     cold = (fwd + rev + mat + construction + publication) if rec is not None else None
     if cold is not None and cold > COUNT_BOUND:
         cold = None
-    return {"cold_work_proxy": cold, "forward_proxy": fwd, "reverse_proxy": rev, "materialization_proxy": mat, "predicted": pred, "construction_proxy": construction, "publication_proxy": publication, "ideal_reuse_proxy": ideal, "stored_entries": stored_entries, "peak_reserved_bytes_estimate": mem, "buckets": len(plan.buckets), "streamed": sum(1 for b in plan.buckets if _streamed(b)), "sparse": sum(1 for b in plan.buckets if b.storage == IR.SPARSE), "max_bucket_volume": max((b.volume() * b.elim_volume(B.dom) for b in plan.buckets), default=0), "cost_model": "compositional cold VALUE / PULLBACK / combined recurrences v2 (reverse-phase value reconstruction included; zero memo hits outside retention)", "unknown": cold is None}
+    return {"cold_work_proxy": cold, "forward_proxy": fwd, "reverse_proxy": rev, "materialization_proxy": mat, "predicted": pred, "construction_proxy": construction, "publication_proxy": publication, "ideal_reuse_proxy": ideal, "stored_entries": stored_entries, "peak_reserved_bytes_estimate": mem, "buckets": len(plan.buckets), "streamed": sum(1 for b in plan.buckets if _streamed(b)), "sparse": sum(1 for b in plan.buckets if b.storage == IR.SPARSE), "max_bucket_volume": max((b.volume() * b.elim_volume(B.dom) for b in plan.buckets), default=0),
+            "cost_model": "compositional cold VALUE / PULLBACK / combined recurrences v3 over the EMITTED operand schedule (GATHER wrappers of viewed children are unresolved operands; reverse-phase value reconstruction included)",
+            "assumptions": "EXACT row-class prediction under: no memo (cache) hits, no runtime downgrades, no early drains, pending slots fit; exact-zero row skips only reduce the counts (prediction is then an upper bound of the visited rows); UNKNOWN when a count exceeds COUNT_BOUND", "unknown": cold is None}
 
 
 # ---------------------------------------------------------------------------------------------------------------- emission to the IR
