@@ -33,7 +33,7 @@ def main(D):
         truth = None
         if name != "K14x14":
             mdl = U.read_model(mp); Z, N = OR.brute(mdl, {}); truth = (Z, N, mdl)
-        for arm in ("GENERAL_BIDI_V1", "NATIVE_PLAIN_V1"):
+        for arm in ("GENERAL_BIDI_V2", "NATIVE_PLAIN_V2"):
             o = os.path.join(S, "%s_%s" % (name, arm)); t = time.monotonic(); subprocess.run([PY, "-m", "gbidi.cell", arm, mp, ep, o, "60", "{}"], cwd=HERE, env=ENV, capture_output=True, timeout=200); wall = time.monotonic() - t
             rec = json.load(open(os.path.join(o, "cell.json"))); row = {"status": rec["status"], "complete_response_s": rec.get("complete_response_s"), "outer_wall_s": wall, "route": rec.get("route"), "precision": rec.get("precision"), "max_width": rec.get("max_width"), "phases_s": rec.get("phases_s"), "plan_totals": (rec.get("plan") or {}).get("totals"), "mechanisms": rec.get("mechanisms"), "counters": (rec.get("attempts") or [{}])[-1].get("counters"), "maxrss_self_bytes": rec.get("maxrss_self_bytes"), "reason": rec.get("reason")}
             if truth is not None and rec["status"] == "CERTIFIED":
