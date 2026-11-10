@@ -9,6 +9,12 @@ Two parts:
   - `docs/lab-reports/` — byte-for-byte copies (183 files, with `INDEX.md` giving repo, commit, bytes, SHA-256) of every result report,
     closeout/audit document, ledger, manifest, source lock, results table and accounting record produced by the H4 lab (run1 → external
     benchmark → moment audit → closeout → centering pilot). This answers the handoff's `reports/REQUEST_MISSING_REPORTS.md`.
+- `docs/prose-handoff-2026-11-09/` — the overseer's prose-only research handoff of 9 Nov 2026 (`INFERENCE_RESEARCH_PROSE_HANDOFF_2026-11-09.zip`,
+  SHA-256 `033c9e8810e8b4de4d7bca11ad8cc93d705f7b482db8bf4119f7f90fbe8f4a4d`, 1,123,565 bytes; `PACKAGE_MANIFEST.txt` verifies 101/101). A different
+  series from `docs/handoff/` (not extracted over it). Start at `00_START_HERE.txt`; `README_REPO_NOTE.md` (local) records what the packet predates:
+  the BIDI native pilot result (E-MDI-40), GENERAL_BIDI_V1 (paused at cell 219) and the GENERAL_BIDI_V2 repair, all recorded under `code/runs/`.
+- `docs/LEDGER_ADDITIONS_*.md` — append-only empirical ledger entries; the running MDI ledger is `LEDGER_ADDITIONS_mdi_capacity_2026-11-02.md`
+  (E-MDI-02 … E-MDI-40 and corrections).
 - `code/` — the direct chain-query certificate pilot (26 Oct 2026): `code/README.md`, `code/dq/`, `code/native/`, `code/tests/`, and the
   durable campaign records under `code/runs/dq_pilot_2026-10-26/` (REPORT.md leads with the decision). The earlier `strongcompact`
   implementation was deleted on 26 Oct 2026 and exists only as prose in `docs/`.
