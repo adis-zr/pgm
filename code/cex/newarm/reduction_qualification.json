@@ -1,0 +1,667 @@
+{
+  "records": [
+    {
+      "seed": 33000,
+      "model_sha256": "024a626f2865be5b5605eab1a3b5c97f6f55fbc8ea846155da86a3969b2a17f3",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33001,
+      "model_sha256": "9c2a7ef8db42d75f9e5ab190d271432ce14defc0ce0f22b8e6279dbda394e99c",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33002,
+      "model_sha256": "8eda255bf339e4b15e8a0fede6478ed1ce68f5a6634bd9eb0828b57e128ff910",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33003,
+      "model_sha256": "695eaef07ce46c954a453ab9cba51c35cdc04df926037a8bbdccbadaa328bb3e",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33004,
+      "model_sha256": "d6018616236b657febadcae867365ae0b1cedafe826cd693d12b3f25ee7fcbef",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33005,
+      "model_sha256": "93c14f7d3703657934000ad9dade52d71e9ba1215e18bf33657f9006b3bea81f",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 1,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33006,
+      "model_sha256": "b01b39d1f43e29f28cbd0b6f53d7abcca5ffd0abd2b749133337b4fcb899341c",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33007,
+      "model_sha256": "903930856c3f755451d26f0091584523d70d375cd03b8100c9ebd8c92af276da",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33008,
+      "model_sha256": "591fcc9f2c67e78dcac3eb3693adde14f8f925ce63035e0ddf4f369c469cfd55",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33009,
+      "model_sha256": "478797d1393b4f4ed6a24ce5773972d20551e135b40123d93ef41648232e4d4a",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33010,
+      "model_sha256": "3c2b865c40eb10ecc15646e9e50696d0f804009e93e6eebce46e5ec6de32c900",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33011,
+      "model_sha256": "e42d072ba2dffab938b232d8a6a27c6e7feec8cac7162bebeabe89357158e26a",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33012,
+      "model_sha256": "e9ab6bec2a3546032c839fc1adfc65f434aecf348b6eaea7a540f1cd110e3755",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 0
+    },
+    {
+      "seed": 33013,
+      "model_sha256": "71df530b0199027c78ef76791415d427c01838285914582200a57fee2777df54",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33014,
+      "model_sha256": "a7f3e1d0ae1797ec65f142d1f0355488985a3d42e67bc57445011ad685a55afa",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33015,
+      "model_sha256": "08b8ef27bda7b96b05653ea0881bcfa2bcb98a42c6272bbea0958d935e6740e2",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33016,
+      "model_sha256": "648423c60d4a2576b5b48d4dd85afb8261a5c9f0caa4bf924e4762674ef9afdb",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 5,
+      "remaining_variables": 0
+    },
+    {
+      "seed": 33017,
+      "model_sha256": "9297e16959e39e1b075faa29671e9586207ded81286e1bb8070da238e87c093e",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33018,
+      "model_sha256": "a5454520c611906d509b49b792224d3be8586d1fd83c9a49b65b04504fa97362",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33019,
+      "model_sha256": "6bd5b91ad381d956160de3f5e53993c5a9bf8171594f107eb157480f5fa308e1",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 2,
+      "remaining_variables": 0
+    },
+    {
+      "seed": 33020,
+      "model_sha256": "75949d104c9afd8565f2e400d5d1c17f2798b6e89d6ee1d9f31c7edb6c408fee",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33021,
+      "model_sha256": "c156b13279db0a51ceef71d48d391a171e784fffe543098aac59bf6d8e30784b",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33022,
+      "model_sha256": "09d2892e8fd4503ba412df5deac64e9ca63dfb259b357ca009e873e403f5af66",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33023,
+      "model_sha256": "83be0ecbac2f6844c4d786f991aeb2d1dba1a7dccf0e7328909660be8288a1a6",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33024,
+      "model_sha256": "76c4dfc90079434d6e1b5c408bc2b43a246c2f159ca0d1ccb7bd2a1b68eb0703",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33025,
+      "model_sha256": "df8add42cd9d367eb3d5f0fa42a4613f615eb36d3e5f864dea0cc12ec354b4ad",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33026,
+      "model_sha256": "281a3a60d62b2ecd600fd20ee543ea0e638ab12eeba281b275f75da12ace069f",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33027,
+      "model_sha256": "22a6ef309c163d9a2a9d32009365b2f206a2c7cd270bcf16a8e2ea8b5f03e404",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33028,
+      "model_sha256": "a5d9d4d6f171d4dedff8e686ad82f6612b9e3c743399af3e31a3f97a7ee995a2",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 5,
+      "remaining_variables": 0
+    },
+    {
+      "seed": 33029,
+      "model_sha256": "57be27bad22ae74a2d1da7fab8c6587de6ec2c7249c3b6a212511900bfcab3b9",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33030,
+      "model_sha256": "5ab697737cd2f0957f3100e7eb89f7a151b121835c866ffa316ea86bffa042cb",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33031,
+      "model_sha256": "13f15650a4c6f2cffc5b5881e22ef2ac515b08a5d4ddc27fa5c7faf523396c84",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33032,
+      "model_sha256": "0bbeb90d8fcea037cb0b27e6519eaf553d6bfa8e9c3cb793ce4dd7ab9d4656e0",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33033,
+      "model_sha256": "cfd6272621b0c9a6a879f71d9bfe3379d5a915b642ffd1bdfa94e0157726cfca",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33034,
+      "model_sha256": "f17f7b43b9d6b053cabea88bb2f28659fa6f70c624abe0043c038d92ca2e5eea",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 1,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33035,
+      "model_sha256": "526260d3626d29daf425a957ee5278658594c29e74e47b21ca1d4dd1dd242065",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33036,
+      "model_sha256": "935be8d895fa33bde6aa26890300eb3d847da5a2f196be37b29c3e6402770c12",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 5,
+      "remaining_variables": 0
+    },
+    {
+      "seed": 33037,
+      "model_sha256": "8555c52ec1d8e3a0c816563b33b56850d621261921954fe9de825acdd01fa33f",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33038,
+      "model_sha256": "86b2f6cdf4ae4a0b91bbef9771f64179fd7cee93bebd76529ab01d69dced1e92",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33039,
+      "model_sha256": "0f614d0444bb7126d5650737507461e0596bab3f5dd31a7b517cfed8a4dcca15",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33040,
+      "model_sha256": "f9ac5fb002c9308000ebf86f1c6f3e7b540eab9d56458096281a2f239c43991b",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 0
+    },
+    {
+      "seed": 33041,
+      "model_sha256": "c24e142f5e990013a763c373837a3675cc2bf906969752b3597fe10420d95e73",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33042,
+      "model_sha256": "d10985795fec1658f1585a6d61e133fd61714c441fe01dec0878e8f417fe4f45",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33043,
+      "model_sha256": "5f539f3e773783b42cc3edd3caf2beb7e080dfc3b3be20a62b1323f97aac3122",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33044,
+      "model_sha256": "b3f3a5760abaebbfb9beef2456e784e348fd83f44a9966690853af8d4ef77919",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33045,
+      "model_sha256": "116bfc5eea11b32ec8d176df32dd19d96e6109d5fe98e65d48aa1ae9c2395423",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33046,
+      "model_sha256": "e0e86767072782d798e960543eb7576bba5121f430fff9991818a283048a656b",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33047,
+      "model_sha256": "81b644e606b4acb4198454aa4c39fab825268b0ded42ae6c507faf15fdc7a48e",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33048,
+      "model_sha256": "7c25bce05eddae9d5c4ce1d29bd3c07da3f484ebe575087134f9eb319b96e097",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33049,
+      "model_sha256": "0f4d0ab1910bbb814ed5a9356466ee8912e9b965721d80bfef1375e39f6df0d7",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33050,
+      "model_sha256": "226fd4130843c6af3c8ef4be90b7218a6432c2391549ce55bf3ba5f5b5feeb2d",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33051,
+      "model_sha256": "51fea06bf3b5fb2ab5e801331abc26f6e0bfeee9fee6561763d705c3df70895f",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33052,
+      "model_sha256": "6564d6383cb77d931cbeda1bef5256ed0ab625a10ac7d788a04d790163641c6a",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 5,
+      "remaining_variables": 0
+    },
+    {
+      "seed": 33053,
+      "model_sha256": "675bff254d4a289ea70ef4b277380c58b48dc40022806a755bc729934b2dd90d",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33054,
+      "model_sha256": "d33904102b3ff35ee43a4e84f3d452a6d73104c387b8afdc33dc57ee229716b7",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 1,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33055,
+      "model_sha256": "dcffd88b70df59ffb8b9c4d6738f989390ce38a789872bd121e07d13df844d3a",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33056,
+      "model_sha256": "d9bf16466695ceb6bf09fa945e6b6ab61197c3866802168bf52e367d7af3ab7d",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33057,
+      "model_sha256": "d287b9eb06c5694abf077d652ce1b98fca3c56fb667b492c415b715eff747b1f",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33058,
+      "model_sha256": "8ab2d87a2f300763697f7b170491e79726c09292c85b85e5f58662cb70a84b8a",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33059,
+      "model_sha256": "32a41b0bb4802c9fabbb53900ddbb01549d284dd23abba1747fbfdbe7134382f",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33060,
+      "model_sha256": "8cf1ed54df8634db0e2786ac804aae1dc38c9d340af734bd9cef8b00060f94dd",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33061,
+      "model_sha256": "1c8675bcb62f76deb79c65847fed7c6d811efc486c9b0292db9c6a3afde620b4",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 1,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33062,
+      "model_sha256": "09ccb1c42facb95c963956422167ae15a853938875ea188e7fb8ce896c52bd40",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33063,
+      "model_sha256": "a8ded5326e97a1e60a7d7ffd53155104d641ddfa457cb343f57a8a3c23908531",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33064,
+      "model_sha256": "dd36a3b8a0fe6068c373784a12369316446a28688ee5ebc9393c022a908fe9ea",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33065,
+      "model_sha256": "3d0b56eb7dfad94f587ffa6abb5cb8f2bf615285c1b0f48f7747f0d97158d492",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33066,
+      "model_sha256": "476051f67205a759dfbea8ab20625c7d70a84f2336b5c53b6c69dd6d2c5633bd",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33067,
+      "model_sha256": "bff530e76c9db0a9451f2c23225e71857475d3415e98288b18fa9f2b5ce6441a",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33068,
+      "model_sha256": "025a32ce235e58a2a4f884e2cbfd3e3c465d3125bd0e98807e32bd196c67dbda",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 0
+    },
+    {
+      "seed": 33069,
+      "model_sha256": "92d87cc1c7a1a90f6a6b2b145e2647d68e0a85434d34f20089bc59ac2d169786",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33070,
+      "model_sha256": "e82d84a121ae272271b794b0a1299b36b6e39ea6173819dae74d8a282ead1fdc",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 1,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33071,
+      "model_sha256": "552f635900ce4b0815fcab298e953888fd493d5cdc9c807846298cc7a6af80c1",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33072,
+      "model_sha256": "be4645b44bafc279c316449948d6d1447844f620f623f1e5ca30f16e2311bec8",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33073,
+      "model_sha256": "72d811925fd8749c41af431ddd9b428b4604338f36aa2a9205ad7f2fee9d6bda",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33074,
+      "model_sha256": "b7ae591e14b3f4b7cac25df7a3f406ecd1f5607ce74a108d7293a0d8a5651f22",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33075,
+      "model_sha256": "493db40e9da834c06c5e505daf27ae91f81cf08b4e22b796fe6a88e2af4a2bc8",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33076,
+      "model_sha256": "7ffeca08e4d514ad39d1688ca47aee1edba1bd87f600ba080114de8c150f4e34",
+      "status": "PASS",
+      "aliases": 0,
+      "states_removed": 4,
+      "remaining_variables": 1
+    },
+    {
+      "seed": 33077,
+      "model_sha256": "94775059050b48b46a2eac6ec00b516438aada0912b6ff92d0e823a8b2436d3c",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33078,
+      "model_sha256": "d01f240a38b15a08e367fe808b5cfe39c66aff83db4fb01e83b4dc08065261f9",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    },
+    {
+      "seed": 33079,
+      "model_sha256": "ee072cad6088bacde3d2a8041ca2f4da336fc0579ee1da13043310ce0d619c77",
+      "status": "PASS",
+      "aliases": 2,
+      "states_removed": 0,
+      "remaining_variables": 2
+    }
+  ],
+  "models": 80,
+  "passed": 80,
+  "aliases_exercised": 120,
+  "states_removed": 91,
+  "qualified_hashes": {
+    "core.py": "adec378743dca9ac2f133d4bb6c1753dea48ee6c78976d6b82d678b6eeb2ce94",
+    "dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+    "forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+    "geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90",
+    "planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+    "reduction.py": "7899047ec2feca256d695d4529e7ce1ae5a89182bc2e64d3b98c7bf7f02a9342",
+    "stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+    "stream_float.py": "95e720759ea1a805111b3dcb59696aed0cf0e617afe5cf79f4920fb10010a1c1",
+    "support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+    "stream_kernel.cpp": "5f1c1cc1c6a248b98ebb3bbd359faa4103672b827e9d352897f3366f7a3fedf2",
+    "libstream_kernel.so": "86f93c11127a864c01ff7e8acc435eae4482bf4d297ccbc6b051c7e72f3671c0",
+    "qualification.py": "98054ffc5f81625439f713b2f104c0aa31f891e0281c8b85900ff66faf8f30c4",
+    "geometry_controls.py": "16e5e347ea4b39bc7616306a88aa54a4dd1f3aabed26ad7a915cb2502f7ea1c5"
+  },
+  "implementation_stable_during_run": true,
+  "qualification_sha256": "8d31fd218a302e2d861443fc9472b10a923c46450304909ebfdd7af522edb604",
+  "all_pass": true,
+  "scope": "Exact raw/reduced posterior equality and complete original-query lifting; also integrated pipeline oracle containment."
+}

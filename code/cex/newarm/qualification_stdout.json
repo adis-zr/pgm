@@ -1,0 +1,83 @@
+{
+  "total_models": 380,
+  "passed": 380,
+  "coordinates_checked": 3741,
+  "adversarial_controls": [
+    {
+      "name": "global_zero_mass",
+      "model_sha256": "e74a3364e2e1e8a0831690880aa8c0dbd57a2326a4d43e1f0d2e00d6398f592c",
+      "expected": "zero",
+      "status": "PASS"
+    },
+    {
+      "name": "reject_negative_scalar",
+      "model_sha256": "d3f0f541229d47936824d0858161d7175f86f3e36c4fd40621ba4ef9731684f4",
+      "expected": "invalid",
+      "status": "PASS"
+    },
+    {
+      "name": "expired_fully_observed",
+      "model_sha256": "f29c1c6aa96876b8aea44b36d2c80579a473356d039da0a7be450673a8f00058",
+      "expected": "expired",
+      "status": "PASS"
+    },
+    {
+      "name": "expired_empty_model",
+      "model_sha256": "cf0559c5b238569aebaeec5fa7acaa772e66b1ed36bd8117e71c4a1af575a6d0",
+      "expected": "expired",
+      "status": "PASS"
+    },
+    {
+      "name": "isolated_mixed_domains",
+      "model_sha256": "713d9e607cff3fe07fd885dbed793e2a328b1ab2c74c004cdc3b820d70958d04",
+      "expected": "valid",
+      "status": "PASS"
+    },
+    {
+      "name": "fully_observed",
+      "model_sha256": "f29c1c6aa96876b8aea44b36d2c80579a473356d039da0a7be450673a8f00058",
+      "expected": "valid",
+      "status": "PASS"
+    },
+    {
+      "name": "zero_scalar",
+      "model_sha256": "f95cb1775b66d59a952d08a66be046e0304899c66488f0b137051bfb2aeb79e4",
+      "expected": "zero",
+      "status": "PASS"
+    },
+    {
+      "name": "invalid_factor_shape",
+      "model_sha256": "b0a1ac20ebe779d6bf0e3b4d19920a2eed62c00b3fff48438e95360034163b9e",
+      "expected": "invalid",
+      "status": "PASS"
+    },
+    {
+      "name": "reject_nonmember_point",
+      "expected": "invalid publication",
+      "status": "PASS"
+    },
+    {
+      "name": "reject_serialized_nonmember_point",
+      "expected": "invalid publication",
+      "status": "PASS"
+    }
+  ],
+  "qualified_hashes": {
+    "core.py": "adec378743dca9ac2f133d4bb6c1753dea48ee6c78976d6b82d678b6eeb2ce94",
+    "dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+    "forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+    "geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90",
+    "planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+    "reduction.py": "7899047ec2feca256d695d4529e7ce1ae5a89182bc2e64d3b98c7bf7f02a9342",
+    "stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+    "stream_float.py": "95e720759ea1a805111b3dcb59696aed0cf0e617afe5cf79f4920fb10010a1c1",
+    "support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+    "stream_kernel.cpp": "5f1c1cc1c6a248b98ebb3bbd359faa4103672b827e9d352897f3366f7a3fedf2",
+    "libstream_kernel.so": "86f93c11127a864c01ff7e8acc435eae4482bf4d297ccbc6b051c7e72f3671c0",
+    "qualification.py": "98054ffc5f81625439f713b2f104c0aa31f891e0281c8b85900ff66faf8f30c4",
+    "geometry_controls.py": "16e5e347ea4b39bc7616306a88aa54a4dd1f3aabed26ad7a915cb2502f7ea1c5"
+  },
+  "implementation_stable_during_run": true,
+  "all_pass": true,
+  "scope": "Exact exhaustive independent oracle on small legal inputs; no benchmark inference or implementation proof."
+}

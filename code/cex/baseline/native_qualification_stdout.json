@@ -1,0 +1,23 @@
+{
+  "guards": [
+    {
+      "name": "expired_empty",
+      "status": "PASS"
+    },
+    {
+      "name": "expired_observed",
+      "status": "PASS"
+    },
+    {
+      "name": "changed_rounding_environment",
+      "status": "PASS"
+    }
+  ],
+  "models": 130,
+  "ordinary_enclosures": 100,
+  "extreme_enclosures": 3,
+  "safe_range_refusals": 27,
+  "coordinates_checked": 874,
+  "all_pass": true,
+  "scope": "Small-model exact-oracle numerical qualification of this precise build; not independent replay of benchmark outputs."
+}

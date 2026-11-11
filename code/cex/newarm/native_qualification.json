@@ -1,0 +1,1316 @@
+{
+  "build": {
+    "source_sha256": "5f1c1cc1c6a248b98ebb3bbd359faa4103672b827e9d352897f3366f7a3fedf2",
+    "binary_sha256": "86f93c11127a864c01ff7e8acc435eae4482bf4d297ccbc6b051c7e72f3671c0",
+    "compiler_flags": [
+      "-O3",
+      "-std=c++17",
+      "-shared",
+      "-fPIC",
+      "-fno-fast-math",
+      "-ffp-contract=off",
+      "-frounding-math"
+    ]
+  },
+  "qualified_hashes": {
+    "stream_float.py": "95e720759ea1a805111b3dcb59696aed0cf0e617afe5cf79f4920fb10010a1c1",
+    "stream_kernel.cpp": "5f1c1cc1c6a248b98ebb3bbd359faa4103672b827e9d352897f3366f7a3fedf2",
+    "libstream_kernel.so": "86f93c11127a864c01ff7e8acc435eae4482bf4d297ccbc6b051c7e72f3671c0"
+  },
+  "records": [
+    {
+      "kind": "ordinary",
+      "seed": 31000,
+      "model_sha256": "8d72d134bba5482900bd787898030714c35507c4173a8d2e86dfd3393458a274",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "63564848795503340512145535255627/3780152288079866952910551437459642853961498624",
+      "status": "PASS",
+      "seconds": 0.005634928998915711
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31001,
+      "model_sha256": "43599b9c2dcf185569acb1dfd1a685bfb005b4efe849b4c9e3391f489bb58bd7",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "45035996273704935/40564819207303295811898228867072",
+      "status": "PASS",
+      "seconds": 0.00035862000004271977
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31002,
+      "model_sha256": "4d538bb5063b41771cb8de5dc94d60c9bd21de43125f230c292da9001e21d8ab",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "1460333491462919000509107174113325/600839562013814618311198033201138721589651570688",
+      "status": "PASS",
+      "seconds": 0.0006798639988119248
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31003,
+      "model_sha256": "39ccb752d95bff77158a048f73665164e9c0476da008f3af3950cfc9c826d5d2",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "5/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.0008779320014582481
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31004,
+      "model_sha256": "b6e12c7455726ae90370922cf4756fce2e59901aae7b81580c696663bd4f4508",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "5247999569457971644520526766629/1527113420475470280696119901269637284094803968",
+      "status": "PASS",
+      "seconds": 0.0004335729990998516
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31005,
+      "model_sha256": "ec1078799f30b2ba1223459e762bf346918e63e4a87c44294b9e656c27872f7b",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "31/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.0027774640002462547
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31006,
+      "model_sha256": "d08a976dd5b795385ec21c61f53d0442b0bdce66d00cf616bfc477fe47b9d785",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "3247212500639857699864938436795/718195275498851176685984493466545774095499264",
+      "status": "PASS",
+      "seconds": 0.0015352940008597216
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31007,
+      "model_sha256": "824fc392fb0d632a6fde1de34e9ecfbe87f452f02c0757cc2f447786b977d6d3",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "269476359738992402195083666948595/30119457261151817765935709529126723718641352704",
+      "status": "PASS",
+      "seconds": 0.0007591440007672645
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31008,
+      "model_sha256": "24ff580d15acdafc86d792bf96caa53cdea9b63d09c5eb383dbeb6d339c7087f",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.00023365200104308315
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31009,
+      "model_sha256": "397d9e1dd9095bddb1ffc093c3e823e3284f8d5b5d876568b1c01a4bcb35c9aa",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.0001784489995770855
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31010,
+      "model_sha256": "f1d8ca4c0526a4675eaf2dd6ce573f557ecfd41196f353206b4a6776cd7d1160",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 10,
+      "max_width": "45035996273704935/26721269795287091328186958113191",
+      "status": "PASS",
+      "seconds": 0.0006503099994006334
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31011,
+      "model_sha256": "ae279071b238ae0d9dd1f730904bcb4af5eb63f334febd900261da16e00c4e61",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "1/562949953421312",
+      "status": "PASS",
+      "seconds": 0.0011926769984711427
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31012,
+      "model_sha256": "8c11b5cbe7798a13b1173d99bd934364e3c9edd24fb0b5f1f9444840494389b7",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "5408642560973775577159531990585/18674743143672626223834806203327776348698574848",
+      "status": "PASS",
+      "seconds": 0.00031880999995337334
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31013,
+      "model_sha256": "58cbca925e098f51c4f2c0ae7dd0bc0588ad5b655e6713b93e6e20ed360860e0",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "45035996273704935/40564819207303295811898228867072",
+      "status": "PASS",
+      "seconds": 0.00032835499951033853
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31014,
+      "model_sha256": "43599b9c2dcf185569acb1dfd1a685bfb005b4efe849b4c9e3391f489bb58bd7",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "45035996273704935/40564819207303295811898228867072",
+      "status": "PASS",
+      "seconds": 0.00022903499848325737
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31015,
+      "model_sha256": "41d07afdbda92f1b5bd0b9b024b3f25b7eba64dfabc52af69628f0f974dbc471",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "14233269897299409150209316503265/16025237251435319800476919706273053791683084288",
+      "status": "PASS",
+      "seconds": 0.0002717789993766928
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31016,
+      "model_sha256": "d8419ae75ddf1df920189710d4f08d310dc0ac8618b1b8bbd56c7010b3796936",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.0002963170009024907
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31017,
+      "model_sha256": "fc64932279cd93e0eadb9eee80f8e1a4b189d69ba5beb463dce672b3da37e965",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "9007199254740987/20282409603651647905949114433536",
+      "status": "PASS",
+      "seconds": 0.0002641080009198049
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31018,
+      "model_sha256": "b1213c5003cb1d67493f6cf760a02f18ae541fc30b94868761608878ba9e880e",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "85449040459828674773116563061575/17484749159132151108193493956019884054336765952",
+      "status": "PASS",
+      "seconds": 0.0012362929992377758
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31019,
+      "model_sha256": "96bdc7736d043aab2a1f80b1294b9366c35122d80394833a70d60b0e5cc74c0e",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "135107988821114805/223106505640168126965440258768896",
+      "status": "PASS",
+      "seconds": 0.00028845499946328346
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31020,
+      "model_sha256": "68e63591e4fe5eb182692fb982b0110a27ee7a4d6d8d1fa59cecc27330a004a3",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 12,
+      "max_width": "292968138719412607407227538971743/52425276057180297259891525478906570124354912256",
+      "status": "PASS",
+      "seconds": 0.0010649539999576518
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31021,
+      "model_sha256": "29c79f08a8de7bce5bb390c7a2aa93d11a27b5054a0141bc35f53c15d67b6746",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "52397949504127439773913235826761/3125513850739305162539606169933787258609991680",
+      "status": "PASS",
+      "seconds": 0.003439701999013778
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31022,
+      "model_sha256": "c188fd1b4a757e08586ab7daac8eb53138c765df00b08182924be98b0d838057",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.0002174479996028822
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31023,
+      "model_sha256": "de735a92c0d7b811bc64f46561cd0c3bc7311df027a094a627b8878aab571ecb",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.00021101800120959524
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31024,
+      "model_sha256": "cf9313aad8f42520c15338483cba84d4798bfceb5d0e9fd639d65cc8080e691c",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "31316143909719725839164708658365/3087446065674256554866721569877274060858064896",
+      "status": "PASS",
+      "seconds": 0.002020294001340517
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31025,
+      "model_sha256": "0fa188fbb6d34dbdee827bbea597aa7cc6416d0e4d1701366b200c895e28fc69",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "9007199254740987/4705519028047181989921021377905",
+      "status": "PASS",
+      "seconds": 0.00037362299917731434
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31026,
+      "model_sha256": "5016726e69bb9d1ac48d4476f96bf87ac6e1bd4db8aa526f5a2e1c7f8ac03e3d",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "572821672852481391923893453731067/99291121555566381967987905461016901496151736320",
+      "status": "PASS",
+      "seconds": 0.0012158820009062765
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31027,
+      "model_sha256": "b0706c2a53b68bd83a1c32d22c2f9a1b824181d39e792d6363f60a0a68e8fd59",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "13/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.0008548679998057196
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31028,
+      "model_sha256": "9a28eff0accfb70a399227e7df92cf4dc240c47bf17fe583bc93cca9bbb1539c",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "45035996273704935/28170013338405065535240519519802",
+      "status": "PASS",
+      "seconds": 0.0004729829997813795
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31029,
+      "model_sha256": "23072259d94a6ccf70ad633d099c2c3132930c511389fa673bc8cd6e8e306c60",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "45035996273704935/27584077060966238630075004302134",
+      "status": "PASS",
+      "seconds": 0.00035085799936496187
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31030,
+      "model_sha256": "2ed02b1be1208082b68e718e2f94ff8de95fc40d37deea78642573eb75ac3a72",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "243388915243819900972178939576325/292300327466180275348110991037848145534457479168",
+      "status": "PASS",
+      "seconds": 0.0002416440001979936
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31031,
+      "model_sha256": "f79a8331009eafed8adacbe731183253bdcafdb2f7b6c2462446a663e778874f",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "45035996273704935/21248238632396965545184697828107",
+      "status": "PASS",
+      "seconds": 0.0005325520014594076
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31032,
+      "model_sha256": "1ec361e2903b56d1cef6c3549b0885909c87331f8566ffd029968cd6d7360b82",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "878596907240704268531439290325/1677703850520636147693490410653345635081650176",
+      "status": "PASS",
+      "seconds": 0.0002992900008393917
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31033,
+      "model_sha256": "03482e7fec6cbf2b1ac19e3c5b9bd44cb078331c4cac08ff9af7ec2cb0f481dc",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "36480167273234550014635788060443/8270717398757590835759640224726006558927880192",
+      "status": "PASS",
+      "seconds": 0.0004907189995719818
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31034,
+      "model_sha256": "e6251d7638657440c7ba7d724b84b1ff8d6a8e652c03fdf687cd6df4edbed8d3",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "7881299347898361/2716394143346200954643341340087",
+      "status": "PASS",
+      "seconds": 0.0005845410014444496
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31035,
+      "model_sha256": "7d1a6b694437607c65d7e60702d26353fabc2b46c5ac37d27383416532e27883",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 12,
+      "max_width": "293870728942704065080172142605795/30639182550213636050298691233431263889634361344",
+      "status": "PASS",
+      "seconds": 0.001770597998984158
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31036,
+      "model_sha256": "946fa56710c2fa871aae04131881d6c135ec4028093cac4c546bace27cc13bdc",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 10,
+      "max_width": "23/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.000854777999848011
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31037,
+      "model_sha256": "9c2d901a982c50ac730517c76a9383060d23c909b30ca47693226bd2639ee0e3",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 12,
+      "max_width": "45035996273704935/24628640233005570527109798653369",
+      "status": "PASS",
+      "seconds": 0.0008955190005508484
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31038,
+      "model_sha256": "171090fd238a12a8c80966942a44a24c95d4d1ef17de98a94b618b0518e02b76",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "1054596995021541609914869927584783/103433005540052884231168859771842790956447301632",
+      "status": "PASS",
+      "seconds": 0.0023983130013220944
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31039,
+      "model_sha256": "37220f8556666d079ceb24ef64019b2d3965809b9560c11f010c6845ef82027c",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.0003782700005103834
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31040,
+      "model_sha256": "f799a632d3e4a5ed8a2dac94ae7d07e72a37f61761c98dd33797503227c4d44b",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "5/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.00027232100001128856
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31041,
+      "model_sha256": "39e58afa2421c036ce83bf7f81e46956c4e863151a7c5c5e51ce75b86890e3a5",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "45035996273704935/32451855365842638450958434041854",
+      "status": "PASS",
+      "seconds": 0.0021966900003462797
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31042,
+      "model_sha256": "884a9bab448cd101aebb5be9d9d6510431e906fcc7998a11146e15cc30f53872",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "758383670765542905161559637515675/36373660534256265432717989859478629027684548608",
+      "status": "PASS",
+      "seconds": 0.003752884000277845
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31043,
+      "model_sha256": "0184a231aba53ac72dfab89cbedddcda97145f5836cea2f4403701fcadd347bc",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "977745559209178694396156163054495/59508525130412585094661912573161878928370958336",
+      "status": "PASS",
+      "seconds": 0.0018690659999265336
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31044,
+      "model_sha256": "1e8eeac31b337ebae577d2821a33ac9230ecb9fb44eb76e2d309bde56b94160d",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "945755921747803635/1074967708993537339015303064977408",
+      "status": "PASS",
+      "seconds": 0.000679474000207847
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31045,
+      "model_sha256": "0525626c4269df7126bcc442e70ad1dd24c2340f5faf7d82410140e891bb224a",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 10,
+      "max_width": "5/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.0003931720002583461
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31046,
+      "model_sha256": "547d4d17288c95666421f20dfe6c0e935d421a0e28447535ac71f13b0691345b",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 12,
+      "max_width": "226785241096322417704043999298941/39936756602108658239766432271694407655059619840",
+      "status": "PASS",
+      "seconds": 0.0009736869997141184
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31047,
+      "model_sha256": "facda3cb4c95c157aadf7e265de2c4f0187ed4e6bdd8106392f39d1e3ee8513f",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "45035996273704935/36508337286572967131428331454463",
+      "status": "PASS",
+      "seconds": 0.00044316799903754145
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31048,
+      "model_sha256": "6a026950f701f359b65dd157a2a9d590de69ca224bd287d24800333697a6f2f3",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "5736217702733842851844469882375/258433994069867137091945048077494870928785408",
+      "status": "PASS",
+      "seconds": 0.007225396000649198
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31049,
+      "model_sha256": "3e7f3999d1c2a3a3bb7da0f2e2c3b4fbdaa52eca73a7d0ce9f637181bec1d73a",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.00037849999898753595
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31050,
+      "model_sha256": "4960a3a56793d4c7597ca3199e104b8e70bce6a0bbfef14157baaecc86c62af3",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "52982621005457391141791521367523/2362263870951170840598602066072198130539274698752",
+      "status": "PASS",
+      "seconds": 0.0004236879995005438
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31051,
+      "model_sha256": "54fe4bae0fa96f9af70d1c800e8e1fbae7513c348ca752dbf4fd2b87fce04b39",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 10,
+      "max_width": "88410503400532797357036822822075/16164738996226634475278230917102764125918855168",
+      "status": "PASS",
+      "seconds": 0.000777180999648408
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31052,
+      "model_sha256": "fe2161f8fa4b81e550c3cc98d7cde81640f8ea9bc96a4c5b8d132ec56afd8962",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "117093590311632727/20654943657596233283029585979250",
+      "status": "PASS",
+      "seconds": 0.001153868999608676
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31053,
+      "model_sha256": "cdc5e58ac59130039aba6a132bcda90f8bac7d3129b99f347b220c13c5c5d16d",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "23609154035996594427827076936225/2426647380227625295751584463553166917685477376",
+      "status": "PASS",
+      "seconds": 0.0007393539999611676
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31054,
+      "model_sha256": "3ec0c729bf3fa37d7a499622acb4da784dbcc15284ce5f94837c03bf86aed7e5",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "45703387354683403600558181518203/10399464135168700588340516638686554209063534592",
+      "status": "PASS",
+      "seconds": 0.0012877000008302275
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31055,
+      "model_sha256": "20291d4c63e01f91711619a4f7bcb546293fdfc3aadc7e6d639bd1e603382534",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "5/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.00025804899996728636
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31056,
+      "model_sha256": "471cba5b2c57f0578d22bef3eaf9603d844bc78ba486cc4a886631d9fe406a54",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "430125849083118977642631801451121/31415841643934667456658609993434617873726177280",
+      "status": "PASS",
+      "seconds": 0.002256368999951519
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31057,
+      "model_sha256": "21be07a29aa473edd17b805eb8f69b2d89f7e352e85d9fc6067f519c1b36540e",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "15011998757901645/20282409603651647905949114433536",
+      "status": "PASS",
+      "seconds": 0.00032800500048324466
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31058,
+      "model_sha256": "3efd4d9f05cea5a9e3be5f6af93e44df3dee3c0523de0d4df38c94f6ad7b690f",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 10,
+      "max_width": "167329879230125960116091372961765/21445610228904163210911214789288791779917692928",
+      "status": "PASS",
+      "seconds": 0.0009954600009223213
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31059,
+      "model_sha256": "f204f3fe2b6e87365936b59880ee4e9570c7201157756f1bc20ed068fc736d62",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "7538634158859293875/970905844332081652732685441028096",
+      "status": "PASS",
+      "seconds": 0.0014697240003442857
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31060,
+      "model_sha256": "70ea02e94f7e24afcedf2c02eb9460129c4394449cdb3ec7cc0429b6776ce9cd",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "283726776524340681/40564819207303178718307917234176",
+      "status": "PASS",
+      "seconds": 0.0011451549999037525
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31061,
+      "model_sha256": "ca646eb75c05e7b0d2036db71a30f98993dd419038c87bd1d243fdfd42f44004",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "2957851400532532267759222565547/996099952201032678074190921431955987415171072",
+      "status": "PASS",
+      "seconds": 0.0006331040003715316
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31062,
+      "model_sha256": "4d8c13c9714bddbf78a61f0dc1f79e9b5f5c0c467bd04b08443a962d77dfcfea",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "26882466618264959934533652294383/1969149937117762382615383620232756965396185088",
+      "status": "PASS",
+      "seconds": 0.0034936030006065266
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31063,
+      "model_sha256": "7317aaed06a9d8c88a0006ca4986e2f457dd096fe779aa2fc59ad202cfee0310",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "8428065562088782579107557538345/400185338673936853450439402394235977265577984",
+      "status": "PASS",
+      "seconds": 0.003303448000224307
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31064,
+      "model_sha256": "bab1ce02f2da93e5c693be0e298593778bc4c2072f102dec02150b61d883e88a",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "403679453079617139004044305442485/82354327886088721535214275094228572518949584896",
+      "status": "PASS",
+      "seconds": 0.0008561199992982438
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31065,
+      "model_sha256": "a7cdb41da8a84a0c6516699585bcb713beea332a23fc8ea79911e10337f0c78b",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "2297050495645561228963637378066325/421200132191027572997753000982628039172626055168",
+      "status": "PASS",
+      "seconds": 0.0005996529998810729
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31066,
+      "model_sha256": "f96c3846524a83c58811ddc48795c892fe49cc6047b3ac6dcf7339a3637c7831",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "41/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.006121091999375494
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31067,
+      "model_sha256": "919334193c30f0c02bc97281a84e8571c6e7f3b6505d392f04b9fac01729d1b7",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "45035996273704935/28560944135754361520769145931734",
+      "status": "PASS",
+      "seconds": 0.0003943450010410743
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31068,
+      "model_sha256": "49ad399be6cfbe8285c0a1da45d39aae4def471a750ab5f89498ca731f669f10",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "55239999975193113502603977757335/4148083105105191980972226613434221101154566144",
+      "status": "PASS",
+      "seconds": 0.001971830000911723
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31069,
+      "model_sha256": "e469fadfcbd71c27dd467731d1916e2405448073e0263f2efd53a428af89b3a0",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "45035996273704935/36508337286572967131428331454463",
+      "status": "PASS",
+      "seconds": 0.00030909500128473155
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31070,
+      "model_sha256": "7507f3d4991917485acb38af89fbce7ee7184139f44328ce9d3bd36255fd49cf",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "37811200403474076217211189181383/2226958329760372274850780513834318517197864960",
+      "status": "PASS",
+      "seconds": 0.0018136329999833833
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31071,
+      "model_sha256": "cb1329de64cca856ec18a84443defd480d2ecc67f6bf947bf51f4a0523e01058",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "135920314357804473753861563787955/43949317493033031288668486781001593986182283264",
+      "status": "PASS",
+      "seconds": 0.0005339839990483597
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31072,
+      "model_sha256": "1f4324161cbc45ef73a9c08cb0c88c2ed2e0c6f0b0c8424ab48b9bbecf3d36bc",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "54043195528445907/18530671696658702269145381163448",
+      "status": "PASS",
+      "seconds": 0.0004929919996357057
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31073,
+      "model_sha256": "a810b077e16a8eee7a9ae40326572917126184a284a2e2c1a8d3cbb34ef289f8",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.00017894899974635337
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31074,
+      "model_sha256": "275ae33f2037cc9008455fe777f1d1c42a6818e7e336ffdb490f17203583baa9",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "1411655708414154988789473994604625/453522226834245043558111187336146708753182359552",
+      "status": "PASS",
+      "seconds": 0.0006802850002713967
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31075,
+      "model_sha256": "14af706b1dbaa5b09ae39ac7f09da30397ccadda00d36ff4c5b3956ede4620e8",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.00019088799854216632
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31076,
+      "model_sha256": "23806acd570b1b7c775e4df72a9adfe2828db8866954104d972056267efc2865",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "45035996273704935/23099410937492153558753240911418",
+      "status": "PASS",
+      "seconds": 0.00024182400011341088
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31077,
+      "model_sha256": "a783ea0a268a6ab6f1cef827d2cf734340e4fc3a9c62f84d8184ab9d670da19a",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "519229685853482341316124511043575/182958353117720122924256922526142593676118851584",
+      "status": "PASS",
+      "seconds": 0.0006458430016209604
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31078,
+      "model_sha256": "b5fc60bdc7c362c40d45f52eddbe7d177afea20096cf40ba1c5937b21117d137",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "90971257360293806788048908038953/27296426771963642877624224042274872692947550208",
+      "status": "PASS",
+      "seconds": 0.0015546220001851907
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31079,
+      "model_sha256": "43599b9c2dcf185569acb1dfd1a685bfb005b4efe849b4c9e3391f489bb58bd7",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "45035996273704935/40564819207303295811898228867072",
+      "status": "PASS",
+      "seconds": 0.00024661099996592384
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31080,
+      "model_sha256": "2d6bd1bc1b84cda937f8c622a36465588405871e57816629cfe5029a27f46d62",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "45035996273704935/40564819207303295811898228867072",
+      "status": "PASS",
+      "seconds": 0.00028156400003354065
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31081,
+      "model_sha256": "a4160bd8f1910e1014b6e1bcca0d5f37d08a87e51ec9757d38a9ba7da5ea719f",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "31204690904778785380357704487119/3911950373459172059246728898722941103945809920",
+      "status": "PASS",
+      "seconds": 0.001329093000094872
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31082,
+      "model_sha256": "eb97ce36c8826d26dfecb001eaf6e0ab83c6410d5b557c9bda3b82e0b99e4423",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 10,
+      "max_width": "3002399751580329/1757808832316476211896918282513",
+      "status": "PASS",
+      "seconds": 0.0004126919993723277
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31083,
+      "model_sha256": "e51098d04875e943d2200e5832e6d5d0ed0b0c2fdf7d7c7a41000158eb5dc20f",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "5003999585967215/2575544076654177368895137471862",
+      "status": "PASS",
+      "seconds": 0.0003724510006577475
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31084,
+      "model_sha256": "6c44bc9121185f8b6d1d912bd5df58b3bcd349b374af8caf986b7617a33beda8",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 12,
+      "max_width": "40532396646334383/8330275372928331022252545334127",
+      "status": "PASS",
+      "seconds": 0.001043762000335846
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31085,
+      "model_sha256": "65be651e10664bd61a72860987850d387f0f61f076e23e7158da088a6bba48cf",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "15011998757901645/7136403379062617022596896832929",
+      "status": "PASS",
+      "seconds": 0.0008338469997397624
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31086,
+      "model_sha256": "ea21a067b0f49e7ff00bfca8412e7367a12e417191639e6a1c5c9070398ffc19",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.00024328600011358503
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31087,
+      "model_sha256": "d1f4d679e9a9623732480f9eccfb09fb7a0dd6ae1b40687b74010549b4a649e7",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 16,
+      "max_width": "210894804857969057542382122242257/17202101045184674202072877884827969250291351552",
+      "status": "PASS",
+      "seconds": 0.0019609739993029507
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31088,
+      "model_sha256": "f7e8dd097fa7ea48544be773be5ef27f6c31c509aaffccc3f0ba70cf636bb2c6",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 12,
+      "max_width": "393057920805459211589252514460725/48985988836274973916282619229780123150400356352",
+      "status": "PASS",
+      "seconds": 0.001473219999752473
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31089,
+      "model_sha256": "ff0df59bc5e6d7f955321888587f42ac3a55ecb5c87b75d9c22f0303f57b0ddd",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 10,
+      "max_width": "45035996273704935/33804016006086076840848772475566",
+      "status": "PASS",
+      "seconds": 0.0005799640002805972
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31090,
+      "model_sha256": "3fed31e2698f1b2fa2b04cdfa3b7b78cc3a33d7049d6a53b5758a624ada1549b",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "45035996273704935/21441404438146028172311889032923",
+      "status": "PASS",
+      "seconds": 0.00046969799950602464
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31091,
+      "model_sha256": "246893c821f9d7e954950c2101b16adc49b50706e8e2d85e8d328ad47d6db3ed",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "1219994562625663641446512843137/2472465175935735030530833502168867660552470528",
+      "status": "PASS",
+      "seconds": 0.00024614099856989924
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31092,
+      "model_sha256": "f22f2f32c6bb2880c3bc85c6a4cf5108ad1e4eae0e31094e89bb86a74228e465",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "0",
+      "status": "PASS",
+      "seconds": 0.00024124399897118565
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31093,
+      "model_sha256": "2dc2dddcbb24a668188aa299fdbd86ab95287ef4210a83a268352ffac705d13d",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "2464876167110443744116003278393/931675577183055348741364128954796293677383680",
+      "status": "PASS",
+      "seconds": 0.00044911700024385937
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31094,
+      "model_sha256": "3518f06d10ae11908e7232dfb9f4570faeeac58dd7a4da004e57f04186ec91a5",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 10,
+      "max_width": "9007199254740984/2609247485469767287082785998985",
+      "status": "PASS",
+      "seconds": 0.0009701119997771457
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31095,
+      "model_sha256": "56c302c2d9505a1bda55fb4db6b21d1eb5eae6888ed539f8169bcf9dc0b18307",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 2,
+      "max_width": "15011998757901645/7031235329265904847587673130052",
+      "status": "PASS",
+      "seconds": 0.0003056999994441867
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31096,
+      "model_sha256": "6d0a07d4158fcd015a6e7da63babba979c9e1e0b195e5d1d1d7e7416d4c13283",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "5003999585967215/2397831535365039391650151373792",
+      "status": "PASS",
+      "seconds": 0.0003115299987257458
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31097,
+      "model_sha256": "3f8c06d25bf6c359fb52eace9e388f5298cb723d3597421ff1ae136369b6b122",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 14,
+      "max_width": "70988433612780605541235315179535/7154194430974729287905933098495786023873675264",
+      "status": "PASS",
+      "seconds": 0.0021312110002327245
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31098,
+      "model_sha256": "e8854a6a8962844dbc4ea2f16da0ed6332cc596d0c9887b979b511d01db63685",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "5/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.000569317999179475
+    },
+    {
+      "kind": "ordinary",
+      "seed": 31099,
+      "model_sha256": "89dcd6f25d117988002c983a67e6005906c0b26c0b63fbb0aee422a8195adaf0",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 8,
+      "max_width": "406664854208554547148837614379/952356956656727693833534954607878262694608896",
+      "status": "PASS",
+      "seconds": 0.0005585920007433742
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32000,
+      "model_sha256": "bf8977e4ff366502079ec8047f74e5a73b053dce77ea736a6c8f80e4d8ae0f3c",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0010173329992539948
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32001,
+      "model_sha256": "356e6e4e9910ce0a3f5cd980c99a34222b446da4877b989ba0cbcb734ef02567",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.00038553100057470147
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32002,
+      "model_sha256": "a1441e33d249173639cecc28ba1e3b9f204d568bbd607f02bb269a60a35a4798",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.0033003320004354464
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32003,
+      "model_sha256": "f79502be4efa20c351cba48975af23487b66c172232a13ee7903bdaa3f5c9252",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.005345012001271243
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32004,
+      "model_sha256": "596b0b7e7a2e1867d13fe3ef9d387f94e8b122a5a4ee36a160c5dfa399524a50",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0006059530005586566
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32005,
+      "model_sha256": "86683514c465680e12876e4758527501881c0c42667d5bd9775b478e20dbe7b4",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.00045444500028679613
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32006,
+      "model_sha256": "d9855cb2cbe85c5ba37590558b2ca102d9b41c54a9dc957c4ebbfd39731cdd5d",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0003249400015192805
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32007,
+      "model_sha256": "0583e19e870daff85e5aa21714006ae70fe579dd35608aa52a9e7f337fe96ab1",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0010378129991295282
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32008,
+      "model_sha256": "85c215546389e5c434a056364a0d7a690a8f99f20e071c5211fa5807b72e6438",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.00035567600025387947
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32009,
+      "model_sha256": "1280594af56043b9ca3c5fca7bd324e2e4176c84d341e98e5571563a7bffb195",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.001328231001025415
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32010,
+      "model_sha256": "989474306be0444eeb57497dc74ee3234a6d2c6e6c598daf0b5dc93e1da16876",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.0004938139991281787
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32011,
+      "model_sha256": "d664620819e8fd3237090fdee2c79e4d0fbd620462615a6f3c7dd98bb863ef08",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.0004982799982826691
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32012,
+      "model_sha256": "3cef7f113dfeb0388e9393d41eb373b3d8936b6f8270160cab2f989a96578fc3",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.001577106000695494
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32013,
+      "model_sha256": "d6ba4a91211b17a8800f50e4f4957083eff45742ae333ee048c8293d7b5965a8",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.000807075999546214
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32014,
+      "model_sha256": "0488ad7185052923a545bbffd4c4f4e79ea1694994fbce1a7ba5aba11782427b",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.0005772200001956662
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32015,
+      "model_sha256": "8fa7deae1ffa8aefd09d05fb442c1d2ae339d49cbda1689f1b02c3f1b2c78d11",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0016161550011020154
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32016,
+      "model_sha256": "57f721d145a47bf946750725322cbe3e5a06ca10ba384df48d02de25dce9c8b9",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.0005072439998912159
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32017,
+      "model_sha256": "1ceb4dd4700a41b96c11ead7de92c36561e3fc8ae9c1c4601bc029a0bafbcda0",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 6,
+      "max_width": "13/4503599627370496",
+      "status": "PASS",
+      "seconds": 0.000754936998418998
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32018,
+      "model_sha256": "4d22d16ffce207146ee52fa4a51473ab868a10e25f22a7941024e6db908f1d0e",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.003604941000958206
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32019,
+      "model_sha256": "98cd3551ed400e832a415ff9635557a012f652128073de4c07b945efb453a533",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0013645660001202486
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32020,
+      "model_sha256": "5ef0fe8c5b269f9b446dce059be959792c8beefa2dd47dfeaaa7a4c7ee3d74b0",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.0004982709997420898
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32021,
+      "model_sha256": "adf5c7b27a9cb9ed859696d7eed1d00e95c5460a72d55305ec765777019aaab5",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.002333324999199249
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32022,
+      "model_sha256": "fa2e5223efd26d693f7538451e57d97dcba6692ce29551beed8b8da7cb708c40",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "285862544334399694030885508773/731483209172571030903129000687094528350107887483693826048",
+      "status": "PASS",
+      "seconds": 0.00044856600106868427
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32023,
+      "model_sha256": "4008d7fbb97f36d8139b62c3f236c99a6e2c5813818e2888b62adfd13a7ba077",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.002093965000312892
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32024,
+      "model_sha256": "6948c0e7b0e3557b9ee59b82fdf6440d21586f58d8921c446c5c1cf19e89d7f6",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "native route refused: arithmetic range",
+      "status": "PASS",
+      "seconds": 0.0006954769996809773
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32025,
+      "model_sha256": "ccfbf263f2fe64e17d003705086af290cbeae2aa8cff4b2fb8d3b77c7b6790a9",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0009157900003629038
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32026,
+      "model_sha256": "0d63c9e4717b2c371dd5d30f5ebd3e389f6208ccd4b94f75cfb789fb81d655d5",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.003041662999748951
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32027,
+      "model_sha256": "01abae57b2961b8956a70aa3b02572cdaa799bad8c85d3a50f56a06895078b75",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0011562619984033518
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32028,
+      "model_sha256": "9aa143a321945bdfd1c6ee09ed230ab3e9ce124b97482be12e8f2183ead9257a",
+      "outcome": "ENCLOSED",
+      "coordinates_checked": 4,
+      "max_width": "6769213120412207123614255834479/1905364105417472252984124251512013474780062376100451025923643760577617339262587588208740830019584",
+      "status": "PASS",
+      "seconds": 0.000466061999759404
+    },
+    {
+      "kind": "extreme_range",
+      "seed": 32029,
+      "model_sha256": "1cbb756280ebf958cb30d081bdab9bac93e7fbc86414da53c19d8aabb6b62c18",
+      "outcome": "SAFE_RANGE_REFUSAL",
+      "reason": "source conversion range",
+      "status": "PASS",
+      "seconds": 0.0005995430001348723
+    }
+  ],
+  "guards": [
+    {
+      "name": "expired_empty",
+      "status": "PASS"
+    },
+    {
+      "name": "expired_observed",
+      "status": "PASS"
+    },
+    {
+      "name": "changed_rounding_environment",
+      "status": "PASS"
+    }
+  ],
+  "models": 130,
+  "ordinary_enclosures": 100,
+  "extreme_enclosures": 3,
+  "safe_range_refusals": 27,
+  "coordinates_checked": 874,
+  "all_pass": true,
+  "scope": "Small-model exact-oracle numerical qualification of this precise build; not independent replay of benchmark outputs."
+}

@@ -1,0 +1,306 @@
+{
+  "controls": [
+    {
+      "seed": 0,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 1,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 2,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 3,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 4,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 5,
+      "all_coordinates_contained": true,
+      "configurations": 3
+    },
+    {
+      "seed": 6,
+      "zero_mass_detected": true
+    },
+    {
+      "seed": 7,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 8,
+      "zero_mass_detected": true
+    },
+    {
+      "seed": 9,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 10,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 11,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 12,
+      "all_coordinates_contained": true,
+      "configurations": 9
+    },
+    {
+      "seed": 13,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 14,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 15,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 16,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 17,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 18,
+      "all_coordinates_contained": true,
+      "configurations": 6
+    },
+    {
+      "seed": 19,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 20,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 21,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 22,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 23,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 24,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 25,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 26,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 27,
+      "all_coordinates_contained": true,
+      "configurations": 9
+    },
+    {
+      "seed": 28,
+      "all_coordinates_contained": true,
+      "configurations": 6
+    },
+    {
+      "seed": 29,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 30,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 31,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 32,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 33,
+      "all_coordinates_contained": true,
+      "configurations": 9
+    },
+    {
+      "seed": 34,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 35,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 36,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 37,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 38,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 39,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 40,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 41,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 42,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 43,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 44,
+      "zero_mass_detected": true
+    },
+    {
+      "seed": 45,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 46,
+      "all_coordinates_contained": true,
+      "configurations": 5
+    },
+    {
+      "seed": 47,
+      "zero_mass_detected": true
+    },
+    {
+      "seed": 48,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 49,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 50,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    },
+    {
+      "seed": 51,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 52,
+      "all_coordinates_contained": true,
+      "configurations": 6
+    },
+    {
+      "seed": 53,
+      "zero_mass_detected": true
+    },
+    {
+      "seed": 54,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 55,
+      "all_coordinates_contained": true,
+      "configurations": 8
+    },
+    {
+      "seed": 56,
+      "zero_mass_detected": true
+    },
+    {
+      "seed": 57,
+      "all_coordinates_contained": true,
+      "configurations": 9
+    },
+    {
+      "seed": 58,
+      "zero_mass_detected": true
+    },
+    {
+      "seed": 59,
+      "all_coordinates_contained": true,
+      "configurations": 4
+    }
+  ],
+  "range_refusal": true,
+  "wrong_round_mode_refusal": true,
+  "source_and_binary_hashes": {
+    "stream_float.py": "95e720759ea1a805111b3dcb59696aed0cf0e617afe5cf79f4920fb10010a1c1",
+    "stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+    "stream_kernel.cpp": "5f1c1cc1c6a248b98ebb3bbd359faa4103672b827e9d352897f3366f7a3fedf2",
+    "libstream_kernel.so": "86f93c11127a864c01ff7e8acc435eae4482bf4d297ccbc6b051c7e72f3671c0"
+  },
+  "scope": "Independent exact oracle on 60 tiny bipartite models; no benchmark replay and no formal software verification."
+}
