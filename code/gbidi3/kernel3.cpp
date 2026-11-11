@@ -35,7 +35,7 @@
 #include <gmp.h>
 #include <mpfr.h>
 
-static const char* GB3_SCHEDULE = "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.4-sparse-driver-contract";
+static const char* GB3_SCHEDULE = "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.5-leased-temporaries";
 extern "C" const char* gb3_schedule_id() { return GB3_SCHEDULE; }
 
 enum Stop : int { GB_OK = 0, GB_DEADLINE = 1, GB_MEMORY = 2, GB_OVERFLOW = 3, GB_RANGE = 4, GB_BADPROG = 5, GB_FAULT = 6, GB_FPENV = 7, GB_LABEL = 8 };
@@ -435,16 +435,22 @@ template <class P> struct Exec {
         // children (retained rows); cost = support x volume of the MUL axes the candidate leaves free (= the joined rows that will be visited); minimal cost, ties -> lowest
         // operand index. The planner's written driver is AUTHORITATIVE when its support is available; otherwise (a downgraded planned child) the policy runs over the
         // available candidates and the deviation is counted; an available written driver that the run-time policy would not choose is still executed (counted separately).
-        int drv = -1; int64_t best = 0; int pol = -1; int64_t pol_cost = INT64_MAX; std::vector<int64_t> supp(m.children.size(), -1);
+        // Driver DISCOVERY (fifth review B): no full support vector is built; the scan tracks only the WRITTEN candidate's support and the running policy winner,
+        // and its one reusable coverage mask (m.card.size() bytes) is RESERVED before it is constructed and released on every exit (scoped), so nothing is allocated
+        // at zero index headroom before a typed stop / downgrade.
+        int drv = -1; int64_t best = 0; int pol = -1; int64_t pol_cost = INT64_MAX; int64_t pol_supp = -1; int64_t written_supp = -1;
+        ScopedCharge disc_guard(this, &used_index); { uint64_t disc_bytes = (uint64_t)m.card.size() + 64; if (!reserve(used_index, caps.index, disc_bytes)) return false; disc_guard.add(disc_bytes); }
+        std::vector<char> cov(m.card.size(), 0);
         for (size_t i = 0; i < m.children.size(); ++i) { int cn = m.children[i]; const NodeD& c = N[cn]; int64_t cntz = -1;
             if (c.kind == K_SOURCE) { cntz = 0; for (int64_t e = 0; e < c.volume; ++e) { if (!P::is_zero(fvals[F[c.fid].val_off + e])) ++cntz; ++C.source_reads; ++C.sparse_driver_scans; if (!poll(1)) return false; } }
             else if (c.storage == S_SPARSE && sparse_complete[cn]) cntz = (int64_t)sparse_vals[cn].size();
-            supp[i] = cntz; if (cntz < 0) continue;
-            int64_t freev = 1; { std::vector<char> cov(m.card.size(), 0); for (int k : m.proj[i]) cov[k] = 1; for (size_t p = 0; p < m.card.size(); ++p) if (!cov[p]) { if (freev > INT64_MAX / m.card[p]) { freev = INT64_MAX; break; } freev *= m.card[p]; } }
+            if ((int)i == n.sparse_driver) written_supp = cntz;
+            if (cntz < 0) continue;
+            int64_t freev = 1; { std::fill(cov.begin(), cov.end(), 0); for (int k : m.proj[i]) cov[k] = 1; for (size_t p = 0; p < m.card.size(); ++p) if (!cov[p]) { if (freev > INT64_MAX / m.card[p]) { freev = INT64_MAX; break; } freev *= m.card[p]; } }
             int64_t cost = (cntz == 0) ? 0 : ((freev == INT64_MAX || cntz > INT64_MAX / freev) ? INT64_MAX : cntz * freev);
-            if (cost < pol_cost) { pol_cost = cost; pol = (int)i; } }
-        if (n.sparse_driver >= 0 && n.sparse_driver < (int)m.children.size() && supp[n.sparse_driver] >= 0) { drv = n.sparse_driver; best = supp[drv]; if (pol != drv) ++C.sparse_driver_policy_differs; }
-        else if (pol >= 0) { drv = pol; best = supp[drv]; if (n.sparse_driver >= 0) ++C.sparse_driver_deviation; }
+            if (cost < pol_cost) { pol_cost = cost; pol = (int)i; pol_supp = cntz; } }
+        if (n.sparse_driver >= 0 && n.sparse_driver < (int)m.children.size() && written_supp >= 0) { drv = n.sparse_driver; best = written_supp; if (pol != drv) ++C.sparse_driver_policy_differs; }
+        else if (pol >= 0) { drv = pol; best = pol_supp; if (n.sparse_driver >= 0) ++C.sparse_driver_deviation; }
         if (drv < 0) return false;
         const NodeD& dc = N[m.children[drv]]; uint64_t& cv = sparse_cap_values[nn]; uint64_t& ci = sparse_cap_index[nn];
         // temporaries (driver rows, axis masks, digit buffers) charged to the index category at their exact sizes

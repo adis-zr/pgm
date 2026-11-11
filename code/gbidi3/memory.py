@@ -21,6 +21,10 @@ CAPS = {"source_ir_maps_output": 2 * GIB, "value_cache_blocks": 2 * GIB, "revers
 KERNEL_ORDER = ("value_cache_blocks", "source_ir_maps_output", "reverse_pinned", "pending_adjoints", "frames_scratch_pub")   # caps5 order of kernel3: values, index, reverse, pending, scratch
 
 
+class LeaseError(Exception):
+    """a release was attempted with an ownership record this ledger did not issue"""
+
+
 class MemoryStop(Exception):
     def __init__(self, category, requested, used, cap, what):
         super().__init__("MEMORY_CATEGORY %s: %s needs %d bytes, %d used of %d" % (category, what, requested, used, cap)); self.category = category; self.requested = requested; self.used = used; self.cap = cap; self.what = what
@@ -34,11 +38,44 @@ def int_bytes(n):
     return 28 + 4 * max(1, (int(n).bit_length() + 29) // 30)
 
 
+class Lease:
+    """a TRUSTED ownership record of one outstanding reservation, issued by exactly one Ledger (fifth review A). It is the only thing that can release those
+    bytes: `ledger.release_lease(lease)` consumes it exactly once (a second call is a safe no-op) and refuses a lease issued by another ledger. Leases live in
+    private executor / compiler state keyed by the owning object's identity (never inside an untrusted proposal payload); provenance may REPORT the amount,
+    it never authorizes a release."""
+    __slots__ = ("ledger_id", "category", "nbytes", "what", "live")
+
+    def __init__(self, ledger_id, category, nbytes, what):
+        self.ledger_id = ledger_id; self.category = category; self.nbytes = int(nbytes); self.what = what; self.live = True
+
+    def __repr__(self):
+        return "Lease(%s, %d B, %s, %s)" % (self.category, self.nbytes, "live" if self.live else "released", self.what)
+
+
 class Ledger:
-    __slots__ = ("caps", "used", "peak", "log")
+    __slots__ = ("caps", "used", "peak", "log", "over_release", "leases_live")
 
     def __init__(self, caps=None):
-        self.caps = dict(caps or CAPS); self.used = {c: 0 for c in self.caps}; self.peak = {c: 0 for c in self.caps}; self.log = []
+        self.caps = dict(caps or CAPS); self.used = {c: 0 for c in self.caps}; self.peak = {c: 0 for c in self.caps}; self.log = []; self.over_release = []; self.leases_live = 0
+
+    def lease(self, category, nbytes, what):
+        """reserve and return the ownership record (the ONLY release authority for these bytes)"""
+        self.reserve(category, nbytes, what); self.leases_live += 1; return Lease(id(self), category, nbytes, what)
+
+    def release_lease(self, lease):
+        """release exactly the bytes of an outstanding lease THIS ledger issued; returns the bytes released (0 for a consumed lease); a foreign ledger's lease is refused"""
+        if lease is None or not lease.live:
+            return 0
+        if lease.ledger_id != id(self):
+            raise LeaseError("lease %r was not issued by this ledger (foreign-ledger release refused)" % (lease,))
+        lease.live = False; self.leases_live -= 1; self.release(lease.category, lease.nbytes); return lease.nbytes
+
+    def resize_lease(self, lease, nbytes, what):
+        """replace an outstanding lease by a new one of `nbytes` (the new charge is reserved BEFORE the old one is released); returns the new lease"""
+        new = self.lease(lease.category if lease is not None and lease.live else "source_ir_maps_output", nbytes, what)
+        if lease is not None:
+            self.release_lease(lease)
+        return new
 
     def reserve(self, category, nbytes, what):
         nbytes = int(nbytes); cap = self.caps[category]; u = self.used[category]
@@ -47,7 +84,10 @@ class Ledger:
         self.used[category] = u + nbytes; self.peak[category] = max(self.peak[category], self.used[category]); self.log.append((category, nbytes, what)); return nbytes
 
     def release(self, category, nbytes):
-        self.used[category] = max(0, self.used[category] - int(nbytes))
+        nbytes = int(nbytes); u = self.used[category]
+        if nbytes > u:
+            self.over_release.append((category, nbytes, u))                               # an INVARIANT FAILURE (fifth review A): recorded, never silently granted as capacity; the clamp stays so the ledger remains usable
+        self.used[category] = max(0, u - nbytes)
 
     def remaining(self, category):
         return max(0, self.caps[category] - self.used[category])
@@ -57,7 +97,7 @@ class Ledger:
         return [self.remaining(c) for c in KERNEL_ORDER]
 
     def report(self):
-        return {"caps": dict(self.caps), "used": dict(self.used), "peak": dict(self.peak), "entries": len(self.log), "note": "host-side RESERVATIONS by documented proxies (not RSS); kernel categories are reported by the kernel"}
+        return {"caps": dict(self.caps), "used": dict(self.used), "peak": dict(self.peak), "entries": len(self.log), "leases_live": self.leases_live, "over_release_events": list(self.over_release), "note": "host-side RESERVATIONS by documented proxies (not RSS); kernel categories are reported by the kernel; over_release_events must be empty (an entry is an accounting invariant failure)"}
 
 
 def model_bytes_estimate(m, data_len):

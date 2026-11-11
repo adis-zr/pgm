@@ -153,11 +153,12 @@ def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None, clo
             raise
     # apply: a node is restricted only when EVERY consumer use edge completed its lift (a stopped compiler leaves partial nodes FULL)
     completed = set(demanded) if rec["stop"] is None else set()                        # a stopped compiler applies NOTHING: every node keeps FULL / its declared hint (conservative)
-    # ---- EXPORT with ownership transfer (fourth review B): the persistent hint tuples are RESERVED before they are built (sort temporary + tuple + per-index payload,
-    # EXPORT_BYTES_PER_INDEX) while the demand sets are still live; the export is staged and applied ATOMICALLY (a refusal leaves every existing hint untouched and
-    # releases every staged charge); on success the retained charge stays live on the ledger, owned by the PROGRAM (rec["retained_bytes"], n.prov["demand_charge_bytes"])
-    # until release_hints(P, ledger) at the end of that program copy's lifetime; a replaced hint's previous charge is released after the new one is held
-    staged = []; staged_charge = 0
+    # ---- EXPORT with ownership transfer (fourth review B, fifth review A): the persistent hint tuples are RESERVED before they are built (sort temporary + tuple +
+    # per-index payload, EXPORT_BYTES_PER_INDEX) while the demand sets are still live; the export is staged and applied ATOMICALLY (a refusal leaves every existing
+    # hint untouched and releases every staged lease); on success the retained charge is held by TRUSTED LEASES issued by this ledger and kept in the private
+    # registry HINT_LEASES keyed by the program object (never inside the proposal payload: n.prov["demand_charge_bytes"] is REPORTING ONLY and authorizes nothing)
+    # until release_hints(P, ledger) at the end of that program copy's lifetime; a replaced hint's previous LEASE is released after the new one is held
+    staged = []; staged_leases = []; sort_lease = None
     try:
         for n in P.nodes:
             if n.nid in P.roots or n.storage != IR.DENSE or n.kind in (IR.SOURCE, IR.MARKER, IR.CONSTANT) or n.nid not in completed:
@@ -165,42 +166,83 @@ def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None, clo
             dem = demanded.get(n.nid)
             if dem is None or len(dem) >= n.volume:
                 continue
-            exp_bytes = EXPORT_BYTES_PER_INDEX * len(dem) + 128
+            exp_bytes = EXPORT_BYTES_PER_INDEX * len(dem) + 128; lease = None
             if ledger is not None:
-                ledger.reserve("source_ir_maps_output", exp_bytes + 8 * len(dem) + 64, "demand hint export of node %d (%d indices: sort temporary + tuple + index payload)" % (n.nid, len(dem)))
-            staged_charge += exp_bytes + 8 * len(dem) + 64
+                lease = ledger.lease("source_ir_maps_output", exp_bytes, "demand hint export of node %d (%d indices: tuple + index payload)" % (n.nid, len(dem))); staged_leases.append(lease)
+                sort_lease = ledger.lease("source_ir_maps_output", 8 * len(dem) + 64, "demand hint export of node %d: sort temporary" % n.nid)
             hint = tuple(sorted(dem)) if dem else "EMPTY"
             if ledger is not None:
-                ledger.release("source_ir_maps_output", 8 * len(dem) + 64)                    # the sort temporary dies here; the tuple + payload stay charged
-            staged_charge -= 8 * len(dem) + 64; staged.append((n, hint, exp_bytes))
+                ledger.release_lease(sort_lease); sort_lease = None                            # the sort temporary dies here; the tuple + payload lease stays live
+            staged.append((n, hint, exp_bytes, lease))
     except Exception as ex:
         if type(ex).__name__ == "MemoryStop":
             if ledger is not None:
-                ledger.release("source_ir_maps_output", staged_charge)                        # ATOMIC refusal: nothing applied, every staged charge released
+                for l in staged_leases:
+                    ledger.release_lease(l)                                                   # ATOMIC refusal: nothing applied, every staged lease released
+                ledger.release_lease(sort_lease)
             rec["stop"] = {"kind": "MEMORY_CATEGORY", "reason": "export: " + str(ex)[:200]}; staged = []
         else:
             raise
-    retained = 0
-    for n, hint, exp_bytes in staged:
-        before = n.volume if n.demand == "FULL" else (0 if n.demand == "EMPTY" else len(n.demand)); prev = int((n.prov or {}).get("demand_charge_bytes") or 0)
+    retained = 0; owned = _owned(P, ledger, create=bool(staged) and ledger is not None)
+    for n, hint, exp_bytes, lease in staged:
+        before = n.volume if n.demand == "FULL" else (0 if n.demand == "EMPTY" else len(n.demand))
         n.demand = hint; n.prov = dict(n.prov or {}, demand="RESTRICTED_ALL_CONSUMERS", consumers=len(cons[n.nid]), demand_charge_bytes=exp_bytes); rec["restricted"].append(n.nid); rec["entries_saved"] += max(0, before - (0 if hint == "EMPTY" else len(hint))); retained += exp_bytes
-        if prev and ledger is not None:
-            ledger.release("source_ir_maps_output", prev)                                     # the REPLACED hint's charge is released after the new one is held
+        if ledger is not None:
+            prev = owned.pop(n.nid, None); owned[n.nid] = lease
+            if prev is not None:
+                ledger.release_lease(prev)                                                     # the REPLACED hint's OUTSTANDING lease is released after the new one is held (a forged / copied annotation owns nothing)
     for nid, b in list(charged.items()):
         bud.release_set(b)                                                               # the temporary demand sets are consumed into the hints: release
-    rec["rows_inspected"] = bud.rows; rec["peak_live_bytes"] = bud.peak; rec["retained_bytes"] = retained; rec["ownership"] = "retained_bytes stay charged on the ledger, owned by the program; release_hints(P, ledger) releases them at the end of the program copy's lifetime"; return rec
+    rec["rows_inspected"] = bud.rows; rec["peak_live_bytes"] = bud.peak; rec["retained_bytes"] = retained; rec["ownership"] = "retained_bytes are held by ledger-issued LEASES in a private registry keyed by the program object (prov.demand_charge_bytes is reporting only); release_hints(P, ledger) consumes them exactly once at the end of the program copy's lifetime"; return rec
 
 
 EXPORT_BYTES_PER_INDEX = 40                                                               # documented proxy per retained demand index: tuple slot (8 B) + int object (28-32 B); a RESERVATION proxy, not RSS
 
 
+import weakref
+HINT_LEASES = weakref.WeakKeyDictionary()                                                 # PRIVATE trusted registry: program object -> {ledger id -> {nid -> Lease}} (never serialized, never read from a proposal)
+
+
+def _owned(P, ledger, create=False):
+    """the outstanding hint leases of program P issued by `ledger` (a different ledger's leases are invisible here: a copied program under another ledger owns nothing)"""
+    if ledger is None:
+        return {}
+    by_ledger = HINT_LEASES.get(P)
+    if by_ledger is None:
+        if not create:
+            return {}
+        by_ledger = HINT_LEASES[P] = {}
+    d = by_ledger.get(id(ledger))
+    if d is None:
+        if not create:
+            return {}
+        d = by_ledger[id(ledger)] = {}
+    return d
+
+
+def owned_hint_bytes(P, ledger):
+    """REPORTING: bytes of the outstanding hint leases of P issued by `ledger` (0 when nothing is owned, whatever the proposal's annotations claim)"""
+    return sum(l.nbytes for l in _owned(P, ledger).values() if l.live)
+
+
 def release_hints(P, ledger):
-    """release the retained demand-hint charges owned by program P (its lifetime ended or it was replaced by the validated copy, which carries its own reservation)"""
+    """release the OUTSTANDING hint leases of program P issued by `ledger` (its lifetime ended or it was replaced by the validated copy, which carries its own reservation).
+    Exactly once: a consumed lease releases nothing; a program that owns no lease under this ledger releases nothing (whatever its provenance claims); idempotent."""
     tot = 0
+    if ledger is None:
+        return 0
+    owned = _owned(P, ledger)
+    for nid, l in list(owned.items()):
+        tot += ledger.release_lease(l); owned.pop(nid, None)
+    by_ledger = HINT_LEASES.get(P)
+    if by_ledger is not None:
+        by_ledger.pop(id(ledger), None)
+        if not by_ledger:
+            try:
+                del HINT_LEASES[P]
+            except KeyError:
+                pass
     for n in P.nodes:
-        b = int((n.prov or {}).get("demand_charge_bytes") or 0)
-        if b:
-            tot += b; n.prov = dict(n.prov, demand_charge_bytes=0)
-    if ledger is not None and tot:
-        ledger.release("source_ir_maps_output", tot)
+        if (n.prov or {}).get("demand_charge_bytes"):
+            n.prov = dict(n.prov, demand_charge_bytes=0)                                      # reporting only: the annotation is zeroed with the lifetime, it never decided anything
     return tot

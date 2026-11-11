@@ -161,7 +161,7 @@ def test_UA9_the_contract_is_one_text_shared_by_planner_emission_and_kernel_and_
     assert "support x product of the cardinalities" in IR.SPARSE_DRIVER_POLICY and "lowest operand index" in IR.SPARSE_DRIVER_POLICY and "sparse_driver_deviation" in IR.SPARSE_DRIVER_POLICY
     assert IR.sparse_driver_cost([2, 2, 2], [0], 3) == 12 and IR.sparse_driver_cost([2, 2, 2], [0, 1, 2], 5) == 5 and IR.sparse_driver_cost([3, 2], [], 1) == 6
     src = open(os.path.join(HERE, "gbidi3", "kernel3.cpp")).read(); assert "SPARSE_DRIVER_POLICY" in src and "sparse_driver_policy_differs" in src and "n.sparse_driver = r.rdi()" in src
-    assert "sparse-driver-contract" in EX.Lib.get().gb3_schedule_id().decode() and {"sparse_driver_deviation", "sparse_driver_policy_differs", "sparse_driver_scans"} <= set(EX.COUNTER_NAMES)
+    assert EX.Lib.get().gb3_schedule_id().decode().startswith("GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.") and "SPARSE_DRIVER_POLICY" in src and {"sparse_driver_deviation", "sparse_driver_policy_differs", "sparse_driver_scans"} <= set(EX.COUNTER_NAMES)
     P = IR.Program(); s = P.source(0, (0, 1), (2, 2)); mk = P.marker(0, 2); m = P.mul([s, mk]); r = P.reduce(m, {0}, storage=IR.SPARSE, driver=0); P.roots = [r.nid]
     assert r.driver == 0 and IR.program_bytes_bound(P) > 0 and "driver" in IR.Node.__slots__ and "w.append(int(getattr(n, \"driver\", -1)))" in open(os.path.join(HERE, "gbidi3", "ir.py")).read()
 
@@ -171,7 +171,7 @@ class _RecLedger(GM.Ledger):
     def __init__(self, caps=None, fail_on=None):
         super().__init__(caps); self.events = []; self.fail_on = fail_on; self.n_export = 0
     def reserve(self, cat, nb, what):
-        if what.startswith("demand hint export"):
+        if what.startswith("demand hint export") and "sort temporary" not in what:                                                                  # FIXTURE CHANGE (fifth review A): count the staged OUTPUT leases, not the sort temporaries
             self.n_export += 1
             if self.fail_on is not None and self.n_export == self.fail_on:
                 raise GM.MemoryStop(cat, nb, self.used[cat], self.caps[cat], what)
@@ -196,7 +196,8 @@ def test_UB1_successful_export_keeps_a_positive_retained_charge_owned_by_the_pro
     assert rec["retained_bytes"] == exp and led.used["source_ir_maps_output"] == exp and hints[0].prov["demand_charge_bytes"] == exp and "release_hints" in rec["ownership"], (rec["retained_bytes"], led.used)   # the delivered source: tuple retained, charge 0
     # the export reservation (tuple + sort temporary) was requested while the demand sets were still charged (reserve BEFORE construction), then the sort temporary alone was released
     ev = led.events; i = next(k for k, e in enumerate(ev) if e[0] == "reserve" and e[3].startswith("demand hint export")); live_before = sum(e[2] for e in ev[:i] if e[0] == "reserve") - sum(e[2] for e in ev[:i] if e[0] == "release")
-    assert live_before >= DM.Budget.SET_BYTES_PER_INDEX * 4000 and ev[i][2] == exp + 8 * 4000 + 64 and ev[i + 1] == ("release", "source_ir_maps_output", 8 * 4000 + 64, None), (live_before, ev[i], ev[i + 1])
+    # FIXTURE CHANGE (fifth review A, disclosed): the export is two LEASES -- the tuple + payload lease (exp), then the sort-temporary lease (8 per index + 64) released after the sort
+    assert live_before >= DM.Budget.SET_BYTES_PER_INDEX * 4000 and ev[i][2] == exp and ev[i + 1][:3] == ("reserve", "source_ir_maps_output", 8 * 4000 + 64) and ev[i + 2] == ("release", "source_ir_maps_output", 8 * 4000 + 64, None), (live_before, ev[i], ev[i + 1], ev[i + 2])
     # repeated compilation on the SAME program replaces the hint: the new charge is held before the previous is released, the ledger holds exactly one charge
     rec2 = DM.compile_demand(P, row_cap=10 ** 6, tables=tables, clock=clock, ledger=led); assert rec2["restricted"] == [2] and led.used["source_ir_maps_output"] == exp and hints[0].prov["demand_charge_bytes"] == exp
     j = max(k for k, e in enumerate(ev) if e[0] == "reserve" and e[3].startswith("demand hint export")); assert ("release", "source_ir_maps_output", exp, None) in ev[j:]                                                   # the REPLACED charge is released after the new one is held

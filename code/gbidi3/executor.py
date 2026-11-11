@@ -81,7 +81,7 @@ class Lib:
             L.gb3_mpfr_version.restype = ctypes.c_char_p; L.gb3_gmp_version.restype = ctypes.c_char_p; L.gb3_mpfr_emin.restype = ctypes.c_long; L.gb3_mpfr_emax.restype = ctypes.c_long; L.gb3_mpfr_emin_min.restype = ctypes.c_long; L.gb3_mpfr_emax_max.restype = ctypes.c_long
             L.gb3_bytes_per_entry.argtypes = [ctypes.c_int, ctypes.c_int]; L.gb3_bytes_per_entry.restype = ctypes.c_int64; L.gb3_block_entries.restype = ctypes.c_int64
             cls._lib = L; cls._build = b
-            if L.gb3_schedule_id().decode() != "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.4-sparse-driver-contract":
+            if L.gb3_schedule_id().decode() != "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.5-leased-temporaries":
                 raise Refuse("FP_ENV", "kernel schedule id differs")
         return cls._lib
 
@@ -172,7 +172,10 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
         with open(tmp, "w") as f:
             json.dump(dict(rec, NOTE="NONCERTIFYING diagnostic record"), f, default=str); f.flush(); os.fsync(f.fileno())
         os.replace(tmp, os.path.join(out, "diagnostic_record.json"))
+    held = {"plan": None}                                                                      # the mutable planner program while it is alive (its hint leases are consumed on EVERY exit: typed stop or normal handoff)
     def refuse(kind, reason):
+        if held["plan"] is not None:
+            rec["hint_leases_released_bytes"] = DM.release_hints(held["plan"].program, led); held["plan"] = None    # a typed stop (validation refusal / deadline / cap) leaves no outstanding hint lease behind
         rec["status"] = kind; rec["reason"] = reason; rec["stop"] = {"kind": kind, "reason": reason, "cause": rec.get("stop")}; diag("typed_stop"); raise Refuse(kind, reason, rec)
     def remaining():
         return deadline_mono - time.monotonic()
@@ -266,6 +269,7 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
         for n in plan.program.nodes:
             if n.nid not in plan.program.roots and n.storage in (IR.DENSE, IR.SPARSE):
                 n.storage = IR.STREAM; n.demand = "FULL"; n.driver = -1                 # a legal mutation: the priced sparse driver belongs to SPARSE storage only (validator: driver on non-SPARSE is rejected)
+    held["plan"] = plan
     if hooks.get("mutate_program") and plan is not None:
         hooks["mutate_program"](plan.program)
     if hooks.get("mutate_reduced"):
@@ -306,7 +310,7 @@ def execute(arm, model_path, evid_path, out, deadline_mono, cfg, phases=None, re
         rec["plan_validation"] = V.record; rec["plan"] = _plan_record(plan, V); rec["mechanisms"] = plan.mechanisms; phases["validate"] = time.monotonic() - t
         if hooks.get("after_validate"):
             hooks["after_validate"](plan.program)                                             # qualification (C20): the planner payload changes AFTER validation; execution uses the validated copy
-        DM.release_hints(plan.program, led)                                                   # the mutable program's retained demand-hint charge is released at the END of its lifetime (the validated copy carries its own reservation)
+        rec["hint_leases_released_bytes"] = DM.release_hints(plan.program, led); held["plan"] = None   # the mutable program's OUTSTANDING hint leases (issued by this ledger) are consumed at the END of its lifetime (the validated copy carries its own reservation); a proposal's annotations release nothing
         del plan
     diag("planned"); check_deadline("validation")
     # ---------------- 6. numerical routes
