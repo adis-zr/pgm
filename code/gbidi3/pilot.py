@@ -4,8 +4,10 @@ a supervised outer job), status. Protocol of the repaired GENERAL_BIDI_V2 harnes
 the comparator configuration; before EVERY launch the live model / evidence / config bytes are compared with the manifest; reconcile_manifest reconstructs
 task_id / cell_id and requires unique ids / output directories; one exclusive run lock; resume only through the strict reconciler; nonnested budget guard
 (unresolved starts charged at max permitted) + remaining commitment + closeout reserve under the ceiling; STOP_REQUESTED stops between cells.
-At the present stop point only `propose` is used (writes GB_MANIFEST_PROPOSED.json, status PROPOSED_NOT_FROZEN); `freeze` and `run` exist for the
-reviewed round and refuse to act on a proposed manifest without the explicit --authorized flag file FREEZE_AUTHORIZED.txt in the run directory.
+`freeze` and `run` refuse to act without the explicit authorization file FREEZE_AUTHORIZED.txt in the run directory. Hash-namespace correction of 10 Nov 2026
+(authorized after the material stop of the first freeze): the manifest's case dictionary is built by normalize_case from the PRODUCER's Snapshot.task
+(canonical_model_sha256 / canonical_evidence_sha256 = the producer's legacy text hash, the field every record writes), with the census content hashes kept
+as census_content_*; the same dictionary feeds canonical_task on construction and reconstruction.
     python -m gbidi3.pilot propose D ; python -m gbidi3.pilot freeze D ; python -m gbidi3.pilot run D STAGE ; python -m gbidi3.pilot status D"""
 from __future__ import annotations
 import os, sys, json, time, math, hashlib, random, subprocess, fcntl
@@ -111,6 +113,28 @@ def order(seed=SEED):
     return cells
 
 
+def normalize_case(census_case, S):
+    """the ONE normalized case dictionary of the manifest (hash-namespace correction of 10 Nov 2026): every TASK_BINDING_FIELD comes from the PRODUCER's own
+    definition (gbidi3.source.Snapshot.task of the frozen input bytes) -- in particular canonical_model_sha256 / canonical_evidence_sha256 are the producer's
+    LEGACY whitespace-normalized text hashes, exactly what every cell record writes; the census CONTENT hashes (bench.inventory: net type + cardinalities +
+    scopes + reduced rational tables; evidence = sorted items) are PRESERVED under the distinct provenance names census_content_model_sha256 /
+    census_content_evidence_sha256. This dictionary is the one passed to canonical_task (construction AND reconstruction) and the one the strict reconciler
+    binds records against. The raw hashes must agree between the census and the snapshot (same bytes), and the variable count must agree."""
+    from gbidi3 import source as GS
+    t = S.task
+    if t["raw_model_sha256"] != census_case["raw_model_sha256"] or t["raw_evidence_sha256"] != census_case["raw_evidence_sha256"]:
+        raise SystemExit("case %s: the frozen input bytes differ between the census and the snapshot" % census_case["case"])
+    if int(t["nvars"]) != int(census_case["variables"]):
+        raise SystemExit("case %s: variable count differs between the census (%s) and the snapshot (%s)" % (census_case["case"], census_case["variables"], t["nvars"]))
+    cs = {"family": census_case["family"], "model_path": census_case["model_path"], "evidence_path": census_case["evidence_path"], "variables": int(t["nvars"])}
+    for k in GS.TASK_BINDING_FIELDS:
+        if k != "nvars":
+            cs[k] = t[k]
+    cs["census_content_model_sha256"] = census_case["canonical_model_sha256"]; cs["census_content_evidence_sha256"] = census_case["canonical_evidence_sha256"]
+    cs["canonical_definition"] = "canonical_model_sha256 / canonical_evidence_sha256 = producer gbidi3.source.canonical_legacy (whitespace-normalized text; the field the cell record writes); canonical_v2_* = gbidi3.source canonical v2 (typed serialization); census_content_* = bench.inventory content hashes carried for provenance only (not a binding field)"
+    return cs
+
+
 def canonical_task(cs, c, cfg_adp_sha, kernel_sha, commit):
     task = {"model": cs["canonical_model_sha256"], "evidence": cs["canonical_evidence_sha256"], "raw_model": cs["raw_model_sha256"], "raw_evidence": cs["raw_evidence_sha256"], "queries": "all_original_variables", "eps": "1/200", "max_width": "1/100", "arm": c["arm"], "budget_s": c["budget_s"], "memory_gib": MEM_GIB, "grace_s": GRACE_S, "kind": c["kind"], "stage": c["stage"], "config_adp_repaired_sha256": cfg_adp_sha, "cell_config": CELL_CONFIG, "pass": PASS}
     tid = hashlib.sha256(json.dumps(task, sort_keys=True).encode()).hexdigest()[:16]
@@ -137,15 +161,14 @@ def build_manifest(D, proposed):
            "shared_vs_different": shared_vs_different(), "config_adp_repaired_path": os.path.relpath(cfg_adp_path, HERE), "config_adp_repaired_sha256": cfg_sha, "libdai_binary_sha256": sha(os.path.join(HERE, "bench", "libdai", "libdai_mar")), "libdai_algorithm": "JTREE[inference=SUMPROD,updates=HUGIN,maxmem=8589934592]",
            "ceiling_s": CEILING_S, "mem_gib": MEM_GIB, "allocation_s": {"qualification_builds_synthetic": PREPARATION_CAP_S, "matrix_414_cells_plus_launch_cleanup": MATRIX_RESERVE_S, "uniform_inspection_analysis": INSPECTION_RESERVE_S, "closeout_packaging": CLOSEOUT_RESERVE_S, "contingency": CONTINGENCY_S}, "closeout_reserve_s": CLOSEOUT_RESERVE_S, "grace_s": GRACE_S, "launch_overhead_s": LAUNCH_OVERHEAD_S, "memory_budget_gib": MEM_GIB, "thread_env": THREAD_ENV, "seed": SEED, "order_procedure": "brief §20: single continuing random.Random(20261109); per stage copy the ORIGINAL inventory, shuffle once, draw one randrange(number_of_arms) offset; at shuffled position i rotate the stage's arm list left by (i+offset) mod n",
            "query_contract": "every original singleton marginal; eps = 1/200; DELIVERED grid max width <= 1/100 (and pre-grid width recorded); exact dyadic-grid point; separate task-bound point verification; LATE_OUTPUT classified on the launch-relative clock",
-           "cases": {c: {k: cases[c][k] for k in ("family", "model_path", "evidence_path", "raw_model_sha256", "raw_evidence_sha256", "canonical_model_sha256", "canonical_evidence_sha256", "variables")} for c in inventory()}, "unavailable_slots": [{"case": c, "family": f, "status": "INPUT_UNAVAILABLE"} for c, f in UNAVAILABLE], "cells": []}
+           "cases": {}, "case_field_definitions": "every binding field from the producer's gbidi3.source.Snapshot.task of the frozen bytes (normalize_case); census content hashes preserved as census_content_*", "unavailable_slots": [{"case": c, "family": f, "status": "INPUT_UNAVAILABLE"} for c, f in UNAVAILABLE], "cells": []}
     from gbidi3 import source as GS, identity as ID
     for c in inventory():
         S = GS.Snapshot(os.path.join(HERE, cases[c]["model_path"]), os.path.join(HERE, cases[c]["evidence_path"]))
-        for k in ("canonical_v2_model_sha256", "canonical_v2_evidence_sha256", "canonical_version", "orig_card", "eps", "max_width", "queries_sha256"):
-            man["cases"][c][k] = S.task[k]
+        man["cases"][c] = normalize_case(cases[c], S)                                              # the normalized dictionary (producer definitions) IS the dictionary canonical_task and the reconciler use
     man["python_sources_sha256"] = ID.python_sources_sha256(); man["protocol"] = ID.PROTOCOL
     for i, c in enumerate(order()):
-        cs = cases[c["case"]]; tid, cid = canonical_task(cs, c, cfg_sha, br["binary_sha256"], commit)
+        cs = man["cases"][c["case"]]; tid, cid = canonical_task(cs, c, cfg_sha, br["binary_sha256"], commit)
         man["cells"].append(dict(c, index=i, task_id=tid, cell_id=cid, producer_arm=(c["arm"] if c["arm"] in GB_ARMS else PRODUCER_ARM[c["arm"]]), out_dir="cells/%s/%03d__%s__%s__%ds__%s" % (c["stage"], i, c["case"], c["arm"], int(c["budget_s"]), tid), max_permitted_charge_s=c["budget_s"] + GRACE_S + LAUNCH_OVERHEAD_S))
     man["counts"] = {"cells": len(man["cells"]), "nominal_s": sum(c["budget_s"] for c in man["cells"]), "max_permitted_s": sum(c["max_permitted_charge_s"] for c in man["cells"]), "per_stage": {s: sum(1 for c in man["cells"] if c["stage"] == s) for s, _, _ in STAGES}}
     assert man["counts"]["cells"] == 414 and man["counts"]["nominal_s"] == 17480.0 and man["counts"]["max_permitted_s"] == 19964.0 and man["counts"]["per_stage"] == {"primary_breadth": 184, "primary_depth": 92, "ablation_breadth": 138}

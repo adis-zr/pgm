@@ -12,7 +12,7 @@ SRC_TREES = ["gbidi3", "gbidi3_closeout"]
 # producers (adp.cell, bench.cells -> bench/libdai/libdai_mar), and of EVERY test module run in qualification (V3 controls, repair controls, the 236 regressions),
 # with the pinned binaries, build records and frozen configurations they read (review G1). Computed by `closure()` in a fresh interpreter, never by hand.
 ENTRY_MODULES = ["gbidi3.cell", "gbidi3.pilot", "gbidi3.arm_adapter", "gbidi3.verify", "gbidi3.reconcile", "gbidi3.inspect_panel", "gbidi3.demand", "gbidi3.identity", "gbidi3.requirements", "gbidi3.build", "gbidi3_closeout.ready_for_review", "gbidi3_closeout.report", "gbidi3_closeout.package", "gbidi.supervise", "adp.cell", "bench.cells", "adp.census.run", "adp.census.supervise"]
-TEST_FILES_DEFAULT = ["tests/test_gbidi3_complete.py", "tests/test_gbidi3_repair_2026_11_10.py", "tests/test_gbidi3_repair2_2026_11_10.py", "tests/test_gbidi3_repair3_2026_11_10.py", "tests/test_gbidi3_repair4_2026_11_10.py", "tests/test_gbidi3_repair5_2026_11_10.py", "tests/test_adp_v1.py", "tests/test_adp_census.py", "tests/test_adp_census_correction.py", "tests/test_bidi_pilot.py", "tests/test_gbidi_v2.py"]
+TEST_FILES_DEFAULT = ["tests/test_gbidi3_complete.py", "tests/test_gbidi3_repair_2026_11_10.py", "tests/test_gbidi3_repair2_2026_11_10.py", "tests/test_gbidi3_repair3_2026_11_10.py", "tests/test_gbidi3_repair4_2026_11_10.py", "tests/test_gbidi3_repair5_2026_11_10.py", "tests/test_gbidi3_harness_binding_2026_11_10.py", "tests/test_adp_v1.py", "tests/test_adp_census.py", "tests/test_adp_census_correction.py", "tests/test_bidi_pilot.py", "tests/test_gbidi_v2.py"]
 TEST_FILES = list(TEST_FILES_DEFAULT)
 
 
