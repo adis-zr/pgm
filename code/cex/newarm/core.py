@@ -128,7 +128,7 @@ def _discover_component(m, deadline, route='auto', inherited_dag=None):
     discovery.append(dict(candidate_selection='minimum scalar forecast; not a bit-work or global optimum',candidates=candidates,planning_wall_s=time.monotonic()-t))
     return dict(model=m,kind=chosen,forecast=cost,dag=dp,order=order,discovery=discovery)
 
-CEX_CAP_BYTES=3*1024**3          # the 3 GiB worker policy; the compiled executor reserves every allocation against (cap - host RSS at entry) BEFORE it happens
+CEX_CAP_BYTES=3*1024**3          # the 3 GiB worker policy; the compiled executor charges every native heap allocation against (cap - host RSS at entry - measured host-side lowering bytes - plan/output arrays) BEFORE allocating
 def _execute_component(plan,deadline):
     import dag,support,stream,stream_float,cex_executor,resource,sys
     if plan['kind']=='dag':return dag.execute_plan(plan['dag'],deadline=deadline)
@@ -143,9 +143,9 @@ def _execute_component(plan,deadline):
             return r
         except cex_executor.Stop as e:
             plan['discovery'].append(dict(kind='compiled_executor',status='STOP',stop=e.kind,reason=e.reason[:200],wall_s=time.monotonic()-ct,stats={k:v for k,v in e.stats.items() if k not in ('phase',)}))
-            if e.kind in ('RANGE','WIDTH','FPENV'):
+            if e.kind in cex_executor.NUMERICAL_STOPS:
                 ft=time.monotonic();r=support.solve(plan['model'],deadline=deadline,order=plan['order']);plan['discovery'].append(dict(kind='exact_reference_fallback',status=r['status'],wall_s=time.monotonic()-ft));return r
-            raise support.ResourceStop(e.kind,e.stats)
+            raise support.ResourceStop(e.kind,e.stats)   # DEADLINE / MEMORY / REPRESENTATION (a volume this kernel cannot address) are typed resource refusals, final for this attempt; never a zero-evidence claim
     ft=time.monotonic()
     try:return stream_float.solve(plan['model'],deadline=deadline)
     except stream_float.RangeError as e:

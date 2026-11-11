@@ -9220,7 +9220,7 @@
   {
    "name": "extreme_exponents_10^-300..10^300_(source_conversion_range)",
    "ok": true,
-   "outcome": "STOP:RANGE source 3: entry leaves the normal range under rescaling (dynamic range of the re"
+   "outcome": "STOP:RANGE source conversion out of the supported binary64 range after exact scaling (the d"
   },
   {
    "name": "positive_value_below_normal_range_refused_not_zero",
@@ -9239,19 +9239,19 @@
   {
    "name": "memory_cap_typed_stop_before_allocation",
    "ok": true,
-   "outcome": "MEMORY: logical reservation 0 + 1417176 exceeds cap 1048576",
-   "kernel_cap_bytes": 1048576
+   "outcome": "MEMORY: allocation boundary: 1092 live + 1417176 requested exceeds cap 988882",
+   "kernel_cap_bytes": 988882
   },
   {
    "name": "memory_cap_below_host_headroom_refused_before_kernel",
    "ok": true,
-   "outcome": "MEMORY: host-side reservations leave no kernel capacity"
+   "outcome": "MEMORY: host-side reservations (RSS at entry 0 + retained lowering 5670966 + arrays 1418"
   },
   {
    "name": "memory_cap_sufficient_completes_and_reports_peak_logical_bytes",
    "ok": true,
-   "peak_logical_bytes": 2519432,
-   "at_exit": 1417184
+   "peak_logical_bytes": 2528116,
+   "at_exit": 0
   },
   {
    "name": "plan_binding_semantic_vs_physical_hash",
@@ -9277,6 +9277,445 @@
   {
    "name": "all_24_elimination_orders_enclose_truth",
    "ok": true
+  },
+  {
+   "name": "review_F1_reverse_underflow_mixed_card_hard_zero",
+   "ok": true,
+   "outcome": "STOP:RANGE non-normal product (0) of nonzero operands 2.77845e-163 x 2.77845e-163"
+  },
+  {
+   "name": "review_F1_reverse_underflow_binary_hard_zero",
+   "ok": true,
+   "outcome": "STOP:RANGE non-normal product (0) of nonzero operands 2.77845e-163 x 2.77845e-163"
+  },
+  {
+   "name": "review_F1_reverse_underflow_binary_strictly_positive",
+   "ok": true,
+   "outcome": "STOP:RANGE non-normal product (0) of nonzero operands 2.77845e-163 x 2.77845e-163"
+  },
+  {
+   "name": "review_F1_randomized_high_degree_family_480_executions",
+   "ok": true,
+   "outcomes": {
+    "CERTIFIED": 189,
+    "STOP:RANGE": 291
+   }
+  },
+  {
+   "name": "review_F2_star_22x8_volume_overflow_typed_representation",
+   "ok": true,
+   "outcome": "STOP:REPRESENTATION bag of the bucket eliminating variable 0: mixed-radix volume exceeds 2^62 (not a"
+  },
+  {
+   "name": "review_F2_star_32x4_volume_overflow_typed_representation",
+   "ok": true,
+   "outcome": "STOP:REPRESENTATION bag of the bucket eliminating variable 0: mixed-radix volume exceeds 2^62 (not a"
+  },
+  {
+   "name": "review_F2_star_21x8_volume_overflow_typed_representation",
+   "ok": true,
+   "outcome": "STOP:REPRESENTATION bag of the bucket eliminating variable 0: mixed-radix volume exceeds 2^62 (not a"
+  },
+  {
+   "name": "review_F2_automatic_solver_22x8_complete_graph_typed_refusal_not_zero_evidence",
+   "ok": true,
+   "outcome": "ResourceStop:REPRESENTATION"
+  },
+  {
+   "name": "review_F2_affordable_10x4_star_certifies_uniform_truth",
+   "ok": true
+  },
+  {
+   "name": "review_F4_source_10^400_direct_certified_after_exact_scaling",
+   "ok": true,
+   "outcome": "CERTIFIED"
+  },
+  {
+   "name": "review_F4_source_10^400_automatic_solver_keeps_the_baseline_success",
+   "ok": true,
+   "outcome": "EXACT_OR_ENCLOSED_PROTOTYPE"
+  },
+  {
+   "name": "review_F4_source_2^2000_certified_after_exact_scaling",
+   "ok": true
+  },
+  {
+   "name": "review_F4_dynamic_range_inside_one_factor_beyond_binary64_typed_RANGE_not_zero",
+   "ok": true,
+   "outcome": "STOP:RANGE"
+  },
+  {
+   "name": "review_R2_expired_deadline_is_typed_DEADLINE_at_entry",
+   "ok": true,
+   "outcome": "STOP:DEADLINE deadline already expired at executor entry (kernel entered: False)"
+  },
+  {
+   "name": "review_R2_deadline_during_parsing_or_phases_typed_DEADLINE",
+   "ok": true,
+   "outcome": "STOP:DEADLINE deadline expired after lowering"
+  },
+  {
+   "name": "review_P_enclosure_refuses_label_K_u_>=_1/2_typed_RANGE",
+   "ok": true,
+   "outcome": "STOP:RANGE error label too large for a certified enclosure (K=450359962"
+  },
+  {
+   "name": "review_P_kernel_label_sum_int64_overflow_typed_REPRESENTATION",
+   "ok": true,
+   "outcome": "REPRESENTATION label sum: integer overflow"
+  },
+  {
+   "name": "review_F3_allocation_boundary_instrumented_driver_strict_build",
+   "ok": true,
+   "detail": {
+    "built": true,
+    "err": "",
+    "cases": [
+     {
+      "args": [
+       "unaries",
+       "32000"
+      ],
+      "expect": "MEMORY",
+      "ok": true,
+      "stop": "MEMORY",
+      "reported_peak": 20000,
+      "tracked_peak": 20000,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "unaries",
+       "4000000"
+      ],
+      "expect": "OK",
+      "ok": true,
+      "stop": "OK",
+      "reported_peak": 728716,
+      "tracked_peak": 728716,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "isolated",
+       "160000",
+       "0"
+      ],
+      "expect": "DEADLINE",
+      "ok": true,
+      "stop": "DEADLINE",
+      "reported_peak": 0,
+      "tracked_peak": 0,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "isolated",
+       "4000000",
+       "1e18"
+      ],
+      "expect": "MEMORY",
+      "ok": true,
+      "stop": "MEMORY",
+      "reported_peak": 2985608,
+      "tracked_peak": 2985608,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "star",
+       "22",
+       "8"
+      ],
+      "expect": "REPRESENTATION",
+      "ok": true,
+      "stop": "REPRESENTATION",
+      "reported_peak": 21944,
+      "tracked_peak": 21944,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "star",
+       "32",
+       "4"
+      ],
+      "expect": "REPRESENTATION",
+      "ok": true,
+      "stop": "REPRESENTATION",
+      "reported_peak": 19760,
+      "tracked_peak": 19760,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "star",
+       "21",
+       "8"
+      ],
+      "expect": "REPRESENTATION",
+      "ok": true,
+      "stop": "REPRESENTATION",
+      "reported_peak": 20972,
+      "tracked_peak": 20972,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "star",
+       "10",
+       "4"
+      ],
+      "expect": "OK",
+      "ok": true,
+      "stop": "OK",
+      "reported_peak": 4729188,
+      "tracked_peak": 4729188,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "sparse",
+       "2000000"
+      ],
+      "expect": "OK",
+      "ok": true,
+      "stop": "OK",
+      "reported_peak": 9704,
+      "tracked_peak": 9704,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "sparse",
+       "2000"
+      ],
+      "expect": "MEMORY",
+      "ok": true,
+      "stop": "MEMORY",
+      "reported_peak": 240,
+      "tracked_peak": 240,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     }
+    ],
+    "growth": {
+     "ok": true,
+     "record": {
+      "kind": "charged_vector_growth_transient_overlap",
+      "first_allowed": true,
+      "second_allowed": false,
+      "cap_bytes": 16000,
+      "reported_peak_logical_bytes": 8000,
+      "tracked_native_peak_requested_bytes": 8000,
+      "refused_request": 16000,
+      "note": "second reservation refused: 8000 live + 16000 requested > 16000 cap (transient overlap charged)"
+     }
+    },
+    "rescale_boundary": {
+     "ok": true,
+     "record": {
+      "kind": "rescale_boundary",
+      "inexact_case_refused": true,
+      "inexact_case_stop": 3,
+      "inexact_reason": "message 0: entry 8.9003e-308 cannot be rescaled exactly by 2^-2 (leaves the normal range or fails the round trip)",
+      "exact_case_ok": true,
+      "exact_case_stop": 0,
+      "exact_case_values_and_exponent_correct": true
+     }
+    }
+   }
+  },
+  {
+   "name": "review_F3_allocation_boundary_instrumented_driver_ubsan_build",
+   "ok": true,
+   "detail": {
+    "built": true,
+    "err": "",
+    "cases": [
+     {
+      "args": [
+       "unaries",
+       "32000"
+      ],
+      "expect": "MEMORY",
+      "ok": true,
+      "stop": "MEMORY",
+      "reported_peak": 20000,
+      "tracked_peak": 20000,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "unaries",
+       "4000000"
+      ],
+      "expect": "OK",
+      "ok": true,
+      "stop": "OK",
+      "reported_peak": 728716,
+      "tracked_peak": 728716,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "isolated",
+       "160000",
+       "0"
+      ],
+      "expect": "DEADLINE",
+      "ok": true,
+      "stop": "DEADLINE",
+      "reported_peak": 0,
+      "tracked_peak": 0,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "isolated",
+       "4000000",
+       "1e18"
+      ],
+      "expect": "MEMORY",
+      "ok": true,
+      "stop": "MEMORY",
+      "reported_peak": 2985608,
+      "tracked_peak": 2985608,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "star",
+       "22",
+       "8"
+      ],
+      "expect": "REPRESENTATION",
+      "ok": true,
+      "stop": "REPRESENTATION",
+      "reported_peak": 21944,
+      "tracked_peak": 21944,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "star",
+       "32",
+       "4"
+      ],
+      "expect": "REPRESENTATION",
+      "ok": true,
+      "stop": "REPRESENTATION",
+      "reported_peak": 19760,
+      "tracked_peak": 19760,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "star",
+       "21",
+       "8"
+      ],
+      "expect": "REPRESENTATION",
+      "ok": true,
+      "stop": "REPRESENTATION",
+      "reported_peak": 20972,
+      "tracked_peak": 20972,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "star",
+       "10",
+       "4"
+      ],
+      "expect": "OK",
+      "ok": true,
+      "stop": "OK",
+      "reported_peak": 4729188,
+      "tracked_peak": 4729188,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "sparse",
+       "2000000"
+      ],
+      "expect": "OK",
+      "ok": true,
+      "stop": "OK",
+      "reported_peak": 9704,
+      "tracked_peak": 9704,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     },
+     {
+      "args": [
+       "sparse",
+       "2000"
+      ],
+      "expect": "MEMORY",
+      "ok": true,
+      "stop": "MEMORY",
+      "reported_peak": 240,
+      "tracked_peak": 240,
+      "live_at_return": 0,
+      "sanitizer_stderr": ""
+     }
+    ],
+    "growth": {
+     "ok": true,
+     "record": {
+      "kind": "charged_vector_growth_transient_overlap",
+      "first_allowed": true,
+      "second_allowed": false,
+      "cap_bytes": 16000,
+      "reported_peak_logical_bytes": 8000,
+      "tracked_native_peak_requested_bytes": 8000,
+      "refused_request": 16000,
+      "note": "second reservation refused: 8000 live + 16000 requested > 16000 cap (transient overlap charged)"
+     }
+    },
+    "rescale_boundary": {
+     "ok": true,
+     "record": {
+      "kind": "rescale_boundary",
+      "inexact_case_refused": true,
+      "inexact_case_stop": 3,
+      "inexact_reason": "message 0: entry 8.9003e-308 cannot be rescaled exactly by 2^-2 (leaves the normal range or fails the round trip)",
+      "exact_case_ok": true,
+      "exact_case_stop": 0,
+      "exact_case_values_and_exponent_correct": true
+     }
+    }
+   }
+  },
+  {
+   "name": "review_F3_host_side_lowering_and_enclosure_bytes_measured_and_charged",
+   "ok": true,
+   "measured": {
+    "host_lowering_peak_bytes_measured": 47355,
+    "host_lowering_retained_bytes_measured": 2602,
+    "host_plan_output_arrays_bytes": 1440,
+    "host_enclosure_peak_bytes_measured": 4756,
+    "kernel_cap_bytes": 3221221430
+   }
   }
  ],
  "reference_defects": [
@@ -9291,12 +9730,19 @@
    "note": "frozen support.py joined(): an empty intermediate join leaves cols incomplete and raises ValueError instead of returning ZERO_EVIDENCE (reference-only defect; brute force remains the oracle)"
   }
  ],
- "passed": 375,
- "total": 375,
+ "passed": 395,
+ "total": 395,
  "all_pass": true,
+ "random_executions": 360,
+ "random_status_counts": {
+  "CERTIFIED": 288,
+  "ZERO_EVIDENCE": 72
+ },
+ "control_groups": 35,
+ "count_semantics": "passed/total counts random EXECUTIONS (each one test) plus grouped CONTROLS (one count each, several executing many plans); it is NOT a count of enclosures",
  "kernel": {
-  "source_sha256": "a5d66a766f50caf8a94cdc46d96761cc35c25f95b9f8c2902440ae467e96b6f1",
-  "binary_sha256": "6c5982a2a9a3c7d4014182000cbd95e1af757a82f7e5f511025fdfc6373b3d77",
+  "source_sha256": "044ac466b4c5cc796c1c8af894a1cf1b27b1f1f6ea0da6eeeeb4ff16ad94988d",
+  "binary_sha256": "c19dc045a064a2ea11318f235414db1b22caf97ffe5367027f156f1e1b98d675",
   "flags": [
    "-std=c++17",
    "-O2",
@@ -9311,10 +9757,11 @@
   ],
   "compiler": "clang++",
   "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
-  "build_wall_s": 2.305921707767993,
+  "build_wall_s": 0.8683280837722123,
   "platform": "darwin",
-  "built_utc": "2026-11-11T21:31:35Z"
+  "built_utc": "2026-11-11T23:32:22Z",
+  "plan_format": 2
  },
- "executor_sha256": "3241fec240fb84da2e0b883cf34d4274d1c2b41d661e08fc827ca148df59e5ca",
- "utc": "2026-11-11T21:31:38Z"
+ "executor_sha256": "2375d8de7dba58ee09971d7029b887b2039de797c27142b75aa9450b56d6771a",
+ "utc": "2026-11-11T23:41:26Z"
 }

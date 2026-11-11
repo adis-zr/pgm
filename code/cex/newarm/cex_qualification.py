@@ -1,9 +1,19 @@
-"""Qualification of the compiled executor (prompt section 8 step 2) against raw-model exact enumeration and the exact Fraction reference on the SAME plan.
-Controls: hard zeros, repeated factor occurrences, permuted axes / variable ids, disconnected components, evidence, skewed magnitudes, extreme exponents,
-near-zero normalizers, sparse / dense equivalent representations (fill thresholds 0 / 0.25 / 1.01), different sound reduction trees (every order is a different
-tree), resource stops (deadline, memory cap, row cap), range refusal (no fabricated zero), label-overflow refusal, wrong binding (a mutated plan hash differs),
-stale-output / checker-failure controls (publication invariants). Writes CEX_QUALIFICATION.json beside this file."""
-import sys, time, random, json, math, hashlib, os
+"""Qualification of the compiled executor (prompt section 8 step 2; v1.2 after the adversarial review of 11 Nov 2026) against raw-model exact enumeration and the
+exact Fraction reference on the SAME plan. Random section A: 120 mixed-domain models (hard zeros, repeated occurrences, evidence, skewed magnitudes) x 3 physical
+schedules (fill thresholds 0 / 0.25 / 1.01). Grouped controls (one count each): B permuted axes/ids; C disconnected components; D extreme exponents 10^+-60 and
+10^+-300 (valid enclosure or typed RANGE), a positive value below the normal range refused (never zero); E typed ZERO_EVIDENCE; F deadline inside the kernel,
+memory cap refused BEFORE allocation (kernel side and host side), sufficient cap completes and reports the peak; G semantic vs physical plan hash; H non-covering
+order refused; I checker rejects a tampered interval; J three physical schedules of one semantic plan; K all 24 elimination orders of a 4-variable model.
+REVIEW REGRESSIONS (permanent, 11 Nov 2026): L the reviewer's three reverse-underflow constructions + a randomized high-degree family (valid enclosure containing
+exact truth or typed RANGE; never a false certificate) under several multiplication orders; M integer-volume overflow (22x8 / 32x4 / 21x8 stars direct and the
+22x8 complete graph through the automatic solver) -> typed REPRESENTATION refusal, never ZERO_EVIDENCE; an affordable 10x4 star certifies the uniform truth;
+N source conversion: huge entries (10^400, 2^2000) certify after exact power-of-two scaling, direct and through the automatic solver (the baseline success is kept);
+O an already-expired deadline is a typed DEADLINE at entry (no row visited); P label overflow: the enclosure refuses K u >= 1/2 (typed RANGE) and the kernel refuses
+an int64 label-sum overflow (typed REPRESENTATION); Q the allocation boundary (instrumented global operator new, strict build AND UBSan build): the kernel's
+peak_logical_bytes EQUALS the tracked native peak and nothing is live at return on every control; small caps are refused before any row; growth overlap is charged;
+rescale exactness is round-trip checked; R host-side memory is MEASURED (tracemalloc) per phase. Writes CEX_QUALIFICATION.json beside this file. Count = passed/total
+TESTS AND CONTROL GROUPS (random executions + grouped controls), NOT a count of enclosures."""
+import sys, time, random, json, math, hashlib, os, collections
 BASE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, BASE); sys.set_int_max_str_digits(0)
 from fractions import Fraction as F
 from itertools import permutations
@@ -81,8 +91,8 @@ rD, eD = run(mBig, oB, budget=0.0005); ok = eD is not None and eD.kind == 'DEADL
 # a single dense factor over 11 ternary variables (177,147 entries = 1.4 MB): (a) kernel-side refusal: the cap leaves exactly 1 MiB of kernel capacity, so the source
 # reservation (1.4 MB) is refused BEFORE allocation; (b) Python-side refusal: a cap below the host-side headroom is refused before the kernel is entered
 mDense = dict(cards=[3] * 11, factors=[dict(scope=tuple(range(11)), values=[F(1 + (i * 7919) % 13) for i in range(3 ** 11)])], evidence={}); wD, vD, _ = X.lower(mDense, list(range(11)), 0.25)
-capK = 64 * 1024 ** 2 + (len(wD) * 8 + len(vD) * 8) * 2 + 1024 ** 2
-rM, eM = run(mDense, list(range(11)), cap_bytes=capK); ok = eM is not None and eM.kind == 'MEMORY' and 'logical reservation' in eM.reason and (eM.stats.get('counters') or {}).get('forward_rows', 0) == 0
+capK = (len(wD) * 8 + len(vD) * 8 + 3 ** 11 * 8 + 11 * 16 + 24 + len(X.COUNTERS) * 8 + 256) + 1024 ** 2 + 4 * 1024 ** 2    # host arrays + 1 MiB kernel capacity (+ measured lowering retention allowance): the 1.4 MB source is refused BEFORE allocation
+rM, eM = run(mDense, list(range(11)), cap_bytes=capK); ok = eM is not None and eM.kind == 'MEMORY' and 'allocation boundary' in eM.reason and (eM.stats.get('counters') or {}).get('forward_rows', 0) == 0
 total += 1; passed += ok; R['controls'].append(dict(name='memory_cap_typed_stop_before_allocation', ok=ok, outcome=(eM.kind + ': ' + eM.reason[:100] if eM else rM['status']), kernel_cap_bytes=(eM.stats.get('kernel_cap_bytes') if eM else None)))
 rM2, eM2 = run(mDense, list(range(11)), cap_bytes=1024 ** 2); ok = eM2 is not None and eM2.kind == 'MEMORY' and 'host-side' in eM2.reason; total += 1; passed += ok; R['controls'].append(dict(name='memory_cap_below_host_headroom_refused_before_kernel', ok=ok, outcome=(eM2.kind + ': ' + eM2.reason[:80] if eM2 else rM2['status'])))
 rM3, eM3 = run(mDense, list(range(11)), cap_bytes=256 * 1024 ** 2); tD = None
@@ -113,5 +123,120 @@ mK = gen(random.Random(41), 4, [2, 3, 2, 2], 5, 0.2, 'plain', ev_p=0); tK = core
 for perm_ in permutations(range(4)):
     rK, eK = run(mK, list(perm_)); allok = allok and rK is not None and contained(rK['intervals'], tK)
 total += 1; passed += allok; R['controls'].append(dict(name='all_24_elimination_orders_enclose_truth', ok=allok))
-R.update(dict(passed=passed, total=total, all_pass=passed == total, kernel=json.load(open(os.path.join(BASE, 'cex_build.json'))), executor_sha256=hashlib.sha256(open(os.path.join(BASE, 'cex_executor.py'), 'rb').read()).hexdigest(), utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())))
-json.dump(R, open(os.path.join(BASE, 'CEX_QUALIFICATION.json'), 'w'), indent=1, default=str); print(json.dumps({'passed': passed, 'total': total, 'all_pass': R['all_pass'], 'controls': [(c['name'], c['ok']) for c in R['controls']]}))
+# ======================= REVIEW REGRESSIONS (adversarial review of 11 Nov 2026) =======================
+import subprocess, itertools, ctypes as CT_
+def exact_marginals(model):
+    nums = [[F(0)] * c for c in model['cards']]; z = F(0)
+    for a in itertools.product(*(range(c) for c in model['cards'])):
+        w = F(1)
+        for f in model['factors']:
+            idx = 0
+            for v in f['scope']: idx = idx * model['cards'][v] + a[v]
+            w *= f['values'][idx]
+        z += w
+        for v, st in enumerate(a): nums[v][st] += w
+    return None if z == 0 else [[x / z for x in row] for row in nums]
+def sound(m, order, **kw):
+    """a result is SOUND iff it is CERTIFIED and encloses the exact truth (or truth is zero mass and it says so) or a typed RANGE/REPRESENTATION/MEMORY/DEADLINE stop; a false certificate is UNSOUND"""
+    truth = exact_marginals(m); r, e = run(m, order, **kw)
+    if e is not None: return e.kind in ('RANGE', 'REPRESENTATION', 'MEMORY', 'DEADLINE'), 'STOP:%s %s' % (e.kind, e.reason[:90])
+    if truth is None: return r['status'] == 'ZERO_EVIDENCE', r['status']
+    if r['status'] != 'CERTIFIED': return False, r['status']
+    return contained(r['intervals'], truth) and core.verify_output(r['intervals'], r['points']), 'CERTIFIED' + ('' if contained(r['intervals'], truth) else ' FALSE_CERTIFICATE')
+# ---- L. reverse-underflow constructions (reviewer's F1): 110 unary [3/2,1] occurrences on y, equality (x,y), two tiny leaves (z,y),(w,y) with 2^-541 entries
+def review_model(binary=True, strictly_positive=False):
+    factors = [{'scope': (3,), 'values': [F(3, 2), F(1)]} for _ in range(110)]
+    eps = F(1, 2 ** 1020) if strictly_positive else F(0)
+    factors.append({'scope': (0, 3), 'values': [F(1), eps, eps, F(1)]})
+    for leaf in (1, 2):
+        vals = [F(1, 2 ** 541), F(1, 2)] * 2 if binary else [F(1, 2 ** 540), F(1)]
+        factors.append({'scope': (leaf, 3), 'values': vals})
+    return {'cards': [2, 2, 2, 2] if binary else [2, 1, 1, 2], 'evidence': {}, 'factors': factors}
+outsL = []
+for binary, positive in ((False, False), (True, False), (True, True)):
+    ok, what = sound(review_model(binary, positive), [0, 1, 2, 3]); outsL.append((binary, positive, ok, what)); total += 1; passed += ok
+    R['controls'].append(dict(name='review_F1_reverse_underflow_%s%s' % ('binary' if binary else 'mixed_card', '_strictly_positive' if positive else '_hard_zero'), ok=ok, outcome=what))
+# randomized high-degree family: k tiny leaves (2^-a, a in 300..700), u unary occurrences (1..160) of [3/2,1] or [1,3/2], all 24 orders of the 4 variables, three fill thresholds
+rngL = random.Random(1111); allok = True; fam = []
+for trial in range(40):
+    k = rngL.randint(1, 3); u = rngL.randint(1, 160); a = rngL.randint(300, 700); m = {'cards': [2] * (2 + k), 'evidence': {}, 'factors': []}
+    for _ in range(u): m['factors'].append({'scope': (1,), 'values': rngL.choice([[F(3, 2), F(1)], [F(1), F(3, 2)], [F(7, 5), F(1, 3)]])})
+    m['factors'].append({'scope': (0, 1), 'values': rngL.choice([[F(1), F(0), F(0), F(1)], [F(1), F(1, 2 ** 1020), F(1, 2 ** 1020), F(1)], [F(2), F(1), F(1), F(3)]])})
+    for leaf in range(2, 2 + k): m['factors'].append({'scope': (leaf, 1), 'values': [F(1, 2 ** a), F(1, 2), F(1, 2 ** rngL.randint(1, a)), F(1, 2)]})
+    orders = [list(o) for o in permutations(range(2 + k))]; rngL.shuffle(orders)
+    for o in orders[:4]:
+        for thr in (0.0, 0.25, 1.01):
+            ok, what = sound(m, o, dense_fill_threshold=thr); allok = allok and ok; fam.append((trial, o, thr, what[:40]))
+            if not ok: print('FAIL L', trial, o, thr, what, flush=True)
+total += 1; passed += allok; R['controls'].append(dict(name='review_F1_randomized_high_degree_family_480_executions', ok=allok, outcomes=dict(collections.Counter(w.split(' ')[0] for _, _, _, w in fam))))
+# ---- M. integer-volume overflow (reviewer's F2): typed REPRESENTATION, never ZERO_EVIDENCE; the automatic solver surfaces a ResourceStop
+for n_, c_ in ((22, 8), (32, 4), (21, 8)):
+    mS = {'cards': [c_] * n_, 'evidence': {}, 'factors': [{'scope': (0, i), 'values': [F(1)] * (c_ * c_)} for i in range(1, n_)]}
+    rS, eS = run(mS, list(range(n_)), cap_bytes=100_000_000); ok = eS is not None and eS.kind == 'REPRESENTATION' and (eS.stats.get('counters') or {}).get('forward_rows', 0) == 0; total += 1; passed += ok
+    R['controls'].append(dict(name='review_F2_star_%dx%d_volume_overflow_typed_representation' % (n_, c_), ok=ok, outcome=('STOP:%s %s' % (eS.kind, eS.reason[:80]) if eS else rS['status'])))
+mQ = {'cards': [8] * 22, 'evidence': {}, 'factors': [{'scope': (i, j), 'values': [F(1)] * 64} for i in range(22) for j in range(i + 1, 22)]}
+try: core.solve(mQ, deadline=time.monotonic() + 20); okQ = False; whatQ = 'completed?'
+except support.ResourceStop as ex: okQ = ex.reason == 'REPRESENTATION'; whatQ = 'ResourceStop:%s' % ex.reason
+except Exception as ex: okQ = False; whatQ = '%s: %s' % (type(ex).__name__, str(ex)[:60])
+total += 1; passed += okQ; R['controls'].append(dict(name='review_F2_automatic_solver_22x8_complete_graph_typed_refusal_not_zero_evidence', ok=okQ, outcome=whatQ))
+mS10 = {'cards': [4] * 10, 'evidence': {}, 'factors': [{'scope': (0, i), 'values': [F(1)] * 16} for i in range(1, 10)]}; rS10, eS10 = run(mS10, list(range(10)), cap_bytes=200_000_000)
+ok = rS10 is not None and rS10['status'] == 'CERTIFIED' and contained(rS10['intervals'], [[F(1, 4)] * 4 for _ in range(10)]); total += 1; passed += ok; R['controls'].append(dict(name='review_F2_affordable_10x4_star_certifies_uniform_truth', ok=ok))
+# ---- N. source conversion range (reviewer's F4): huge entries are scaled exactly by a power of two; the baseline success is preserved through the automatic solver
+mN = {'cards': [2, 2, 2], 'evidence': {}, 'factors': [{'scope': (0, 1, 2), 'values': [F(10 ** 400) * (i + 1) for i in range(8)]}]}; tN = [[F(5, 18), F(13, 18)], [F(7, 18), F(11, 18)], [F(4, 9), F(5, 9)]]
+rN, eN = run(mN, [0, 1, 2]); ok = rN is not None and rN['status'] == 'CERTIFIED' and contained(rN['intervals'], tN); total += 1; passed += ok; R['controls'].append(dict(name='review_F4_source_10^400_direct_certified_after_exact_scaling', ok=ok, outcome=(rN['status'] if rN else 'STOP:%s' % eN.kind)))
+try: gN = core.solve(mN, deadline=time.monotonic() + 10); ok = contained(gN['intervals'], tN) and gN['stats']['components'][0]['route'] == 'support'; whatN = gN['status']
+except Exception as ex: ok = False; whatN = '%s: %s' % (type(ex).__name__, str(ex)[:60])
+total += 1; passed += ok; R['controls'].append(dict(name='review_F4_source_10^400_automatic_solver_keeps_the_baseline_success', ok=ok, outcome=whatN))
+m2k = {'cards': [2], 'evidence': {}, 'factors': [{'scope': (0,), 'values': [F(2) ** 2000, F(2) ** 2000]}]}; r2k, e2k = run(m2k, [0]); ok = r2k is not None and r2k['status'] == 'CERTIFIED' and contained(r2k['intervals'], [[F(1, 2), F(1, 2)]]); total += 1; passed += ok; R['controls'].append(dict(name='review_F4_source_2^2000_certified_after_exact_scaling', ok=ok))
+mW = {'cards': [2], 'evidence': {}, 'factors': [{'scope': (0,), 'values': [F(10) ** 400, F(10) ** -400]}]}; rW, eW = run(mW, [0]); ok = eW is not None and eW.kind == 'RANGE'; total += 1; passed += ok; R['controls'].append(dict(name='review_F4_dynamic_range_inside_one_factor_beyond_binary64_typed_RANGE_not_zero', ok=ok, outcome=('STOP:%s' % eW.kind if eW else rW['status'])))
+# ---- O. expired deadline at entry (reviewer's R2): typed DEADLINE, zero rows
+mO = {'cards': [2] * 1000, 'evidence': {}, 'factors': [{'scope': (i,), 'values': [F(1, 2), F(1, 2)]} for i in range(1000)]}
+try: X.execute(mO, list(range(1000)), deadline=0.0, cap_bytes=200_000_000); okO = False; whatO = 'returned'
+except X.Stop as ex: okO = ex.kind == 'DEADLINE' and (ex.stats.get('counters') or {}).get('forward_rows') in (0, None); whatO = 'STOP:%s %s (kernel entered: %s)' % (ex.kind, ex.reason[:60], 'counters' in ex.stats)   # refused at the Python entry check (no kernel call) or at the kernel's entry check (zero rows)
+total += 1; passed += okO; R['controls'].append(dict(name='review_R2_expired_deadline_is_typed_DEADLINE_at_entry', ok=okO, outcome=whatO))
+try: X.execute(mO, list(range(1000)), deadline=time.monotonic() + 0.0005, cap_bytes=200_000_000); okO2 = False; whatO2 = 'returned'
+except X.Stop as ex: okO2 = ex.kind == 'DEADLINE'; whatO2 = 'STOP:%s %s' % (ex.kind, ex.reason[:60])
+total += 1; passed += okO2; R['controls'].append(dict(name='review_R2_deadline_during_parsing_or_phases_typed_DEADLINE', ok=okO2, outcome=whatO2))
+# ---- P. label overflow: the enclosure refuses K u >= 1/2; the kernel refuses an int64 label-sum overflow (direct call with patched plan words)
+try: X.enclose([1.0, 1.0], [0], [2 ** 52], 2.0, 0, 0, [2], {}, {}); okP = False; whatP = 'returned'
+except X.Stop as ex: okP = ex.kind == 'RANGE' and 'label' in ex.reason; whatP = 'STOP:%s %s' % (ex.kind, ex.reason[:60])
+total += 1; passed += okP; R['controls'].append(dict(name='review_P_enclosure_refuses_label_K_u_>=_1/2_typed_RANGE', ok=okP, outcome=whatP))
+mP = {'cards': [2, 2], 'evidence': {}, 'factors': [{'scope': (0, 1), 'values': [F(1), F(2), F(3), F(4)]}, {'scope': (0, 1), 'values': [F(2), F(1), F(1), F(2)]}]}
+wP, vP, metaP = X.lower(mP, [0, 1], 0.25); provP = X.build(); libP = X.load(provP)
+# plan words: 2, n, cards[2], n, order[2], nsrc, then per source: slen, scope..., mode, count, label, exp2 -> patch both labels to 2^62
+idx = 2 + 2 + 1 + 2 + 1; pos = []
+for s_ in range(2):
+    sl = wP[idx]; idx += 1 + sl; mode = wP[idx]; cnt = wP[idx + 1]; idx += 2 + (cnt if mode == 1 else 0); pos.append(idx); idx += 2
+wP2 = list(wP)
+for q_ in pos: wP2[q_] = 2 ** 62
+Wp = (CT_.c_int64 * len(wP2))(*wP2); Vp = (CT_.c_double * len(vP))(*vP); Np = (CT_.c_double * 4)(); NEp = (CT_.c_int64 * 2)(); NLp = (CT_.c_int64 * 2)(); Zp = (CT_.c_double * 1)(); ZMp = (CT_.c_int64 * 2)(); CTp = (CT_.c_uint64 * len(X.COUNTERS))(); RSp = CT_.create_string_buffer(256)
+rcP = libP.cex_run(Wp, len(wP2), Vp, len(vP), 10 ** 8, float('inf'), 0.25, Np, NEp, NLp, Zp, ZMp, CTp, len(X.COUNTERS), RSp, 256)
+ok = rcP == 8 and b'overflow' in RSp.value; total += 1; passed += ok; R['controls'].append(dict(name='review_P_kernel_label_sum_int64_overflow_typed_REPRESENTATION', ok=ok, outcome='%s %s' % (X.STOPS.get(rcP, rcP), RSp.value.decode(errors='replace')[:80])))
+# ---- Q. the allocation boundary: the instrumented control driver (global operator new counts every requested byte while cex_run executes), strict build and UBSan build
+def build_driver(extra, out):
+    cmd = ['clang++', '-std=c++17', '-O1', '-g', '-ffp-model=strict', '-ffp-contract=off', '-fno-fast-math', '-fno-unsafe-math-optimizations', '-fno-reciprocal-math', '-fno-associative-math', *extra, '-DKERNEL_PATH="cex_kernel.cpp"', '-I' + BASE, os.path.join(BASE, 'cex_control_driver.cpp'), '-o', out]
+    p = subprocess.run(cmd, capture_output=True, text=True); return p.returncode == 0, p.stderr[-400:]
+drv = {}
+for tag, extra in (('strict', []), ('ubsan', ['-fsanitize=undefined', '-fno-sanitize-recover=undefined'])):
+    out = os.path.join(BASE, 'native_cache', 'cex_control_driver_' + tag); os.makedirs(os.path.dirname(out), exist_ok=True); okb, err = build_driver(extra, out); drv[tag] = dict(built=okb, err=err, cases=[])
+    if not okb: continue
+    for args, expect in ((['unaries', '32000'], 'MEMORY'), (['unaries', '4000000'], 'OK'), (['isolated', '160000', '0'], 'DEADLINE'), (['isolated', '4000000', '1e18'], 'MEMORY'), (['star', '22', '8'], 'REPRESENTATION'), (['star', '32', '4'], 'REPRESENTATION'), (['star', '21', '8'], 'REPRESENTATION'), (['star', '10', '4'], 'OK'), (['sparse', '2000000'], 'OK'), (['sparse', '2000'], 'MEMORY')):
+        p = subprocess.run([out, *args], capture_output=True, text=True, timeout=120)
+        try: j = json.loads(p.stdout.strip().splitlines()[-1])
+        except Exception: j = {'parse_error': p.stdout[-200:] + p.stderr[-400:]}
+        okc = p.returncode == 0 and j.get('stop') == expect and j.get('peak_matches') is True and j.get('nothing_live') is True and (expect != 'MEMORY' or j.get('forward_rows') == 0) and (expect != 'REPRESENTATION' or j.get('forward_rows') == 0) and (expect != 'DEADLINE' or j.get('tracked_allocations') == 0)
+        drv[tag]['cases'].append(dict(args=args, expect=expect, ok=okc, stop=j.get('stop'), reported_peak=j.get('reported_peak_logical_bytes'), tracked_peak=j.get('tracked_native_peak_requested_bytes'), live_at_return=j.get('tracked_native_live_at_return'), sanitizer_stderr=p.stderr[-200:] if p.stderr else ''))
+    p = subprocess.run([out, 'growth'], capture_output=True, text=True, timeout=60); j = json.loads(p.stdout.strip().splitlines()[-1]) if p.returncode == 0 else {}
+    drv[tag]['growth'] = dict(ok=(j.get('first_allowed') is True and j.get('second_allowed') is False and j.get('reported_peak_logical_bytes') == j.get('tracked_native_peak_requested_bytes')), record=j)
+    p = subprocess.run([out, 'rescale_boundary'], capture_output=True, text=True, timeout=60); j = json.loads(p.stdout.strip().splitlines()[-1]) if p.returncode == 0 else {}
+    drv[tag]['rescale_boundary'] = dict(ok=(j.get('inexact_case_refused') is True and j.get('exact_case_ok') is True and j.get('exact_case_values_and_exponent_correct') is True), record=j)
+for tag in ('strict', 'ubsan'):
+    d = drv[tag]; okd = d['built'] and len(d['cases']) == 10 and all(c['ok'] for c in d['cases']) and d.get('growth', {}).get('ok') and d.get('rescale_boundary', {}).get('ok')
+    total += 1; passed += bool(okd); R['controls'].append(dict(name='review_F3_allocation_boundary_instrumented_driver_%s_build' % tag, ok=bool(okd), detail=d))
+# ---- R. host-side memory is measured per phase and enters the kernel cap
+rR, eR = run(mJ, oJ); ok = rR is not None and rR['stats']['host_lowering_peak_bytes_measured'] > 0 and rR['stats']['host_enclosure_peak_bytes_measured'] > 0 and rR['stats']['kernel_cap_bytes'] == 3 * 1024 ** 3 - rR['stats']['host_lowering_retained_bytes_measured'] - rR['stats']['host_plan_output_arrays_bytes']
+total += 1; passed += ok; R['controls'].append(dict(name='review_F3_host_side_lowering_and_enclosure_bytes_measured_and_charged', ok=ok, measured={k: rR['stats'].get(k) for k in ('host_lowering_peak_bytes_measured', 'host_lowering_retained_bytes_measured', 'host_plan_output_arrays_bytes', 'host_enclosure_peak_bytes_measured', 'kernel_cap_bytes')} if rR else None))
+import collections
+R.update(dict(passed=passed, total=total, all_pass=passed == total, random_executions=len(R['records']), random_status_counts=dict(collections.Counter(r['status'] for r in R['records'])), control_groups=len(R['controls']), count_semantics='passed/total counts random EXECUTIONS (each one test) plus grouped CONTROLS (one count each, several executing many plans); it is NOT a count of enclosures', kernel=json.load(open(os.path.join(BASE, 'cex_build.json'))), executor_sha256=hashlib.sha256(open(os.path.join(BASE, 'cex_executor.py'), 'rb').read()).hexdigest(), utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())))
+json.dump(R, open(os.path.join(BASE, 'CEX_QUALIFICATION.json'), 'w'), indent=1, default=str); print(json.dumps({'passed': passed, 'total': total, 'all_pass': R['all_pass'], 'random_executions': len(R['records']), 'controls': [(c['name'], c['ok']) for c in R['controls']]}))
+sys.exit(0 if R['all_pass'] else 1)
