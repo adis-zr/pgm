@@ -35,7 +35,7 @@
 #include <gmp.h>
 #include <mpfr.h>
 
-static const char* GB3_SCHEDULE = "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.3-sparse-pull-frames";
+static const char* GB3_SCHEDULE = "GENERAL_BIDI_COMPLETE_V3/indexed-ir-frames-blocks-sparse-lru-deltas/v3.4-sparse-driver-contract";
 extern "C" const char* gb3_schedule_id() { return GB3_SCHEDULE; }
 
 enum Stop : int { GB_OK = 0, GB_DEADLINE = 1, GB_MEMORY = 2, GB_OVERFLOW = 3, GB_RANGE = 4, GB_BADPROG = 5, GB_FAULT = 6, GB_FPENV = 7, GB_LABEL = 8 };
@@ -87,6 +87,7 @@ struct GAxis { int out_pos; int fixed; int64_t cls_off; int64_t ratio_off; };   
 struct NodeD {
     int kind; std::vector<int> axes; std::vector<int64_t> card; int64_t volume;
     int storage; int demand_kind; std::vector<int64_t> demand;                     // demand_kind: 0 FULL, 1 LIST, 2 EMPTY (DENSE only)
+    int sparse_driver = -1;                                                        // SPARSE REDUCE: the planner's priced driver (MUL operand index) or -1 (run-time policy)
     int fid; int var; int64_t val_off;                                             // SOURCE / MARKER / CONSTANT
     std::vector<int> children;                                                     // GATHER (1) / ADD / MUL / REDUCE (1)
     std::vector<GAxis> gaxes;                                                      // GATHER
@@ -111,6 +112,7 @@ struct Counters {
     uint64_t reverse_value_frames, reverse_pullback_frames, reverse_combined_frames;   // frames pushed DURING THE REVERSE PHASE by class: pure VALUE (reconstruction of a streamed value needed by a pullback), pure PULLBACK, combined VALUE+PULLBACK
     uint64_t sparse_reverse_immediate, immediate_pullback_frames;   // support-indexed sparse deliveries made IMMEDIATELY (pending array unavailable); immediate generic PULLBACK frames pushed because a pending slot could not be allocated
     uint64_t reverse_value_terms, combined_terms, reverse_mul_rows;   // eliminated tuples SUMMED during the reverse phase in pure VALUE frames (reconstruction) / in combined VALUE+PULLBACK frames; MUL rows evaluated during the reverse phase
+    uint64_t sparse_driver_deviation, sparse_driver_policy_differs, sparse_driver_scans;   // planned driver unavailable (downgraded child) -> policy over the available candidates; written driver executed although the run-time policy would prefer another operand; source entries scanned for support discovery
 };
 static long test_emin = 0, test_emax = 0; static int test_bad_alloc = 0; static uint64_t test_leaf_label = 1; static int test_branch_fault = 0; static int test_ref_fault = 0;
 
@@ -429,19 +431,27 @@ template <class P> struct Exec {
     // determine, evaluate the other inputs (exact zero skips), scatter-add the product into the output row of the REDUCE's kept axes (duplicate aggregation).
     bool materialize_sparse(int nn) {
         NodeD& n = N[nn]; if (n.kind != K_REDUCE) return false; int mn = n.children[0]; const NodeD& m = N[mn]; if (m.kind != K_MUL) return false;
-        // known supports: SOURCE children (zeros in the table) and COMPLETE sparse children; choose the driver = smallest known support
-        int drv = -1; int64_t best = INT64_MAX;
+        // SPARSE_DRIVER_POLICY (one contract with the planner, gbidi3.ir.SPARSE_DRIVER_POLICY): candidates = SOURCE operands (support scanned) and COMPLETE sparse
+        // children (retained rows); cost = support x volume of the MUL axes the candidate leaves free (= the joined rows that will be visited); minimal cost, ties -> lowest
+        // operand index. The planner's written driver is AUTHORITATIVE when its support is available; otherwise (a downgraded planned child) the policy runs over the
+        // available candidates and the deviation is counted; an available written driver that the run-time policy would not choose is still executed (counted separately).
+        int drv = -1; int64_t best = 0; int pol = -1; int64_t pol_cost = INT64_MAX; std::vector<int64_t> supp(m.children.size(), -1);
         for (size_t i = 0; i < m.children.size(); ++i) { int cn = m.children[i]; const NodeD& c = N[cn]; int64_t cntz = -1;
-            if (c.kind == K_SOURCE) { cntz = 0; for (int64_t e = 0; e < c.volume; ++e) { if (!P::is_zero(fvals[F[c.fid].val_off + e])) ++cntz; ++C.source_reads; if (!poll(1)) return false; } }
+            if (c.kind == K_SOURCE) { cntz = 0; for (int64_t e = 0; e < c.volume; ++e) { if (!P::is_zero(fvals[F[c.fid].val_off + e])) ++cntz; ++C.source_reads; ++C.sparse_driver_scans; if (!poll(1)) return false; } }
             else if (c.storage == S_SPARSE && sparse_complete[cn]) cntz = (int64_t)sparse_vals[cn].size();
-            if (cntz >= 0 && cntz < best) { best = cntz; drv = (int)i; } }
+            supp[i] = cntz; if (cntz < 0) continue;
+            int64_t freev = 1; { std::vector<char> cov(m.card.size(), 0); for (int k : m.proj[i]) cov[k] = 1; for (size_t p = 0; p < m.card.size(); ++p) if (!cov[p]) { if (freev > INT64_MAX / m.card[p]) { freev = INT64_MAX; break; } freev *= m.card[p]; } }
+            int64_t cost = (cntz == 0) ? 0 : ((freev == INT64_MAX || cntz > INT64_MAX / freev) ? INT64_MAX : cntz * freev);
+            if (cost < pol_cost) { pol_cost = cost; pol = (int)i; } }
+        if (n.sparse_driver >= 0 && n.sparse_driver < (int)m.children.size() && supp[n.sparse_driver] >= 0) { drv = n.sparse_driver; best = supp[drv]; if (pol != drv) ++C.sparse_driver_policy_differs; }
+        else if (pol >= 0) { drv = pol; best = supp[drv]; if (n.sparse_driver >= 0) ++C.sparse_driver_deviation; }
         if (drv < 0) return false;
         const NodeD& dc = N[m.children[drv]]; uint64_t& cv = sparse_cap_values[nn]; uint64_t& ci = sparse_cap_index[nn];
         // temporaries (driver rows, axis masks, digit buffers) charged to the index category at their exact sizes
         uint64_t tmp_bytes = (uint64_t)best * sizeof(int64_t) + m.card.size() * (1 + 2 * sizeof(int64_t) + sizeof(int)) + dc.card.size() * sizeof(int64_t) + 256;
         ScopedCharge tmp_guard(this, &used_index); if (!reserve(used_index, caps.index, tmp_bytes)) return false; tmp_guard.add(tmp_bytes);   // driver rows / masks / digit buffers: released on every exit of this function
         std::vector<int64_t> drows; drows.reserve(best);
-        if (dc.kind == K_SOURCE) { for (int64_t e = 0; e < dc.volume; ++e) { if (!P::is_zero(fvals[F[dc.fid].val_off + e])) drows.push_back(e); if (!poll(1)) return false; } } else drows = sparse_idx[m.children[drv]];
+        if (dc.kind == K_SOURCE) { for (int64_t e = 0; e < dc.volume; ++e) { if (!P::is_zero(fvals[F[dc.fid].val_off + e])) drows.push_back(e); ++C.source_reads; if (!poll(1)) return false; } } else drows = sparse_idx[m.children[drv]];   // the driver's row pass is counted work (priced by the planner as driver_pass)
         std::vector<char> det(m.card.size(), 0); for (size_t k = 0; k < dc.card.size(); ++k) det[m.proj[drv][k]] = 1;
         std::vector<int> freeax; int64_t freevol = 1; for (size_t p = 0; p < m.card.size(); ++p) if (!det[p]) { freeax.push_back((int)p); if (freevol > INT64_MAX / m.card[p]) return false; freevol *= m.card[p]; }
         std::vector<int64_t> d(m.card.size()), dd; size_t sl; if (!frame_alloc(2, sl)) return false; Num& row = at(sl); Num& tmp = at(sl + 1);
@@ -605,7 +615,8 @@ template <class P> static void parse_prog(Exec<P>& E, const int64_t* prog, int64
             for (size_t k = 0; k < ch.card.size(); ++k) { int p = r.rdi(); int64_t ro = r.rd(); if (p < -1 || p >= na) throw BadProg("reduce map"); n.proj[0][k] = p; n.reps_off[k] = ro;
                 if (p >= 0) { if (seen[p]) throw BadProg("reduce kept axis twice"); seen[p] = 1; if (ro < 0) { if (n.card[p] != ch.card[k]) throw BadProg("reduce kept axis card"); } else { if (n.storage == S_SPARSE) throw BadProg("sparse reduce with a core axis"); if (ro > ncls - n.card[p]) throw BadProg("reps off"); for (int64_t q = 0; q < n.card[p]; ++q) if (E.cls[ro + q] < 0 || E.cls[ro + q] >= ch.card[k]) throw BadProg("reps value"); } }
                 else { if (ro >= 0) throw BadProg("reps on an eliminated axis"); n.elim_card.push_back(ch.card[k]); if (n.elim_card.size() > 64) throw BadProg("more than 64 eliminated axes in one REDUCE"); if (n.elim_volume > INT64_MAX / ch.card[k]) throw BadProg("elim volume"); n.elim_volume *= ch.card[k]; } }
-            for (int p = 0; p < na; ++p) if (!seen[p]) throw BadProg("reduce output axis not produced"); E.N[c].uses++; break; }
+            for (int p = 0; p < na; ++p) if (!seen[p]) throw BadProg("reduce output axis not produced"); E.N[c].uses++;
+            n.sparse_driver = r.rdi(); if (n.sparse_driver < -1 || (n.sparse_driver >= 0 && (ch.kind != K_MUL || n.sparse_driver >= (int)ch.children.size()))) throw BadProg("sparse driver"); if (n.sparse_driver >= 0 && n.storage != S_SPARSE) throw BadProg("driver on a non-sparse reduce"); break; }
         }
     }
     int64_t nr = r.rdn(); if (nr > nN) throw BadProg("roots"); E.roots.resize(nr); for (int64_t i = 0; i < nr; ++i) { E.roots[i] = r.rdi(); if (E.roots[i] < 0 || E.roots[i] >= nN || !E.N[E.roots[i]].card.empty()) throw BadProg("root must be a scalar node"); }
@@ -661,8 +672,8 @@ static int dbl_fault() { return Dbl::label_fault ? GB_LABEL : (Dbl::range_fault 
 int gb3_forward(Handle* h) { try { if (h->mode == 1 && !fp_env_ok()) return GB_FPENV; int st = h->mode == 0 ? h->I->forward() : h->D->forward(); if (st == GB_OK && h->mode == 0) st = mpfr_flags_stop(); if (st == GB_OK && h->mode == 1) { st = dbl_fault(); if (st == GB_OK && !Dbl::finite(h->D->Z)) st = GB_RANGE; } return st; } catch (const std::bad_alloc&) { return GB_MEMORY; } catch (...) { return GB_FAULT; } }
 int gb3_reverse(Handle* h) { try { if (h->mode == 1 && !fp_env_ok()) return GB_FPENV; int st = h->mode == 0 ? h->I->reverse() : h->D->reverse(); if (st == GB_OK && h->mode == 0) st = mpfr_flags_stop(); if (st == GB_OK && h->mode == 1) st = dbl_fault(); return st; } catch (const std::bad_alloc&) { return GB_MEMORY; } catch (...) { return GB_FAULT; } }
 int gb3_mpfr_flags(Handle* h) { (void)h; return (mpfr_overflow_p() ? 1 : 0) | (mpfr_underflow_p() ? 2 : 0) | (mpfr_nanflag_p() ? 4 : 0) | (mpfr_erangeflag_p() ? 8 : 0) | (mpfr_inexflag_p() ? 16 : 0); }
-#define CTRS3(E) uint64_t v[56] = {E.C.value_frames, E.C.pullback_frames, E.C.frames_combined, E.C.max_frame_depth, E.C.polls, E.C.mults, E.C.adds, E.C.lookups, E.C.zero_skips, E.C.source_reads, E.C.marker_updates, E.C.gather_visits, E.C.add_visits, E.C.mul_rows, E.C.reduce_terms, E.C.stream_reevals, E.C.reads_outside_demand, E.C.regenerated_values, E.C.dense_blocks, E.C.entries_materialized, E.C.entries_stored_planned, E.C.sparse_rows_joined, E.C.sparse_output_rows, E.C.sparse_join_discarded, E.C.cache_hits, E.C.cache_misses, E.C.cache_evictions, E.C.cache_inserts, E.C.adjoint_adds, E.C.slots_drained, E.C.early_flushes, E.C.late_increments, E.peak_pending, E.C.downgrades, E.C.root_ops, E.C.numerator_adds, E.used_values, E.used_index, E.used_reverse, E.used_pending, E.used_scratch, E.peak_scratch, E.cache_bytes, E.C.reverse_tuples, E.C.sparse_reverse_rows, E.C.sparse_reverse_generic, E.C.reverse_value_frames, E.C.reverse_pullback_frames, E.C.reverse_combined_frames, E.C.sparse_reverse_immediate, E.C.immediate_pullback_frames, E.C.reverse_value_terms, E.C.combined_terms, E.C.reverse_mul_rows, 0, 0}; std::memcpy(out48, v, sizeof(v));
-void gb3_counters(Handle* h, uint64_t* out48 /* 56 slots */) { if (h->mode == 0) { CTRS3((*h->I)) } else { CTRS3((*h->D)) } }
+#define CTRS3(E) uint64_t v[64] = {E.C.value_frames, E.C.pullback_frames, E.C.frames_combined, E.C.max_frame_depth, E.C.polls, E.C.mults, E.C.adds, E.C.lookups, E.C.zero_skips, E.C.source_reads, E.C.marker_updates, E.C.gather_visits, E.C.add_visits, E.C.mul_rows, E.C.reduce_terms, E.C.stream_reevals, E.C.reads_outside_demand, E.C.regenerated_values, E.C.dense_blocks, E.C.entries_materialized, E.C.entries_stored_planned, E.C.sparse_rows_joined, E.C.sparse_output_rows, E.C.sparse_join_discarded, E.C.cache_hits, E.C.cache_misses, E.C.cache_evictions, E.C.cache_inserts, E.C.adjoint_adds, E.C.slots_drained, E.C.early_flushes, E.C.late_increments, E.peak_pending, E.C.downgrades, E.C.root_ops, E.C.numerator_adds, E.used_values, E.used_index, E.used_reverse, E.used_pending, E.used_scratch, E.peak_scratch, E.cache_bytes, E.C.reverse_tuples, E.C.sparse_reverse_rows, E.C.sparse_reverse_generic, E.C.reverse_value_frames, E.C.reverse_pullback_frames, E.C.reverse_combined_frames, E.C.sparse_reverse_immediate, E.C.immediate_pullback_frames, E.C.reverse_value_terms, E.C.combined_terms, E.C.reverse_mul_rows, E.C.sparse_driver_deviation, E.C.sparse_driver_policy_differs, E.C.sparse_driver_scans, 0, 0, 0, 0, 0, 0, 0}; std::memcpy(out48, v, sizeof(v));
+void gb3_counters(Handle* h, uint64_t* out48 /* 64 slots */) { if (h->mode == 0) { CTRS3((*h->I)) } else { CTRS3((*h->D)) } }
 void gb3_snapshot(Handle* h, uint64_t* out8) { if (!h) return; if (h->mode == 0) for (int i = 0; i < 8; ++i) out8[i] = h->I->snap[i].load(); else for (int i = 0; i < 8; ++i) out8[i] = h->D->snap[i].load(); }
 // results: Z (lo,hi) then every reduced variable's N[v][a] (lo,hi) as exact tokens (';' separated). MPFR: hex@exp or "0"; binary64: %a@label (Z and N tokens written twice)
 int64_t gb3_results_size(Handle* h) {

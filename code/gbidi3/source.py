@@ -85,9 +85,11 @@ def numeral_bits_bound(t):
         return None
     if m.group("num") is not None:
         return (len(m.group("num")) * 3322 // 1000 + 2, len(m.group("den")) * 3322 // 1000 + 2)
-    ip = m.group("ip") or ""; fp = m.group("fp") or ""; ex = int(m.group("ex") or 0); digits = len(ip) + len(fp)
-    if len(m.group("ex") or "") > 12:
-        return (1 << 62, 1 << 62)                                                               # an exponent text beyond 12 digits is beyond any admissible value: bounded as "enormous"
+    ip = m.group("ip") or ""; fp = m.group("fp") or ""; digits = len(ip) + len(fp); exs = (m.group("ex") or "0")
+    sig = exs.lstrip("+-").lstrip("0")
+    if len(sig) > 12:
+        return (1 << 62, 1 << 62)                                                               # an exponent with more than 12 significant digits is beyond any admissible value: bounded as "enormous" BEFORE any int() conversion (direct-API typed error, no ValueError under the interpreter's digit limit)
+    ex = int(exs)
     shift = ex - len(fp)                                                                       # value = int(ip + fp) * 10^shift
     num_bits = digits * 3322 // 1000 + 2 + (shift * 3322 // 1000 + 2 if shift > 0 else 0); den_bits = 2 + ((-shift) * 3322 // 1000 + 2 if shift < 0 else 0)
     return (num_bits, den_bits)

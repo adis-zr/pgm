@@ -62,6 +62,13 @@ def owner_evidence(D, child_start, child_receipt, by_job):
     if len(owner_rc) != 1:
         return None, ["owner receipt %s: expected exactly one in this ledger, found %d (missing, duplicate or conflicting ownership evidence)" % (owner_jid[:40], len(owner_rc))]
     owner = owner_rc[0]
+    # UNIQUE owner lifecycle (fourth review C): exactly one START (a supervised job always writes its START first) and at most one SPAWNED for the owner; a duplicate /
+    # contradictory START is not resolved by dictionary overwrite but rejected
+    owner_st = [r for r in rows if r.get("kind") == "START" and r.get("jid") == owner_jid]; owner_sp = [r for r in rows if r.get("kind") == "SPAWNED" and r.get("jid") == owner_jid]
+    if len(owner_st) != 1 or len(owner_sp) > 1:
+        return owner, ["owner lifecycle %s: expected exactly one START and at most one SPAWNED, found %d / %d (missing or ambiguous owner lifecycle)" % (owner_jid[:40], len(owner_st), len(owner_sp))]
+    if owner_sp and owner.get("pgid") is not None and owner_sp[0].get("pgid") != owner.get("pgid"):
+        reasons.append("owner receipt pgid differs from its SPAWNED record")
     # ancestry: follow START parent links from the child; also accept the registry's root owner of the child's own registration
     parent_of = {r["jid"]: r.get("parent_jid") for r in rows if r.get("kind") == "START"}
     chain = []; j = child_start.get("parent_jid"); seen = set()
@@ -88,8 +95,17 @@ def owner_evidence(D, child_start, child_receipt, by_job):
             reasons.append("the child attempt is not in its own ownership registry")
     if owner_jid not in chain and not registry_ok:
         reasons.append("owner %s is neither an ancestor of the attempt in the START chain nor a registered owner of its group (unrelated ownership evidence)" % owner_jid[:40])
-    if owner.get("cleanup_unresolved") or owner.get("group_empty_at_receipt") is not True or (owner.get("nested_groups_live_at_receipt") or 0) != 0 or (owner.get("nested_groups_registered") or 0) < 1:
-        reasons.append("the owner receipt does not establish the closure of the owned work (cleanup unresolved, live nested groups, non-empty group or no registered nested group)")
+    # POSITIVE, mutually compatible closure fields (fourth review C): missing fields are NOT clean; contradictions between the outcome / detailed live list and the flags are rejected
+    def is_int(x):
+        return isinstance(x, int) and not isinstance(x, bool)
+    live_n = owner.get("nested_groups_live_at_receipt"); reg_n = owner.get("nested_groups_registered"); killed_n = owner.get("nested_groups_killed"); live_list = owner.get("nested_live")
+    if owner.get("cleanup_unresolved") is not False or owner.get("group_empty_at_receipt") is not True or not is_int(live_n) or live_n != 0 or not is_int(reg_n) or reg_n < 1 or not is_int(killed_n) or killed_n < 0:
+        reasons.append("the owner receipt does not POSITIVELY establish the closure of the owned work (requires explicit cleanup_unresolved false, group_empty_at_receipt true, nested_groups_live_at_receipt == 0, nested_groups_registered >= 1, nested_groups_killed >= 0; missing fields are not clean)")
+    oc = str(owner.get("outcome") or "")
+    if not oc or oc.startswith("CLEANUP_UNRESOLVED") or oc in ("LAUNCH_FAILED",) or owner.get("outcome_before_cleanup") in (None,) and oc == "":
+        reasons.append("owner receipt outcome %r is incompatible with an established cleanup" % oc)
+    if isinstance(live_list, list) and live_list:
+        reasons.append("owner receipt lists %d live nested group(s) although its live count is zero (contradictory evidence)" % len(live_list))
     return owner, reasons
 
 

@@ -48,11 +48,12 @@ def prod(xs):
 
 class Node:
     """immutable semantic identity (nid, kind, axes, card, children, payload) + mutable storage decision (storage, demand) + provenance"""
-    __slots__ = ("nid", "kind", "axes", "card", "children", "fid", "var", "value", "gaxes", "proj", "rmap", "reps", "storage", "demand", "prov", "witness", "notes", "cost")
+    __slots__ = ("nid", "kind", "axes", "card", "children", "fid", "var", "value", "gaxes", "proj", "rmap", "reps", "storage", "demand", "prov", "witness", "notes", "cost", "driver")
 
-    def __init__(self, nid, kind, axes, card, children=(), fid=None, var=None, value=None, gaxes=None, proj=None, rmap=None, reps=None, storage=STREAM, demand="FULL", prov=None, witness=None):
+    def __init__(self, nid, kind, axes, card, children=(), fid=None, var=None, value=None, gaxes=None, proj=None, rmap=None, reps=None, storage=STREAM, demand="FULL", prov=None, witness=None, driver=-1):
         self.nid = nid; self.kind = kind; self.axes = tuple(axes); self.card = tuple(int(c) for c in card); self.children = tuple(children); self.fid = fid; self.var = var; self.value = value
         self.gaxes = gaxes; self.proj = proj; self.rmap = rmap; self.reps = reps; self.storage = storage; self.demand = demand; self.prov = prov or {}; self.witness = witness; self.notes = []; self.cost = None
+        self.driver = int(driver) if driver is not None else -1                        # SPARSE REDUCE only: the MUL operand index that DRIVES the join (the planner's priced choice under SPARSE_DRIVER_POLICY), -1 = policy at run time
         if len(self.axes) != len(self.card) or any(c < 1 for c in self.card):
             raise IRError("node %d: axes / cardinalities malformed" % nid)
         if prod(self.card) > INT64_MAX:
@@ -129,6 +130,7 @@ class Program:
             raise IRError("REDUCE: eliminated axis not in the child")
         return self.add(REDUCE, axes, card, children=(child.nid,), rmap=tuple(rmap), reps=tuple(rp), **kw)
 
+
     def consumers(self):
         """nid -> list of (consumer nid, child position)"""
         cons = {n.nid: [] for n in self.nodes}
@@ -136,6 +138,24 @@ class Program:
             for i, c in enumerate(n.children):
                 cons[c].append((n.nid, i))
         return cons
+
+
+
+SPARSE_DRIVER_POLICY = ("candidates = every SOURCE operand of the MUL (support = its nonzero entries, scanned) and every operand that is a COMPLETE sparse node (support = its retained rows); "
+                        "cost(candidate) = support x product of the cardinalities of the MUL axes the candidate does NOT cover (= the joined rows the kernel visits, rejected zero products included); "
+                        "choose the minimal cost, ties -> the lowest operand index; the planner prices exactly this quantity and writes its choice into REDUCE.driver; the kernel executes the written "
+                        "driver when that operand's support is available at run time, otherwise it applies the same policy to the available candidates and counts sparse_driver_deviation (a resource "
+                        "downgrade of a planned sparse child is the only cause); when the written driver is available but the run-time policy would prefer another operand (the planner's child support was "
+                        "an estimate) the written driver is still executed and sparse_driver_policy_differs is counted")
+
+
+def sparse_driver_cost(mul_card, operand_proj, support):
+    """joined rows visited when `operand` drives the join: support x volume of the MUL axes it leaves free"""
+    covered = set(operand_proj); free = 1
+    for p, c in enumerate(mul_card):
+        if p not in covered:
+            free *= c
+    return support * free
 
 
 # ---------------------------------------------------------------------------------------------------------------- local semantics (unconditional, every program)
@@ -237,6 +257,11 @@ def local_semantics(P, dom, tick=lambda n=1: None):
             kept = [r for r in n.rmap if r != -1]
             if sorted(kept) != list(range(len(n.axes))) or any(not isinstance(r, int) or isinstance(r, bool) or r < -1 for r in n.rmap):
                 raise IRError("node %d: REDUCE kept axes are not a bijection onto the output" % n.nid)
+            drv = getattr(n, "driver", -1)
+            if not isinstance(drv, int) or isinstance(drv, bool) or drv < -1 or (drv >= 0 and (c.kind != MUL or drv >= len(c.children))):
+                raise IRError("node %d: sparse driver %r is not an operand index of the MUL child" % (n.nid, drv))
+            if drv >= 0 and n.storage != SPARSE:
+                raise IRError("node %d: a sparse driver is declared on a non-SPARSE REDUCE" % n.nid)
             for k, r in enumerate(n.rmap):
                 if r < 0:
                     if n.reps[k] is not None:
@@ -486,7 +511,7 @@ def flatten_bytes_bound(V):
         elif n.kind == MUL:
             words += sum(len(pr) for pr in n.proj)
         elif n.kind == REDUCE:
-            words += 2 * len(n.rmap) + sum(len(r[0]) for r in n.reps if r is not None)
+            words += 2 * len(n.rmap) + 1 + sum(len(r[0]) for r in n.reps if r is not None)
     nvals = sum(len(V.tables[fid]) for fid in V.factor_order) + sum(len(g["ratio"]) for n in P.nodes if n.kind == GATHER for g in n.gaxes if g.get("ratio") is not None) + 2
     return 8 * words * 2 + 160 * nvals + 4096                                        # int64 list + ctypes copy; value strings "num/den" (proxy 160 B incl. list slot and encoded copy)
 
@@ -541,6 +566,7 @@ def flatten(V, deadline=None):
             w.append(n.children[0])
             for k, r in enumerate(n.rmap):
                 w += [r, put_cls(n.reps[k][0]) if (r >= 0 and n.reps[k] is not None) else -1]
+            w.append(int(getattr(n, "driver", -1)))                                       # the priced sparse driver (operand index of the MUL) or -1
         node_words.append(w)
     prog += [len(cls_pool)] + cls_pool
     prog.append(len(P.nodes))

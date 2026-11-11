@@ -587,8 +587,13 @@ def test_RF1_nonbipartite_production_planning_demand_restriction_activates_and_s
     g, cg = r["GENERAL_BIDI_COMPLETE_V3"]; a, ca = r["A1_NO_DEMAND_MASKS"]
     assert g["mechanisms"]["demand"]["restricted_nodes"] >= 1 and g["mechanisms"]["demand"]["entries_saved"] >= 1 and a["mechanisms"]["demand"]["restricted_nodes"] == 0
     assert sum(1 for n in g["plan"]["node_table"] if n["demand"] not in ("FULL", "EMPTY")) >= 1                                                      # the restriction is in the EXECUTED validated program
-    assert (g["mechanisms"]["fusion"], g["mechanisms"]["two_axis"], g["mechanisms"]["sparse"]) == (a["mechanisms"]["fusion"], a["mechanisms"]["two_axis"], a["mechanisms"]["sparse"])   # the only planning difference is the demand switch
-    assert work(cg) < work(ca) and cg["entries_materialized"] < ca["entries_materialized"] and cg["reads_outside_demand"] == 0, (work(cg), work(ca), cg["entries_materialized"], ca["entries_materialized"])
+    assert (g["mechanisms"]["fusion"], g["mechanisms"]["two_axis"]) == (a["mechanisms"]["fusion"], a["mechanisms"]["two_axis"])                      # the only planning difference is the demand switch ...
+    # FIXTURE CHANGE (fourth review A, disclosed): the SPARSE storage decision is priced against the DENSE alternative's demand-restricted stored entries (SPARSE_STORAGE_RULE), so the
+    # demand switch may legally turn a bucket that A1 stores SPARSE into a demand-restricted DENSE bucket; every such difference must be a node GENERAL restricted (here: 7 of 9 entries x 3 = 21
+    # DENSE rows versus the 7 x 3 = 21-row sparse join: a tie -> DENSE), and GENERAL never adds a sparse bucket
+    gs = {n["nid"] for n in g["plan"]["node_table"] if n["kind"] == IR.REDUCE and n["storage"] == IR.SPARSE}; as_ = {n["nid"] for n in a["plan"]["node_table"] if n["kind"] == IR.REDUCE and n["storage"] == IR.SPARSE}
+    gdem = {n["nid"]: n["demand"] for n in g["plan"]["node_table"]}; assert gs <= as_ and all(isinstance(gdem[nid], int) for nid in as_ - gs), (gs, as_, gdem)
+    assert work(cg) < work(ca) and cg["entries_materialized"] + cg["sparse_output_rows"] < ca["entries_materialized"] + ca["sparse_output_rows"] and cg["reads_outside_demand"] == 0, (work(cg), work(ca), cg["entries_materialized"], ca["entries_materialized"], cg["sparse_output_rows"], ca["sparse_output_rows"])   # residency = dense entries + sparse rows
     # higher arity / nonbinary, zeros, no-op and capped cases keep exact truth with the mechanism's accounting present
     card2 = [3, 3, 3, 2]; facs2 = Q.rnd_model(31, card2, [(0, 1, 2), (1, 2, 3), (0, 3), (0, 2)], zeros=0.15); r2 = _run_arms(tmp_path, "tern_cycles", card2, facs2, ("GENERAL_BIDI_COMPLETE_V3", "A1_NO_DEMAND_MASKS"))
     g2 = r2["GENERAL_BIDI_COMPLETE_V3"][0]; assert "restricted_nodes" in g2["mechanisms"]["demand"] and g2["mechanisms"]["demand"]["skipped"] >= 0

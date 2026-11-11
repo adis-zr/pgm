@@ -127,6 +127,8 @@ def set_storage(kind, only_kind=IR.REDUCE, include_roots=False):
                 if kind == IR.SPARSE and not (n.kind == IR.REDUCE and P.nodes[n.children[0]].kind == IR.MUL and all(r is None for r in n.reps)):
                     continue
                 n.storage = kind; n.demand = "FULL"
+                if kind != IR.SPARSE:
+                    n.driver = -1                                                                                  # fourth review: a sparse driver is declared on SPARSE storage only (the validator rejects it elsewhere)
     return f
 
 
@@ -671,7 +673,7 @@ def test_C20_every_corruption_class_is_rejected_or_cannot_reach_execution(tmp_pa
     def forge_demand(P2):
         for n in P2.nodes:
             if n.kind == IR.REDUCE and n.axes and n.nid not in P2.roots:
-                n.storage = IR.DENSE; n.demand = (0,)
+                n.storage = IR.DENSE; n.demand = (0,); n.driver = -1                                                                             # FIXTURE CHANGE (fourth review A): a forged DENSE node carries no sparse driver (a stale driver is itself rejected by the validator)
     rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "dem"), rules=[], b64=False, hooks={"mutate_program": forge_demand}); assert truth_inside(rec, mp, ep) and counters(rec)["reads_outside_demand"] >= 1
     # the file changes after the snapshot: the record is bound to the parsed bytes; publication refuses (TASK_MISMATCH / CHECK_FAILED), no MAR
     rec = run("GENERAL_BIDI_COMPLETE_V3", mp, ep, str(tmp_path / "fc"), rules=[], b64=False); orig = open(mp).read()
@@ -770,7 +772,7 @@ def test_C22_every_category_cap_python_storage_pending_transfers_fallback_export
     for i in range(nf):
         nodes += [5, 1, i, 1, 0, 0, 0, 2, i, nf + i, 0, 0]                               # MUL_i(SOURCE_i, MARKER_i)
     for i in range(nf):
-        nodes += [6, 0, 1, 0, 0, 2 * nf + i, -1, -1]                                     # REDUCE_i over i -> scalar root (DENSE)
+        nodes += [6, 0, 1, 0, 0, 2 * nf + i, -1, -1, -1]                                   # REDUCE_i over i -> scalar root (DENSE); FIXTURE CHANGE (fourth review A): the flat REDUCE carries one more word, the sparse driver (-1 = none)
     prog += [4 * nf] + nodes + [nf] + [3 * nf + i for i in range(nf)]
     a = (c_.c_int64 * len(prog))(*prog); qs = (c_.c_char_p * (nf + 1))(*([b"1/1"] * (nf + 1))); dv = (c_.c_double * (nf + 1))(*([1.0] * (nf + 1))); caps = (c_.c_uint64 * 5)(*([1 << 28] * 5)); err = c_.c_int()
     h0 = L.gb3_create(1, 53, a, len(prog), qs, dv, nf, 0, 0, caps, 0.0, c_.byref(err)); assert not h0 and err.value == 1, err.value                  # FIXTURE CHANGE (repair E5): program parsing polls -> an already-expired deadline is refused AT CREATE (typed DEADLINE, clean teardown)

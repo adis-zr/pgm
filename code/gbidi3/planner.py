@@ -39,7 +39,7 @@ ARMS = {
     "A2_NO_FUSION": {"views": True, "demand_masks": True, "fusion": False, "general_planner": True, "two_axis": True, "orders": ("original_id", "min_volume", "min_fill")},
     "A3_NO_RESPONSE_VIEWS": {"views": False, "demand_masks": True, "fusion": True, "general_planner": True, "two_axis": True, "orders": ("original_id", "min_volume", "min_fill")},
 }
-PLANNER_CONSTANTS = {"TWO_AXIS_JOINT_MAX": TWO_AXIS_JOINT_MAX, "BLOCK_ENTRIES": BLOCK_ENTRIES, "MAX_DEMAND_PASSES": MAX_DEMAND_PASSES, "SPARSE_MIN_ZERO_FRACTION": "1/4", "CACHE_WHEN_READS_EXCEED_VOLUME": True, "ROW_INSPECTION_CAP": 1_000_000, "METADATA_UPDATE_CAP": 3_000_000}
+PLANNER_CONSTANTS = {"TWO_AXIS_JOINT_MAX": TWO_AXIS_JOINT_MAX, "BLOCK_ENTRIES": BLOCK_ENTRIES, "MAX_DEMAND_PASSES": MAX_DEMAND_PASSES, "SPARSE_STORAGE_RULE": "SPARSE iff the SPARSE_DRIVER_POLICY minimum (support x free-axis volume over every SOURCE operand and complete sparse child) < stored (demand-restricted) entries x eliminated volume; ties DENSE; no density threshold (the delivered 1/4 .. 3/4 zero-fraction gate is withdrawn, fourth review A)", "CACHE_WHEN_READS_EXCEED_VOLUME": True, "ROW_INSPECTION_CAP": 1_000_000, "METADATA_UPDATE_CAP": 3_000_000}
 
 
 def prod(xs):
@@ -52,11 +52,11 @@ def prod(xs):
 # ---------------------------------------------------------------------------------------------------------------- intermediate (mutable) plan
 class Bucket:
     """one region node before emission: eliminated variables, owned factors, child buckets, boundary scope"""
-    __slots__ = ("bid", "elim", "fids", "children", "scope", "card", "storage", "demand", "views", "support", "bag_support", "support_prov", "demand_prov", "prov", "consumer", "cost", "reads", "stored", "two_axis", "fused_from", "sparse_rows", "sparse_joined", "raw_scope_card", "core_card", "notes")
+    __slots__ = ("bid", "elim", "fids", "children", "scope", "card", "storage", "demand", "views", "support", "bag_support", "support_prov", "demand_prov", "prov", "consumer", "cost", "reads", "stored", "two_axis", "fused_from", "sparse_rows", "sparse_joined", "sparse_driver", "raw_scope_card", "core_card", "notes")
 
     def __init__(self, bid, elim, fids, children, scope, card):
         self.bid = bid; self.elim = list(elim); self.fids = list(fids); self.children = list(children); self.scope = tuple(scope); self.card = tuple(card); self.raw_scope_card = tuple(card); self.core_card = tuple(card)
-        self.storage = IR.DENSE; self.demand = "FULL"; self.views = {}; self.support = None; self.bag_support = None; self.support_prov = "NOT_COMPUTED"; self.demand_prov = "FULL"; self.prov = {}; self.consumer = None; self.cost = None; self.reads = 1; self.stored = None; self.two_axis = False; self.fused_from = []; self.sparse_rows = None; self.sparse_joined = None; self.notes = []
+        self.storage = IR.DENSE; self.demand = "FULL"; self.views = {}; self.support = None; self.bag_support = None; self.support_prov = "NOT_COMPUTED"; self.demand_prov = "FULL"; self.prov = {}; self.consumer = None; self.cost = None; self.reads = 1; self.stored = None; self.two_axis = False; self.fused_from = []; self.sparse_rows = None; self.sparse_joined = None; self.sparse_driver = -1; self.notes = []
 
     def volume(self):
         return prod(self.core_card)
@@ -65,7 +65,7 @@ class Bucket:
         """shallow structural copy (lists / dicts / provenance copied; supports shared read-only); consumer / children links remapped by Plan.clone"""
         b = Bucket(self.bid, self.elim, self.fids, [], self.scope, self.card); b.raw_scope_card = self.raw_scope_card; b.core_card = self.core_card; b.storage = self.storage; b.demand = self.demand if isinstance(self.demand, str) else tuple(self.demand)
         b.views = dict(self.views); b.support = self.support; b.bag_support = self.bag_support; b.support_prov = self.support_prov; b.demand_prov = self.demand_prov; b.prov = dict(self.prov); b.cost = self.cost; b.reads = self.reads; b.stored = self.stored
-        b.two_axis = self.two_axis; b.fused_from = list(self.fused_from); b.sparse_rows = self.sparse_rows; b.sparse_joined = self.sparse_joined; b.notes = list(self.notes); return b
+        b.two_axis = self.two_axis; b.fused_from = list(self.fused_from); b.sparse_rows = self.sparse_rows; b.sparse_joined = self.sparse_joined; b.sparse_driver = self.sparse_driver; b.notes = list(self.notes); return b
 
     def elim_volume(self, dom):
         return prod(len(dom[v]) for v in self.elim)
@@ -384,6 +384,26 @@ class Builder:
             plan.buckets.insert(saved["idx"], b)
         return undo
 
+    # ------------------------------------------------------------------ ONE sparse-driver contract (gbidi3.ir.SPARSE_DRIVER_POLICY) priced by the planner, written into the emitted REDUCE, executed by the kernel
+    def _sparse_choice(self, b):
+        """(operand index, joined rows, support, label) of the cheapest sparse driver of bucket b in EMITTED operand order [sources..., markers..., children...], or None.
+        Candidates: every SOURCE operand (support = nonzero entries; a fully positive source is a candidate too) and every child bucket that is itself SPARSE
+        (support = its planned retained rows, an ESTIMATE the kernel replaces by the exact count); cost = support x volume of the bag axes the candidate leaves
+        free = the joined rows the kernel will visit, rejected zero products included; minimal cost, ties -> lowest operand index. A viewed child is wrapped in a
+        GATHER at emission and is therefore not a candidate (the kernel sees a GATHER operand)."""
+        bag = list(b.elim) + list(b.scope); best = None
+        for i, f in enumerate(b.fids):
+            nz = sum(1 for x in self.ftable[f] if x != 0); free = prod(len(self.dom[v]) for v in bag if v not in self.fscope[f]); cost = nz * free
+            if best is None or cost < best[1]:
+                best = (i, cost, nz, "SOURCE %s (support %d x free %d)" % (f, nz, free))
+        base = len(b.fids) + len(b.elim)
+        for j, c in enumerate(b.children):
+            if c.storage == IR.SPARSE and not c.views and c.sparse_rows is not None:
+                free = prod(len(self.dom[v]) for v in bag if v not in c.scope); cost = c.sparse_rows * free
+                if best is None or cost < best[1]:
+                    best = (base + j, cost, c.sparse_rows, "SPARSE child bucket %d (planned rows %d x free %d)" % (c.bid, c.sparse_rows, free))
+        return best
+
     # ------------------------------------------------------------------ storage decisions under the caps
     def storage_pass(self, plan, bytes_per_entry, caps):
         """storage decision of every bucket from scratch (idempotent; re-run by the whole-path cost evaluation after every tentative rewrite)"""
@@ -391,18 +411,14 @@ class Builder:
         plan.mechanisms["sparse"]["nodes"] = 0; plan.mechanisms["downgrades"] = {"to_stream": 0, "to_cache": 0}
         for b in plan.buckets:
             b.stored = b.volume() if b.demand == "FULL" else (0 if b.demand == "EMPTY" else len(b.demand))
-            b.storage = IR.DENSE; b.sparse_rows = None; b.sparse_joined = None; b.prov.pop("storage", None)
-            # SPARSE candidate: REDUCE(MUL) with a zero-bearing source operand, no compressed axes, and a cheaper join price
-            if not b.views and b.fids:
-                zf = [(f, sum(1 for x in self.ftable[f] if x != 0)) for f in b.fids]; zf = [(f, nz) for f, nz in zf if nz < len(self.ftable[f])]
-                if zf:
-                    f, nz = min(zf, key=lambda t: t[1] / max(1, len(self.ftable[t[0]])))
-                    frac = Fr(nz, len(self.ftable[f]))
-                    if frac <= Fr(3, 4):
-                        bag = list(b.elim) + list(b.scope); free = [v for v in bag if v not in self.fscope[f]]; joined = nz * prod(len(self.dom[v]) for v in free)
-                        dense_rows = b.stored * b.elim_volume(self.dom)                        # the DENSE alternative visits stored (demand-restricted) entries x eliminated volume
-                        if joined < dense_rows:
-                            b.storage = IR.SPARSE; b.sparse_rows = min(b.volume(), joined); b.sparse_joined = joined; plan.mechanisms["sparse"]["nodes"] += 1; b.prov["storage"] = "SPARSE_JOIN_PRICE"
+            b.storage = IR.DENSE; b.sparse_rows = None; b.sparse_joined = None; b.sparse_driver = -1; b.prov.pop("storage", None); b.prov.pop("sparse_driver", None)
+            # SPARSE candidate: REDUCE(MUL) without compressed axes whose cheapest driver under SPARSE_DRIVER_POLICY visits fewer rows than the DENSE alternative
+            if not b.views and (b.fids or any(c.storage == IR.SPARSE for c in b.children)):
+                ch = self._sparse_choice(b)
+                if ch is not None:
+                    drv, joined, supp, label = ch; dense_rows = b.stored * b.elim_volume(self.dom)   # the DENSE alternative visits stored (demand-restricted) entries x eliminated volume
+                    if joined < dense_rows:
+                        b.storage = IR.SPARSE; b.sparse_rows = min(b.volume(), joined); b.sparse_joined = joined; b.sparse_driver = drv; plan.mechanisms["sparse"]["nodes"] += 1; b.prov["storage"] = "SPARSE_JOIN_PRICE"; b.prov["sparse_driver"] = label
         # memory: downgrade the largest non-root stored buckets until the reserved peak fits
         def reserved():
             tot = 0
@@ -417,7 +433,14 @@ class Builder:
             if not cands:
                 break
             b = max(cands, key=lambda q: (q.stored * bytes_per_entry if q.storage == IR.DENSE else (q.sparse_rows or q.volume()) * (bytes_per_entry + 56), -q.bid))
-            b.storage = IR.STREAM; b.prov["storage"] = "DOWNGRADED_TO_STREAM_MEMORY"; plan.mechanisms["downgrades"]["to_stream"] += 1
+            was_sparse = b.storage == IR.SPARSE; b.storage = IR.STREAM; b.sparse_driver = -1; b.prov["storage"] = "DOWNGRADED_TO_STREAM_MEMORY"; plan.mechanisms["downgrades"]["to_stream"] += 1
+            p = b.consumer
+            if was_sparse and p is not None and p.storage == IR.SPARSE:                        # the consumer may have planned THIS child as its driver: re-run the policy on the remaining candidates (the plan never leaves a dangling driver)
+                ch = self._sparse_choice(p)
+                if ch is not None and ch[1] < p.stored * p.elim_volume(self.dom):
+                    p.sparse_driver, p.sparse_joined, _, p.prov["sparse_driver"] = ch[0], ch[1], ch[2], ch[3]; p.sparse_rows = min(p.volume(), ch[1])
+                else:
+                    p.storage = IR.DENSE; p.sparse_rows = None; p.sparse_joined = None; p.sparse_driver = -1; p.prov["storage"] = "DENSE_AFTER_CHILD_DOWNGRADE"; plan.mechanisms["sparse"]["nodes"] -= 1
         # CACHE for streamed buckets that are read more often than their volume (bounded reuse: the LRU holds at most half of the remaining value category)
         _compute_reads(self, plan)
         for b in plan.buckets:
@@ -555,11 +578,11 @@ def totals(B, plan, bytes_per_entry):
     """the ONE whole-path cost proxy (units: primitive operations; a consistent conservative proxy, not predicted seconds) from the compositional cold
     recurrences (cold_recurrences): per bucket with k operands, VALUE rows x (2k + 1) [k reads / lookups + k multiplies + 1 accumulate], PULLBACK rows x
     (3k + 4) [k reads + 2k prefix / suffix multiplies + scatter + deliveries], combined rows x (3k + 5); backward-phase VALUE reconstruction rows are
-    included as VALUE rows; materialization = stored entries x 2 + demand-list index entries x 2 + sparse index rows x 2; construction = every source entry
-    scanned once + 8 per bucket; publication = 4 per original state. Fusion decisions, the one-/two-axis comparison and the final ranking use this SAME
+    included as VALUE rows; materialization = stored entries x 2 + demand-list index entries x 2 + sparse index rows x 2 + sparse driver discovery (support scan of every
+    SOURCE operand + the driver's row pass); construction = every source entry scanned once + 8 per bucket; publication = 4 per original state. Fusion decisions, the one-/two-axis comparison and the final ranking use this SAME
     number (reviews D2 / F3). `predicted` carries the row quantities the kernel counts. UNKNOWN (cold_work_proxy None) when a count exceeds COUNT_BOUND."""
     rec, per = cold_recurrences(B, plan); fwd = 0; rev = 0; ideal = 0; stored_entries = 0; mem = 0; mat = 0
-    pred = {"forward_rows": 0, "reverse_value_rows": 0, "reverse_pull_rows": 0, "reverse_combined_rows": 0, "sparse_pull_rows": 0, "dense_entries": 0, "sparse_rows": 0, "sparse_joined": 0, "stream_rows": 0}
+    pred = {"forward_rows": 0, "reverse_value_rows": 0, "reverse_pull_rows": 0, "reverse_combined_rows": 0, "sparse_pull_rows": 0, "dense_entries": 0, "sparse_rows": 0, "sparse_joined": 0, "sparse_driver_scans": 0, "stream_rows": 0}
     construction = sum(len(B.ftable[f]) for f in B.factors) + 8 * len(plan.buckets)
     publication = 4 * sum(len(B.dom[v]) for v in B.dom) + 64
     for b in plan.buckets:
@@ -575,6 +598,11 @@ def totals(B, plan, bytes_per_entry):
             st = q["stored"]; stored_entries += st; mem += st * bytes_per_entry + (len(b.demand) * 48 if b.demand not in ("FULL", "EMPTY") else 0); mat += 2 * st + (2 * len(b.demand) if b.demand not in ("FULL", "EMPTY") else 0); pred["dense_entries"] += st
         elif b.storage == IR.SPARSE:
             st = q["stored"]; stored_entries += st; mem += st * (bytes_per_entry + 56) + (b.sparse_joined or st) * 8; mat += 4 * st + (b.sparse_joined or st); pred["sparse_rows"] += st; pred["sparse_joined"] += (b.sparse_joined or st)
+            # driver discovery (fourth review A): the kernel scans EVERY SOURCE operand of the sparse MUL once for its support (sparse_driver_scans, counted as source reads), then
+            # collects the driver's rows in a second pass over the driver (a SOURCE driver: its whole table, counted as source reads; a SPARSE child driver: its retained rows)
+            scans = sum(len(B.ftable[f]) for f in b.fids); base = len(b.fids) + len(b.elim); drv = b.sparse_driver
+            driver_pass = len(B.ftable[b.fids[drv]]) if 0 <= drv < len(b.fids) else ((b.children[drv - base].sparse_rows or 0) if drv >= base and drv - base < len(b.children) else 0)
+            mat += scans + driver_pass; pred["sparse_driver_scans"] += scans
         else:
             pred["stream_rows"] += q["fwd_value_rows"]
     mem += sum(len(B.dom[v]) for v in B.dom) * bytes_per_entry
@@ -583,7 +611,7 @@ def totals(B, plan, bytes_per_entry):
         cold = None
     return {"cold_work_proxy": cold, "forward_proxy": fwd, "reverse_proxy": rev, "materialization_proxy": mat, "predicted": pred, "construction_proxy": construction, "publication_proxy": publication, "ideal_reuse_proxy": ideal, "stored_entries": stored_entries, "peak_reserved_bytes_estimate": mem, "buckets": len(plan.buckets), "streamed": sum(1 for b in plan.buckets if _streamed(b)), "sparse": sum(1 for b in plan.buckets if b.storage == IR.SPARSE), "max_bucket_volume": max((b.volume() * b.elim_volume(B.dom) for b in plan.buckets), default=0),
             "cost_model": "compositional cold VALUE / PULLBACK / combined recurrences v3 over the EMITTED operand schedule (GATHER wrappers of viewed children are unresolved operands; reverse-phase value reconstruction included)",
-            "assumptions": "EXACT row-class prediction under: no memo (cache) hits, no runtime downgrades, no early drains, pending slots fit; exact-zero row skips only reduce the counts (prediction is then an upper bound of the visited rows); UNKNOWN when a count exceeds COUNT_BOUND", "unknown": cold is None}
+            "assumptions": "CONDITIONAL exact row-class prediction: exact under no memo (cache) hits, no runtime downgrades, no early drains, pending slots fit, and the written sparse drivers executed (sparse_driver_deviation 0); exact-zero row skips can only reduce the visited rows below the prediction; a planned SPARSE child's support is an estimate (exact at run time; sparse_driver_policy_differs counts a run-time disagreement, the written driver is still executed). OUTSIDE these assumptions no upper bound is claimed: the deviations are counted by the kernel (downgrades, early_flushes, cache_hits, sparse_driver_deviation) and reported with the record. UNKNOWN when a count exceeds COUNT_BOUND", "unknown": cold is None}
 
 
 # ---------------------------------------------------------------------------------------------------------------- emission to the IR
@@ -616,7 +644,7 @@ def emit(B, plan):
         axes = list(b.elim) + list(b.scope); card = [len(B.dom[v]) for v in axes]
         m = P.mul(ops, axes=axes, card=card)
         reps = {w: v for w, v in b.views.items()} if b.views else None
-        n = P.reduce(m, set(b.elim), reps=reps, storage=b.storage, demand=(b.demand if b.storage == IR.DENSE else "FULL"), prov=dict(b.prov, bucket=b.bid, support=b.support_prov, demand=(b.demand_prov if b.storage == IR.DENSE else "FULL_NON_DENSE_STORAGE"), two_axis=b.two_axis, fused_from=list(b.fused_from)))
+        n = P.reduce(m, set(b.elim), reps=reps, storage=b.storage, demand=(b.demand if b.storage == IR.DENSE else "FULL"), driver=(b.sparse_driver if b.storage == IR.SPARSE else -1), prov=dict(b.prov, bucket=b.bid, support=b.support_prov, demand=(b.demand_prov if b.storage == IR.DENSE else "FULL_NON_DENSE_STORAGE"), two_axis=b.two_axis, fused_from=list(b.fused_from)))
         node_of[b.bid] = n.nid
     for r in plan.roots:
         if r.bid in node_of:

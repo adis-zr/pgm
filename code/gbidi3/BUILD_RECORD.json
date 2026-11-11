@@ -44,18 +44,18 @@
   "/Users/adis/Workspace/pgm/code/gbidi3/kernel3.cpp"
  ],
  "returncode": 0,
- "stderr": "/Users/adis/Workspace/pgm/code/gbidi3/kernel3.cpp:353:169: warning: unused variable 'ACC' [-Wunused-variable]\n            const size_t PRE = f.base + k, SUF = f.base + 2 * k + 1, G = f.base + 3 * k + 2, ROW = f.base + 3 * k + 3, SC = f.base + 3 * k + 4, H = f.base + 3 * k + 5, ACC = f.base + 3 * k + 6; (void)SC;\n                                                                                                                                                                        ^\n/Users/adis/Workspace/pgm/code/gbidi3/kernel3.cpp:451:93: warning: variable 'buckets_before' set but not used [-Wunused-but-set-variable]\n        ScopedCharge contrib_guard(this, &used_index); uint64_t contrib_charged = 0; size_t buckets_before = dpos[nn].bucket_count();\n                                                                                            ^\n2 warnings generated.\n",
- "build_wall_s": 2.738019584212452,
+ "stderr": "/Users/adis/Workspace/pgm/code/gbidi3/kernel3.cpp:355:169: warning: unused variable 'ACC' [-Wunused-variable]\n            const size_t PRE = f.base + k, SUF = f.base + 2 * k + 1, G = f.base + 3 * k + 2, ROW = f.base + 3 * k + 3, SC = f.base + 3 * k + 4, H = f.base + 3 * k + 5, ACC = f.base + 3 * k + 6; (void)SC;\n                                                                                                                                                                        ^\n/Users/adis/Workspace/pgm/code/gbidi3/kernel3.cpp:461:93: warning: variable 'buckets_before' set but not used [-Wunused-but-set-variable]\n        ScopedCharge contrib_guard(this, &used_index); uint64_t contrib_charged = 0; size_t buckets_before = dpos[nn].bucket_count();\n                                                                                            ^\n2 warnings generated.\n",
+ "build_wall_s": 2.5560699589550495,
  "source": "gbidi3/kernel3.cpp",
- "source_sha256": "9cc73fa023845f3adf6e89a23fa3104f784982c9e9c4c4f18d02859dfa85f6dc",
+ "source_sha256": "19953a41d61aba7b4c5b914b2482a12ba773783be37b451336dcf57f85b98ebf",
  "binary": "gbidi3/libgbidi3_kernel.dylib",
- "binary_sha256": "4ee5aef72e9e744a6d9c64fb0d31ad0d6349b09bb40e54aeee4c45862ec16dce",
+ "binary_sha256": "60e768679dc080206b5713edcce3e24eb4877b303ba5a4125a9528990d21deac",
  "linked_libraries_sha256": {
   "/opt/homebrew/opt/mpfr/lib/libmpfr.6.dylib": "ee2da0c9af31774e88f40622b8b0c377bed74c32c98160d3efcf4c75c47c9675",
   "/opt/homebrew/opt/gmp/lib/libgmp.10.dylib": "1bb9184824b82f40bd50279634290d6cbdf9c1a371c045c7b10815e7955cd696"
  },
  "platform": "macOS-26.6.2-arm64-arm-64bit",
  "machine": "arm64",
- "utc": "2026-11-10T21:58:37Z",
+ "utc": "2026-11-10T23:34:19Z",
  "arithmetic": "general route: outward MPFR intervals (RNDD/RNDU); optional route: binary64 nearest-even with per-value exact error labels and a per-operation range check; no division; -ffp-model=strict -ffp-contract=off"
 }

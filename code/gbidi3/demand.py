@@ -153,14 +153,54 @@ def compile_demand(P, row_cap=1_000_000, tick=lambda n=1: None, tables=None, clo
             raise
     # apply: a node is restricted only when EVERY consumer use edge completed its lift (a stopped compiler leaves partial nodes FULL)
     completed = set(demanded) if rec["stop"] is None else set()                        # a stopped compiler applies NOTHING: every node keeps FULL / its declared hint (conservative)
-    for n in P.nodes:
-        if n.nid in P.roots or n.storage != IR.DENSE or n.kind in (IR.SOURCE, IR.MARKER, IR.CONSTANT) or n.nid not in completed:
-            continue
-        dem = demanded.get(n.nid)
-        if dem is None or len(dem) >= n.volume:
-            continue
-        before = n.volume if n.demand == "FULL" else (0 if n.demand == "EMPTY" else len(n.demand))
-        n.demand = tuple(sorted(dem)) if dem else "EMPTY"; n.prov = dict(n.prov or {}, demand="RESTRICTED_ALL_CONSUMERS", consumers=len(cons[n.nid])); rec["restricted"].append(n.nid); rec["entries_saved"] += max(0, before - len(dem))
+    # ---- EXPORT with ownership transfer (fourth review B): the persistent hint tuples are RESERVED before they are built (sort temporary + tuple + per-index payload,
+    # EXPORT_BYTES_PER_INDEX) while the demand sets are still live; the export is staged and applied ATOMICALLY (a refusal leaves every existing hint untouched and
+    # releases every staged charge); on success the retained charge stays live on the ledger, owned by the PROGRAM (rec["retained_bytes"], n.prov["demand_charge_bytes"])
+    # until release_hints(P, ledger) at the end of that program copy's lifetime; a replaced hint's previous charge is released after the new one is held
+    staged = []; staged_charge = 0
+    try:
+        for n in P.nodes:
+            if n.nid in P.roots or n.storage != IR.DENSE or n.kind in (IR.SOURCE, IR.MARKER, IR.CONSTANT) or n.nid not in completed:
+                continue
+            dem = demanded.get(n.nid)
+            if dem is None or len(dem) >= n.volume:
+                continue
+            exp_bytes = EXPORT_BYTES_PER_INDEX * len(dem) + 128
+            if ledger is not None:
+                ledger.reserve("source_ir_maps_output", exp_bytes + 8 * len(dem) + 64, "demand hint export of node %d (%d indices: sort temporary + tuple + index payload)" % (n.nid, len(dem)))
+            staged_charge += exp_bytes + 8 * len(dem) + 64
+            hint = tuple(sorted(dem)) if dem else "EMPTY"
+            if ledger is not None:
+                ledger.release("source_ir_maps_output", 8 * len(dem) + 64)                    # the sort temporary dies here; the tuple + payload stay charged
+            staged_charge -= 8 * len(dem) + 64; staged.append((n, hint, exp_bytes))
+    except Exception as ex:
+        if type(ex).__name__ == "MemoryStop":
+            if ledger is not None:
+                ledger.release("source_ir_maps_output", staged_charge)                        # ATOMIC refusal: nothing applied, every staged charge released
+            rec["stop"] = {"kind": "MEMORY_CATEGORY", "reason": "export: " + str(ex)[:200]}; staged = []
+        else:
+            raise
+    retained = 0
+    for n, hint, exp_bytes in staged:
+        before = n.volume if n.demand == "FULL" else (0 if n.demand == "EMPTY" else len(n.demand)); prev = int((n.prov or {}).get("demand_charge_bytes") or 0)
+        n.demand = hint; n.prov = dict(n.prov or {}, demand="RESTRICTED_ALL_CONSUMERS", consumers=len(cons[n.nid]), demand_charge_bytes=exp_bytes); rec["restricted"].append(n.nid); rec["entries_saved"] += max(0, before - (0 if hint == "EMPTY" else len(hint))); retained += exp_bytes
+        if prev and ledger is not None:
+            ledger.release("source_ir_maps_output", prev)                                     # the REPLACED hint's charge is released after the new one is held
     for nid, b in list(charged.items()):
-        bud.release_set(b)                                                               # the demand sets are consumed into the hints: release
-    rec["rows_inspected"] = bud.rows; rec["peak_live_bytes"] = bud.peak; return rec
+        bud.release_set(b)                                                               # the temporary demand sets are consumed into the hints: release
+    rec["rows_inspected"] = bud.rows; rec["peak_live_bytes"] = bud.peak; rec["retained_bytes"] = retained; rec["ownership"] = "retained_bytes stay charged on the ledger, owned by the program; release_hints(P, ledger) releases them at the end of the program copy's lifetime"; return rec
+
+
+EXPORT_BYTES_PER_INDEX = 40                                                               # documented proxy per retained demand index: tuple slot (8 B) + int object (28-32 B); a RESERVATION proxy, not RSS
+
+
+def release_hints(P, ledger):
+    """release the retained demand-hint charges owned by program P (its lifetime ended or it was replaced by the validated copy, which carries its own reservation)"""
+    tot = 0
+    for n in P.nodes:
+        b = int((n.prov or {}).get("demand_charge_bytes") or 0)
+        if b:
+            tot += b; n.prov = dict(n.prov, demand_charge_bytes=0)
+    if ledger is not None and tot:
+        ledger.release("source_ir_maps_output", tot)
+    return tot
