@@ -1,0 +1,20 @@
+{
+  "checks": {
+    "preexisting_output_refused_before_launch": true,
+    "nonzero_exit_completion_refused": true,
+    "timeout_targets_owned_session_group": true,
+    "identity_DAG_survives_alias_reduction": true,
+    "forced_DAG_executes_valid_source_identity": true,
+    "forest_returns_all_rows_with_scoped_matching_and_replay": true,
+    "initial_score_and_price_check_deadline": true,
+    "optional_order_timeout_retains_complete_route": true,
+    "stopped_cell_retains_completed_component_trace": true
+  },
+  "all_pass": true,
+  "source_sha256": {
+    "core.py": "adec378743dca9ac2f133d4bb6c1753dea48ee6c78976d6b82d678b6eeb2ce94",
+    "evaluate.py": "3bd39cf2ff99ab9b3223aa897c9afe7201e2a653db8f8adb52222e44e4dd4741",
+    "planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+    "forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89"
+  }
+}

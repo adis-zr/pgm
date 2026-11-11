@@ -1,0 +1,21 @@
+{
+ "source_sha256": "a5d66a766f50caf8a94cdc46d96761cc35c25f95b9f8c2902440ae467e96b6f1",
+ "binary_sha256": "0a39369eb46365ef1131a53d0eb98f85c9912901c56dc306bc4563701ad91c05",
+ "flags": [
+  "-std=c++17",
+  "-O2",
+  "-ffp-model=strict",
+  "-ffp-contract=off",
+  "-fno-fast-math",
+  "-fno-unsafe-math-optimizations",
+  "-fno-reciprocal-math",
+  "-fno-associative-math",
+  "-fPIC",
+  "-shared"
+ ],
+ "compiler": "clang++",
+ "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+ "build_wall_s": 1.6995301246643066,
+ "platform": "darwin",
+ "built_utc": "2026-11-11T21:16:10Z"
+}

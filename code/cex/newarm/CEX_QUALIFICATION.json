@@ -9220,7 +9220,7 @@
   {
    "name": "extreme_exponents_10^-300..10^300_(source_conversion_range)",
    "ok": true,
-   "outcome": "STOP:RANGE non-normal intermediate (inf) from nonzero operands"
+   "outcome": "STOP:RANGE source 3: entry leaves the normal range under rescaling (dynamic range of the re"
   },
   {
    "name": "positive_value_below_normal_range_refused_not_zero",
@@ -9295,8 +9295,8 @@
  "total": 375,
  "all_pass": true,
  "kernel": {
-  "source_sha256": "468042e79459ff89a6d9e8197b68d415adb7042940638af37e87d3594c6b7574",
-  "binary_sha256": "7f6e1e4073d65dfe1b6fee1727331423e4bbc364b5346d87e63cdc622ae4598a",
+  "source_sha256": "a5d66a766f50caf8a94cdc46d96761cc35c25f95b9f8c2902440ae467e96b6f1",
+  "binary_sha256": "6c5982a2a9a3c7d4014182000cbd95e1af757a82f7e5f511025fdfc6373b3d77",
   "flags": [
    "-std=c++17",
    "-O2",
@@ -9311,10 +9311,10 @@
   ],
   "compiler": "clang++",
   "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
-  "build_wall_s": 1.7535193334333599,
+  "build_wall_s": 2.305921707767993,
   "platform": "darwin",
-  "built_utc": "2026-11-11T20:31:10Z"
+  "built_utc": "2026-11-11T21:31:35Z"
  },
  "executor_sha256": "3241fec240fb84da2e0b883cf34d4274d1c2b41d661e08fc827ca148df59e5ca",
- "utc": "2026-11-11T20:31:14Z"
+ "utc": "2026-11-11T21:31:38Z"
 }

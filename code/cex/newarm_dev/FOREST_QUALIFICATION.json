@@ -1,0 +1,197 @@
+{
+  "status": "PASS",
+  "random_seed": 831472,
+  "random_cases": 180,
+  "random_positive": 128,
+  "random_zero_mass": 52,
+  "controls": [
+    {
+      "name": "edge_case_0",
+      "positive": true
+    },
+    {
+      "name": "edge_case_1",
+      "positive": true
+    },
+    {
+      "name": "edge_case_2",
+      "positive": true
+    },
+    {
+      "name": "edge_case_3",
+      "positive": true
+    },
+    {
+      "name": "edge_case_4",
+      "positive": false
+    },
+    {
+      "name": "edge_case_5",
+      "positive": false
+    },
+    {
+      "name": "source_exponents_10000",
+      "max_abs_exponent": 49977,
+      "source_bits": 100095,
+      "large_gap_additions": 42,
+      "output_denominator_bits": 1
+    },
+    {
+      "name": "exponent_gap_two_billion",
+      "max_temporary_bits": 32
+    }
+  ],
+  "scaling": [
+    {
+      "shape": "chain",
+      "n": 16,
+      "elapsed_s": 0.008653118000438553,
+      "precision_bits": 21,
+      "K": 277,
+      "arithmetic_schedule_calls": 2600,
+      "arithmetic_calls_per_n": 162.5,
+      "source_entries_per_scan": 92,
+      "max_temporary_bits": 42,
+      "max_exponent_bits": 6,
+      "publication_coordinates": 96
+    },
+    {
+      "shape": "chain",
+      "n": 64,
+      "elapsed_s": 0.033705497000482865,
+      "precision_bits": 23,
+      "K": 1141,
+      "arithmetic_schedule_calls": 10856,
+      "arithmetic_calls_per_n": 169.625,
+      "source_entries_per_scan": 380,
+      "max_temporary_bits": 46,
+      "max_exponent_bits": 6,
+      "publication_coordinates": 384
+    },
+    {
+      "shape": "chain",
+      "n": 256,
+      "elapsed_s": 0.14192515300055675,
+      "precision_bits": 25,
+      "K": 4597,
+      "arithmetic_schedule_calls": 43880,
+      "arithmetic_calls_per_n": 171.40625,
+      "source_entries_per_scan": 1532,
+      "max_temporary_bits": 50,
+      "max_exponent_bits": 8,
+      "publication_coordinates": 1536
+    },
+    {
+      "shape": "chain",
+      "n": 1024,
+      "elapsed_s": 0.6259809559996938,
+      "precision_bits": 27,
+      "K": 18421,
+      "arithmetic_schedule_calls": 175976,
+      "arithmetic_calls_per_n": 171.8515625,
+      "source_entries_per_scan": 6140,
+      "max_temporary_bits": 54,
+      "max_exponent_bits": 10,
+      "publication_coordinates": 6144
+    },
+    {
+      "shape": "chain",
+      "n": 4096,
+      "elapsed_s": 2.548649619999196,
+      "precision_bits": 29,
+      "K": 73717,
+      "arithmetic_schedule_calls": 704360,
+      "arithmetic_calls_per_n": 171.962890625,
+      "source_entries_per_scan": 24572,
+      "max_temporary_bits": 58,
+      "max_exponent_bits": 12,
+      "publication_coordinates": 24576
+    },
+    {
+      "shape": "star",
+      "n": 16,
+      "elapsed_s": 0.007583417998830555,
+      "precision_bits": 21,
+      "K": 251,
+      "arithmetic_schedule_calls": 2544,
+      "arithmetic_calls_per_n": 159.0,
+      "source_entries_per_scan": 92,
+      "max_temporary_bits": 42,
+      "max_exponent_bits": 6,
+      "publication_coordinates": 96
+    },
+    {
+      "shape": "star",
+      "n": 64,
+      "elapsed_s": 0.032386191000114195,
+      "precision_bits": 23,
+      "K": 1019,
+      "arithmetic_schedule_calls": 10608,
+      "arithmetic_calls_per_n": 165.75,
+      "source_entries_per_scan": 380,
+      "max_temporary_bits": 46,
+      "max_exponent_bits": 6,
+      "publication_coordinates": 384
+    },
+    {
+      "shape": "star",
+      "n": 256,
+      "elapsed_s": 0.13326770400090027,
+      "precision_bits": 25,
+      "K": 4091,
+      "arithmetic_schedule_calls": 42864,
+      "arithmetic_calls_per_n": 167.4375,
+      "source_entries_per_scan": 1532,
+      "max_temporary_bits": 50,
+      "max_exponent_bits": 8,
+      "publication_coordinates": 1536
+    },
+    {
+      "shape": "star",
+      "n": 1024,
+      "elapsed_s": 0.5509805120000237,
+      "precision_bits": 27,
+      "K": 16379,
+      "arithmetic_schedule_calls": 171888,
+      "arithmetic_calls_per_n": 167.859375,
+      "source_entries_per_scan": 6140,
+      "max_temporary_bits": 54,
+      "max_exponent_bits": 10,
+      "publication_coordinates": 6144
+    },
+    {
+      "shape": "star",
+      "n": 4096,
+      "elapsed_s": 2.475257928999781,
+      "precision_bits": 29,
+      "K": 65531,
+      "arithmetic_schedule_calls": 687984,
+      "arithmetic_calls_per_n": 167.96484375,
+      "source_entries_per_scan": 24572,
+      "max_temporary_bits": 58,
+      "max_exponent_bits": 12,
+      "publication_coordinates": 24576
+    },
+    {
+      "shape": "evidence_chain",
+      "n": 256,
+      "elapsed_s": 0.04033269499996095,
+      "free_variables": 128,
+      "precision_bits": 17,
+      "source_entries_per_scan": 1532
+    },
+    {
+      "shape": "evidence_chain",
+      "n": 1024,
+      "elapsed_s": 0.14770062400020834,
+      "free_variables": 512,
+      "precision_bits": 17,
+      "source_entries_per_scan": 6140
+    }
+  ],
+  "total_test_s": 7.202407537000909,
+  "source_sha256": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+  "test_sha256": "7582f75259a7c90f4608f6469eeb1e6aaddbe4d116097ec3349657093404e1a7",
+  "oracle": "independent full-joint Fraction enumeration; every original coordinate checked",
+  "scope": "empirical correctness and scaling controls; Theta(n) is a scoped word-RAM theorem, not inferred from Python timings"
+}

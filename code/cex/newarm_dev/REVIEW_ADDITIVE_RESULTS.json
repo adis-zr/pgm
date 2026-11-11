@@ -1,0 +1,331 @@
+{
+  "controls": [
+    {
+      "seed": 0,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 0,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 0,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 1,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 1,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 1,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 2,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 2,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 2,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 3,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 3,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 3,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 4,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 4,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 4,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 5,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 5,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 5,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 6,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 6,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 6,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 7,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 7,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 7,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 8,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 8,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 8,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 9,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 9,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 9,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 10,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 10,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 10,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 11,
+      "nonlinear": false,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 11,
+      "nonlinear": true,
+      "raw_perturbation": false,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    },
+    {
+      "seed": 11,
+      "nonlinear": false,
+      "raw_perturbation": true,
+      "containment": true,
+      "signed_coefficients": true,
+      "correlated_parent_additive_used": true,
+      "scalar_counts_match": true
+    }
+  ],
+  "passed": 36,
+  "dag_sha256": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+  "scope": "independent exact whole-joint oracle; shuffled IDs/factors/axes; correlated parents; signed additive recursion; nonlinear rejection; raw normalization perturbations"
+}

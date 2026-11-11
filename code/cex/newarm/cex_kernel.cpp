@@ -66,6 +66,16 @@ struct Exec {
     }
     void free_rel(Rel& r) { if (r.freed) return; release((int64_t)r.bytes()); if (r.is_message) live_msg_entries -= (int64_t)r.vals.size(); std::vector<uint64_t>().swap(r.keys); std::vector<double>().swap(r.vals); r.freed = true; }
     static int64_t ceil_log2(int64_t n) { int64_t k = 0; while ((int64_t(1) << k) < n) ++k; return k; }
+    // exact power-of-two rescaling of a relation so that its maximum stored entry lies in [1, 2): true = stored * 2^exp2 is preserved exactly; labels unchanged.
+    // An entry that would fall below the normal range after scaling is a RANGE stop (the relation's dynamic range exceeds binary64), never a flush to zero.
+    bool rescale(Rel& r, int who, const char* what) {
+        double mx = 0.0; for (double x : r.vals) if (x > mx) mx = x;
+        if (mx == 0.0) return true;                                        // all-zero: the caller decides (forward: ZEROMASS; context: legitimately zero adjoint)
+        if (!std::isfinite(mx)) { stop = RANGE; std::snprintf(reason, sizeof reason, "%s %d: non-finite entry before rescaling", what, who); return false; }
+        int e; std::frexp(mx, &e); int shift = 1 - e; if (shift == 0) return true;
+        for (double& x : r.vals) { if (x != 0.0) { x = std::ldexp(x, shift); if (x < DMIN || !std::isfinite(x)) { stop = RANGE; std::snprintf(reason, sizeof reason, "%s %d: entry leaves the normal range under rescaling (dynamic range of the relation too wide for binary64)", what, who); return false; } } }
+        C.rescale_entries += r.vals.size(); r.exp2 -= shift; return true;
+    }
     // ---------------- range guard: a product / sum of nonzero finite operands must stay a normal finite double
     inline bool guard(double r, bool nonzero_operands) { if (!std::isfinite(r) || (nonzero_operands && (r == 0.0 || r < DMIN))) { stop = RANGE; std::snprintf(reason, sizeof reason, "non-normal intermediate (%g) from nonzero operands", r); return false; } return true; }
     // ---------------- join machinery: rows of the bag of a bucket as mixed-radix keys over `bag`
@@ -177,12 +187,9 @@ struct Exec {
                     for (size_t t = 0; t < okeys.size(); ++t) out.vals[okeys[t]] = ovals[t]; release((int64_t)(okeys.capacity() * 8 + ovals.capacity() * 8));
                 } else { out.dense = false; out.keys.swap(okeys); out.vals.swap(ovals); }
             }
-            // rescale: max stored entry into [1, 2) (exact power-of-two scaling)
-            double mx = 0.0; for (double x : out.vals) if (x > mx) mx = x;
-            if (mx == 0.0) { stop = ZEROMASS; std::snprintf(reason, sizeof reason, "bucket %d produced an all-zero message: exact zeros only -> Z = 0 in this component", i); return false; }
-            int e; std::frexp(mx, &e); int shift = 1 - e;     // mx * 2^shift in [1, 2)
-            if (shift != 0) { for (double& x : out.vals) { if (x != 0.0) { x = std::ldexp(x, shift); if (x < DMIN) { stop = RANGE; std::snprintf(reason, sizeof reason, "rescaled entry below normal range (dynamic range of bucket %d too wide for binary64)", i); return false; } } } C.rescale_entries += out.vals.size(); }
-            out.exp2 = exp_in - shift;
+            // rescale: max stored entry into [1, 2) (exact power-of-two scaling); an all-zero message = exact zero mass in this component
+            { double mx = 0.0; for (double x : out.vals) if (x > mx) mx = x; if (mx == 0.0) { stop = ZEROMASS; std::snprintf(reason, sizeof reason, "bucket %d produced an all-zero message: exact zeros only -> Z = 0 in this component", i); return false; } }
+            out.exp2 = exp_in; if (!rescale(out, i, "message")) return false;
             if (out.label > (int64_t)C.max_label) C.max_label = out.label;
             C.messages_entries += out.vals.size(); live_msg_entries += (int64_t)out.vals.size(); if (live_msg_entries > C.max_live_message_entries) C.max_live_message_entries = live_msg_entries;
             // assign to the bucket of its lowest-ranked separator variable
@@ -242,6 +249,8 @@ struct Exec {
             if (Nlab[v] > (int64_t)C.max_label) C.max_label = Nlab[v];
             // guard numerators finite
             for (int64_t x = 0; x < cx; ++x) if (!std::isfinite(Nval[noff[v] + x])) { stop = RANGE; std::snprintf(reason, sizeof reason, "non-finite numerator"); return false; }
+            // every child context fed here is now complete (a context has exactly one writer: its consumer bucket): rescale it before it is read as g
+            for (auto r : ins) if (r->is_message) { Rel& gc = ctx[r->child]; if (!rescale(gc, r->child, "context")) return false; }
             // release: the context of this bucket and the child messages consumed here have had their final use
             free_rel(g); for (auto r : ins) if (r->is_message) free_rel(*r);
         }
@@ -268,6 +277,7 @@ int cex_run(const int64_t* plan, int64_t plen, const double* vals, int64_t nvals
             if (r.dense) { if (cnt != r.vol) { E.stop = BADPLAN; std::snprintf(E.reason, sizeof E.reason, "invalid plan word"); throw 2; } if (!E.reserve_vec(r.vals, cnt)) throw 2; for (int64_t t = 0; t < cnt; ++t) { if (vp >= nvals) { E.stop = BADPLAN; std::snprintf(E.reason, sizeof E.reason, "invalid plan word"); throw 2; } r.vals.push_back(vals[vp++]); } }
             else { if (!E.reserve_vec(r.keys, cnt) || !E.reserve_vec(r.vals, cnt)) throw 2; for (int64_t t = 0; t < cnt; ++t) r.keys.push_back((uint64_t)rd()); for (int64_t t = 1; t < cnt; ++t) if (r.keys[t] <= r.keys[t - 1]) { E.stop = BADPLAN; std::snprintf(E.reason, sizeof E.reason, "invalid plan word"); throw 2; } for (int64_t t = 0; t < cnt; ++t) { if (vp >= nvals) { E.stop = BADPLAN; std::snprintf(E.reason, sizeof E.reason, "invalid plan word"); throw 2; } r.vals.push_back(vals[vp++]); } }
             r.label = rd(); r.exp2 = 0; for (double x : r.vals) { if (!(x >= 0.0) || !std::isfinite(x) || (x != 0.0 && x < DMIN)) { E.stop = RANGE; std::snprintf(E.reason, sizeof E.reason, "source value outside the supported binary64 range"); throw 2; } } E.C.conversions += r.vals.size();
+            if (!E.rescale(r, (int)s, "source")) throw 2;                   // sources are brought to max in [1,2) too (exact power-of-two scaling): every stored relation has a bounded magnitude
             if (sl == 0) { E.stop = BADPLAN; std::snprintf(E.reason, sizeof E.reason, "invalid plan word"); throw 2; }   // scalar factors are cancelled by the caller
             int best = E.n; for (int w : r.scope) best = std::min(best, E.rank[w]); E.bucket_src[best].push_back((int)s);
         }
@@ -283,5 +293,5 @@ int cex_run(const int64_t* plan, int64_t plen, const double* vals, int64_t nvals
     std::strncpy(reason_out, E.reason, (size_t)std::max<int64_t>(0, reason_len - 1)); if (reason_len > 0) reason_out[reason_len - 1] = 0;
     return E.stop;
 }
-const char* cex_schedule_id() { return "CEX/nonneg-bucket-contraction-all-singleton-reverse/v1.0-labels-recip-envelope-scaled"; }
+const char* cex_schedule_id() { return "CEX/nonneg-bucket-contraction-all-singleton-reverse/v1.1-scaled-sources-messages-contexts"; }
 }
