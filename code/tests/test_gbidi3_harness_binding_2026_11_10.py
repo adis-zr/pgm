@@ -91,11 +91,12 @@ def test_WB1_tiny_synthetic_task_through_a_new_arm_and_both_comparator_adapters_
     od = os.path.join(D, rws["GENERAL_BIDI_COMPLETE_V3"]["out_dir"]); g = json.load(open(os.path.join(od, "cell.json"))); chk = json.load(open(os.path.join(od, "checked_record.json")))
     assert g["task"]["canonical_model_sha256"] == case["canonical_model_sha256"] and Q.contained(chk, rows)                                           # the cell record binds the producer's legacy field; the production-config (binary64-admitted) checked record ENCLOSES the exact rows
     # ---- WC-style genuine substitutions on COPIES of this run (the record / manifest / bytes are the real ones)
-    def variant(name, mutate_manifest=None, mutate_files=None):
-        dest = str(tmp_path / name); shutil.copytree(D, dest); m2 = json.load(open(os.path.join(dest, "GB_MANIFEST.json")))
+    def variant(name, mutate_manifest=None):
+        """the SAME run directory (records, START commands and receipts untouched) reconciled against a mutated copy of the manifest"""
+        m2 = copy.deepcopy(man)
         if mutate_manifest:
             mutate_manifest(m2)
-        json.dump(m2, open(os.path.join(dest, "GB_MANIFEST.json"), "w")); return dest, m2
+        return D, m2
     # (a) a forged legacy field in the manifest -> every record NOT accepted on exactly that field
     dest, m2 = variant("forged_legacy", lambda m: m["cases"]["X"].__setitem__("canonical_model_sha256", "0" * 64))
     rr = R.cells_ledger(dest, m2); assert all(not r["accepted"] and "task field canonical_model_sha256 missing or differs" in r["reasons"] for r in rr), [r["reasons"] for r in rr]
