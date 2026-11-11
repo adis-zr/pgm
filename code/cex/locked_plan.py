@@ -34,6 +34,8 @@ for arm in sys.argv[5].split(',') if len(sys.argv) > 5 else ('new', 'baseline'):
         except Exception as e:
             status = 'STOPPED'; stop = dict(type=type(e).__name__, reason=str(e)[:300], stats={k: v for k, v in (getattr(e, 'stats', {}) or {}).items() if k != 'core_trace'}); rows.append(dict(component=ci, variables=len(old), status='STOPPED', wall_s=time.monotonic() - tc)); break
     res[arm] = dict(status=status, wall_s=time.monotonic() - t_arm, peak_rss_bytes_process=rss(), stop=stop, components=rows)
+    out['executors_partial'] = {a: {k: v for k, v in r.items() if k != 'components'} | {'components': [{k: v for k, v in c.items() if k not in ('intervals', 'points')} for c in r['components']]} for a, r in res.items()}
+    json.dump(out, open(os.path.join(outdir, case + '.json'), 'w'), indent=1, default=str)      # persist after EVERY arm: a later kill (memory / deadline) keeps the finished arm's record
 # ---- cross-check: the new arm's enclosures contain the exact reference points where both completed
 if 'new' in res and 'baseline' in res and res['new']['status'] == 'COMPLETED' and res['baseline']['status'] == 'COMPLETED':
     allc = True; coords = 0

@@ -39,7 +39,7 @@ def panel(a):
     dest=Path(a.output);dest.mkdir(parents=True,exist_ok=True)
     if (dest/'receipts.json').exists():raise ValueError('refuse to overwrite an existing campaign')
     base=Path(__file__).resolve().parent
-    hashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(base.iterdir()) if p.is_file() and p.suffix in ('.py','.cpp','.so')}
+    hashes={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(base.iterdir()) if p.is_file() and p.suffix in ('.py','.cpp','.so','.dylib')}
     paths=sorted(Path(a.input).glob('*.uai'))
     if a.cases:paths=[p for p in paths if p.stem in a.cases.split(',')]
     if any((dest/(p.stem+'.json')).exists() for p in paths):raise ValueError('refuse pre-existing case outputs')
@@ -80,7 +80,7 @@ def panel(a):
         rec=dict(case=p.stem,budget_s=a.seconds,wall_s=wall,status=status,process_outcome=kind,returncode=proc.returncode,peak_tree_rss_bytes_sampled=peak_tree,memory_cap_bytes=mem_cap,stderr=stderr[-2000:],output_sha256=hashlib.sha256(out.read_bytes()).hexdigest() if out.exists() else None)
         receipts.append(rec);(dest/'receipts.json').write_text(json.dumps(receipts,indent=2))
         print(p.stem,status,round(wall,3),flush=True)
-    after={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(base.iterdir()) if p.is_file() and p.suffix in ('.py','.cpp','.so')}
+    after={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(base.iterdir()) if p.is_file() and p.suffix in ('.py','.cpp','.so','.dylib')}
     (dest/'environment.json').write_text(json.dumps(dict(python=sys.version,platform=platform.platform(),machine=platform.machine(),cpu_count=os.cpu_count(),route=a.route,seconds=a.seconds,source_hashes_before=hashes,source_hashes_after=after,source_unchanged=hashes==after),indent=2))
 
 if __name__=='__main__':
