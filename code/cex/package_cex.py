@@ -40,16 +40,18 @@ def main(D, out):
         add_tree(D, "run_dir/" + os.path.basename(D))
         add(os.path.join(HERE, "gbidi", "supervise.py"), "code/gbidi/supervise.py")
         add(os.path.join(PACKET, "CLAUDE_CERTIFIED_EXECUTOR_PASS_PROMPT_AND_CONTEXT_2026-11-11.txt"), "received/CLAUDE_CERTIFIED_EXECUTOR_PASS_PROMPT_AND_CONTEXT_2026-11-11.txt")
-        REVIEW = "/Users/adis/Workspace/pgm/docs/review-received-2026-11-11-certified-executor"
-        for f in ("CERTIFIED_EXECUTOR_ADVERSARIAL_REVIEW_2026-11-11.txt", "RECEIVED_SHA256.txt"):
-            if os.path.exists(os.path.join(REVIEW, f)): add(os.path.join(REVIEW, f), "received_review/" + f)
-        for sub in ("kernel_audit", "integration_audit", "resource_audit", "campaign_audit", "qualification_audit", "root_audit"):
-            d = os.path.join(REVIEW, "evidence", "executor_adversarial_review_2026-11-11", sub)
+        for REVIEW, tag in (("/Users/adis/Workspace/pgm/docs/review-received-2026-11-11-certified-executor", "received_review"), ("/Users/adis/Workspace/pgm/docs/review-received-2026-11-11-certified-executor-repair", "received_review2")):
+          sub_root = "evidence/executor_adversarial_review_2026-11-11" if tag == "received_review" else "evidence/executor_repair_review_2026-11-11"
+          for f in sorted(os.listdir(REVIEW)):
+            if f.endswith(".txt") and os.path.isfile(os.path.join(REVIEW, f)): add(os.path.join(REVIEW, f), tag + "/" + f)
+          d0 = os.path.join(REVIEW, sub_root)
+          for sub in (sorted(os.listdir(d0)) if os.path.isdir(d0) else []):
+            d = os.path.join(d0, sub)
             if os.path.isdir(d):
                 for dp, dns, fns in os.walk(d):
                     dns[:] = sorted(x for x in dns if x not in ("newarm", "newarm_copy", "__pycache__"))      # the reviewer's adapted source copies are excluded (their identity is in the review's manifest)
                     for fn in sorted(fns):
-                        if fn.endswith((".md", ".py", ".json", ".cpp", ".txt", ".stderr", ".stdout", ".gz")): add(os.path.join(dp, fn), "received_review/evidence/" + sub + "/" + os.path.relpath(os.path.join(dp, fn), d))
+                        if fn.endswith((".md", ".py", ".json", ".cpp", ".txt", ".stderr", ".stdout", ".gz", ".uai")): add(os.path.join(dp, fn), tag + "/evidence/" + sub + "/" + os.path.relpath(os.path.join(dp, fn), d))
         for f in ("MANIFEST_SHA256.json", "THEORY.md"):
             p = os.path.join(PACKET, "packet", f)
             if os.path.exists(p):
