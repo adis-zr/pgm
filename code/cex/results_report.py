@@ -11,25 +11,27 @@ out = []; P = out.append
 P('# Certified executor pass — results (11 Nov 2026, same host for both arms: macOS arm64, Apple clang 15, Python 3.12)'); P('')
 P('Both arms: the frozen `response_v3` planner / harness (+ shared host adapter). Baseline support route = exact Fraction reference; new arm = compiled certified binary64 backend on the SAME validated plan. 3 GiB worker policy enforced by sampled process-tree RSS (RLIMIT_AS not lowerable on this host). One fresh process per case; outer receipt wall = delivery clock; sleep prevented.'); P('')
 P('## 1. Locked-plan comparisons (same component model + same order; plan construction by the unchanged planner, charged)'); P(''); P('| case | plan construction s | baseline (exact Fraction) | new (compiled) | new encloses exact reference | new max width | K |'); P('|---|---:|---|---|---|---:|---:|')
-for tag in ('both_1', 'new_1', 'baseline_1', 'v12_fresh_2', 'v13_fresh'):
-    for f in sorted(glob.glob(os.path.join(RD, 'locked_plan', tag, '*.json'))):
+for tag in ('both_1', 'new_1', 'baseline_1', 'v12_fresh_2', 'v13_fresh', 'v14_fresh'):
+    for f in sorted(glob.glob(os.path.join(RD, 'locked_plan', tag, '**', '*.json'), recursive=True)):
         if f.endswith('.plan.json') or '.new.json' in f or '.baseline.json' in f: continue      # fresh-process per-arm files and serialized plans are not case records
         d = json.load(open(f)); ex = d.get('executors') or d.get('executors_partial') or {}
+        if 'case' not in d: continue
         def arm(a):
             r = ex.get(a); 
             if not r: return 'not run in this file'
             c0 = r['components'][0] if r['components'] else {}
+            if r.get('status') in ('NO_OUTPUT', None) and r.get('process_outcome'): r = dict(r, status=r['process_outcome'])
             wall = r.get('wall_s') if r.get('wall_s') is not None else r.get('parent_measured_wall_s', 0); rssb = r.get('peak_rss_bytes_process') if r.get('peak_rss_bytes_process') is not None else (r.get('peak_rss_bytes_this_process') or r.get('peak_tree_rss_bytes_sampled') or 0)
             return '%s %.2f s, RSS %d MB%s%s' % (r['status'], wall, rssb // 2 ** 20, (' (' + str(r['stop'])[:60] + ')') if r.get('stop') else '', ' [fresh process; tree RSS %d MB]' % ((r.get('peak_tree_rss_bytes_sampled') or 0) // 2 ** 20) if 'peak_rss_bytes_this_process' in r or r.get('process_outcome') else '')
         c0n = (ex.get('new') or {}).get('components', [{}])[0] if ex.get('new') else {}
         P('| %s (%s) | %.3f | %s | %s | %s (%s coords) | %s | %s |' % (d['case'], tag, d['plan_construction_s'], arm('baseline'), arm('new'), d.get('new_encloses_exact_reference'), d.get('coordinates_compared'), c0n.get('max_width'), c0n.get('max_label_K')))
 P(''); P('Grids_11 / Grids_15 baseline (exact) runs were MEMORY_KILLed by the 3 GiB harness cap before writing a record (CEX ledger: locked_plan:Grids_1x_baseline_1, 70 s / 92 s, peak 3.2 GB) — the same failure class as the packet (3 GiB address-space MemoryError at 107 s).'); P('')
 for tag, label in (('20s_all46', 'all 46 cases at 20 s'), ('120s_panel13', 'the explicitly scoped 13-case panel at 120 s (denominator 13)')):
-    for cand in ('', '_v11', '_v11_gated', '_v12', '_v13'):
+    for cand in ('', '_v11', '_v11_gated', '_v12', '_v13', '_v14'):
         p = os.path.join(RD, 'COMPARISON_%s%s.json' % (tag, cand))
         C = jl(p)
         if not C: continue
-        S = C['summary']; P('## %s — %s%s' % ('2' if tag.startswith('20s') else '3', label, {'': ' — candidate v1.0', '_v11': ' — candidate v1.1 (rescaled sources / contexts)', '_v11_gated': ' — candidate v1.1 re-read through the REPAIRED audit gate (comparator v2)', '_v12': ' — candidate v1.2 (repaired kernel / executor with tracemalloc host accounting; new arm rerun, baseline campaigns unchanged)', '_v13': ' — candidate v1.3 (= v1.2 kernel; host accounting by counted bytes + RSS growth; FINAL)'}[cand])); P('')
+        S = C['summary']; P('## %s — %s%s' % ('2' if tag.startswith('20s') else '3', label, {'': ' — candidate v1.0', '_v11': ' — candidate v1.1 (rescaled sources / contexts)', '_v11_gated': ' — candidate v1.1 re-read through the REPAIRED audit gate (comparator v2)', '_v12': ' — candidate v1.2 (repaired kernel / executor with tracemalloc host accounting; new arm rerun, baseline campaigns unchanged)', '_v13': ' — candidate v1.3 (= v1.2 kernel; host accounting by counted bytes + RSS growth)', '_v14': ' — candidate v1.4 (checked metadata + ABI bounds; HostBudget charged before construction; streamed hash; terminal deadlines; gate v3 with campaign specifications; FINAL)'}[cand])); P('')
         comp = S.get('completed') or S.get('completed_and_gated')
         P('- completed%s: baseline %d, new %d of %d; new-only %s; baseline-only (lost successes) %s; neither %d' % (' (and passing the v2 audit gate)' if 'completed_and_gated' in S else '', comp['baseline'], comp['new'], S['cases'], S['new_only'], S['baseline_only'] or 'none', len(S['neither'])))
         P('- status counts: %s' % S['status_counts'])
@@ -43,7 +45,7 @@ for tag, label in (('20s_all46', 'all 46 cases at 20 s'), ('120s_panel13', 'the 
             b = r['baseline']; n = r['new']; P('| %s | %s %.2f s %s | %s %.2f s %s | %s |' % (r['case'], b['status'], b['wall_s'] or 0, ('(' + (b['reason'] or '')[:40] + ')') if b['status'] != 'COMPLETED' else 'RSS %s MB' % b['peak_tree_rss_MB'], n['status'], n['wall_s'] or 0, ('(' + (n['reason'] or '')[:40] + ')') if n['status'] != 'COMPLETED' else 'RSS %s MB' % n['peak_tree_rss_MB'], str(n['phases'].get('executor_attempts', ''))[:220]))
         P('')
 P('## 4. Qualification'); P('')
-for ver in ('v1.0', 'v1.1', 'v1.2', 'v1.3'):
+for ver in ('v1.0', 'v1.1', 'v1.2', 'v1.3', 'v1.4'):
     Q = jl(os.path.join(RD, 'kernel_versions', 'CEX_QUALIFICATION_%s.json' % ver))
     if Q: P('- %s: %s / %s counted tests and control groups (%s random executions %s + %d grouped controls; NOT a count of enclosures); controls: %s' % (ver, Q['passed'], Q['total'], len(Q.get('records', [])), dict(collections.Counter(r['status'] for r in Q.get('records', []))), len(Q.get('controls', [])), [c['name'] for c in Q.get('controls', []) if not c.get('ok')] or 'all OK'))
 P('- reviewer\'s independent fuzz suites (unchanged scripts, own exact oracle) on v1.2 / v1.3 on this host: 1,050/1,050 and 1,500/1,500 (qualification/cex_qualification_v12_2.txt, cex_qualification_v13_1.txt)')

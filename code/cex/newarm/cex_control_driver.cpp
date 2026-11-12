@@ -68,6 +68,20 @@ int main(int argc, char** argv) {
         std::printf("{\"kind\":\"rescale_boundary\",\"inexact_case_refused\":%s,\"inexact_case_stop\":%d,\"inexact_reason\":\"%s\",\"exact_case_ok\":%s,\"exact_case_stop\":%d,\"exact_case_values_and_exponent_correct\":%s}\n", (!oka && sa == RANGE) ? "true" : "false", sa, ra, okb ? "true" : "false", sb, exact_b ? "true" : "false");
         return 0;
     }
+    if (mode == "meta") {               // ABI precondition controls: extreme source label / exponent metadata must be a typed BADPLAN refusal at the parser (never wrapped arithmetic)
+        std::printf("[");
+        int64_t tests[4][2] = {{std::numeric_limits<int64_t>::max() - 1, 0}, {0, std::numeric_limits<int64_t>::max()}, {(int64_t(1) << 40) + 1, 0}, {0, -(int64_t(1) << 40) - 1}};
+        for (int t = 0; t < 4; ++t) {
+            int64_t label = tests[t][0], e = tests[t][1]; int64_t plan[] = {2, 1, 2, 1, 0, 1, 1, 0, 0, 2, label, e}; double values[] = {1, 1}, out[2]{}, z{}; int64_t ne[1]{}, nl[1]{}, zm[2]{}; uint64_t counters[22]{}; char reason[256]{};
+            int rc = cex_run(plan, 12, values, 2, 1000000, std::numeric_limits<double>::infinity(), .25, out, ne, nl, &z, zm, counters, 22, reason, 256);
+            std::printf("%s{\"label\":%lld,\"exp2\":%lld,\"return_code\":%d,\"stop\":\"%s\",\"reason\":\"%s\",\"ok\":%s}", t ? "," : "", (long long)label, (long long)e, rc, rc == 4 ? "BADPLAN" : "?", reason, rc == 4 ? "true" : "false");
+        }
+        { int64_t plan[] = {2, 1, 2, 1, 0, 1, 1, 0, 0, 2, 1, -5}; double values[] = {1, 1}, out[2]{}, z{}; int64_t ne[1]{}, nl[1]{}, zm[2]{}; uint64_t counters[22]{}; char reason[256]{};   // in-bounds metadata: OK with the exponent carried
+          int rc = cex_run(plan, 12, values, 2, 1000000, std::numeric_limits<double>::infinity(), .25, out, ne, nl, &z, zm, counters, 22, reason, 256);
+          double Zt = std::ldexp(z, (int)zm[0]), Nt = std::ldexp(out[0], (int)ne[0]);   // true Z = sum_x 1 * 2^-5 = 2^-4; true N_x = 1 * 2^-5
+          std::printf(",{\"label\":1,\"exp2\":-5,\"return_code\":%d,\"stop\":\"%s\",\"Z_true\":%.17g,\"N0_true\":%.17g,\"ok\":%s}]\n", rc, rc == 0 ? "OK" : "?", Zt, Nt, (rc == 0 && Zt == 0.0625 && Nt == 0.03125) ? "true" : "false"); }
+        return 0;
+    }
     if (mode == "unaries" || mode == "isolated") {
         bool isolated = mode == "isolated"; int n = isolated ? 10000 : 1000; int64_t cap = std::atoll(argv[2]); double deadline = isolated ? std::atof(argc > 3 ? argv[3] : "0") : std::numeric_limits<double>::infinity();
         std::vector<int64_t> plan{2, n};

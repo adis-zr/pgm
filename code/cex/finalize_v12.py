@@ -4,12 +4,13 @@ the residual-failure classification of the v1.2 20 s campaign by MEASURED PHASE 
     python cex/finalize_v12.py <RD>"""
 import sys, os, json, subprocess, collections, statistics
 from fractions import Fraction as F
-sys.set_int_max_str_digits(0); RD = sys.argv[1]; TAG = sys.argv[2] if len(sys.argv) > 2 else 'v12'; LOCKED = {'v12': 'v12_fresh_2', 'v13': 'v13_fresh'}[TAG]; HERE = os.path.dirname(os.path.abspath(__file__)); PY = sys.executable
+sys.set_int_max_str_digits(0); RD = sys.argv[1]; TAG = sys.argv[2] if len(sys.argv) > 2 else 'v12'; LOCKED = {'v12': 'v12_fresh_2', 'v13': 'v13_fresh', 'v14': 'v14_fresh'}[TAG]; HERE = os.path.dirname(os.path.abspath(__file__)); PY = sys.executable
+SPECS = os.path.join(RD, 'campaign_specs')
 out = {}
 # ---- 1. gate: baseline (unchanged) vs v1.2
 for tag, b, n in (('20s_all46_' + TAG, 'baseline_20s_all46', 'newarm_20s_all46_' + TAG), ('120s_panel13_' + TAG, 'baseline_120s_panel13', 'newarm_120s_panel13_' + TAG)):
-    p = subprocess.run([PY, os.path.join(HERE, 'compare_campaigns.py'), os.path.join(RD, 'campaigns', b), os.path.join(RD, 'campaigns', n), os.path.join(RD, 'COMPARISON_%s.json' % tag)], capture_output=True, text=True)
-    out['gate_' + tag] = dict(exit=p.returncode, stdout=p.stdout[-3000:])
+    p = subprocess.run([PY, os.path.join(HERE, 'compare_campaigns.py'), os.path.join(RD, 'campaigns', b), os.path.join(RD, 'campaigns', n), os.path.join(RD, 'COMPARISON_%s.json' % tag), os.path.join(SPECS, b + '.json'), os.path.join(SPECS, n + '.json')], capture_output=True, text=True)
+    out['gate_' + tag] = dict(exit=p.returncode, stdout=p.stdout[-3000:], stderr=p.stderr[-800:], specs=[b + '.json', n + '.json'])
     print(tag, 'gate exit', p.returncode); print(p.stdout[:1500])
 # ---- 2. DIABETES isolated rerun vs original (baseline, 120 s)
 def rec(camp, case):
@@ -20,9 +21,12 @@ out['diabetes_baseline_120s'] = dict(original_overlapped_attempt=d0, isolated_re
 print('DIABETES', json.dumps(out['diabetes_baseline_120s'], default=str)[:600])
 # ---- 3. locked plans v1.2 fresh process (attempt 2; attempt 1 preserved as a failed attempt)
 L = {}
-for f in sorted(os.listdir(os.path.join(RD, 'locked_plan', LOCKED))) if os.path.isdir(os.path.join(RD, 'locked_plan', LOCKED)) else []:
-    if not f.endswith('.json') or f.endswith('.plan.json') or '.new.' in f or '.baseline.' in f: continue
-    d = json.load(open(os.path.join(RD, 'locked_plan', 'v12_fresh_2', f))); ex = d.get('executors') or {}
+import glob as _g
+for src_path in sorted(_g.glob(os.path.join(RD, 'locked_plan', LOCKED, '**', '*.json'), recursive=True)):      # per-case attempt directories (locked_plan v3 refuses a reused directory) and the flat layout alike
+    f = os.path.basename(src_path)
+    if f.endswith('.plan.json') or '.new.' in f or '.baseline.' in f: continue
+    d = json.load(open(src_path)); ex = d.get('executors') or {}      # (follow-up review §6: the path is the SELECTED directory; its name is recorded in every summary)
+    if 'case' not in d: continue
     # recompute containment from the retained coordinates
     rc = d.get('retained_coordinates') or {}; cont = None; coords = 0
     if 'new' in rc and 'baseline' in rc and ex.get('new', {}).get('status') == 'COMPLETED' and ex.get('baseline', {}).get('status') == 'COMPLETED':
@@ -30,7 +34,7 @@ for f in sorted(os.listdir(os.path.join(RD, 'locked_plan', LOCKED))) if os.path.
         for cn, cb in zip(rc['new'], rc['baseline']):
             for row, ps in zip(cn['intervals'], cb['points']):
                 for (lo, hi), p in zip(row, ps): coords += 1; cont = cont and F(lo) <= F(p) <= F(hi)
-    L[d['case']] = dict(plan_construction_s=round(d['plan_construction_s'], 3), arms={a: dict(status=r.get('status'), wall_s=round(r.get('wall_s') or r.get('parent_measured_wall_s') or 0, 2), own_peak_rss_MB=round((r.get('peak_rss_bytes_this_process') or 0) / 2 ** 20, 1), tree_rss_MB=round((r.get('peak_tree_rss_bytes_sampled') or 0) / 2 ** 20, 1), stop=(str(r.get('stop'))[:100] if r.get('stop') else None), kernel_s=(r['components'][0].get('kernel_s') if r.get('components') else None), K=(r['components'][0].get('max_label_K') if r.get('components') else None), peak_logical_MB=round(((r['components'][0].get('counters') or {}).get('peak_logical_bytes') or 0) / 2 ** 20, 1) if r.get('components') else None) for a, r in ex.items()}, recomputed_containment=cont, coordinates=coords, recorded_containment=d.get('new_encloses_exact_reference'), worst_excursion=d.get('worst_excursion'))
+    L[d['case']] = dict(source_file=os.path.relpath(src_path, RD), plan_sha256=d.get('plan_sha256'), kernel_source=((ex.get('new') or {}).get('components') or [{}])[0].get('kernel', {}).get('source_sha256') if (ex.get('new') or {}).get('components') else None, plan_construction_s=round(d['plan_construction_s'], 3), arms={a: dict(status=(r.get('status') if r.get('status') not in ('NO_OUTPUT', None) else r.get('process_outcome')), process_outcome=r.get('process_outcome'), returncode=r.get('returncode'), rejection_reasons=r.get('rejection_reasons'), wall_s=round(r.get('wall_s') or r.get('parent_measured_wall_s') or 0, 2), own_peak_rss_MB=round((r.get('peak_rss_bytes_this_process') or 0) / 2 ** 20, 1), tree_rss_MB=round((r.get('peak_tree_rss_bytes_sampled') or 0) / 2 ** 20, 1), stop=(str(r.get('stop'))[:100] if r.get('stop') else None), kernel_s=(r['components'][0].get('kernel_s') if r.get('components') else None), K=(r['components'][0].get('max_label_K') if r.get('components') else None), peak_logical_MB=round(((r['components'][0].get('counters') or {}).get('peak_logical_bytes') or 0) / 2 ** 20, 1) if r.get('components') else None) for a, r in ex.items()}, recomputed_containment=cont, coordinates=coords, recorded_containment=d.get('new_encloses_exact_reference'), worst_excursion=d.get('worst_excursion'))
 out['locked_plans_fresh_process_' + TAG] = L; print('LOCKED', json.dumps(L, default=str)[:1500])
 # ---- 4. residual failures of the v1.2 20 s campaign by measured phase
 D = os.path.join(RD, 'campaigns', 'newarm_20s_all46_' + TAG)

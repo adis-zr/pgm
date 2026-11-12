@@ -11,7 +11,9 @@ N source conversion: huge entries (10^400, 2^2000) certify after exact power-of-
 O an already-expired deadline is a typed DEADLINE at entry (no row visited); P label overflow: the enclosure refuses K u >= 1/2 (typed RANGE) and the kernel refuses
 an int64 label-sum overflow (typed REPRESENTATION); Q the allocation boundary (instrumented global operator new, strict build AND UBSan build): the kernel's
 peak_logical_bytes EQUALS the tracked native peak and nothing is live at return on every control; small caps are refused before any row; growth overlap is charged;
-rescale exactness is round-trip checked; R host-side retained lowering bytes COUNTED exactly (sys.getsizeof) and RSS growth MEASURED per phase (v1.3: tracemalloc dropped, it slowed lowering ~10x). Writes CEX_QUALIFICATION.json beside this file. Count = passed/total
+rescale exactness is round-trip checked; R host-side HostBudget charged before every construction + RSS growth measured. FOLLOW-UP REVIEW REGRESSIONS (v1.4): S the reviewer's
+host-memory counterexample is refused before construction and certifies within budget under a sufficient cap; streamed semantic hash == closed form; T early ZERO_EVIDENCE honours the
+deadline; U integer metadata ABI bounds (driver `meta` mode, strict + UBSan); V gate v3 / locked_plan v3 negative controls all rejected (cex/gate_controls.py). Writes CEX_QUALIFICATION.json beside this file. Count = passed/total
 TESTS AND CONTROL GROUPS (random executions + grouped controls), NOT a count of enclosures."""
 import sys, time, random, json, math, hashlib, os, collections
 BASE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, BASE); sys.set_int_max_str_digits(0)
@@ -91,10 +93,11 @@ rD, eD = run(mBig, oB, budget=0.0005); ok = eD is not None and eD.kind == 'DEADL
 # a single dense factor over 11 ternary variables (177,147 entries = 1.4 MB): (a) kernel-side refusal: the cap leaves exactly 1 MiB of kernel capacity, so the source
 # reservation (1.4 MB) is refused BEFORE allocation; (b) Python-side refusal: a cap below the host-side headroom is refused before the kernel is entered
 mDense = dict(cards=[3] * 11, factors=[dict(scope=tuple(range(11)), values=[F(1 + (i * 7919) % 13) for i in range(3 ** 11)])], evidence={}); wD, vD, _ = X.lower(mDense, list(range(11)), 0.25)
-capK = (len(wD) * 8 + len(vD) * 8 + 3 ** 11 * 8 + 11 * 16 + 24 + len(X.COUNTERS) * 8 + 256) + 1024 ** 2 + 4 * 1024 ** 2    # host arrays + 1 MiB kernel capacity (+ measured lowering retention allowance): the 1.4 MB source is refused BEFORE allocation
+BD = X.HostBudget(1 << 62, {}); X.lower(mDense, list(range(11)), 0.25, budget=BD); arraysD = len(wD) * 8 + max(1, len(vD)) * 8 + sum(mDense['cards']) * 8 + 11 * 16 + 8 + 16 + len(X.COUNTERS) * 8 + 256     # exactly execute()'s arrays_bytes
+capK = BD.live + arraysD + 1024 ** 2    # the host budget admits every host construction (live after lowering + arrays) and leaves the kernel exactly 1 MiB: the 1.4 MB source is refused by the KERNEL's allocation boundary BEFORE allocation
 rM, eM = run(mDense, list(range(11)), cap_bytes=capK); ok = eM is not None and eM.kind == 'MEMORY' and 'allocation boundary' in eM.reason and (eM.stats.get('counters') or {}).get('forward_rows', 0) == 0
 total += 1; passed += ok; R['controls'].append(dict(name='memory_cap_typed_stop_before_allocation', ok=ok, outcome=(eM.kind + ': ' + eM.reason[:100] if eM else rM['status']), kernel_cap_bytes=(eM.stats.get('kernel_cap_bytes') if eM else None)))
-rM2, eM2 = run(mDense, list(range(11)), cap_bytes=1024 ** 2); ok = eM2 is not None and eM2.kind == 'MEMORY' and 'host-side' in eM2.reason; total += 1; passed += ok; R['controls'].append(dict(name='memory_cap_below_host_headroom_refused_before_kernel', ok=ok, outcome=(eM2.kind + ': ' + eM2.reason[:80] if eM2 else rM2['status'])))
+rM2, eM2 = run(mDense, list(range(11)), cap_bytes=1024 ** 2); ok = eM2 is not None and eM2.kind == 'MEMORY' and 'host budget' in eM2.reason and 'counters' not in eM2.stats; total += 1; passed += ok; R['controls'].append(dict(name='memory_cap_below_host_headroom_refused_before_kernel', ok=ok, outcome=(eM2.kind + ': ' + eM2.reason[:80] if eM2 else rM2['status'])))
 rM3, eM3 = run(mDense, list(range(11)), cap_bytes=256 * 1024 ** 2); tD = None
 ok = rM3 is not None and rM3['status'] == 'CERTIFIED' and rM3['stats']['counters']['peak_logical_bytes'] > 1_400_000 and rM3['stats']['counters']['logical_bytes_at_exit'] <= rM3['stats']['counters']['peak_logical_bytes']; total += 1; passed += ok
 R['controls'].append(dict(name='memory_cap_sufficient_completes_and_reports_peak_logical_bytes', ok=ok, peak_logical_bytes=(rM3['stats']['counters']['peak_logical_bytes'] if rM3 else None), at_exit=(rM3['stats']['counters']['logical_bytes_at_exit'] if rM3 else None)))
@@ -168,7 +171,7 @@ for trial in range(40):
         for thr in (0.0, 0.25, 1.01):
             ok, what = sound(m, o, dense_fill_threshold=thr); allok = allok and ok; fam.append((trial, o, thr, what[:40]))
             if not ok: print('FAIL L', trial, o, thr, what, flush=True)
-total += 1; passed += allok; R['controls'].append(dict(name='review_F1_randomized_high_degree_family_480_executions', ok=allok, outcomes=dict(collections.Counter(w.split(' ')[0] for _, _, _, w in fam))))
+total += 1; passed += allok; R['controls'].append(dict(name='review_F1_randomized_high_degree_family_480_executions_4_of_24_orders_per_model', ok=allok, outcomes=dict(collections.Counter(w.split(' ')[0] for _, _, _, w in fam))))
 # ---- M. integer-volume overflow (reviewer's F2): typed REPRESENTATION, never ZERO_EVIDENCE; the automatic solver surfaces a ResourceStop
 for n_, c_ in ((22, 8), (32, 4), (21, 8)):
     mS = {'cards': [c_] * n_, 'evidence': {}, 'factors': [{'scope': (0, i), 'values': [F(1)] * (c_ * c_)} for i in range(1, n_)]}
@@ -211,7 +214,11 @@ wP2 = list(wP)
 for q_ in pos: wP2[q_] = 2 ** 62
 Wp = (CT_.c_int64 * len(wP2))(*wP2); Vp = (CT_.c_double * len(vP))(*vP); Np = (CT_.c_double * 4)(); NEp = (CT_.c_int64 * 2)(); NLp = (CT_.c_int64 * 2)(); Zp = (CT_.c_double * 1)(); ZMp = (CT_.c_int64 * 2)(); CTp = (CT_.c_uint64 * len(X.COUNTERS))(); RSp = CT_.create_string_buffer(256)
 rcP = libP.cex_run(Wp, len(wP2), Vp, len(vP), 10 ** 8, float('inf'), 0.25, Np, NEp, NLp, Zp, ZMp, CTp, len(X.COUNTERS), RSp, 256)
-ok = rcP == 8 and b'overflow' in RSp.value; total += 1; passed += ok; R['controls'].append(dict(name='review_P_kernel_label_sum_int64_overflow_typed_REPRESENTATION', ok=ok, outcome='%s %s' % (X.STOPS.get(rcP, rcP), RSp.value.decode(errors='replace')[:80])))
+okP1 = rcP == 4 and b'ABI precondition' in RSp.value
+wP3 = list(wP)
+for q_ in pos: wP3[q_] = 2 ** 40          # in-bounds extreme labels: carried and summed without overflow (K = 2^41 + ... -> the enclosure then refuses K u >= 1/2 as RANGE, not a wrapped negative label)
+Wp3 = (CT_.c_int64 * len(wP3))(*wP3); rcP3 = libP.cex_run(Wp3, len(wP3), Vp, len(vP), 10 ** 8, float('inf'), 0.25, Np, NEp, NLp, Zp, ZMp, CTp, len(X.COUNTERS), RSp, 256); okP2 = rcP3 == 0 and int(NLp[0]) > 2 ** 41 and int(ZMp[1]) > 2 ** 41
+ok = okP1 and okP2; total += 1; passed += ok; R['controls'].append(dict(name='review_P_kernel_label_metadata_ABI_bound_refused_and_in_bounds_labels_carried', ok=ok, outcome='2^62 labels: %s %s; 2^40 labels: rc %d Nlab %d Zlab %d' % (X.STOPS.get(rcP, rcP), RSp.value.decode(errors='replace')[:60], rcP3, int(NLp[0]), int(ZMp[1]))))
 # ---- Q. the allocation boundary: the instrumented control driver (global operator new counts every requested byte while cex_run executes), strict build and UBSan build
 def build_driver(extra, out):
     cmd = ['clang++', '-std=c++17', '-O1', '-g', '-ffp-model=strict', '-ffp-contract=off', '-fno-fast-math', '-fno-unsafe-math-optimizations', '-fno-reciprocal-math', '-fno-associative-math', *extra, '-DKERNEL_PATH="cex_kernel.cpp"', '-I' + BASE, os.path.join(BASE, 'cex_control_driver.cpp'), '-o', out]
@@ -230,13 +237,43 @@ for tag, extra in (('strict', []), ('ubsan', ['-fsanitize=undefined', '-fno-sani
     drv[tag]['growth'] = dict(ok=(j.get('first_allowed') is True and j.get('second_allowed') is False and j.get('reported_peak_logical_bytes') == j.get('tracked_native_peak_requested_bytes')), record=j)
     p = subprocess.run([out, 'rescale_boundary'], capture_output=True, text=True, timeout=60); j = json.loads(p.stdout.strip().splitlines()[-1]) if p.returncode == 0 else {}
     drv[tag]['rescale_boundary'] = dict(ok=(j.get('inexact_case_refused') is True and j.get('exact_case_ok') is True and j.get('exact_case_values_and_exponent_correct') is True), record=j)
+    p = subprocess.run([out, 'meta'], capture_output=True, text=True, timeout=60); jm = json.loads(p.stdout.strip().splitlines()[-1]) if p.returncode == 0 and p.stdout.strip() else []
+    drv[tag]['meta'] = dict(ok=(p.returncode == 0 and len(jm) == 5 and all(x.get('ok') for x in jm) and not p.stderr.strip()), records=jm, stderr=p.stderr[-200:])
 for tag in ('strict', 'ubsan'):
-    d = drv[tag]; okd = d['built'] and len(d['cases']) == 10 and all(c['ok'] for c in d['cases']) and d.get('growth', {}).get('ok') and d.get('rescale_boundary', {}).get('ok')
+    d = drv[tag]; okd = d['built'] and len(d['cases']) == 10 and all(c['ok'] for c in d['cases']) and d.get('growth', {}).get('ok') and d.get('rescale_boundary', {}).get('ok') and d.get('meta', {}).get('ok')
     total += 1; passed += bool(okd); R['controls'].append(dict(name='review_F3_allocation_boundary_instrumented_driver_%s_build' % tag, ok=bool(okd), detail=d))
+# ======================= FOLLOW-UP REVIEW REGRESSIONS (repair review of 11 Nov 2026) =======================
+# ---- S. §3 the reviewer's host-memory counterexample: 1,024 states x 2^50000 under cap = entry RSS + 4 MiB must be a typed MEMORY stop BEFORE the construction (never CERTIFIED past the cap)
+mS = {'cards': [1024], 'factors': [{'scope': (0,), 'values': [F(1 << 50000)] * 1024}], 'evidence': {}}; entryS = X.rss_bytes(); capS = entryS + 4 * 1024 ** 2
+try: rS_ = X.execute(mS, [0], deadline=time.monotonic() + 60, cap_bytes=capS, host_reserved_bytes=entryS); okS = False; whatS = 'CERTIFIED past the cap (budget peak %s)' % rS_['stats'].get('host_budget_peak_bytes')
+except X.Stop as ex: okS = ex.kind == 'MEMORY' and 'host budget' in ex.reason and (ex.stats.get('host_budget_live_bytes', 0) + ex.stats.get('host_budget_refused_bytes', 0)) > capS - entryS; whatS = 'STOP:%s %s' % (ex.kind, ex.reason[:110])
+total += 1; passed += okS; R['controls'].append(dict(name='review2_S3_host_memory_cap_refused_before_construction', ok=okS, outcome=whatS, cap_minus_entry=capS - entryS))
+entryS = X.rss_bytes()
+try: rS2 = X.execute(mS, [0], deadline=time.monotonic() + 60, cap_bytes=entryS + 256 * 1024 ** 2, host_reserved_bytes=entryS); okS2 = rS2['status'] == 'CERTIFIED' and contained(rS2['intervals'], [[F(1, 1024)] * 1024]) and rS2['stats']['host_budget_peak_bytes'] <= 256 * 1024 ** 2 and rS2['stats']['hash_blocks'] >= 2; whatS2 = 'CERTIFIED; budget peak %d; rss growth %d; hash blocks %d' % (rS2['stats']['host_budget_peak_bytes'], rS2['stats']['host_lowering_rss_growth_bytes_measured'], rS2['stats']['hash_blocks'])
+except X.Stop as ex: okS2 = False; whatS2 = 'STOP:%s %s' % (ex.kind, ex.reason[:100])
+total += 1; passed += okS2; R['controls'].append(dict(name='review2_S3_same_model_under_sufficient_cap_certifies_within_budget', ok=okS2, outcome=whatS2))
+# the streamed semantic hash must equal the v1.3 closed form json.dumps([scope, [str(v) ...]]) per factor (binding unchanged across versions)
+mH = {'cards': [2, 3], 'factors': [{'scope': (0,), 'values': [F(1, 3), F(2, 3)]}, {'scope': (0, 1), 'values': [F(1), F(2), F(3), F(4), F(0), F(2 ** 100, 7)]}], 'evidence': {1: 2}}
+wH, vH, metaH = X.lower(mH, [0], 0.25); semH = hashlib.sha256(); semH.update(json.dumps({'cards': [2, 3], 'evidence': [(1, 2)], 'order': [0]}).encode())
+for f in mH['factors']:
+    sc = f['scope']; data = [wv for a, wv in zip(product(*(range(mH['cards'][x]) for x in sc)), f['values']) if all(a[i] == mH['evidence'][x] for i, x in enumerate(sc) if x in mH['evidence'])]; newsc = tuple(x for x in sc if x not in mH['evidence']); semH.update(json.dumps([list(newsc), [str(x) for x in data]]).encode())
+okH = semH.hexdigest() == metaH['semantic_plan_sha256']; total += 1; passed += okH; R['controls'].append(dict(name='review2_streamed_semantic_hash_equals_closed_form', ok=okH))
+# ---- T. §7B an early ZERO_EVIDENCE must still honour the deadline (typed DEADLINE, not a late ZERO_EVIDENCE)
+mT2 = {'cards': [1024], 'factors': [{'scope': (0,), 'values': [F(1 << 50000)] * 1024}, {'scope': (), 'values': [F(0)]}], 'evidence': {}}; tT = time.monotonic()
+try: rT2 = X.execute(mT2, [0], deadline=tT + 0.05); okT = False; whatT = '%s after %.2f s' % (rT2['status'], time.monotonic() - tT)
+except X.Stop as ex: okT = ex.kind == 'DEADLINE'; whatT = 'STOP:%s after %.2f s (%s)' % (ex.kind, time.monotonic() - tT, ex.reason[:60])
+total += 1; passed += okT; R['controls'].append(dict(name='review2_S7B_early_zero_evidence_honours_deadline', ok=okT, outcome=whatT))
+rT3, eT3 = run(mT2, [0], budget=60); okT3 = rT3 is not None and rT3['status'] == 'ZERO_EVIDENCE'; total += 1; passed += okT3; R['controls'].append(dict(name='review2_S7B_same_model_with_budget_is_zero_evidence', ok=okT3))
+# ---- U. §7A integer metadata: the ABI precondition (label in [0, 2^40], exponent in [-2^40, 2^40]) is enforced at the parser (BADPLAN), in-bounds metadata is carried; checked under UBSan by the driver's `meta` mode (control Q below)
+# ---- V. §4 / §5 experimental-integrity gates: every negative control of cex/gate_controls.py must be rejected (and the untouched saved campaigns accepted)
+pG = subprocess.run([sys.executable, os.path.join(BASE, '..', 'gate_controls.py'), os.path.join(BASE, '..', '..', 'runs', 'mdi_2026-10-28', 'CERTIFIED_EXECUTOR_2026-11-11'), os.path.join(BASE, '..', '..'), os.path.join(BASE, 'GATE_CONTROLS.json')], capture_output=True, text=True)
+try: gc = json.load(open(os.path.join(BASE, 'GATE_CONTROLS.json')))
+except Exception: gc = []
+okG = pG.returncode == 0 and len(gc) == 9 and all(g['ok'] for g in gc); total += 1; passed += okG; R['controls'].append(dict(name='review2_S4_S5_gate_and_locked_plan_negative_controls_rejected', ok=okG, controls=[(g['control'], g['ok']) for g in gc], stderr=pG.stderr[-300:] if not okG else ''))
 # ---- R. host-side memory is measured per phase and enters the kernel cap
 rR, eR = run(mJ, oJ); wJ, vJ, _ = X.lower(mJ, oJ, 0.25)
-ok = rR is not None and rR['stats']['host_lowering_retained_bytes_counted'] == X.counted_bytes(wJ, vJ) > 0 and 'host_lowering_rss_growth_bytes_measured' in rR['stats'] and 'host_enclosure_rss_growth_bytes_measured' in rR['stats'] and rR['stats']['kernel_cap_bytes'] == 3 * 1024 ** 3 - rR['stats']['host_lowering_retained_bytes_counted'] - rR['stats']['host_plan_output_arrays_bytes']
-total += 1; passed += ok; R['controls'].append(dict(name='review_F3_host_side_lowering_bytes_counted_rss_growth_measured_and_charged', ok=ok, measured={k: rR['stats'].get(k) for k in ('host_lowering_rss_growth_bytes_measured', 'host_lowering_retained_bytes_counted', 'host_plan_output_arrays_bytes', 'host_enclosure_rss_growth_bytes_measured', 'kernel_cap_bytes')} if rR else None))
+ok = rR is not None and rR['stats']['host_lowering_retained_bytes_counted'] == X.counted_bytes(wJ, vJ) > 0 and rR['stats']['host_budget_peak_bytes'] >= rR['stats']['host_lowering_retained_bytes_counted'] and rR['stats']['kernel_cap_bytes'] == 3 * 1024 ** 3 - rR['stats']['host_budget_live_at_kernel_call_bytes'] and 'host_lowering_rss_growth_bytes_measured' in rR['stats'] and 'host_enclosure_rss_growth_bytes_measured' in rR['stats']
+total += 1; passed += ok; R['controls'].append(dict(name='review_F3_host_side_budget_charged_before_build_and_rss_growth_measured', ok=ok, measured={k: rR['stats'].get(k) for k in ('host_budget_peak_bytes', 'host_budget_live_bytes', 'host_budget_live_at_kernel_call_bytes', 'host_lowering_rss_growth_bytes_measured', 'host_lowering_retained_bytes_counted', 'host_plan_output_arrays_bytes', 'host_enclosure_rss_growth_bytes_measured', 'kernel_cap_bytes')} if rR else None))
 import collections
 R.update(dict(passed=passed, total=total, all_pass=passed == total, random_executions=len(R['records']), random_status_counts=dict(collections.Counter(r['status'] for r in R['records'])), control_groups=len(R['controls']), count_semantics='passed/total counts random EXECUTIONS (each one test) plus grouped CONTROLS (one count each, several executing many plans); it is NOT a count of enclosures', kernel=json.load(open(os.path.join(BASE, 'cex_build.json'))), executor_sha256=hashlib.sha256(open(os.path.join(BASE, 'cex_executor.py'), 'rb').read()).hexdigest(), utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())))
 json.dump(R, open(os.path.join(BASE, 'CEX_QUALIFICATION.json'), 'w'), indent=1, default=str); print(json.dumps({'passed': passed, 'total': total, 'all_pass': R['all_pass'], 'random_executions': len(R['records']), 'controls': [(c['name'], c['ok']) for c in R['controls']]}))

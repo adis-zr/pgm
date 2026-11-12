@@ -1,0 +1,179 @@
+[
+ {
+  "control": "gate_v3:missing_five_cases",
+  "expect": "REJECTED",
+  "returncode": 1,
+  "gate_passed": false,
+  "failures": [
+   [
+    "1aie",
+    "baseline",
+    "case missing from the campaign (declared in the specification)"
+   ],
+   [
+    "1npl",
+    "baseline",
+    "case missing from the campaign (declared in the specification)"
+   ],
+   [
+    "1qt9",
+    "baseline",
+    "case missing from the campaign (declared in the specification)"
+   ],
+   [
+    "BN_12",
+    "baseline",
+    "case missing from the campaign (declared in the specification)"
+   ]
+  ],
+  "ok": true
+ },
+ {
+  "control": "gate_v3:duplicate_receipt",
+  "expect": "REJECTED",
+  "returncode": 1,
+  "gate_passed": false,
+  "failures": [
+   [
+    "1aie",
+    "baseline",
+    "duplicate receipt (2 records)"
+   ],
+   [
+    "1aie",
+    "new",
+    "duplicate receipt (2 records)"
+   ]
+  ],
+  "ok": true
+ },
+ {
+  "control": "gate_v3:contradictory_source_manifest",
+  "expect": "REJECTED",
+  "returncode": 1,
+  "gate_passed": false,
+  "failures": [
+   [
+    "*",
+    "baseline",
+    "source_hashes_before != source_hashes_after"
+   ],
+   [
+    "*",
+    "baseline",
+    "source core.py differs from the frozen artifact (000000000000 vs adec378743dc)"
+   ],
+   [
+    "*",
+    "new",
+    "source_hashes_before != source_hashes_after"
+   ],
+   [
+    "*",
+    "new",
+    "source core.py differs from the frozen artifact (000000000000 vs 4ce2a18d3540)"
+   ]
+  ],
+  "ok": true
+ },
+ {
+  "control": "gate_v3:extra_case",
+  "expect": "REJECTED",
+  "returncode": 1,
+  "gate_passed": false,
+  "failures": [
+   [
+    "NOT_AN_INPUT",
+    "baseline",
+    "case not in the specification (extra receipt)"
+   ],
+   [
+    "NOT_AN_INPUT",
+    "new",
+    "case not in the specification (extra receipt)"
+   ]
+  ],
+  "ok": true
+ },
+ {
+  "control": "gate_v3:wrong_budget",
+  "expect": "REJECTED",
+  "returncode": 1,
+  "gate_passed": false,
+  "failures": [
+   [
+    "1aie",
+    "baseline",
+    "receipt budget 25.0 differs from the specification 20.0"
+   ],
+   [
+    "1aie",
+    "new",
+    "receipt budget 25.0 differs from the specification 20.0"
+   ]
+  ],
+  "ok": true
+ },
+ {
+  "control": "gate_v3:untouched_saved_campaigns",
+  "expect": "ACCEPTED",
+  "returncode": 0,
+  "gate_passed": true,
+  "failures": [],
+  "ok": true
+ },
+ {
+  "control": "locked_v3:existing_attempt_directory_refused",
+  "expect": "REJECTED",
+  "ok": true
+ },
+ {
+  "control": "locked_v3:child_exit_7_no_stale_acceptance",
+  "expect": "REJECTED",
+  "arms": {
+   "new": [
+    "NO_OUTPUT",
+    7,
+    [
+     "child returncode 7",
+     "output nonce does not match this attempt (stale or foreign output)",
+     "output plan hash does not match the serialized plan"
+    ]
+   ],
+   "baseline": [
+    "NO_OUTPUT",
+    7,
+    [
+     "child returncode 7",
+     "output nonce does not match this attempt (stale or foreign output)",
+     "output plan hash does not match the serialized plan"
+    ]
+   ]
+  },
+  "containment": null,
+  "ok": true
+ },
+ {
+  "control": "locked_v3:foreign_nonce_output_rejected",
+  "expect": "REJECTED",
+  "arms": {
+   "new": [
+    "REJECTED",
+    [
+     "output nonce does not match this attempt (stale or foreign output)",
+     "output plan hash does not match the serialized plan",
+     "component count 0 differs from the plan (1)"
+    ]
+   ],
+   "baseline": [
+    "REJECTED",
+    [
+     "output nonce does not match this attempt (stale or foreign output)",
+     "output plan hash does not match the serialized plan",
+     "component count 0 differs from the plan (1)"
+    ]
+   ]
+  },
+  "ok": true
+ }
+]

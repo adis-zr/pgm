@@ -1,4 +1,4 @@
-// cex_kernel.cpp -- compiled nonnegative bucket contraction + all-singleton reverse recovery (certified executor pass, 11 Nov 2026) -- v1.2 (repair after
+// cex_kernel.cpp -- compiled nonnegative bucket contraction + all-singleton reverse recovery (certified executor pass, 11 Nov 2026) -- v1.4 (v1.2 repair after
 // the adversarial review of 11 Nov 2026: checked arithmetic by OPERAND PROVENANCE, checked integer dimensions, one enforceable allocation boundary,
 // deadline checks at entry / phase boundaries / return, exact-rescaling round-trip check, plan format 2 with Python-side exact power-of-two source scaling).
 //
@@ -19,8 +19,10 @@
 // SCALING: every relation carries an integer power-of-two exponent e: true = stored * 2^e; products add exponents; a new message / completed context is
 // normalized so its maximum stored entry lies in [1, 2) by ldexp, whose EXACTNESS is checked per entry by round trip (ldexp(y, -shift) == x) and normality;
 // sources arrive pre-scaled by the Python side (exact rational power-of-two scaling, so no source magnitude is outside binary64 by construction).
-// INTEGERS: every stride / volume / byte / label / exponent sum is computed with overflow-checked arithmetic (__builtin_*_overflow); a mixed-radix volume
-// above 2^62 is a typed REPRESENTATION refusal (this kernel addresses rows by 64-bit keys), never a wrapped volume.
+// INTEGERS: every stride / volume / byte / label / exponent sum, difference and negation is computed with overflow-checked arithmetic (__builtin_*_overflow,
+// helpers addl / subl); a mixed-radix volume above 2^62 is a typed REPRESENTATION refusal (this kernel addresses rows by 64-bit keys), never a wrapped volume.
+// ABI PRECONDITION (v1.4, enforced at the plan parser): a source label lies in [0, 2^40] and a source exponent in [-2^40, 2^40] (the Python side emits labels 0/1
+// and exponents bounded by the bit length of its rational inputs); anything else is a typed BADPLAN refusal before any arithmetic.
 // MEMORY: ONE allocation boundary: every container in this kernel uses the `Charged` allocator, which charges the exact requested bytes of every heap
 // allocation (capacity-based, transient overlap included: a growing vector's new block is charged while the old block is still live) against the cap
 // BEFORE calling operator new and refuses (typed MEMORY stop) instead of allocating; deallocations release exactly what was charged. `peak_logical_bytes`
@@ -51,6 +53,7 @@ enum Stop : int { OK = 0, DEADLINE = 1, MEMORY = 2, RANGE = 3, BADPLAN = 4, FPEN
 static const double DMIN = std::numeric_limits<double>::min();
 static const int64_t VOL_LIMIT = int64_t(1) << 62;
 static const int64_t PLAN_FORMAT = 2;
+static const int64_t META_LIMIT = int64_t(1) << 40;     // ABI precondition on source labels / exponents
 
 // ---------------- the allocation boundary
 struct Ledger { int64_t cap = 0, live = 0, peak = 0, refused_request = 0; uint64_t allocs = 0; bool exceeded = false; };
@@ -110,6 +113,7 @@ struct Exec {
         return true;
     }
     bool addl(int64_t a, int64_t b, int64_t& out, const char* what) { if (!add_i(a, b, out)) { stop = REPRESENTATION; std::snprintf(reason, sizeof reason, "%s: integer overflow", what); return false; } return true; }
+    bool subl(int64_t a, int64_t b, int64_t& out, const char* what) { if (__builtin_sub_overflow(a, b, &out)) { stop = REPRESENTATION; std::snprintf(reason, sizeof reason, "%s: integer overflow", what); return false; } return true; }
     void free_rel(Rel& r) { if (r.freed) return; if (r.is_message) live_msg_entries -= (int64_t)r.vals.size(); vec<uint64_t>().swap(r.keys); vec<double>().swap(r.vals); r.freed = true; }
     // exact power-of-two rescaling of a relation so that its maximum stored entry lies in [1, 2): true = stored * 2^exp2 preserved EXACTLY (round trip checked
     // per entry), labels unchanged. An entry whose scaled value is not a normal double reproducing the original under the inverse shift is a RANGE stop.
@@ -125,7 +129,7 @@ struct Exec {
             if (!(y >= DMIN) || !std::isfinite(y) || std::ldexp(y, -shift) != x) { stop = RANGE; std::snprintf(reason, sizeof reason, "%s %d: entry %g cannot be rescaled exactly by 2^%d (leaves the normal range or fails the round trip)", what, who, x, shift); return false; }
             x = y;
         }
-        C.rescale_entries += r.vals.size(); if (!poll(r.vals.size())) return false; r.exp2 -= shift; return true;
+        C.rescale_entries += r.vals.size(); if (!poll(r.vals.size())) return false; return subl(r.exp2, (int64_t)shift, r.exp2, "rescale exponent");
     }
     // ---------------- join machinery: rows of the bag of a bucket as mixed-radix keys over `bag`
     struct Bag { vec<int> vars; vec<int64_t> card, stride; int64_t vol = 1; vec<int> pos_of; };
@@ -208,7 +212,7 @@ struct Exec {
                     }
                     out.vals[sidx] = acc; if (!poll(cx)) return false;
                 }
-                int64_t lab; if (!addl(lab_in, (k - 1) + (cx - 1) + 1, lab, "message label")) return false; out.label = lab;   // k-1 multiplications per term (+1 slack for the initial 1.0 product), up to cx sequential additions
+                int64_t lab, inc; if (!addl((int64_t)k, cx - 1, inc, "message label") || !addl(lab_in, inc, lab, "message label")) return false; out.label = lab;   // k-1 multiplications per term (+1 slack for the initial 1.0 product), up to cx sequential additions
             } else {
                 ++C.buckets_sparse; vec<uint64_t> rows; if (!support_rows(ins, b, rows, cap_bytes / 16)) return false;
                 C.sparse_rows += rows.size();
@@ -225,7 +229,7 @@ struct Exec {
                 }
                 if (have_cur) { okeys.push_back(cur); ovals.push_back(acc); }
                 vec<uint64_t>().swap(rows);
-                int64_t lab; if (!addl(lab_in, (k - 1) + (maxterms - 1) + 1, lab, "message label")) return false; out.label = lab;
+                int64_t lab, inc; if (!addl((int64_t)k, maxterms - 1, inc, "message label") || !addl(lab_in, inc, lab, "message label")) return false; out.label = lab;
                 // representation choice from validated density (sepvol * 8 bytes would have to fit a quarter of the cap: sepvol <= cap / 32)
                 if (sepvol <= (int64_t)(okeys.size() / dense_fill_threshold) && sepvol <= cap_bytes / 32) {
                     out.vals.assign((size_t)sepvol, 0.0); out.dense = true;
@@ -248,12 +252,12 @@ struct Exec {
         vec<int> roots; for (int i = 0; i < n; ++i) if (msgs[i].scope.empty()) roots.push_back(i);
         // Z = product of roots (exclusion products give each root's adjoint); every product checked
         int R = (int)roots.size(); vec<double> pre(R + 1, 1.0), suf(R + 2, 1.0); vec<int64_t> preL(R + 1, 0), sufL(R + 2, 0), preE(R + 1, 0), sufE(R + 2, 0);
-        for (int r = 0; r < R; ++r) { const Rel& m = msgs[roots[r]]; if (!mul(pre[r], m.vals[0], pre[r + 1])) return false; if (!addl(preL[r], m.label + 1, preL[r + 1], "root label") || !addl(preE[r], m.exp2, preE[r + 1], "root exponent")) return false; if (!poll(1)) return false; }
-        for (int r = R - 1; r >= 0; --r) { const Rel& m = msgs[roots[r]]; if (!mul(suf[r + 1], m.vals[0], suf[r])) return false; if (!addl(sufL[r + 1], m.label + 1, sufL[r], "root label") || !addl(sufE[r + 1], m.exp2, sufE[r], "root exponent")) return false; if (!poll(1)) return false; }
+        for (int r = 0; r < R; ++r) { const Rel& m = msgs[roots[r]]; if (!mul(pre[r], m.vals[0], pre[r + 1])) return false; int64_t l1; if (!addl(m.label, 1, l1, "root label") || !addl(preL[r], l1, preL[r + 1], "root label") || !addl(preE[r], m.exp2, preE[r + 1], "root exponent")) return false; if (!poll(1)) return false; }
+        for (int r = R - 1; r >= 0; --r) { const Rel& m = msgs[roots[r]]; if (!mul(suf[r + 1], m.vals[0], suf[r])) return false; int64_t l1; if (!addl(m.label, 1, l1, "root label") || !addl(sufL[r + 1], l1, sufL[r], "root label") || !addl(sufE[r + 1], m.exp2, sufE[r], "root exponent")) return false; if (!poll(1)) return false; }
         Zval = pre[R]; Zlab = preL[R]; Zexp = preE[R];
         if (!(Zval >= DMIN)) { stop = RANGE; std::snprintf(reason, sizeof reason, "Z is not a normal double"); return false; }
         vec<Rel> ctx(n);          // ctx[i] = g_i over msgs[i].scope, same representation / keys as msgs[i]
-        for (int r = 0; r < R; ++r) { int i = roots[r]; Rel& g = ctx[i]; g.dense = true; g.scope.clear(); g.vol = 1; double gv; if (!mul(pre[r], suf[r + 1], gv)) return false; g.vals.assign(1, gv); if (!addl(preL[r], sufL[r + 1] + 1, g.label, "root context label") || !addl(preE[r], sufE[r + 1], g.exp2, "root context exponent")) return false; C.contexts_entries += 1; }
+        for (int r = 0; r < R; ++r) { int i = roots[r]; Rel& g = ctx[i]; g.dense = true; g.scope.clear(); g.vol = 1; double gv; if (!mul(pre[r], suf[r + 1], gv)) return false; g.vals.assign(1, gv); int64_t s1; if (!addl(sufL[r + 1], 1, s1, "root context label") || !addl(preL[r], s1, g.label, "root context label") || !addl(preE[r], sufE[r + 1], g.exp2, "root context exponent")) return false; C.contexts_entries += 1; }
         vec<int64_t> noff(n + 1, 0); for (int v = 0; v < n; ++v) if (!addl(noff[v], card[v], noff[v + 1], "numerator offsets")) return false;
         Nval.assign((size_t)noff[n], 0.0); Nexp.assign(n, 0); Nlab.assign(n, 0);
         vec<int64_t> d(64);
@@ -268,8 +272,8 @@ struct Exec {
             vec<vec<int>> bp(ins.size()); for (size_t j = 0; j < ins.size(); ++j) { bp[j].resize(ins[j]->scope.size()); for (size_t a = 0; a < ins[j]->scope.size(); ++a) bp[j][a] = b.pos_of[ins[j]->scope[a]]; }
             int64_t lab_in = 0, exp_in = 0; for (auto r : ins) { if (!addl(lab_in, r->label, lab_in, "label sum") || !addl(exp_in, r->exp2, exp_in, "exponent sum")) return false; }
             // allocate child contexts (same representation as the child message), zero-filled; every allocation charged by the allocator
-            for (size_t j = 0; j < ins.size(); ++j) { Rel* r = ins[j]; if (!r->is_message) continue; Rel& gc = ctx[r->child]; if (!gc.vals.empty()) continue; gc.scope = r->scope; gc.card = r->card; gc.stride = r->stride; gc.vol = r->vol; gc.dense = r->dense; if (!r->dense) gc.keys = r->keys; gc.vals.assign(r->vals.size(), 0.0); int64_t ge; if (!addl(gexp, exp_in, ge, "context exponent") || !addl(ge, -r->exp2, gc.exp2, "context exponent")) return false; gc.label = 0; C.contexts_entries += gc.vals.size(); }
-            if (!addl(gexp, exp_in, Nexp[v], "numerator exponent")) return false; int64_t termlab; if (!addl(g.label, lab_in + k + 1, termlab, "term label")) return false;   // prefix product of k factors from 1.0: k multiplications (+k); times g: +1
+            for (size_t j = 0; j < ins.size(); ++j) { Rel* r = ins[j]; if (!r->is_message) continue; Rel& gc = ctx[r->child]; if (!gc.vals.empty()) continue; gc.scope = r->scope; gc.card = r->card; gc.stride = r->stride; gc.vol = r->vol; gc.dense = r->dense; if (!r->dense) gc.keys = r->keys; gc.vals.assign(r->vals.size(), 0.0); int64_t ge; if (!addl(gexp, exp_in, ge, "context exponent") || !subl(ge, r->exp2, gc.exp2, "context exponent")) return false; gc.label = 0; C.contexts_entries += gc.vals.size(); }
+            if (!addl(gexp, exp_in, Nexp[v], "numerator exponent")) return false; int64_t termlab, t1; if (!addl(lab_in, (int64_t)k + 1, t1, "term label") || !addl(g.label, t1, termlab, "term label")) return false;   // prefix product of k factors from 1.0: k multiplications (+k); times g: +1
             vec<double> fv(k), pre_(k + 1), suf_(k + 1); vec<int64_t> ridx(k);
             // iterate the bag rows: dense if all dense, else the sparse support (recomputed: counted as reverse join work)
             auto visit = [&](int64_t idx) -> bool {
@@ -292,7 +296,7 @@ struct Exec {
             if (all_dense) { for (int64_t idx = 0; idx < b.vol; ++idx) { if (!visit(idx)) return false; ++rows_visited; } }
             else { vec<uint64_t> rows; if (!support_rows(ins, b, rows, cap_bytes / 16)) return false; for (uint64_t key : rows) { if (!visit((int64_t)key)) return false; ++rows_visited; } }
             if (!addl(termlab, std::max<int64_t>(0, rows_visited - 1), Nlab[v], "numerator label")) return false;   // sequential accumulation bound: at most rows_visited terms into one numerator entry
-            for (size_t j = 0; j < ins.size(); ++j) { Rel* r = ins[j]; if (!r->is_message) continue; Rel& gc = ctx[r->child]; int64_t tl; if (!addl(g.label, lab_in - r->label + k + 1, tl, "context label") || !addl(tl, std::max<int64_t>(0, rows_visited - 1), tl, "context label")) return false; gc.label = std::max(gc.label, tl); if ((int64_t)gc.label > (int64_t)C.max_label) C.max_label = gc.label; }
+            for (size_t j = 0; j < ins.size(); ++j) { Rel* r = ins[j]; if (!r->is_message) continue; Rel& gc = ctx[r->child]; int64_t tl, t2; if (!subl(lab_in, r->label, t2, "context label") || !addl(t2, (int64_t)k + 1, t2, "context label") || !addl(g.label, t2, tl, "context label") || !addl(tl, std::max<int64_t>(0, rows_visited - 1), tl, "context label")) return false; gc.label = std::max(gc.label, tl); if ((int64_t)gc.label > (int64_t)C.max_label) C.max_label = gc.label; }
             if (Nlab[v] > (int64_t)C.max_label) C.max_label = Nlab[v];
             for (int64_t x = 0; x < cx; ++x) if (!std::isfinite(Nval[noff[v] + x])) { stop = RANGE; std::snprintf(reason, sizeof reason, "non-finite numerator"); return false; }
             // every child context fed here is now complete (a context has exactly one writer: its consumer bucket): rescale it before it is read as g
@@ -331,7 +335,7 @@ int cex_run(const int64_t* plan, int64_t plen, const double* vals, int64_t nvals
                 int64_t mode = rd(); int64_t cnt = rd(); r.dense = (mode == 0); if (cnt < 0 || cnt > r.vol) bad("source count");
                 if (r.dense) { if (cnt != r.vol) bad("dense count"); r.vals.reserve((size_t)cnt); for (int64_t t = 0; t < cnt; ++t) { if (vp >= nvals) bad("values exhausted"); r.vals.push_back(vals[vp++]); if (!E.poll(1)) throw 2; } }
                 else { r.keys.reserve((size_t)cnt); r.vals.reserve((size_t)cnt); for (int64_t t = 0; t < cnt; ++t) { int64_t kk = rd(); if (kk < 0 || kk >= r.vol) bad("sparse key"); r.keys.push_back((uint64_t)kk); if (!E.poll(1)) throw 2; } for (int64_t t = 1; t < cnt; ++t) if (r.keys[t] <= r.keys[t - 1]) bad("sparse keys not strictly increasing"); for (int64_t t = 0; t < cnt; ++t) { if (vp >= nvals) bad("values exhausted"); r.vals.push_back(vals[vp++]); if (!E.poll(1)) throw 2; } }
-                r.label = rd(); if (r.label < 0) bad("label"); r.exp2 = rd();
+                r.label = rd(); if (r.label < 0 || r.label > META_LIMIT) bad("source label outside [0, 2^40] (ABI precondition)"); r.exp2 = rd(); if (r.exp2 < -META_LIMIT || r.exp2 > META_LIMIT) bad("source exponent outside [-2^40, 2^40] (ABI precondition)");
                 for (double x : r.vals) { if (!(x >= 0.0) || !std::isfinite(x) || (x != 0.0 && x < DMIN)) { E.stop = RANGE; std::snprintf(E.reason, sizeof E.reason, "source %lld: value outside the supported binary64 range", (long long)s); throw 2; } } if (!E.poll(r.vals.size())) throw 2; E.C.conversions += r.vals.size();
                 if (!E.rescale(r, (int)s, "source")) throw 2;                   // the Python side pre-scales (shift 0 expected); kept as an enforced invariant
                 int best = E.n; for (int w : r.scope) best = std::min(best, E.rank[w]); E.bucket_src[best].push_back((int)s);
@@ -357,5 +361,5 @@ int cex_run(const int64_t* plan, int64_t plen, const double* vals, int64_t nvals
     std::strncpy(reason_out, reason, (size_t)std::max<int64_t>(0, reason_len - 1)); if (reason_len > 0) reason_out[reason_len - 1] = 0;
     return stop;
 }
-const char* cex_schedule_id() { return "CEX/nonneg-bucket-contraction-all-singleton-reverse/v1.2-checked-arithmetic-allocator-boundary-format2"; }
+const char* cex_schedule_id() { return "CEX/nonneg-bucket-contraction-all-singleton-reverse/v1.4-checked-metadata-abi-bounds"; }
 }

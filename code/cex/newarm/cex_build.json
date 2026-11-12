@@ -1,6 +1,6 @@
 {
- "source_sha256": "044ac466b4c5cc796c1c8af894a1cf1b27b1f1f6ea0da6eeeeb4ff16ad94988d",
- "binary_sha256": "c19dc045a064a2ea11318f235414db1b22caf97ffe5367027f156f1e1b98d675",
+ "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+ "binary_sha256": "8d046f2730c7a86453e16ca1787dd6934c42b242beaee520f1e771f090b881bf",
  "flags": [
   "-std=c++17",
   "-O2",
@@ -15,8 +15,8 @@
  ],
  "compiler": "clang++",
  "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
- "build_wall_s": 0.8683280837722123,
+ "build_wall_s": 1.7418996668420732,
  "platform": "darwin",
- "built_utc": "2026-11-11T23:32:22Z",
+ "built_utc": "2026-11-12T02:26:15Z",
  "plan_format": 2
 }

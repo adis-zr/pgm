@@ -9239,13 +9239,13 @@
   {
    "name": "memory_cap_typed_stop_before_allocation",
    "ok": true,
-   "outcome": "MEMORY: allocation boundary: 1092 live + 1417176 requested exceeds cap 989376",
-   "kernel_cap_bytes": 989376
+   "outcome": "MEMORY: allocation boundary: 1092 live + 1417176 requested exceeds cap 1048576",
+   "kernel_cap_bytes": 1048576
   },
   {
    "name": "memory_cap_below_host_headroom_refused_before_kernel",
    "ok": true,
-   "outcome": "MEMORY: host-side reservations (RSS at entry 0 + retained lowering 5670416 + arrays 1418"
+   "outcome": "MEMORY: host budget: 956 live + 1417232 requested for restricted value list (177147 slot"
   },
   {
    "name": "memory_cap_sufficient_completes_and_reports_peak_logical_bytes",
@@ -9294,7 +9294,7 @@
    "outcome": "STOP:RANGE non-normal product (0) of nonzero operands 2.77845e-163 x 2.77845e-163"
   },
   {
-   "name": "review_F1_randomized_high_degree_family_480_executions",
+   "name": "review_F1_randomized_high_degree_family_480_executions_4_of_24_orders_per_model",
    "ok": true,
    "outcomes": {
     "CERTIFIED": 189,
@@ -9347,12 +9347,12 @@
   {
    "name": "review_R2_expired_deadline_is_typed_DEADLINE_at_entry",
    "ok": true,
-   "outcome": "STOP:DEADLINE deadline already expired at executor entry (kernel entered: False)"
+   "outcome": "STOP:DEADLINE deadline expired at executor entry (kernel entered: False)"
   },
   {
    "name": "review_R2_deadline_during_parsing_or_phases_typed_DEADLINE",
    "ok": true,
-   "outcome": "STOP:DEADLINE deadline expired after lowering"
+   "outcome": "STOP:DEADLINE lowering deadline"
   },
   {
    "name": "review_P_enclosure_refuses_label_K_u_>=_1/2_typed_RANGE",
@@ -9360,9 +9360,9 @@
    "outcome": "STOP:RANGE error label too large for a certified enclosure (K=450359962"
   },
   {
-   "name": "review_P_kernel_label_sum_int64_overflow_typed_REPRESENTATION",
+   "name": "review_P_kernel_label_metadata_ABI_bound_refused_and_in_bounds_labels_carried",
    "ok": true,
-   "outcome": "REPRESENTATION label sum: integer overflow"
+   "outcome": "2^62 labels: BADPLAN ; 2^40 labels: rc 0 Nlab 2199023255562 Zlab 2199023255558"
   },
   {
    "name": "review_F3_allocation_boundary_instrumented_driver_strict_build",
@@ -9532,6 +9532,53 @@
       "exact_case_stop": 0,
       "exact_case_values_and_exponent_correct": true
      }
+    },
+    "meta": {
+     "ok": true,
+     "records": [
+      {
+       "label": 9223372036854775806,
+       "exp2": 0,
+       "return_code": 4,
+       "stop": "BADPLAN",
+       "reason": "invalid plan: source label outside [0, 2^40] (ABI precondition)",
+       "ok": true
+      },
+      {
+       "label": 0,
+       "exp2": 9223372036854775807,
+       "return_code": 4,
+       "stop": "BADPLAN",
+       "reason": "invalid plan: source exponent outside [-2^40, 2^40] (ABI precondition)",
+       "ok": true
+      },
+      {
+       "label": 1099511627777,
+       "exp2": 0,
+       "return_code": 4,
+       "stop": "BADPLAN",
+       "reason": "invalid plan: source label outside [0, 2^40] (ABI precondition)",
+       "ok": true
+      },
+      {
+       "label": 0,
+       "exp2": -1099511627777,
+       "return_code": 4,
+       "stop": "BADPLAN",
+       "reason": "invalid plan: source exponent outside [-2^40, 2^40] (ABI precondition)",
+       "ok": true
+      },
+      {
+       "label": 1,
+       "exp2": -5,
+       "return_code": 0,
+       "stop": "OK",
+       "Z_true": 0.0625,
+       "N0_true": 0.03125,
+       "ok": true
+      }
+     ],
+     "stderr": ""
     }
    }
   },
@@ -9703,18 +9750,135 @@
       "exact_case_stop": 0,
       "exact_case_values_and_exponent_correct": true
      }
+    },
+    "meta": {
+     "ok": true,
+     "records": [
+      {
+       "label": 9223372036854775806,
+       "exp2": 0,
+       "return_code": 4,
+       "stop": "BADPLAN",
+       "reason": "invalid plan: source label outside [0, 2^40] (ABI precondition)",
+       "ok": true
+      },
+      {
+       "label": 0,
+       "exp2": 9223372036854775807,
+       "return_code": 4,
+       "stop": "BADPLAN",
+       "reason": "invalid plan: source exponent outside [-2^40, 2^40] (ABI precondition)",
+       "ok": true
+      },
+      {
+       "label": 1099511627777,
+       "exp2": 0,
+       "return_code": 4,
+       "stop": "BADPLAN",
+       "reason": "invalid plan: source label outside [0, 2^40] (ABI precondition)",
+       "ok": true
+      },
+      {
+       "label": 0,
+       "exp2": -1099511627777,
+       "return_code": 4,
+       "stop": "BADPLAN",
+       "reason": "invalid plan: source exponent outside [-2^40, 2^40] (ABI precondition)",
+       "ok": true
+      },
+      {
+       "label": 1,
+       "exp2": -5,
+       "return_code": 0,
+       "stop": "OK",
+       "Z_true": 0.0625,
+       "N0_true": 0.03125,
+       "ok": true
+      }
+     ],
+     "stderr": ""
     }
    }
   },
   {
-   "name": "review_F3_host_side_lowering_bytes_counted_rss_growth_measured_and_charged",
+   "name": "review2_S3_host_memory_cap_refused_before_construction",
+   "ok": true,
+   "outcome": "STOP:MEMORY host budget: 92092 live + 154751600 requested for enclosure row 0 (1024 states: three Fractions per state + fo",
+   "cap_minus_entry": 4194304
+  },
+  {
+   "name": "review2_S3_same_model_under_sufficient_cap_certifies_within_budget",
+   "ok": true,
+   "outcome": "CERTIFIED; budget peak 154843692; rss growth 65536; hash blocks 256"
+  },
+  {
+   "name": "review2_streamed_semantic_hash_equals_closed_form",
+   "ok": true
+  },
+  {
+   "name": "review2_S7B_early_zero_evidence_honours_deadline",
+   "ok": true,
+   "outcome": "STOP:DEADLINE after 0.05 s (lowering deadline)"
+  },
+  {
+   "name": "review2_S7B_same_model_with_budget_is_zero_evidence",
+   "ok": true
+  },
+  {
+   "name": "review2_S4_S5_gate_and_locked_plan_negative_controls_rejected",
+   "ok": true,
+   "controls": [
+    [
+     "gate_v3:missing_five_cases",
+     true
+    ],
+    [
+     "gate_v3:duplicate_receipt",
+     true
+    ],
+    [
+     "gate_v3:contradictory_source_manifest",
+     true
+    ],
+    [
+     "gate_v3:extra_case",
+     true
+    ],
+    [
+     "gate_v3:wrong_budget",
+     true
+    ],
+    [
+     "gate_v3:untouched_saved_campaigns",
+     true
+    ],
+    [
+     "locked_v3:existing_attempt_directory_refused",
+     true
+    ],
+    [
+     "locked_v3:child_exit_7_no_stale_acceptance",
+     true
+    ],
+    [
+     "locked_v3:foreign_nonce_output_rejected",
+     true
+    ]
+   ],
+   "stderr": ""
+  },
+  {
+   "name": "review_F3_host_side_budget_charged_before_build_and_rss_growth_measured",
    "ok": true,
    "measured": {
+    "host_budget_peak_bytes": 23028,
+    "host_budget_live_bytes": 23028,
+    "host_budget_live_at_kernel_call_bytes": 6192,
     "host_lowering_rss_growth_bytes_measured": 0,
     "host_lowering_retained_bytes_counted": 3556,
     "host_plan_output_arrays_bytes": 1440,
     "host_enclosure_rss_growth_bytes_measured": 0,
-    "kernel_cap_bytes": 3221220476
+    "kernel_cap_bytes": 3221219280
    }
   }
  ],
@@ -9730,19 +9894,19 @@
    "note": "frozen support.py joined(): an empty intermediate join leaves cols incomplete and raises ValueError instead of returning ZERO_EVIDENCE (reference-only defect; brute force remains the oracle)"
   }
  ],
- "passed": 395,
- "total": 395,
+ "passed": 401,
+ "total": 401,
  "all_pass": true,
  "random_executions": 360,
  "random_status_counts": {
   "CERTIFIED": 288,
   "ZERO_EVIDENCE": 72
  },
- "control_groups": 35,
+ "control_groups": 41,
  "count_semantics": "passed/total counts random EXECUTIONS (each one test) plus grouped CONTROLS (one count each, several executing many plans); it is NOT a count of enclosures",
  "kernel": {
-  "source_sha256": "044ac466b4c5cc796c1c8af894a1cf1b27b1f1f6ea0da6eeeeb4ff16ad94988d",
-  "binary_sha256": "c19dc045a064a2ea11318f235414db1b22caf97ffe5367027f156f1e1b98d675",
+  "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+  "binary_sha256": "8d046f2730c7a86453e16ca1787dd6934c42b242beaee520f1e771f090b881bf",
   "flags": [
    "-std=c++17",
    "-O2",
@@ -9757,11 +9921,11 @@
   ],
   "compiler": "clang++",
   "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
-  "build_wall_s": 0.8683280837722123,
+  "build_wall_s": 1.7418996668420732,
   "platform": "darwin",
-  "built_utc": "2026-11-11T23:32:22Z",
+  "built_utc": "2026-11-12T02:26:15Z",
   "plan_format": 2
  },
- "executor_sha256": "d15b96dda30dd9bfd63862b829a309c83d6df254c3dbc4de420c0848bf4249ed",
- "utc": "2026-11-12T00:01:58Z"
+ "executor_sha256": "b3056dc355681326fb853539284b9699bdc2b97c9302637a72ef2901ef5e4ae5",
+ "utc": "2026-11-12T02:38:14Z"
 }
