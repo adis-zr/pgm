@@ -26,7 +26,7 @@
       "coordinates_checked": 16,
       "max_width": "63564848795503340512145535255627/3780152288079866952910551437459642853961498624",
       "status": "PASS",
-      "seconds": 0.003369417041540146
+      "seconds": 0.0034710830077528954
     },
     {
       "kind": "ordinary",
@@ -36,7 +36,7 @@
       "coordinates_checked": 2,
       "max_width": "45035996273704935/40564819207303295811898228867072",
       "status": "PASS",
-      "seconds": 0.00028300005942583084
+      "seconds": 0.00030895788222551346
     },
     {
       "kind": "ordinary",
@@ -46,7 +46,7 @@
       "coordinates_checked": 8,
       "max_width": "1460333491462919000509107174113325/600839562013814618311198033201138721589651570688",
       "status": "PASS",
-      "seconds": 0.0004805000498890877
+      "seconds": 0.0004979162476956844
     },
     {
       "kind": "ordinary",
@@ -56,7 +56,7 @@
       "coordinates_checked": 14,
       "max_width": "5/4503599627370496",
       "status": "PASS",
-      "seconds": 0.0005964580923318863
+      "seconds": 0.0006138328462839127
     },
     {
       "kind": "ordinary",
@@ -66,7 +66,7 @@
       "coordinates_checked": 4,
       "max_width": "5247999569457971644520526766629/1527113420475470280696119901269637284094803968",
       "status": "PASS",
-      "seconds": 0.0003447919152677059
+      "seconds": 0.00035616615787148476
     },
     {
       "kind": "ordinary",
@@ -76,7 +76,7 @@
       "coordinates_checked": 16,
       "max_width": "31/4503599627370496",
       "status": "PASS",
-      "seconds": 0.0019635409116744995
+      "seconds": 0.001995166763663292
     },
     {
       "kind": "ordinary",
@@ -86,7 +86,7 @@
       "coordinates_checked": 14,
       "max_width": "3247212500639857699864938436795/718195275498851176685984493466545774095499264",
       "status": "PASS",
-      "seconds": 0.0010257908143103123
+      "seconds": 0.001017499715089798
     },
     {
       "kind": "ordinary",
@@ -96,7 +96,7 @@
       "coordinates_checked": 8,
       "max_width": "269476359738992402195083666948595/30119457261151817765935709529126723718641352704",
       "status": "PASS",
-      "seconds": 0.0005413331091403961
+      "seconds": 0.0005389582365751266
     },
     {
       "kind": "ordinary",
@@ -106,7 +106,7 @@
       "coordinates_checked": 2,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00022425036877393723
+      "seconds": 0.00021354109048843384
     },
     {
       "kind": "ordinary",
@@ -116,7 +116,7 @@
       "coordinates_checked": 2,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00020141666755080223
+      "seconds": 0.0001949169673025608
     },
     {
       "kind": "ordinary",
@@ -126,7 +126,7 @@
       "coordinates_checked": 10,
       "max_width": "45035996273704935/26721269795287091328186958113191",
       "status": "PASS",
-      "seconds": 0.0005284161306917667
+      "seconds": 0.0005082078278064728
     },
     {
       "kind": "ordinary",
@@ -136,7 +136,7 @@
       "coordinates_checked": 14,
       "max_width": "1/562949953421312",
       "status": "PASS",
-      "seconds": 0.0009087910875678062
+      "seconds": 0.0009202081710100174
     },
     {
       "kind": "ordinary",
@@ -146,7 +146,7 @@
       "coordinates_checked": 2,
       "max_width": "5408642560973775577159531990585/18674743143672626223834806203327776348698574848",
       "status": "PASS",
-      "seconds": 0.0002617086283862591
+      "seconds": 0.00025970814749598503
     },
     {
       "kind": "ordinary",
@@ -156,7 +156,7 @@
       "coordinates_checked": 4,
       "max_width": "45035996273704935/40564819207303295811898228867072",
       "status": "PASS",
-      "seconds": 0.0003020418807864189
+      "seconds": 0.00029900018125772476
     },
     {
       "kind": "ordinary",
@@ -166,7 +166,7 @@
       "coordinates_checked": 2,
       "max_width": "45035996273704935/40564819207303295811898228867072",
       "status": "PASS",
-      "seconds": 0.00024629198014736176
+      "seconds": 0.00023729074746370316
     },
     {
       "kind": "ordinary",
@@ -176,7 +176,7 @@
       "coordinates_checked": 4,
       "max_width": "14233269897299409150209316503265/16025237251435319800476919706273053791683084288",
       "status": "PASS",
-      "seconds": 0.0002720840275287628
+      "seconds": 0.00026895804330706596
     },
     {
       "kind": "ordinary",
@@ -186,7 +186,7 @@
       "coordinates_checked": 4,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00022579170763492584
+      "seconds": 0.00022229226306080818
     },
     {
       "kind": "ordinary",
@@ -196,7 +196,7 @@
       "coordinates_checked": 2,
       "max_width": "9007199254740987/20282409603651647905949114433536",
       "status": "PASS",
-      "seconds": 0.0002454998902976513
+      "seconds": 0.00024245772510766983
     },
     {
       "kind": "ordinary",
@@ -206,7 +206,7 @@
       "coordinates_checked": 14,
       "max_width": "85449040459828674773116563061575/17484749159132151108193493956019884054336765952",
       "status": "PASS",
-      "seconds": 0.0009280410595238209
+      "seconds": 0.0009107077494263649
     },
     {
       "kind": "ordinary",
@@ -216,7 +216,7 @@
       "coordinates_checked": 2,
       "max_width": "135107988821114805/223106505640168126965440258768896",
       "status": "PASS",
-      "seconds": 0.00025454163551330566
+      "seconds": 0.0002443748526275158
     },
     {
       "kind": "ordinary",
@@ -226,7 +226,7 @@
       "coordinates_checked": 12,
       "max_width": "292968138719412607407227538971743/52425276057180297259891525478906570124354912256",
       "status": "PASS",
-      "seconds": 0.0008445000275969505
+      "seconds": 0.0008002500981092453
     },
     {
       "kind": "ordinary",
@@ -236,7 +236,7 @@
       "coordinates_checked": 16,
       "max_width": "52397949504127439773913235826761/3125513850739305162539606169933787258609991680",
       "status": "PASS",
-      "seconds": 0.0024224580265581608
+      "seconds": 0.0023430418223142624
     },
     {
       "kind": "ordinary",
@@ -246,7 +246,7 @@
       "coordinates_checked": 2,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.0002560419961810112
+      "seconds": 0.00020904187113046646
     },
     {
       "kind": "ordinary",
@@ -256,7 +256,7 @@
       "coordinates_checked": 2,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00027745915576815605
+      "seconds": 0.00020429212599992752
     },
     {
       "kind": "ordinary",
@@ -266,7 +266,7 @@
       "coordinates_checked": 14,
       "max_width": "31316143909719725839164708658365/3087446065674256554866721569877274060858064896",
       "status": "PASS",
-      "seconds": 0.0014748331159353256
+      "seconds": 0.001480707898736
     },
     {
       "kind": "ordinary",
@@ -276,7 +276,7 @@
       "coordinates_checked": 2,
       "max_width": "9007199254740987/4705519028047181989921021377905",
       "status": "PASS",
-      "seconds": 0.00028787506744265556
+      "seconds": 0.0002489169128239155
     },
     {
       "kind": "ordinary",
@@ -286,7 +286,7 @@
       "coordinates_checked": 14,
       "max_width": "572821672852481391923893453731067/99291121555566381967987905461016901496151736320",
       "status": "PASS",
-      "seconds": 0.000846541952341795
+      "seconds": 0.0007852497510612011
     },
     {
       "kind": "ordinary",
@@ -296,7 +296,7 @@
       "coordinates_checked": 14,
       "max_width": "13/4503599627370496",
       "status": "PASS",
-      "seconds": 0.0006808331236243248
+      "seconds": 0.0006334166973829269
     },
     {
       "kind": "ordinary",
@@ -306,7 +306,7 @@
       "coordinates_checked": 6,
       "max_width": "45035996273704935/28170013338405065535240519519802",
       "status": "PASS",
-      "seconds": 0.0004093339666724205
+      "seconds": 0.00036908313632011414
     },
     {
       "kind": "ordinary",
@@ -316,7 +316,7 @@
       "coordinates_checked": 4,
       "max_width": "45035996273704935/27584077060966238630075004302134",
       "status": "PASS",
-      "seconds": 0.00034612463787198067
+      "seconds": 0.00030450010672211647
     },
     {
       "kind": "ordinary",
@@ -326,7 +326,7 @@
       "coordinates_checked": 2,
       "max_width": "243388915243819900972178939576325/292300327466180275348110991037848145534457479168",
       "status": "PASS",
-      "seconds": 0.00032970821484923363
+      "seconds": 0.0002927500754594803
     },
     {
       "kind": "ordinary",
@@ -336,7 +336,7 @@
       "coordinates_checked": 8,
       "max_width": "45035996273704935/21248238632396965545184697828107",
       "status": "PASS",
-      "seconds": 0.0004729577340185642
+      "seconds": 0.0004410417750477791
     },
     {
       "kind": "ordinary",
@@ -346,7 +346,7 @@
       "coordinates_checked": 4,
       "max_width": "878596907240704268531439290325/1677703850520636147693490410653345635081650176",
       "status": "PASS",
-      "seconds": 0.0002772081643342972
+      "seconds": 0.0002766251564025879
     },
     {
       "kind": "ordinary",
@@ -356,7 +356,7 @@
       "coordinates_checked": 6,
       "max_width": "36480167273234550014635788060443/8270717398757590835759640224726006558927880192",
       "status": "PASS",
-      "seconds": 0.0004281247965991497
+      "seconds": 0.00042512500658631325
     },
     {
       "kind": "ordinary",
@@ -366,7 +366,7 @@
       "coordinates_checked": 8,
       "max_width": "7881299347898361/2716394143346200954643341340087",
       "status": "PASS",
-      "seconds": 0.000465999823063612
+      "seconds": 0.00045849988237023354
     },
     {
       "kind": "ordinary",
@@ -376,7 +376,7 @@
       "coordinates_checked": 12,
       "max_width": "293870728942704065080172142605795/30639182550213636050298691233431263889634361344",
       "status": "PASS",
-      "seconds": 0.0013008750975131989
+      "seconds": 0.0012777079828083515
     },
     {
       "kind": "ordinary",
@@ -386,7 +386,7 @@
       "coordinates_checked": 10,
       "max_width": "23/4503599627370496",
       "status": "PASS",
-      "seconds": 0.000556624960154295
+      "seconds": 0.0005467087030410767
     },
     {
       "kind": "ordinary",
@@ -396,7 +396,7 @@
       "coordinates_checked": 12,
       "max_width": "45035996273704935/24628640233005570527109798653369",
       "status": "PASS",
-      "seconds": 0.0006682910025119781
+      "seconds": 0.0006566247902810574
     },
     {
       "kind": "ordinary",
@@ -406,7 +406,7 @@
       "coordinates_checked": 16,
       "max_width": "1054596995021541609914869927584783/103433005540052884231168859771842790956447301632",
       "status": "PASS",
-      "seconds": 0.0015614582225680351
+      "seconds": 0.0015229587443172932
     },
     {
       "kind": "ordinary",
@@ -416,7 +416,7 @@
       "coordinates_checked": 2,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00024362467229366302
+      "seconds": 0.00023729167878627777
     },
     {
       "kind": "ordinary",
@@ -426,7 +426,7 @@
       "coordinates_checked": 2,
       "max_width": "5/4503599627370496",
       "status": "PASS",
-      "seconds": 0.00024183327332139015
+      "seconds": 0.00023237476125359535
     },
     {
       "kind": "ordinary",
@@ -436,7 +436,7 @@
       "coordinates_checked": 16,
       "max_width": "45035996273704935/32451855365842638450958434041854",
       "status": "PASS",
-      "seconds": 0.0015884172171354294
+      "seconds": 0.0015660831704735756
     },
     {
       "kind": "ordinary",
@@ -446,7 +446,7 @@
       "coordinates_checked": 16,
       "max_width": "758383670765542905161559637515675/36373660534256265432717989859478629027684548608",
       "status": "PASS",
-      "seconds": 0.002721915952861309
+      "seconds": 0.0026760841719806194
     },
     {
       "kind": "ordinary",
@@ -456,7 +456,7 @@
       "coordinates_checked": 14,
       "max_width": "977745559209178694396156163054495/59508525130412585094661912573161878928370958336",
       "status": "PASS",
-      "seconds": 0.001364041119813919
+      "seconds": 0.0013363752514123917
     },
     {
       "kind": "ordinary",
@@ -466,7 +466,7 @@
       "coordinates_checked": 8,
       "max_width": "945755921747803635/1074967708993537339015303064977408",
       "status": "PASS",
-      "seconds": 0.0004582079127430916
+      "seconds": 0.00045283325016498566
     },
     {
       "kind": "ordinary",
@@ -476,7 +476,7 @@
       "coordinates_checked": 10,
       "max_width": "5/4503599627370496",
       "status": "PASS",
-      "seconds": 0.0003354158252477646
+      "seconds": 0.00033408310264348984
     },
     {
       "kind": "ordinary",
@@ -486,7 +486,7 @@
       "coordinates_checked": 12,
       "max_width": "226785241096322417704043999298941/39936756602108658239766432271694407655059619840",
       "status": "PASS",
-      "seconds": 0.0007212087512016296
+      "seconds": 0.000723457895219326
     },
     {
       "kind": "ordinary",
@@ -496,7 +496,7 @@
       "coordinates_checked": 6,
       "max_width": "45035996273704935/36508337286572967131428331454463",
       "status": "PASS",
-      "seconds": 0.0004269159398972988
+      "seconds": 0.000425499863922596
     },
     {
       "kind": "ordinary",
@@ -506,7 +506,7 @@
       "coordinates_checked": 16,
       "max_width": "5736217702733842851844469882375/258433994069867137091945048077494870928785408",
       "status": "PASS",
-      "seconds": 0.004779167007654905
+      "seconds": 0.0047365827485919
     },
     {
       "kind": "ordinary",
@@ -516,7 +516,7 @@
       "coordinates_checked": 8,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00031904224306344986
+      "seconds": 0.000313333235681057
     },
     {
       "kind": "ordinary",
@@ -526,7 +526,7 @@
       "coordinates_checked": 6,
       "max_width": "52982621005457391141791521367523/2362263870951170840598602066072198130539274698752",
       "status": "PASS",
-      "seconds": 0.0003459588624536991
+      "seconds": 0.00034125009551644325
     },
     {
       "kind": "ordinary",
@@ -536,7 +536,7 @@
       "coordinates_checked": 10,
       "max_width": "88410503400532797357036822822075/16164738996226634475278230917102764125918855168",
       "status": "PASS",
-      "seconds": 0.0006391671486198902
+      "seconds": 0.0006258748471736908
     },
     {
       "kind": "ordinary",
@@ -546,7 +546,7 @@
       "coordinates_checked": 14,
       "max_width": "117093590311632727/20654943657596233283029585979250",
       "status": "PASS",
-      "seconds": 0.0008626249618828297
+      "seconds": 0.0008448748849332333
     },
     {
       "kind": "ordinary",
@@ -556,7 +556,7 @@
       "coordinates_checked": 8,
       "max_width": "23609154035996594427827076936225/2426647380227625295751584463553166917685477376",
       "status": "PASS",
-      "seconds": 0.000565625261515379
+      "seconds": 0.0005620000883936882
     },
     {
       "kind": "ordinary",
@@ -566,7 +566,7 @@
       "coordinates_checked": 14,
       "max_width": "45703387354683403600558181518203/10399464135168700588340516638686554209063534592",
       "status": "PASS",
-      "seconds": 0.0009545828215777874
+      "seconds": 0.0009262501262128353
     },
     {
       "kind": "ordinary",
@@ -576,7 +576,7 @@
       "coordinates_checked": 2,
       "max_width": "5/4503599627370496",
       "status": "PASS",
-      "seconds": 0.00024204188957810402
+      "seconds": 0.00024187518283724785
     },
     {
       "kind": "ordinary",
@@ -586,7 +586,7 @@
       "coordinates_checked": 16,
       "max_width": "430125849083118977642631801451121/31415841643934667456658609993434617873726177280",
       "status": "PASS",
-      "seconds": 0.0016480828635394573
+      "seconds": 0.0016192500479519367
     },
     {
       "kind": "ordinary",
@@ -596,7 +596,7 @@
       "coordinates_checked": 2,
       "max_width": "15011998757901645/20282409603651647905949114433536",
       "status": "PASS",
-      "seconds": 0.0002498752437531948
+      "seconds": 0.00024183280766010284
     },
     {
       "kind": "ordinary",
@@ -606,7 +606,7 @@
       "coordinates_checked": 10,
       "max_width": "167329879230125960116091372961765/21445610228904163210911214789288791779917692928",
       "status": "PASS",
-      "seconds": 0.0007414999417960644
+      "seconds": 0.0007204576395452023
     },
     {
       "kind": "ordinary",
@@ -616,7 +616,7 @@
       "coordinates_checked": 14,
       "max_width": "7538634158859293875/970905844332081652732685441028096",
       "status": "PASS",
-      "seconds": 0.0009655840694904327
+      "seconds": 0.0009467080235481262
     },
     {
       "kind": "ordinary",
@@ -626,7 +626,7 @@
       "coordinates_checked": 14,
       "max_width": "283726776524340681/40564819207303178718307917234176",
       "status": "PASS",
-      "seconds": 0.0007347920909523964
+      "seconds": 0.0007246248424053192
     },
     {
       "kind": "ordinary",
@@ -636,7 +636,7 @@
       "coordinates_checked": 6,
       "max_width": "2957851400532532267759222565547/996099952201032678074190921431955987415171072",
       "status": "PASS",
-      "seconds": 0.00038829119876027107
+      "seconds": 0.000386625062674284
     },
     {
       "kind": "ordinary",
@@ -646,7 +646,7 @@
       "coordinates_checked": 16,
       "max_width": "26882466618264959934533652294383/1969149937117762382615383620232756965396185088",
       "status": "PASS",
-      "seconds": 0.002581583335995674
+      "seconds": 0.002484917175024748
     },
     {
       "kind": "ordinary",
@@ -656,7 +656,7 @@
       "coordinates_checked": 14,
       "max_width": "8428065562088782579107557538345/400185338673936853450439402394235977265577984",
       "status": "PASS",
-      "seconds": 0.0024223332293331623
+      "seconds": 0.002347959205508232
     },
     {
       "kind": "ordinary",
@@ -666,7 +666,7 @@
       "coordinates_checked": 14,
       "max_width": "403679453079617139004044305442485/82354327886088721535214275094228572518949584896",
       "status": "PASS",
-      "seconds": 0.0006449590437114239
+      "seconds": 0.0006259158253669739
     },
     {
       "kind": "ordinary",
@@ -676,7 +676,7 @@
       "coordinates_checked": 8,
       "max_width": "2297050495645561228963637378066325/421200132191027572997753000982628039172626055168",
       "status": "PASS",
-      "seconds": 0.00048454198986291885
+      "seconds": 0.0004726252518594265
     },
     {
       "kind": "ordinary",
@@ -686,7 +686,7 @@
       "coordinates_checked": 16,
       "max_width": "41/4503599627370496",
       "status": "PASS",
-      "seconds": 0.004266082774847746
+      "seconds": 0.004259167239069939
     },
     {
       "kind": "ordinary",
@@ -696,7 +696,7 @@
       "coordinates_checked": 4,
       "max_width": "45035996273704935/28560944135754361520769145931734",
       "status": "PASS",
-      "seconds": 0.00031404197216033936
+      "seconds": 0.00031066685914993286
     },
     {
       "kind": "ordinary",
@@ -706,7 +706,7 @@
       "coordinates_checked": 14,
       "max_width": "55239999975193113502603977757335/4148083105105191980972226613434221101154566144",
       "status": "PASS",
-      "seconds": 0.0014639999717473984
+      "seconds": 0.001449208240956068
     },
     {
       "kind": "ordinary",
@@ -716,7 +716,7 @@
       "coordinates_checked": 4,
       "max_width": "45035996273704935/36508337286572967131428331454463",
       "status": "PASS",
-      "seconds": 0.00027512479573488235
+      "seconds": 0.0002638339065015316
     },
     {
       "kind": "ordinary",
@@ -726,7 +726,7 @@
       "coordinates_checked": 14,
       "max_width": "37811200403474076217211189181383/2226958329760372274850780513834318517197864960",
       "status": "PASS",
-      "seconds": 0.0013420418836176395
+      "seconds": 0.001448457594960928
     },
     {
       "kind": "ordinary",
@@ -736,7 +736,7 @@
       "coordinates_checked": 6,
       "max_width": "135920314357804473753861563787955/43949317493033031288668486781001593986182283264",
       "status": "PASS",
-      "seconds": 0.00043341564014554024
+      "seconds": 0.00045954110100865364
     },
     {
       "kind": "ordinary",
@@ -746,7 +746,7 @@
       "coordinates_checked": 6,
       "max_width": "54043195528445907/18530671696658702269145381163448",
       "status": "PASS",
-      "seconds": 0.00042183278128504753
+      "seconds": 0.0004459158517420292
     },
     {
       "kind": "ordinary",
@@ -756,7 +756,7 @@
       "coordinates_checked": 2,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00020350003615021706
+      "seconds": 0.00022462476044893265
     },
     {
       "kind": "ordinary",
@@ -766,7 +766,7 @@
       "coordinates_checked": 8,
       "max_width": "1411655708414154988789473994604625/453522226834245043558111187336146708753182359552",
       "status": "PASS",
-      "seconds": 0.0005350839346647263
+      "seconds": 0.0005475003272294998
     },
     {
       "kind": "ordinary",
@@ -776,7 +776,7 @@
       "coordinates_checked": 2,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00021125003695487976
+      "seconds": 0.00023999996483325958
     },
     {
       "kind": "ordinary",
@@ -786,7 +786,7 @@
       "coordinates_checked": 2,
       "max_width": "45035996273704935/23099410937492153558753240911418",
       "status": "PASS",
-      "seconds": 0.0002483748830854893
+      "seconds": 0.0002805418334901333
     },
     {
       "kind": "ordinary",
@@ -796,7 +796,7 @@
       "coordinates_checked": 8,
       "max_width": "519229685853482341316124511043575/182958353117720122924256922526142593676118851584",
       "status": "PASS",
-      "seconds": 0.000501417089253664
+      "seconds": 0.000536749605089426
     },
     {
       "kind": "ordinary",
@@ -806,7 +806,7 @@
       "coordinates_checked": 14,
       "max_width": "90971257360293806788048908038953/27296426771963642877624224042274872692947550208",
       "status": "PASS",
-      "seconds": 0.0012288750149309635
+      "seconds": 0.0012487908825278282
     },
     {
       "kind": "ordinary",
@@ -816,7 +816,7 @@
       "coordinates_checked": 2,
       "max_width": "45035996273704935/40564819207303295811898228867072",
       "status": "PASS",
-      "seconds": 0.00023999996483325958
+      "seconds": 0.0002697906456887722
     },
     {
       "kind": "ordinary",
@@ -826,7 +826,7 @@
       "coordinates_checked": 4,
       "max_width": "45035996273704935/40564819207303295811898228867072",
       "status": "PASS",
-      "seconds": 0.0002753748558461666
+      "seconds": 0.0002959161065518856
     },
     {
       "kind": "ordinary",
@@ -836,7 +836,7 @@
       "coordinates_checked": 16,
       "max_width": "31204690904778785380357704487119/3911950373459172059246728898722941103945809920",
       "status": "PASS",
-      "seconds": 0.0009156251326203346
+      "seconds": 0.000941332895308733
     },
     {
       "kind": "ordinary",
@@ -846,7 +846,7 @@
       "coordinates_checked": 10,
       "max_width": "3002399751580329/1757808832316476211896918282513",
       "status": "PASS",
-      "seconds": 0.0003567091189324856
+      "seconds": 0.000378625001758337
     },
     {
       "kind": "ordinary",
@@ -856,7 +856,7 @@
       "coordinates_checked": 6,
       "max_width": "5003999585967215/2575544076654177368895137471862",
       "status": "PASS",
-      "seconds": 0.00034245802089571953
+      "seconds": 0.0003649173304438591
     },
     {
       "kind": "ordinary",
@@ -866,7 +866,7 @@
       "coordinates_checked": 12,
       "max_width": "40532396646334383/8330275372928331022252545334127",
       "status": "PASS",
-      "seconds": 0.0007855831645429134
+      "seconds": 0.0008097500540316105
     },
     {
       "kind": "ordinary",
@@ -876,7 +876,7 @@
       "coordinates_checked": 14,
       "max_width": "15011998757901645/7136403379062617022596896832929",
       "status": "PASS",
-      "seconds": 0.0006717499345541
+      "seconds": 0.0006547081284224987
     },
     {
       "kind": "ordinary",
@@ -886,7 +886,7 @@
       "coordinates_checked": 2,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.0002227500081062317
+      "seconds": 0.00021012499928474426
     },
     {
       "kind": "ordinary",
@@ -896,7 +896,7 @@
       "coordinates_checked": 16,
       "max_width": "210894804857969057542382122242257/17202101045184674202072877884827969250291351552",
       "status": "PASS",
-      "seconds": 0.0014694170095026493
+      "seconds": 0.001457124948501587
     },
     {
       "kind": "ordinary",
@@ -906,7 +906,7 @@
       "coordinates_checked": 12,
       "max_width": "393057920805459211589252514460725/48985988836274973916282619229780123150400356352",
       "status": "PASS",
-      "seconds": 0.0011022500693798065
+      "seconds": 0.0010936670005321503
     },
     {
       "kind": "ordinary",
@@ -916,7 +916,7 @@
       "coordinates_checked": 10,
       "max_width": "45035996273704935/33804016006086076840848772475566",
       "status": "PASS",
-      "seconds": 0.0004363330081105232
+      "seconds": 0.0004313751123845577
     },
     {
       "kind": "ordinary",
@@ -926,7 +926,7 @@
       "coordinates_checked": 8,
       "max_width": "45035996273704935/21441404438146028172311889032923",
       "status": "PASS",
-      "seconds": 0.00040454184636473656
+      "seconds": 0.00039233267307281494
     },
     {
       "kind": "ordinary",
@@ -936,7 +936,7 @@
       "coordinates_checked": 2,
       "max_width": "1219994562625663641446512843137/2472465175935735030530833502168867660552470528",
       "status": "PASS",
-      "seconds": 0.00025454210117459297
+      "seconds": 0.00024533411487936974
     },
     {
       "kind": "ordinary",
@@ -946,7 +946,7 @@
       "coordinates_checked": 6,
       "max_width": "0",
       "status": "PASS",
-      "seconds": 0.00024408288300037384
+      "seconds": 0.0002382500097155571
     },
     {
       "kind": "ordinary",
@@ -956,7 +956,7 @@
       "coordinates_checked": 8,
       "max_width": "2464876167110443744116003278393/931675577183055348741364128954796293677383680",
       "status": "PASS",
-      "seconds": 0.000383750069886446
+      "seconds": 0.00038066692650318146
     },
     {
       "kind": "ordinary",
@@ -966,7 +966,7 @@
       "coordinates_checked": 10,
       "max_width": "9007199254740984/2609247485469767287082785998985",
       "status": "PASS",
-      "seconds": 0.0005981656722724438
+      "seconds": 0.0005922080017626286
     },
     {
       "kind": "ordinary",
@@ -976,7 +976,7 @@
       "coordinates_checked": 2,
       "max_width": "15011998757901645/7031235329265904847587673130052",
       "status": "PASS",
-      "seconds": 0.0002515423111617565
+      "seconds": 0.00024641677737236023
     },
     {
       "kind": "ordinary",
@@ -986,7 +986,7 @@
       "coordinates_checked": 4,
       "max_width": "5003999585967215/2397831535365039391650151373792",
       "status": "PASS",
-      "seconds": 0.00027949968352913857
+      "seconds": 0.000269915908575058
     },
     {
       "kind": "ordinary",
@@ -996,7 +996,7 @@
       "coordinates_checked": 14,
       "max_width": "70988433612780605541235315179535/7154194430974729287905933098495786023873675264",
       "status": "PASS",
-      "seconds": 0.0012972080148756504
+      "seconds": 0.0012900419533252716
     },
     {
       "kind": "ordinary",
@@ -1006,7 +1006,7 @@
       "coordinates_checked": 8,
       "max_width": "5/4503599627370496",
       "status": "PASS",
-      "seconds": 0.0004310416989028454
+      "seconds": 0.00041675008833408356
     },
     {
       "kind": "ordinary",
@@ -1016,7 +1016,7 @@
       "coordinates_checked": 8,
       "max_width": "406664854208554547148837614379/952356956656727693833534954607878262694608896",
       "status": "PASS",
-      "seconds": 0.0003632497973740101
+      "seconds": 0.000383750069886446
     },
     {
       "kind": "extreme_range",
@@ -1025,7 +1025,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0009538331069052219
+      "seconds": 0.0009628748521208763
     },
     {
       "kind": "extreme_range",
@@ -1034,7 +1034,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.00037787528708577156
+      "seconds": 0.00037358421832323074
     },
     {
       "kind": "extreme_range",
@@ -1043,7 +1043,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.00322291674092412
+      "seconds": 0.003084832802414894
     },
     {
       "kind": "extreme_range",
@@ -1052,7 +1052,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.005032125394791365
+      "seconds": 0.004880958236753941
     },
     {
       "kind": "extreme_range",
@@ -1061,7 +1061,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0006250417791306973
+      "seconds": 0.000573290977627039
     },
     {
       "kind": "extreme_range",
@@ -1070,7 +1070,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.00042220763862133026
+      "seconds": 0.00037583382800221443
     },
     {
       "kind": "extreme_range",
@@ -1079,7 +1079,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0005669998936355114
+      "seconds": 0.00029620807617902756
     },
     {
       "kind": "extreme_range",
@@ -1088,7 +1088,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0009778337553143501
+      "seconds": 0.0009582918137311935
     },
     {
       "kind": "extreme_range",
@@ -1097,7 +1097,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.0002997079864144325
+      "seconds": 0.000289292074739933
     },
     {
       "kind": "extreme_range",
@@ -1106,7 +1106,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0011998331174254417
+      "seconds": 0.0011788327246904373
     },
     {
       "kind": "extreme_range",
@@ -1115,7 +1115,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.0004377500154078007
+      "seconds": 0.00042454199865460396
     },
     {
       "kind": "extreme_range",
@@ -1124,7 +1124,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.0004236670210957527
+      "seconds": 0.0004205843433737755
     },
     {
       "kind": "extreme_range",
@@ -1133,7 +1133,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.001401958055794239
+      "seconds": 0.001390750054270029
     },
     {
       "kind": "extreme_range",
@@ -1142,7 +1142,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.00073245819658041
+      "seconds": 0.0007251659408211708
     },
     {
       "kind": "extreme_range",
@@ -1151,7 +1151,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.0005361251533031464
+      "seconds": 0.0005247918888926506
     },
     {
       "kind": "extreme_range",
@@ -1160,7 +1160,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0015432089567184448
+      "seconds": 0.0015368331223726273
     },
     {
       "kind": "extreme_range",
@@ -1169,7 +1169,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.00042454199865460396
+      "seconds": 0.0004152078181505203
     },
     {
       "kind": "extreme_range",
@@ -1179,7 +1179,7 @@
       "coordinates_checked": 6,
       "max_width": "13/4503599627370496",
       "status": "PASS",
-      "seconds": 0.0005979156121611595
+      "seconds": 0.0005899579264223576
     },
     {
       "kind": "extreme_range",
@@ -1188,7 +1188,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0037765828892588615
+      "seconds": 0.0037584584206342697
     },
     {
       "kind": "extreme_range",
@@ -1197,7 +1197,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.001213208306580782
+      "seconds": 0.0011987080797553062
     },
     {
       "kind": "extreme_range",
@@ -1206,7 +1206,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.00043245870620012283
+      "seconds": 0.0004237922839820385
     },
     {
       "kind": "extreme_range",
@@ -1215,7 +1215,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.002365000080317259
+      "seconds": 0.0024262499064207077
     },
     {
       "kind": "extreme_range",
@@ -1225,7 +1225,7 @@
       "coordinates_checked": 4,
       "max_width": "285862544334399694030885508773/731483209172571030903129000687094528350107887483693826048",
       "status": "PASS",
-      "seconds": 0.0004097502678632736
+      "seconds": 0.0003975830040872097
     },
     {
       "kind": "extreme_range",
@@ -1234,7 +1234,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.002028457820415497
+      "seconds": 0.0020055421628057957
     },
     {
       "kind": "extreme_range",
@@ -1243,7 +1243,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "native route refused: arithmetic range",
       "status": "PASS",
-      "seconds": 0.0005210828967392445
+      "seconds": 0.0005101249553263187
     },
     {
       "kind": "extreme_range",
@@ -1252,7 +1252,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0007862499915063381
+      "seconds": 0.0007795421406626701
     },
     {
       "kind": "extreme_range",
@@ -1261,7 +1261,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0028598331846296787
+      "seconds": 0.0028481250628829002
     },
     {
       "kind": "extreme_range",
@@ -1270,7 +1270,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0011169584468007088
+      "seconds": 0.001107832882553339
     },
     {
       "kind": "extreme_range",
@@ -1280,7 +1280,7 @@
       "coordinates_checked": 4,
       "max_width": "6769213120412207123614255834479/1905364105417472252984124251512013474780062376100451025923643760577617339262587588208740830019584",
       "status": "PASS",
-      "seconds": 0.00039166584610939026
+      "seconds": 0.0003804168663918972
     },
     {
       "kind": "extreme_range",
@@ -1289,7 +1289,7 @@
       "outcome": "SAFE_RANGE_REFUSAL",
       "reason": "source conversion range",
       "status": "PASS",
-      "seconds": 0.0005727922543883324
+      "seconds": 0.0005618752911686897
     }
   ],
   "guards": [

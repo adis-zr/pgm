@@ -22,10 +22,12 @@ Typed stops: DEADLINE, MEMORY, RANGE, BADPLAN (invalid plan), FPENV, FAULT, ZERO
 with 64-bit keys: a resource / representation refusal, NEVER a zero-evidence claim), WIDTH (enclosure wider than 1/100).
 
 Memory: the kernel charges EVERY native heap allocation (exact requested bytes, transient growth overlap included) against its cap BEFORE allocating and
-refuses with a typed MEMORY stop; `peak_logical_bytes` is the peak of all live kernel heap bytes. The Python side measures its own allocations per phase with
-tracemalloc (lowering, enclosure) and sizes its ctypes plan / output arrays exactly; the kernel cap = cap - host RSS at entry - retained lowering bytes -
-plan/output arrays; the enclosure phase is checked against the remaining capacity after the kernel has released everything (typed MEMORY stop)."""
-import ctypes as C, hashlib, json, math, os, subprocess, sys, threading, time, tracemalloc
+refuses with a typed MEMORY stop; `peak_logical_bytes` is the peak of all live kernel heap bytes. Host side (v1.3: tracemalloc, which traced every allocation
+and slowed lowering ~10x, was replaced): the bytes RETAINED by lowering are COUNTED exactly from the CPython objects handed to the kernel (sys.getsizeof of the
+plan-word and value lists and of every element), the ctypes plan / output arrays are sized exactly, and the process high-water mark (ru_maxrss) is MEASURED
+before / after lowering and the enclosure; kernel cap = cap - host RSS at entry - counted retained lowering bytes - arrays; an enclosure phase whose measured
+RSS growth exceeds the capacity the kernel released is a typed MEMORY stop."""
+import ctypes as C, hashlib, json, math, os, resource, subprocess, sys, threading, time
 from fractions import Fraction as F
 from itertools import product
 from pathlib import Path
@@ -80,6 +82,15 @@ def load(prov):
     lib = C.CDLL(str(path)); lib.cex_run.restype = C.c_int; lib.cex_schedule_id.restype = C.c_char_p
     lib.cex_run.argtypes = [C.POINTER(C.c_int64), C.c_int64, C.POINTER(C.c_double), C.c_int64, C.c_int64, C.c_double, C.c_double, C.POINTER(C.c_double), C.POINTER(C.c_int64), C.POINTER(C.c_int64), C.POINTER(C.c_double), C.POINTER(C.c_int64), C.POINTER(C.c_uint64), C.c_int64, C.c_char_p, C.c_int64]
     _LIBS[digest] = lib; prov['loaded_binary_path'] = str(path); prov['schedule_id'] = lib.cex_schedule_id().decode(); return lib
+
+
+def rss_bytes():
+    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; return r if sys.platform == 'darwin' else r * 1024
+
+
+def counted_bytes(*lists):
+    """exact CPython size of the given lists and of every element object (sys.getsizeof; shared small ints are counted conservatively)"""
+    return sum(sys.getsizeof(l) + sum(sys.getsizeof(x) for x in l) for l in lists)
 
 
 def floor_log2(q):
@@ -194,49 +205,33 @@ def execute(model, order, deadline=None, cap_bytes=3 * 1024 ** 3, dense_fill_thr
     """run the validated plan; returns dict(status, intervals, points, stats, certificate) or raises Stop (typed) / ValueError (invalid plan)"""
     t0 = time.monotonic(); stats = {'phase': 'build'}
     if deadline is not None and t0 >= deadline: raise Stop('DEADLINE', 'deadline already expired at executor entry', stats)
-    prov = build(deadline); lib = load(prov); stats['build_s'] = time.monotonic() - t0; stats['phase'] = 'lowering'; t = time.monotonic()
-    tracing = tracemalloc.is_tracing()
-    if not tracing: tracemalloc.start()
-    tracemalloc.reset_peak(); base_cur, _ = tracemalloc.get_traced_memory()
-    try:
-        words, vals, meta = lower(model, order, dense_fill_threshold, deadline)
-    finally:
-        cur, peak = tracemalloc.get_traced_memory()
-    stats['host_lowering_peak_bytes_measured'] = max(0, peak - base_cur); stats['host_lowering_retained_bytes_measured'] = max(0, cur - base_cur)
+    prov = build(deadline); lib = load(prov); stats['build_s'] = time.monotonic() - t0; stats['phase'] = 'lowering'; t = time.monotonic(); rss0 = rss_bytes()
+    words, vals, meta = lower(model, order, dense_fill_threshold, deadline)
+    stats['host_lowering_rss_growth_bytes_measured'] = max(0, rss_bytes() - rss0)
+    stats['host_lowering_retained_bytes_counted'] = counted_bytes(words or [], vals or [])
     stats.update({k: v for k, v in meta.items() if k not in ('active', 'evidence', 'cards')}); stats['lowering_s'] = time.monotonic() - t
-    if meta.get('zero_evidence'):
-        if not tracing: tracemalloc.stop()
-        return {'status': 'ZERO_EVIDENCE', 'intervals': None, 'stats': stats}
+    if meta.get('zero_evidence'): return {'status': 'ZERO_EVIDENCE', 'intervals': None, 'stats': stats}
     n = meta['n']; cards = meta['cards']; ev = meta['evidence']; tot = sum(cards)
     arrays_bytes = len(words) * 8 + max(1, len(vals)) * 8 + tot * 8 + n * 16 + 8 + 16 + len(COUNTERS) * 8 + 256
     stats['host_plan_output_arrays_bytes'] = arrays_bytes
-    kcap = cap_bytes - host_reserved_bytes - stats['host_lowering_retained_bytes_measured'] - arrays_bytes
-    if kcap <= 0:
-        if not tracing: tracemalloc.stop()
-        raise Stop('MEMORY', 'host-side reservations (RSS at entry %d + retained lowering %d + arrays %d) leave no kernel capacity under cap %d' % (host_reserved_bytes, stats['host_lowering_retained_bytes_measured'], arrays_bytes, cap_bytes), stats)
+    kcap = cap_bytes - host_reserved_bytes - stats['host_lowering_retained_bytes_counted'] - arrays_bytes
+    if kcap <= 0: raise Stop('MEMORY', 'host-side reservations (RSS at entry %d + retained lowering %d + arrays %d) leave no kernel capacity under cap %d' % (host_reserved_bytes, stats['host_lowering_retained_bytes_counted'], arrays_bytes, cap_bytes), stats)
     stats['kernel_cap_bytes'] = kcap; stats['phase'] = 'kernel'; t = time.monotonic()
-    if deadline is not None and t >= deadline:
-        if not tracing: tracemalloc.stop()
-        raise Stop('DEADLINE', 'deadline expired after lowering', stats)
+    if deadline is not None and t >= deadline: raise Stop('DEADLINE', 'deadline expired after lowering', stats)
     W = (C.c_int64 * len(words))(*words); V = (C.c_double * max(1, len(vals)))(*vals)
     N = (C.c_double * tot)(); NE = (C.c_int64 * n)(); NL = (C.c_int64 * n)(); Z = (C.c_double * 1)(); ZM = (C.c_int64 * 2)(); CT = (C.c_uint64 * len(COUNTERS))(); RS = C.create_string_buffer(256)
     with _KERNEL_LOCK:
         rc = lib.cex_run(W, len(words), V, len(vals), kcap, float('inf') if deadline is None else deadline, dense_fill_threshold, N, NE, NL, Z, ZM, CT, len(COUNTERS), RS, 256)
     stats['kernel_s'] = time.monotonic() - t; stats['counters'] = {k: int(CT[i]) for i, k in enumerate(COUNTERS)}; stats['kernel_status'] = STOPS.get(rc, 'UNKNOWN_%d' % rc); stats['kernel_reason'] = RS.value.decode(errors='replace')
-    if rc == 7:
-        if not tracing: tracemalloc.stop()
-        return {'status': 'ZERO_EVIDENCE', 'intervals': None, 'stats': stats}
-    if rc != 0:
-        if not tracing: tracemalloc.stop()
-        raise Stop(STOPS.get(rc, 'FAULT'), stats['kernel_reason'], stats)
-    # ---- exact enclosure from the kernel's doubles + labels (measured; checked against the capacity the kernel released)
-    stats['phase'] = 'enclosure'; t = time.monotonic(); tracemalloc.reset_peak(); base_cur, _ = tracemalloc.get_traced_memory()
+    if rc == 7: return {'status': 'ZERO_EVIDENCE', 'intervals': None, 'stats': stats}
+    if rc != 0: raise Stop(STOPS.get(rc, 'FAULT'), stats['kernel_reason'], stats)
+    # ---- exact enclosure from the kernel's doubles + labels (process high-water mark measured across the phase; checked against the capacity the kernel released)
+    stats['phase'] = 'enclosure'; t = time.monotonic(); rss1 = rss_bytes()
     try:
         intervals, points, maxK, maxw = enclose([N[i] for i in range(tot)], [int(x) for x in NE], [int(x) for x in NL], Z[0], int(ZM[0]), int(ZM[1]), cards, ev, stats, deadline)
     finally:
-        cur, peak = tracemalloc.get_traced_memory(); stats['host_enclosure_peak_bytes_measured'] = max(0, peak - base_cur)
-        if not tracing: tracemalloc.stop()
-    if stats['host_enclosure_peak_bytes_measured'] > kcap: raise Stop('MEMORY', 'enclosure construction measured %d bytes above the kernel capacity %d released for it' % (stats['host_enclosure_peak_bytes_measured'], kcap), stats)
+        stats['host_enclosure_rss_growth_bytes_measured'] = max(0, rss_bytes() - rss1)
+    if stats['host_enclosure_rss_growth_bytes_measured'] > kcap: raise Stop('MEMORY', 'enclosure construction grew the process by %d bytes, above the kernel capacity %d released for it' % (stats['host_enclosure_rss_growth_bytes_measured'], kcap), stats)
     stats['enclosure_s'] = time.monotonic() - t; stats['max_label_K'] = maxK; stats['max_width'] = str(maxw); stats['max_width_float'] = float(maxw); stats['total_s'] = time.monotonic() - t0; stats['phase'] = 'complete'
     if maxw > F(1, 100): raise Stop('WIDTH', 'delivered width %s exceeds 1/100 (precision insufficient; retry or exact fallback required)' % float(maxw), stats)
     if deadline is not None and time.monotonic() >= deadline: raise Stop('DEADLINE', 'deadline expired before the executor returned', stats)

@@ -9239,13 +9239,13 @@
   {
    "name": "memory_cap_typed_stop_before_allocation",
    "ok": true,
-   "outcome": "MEMORY: allocation boundary: 1092 live + 1417176 requested exceeds cap 988882",
-   "kernel_cap_bytes": 988882
+   "outcome": "MEMORY: allocation boundary: 1092 live + 1417176 requested exceeds cap 989376",
+   "kernel_cap_bytes": 989376
   },
   {
    "name": "memory_cap_below_host_headroom_refused_before_kernel",
    "ok": true,
-   "outcome": "MEMORY: host-side reservations (RSS at entry 0 + retained lowering 5670966 + arrays 1418"
+   "outcome": "MEMORY: host-side reservations (RSS at entry 0 + retained lowering 5670416 + arrays 1418"
   },
   {
    "name": "memory_cap_sufficient_completes_and_reports_peak_logical_bytes",
@@ -9707,14 +9707,14 @@
    }
   },
   {
-   "name": "review_F3_host_side_lowering_and_enclosure_bytes_measured_and_charged",
+   "name": "review_F3_host_side_lowering_bytes_counted_rss_growth_measured_and_charged",
    "ok": true,
    "measured": {
-    "host_lowering_peak_bytes_measured": 47355,
-    "host_lowering_retained_bytes_measured": 2602,
+    "host_lowering_rss_growth_bytes_measured": 0,
+    "host_lowering_retained_bytes_counted": 3556,
     "host_plan_output_arrays_bytes": 1440,
-    "host_enclosure_peak_bytes_measured": 4756,
-    "kernel_cap_bytes": 3221221430
+    "host_enclosure_rss_growth_bytes_measured": 0,
+    "kernel_cap_bytes": 3221220476
    }
   }
  ],
@@ -9762,6 +9762,6 @@
   "built_utc": "2026-11-11T23:32:22Z",
   "plan_format": 2
  },
- "executor_sha256": "2375d8de7dba58ee09971d7029b887b2039de797c27142b75aa9450b56d6771a",
- "utc": "2026-11-11T23:41:26Z"
+ "executor_sha256": "d15b96dda30dd9bfd63862b829a309c83d6df254c3dbc4de420c0848bf4249ed",
+ "utc": "2026-11-12T00:01:58Z"
 }

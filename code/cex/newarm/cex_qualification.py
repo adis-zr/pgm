@@ -11,7 +11,7 @@ N source conversion: huge entries (10^400, 2^2000) certify after exact power-of-
 O an already-expired deadline is a typed DEADLINE at entry (no row visited); P label overflow: the enclosure refuses K u >= 1/2 (typed RANGE) and the kernel refuses
 an int64 label-sum overflow (typed REPRESENTATION); Q the allocation boundary (instrumented global operator new, strict build AND UBSan build): the kernel's
 peak_logical_bytes EQUALS the tracked native peak and nothing is live at return on every control; small caps are refused before any row; growth overlap is charged;
-rescale exactness is round-trip checked; R host-side memory is MEASURED (tracemalloc) per phase. Writes CEX_QUALIFICATION.json beside this file. Count = passed/total
+rescale exactness is round-trip checked; R host-side retained lowering bytes COUNTED exactly (sys.getsizeof) and RSS growth MEASURED per phase (v1.3: tracemalloc dropped, it slowed lowering ~10x). Writes CEX_QUALIFICATION.json beside this file. Count = passed/total
 TESTS AND CONTROL GROUPS (random executions + grouped controls), NOT a count of enclosures."""
 import sys, time, random, json, math, hashlib, os, collections
 BASE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, BASE); sys.set_int_max_str_digits(0)
@@ -234,8 +234,9 @@ for tag in ('strict', 'ubsan'):
     d = drv[tag]; okd = d['built'] and len(d['cases']) == 10 and all(c['ok'] for c in d['cases']) and d.get('growth', {}).get('ok') and d.get('rescale_boundary', {}).get('ok')
     total += 1; passed += bool(okd); R['controls'].append(dict(name='review_F3_allocation_boundary_instrumented_driver_%s_build' % tag, ok=bool(okd), detail=d))
 # ---- R. host-side memory is measured per phase and enters the kernel cap
-rR, eR = run(mJ, oJ); ok = rR is not None and rR['stats']['host_lowering_peak_bytes_measured'] > 0 and rR['stats']['host_enclosure_peak_bytes_measured'] > 0 and rR['stats']['kernel_cap_bytes'] == 3 * 1024 ** 3 - rR['stats']['host_lowering_retained_bytes_measured'] - rR['stats']['host_plan_output_arrays_bytes']
-total += 1; passed += ok; R['controls'].append(dict(name='review_F3_host_side_lowering_and_enclosure_bytes_measured_and_charged', ok=ok, measured={k: rR['stats'].get(k) for k in ('host_lowering_peak_bytes_measured', 'host_lowering_retained_bytes_measured', 'host_plan_output_arrays_bytes', 'host_enclosure_peak_bytes_measured', 'kernel_cap_bytes')} if rR else None))
+rR, eR = run(mJ, oJ); wJ, vJ, _ = X.lower(mJ, oJ, 0.25)
+ok = rR is not None and rR['stats']['host_lowering_retained_bytes_counted'] == X.counted_bytes(wJ, vJ) > 0 and 'host_lowering_rss_growth_bytes_measured' in rR['stats'] and 'host_enclosure_rss_growth_bytes_measured' in rR['stats'] and rR['stats']['kernel_cap_bytes'] == 3 * 1024 ** 3 - rR['stats']['host_lowering_retained_bytes_counted'] - rR['stats']['host_plan_output_arrays_bytes']
+total += 1; passed += ok; R['controls'].append(dict(name='review_F3_host_side_lowering_bytes_counted_rss_growth_measured_and_charged', ok=ok, measured={k: rR['stats'].get(k) for k in ('host_lowering_rss_growth_bytes_measured', 'host_lowering_retained_bytes_counted', 'host_plan_output_arrays_bytes', 'host_enclosure_rss_growth_bytes_measured', 'kernel_cap_bytes')} if rR else None))
 import collections
 R.update(dict(passed=passed, total=total, all_pass=passed == total, random_executions=len(R['records']), random_status_counts=dict(collections.Counter(r['status'] for r in R['records'])), control_groups=len(R['controls']), count_semantics='passed/total counts random EXECUTIONS (each one test) plus grouped CONTROLS (one count each, several executing many plans); it is NOT a count of enclosures', kernel=json.load(open(os.path.join(BASE, 'cex_build.json'))), executor_sha256=hashlib.sha256(open(os.path.join(BASE, 'cex_executor.py'), 'rb').read()).hexdigest(), utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())))
 json.dump(R, open(os.path.join(BASE, 'CEX_QUALIFICATION.json'), 'w'), indent=1, default=str); print(json.dumps({'passed': passed, 'total': total, 'all_pass': R['all_pass'], 'random_executions': len(R['records']), 'controls': [(c['name'], c['ok']) for c in R['controls']]}))

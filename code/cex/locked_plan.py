@@ -12,7 +12,7 @@ P = '/Users/adis/Workspace/pgm/docs/handoff-received-2026-11-11-certified-execut
 CHILD = r'''
 import sys, os, json, time, resource; sys.set_int_max_str_digits(0)
 from fractions import Fraction as F
-arm, planp, outp, budget, cap = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4]), int(sys.argv[5]); here = os.path.dirname(os.path.abspath(__file__))
+arm, planp, outp, budget, cap, here = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4]), int(sys.argv[5]), sys.argv[6]   # here = the cex/ code directory (passed explicitly: this child script lives in the output directory)
 plan = json.load(open(planp)); comps = [(c['old'], dict(cards=c['cards'], factors=[dict(scope=tuple(f['scope']), values=[F(x) for x in f['values']]) for f in c['factors']], evidence={}), c['order']) for c in plan['support_components']]
 def rss(): r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; return r if sys.platform == 'darwin' else r * 1024
 rss_entry = rss(); t_arm = time.monotonic(); rows = []; status = 'COMPLETED'; stop = None
@@ -26,7 +26,7 @@ for ci, (old, cm, order) in enumerate(comps):
             rows.append(dict(component=ci, variables=len(old), status=r['status'], wall_s=time.monotonic() - tc, forward_s=st.get('forward_s'), reverse_s=st.get('reverse_s'), forward_support_rows=st.get('forward_support_rows'), messages_entries=st.get('messages_entries'), max_numerator_bits=st.get('max_numerator_bits'), mults=st.get('multiplications'), adds=st.get('additions'), divisions=st.get('divisions'), intervals=[[[str(a), str(b)] for a, b in row] for row in r['intervals']], points=[[str(x) for x in row] for row in r['points']]))
         else:
             r = X.execute(cm, order, deadline=dl, cap_bytes=cap, host_reserved_bytes=rss()); st = r['stats']
-            rows.append(dict(component=ci, variables=len(old), status=r['status'], wall_s=time.monotonic() - tc, build_s=st.get('build_s'), lowering_s=st.get('lowering_s'), kernel_s=st.get('kernel_s'), enclosure_s=st.get('enclosure_s'), counters=st.get('counters'), max_label_K=st.get('max_label_K'), max_width=st.get('max_width_float'), semantic_plan_sha256=r['certificate']['semantic_plan_sha256'], physical_schedule_sha256=r['certificate']['physical_schedule_sha256'], kernel=r['certificate']['kernel'], kernel_cap_bytes=st.get('kernel_cap_bytes'), host_measured={k: st.get(k) for k in ('host_lowering_peak_bytes_measured', 'host_lowering_retained_bytes_measured', 'host_plan_output_arrays_bytes', 'host_enclosure_peak_bytes_measured')}, intervals=[[[str(a), str(b)] for a, b in row] for row in r['intervals']], points=[[str(x) for x in row] for row in r['points']]))
+            rows.append(dict(component=ci, variables=len(old), status=r['status'], wall_s=time.monotonic() - tc, build_s=st.get('build_s'), lowering_s=st.get('lowering_s'), kernel_s=st.get('kernel_s'), enclosure_s=st.get('enclosure_s'), counters=st.get('counters'), max_label_K=st.get('max_label_K'), max_width=st.get('max_width_float'), semantic_plan_sha256=r['certificate']['semantic_plan_sha256'], physical_schedule_sha256=r['certificate']['physical_schedule_sha256'], kernel=r['certificate']['kernel'], kernel_cap_bytes=st.get('kernel_cap_bytes'), host_measured={k: st.get(k) for k in ('host_lowering_rss_growth_bytes_measured', 'host_lowering_retained_bytes_counted', 'host_plan_output_arrays_bytes', 'host_enclosure_rss_growth_bytes_measured')}, intervals=[[[str(a), str(b)] for a, b in row] for row in r['intervals']], points=[[str(x) for x in row] for row in r['points']]))
     except Exception as e:
         status = 'STOPPED'; stop = dict(type=type(e).__name__, kind=getattr(e, 'kind', None), reason=str(e)[:300], stats={k: v for k, v in (getattr(e, 'stats', {}) or {}).items() if k != 'core_trace'}); rows.append(dict(component=ci, variables=len(old), status='STOPPED', wall_s=time.monotonic() - tc)); break
 json.dump(dict(arm=arm, status=status, wall_s=time.monotonic() - t_arm, peak_rss_bytes_this_process=rss(), rss_at_entry_bytes=rss_entry, stop=stop, components=rows), open(outp, 'w'), default=str)
@@ -49,7 +49,7 @@ def main():
     res = {}
     for arm in arms:
         armout = os.path.join(outdir, '%s.%s.json' % (case, arm)); t_arm = time.monotonic()
-        proc = subprocess.Popen([sys.executable, childp, arm, planp, armout, str(budget), str(cap)], cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        proc = subprocess.Popen([sys.executable, childp, arm, planp, armout, str(budget), str(cap), HERE], cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         watch = {'peak': 0, 'killed': False, 'stop': False}
         def watchdog():
             try: import psutil
