@@ -70,6 +70,10 @@ def main(RD):
     for c in cells:
         r = rec.get(c['cell_id']); w = worker(RD, r) if r else {}
         row = dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], status=(r or {}).get('status', 'NOT_RUN'), outcome=(r or {}).get('outcome', 'NOT_RUN'), guarantee=(r or {}).get('guarantee_type', 'NONE'), wall=(r or {}).get('launch_relative_wall_s'), rss_MB=round(((r or {}).get('supervisor') or {}).get('peak_MB', 0) or 0), seed=c.get('seed'), nonce=(r or {}).get('nonce'), output_sha256=(r or {}).get('output_sha256'))
+        if r and row['outcome'] == 'NOT_COMPLETED' and c['arm'] == 'MERLIN_CTE':
+            # report-stage refinement (the frozen wrapper mapped every non-completed Merlin CTE adapter outcome to NOT_COMPLETED): read the adapter's own typed outcome
+            pr = os.path.join(r.get('attempt_dir', ''), 'cmp', 'pac_receipt.json'); ad = (json.load(open(pr)).get('adapter') or {}) if os.path.exists(pr) else {}
+            ao = str(ad.get('outcome', '')); row['outcome'] = 'INVALID_PLAN_OR_CERTIFICATE' if 'OUTPUT_INVALID' in ao else ('MEMORY' if 'MEMORY' in ao else ('DEADLINE' if 'TIMEOUT' in ao or 'DEADLINE' in ao else 'NOT_COMPLETED')); row['adapter_outcome'] = ao; row['adapter_reason'] = str(ad.get('reason', ''))[:120]; row['report_stage_remap'] = True
         if w:
             st = w.get('stats') or {}; comps = st.get('components') or []
             row['routes'] = [(x.get('route'), x.get('guarantee')) for x in comps][:6]
