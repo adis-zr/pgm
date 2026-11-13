@@ -521,7 +521,7 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
     try: rig.fp_selfcheck()
     except (rig.RangeStop, AssertionError) as e: raise EngineStop('NUMERICAL_RANGE_OR_PRECISION', 'binary64 environment self-check failed: %s' % e, st)
     S = Stream(cards, cut, U, delta_range_c, delta_var_c, K_total, policy['variance_l_values']); rng_t = random.Random(seed_tree); rng_p = random.Random(seed_point)
-    st['phase'] = 'stream'; trials = 0; kernel_s = 0.0; last_check = None; publish = None; term = None; counters_tot = {}; last_cert_t = time.monotonic(); Uf = float(U)
+    st['phase'] = 'stream'; trials = 0; kernel_s = 0.0; last_check = None; publish = None; term = None; counters_tot = {}; last_cert_t = time.monotonic()
     np = S.np
     def to_dimless(x):
         """exact rational x >= 0 -> directed binary64 bounds of x/U_root"""

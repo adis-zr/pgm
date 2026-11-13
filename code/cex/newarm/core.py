@@ -234,8 +234,8 @@ def _solve(model, deadline, route, trace):
     verify_output(intervals,points);check('publication')
     return dict(intervals=intervals,points=points,stats=dict(reduction=reduced['stats'],split_s=split_s,total_s=time.monotonic()-t,components=records,root_discovery=root_discovery),decoder=decoder,reduction_certificate=reduced.get('certificate'),necessity=dict(explicit_output_fields=sum(original_cards),scope='Omega(K) writes for the explicit original singleton output; not a numerical time lower bound',intrinsic_optimality='OPEN'),status='EXACT_OR_ENCLOSED_PROTOTYPE')
 
-def publish(intervals, points, digits=8):
-    """Outward decimal endpoints and exact grid simplex points."""
+def publish(intervals, points, digits=8, epsilon=F(1,200)):
+    """Outward decimal endpoints and exact grid simplex points (epsilon: the publication contract checked at the end; default 1/200)."""
     scale=10**digits;out=[];ps=[]
     def fmt(x):return str(x//scale)+'.'+str(x%scale).zfill(digits)
     for row,p in zip(intervals,points):
@@ -248,5 +248,5 @@ def publish(intervals, points, digits=8):
             a=lo*scale;b=hi*scale
             rr.append([fmt(a.numerator//a.denominator),fmt(-(-b.numerator//b.denominator))])
         out.append(rr)
-    verify_output([[(F(a),F(b)) for a,b in row] for row in out],[[F(x) for x in row] for row in ps])
+    verify_output([[(F(a),F(b)) for a,b in row] for row in out],[[F(x) for x in row] for row in ps],epsilon)
     return out,ps

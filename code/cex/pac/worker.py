@@ -39,7 +39,7 @@ OUTCOME_OF_STOP = {'DEADLINE': 'DEADLINE', 'MEMORY': 'MEMORY', 'REPRESENTATION':
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--arm', required=True); ap.add_argument('--deadline', type=float, required=True); ap.add_argument('--seed', required=True); ap.add_argument('--nonce', required=True); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--budget', type=float, default=None)
     a = ap.parse_args(); t = time.monotonic(); delta = F(a.delta)
-    out = {'status': 'STARTED', 'worker_version': WORKER_VERSION, 'arm': a.arm, 'seed': a.seed, 'nonce': a.nonce, 'delta': a.delta, 'epsilon': '1/200', 'deadline_abs': a.deadline, 'budget_s': a.budget, 'guarantee_type': 'NONE', 'outcome': None, 'policy': jsonable(engine.POLICY), 'candidate_sources': candidate_sources()}
+    out = {'status': 'STARTED', 'worker_version': WORKER_VERSION, 'arm': a.arm, 'seed': a.seed, 'nonce': a.nonce, 'delta': a.delta, 'epsilon': '%d/%d' % (engine.POLICY['epsilon'].numerator, engine.POLICY['epsilon'].denominator), 'deadline_abs': a.deadline, 'budget_s': a.budget, 'guarantee_type': 'NONE', 'outcome': None, 'policy': jsonable(engine.POLICY), 'candidate_sources': candidate_sources()}
     try: resource.setrlimit(resource.RLIMIT_AS, (3 * 1024 ** 3, 3 * 1024 ** 3)); out['memory_policy'] = 'RLIMIT_AS 3 GiB (address space)'
     except (ValueError, OSError) as e: out['memory_policy'] = 'RLIMIT_AS unavailable on this host (%s); the campaign supervisor enforces 3 GiB by SAMPLED process-tree RSS kill (a sampled policy, not a hard bound; shared by every arm)' % e
     late = lambda: time.monotonic() >= a.deadline
@@ -47,11 +47,11 @@ def main():
         m, binding = core.read_uai(a.input); out['binding'] = binding; out['parse_s'] = time.monotonic() - t
         r = solve.solve(m, a.deadline, a.arm, a.seed, delta)
         out.update({k: r[k] for k in ('intervals', 'points', 'stats', 'decoder', 'certificate', 'guarantee_type', 'outcome')})
-        core.verify_output(out['intervals'], out['points']); out['publication_check'] = True
+        core.verify_output(out['intervals'], out['points'], engine.POLICY['epsilon']); out['publication_check'] = True
         if sum(__import__('math').log2(d) for d in m['cards']) <= 12:
             truth = core.brute_force(m); out['independent_bruteforce_containment'] = all(lo <= p <= hi for row, ps in zip(out['intervals'], truth) for (lo, hi), p in zip(row, ps))
             if not out['independent_bruteforce_containment']: out['containment_violation'] = 'the published enclosure does NOT contain the brute-force truth (retained for investigation; a PAC run may legitimately miss with probability <= delta)'
-        pt = time.monotonic(); out['intervals'], out['points'] = core.publish(out['intervals'], out['points']); out['publication_s'] = time.monotonic() - pt
+        pt = time.monotonic(); out['intervals'], out['points'] = core.publish(out['intervals'], out['points'], epsilon=engine.POLICY['epsilon']); out['publication_s'] = time.monotonic() - pt
         if late(): out['status'] = 'STOPPED'; out['outcome'] = 'DEADLINE'; out['guarantee_type'] = 'NONE'; out['reason'] = 'publication completed after the deadline'; out['late_publication'] = True; out.pop('intervals', None); out.pop('points', None)
         else: out['status'] = 'COMPLETED'
     except solve.ZeroEvidence as e:
@@ -61,7 +61,7 @@ def main():
     except Exception as e:
         out['status'] = 'STOPPED'; out['exception_type'] = type(e).__name__; out['reason'] = str(e)[:500]; st = getattr(e, 'stats', None); out['stop_stats'] = jsonable(st) if st else None
         kind = getattr(e, 'reason', None) if isinstance(e, support.ResourceStop) else (getattr(e, 'kind', None) if type(e).__name__ in ('Stop', 'CellStop') else None)
-        out['outcome'] = OUTCOME_OF_STOP.get(kind, 'DEADLINE' if (type(e).__name__ in ('TimeoutError', 'Deadline', 'DeadlineExceeded') or late()) else ('INVALID_PLAN_OR_CERTIFICATE' if isinstance(e, (ValueError, AssertionError)) else 'FAULT'))
+        out['outcome'] = OUTCOME_OF_STOP.get(kind, 'DEADLINE' if (type(e).__name__ in ('TimeoutError', 'Deadline', 'DeadlineExceeded') or late()) else ('NUMERICAL_RANGE_OR_PRECISION' if isinstance(e, (OverflowError, ZeroDivisionError)) or type(e).__name__ == 'RangeStop' else ('INVALID_PLAN_OR_CERTIFICATE' if isinstance(e, (ValueError, AssertionError)) else 'FAULT')))
         if out['outcome'] == 'FAULT': out['fault_note'] = 'an unclassified exception: investigate (never counted as a refusal of the model)'
     out['worker_elapsed_s'] = time.monotonic() - t; ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; out['peak_rss_bytes'] = ru if sys.platform == 'darwin' else ru * 1024
     tmp = a.output + '.tmp'; open(tmp, 'w').write(json.dumps(jsonable(out), indent=1)); os.replace(tmp, a.output)

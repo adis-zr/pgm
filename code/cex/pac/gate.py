@@ -86,7 +86,7 @@ def check_pac_certificate(w, c, man, fail):
     # lifted exact rows -> frozen decimal publication must reproduce the worker's published decimals
     try:
         LI = [[(F(a), F(b)) for a, b in row] for row in cert['lifted_intervals_exact']]; LP = [[F(x) for x in row] for row in cert['lifted_points_exact']]
-        core.verify_output(LI, LP); di, dp = core.publish(LI, LP)
+        eps_t = F(str((man.get('task') or {}).get('epsilon', '1/200'))); core.verify_output(LI, LP, eps_t); di, dp = core.publish(LI, LP, epsilon=eps_t)
         if di != w.get('intervals') or dp != w.get('points'): fail(cid, 'the published decimals are not the frozen publication of the certified exact rows')
     except Exception as ex: fail(cid, 'lifted exact rows: %s' % str(ex)[:80])
 
@@ -137,7 +137,7 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None):
         if cid not in receipts: fail(cid, 'planned cell without receipt (NOT_RUN)')
     for cid in receipts:
         if cid not in cells: fail(cid, 'receipt for a cell not in the frozen manifest')
-    task = man.get('task') or {}; models = {}; checked = 0; gated = 0; pac_verified = 0
+    task = man.get('task') or {}; EPS = F(str(task.get('epsilon', '1/200'))); models = {}; checked = 0; gated = 0; pac_verified = 0
     for cid, r in receipts.items():
         c = cells.get(cid)
         if not c: continue
@@ -183,7 +183,7 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None):
                 okshape = isinstance(iv, list) and isinstance(pts, list) and len(iv) == len(cards) and len(pts) == len(cards) and all(isinstance(row, list) and isinstance(pr, list) and len(row) == k and len(pr) == k for row, pr, k in zip(iv, pts, cards))
                 if not okshape: fail(cid, 'output shape differs from the original model'); continue
                 try:
-                    IV = [[(F(a), F(b)) for a, b in row] for row in iv]; PT = [[F(x) for x in row] for row in pts]; core.verify_output(IV, PT)
+                    IV = [[(F(a), F(b)) for a, b in row] for row in iv]; PT = [[F(x) for x in row] for row in pts]; core.verify_output(IV, PT, EPS)
                     for v, a in ev.items():
                         if not all((PT[v][s] == 1 and IV[v][s] == (F(1), F(1))) if s == a else (PT[v][s] == 0 and IV[v][s] == (F(0), F(0))) for s in range(cards[v])): fail(cid, 'observed variable %d not one-hot' % v)
                 except Exception as ex: fail(cid, 'publication contract: %s' % str(ex)[:80]); continue

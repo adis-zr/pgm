@@ -1,12 +1,44 @@
 {
  "groups": [
   {
-   "name": "Q1_identity_binding",
+   "name": "Q1_identity_and_gate_negative_controls",
    "ok": true,
-   "wall_s": 0.004,
+   "wall_s": 0.631,
    "detail": {
-    "mutations_change_binding": 3,
-    "receipt_fields": "case_id, arm, replicate, budget_s, seed, nonce, model_sha256, evidence_sha256, candidate_sources (worker), output_sha256, supervisor receipt"
+    "semantic_plan_mutations_change_binding": 3,
+    "worker_deterministic_fixture_route": [
+     "pac_conditional_exact_cover_complete"
+    ],
+    "valid_fixture_accepted": true,
+    "negative_controls_rejected": {
+     "empty_candidate_source_map": "worker candidate source identity incomplete: 45 frozen sources not rec",
+     "missing_certificate_wrong_delta": "deterministic publication with a legacy / missing certificate schema (",
+     "late_publication_true_boolean": "COMPLETED but recomputed launch-relative wall 200.0 > budget 30.0",
+     "duplicate_planned_cell": "duplicate planned cell ids in the manifest: 1 duplicates",
+     "input_changed_after_freeze": "input files on disk differ from the FROZEN manifest hashes (input chan",
+     "fabricated_decimals": "the published decimals are not the frozen publication of the certified",
+     "fabricated_pac_answer_no_certificate": "PAC guarantee with a legacy / missing certificate: UNVERIFIABLE (no de",
+     "late_unproved_zero_nonzero_child": "zero-evidence claim after the budget (late proof is not a timely resul",
+     "cbi_completed_without_output": "COMPLETED without a worker output file",
+     "foreign_nonce": "worker nonce differs from the receipt (stale or foreign output)",
+     "wrong_seed": "worker seed differs from the manifest",
+     "exact_cover_without_resolved_cells": "exact-cover component 0 without resolved cells",
+     "lifted_rows_tampered": "lifted exact rows: ",
+     "start_hash_disagrees": "CAMPAIGN_START manifest sha256 0000000000000000 differs from the manif",
+     "missing_receipt": "planned cell without receipt (NOT_RUN)"
+    },
+    "pac_fixture_trials": 4096,
+    "pac_certificate_replayed_and_accepted": true,
+    "pac_certificate_tampering_rejected": {
+     "n": "PAC component 0: n differs from trials",
+     "a_lo": "PAC component 0: replayed row 0 differs from the recorded certificate",
+     "alpha": "PAC component 0: per-coordinate alpha differs from delta/(2K)",
+     "K": "PAC component 0: K differs from the job ledger",
+     "exact_row": "PAC component 0: replayed row 0 differs from the recorded certificate",
+     "task_delta": "delta differs from the manifest task",
+     "U_root": "PAC component 0: U_root missing / inconsistent",
+     "certifier_label": "PAC component 0: replayed row 0 differs from the recorded certificate"
+    }
    }
   },
   {
@@ -17,102 +49,148 @@
     "random_cells": 200,
     "posterior_identical_mass_1000x": true,
     "evidence_alias_repeat_gauge_disconnected": true,
+    "evidence_contradiction_is_empty_cell": true,
+    "expired_deadline_refused_at_entry": true,
     "zero_evidence_component_invalidates_job": true
    }
   },
   {
-   "name": "Q3_adaptive_laws_exhaustive",
+   "name": "Q3_fixed_laws_exhaustive_plus_resolution_histories_and_production_draw",
    "ok": true,
-   "wall_s": 0.046,
+   "wall_s": 2.152,
    "detail": {
     "models": 27,
     "leaves": 149,
-    "negative_controls_detected": 3
+    "adaptive_resolution_histories": 19,
+    "production_draw_leaf_frequency_checks": 5,
+    "negative_identity_controls_detected": 3,
+    "duplicate_resolved_cell_refused": true
    }
   },
   {
-   "name": "Q4_support_envelopes",
+   "name": "Q4_support_envelopes_production_guard",
    "ok": true,
-   "wall_s": 0.033,
+   "wall_s": 0.202,
    "detail": {
-    "child_sum_monotonicity_checks": 257,
+    "child_sum_monotonicity_checks": 343,
     "U0_root_is_deterministic_zero": true,
-    "no_certificate_is_NONE_not_zero_evidence": true,
-    "invalid_pointwise_envelope_rejected": true
+    "positive_Z_zero_prefix_refuses_not_zero_evidence": 3,
+    "production_envelope_guard_rejects_corrupted_tree": true
    }
   },
   {
-   "name": "Q5_actual_sampling_law",
+   "name": "Q5_actual_sampling_backend",
    "ok": true,
-   "wall_s": 0.0,
+   "wall_s": 0.824,
    "detail": {
-    "3": {
-     "bits": 2,
-     "rejected_per_round": 1
+    "algebra_rejection_W_3": {
+     "bits": 2
     },
-    "5": {
-     "bits": 3,
-     "rejected_per_round": 3
+    "algebra_rejection_W_5": {
+     "bits": 3
     },
-    "6": {
-     "bits": 3,
-     "rejected_per_round": 2
+    "algebra_rejection_W_6": {
+     "bits": 3
     },
-    "7": {
-     "bits": 3,
-     "rejected_per_round": 1
+    "algebra_rejection_W_7": {
+     "bits": 3
     },
-    "12": {
-     "bits": 4,
-     "rejected_per_round": 4
+    "algebra_rejection_W_12": {
+     "bits": 4
     },
-    "1000": {
-     "bits": 10,
-     "rejected_per_round": 24
+    "algebra_rejection_W_1000": {
+     "bits": 10
     },
-    "induced_probabilities_exact": true,
-    "prng": "random.Random (MT19937); randrange = rejection on getrandbits (CPython _randbelow_with_getrandbits)"
+    "production_random_backend_frequencies": [
+     10113,
+     19874,
+     30013
+    ],
+    "prng": "random.Random (MT19937); randrange = rejection on getrandbits (CPython _randbelow_with_getrandbits); seed reproducibility is engineering evidence, the theorem assumes ideal bits"
    }
   },
   {
-   "name": "Q6_confidence_arithmetic",
+   "name": "Q6_confidence_arithmetic_inversion_underflow",
    "ok": true,
-   "wall_s": 1.511,
+   "wall_s": 1.945,
    "detail": {
     "range_boundary_rounded_up_within_1e-30": true,
     "psi_enclosures_16": true,
     "omega_lower_bound_valid": true,
+    "review_witness_1_inside_positive_set": [
+     "True",
+     1.3714100759593355e-38
+    ],
+    "review_witness_2_family_certified": true,
+    "random_concave_quadratics": {
+     "n": 3000,
+     "none": 0,
+     "violations": 0
+    },
+    "IV_sq_crossing_zero_encloses_endpoint_square": true,
+    "underflow_statistics_enclosed_2^-540_2^-1075": true,
+    "directed_accumulators_enclose_exact_sums_500": true,
     "variance_inversion_outer_set_grid_1001x3": true,
-    "nonconvex_components_seen": 0,
-    "rho_fixed_before_stream": true,
-    "delta_split": "range 1/2, variance 1/2, per coordinate /K (engine.Stream alpha_r, alpha_v)"
+    "nonconvex_accepted_set_constructed": 3,
+    "design_record_fields_executed": true
    }
   },
   {
-   "name": "Q7_numerical_publication",
+   "name": "Q7_numerical_publication_actual_pac",
    "ok": true,
-   "wall_s": 0.001,
+   "wall_s": 1.283,
    "detail": {
     "three_0_0.6_eps_0.3_infeasible": true,
     "feasible_point_exact_simplex": true,
     "no_division_without_positive_denominator": true,
+    "pac_publication_point": {
+     "trials": 4096,
+     "contains_truth": true,
+     "certifiers": [
+      "variance"
+     ],
+     "replay_equal": true
+    },
+    "pac_publication_conditional": {
+     "trials": 4096,
+     "contains_truth": true,
+     "certifiers": [
+      "variance"
+     ],
+     "replay_equal": true
+    },
     "huge_small_exponents_enclosed": true
    }
   },
   {
-   "name": "Q9_resource_driven_selection",
+   "name": "Q9_resource_selection_and_continuation",
    "ok": true,
-   "wall_s": 0.497,
+   "wall_s": 0.802,
    "detail": {
-    "deadline_refuses_with_prefix_recorded": 257,
+    "deadline_refuses_with_prefix_recorded": 132,
     "failed_trial_terminates_stream_prefix_2": true,
-    "early_zero_evidence_honours_deadline": true
+    "exact_refusal_continues_into_pac": {
+     "component": 0,
+     "from_route": "support",
+     "stop": "MEMORY",
+     "remaining_s": 29.999445625115186,
+     "to": "pac_conditional"
+    },
+    "deadline_refusal_is_final": true,
+    "zero_evidence_terminal_deadline_checked_in_worker": {
+     "late": "DEADLINE",
+     "timely": "PROVED_ZERO_EVIDENCE",
+     "solve_level_controlled_clock": "DEADLINE"
+    },
+    "source_conversion_range_is_typed": true,
+    "factorless_model_all_arms": true,
+    "frozen_executor_early_zero_honours_deadline": true
    }
   },
   {
-   "name": "Q10_existing_defects_and_regressions",
+   "name": "Q10_existing_defects_isolated",
    "ok": true,
-   "wall_s": 37.338,
+   "wall_s": 38.69,
    "detail": {
     "host_budget_control_on_candidate": {
      "host_budget_peak_bytes": 966101,
@@ -122,163 +200,549 @@
       "actual_sys_getsizeof_bytes": 8856
      }
     },
-    "claim": "NARROWED (cex_executor docstring): HostBudget is an accounting of the named containers, not a proven upper bound; the only whole-worker bound is the sampled process-tree RSS policy",
-    "frozen_executor_qualification": {
+    "claim": "NARROWED (cex_executor docstrings and certificate text): HostBudget is an accounting of the named containers, not a proven upper bound; the only whole-worker bound is the sampled process-tree RSS policy",
+    "frozen_executor_qualification_isolated_copy": {
      "passed": 401,
      "total": 401,
-     "controls": 41
+     "controls": 41,
+     "isolated_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v2_llhu7cqv/q10_iso"
     },
-    "gate_controls": "cex/gate_controls.py runs inside that suite (control review2_S4_S5): specification gate + stale locked outputs + reused attempt dirs"
+    "historical_records_untouched": true
    }
   },
   {
-   "name": "Q11_diagnostic_coverage_delta_0.1",
+   "name": "Q11_diagnostic_coverage_delta_0.1_attempted_runs",
    "ok": true,
-   "wall_s": 415.031,
+   "wall_s": 91.06,
    "detail": {
-    "models": 60,
-    "certified": 25,
+    "attempted": 60,
+    "published_pac": 57,
     "misses": 0,
     "delta_joint": "0.1",
+    "criterion": "misses <= 13 = one-sided 1e-3 quantile of Binomial(60, 0.1) over ATTEMPTED runs",
     "note": "bug detection only; cannot verify 1e-6",
-    "wall_s": 415.0,
+    "wall_s": 91.1,
     "rows": [
-     [
-      1,
-      "point",
-      431418,
-      true
-     ],
-     [
-      2,
-      "point",
-      364660,
-      true
-     ],
-     [
-      5,
-      "point",
-      565763,
-      true
-     ],
-     [
-      7,
-      "point",
-      436675,
-      true
-     ],
-     [
-      13,
-      "point",
-      434097,
-      true
-     ],
-     [
-      14,
-      "point",
-      563264,
-      true
-     ],
-     [
-      17,
-      "point",
-      458752,
-      true
-     ],
-     [
-      22,
-      "point",
-      303934,
-      true
-     ],
-     [
-      23,
-      "point",
-      434069,
-      true
-     ],
-     [
-      25,
-      "point",
-      393216,
-      true
-     ],
-     [
-      29,
-      "point",
-      524288,
-      true
-     ],
-     [
-      35,
-      "point",
-      196608,
-      true
-     ],
-     [
-      37,
-      "point",
-      262144,
-      true
-     ],
-     [
-      40,
-      "point",
-      363138,
-      true
-     ],
-     [
-      41,
-      "point",
-      524288,
-      true
-     ],
-     [
-      42,
-      "conditional",
-      173154,
-      true
-     ],
-     [
-      43,
-      "point",
-      524288,
-      true
-     ],
-     [
-      44,
-      "point",
-      364607,
-      true
-     ],
-     [
-      47,
-      "point",
-      262144,
-      true
-     ],
-     [
-      48,
-      "conditional",
-      108654,
-      true
-     ]
+     {
+      "trial": 0,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 6270,
+      "contains_truth": true
+     },
+     {
+      "trial": 1,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 30961,
+      "contains_truth": true
+     },
+     {
+      "trial": 2,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 3,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 6696,
+      "contains_truth": true
+     },
+     {
+      "trial": 4,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 86709,
+      "contains_truth": true
+     },
+     {
+      "trial": 5,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 6,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 15488,
+      "contains_truth": true
+     },
+     {
+      "trial": 7,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 8,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 9,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 19343,
+      "contains_truth": true
+     },
+     {
+      "trial": 10,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 11,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 12,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 13,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 32768,
+      "contains_truth": true
+     },
+     {
+      "trial": 14,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 15,
+      "mode": "conditional",
+      "status": "DEADLINE",
+      "guarantee": "NONE",
+      "trials": 21514,
+      "contains_truth": null
+     },
+     {
+      "trial": 16,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 44578,
+      "contains_truth": true
+     },
+     {
+      "trial": 17,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 18,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 6897,
+      "contains_truth": true
+     },
+     {
+      "trial": 19,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 20,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 46598,
+      "contains_truth": true
+     },
+     {
+      "trial": 21,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 22,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 23,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 24,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 25,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 26,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 27,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 28,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 29,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 30,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 13683,
+      "contains_truth": true
+     },
+     {
+      "trial": 31,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 32644,
+      "contains_truth": true
+     },
+     {
+      "trial": 32,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 29959,
+      "contains_truth": true
+     },
+     {
+      "trial": 33,
+      "mode": "conditional",
+      "status": "DEADLINE",
+      "guarantee": "NONE",
+      "trials": 26799,
+      "contains_truth": null
+     },
+     {
+      "trial": 34,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 35,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 36,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 37,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 38,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 39,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 13239,
+      "contains_truth": true
+     },
+     {
+      "trial": 40,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 48267,
+      "contains_truth": true
+     },
+     {
+      "trial": 41,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 42,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 43,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 44,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 45,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 46,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 47,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 48,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 49,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 50,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 51,
+      "mode": "conditional",
+      "status": "DEADLINE",
+      "guarantee": "NONE",
+      "trials": 28196,
+      "contains_truth": null
+     },
+     {
+      "trial": 52,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 53,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 54,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 2048,
+      "contains_truth": true
+     },
+     {
+      "trial": 55,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     },
+     {
+      "trial": 56,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 4096,
+      "contains_truth": true
+     },
+     {
+      "trial": 57,
+      "mode": "conditional",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 19192,
+      "contains_truth": true
+     },
+     {
+      "trial": 58,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 8192,
+      "contains_truth": true
+     },
+     {
+      "trial": 59,
+      "mode": "point",
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 16384,
+      "contains_truth": true
+     }
     ]
+   }
+  },
+  {
+   "name": "Q12_exact_closure_and_partial_cover",
+   "ok": true,
+   "wall_s": 74.761,
+   "detail": {
+    "empty_cutset_closure_one_contraction": 1.2998024554566185e-14,
+    "forced_cutset_complete_cover_2_cells": true,
+    "generic_complete_covers": 1,
+    "generic_partial_covers_conserved": 22,
+    "ablation_residual_region_fixed": true
    }
   }
  ],
- "executions": 414,
- "coordinates_checked": 3003,
- "passed": 10,
- "total": 10,
+ "executions": 3485,
+ "coordinates_checked": 3345,
+ "suite_version": "pac-qualification-v2 (2026-11-13)",
+ "passed": 11,
+ "total": 11,
  "all_pass": true,
- "Q8": "candidate validation (theory section 9) not implemented in this pass; recorded",
- "utc": "2026-11-13T05:13:13Z",
+ "Q8": "candidate validation (theory section 9) not implemented; recorded",
+ "utc": "2026-11-13T20:12:34Z",
  "candidate_sources": {
-  "engine.py": "b7436d181d8c549543626aea6e6d97153cb5e1408d334db6e39acfcbd9cd2c70",
-  "solve.py": "0ba134ed01a9f75c34b111a3336bb33e3b641e844b3f6b0b03daa2da965ce9d0",
-  "contrib.py": "3e94d3fc13c146839a874f4a12575c58d48d1a1c1b7e85059f2cb3bb63198579",
-  "rig.py": "fa65489741a4219a17984675e659b91cf3359419fef780ae14edd9b1349b53c9",
-  "worker.py": "ae6b1a8d4508809e01995902172b60ddc816548d593cf54e3309928cd008d8d6"
- }
+  "campaign.py": "0357dae0b0bbf010307f982280d7ae761e13d790fb587aaeee31fa78e2b61ecc",
+  "closeout.py": "d4380356fcea7e1344dda8c51cafc3cbcb91cfd15a28a4800a51c9908e2cbe6e",
+  "comparator_cell.py": "1142b72d9448b9d45605d7ca023255db32bbbc9b06f848251dcef5aa90b563eb",
+  "contrib.py": "aa6018a1798c5524361459000fa240b70cd11bde367f631e1c8900682fa77678",
+  "engine.py": "df202423f9980270cc722b703a90ab7e9a1e668d35df5421c8e7cd2e464a7998",
+  "gate.py": "e16726eb6cc08c9cccf0cae0ca7d7195820b8b31460f1a9eee37d25b98eecd06",
+  "legacy_cbi_uai.py": "86dcb80e4412e0017a55812b963081575902344825ed1d66f3b34296e9079520",
+  "legacy_qgrid.py": "a47088532f5e2a6da489de69df3b73d6183796a7ec85cec3457c3d3f355a3c84",
+  "package.py": "a3d9f7151b010b76d58999607891ef245cbe7cf0f96743b1a6a739163403e6a2",
+  "qualification.py": "40b13167c1ce0b662ab35617cd07882eb4334f7ea55e5b666902eed16adcb8f2",
+  "references.py": "0b6008a89c64518062c233692f641caebc7b2fb02cb3ca63d6198adf5b9368ec",
+  "report.py": "1ffadc6239c72d085a8699ce711c7c3e3bc5c2d5f83d8ff5c36fb2fa7f0f37e3",
+  "rig.py": "af5247054a27107312407edcbaf72a30407381a1906a54ea0c728107111680e0",
+  "solve.py": "dbb0f1b5b84dc4d48b7408ea8854ad140af4b089b336321d6baae328acb39a78",
+  "worker.py": "68ee72a6e60cc8764554299b973f0814b2baeb27cf9f1c946be017dd19aee0d1"
+ },
+ "temp_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v2_llhu7cqv"
 }

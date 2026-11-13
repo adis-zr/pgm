@@ -50,7 +50,7 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
         ft = time.monotonic(); trace['phase'] = 'forest discovery'
         try:
             result = forest.solve(model, deadline=deadline, independent_replay=True)
-            core.verify_output(result['intervals'], result['points']); check('forest publication')
+            core.verify_output(result['intervals'], result['points'], POLICY['epsilon']); check('forest publication')
             trace['root_discovery'].append(dict(kind='forest', wall_s=time.monotonic() - ft, chosen=True))
             return _finish(result['intervals'], result['points'], [dict(component=0, variables=list(range(n0)), route='forest', guarantee='DETERMINISTIC', stats=result['stats'], certificate=result['certificate'])], dict(reduction={'not_attempted': 'complete forest computation'}), [dict(kind='identity', variable=v) for v in range(n0)], trace, t0, delta, K_total=0, check=check)
         except forest.UnsupportedError as e: trace['root_discovery'].append(dict(kind='forest', declined=str(e)[:200], wall_s=time.monotonic() - ft))
@@ -149,16 +149,16 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
         for v, row, q in zip(old, rows, ps): intervals[v] = row; points[v] = q
     trace['decisions'] = decisions
     assert all(x is not None for x in intervals)
-    core.verify_output(intervals, points); check('before lift')
+    core.verify_output(intervals, points, POLICY['epsilon']); check('before lift')
     lifted_i, lifted_p = reduction.lift(reduced, intervals, points)
     return _finish(lifted_i, lifted_p, records, dict(reduction=reduced['stats'], decisions=decisions, continuations=trace['continuations']), reduced['decoder'], trace, t0, delta, K_total=K_total, check=check, reduction_certificate=reduced.get('certificate'), original_cards=original_cards)
 
 
 def _finish(intervals, points, records, stats_extra, decoder, trace, t0, delta, K_total, check, reduction_certificate=None, original_cards=None):
     if original_cards is not None: assert len(intervals) == len(original_cards) and all(len(row) == d_ for row, d_ in zip(intervals, original_cards))
-    core.verify_output(intervals, points); check('publication')
+    core.verify_output(intervals, points, POLICY['epsilon']); check('publication')
     guarantees = {r['guarantee'] for r in records}; gt = 'PAC' if 'PAC' in guarantees else 'DETERMINISTIC'
-    cert = dict(certificate_version='pac-certificate-v2', guarantee_type=gt, delta=str(delta) if gt == 'PAC' else '0', epsilon='1/200', delta_ledger=trace.get('delta_ledger'), K_total=K_total,
+    cert = dict(certificate_version='pac-certificate-v2', guarantee_type=gt, delta=str(delta) if gt == 'PAC' else '0', epsilon='%d/%d' % (POLICY['epsilon'].numerator, POLICY['epsilon'].denominator), delta_ledger=trace.get('delta_ledger'), K_total=K_total,
                 components=[dict(component=r['component'], variables=r['variables'], route=r['route'], guarantee=r['guarantee'], certifier_per_row=r.get('certifier_per_row'), design=r.get('design'), sufficient_statistics=r.get('sufficient_statistics'), intervals_exact=r.get('intervals_exact'), points_exact=r.get('points_exact'), trials=(r.get('stats') or {}).get('trials_completed'), resolved_cells=(r.get('stats') or {}).get('resolved_cells')) for r in records],
                 lifted_intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in intervals], lifted_points_exact=[[str(x) for x in row] for row in points], decoder=decoder, reduction_certificate=reduction_certificate,
                 trust_boundary='a checker verifies task binding, the lawful statistical construction (design record), the numerical enclosures (sufficient statistics -> hulls) and the stopping predicate; it cannot certify that a particular random outcome is accurate')
