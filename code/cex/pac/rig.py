@@ -218,17 +218,22 @@ def log_threshold_up(K, delta_c, omega_l):
 
 
 def quad_roots_outer(A, Bc, Cc):
-    """for the quadratic A t^2 + B t + C with exact rational coefficients, return the OUTER rational enclosures of its real roots (lo1, hi1), (lo2, hi2) or None if
-    no real root (exact rational discriminant; exact-rational sqrt bounds)"""
+    """for the quadratic A t^2 + B t + C with exact rational coefficients (A != 0), return the OUTER rational enclosures ((lo1, hi1), (lo2, hi2)) of its two real
+    roots, ordered lo1 <= hi1 <= lo2 <= hi2 (each pair encloses one root; equal roots give two coincident pairs), or None if no real root. Exact rational discriminant;
+    exact-rational sqrt bounds; the division by 2A is sign-aware (a negative 2A reverses the order of the bounds). Repaired after review R11 (the previous version
+    returned reversed pairs for A < 0); verified against exact roots in qualification."""
+    A = F(A); Bc = F(Bc); Cc = F(Cc)
+    if A == 0: raise ValueError('not a quadratic')
     disc = Bc * Bc - 4 * A * Cc
     if disc < 0: return None
-    slo, shi = sqrt_bounds(disc)
-    if A > 0:
-        r1 = ((-Bc - shi) / (2 * A), (-Bc - slo) / (2 * A)); r2 = ((-Bc + slo) / (2 * A), (-Bc + shi) / (2 * A))
-    else:
-        r1 = ((-Bc + slo) / (2 * A), (-Bc + shi) / (2 * A)); r2 = ((-Bc - shi) / (2 * A), (-Bc - slo) / (2 * A))
-        r1, r2 = (min(r1[0], r2[0]), min(r1[1], r2[1])), (max(r1[0], r2[0]), max(r1[1], r2[1]))
-    return r1, r2
+    slo, shi = sqrt_bounds(disc)                                   # 0 <= slo <= sqrt(disc) <= shi
+    den = 2 * A
+    def div_outer(lo, hi):                                         # outer enclosure of [lo, hi] / den
+        a, b = lo / den, hi / den
+        return (a, b) if den > 0 else (b, a)
+    r_minus = div_outer(-Bc - shi, -Bc - slo)                      # encloses (-B - sqrt)/2A
+    r_plus = div_outer(-Bc + slo, -Bc + shi)                       # encloses (-B + sqrt)/2A
+    return (r_minus, r_plus) if r_minus[0] <= r_plus[0] else (r_plus, r_minus)
 
 
 def shrunk_rejection(A2, A1, A0L, max_shrink=8):

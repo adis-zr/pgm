@@ -60,9 +60,10 @@ def checkpoints():
 
 
 def write_uai(m, path):
-    lines = ['MARKOV', str(len(m['cards'])), ' '.join(str(c) for c in m['cards']), str(len(m['factors']))] + ['%d %s' % (len(f['scope']), ' '.join(str(v) for v in f['scope'])) for f in m['factors']]
-    for f in m['factors']: lines.append(str(len(f['values']))); lines.append(' '.join(str(x) for x in f['values']))
-    data = ('\n'.join(lines) + '\n').encode(); open(path, 'wb').write(data); return hashlib.sha256(data).hexdigest()
+    """exact integer-scaled UAI export + explicit empty-evidence file (cex/pac/uai_export.py); returns the export record"""
+    import os as _os, sys as _sys; _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    import uai_export
+    return uai_export.write_uai(m, path)
 
 
 # the registered historical instances (QGRID_REPRODUCTION.md §2-3; 05_INVENTORY_AUDIT): principal 16x16 q=3 v=11/10 seeds 0,1; main screen L in {8,16,32}, q in {3/2,3,9}, v=11/10, seeds 0,1; strips; tiny grids; zero-field planar squares
@@ -80,10 +81,10 @@ def main(out_dir):
     for spec in REGISTERED:
         if spec.get('L') is not None: m, meta = grid_model(spec['L'], spec['q'], spec['v'], spec['seed'])
         else: m, meta = grid_model(None, spec['q'], spec['v'], spec['seed'], H_=spec['H'], W=spec['W'])
-        p = os.path.join(out_dir, spec['name'] + '.uai'); h = write_uai(m, p)
-        inv.append(dict(case_id=spec['name'], model_path=os.path.abspath(p), model_sha256=h, evidence_sha256=hashlib.sha256(b'0').hexdigest(), variables=len(m['cards']), factors=len(m['factors']), L=spec.get('L'), H=spec.get('H', spec.get('L')), W=spec.get('W', spec.get('L')), q=str(spec['q']), v=str(spec['v']), seed=spec['seed'], role=spec['role'], all_entries_positive=all(x > 0 for f in m['factors'] for x in f['values']),
+        p = os.path.join(out_dir, spec['name'] + '.uai'); ex = write_uai(m, p)
+        inv.append(dict(case_id=spec['name'], model_path=os.path.abspath(p), model_sha256=ex['model_sha256'], evidence_path=ex['evidence_path'], evidence_sha256=ex['evidence_sha256'], export_factor_scalars=ex['factor_scalars'], variables=len(m['cards']), factors=len(m['factors']), L=spec.get('L'), H=spec.get('H', spec.get('L')), W=spec.get('W', spec.get('L')), q=str(spec['q']), v=str(spec['v']), seed=spec['seed'], role=spec['role'], all_entries_positive=all(x > 0 for f in m['factors'] for x in f['values']),
                         tasks=dict(singletons='corner (0,0) and centre (m,m) singleton probabilities: COVERED by the all-original-singleton UAI task (error target 1/100 full width = eps 1/200 point-to-endpoint)', joint_and_parity='adjacent / far-pair / block joint laws, influence, straight / detour parity: NOT singleton tasks -> primary arms UNSUPPORTED_TASK_ADAPTER (recorded)', evidence='no evidence in the unqualified challenge results; sparse-pin evidence variants are additional labelled tasks (generator: sparse_pins)')))
-    json.dump(dict(generator='qgrid-v1 hash rules (QGRID_REPRODUCTION.md §1), reconstructed 2026-11-13; this is a NEW labelled generation, not a bitwise replay of the missing historical model files', checkpoints_verified=ok, checkpoints=cp, native_specialists='UNAVAILABLE_BACKEND: the historical moment-LP / checkerboard-oracle / window-transfer methods exist only as prose (docs/handoff/historical/v4/methods/GRID_INFERENCE.md); no executable specialist is in the repository; the dq/ package is the signed-exponential CHAIN pilot, not this grid', previous_manifest_error='campaign.py (2026-11-12) excluded qgrid as "signed factors (negative entries)"; every table is positive (verified per instance: all_entries_positive)', instances=inv), open(os.path.join(out_dir, 'QGRID_INVENTORY.json'), 'w'), indent=1)
+    json.dump(dict(generator='qgrid-v1 hash rules (QGRID_REPRODUCTION.md §1), reconstructed 2026-11-13; this is a NEW labelled generation, not a bitwise replay of the missing historical model files', export='integer-scaled exact UAI (cex/pac/uai_export.py) + explicit empty-evidence file per model (external parser admission: libDAI / Merlin reject slash tokens)', checkpoints_verified=ok, checkpoints=cp, native_specialists='UNAVAILABLE_BACKEND: the historical moment-LP / checkerboard-oracle / window-transfer methods exist only as prose (docs/handoff/historical/v4/methods/GRID_INFERENCE.md); no executable specialist is in the repository; the dq/ package is the signed-exponential CHAIN pilot, not this grid', previous_manifest_error='campaign.py (2026-11-12) excluded qgrid as "signed factors (negative entries)"; every table is positive (verified per instance: all_entries_positive)', instances=inv), open(os.path.join(out_dir, 'QGRID_INVENTORY.json'), 'w'), indent=1)
     print(json.dumps(dict(checkpoints_verified=ok, instances=len(inv), out=out_dir)))
 
 

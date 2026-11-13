@@ -21,13 +21,16 @@ for p in (NEWARM, HERE):
     if p not in sys.path: sys.path.insert(0, p)
 import core, reduction, engine, contrib, support
 POLICY = engine.POLICY
-SOLVER_VERSION = 'pac-solve-v2 (2026-11-13 repair)'
-CONTINUABLE_STOPS = ('MEMORY', 'REPRESENTATION', 'SUPPORT_ROWS_CAP', 'RANGE', 'WIDTH', 'FPENV', 'NUMERICAL_RANGE_OR_PRECISION')   # exact-route refusals after which the PAC engine may continue while time remains
+SOLVER_VERSION = 'pac-solve-v3 (2026-11-13 completion)'
+CONTINUABLE_STOPS = ('MEMORY', 'REPRESENTATION', 'SUPPORT_ROWS_CAP', 'RANGE', 'WIDTH', 'FPENV', 'NUMERICAL_RANGE_OR_PRECISION')   # exact-route refusals after which the PAC engine may continue while time remains (every backend's refusal family is normalized to these in core._execute_component)
 
 
 class ZeroEvidence(Exception):
-    """deterministic zero-evidence proof (the worker publishes PROVED_ZERO_EVIDENCE only after the terminal deadline check)"""
-    def __init__(self, proof, trace): super().__init__('ZERO_EVIDENCE'); self.proof = proof; self.trace = trace
+    """deterministic zero-evidence proof (the worker publishes PROVED_ZERO_EVIDENCE only after the terminal deadline check). `proof` is a STRUCTURED, independently
+    re-derivable record: kind in {forest, reduction, component_restriction, exact_component, pac_root_bound, pac_exact_cover} with the component partition / cutset
+    needed by the checker to re-derive the zero (gate.verify_zero_proof)."""
+    def __init__(self, proof, trace):
+        super().__init__('ZERO_EVIDENCE'); self.proof = proof if isinstance(proof, dict) else dict(kind='legacy_text', text=str(proof)); self.trace = trace
 
 
 def _stop(kind, trace, **kw):
@@ -41,7 +44,7 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
     def check(where):
         if deadline is not None and time.monotonic() >= deadline: raise _stop('DEADLINE', trace, where=where)
     def remaining(): return (deadline - time.monotonic()) if deadline is not None else float('inf')
-    rss = lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    rss = lambda: core.rss_bytes()                                             # bytes on every platform (review R11)
     original_cards = list(model['cards']); n0 = len(original_cards)
     check('entry')
     # ---------------- root-level deterministic routes (shared with the baseline entry point): H1 only
@@ -52,9 +55,9 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
             result = forest.solve(model, deadline=deadline, independent_replay=True)
             core.verify_output(result['intervals'], result['points'], POLICY['epsilon']); check('forest publication')
             trace['root_discovery'].append(dict(kind='forest', wall_s=time.monotonic() - ft, chosen=True))
-            return _finish(result['intervals'], result['points'], [dict(component=0, variables=list(range(n0)), route='forest', guarantee='DETERMINISTIC', stats=result['stats'], certificate=result['certificate'])], dict(reduction={'not_attempted': 'complete forest computation'}), [dict(kind='identity', variable=v) for v in range(n0)], trace, t0, delta, K_total=0, check=check)
+            return _finish(result['intervals'], result['points'], [dict(component=0, variables=list(range(n0)), route='forest', guarantee='DETERMINISTIC', stats=result['stats'], certificate=result['certificate'], intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in result['intervals']], points_exact=[[str(x) for x in row] for row in result['points']])], dict(reduction={'not_attempted': 'complete forest computation'}), [dict(kind='identity', variable=v) for v in range(n0)], trace, t0, delta, K_total=0, check=check)
         except forest.UnsupportedError as e: trace['root_discovery'].append(dict(kind='forest', declined=str(e)[:200], wall_s=time.monotonic() - ft))
-        except forest.ZeroEvidence: raise ZeroEvidence('complete forest computation: zero evidence', trace)
+        except forest.ZeroEvidence: raise ZeroEvidence(dict(kind='forest', text='complete forest computation: zero evidence'), trace)
         except forest.DeadlineExceeded: raise _stop('DEADLINE', trace, where='forest')
         check('after forest discovery'); trace['phase'] = 'identity planning'; rt = time.monotonic(); raw_plan = None; raw_cost = None
         try:
@@ -68,12 +71,12 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
     try: reduced = reduction.reduce(model, deadline=deadline)
     except reduction.Deadline as ex: raise _stop('DEADLINE', trace, where='reduction', stats=ex.stats)
     trace['reduction'] = reduced['stats']
-    if reduced.get('status') == 'ZERO_EVIDENCE': raise ZeroEvidence('source reduction: zero evidence (%s)' % str(reduced.get('certificate', ''))[:200], trace)
+    if reduced.get('status') == 'ZERO_EVIDENCE': raise ZeroEvidence(dict(kind='reduction', reason=str(reduced.get('reason', ''))[:200]), trace)
     rm = reduced['model']; check('after reduction'); trace['phase'] = 'components'
     try: split = core.components(rm, deadline=deadline)
     except TimeoutError: raise _stop('DEADLINE', trace, where='components')
     except ValueError as e:
-        if str(e) == 'ZERO_EVIDENCE': raise ZeroEvidence('component restriction: a fully observed factor is zero', trace)
+        if str(e) == 'ZERO_EVIDENCE': raise ZeroEvidence(dict(kind='component_restriction', text='a fully observed factor is zero after reduction'), trace)
         raise
     unchanged = (len(rm['cards']) == n0 and not model.get('evidence') and not any(reduced['stats'].get(k, 0) for k in ('aliases', 'states_removed', 'scalar_factors_cancelled')))
     # K_total: EVERY coordinate of the reduced job (conservative union bound; deterministic components leave their allowance unspent)
@@ -97,7 +100,7 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
                 ct = time.monotonic()
                 try:
                     result = dag.execute_plan(raw_plan, deadline=deadline); check('identity DAG publication')
-                    return _finish(result['intervals'], result['points'], [dict(component=0, variables=list(range(n0)), route='dag', guarantee='DETERMINISTIC', discovery=trace['root_discovery'], execution_wall_s=time.monotonic() - ct, stats=result['stats'], certificate=result['certificate'])], dict(reduction={'not_attempted': 'identity source DAG selected'}), [dict(kind='identity', variable=v) for v in range(n0)], trace, t0, delta, K_total=0, check=check)
+                    return _finish(result['intervals'], result['points'], [dict(component=0, variables=list(range(n0)), route='dag', guarantee='DETERMINISTIC', discovery=trace['root_discovery'], execution_wall_s=time.monotonic() - ct, stats=result['stats'], certificate=result['certificate'], intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in result['intervals']], points_exact=[[str(x) for x in row] for row in result['points']])], dict(reduction={'not_attempted': 'identity source DAG selected'}), [dict(kind='identity', variable=v) for v in range(n0)], trace, t0, delta, K_total=0, check=check)
                 except (dag.Deadline, TimeoutError): raise _stop('DEADLINE', trace, where='identity DAG execution')
                 except (dag.Unsupported, ValueError, support.ResourceStop) as e:
                     kind = getattr(e, 'reason', None) if isinstance(e, support.ResourceStop) else 'INVALID_PLAN'
@@ -115,9 +118,9 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
             if det:
                 try:
                     result = core._execute_component(p, deadline)
-                    if result.get('status') == 'ZERO_EVIDENCE': raise ZeroEvidence('exact component %d: zero mass' % i, trace)
+                    if result.get('status') == 'ZERO_EVIDENCE': raise ZeroEvidence(dict(kind='exact_component', component=i, variables=list(old), route=p['kind']), trace)
                     rows = result['intervals']; ps = result.get('points') or [[(lo + hi) / 2 for lo, hi in row] for row in rows]; route_used = p['kind']; guarantee = 'DETERMINISTIC'
-                    rec_extra = dict(discovery=p['discovery'], stats=result.get('stats'), certificate=result.get('certificate'))
+                    rec_extra = dict(discovery=p['discovery'], stats=result.get('stats'), certificate=result.get('certificate'), intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in rows], points_exact=[[str(x) for x in row] for row in ps])
                 except support.ResourceStop as e:
                     if e.reason == 'DEADLINE' or remaining() <= 0: raise _stop('DEADLINE', trace, component=i, stats=e.stats, reason='exact route refused at the deadline')
                     if e.reason not in CONTINUABLE_STOPS: raise _stop(e.reason, trace, component=i, stats=e.stats)
@@ -139,10 +142,10 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
             try:
                 r = engine.run_component(cm, deadline, seed_tree, seed_point, mode, delta / 2, delta / 2, max(1, K_total), cap_bytes, rss(), POLICY, fixed_cutset=fixed_cut, fixed_order=fixed_order, forced=(arm == 'P1_PAC_CONDITIONAL'), resolve=resolve)
             except engine.EngineStop as e: raise _stop(e.outcome, trace, component=i, stats=e.stats, reason=e.reason)
-            if r['status'] == 'PROVED_ZERO_EVIDENCE': raise ZeroEvidence('PAC component %d: %s' % (i, r['stats'].get('proof', 'zero root bound')), trace)
+            if r['status'] == 'PROVED_ZERO_EVIDENCE': raise ZeroEvidence(dict(kind='pac_root_bound' if r['stats'].get('resolved_cells', 0) == 0 and 'root' in str(r['stats'].get('proof', '')) else 'pac_exact_cover', component=i, variables=list(old), cutset=(r['stats'].get('design') or {}).get('cutset'), frontier=r['stats'].get('frontier'), resolved_totals=r['stats'].get('resolved_totals'), text=str(r['stats'].get('proof', ''))[:200]), trace)
             if r['status'] != 'PUBLISHED': raise _stop(r['status'], trace, component=i, stats=r['stats'])
             rows = r['intervals']; ps = r['points']; guarantee = r['guarantee']; route_used = 'pac_' + mode + ('' if guarantee == 'PAC' else '_' + str(r['stats'].get('route')))
-            rec_extra = dict(stats=r['stats'], certifier_per_row=r['certifier_per_row'], widths=r.get('widths'), variance_sets_nonconvex=r.get('variance_sets_nonconvex'), design=r['stats'].get('design'), sufficient_statistics=r['stats'].get('sufficient_statistics'), intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in rows], points_exact=[[str(x) for x in row] for row in ps])
+            rec_extra = dict(stats=r['stats'], certifier_per_row=r['certifier_per_row'], widths=r.get('widths'), variance_sets_nonconvex=r.get('variance_sets_nonconvex'), design=r['stats'].get('design'), sufficient_statistics=r['stats'].get('sufficient_statistics'), frontier=r['stats'].get('frontier'), resolved_totals=r['stats'].get('resolved_totals'), intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in rows], points_exact=[[str(x) for x in row] for row in ps], cutset_mode_cards=dict(cutset=(r['stats'].get('design') or {}).get('cutset'), order_free=(r['stats'].get('design') or {}).get('order_free'), cards=list(cm['cards'])))
         guarantees.add(guarantee)
         records.append(dict(component=i, variables=old, route=route_used, guarantee=guarantee, execution_wall_s=time.monotonic() - ct, **rec_extra))
         assert len(rows) == len(old) and len(ps) == len(old)
@@ -151,15 +154,18 @@ def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 **
     assert all(x is not None for x in intervals)
     core.verify_output(intervals, points, POLICY['epsilon']); check('before lift')
     lifted_i, lifted_p = reduction.lift(reduced, intervals, points)
-    return _finish(lifted_i, lifted_p, records, dict(reduction=reduced['stats'], decisions=decisions, continuations=trace['continuations']), reduced['decoder'], trace, t0, delta, K_total=K_total, check=check, reduction_certificate=reduced.get('certificate'), original_cards=original_cards)
+    return _finish(lifted_i, lifted_p, records, dict(reduction=reduced['stats'], decisions=decisions, continuations=trace['continuations']), reduced['decoder'], trace, t0, delta, K_total=K_total, check=check, reduction_certificate=reduced.get('certificate'), original_cards=original_cards, reduced_model=rm, partition=[old for old, _ in split])
 
 
-def _finish(intervals, points, records, stats_extra, decoder, trace, t0, delta, K_total, check, reduction_certificate=None, original_cards=None):
+def _finish(intervals, points, records, stats_extra, decoder, trace, t0, delta, K_total, check, reduction_certificate=None, original_cards=None, reduced_model=None, partition=None):
     if original_cards is not None: assert len(intervals) == len(original_cards) and all(len(row) == d_ for row, d_ in zip(intervals, original_cards))
     core.verify_output(intervals, points, POLICY['epsilon']); check('publication')
     guarantees = {r['guarantee'] for r in records}; gt = 'PAC' if 'PAC' in guarantees else 'DETERMINISTIC'
-    cert = dict(certificate_version='pac-certificate-v2', guarantee_type=gt, delta=str(delta) if gt == 'PAC' else '0', epsilon='%d/%d' % (POLICY['epsilon'].numerator, POLICY['epsilon'].denominator), delta_ledger=trace.get('delta_ledger'), K_total=K_total,
-                components=[dict(component=r['component'], variables=r['variables'], route=r['route'], guarantee=r['guarantee'], certifier_per_row=r.get('certifier_per_row'), design=r.get('design'), sufficient_statistics=r.get('sufficient_statistics'), intervals_exact=r.get('intervals_exact'), points_exact=r.get('points_exact'), trials=(r.get('stats') or {}).get('trials_completed'), resolved_cells=(r.get('stats') or {}).get('resolved_cells')) for r in records],
+    ledger = trace.get('delta_ledger') or dict(delta=str(delta), range_family=str(delta / 2), variance_family=str(delta / 2), per_coordinate_alpha_each_family=None, coordinates=K_total, components_pac=0, rule='whole-model deterministic root route: no stochastic coordinate')
+    cert = dict(certificate_version='pac-certificate-v3', guarantee_type=gt, delta=str(delta) if gt == 'PAC' else '0', epsilon='%d/%d' % (POLICY['epsilon'].numerator, POLICY['epsilon'].denominator), delta_ledger=ledger, K_total=K_total,
+                components=[dict(component=r['component'], variables=r['variables'], route=r['route'], guarantee=r['guarantee'], certifier_per_row=r.get('certifier_per_row'), design=r.get('design'), sufficient_statistics=r.get('sufficient_statistics'), frontier=r.get('frontier'), resolved_totals=r.get('resolved_totals'), intervals_exact=r.get('intervals_exact'), points_exact=r.get('points_exact'), trials=(r.get('stats') or {}).get('trials_completed'), resolved_cells=(r.get('stats') or {}).get('resolved_cells')) for r in records],
                 lifted_intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in intervals], lifted_points_exact=[[str(x) for x in row] for row in points], decoder=decoder, reduction_certificate=reduction_certificate,
+                reduced_model=(dict(cards=list(reduced_model['cards']), factors=[dict(scope=list(f['scope']), values=[str(x) for x in f['values']]) for f in reduced_model['factors']]) if reduced_model is not None else None), partition=partition,
+                chain='original model (binding) -> reduction.reduce (decoder; re-derivable) -> core.components (partition) -> per-component exact rows (deterministic route certificate or PAC design + statistics + frontier + resolved totals) -> reduction.lift (decoder) -> original rows -> core.publish decimals',
                 trust_boundary='a checker verifies task binding, the lawful statistical construction (design record), the numerical enclosures (sufficient statistics -> hulls) and the stopping predicate; it cannot certify that a particular random outcome is accurate')
     return dict(intervals=intervals, points=points, guarantee_type=gt, outcome='PUBLISHED', stats=dict(stats_extra, total_s=time.monotonic() - t0, components=[{k: v for k, v in r.items() if k not in ('sufficient_statistics', 'intervals_exact', 'points_exact')} for r in records], root_discovery=trace.get('root_discovery'), delta_ledger=trace.get('delta_ledger'), solver_version=SOLVER_VERSION), decoder=decoder, certificate=cert)

@@ -41,7 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path
 if NEWARM not in sys.path: sys.path.insert(0, NEWARM)
 if HERE not in sys.path: sys.path.insert(0, HERE)
 import rig, contrib
-ENGINE_VERSION = 'pac-engine-v2 (2026-11-13 repair)'
+ENGINE_VERSION = 'pac-engine-v3 (2026-11-13 completion: explicit frontier, deterministic partial-cover publication, component-scale resolved totals)'
 
 # ---------------- FROZEN POLICY CONSTANTS (recorded in the freeze; never tuned after scoring)
 POLICY = dict(
@@ -112,12 +112,21 @@ def choose_cutset(model, deadline=None, policy=POLICY, budget_fraction=0.1):
     return dict(cutset=cut, order=order, residual_forecast=st['scalar_forecast'], residual_peak_bag=st['peak_bag'], trace=trace[-8:], steps=len(trace), stopped=stopped, selection_s=time.monotonic() - t0, fits=(st['scalar_forecast'] <= policy['work_target_units_per_trial'] and st['peak_bag'] <= policy['peak_bag_rows_max']))
 
 
-# ---------------- the proposal tree of factor-max cell bounds with a disjoint resolved region
+# ---------------- the proposal tree of factor-max cell bounds with an EXPLICIT FRONTIER (candidate v3; review R01)
 class Tree:
-    """exact factor-max envelope on partial-assignment cells of `model` (no evidence; cells assign cutset variables in the fixed cutset order), with the
-    resolved region of §3/§6. For factor a with cutset-scope variables c_1..c_k (cutset order) the table levels_a[i] holds, for every assignment of c_1..c_i,
-    the EXACT maximum of the factor over all compatible entries (integer table in the per-factor common denominator D_a). Effective weights subtract the resolved
-    leaf bounds below a node; the draw law is exactly w_s / sum w_s."""
+    """exact factor-max envelope on partial-assignment cells of `model` (no evidence; cells assign cutset variables in the fixed cutset order), with an explicit
+    unresolved FRONTIER. Node = prefix (tuple of states in cutset order). Bounds: u(node) = m_node * prod_a M_a(node) (exact rationals; the child-sum inequality
+    sum_s u(child_s) <= u(node) holds exactly). Effective residual bound w(node):
+        leaf:            w = 0 if resolved (its exact contribution is in the resolved totals) else u(leaf)   [u(leaf) = 0 is a proved-zero leaf];
+        expanded node:   w = sum over children of w(child)                                                   (children expanded or not);
+        unexpanded node: w = u(node).
+    Every w is a valid upper bound on the residual (unresolved) mass under the node, and w(node) <= u(node). The draw at a node uses the children's w values
+    (exact unbiased integer draw on common-denominator weights); when a node is reached it is EXPANDED (its children's bounds are computed, deterministically from
+    the model) and its w is refreshed. Telescoping: along a drawn path q(leaf) = prod w(child_k)/S_k with S_k = sum of the children's w <= w(parent_k), hence
+    q(leaf) >= w(leaf)/w(root) = u(leaf)/U_t with U_t := w(root) (proposal domination; re-checked exactly on every trial by the engine).
+    Resolution and expansion change only FUTURE trials (predictable design); historical trials keep their laws. U_t = 0 <=> no unresolved positive support
+    remains (every reachable positive leaf is resolved and every reached subtree with zero children is closed) -- independent of the slack U_root - sum u(leaf).
+    The frontier state is reproducible from (model, cutset, resolved leaves, expanded zero prefixes); `rebuild` lets a checker re-derive U_t."""
     def __init__(self, model, cutset, deadline=None):
         import numpy as np
         self.m = model; self.cards = model['cards']; self.n = len(self.cards); self.cut = list(cutset); self.pos = {v: i for i, v in enumerate(self.cut)}
@@ -150,45 +159,88 @@ class Tree:
             self.nums.append(row)
         self.Dprod = math.prod(self.denoms, start=1)
         self.u_root = F(self.free_count * math.prod(self.cards[v] for v in self.cut)) * math.prod(self.root_max, start=F(1))
-        self.resolved = set(); self.resolved_sum = {}; self.U_t = self.u_root; self.resolved_count = 0
-    # ---- resolved region
-    def resolve(self, leaf, u_leaf):
-        """insert the leaf cell (tuple of states in cutset order) with its exact bound u_leaf into the resolved region ONCE; refuses duplicates"""
-        leaf = tuple(leaf)
-        if leaf in self.resolved: raise EngineStop('INVALID_PLAN_OR_CERTIFICATE', 'duplicate insertion of a resolved cell %s' % (leaf,))
-        self.resolved.add(leaf); self.resolved_count += 1
-        for k in range(len(leaf) + 1):
-            p = leaf[:k]; self.resolved_sum[p] = self.resolved_sum.get(p, F(0)) + u_leaf
-        self.U_t = self.u_root - self.resolved_sum[()]
-        assert self.U_t >= 0
-    def child_weights(self, prefix, assign, cur, u_prefix, v):
-        """exact effective weights of the children assigning v at the prefix: u_s - resolved(prefix + s); returns (list of Fractions, list of new per-factor maxima per child)"""
-        c = self.cards[v]; ws = []; news = []
+        # frontier state
+        self.resolved = set(); self.resolved_count = 0
+        self.children = {}            # expanded node prefix -> list of (u_child, per-factor new maxima dict) per child state
+        self.w = {(): self.u_root}    # effective residual bound per known node (root always present)
+        self.U_t = self.u_root
+    # ---- bounds
+    def node_bounds(self, prefix):
+        """exact (u(prefix), per-factor current maxima) by walking the stored tables along the prefix"""
+        cur = {a: int(self.levels[a][0].reshape(-1)[0]) for a in range(len(self.factors))}; u = self.u_root; assign = {}
+        for k, s_ in enumerate(prefix):
+            v = self.cut[k]; f = F(1, self.cards[v])
+            for a, i in self.touch[v]:
+                lv = self.levels[a][i + 1]; pre = tuple(assign[x] for x in self.cut_scope[a][:i]); nv = int(lv[pre + (s_,)])
+                if nv == 0: f = F(0); cur[a] = 0; continue
+                f *= F(nv, cur[a]); cur[a] = nv
+            u = u * f; assign[v] = s_
+        return u, cur, assign
+    def _expand(self, prefix, assign, cur, u_prefix):
+        """compute the children of a node once (deterministic from the model); store; return the list of (u_child, new maxima)"""
+        if prefix in self.children: return self.children[prefix]
+        v = self.cut[len(prefix)]; c = self.cards[v]; kids = []
         for s_ in range(c):
             f = F(1, c); new = {}
             for a, i in self.touch[v]:
-                lv = self.levels[a][i + 1]; pre = tuple(assign[u] for u in self.cut_scope[a][:i]); nv = int(lv[pre + (s_,)]); new[a] = nv
+                lv = self.levels[a][i + 1]; pre = tuple(assign[x] for x in self.cut_scope[a][:i]); nv = int(lv[pre + (s_,)]); new[a] = nv
                 if nv == 0: f = F(0); break
                 f *= F(nv, cur[a])
-            us = u_prefix * f; R = self.resolved_sum.get(prefix + (s_,), F(0))
-            ws.append(us - R); news.append((us, new))
-        return ws, news
+            kids.append((u_prefix * f, new))
+        self.children[prefix] = kids
+        for s_, (us, _) in enumerate(kids):
+            ch = prefix + (s_,)
+            if ch not in self.w: self.w[ch] = F(0) if ch in self.resolved else us
+        self._refresh(prefix)
+        return kids
+    def _refresh(self, prefix):
+        """w(node) := sum of the children's w (node expanded); propagate to the root (U_t = w(root))"""
+        kids = self.children.get(prefix)
+        if kids is None: return
+        total = F(0)
+        for s_ in range(len(kids)): total += self.w[prefix + (s_,)]
+        self.w[prefix] = total
+        if prefix: self._refresh(prefix[:-1])
+        else: self.U_t = total
+    def child_weights(self, prefix, assign, cur, u_prefix, v):
+        """effective weights w(child) of the children assigning v at the (expanded) prefix; returns (weights, [(u_child, new maxima)])"""
+        kids = self._expand(prefix, assign, cur, u_prefix)
+        return [self.w[prefix + (s_,)] for s_ in range(len(kids))], kids
+    # ---- resolved region
+    def _expand_path(self, prefix):
+        """expand every node from the root to (and including, if internal) `prefix`; returns (u(prefix), maxima, assign)"""
+        cur = {a: int(self.levels[a][0].reshape(-1)[0]) for a in range(len(self.factors))}; u = self.u_root; assign = {}
+        for k in range(len(prefix)):
+            kids = self._expand(prefix[:k], assign, cur, u); us, new = kids[prefix[k]]; u = us; cur = dict(cur); cur.update(new); assign[self.cut[k]] = prefix[k]
+        if len(prefix) < len(self.cut): self._expand(prefix, assign, cur, u)
+        return u, cur, assign
+    def resolve(self, leaf, u_leaf):
+        """insert the leaf cell (tuple of states in cutset order) into the resolved region ONCE; refuses duplicates; its ancestors are expanded and refreshed"""
+        leaf = tuple(leaf)
+        if leaf in self.resolved: raise EngineStop('INVALID_PLAN_OR_CERTIFICATE', 'duplicate insertion of a resolved cell %s' % (leaf,))
+        if len(leaf) != len(self.cut): raise EngineStop('INVALID_PLAN_OR_CERTIFICATE', 'resolved cell is not a leaf of the cutset tree')
+        u, cur, assign = self._expand_path(leaf)
+        if u != u_leaf: raise EngineStop('INVALID_PLAN_OR_CERTIFICATE', 'resolved cell bound differs from the tree bound')
+        self.resolved.add(leaf); self.resolved_count += 1; self.w[leaf] = F(0)
+        if leaf: self._refresh(leaf[:-1])
+        else: self.U_t = F(0)
+        assert self.U_t >= 0
     def draw_leaf(self, rng):
-        """one path from the root in cutset order with the current resolved region; exact weighted integer draws; returns (assign, q, zero_terminal, trans, u_leaf)"""
+        """one path from the root in cutset order under the current frontier; exact weighted integer draws; returns (assign, q, zero_terminal, trans, u_leaf)"""
         assign = {}; q = F(1); trans = []; prefix = (); cur = {a: int(self.levels[a][0].reshape(-1)[0]) for a in range(len(self.factors))}; u = self.u_root
         for v in self.cut:
-            ws, news = self.child_weights(prefix, assign, cur, u, v)
-            for w in ws: assert w >= 0, 'resolved sum exceeds the cell bound (child-sum inequality violated)'
+            ws, kids = self.child_weights(prefix, assign, cur, u, v)
+            for w in ws: assert w >= 0, 'negative effective weight'
             D = 1
             for w in ws: D = D * w.denominator // math.gcd(D, w.denominator)
             wi = [int(w * D) for w in ws]; W = sum(wi)
-            if W == 0: return assign, q, True, trans, F(0)
+            if W == 0: return assign, q, True, trans, F(0)        # a reached node with no residual support (now closed and propagated): a legitimate zero residual trial
             k = rng.randrange(W); acc = 0
             for s_, x in enumerate(wi):
                 acc += x
                 if k < acc:
-                    assign[v] = s_; q *= F(x, W); trans.append((v, s_, x, W)); u = news[s_][0]
-                    for a, nv in news[s_][1].items(): cur[a] = nv
+                    assign[v] = s_; q *= F(x, W); trans.append((v, s_, x, W)); u = kids[s_][0]
+                    for a, nv in kids[s_][1].items(): cur[a] = nv
                     prefix = prefix + (s_,); break
         return assign, q, False, trans, u
     def point_weight(self, assign_full):
@@ -199,6 +251,75 @@ class Tree:
             num *= nums[i]
             if num == 0: return F(0)
         return F(num, self.Dprod)
+    def frontier_record(self):
+        """the frontier state sufficient for an exact re-derivation: resolved leaves + the expanded internal nodes that are not ancestors of a resolved leaf
+        (ancestors of resolved leaves are implied); zero prefixes (expanded nodes whose children all have bound 0) are listed for inspection"""
+        implied = set()
+        for l in self.resolved:
+            for k in range(len(l)): implied.add(l[:k])
+        extra = sorted(p for p in self.children if p not in implied)
+        zero = sorted(p for p, kids in self.children.items() if all(us == 0 for us, _ in kids))
+        return dict(resolved_leaves=[list(l) for l in sorted(self.resolved)], extra_expanded=[list(p) for p in extra], zero_prefixes=[list(p) for p in zero], U_t=_frac_str(self.U_t), U_root=_frac_str(self.u_root), expanded_nodes=len(self.children))
+    @staticmethod
+    def rebuild(model, cutset, resolved_leaves, extra_expanded, deadline=None):
+        """checker: re-derive the frontier (hence U_t) from the recorded resolved leaves and extra expanded nodes; expansion is deterministic from the model"""
+        T = Tree(model, cutset, deadline)
+        for leaf in resolved_leaves:
+            u, _, _ = T.node_bounds(tuple(leaf)); T.resolve(tuple(leaf), u)
+        for p in extra_expanded:
+            if len(p) < len(T.cut): T._expand_path(tuple(p))
+        return T
+
+
+# ---------------- RESOLVED TOTALS in the component's own scale (block floating point; candidate v3; review R03 / R02)
+class Totals:
+    """rigorous directed enclosures of the resolved mass A and the per-coordinate resolved numerators a_j in the COMPONENT'S scale, independent of the statistical
+    scale U_root: block floating point = binary64 directed mantissas times 2^E with ONE shared exponent E chosen from the first resolved cell and re-based when a
+    later cell is much larger (exact power-of-two rescaling). A cell far smaller than 2^E only loosens the LOWER bound (its mantissa underflows to 0) and adds at
+    most one ulp to the upper bound: contributions below 2^-1000 of the dominant resolved mass are irrelevant to a normalized answer at eps = 1/200.
+    The exact rational mass enclosure (A_exact_lo/hi) is kept as well (scalar, cheap). The per-cell records (leaf, B0 enclosure) are retained for the checker."""
+    def __init__(self, tot):
+        import numpy as np
+        self.np = np; self.E = None; self.tot = tot; self.A_lo = 0.0; self.A_hi = 0.0; self.a_lo = np.zeros(tot); self.a_hi = np.zeros(tot); self.A_exact_lo = F(0); self.A_exact_hi = F(0); self.cells = []
+    def _conv(self, x, up):
+        q = x / self.scale
+        return rig.df_hi(q) if up else rig.df_lo(q)
+    def _rebase(self, Enew):
+        f = 2.0 ** (self.E - Enew) if self.E is not None else 1.0        # exact power-of-two factor (|E - Enew| < 1000 by construction)
+        if self.E is not None:
+            self.A_lo *= f; self.A_hi *= f; self.a_lo *= f; self.a_hi *= f
+        self.E = Enew; self.scale = F(2) ** Enew
+    def add_cell(self, leaf, B0lo, B0hi, rows_lo, rows_hi, idx):
+        """rows_lo / rows_hi: lists of exact Fractions aligned with idx (coordinate indices); the cell's B0 enclosure exact Fractions"""
+        if B0hi > 0:
+            e = B0hi.numerator.bit_length() - B0hi.denominator.bit_length()
+            if self.E is None: self._rebase(e)
+            elif e > self.E + 600: self._rebase(e)
+        elif self.E is None: self._rebase(0)
+        self.A_lo = rig.add_lo(self.A_lo, self._conv(B0lo, False)); self.A_hi = rig.add_hi(self.A_hi, self._conv(B0hi, True))
+        np = self.np
+        if idx:
+            lo = np.fromiter((self._conv(x, False) for x in rows_lo), dtype=np.float64, count=len(idx)); hi = np.fromiter((self._conv(x, True) for x in rows_hi), dtype=np.float64, count=len(idx))
+            self.a_lo[idx] = np.maximum(np.nextafter(self.a_lo[idx] + lo, -rig.INF), 0.0); self.a_hi[idx] = np.nextafter(self.a_hi[idx] + hi, rig.INF)
+            if not np.all(np.isfinite(self.a_hi)): raise EngineStop('NUMERICAL_RANGE_OR_PRECISION', 'resolved totals overflow')
+        self.A_exact_lo += B0lo; self.A_exact_hi += B0hi
+        self.cells.append((tuple(leaf), B0lo, B0hi))
+    def bounds(self, U_t, cards, off):
+        """deterministic enclosures of every coordinate from the resolved totals and the residual envelope U_t (exact rational arithmetic on the dyadic mantissas):
+        N_j in [a_lo_j, a_hi_j + U_t], Z in [A_lo, A_hi + U_t]  =>  p_j in [a_lo_j/(A_hi + U_t), min(1, (a_hi_j + U_t)/A_lo)]  (needs A_lo > 0)"""
+        if self.E is None: return None
+        Alo = F(self.A_lo) * self.scale; Ahi = F(self.A_hi) * self.scale
+        if Alo <= 0: return None
+        Ut = F(U_t); rows = []
+        for v in range(len(cards)):
+            row = []
+            for s_ in range(cards[v]):
+                j = off[v] + s_; lo = F(float(self.a_lo[j])) * self.scale; hi = F(float(self.a_hi[j])) * self.scale
+                row.append((max(F(0), lo / (Ahi + Ut)), min(F(1), (hi + Ut) / Alo)))
+            rows.append(row)
+        return rows
+    def record(self):
+        return dict(E=self.E, A_lo=self.A_lo, A_hi=self.A_hi, a_lo=[float(x) for x in self.a_lo], a_hi=[float(x) for x in self.a_hi], A_exact_lo=_frac_str(self.A_exact_lo), A_exact_hi=_frac_str(self.A_exact_hi), cells=[dict(leaf=list(l), B0_lo=_frac_str(lo), B0_hi=_frac_str(hi)) for l, lo, hi in self.cells], representation='block floating point: binary64 directed mantissas x 2^E (component scale); rebased when a cell exceeds 2^(E+600)')
 
 
 # ---------------- residual template: lowering with cached slices (reuses cex_executor.convert; typed stops translated)
@@ -351,17 +472,6 @@ class Stream:
         return range_hulls_from(self.record())
     def variance_sets(self, only=None):
         return variance_sets_from(self.record(), only)
-    def resolved_rows(self):
-        """deterministic rows from the resolved totals when the cover is complete: p_j in [a_lo/A_hi, a_hi/A_lo]"""
-        Alo, Ahi = self._enc(self.A_lo, self.A_hi)
-        if Alo <= 0: return None
-        rows = {}
-        for v in range(self.n):
-            row = []
-            for s_ in range(self.cards[v]):
-                j = self.off[v] + s_; lo, hi = self._enc(self.ra_lo[j], self.ra_hi[j]); row.append((min(F(1), lo / Ahi), min(F(1), hi / Alo)))
-            rows[v] = row
-        return rows
 
 
 # ---------------- certificate recomputation from a RECORD (shared by the engine and the independent gate replay)
@@ -476,10 +586,17 @@ def _deterministic_rows_publish(rows, n, eps, margin):
 
 
 # ---------------- one component
+def deterministic_rows(T, U_t, cards, off):
+    return T.bounds(U_t, cards, off)
+
+
 def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, delta_var_c, K_total, cap_bytes, rss_entry, policy=POLICY, trace=None, fixed_cutset=None, fixed_order=None, max_trials=None, forced=False, resolve=None, tree_factory=None):
-    """comp: reduced component model (no evidence). Returns dict(status, guarantee, intervals/points per component variable, stats incl. the canonical design record and
-    the sufficient statistics). mode in {'conditional', 'point'}; resolve: insert evaluated cells into the resolved region (default: policy for conditional mode, never
-    for point mode); fixed_cutset/fixed_order: the matched ablation's shared law. tree_factory: qualification hook (default Tree)."""
+    """comp: reduced component model (no evidence). Returns dict(status, guarantee, intervals/points per component variable, stats incl. the canonical design record,
+    the frontier record, the resolved totals and the sufficient statistics). mode in {'conditional', 'point'}; resolve: insert evaluated cells into the resolved
+    region (default: policy for conditional mode; never for point mode); fixed_cutset/fixed_order: the matched ablation's shared law. tree_factory: qualification hook.
+    Publication paths, checked at every certification point in this order: (1) DETERMINISTIC from the resolved totals and the residual envelope U_t (delta = 0;
+    complete cover is the special case U_t = 0; partial covers publish as soon as the deterministic enclosures meet the task); (2) PAC from the statistical hulls.
+    A deterministic publication never spends delta; the statistical stream is unchanged by it."""
     t0 = time.monotonic(); cards = comp['cards']; n = len(cards); eps = policy['epsilon']; st = dict(phase='cutset', engine_version=ENGINE_VERSION); trace = trace if trace is not None else []
     Tree_ = tree_factory or Tree
     if resolve is None: resolve = bool(policy['resolve_evaluated_cells']) and mode == 'conditional'
@@ -487,10 +604,9 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
     def check(where):
         if deadline is not None and time.monotonic() >= deadline: raise EngineStop('DEADLINE', where, st)
     check('entry')
-    # ---- factorless component: uniform, exact, deterministic (review F09: a legal input, not a crash)
     if not comp['factors']:
         rows = [[(F(1, c), F(1, c)) for _ in range(c)] for c in cards]
-        st.update(route='uniform_factorless_component', trials_completed=0, wall_s=time.monotonic() - t0, design=dict(cutset=[], order=list(range(n)), mode=mode, U_root='0/1', note='no factors: uniform law'))
+        st.update(route='uniform_factorless_component', trials_completed=0, wall_s=time.monotonic() - t0, design=dict(cutset=[], order_free=list(range(n)), mode=mode, U_root='0/1', note='no factors: uniform law'))
         return dict(status='PUBLISHED', guarantee='DETERMINISTIC', intervals=rows, points=[[F(1, c)] * c for c in cards], certifier_per_row=['exact'] * n, widths={}, stats=st)
     if fixed_cutset is None:
         cs = choose_cutset(comp, deadline, policy); cut = cs['cutset']; order_free = cs['order']; st['cutset_selection'] = cs
@@ -503,14 +619,14 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
     else:
         cut = list(fixed_cutset); order_free = list(fixed_order); st['cutset_selection'] = dict(fixed_by_ablation=True)
     check('after cutset selection')
-    if mode == 'conditional' and not cut: resolve = True          # an empty cutset has ONE cell = the whole component: its first rigorous contraction IS the complete exact answer (closure, review F01); never repeated
+    if mode == 'conditional' and not cut: resolve = True
     st['phase'] = 'tree'; tree = Tree_(comp, cut, deadline); U = tree.u_root
     st['U_root_log10'] = (math.log10(U.numerator) - math.log10(U.denominator)) if U > 0 else None; st['U_root_bits'] = (U.numerator.bit_length(), U.denominator.bit_length())
     design = dict(cutset=list(cut), order_free=list(order_free), mode=mode, resolve=resolve, U_root=_frac_str(U), lambda_rule=policy['lambda_rule'], rho_rule=policy['rho_rule'], stream_scale=policy['stream_scale'], K_total=K_total, delta_range=_frac_str(F(delta_range_c)), delta_variance=_frac_str(F(delta_var_c)), alpha_range=_frac_str(F(delta_range_c) / K_total), alpha_variance=_frac_str(F(delta_var_c) / K_total), l_values=list(policy['variance_l_values']), seed_tree=str(seed_tree), seed_point=str(seed_point), prng=policy['prng'], epsilon=_frac_str(eps), decimal_margin=_frac_str(policy['decimal_margin']), exact_leaf_max_completions=policy['exact_leaf_max_completions'], engine_version=ENGINE_VERSION)
     st['design'] = design
     if U == 0:
         check('zero root bound terminal')
-        return dict(status='PROVED_ZERO_EVIDENCE', guarantee='DETERMINISTIC', stats=dict(st, proof='every cell bound is zero at the root: some factor has only zero entries compatible with the root cell', wall_s=time.monotonic() - t0))
+        return dict(status='PROVED_ZERO_EVIDENCE', guarantee='DETERMINISTIC', stats=dict(st, proof='every cell bound is zero at the root: some factor has only zero entries compatible with the root cell', frontier=tree.frontier_record(), wall_s=time.monotonic() - t0))
     free_leaf = [v for v in range(n) if v not in tree.pos]
     try:
         tmpl = Template(comp, cut, order_free, deadline=deadline) if (mode == 'conditional' and free_leaf and tree.free_count > policy['exact_leaf_max_completions']) else None
@@ -520,27 +636,39 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
     design['template_semantic'] = tmpl.sem if tmpl else None; design['leaf_completions'] = tree.free_count; design['leaf_evaluator'] = 'compiled_kernel' if tmpl else ('exact_enumeration' if free_leaf else 'point_product')
     try: rig.fp_selfcheck()
     except (rig.RangeStop, AssertionError) as e: raise EngineStop('NUMERICAL_RANGE_OR_PRECISION', 'binary64 environment self-check failed: %s' % e, st)
-    S = Stream(cards, cut, U, delta_range_c, delta_var_c, K_total, policy['variance_l_values']); rng_t = random.Random(seed_tree); rng_p = random.Random(seed_point)
-    st['phase'] = 'stream'; trials = 0; kernel_s = 0.0; last_check = None; publish = None; term = None; counters_tot = {}; last_cert_t = time.monotonic()
+    S = Stream(cards, cut, U, delta_range_c, delta_var_c, K_total, policy['variance_l_values']); T = Totals(S.tot); rng_t = random.Random(seed_tree); rng_p = random.Random(seed_point)
+    st['phase'] = 'stream'; trials = 0; kernel_s = 0.0; last_check = None; publish = None; term = None; counters_tot = {}; last_cert_t = time.monotonic(); det_dirty = False
     np = S.np
     def to_dimless(x):
-        """exact rational x >= 0 -> directed binary64 bounds of x/U_root"""
         q = x / U
         return rig.df_lo(q), rig.df_hi(q)
-    def certify():
-        ok, rows, pts, chosen, widths, bU, vsets = hulls_from_record(S.record(), eps, policy['decimal_margin'])
-        return ok, rows, pts, chosen, widths, bU, vsets
+    def certify_det():
+        """deterministic publication from the resolved totals and U_t (delta = 0)"""
+        rows = T.bounds(tree.U_t, cards, S.off)
+        if rows is None: return None
+        ok, ivs, pts = _deterministic_rows_publish({v: rows[v] for v in range(n)}, n, eps, policy['decimal_margin'])
+        return (ivs, pts, rows) if ok else None
+    def certify_pac():
+        return hulls_from_record(S.record(), eps, policy['decimal_margin'])
     while True:
         if deadline is not None and time.monotonic() >= deadline: term = 'DEADLINE'; break
-        if tree.U_t == 0: term = 'COVER_COMPLETE'; break
+        if det_dirty:
+            # the resolved state changed: deterministic bounds first (closure when U_t = 0 is the special case where they are exact up to the enclosures)
+            det_dirty = False; tc = time.monotonic(); dr = certify_det(); st['certify_det_s'] = st.get('certify_det_s', 0.0) + time.monotonic() - tc
+            if dr is not None: publish = ('DETERMINISTIC', dr); term = 'DETERMINISTIC_BOUNDS' if tree.U_t > 0 else 'COVER_COMPLETE'; break
+            if tree.U_t == 0: term = 'COVER_COMPLETE'; break
         if max_trials is not None and trials >= max_trials: term = 'MAX_TRIALS'; break
         if trials > 0 and ((trials & (trials - 1)) == 0 or trials % 65536 == 0 or (time.monotonic() - last_cert_t) > max(0.5, 0.1 * (deadline - time.monotonic()) if deadline else 0.5)):
-            tc = time.monotonic(); ok, rows, pts, chosen, widths, bU, vsets = certify(); st['certify_s'] = st.get('certify_s', 0.0) + time.monotonic() - tc; last_check = dict(trial=trials, widths=widths, chosen=chosen); last_cert_t = time.monotonic()
-            if ok: publish = (rows, pts, chosen, widths, vsets); term = 'CERTIFIED'; break
-        # ---- one trial: predictable design (tree + resolved region fixed before the draw), fresh draw
+            tc = time.monotonic(); ok, rows, pts, chosen, widths, bU, vsets = certify_pac(); st['certify_s'] = st.get('certify_s', 0.0) + time.monotonic() - tc; last_check = dict(trial=trials, widths=widths, chosen=chosen); last_cert_t = time.monotonic()
+            if ok: publish = ('PAC', (rows, pts, chosen, widths, vsets)); term = 'CERTIFIED'; break
+        # ---- one trial: predictable design (frontier fixed before the draw), fresh draw
         U_t = tree.U_t
         assign, q, zero_terminal, trans, u_leaf = tree.draw_leaf(rng_t); trials += 1
-        if zero_terminal: S.add_zero(); continue
+        if zero_terminal:
+            S.add_zero()
+            if tree.U_t < U_t: det_dirty = True                       # a reached zero subtree closed: the residual envelope dropped (frontier propagation)
+            if tree.U_t == 0: det_dirty = True
+            continue
         if not (q * U_t >= u_leaf): raise EngineStop('INVALID_PLAN_OR_CERTIFICATE', 'proposal law: q U_t < u_leaf (telescoping inequality violated)', st)
         try:
             if mode == 'point':
@@ -548,7 +676,7 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
                 for v in free_leaf: full[v] = rng_p.randrange(cards[v])
                 w = tree.point_weight(full)
                 if not (w * tree.free_count <= u_leaf): raise EngineStop('INVALID_PLAN_OR_CERTIFICATE', 'envelope violated (point): W(x) m_leaf > u_leaf', st)
-                r = w * tree.free_count / q                                        # W(x)/Q(x), Q(x) = q/m_leaf; r <= u_leaf/q <= U_t
+                r = w * tree.free_count / q
                 rlo, rhi = to_dimless(r); Ylo = np.zeros(S.tot); Yhi = np.zeros(S.tot)
                 idx = [S.off[v] + full[v] for v in range(n)]; Ylo[idx] = rlo; Yhi[idx] = rhi
                 S.add_residual(rlo, rhi, Ylo, Yhi)
@@ -560,19 +688,22 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
                 for k, x in ctr.items(): counters_tot[k] = counters_tot.get(k, 0) + x
                 if B0[0] > u_leaf: raise EngineStop('INVALID_PLAN_OR_CERTIFICATE', 'envelope violated (conditional): B0_lo(leaf) = %s > u_leaf = %s' % (float(B0[0]), float(u_leaf)), st)
                 rlo, rhi = to_dimless(B0[0] / q)[0], to_dimless(B0[1] / q)[1]
-                Ylo = np.zeros(S.tot); Yhi = np.zeros(S.tot); Rlo = np.zeros(S.tot); Rhi = np.zeros(S.tot)
+                Ylo = np.zeros(S.tot); Yhi = np.zeros(S.tot); idx = []; rows_lo = []; rows_hi = []
                 for v in range(n):
                     if v in assign:
-                        j = S.off[v] + assign[v]; Ylo[j] = rlo; Yhi[j] = rhi
-                        Rlo[j], Rhi[j] = to_dimless(B0[0])[0], to_dimless(B0[1])[1]
+                        j = S.off[v] + assign[v]; Ylo[j] = rlo; Yhi[j] = rhi; idx.append(j); rows_lo.append(B0[0]); rows_hi.append(B0[1])
                     elif rows_c is not None:
                         for s_, (lo, hi) in enumerate(rows_c[v]):
-                            j = S.off[v] + s_; Ylo[j] = to_dimless(lo / q)[0]; Yhi[j] = to_dimless(hi / q)[1]; Rlo[j] = to_dimless(lo)[0]; Rhi[j] = to_dimless(hi)[1]
+                            j = S.off[v] + s_; Ylo[j] = to_dimless(lo / q)[0]; Yhi[j] = to_dimless(hi / q)[1]; idx.append(j); rows_lo.append(lo); rows_hi.append(hi)
                 S.add_residual(rlo, rhi, Ylo, Yhi)
                 if resolve:
-                    # between trials: insert the evaluated cell ONCE into the resolved region (predictable for the next trial)
-                    tree.resolve(tuple(assign[v] for v in cut), u_leaf)
-                    b0lo, _ = to_dimless(B0[0]); _, b0hi = to_dimless(B0[1]); S.resolve_add(b0lo, b0hi, Rlo, Rhi, B0[0], B0[1])
+                    leaf = tuple(assign[v] for v in cut)
+                    tree.resolve(leaf, u_leaf)                                      # frontier: leaf closed, ancestors refreshed (predictable for the next trial)
+                    T.add_cell(leaf, B0[0], B0[1], rows_lo, rows_hi, idx)           # component-scale resolved totals
+                    b0lo, _ = to_dimless(B0[0]); _, b0hi = to_dimless(B0[1]); Rlo = np.zeros(S.tot); Rhi = np.zeros(S.tot)
+                    for j, lo, hi in zip(idx, rows_lo, rows_hi): Rlo[j] = to_dimless(lo)[0]; Rhi[j] = to_dimless(hi)[1]
+                    S.resolve_add(b0lo, b0hi, Rlo, Rhi, B0[0], B0[1])               # dimensionless resolved totals for the statistical stream (T = A + r)
+                    det_dirty = True
         except contrib.CellStop as e:
             term = {'DEADLINE': 'DEADLINE', 'MEMORY': 'MEMORY', 'RANGE': 'NUMERICAL_RANGE_OR_PRECISION', 'REPRESENTATION': 'MEMORY'}.get(e.kind, 'INVALID_PLAN_OR_CERTIFICATE'); st['trial_failure'] = dict(trial=trials, kind=e.kind, reason=e.reason[:200]); trials -= 1; break
         except rig.RangeStop as e:
@@ -582,29 +713,30 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
             if e.outcome == 'NUMERICAL_RANGE_OR_PRECISION': term = 'NUMERICAL_RANGE_OR_PRECISION'; st['trial_failure'] = dict(trial=trials, kind='RANGE', reason=e.reason[:200]); trials -= 1; break
             raise
     # ---- terminal
-    st['sufficient_statistics'] = S.record(); st['resolved_cells'] = tree.resolved_count; st['U_t_over_U_root'] = float(tree.U_t / U) if U else None
+    st['sufficient_statistics'] = S.record(); st['resolved_cells'] = tree.resolved_count; st['frontier'] = tree.frontier_record(); st['resolved_totals'] = T.record(); st['U_t_over_U_root'] = float(tree.U_t / U) if U else None
     st['Z_estimate_over_U'] = (float(S.b_lo) / S.t) if S.t else None; st['Z_estimate_note'] = 'sample average of the lower accumulator; an ESTIMATE, not a certified ratio; U_root is gauge dependent'
     st['trials_per_second'] = (S.t / max(1e-9, time.monotonic() - t0))
     st.update(trials_completed=S.t, positive_trials=S.positive_trials, zero_trials=S.zero_trials, kernel_s=kernel_s, counters=counters_tot, terminal=term, wall_s=time.monotonic() - t0, K_total=K_total)
-    if term == 'COVER_COMPLETE':
-        # U_t = 0: Z = A, N_j = a_j (theory §3 "If a certificate establishes U_t = 0"); deterministic, delta = 0
+    # deterministic bounds are tried at EVERY terminal (also DEADLINE / failed trial): acquired exact information is never discarded
+    if publish is None and (det_dirty or term in ('DEADLINE', 'MAX_TRIALS', 'MEMORY', 'NUMERICAL_RANGE_OR_PRECISION', 'INVALID_PLAN_OR_CERTIFICATE', 'COVER_COMPLETE')) and tree.resolved_count > 0:
+        dr = certify_det()
+        if dr is not None: publish = ('DETERMINISTIC', dr); st['terminal_deterministic_bounds'] = True
+    if term == 'COVER_COMPLETE' and publish is None:
         check('complete cover terminal')
-        rows = S.resolved_rows()
-        if rows is None:
-            if S.A_exact_hi == 0: return dict(status='PROVED_ZERO_EVIDENCE', guarantee='DETERMINISTIC', stats=dict(st, proof='complete exact cover with total mass 0'))
-            return dict(status='NUMERICAL_RANGE_OR_PRECISION', guarantee='NONE', stats=dict(st, note='complete exact cover but the resolved lower mass enclosure is 0 in the dimensionless scale (U_root too large for binary64)'))
-        ok, ivs, pts = _deterministic_rows_publish(rows, n, eps, policy['decimal_margin'])
-        if not ok: return dict(status='NUMERICAL_RANGE_OR_PRECISION', guarantee='NONE', stats=dict(st, note='complete exact cover but the enclosure of the resolved totals is too wide for publication at eps'))
-        st['route'] = 'exact_cover_complete'; st['last_check'] = last_check
-        return dict(status='PUBLISHED', guarantee='DETERMINISTIC', intervals=ivs, points=pts, certifier_per_row=['exact_cover'] * n, widths=dict(exact_cover={v: float(max(hi - lo for lo, hi in rows[v])) for v in range(n)}), stats=st)
-    if publish is None and S.t > 0 and term != 'CERTIFIED':
-        tc = time.monotonic(); ok, rows, pts, chosen, widths, bU, vsets = certify(); st['certify_s'] = st.get('certify_s', 0.0) + time.monotonic() - tc; last_check = dict(trial=S.t, widths=widths, chosen=chosen)
-        if ok: publish = (rows, pts, chosen, widths, vsets)
+        if T.A_exact_hi == 0: return dict(status='PROVED_ZERO_EVIDENCE', guarantee='DETERMINISTIC', stats=dict(st, proof='complete exact cover (frontier closed) with total mass 0'))
+        return dict(status='NUMERICAL_RANGE_OR_PRECISION', guarantee='NONE', stats=dict(st, note='complete exact cover but the enclosure of the resolved totals is too wide for publication at eps (cell enclosures / block-floating rounding)'))
+    if publish is None and S.t > 0 and term not in ('CERTIFIED',):
+        tc = time.monotonic(); ok, rows, pts, chosen, widths, bU, vsets = certify_pac(); st['certify_s'] = st.get('certify_s', 0.0) + time.monotonic() - tc; last_check = dict(trial=S.t, widths=widths, chosen=chosen)
+        if ok: publish = ('PAC', (rows, pts, chosen, widths, vsets))
     st['last_check'] = last_check
     if publish is None:
         if S.positive_trials == 0 and S.t > 0: st['note'] = 'no positive sample observed; NOT a zero-evidence claim'
         if S.t > 0 and S.b_hi > 0 and S.b_lo == 0: st['stream_scale_underflow'] = 'the lower denominator accumulator is 0 while the upper is positive: the dimensionless statistics underflow binary64 at this U_root (numerical width, not statistical width)'
-        return dict(status=term if term not in ('CERTIFIED', 'MAX_TRIALS', None) else 'TOO_WIDE', guarantee='NONE', stats=st)
-    check('PAC publication terminal')
-    rows, pts, chosen, widths, vsets = publish
+        return dict(status=term if term not in ('CERTIFIED', 'MAX_TRIALS', 'DETERMINISTIC_BOUNDS', None) else 'TOO_WIDE', guarantee='NONE', stats=st)
+    check('publication terminal')
+    kind, payload = publish
+    if kind == 'DETERMINISTIC':
+        ivs, pts, rows = payload; st['route'] = 'exact_cover_complete' if tree.U_t == 0 else 'deterministic_partial_cover_bounds'; st['deterministic_widths'] = {v: float(max(hi - lo for lo, hi in rows[v])) for v in range(n)}
+        return dict(status='PUBLISHED', guarantee='DETERMINISTIC', intervals=ivs, points=pts, certifier_per_row=[st['route']] * n, widths=dict(deterministic=st['deterministic_widths']), stats=st)
+    rows, pts, chosen, widths, vsets = payload
     return dict(status='PUBLISHED', guarantee='PAC', intervals=[rows[v] for v in range(n)], points=[pts[v] for v in range(n)], certifier_per_row=[chosen[v] for v in range(n)], widths=widths, variance_sets_nonconvex=[[len(vsets[v][s]) > 1 for s in range(cards[v])] if v in vsets else [False] * cards[v] for v in range(n)], stats=st)

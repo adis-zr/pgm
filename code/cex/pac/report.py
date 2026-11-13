@@ -14,8 +14,9 @@ import sys, os, json, glob, collections, statistics, hashlib, time, math
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); sys.set_int_max_str_digits(0)
 import core
-EPS = F(1, 200); REPORT_VERSION = 'pac-report-v2 (2026-11-13 repair)'
+EPS = F(1, 200); REPORT_VERSION = 'pac-report-v3 (2026-11-13 completion: native-query scoring for adapted cohorts, cohort-aware tables)'
 CANDIDATE_ARMS = ('B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL')
+import sys as _sys
 EXACT_CAPACITY_ARMS = ('LIBDAI_EXACT', 'MERLIN_CTE')
 
 
@@ -57,7 +58,7 @@ def capacity_of(arm, r):
 
 
 def main(RD):
-    RD = os.path.abspath(RD); man, rec = load(RD); cells = man['cells']; out = {'report_version': REPORT_VERSION}; L = []; P = L.append
+    RD = os.path.abspath(RD); man, rec = load(RD); cells = man['cells']; out = {'report_version': REPORT_VERSION, 'manifest_sha256': hashlib.sha256(open(os.path.join(RD, 'CAMPAIGN_MANIFEST.json'), 'rb').read()).hexdigest()}; L = []; P = L.append
     inv = man['inventory']; core_rows = [r for r in inv if r['cohort'] == 'external_core']
     planned = len(cells); received = len(rec); unrun = [c for c in cells if c['cell_id'] not in rec]
     P('# PAC EMPIRICAL PASS — RESULTS (%s UTC; host %s; receipts read from %s; %s)' % (time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), man['host']['platform'], 'cells/*/receipt.json', REPORT_VERSION)); P('')
@@ -122,7 +123,7 @@ def main(RD):
     audit = []; cat = collections.Counter()
     for c in cells:
         r = rec.get(c['cell_id'])
-        if not r or r.get('status') != 'COMPLETED' or c['cohort'] not in ('external_core', 'selector_transfer_additions'): continue
+        if not r or r.get('status') != 'COMPLETED' or c['cohort'] not in ('external_core', 'selector_transfer_additions', 'qgrid', 'CBI_UAI', 'SF_small'): continue
         model, binding = model_of(c)
         if model is None: audit.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], reference='NONE', accurate='UNRESOLVED_INPUT_UNAVAILABLE')); cat[(c['arm'], 'UNRESOLVED_INPUT_UNAVAILABLE')] += 1; continue
         cards = model['cards']; frozen_binding = dict(model_sha256=c.get('model_sha256'), evidence_sha256=c.get('evidence_sha256'))
@@ -158,11 +159,38 @@ def main(RD):
         else:
             audit.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], reference='NONE (no bound R0 and no B0 enclosure at this budget)', accurate='UNRESOLVED_NO_REFERENCE')); cat[(c['arm'], 'UNRESOLVED_NO_REFERENCE')] += 1
     out['reference_audit'] = audit; json.dump(dict(report_version=REPORT_VERSION, refs={k: v['kind'] for k, v in refs.items()}, references_rejected=ref_rejected, audit=audit, counts={'%s|%s' % k: v for k, v in cat.items()}, trust_note='a reference agreement is a diagnostic; the PAC guarantee is a property of the lawful procedure (gate), not of any single outcome'), open(os.path.join(RD, 'REFERENCE_AUDIT.json'), 'w'), indent=1, default=str)
+    # ---- NATIVE-QUERY scoring of the adapted cohorts (CBI_UAI, SF_small): every COMPLETED candidate publication is mapped through the bound blocks metadata to the
+    # native per-coordinate task (legacy_cbi_uai.native_score); state-marginal completion and native completion are reported SEPARATELY; deterministic vs PAC kept distinct
+    native_rows = []
+    try:
+        sys.path.insert(0, HERE); import legacy_cbi_uai as LC
+        for c in cells:
+            r = rec.get(c['cell_id'])
+            if not r or c['cohort'] not in ('CBI_UAI', 'SF_small') or c['arm'] not in CANDIDATE_ARMS or r.get('status') != 'COMPLETED': continue
+            w = worker(RD, r); bp = c.get('blocks_path')
+            if not bp or not os.path.exists(bp): native_rows.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], native_completion='ADAPTER_REFUSED', reason='blocks metadata missing')); continue
+            meta = json.load(open(bp)); rows_ = [[(F(a), F(b)) for a, b in row] for row in w['intervals']]
+            inst = None
+            src = next((x for x in man.get('inventory', []) if x.get('case_id') == c['case_id']), {})
+            if c['cohort'] == 'CBI_UAI' and src.get('source_instance'):
+                ip = os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CBI_LIBRARY_2026-11-06', 'inputs', src['source_instance'])
+                if os.path.exists(ip) and hashlib.sha256(open(ip, 'rb').read()).hexdigest() == src.get('source_sha256'): inst = json.load(open(ip))
+            sc = LC.native_score(meta, rows_, meta_sha256=c.get('blocks_sha256'), native_width=F(1, 100), instance_json=inst)
+            native_rows.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee=r.get('guarantee_type'), native_completion=sc['native_completion'], max_coordinate_width=sc.get('max_coordinate_width'), native_reference=sc.get('native_reference'), reason=sc.get('reason')))
+    except Exception as ex: native_rows.append(dict(error='native scoring failed: %s' % str(ex)[:120]))
+    out['native_query_scores'] = native_rows
+    if native_rows:
+        P('## Table 2b — Adapted cohorts scored on the NATIVE query (per-coordinate probabilities, width 1/100): state-marginal completion vs native completion'); P(''); P('| cohort/case | arm | budget | rep | guarantee | native completion | max coordinate width | native reference |'); P('|---|---|---:|---:|---|---|---:|---|')
+        for x in native_rows:
+            if 'error' in x: P('| %s | | | | | | | |' % x['error']); continue
+            P('| %s | %s | %d | %d | %s | %s | %s | %s |' % (x['case'], x['arm'], x['budget'], x['rep'], x.get('guarantee'), x['native_completion'], ('%.3g' % x['max_coordinate_width']) if x.get('max_coordinate_width') is not None else '—', json.dumps(x.get('native_reference') or x.get('reason') or '')[:80]))
+        P('')
     # ---- table 3
     P('## Table 3 — Completion by cohort, budget and arm (run level; per-case k/3 for stochastic arms)'); P(''); P('| cohort | budget | arm | planned | received | PUBLISHED deterministic | PUBLISHED PAC | PUBLISHED unguaranteed (heuristic) | PROVED_ZERO_EVIDENCE | zero-or-underflow (unresolved) | DEADLINE | MEMORY | TOO_WIDE | numerical | invalid/fault | NOT_RUN | per-case 0/3,1/3,2/3,3/3 |'); P('|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
     arms_order = ['B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL', 'LIBDAI_EXACT', 'MERLIN_CTE', 'WMB', 'IJGP', 'LBP', 'PGMAX_SUMPRODUCT_BP', 'CBI_NATIVE', 'H4_NATIVE', 'QGRID_NATIVE', 'SF_NATIVE']
     completion = {}
-    for coh in sorted({x['cohort'] for x in rows}, key=lambda k: ('external_core', 'selector_transfer_additions').index(k) if k in ('external_core', 'selector_transfer_additions') else 9):
+    COH_ORDER = ('external_core', 'selector_transfer_additions', 'qgrid', 'CBI_UAI', 'SF_small', 'CBI', 'H4_native', 'SF_native')
+    for coh in sorted({x['cohort'] for x in rows}, key=lambda k: COH_ORDER.index(k) if k in COH_ORDER else 99):
         for budget in man['budgets_s']:
             for arm in arms_order + sorted({x['arm'] for x in rows} - set(arms_order)):
                 rs = [x for x in rows if x['cohort'] == coh and x['budget'] == budget and x['arm'] == arm]
@@ -198,7 +226,7 @@ def main(RD):
     P('## Table 5 — Comparators (unguaranteed points; execution capacity tagged per run) and reference audit (binding- and shape-validated references only)'); P(''); P('| arm | budget | published | DEADLINE | MEMORY | invalid/fault | exact-capacity runs | CONFIRMED_ACCURATE | CONFIRMED_INACCURATE | UNRESOLVED (interval) | UNRESOLVED (no reference) | MALFORMED |'); P('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
     for arm in ('LIBDAI_EXACT', 'MERLIN_CTE', 'WMB', 'IJGP', 'LBP', 'PGMAX_SUMPRODUCT_BP', 'B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL'):
         for budget in man['budgets_s']:
-            rs = [x for x in rows if x['arm'] == arm and x['budget'] == budget and x['cohort'] in ('external_core', 'selector_transfer_additions')]
+            rs = [x for x in rows if x['arm'] == arm and x['budget'] == budget and x['cohort'] in ('external_core', 'selector_transfer_additions', 'qgrid', 'CBI_UAI', 'SF_small')]
             if not rs: continue
             exact_cap = sum(1 for x in rs if x['outcome'] == 'PUBLISHED' and str(x.get('execution_capacity', '')).startswith('exact'))
             au = [a for a in audit if a['arm'] == arm and a['budget'] == budget]

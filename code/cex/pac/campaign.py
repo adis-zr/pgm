@@ -2,7 +2,7 @@
 artifact hashes, prospective ceiling) BEFORE any scored run; `run` executes the frozen cells sequentially, each in a fresh attempt directory with a nonce, under the
 project supervisor (gbidi.supervise, unchanged) with the 3 GiB SAMPLED process-tree RSS policy (interval 0.05 s) and timeout = budget + 1 s cleanup grace; the receipt of
 a cell is written once; a crashed campaign resumes by skipping cells whose receipt exists (the manifest is immutable). Every attempt (incl. failed launches) is logged.
-    python cex/pac/campaign.py manifest <RD> <inputs_dir> [--dev]
+    python cex/pac/campaign.py manifest <RD> <inputs_dir> [--dev] [--qgrid QGRID_INVENTORY.json] [--cbi-uai CBI_UAI_INVENTORY.json] [--sf-inputs DIR] [--h4-packet DIR] [--include cohort,cohort,...]
     python cex/pac/campaign.py run <RD> [--only COHORT] [--max-cells N]"""
 import sys, os, json, time, hashlib, secrets, subprocess, math, glob, platform
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); PY = sys.executable
@@ -54,7 +54,7 @@ def legacy_cohorts():
         dict(cohort='other_registered_timed_tasks', suite='ND positive perturbations (branch nd-certificate-2026-11-05), n32 H4/type-count, long alternating chains, Walsh diagnostics, earlier CBI chain/spoke/cycle/ladder fixtures', tasks='correctness controls and certificate diagnostics with their own contracts (per 05_INVENTORY_AUDIT: "correctness fixtures rather than primary timed tasks"); individually: ND = Promedus_12 positive-perturbation family (two-channel certificate; stopped), chains / Walsh = diagnostics of the sf / h4 theory, earlier CBI fixtures = subsumed by the 10 retained correctness instances', primary_arms='not applicable (fixtures; signed or irrational models where timed)', native_specialists='historical; NOT RERUN (no primary timed contract to reconcile)', status='INVENTORIED_CORRECTNESS_FIXTURES')]
 
 
-def manifest(RD, inputs, dev=False):
+def manifest(RD, inputs, dev=False, qgrid_inventory=None, cbi_uai_inventory=None, sf_inputs=None, h4_packet=None, include=('external_core', 'selector_transfer_additions', 'CBI', 'qgrid', 'CBI_UAI', 'SF_small', 'H4_native', 'SF_native')):
     RD = os.path.abspath(RD); inputs = os.path.abspath(inputs); os.makedirs(RD, exist_ok=True); SI = os.path.join(CODE, '..', 'docs', 'handoff-received-2026-11-12-pac-empirical', 'PAC_EMPIRICAL_HANDOFF_2026-11-12', '06_SEED_INVENTORY.json')
     inv = resolve_inventory(inputs, SI); legacy = legacy_cohorts()
     # CBI cohort: the 23 pass-2 inputs retained in runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/inputs, HASH-VERIFIED against that pass's MANIFEST.json (21 of them are
@@ -74,22 +74,64 @@ def manifest(RD, inputs, dev=False):
         cid = hashlib.sha256('|'.join([row['case_id'], arm, str(rep), str(budget), kind]).encode()).hexdigest()[:16]
         seed_arm = 'ABLATION_PAIR' if kind == 'ablation' else arm        # the matched pair A0/A1 shares ONE seed (common cutset-tree draw stream; the point completion uses a separate domain inside the engine)
         seed = hashlib.sha256('|'.join([root_seed, row.get('model_sha256') or '', row.get('evidence_sha256') or '', row.get('task', ''), seed_arm, str(budget), str(rep), 'ablation' if kind == 'ablation' else 'primary']).encode()).hexdigest() if arm not in ('B0_FROZEN_V14',) and kind != 'comparator' else None
-        return dict(cell_id=cid, cohort=row['cohort'], case_id=row['case_id'], arm=arm, replicate=rep, budget_s=budget, kind=kind, model_path=row.get('model_path'), evidence_path=row.get('evidence_path'), model_sha256=row.get('model_sha256'), evidence_sha256=row.get('evidence_sha256'), seed=seed, seed_namespace=('paired_ablation' if kind == 'ablation' else ('scored_primary' if seed else None)))
+        return dict(cell_id=cid, cohort=row['cohort'], case_id=row['case_id'], arm=arm, replicate=rep, budget_s=budget, kind=kind, model_path=row.get('model_path'), evidence_path=row.get('evidence_path'), model_sha256=row.get('model_sha256'), evidence_sha256=row.get('evidence_sha256'), seed=seed, seed_namespace=('paired_ablation' if kind == 'ablation' else ('scored_primary' if seed else None)), task=row.get('task'), blocks_path=row.get('blocks_path'), blocks_sha256=row.get('blocks_sha256'), native_arm=row.get('native_arm'), packet=row.get('packet'), sf_r=row.get('sf_r'), sf_eps=row.get('sf_eps'), panel=row.get('panel'))
+    # ---- generated / adapted cohorts (candidate v3, review R07): explicit records with task, arms applicability, guarantee contract, native comparator
+    gen_rows = []
+    if qgrid_inventory and 'qgrid' in include:
+        qi = json.load(open(qgrid_inventory))
+        for r in qi['instances']: gen_rows.append(dict(cohort='qgrid', case_id=r['case_id'], model_path=r['model_path'], evidence_path=r['evidence_path'], model_sha256=r['model_sha256'], evidence_sha256=r['evidence_sha256'], status='GENERATED_HASH_RECORDED', task='all original singleton marginals (covers the registered corner / centre singleton queries); joint / parity queries UNSUPPORTED_TASK_ADAPTER', epsilon='1/200', native_specialists='UNAVAILABLE_BACKEND (prose-only historical methods)', generator='qgrid-v1 (legacy_qgrid.py)', export_factor_scalars=r.get('export_factor_scalars')))
+    if cbi_uai_inventory and 'CBI_UAI' in include:
+        ci = json.load(open(cbi_uai_inventory))
+        for r in ci['instances']:
+            if r['status'] == 'RENDERED': gen_rows.append(dict(cohort='CBI_UAI', case_id=r['case_id'], model_path=r['model_path'], evidence_path=r['evidence_path'], model_sha256=r['model_sha256'], evidence_sha256=r['evidence_sha256'], blocks_path=r['blocks_path'], blocks_sha256=r['blocks_sha256'], status='RENDERED_HASH_RECORDED', task='block-state singleton marginals -> NATIVE per-coordinate probabilities (legacy_cbi_uai.native_score; native width 1/100 scored separately; deterministic delta 0 vs PAC delta > 0 kept distinct)', epsilon='1/200', native_specialists='cbi CLI solve (native cohort)', source_instance=r['source'], source_sha256=r['source_sha256']))
+            else: gen_rows.append(dict(cohort='CBI_UAI', case_id=r['case_id'], status=r['status'], model_sha256=None, task='UNSUPPORTED_TASK_ADAPTER (explicit tables exceed the adapter cap)', source_instance=r['source'], source_sha256=r['source_sha256']))
+    if sf_inputs and 'SF_small' in include:
+        sfp = os.path.join(sf_inputs, 'small_control.json')
+        if os.path.exists(sfp):
+            import legacy_sf_uai as LS
+            for rr in LS.render_panel(sfp, os.path.join(RD, 'sf_uai')): gen_rows.append(dict(rr, cohort='SF_small', status='RENDERED_HASH_RECORDED', epsilon='1/200'))
+        for pn in ('primary_A', 'primary_B', 'ordinary_control'): gen_rows.append(dict(cohort='SF_small', case_id='sf_uai_%s' % pn, status='UNSUPPORTED_TASK_ADAPTER (n=24, m=4096: 16.8 M-entry pairwise table exceeds the adapter cap; implicit kernel natively)', model_sha256=None))
+    inv_all = inv + gen_rows
     core_rows = [r for r in inv if r['status'] == 'AVAILABLE_HASH_VERIFIED']; sel_rows = [r for r in inv if r['cohort'] == 'selector_transfer_additions' and r.get('model_sha256')]
-    for row in core_rows + sel_rows:
+    cand_rows = (core_rows if 'external_core' in include else []) + (sel_rows if 'selector_transfer_additions' in include else []) + [r for r in gen_rows if r.get('model_sha256')]
+    for row in cand_rows:
         for budget in BUDGETS:
             for arm, reps in PRIMARY:
                 for rep in range(reps): cells.append(mk(row, arm, rep, budget, 'primary'))
             for arm, reps in COMPARATORS:
                 for rep in range(reps): cells.append(mk(row, arm, rep, budget, 'comparator'))
         for arm, reps in ABLATION: cells.append(mk(row, arm, 0, 120.0, 'ablation'))
-    for row in cbi_rows:
-        if row['status'].startswith('RETAINED'):
-            for budget in BUDGETS: cells.append(mk(row, 'CBI_NATIVE', 0, budget, 'legacy_native'))
+    if 'CBI' in include:
+        for row in cbi_rows:
+            if row['status'].startswith('RETAINED'):
+                for budget in BUDGETS: cells.append(mk(row, 'CBI_NATIVE', 0, budget, 'legacy_native'))
+    # ---- separately contracted NATIVE cohorts (own task contracts; never pooled with the UAI numerator)
+    native_rows = []
+    if h4_packet and 'H4_native' in include:
+        hp = os.path.abspath(h4_packet); fz = os.path.join(hp, 'inputs', 'FROZEN_NODES.json')
+        if os.path.exists(fz):
+            for arm_ in ('C', 'PI', 'PP'):
+                row = dict(cohort='H4_native', case_id='H4-n128-s1_%s' % arm_, model_path=fz, model_sha256=sha(fz), evidence_sha256=hashlib.sha256(b'0').hexdigest(), status='PACKET_HASH_RECORDED', task='H4 six frozen nodes, both source signs: marker masses / node weights / selected-node responses (h4a/arm.py %s); own contract (conditional width 1/100 historical)' % arm_, native_arm=arm_, packet=hp)
+                native_rows.append(row)
+                for budget in BUDGETS: cells.append(mk(row, 'H4_NATIVE_' + arm_, 0, budget, 'legacy_native'))
+    if sf_inputs and 'SF_native' in include:
+        pj = os.path.join(sf_inputs, 'PANELS.json')
+        if os.path.exists(pj):
+            PJ = json.load(open(pj)); import sys as _s
+            _s.path.insert(0, CODE)
+            from sf import core as SFC
+            for pn, info in sorted(PJ['panels'].items()):
+                pp = os.path.join(sf_inputs, pn + '.json')
+                for r_ in SFC.R_PRIORITY:
+                    for eps_ in SFC.WIDTHS:
+                        row = dict(cohort='SF_native', case_id='sf_%s_r%s_eps%s' % (pn, str(r_).replace('/', '-'), str(eps_).replace('/', '-')), model_path=pp, model_sha256=sha(pp), evidence_sha256=hashlib.sha256(b'0').hexdigest(), status='PANEL_HASH_RECORDED', task='coupled two-block per-coordinate probabilities at coupling r=%s, width %s (sf/invoke.py select; own contract)' % (r_, eps_), sf_r=str(r_), sf_eps=str(eps_), panel=pn)
+                        native_rows.append(row)
+                        for budget in BUDGETS: cells.append(mk(row, 'SF_NATIVE_SELECT', 0, budget, 'legacy_native'))
+    inv_all = inv_all + native_rows
     # ORDERING RULE: by (cohort, case, budget), within a case/budget: B0, then P1 r0, H1 r0, P1 r1, H1 r1, P1 r2, H1 r2, then comparators in registry order, then (after both budgets) A0, A1; CBI cohort last
     order_arm = {'B0_FROZEN_V14': 0, 'P1_PAC_CONDITIONAL': 1, 'H1_HYBRID': 2}; comp_order = {a: 10 + i for i, (a, _) in enumerate(COMPARATORS)}
     def key(c):
-        coh = {'external_core': 0, 'selector_transfer_additions': 1, 'CBI': 2}[c['cohort']]
+        coh = {'external_core': 0, 'selector_transfer_additions': 1, 'qgrid': 2, 'CBI_UAI': 3, 'SF_small': 4, 'CBI': 5, 'H4_native': 6, 'SF_native': 7}[c['cohort']]
         if c['kind'] == 'ablation': return (coh, c['case_id'], 999.0, 50 + (0 if c['arm'] == 'A0_POINT' else 1), 0)
         a = c['arm']; o = order_arm.get(a, comp_order.get(a, 90)); rep = c['replicate']
         return (coh, c['case_id'], c['budget_s'], (rep * 2 + o) if a in ('P1_PAC_CONDITIONAL', 'H1_HYBRID') else (0 if a == 'B0_FROZEN_V14' else o), rep)
@@ -101,19 +143,44 @@ def manifest(RD, inputs, dev=False):
     cand_build = json.load(open(os.path.join(CODE, 'cex', 'newarm', 'cex_build.json'))) if os.path.exists(os.path.join(CODE, 'cex', 'newarm', 'cex_build.json')) else None
     artifact = {'%s/%s' % (d, f): sha(os.path.join(CODE, 'cex', d, f)) for d in ('pac', 'newarm', 'b0_frozen_v14') for f in sorted(os.listdir(os.path.join(CODE, 'cex', d))) if f.endswith(('.py', '.cpp'))}      # PER-DIRECTORY keys (the 2026-11-12 flat dict collided; MANIFEST_AMENDMENT_1)
     comparators = dict(LIBDAI_EXACT=dict(binary=sha(os.path.join(CODE, 'bench', 'libdai', 'libdai_mar')), config='JTREE[inference=SUMPROD,updates=HUGIN,maxmem=8589934592] (historical sweep setting; maxmem is the driver internal admission, the worker policy is the 3 GiB sampled RSS)'), LBP=dict(binary=sha(os.path.join(CODE, 'bench', 'libdai', 'libdai_mar')), config='BP[inference=SUMPROD,updates=SEQMAX,logdomain=0,tol=1e-9,maxiter=10000,damping=0.0,maxtime=<remaining>]'), WMB=dict(binary=sha('/Users/adis/Workspace/comparators/merlin/build/merlin'), config='merlin 1.7.0 wmb, i-bound ladder [2,4,6,8,10,12,16,20], 100 iterations; execution capacity tagged exact/approximate per run'), IJGP=dict(binary=sha('/Users/adis/Workspace/comparators/merlin/build/merlin'), config='merlin 1.7.0 ijgp, same ladder'), PGMAX_SUMPRODUCT_BP=dict(interpreter='.venv-pgmax (pgmax 0.6.1, jax 0.4.31 cpu, float32)', config='200 iterations, damping 0.5, temperature 1.0'), MERLIN_CTE=dict(binary=sha('/Users/adis/Workspace/comparators/merlin/build/merlin'), config='merlin 1.7.0 cte (exact clique-tree elimination, binary64 point)'), **{k: dict(status=v) for k, v in UNAVAILABLE.items()})
-    man = dict(schema='pac_empirical_campaign_manifest_v2', frozen_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), dev=dev, host=dict(platform=platform.platform(), machine=platform.machine(), python=sys.version, cpu_count=os.cpu_count()), inputs_dir=os.path.abspath(inputs), inventory=inv, legacy_cohorts=legacy, cbi_instances=cbi_rows, arms=dict(primary=PRIMARY, comparators=COMPARATORS, ablation=ABLATION, unavailable=UNAVAILABLE), budgets_s=BUDGETS, task=dict(epsilon='1/200', delta='1/1000000', delta_allocation='range 1/2, variance 1/2; per coordinate family_delta/K over all stochastic coordinates of the job', deterministic_delta='0'), resource_contract=dict(memory='3 GiB sampled process-tree RSS kill (interval 0.05 s), identical for every arm; RLIMIT_AS unavailable on macOS', clock='launch-relative absolute deadline on the host monotonic clock (mach_absolute_time); host sleep prohibited (caffeinate -s)', cleanup_grace_s=1.0, supervisor_internal_grace_s=4.0, actual_kill_threshold_s='budget + 5 (timeout budget+1 plus the supervisor GRACE_S = 4 before SIGKILL; review F11 / H4); walls are charged in full; late outputs never count', late_output_counts_as_success=False, threads='single worker at a time; OMP/BLAS threads 1; JAX cpu single-thread flags; Merlin single-threaded'), seeds=dict(root_seed=root_seed, generation='sha256(root | model_sha | evidence_sha | task | arm | budget | replicate | namespace); development namespace = the literal string devseed (never scored)', prng='python random.Random (MT19937) seeded from the 128-bit integer of the seed hash; unbiased integer draws; the theorem assumes ideal independent unbiased bits (separate assumption)'), ordering_rule='sorted by (cohort, case, budget); within a case/budget: B0, P1 r0, H1 r0, P1 r1, H1 r1, P1 r2, H1 r2, comparators in registry order; after both budgets A0 then A1; CBI cohort last; strictly sequential', cells=cells, counts=dict(cells=len(cells), by_arm={a: sum(1 for c in cells if c['arm'] == a) for a in sorted({c['arm'] for c in cells})}, by_cohort={k: sum(1 for c in cells if c['cohort'] == k) for k in sorted({c['cohort'] for c in cells})}), ceiling=ceiling, candidate_artifact_hashes=artifact, kernel_builds=dict(b0_frozen_v14=b0_build, candidate=cand_build, note='binaries rebuilt on this host with the recorded flags; the historical binary hash is not portable'), comparator_identities=comparators)
+    man = dict(schema='pac_empirical_campaign_manifest_v3', frozen_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), dev=dev, host=dict(platform=platform.platform(), machine=platform.machine(), python=sys.version, cpu_count=os.cpu_count()), inputs_dir=os.path.abspath(inputs), inventory=inv_all, legacy_cohorts=legacy, cbi_instances=cbi_rows, cohorts_included=list(include), generated_inventories=dict(qgrid=qgrid_inventory, cbi_uai=cbi_uai_inventory, sf_inputs=sf_inputs, h4_packet=h4_packet), arms=dict(primary=PRIMARY, comparators=COMPARATORS, ablation=ABLATION, unavailable=UNAVAILABLE), budgets_s=BUDGETS, task=dict(epsilon='1/200', delta='1/1000000', delta_allocation='range 1/2, variance 1/2; per coordinate family_delta/K over all stochastic coordinates of the job', deterministic_delta='0'), resource_contract=dict(memory='3 GiB sampled process-tree RSS kill (interval 0.05 s), identical for every arm; RLIMIT_AS unavailable on macOS', clock='launch-relative absolute deadline on the host monotonic clock (mach_absolute_time); host sleep prohibited (caffeinate -s)', cleanup_grace_s=1.0, supervisor_internal_grace_s=4.0, actual_kill_threshold_s='budget + 5 (timeout budget+1 plus the supervisor GRACE_S = 4 before SIGKILL; review F11 / H4); walls are charged in full; late outputs never count', late_output_counts_as_success=False, threads='single worker at a time; OMP/BLAS threads 1; JAX cpu single-thread flags; Merlin single-threaded'), seeds=dict(root_seed=root_seed, generation='sha256(root | model_sha | evidence_sha | task | arm | budget | replicate | namespace); development namespace = the literal string devseed (never scored)', prng='python random.Random (MT19937) seeded from the 128-bit integer of the seed hash; unbiased integer draws; the theorem assumes ideal independent unbiased bits (separate assumption)'), ordering_rule='sorted by (cohort, case, budget); within a case/budget: B0, P1 r0, H1 r0, P1 r1, H1 r1, P1 r2, H1 r2, comparators in registry order; after both budgets A0 then A1; CBI cohort last; strictly sequential', cells=cells, counts=dict(cells=len(cells), by_arm={a: sum(1 for c in cells if c['arm'] == a) for a in sorted({c['arm'] for c in cells})}, by_cohort={k: sum(1 for c in cells if c['cohort'] == k) for k in sorted({c['cohort'] for c in cells})}), ceiling=ceiling, candidate_artifact_hashes=artifact, kernel_builds=dict(b0_frozen_v14=b0_build, candidate=cand_build, note='binaries rebuilt on this host with the recorded flags; the historical binary hash is not portable'), comparator_identities=comparators)
     man['manifest_sha256_without_self'] = hashlib.sha256(json.dumps(man, sort_keys=True, default=str).encode()).hexdigest()
-    p = os.path.join(RD, 'CAMPAIGN_MANIFEST%s.json' % ('_dev' if dev else '')); json.dump(man, open(p, 'w'), indent=1, default=str)
+    p = os.path.join(RD, 'CAMPAIGN_MANIFEST%s.json' % ('_dev' if dev else ''))
+    if os.path.exists(p): raise SystemExit('refuse: %s exists (a frozen manifest is immutable; use a new run directory)' % p)
+    json.dump(man, open(p, 'w'), indent=1, default=str)
     print(json.dumps(dict(cells=len(cells), nominal_s=nominal, ceiling_s=ceiling['total_ceiling_seconds'], by_arm=man['counts']['by_arm'], by_cohort=man['counts']['by_cohort'], root_seed=root_seed, manifest=p)))
+
+
+def ensure_h4_native_build(L):
+    """build the H4 native kernels (h4point, h4pcheck, h4rect) with the RECORDED flags of h4a/run.py into code/build when absent; charged to the ledger (scope native_build)"""
+    INC = ["-I/opt/homebrew/opt/gmp/include", "-I/opt/homebrew/opt/mpfr/include"]; LIB = ["-L/opt/homebrew/opt/gmp/lib", "-L/opt/homebrew/opt/mpfr/lib", "-lmpfr", "-lgmp"]; FLAGS = ["-O2", "-std=c++17", "-fno-fast-math", "-ffp-contract=off"]
+    os.makedirs(os.path.join(CODE, 'build'), exist_ok=True); rec = {}
+    for k in ('h4point', 'h4pcheck', 'h4rect'):
+        out = os.path.join(CODE, 'build', k)
+        if os.path.exists(out): rec[k] = dict(reused=True, binary_sha256=sha(out)); continue
+        cmd = ['c++', *FLAGS, *(INC if k == 'h4rect' else []), os.path.join(CODE, 'native', k + '.cpp'), '-o', out, *(LIB if k == 'h4rect' else [])]
+        p = subprocess.run([PY, '-m', 'gbidi.supervise', '--ledger', L, '--scope', 'native_build', '--job', 'build:' + k, '--timeout', '600', '--mem-gib', '4', '--', *cmd], capture_output=True, text=True, cwd=CODE)
+        rec[k] = dict(built=True, rc=p.returncode, cmd=' '.join(cmd), binary_sha256=sha(out) if os.path.exists(out) else None, stderr=p.stderr[-300:])
+    return rec
 
 
 def run(RD, only=None, max_cells=None, manifest_name='CAMPAIGN_MANIFEST.json'):
     RD = os.path.abspath(RD)                                              # the comparator adapters run their children with cwd = the cell directory: every path must be absolute
     man = json.load(open(os.path.join(RD, manifest_name))); L = os.path.join(RD, 'PAC_LEDGER.jsonl'); cells_dir = os.path.join(RD, 'cells'); os.makedirs(cells_dir, exist_ok=True); done = 0
     # CAMPAIGN START record (the manifest's identity bound to the ledger before the first scored cell; an existing record is kept and a resume is recorded as such)
-    mh = sha(os.path.join(RD, manifest_name)); st_row = dict(kind='CAMPAIGN_START', manifest=manifest_name, manifest_sha256=mh, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), only=only, max_cells=max_cells, resume=os.path.exists(os.path.join(RD, 'CAMPAIGN_START.json')), candidate_artifact_hashes=man.get('candidate_artifact_hashes'))
+    mh = sha(os.path.join(RD, manifest_name)); sp = os.path.join(RD, 'CAMPAIGN_START.json')
+    if os.path.exists(sp):
+        # RESUME PREFLIGHT (review R06): the manifest on disk must be the one bound at START; the bound amendment list must be unchanged; else refuse before any cell
+        st0 = json.load(open(sp))
+        if st0.get('manifest_sha256') != mh or st0.get('manifest') != manifest_name: raise SystemExit('RESUME REFUSED: manifest on disk (%s) differs from the CAMPAIGN_START binding (%s)' % (mh[:16], str(st0.get('manifest_sha256'))[:16]))
+        present = sorted(os.path.basename(x) for x in glob.glob(os.path.join(RD, 'MANIFEST_AMENDMENT_*artifact_hashes.json')))
+        if present != sorted(st0.get('bound_amendments') or []): raise SystemExit('RESUME REFUSED: artifact amendments on disk %s differ from those bound at START %s' % (present, st0.get('bound_amendments')))
+        st_row = dict(kind='CAMPAIGN_START', manifest=manifest_name, manifest_sha256=mh, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), only=only, max_cells=max_cells, resume=True, bound_amendments=st0.get('bound_amendments') or [])
+    else:
+        st_row = dict(kind='CAMPAIGN_START', manifest=manifest_name, manifest_sha256=mh, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), only=only, max_cells=max_cells, resume=False, candidate_artifact_hashes=man.get('candidate_artifact_hashes'), bound_amendments=[], note='no artifact amendment may be introduced after this record; the gate refuses unbound amendments')
+        json.dump(st_row, open(sp, 'w'), indent=1)
     open(L, 'a').write(json.dumps(st_row) + '\n')
-    if not os.path.exists(os.path.join(RD, 'CAMPAIGN_START.json')): json.dump(st_row, open(os.path.join(RD, 'CAMPAIGN_START.json'), 'w'), indent=1)
+    if any(c['arm'].startswith('H4_NATIVE_') for c in man['cells']): json.dump(ensure_h4_native_build(L), open(os.path.join(RD, 'H4_NATIVE_BUILD.json'), 'w'), indent=1)
     for c in man['cells']:
         if only and c['cohort'] != only: continue
         if max_cells is not None and done >= max_cells: break
@@ -124,6 +191,8 @@ def run(RD, only=None, max_cells=None, manifest_name='CAMPAIGN_MANIFEST.json'):
         if c['arm'] == 'B0_FROZEN_V14': cmd = [PY, os.path.join(CODE, 'cex', 'b0_frozen_v14', 'evaluate.py'), '--worker', '--input', c['model_path'], '--output', out, '--route', 'auto', '--deadline', str(deadline)]
         elif c['arm'] in ('P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL'): cmd = [PY, os.path.join(HERE, 'worker.py'), '--input', c['model_path'], '--output', out, '--arm', c['arm'], '--deadline', str(deadline), '--seed', c['seed'], '--nonce', nonce, '--budget', str(budget)]
         elif c['arm'] == 'CBI_NATIVE': cmd = [PY, '-m', 'cbi.cli', 'solve', c['model_path'], '--queries', 'all', '--width', '1/100', '--out', out]
+        elif c['arm'].startswith('H4_NATIVE_'): cmd = [PY, os.path.join(CODE, 'h4a', 'arm.py'), '--arm', c['native_arm'], '--rep', str(c['replicate']), '--out-dir', os.path.join(attempt, 'h4'), '--packet', c['packet']]
+        elif c['arm'] == 'SF_NATIVE_SELECT': r_ = __import__('fractions').Fraction(c['sf_r']); e_ = __import__('fractions').Fraction(c['sf_eps']); cmd = [PY, os.path.join(CODE, 'sf', 'invoke.py'), 'select', c['model_path'], str(r_.numerator), str(r_.denominator), str(e_.numerator), str(e_.denominator), out, str(budget)]
         else: cmd = [PY, os.path.join(HERE, 'comparator_cell.py'), c['arm'], c['model_path'], c['evidence_path'], os.path.join(attempt, 'cmp'), str(budget), nonce, str(launch)]
         job = 'cell:%s:%s:%d:r%d' % (c['case_id'], c['arm'], int(budget), c['replicate'])
         sup = [PY, '-m', 'gbidi.supervise', '--ledger', L, '--scope', 'pac_scored_' + c['kind'], '--job', job, '--timeout', str(budget + 1.0), '--mem-gib', '3', '--interval', '0.05', '--stdout', os.path.join(attempt, 'stdout.txt'), '--stderr', os.path.join(attempt, 'stderr.txt'), '--', 'caffeinate', '-s', *cmd]
@@ -132,7 +201,7 @@ def run(RD, only=None, max_cells=None, manifest_name='CAMPAIGN_MANIFEST.json'):
         try: srec = json.loads(p.stderr.strip().splitlines()[-1])
         except Exception: srec = dict(parse_error=p.stderr[-300:])
         w = {}
-        if c['arm'] not in ('CBI_NATIVE',) and not c['arm'].startswith(('LIBDAI', 'LBP', 'WMB', 'IJGP', 'PGMAX', 'MERLIN')):
+        if c['arm'] not in ('CBI_NATIVE', 'SF_NATIVE_SELECT') and not c['arm'].startswith(('LIBDAI', 'LBP', 'WMB', 'IJGP', 'PGMAX', 'MERLIN', 'H4_NATIVE_')):
             w = json.load(open(out)) if os.path.exists(out) else {}
             status = w.get('status', 'NO_OUTPUT'); outcome = w.get('outcome') or ({'COMPLETED': 'PUBLISHED'}.get(status)); gt = w.get('guarantee_type') or ('DETERMINISTIC' if c['arm'] == 'B0_FROZEN_V14' and status == 'COMPLETED' else 'NONE')
             if c['arm'] == 'B0_FROZEN_V14' and status == 'STOPPED': outcome = {'DEADLINE': 'DEADLINE', 'MEMORY': 'MEMORY', 'ZERO_EVIDENCE': 'PROVED_ZERO_EVIDENCE'}.get(str(w.get('reason', ''))[:13], 'DEADLINE' if 'deadline' in str(w.get('reason', '')).lower() else ('MEMORY' if ('SUPPORT_ROWS_CAP' in str(w.get('reason', '')) or 'MEMORY' in str(w.get('reason', ''))) else 'NOT_COMPLETED'))
@@ -140,6 +209,14 @@ def run(RD, only=None, max_cells=None, manifest_name='CAMPAIGN_MANIFEST.json'):
             if srec.get('outcome') == 'MEMORY_KILL' or 'MEMORY' in str(srec.get('outcome')): status = 'MEMORY_KILL'; outcome = 'MEMORY'; gt = 'NONE'
             if srec.get('outcome') == 'TIMEOUT_KILL': status = 'TIMEOUT_KILL'; outcome = 'DEADLINE'; gt = 'NONE'
             if status == 'COMPLETED' and srec.get('rc') not in (0, None): status = 'INVALID_PROCESS_EXIT'; outcome = 'INVALID_PLAN_OR_CERTIFICATE'; gt = 'NONE'
+        elif c['arm'].startswith('H4_NATIVE_'):
+            rp_ = os.path.join(attempt, 'h4', 'bundle.json'); w = json.load(open(rp_)) if os.path.exists(rp_) else {}; ok_ = bool(w.get('all_verified'))      # h4a/arm.py writes bundle.json with all_verified (producer + independent checker)
+            status = 'COMPLETED' if ok_ and wall <= budget else ('LATE_OUTPUT' if ok_ else ('NO_OUTPUT' if not w else 'NOT_VERIFIED')); outcome = 'PUBLISHED' if status == 'COMPLETED' else ('DEADLINE' if status in ('LATE_OUTPUT', 'TIMEOUT_KILL') or srec.get('outcome') == 'TIMEOUT_KILL' else 'NOT_COMPLETED'); gt = 'DETERMINISTIC' if status == 'COMPLETED' else 'NONE'; out = rp_
+            if srec.get('outcome') == 'TIMEOUT_KILL': status = 'TIMEOUT_KILL'; outcome = 'DEADLINE'; gt = 'NONE'
+        elif c['arm'] == 'SF_NATIVE_SELECT':
+            w = json.load(open(out)) if os.path.exists(out) else {}; st = w.get('status', 'NO_OUTPUT'); met = bool((w.get('width_met') or {}).get(c['sf_eps']))      # sf/invoke.py: width_met is keyed by the requested width
+            status = 'COMPLETED' if st == 'OK' and met and wall <= budget else ('LATE_OUTPUT' if st == 'OK' and met else st); outcome = 'PUBLISHED' if status == 'COMPLETED' else ('DEADLINE' if status in ('LATE_OUTPUT', 'TIMEOUT_KILL', 'TIMEOUT_COOPERATIVE') or srec.get('outcome') == 'TIMEOUT_KILL' else ('TOO_WIDE' if st == 'OK' else 'NOT_COMPLETED')); gt = 'DETERMINISTIC' if status == 'COMPLETED' else 'NONE'
+            if srec.get('outcome') == 'TIMEOUT_KILL': status = 'TIMEOUT_KILL'; outcome = 'DEADLINE'; gt = 'NONE'
         elif c['arm'] == 'CBI_NATIVE':
             w = json.load(open(out)) if os.path.exists(out) else {}; st = w.get('status'); status = 'COMPLETED' if st == 'CERTIFIED' and wall <= budget else ('LATE_OUTPUT' if st == 'CERTIFIED' else (st or 'NO_OUTPUT')); outcome = 'PUBLISHED' if status == 'COMPLETED' else ('DEADLINE' if status in ('LATE_OUTPUT', 'TIMEOUT_KILL') or srec.get('outcome') == 'TIMEOUT_KILL' else 'NOT_COMPLETED'); gt = 'DETERMINISTIC' if status == 'COMPLETED' else 'NONE'
             if srec.get('outcome') == 'TIMEOUT_KILL': status = 'TIMEOUT_KILL'; outcome = 'DEADLINE'; gt = 'NONE'
@@ -158,7 +235,10 @@ def run(RD, only=None, max_cells=None, manifest_name='CAMPAIGN_MANIFEST.json'):
 
 if __name__ == '__main__':
     cmd = sys.argv[1]
-    if cmd == 'manifest': manifest(sys.argv[2], sys.argv[3], dev='--dev' in sys.argv)
+    if cmd == 'manifest':
+        def opt(name): return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None
+        inc = tuple(opt('--include').split(',')) if opt('--include') else ('external_core', 'selector_transfer_additions', 'CBI', 'qgrid', 'CBI_UAI', 'SF_small', 'H4_native', 'SF_native')
+        manifest(sys.argv[2], sys.argv[3], dev='--dev' in sys.argv, qgrid_inventory=opt('--qgrid'), cbi_uai_inventory=opt('--cbi-uai'), sf_inputs=opt('--sf-inputs'), h4_packet=opt('--h4-packet'), include=inc)
     elif cmd == 'run':
         only = sys.argv[sys.argv.index('--only') + 1] if '--only' in sys.argv else None; mx = int(sys.argv[sys.argv.index('--max-cells') + 1]) if '--max-cells' in sys.argv else None
         run(sys.argv[2], only, mx, 'CAMPAIGN_MANIFEST_dev.json' if '--dev' in sys.argv else 'CAMPAIGN_MANIFEST.json')

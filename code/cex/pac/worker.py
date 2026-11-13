@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path
 for p in (NEWARM, HERE):
     if p not in sys.path: sys.path.insert(0, p)
 import core, solve, engine, support
-WORKER_VERSION = 'pac-worker-v2 (2026-11-13 repair)'
+WORKER_VERSION = 'pac-worker-v3 (2026-11-13 completion)'
 
 
 def jsonable(x):
@@ -55,9 +55,9 @@ def main():
         if late(): out['status'] = 'STOPPED'; out['outcome'] = 'DEADLINE'; out['guarantee_type'] = 'NONE'; out['reason'] = 'publication completed after the deadline'; out['late_publication'] = True; out.pop('intervals', None); out.pop('points', None)
         else: out['status'] = 'COMPLETED'
     except solve.ZeroEvidence as e:
-        out['status'] = 'STOPPED'; out['zero_evidence_proof'] = e.proof; out['stop_stats'] = jsonable(dict(core_trace=e.trace))
+        out['status'] = 'STOPPED'; out['zero_evidence_proof'] = jsonable(e.proof); out['stop_stats'] = jsonable(dict(core_trace=e.trace))
         if late(): out['outcome'] = 'DEADLINE'; out['guarantee_type'] = 'NONE'; out['reason'] = 'zero-evidence proof completed after the deadline (not a valid within-budget result)'; out['late_proof'] = True
-        else: out['outcome'] = 'PROVED_ZERO_EVIDENCE'; out['guarantee_type'] = 'DETERMINISTIC'; out['reason'] = 'ZERO_EVIDENCE (deterministic proof: %s)' % e.proof[:200]
+        else: out['outcome'] = 'PROVED_ZERO_EVIDENCE'; out['guarantee_type'] = 'DETERMINISTIC'; out['reason'] = 'ZERO_EVIDENCE (deterministic proof kind %s)' % e.proof.get('kind')
     except Exception as e:
         out['status'] = 'STOPPED'; out['exception_type'] = type(e).__name__; out['reason'] = str(e)[:500]; st = getattr(e, 'stats', None); out['stop_stats'] = jsonable(st) if st else None
         kind = getattr(e, 'reason', None) if isinstance(e, support.ResourceStop) else (getattr(e, 'kind', None) if type(e).__name__ in ('Stop', 'CellStop') else None)

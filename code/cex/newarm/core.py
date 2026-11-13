@@ -128,15 +128,26 @@ def _discover_component(m, deadline, route='auto', inherited_dag=None):
     discovery.append(dict(candidate_selection='minimum scalar forecast; not a bit-work or global optimum',candidates=candidates,planning_wall_s=time.monotonic()-t))
     return dict(model=m,kind=chosen,forecast=cost,dag=dp,order=order,discovery=discovery)
 
+def rss_bytes():
+    """peak RSS of this process in BYTES on every platform (ru_maxrss is bytes on macOS, KiB on Linux)"""
+    import resource,sys
+    ru=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return ru if sys.platform=='darwin' else ru*1024
+
 CEX_CAP_BYTES=3*1024**3          # the 3 GiB worker policy; the compiled executor charges every native heap allocation against (cap - host RSS at entry - measured host-side lowering bytes - plan/output arrays) BEFORE allocating
 def _execute_component(plan,deadline):
+    """execute one component's selected deterministic route; EVERY backend refusal family is normalized at this boundary to support.ResourceStop with reason in
+    {DEADLINE, MEMORY, REPRESENTATION, RANGE/WIDTH/FPENV (after the exact fallback)}; invalid-source errors (ValueError) propagate unchanged (candidate v3)"""
     import dag,support,stream,stream_float,cex_executor,resource,sys
-    if plan['kind']=='dag':return dag.execute_plan(plan['dag'],deadline=deadline)
+    if plan['kind']=='dag':
+        try:return dag.execute_plan(plan['dag'],deadline=deadline)
+        except dag.Deadline as e:raise support.ResourceStop('DEADLINE',dict(route='dag'))
+        except dag.Unsupported as e:raise support.ResourceStop('REPRESENTATION',dict(route='dag',reason=str(e)[:200]))
     if plan['kind']=='support':
         # NEW ARM (certified executor pass, 11 Nov 2026): the SAME validated semantic plan (component model + selected order) runs on the compiled certified
         # binary64 backend; a typed numerical stop (RANGE / WIDTH / label overflow / FPENV) falls back to the exact Fraction reference on the same plan (charged);
         # DEADLINE / MEMORY stops are final (the reference would not finish either within the same budget). Both attempts are recorded in plan['discovery'].
-        ct=time.monotonic();ru=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss;host=ru if sys.platform=='darwin' else ru*1024
+        ct=time.monotonic();host=rss_bytes()
         try:
             r=cex_executor.execute(plan['model'],plan['order'],deadline=deadline,cap_bytes=CEX_CAP_BYTES,host_reserved_bytes=host)
             plan['discovery'].append(dict(kind='compiled_executor',status=r['status'],wall_s=time.monotonic()-ct,stats={k:v for k,v in r['stats'].items() if k not in ('phase',)}))
@@ -144,13 +155,25 @@ def _execute_component(plan,deadline):
         except cex_executor.Stop as e:
             plan['discovery'].append(dict(kind='compiled_executor',status='STOP',stop=e.kind,reason=e.reason[:200],wall_s=time.monotonic()-ct,stats={k:v for k,v in e.stats.items() if k not in ('phase',)}))
             if e.kind in cex_executor.NUMERICAL_STOPS:
-                ft=time.monotonic();r=support.solve(plan['model'],deadline=deadline,order=plan['order']);plan['discovery'].append(dict(kind='exact_reference_fallback',status=r['status'],wall_s=time.monotonic()-ft));return r
+                ft=time.monotonic()
+                try:r=support.solve(plan['model'],deadline=deadline,order=plan['order'])
+                except support.Unsupported as ex:plan['discovery'].append(dict(kind='exact_reference_fallback',status='REPRESENTATION_REFUSAL',wall_s=time.monotonic()-ft,reason=str(ex)[:200]));raise support.ResourceStop('REPRESENTATION',dict(route='support_exact_fallback',reason=str(ex)[:200]))
+                except TimeoutError as ex:raise support.ResourceStop('DEADLINE',dict(route='support_exact_fallback'))
+                plan['discovery'].append(dict(kind='exact_reference_fallback',status=r['status'],wall_s=time.monotonic()-ft));return r
             raise support.ResourceStop(e.kind,e.stats)   # DEADLINE / MEMORY / REPRESENTATION (a volume this kernel cannot address) are typed resource refusals, final for this attempt; never a zero-evidence claim
     ft=time.monotonic()
-    try:return stream_float.solve(plan['model'],deadline=deadline)
-    except stream_float.RangeError as e:
-        plan['discovery'].append(dict(kind='binary64_attempt',status='range_refusal',wall_s=time.monotonic()-ft,reason=str(e),stats=getattr(e,'stats',None)))
-        return stream.solve(plan['model'],deadline=deadline)
+    try:
+        try:return stream_float.solve(plan['model'],deadline=deadline)
+        except stream_float.RangeError as e:
+            plan['discovery'].append(dict(kind='binary64_attempt',status='range_refusal',wall_s=time.monotonic()-ft,reason=str(e),stats=getattr(e,'stats',None)))
+            return stream.solve(plan['model'],deadline=deadline)
+    except stream.UnsupportedError as e:
+        # the stream backend's REPRESENTATION refusals (configuration counters, indexing, event counts, working buffers, non-bipartite) are compatible typed
+        # resource refusals of this route, never an invalid source: normalized to the common typed stop so a controller may continue (candidate v3, review R10)
+        plan['discovery'].append(dict(kind='stream_attempt',status='representation_refusal',wall_s=time.monotonic()-ft,reason=str(e)[:200]))
+        raise support.ResourceStop('REPRESENTATION',dict(route='stream',reason=str(e)[:200]))
+    except stream.DeadlineExceeded as e:
+        raise support.ResourceStop('DEADLINE',dict(route='stream',stats=getattr(e,'stats',None)))
 
 def solve(model, deadline=None, route='auto'):
     trace={'phase':'entry','completed_components':[],'component_plans':[]}
