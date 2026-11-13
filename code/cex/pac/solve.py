@@ -1,95 +1,165 @@
-"""Job-level PAC / hybrid solver (handoff 02 "Minimal empirical arms"): the frozen deterministic pipeline's reduction + component split + planner are REUSED unchanged
-(cex/newarm core.py, reduction.py, planning.py, geometry.py); per component the arm policy picks the frozen deterministic route or the PAC engine (cex/pac/engine.py).
-  P1_PAC_CONDITIONAL : every component with free variables goes through the PAC engine in conditional (integrated) mode (forced minimum cutset of one variable);
-                       components small enough for exact enumeration are answered exactly (delta = 0, labelled DETERMINISTIC).
-  H1_HYBRID          : the frozen planner's candidate routes are priced; the chosen deterministic route runs when forecast / rate_route <= gate_fraction * remaining
-                       budget (rates = the slowest observed in the frozen v1.4 campaigns per route, POLICY['gate_units_per_second']); otherwise the PAC engine
-                       (conditional mode) runs for the remaining budget. Zero-evidence in ANY component invalidates the global posterior (ValueError ZERO_EVIDENCE).
-  A0_POINT / A1_CONDITIONAL : the matched ablation (same cutset / order / tree seed; point vs integrated); the cutset is chosen ONCE by the frozen policy and passed to both.
-One global delta ledger per job: delta_range = delta_var = delta/2; alpha per coordinate = family delta / K_total where K_total = sum of cardinalities over all
-coordinates handled by PAC components (deterministic components spend no delta). Every terminal return is deadline-checked; the lift to original coordinates
-uses the frozen reduction decoder; publication uses the frozen outward decimal publisher + verify_output."""
+"""Job-level controller -- candidate v2 (repair of review F01 / F04 / F05 / F09 of 13 Nov 2026).
+
+Shared deterministic discovery (review F01 "share the complete deterministic discovery interface"): the hybrid uses the SAME root-level candidate set as the frozen
+baseline entry point (cex/newarm core._solve): (1) the complete forest route on the original model; (2) the identity source-DAG plan on the original model (retained
+because a sound reduction can hide structure); (3) reduction + exact component split + per-component discovery (support / dag / stream candidates) with the identity
+plan inherited when the reduction changed nothing; the representation (identity DAG vs reduced components) is selected by the same scalar-forecast comparison.
+Controller (budgeted, lazy): components are executed in order; the deterministic-versus-PAC decision of a component is made immediately BEFORE its execution against
+the ACTUAL remaining time (repricing), never all up front. A deterministic route that refuses with a compatible typed stop (MEMORY / REPRESENTATION / a numerical
+stop that the executor could not resolve) while time remains CONTINUES into the PAC engine for that component (exact-to-PAC continuation); DEADLINE is final.
+Delta ledger (review F04): the decision whether a component samples is NOT needed before allocation any more -- K_total conservatively counts EVERY coordinate of the
+reduced job (sum of cardinalities over all components), so every coordinate that can ever receive a statistical bound is in the union bound; deterministic components
+simply leave their allowance unspent. The executed design record of every stream (canonical cutset / order AFTER forcing, mode, exact U_root, K, alphas, seeds) and the
+sufficient statistics are returned in the certificate for independent replay (gate.py, engine.hulls_from_record).
+Arms: P1_PAC_CONDITIONAL (forced PAC per component, conditional mode, resolved region ON), H1_HYBRID (the controller above), A0_POINT / A1_CONDITIONAL (matched ablation:
+same deterministic cutset / order / tree seed, resolution OFF in both so the residual region is held fixed; point vs integrated).
+Every terminal return -- including ZERO_EVIDENCE -- is deadline-checked (review F09)."""
 import sys, os, time, math, json, hashlib, random
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path.dirname(HERE), 'newarm')
 for p in (NEWARM, HERE):
     if p not in sys.path: sys.path.insert(0, p)
-import core, reduction, engine, contrib
+import core, reduction, engine, contrib, support
 POLICY = engine.POLICY
+SOLVER_VERSION = 'pac-solve-v2 (2026-11-13 repair)'
+CONTINUABLE_STOPS = ('MEMORY', 'REPRESENTATION', 'SUPPORT_ROWS_CAP', 'RANGE', 'WIDTH', 'FPENV', 'NUMERICAL_RANGE_OR_PRECISION')   # exact-route refusals after which the PAC engine may continue while time remains
 
 
-class Deadline(Exception): pass
+class ZeroEvidence(Exception):
+    """deterministic zero-evidence proof (the worker publishes PROVED_ZERO_EVIDENCE only after the terminal deadline check)"""
+    def __init__(self, proof, trace): super().__init__('ZERO_EVIDENCE'); self.proof = proof; self.trace = trace
 
 
-def _deadline(deadline, where, stats):
-    if deadline is not None and time.monotonic() >= deadline: raise core.support.ResourceStop('DEADLINE', dict(stats, where=where)) if hasattr(core, 'support') else TimeoutError(where)
+def _stop(kind, trace, **kw):
+    return support.ResourceStop(kind, dict(core_trace=trace, **kw))
 
 
 def solve(model, deadline, arm, seed, delta=F(1, 10 ** 6), cap_bytes=3 * 1024 ** 3, ablation_shared=None):
-    """returns dict(intervals, points, guarantee_type, outcome, stats, decoder, certificate_metadata); raises on typed failures (the harness records them)"""
-    import resource, support
-    t0 = time.monotonic(); trace = dict(arm=arm, seed=str(seed), delta=str(delta), phase='reduction', components=[], policy=POLICY)
+    """returns dict(intervals, points, guarantee_type, outcome, stats, decoder, certificate); raises support.ResourceStop (typed) or ZeroEvidence"""
+    import resource
+    t0 = time.monotonic(); trace = dict(arm=arm, seed=str(seed), delta=str(delta), phase='entry', solver_version=SOLVER_VERSION, policy=engine.POLICY, root_discovery=[], components=[], continuations=[])
     def check(where):
-        if deadline is not None and time.monotonic() >= deadline: raise support.ResourceStop('DEADLINE', dict(core_trace=trace, where=where))
+        if deadline is not None and time.monotonic() >= deadline: raise _stop('DEADLINE', trace, where=where)
+    def remaining(): return (deadline - time.monotonic()) if deadline is not None else float('inf')
     rss = lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    original_cards = list(model['cards'])
+    original_cards = list(model['cards']); n0 = len(original_cards)
+    check('entry')
+    # ---------------- root-level deterministic routes (shared with the baseline entry point): H1 only
+    if arm == 'H1_HYBRID':
+        import forest, dag
+        ft = time.monotonic(); trace['phase'] = 'forest discovery'
+        try:
+            result = forest.solve(model, deadline=deadline, independent_replay=True)
+            core.verify_output(result['intervals'], result['points']); check('forest publication')
+            trace['root_discovery'].append(dict(kind='forest', wall_s=time.monotonic() - ft, chosen=True))
+            return _finish(result['intervals'], result['points'], [dict(component=0, variables=list(range(n0)), route='forest', guarantee='DETERMINISTIC', stats=result['stats'], certificate=result['certificate'])], dict(reduction={'not_attempted': 'complete forest computation'}), [dict(kind='identity', variable=v) for v in range(n0)], trace, t0, delta, K_total=0, check=check)
+        except forest.UnsupportedError as e: trace['root_discovery'].append(dict(kind='forest', declined=str(e)[:200], wall_s=time.monotonic() - ft))
+        except forest.ZeroEvidence: raise ZeroEvidence('complete forest computation: zero evidence', trace)
+        except forest.DeadlineExceeded: raise _stop('DEADLINE', trace, where='forest')
+        check('after forest discovery'); trace['phase'] = 'identity planning'; rt = time.monotonic(); raw_plan = None; raw_cost = None
+        try:
+            raw_plan = dag.plan(model, deadline=min(deadline if deadline is not None else float('inf'), time.monotonic() + 2)); raw_cost = core._dag_forecast(raw_plan['stats'])
+            trace['root_discovery'].append(dict(kind='identity_source_dag', scalar_forecast=raw_cost, wall_s=time.monotonic() - rt))
+        except (ValueError, TimeoutError) as e: trace['root_discovery'].append(dict(kind='identity_source_dag', declined=str(e)[:200], wall_s=time.monotonic() - rt))
+        check('after identity planning')
+    else: raw_plan = None; raw_cost = None
+    # ---------------- reduction + components (all arms)
+    trace['phase'] = 'reduction'
     try: reduced = reduction.reduce(model, deadline=deadline)
-    except reduction.Deadline as ex: raise support.ResourceStop('DEADLINE', dict(core_trace=trace, where='reduction', stats=ex.stats))
+    except reduction.Deadline as ex: raise _stop('DEADLINE', trace, where='reduction', stats=ex.stats)
     trace['reduction'] = reduced['stats']
-    if reduced.get('status') == 'ZERO_EVIDENCE': raise ValueError('ZERO_EVIDENCE')
+    if reduced.get('status') == 'ZERO_EVIDENCE': raise ZeroEvidence('source reduction: zero evidence (%s)' % str(reduced.get('certificate', ''))[:200], trace)
     rm = reduced['model']; check('after reduction'); trace['phase'] = 'components'
     try: split = core.components(rm, deadline=deadline)
-    except TimeoutError: raise support.ResourceStop('DEADLINE', dict(core_trace=trace, where='components'))
-    trace['phase'] = 'planning'; plans = []
-    for old, cm in split:
-        check('component planning')
-        if arm in ('H1_HYBRID',):
-            p = core._discover_component(cm, deadline, 'auto'); plans.append((old, cm, p))
-        else:
-            plans.append((old, cm, None))
-    # ---- arm policy per component
-    decisions = []; K_total = 0; pac_comps = []
-    for i, (old, cm, p) in enumerate(plans):
-        n = len(cm['cards']); vol = math.prod(cm['cards'])
+    except TimeoutError: raise _stop('DEADLINE', trace, where='components')
+    except ValueError as e:
+        if str(e) == 'ZERO_EVIDENCE': raise ZeroEvidence('component restriction: a fully observed factor is zero', trace)
+        raise
+    unchanged = (len(rm['cards']) == n0 and not model.get('evidence') and not any(reduced['stats'].get(k, 0) for k in ('aliases', 'states_removed', 'scalar_factors_cancelled')))
+    # K_total: EVERY coordinate of the reduced job (conservative union bound; deterministic components leave their allowance unspent)
+    K_total = sum(sum(cm['cards']) for _, cm in split); trace['K_total'] = K_total
+    trace['delta_ledger'] = dict(delta=str(delta), range_family=str(delta / 2), variance_family=str(delta / 2), per_coordinate_alpha_each_family=str(delta / (2 * K_total)) if K_total else None, coordinates=K_total, rule='K_total = sum of cardinalities over ALL components of the reduced job (every coordinate that may ever receive a statistical bound); deterministic components spend none of their allowance')
+    # ---------------- H1: per-component discovery and representation selection (as the baseline entry point)
+    plans = []
+    if arm == 'H1_HYBRID':
+        trace['phase'] = 'planning'
+        for old, cm in split:
+            check('component planning')
+            inherited = raw_plan if (unchanged and len(split) == 1 and old == list(range(n0))) else None
+            plans.append(core._discover_component(cm, deadline, 'auto', inherited))
+        reduced_cost = sum(p['forecast'] for p in plans)
+        use_raw = raw_plan is not None and raw_cost <= reduced_cost
+        trace['root_discovery'].append(dict(kind='representation_selection', chosen='identity_source_dag' if use_raw else 'reduced_components', identity_forecast=raw_cost, reduced_forecast=reduced_cost))
+        if use_raw:
+            rate = POLICY['gate_units_per_second']['dag']; est = raw_cost / rate; rem = remaining(); det = est <= POLICY['gate_fraction'] * rem
+            trace['root_discovery'].append(dict(kind='identity_dag_gate', estimate_s=est, remaining_s=rem, admitted=det))
+            if det:
+                ct = time.monotonic()
+                try:
+                    result = dag.execute_plan(raw_plan, deadline=deadline); check('identity DAG publication')
+                    return _finish(result['intervals'], result['points'], [dict(component=0, variables=list(range(n0)), route='dag', guarantee='DETERMINISTIC', discovery=trace['root_discovery'], execution_wall_s=time.monotonic() - ct, stats=result['stats'], certificate=result['certificate'])], dict(reduction={'not_attempted': 'identity source DAG selected'}), [dict(kind='identity', variable=v) for v in range(n0)], trace, t0, delta, K_total=0, check=check)
+                except (dag.Deadline, TimeoutError): raise _stop('DEADLINE', trace, where='identity DAG execution')
+                except (dag.Unsupported, ValueError, support.ResourceStop) as e:
+                    kind = getattr(e, 'reason', None) if isinstance(e, support.ResourceStop) else 'INVALID_PLAN'
+                    trace['continuations'].append(dict(from_route='identity_source_dag', stop=str(kind), reason=str(e)[:200], remaining_s=remaining(), to='reduced components (deterministic or PAC per component)'))
+                    check('after identity DAG refusal')
+    else:
+        plans = [None] * len(split)
+    # ---------------- component execution with LAZY decisions and exact-to-PAC continuation
+    trace['phase'] = 'execution'; intervals = [None] * len(rm['cards']); points = [None] * len(intervals); records = []; guarantees = set(); decisions = []
+    for i, ((old, cm), p) in enumerate(zip(split, plans)):
+        check('component execution'); ct = time.monotonic(); n = len(cm['cards']); rows = ps = None; route_used = None; guarantee = None; rec_extra = {}
         if arm == 'H1_HYBRID':
-            rate = POLICY['gate_units_per_second'].get(p['kind'], 1e8); remaining = (deadline - time.monotonic()) if deadline else float('inf'); est = (p['forecast'] or 0) / rate
-            det = est <= POLICY['gate_fraction'] * remaining
-            decisions.append(dict(component=i, variables=n, route=p['kind'] if det else 'pac_conditional', forecast=p['forecast'], estimate_s=est, remaining_s=remaining, deterministic=det))
-            if not det: pac_comps.append(i); K_total += sum(cm['cards']) if vol > POLICY['exact_leaf_max_completions'] else 0
-        elif arm in ('P1_PAC_CONDITIONAL', 'A0_POINT', 'A1_CONDITIONAL'):
-            decisions.append(dict(component=i, variables=n, route='pac_point' if arm == 'A0_POINT' else 'pac_conditional', deterministic=False)); pac_comps.append(i)
-            if vol > POLICY['exact_leaf_max_completions']: K_total += sum(cm['cards'])
-        else: raise ValueError('unknown arm %s' % arm)
-    trace['decisions'] = decisions; trace['K_total'] = K_total; trace['delta_ledger'] = dict(delta=str(delta), range_family=str(delta / 2), variance_family=str(delta / 2), per_coordinate_alpha_each_family=str(delta / (2 * K_total)) if K_total else None, coordinates=K_total, components_pac=len(pac_comps))
-    trace['phase'] = 'execution'; intervals = [None] * len(rm['cards']); points = [None] * len(intervals); records = []; guarantees = set()
-    for i, (old, cm, p) in enumerate(plans):
-        check('component execution'); ct = time.monotonic(); d = decisions[i]
-        if d['deterministic']:
-            result = core._execute_component(p, deadline)
-            if result.get('status') == 'ZERO_EVIDENCE': raise ValueError('ZERO_EVIDENCE')
-            rows = result['intervals']; ps = result.get('points') or [[(lo + hi) / 2 for lo, hi in row] for row in rows]; guarantees.add('DETERMINISTIC')
-            records.append(dict(component=i, variables=old, route=p['kind'], guarantee='DETERMINISTIC', discovery=p['discovery'], execution_wall_s=time.monotonic() - ct, stats=result.get('stats'), certificate=result.get('certificate')))
+            rate = POLICY['gate_units_per_second'].get(p['kind'], 1e8); rem = remaining(); est = (p['forecast'] or 0) / rate; det = est <= POLICY['gate_fraction'] * rem
+            decisions.append(dict(component=i, variables=n, route=p['kind'] if det else 'pac_conditional', forecast=p['forecast'], estimate_s=est, remaining_s_at_decision=rem, deterministic=det))
+            if det:
+                try:
+                    result = core._execute_component(p, deadline)
+                    if result.get('status') == 'ZERO_EVIDENCE': raise ZeroEvidence('exact component %d: zero mass' % i, trace)
+                    rows = result['intervals']; ps = result.get('points') or [[(lo + hi) / 2 for lo, hi in row] for row in rows]; route_used = p['kind']; guarantee = 'DETERMINISTIC'
+                    rec_extra = dict(discovery=p['discovery'], stats=result.get('stats'), certificate=result.get('certificate'))
+                except support.ResourceStop as e:
+                    if e.reason == 'DEADLINE' or remaining() <= 0: raise _stop('DEADLINE', trace, component=i, stats=e.stats, reason='exact route refused at the deadline')
+                    if e.reason not in CONTINUABLE_STOPS: raise _stop(e.reason, trace, component=i, stats=e.stats)
+                    trace['continuations'].append(dict(component=i, from_route=p['kind'], stop=e.reason, remaining_s=remaining(), to='pac_conditional'))
+                    decisions[-1].update(route='pac_conditional_after_%s' % e.reason, deterministic=False, exact_attempt_wall_s=time.monotonic() - ct)
+                except (TimeoutError,) as e: raise _stop('DEADLINE', trace, component=i, reason=str(e)[:100])
         else:
-            mode = 'point' if arm == 'A0_POINT' else 'conditional'; seed_tree = engine.seed_int(seed, 'tree', i); seed_point = engine.seed_int(seed, 'point', i)
-            fixed_cut = fixed_order = None
+            decisions.append(dict(component=i, variables=n, route='pac_point' if arm == 'A0_POINT' else 'pac_conditional', deterministic=False))
+        if rows is None:
+            # ---- PAC engine for this component (forced arm, ablation arm, hybrid fallback or hybrid decision)
+            check('before PAC component'); mode = 'point' if arm == 'A0_POINT' else 'conditional'; seed_tree = engine.seed_int(seed, 'tree', i); seed_point = engine.seed_int(seed, 'point', i)
+            fixed_cut = fixed_order = None; resolve = None
             if arm in ('A0_POINT', 'A1_CONDITIONAL'):
-                cs = engine.choose_cutset(cm, deadline, POLICY, budget_fraction=None); fixed_cut = cs['cutset']; fixed_order = cs['order']; check('after deterministic ablation cutset selection')   # deterministic: both arms of the pair derive the SAME cutset/order from the model alone; each arm charges its own selection
-            if ablation_shared is not None:
-                key = str(i)
-                if key not in ablation_shared: cs = engine.choose_cutset(cm, deadline, POLICY, budget_fraction=None); ablation_shared[key] = dict(cutset=cs['cutset'], order=cs['order'])
-                fixed_cut = ablation_shared[key]['cutset']; fixed_order = ablation_shared[key]['order']
+                resolve = False
+                if ablation_shared is not None and str(i) in ablation_shared: fixed_cut = ablation_shared[str(i)]['cutset']; fixed_order = ablation_shared[str(i)]['order']
+                else:
+                    cs = engine.choose_cutset(cm, deadline, POLICY, budget_fraction=None); fixed_cut = cs['cutset']; fixed_order = cs['order']; check('after deterministic ablation cutset selection')
+                    if ablation_shared is not None: ablation_shared[str(i)] = dict(cutset=fixed_cut, order=fixed_order)
             try:
-                r = engine.run_component(cm, deadline, seed_tree, seed_point, mode, delta / 2, delta / 2, max(1, K_total), cap_bytes, rss(), POLICY, fixed_cutset=fixed_cut, fixed_order=fixed_order, forced=(arm == 'P1_PAC_CONDITIONAL'))
-            except engine.EngineStop as e: raise support.ResourceStop(e.outcome, dict(core_trace=trace, component=i, stats=e.stats, reason=e.reason))
-            if r['status'] == 'PROVED_ZERO_EVIDENCE': raise ValueError('ZERO_EVIDENCE')
-            if r['status'] != 'PUBLISHED': raise support.ResourceStop(r['status'] if r['status'] != 'TOO_WIDE' else 'TOO_WIDE', dict(core_trace=trace, component=i, stats=r['stats']))
-            rows = r['intervals']; ps = r['points']; guarantees.add(r['guarantee'])
-            records.append(dict(component=i, variables=old, route='pac_' + mode, guarantee=r['guarantee'], execution_wall_s=time.monotonic() - ct, stats=r['stats'], certifier_per_row=r['certifier_per_row'], widths=r.get('widths'), variance_sets_nonconvex=r.get('variance_sets_nonconvex')))
+                r = engine.run_component(cm, deadline, seed_tree, seed_point, mode, delta / 2, delta / 2, max(1, K_total), cap_bytes, rss(), POLICY, fixed_cutset=fixed_cut, fixed_order=fixed_order, forced=(arm == 'P1_PAC_CONDITIONAL'), resolve=resolve)
+            except engine.EngineStop as e: raise _stop(e.outcome, trace, component=i, stats=e.stats, reason=e.reason)
+            if r['status'] == 'PROVED_ZERO_EVIDENCE': raise ZeroEvidence('PAC component %d: %s' % (i, r['stats'].get('proof', 'zero root bound')), trace)
+            if r['status'] != 'PUBLISHED': raise _stop(r['status'], trace, component=i, stats=r['stats'])
+            rows = r['intervals']; ps = r['points']; guarantee = r['guarantee']; route_used = 'pac_' + mode + ('' if guarantee == 'PAC' else '_' + str(r['stats'].get('route')))
+            rec_extra = dict(stats=r['stats'], certifier_per_row=r['certifier_per_row'], widths=r.get('widths'), variance_sets_nonconvex=r.get('variance_sets_nonconvex'), design=r['stats'].get('design'), sufficient_statistics=r['stats'].get('sufficient_statistics'), intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in rows], points_exact=[[str(x) for x in row] for row in ps])
+        guarantees.add(guarantee)
+        records.append(dict(component=i, variables=old, route=route_used, guarantee=guarantee, execution_wall_s=time.monotonic() - ct, **rec_extra))
         assert len(rows) == len(old) and len(ps) == len(old)
         for v, row, q in zip(old, rows, ps): intervals[v] = row; points[v] = q
+    trace['decisions'] = decisions
     assert all(x is not None for x in intervals)
-    core.verify_output(intervals, points); intervals, points = reduction.lift(reduced, intervals, points)
-    assert len(intervals) == len(original_cards) and all(len(row) == d_ for row, d_ in zip(intervals, original_cards))
+    core.verify_output(intervals, points); check('before lift')
+    lifted_i, lifted_p = reduction.lift(reduced, intervals, points)
+    return _finish(lifted_i, lifted_p, records, dict(reduction=reduced['stats'], decisions=decisions, continuations=trace['continuations']), reduced['decoder'], trace, t0, delta, K_total=K_total, check=check, reduction_certificate=reduced.get('certificate'), original_cards=original_cards)
+
+
+def _finish(intervals, points, records, stats_extra, decoder, trace, t0, delta, K_total, check, reduction_certificate=None, original_cards=None):
+    if original_cards is not None: assert len(intervals) == len(original_cards) and all(len(row) == d_ for row, d_ in zip(intervals, original_cards))
     core.verify_output(intervals, points); check('publication')
-    gt = 'PAC' if 'PAC' in guarantees else 'DETERMINISTIC'
-    return dict(intervals=intervals, points=points, guarantee_type=gt, outcome='PUBLISHED', stats=dict(reduction=reduced['stats'], total_s=time.monotonic() - t0, components=records, decisions=decisions, delta_ledger=trace['delta_ledger']), decoder=reduced['decoder'], certificate=dict(guarantee_type=gt, delta=str(delta) if gt == 'PAC' else '0', epsilon='1/200', components=[dict(component=r['component'], route=r['route'], guarantee=r['guarantee'], certifier_per_row=r.get('certifier_per_row'), U_root=(r.get('stats') or {}).get('U_root'), trials=(r.get('stats') or {}).get('trials_completed'), cutset=((r.get('stats') or {}).get('cutset') or {}).get('cutset')) for r in records]))
+    guarantees = {r['guarantee'] for r in records}; gt = 'PAC' if 'PAC' in guarantees else 'DETERMINISTIC'
+    cert = dict(certificate_version='pac-certificate-v2', guarantee_type=gt, delta=str(delta) if gt == 'PAC' else '0', epsilon='1/200', delta_ledger=trace.get('delta_ledger'), K_total=K_total,
+                components=[dict(component=r['component'], variables=r['variables'], route=r['route'], guarantee=r['guarantee'], certifier_per_row=r.get('certifier_per_row'), design=r.get('design'), sufficient_statistics=r.get('sufficient_statistics'), intervals_exact=r.get('intervals_exact'), points_exact=r.get('points_exact'), trials=(r.get('stats') or {}).get('trials_completed'), resolved_cells=(r.get('stats') or {}).get('resolved_cells')) for r in records],
+                lifted_intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in intervals], lifted_points_exact=[[str(x) for x in row] for row in points], decoder=decoder, reduction_certificate=reduction_certificate,
+                trust_boundary='a checker verifies task binding, the lawful statistical construction (design record), the numerical enclosures (sufficient statistics -> hulls) and the stopping predicate; it cannot certify that a particular random outcome is accurate')
+    return dict(intervals=intervals, points=points, guarantee_type=gt, outcome='PUBLISHED', stats=dict(stats_extra, total_s=time.monotonic() - t0, components=[{k: v for k, v in r.items() if k not in ('sufficient_statistics', 'intervals_exact', 'points_exact')} for r in records], root_discovery=trace.get('root_discovery'), delta_ledger=trace.get('delta_ledger'), solver_version=SOLVER_VERSION), decoder=decoder, certificate=cert)

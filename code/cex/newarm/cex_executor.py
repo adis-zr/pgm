@@ -99,8 +99,9 @@ def counted_bytes(*lists):
 
 
 class HostBudget:
-    """charge-before-build accounting of host-side construction bytes: every charge is a documented UPPER BOUND on the CPython object about to be created
-    (sys.getsizeof of the finished object, or a closed-form bound before it exists); exceeding the budget is a typed MEMORY stop BEFORE the object is built."""
+    """charge-before-build ACCOUNTING of host-side construction bytes for the NAMED containers (an estimate calibrated against sys.getsizeof / tracemalloc on
+    the controls -- see the module docstring; NOT a proven upper bound on all Python allocations: interpreter internals, Fraction temporaries, caches and allocator
+    bookkeeping are outside it); exceeding the budget is a typed MEMORY stop BEFORE the named object is built. The only whole-worker bound is the harness's sampled RSS policy."""
     def __init__(self, budget, stats):
         self.budget = int(budget); self.live = 0; self.peak = 0; self.stats = stats
     def charge(self, nbytes, what):
@@ -114,7 +115,7 @@ class HostBudget:
 
 
 def int_str_bytes_bound(x):
-    """upper bound on sys.getsizeof(str(x)) for a Python int without building the string: digits <= bit_length * log10(2) + 1, plus the str header (49) and NUL"""
+    """estimate of sys.getsizeof(str(x)) for a Python int without building the string: digits <= bit_length * log10(2) + 1, plus the str header (49) and NUL (an upper bound for the string object alone)"""
     return 49 + 2 + (x.bit_length() * 30103) // 100000 + 1
 
 
@@ -288,4 +289,4 @@ def execute(model, order, deadline=None, cap_bytes=3 * 1024 ** 3, dense_fill_thr
     if maxw > F(1, 100): raise Stop('WIDTH', 'delivered width %s exceeds 1/100 (precision insufficient; retry or exact fallback required)' % float(maxw), stats)
     terminal_deadline('before the CERTIFIED return')
     return {'status': 'CERTIFIED', 'intervals': intervals, 'points': points, 'stats': stats,
-            'certificate': {'method': 'compiled_nonnegative_bucket_contraction_all_singleton_reverse', 'arithmetic': 'binary64 nearest with reciprocal-envelope labels (u=2^-53); every product checked by operand provenance; exact N/Z in Python; Bernoulli widening by K=E_N+E_Z', 'memory_contract': 'kernel heap charged before allocation (hard); host constructions charged before build against cap - entry RSS (documented upper bounds; interpreter internals and RSS excluded); whole-worker bound = the harness sampled-RSS policy', 'order': list(order), 'semantic_plan_sha256': meta['semantic_plan_sha256'], 'physical_schedule_sha256': meta['physical_schedule_sha256'], 'kernel': {k: prov.get(k) for k in ('source_sha256', 'binary_sha256', 'compiler', 'compiler_version', 'flags', 'schedule_id', 'plan_format')}, 'max_label_K': maxK, 'convention': 'unnormalized adjoints (zero-safe prefix/suffix exclusion products, no division); final exact N/Z'}}
+            'certificate': {'method': 'compiled_nonnegative_bucket_contraction_all_singleton_reverse', 'arithmetic': 'binary64 nearest with reciprocal-envelope labels (u=2^-53); every product checked by operand provenance; exact N/Z in Python; Bernoulli widening by K=E_N+E_Z', 'memory_contract': 'kernel heap charged before allocation (hard); host constructions charged before build against cap - entry RSS (an ACCOUNTING of the named containers, not a proven upper bound; interpreter internals and RSS excluded); whole-worker bound = the harness sampled-RSS policy (sampled)', 'order': list(order), 'semantic_plan_sha256': meta['semantic_plan_sha256'], 'physical_schedule_sha256': meta['physical_schedule_sha256'], 'kernel': {k: prov.get(k) for k in ('source_sha256', 'binary_sha256', 'compiler', 'compiler_version', 'flags', 'schedule_id', 'plan_format')}, 'max_label_K': maxK, 'convention': 'unnormalized adjoints (zero-safe prefix/suffix exclusion products, no division); final exact N/Z'}}

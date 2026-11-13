@@ -30,13 +30,22 @@ class CellStop(Exception):
         super().__init__('%s: %s' % (kind, reason)); self.kind = kind; self.reason = reason; self.stats = dict(stats or {})
 
 
-def restrict(model, cell):
+def _dl(deadline, where):
+    if deadline is not None and time.monotonic() >= deadline: raise CellStop('DEADLINE', where)
+
+
+def restrict(model, cell, deadline=None):
     """exact restriction of every factor occurrence to the assignments fixed by `cell` (a dict var -> state; evidence is merged in). Returns the reduced
     model over the FREE variables (renumbered), the list of removed exact positive scalars (factors whose whole scope is fixed), the free-variable map and the
-    merged assignment. Zero-weight fixed factors make the cell a proved zero cell (returns None model)."""
-    cards = model['cards']; n = len(cards); fixed = dict(model.get('evidence', {})); fixed.update(cell)
-    for v, a in fixed.items():
+    merged assignment (evidence and cell INTERSECTED: a cell state contradicting the evidence is a proved EMPTY cell, never an overwrite). Zero-weight fixed
+    factors make the cell a proved zero cell (returns None model). Deadline polled every 4096 entries."""
+    cards = model['cards']; n = len(cards); ev = dict(model.get('evidence', {})); fixed = dict(ev)
+    for v, a in cell.items():
         if not (0 <= v < n and 0 <= a < cards[v]): raise ValueError('cell assigns an invalid state')
+        if v in ev and ev[v] != a: return None, [], [u for u in range(n) if u not in ev], dict(ev), 0        # cell contradicts the evidence: a PROVED EMPTY cell (intersection, never an overwrite; review F09)
+        fixed[v] = a
+    for v, a in fixed.items():
+        if not (0 <= v < n and 0 <= a < cards[v]): raise ValueError('evidence assigns an invalid state')
     free = [v for v in range(n) if v not in fixed]; idx = {v: i for i, v in enumerate(free)}
     out = []; scalars = []; zero = False; entries = 0
     for f in model['factors']:
@@ -44,6 +53,7 @@ def restrict(model, cell):
         data = []
         for a, w in zip(product(*(range(cards[v]) for v in sc)), vals):
             entries += 1
+            if entries % 4096 == 0: _dl(deadline, 'restrict scan')
             if all(a[i] == fixed[v] for i, v in enumerate(sc) if v in fixed):
                 data.append(w if isinstance(w, F) else F(w))
         if not newsc:
@@ -57,10 +67,11 @@ def restrict(model, cell):
 def cell_exact(model, cell, deadline=None, max_completions=1 << 22):
     """exact rational enumeration of the cell (qualification oracle; production for tiny cells). Deadline-checked; refuses cells with more completions than
     `max_completions` (typed stop, never an approximation)."""
-    t0 = time.monotonic(); cards = model['cards']; n = len(cards)
-    red, scalars, free, fixed, entries = restrict(model, cell); scale = math.prod(scalars, start=F(1))
+    t0 = time.monotonic(); cards = model['cards']; n = len(cards); _dl(deadline, 'cell_exact entry')
+    red, scalars, free, fixed, entries = restrict(model, cell, deadline); scale = math.prod(scalars, start=F(1))
     B = {v: [F(0)] * cards[v] for v in range(n)}
     if red is None:
+        _dl(deadline, 'cell_exact zero-cell terminal')
         return dict(B0=(F(0), F(0)), B={v: [(F(0), F(0))] * cards[v] for v in range(n)}, scale='original source product', cell=dict(fixed), exact=True, route='exact_zero_cell', stats=dict(entries=entries, completions=0, wall_s=time.monotonic() - t0))
     m = math.prod(red['cards'], start=1)
     if m > max_completions: raise CellStop('CELL_TOO_LARGE', 'exact enumeration refused: %d completions' % m)
@@ -79,6 +90,7 @@ def cell_exact(model, cell, deadline=None, max_completions=1 << 22):
         for i, v in enumerate(free): B[v][x[i]] += w
     for v, a in fixed.items(): B[v][a] = B0
     for v in range(n): assert sum(B[v]) == B0, 'row conservation'
+    _dl(deadline, 'cell_exact terminal')
     return dict(B0=(B0, B0), B={v: [(x, x) for x in B[v]] for v in range(n)}, scale='original source product', cell=dict(fixed), exact=True, route='exact_enumeration', stats=dict(entries=entries, completions=m, wall_s=time.monotonic() - t0))
 
 
@@ -95,20 +107,26 @@ def cell_kernel(model, cell, deadline=None, cap_bytes=3 * 1024 ** 3, host_reserv
     """the frozen compiled kernel on the restricted model; the gauge is undone exactly (sum of lowering shifts) and the removed exact scalars are multiplied
     back; per-coordinate enclosures from the labels. Returns the common record. Typed stops propagate as CellStop (kind preserved)."""
     import cex_executor as X, planning
-    t0 = time.monotonic(); cards = model['cards']; n = len(cards)
-    red, scalars, free, fixed, entries = restrict(model, cell); scale = math.prod(scalars, start=F(1))
+    t0 = time.monotonic(); cards = model['cards']; n = len(cards); _dl(deadline, 'cell_kernel entry')
+    red, scalars, free, fixed, entries = restrict(model, cell, deadline); scale = math.prod(scalars, start=F(1))
     if red is None:
+        _dl(deadline, 'cell_kernel zero-cell terminal')
         return dict(B0=(F(0), F(0)), B={v: [(F(0), F(0))] * cards[v] for v in range(n)}, scale='original source product', cell=dict(fixed), exact=True, route='exact_zero_cell', stats=dict(entries=entries, wall_s=time.monotonic() - t0))
     if not free:                                                     # fully assigned cell: exact product
         return cell_exact(model, cell, deadline)
     if not red['factors']:                                           # free variables without any factor: uniform, exact
-        return cell_exact(model, cell, deadline) if math.prod(red['cards']) <= (1 << 22) else _uniform_cell(model, red, scale, free, fixed, entries, t0)
-    if order is None:
-        order, _ = planning.order_and_price(red, deadline=deadline)
-    prov = X.build(deadline); lib = X.load(prov); import ctypes as C
-    B = X.HostBudget(max(1, cap_bytes - host_reserved_bytes), {})
-    words, vals, meta = X.lower(red, order, dense_fill_threshold, deadline, budget=B)
+        if math.prod(red['cards']) <= (1 << 22): return cell_exact(model, cell, deadline)
+        _dl(deadline, 'cell_kernel uniform terminal'); return _uniform_cell(model, red, scale, free, fixed, entries, t0)
+    try:
+        if order is None:
+            order, _ = planning.order_and_price(red, deadline=deadline)
+        prov = X.build(deadline); lib = X.load(prov); import ctypes as C
+        B = X.HostBudget(max(1, cap_bytes - host_reserved_bytes), {})
+        words, vals, meta = X.lower(red, order, dense_fill_threshold, deadline, budget=B)
+    except X.Stop as e: raise CellStop(e.kind, 'source lowering: ' + e.reason, dict(e.stats))        # typed executor stop (RANGE / MEMORY / DEADLINE / REPRESENTATION) -> the common typed contribution stop (review F09 / C2)
+    except TimeoutError: raise CellStop('DEADLINE', 'cell_kernel planning deadline')
     if meta.get('zero_evidence'):
+        _dl(deadline, 'cell_kernel zero-lowering terminal')
         return dict(B0=(F(0), F(0)), B={v: [(F(0), F(0))] * cards[v] for v in range(n)}, scale='original source product', cell=dict(fixed), exact=True, route='kernel_lowering_zero', stats=dict(entries=entries, wall_s=time.monotonic() - t0))
     shifts = meta['source_scale_shifts_list'] if 'source_scale_shifts_list' in meta else None
     if shifts is None: raise CellStop('BADPLAN', 'lowering did not expose the per-source shifts (cex_executor must be the PAC-aware v1.5+)')
@@ -119,8 +137,10 @@ def cell_kernel(model, cell, deadline=None, cap_bytes=3 * 1024 ** 3, host_reserv
         rc = lib.cex_run(W, len(words), V, len(vals), kcap, float('inf') if deadline is None else deadline, dense_fill_threshold, N, NE, NL, Z, ZM, CT, len(X.COUNTERS), RS, 256)
     counters = {k: int(CT[i]) for i, k in enumerate(X.COUNTERS)}
     if rc == 7:
+        _dl(deadline, 'cell_kernel zero-mass terminal')
         return dict(B0=(F(0), F(0)), B={v: [(F(0), F(0))] * cards[v] for v in range(n)}, scale='original source product', cell=dict(fixed), exact=True, route='kernel_zero_mass', stats=dict(entries=entries, counters=counters, wall_s=time.monotonic() - t0))
     if rc != 0: raise CellStop(X.STOPS.get(rc, 'FAULT'), RS.value.decode(errors='replace'), dict(counters=counters))
+    _dl(deadline, 'cell_kernel enclosure')
     gauge = scale                                                     # the kernel carries every source's exact power-of-two scale in its exponent words (plan format 2: exp2 = -shift; true = stored * 2^exp2), so Z 2^Zexp and N 2^Nexp are ALREADY in the restricted model's scale; only the removed exact scalars are multiplied back. The shift list is recorded (stats) and checked by control, not applied.
     zv = F(Z[0]) * F(2) ** int(ZM[0]) * gauge; zlab = int(ZM[1]); B0 = envelope(zv, zlab)
     out = {v: None for v in range(n)}; off = 0
@@ -130,6 +150,7 @@ def cell_kernel(model, cell, deadline=None, cap_bytes=3 * 1024 ** 3, host_reserv
             nv = F(N[off + a]) * F(2) ** int(NE[i]) * gauge; row.append(envelope(nv, int(NL[i])))
         out[free[i]] = row; off += c
     for v, a in fixed.items(): out[v] = [B0 if s == a else (F(0), F(0)) for s in range(cards[v])]
+    _dl(deadline, 'cell_kernel terminal')
     return dict(B0=B0, B=out, scale='original source product', cell=dict(fixed), exact=False, route='compiled_kernel', stats=dict(entries=entries, counters=counters, lowering=meta.get('semantic_plan_sha256'), K_Z=zlab, max_label=max(int(x) for x in NL) if nn else 0, source_shifts_sum=sum(shifts), wall_s=time.monotonic() - t0, host_budget_peak=B.peak))
 
 

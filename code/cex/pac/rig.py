@@ -1,74 +1,177 @@
-"""Rigorous arithmetic helpers for the PAC engine: outward-rounded intervals on gmpy2 mpfr (128-bit) for the accumulated statistics, exact rational sqrt bounds,
-and the two confidence boundaries. Every function documents its rounding direction. No interval is ever narrowed by an unchecked float operation."""
+"""Rigorous arithmetic helpers for the PAC engine -- candidate v2 (repair of review findings F02 / F03 of 13 Nov 2026).
+
+Two representations, each with a stated rounding contract:
+  * DIRECTED binary64 ("DF"): a lower bound is obtained by rounding to nearest and then stepping ONE float towards -inf (math.nextafter / numpy.nextafter);
+    an upper bound by stepping towards +inf. For round-to-nearest the true value lies within half an ulp of the rounded result, so the neighbour in the
+    needed direction is a valid bound in EVERY case, including subnormal results, results that underflow to zero (the neighbours of 0 are +-2^-1074,
+    and a nonnegative true value is then enclosed by [0, 2^-1074]) and exact results. Sums of nonnegative increments in [0, 1] cannot overflow for
+    fewer than 2^1000 trials. The accumulators therefore carry NO multiplicative error label any more: a lower accumulator is a directed-down sum of
+    directed-down terms (<= the exact sum), an upper accumulator the mirror image. The hardware rounding mode is CHECKED at stream start (`fp_selfcheck`).
+    Binary64 values are dyadic rationals, so `Fraction(x)` recovers them exactly.
+  * gmpy2 mpfr with PREC = 128 and directed rounding contexts that TRAP underflow / overflow / invalid / erange (`RangeStop`), used for the confidence
+    boundaries (log, sqrt) and for the sign-aware interval arithmetic of the quadratic inversion.
+
+Quadratic inversion (`shrunk_rejection`): for a concave quadratic g with EXACT rational coefficients the candidate open rejection interval is computed by
+sign-aware interval arithmetic, and then each endpoint is CERTIFIED by EXACT rational evaluation g(endpoint) > 0. Concavity makes g > 0 on the whole closed
+segment between two points where it is positive, so the open interval is strictly inside {g > 0}. If the exact check fails the interval is shrunk towards its
+midpoint (a bounded number of times); if it still fails, NO rejection is returned (conservative). The gate re-verifies recorded intervals with
+`exact_quadratic_positive_on`."""
 import gmpy2
 from gmpy2 import mpfr, mpq
 from fractions import Fraction as F
-import math
+import math, sys
 PREC = 128
-_UP = gmpy2.context(precision=PREC, round=gmpy2.RoundUp); _DN = gmpy2.context(precision=PREC, round=gmpy2.RoundDown)
+_TRAPS = dict(trap_underflow=True, trap_overflow=True, trap_invalid=True, trap_divzero=True, trap_erange=True)
+_UP = gmpy2.context(precision=PREC, round=gmpy2.RoundUp, **_TRAPS); _DN = gmpy2.context(precision=PREC, round=gmpy2.RoundDown, **_TRAPS)
+_MPFR = type(mpfr(0)); INF = float('inf')
+
+
+class RangeStop(Exception):
+    """typed numerical refusal: an mpfr operation left the representable range (underflow / overflow / invalid), or a binary64 directed bound is not finite"""
 
 
 def to_q(x):
     if isinstance(x, F): return mpq(x.numerator, x.denominator)
-    if isinstance(x, int): return mpq(x)
+    if isinstance(x, (int, float)): return mpq(x)
     return x
 
 
+def _guard(fn):
+    try: return fn()
+    except (gmpy2.UnderflowResultError, gmpy2.OverflowResultError, gmpy2.InvalidOperationError, gmpy2.RangeError, gmpy2.DivisionByZeroError, ValueError) as e: raise RangeStop(str(e))
+
+
+def neg(x):
+    """EXACT negation of an mpfr: performed inside the 128-bit context (a negation at the interpreter's default 53-bit context would ROUND a 128-bit operand;
+    this was the review's IV.sq defect)"""
+    with _DN: return -x
+
+
+def frac(x):
+    """exact rational value of a finite mpfr or binary64 (both dyadic)"""
+    if isinstance(x, float):
+        if not math.isfinite(x): raise RangeStop('non-finite binary64 in an exact conversion')
+        return F(x)
+    q = mpq(x); return F(int(q.numerator), int(q.denominator))
+
+
+# ---------------- directed binary64
+def _to_float(q):
+    try: return float(q)                                   # Fraction.__float__ / int.__float__ are correctly rounded (int/int true division)
+    except OverflowError: raise RangeStop('rational too large for binary64')
+def df_lo(q):
+    """binary64 lower bound of the exact NONNEGATIVE rational / int q: nearest conversion; exact when representable, else one step down (clamped at 0)"""
+    x = _to_float(q)
+    if F(x) == q: return x
+    y = math.nextafter(x, -INF); return 0.0 if y < 0 else y
+def df_hi(q):
+    x = _to_float(q)
+    if F(x) == q: return x
+    y = math.nextafter(x, INF)
+    if not math.isfinite(y): raise RangeStop('rational too large for binary64')
+    return y
+def add_lo(a, b):
+    """lower bound of a + b for NONNEGATIVE lower bounds a, b (nearest sum, one step down, clamped at 0)"""
+    y = math.nextafter(a + b, -INF); return 0.0 if y < 0 else y
+def add_hi(a, b):
+    y = math.nextafter(a + b, INF)
+    if not math.isfinite(y): raise RangeStop('binary64 upper accumulator overflow')
+    return y
+def mul_lo(a, b):
+    """a, b >= 0"""
+    y = math.nextafter(a * b, -INF); return 0.0 if y < 0 else y
+def mul_hi(a, b):
+    y = math.nextafter(a * b, INF)
+    if not math.isfinite(y): raise RangeStop('binary64 upper product overflow')
+    return y
+
+
+def fp_selfcheck():
+    """verify that the interpreter's binary64 arithmetic rounds to nearest-even and that the directed-neighbour rule encloses exact results on a fixed battery
+    (run at every stream start, charged). Raises RangeStop if the arithmetic environment is not the assumed one."""
+    import numpy as np, random
+    assert 1.0 + 2.0 ** -53 == 1.0 and 1.0 + 2.0 ** -52 + 2.0 ** -53 == 1.0 + 2.0 ** -51 and 1.0 + 3 * 2.0 ** -53 == 1.0 + 2.0 ** -51, 'not round-to-nearest-even'
+    assert float(F(1, 3)) == 0.3333333333333333 and float(F(2, 3)) == 0.6666666666666666
+    assert np.nextafter(np.float64(0.0), np.float64(INF)) == 2.0 ** -1074 and math.nextafter(0.0, -INF) == -(2.0 ** -1074)
+    rng = random.Random(20261113)
+    for _ in range(2000):
+        a = F(rng.randrange(0, 1 << 60), 1 << rng.randrange(0, 1100)); b = F(rng.randrange(0, 1 << 60), 1 << rng.randrange(0, 1100))
+        s = a + b; p = a * b
+        fa, fb = float(a), float(b)
+        if not (F(df_lo(a)) <= a <= F(df_hi(a))): raise RangeStop('directed conversion failed')
+        if not (F(df_lo(a / 3)) <= a / 3 <= F(df_hi(a / 3))): raise RangeStop('directed conversion failed (inexact)')
+        if not (F(add_lo(fa, fb)) <= F(fa) + F(fb) <= F(add_hi(fa, fb))): raise RangeStop('directed add failed')
+        if not (F(mul_lo(fa, fb)) <= F(fa) * F(fb) <= F(mul_hi(fa, fb))): raise RangeStop('directed mul failed')
+        x = np.array([fa, fb]); y = np.array([fb, fa])
+        lo = np.nextafter(x * y, -INF); hi = np.nextafter(x * y, INF)
+        if not (F(float(max(lo[0], 0.0))) <= F(fa) * F(fb) <= F(float(hi[0]))): raise RangeStop('numpy directed mul failed')
+    return True
+
+
+# ---------------- mpfr helpers
+def dn(x):
+    """mpfr lower bound of an exact rational / int / float"""
+    def f():
+        with _DN: return mpfr(to_q(x)) if not isinstance(x, _MPFR) else mpfr(x)
+    return _guard(f)
+def up(x):
+    def f():
+        with _UP: return mpfr(to_q(x)) if not isinstance(x, _MPFR) else mpfr(x)
+    return _guard(f)
+
+
 class IV:
-    """closed interval [lo, hi] of mpfr with outward rounding; constructed from exact rationals or other IVs"""
+    """closed interval [lo, hi] of mpfr with outward rounding; sign-aware products, quotients and squares (every case of the sign table)"""
     __slots__ = ('lo', 'hi')
     def __init__(self, lo, hi=None):
         if hi is None: hi = lo
-        if isinstance(lo, (F, int)):
-            q = to_q(lo)
-            with _DN: self.lo = mpfr(q)
-            with _UP: self.hi = mpfr(to_q(hi)) if not isinstance(hi, IV) else hi.hi
-            if not isinstance(hi, (F, int)) and not isinstance(hi, IV): self.hi = hi
-            elif isinstance(hi, (F, int)):
-                with _UP: self.hi = mpfr(to_q(hi))
-        else: self.lo = lo; self.hi = hi
+        self.lo = lo if isinstance(lo, _MPFR) else dn(lo); self.hi = hi if isinstance(hi, _MPFR) else up(hi)
         assert self.lo <= self.hi, (self.lo, self.hi)
     @staticmethod
     def exact(q): return IV(q, q)
-    def __add__(self, o):
-        o = o if isinstance(o, IV) else IV(o)
-        with _DN: lo = self.lo + o.lo
-        with _UP: hi = self.hi + o.hi
-        return IV._raw(lo, hi)
-    def __sub__(self, o):
-        o = o if isinstance(o, IV) else IV(o)
-        with _DN: lo = self.lo - o.hi
-        with _UP: hi = self.hi - o.lo
-        return IV._raw(lo, hi)
-    def __mul__(self, o):
-        o = o if isinstance(o, IV) else IV(o)
-        with _DN: cl = [self.lo * o.lo, self.lo * o.hi, self.hi * o.lo, self.hi * o.hi]
-        with _UP: ch = [self.lo * o.lo, self.lo * o.hi, self.hi * o.lo, self.hi * o.hi]
-        return IV._raw(min(cl), max(ch))
-    def __truediv__(self, o):
-        o = o if isinstance(o, IV) else IV(o)
-        if not (o.lo > 0 or o.hi < 0): raise ZeroDivisionError('interval divisor contains zero')
-        with _DN: cl = [self.lo / o.lo, self.lo / o.hi, self.hi / o.lo, self.hi / o.hi]
-        with _UP: ch = [self.lo / o.lo, self.lo / o.hi, self.hi / o.lo, self.hi / o.hi]
-        return IV._raw(min(cl), max(ch))
-    def sq(self):
-        if self.lo >= 0: return self * self
-        if self.hi <= 0: return IV._raw(min((self * self).lo, 0 * self.lo), (self * self).hi)
-        m = max(-self.lo, self.hi)
-        with _UP: hi = m * m
-        return IV._raw(mpfr(0), hi)
     @staticmethod
     def _raw(lo, hi):
         iv = IV.__new__(IV); iv.lo = lo; iv.hi = hi; return iv
-    def frac(self):
-        """exact rational enclosure (the mpfr endpoints are dyadic rationals: exact conversion)"""
-        return (F(gmpy2.mpq(self.lo)) if gmpy2.is_finite(self.lo) else None, F(gmpy2.mpq(self.hi)) if gmpy2.is_finite(self.hi) else None)
+    def __add__(self, o):
+        o = o if isinstance(o, IV) else IV(o)
+        def f():
+            with _DN: lo = self.lo + o.lo
+            with _UP: hi = self.hi + o.hi
+            return IV._raw(lo, hi)
+        return _guard(f)
+    def __neg__(self): return IV._raw(neg(self.hi), neg(self.lo))             # exact negation inside the 128-bit context
+    def __sub__(self, o):
+        o = o if isinstance(o, IV) else IV(o)
+        return self + (-o)
+    def __mul__(self, o):
+        o = o if isinstance(o, IV) else IV(o)
+        def f():
+            with _DN: cl = [self.lo * o.lo, self.lo * o.hi, self.hi * o.lo, self.hi * o.hi]
+            with _UP: ch = [self.lo * o.lo, self.lo * o.hi, self.hi * o.lo, self.hi * o.hi]
+            return IV._raw(min(cl), max(ch))
+        return _guard(f)
+    def __truediv__(self, o):
+        o = o if isinstance(o, IV) else IV(o)
+        if not (o.lo > 0 or o.hi < 0): raise ZeroDivisionError('interval divisor contains zero')
+        def f():
+            with _DN: cl = [self.lo / o.lo, self.lo / o.hi, self.hi / o.lo, self.hi / o.hi]
+            with _UP: ch = [self.lo / o.lo, self.lo / o.hi, self.hi / o.lo, self.hi / o.hi]
+            return IV._raw(min(cl), max(ch))
+        return _guard(f)
+    def sq(self):
+        """[lo, hi]^2: the magnitudes of the endpoints are formed by EXACT negation, so the square of a negative endpoint loses nothing (repair of the review's IV.sq control)"""
+        a = neg(self.lo) if self.lo < 0 else self.lo; b = neg(self.hi) if self.hi < 0 else self.hi
+        m = max(a, b)
+        def f():
+            with _UP: hi = m * m
+            if self.lo >= 0 or self.hi <= 0:
+                mn = min(a, b)
+                with _DN: lo = mn * mn
+                return IV._raw(lo, hi)
+            return IV._raw(mpfr(0), hi)
+        return _guard(f)
+    def frac(self): return (frac(self.lo), frac(self.hi))
     def __repr__(self): return 'IV[%s, %s]' % (float(self.lo), float(self.hi))
-
-
-def isqrt_lo(n):
-    """floor(sqrt(n)) for a nonnegative int"""
-    return math.isqrt(n)
 
 
 def sqrt_bounds(q, bits=128):
@@ -77,48 +180,46 @@ def sqrt_bounds(q, bits=128):
     if q < 0: raise ValueError('sqrt of negative')
     if q == 0: return F(0), F(0)
     s = 1 << (2 * bits); n = q.numerator * s; d = q.denominator
-    # sqrt(q) = sqrt(n/d) = sqrt(n*d)/d
     r = math.isqrt(n * d); lo = F(r, d << bits); hi = F(r + 1, d << bits)
     return lo, hi
 
 
-def log_up(x_hi):
-    """upper bound on log(x) for a rational/mpfr x >= x_hi's value (round-up mpfr)"""
-    with _UP: return gmpy2.log(mpfr(to_q(x_hi)) if isinstance(x_hi, (F, int)) else x_hi)
-
-
 def range_boundary_up(rho, V_hi, alpha):
-    """b(V, alpha) = sqrt((rho+V) log((rho+V)/(rho alpha^2))) rounded UP (exact rational inputs; mpfr round-up for log and sqrt). V_hi is an upper bound on V
+    """b(V, alpha) = sqrt((rho+V) log((rho+V)/(rho alpha^2))) rounded UP (exact rational inputs; mpfr round-up log and sqrt). V_hi is an upper bound on V
     (b increases in V); alpha the per-coordinate failure allowance. Returns an exact rational upper bound."""
     rho = F(rho); V = F(V_hi); alpha = F(alpha); s = rho + V; arg = s / (rho * alpha * alpha)
     if arg <= 1: return F(0)
-    with _UP:
-        L = gmpy2.log(mpfr(to_q(arg)))
-        prod = mpfr(to_q(s)) * L
-        root = gmpy2.sqrt(prod)
-    return F(gmpy2.mpq(root))
+    def f():
+        with _UP:
+            L = gmpy2.log(mpfr(to_q(arg))); prod = mpfr(to_q(s)) * L; root = gmpy2.sqrt(prod)
+        return frac(root)
+    return _guard(f)
 
 
 def psi(lam):
     """psi(lambda) = -log(1-lambda) - lambda as an exact rational (LOWER, UPPER) bound pair for dyadic lambda in (0,1). Directed rounding with the NEGATION handled
     explicitly: an upper bound of -log(x) is the negation of a LOWER bound of log(x) (negation is exact), then the subtraction of lambda is rounded in the wanted direction."""
     lam = F(lam); x = to_q(1 - lam)
-    with _DN: log_lo = gmpy2.log(mpfr(x))
-    with _UP: log_hi = gmpy2.log(mpfr(x))
-    with _UP: hi = (-log_lo) - mpfr(to_q(lam))          # -log_lo >= -log(x); the subtraction rounds up
-    with _DN: lo = (-log_hi) - mpfr(to_q(lam))          # -log_hi <= -log(x); the subtraction rounds down
-    return F(gmpy2.mpq(lo)), F(gmpy2.mpq(hi))
+    def f():
+        with _DN: log_lo = gmpy2.log(mpfr(x))
+        with _UP: log_hi = gmpy2.log(mpfr(x))
+        with _UP: hi = (-log_lo) - mpfr(to_q(lam))          # the negation inside the 128-bit context is exact
+        with _DN: lo = (-log_hi) - mpfr(to_q(lam))
+        return frac(lo), frac(hi)
+    return _guard(f)
 
 
 def log_threshold_up(K, delta_c, omega_l):
     """log(2K/(delta omega_l)) rounded up, exact rational"""
-    with _UP: v = gmpy2.log(mpfr(to_q(F(2 * K) / (F(delta_c) * F(omega_l)))))
-    return F(gmpy2.mpq(v))
+    def f():
+        with _UP: v = gmpy2.log(mpfr(to_q(F(2 * K) / (F(delta_c) * F(omega_l)))))
+        return frac(v)
+    return _guard(f)
 
 
 def quad_roots_outer(A, Bc, Cc):
     """for the quadratic A t^2 + B t + C with exact rational coefficients, return the OUTER rational enclosures of its real roots (lo1, hi1), (lo2, hi2) or None if
-    no real root; used to bound rejection intervals from the inside (a rejection interval is shrunk to be safe)"""
+    no real root (exact rational discriminant; exact-rational sqrt bounds)"""
     disc = Bc * Bc - 4 * A * Cc
     if disc < 0: return None
     slo, shi = sqrt_bounds(disc)
@@ -130,29 +231,35 @@ def quad_roots_outer(A, Bc, Cc):
     return r1, r2
 
 
-# ---------------- fast directed-rounding quadratic inversion (mpfr 128-bit, correctly rounded; the rejected interval is SHRUNK by rounding its endpoints inward)
-def shrunk_rejection(A2, A1, A0L):
-    """for the concave quadratic g(t) = A2 t^2 + A1 t + A0L (A2 < 0, exact rationals or mpfr), return the OPEN interval strictly between its roots, SHRUNK (lower root
-    rounded UP, upper root rounded DOWN) so that every t in the returned interval certainly has g(t) > 0; None if no real root. Directed rounding via gmpy2 contexts:
-    each operation is correctly rounded in the stated direction, so the enclosures are rigorous."""
-    a2 = to_q(A2); a1 = to_q(A1); a0 = to_q(A0L)
-    with _DN: disc_lo = mpfr(a1) * mpfr(a1) - mpfr(4) * mpfr(a2) * mpfr(a0)      # a1^2 rounded down, 4 a2 a0 is NEGATIVE*? (a2<0, a0 sign free): compute both bounds explicitly below
-    with _UP: t1 = mpfr(a1) * mpfr(a1)
-    with _DN: t1d = mpfr(a1) * mpfr(a1)
-    # 4 a2 a0: outer bounds
-    with _UP: p_hi = mpfr(4) * mpfr(a2) * mpfr(a0)
-    with _DN: p_lo = mpfr(4) * mpfr(a2) * mpfr(a0)
-    with _DN: disc_lo = t1d - p_hi
-    with _UP: disc_hi = t1 - p_lo
-    if disc_hi < 0: return None
-    if disc_lo < 0: disc_lo = mpfr(0)
-    with _DN: s_lo = gmpy2.sqrt(disc_lo)
-    with _UP: s_hi = gmpy2.sqrt(disc_hi)
-    # roots: (-a1 -/+ s)/(2 a2) with a2 < 0: lower root = (-a1 + s)/(2 a2) ... careful: 2a2 < 0 flips order. r_minus = (-a1 - s)/(2a2) = (a1 + s)/(-2a2) [larger]; r_plus = (a1 - s)/(-2 a2) [smaller]
-    with _UP: den_hi = mpfr(-2) * mpfr(a2)
-    with _DN: den_lo = mpfr(-2) * mpfr(a2)
-    a1u = None
-    with _UP: lo_root_up = (mpfr(a1) - s_lo) / den_lo if (mpfr(a1) - s_lo) >= 0 else (mpfr(a1) - s_lo) / den_hi          # smaller root rounded UP
-    with _DN: hi_root_dn = (mpfr(a1) + s_lo) / den_hi if (mpfr(a1) + s_lo) >= 0 else (mpfr(a1) + s_lo) / den_lo          # larger root rounded DOWN
-    if not (lo_root_up < hi_root_dn): return None
-    return F(gmpy2.mpq(lo_root_up)), F(gmpy2.mpq(hi_root_dn))
+def shrunk_rejection(A2, A1, A0L, max_shrink=8):
+    """for the CONCAVE quadratic g(t) = A2 t^2 + A1 t + A0L (A2 < 0; exact rationals), return an OPEN interval (lo, hi) such that g(t) > 0 for every t in [lo, hi],
+    or None when no such interval is certified. Construction: sign-aware interval arithmetic (IV) for the discriminant and the two roots; the candidate interval is
+    (upper bound of the smaller root, lower bound of the larger root); then both endpoints are CERTIFIED by EXACT rational evaluation g(lo) > 0 and g(hi) > 0
+    (concavity: positive at both endpoints => positive on the segment). On failure the interval is shrunk towards its midpoint by a factor 2 per step (at most
+    `max_shrink` steps) and re-certified; if no certified interval remains, None (no rejection; conservative)."""
+    a2 = F(A2); a1 = F(A1); a0 = F(A0L)
+    if a2 >= 0: raise ValueError('shrunk_rejection needs a concave quadratic (A2 < 0)')
+    g = lambda t: a2 * t * t + a1 * t + a0
+    try:
+        A2i = IV.exact(a2); A1i = IV.exact(a1); A0i = IV.exact(a0)
+        disc = A1i.sq() - IV.exact(4) * A2i * A0i
+        if disc.hi < 0: return None
+        def sq():
+            with _DN: slo = gmpy2.sqrt(disc.lo) if disc.lo > 0 else mpfr(0)
+            with _UP: shi = gmpy2.sqrt(disc.hi)
+            return IV._raw(slo, shi)
+        s = _guard(sq); den = IV.exact(2) * A2i                                  # den < 0 exactly
+        r_small = (-A1i + s) / den; r_large = (-A1i - s) / den                     # den < 0: (-a1 + s)/den is the SMALLER root, (-a1 - s)/den the LARGER
+        lo = frac(r_small.hi); hi = frac(r_large.lo)                               # inner candidate
+    except (RangeStop, ZeroDivisionError): return None
+    for _ in range(max_shrink + 1):
+        if not (lo < hi): return None
+        if g(lo) > 0 and g(hi) > 0: return lo, hi                                 # EXACT certification (concave => g > 0 on [lo, hi])
+        mid = (lo + hi) / 2; lo = (lo + mid) / 2; hi = (hi + mid) / 2
+    return None
+
+
+def exact_quadratic_positive_on(A2, A1, A0L, lo, hi):
+    """independent checker predicate: A2 < 0, lo < hi, exact g(lo) > 0 and g(hi) > 0 (hence g > 0 on [lo, hi] by concavity)"""
+    a2 = F(A2); a1 = F(A1); a0 = F(A0L); g = lambda t: a2 * t * t + a1 * t + a0
+    return a2 < 0 and F(lo) < F(hi) and g(F(lo)) > 0 and g(F(hi)) > 0
