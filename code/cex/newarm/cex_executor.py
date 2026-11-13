@@ -1,4 +1,5 @@
-"""Certified compiled executor for the nonnegative bucket-contraction / all-singleton-reverse plan (certified executor pass, 11 Nov 2026) -- v1.4 (v1.2 repaired
+"""Certified compiled executor for the nonnegative bucket-contraction / all-singleton-reverse plan (certified executor pass, 11 Nov 2026) -- v1.5 = v1.4 + the per-source
+scale list exposed to the PAC cell-contribution API (cex/pac/contrib.py; the kernel binary and every numerical path are unchanged) (v1.2 repaired
 after the adversarial review of 11 Nov 2026 (checked arithmetic by operand provenance, checked integer dimensions, one native allocation boundary, typed
 conversion stops with exact power-of-two source scaling, deadline at entry / phase boundaries / return, measured host-side memory).
 
@@ -21,13 +22,15 @@ zero); conversion therefore never overflows, and OverflowError in float() is nev
 Typed stops: DEADLINE, MEMORY, RANGE, BADPLAN (invalid plan), FPENV, FAULT, ZERO_EVIDENCE, REPRESENTATION (a mixed-radix volume this kernel cannot address
 with 64-bit keys: a resource / representation refusal, NEVER a zero-evidence claim), WIDTH (enclosure wider than 1/100).
 
-Memory (v1.4 contract, stated precisely): the kernel charges EVERY native heap allocation (exact requested bytes, transient growth overlap included)
-against its cap BEFORE allocating and refuses with a typed MEMORY stop; `peak_logical_bytes` is the peak of all live kernel heap bytes. The HOST side runs a
-`HostBudget` that charges a documented upper bound of every host construction BEFORE it is built -- the serialized value strings of the semantic hash (streamed
-in fixed-size blocks, never a whole-model text copy), each converted value, the plan-word / value lists, the ctypes arrays, each enclosure row -- and raises
-a typed MEMORY stop when the running total would exceed cap - host_reserved_bytes. Not covered (and not claimed): CPython interpreter internals outside the
-counted objects, the C allocator's bookkeeping, and the process RSS high-water mark; these are REPORTED (rss growth per phase) and remain the business of the
-worker policy (the harness's sampled process-tree RSS kill), which is the ONLY whole-worker bound. Deadline: checked at entry, after lowering, before the
+Memory (v1.5 contract, NARROWED after the review of 12 Nov 2026 reproduced a 100,000-state zero-unary model whose tracemalloc peak (4.79 MB) exceeded the
+HostBudget peak (0.87 MB) on the unchanged v1.4): the kernel charges EVERY native heap allocation (exact requested bytes, transient growth overlap included)
+against its cap BEFORE allocating and refuses with a typed MEMORY stop; `peak_logical_bytes` is the peak of all live kernel heap bytes -- this is the only HARD
+bound in the executor. The HOST side runs a `HostBudget` that charges, BEFORE each construction, a documented ESTIMATE of the CONTAINERS the lowering and the
+enclosure build: restricted value lists (now including CPython's append over-allocation and the product-iterator tuple temporaries), per-block hash value strings,
+converted value lists, plan-word / value lists, ctypes arrays, enclosure rows. It is an ACCOUNTING OF THE NAMED CONTAINERS, calibrated against sys.getsizeof and
+tracemalloc on the controls (the review's model: charged vs traced peak recorded in the qualification), NOT a proven upper bound on all Python allocations:
+interpreter internals, Fraction arithmetic temporaries inside convert()/floor_log2(), dict/int caches and allocator bookkeeping are outside it. The process RSS
+growth per phase is REPORTED. The ONLY whole-worker bound is the harness's SAMPLED process-tree RSS kill (a sampled policy, not a hard allocation bound). Deadline: checked at entry, after lowering, before the
 kernel, during the enclosure, and before EVERY terminal return (CERTIFIED and ZERO_EVIDENCE alike); lowering polls the deadline every 256 entries and once per hash block."""
 import ctypes as C, hashlib, json, math, os, resource, subprocess, sys, threading, time
 from fractions import Fraction as F
@@ -165,7 +168,7 @@ def lower(model, order, dense_fill_threshold=0.25, deadline=None, budget=None):
         if len(v_) != math.prod(cards[v] for v in sc): raise ValueError('factor shape mismatch')
         keep = [i for i, v in enumerate(sc) if v not in ev]; newsc = tuple(sc[i] for i in keep); vol = math.prod(cards[v] for v in newsc)
         if vol > 2 ** 62: raise Stop('REPRESENTATION', 'a source factor volume above 2^62 is not addressable by this kernel (64-bit keys): typed representation refusal, not a zero-evidence claim', stats)
-        data_charge = B.charge(56 + 8 * vol, 'restricted value list (%d slots)' % vol); data = []       # the list of references to the caller's (shared) Fraction objects
+        data_charge = B.charge(56 + 9 * vol + 64 + 2 * (56 + 8 * len(sc)) + 32 * len(sc) + 80, 'restricted value list (%d slots incl. append over-allocation) + product-iterator temporaries' % vol); data = []       # list of references to the caller's (shared) Fraction objects: CPython append growth over-allocates <= 12.5 % + 6 slots; the itertools.product tuple + its ints and the zip pair are transient temporaries charged once
         for a, w in zip(product(*(range(cards[v]) for v in sc)), v_):
             stats['source_entries_read'] += 1
             if not isinstance(w, F): w = F(w)
@@ -207,8 +210,8 @@ def lower(model, order, dense_fill_threshold=0.25, deadline=None, budget=None):
         if mode == 1: words += keys
         words += [lab, exp2]; vals += dv
     phys = hashlib.sha256(json.dumps({'plan_format': PLAN_FORMAT, 'dense_fill_threshold': dense_fill_threshold, 'modes': [s_[1] for s_ in srcs], 'scales': [s_[5] for s_ in srcs], 'kernel': hashlib.sha256(SRC.read_bytes()).hexdigest()}).encode()).hexdigest()
-    stats['source_scale_shifts'] = (min(stats['source_scale_shifts']), max(stats['source_scale_shifts'])) if stats['source_scale_shifts'] else None
-    return words, vals, dict(stats, semantic_plan_sha256=sem.hexdigest(), physical_schedule_sha256=phys, n=n, active=active, evidence=ev, cards=cards, plan_lists_charge=plan_lists_charge)
+    shifts_list = list(stats['source_scale_shifts']); stats['source_scale_shifts'] = (min(shifts_list), max(shifts_list)) if shifts_list else None
+    return words, vals, dict(stats, semantic_plan_sha256=sem.hexdigest(), physical_schedule_sha256=phys, n=n, active=active, evidence=ev, cards=cards, plan_lists_charge=plan_lists_charge, source_scale_shifts_list=shifts_list)
 
 
 def enclose(Nvals, Nexp, Nlab, Zval, Zexp, Zlab, cards, ev, stats, deadline=None, budget=None):
@@ -258,7 +261,7 @@ def execute(model, order, deadline=None, cap_bytes=3 * 1024 ** 3, dense_fill_thr
     B = HostBudget(host_budget_bytes, stats)
     words, vals, meta = lower(model, order, dense_fill_threshold, deadline, budget=B)
     stats['host_lowering_rss_growth_bytes_measured'] = max(0, rss_bytes() - rss0); stats['host_lowering_retained_bytes_counted'] = counted_bytes(words or [], vals or [])
-    stats.update({k: v for k, v in meta.items() if k not in ('active', 'evidence', 'cards', 'plan_lists_charge')}); stats['lowering_s'] = time.monotonic() - t; B.report()
+    stats.update({k: v for k, v in meta.items() if k not in ('active', 'evidence', 'cards', 'plan_lists_charge', 'source_scale_shifts_list')}); stats['lowering_s'] = time.monotonic() - t; B.report()
     if meta.get('zero_evidence'):
         terminal_deadline('before the ZERO_EVIDENCE return'); return {'status': 'ZERO_EVIDENCE', 'intervals': None, 'stats': stats}
     n = meta['n']; cards = meta['cards']; ev = meta['evidence']; tot = sum(cards)

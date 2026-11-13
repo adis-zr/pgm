@@ -1,0 +1,13 @@
+{
+  "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+  "binary_sha256": "d75a106a80190d7c48e62e46da4b3c64eda156765365f31d9e7d6e910f08f4d1",
+  "compiler_flags": [
+    "-O3",
+    "-std=c++17",
+    "-shared",
+    "-fPIC",
+    "-fno-fast-math",
+    "-ffp-contract=off",
+    "-frounding-math"
+  ]
+}

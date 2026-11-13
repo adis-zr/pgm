@@ -1,0 +1,284 @@
+{
+ "groups": [
+  {
+   "name": "Q1_identity_binding",
+   "ok": true,
+   "wall_s": 0.004,
+   "detail": {
+    "mutations_change_binding": 3,
+    "receipt_fields": "case_id, arm, replicate, budget_s, seed, nonce, model_sha256, evidence_sha256, candidate_sources (worker), output_sha256, supervisor receipt"
+   }
+  },
+  {
+   "name": "Q2_exact_cell_oracle",
+   "ok": true,
+   "wall_s": 0.158,
+   "detail": {
+    "random_cells": 200,
+    "posterior_identical_mass_1000x": true,
+    "evidence_alias_repeat_gauge_disconnected": true,
+    "zero_evidence_component_invalidates_job": true
+   }
+  },
+  {
+   "name": "Q3_adaptive_laws_exhaustive",
+   "ok": true,
+   "wall_s": 0.046,
+   "detail": {
+    "models": 27,
+    "leaves": 149,
+    "negative_controls_detected": 3
+   }
+  },
+  {
+   "name": "Q4_support_envelopes",
+   "ok": true,
+   "wall_s": 0.033,
+   "detail": {
+    "child_sum_monotonicity_checks": 257,
+    "U0_root_is_deterministic_zero": true,
+    "no_certificate_is_NONE_not_zero_evidence": true,
+    "invalid_pointwise_envelope_rejected": true
+   }
+  },
+  {
+   "name": "Q5_actual_sampling_law",
+   "ok": true,
+   "wall_s": 0.0,
+   "detail": {
+    "3": {
+     "bits": 2,
+     "rejected_per_round": 1
+    },
+    "5": {
+     "bits": 3,
+     "rejected_per_round": 3
+    },
+    "6": {
+     "bits": 3,
+     "rejected_per_round": 2
+    },
+    "7": {
+     "bits": 3,
+     "rejected_per_round": 1
+    },
+    "12": {
+     "bits": 4,
+     "rejected_per_round": 4
+    },
+    "1000": {
+     "bits": 10,
+     "rejected_per_round": 24
+    },
+    "induced_probabilities_exact": true,
+    "prng": "random.Random (MT19937); randrange = rejection on getrandbits (CPython _randbelow_with_getrandbits)"
+   }
+  },
+  {
+   "name": "Q6_confidence_arithmetic",
+   "ok": true,
+   "wall_s": 1.511,
+   "detail": {
+    "range_boundary_rounded_up_within_1e-30": true,
+    "psi_enclosures_16": true,
+    "omega_lower_bound_valid": true,
+    "variance_inversion_outer_set_grid_1001x3": true,
+    "nonconvex_components_seen": 0,
+    "rho_fixed_before_stream": true,
+    "delta_split": "range 1/2, variance 1/2, per coordinate /K (engine.Stream alpha_r, alpha_v)"
+   }
+  },
+  {
+   "name": "Q7_numerical_publication",
+   "ok": true,
+   "wall_s": 0.001,
+   "detail": {
+    "three_0_0.6_eps_0.3_infeasible": true,
+    "feasible_point_exact_simplex": true,
+    "no_division_without_positive_denominator": true,
+    "huge_small_exponents_enclosed": true
+   }
+  },
+  {
+   "name": "Q9_resource_driven_selection",
+   "ok": true,
+   "wall_s": 0.497,
+   "detail": {
+    "deadline_refuses_with_prefix_recorded": 257,
+    "failed_trial_terminates_stream_prefix_2": true,
+    "early_zero_evidence_honours_deadline": true
+   }
+  },
+  {
+   "name": "Q10_existing_defects_and_regressions",
+   "ok": true,
+   "wall_s": 37.338,
+   "detail": {
+    "host_budget_control_on_candidate": {
+     "host_budget_peak_bytes": 966101,
+     "traced_peak_bytes": 4794952,
+     "restricted_list_1024": {
+      "charged_bytes": 8248,
+      "actual_sys_getsizeof_bytes": 8856
+     }
+    },
+    "claim": "NARROWED (cex_executor docstring): HostBudget is an accounting of the named containers, not a proven upper bound; the only whole-worker bound is the sampled process-tree RSS policy",
+    "frozen_executor_qualification": {
+     "passed": 401,
+     "total": 401,
+     "controls": 41
+    },
+    "gate_controls": "cex/gate_controls.py runs inside that suite (control review2_S4_S5): specification gate + stale locked outputs + reused attempt dirs"
+   }
+  },
+  {
+   "name": "Q11_diagnostic_coverage_delta_0.1",
+   "ok": true,
+   "wall_s": 415.031,
+   "detail": {
+    "models": 60,
+    "certified": 25,
+    "misses": 0,
+    "delta_joint": "0.1",
+    "note": "bug detection only; cannot verify 1e-6",
+    "wall_s": 415.0,
+    "rows": [
+     [
+      1,
+      "point",
+      431418,
+      true
+     ],
+     [
+      2,
+      "point",
+      364660,
+      true
+     ],
+     [
+      5,
+      "point",
+      565763,
+      true
+     ],
+     [
+      7,
+      "point",
+      436675,
+      true
+     ],
+     [
+      13,
+      "point",
+      434097,
+      true
+     ],
+     [
+      14,
+      "point",
+      563264,
+      true
+     ],
+     [
+      17,
+      "point",
+      458752,
+      true
+     ],
+     [
+      22,
+      "point",
+      303934,
+      true
+     ],
+     [
+      23,
+      "point",
+      434069,
+      true
+     ],
+     [
+      25,
+      "point",
+      393216,
+      true
+     ],
+     [
+      29,
+      "point",
+      524288,
+      true
+     ],
+     [
+      35,
+      "point",
+      196608,
+      true
+     ],
+     [
+      37,
+      "point",
+      262144,
+      true
+     ],
+     [
+      40,
+      "point",
+      363138,
+      true
+     ],
+     [
+      41,
+      "point",
+      524288,
+      true
+     ],
+     [
+      42,
+      "conditional",
+      173154,
+      true
+     ],
+     [
+      43,
+      "point",
+      524288,
+      true
+     ],
+     [
+      44,
+      "point",
+      364607,
+      true
+     ],
+     [
+      47,
+      "point",
+      262144,
+      true
+     ],
+     [
+      48,
+      "conditional",
+      108654,
+      true
+     ]
+    ]
+   }
+  }
+ ],
+ "executions": 414,
+ "coordinates_checked": 3003,
+ "passed": 10,
+ "total": 10,
+ "all_pass": true,
+ "Q8": "candidate validation (theory section 9) not implemented in this pass; recorded",
+ "utc": "2026-11-13T05:13:13Z",
+ "candidate_sources": {
+  "engine.py": "b7436d181d8c549543626aea6e6d97153cb5e1408d334db6e39acfcbd9cd2c70",
+  "solve.py": "0ba134ed01a9f75c34b111a3336bb33e3b641e844b3f6b0b03daa2da965ce9d0",
+  "contrib.py": "3e94d3fc13c146839a874f4a12575c58d48d1a1c1b7e85059f2cb3bb63198579",
+  "rig.py": "fa65489741a4219a17984675e659b91cf3359419fef780ae14edd9b1349b53c9",
+  "worker.py": "ae6b1a8d4508809e01995902172b60ddc816548d593cf54e3309928cd008d8d6"
+ }
+}
