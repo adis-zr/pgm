@@ -13,6 +13,11 @@ import core
 
 def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
     RD = os.path.abspath(RD); man = json.load(open(os.path.join(RD, manifest_name))); failures = []; cells = {c['cell_id']: c for c in man['cells']}
+    # frozen candidate source hashes: MANIFEST_AMENDMENT_1 (per-directory, from the manifest commit) supersedes the manifest's flat dict whose keys collided across directories
+    ap = os.path.join(RD, 'MANIFEST_AMENDMENT_1_artifact_hashes.json')
+    if os.path.exists(ap):
+        am = json.load(open(ap)); frozen_candidate = dict(am['per_directory_hashes']['newarm']); frozen_candidate.update(am['per_directory_hashes']['pac'])
+    else: frozen_candidate = {f.split('/')[-1]: h for f, h in (man.get('candidate_artifact_hashes') or {}).items()}
     receipts = {}
     for rp in glob.glob(os.path.join(RD, 'cells', '*', 'receipt.json')):
         r = json.load(open(rp)); cid = r.get('cell_id')
@@ -46,8 +51,7 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
                     if w.get('arm') != c['arm']: failures.append((cid, 'worker arm differs'))
                     if w.get('guarantee_type') not in ('PAC', 'DETERMINISTIC'): failures.append((cid, 'completed PAC-arm output without a guarantee type'))
                     cs = w.get('candidate_sources') or {}
-                    for f, h in (man.get('candidate_artifact_hashes') or {}).items():
-                        base = f.split('/')[-1]
+                    for base, h in frozen_candidate.items():
                         if base in cs and cs[base] != h: failures.append((cid, 'worker candidate source %s differs from the frozen artifact' % base))
                 if r.get('guarantee_type') != (w.get('guarantee_type') or 'DETERMINISTIC'): failures.append((cid, 'receipt guarantee_type differs from the worker'))
                 mp = c['model_path']
