@@ -28,7 +28,10 @@ def worker(RD, r):
 
 
 def read_mar(path):
-    toks = open(path).read().split(); i = 1 if toks[0] == 'MAR' else 0; n = int(toks[i]); i += 1; rows = []
+    toks = open(path).read().split()
+    if 'MAR' in toks: i = toks.index('MAR') + 1          # Merlin writes 'PR <logZ> (<Z>) STATUS <text> MAR <n> ...'; libDAI / PGMax write 'MAR <n> ...'
+    else: i = 0
+    n = int(toks[i]); i += 1; rows = []
     for _ in range(n):
         k = int(toks[i]); i += 1; rows.append([F(toks[i + j]) for j in range(k)]); i += k
     return rows
