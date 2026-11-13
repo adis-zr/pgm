@@ -1,748 +1,951 @@
 {
  "groups": [
   {
-   "name": "Q1_identity_and_gate_negative_controls",
+   "name": "Q1_identity_and_gate_end_to_end",
    "ok": true,
-   "wall_s": 0.631,
+   "wall_s": 5.118,
    "detail": {
-    "semantic_plan_mutations_change_binding": 3,
-    "worker_deterministic_fixture_route": [
-     "pac_conditional_exact_cover_complete"
-    ],
-    "valid_fixture_accepted": true,
-    "negative_controls_rejected": {
-     "empty_candidate_source_map": "worker candidate source identity incomplete: 45 frozen sources not rec",
-     "missing_certificate_wrong_delta": "deterministic publication with a legacy / missing certificate schema (",
-     "late_publication_true_boolean": "COMPLETED but recomputed launch-relative wall 200.0 > budget 30.0",
-     "duplicate_planned_cell": "duplicate planned cell ids in the manifest: 1 duplicates",
-     "input_changed_after_freeze": "input files on disk differ from the FROZEN manifest hashes (input chan",
-     "fabricated_decimals": "the published decimals are not the frozen publication of the certified",
-     "fabricated_pac_answer_no_certificate": "PAC guarantee with a legacy / missing certificate: UNVERIFIABLE (no de",
-     "late_unproved_zero_nonzero_child": "zero-evidence claim after the budget (late proof is not a timely resul",
-     "cbi_completed_without_output": "COMPLETED without a worker output file",
-     "foreign_nonce": "worker nonce differs from the receipt (stale or foreign output)",
-     "wrong_seed": "worker seed differs from the manifest",
-     "exact_cover_without_resolved_cells": "exact-cover component 0 without resolved cells",
-     "lifted_rows_tampered": "lifted exact rows: ",
-     "start_hash_disagrees": "CAMPAIGN_START manifest sha256 0000000000000000 differs from the manif",
-     "missing_receipt": "planned cell without receipt (NOT_RUN)"
+    "real_worker_fixtures_accepted": {
+     "det_cover": {
+      "routes": [
+       "pac_conditional_exact_cover_complete"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "det_partial": {
+      "routes": [
+       "pac_conditional_deterministic_partial_cover_bounds"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "h1_forest_ev": {
+      "routes": [
+       "forest"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "h1_support_grid": {
+      "routes": [
+       "support"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zero": {
+      "routes": "PROVED_ZERO_EVIDENCE",
+      "guarantee": "DETERMINISTIC"
+     }
     },
     "pac_fixture_trials": 4096,
-    "pac_certificate_replayed_and_accepted": true,
-    "pac_certificate_tampering_rejected": {
-     "n": "PAC component 0: n differs from trials",
-     "a_lo": "PAC component 0: replayed row 0 differs from the recorded certificate",
-     "alpha": "PAC component 0: per-coordinate alpha differs from delta/(2K)",
-     "K": "PAC component 0: K differs from the job ledger",
-     "exact_row": "PAC component 0: replayed row 0 differs from the recorded certificate",
-     "task_delta": "delta differs from the manifest task",
-     "U_root": "PAC component 0: U_root missing / inconsistent",
-     "certifier_label": "PAC component 0: replayed row 0 differs from the recorded certificate"
-    }
+    "negative_controls_rejected": {
+     "wrong_lift_consistent_decimals": "the lift of the VERIFIED component rows differs from the certificate lifted rows",
+     "foreign_design": "PAC component 0: design cutset / order is not a partition of the component varia",
+     "false_U_root": "PAC component 0: U_root differs from the factor-max root bound rebuilt from the ",
+     "false_exact_cover": "component 0: frontier record does not rebuild to the recorded U_t",
+     "false_zero_string": "zero-evidence proof NOT re-derivable: proof is not a structured record ('Trust m",
+     "false_zero_structured": "zero-evidence proof NOT re-derivable: reduction of the original model is not zer",
+     "coherent_K_one": "K_total 1 differs from the sum of cardinalities of the re-derived reduced job (6",
+     "empty_freeze": "manifest candidate_artifact_hashes must be a NONEMPTY per-directory map (dir/fil",
+     "negative_wall": "receipt wall is not a finite nonnegative number (-1000)",
+     "empty_candidate_source_map": "worker candidate source identity incomplete: 47 frozen sources not recorded (e.g",
+     "missing_certificate_wrong_delta": "publication with a legacy / missing certificate schema (None): UNVERIFIABLE by t",
+     "late_publication_true_boolean": "COMPLETED but recomputed launch-relative wall 200.0 > budget 60.0",
+     "duplicate_planned_cell": "duplicate planned cell ids in the manifest: 1 duplicates",
+     "input_changed_after_freeze": "input files on disk differ from the FROZEN manifest hashes (input changed after ",
+     "foreign_nonce": "worker nonce differs from the receipt (stale or foreign output)",
+     "wrong_seed": "worker seed differs from the manifest",
+     "cbi_completed_without_output": "COMPLETED without a worker output file",
+     "tampered_statistic_n": "PAC component 0: n differs from trials",
+     "tampered_exact_row": "PAC component 0: replayed row 0 differs from the recorded exact rows",
+     "start_hash_disagrees": "CAMPAIGN_START manifest sha256 0000000000000000 differs from the manifest file o",
+     "unbound_amendment_erasure": "artifact amendment MANIFEST_AMENDMENT_999_artifact_hashes.json is not bound by C",
+     "bound_amendment_empty_maps": "bound amendment with an empty candidate map refused",
+     "missing_receipt": "planned cell without receipt (NOT_RUN)",
+     "tampered_deterministic_row": "component 0: recorded deterministic row 0 differs from the bounds re-derived fro"
+    },
+    "b0_scope_in_manifest_valid_candidate_accepted": true
    }
   },
   {
    "name": "Q2_exact_cell_oracle",
    "ok": true,
-   "wall_s": 0.158,
+   "wall_s": 0.17,
    "detail": {
     "random_cells": 200,
     "posterior_identical_mass_1000x": true,
-    "evidence_alias_repeat_gauge_disconnected": true,
     "evidence_contradiction_is_empty_cell": true,
     "expired_deadline_refused_at_entry": true,
     "zero_evidence_component_invalidates_job": true
    }
   },
   {
-   "name": "Q3_fixed_laws_exhaustive_plus_resolution_histories_and_production_draw",
+   "name": "Q3_laws_and_actual_adaptive_accumulation",
    "ok": true,
-   "wall_s": 2.152,
+   "wall_s": 2.134,
    "detail": {
     "models": 27,
     "leaves": 149,
-    "adaptive_resolution_histories": 19,
-    "production_draw_leaf_frequency_checks": 5,
-    "negative_identity_controls_detected": 3,
+    "actual_add_residual_observed": {
+     "calls": 96,
+     "positive_A": 84,
+     "checked": 84
+    },
+    "production_draw_frequency_checks": 5,
     "duplicate_resolved_cell_refused": true
    }
   },
   {
-   "name": "Q4_support_envelopes_production_guard",
+   "name": "Q4_frontier_invariants_random_models",
    "ok": true,
-   "wall_s": 0.202,
+   "wall_s": 1.005,
    "detail": {
-    "child_sum_monotonicity_checks": 343,
-    "U0_root_is_deterministic_zero": true,
-    "positive_Z_zero_prefix_refuses_not_zero_evidence": 3,
-    "production_envelope_guard_rejects_corrupted_tree": true
+    "models": 114,
+    "steps": 1112,
+    "closures": 114,
+    "telescoping": 3321,
+    "rebuild": 228,
+    "zero_prefix_models": 7,
+    "strict_slack_models": 113,
+    "zero_mass_positive_bound_leaves": 24,
+    "closing_draws": 25,
+    "U0_root_deterministic_zero": true,
+    "positive_Z_zero_prefix_refuses": true,
+    "production_envelope_guard": true
    }
   },
   {
    "name": "Q5_actual_sampling_backend",
    "ok": true,
-   "wall_s": 0.824,
+   "wall_s": 0.365,
    "detail": {
-    "algebra_rejection_W_3": {
-     "bits": 2
-    },
-    "algebra_rejection_W_5": {
-     "bits": 3
-    },
-    "algebra_rejection_W_6": {
-     "bits": 3
-    },
-    "algebra_rejection_W_7": {
-     "bits": 3
-    },
-    "algebra_rejection_W_12": {
-     "bits": 4
-    },
-    "algebra_rejection_W_1000": {
-     "bits": 10
-    },
     "production_random_backend_frequencies": [
      10113,
      19874,
      30013
     ],
-    "prng": "random.Random (MT19937); randrange = rejection on getrandbits (CPython _randbelow_with_getrandbits); seed reproducibility is engineering evidence, the theorem assumes ideal bits"
+    "prng": "python random.Random (Mersenne Twister 19937) seeded by an int derived from the job seed string; unbiased integer draws by randrange (rejection on getrandbits); the theorem assumes ideal independent unbiased bits -- a separate assumption from seed reproducibility"
    }
   },
   {
-   "name": "Q6_confidence_arithmetic_inversion_underflow",
+   "name": "Q6_confidence_arithmetic",
    "ok": true,
-   "wall_s": 1.945,
+   "wall_s": 0.537,
    "detail": {
-    "range_boundary_rounded_up_within_1e-30": true,
-    "psi_enclosures_16": true,
-    "omega_lower_bound_valid": true,
-    "review_witness_1_inside_positive_set": [
-     "True",
-     1.3714100759593355e-38
-    ],
-    "review_witness_2_family_certified": true,
-    "random_concave_quadratics": {
-     "n": 3000,
-     "none": 0,
-     "violations": 0
-    },
-    "IV_sq_crossing_zero_encloses_endpoint_square": true,
-    "underflow_statistics_enclosed_2^-540_2^-1075": true,
-    "directed_accumulators_enclose_exact_sums_500": true,
-    "variance_inversion_outer_set_grid_1001x3": true,
-    "nonconvex_accepted_set_constructed": 3,
-    "design_record_fields_executed": true
+    "boundary_psi_enclosures": true,
+    "review_witness_1": true,
+    "review_witness_2_family": true,
+    "random_concave_quadratics_3000": true,
+    "quad_roots_outer_repaired_1000": true,
+    "IV_sq": true,
+    "underflow_statistics_enclosed": true,
+    "directed_accumulators_500": true,
+    "nonconvex_accepted_set": 3,
+    "design_record_fields": true
    }
   },
   {
-   "name": "Q7_numerical_publication_actual_pac",
+   "name": "Q7_numerical_publication_truth_asserted",
    "ok": true,
-   "wall_s": 1.283,
+   "wall_s": 3.273,
    "detail": {
-    "three_0_0.6_eps_0.3_infeasible": true,
-    "feasible_point_exact_simplex": true,
-    "no_division_without_positive_denominator": true,
     "pac_publication_point": {
      "trials": 4096,
      "contains_truth": true,
      "certifiers": [
       "variance"
-     ],
-     "replay_equal": true
+     ]
     },
     "pac_publication_conditional": {
      "trials": 4096,
      "contains_truth": true,
      "certifiers": [
       "variance"
-     ],
-     "replay_equal": true
+     ]
     },
-    "huge_small_exponents_enclosed": true
+    "adaptive_publication": {
+     "guarantee": "DETERMINISTIC",
+     "route": "deterministic_partial_cover_bounds",
+     "resolved": 1865,
+     "trials": 1865,
+     "U_t_over_U": 0.00087738037109375,
+     "contains_truth": true
+    },
+    "tiny_a_exact_answers_published": true,
+    "huge_exponents": true
    }
   },
   {
-   "name": "Q9_resource_selection_and_continuation",
+   "name": "Q9_continuation_every_backend_class",
    "ok": true,
-   "wall_s": 0.802,
+   "wall_s": 0.92,
    "detail": {
-    "deadline_refuses_with_prefix_recorded": 132,
-    "failed_trial_terminates_stream_prefix_2": true,
-    "exact_refusal_continues_into_pac": {
-     "component": 0,
-     "from_route": "support",
-     "stop": "MEMORY",
-     "remaining_s": 29.999445625115186,
-     "to": "pac_conditional"
+    "deadline_refuses": true,
+    "failed_trial_terminates": true,
+    "continuation_per_backend_class": {
+     "stream.UnsupportedError": [
+      "DETERMINISTIC",
+      "REPRESENTATION"
+     ],
+     "dag.Unsupported": [
+      "DETERMINISTIC",
+      "REPRESENTATION"
+     ],
+     "support.Unsupported_after_RANGE": [
+      "DETERMINISTIC",
+      "REPRESENTATION"
+     ],
+     "ResourceStop.MEMORY": [
+      "DETERMINISTIC",
+      "MEMORY"
+     ]
     },
-    "deadline_refusal_is_final": true,
-    "zero_evidence_terminal_deadline_checked_in_worker": {
-     "late": "DEADLINE",
-     "timely": "PROVED_ZERO_EVIDENCE",
-     "solve_level_controlled_clock": "DEADLINE"
-    },
-    "source_conversion_range_is_typed": true,
-    "factorless_model_all_arms": true,
-    "frozen_executor_early_zero_honours_deadline": true
+    "deadline_refusal_final": true,
+    "late_zero_is_DEADLINE_timely_zero_verified": true,
+    "typed_range": true,
+    "factorless_all_arms": true
    }
   },
   {
    "name": "Q10_existing_defects_isolated",
    "ok": true,
-   "wall_s": 38.69,
+   "wall_s": 39.722,
    "detail": {
-    "host_budget_control_on_candidate": {
+    "host_budget_control": {
      "host_budget_peak_bytes": 966101,
-     "traced_peak_bytes": 4794952,
-     "restricted_list_1024": {
-      "charged_bytes": 8248,
-      "actual_sys_getsizeof_bytes": 8856
-     }
+     "traced_peak_bytes": 4794952
     },
-    "claim": "NARROWED (cex_executor docstrings and certificate text): HostBudget is an accounting of the named containers, not a proven upper bound; the only whole-worker bound is the sampled process-tree RSS policy",
-    "frozen_executor_qualification_isolated_copy": {
+    "claim": "NARROWED: HostBudget is an accounting of the named containers, not a proven bound; the only whole-worker bound is the sampled RSS policy",
+    "frozen_executor_isolated": {
      "passed": 401,
      "total": 401,
-     "controls": 41,
-     "isolated_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v2_llhu7cqv/q10_iso"
+     "controls": 41
     },
-    "historical_records_untouched": true
+    "dependencies_for_standalone_replay": "cex/*.py, cex/baseline/, cex/newarm/, runs/mdi_2026-10-28/CERTIFIED_EXECUTOR_2026-11-11/{campaign_specs, campaigns/baseline_20s_all46, campaigns/newarm_20s_all46_v13, *.json}"
    }
   },
   {
-   "name": "Q11_diagnostic_coverage_delta_0.1_attempted_runs",
+   "name": "Q11_diagnostic_coverage_attempted_runs",
    "ok": true,
-   "wall_s": 91.06,
+   "wall_s": 78.84,
    "detail": {
     "attempted": 60,
-    "published_pac": 57,
-    "misses": 0,
-    "delta_joint": "0.1",
-    "criterion": "misses <= 13 = one-sided 1e-3 quantile of Binomial(60, 0.1) over ATTEMPTED runs",
+    "published": 59,
+    "pac_misses": 0,
+    "delta": "1/10 per run (two families 1/20)",
+    "criterion": "misses <= 14 (P[X > 14] = 6.66e-4 at p = 0.1, n = 60)",
     "note": "bug detection only; cannot verify 1e-6",
-    "wall_s": 91.1,
+    "wall_s": 78.8,
     "rows": [
      {
       "trial": 0,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 6270,
+      "guarantee": "DETERMINISTIC",
+      "trials": 3,
+      "resolved": 3,
       "contains_truth": true
      },
      {
       "trial": 1,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 30961,
+      "trials": 32768,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 2,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 3,
       "mode": "conditional",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 6696,
+      "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 4,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 86709,
+      "trials": 89149,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 5,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 6,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 15488,
+      "guarantee": "DETERMINISTIC",
+      "trials": 2,
+      "resolved": 2,
       "contains_truth": true
      },
      {
       "trial": 7,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 8,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 9,
       "mode": "conditional",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 19343,
+      "trials": 23027,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 10,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 11,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 12,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 4096,
+      "guarantee": "DETERMINISTIC",
+      "trials": 3,
+      "resolved": 3,
       "contains_truth": true
      },
      {
       "trial": 13,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 32768,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 14,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 15,
       "mode": "conditional",
-      "status": "DEADLINE",
-      "guarantee": "NONE",
-      "trials": 21514,
-      "contains_truth": null
+      "resolve": false,
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 24965,
+      "resolved": 0,
+      "contains_truth": true
      },
      {
       "trial": 16,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 44578,
+      "trials": 59440,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 17,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 18,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 6897,
+      "guarantee": "DETERMINISTIC",
+      "trials": 2,
+      "resolved": 2,
       "contains_truth": true
      },
      {
       "trial": 19,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 20,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 46598,
+      "trials": 59954,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 21,
       "mode": "conditional",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 22,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 23,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 24,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 4096,
+      "guarantee": "DETERMINISTIC",
+      "trials": 3,
+      "resolved": 3,
       "contains_truth": true
      },
      {
       "trial": 25,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 26,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 27,
       "mode": "conditional",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 28,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 29,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 30,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 13683,
+      "guarantee": "DETERMINISTIC",
+      "trials": 2,
+      "resolved": 2,
       "contains_truth": true
      },
      {
       "trial": 31,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 32644,
+      "trials": 32768,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 32,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 29959,
+      "trials": 32768,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 33,
       "mode": "conditional",
+      "resolve": false,
       "status": "DEADLINE",
       "guarantee": "NONE",
-      "trials": 26799,
+      "trials": 48557,
+      "resolved": 0,
       "contains_truth": null
      },
      {
       "trial": 34,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 35,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 36,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 4096,
+      "guarantee": "DETERMINISTIC",
+      "trials": 2,
+      "resolved": 2,
       "contains_truth": true
      },
      {
       "trial": 37,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 38,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 39,
       "mode": "conditional",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 13239,
+      "trials": 13935,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 40,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 48267,
+      "trials": 61240,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 41,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 42,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 4096,
+      "guarantee": "DETERMINISTIC",
+      "trials": 3,
+      "resolved": 3,
       "contains_truth": true
      },
      {
       "trial": 43,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 44,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 45,
       "mode": "conditional",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 46,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 47,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 48,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 4096,
+      "guarantee": "DETERMINISTIC",
+      "trials": 3,
+      "resolved": 3,
       "contains_truth": true
      },
      {
       "trial": 49,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 50,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 51,
       "mode": "conditional",
-      "status": "DEADLINE",
-      "guarantee": "NONE",
-      "trials": 28196,
-      "contains_truth": null
+      "resolve": false,
+      "status": "PUBLISHED",
+      "guarantee": "PAC",
+      "trials": 36863,
+      "resolved": 0,
+      "contains_truth": true
      },
      {
       "trial": 52,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 53,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 54,
       "mode": "conditional",
+      "resolve": true,
       "status": "PUBLISHED",
-      "guarantee": "PAC",
-      "trials": 2048,
+      "guarantee": "DETERMINISTIC",
+      "trials": 2,
+      "resolved": 2,
       "contains_truth": true
      },
      {
       "trial": 55,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 56,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 4096,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 57,
       "mode": "conditional",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 19192,
+      "trials": 22505,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 58,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 8192,
+      "resolved": 0,
       "contains_truth": true
      },
      {
       "trial": 59,
       "mode": "point",
+      "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
       "trials": 16384,
+      "resolved": 0,
       "contains_truth": true
      }
     ]
    }
   },
   {
-   "name": "Q12_exact_closure_and_partial_cover",
+   "name": "Q12_exact_closure_partial_cover_sensitivity",
    "ok": true,
-   "wall_s": 74.761,
+   "wall_s": 6.587,
    "detail": {
-    "empty_cutset_closure_one_contraction": 1.2998024554566185e-14,
-    "forced_cutset_complete_cover_2_cells": true,
-    "generic_complete_covers": 1,
-    "generic_partial_covers_conserved": 22,
+    "review_slack_cover_a_1/2_1/10_0": true,
+    "review_full_solver_cover": true,
+    "review_partial_cover_star": {
+     "resolved": 256,
+     "trials": 256
+    },
+    "generic": {
+     "complete_covers": 20,
+     "partial_or_pac": 3,
+     "deterministic_publications": 23,
+     "pac_publications": 0,
+     "pac_misses": 0
+    },
+    "output_corruption_detected": 6,
     "ablation_residual_region_fixed": true
+   }
+  },
+  {
+   "name": "Q13_adapters_and_executable_pipeline",
+   "ok": true,
+   "wall_s": 0.928,
+   "detail": {
+    "truncated_misshaped_wrongly_bound_refused": true,
+    "native_width_scored_separately": 0.02,
+    "integer_export_exact_and_parsed_by_repository_readers": true,
+    "external_readers_parse_export": {
+     "libdai": {
+      "rc": 0,
+      "max_abs_error": 4.1614906832298134e-11
+     },
+     "merlin": {
+      "rc": 0,
+      "status_true": true
+     }
+    },
+    "real_pipeline_manifest_run_gate_report_closeout": {
+     "cells": 2,
+     "gate_passed": true,
+     "closeout_qualified_with_matching_identity": true,
+     "closeout_refuses_foreign_identity": true,
+     "resume_preflight_refuses_edited_manifest": true
+    }
    }
   }
  ],
- "executions": 3485,
- "coordinates_checked": 3345,
- "suite_version": "pac-qualification-v2 (2026-11-13)",
- "passed": 11,
- "total": 11,
+ "executions": 342,
+ "helper_evaluations": 4668,
+ "coordinates_checked": 15749,
+ "suite_version": "pac-qualification-v3 (2026-11-13 completion)",
+ "passed": 12,
+ "total": 12,
  "all_pass": true,
- "Q8": "candidate validation (theory section 9) not implemented; recorded",
- "utc": "2026-11-13T20:12:34Z",
+ "Q8": "candidate validation (theory section 9) OPTIONAL in the handoff; not implemented; recorded",
+ "utc": "2026-11-13T21:58:17Z",
  "candidate_sources": {
-  "campaign.py": "0357dae0b0bbf010307f982280d7ae761e13d790fb587aaeee31fa78e2b61ecc",
-  "closeout.py": "d4380356fcea7e1344dda8c51cafc3cbcb91cfd15a28a4800a51c9908e2cbe6e",
-  "comparator_cell.py": "1142b72d9448b9d45605d7ca023255db32bbbc9b06f848251dcef5aa90b563eb",
-  "contrib.py": "aa6018a1798c5524361459000fa240b70cd11bde367f631e1c8900682fa77678",
-  "engine.py": "df202423f9980270cc722b703a90ab7e9a1e668d35df5421c8e7cd2e464a7998",
-  "gate.py": "e16726eb6cc08c9cccf0cae0ca7d7195820b8b31460f1a9eee37d25b98eecd06",
-  "legacy_cbi_uai.py": "86dcb80e4412e0017a55812b963081575902344825ed1d66f3b34296e9079520",
-  "legacy_qgrid.py": "a47088532f5e2a6da489de69df3b73d6183796a7ec85cec3457c3d3f355a3c84",
-  "package.py": "a3d9f7151b010b76d58999607891ef245cbe7cf0f96743b1a6a739163403e6a2",
-  "qualification.py": "40b13167c1ce0b662ab35617cd07882eb4334f7ea55e5b666902eed16adcb8f2",
-  "references.py": "0b6008a89c64518062c233692f641caebc7b2fb02cb3ca63d6198adf5b9368ec",
-  "report.py": "1ffadc6239c72d085a8699ce711c7c3e3bc5c2d5f83d8ff5c36fb2fa7f0f37e3",
-  "rig.py": "af5247054a27107312407edcbaf72a30407381a1906a54ea0c728107111680e0",
-  "solve.py": "dbb0f1b5b84dc4d48b7408ea8854ad140af4b089b336321d6baae328acb39a78",
-  "worker.py": "68ee72a6e60cc8764554299b973f0814b2baeb27cf9f1c946be017dd19aee0d1"
+  "pac/campaign.py": "714b106ad80527f1d84c70d9958e31207f79f3e1a82f8ba3b4289332ce652e9b",
+  "pac/closeout.py": "aa00eae0f94fb601d120cda3318dc7b1a6f67825600d61945046f087ca6e171c",
+  "pac/comparator_cell.py": "1142b72d9448b9d45605d7ca023255db32bbbc9b06f848251dcef5aa90b563eb",
+  "pac/contrib.py": "aa6018a1798c5524361459000fa240b70cd11bde367f631e1c8900682fa77678",
+  "pac/engine.py": "dfba68c2c83ba771f7150cb42721f73193bdd0dd75c2967eb7a6a0807a28e742",
+  "pac/gate.py": "a28a324a6f56bf7199e2f2fcd7e1a39a623c7917015001730352daf392cb173e",
+  "pac/legacy_cbi_uai.py": "dc34fe3209d7235b75a98b2d0b64755224fe0917c917fa3abf454344d47470cf",
+  "pac/legacy_qgrid.py": "1498b648c2dee141fae7f7be709812876c5bf8af2df65a281b1d21ce03ad4b9b",
+  "pac/legacy_sf_uai.py": "c4a4ac06f8b403d181bcc549546d695fe798a90f6176e07c63be201116e256f1",
+  "pac/package.py": "a3d9f7151b010b76d58999607891ef245cbe7cf0f96743b1a6a739163403e6a2",
+  "pac/qualification.py": "42669ce09e9fe15825bdf71d915efdb34020730f31c7589f91b7c72bcfec1e7c",
+  "pac/references.py": "0b6008a89c64518062c233692f641caebc7b2fb02cb3ca63d6198adf5b9368ec",
+  "pac/report.py": "1c4c5c1f0728b6183487d5b9898cd5afc30614b255b53445fed53a35cd862c17",
+  "pac/rig.py": "572b1931f0009a0ca9dd55e0ddd97545b804e989e58104e6ae3b60ac792ccd19",
+  "pac/solve.py": "457bbb3de096ccd1580760654bace72599d2fed032c8f7aa982238f2c1dac3e5",
+  "pac/uai_export.py": "6cec9b971968843e8c30a19e37e5976d8470755515819ca6a44c1c48109e7265",
+  "pac/worker.py": "4f52612a0df066b3b71b92406c0cf4c1287bad971483583bf1a4f17490904511",
+  "newarm/analyze.py": "c994966d5c6e5c0352b61b093d0f1c46699f0f29d592839f3107192072c349f3",
+  "newarm/audit_forest_theory.py": "7d880094e355e26f8b9f76de7ce2213d136ea6f396802982c21b08ba10bb6746",
+  "newarm/audit_native_theory.py": "ce56f22d90618e75fd5649fb03f57903c864d4a1a04c170a24dc626e59a1d132",
+  "newarm/audit_response_theory.py": "0ed6545a6255a659896f3cf67686d7231b91b47b6b058f3974cba709f291a95d",
+  "newarm/cex_control_driver.cpp": "3fdd6b19d551cc213054f5939462b10c1768de7115e8089eee9c2bbc21ba7bfe",
+  "newarm/cex_executor.py": "3480e9ba3b9109d436a350af5efb12cf5a3e7516ce42c4d8e7e9c9e1f92c9a4e",
+  "newarm/cex_kernel.cpp": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+  "newarm/cex_qualification.py": "8670db60ae2729b416d8827b3301c7b602282c6c256a4f58c60cec01aac35417",
+  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
+  "newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+  "newarm/evaluate.py": "eaa50de6d6f452568df000b490ae8ac7195b00cba9a79c2dddb979e570d75508",
+  "newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+  "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90",
+  "newarm/geometry_controls.py": "16e5e347ea4b39bc7616306a88aa54a4dd1f3aabed26ad7a915cb2502f7ea1c5",
+  "newarm/native_qualification.py": "3f1fdb1095d57ddc4f3223a9a2eb86538e28ab9d6d572655ad68b625bbc7c365",
+  "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+  "newarm/qualification.py": "98054ffc5f81625439f713b2f104c0aa31f891e0281c8b85900ff66faf8f30c4",
+  "newarm/qualify_dag_additive.py": "2bf31d8ca37ac371341dd2dcbc1f91ab93dd3c6548261f21a36b13effcb180ce",
+  "newarm/reduction.py": "7899047ec2feca256d695d4529e7ce1ae5a89182bc2e64d3b98c7bf7f02a9342",
+  "newarm/reduction_qualification.py": "8d31fd218a302e2d861443fc9472b10a923c46450304909ebfdd7af522edb604",
+  "newarm/review_additive.py": "5f1bb34ef77bbbe109f7a14924b763de4da5f4c769b54e03c7b51a24d5f67288",
+  "newarm/review_regression.py": "edc11d5e52d0f1a1339bf60635265adf9d5009b7628dc9ff38829b6ec134fcbe",
+  "newarm/smoke_cex.py": "55335f2e22528956d1a77725df4adb904c4b63c6b674899c5c2979b832b58f6d",
+  "newarm/stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+  "newarm/stream_float.py": "1319565b2e6048b1a66153c732e37f5f00e41ab5391600fe9b793fed7fcdcb72",
+  "newarm/stream_kernel.cpp": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+  "newarm/support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+  "newarm/test_dag.py": "b089ae9c8cc75cd4b9c9f6062cb5f118bb365f88ea47940d5b720b7ff8d65161",
+  "newarm/test_forest.py": "7582f75259a7c90f4608f6469eeb1e6aaddbe4d116097ec3349657093404e1a7",
+  "newarm/test_reduction.py": "c8623008fa6cd7f0a7bf1731577803b63dde9ccebb87b54c0db3bf7e29c5c33f"
  },
- "temp_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v2_llhu7cqv"
+ "temp_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_f8jpdkl7",
+ "counts_note": "executions = end-to-end inference executions (run_component / solve / worker); helper_evaluations = arithmetic helper calls; coordinates_checked = published coordinates compared with the independent truth"
 }

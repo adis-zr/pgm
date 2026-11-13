@@ -76,7 +76,7 @@ core_ = lambda **kw: cnt(cohort='external_core', **kw)
 b0_20 = (R or {}).get('b0_vs_h1_20', {}); b0_120 = (R or {}).get('b0_vs_h1_120', {})
 pac_pub = {b: core_(arm='P1_PAC_CONDITIONAL', budget=float(b), outcome='PUBLISHED', guarantee='PAC') for b in (20, 120)}; h1_pac = {b: core_(arm='H1_HYBRID', budget=float(b), outcome='PUBLISHED', guarantee='PAC') for b in (20, 120)}
 if qualified:
-    verdict = 'NO EMPIRICAL GAIN' if (all(v == 0 for v in pac_pub.values()) and all(v == 0 for v in h1_pac.values()) and not any(b0_20.get('new')) and not any(b0_120.get('new'))) else 'EMPIRICAL CHANGE OBSERVED (see section 1; a positive result needs 03 §9)'
+    verdict = 'NO EMPIRICAL GAIN' if (all(v == 0 for v in pac_pub.values()) and all(v == 0 for v in h1_pac.values()) and not (b0_20.get('new') or []) and not (b0_120.get('new') or [])) else 'EMPIRICAL CHANGE OBSERVED (see section 1; a positive result needs 03 §9)'
 else: verdict = 'UNQUALIFIED / INVALID (prerequisites failed: %s)' % '; '.join(prereq)
 inacc = [a for a in (A or {}).get('audit', []) if a.get('accurate') == 'CONFIRMED_INACCURATE']
 P('# PAC EMPIRICAL PASS — CLOSEOUT (%s UTC; %s) — %s' % (time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), CLOSEOUT_VERSION, verdict)); P('')
