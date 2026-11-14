@@ -54,9 +54,33 @@ ADAPTED_COHORTS = tuple(k for k, v in COHORTS.items() if v['native_query'] and v
 QUALIFICATION_GROUPS = ('Q1_identity_and_gate_end_to_end', 'Q2_exact_cell_oracle', 'Q3_laws_moments_and_actual_adaptive_accumulation', 'Q4_frontier_invariants_and_rebase_histories', 'Q5_actual_sampling_backend', 'Q6_confidence_arithmetic', 'Q7_numerical_publication_truth_asserted', 'Q8_intersection_and_mechanism_sensitivity', 'Q9_continuation_every_backend_class', 'Q10_existing_defects_isolated', 'Q11_diagnostic_coverage_attempted_runs', 'Q12_exact_closure_partial_cover_sensitivity', 'Q13_registry_pipeline_every_arm_complete')
 
 # ---- the REQUIRED frozen source inventory (identity scopes -> directories under code/cex or code/)
-SOURCE_SCOPES = {'candidate': ('cex/pac', 'cex/newarm'), 'b0_frozen_v14': ('cex/b0_frozen_v14',), 'supervisor': ('gbidi/supervise.py',), 'native_cbi': ('cbi',), 'native_sf': ('sf',), 'native_h4': ('h4a', 'build/h4rect', 'build/h4point', 'build/h4pcheck'), 'comparator_glue': ('cex/pac/comparator_cell.py', 'ext/comparator/merlin_adapter.py', 'bench/cells.py')}
+SOURCE_SCOPES = {'candidate': ('cex/pac', 'cex/newarm'), 'b0_frozen_v14': ('cex/b0_frozen_v14',), 'supervisor': ('gbidi/supervise.py',), 'native_cbi': ('cbi',), 'native_sf': ('sf',), 'native_h4': ('h4a', 'build/h4rect', 'build/h4point', 'build/h4pcheck'), 'comparator_glue': ('cex/pac/comparator_cell.py', 'ext/comparator/merlin_adapter.py', 'bench/cells.py', 'bench/pgmax_mar.py', 'ext/uai.py')}      # v4.2: the EXECUTED PGMax glue (factor slicing / merging / log-potentials / BP configuration) and the UAI reader every adapter imports are part of the experiment identity (fifth review R03)
 SOURCE_EXTS = ('.py', '.cpp', '.sh', '.h', '.hpp', '.c')
 SOURCE_BINARIES = ('build/h4rect', 'build/h4point', 'build/h4pcheck')      # native executables actually invoked by h4a/arm.py: identity frozen by content hash; rebuilt binaries change the identity (documented runtime assumption: the recorded hash is the one that ran)
+# ---- v4.2 (fifth review, identity gap): a REQUIRED artifact whose identity is None (absent on the host) can never qualify a manifest that plans an arm needing it;
+# artifacts needed by no planned arm are reported as UNAVAILABLE (scoped), never silently accepted as equal None entries
+ARTIFACT_REQUIRED_BY = {'build/h4rect': ('H4_NATIVE_C', 'H4_NATIVE_PI', 'H4_NATIVE_PP'), 'build/h4point': ('H4_NATIVE_C', 'H4_NATIVE_PI', 'H4_NATIVE_PP'), 'build/h4pcheck': ('H4_NATIVE_C', 'H4_NATIVE_PI', 'H4_NATIVE_PP')}
+
+
+def artifact_required(key, planned_arms):
+    """True when the artifact `key` must carry a valid identity for the given planned arms: every source file is always required; a native executable is required
+    exactly when an arm that invokes it is planned"""
+    need = ARTIFACT_REQUIRED_BY.get(key)
+    if need is None: return True
+    return any(a in need for a in planned_arms)
+
+
+def identity_failures(inventory, planned_arms):
+    """(failures, unavailable): inventory entries that are None / not a sha256 hex digest for a REQUIRED artifact are failures; None entries of artifacts no planned arm
+    needs are returned as scoped unavailable artifacts"""
+    import re
+    fails = []; unavailable = []
+    for k, v in sorted(inventory.items()):
+        ok = isinstance(v, str) and re.fullmatch(r'[0-9a-f]{64}', v) is not None
+        if ok: continue
+        if artifact_required(k, planned_arms): fails.append('required artifact %s has no valid identity (%r): a null identity never qualifies a manifest that plans an arm needing it' % (k, v))
+        else: unavailable.append(k)
+    return fails, unavailable
 
 
 def arms_for_cohort(cohort, primary, comparators, ablation):
@@ -88,15 +112,67 @@ def source_inventory(code_dir, scopes=None):
 
 
 def scope_of_key(key):
-    if key in ('cex/pac/comparator_cell.py', 'ext/comparator/merlin_adapter.py', 'bench/cells.py'): return 'comparator_glue'
+    if key in ('cex/pac/comparator_cell.py', 'ext/comparator/merlin_adapter.py', 'bench/cells.py', 'bench/pgmax_mar.py', 'ext/uai.py'): return 'comparator_glue'
     head = key.split('/', 1)[0]
     return {'pac': 'candidate', 'newarm': 'candidate', 'b0_frozen_v14': 'b0_frozen_v14', 'gbidi': 'supervisor', 'cbi': 'native_cbi', 'sf': 'native_sf', 'h4a': 'native_h4', 'build': 'native_h4'}.get(head)
 
 
 # ---- arm EXECUTION SEMANTICS (review 4 F04): what a PAC component of each candidate arm may look like; the gate binds the recorded design to the planned arm
 ARM_SEMANTICS = {
-    'P1_PAC_CONDITIONAL': dict(mode='conditional', resolve=True, forced=True, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component'), pac_routes=('pac_conditional',), root_routes=()),
-    'H1_HYBRID': dict(mode='conditional', resolve=True, forced=False, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component', 'support', 'stream', 'dag', 'forest'), pac_routes=('pac_conditional',), root_routes=('forest', 'dag')),
-    'A0_POINT': dict(mode='point', resolve=False, forced=False, deterministic_routes=('pac_point_uniform_factorless_component',), pac_routes=('pac_point',), root_routes=()),
-    'A1_CONDITIONAL': dict(mode='conditional', resolve=False, forced=False, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component'), pac_routes=('pac_conditional',), root_routes=(), empty_cutset_exception='an empty cutset in conditional mode resolves its single cell (one contraction closes the cover): resolve=True is legitimate for A1 exactly then'),
+    'P1_PAC_CONDITIONAL': dict(mode='conditional', resolve=True, forced=True, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component'), pac_routes=('pac_conditional',), root_routes=(), zero_proof_kinds=('reduction', 'component_restriction', 'pac_root_bound', 'pac_exact_cover')),
+    'H1_HYBRID': dict(mode='conditional', resolve=True, forced=False, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component', 'support', 'stream', 'dag', 'forest'), pac_routes=('pac_conditional',), root_routes=('forest', 'dag'), zero_proof_kinds=('forest', 'reduction', 'component_restriction', 'exact_component', 'pac_root_bound', 'pac_exact_cover')),
+    'A0_POINT': dict(mode='point', resolve=False, forced=False, deterministic_routes=('pac_point_uniform_factorless_component',), pac_routes=('pac_point',), root_routes=(), zero_proof_kinds=('reduction', 'component_restriction', 'pac_root_bound')),
+    'A1_CONDITIONAL': dict(mode='conditional', resolve=False, forced=False, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component'), pac_routes=('pac_conditional',), root_routes=(), zero_proof_kinds=('reduction', 'component_restriction', 'pac_root_bound', 'pac_exact_cover'), empty_cutset_exception='an empty cutset in conditional mode resolves its single cell (one contraction closes the cover): resolve=True is legitimate for A1 exactly then'),
 }
+
+
+def permitted_resolution(arm, mode, cutset):
+    """the ONE rule deciding whether an execution of `arm` may insert evaluated cells into the resolved region: the arm's resolve flag, or the empty-cutset closure
+    of conditional mode (the engine resolves the single root cell for every conditional arm: engine.run_component `if mode == 'conditional' and not cut: resolve = True`)"""
+    sem = ARM_SEMANTICS[arm]
+    return bool(sem['resolve']) or (mode == 'conditional' and sem['mode'] == 'conditional' and not list(cutset or []))
+
+
+def execution_semantics_failure(arm, family, route=None, design=None, resolved_leaves=None, contribution_cells=None, resolved_cells=None, zero_kind=None, cutset=None):
+    """COMMON execution-semantics invariant for EVERY terminal family of a candidate arm (fifth review R04). Returns a failure message or None.
+    family in {'pac', 'cover', 'factorless', 'frozen', 'root', 'zero'}:
+      pac        -- a statistical publication: route in pac_routes; design mode = arm mode; design.resolve = permitted_resolution; resolved leaves / contribution records /
+                    resolved_cells agree (all zero when resolution is not permitted);
+      cover      -- a deterministic exact / partial cover: route in deterministic_routes; design mode = arm mode; resolution MUST be permitted (a cover resolves cells);
+                    design.resolve True; resolved leaves = contribution records = resolved_cells >= 1;
+      factorless -- the uniform factorless route of the arm's mode: empty cutset, no resolution claimed;
+      frozen     -- a frozen executor route (support / stream / dag / forest) on a component: must be in deterministic_routes (H1 only);
+      root       -- a whole-model root route: must be in root_routes (H1 only);
+      zero       -- a zero-evidence proof: kind in zero_proof_kinds; a pac_exact_cover zero proof resolves cells and so needs permitted resolution for its cutset."""
+    sem = ARM_SEMANTICS.get(arm)
+    if sem is None: return 'arm %s has no execution semantics' % arm
+    d = design or {}; nl = resolved_leaves; nc = contribution_cells; rc = resolved_cells
+    if family == 'pac':
+        if route not in sem['pac_routes']: return 'statistical route %s is not a PAC route of arm %s' % (route, arm)
+        if d.get('mode') != sem['mode']: return 'design mode %s differs from the arm mode %s' % (d.get('mode'), sem['mode'])
+        perm = permitted_resolution(arm, d.get('mode'), d.get('cutset'))
+        if bool(d.get('resolve')) != perm: return 'design.resolve %s but the planned arm %s permits resolution = %s for cutset %s' % (d.get('resolve'), arm, perm, d.get('cutset'))
+        if not perm and (nl or nc or rc): return 'arm %s must not resolve cells (cutset %s) yet %s leaves / %s contribution records / %s resolved cells are recorded' % (arm, d.get('cutset'), nl, nc, rc)
+        if perm and rc is not None and rc != nl: return 'design and frontier disagree (%s resolved leaves recorded in the frontier, resolved_cells %s)' % (nl, rc)
+        return None                                  # the frontier <-> contribution BIJECTION is verified by gate.verify_cover (precise per-record messages)
+    if family == 'cover':
+        if route not in sem['deterministic_routes'] or not str(route).startswith('pac_'): return 'cover route %s is not available to the planned arm %s' % (route, arm)
+        if d.get('mode') != sem['mode']: return 'design mode %s differs from the arm mode %s' % (d.get('mode'), sem['mode'])
+        perm = permitted_resolution(arm, d.get('mode'), d.get('cutset'))
+        if not perm: return 'the planned arm %s does not resolve cells for cutset %s, yet a deterministic cover (%s) is claimed' % (arm, d.get('cutset'), route)
+        if not d.get('resolve'): return 'deterministic cover with design.resolve = %s' % d.get('resolve')
+        if not nl or (rc is not None and rc != nl): return 'cover: design and frontier disagree (%s resolved leaves recorded in the frontier, resolved_cells %s)' % (nl, rc)
+        return None                                  # the frontier <-> contribution BIJECTION is verified by gate.verify_cover
+    if family == 'factorless':
+        if route != 'pac_%s_uniform_factorless_component' % sem['mode'] or route not in sem['deterministic_routes']: return 'factorless route %s is not the uniform route of arm %s' % (route, arm)
+        if list(d.get('cutset') or []) or nl or nc or rc: return 'factorless component claims a cutset or resolved cells'
+        return None
+    if family == 'frozen':
+        return None if (route in sem['deterministic_routes'] and not str(route).startswith('pac_')) else 'frozen executor route %s is not available to the planned arm %s' % (route, arm)
+    if family == 'root':
+        return None if route in sem['root_routes'] else 'whole-model root route %s is not available to the planned arm %s' % (route, arm)
+    if family == 'zero':
+        if zero_kind not in sem['zero_proof_kinds']: return 'zero-proof kind %s is not available to the planned arm %s' % (zero_kind, arm)
+        if zero_kind == 'pac_exact_cover' and not permitted_resolution(arm, 'conditional' if sem['mode'] == 'conditional' else 'point', cutset): return 'a pac_exact_cover zero proof resolves cells, which arm %s does not permit for cutset %s' % (arm, cutset)
+        return None
+    return 'unknown terminal family %s' % family

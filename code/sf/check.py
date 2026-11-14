@@ -3,7 +3,10 @@ residual bounds and final endpoints from the RAW input rows; never accept produc
 sf.routes: S via sorted-array intersection and set membership; F via the section-3 moment identity (alpha_S for |S| <= k+1,
 beta_S for |S| <= k, contracted per degree; the producer uses the section-5 streaming form); E via the TRANSPOSED accumulation
 (loop over y, vectorized over x, with the coordinate split done by bit masks); W via the pair reconstruction (frozen). Tails via
-math.comb (the producer's tails are compared exactly)."""
+math.comb (the producer's tails are compared exactly).
+PREMISE CHECKS (fifth adversarial review, 14 Nov 2026, R01): every bound is accepted only inside the domain its reconstruction actually covers -- the sparse route's
+radius must be one of SPARSE_RADII (distances 0 and 1 are enumerated; nothing deeper is reconstructed) and the omitted-region bound is derived from the RECONSTRUCTED
+retained set; the spectral degree must lie in 0..n; the route label must name the declared parameter. Out-of-domain parameters are refused, never coerced."""
 from __future__ import annotations
 from fractions import Fraction as Fr
 from math import comb
@@ -42,9 +45,21 @@ def _common(law, rec, r, claimed_symmetric):
     return sym
 
 
+SPARSE_RADII = (0, 1)          # the IMPLEMENTED reconstruction depth: this checker enumerates retained pairs at Hamming distance 0 (sorted intersection) and 1 (XOR
+                               # neighbours) and nothing deeper; a certificate whose omitted-region bound presumes a deeper enumeration is OUTSIDE the proof it can
+                               # reconstruct and is REFUSED (fifth review R01: route S1 with a declared h = n would set U = 0 without covering the omitted pairs)
+
+
 def check_S(law, r, rec, claimed_symmetric):
     sym = _common(law, rec, r, claimed_symmetric)
-    n = law.n; u, v = C.uv(r); h = int(rec["h"])
+    n = law.n; u, v = C.uv(r)
+    # ---- PREMISES of the sparse bound (checked BEFORE any arithmetic): the radius must be one this checker reconstructs completely, the route label must name that
+    # radius, and the record must declare it as a non-negative integer (a negative, fractional, intermediate or >= n radius is refused, never coerced)
+    h_raw = rec.get("h"); route = str(rec.get("route", ""))
+    _req(isinstance(h_raw, (int, str)) and not isinstance(h_raw, bool) and str(h_raw).strip().lstrip("-").isdigit(), "S: radius h is not an integer record (%r)" % (h_raw,))
+    h = int(h_raw)
+    _req(h in SPARSE_RADII, "S: declared radius h = %d is outside the reconstructed radius domain %s (this checker enumerates distances 0..1 only; a bound for h = %d is not reconstructible)" % (h, SPARSE_RADII, h))
+    _req(route == "S%d" % h, "S: route label %r does not name the declared radius h = %d" % (route, h))
     A = np.array(law.A_rows, dtype=np.uint64); B = np.array(law.B_rows, dtype=np.uint64)
     aw = dict(zip(law.A_rows, law.A_w)); bset = set(law.B_rows); bw = dict(zip(law.B_rows, law.B_w))
     # radius 0 via sorted intersection; radius 1 via XOR neighbours tested against a set
@@ -65,6 +80,9 @@ def check_S(law, r, rec, claimed_symmetric):
                     for i in range(n):
                         if (x >> i) & 1:
                             N[i] += w * kap[1]
+    # ---- the omitted-region bound is DERIVED from the reconstructed retained set: every omitted pair has distance >= h + 1 (the enumeration above is complete through
+    # distance h), kappa is non-increasing in the distance, hence U = (A0 B0 - P_reconstructed) * kappa_{h+1}; when h >= n (only n = 1, h = 1 inside SPARSE_RADII) every
+    # pair has been enumerated and U = 0 is exact
     U = (law.A0 * law.B0 - P) * kap[h + 1] if h < n else 0
     _req(int(rec["P_int"]) == P and int(rec["R_int"]) == R and int(rec["U_int"]) == U, "S%d: retained mass / omitted bound differ from the reconstruction" % h)
     _req([int(x) for x in rec["N_int"]] == N, "S%d: numerators differ" % h)
@@ -105,7 +123,9 @@ def _moments_rowwise(masks, weights, Sarr):
 
 def check_F(law, r, rec, claimed_symmetric):
     sym = _common(law, rec, r, claimed_symmetric)
-    n = law.n; u, v = C.uv(r); k = int(rec["k"])
+    n = law.n; u, v = C.uv(r); k_raw = rec.get("k")
+    _req(isinstance(k_raw, (int, str)) and not isinstance(k_raw, bool) and str(k_raw).strip().lstrip("-").isdigit(), "F: degree k is not an integer record (%r)" % (k_raw,))
+    k = int(k_raw); _req(0 <= k <= n, "F: degree k = %d outside 0..n (n = %d)" % (k, n)); _req(str(rec.get("route", "")) == "F%d" % k, "F: route label %r does not name the declared degree k = %d" % (rec.get("route"), k))
     subs_k1 = _subsets(n, min(k + 1, n)); subs_k = {d: subs_k1[d] for d in range(k + 1)}
     Sk1 = np.array([S for d in subs_k1 for S in subs_k1[d]], dtype=np.uint64); Sk = np.array([S for d in subs_k for S in subs_k[d]], dtype=np.uint64)
     alpha = dict(zip(Sk1.tolist(), (int(x) for x in _moments_rowwise(law.A_rows, law.A_w, Sk1))))

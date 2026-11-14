@@ -12,13 +12,13 @@ the artifacts are the exact evidence set the gate verified:
     supplementary gains AND losses are reported, delta-0 native tasks and PAC answers are never pooled.
 Otherwise UNQUALIFIED / INVALID with every failed prerequisite listed; exit status 1.
     python cex/pac/closeout.py <RD> [--manifest CAMPAIGN_MANIFEST.json] [--qualification PATH]"""
-import sys, os, json, time, collections, hashlib, glob
-RD = os.path.abspath(sys.argv[1]); HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); sys.path.insert(0, HERE)
-import registry
+import sys, os, json, time, collections, hashlib, glob, contextlib, io
+RD = os.path.abspath(sys.argv[1]); HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); sys.path.insert(0, HERE); sys.set_int_max_str_digits(0)
+import registry, gate, report
 QP = sys.argv[sys.argv.index('--qualification') + 1] if '--qualification' in sys.argv else os.path.join(HERE, 'PAC_QUALIFICATION.json')
 MN = sys.argv[sys.argv.index('--manifest') + 1] if '--manifest' in sys.argv else 'CAMPAIGN_MANIFEST.json'
 OUTP = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else os.path.join(RD, 'CLOSEOUT_PAC.md')
-CLOSEOUT_VERSION = 'pac-closeout-v4.1 (2026-11-14 repair 4; authoritative cell-id rows, current-byte evidence re-hash, native CBI references)'
+CLOSEOUT_VERSION = 'pac-closeout-v4.2 (2026-11-14 repair 5: complete task dependency set re-hashed, EVERY decision-bearing summary (rows, conclusions incl. native widths, reference audit classifications, native query scores) RE-DERIVED from the current raw records and compared with the report artifacts, reference artifact bound by hash, null identities refused)'
 L = []; P = L.append; prereq = []
 def sha(p):
     h = hashlib.sha256()
@@ -66,6 +66,8 @@ else:
     miss_inv = [k for k in want_inv if k not in frozen]; extra_inv = [k for k in frozen if k not in want_inv]; diff_inv = [k for k in want_inv if k in frozen and frozen[k] != want_inv[k]]
     if miss_inv or extra_inv: prereq.append('frozen source inventory is not the complete required set (%d missing, %d extra)' % (len(miss_inv), len(extra_inv)))
     if diff_inv: prereq.append('frozen source %s differs from the file on disk (%d differ)' % (diff_inv[0], len(diff_inv)))
+    id_fail, unavailable_artifacts = registry.identity_failures(frozen, sorted({c['arm'] for c in cells}))
+    for f_ in id_fail: prereq.append(f_)
 # ---- gate identity + counts + content
 if G is not None:
     if not str(G.get('gate_version', '')).startswith('pac-gate-v4'): prereq.append('gate result produced by a pre-v4 gate (%s): re-gate required' % G.get('gate_version'))
@@ -90,6 +92,14 @@ if G is not None:
             if e.get('verified') is False and e.get('status') == 'COMPLETED': unverified += 1
         if bad_ev: prereq.append('%d evidence files consumed by the gate differ from the current bytes or are missing' % bad_ev)
         if unverified: prereq.append('%d COMPLETED cells were not verified by the gate' % unverified)
+        # the COMPLETE task dependency set (v4.2; ONE enumerator shared with the gate and the report): every dependency of every COMPLETED / zero cell must be inside the
+        # gated evidence (hence re-hashed above); a dependency the gate never hashed means an incomplete closure -> no qualified verdict
+        dep_fail = []
+        for e in gs:
+            c_ = cell_by_id.get(e.get('cell_id')); r_ = (receipts.get(e.get('cell_id')) or [None])[0]
+            if c_ is None or r_ is None or not (r_.get('status') == 'COMPLETED' or r_.get('outcome') == 'PROVED_ZERO_EVIDENCE'): continue
+            dep_fail += gate.dependency_closure_failures(RD, c_, e.get('evidence'))
+        if dep_fail: prereq.append('%d task dependencies (model / .evid / blocks metadata) of completed cells are not bound by the gate (never hashed, or changed since): %s' % (len(dep_fail), dep_fail[0][:120]))
 # ---- qualification: exact schema + identity
 if Q is not None:
     groups = Q.get('groups') or []; names = [g.get('name') for g in groups]
@@ -117,6 +127,32 @@ if R is not None:
     if bad_rows: prereq.append('%d results rows do not match the AUTHORITATIVE rows derived from the manifest and receipts by cell id (foreign / aliased / altered rows)' % bad_rows)
     if unrun or unrun_disk: prereq.append('results report %d unrun / disk %d unrun' % (len(unrun), len(unrun_disk)))
     if not isinstance(R.get('conclusions_by_cohort_budget'), dict): prereq.append('results carry no per-cohort conclusions table')
+    # ---- v4.2: the report is RE-DERIVED here from the CURRENT raw records (receipts, worker outputs, comparator answers, blocks metadata, REFERENCES_R0.json) and every
+    # decision-bearing part must equal the report artifacts on disk: run rows, conclusions (incl. the NATIVE width summaries), native query scores (incl. reference
+    # containment), the reference audit classifications; the reference artifact and the audit are bound by hash to this manifest and gated set
+    try:
+        with contextlib.redirect_stdout(io.StringIO()): RR = report.main(RD, MN, write=False)
+    except Exception as ex: RR = None; prereq.append('report re-derivation from the current raw records failed: %s: %s' % (type(ex).__name__, str(ex)[:100]))
+    if RR is not None:
+        core_run = lambda x: {k: x.get(k) for k in ('cell_id', 'case', 'arm', 'cohort', 'budget', 'rep', 'status', 'outcome', 'guarantee', 'output_sha256')}
+        if sorted((core_run(x) for x in runs), key=lambda x: str(x['cell_id'])) != sorted((core_run(x) for x in RR['runs']), key=lambda x: str(x['cell_id'])): prereq.append('report run rows differ from the rows RE-DERIVED from the current raw records')
+        if R.get('conclusions_by_cohort_budget') != RR.get('conclusions_by_cohort_budget'): prereq.append('report conclusions (incl. native width summaries) differ from the conclusions RE-DERIVED from the current raw records')
+        nat_core = lambda rows_: sorted((json.dumps({k: x.get(k) for k in ('cell_id', 'cohort', 'case', 'arm', 'budget', 'rep', 'guarantee', 'native_completion', 'native_widths_met', 'max_coordinate_width', 'native_reference')}, sort_keys=True, default=str) for x in rows_))
+        if nat_core(R.get('native_query_scores') or []) != nat_core(RR.get('native_query_scores') or []): prereq.append('report native query scores differ from the scores RE-DERIVED from the current outputs, blocks metadata and references')
+        # the audit hash is RECOMPUTED from the rows ON DISK (never read from the artifact's own hash field) and compared with the re-derived audit
+        a_core = sorted(({k: a_.get(k) for k in ('cell_id', 'case', 'arm', 'budget', 'rep', 'reference', 'accurate', 'intervals_contain_truth', 'max_abs_error', 'error_upper', 'error_lower')} for a_ in (A or {}).get('audit', [])), key=lambda a_: str(a_['cell_id']))
+        a_hash = hashlib.sha256(json.dumps(a_core, sort_keys=True, default=str).encode()).hexdigest()
+        r_core = sorted(({k: a_.get(k) for k in ('cell_id', 'case', 'arm', 'budget', 'rep', 'reference', 'accurate', 'intervals_contain_truth', 'max_abs_error', 'error_upper', 'error_lower')} for a_ in (R.get('reference_audit') or [])), key=lambda a_: str(a_['cell_id']))
+        r_hash = hashlib.sha256(json.dumps(r_core, sort_keys=True, default=str).encode()).hexdigest()
+        if a_hash != RR.get('reference_audit_sha256') or r_hash != RR.get('reference_audit_sha256') or (A or {}).get('audit_sha256') != RR.get('reference_audit_sha256') or R.get('reference_audit_sha256') != RR.get('reference_audit_sha256'): prereq.append('reference audit classifications (REFERENCE_AUDIT.json rows / RESULTS_PAC.json rows, recomputed from the artifacts on disk) differ from the audit RE-DERIVED from the current outputs and references (or the audit artifact is unbound)')
+        if (A or {}).get('manifest_sha256') != mh or (G is not None and (A or {}).get('gated_set_sha256') != G.get('gated_set_sha256')): prereq.append('reference audit artifact is not bound to this manifest / gated set')
+        rp_ = os.path.join(RD, 'REFERENCES_R0.json'); ref_sha_now = sha(rp_) if os.path.exists(rp_) else None
+        if (A or {}).get('references_file_sha256') != ref_sha_now or R.get('references_file_sha256') != ref_sha_now: prereq.append('REFERENCES_R0.json differs from the reference artifact the report / audit were derived from (or is missing)')
+        if os.path.exists(rp_):
+            try:
+                RJ = json.load(open(rp_))
+                if RJ.get('manifest_sha256') != mh: prereq.append('REFERENCES_R0.json was built for a different manifest')
+            except Exception: prereq.append('REFERENCES_R0.json unreadable')
 # ---- the per-cohort conclusions are RE-DERIVED here from the verified rows (never read as data): PAC / deterministic publication counts and H1-vs-B0 new / lost per cohort and budget
 def rederive_conclusions(rows_):
     out_ = {}
@@ -146,9 +182,13 @@ if R is not None:
         if {a: {k: v for k, v in d_.items()} for a, d_ in cc['by_arm'].items()} != {a: {k: d_.get(k) for k in ('planned', 'received', 'published_deterministic', 'published_pac', 'published_unguaranteed', 'zero', 'refused')} for a, d_ in (rc_.get('by_arm') or {}).items()}: prereq.append('report conclusions for %s differ from the counts re-derived from the verified rows' % key); break
         if cc['b0_vs_h1'] and ((rc_.get('b0_vs_h1') or {}).get('new') != cc['b0_vs_h1']['new'] or (rc_.get('b0_vs_h1') or {}).get('lost') != cc['b0_vs_h1']['lost']): prereq.append('report B0-vs-H1 new / lost for %s differ from the rows' % key); break
     if set(rep_concl) != set(re_concl): prereq.append('report conclusions cover %d cohort/budget keys, the rows %d' % (len(rep_concl), len(re_concl)))
+if 'RR' in dir() and RR:
+    det_inacc = [a for a in (RR.get('reference_audit') or []) if a.get('accurate') == 'CONFIRMED_INACCURATE' and a.get('arm') in registry.CANDIDATE_ARMS and str(a.get('reference', '')).startswith('R0_exact') and any(x.get('cell_id') == a.get('cell_id') and x.get('guarantee') == 'DETERMINISTIC' for x in RR.get('runs') or [])]
+    if det_inacc: prereq.append('%d DETERMINISTIC candidate publications are contradicted by an exact R0 reference (INVESTIGATE before any verdict): %s' % (len(det_inacc), [a.get('cell_id') for a in det_inacc][:3]))
 qualified = not prereq
 # ---- SCOPED verdict from the RE-DERIVED per-cohort conclusions (the report's table was checked against them above)
-concl = {k: dict(re_concl[k], representation=(rep_concl.get(k) or {}).get('representation', registry.COHORTS.get(re_concl[k]['cohort'], {}).get('representation')), original_task=(rep_concl.get(k) or {}).get('original_task'), pooled_with_uai_numerator=registry.COHORTS.get(re_concl[k]['cohort'], {}).get('pooled_with_uai_numerator'), native=(rep_concl.get(k) or {}).get('native')) for k in re_concl}
+rr_concl = ((RR or {}).get('conclusions_by_cohort_budget') or {}) if 'RR' in dir() and RR else {}
+concl = {k: dict(re_concl[k], representation=registry.COHORTS.get(re_concl[k]['cohort'], {}).get('representation'), original_task=registry.COHORTS.get(re_concl[k]['cohort'], {}).get('original_task'), pooled_with_uai_numerator=registry.COHORTS.get(re_concl[k]['cohort'], {}).get('pooled_with_uai_numerator'), native=(rr_concl.get(k) or {}).get('native')) for k in re_concl}      # native summaries from the RE-DERIVED report (current raw records), never from the report file
 gains = []; losses = []; pac_pubs = collections.Counter(); det_pubs = collections.Counter(); native_met = collections.Counter()
 for key, cc in concl.items():
     comp = cc.get('b0_vs_h1') or {}
@@ -161,7 +201,8 @@ pac_total = sum(pac_pubs.values())
 if qualified:
     verdict = 'NO EMPIRICAL GAIN IN ANY COHORT' if (pac_total == 0 and not gains) else ('EMPIRICAL CHANGE OBSERVED (gains: %d; losses: %d; PAC publications: %d; a positive result needs 03 §9)' % (len(gains), len(losses), pac_total))
 else: verdict = 'UNQUALIFIED / INVALID (prerequisites failed: %s)' % '; '.join(prereq)
-inacc = [a for a in (A or {}).get('audit', []) if a.get('accurate') == 'CONFIRMED_INACCURATE']
+A_use = (RR or {}).get('reference_audit_record') if ('RR' in dir() and RR) else A      # printed classifications come from the RE-DERIVED audit (the file was checked equal above when qualified)
+inacc = [a for a in (A_use or {}).get('audit', []) if a.get('accurate') == 'CONFIRMED_INACCURATE']
 P('# PAC EMPIRICAL PASS — CLOSEOUT (%s UTC; %s) — %s' % (time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), CLOSEOUT_VERSION, verdict)); P('')
 if M is not None:
     P('Frozen manifest `%s` sha256 `%s` (root seed `%s`), frozen source inventory content hash `%s`, %d cells; receipts on disk %d (COMPLETED %d); gated-set digest (disk) `%s`. Gate: %s (%s; planned %s, receipts %s, gated %s, PAC certificates replayed %s, failures %s). Qualification: %s.' % (MN, mh, (M.get('seeds') or {}).get('root_seed'), ah, ncells, len(receipts), completed_disk, disk_digest, ('PASSED' if G and G.get('gate_passed') and not G.get('failures') else 'FAILED / MISSING'), (G or {}).get('gate_version'), (G or {}).get('planned'), (G or {}).get('receipts'), (G or {}).get('completed_gated'), (G or {}).get('pac_certificates_replayed'), len((G or {}).get('failures', [])), ('%s/%s groups (%s), %s' % (Q.get('passed'), Q.get('total'), Q.get('suite_version'), json.dumps(Q.get('counts') or {}, default=str)[:200]) if Q else 'MISSING'))); P('')
@@ -177,8 +218,8 @@ for key, cc in concl.items():
 P(''); P('Supplementary gains (every cohort): %s. Supplementary losses: %s. PAC publications by cohort: %s. External-core statement: %s.' % (gains or 'none', losses or 'none', dict(pac_pubs) or 'none', json.dumps({k: v for k, v in concl.items() if k.startswith('external_core')}, default=str)[:600] or 'no external_core cells in this manifest')); P('')
 P('Delta-0 native tasks (CBI, H4, SF natives) are reported in their own rows and never pooled with PAC answers; a deterministic mapping of PAC state intervals keeps its PAC delta.'); P('')
 P('## 2. Reference audit (diagnostic; binding- and shape-validated references only)'); P('')
-cat = collections.Counter((a['arm'], a['accurate']) for a in (A or {}).get('audit', []))
-P('References used: %s; rejected for binding/shape: %d. Per arm (accurate / inaccurate / unresolved / malformed): %s. CONFIRMED_INACCURATE publications: %d%s.' % (dict(collections.Counter(v for v in (A or {}).get('refs', {}).values())), len((A or {}).get('references_rejected', [])), {k[0]: dict(acc=cat[(k[0], 'CONFIRMED_ACCURATE')], inacc=cat[(k[0], 'CONFIRMED_INACCURATE')], unres=cat[(k[0], 'UNRESOLVED_NO_REFERENCE')] + cat[(k[0], 'UNRESOLVED_INTERVAL')], malformed=cat[(k[0], 'MALFORMED_CANDIDATE')]) for k in sorted({(a['arm'],) for a in (A or {}).get('audit', [])})}, len(inacc), (' — INVESTIGATE: ' + str(inacc[:5])) if inacc else '')); P('')
+cat = collections.Counter((a['arm'], a['accurate']) for a in (A_use or {}).get('audit', []))
+P('References used: %s; rejected for binding/shape: %d. Per arm (accurate / inaccurate / unresolved / malformed): %s. CONFIRMED_INACCURATE publications: %d%s. (classifications RE-DERIVED from the current outputs and REFERENCES_R0.json at closeout time; a deterministic certificate contradicted by an exact reference is an INVESTIGATE item, never silently qualified)' % (dict(collections.Counter(v for v in (A_use or {}).get('refs', {}).values())), len((A_use or {}).get('references_rejected', [])), {k[0]: dict(acc=cat[(k[0], 'CONFIRMED_ACCURATE')], inacc=cat[(k[0], 'CONFIRMED_INACCURATE')], unres=cat[(k[0], 'UNRESOLVED_NO_REFERENCE')] + cat[(k[0], 'UNRESOLVED_INTERVAL')], malformed=cat[(k[0], 'MALFORMED_CANDIDATE')]) for k in sorted({(a['arm'],) for a in (A_use or {}).get('audit', [])})}, len(inacc), (' — INVESTIGATE: ' + str(inacc[:5])) if inacc else '')); P('')
 P('## 3. What was proved, qualified, measured, and remains unknown'); P('')
 P('- Proved (theory packet, unchanged): conditional unbiasedness of exact-plus-residual trials; ratio mixture and variance-sensitive anytime certificates; the factor-max envelope telescoping over the explicit frontier; the finite-precision publication bridge; the deterministic-statistical intersection keeps the simultaneous risk (both sets contain p_j on the statistical event). Proof-to-code map: `PROOF_TO_CODE_PAC_v4.md`.')
 P('- Qualified: %s.' % ('; '.join(g['name'] for g in Q['groups'] if g.get('ok')) if Q else 'NONE (record missing)'))

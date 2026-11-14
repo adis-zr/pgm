@@ -9,7 +9,10 @@ HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.pat
 from fractions import Fraction as F
 from itertools import product
 import core, registry
-REFERENCES_VERSION = 'pac-references-v4.1 (2026-11-14 repair 4: executable task set incl. native CBI instances; manifest-bound)'
+REFERENCES_VERSION = 'pac-references-v4.2 (2026-11-14 repair 5: executable task set incl. native CBI instances; manifest-bound; per-case cap enforced at completion too)'
+# PER-CASE CAP GRANULARITY (stated honestly; fifth review R05): the brute-force clock is polled every 4,096 assignments, the cbi exact reference between whole marginal calls,
+# and ONCE MORE after the last call; a case whose construction exceeded cap_s is typed NONE even when its arithmetic completed (never an R0 reference); the whole stage runs
+# under the supervisor's hard cap (offline_reference_total_seconds), which is the only HARD limit
 
 
 def brute(model, deadline):
@@ -49,6 +52,7 @@ def reference_for_row(r, bits, cap):
             res = brute(m, t + cap)
             if res is None: return dict(kind='NONE', reason='brute force exceeded the per-case cap %.0f s' % cap, binding=b, construction_s=time.monotonic() - t, representation=rep)
             if res == 'ZERO': return dict(kind='R0_zero_evidence', binding=b, construction_s=time.monotonic() - t, representation=rep)
+            if time.monotonic() - t > cap: return dict(kind='NONE', reason='brute force exceeded the per-case cap %.0f s (detected at completion; soft cooperative cap)' % cap, binding=b, construction_s=time.monotonic() - t, representation=rep)
             return dict(kind='R0_exact_rational', rows=res, binding=b, construction_s=time.monotonic() - t, free_bits=free_bits, representation=rep)
         if rep == 'cbi_block_json':
             from cbi import model as M, exact as EX
@@ -57,6 +61,7 @@ def reference_for_row(r, bits, cap):
                 if time.monotonic() - t > cap: return dict(kind='NONE', reason='cbi exact reference exceeded the per-case cap %.0f s' % cap, binding=b, representation=rep)
                 marg, _ = EX.marginal(inst.blocks, inst.edges, bi, max_entries=1 << 22); probs, Z = EX.coordinate_probabilities(inst.blocks, bi, marg, inst.d)
                 out[str(inst.ext(bi))] = [str(x) for x in probs]
+            if time.monotonic() - t > cap: return dict(kind='NONE', reason='cbi exact reference exceeded the per-case cap %.0f s (detected at completion; soft cooperative cap)' % cap, binding=b, construction_s=time.monotonic() - t, representation=rep)
             return dict(kind='R0_cbi_exact_coordinates', coordinates=out, binding=b, construction_s=time.monotonic() - t, representation=rep)
         if rep in ('sf_panel_json', 'h4_frozen_packet'): return dict(kind='UNAVAILABLE_FOR_R0', reason='%s: the native invocation carries its own independent checker; no offline R0 reference is defined' % rep, representation=rep)
         return dict(kind='UNSUPPORTED_REPRESENTATION', reason='cohort %s has no reference method in the registry' % r.get('cohort'), representation=rep)
@@ -65,8 +70,10 @@ def reference_for_row(r, bits, cap):
 
 def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', bits=20, cap=300.0):
     man = json.load(open(os.path.join(RD, manifest_name))); refs = {}; t0 = time.monotonic(); outp = os.path.join(RD, 'REFERENCES_R0.json')
+    mh_now = hashlib.sha256(open(os.path.join(RD, manifest_name), 'rb').read()).hexdigest()
     if os.path.exists(outp):
-        try: refs = json.load(open(outp)).get('references') or {}
+        try:
+            old = json.load(open(outp)); refs = (old.get('references') or {}) if old.get('manifest_sha256') == mh_now else {}      # v4.2: an existing artifact is RESUMED only when it was built for THIS manifest; a foreign artifact is rebuilt
         except Exception: refs = {}
     rows_all = list(man['inventory']) + [dict(x, cohort=x.get('cohort', 'CBI')) for x in man.get('cbi_instances') or []]      # the SAME executable task set the producer schedules cells from (review 4 F05): inventory rows + native CBI instances
     executable = {c['case_id'] for c in man['cells']}
@@ -74,8 +81,9 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', bits=20, cap=300.0):
         cid = r.get('case_id')
         if cid in refs or cid not in executable: continue
         refs[cid] = reference_for_row(r, bits, cap)
-        _write_atomic(outp, dict(references_version=REFERENCES_VERSION, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), manifest_sha256=hashlib.sha256(open(os.path.join(RD, manifest_name), 'rb').read()).hexdigest(), bits_cap=bits, per_case_cap_s=cap, total_s=time.monotonic() - t0, references=refs))
+        _write_atomic(outp, dict(references_version=REFERENCES_VERSION, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), manifest_sha256=mh_now, bits_cap=bits, per_case_cap_s=cap, total_s=time.monotonic() - t0, references=refs))
         print(cid, refs[cid]['kind'], round(refs[cid].get('construction_s', 0), 2), flush=True)
+    if not os.path.exists(outp) or json.load(open(outp)).get('manifest_sha256') != mh_now: _write_atomic(outp, dict(references_version=REFERENCES_VERSION, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), manifest_sha256=mh_now, bits_cap=bits, per_case_cap_s=cap, total_s=time.monotonic() - t0, references=refs))
     print(json.dumps({k: v['kind'] for k, v in refs.items()}))
 
 

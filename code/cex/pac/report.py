@@ -15,7 +15,7 @@ from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); sys.set_int_max_str_digits(0)
 import core
 sys.path.insert(0, HERE); import registry
-EPS = F(1, 200); REPORT_VERSION = 'pac-report-v4.1 (2026-11-14 repair 4: current-byte evidence re-hash, native CBI exact references consumed, cell-id keyed rows)'
+EPS = F(1, 200); REPORT_VERSION = 'pac-report-v4.2 (2026-11-14 repair 5: task dependency set re-hashed (model, .evid, blocks, packets), malformed comparator answers never counted as publications, reference audit bound to manifest / gated set / inputs, native and reference summaries re-derivable from verified raw records)'
 CANDIDATE_ARMS = ('B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL')
 import sys as _sys
 EXACT_CAPACITY_ARMS = ('LIBDAI_EXACT', 'MERLIN_CTE')
@@ -48,6 +48,11 @@ def load(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
                     fp = rel if os.path.isabs(rel) else os.path.join(RD, rel)
                     cur = hashlib.sha256(open(fp, 'rb').read()).hexdigest() if os.path.exists(fp) else None
                     if cur != h: mism.append('evidence file %s of cell %s differs from the gated hash or is missing' % (rel, cid))
+                # the TASK DEPENDENCY SET (v4.2; one enumerator shared with the gate and the closeout): every dependency must be IN the gated evidence and unchanged now
+                c_ = next((x for x in man['cells'] if x['cell_id'] == cid), None)
+                if c_ is not None and (r.get('status') == 'COMPLETED' or r.get('outcome') == 'PROVED_ZERO_EVIDENCE'):
+                    import gate as _gate
+                    mism.extend(_gate.dependency_closure_failures(RD, c_, e.get('evidence')))
                 if e.get('verified') is False and r.get('status') == 'COMPLETED': mism.append('gated entry %s was not verified by the gate' % cid)
             for cid in rec:
                 if cid not in seen: mism.append('receipt %s is not in the gated set' % cid)
@@ -86,7 +91,8 @@ def capacity_of(arm, r):
     return None
 
 
-def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
+def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', write=True):
+    """write=False (v4.2): DERIVE everything from the current raw records without writing any file (the closeout re-derives the report this way and compares)"""
     RD = os.path.abspath(RD); man, rec, gate_binding = load(RD, manifest_name); cells = man['cells']; out = {'report_version': REPORT_VERSION, 'manifest': manifest_name, 'manifest_sha256': hashlib.sha256(open(os.path.join(RD, manifest_name), 'rb').read()).hexdigest(), 'gate_binding': gate_binding, 'gated_set_sha256': (gate_binding or {}).get('gated_set_sha256'), 'registry_cohorts': list(registry.COHORT_ORDER)}; L = []; P = L.append
     inv = man['inventory']; core_rows = [r for r in inv if r['cohort'] == 'external_core']
     planned = len(cells); received = len(rec); unrun = [c for c in cells if c['cell_id'] not in rec]
@@ -144,6 +150,17 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
             pr = os.path.join(r.get('attempt_dir', ''), 'cmp', 'pac_receipt.json'); ad = (json.load(open(pr)).get('adapter') or {}) if os.path.exists(pr) else {}
             ao = str(ad.get('outcome', '')); row['outcome'] = 'INVALID_PLAN_OR_CERTIFICATE' if 'OUTPUT_INVALID' in ao else ('MEMORY' if 'MEMORY' in ao else ('DEADLINE' if 'TIMEOUT' in ao or 'DEADLINE' in ao else ('ZERO_EVIDENCE_OR_UNDERFLOW_UNRESOLVED' if 'ZERO' in ao else 'NOT_COMPLETED'))); row['adapter_outcome'] = ao; row['adapter_reason'] = str(ad.get('reason', ''))[:120]; row['report_stage_remap'] = True
         if r and row['outcome'] == 'PROVED_ZERO_EVIDENCE' and not c['arm'] in CANDIDATE_ARMS: row['outcome'] = 'ZERO_EVIDENCE_OR_UNDERFLOW_UNRESOLVED'; row['report_stage_remap'] = 'comparator zero outcomes are UNRESOLVED (underflow indistinguishable)'
+        if r and row['outcome'] == 'PUBLISHED' and registry.validator_of(c['arm']) == 'comparator_mar':
+            # v4.2 (fifth review R03): a comparator publication must be a WELL-FORMED complete answer for the ORIGINAL model; an incomplete / malformed answer is never counted as a completed inference
+            model_, _b = model_of(c); mar = (r.get('comparator') or {}).get('output_file'); bad_ = None
+            if model_ is None: bad_ = 'input unavailable'
+            elif not mar or not os.path.exists(mar): bad_ = 'comparator output missing'
+            else:
+                try:
+                    pts_ = read_mar(mar)
+                    if not shape_ok(pts_, model_['cards']) or any(not (0 <= x <= 1) for rw in pts_ for x in rw) or any(abs(sum(rw) - 1) > F(1, 10 ** 5) * max(1, k) for rw, k in zip(pts_, model_['cards'])): bad_ = 'comparator answer malformed for the original model (shape / range / simplex)'
+                except Exception: bad_ = 'comparator output unparseable'
+            if bad_: row['outcome'] = 'MALFORMED_NOT_A_PUBLICATION'; row['guarantee'] = 'NONE'; row['report_stage_remap'] = bad_
         if w:
             st = w.get('stats') or {}; comps = st.get('components') or []
             row['routes'] = [(x.get('route'), x.get('guarantee')) for x in comps][:6]
@@ -194,7 +211,15 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
             cat[(c['arm'], res)] += 1; audit.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], reference='deterministic enclosure sharing candidate lineage (B0 at the same budget)', error_upper=float(upper), error_lower=float(lower), accurate=res, reference_interval_inside_published=cont, coordinates=sum(len(x) for x in pts), note='containment of the B0 interval inside the candidate interval is NOT a truth test (different widths)'))
         else:
             audit.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], reference='NONE (no bound R0 and no B0 enclosure at this budget)', accurate='UNRESOLVED_NO_REFERENCE')); cat[(c['arm'], 'UNRESOLVED_NO_REFERENCE')] += 1
-    out['reference_audit'] = audit; json.dump(dict(report_version=REPORT_VERSION, refs={k: v['kind'] for k, v in refs.items()}, references_rejected=ref_rejected, audit=audit, counts={'%s|%s' % k: v for k, v in cat.items()}, trust_note='a reference agreement is a diagnostic; the PAC guarantee is a property of the lawful procedure (gate), not of any single outcome'), open(os.path.join(RD, 'REFERENCE_AUDIT.json'), 'w'), indent=1, default=str)
+    out['reference_audit'] = audit
+    # v4.2 (fifth review R02): the audit is BOUND to this manifest, the gated set and the reference artifact; every row carries the cell id so the closeout can re-derive it
+    ref_sha = hashlib.sha256(open(rp, 'rb').read()).hexdigest() if os.path.exists(rp) else None
+    for a_ in audit:
+        c_ = next((x for x in cells if x['case_id'] == a_['case'] and x['arm'] == a_['arm'] and x['budget_s'] == a_['budget'] and x['replicate'] == a_['rep']), None); a_['cell_id'] = c_['cell_id'] if c_ else None
+    audit_core = sorted(({k: a_.get(k) for k in ('cell_id', 'case', 'arm', 'budget', 'rep', 'reference', 'accurate', 'intervals_contain_truth', 'max_abs_error', 'error_upper', 'error_lower')} for a_ in audit), key=lambda a_: str(a_['cell_id']))
+    out['reference_audit_sha256'] = hashlib.sha256(json.dumps(audit_core, sort_keys=True, default=str).encode()).hexdigest(); out['references_file_sha256'] = ref_sha
+    out['reference_audit_record'] = dict(report_version=REPORT_VERSION, manifest_sha256=out['manifest_sha256'], gated_set_sha256=out.get('gated_set_sha256'), references_file_sha256=ref_sha, references_manifest_sha256=out.get('references_manifest_sha256'), audit_sha256=out['reference_audit_sha256'], refs={k: v['kind'] for k, v in refs.items()}, references_rejected=ref_rejected, audit=audit, counts={'%s|%s' % k: v for k, v in cat.items()}, trust_note='a reference agreement is a diagnostic; the PAC guarantee is a property of the lawful procedure (gate), not of any single outcome')
+    if write: json.dump(out['reference_audit_record'], open(os.path.join(RD, 'REFERENCE_AUDIT.json'), 'w'), indent=1, default=str)
     # ---- NATIVE-QUERY scoring of the adapted cohorts (registry: CBI_UAI, SF_small): candidate publications are mapped through the bound blocks metadata to the native
     # per-coordinate task at EVERY width of the cohort's native contract (SF: 1/100 and 1/20); deterministic vs PAC kept distinct (a PAC mapping keeps its delta);
     # comparator points are mapped as UNGUARANTEED native estimates (max abs error vs the exact reference); external block ids are preserved by the adapter metadata
@@ -214,7 +239,7 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
             if c['arm'] in CANDIDATE_ARMS:
                 w = worker(RD, r); rows_ = [[(F(a), F(b)) for a, b in row] for row in w['intervals']]
                 sc = LC.native_score(meta, rows_, meta_sha256=c.get('blocks_sha256'), native_widths=widths_, instance_json=inst, guarantee=r.get('guarantee_type'))
-                native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee=r.get('guarantee_type'), native_completion=sc['native_completion'], native_widths_met=sc.get('native_widths_met'), max_coordinate_width=sc.get('max_coordinate_width'), native_reference=sc.get('native_reference'), delta_note=sc.get('delta_note'), reason=sc.get('reason')))
+                native_rows.append(dict(cell_id=c['cell_id'], cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee=r.get('guarantee_type'), native_completion=sc['native_completion'], native_widths_met=sc.get('native_widths_met'), max_coordinate_width=sc.get('max_coordinate_width'), native_reference=sc.get('native_reference'), delta_note=sc.get('delta_note'), reason=sc.get('reason')))
             elif registry.validator_of(c['arm']) == 'comparator_mar':
                 mar = (r.get('comparator') or {}).get('output_file')
                 if not mar or not os.path.exists(mar): native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee='UNGUARANTEED', native_completion='ADAPTER_REFUSED', reason='comparator output missing')); continue
@@ -368,7 +393,8 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
     P(''); P('Resource contract as EXECUTED: supervisor timeout = budget + 1 s and the supervisor adds its own 4 s grace before SIGKILL, so the actual kill threshold is budget + 5 s (ledger START rows: max_permitted_charge_s). Receipts with wall > budget + 1 s: %d; > budget + 5 s: %d. Walls are charged in full; a publication after the budget is never a success (recomputed by the gate).' % (over1, over5))
     P('Prospective ceiling (manifest): scored matrix %.0f s nominal; orchestration %.0f s; total ceiling %.0f s (04 formula). Interactive post-processing is uncharged (UNKNOWN exposure; ISOLATION_NOTE.json).' % (man['ceiling']['scored_matrix_seconds'], man['ceiling']['orchestration_seconds'], man['ceiling']['total_ceiling_seconds']))
     out['completion'] = {'%s|%s|%s' % k: v for k, v in completion.items()}; out['ledger'] = dict(by_scope=dict(by), total=sum(by.values()), dev_total=dev_total, ceiling=man['ceiling'], grace_note='actual kill threshold budget + 5 s', receipts_over_budget_plus_1=over1, receipts_over_budget_plus_5=over5)
-    json.dump(out, open(os.path.join(RD, 'RESULTS_PAC.json'), 'w'), indent=1, default=str); open(os.path.join(RD, 'RESULTS_PAC.md'), 'w').write('\n'.join(L) + '\n'); print('written', len(L), 'lines;', len(rows), 'runs;', len(unrun), 'unrun')
+    if write: json.dump(out, open(os.path.join(RD, 'RESULTS_PAC.json'), 'w'), indent=1, default=str); open(os.path.join(RD, 'RESULTS_PAC.md'), 'w').write('\n'.join(L) + '\n'); print('written', len(L), 'lines;', len(rows), 'runs;', len(unrun), 'unrun')
+    return out
 
 
 if __name__ == '__main__':

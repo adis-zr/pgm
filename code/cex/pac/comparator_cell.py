@@ -13,7 +13,7 @@ def main():
     arm, mp, ep, out, budget, nonce = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], float(sys.argv[5]), sys.argv[6]; launch_abs = float(sys.argv[7]) if len(sys.argv) > 7 else time.monotonic()
     if os.path.exists(out): raise SystemExit('refuse: attempt directory exists')
     os.makedirs(out); t0 = time.monotonic(); deadline_abs = launch_abs + budget                                    # LAUNCH-relative deadline on the host monotonic clock (the parent's launch instant)
-    rec = dict(arm=arm, nonce=nonce, model_sha256=hashlib.sha256(open(mp, 'rb').read()).hexdigest(), evidence_sha256=hashlib.sha256(open(ep, 'rb').read() if os.path.exists(ep) else b'0').hexdigest(), budget_s=budget, capacity_note=CAPACITY[arm], guarantee_type='UNGUARANTEED')
+    rec = dict(arm=arm, nonce=nonce, model_sha256=hashlib.sha256(open(mp, 'rb').read()).hexdigest(), evidence_sha256=hashlib.sha256(open(ep, 'rb').read() if os.path.exists(ep) else b'0').hexdigest(), model_path=os.path.abspath(mp), evidence_path=os.path.abspath(ep), budget_s=budget, capacity_note=CAPACITY[arm], guarantee_type='UNGUARANTEED', adapter_packet_version='pac-comparator-packet-v4.2 (bound: arm, nonce, model / evidence sha256, budget, output sha256, wall)')
     if arm == 'MERLIN_CTE':
         from ext.comparator import merlin_adapter as MA
         r = MA.run_cell(mp, ep, out, 'cte', max(0.1, deadline_abs - time.monotonic()), mem_gib=3.0); rec['adapter'] = {k: r.get(k) for k in ('outcome', 'reason', 'merlin_process_elapsed_s', 'pin')}; rec['adapter_status'] = r.get('outcome'); ao = str(r.get('outcome'))

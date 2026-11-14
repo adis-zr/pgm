@@ -3,7 +3,7 @@ every factor (rationals) before log-potentials are formed; zero entries become e
 usage: python pgmax_mar.py MODEL EVID OUT.MAR SIDE.json NUM_ITERS DAMPING"""
 import sys, os, time, json, itertools, math
 T0 = time.monotonic()
-sys.path.insert(0, "/Users/adis/Workspace/pgm/code")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))      # the EXECUTING repository tree (v4.2: no absolute main-worktree import; ext.uai resolves from the frozen tree)
 import numpy as np
 import jax; jax.config.update("jax_platform_name", "cpu")
 from pgmax import fgraph, fgroup, infer, vgroup
