@@ -24,7 +24,7 @@ def render_panel(panel_path, out_dir, couplings=None):
         vals = [F(kappa(n, u, v, bin(a ^ b).count('1'))) for a, _ in A for b, _ in B]
         model = dict(cards=[len(A), len(B)], factors=[dict(scope=(0,), values=[F(w) for _, w in A]), dict(scope=(1,), values=[F(w) for _, w in B]), dict(scope=(0, 1), values=vals)], evidence={})
         cid = 'sf_uai_%s_r%s' % (name, str(r).replace('/', '-')); p = os.path.join(out_dir, cid + '.uai'); ex = uai_export.write_uai(model, p)
-        meta = dict(blocks=[dict(id=0, rows=[a for a, _ in A]), dict(id=1, rows=[b for b, _ in B])], d=n, cards=model['cards'], dropped_scalars=['v^-%d (r=%s)' % (n, r)])
+        meta = dict(blocks=[dict(id=0, internal=0, rows=[a for a, _ in A]), dict(id=1, internal=1, rows=[b for b, _ in B])], d=n, cards=model['cards'], dropped_scalars=['v^-%d (r=%s)' % (n, r)], external_block_ids=[0, 1], native_widths=['1/100', '1/20'])
         bp = os.path.join(out_dir, cid + '.blocks.json'); json.dump(meta, open(bp, 'w'))
         rows.append(dict(case_id=cid, model_path=os.path.abspath(p), model_sha256=ex['model_sha256'], evidence_path=ex['evidence_path'], evidence_sha256=ex['evidence_sha256'], blocks_path=os.path.abspath(bp), blocks_sha256=hashlib.sha256(json.dumps(dict(blocks=meta['blocks'], d=meta['d'], cards=meta['cards']), sort_keys=True).encode()).hexdigest(), panel=name, panel_sha256=hashlib.sha256(open(panel_path, 'rb').read()).hexdigest(), sf_r=str(r), task='two-block state marginals -> NATIVE per-coordinate probabilities at coupling r=%s (legacy_cbi_uai.native_score; native widths 1/100 and 1/20 scored separately)' % r, native_specialists='sf/invoke.py select (SF_native cohort)', export_factor_scalars=ex['factor_scalars']))
     return rows

@@ -14,17 +14,34 @@ import sys, os, json, glob, collections, statistics, hashlib, time, math
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); sys.set_int_max_str_digits(0)
 import core
-EPS = F(1, 200); REPORT_VERSION = 'pac-report-v3 (2026-11-13 completion: native-query scoring for adapted cohorts, cohort-aware tables)'
+sys.path.insert(0, HERE); import registry
+EPS = F(1, 200); REPORT_VERSION = 'pac-report-v4 (2026-11-13 repair 3: registry-derived inventory, gated-set consumption, per-cohort scoped conclusions, both SF widths, comparator native points)'
 CANDIDATE_ARMS = ('B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL')
 import sys as _sys
 EXACT_CAPACITY_ARMS = ('LIBDAI_EXACT', 'MERLIN_CTE')
 
 
-def load(RD):
-    man = json.load(open(os.path.join(RD, 'CAMPAIGN_MANIFEST.json'))); rec = {}
+def load(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
+    """receipts are read from disk and, when a v4 GATE_RESULT exists, RECONCILED with its content-addressed gated set: every gated entry must have a receipt with the
+    same sha256 / output sha256 / status / outcome / guarantee, and no receipt may exist outside the gated set; a mismatch is recorded in `gated_set_mismatch`
+    (the closeout refuses such a report)."""
+    man = json.load(open(os.path.join(RD, manifest_name))); rec = {}; shas = {}
     for rp in glob.glob(os.path.join(RD, 'cells', '*', 'receipt.json')):
-        r = json.load(open(rp)); rec[r['cell_id']] = r
-    return man, rec
+        r = json.load(open(rp)); rec[r['cell_id']] = r; shas[r['cell_id']] = hashlib.sha256(open(rp, 'rb').read()).hexdigest()
+    gp = os.path.join(RD, 'GATE_RESULT.json'); gate_binding = None
+    if os.path.exists(gp):
+        G = json.load(open(gp)); gs = G.get('gated_set'); mism = []
+        if isinstance(gs, list):
+            seen = set()
+            for e in gs:
+                cid = e.get('cell_id'); seen.add(cid); r = rec.get(cid)
+                if r is None: mism.append('gated cell %s has no receipt on disk' % cid); continue
+                if shas[cid] != e.get('receipt_sha256') or r.get('output_sha256') != e.get('output_sha256') or r.get('status') != e.get('status') or r.get('outcome') != e.get('outcome') or r.get('guarantee_type') != e.get('guarantee'): mism.append('receipt %s differs from the gated set (stale gate or changed output)' % cid)
+            for cid in rec:
+                if cid not in seen: mism.append('receipt %s is not in the gated set' % cid)
+            gate_binding = dict(gate_version=G.get('gate_version'), gated_set_sha256=G.get('gated_set_sha256'), manifest_sha256=G.get('manifest_sha256'), gate_passed=G.get('gate_passed'), mismatch=mism)
+        else: gate_binding = dict(gate_version=G.get('gate_version'), mismatch=['GATE_RESULT carries no gated set (pre-v4 gate)'])
+    return man, rec, gate_binding
 
 
 def worker(RD, r):
@@ -57,8 +74,8 @@ def capacity_of(arm, r):
     return None
 
 
-def main(RD):
-    RD = os.path.abspath(RD); man, rec = load(RD); cells = man['cells']; out = {'report_version': REPORT_VERSION, 'manifest_sha256': hashlib.sha256(open(os.path.join(RD, 'CAMPAIGN_MANIFEST.json'), 'rb').read()).hexdigest()}; L = []; P = L.append
+def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
+    RD = os.path.abspath(RD); man, rec, gate_binding = load(RD, manifest_name); cells = man['cells']; out = {'report_version': REPORT_VERSION, 'manifest': manifest_name, 'manifest_sha256': hashlib.sha256(open(os.path.join(RD, manifest_name), 'rb').read()).hexdigest(), 'gate_binding': gate_binding, 'gated_set_sha256': (gate_binding or {}).get('gated_set_sha256'), 'registry_cohorts': list(registry.COHORT_ORDER)}; L = []; P = L.append
     inv = man['inventory']; core_rows = [r for r in inv if r['cohort'] == 'external_core']
     planned = len(cells); received = len(rec); unrun = [c for c in cells if c['cell_id'] not in rec]
     P('# PAC EMPIRICAL PASS — RESULTS (%s UTC; host %s; receipts read from %s; %s)' % (time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), man['host']['platform'], 'cells/*/receipt.json', REPORT_VERSION)); P('')
@@ -69,18 +86,23 @@ def main(RD):
     cand = pdh.get('newarm', {}); pac = pdh.get('pac', {}); b0h = pdh.get('b0_frozen_v14', {})
     P('Frozen manifest sha256 (without self): `%s`; root seed `%s`; candidate kernel source `%s` (binary rebuilt here), candidate executor `%s`, PAC engine `%s`; B0 = unchanged v1.4 executor `%s`.' % (man['manifest_sha256_without_self'], man['seeds']['root_seed'], cand.get('cex_kernel.cpp', '')[:16], cand.get('cex_executor.py', '')[:16], pac.get('engine.py', '')[:16], b0h.get('cex_executor.py', '')[:16]))
     P('Planned cells %d, receipts %d, UNRUN %d. %s' % (planned, received, len(unrun), 'COMPLETE MATRIX (of THIS manifest; the requested inventory denominator is Table 1).' if not unrun else 'PARTIAL: %d planned cells have no receipt (listed in RESULTS_PAC.json unrun).' % len(unrun))); P('')
-    # ---- table 1
-    P('## Table 1 — Inventory reconciliation (the denominator of the requested benchmark is the UNION of registered tasks; this manifest covers the rows marked executed)'); P(''); P('| cohort | intended tasks | available (hash-verified) | missing / unavailable | primary arms | native specialists | executed cells | unrun cells |'); P('|---|---:|---:|---|---|---|---:|---:|')
+    # ---- table 1: inventory reconciliation DERIVED FROM THE REGISTRY (every registered cohort; rows reconcile exactly with the cells of this manifest)
+    P('## Table 1 — Inventory reconciliation (denominator = the UNION of registered tasks from cex/pac/registry.py; every row reconciles with the cells of THIS manifest)'); P(''); P('| cohort | representation | original task | registered inputs | available (hash-recorded) | unsupported / unavailable (visible) | arms scheduled | planned cells | executed | unrun |'); P('|---|---|---|---:|---:|---|---|---:|---:|---:|')
     coh_cells = collections.defaultdict(list)
     for c in cells: coh_cells[c['cohort']].append(c)
-    P('| external_core (46 + 2 missing slots headline) | 48 | %d | %s | B0 / P1 / H1 / A0 / A1 | libDAI EXACT, LBP, WMB, IJGP, PGMax, Merlin CTE | %d | %d |' % (sum(1 for r in core_rows if r['status'] == 'AVAILABLE_HASH_VERIFIED'), ', '.join(r['case_id'] for r in core_rows if r['status'] != 'AVAILABLE_HASH_VERIFIED'), sum(1 for c in coh_cells['external_core'] if c['cell_id'] in rec), sum(1 for c in coh_cells['external_core'] if c['cell_id'] not in rec)))
-    sel = [r for r in inv if r['cohort'] == 'selector_transfer_additions']; P('| selector_transfer_additions | 2 | %d | %s | same | same | %d | %d |' % (sum(1 for r in sel if r.get('model_sha256')), ', '.join(r['case_id'] for r in sel if not r.get('model_sha256')) or 'none', sum(1 for c in coh_cells['selector_transfer_additions'] if c['cell_id'] in rec), sum(1 for c in coh_cells['selector_transfer_additions'] if c['cell_id'] not in rec)))
-    cbi = man.get('cbi_instances', []); P('| CBI (native contract) | 23 | %d | %s | %s | cbi CLI solve (native) | %d | %d |' % (sum(1 for r in cbi if r['status'].startswith('RETAINED')), ', '.join(r['case_id'] for r in cbi if not r['status'].startswith('RETAINED')) or 'none', 'UAI-table adapter: %s' % ('executed' if any(c['arm'] in CANDIDATE_ARMS for c in coh_cells['CBI']) else 'NOT in this manifest (block/kernel models; see the inventory plan)'), sum(1 for c in coh_cells['CBI'] if c['cell_id'] in rec), sum(1 for c in coh_cells['CBI'] if c['cell_id'] not in rec)))
-    for lc in man['legacy_cohorts']:
-        if lc['cohort'] in ('CBI',): continue
-        n_ex = sum(1 for c in coh_cells.get(lc['cohort'], []) if c['cell_id'] in rec); n_un = sum(1 for c in coh_cells.get(lc['cohort'], []) if c['cell_id'] not in rec)
-        P('| %s | %s | — | %s | %s | %s | %d | %d |' % (lc['cohort'], lc.get('tasks', '')[:70], lc.get('status'), lc.get('primary_arms', '')[:80], lc.get('native_specialists', '')[:80], n_ex, n_un))
-    P(''); P('Comparators unavailable: %s' % '; '.join('%s: %s' % (k, v[:90]) for k, v in man['arms']['unavailable'].items())); P('')
+    inv_rows = collections.defaultdict(list)
+    for r in inv: inv_rows[r['cohort']].append(r)
+    for r in man.get('cbi_instances', []): inv_rows['CBI'].append(r)
+    reconciliation = {}
+    for coh in registry.COHORT_ORDER:
+        spec = registry.COHORTS[coh]; rows_ = inv_rows.get(coh, []); avail = [r for r in rows_ if r.get('model_sha256')]; unav = [r for r in rows_ if not r.get('model_sha256')]
+        planned_ = coh_cells.get(coh, []); ex_ = sum(1 for c in planned_ if c['cell_id'] in rec); arms_ = sorted({c['arm'] for c in planned_})
+        reconciliation[coh] = dict(registered=len(rows_), available=len(avail), unavailable=[dict(case=r.get('case_id'), status=str(r.get('status'))[:80]) for r in unav], planned=len(planned_), executed=ex_, unrun=len(planned_) - ex_, arms=arms_)
+        P('| %s | %s | %s | %d | %d | %s | %s | %d | %d | %d |' % (coh, spec['representation'], spec['original_task'][:110], len(rows_), len(avail), ('; '.join('%s: %s' % (r.get('case_id'), str(r.get('status'))[:50]) for r in unav[:4]) + (' (+%d more)' % (len(unav) - 4) if len(unav) > 4 else '')) or 'none', ', '.join(arms_) or '—', len(planned_), ex_, len(planned_) - ex_))
+    assert sum(v['planned'] for v in reconciliation.values()) == planned, 'Table 1 does not reconcile with the manifest cells'
+    out['inventory_reconciliation'] = reconciliation
+    P(''); P('Totals: planned %d = sum of the rows; executed %d; unrun %d. Comparators unavailable: %s' % (planned, received, len(unrun), '; '.join('%s: %s' % (k, v[:90]) for k, v in man['arms']['unavailable'].items()))); P('')
+    if gate_binding is not None: P('Gate binding: %s; gated set sha256 `%s`; mismatches with the receipts on disk: %s.' % (gate_binding.get('gate_version'), gate_binding.get('gated_set_sha256'), gate_binding.get('mismatch') or 'none')); P('')
     # ---- references with BINDING (F08)
     refs = {}; rp = os.path.join(RD, 'REFERENCES_R0.json'); ref_rejected = []
     if os.path.exists(rp):
@@ -103,7 +125,7 @@ def main(RD):
     rows = []
     for c in cells:
         r = rec.get(c['cell_id']); w = worker(RD, r) if r else {}
-        row = dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], status=(r or {}).get('status', 'NOT_RUN'), outcome=(r or {}).get('outcome', 'NOT_RUN'), guarantee=(r or {}).get('guarantee_type', 'NONE'), wall=(r or {}).get('launch_relative_wall_s'), rss_MB=round(((r or {}).get('supervisor') or {}).get('peak_MB', 0) or 0), seed=c.get('seed'), nonce=(r or {}).get('nonce'), output_sha256=(r or {}).get('output_sha256'), execution_capacity=capacity_of(c['arm'], r) if r else None)
+        row = dict(cell_id=c['cell_id'], cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], status=(r or {}).get('status', 'NOT_RUN'), outcome=(r or {}).get('outcome', 'NOT_RUN'), guarantee=(r or {}).get('guarantee_type', 'NONE'), wall=(r or {}).get('launch_relative_wall_s'), rss_MB=round(((r or {}).get('supervisor') or {}).get('peak_MB', 0) or 0), seed=c.get('seed'), nonce=(r or {}).get('nonce'), output_sha256=(r or {}).get('output_sha256'), execution_capacity=capacity_of(c['arm'], r) if r else None)
         if r and row['outcome'] == 'NOT_COMPLETED' and c['arm'] == 'MERLIN_CTE':
             pr = os.path.join(r.get('attempt_dir', ''), 'cmp', 'pac_receipt.json'); ad = (json.load(open(pr)).get('adapter') or {}) if os.path.exists(pr) else {}
             ao = str(ad.get('outcome', '')); row['outcome'] = 'INVALID_PLAN_OR_CERTIFICATE' if 'OUTPUT_INVALID' in ao else ('MEMORY' if 'MEMORY' in ao else ('DEADLINE' if 'TIMEOUT' in ao or 'DEADLINE' in ao else ('ZERO_EVIDENCE_OR_UNDERFLOW_UNRESOLVED' if 'ZERO' in ao else 'NOT_COMPLETED'))); row['adapter_outcome'] = ao; row['adapter_reason'] = str(ad.get('reason', ''))[:120]; row['report_stage_remap'] = True
@@ -123,7 +145,7 @@ def main(RD):
     audit = []; cat = collections.Counter()
     for c in cells:
         r = rec.get(c['cell_id'])
-        if not r or r.get('status') != 'COMPLETED' or c['cohort'] not in ('external_core', 'selector_transfer_additions', 'qgrid', 'CBI_UAI', 'SF_small'): continue
+        if not r or r.get('status') != 'COMPLETED' or c['cohort'] not in registry.UAI_COHORTS: continue
         model, binding = model_of(c)
         if model is None: audit.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], reference='NONE', accurate='UNRESOLVED_INPUT_UNAVAILABLE')); cat[(c['arm'], 'UNRESOLVED_INPUT_UNAVAILABLE')] += 1; continue
         cards = model['cards']; frozen_binding = dict(model_sha256=c.get('model_sha256'), evidence_sha256=c.get('evidence_sha256'))
@@ -159,37 +181,46 @@ def main(RD):
         else:
             audit.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], reference='NONE (no bound R0 and no B0 enclosure at this budget)', accurate='UNRESOLVED_NO_REFERENCE')); cat[(c['arm'], 'UNRESOLVED_NO_REFERENCE')] += 1
     out['reference_audit'] = audit; json.dump(dict(report_version=REPORT_VERSION, refs={k: v['kind'] for k, v in refs.items()}, references_rejected=ref_rejected, audit=audit, counts={'%s|%s' % k: v for k, v in cat.items()}, trust_note='a reference agreement is a diagnostic; the PAC guarantee is a property of the lawful procedure (gate), not of any single outcome'), open(os.path.join(RD, 'REFERENCE_AUDIT.json'), 'w'), indent=1, default=str)
-    # ---- NATIVE-QUERY scoring of the adapted cohorts (CBI_UAI, SF_small): every COMPLETED candidate publication is mapped through the bound blocks metadata to the
-    # native per-coordinate task (legacy_cbi_uai.native_score); state-marginal completion and native completion are reported SEPARATELY; deterministic vs PAC kept distinct
+    # ---- NATIVE-QUERY scoring of the adapted cohorts (registry: CBI_UAI, SF_small): candidate publications are mapped through the bound blocks metadata to the native
+    # per-coordinate task at EVERY width of the cohort's native contract (SF: 1/100 and 1/20); deterministic vs PAC kept distinct (a PAC mapping keeps its delta);
+    # comparator points are mapped as UNGUARANTEED native estimates (max abs error vs the exact reference); external block ids are preserved by the adapter metadata
     native_rows = []
     try:
-        sys.path.insert(0, HERE); import legacy_cbi_uai as LC
+        import legacy_cbi_uai as LC
         for c in cells:
             r = rec.get(c['cell_id'])
-            if not r or c['cohort'] not in ('CBI_UAI', 'SF_small') or c['arm'] not in CANDIDATE_ARMS or r.get('status') != 'COMPLETED': continue
-            w = worker(RD, r); bp = c.get('blocks_path')
-            if not bp or not os.path.exists(bp): native_rows.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], native_completion='ADAPTER_REFUSED', reason='blocks metadata missing')); continue
-            meta = json.load(open(bp)); rows_ = [[(F(a), F(b)) for a, b in row] for row in w['intervals']]
-            inst = None
+            if not r or c['cohort'] not in registry.ADAPTED_COHORTS or r.get('status') != 'COMPLETED': continue
+            spec = registry.COHORTS[c['cohort']]; widths_ = spec['native_query']['widths']; bp = c.get('blocks_path')
+            if not bp or not os.path.exists(bp): native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], native_completion='ADAPTER_REFUSED', reason='blocks metadata missing')); continue
+            meta = json.load(open(bp)); inst = None
             src = next((x for x in man.get('inventory', []) if x.get('case_id') == c['case_id']), {})
             if c['cohort'] == 'CBI_UAI' and src.get('source_instance'):
                 ip = os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CBI_LIBRARY_2026-11-06', 'inputs', src['source_instance'])
                 if os.path.exists(ip) and hashlib.sha256(open(ip, 'rb').read()).hexdigest() == src.get('source_sha256'): inst = json.load(open(ip))
-            sc = LC.native_score(meta, rows_, meta_sha256=c.get('blocks_sha256'), native_width=F(1, 100), instance_json=inst)
-            native_rows.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee=r.get('guarantee_type'), native_completion=sc['native_completion'], max_coordinate_width=sc.get('max_coordinate_width'), native_reference=sc.get('native_reference'), reason=sc.get('reason')))
+            if c['arm'] in CANDIDATE_ARMS:
+                w = worker(RD, r); rows_ = [[(F(a), F(b)) for a, b in row] for row in w['intervals']]
+                sc = LC.native_score(meta, rows_, meta_sha256=c.get('blocks_sha256'), native_widths=widths_, instance_json=inst, guarantee=r.get('guarantee_type'))
+                native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee=r.get('guarantee_type'), native_completion=sc['native_completion'], native_widths_met=sc.get('native_widths_met'), max_coordinate_width=sc.get('max_coordinate_width'), native_reference=sc.get('native_reference'), delta_note=sc.get('delta_note'), reason=sc.get('reason')))
+            elif registry.validator_of(c['arm']) == 'comparator_mar':
+                mar = (r.get('comparator') or {}).get('output_file')
+                if not mar or not os.path.exists(mar): native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee='UNGUARANTEED', native_completion='ADAPTER_REFUSED', reason='comparator output missing')); continue
+                try: pts_ = read_mar(mar)
+                except Exception: native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee='UNGUARANTEED', native_completion='ADAPTER_REFUSED', reason='comparator output unparseable')); continue
+                sc = LC.native_point_score(meta, pts_, meta_sha256=c.get('blocks_sha256'), instance_json=inst)
+                native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee='UNGUARANTEED', native_completion=sc['native_completion'], native_reference=sc.get('native_reference'), reason=sc.get('reason')))
     except Exception as ex: native_rows.append(dict(error='native scoring failed: %s' % str(ex)[:120]))
     out['native_query_scores'] = native_rows
     if native_rows:
-        P('## Table 2b — Adapted cohorts scored on the NATIVE query (per-coordinate probabilities, width 1/100): state-marginal completion vs native completion'); P(''); P('| cohort/case | arm | budget | rep | guarantee | native completion | max coordinate width | native reference |'); P('|---|---|---:|---:|---|---|---:|---|')
+        P('## Table 2b — Adapted cohorts scored on the NATIVE query (per-coordinate probabilities) at EVERY width of the native contract; deterministic vs PAC distinct; comparator points = unguaranteed estimates'); P(''); P('| cohort | case | arm | budget | rep | guarantee | native completion (first width) | widths met | max coordinate width | native reference / error |'); P('|---|---|---|---:|---:|---|---|---|---|---|')
         for x in native_rows:
-            if 'error' in x: P('| %s | | | | | | | |' % x['error']); continue
-            P('| %s | %s | %d | %d | %s | %s | %s | %s |' % (x['case'], x['arm'], x['budget'], x['rep'], x.get('guarantee'), x['native_completion'], ('%.3g' % x['max_coordinate_width']) if x.get('max_coordinate_width') is not None else '—', json.dumps(x.get('native_reference') or x.get('reason') or '')[:80]))
+            if 'error' in x: P('| %s | | | | | | | | | |' % x['error']); continue
+            P('| %s | %s | %s | %d | %d | %s | %s | %s | %s | %s |' % (x['cohort'], x['case'], x['arm'], x['budget'], x['rep'], x.get('guarantee'), x['native_completion'], json.dumps(x.get('native_widths_met')) if x.get('native_widths_met') else '—', ('%.3g' % x['max_coordinate_width']) if x.get('max_coordinate_width') is not None else '—', json.dumps(x.get('native_reference') or x.get('reason') or {}, default=str)[:140]))
         P('')
     # ---- table 3
-    P('## Table 3 — Completion by cohort, budget and arm (run level; per-case k/3 for stochastic arms)'); P(''); P('| cohort | budget | arm | planned | received | PUBLISHED deterministic | PUBLISHED PAC | PUBLISHED unguaranteed (heuristic) | PROVED_ZERO_EVIDENCE | zero-or-underflow (unresolved) | DEADLINE | MEMORY | TOO_WIDE | numerical | invalid/fault | NOT_RUN | per-case 0/3,1/3,2/3,3/3 |'); P('|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
-    arms_order = ['B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL', 'LIBDAI_EXACT', 'MERLIN_CTE', 'WMB', 'IJGP', 'LBP', 'PGMAX_SUMPRODUCT_BP', 'CBI_NATIVE', 'H4_NATIVE', 'QGRID_NATIVE', 'SF_NATIVE']
+    P('## Table 3 — Completion by cohort, budget and arm (run level; per-case k/3 for stochastic arms)'); P(''); P('| cohort | budget | arm | planned | received | PUBLISHED deterministic | PUBLISHED PAC | PUBLISHED unguaranteed (heuristic) | PROVED_ZERO_EVIDENCE | zero-or-underflow (unresolved) | DEADLINE | MEMORY | TOO_WIDE / INTERSECTION_EMPTY | numerical | invalid/fault | NOT_RUN | per-case 0/3,1/3,2/3,3/3 |'); P('|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|')
+    arms_order = list(registry.ARMS)
     completion = {}
-    COH_ORDER = ('external_core', 'selector_transfer_additions', 'qgrid', 'CBI_UAI', 'SF_small', 'CBI', 'H4_native', 'SF_native')
+    COH_ORDER = registry.COHORT_ORDER
     for coh in sorted({x['cohort'] for x in rows}, key=lambda k: COH_ORDER.index(k) if k in COH_ORDER else 99):
         for budget in man['budgets_s']:
             for arm in arms_order + sorted({x['arm'] for x in rows} - set(arms_order)):
@@ -201,26 +232,50 @@ def main(RD):
                 if arm in ('P1_PAC_CONDITIONAL', 'H1_HYBRID'):
                     k = collections.Counter(sum(1 for x in rs if x['case'] == cs and x['outcome'] == 'PUBLISHED') for cs in sorted({x['case'] for x in rs})); percase = ','.join(str(k.get(i, 0)) for i in range(4))
                 completion[(coh, budget, arm)] = dict(planned=len(rs), received=cnt(lambda x: x['status'] != 'NOT_RUN'), det=det, pac=pac, heur=heur)
-                P('| %s | %d | %s | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %s |' % (coh, budget, arm, len(rs), cnt(lambda x: x['status'] != 'NOT_RUN'), det, pac, heur, cnt(lambda x: x['outcome'] == 'PROVED_ZERO_EVIDENCE'), cnt(lambda x: x['outcome'] == 'ZERO_EVIDENCE_OR_UNDERFLOW_UNRESOLVED'), cnt(lambda x: x['outcome'] == 'DEADLINE'), cnt(lambda x: x['outcome'] == 'MEMORY'), cnt(lambda x: x['outcome'] == 'TOO_WIDE'), cnt(lambda x: x['outcome'] == 'NUMERICAL_RANGE_OR_PRECISION'), cnt(lambda x: x['outcome'] in ('INVALID_PLAN_OR_CERTIFICATE', 'FAULT')), cnt(lambda x: x['status'] == 'NOT_RUN'), percase))
+                P('| %s | %d | %s | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %s |' % (coh, budget, arm, len(rs), cnt(lambda x: x['status'] != 'NOT_RUN'), det, pac, heur, cnt(lambda x: x['outcome'] == 'PROVED_ZERO_EVIDENCE'), cnt(lambda x: x['outcome'] == 'ZERO_EVIDENCE_OR_UNDERFLOW_UNRESOLVED'), cnt(lambda x: x['outcome'] == 'DEADLINE'), cnt(lambda x: x['outcome'] == 'MEMORY'), cnt(lambda x: x['outcome'] in ('TOO_WIDE', 'INTERSECTION_EMPTY')), cnt(lambda x: x['outcome'] == 'NUMERICAL_RANGE_OR_PRECISION'), cnt(lambda x: x['outcome'] in ('INVALID_PLAN_OR_CERTIFICATE', 'FAULT')), cnt(lambda x: x['status'] == 'NOT_RUN'), percase))
     P('')
-    # ---- table 4: FULLY OBSERVED groups only (F11 / R4)
-    P('## Table 4 — Fresh B0 vs H1 (external core): retained / lost / new on FULLY OBSERVED groups (B0 received AND all three H1 replicates received); pending groups listed separately'); P('')
-    for budget in man['budgets_s']:
-        b0 = {x['case']: x for x in rows if x['arm'] == 'B0_FROZEN_V14' and x['budget'] == budget and x['cohort'] == 'external_core'}
-        h1 = collections.defaultdict(list)
-        for x in rows:
-            if x['arm'] == 'H1_HYBRID' and x['budget'] == budget and x['cohort'] == 'external_core': h1[x['case']].append(x)
-        observed = {c for c in b0 if b0[c]['status'] != 'NOT_RUN' and len(h1[c]) == 3 and all(x['status'] != 'NOT_RUN' for x in h1[c])}; pending = sorted(set(b0) - observed)
-        b0ok = {c for c in observed if b0[c]['outcome'] == 'PUBLISHED'}; h1_all3 = {c for c in observed if all(x['outcome'] == 'PUBLISHED' for x in h1[c])}; h1_any = {c for c in observed if any(x['outcome'] == 'PUBLISHED' for x in h1[c])}
-        lost = sorted(b0ok - h1_all3); new = sorted(h1_all3 - b0ok); retained = sorted(b0ok & h1_all3)
-        pairs = []
-        for c in retained:
-            wb = b0[c]['wall']; wh = statistics.median([x['wall'] for x in h1[c] if x['wall']])
-            if wb and wh: pairs.append((c, round(wh / wb, 3), round(wb, 2), round(wh, 2), b0[c]['rss_MB'], round(statistics.median([x['rss_MB'] for x in h1[c]]))))
-        P('- **%d s**: fully observed groups %d of %d (pending: %s). B0 published %d; H1 published 3/3 on %d (any seed: %d). Retained %d; LOST (B0 yes, H1 not 3/3): %s; NEW (H1 3/3, B0 no): %s. H1 PAC-guaranteed publications: %d runs.' % (budget, len(observed), len(b0), pending or 'none', len(b0ok), len(h1_all3), len(h1_any), len(retained), lost or 'none', new or 'none', sum(1 for c in observed for x in h1[c] if x['guarantee'] == 'PAC')))
-        if pairs:
-            rs_ = sorted(p[1] for p in pairs); P('  paired wall ratio H1(median of 3)/B0 over %d retained cases: median %.3f (timeouts censored, never a ratio); per case (case, ratio, B0 s, H1 s, B0 MB, H1 MB): %s' % (len(pairs), rs_[len(rs_) // 2], sorted(pairs, key=lambda t: t[1])))
-        out['b0_vs_h1_%d' % int(budget)] = dict(observed=sorted(observed), pending=pending, b0=sorted(b0ok), h1_all3=sorted(h1_all3), h1_any=sorted(h1_any), lost=lost, new=new, pairs=pairs)
+    # ---- table 4: FULLY OBSERVED groups only (F11 / R4), PER COHORT (every UAI cohort; review R07: the headline must not be external_core only)
+    P('## Table 4 — Fresh B0 vs H1 by cohort: retained / lost / new on FULLY OBSERVED groups (B0 received AND all three H1 replicates received); pending groups listed separately'); P('')
+    out['b0_vs_h1'] = {}
+    for coh in [k for k in registry.COHORT_ORDER if registry.COHORTS[k]['representation'] == 'uai_table' and coh_cells.get(k)]:
+        for budget in man['budgets_s']:
+            b0 = {x['case']: x for x in rows if x['arm'] == 'B0_FROZEN_V14' and x['budget'] == budget and x['cohort'] == coh}
+            h1 = collections.defaultdict(list)
+            for x in rows:
+                if x['arm'] == 'H1_HYBRID' and x['budget'] == budget and x['cohort'] == coh: h1[x['case']].append(x)
+            if not b0 and not h1: continue
+            observed = {c for c in b0 if b0[c]['status'] != 'NOT_RUN' and len(h1[c]) == 3 and all(x['status'] != 'NOT_RUN' for x in h1[c])}; pending = sorted(set(b0) - observed)
+            b0ok = {c for c in observed if b0[c]['outcome'] == 'PUBLISHED'}; h1_all3 = {c for c in observed if all(x['outcome'] == 'PUBLISHED' for x in h1[c])}; h1_any = {c for c in observed if any(x['outcome'] == 'PUBLISHED' for x in h1[c])}
+            lost = sorted(b0ok - h1_all3); new = sorted(h1_all3 - b0ok); retained = sorted(b0ok & h1_all3)
+            pairs = []
+            for c in retained:
+                wb = b0[c]['wall']; wh = statistics.median([x['wall'] for x in h1[c] if x['wall']])
+                if wb and wh: pairs.append((c, round(wh / wb, 3), round(wb, 2), round(wh, 2), b0[c]['rss_MB'], round(statistics.median([x['rss_MB'] for x in h1[c]]))))
+            P('- **%s, %d s**: fully observed groups %d of %d (pending: %s). B0 published %d; H1 published 3/3 on %d (any seed: %d). Retained %d; LOST (B0 yes, H1 not 3/3): %s; NEW (H1 3/3, B0 no): %s. H1 PAC-guaranteed publications: %d runs.' % (coh, budget, len(observed), len(b0), pending or 'none', len(b0ok), len(h1_all3), len(h1_any), len(retained), lost or 'none', new or 'none', sum(1 for c in observed for x in h1[c] if x['guarantee'] == 'PAC')))
+            if pairs:
+                rs_ = sorted(p[1] for p in pairs); P('  paired wall ratio H1(median of 3)/B0 over %d retained cases: median %.3f (timeouts censored, never a ratio); per case (case, ratio, B0 s, H1 s, B0 MB, H1 MB): %s' % (len(pairs), rs_[len(rs_) // 2], sorted(pairs, key=lambda t: t[1])))
+            out['b0_vs_h1']['%s|%d' % (coh, int(budget))] = dict(cohort=coh, budget=budget, observed=sorted(observed), pending=pending, b0=sorted(b0ok), h1_all3=sorted(h1_all3), h1_any=sorted(h1_any), lost=lost, new=new, pairs=pairs)
+            if coh == 'external_core': out['b0_vs_h1_%d' % int(budget)] = out['b0_vs_h1']['%s|%d' % (coh, int(budget))]       # legacy key kept for the historical readers
+    # ---- per-cohort / per-task / per-budget / per-guarantee conclusions (closeout derives the scoped verdict from THESE, never from external_core alone)
+    concl = {}
+    for coh in registry.COHORT_ORDER:
+        if not coh_cells.get(coh): continue
+        spec = registry.COHORTS[coh]; cr = [x for x in rows if x['cohort'] == coh]
+        for budget in man['budgets_s']:
+            bb = [x for x in cr if x['budget'] == budget]
+            if not bb: continue
+            key = '%s|%d' % (coh, int(budget)); byarm = {}
+            for arm in sorted({x['arm'] for x in bb}):
+                aa = [x for x in bb if x['arm'] == arm]
+                byarm[arm] = dict(planned=len(aa), received=sum(1 for x in aa if x['status'] != 'NOT_RUN'), published_deterministic=sum(1 for x in aa if x['outcome'] == 'PUBLISHED' and x['guarantee'] == 'DETERMINISTIC'), published_pac=sum(1 for x in aa if x['outcome'] == 'PUBLISHED' and x['guarantee'] == 'PAC'), published_unguaranteed=sum(1 for x in aa if x['outcome'] == 'PUBLISHED' and x['guarantee'] == 'UNGUARANTEED'), zero=sum(1 for x in aa if x['outcome'] == 'PROVED_ZERO_EVIDENCE'), refused=sum(1 for x in aa if x['outcome'] not in ('PUBLISHED', 'PROVED_ZERO_EVIDENCE', 'NOT_RUN')))
+            comp_ = out['b0_vs_h1'].get(key) or {}
+            nat = [x for x in native_rows if x.get('cohort') == coh and x.get('budget') == budget and x.get('arm') in CANDIDATE_ARMS]
+            concl[key] = dict(cohort=coh, budget=budget, representation=spec['representation'], original_task=spec['original_task'], pooled_with_uai_numerator=spec['pooled_with_uai_numerator'], by_arm=byarm, b0_vs_h1=dict(new=comp_.get('new', []), lost=comp_.get('lost', []), pending=comp_.get('pending', []), observed=len(comp_.get('observed', []))) if comp_ else None, native=dict(candidate_runs_scored=len(nat), native_width_met=sum(1 for x in nat if x.get('native_completion') == 'NATIVE_WIDTH_MET'), widths_met_counts={w: sum(1 for x in nat if (x.get('native_widths_met') or {}).get(w)) for w in (spec['native_query'] or {}).get('widths', ())}) if spec.get('native_query') and spec['representation'] == 'uai_table' else None)
+    out['conclusions_by_cohort_budget'] = concl
+    P(''); P('## Table 4b — Conclusions by cohort, original task, budget and guarantee (the closeout derives its SCOPED overall verdict from these rows)'); P(''); P('| cohort | budget | task pooled with the UAI numerator? | PAC publications (candidate arms) | deterministic publications (candidate arms) | H1 new vs B0 | H1 lost vs B0 | native width met (candidate runs) |'); P('|---|---:|---|---:|---:|---|---|---|')
+    for key, cc in concl.items():
+        pacn = sum(v['published_pac'] for a, v in cc['by_arm'].items() if a in CANDIDATE_ARMS); detn = sum(v['published_deterministic'] for a, v in cc['by_arm'].items() if a in CANDIDATE_ARMS)
+        P('| %s | %d | %s | %d | %d | %s | %s | %s |' % (cc['cohort'], cc['budget'], 'yes' if cc['pooled_with_uai_numerator'] else 'no (own task; never pooled)', pacn, detn, (cc['b0_vs_h1'] or {}).get('new') or 'none', (cc['b0_vs_h1'] or {}).get('lost') or 'none', json.dumps(cc['native']['widths_met_counts']) if cc.get('native') else '—'))
     P(''); P('Historical context only (not fresh matched controls): v1.4 32/46 at 20 s, 13/13 on the old 13-case 120 s panel.'); P('')
     # ---- table 5
     P('## Table 5 — Comparators (unguaranteed points; execution capacity tagged per run) and reference audit (binding- and shape-validated references only)'); P(''); P('| arm | budget | published | DEADLINE | MEMORY | invalid/fault | exact-capacity runs | CONFIRMED_ACCURATE | CONFIRMED_INACCURATE | UNRESOLVED (interval) | UNRESOLVED (no reference) | MALFORMED |'); P('|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
@@ -284,4 +339,5 @@ def main(RD):
     json.dump(out, open(os.path.join(RD, 'RESULTS_PAC.json'), 'w'), indent=1, default=str); open(os.path.join(RD, 'RESULTS_PAC.md'), 'w').write('\n'.join(L) + '\n'); print('written', len(L), 'lines;', len(rows), 'runs;', len(unrun), 'unrun')
 
 
-if __name__ == '__main__': main(sys.argv[1])
+if __name__ == '__main__':
+    mn = sys.argv[sys.argv.index('--manifest') + 1] if '--manifest' in sys.argv else 'CAMPAIGN_MANIFEST.json'; main(sys.argv[1], mn)

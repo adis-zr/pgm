@@ -33,11 +33,11 @@ def render(inst):
         for x in bu.rows:
             for y in bv.rows: vals.append(kap[bin((x ^ y) & e.mask).count('1')])
         factors.append(dict(scope=(e.u, e.v), values=vals)); dropped.append('v^-%d (edge %d-%d, r=%s)' % (dp, e.u, e.v, e.r))
-    meta = dict(blocks=[dict(id=b, rows=list(m.blocks[b].rows)) for b in ids], d=d, cards=cards, dropped_scalars=dropped)
+    meta = dict(blocks=[dict(id=m.ext(b), internal=b, rows=list(m.blocks[b].rows)) for b in ids], d=d, cards=cards, dropped_scalars=dropped, external_block_ids=[m.ext(b) for b in ids])      # ids are the EXTERNAL block ids of the instance (sparse / reordered / negative allowed); `internal` is the UAI variable index
     return dict(cards=cards, factors=factors, evidence={}), entries, 'RENDERED', meta
 
 
-def meta_sha(meta): return hashlib.sha256(json.dumps(dict(blocks=meta['blocks'], d=meta['d'], cards=meta['cards']), sort_keys=True).encode()).hexdigest()
+def meta_sha(meta): return hashlib.sha256(json.dumps(dict(blocks=[dict(id=b['id'], internal=b.get('internal', i), rows=b['rows']) for i, b in enumerate(meta['blocks'])], d=meta['d'], cards=meta['cards']), sort_keys=True).encode()).hexdigest()
 
 
 def native_enclosures(meta, rows_enclosures, meta_sha256=None):
@@ -59,22 +59,47 @@ def native_enclosures(meta, rows_enclosures, meta_sha256=None):
     return out
 
 
-def native_score(meta, rows_enclosures, meta_sha256=None, native_width=NATIVE_WIDTH, instance_json=None):
-    """returns dict(native_completion in {NATIVE_WIDTH_MET, STATE_ROWS_ONLY_WIDTH_EXCEEDED, ADAPTER_REFUSED}, coordinate enclosures, max width, reference comparison)"""
+def native_score(meta, rows_enclosures, meta_sha256=None, native_width=NATIVE_WIDTH, instance_json=None, native_widths=None, guarantee=None):
+    """returns dict(native_completion in {NATIVE_WIDTH_MET, STATE_ROWS_ONLY_WIDTH_EXCEEDED, ADAPTER_REFUSED}, per requested native width the met flag, coordinate enclosures
+    keyed by EXTERNAL block id, max width, reference comparison). `native_widths`: every width of the cohort's native contract (SF: 1/100 AND 1/20) is scored separately;
+    `guarantee` is carried through unchanged (a deterministic mapping of PAC state intervals keeps their PAC delta: it never satisfies a delta-0 native task)."""
     try: enc = native_enclosures(meta, rows_enclosures, meta_sha256)
     except AdapterError as e: return dict(native_completion='ADAPTER_REFUSED', reason=str(e))
-    widths = {b: [float(hi - lo) for lo, hi in row] for b, row in enc.items()}; wmax = max(max(w) for w in widths.values())
-    rec = dict(native_completion='NATIVE_WIDTH_MET' if all(hi - lo <= native_width for row in enc.values() for lo, hi in row) else 'STATE_ROWS_ONLY_WIDTH_EXCEEDED', native_width=str(native_width), max_coordinate_width=wmax, coordinates={str(b): [(str(lo), str(hi)) for lo, hi in row] for b, row in enc.items()})
+    widths = {b: [float(hi - lo) for lo, hi in row] for b, row in enc.items()}; wmax_exact = max(hi - lo for row in enc.values() for lo, hi in row); wmax = float(wmax_exact)
+    nw = [F(x) for x in (native_widths or (native_width,))]
+    met = {str(w): bool(wmax_exact <= w) for w in nw}
+    rec = dict(native_completion='NATIVE_WIDTH_MET' if met[str(nw[0])] else 'STATE_ROWS_ONLY_WIDTH_EXCEEDED', native_width=str(nw[0]), native_widths_met=met, max_coordinate_width=wmax, guarantee=guarantee, delta_note=('PAC state intervals mapped deterministically keep their PAC delta (not a delta-0 native result)' if guarantee == 'PAC' else 'deterministic state intervals -> deterministic native enclosures (delta 0)'), coordinates={str(b): [(str(lo), str(hi)) for lo, hi in row] for b, row in enc.items()})
     if instance_json is not None:
         try:
             from cbi import model as M, exact as EX
             inst = M.Model.from_json(instance_json); contained = True; cmp = 0
             for b, row in enc.items():
-                marg, _ = EX.marginal(inst.blocks, inst.edges, inst.internal(b), max_entries=1 << 22); probs, Z = EX.coordinate_probabilities(inst.blocks, inst.internal(b), marg, inst.d)
+                bi = inst.internal(b)                                                  # b is the EXTERNAL id (meta.blocks[].id); the exact reference is keyed internally
+                marg, _ = EX.marginal(inst.blocks, inst.edges, bi, max_entries=1 << 22); probs, Z = EX.coordinate_probabilities(inst.blocks, bi, marg, inst.d)
                 for j, (lo, hi) in enumerate(row):
                     cmp += 1
                     if not (lo <= probs[j] <= hi): contained = False
             rec['native_reference'] = dict(kind='cbi exact (variable elimination, exact rationals)', coordinates_compared=cmp, contains_truth=contained)
+        except Exception as ex: rec['native_reference'] = dict(kind='cbi exact', status='UNAVAILABLE: %s' % str(ex)[:80])
+    return rec
+
+
+def native_point_score(meta, rows_points, meta_sha256=None, instance_json=None):
+    """comparator (unguaranteed) points mapped to the native coordinates: p_bj = sum of the state points with bit j; scored as UNGUARANTEED ESTIMATES against the cbi exact
+    reference (max abs error) -- never as a width / completion"""
+    if meta_sha256 is not None and meta_sha(meta) != meta_sha256: return dict(native_completion='ADAPTER_REFUSED', reason='blocks metadata hash does not match the bound export')
+    blocks = meta['blocks']; d = int(meta['d'])
+    if not isinstance(rows_points, (list, tuple)) or len(rows_points) != len(blocks) or any(len(r) != len(b['rows']) for r, b in zip(rows_points, blocks)): return dict(native_completion='ADAPTER_REFUSED', reason='point rows do not match the blocks')
+    pts = {blk['id']: [sum(F(p) for p, x in zip(row, blk['rows']) if (x >> j) & 1) for j in range(d)] for blk, row in zip(blocks, rows_points)}
+    rec = dict(native_completion='UNGUARANTEED_ESTIMATE', coordinates={str(b): [str(x) for x in row] for b, row in pts.items()})
+    if instance_json is not None:
+        try:
+            from cbi import model as M, exact as EX
+            inst = M.Model.from_json(instance_json); worst = F(0); cmp = 0
+            for b, row in pts.items():
+                bi = inst.internal(b); marg, _ = EX.marginal(inst.blocks, inst.edges, bi, max_entries=1 << 22); probs, Z = EX.coordinate_probabilities(inst.blocks, bi, marg, inst.d)
+                for j, x in enumerate(row): cmp += 1; worst = max(worst, abs(x - probs[j]))
+            rec['native_reference'] = dict(kind='cbi exact (variable elimination, exact rationals)', coordinates_compared=cmp, max_abs_error=float(worst))
         except Exception as ex: rec['native_reference'] = dict(kind='cbi exact', status='UNAVAILABLE: %s' % str(ex)[:80])
     return rec
 
@@ -90,9 +115,9 @@ def main(inputs, out_dir):
         if model is not None:
             meta = res[3]; p = os.path.join(out_dir, rec['case_id'] + '.uai'); ex = uai_export.write_uai(model, p)
             rec.update(model_path=os.path.abspath(p), model_sha256=ex['model_sha256'], evidence_path=ex['evidence_path'], evidence_sha256=ex['evidence_sha256'], cards=model['cards'], export_factor_scalars=ex['factor_scalars'], dropped_kernel_scalars=meta['dropped_scalars'])
-            bp = os.path.join(out_dir, rec['case_id'] + '.blocks.json'); json.dump(meta, open(bp, 'w')); rec['blocks_path'] = os.path.abspath(bp); rec['blocks_sha256'] = meta_sha(meta)
+            bp = os.path.join(out_dir, rec['case_id'] + '.blocks.json'); json.dump(meta, open(bp, 'w')); rec['blocks_path'] = os.path.abspath(bp); rec['blocks_sha256'] = meta_sha(meta); rec['external_block_ids'] = meta['external_block_ids']
         inv.append(rec)
-    json.dump(dict(adapter='cbi -> explicit-table UAI (legacy_cbi_uai.py v3, 2026-11-13)', max_entries=MAX_ENTRIES, export='integer-scaled exact UAI + empty evidence (uai_export)', instances=inv), open(os.path.join(out_dir, 'CBI_UAI_INVENTORY.json'), 'w'), indent=1)
+    json.dump(dict(adapter='cbi -> explicit-table UAI (legacy_cbi_uai.py v4, 2026-11-13: external block ids preserved; both SF widths scored)', max_entries=MAX_ENTRIES, export='integer-scaled exact UAI + empty evidence (uai_export)', instances=inv), open(os.path.join(out_dir, 'CBI_UAI_INVENTORY.json'), 'w'), indent=1)
     print(json.dumps(dict(rendered=sum(1 for r in inv if r['status'] == 'RENDERED'), unsupported=sum(1 for r in inv if r['status'] != 'RENDERED'), out=out_dir)))
 
 

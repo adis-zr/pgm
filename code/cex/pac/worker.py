@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path
 for p in (NEWARM, HERE):
     if p not in sys.path: sys.path.insert(0, p)
 import core, solve, engine, support
-WORKER_VERSION = 'pac-worker-v3 (2026-11-13 completion)'
+WORKER_VERSION = 'pac-worker-v4 (2026-11-13 repair 3)'
 
 
 def jsonable(x):
@@ -25,15 +25,12 @@ def jsonable(x):
 
 
 def candidate_sources():
-    """sha256 of EVERY .py / .cpp source in cex/pac and cex/newarm (complete candidate identity, keyed by directory/file)"""
-    out = {}
-    for d, tag in ((HERE, 'pac'), (NEWARM, 'newarm')):
-        for p in sorted(glob.glob(os.path.join(d, '*.py')) + glob.glob(os.path.join(d, '*.cpp'))):
-            out['%s/%s' % (tag, os.path.basename(p))] = hashlib.sha256(open(p, 'rb').read()).hexdigest()
-    return out
+    """sha256 of EVERY source (.py / .cpp / .sh) in the candidate identity scope of the registry (cex/pac, cex/newarm), keyed by directory/file"""
+    import registry
+    return registry.source_inventory(os.path.dirname(os.path.dirname(HERE)), scopes=('candidate',))
 
 
-OUTCOME_OF_STOP = {'DEADLINE': 'DEADLINE', 'MEMORY': 'MEMORY', 'REPRESENTATION': 'MEMORY', 'SUPPORT_ROWS_CAP': 'MEMORY', 'TOO_WIDE': 'TOO_WIDE', 'NUMERICAL_RANGE_OR_PRECISION': 'NUMERICAL_RANGE_OR_PRECISION', 'RANGE': 'NUMERICAL_RANGE_OR_PRECISION', 'WIDTH': 'NUMERICAL_RANGE_OR_PRECISION', 'FPENV': 'NUMERICAL_RANGE_OR_PRECISION', 'INVALID_PLAN_OR_CERTIFICATE': 'INVALID_PLAN_OR_CERTIFICATE', 'BADPLAN': 'INVALID_PLAN_OR_CERTIFICATE'}
+OUTCOME_OF_STOP = {'INTERSECTION_EMPTY': 'INTERSECTION_EMPTY', 'DEADLINE': 'DEADLINE', 'MEMORY': 'MEMORY', 'REPRESENTATION': 'MEMORY', 'SUPPORT_ROWS_CAP': 'MEMORY', 'TOO_WIDE': 'TOO_WIDE', 'NUMERICAL_RANGE_OR_PRECISION': 'NUMERICAL_RANGE_OR_PRECISION', 'RANGE': 'NUMERICAL_RANGE_OR_PRECISION', 'WIDTH': 'NUMERICAL_RANGE_OR_PRECISION', 'FPENV': 'NUMERICAL_RANGE_OR_PRECISION', 'INVALID_PLAN_OR_CERTIFICATE': 'INVALID_PLAN_OR_CERTIFICATE', 'BADPLAN': 'INVALID_PLAN_OR_CERTIFICATE'}
 
 
 def main():

@@ -41,7 +41,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path
 if NEWARM not in sys.path: sys.path.insert(0, NEWARM)
 if HERE not in sys.path: sys.path.insert(0, HERE)
 import rig, contrib
-ENGINE_VERSION = 'pac-engine-v3 (2026-11-13 completion: explicit frontier, deterministic partial-cover publication, component-scale resolved totals)'
+ENGINE_VERSION = 'pac-engine-v4 (2026-11-13 repair 3: directed rebase of the resolved totals, deterministic-statistical intersection, replayable design)'
 
 # ---------------- FROZEN POLICY CONSTANTS (recorded in the freeze; never tuned after scoring)
 POLICY = dict(
@@ -274,20 +274,45 @@ class Tree:
 # ---------------- RESOLVED TOTALS in the component's own scale (block floating point; candidate v3; review R03 / R02)
 class Totals:
     """rigorous directed enclosures of the resolved mass A and the per-coordinate resolved numerators a_j in the COMPONENT'S scale, independent of the statistical
-    scale U_root: block floating point = binary64 directed mantissas times 2^E with ONE shared exponent E chosen from the first resolved cell and re-based when a
-    later cell is much larger (exact power-of-two rescaling). A cell far smaller than 2^E only loosens the LOWER bound (its mantissa underflows to 0) and adds at
-    most one ulp to the upper bound: contributions below 2^-1000 of the dominant resolved mass are irrelevant to a normalized answer at eps = 1/200.
-    The exact rational mass enclosure (A_exact_lo/hi) is kept as well (scalar, cheap). The per-cell records (leaf, B0 enclosure) are retained for the checker."""
+    scale U_root: block floating point = binary64 directed mantissas times 2^E with ONE shared exponent E (candidate v4; review R01 of 13 Nov 2026).
+    INVARIANT (for every coordinate j and for the denominator, after every insertion and every rebase):   lo_j * 2^E  <=  sum over resolved cells of n_j(cell)  <=  hi_j * 2^E
+    with lo_j, hi_j finite nonnegative binary64 values (and hi_j > 0 whenever some inserted upper contribution was positive).
+      * insertion: each exact rational contribution x is divided EXACTLY by 2^E (rational arithmetic), then rounded to binary64 DOWN (lower) / UP (upper) by
+        rig.df_lo / df_hi (nearest conversion, one ulp step in the needed direction when inexact; a positive value below 2^-1074 rounds up to 2^-1074 and down to 0);
+        the accumulators are then added with directed rounding (rig.add_lo / add_hi, numpy nextafter). Both steps are monotone outward: the invariant is preserved.
+      * rebase E -> E' (E' > E, when a new cell is far larger than the current scale): every accumulator x is replaced by  rd(x * 2^(E-E'))  (lower)  or
+        ru(x * 2^(E-E'))  (upper), computed with math.ldexp / numpy.ldexp (correctly rounded to nearest) followed by an EXACTNESS test (ldexp back by E'-E
+        reproduces x exactly iff no rounding occurred; the back-scaling is exact because the result is <= x and in range) and ONE ulp step in the needed direction
+        when inexact; a positive upper value that underflows to 0 becomes 2^-1074 (nextafter(0, +inf)); a lower value never goes below 0. Since x * 2^(E-E') is
+        the exact scaled value, rd/ru enclose it: the invariant holds for EVERY exponent gap (including gaps beyond 1074 and subnormal results); coordinates
+        untouched by later sparse updates keep their positive upper bounds. Nothing in the rebase ever uses an ordinary (round-to-nearest) multiplication.
+      * the scaled values shrink under a rebase, so no overflow can occur there; an upper accumulator reaching +inf under insertion is a typed NUMERICAL_RANGE_OR_PRECISION stop.
+    The exact rational mass enclosure (A_exact_lo/hi) is kept as well (scalar, cheap). Per-cell records (leaf, B0 enclosure) are retained for the checker, which
+    re-derives every contribution by deterministic replay (compiled-kernel boundary) and re-enumerates affordable cells independently."""
     def __init__(self, tot):
         import numpy as np
-        self.np = np; self.E = None; self.tot = tot; self.A_lo = 0.0; self.A_hi = 0.0; self.a_lo = np.zeros(tot); self.a_hi = np.zeros(tot); self.A_exact_lo = F(0); self.A_exact_hi = F(0); self.cells = []
+        self.np = np; self.E = None; self.tot = tot; self.A_lo = 0.0; self.A_hi = 0.0; self.a_lo = np.zeros(tot); self.a_hi = np.zeros(tot); self.A_exact_lo = F(0); self.A_exact_hi = F(0); self.cells = []; self.rebases = 0
     def _conv(self, x, up):
         q = x / self.scale
         return rig.df_hi(q) if up else rig.df_lo(q)
+    @staticmethod
+    def _scale_down_scalar(x, k, up):
+        """rd / ru of x * 2^k for a nonnegative binary64 x and an integer k <= 0 (directed, exact when representable)"""
+        if x == 0.0: return 0.0
+        y = math.ldexp(x, k)
+        if math.ldexp(y, -k) == x: return y                                   # exact (no rounding occurred)
+        return math.nextafter(y, rig.INF) if up else max(0.0, math.nextafter(y, -rig.INF))
+    def _scale_down_vec(self, arr, k, up):
+        np = self.np; y = np.ldexp(arr, k); exact = (np.ldexp(y, -k) == arr) | (arr == 0.0)
+        stepped = np.nextafter(y, rig.INF) if up else np.maximum(np.nextafter(y, -rig.INF), 0.0)
+        return np.where(exact, y, stepped)
     def _rebase(self, Enew):
-        f = 2.0 ** (self.E - Enew) if self.E is not None else 1.0        # exact power-of-two factor (|E - Enew| < 1000 by construction)
         if self.E is not None:
-            self.A_lo *= f; self.A_hi *= f; self.a_lo *= f; self.a_hi *= f
+            k = self.E - Enew; assert k < 0, 'rebase only to a larger exponent'
+            if k < -2200: k_eff = -2200                                            # every scaled value is then below 2^-1074: lower -> 0, positive upper -> 2^-1074 (ldexp handles any k, this only keeps k in a safe int range)
+            else: k_eff = k
+            self.A_lo = self._scale_down_scalar(self.A_lo, k_eff, False); self.A_hi = self._scale_down_scalar(self.A_hi, k_eff, True)
+            self.a_lo = self._scale_down_vec(self.a_lo, k_eff, False); self.a_hi = self._scale_down_vec(self.a_hi, k_eff, True); self.rebases += 1
         self.E = Enew; self.scale = F(2) ** Enew
     def add_cell(self, leaf, B0lo, B0hi, rows_lo, rows_hi, idx):
         """rows_lo / rows_hi: lists of exact Fractions aligned with idx (coordinate indices); the cell's B0 enclosure exact Fractions"""
@@ -318,8 +343,23 @@ class Totals:
                 row.append((max(F(0), lo / (Ahi + Ut)), min(F(1), (hi + Ut) / Alo)))
             rows.append(row)
         return rows
+    @staticmethod
+    def bounds_from_record(rec, U_t, cards, off):
+        """checker: deterministic rows from a (verified) resolved-totals record and a (rebuilt) U_t -- the same arithmetic as `bounds`"""
+        if rec.get('E') is None: return None
+        scale = F(2) ** int(rec['E']); Alo = F(float(rec['A_lo'])) * scale; Ahi = F(float(rec['A_hi'])) * scale
+        if Alo <= 0: return None
+        Ut = F(U_t); rows = []
+        for v in range(len(cards)):
+            row = []
+            for s_ in range(cards[v]):
+                j = off[v] + s_; lo = F(float(rec['a_lo'][j])) * scale; hi = F(float(rec['a_hi'][j])) * scale
+                row.append((max(F(0), lo / (Ahi + Ut)), min(F(1), (hi + Ut) / Alo)))
+            rows.append(row)
+        return rows
     def record(self):
-        return dict(E=self.E, A_lo=self.A_lo, A_hi=self.A_hi, a_lo=[float(x) for x in self.a_lo], a_hi=[float(x) for x in self.a_hi], A_exact_lo=_frac_str(self.A_exact_lo), A_exact_hi=_frac_str(self.A_exact_hi), cells=[dict(leaf=list(l), B0_lo=_frac_str(lo), B0_hi=_frac_str(hi)) for l, lo, hi in self.cells], representation='block floating point: binary64 directed mantissas x 2^E (component scale); rebased when a cell exceeds 2^(E+600)')
+        return dict(E=self.E, rebases=self.rebases, A_lo=self.A_lo, A_hi=self.A_hi, a_lo=[float(x) for x in self.a_lo], a_hi=[float(x) for x in self.a_hi], A_exact_lo=_frac_str(self.A_exact_lo), A_exact_hi=_frac_str(self.A_exact_hi), cells=[dict(leaf=list(l), B0_lo=_frac_str(lo), B0_hi=_frac_str(hi)) for l, lo, hi in self.cells],
+                    representation='block floating point: directed binary64 mantissas x 2^E, directed insertion and DIRECTED rebase (ldexp + exactness test + one ulp outward); invariant lo*2^E <= exact <= hi*2^E')
 
 
 # ---------------- residual template: lowering with cached slices (reuses cex_executor.convert; typed stops translated)
@@ -405,6 +445,18 @@ def kernel_cell(tmpl, assign, deadline, cap_bytes, rss_entry):
     for i, v in enumerate(tmpl.free):
         c = tmpl.cards[v]; e2 = F(2) ** int(NE[i]) * scale; lab = int(NL[i]); rows[v] = [contrib.envelope(F(float(N[off + a])) * e2, lab) for a in range(c)]; off += c
     return B0, rows, counters
+
+
+def cell_contribution_rows(cards, cut, assign, B0, rows_c, off):
+    """the per-coordinate contribution rows of one resolved cell in the component scale, in the canonical coordinate order used by Totals / Stream:
+    cut variables contribute the cell mass to their assigned state; free variables contribute the leaf's per-state enclosures. Returns (idx, rows_lo, rows_hi).
+    Shared by run_component (producer) and gate.verify_cover (checker) so that a replay re-accumulates exactly the producer's inputs."""
+    idx = []; rows_lo = []; rows_hi = []
+    for v in range(len(cards)):
+        if v in assign: idx.append(off[v] + assign[v]); rows_lo.append(B0[0]); rows_hi.append(B0[1])
+        elif rows_c is not None:
+            for s_, (lo, hi) in enumerate(rows_c[v]): idx.append(off[v] + s_); rows_lo.append(lo); rows_hi.append(hi)
+    return idx, rows_lo, rows_hi
 
 
 def exact_cell(model, assign, deadline):
@@ -531,31 +583,62 @@ def _subtract(lo, hi, rejected):
     return segs
 
 
-def hulls_from_record(R, eps=POLICY['epsilon'], margin=POLICY['decimal_margin']):
+def _intersect(seg, det):
+    """closed interval intersection; None when empty"""
+    lo = max(seg[0], det[0]); hi = min(seg[1], det[1])
+    return (lo, hi) if lo <= hi else None
+
+
+def hulls_from_record(R, eps=POLICY['epsilon'], margin=POLICY['decimal_margin'], det_rows=None):
     """independent replay of the publication predicate from a record: per row the narrower certified hull with a feasible simplex point; returns
-    (ok, rows {v: [(lo,hi)]}, points, chosen certifier per row, widths). The gate calls this with the certificate's recorded statistics."""
-    cards = R['cards']; n = len(cards); rh, bU = range_hulls_from(R); rows_r = {}; pts = {}; chosen = {}; ok = True; widths = dict(range={}, variance={})
+    (ok, rows {v: [(lo,hi)]}, points, chosen certifier per row, widths, boundary, variance sets, composition). The gate calls this with the certificate's recorded
+    statistics and with the deterministic rows it has itself re-derived.
+    COMPOSITION (02_IMPLEMENTATION_REQUIREMENTS line 52; candidate v4): when proved deterministic bounds det_rows[v][s] = [dlo, dhi] are supplied, every statistical
+    outer set is INTERSECTED with them before the simplex feasibility check: range hull -> hull ∩ det; variance set -> each accepted segment ∩ det, empty segments
+    dropped, then the outer hull of the remaining segments (the documented conservative point). Risk: on the event E of the time-uniform statistical guarantee
+    (P(E^c) <= delta over the whole job) the statistical set contains p_j; the deterministic bound contains p_j surely; hence their intersection and its outer hull
+    contain p_j on E -- the simultaneous risk allocation is unchanged. An EMPTY intersection at some coordinate (p_j outside one of two sets that should both
+    contain it: the statistical event failed, or a defect) makes the row unpublishable and is reported as composition 'EMPTY_INTERSECTION' with the coordinate;
+    the caller turns it into the typed diagnostic outcome INTERSECTION_EMPTY (never an optimistic publication, never a silently dropped run)."""
+    cards = R['cards']; n = len(cards); rh, bU = range_hulls_from(R); rows_r = {}; pts = {}; chosen = {}; ok = True; widths = dict(range={}, variance={}, deterministic={}, intersection={}); comp = dict(used='statistical_only' if det_rows is None else 'intersection_with_deterministic', empty=[], standalone_statistical_ok={}, standalone_deterministic_ok={})
     need_var = []
+    def det_of(v, s_): return (F(det_rows[v][s_][0]), F(det_rows[v][s_][1])) if det_rows is not None else None
     for v in range(n):
         best = None
+        if det_rows is not None:
+            wd = max(F(det_rows[v][s_][1]) - F(det_rows[v][s_][0]) for s_ in range(cards[v])); widths['deterministic'][v] = float(wd); comp['standalone_deterministic_ok'][v] = bool(wd <= 2 * eps - 2 * margin and feasible_point([det_of(v, s_) for s_ in range(cards[v])], eps - margin) is not None)
         if rh is not None and all(h is not None for h in rh[v]):
-            w = max(hi - lo for lo, hi in rh[v]); widths['range'][v] = float(w)
-            if w <= 2 * eps - 2 * margin:
-                p = feasible_point(rh[v], eps - margin)
-                if p is not None: best = (w, 'range', rh[v], p)
+            w0 = max(hi - lo for lo, hi in rh[v]); widths['range'][v] = float(w0); comp['standalone_statistical_ok'][v] = bool(w0 <= 2 * eps - 2 * margin and feasible_point(rh[v], eps - margin) is not None)
+            hull = list(rh[v])
+            if det_rows is not None:
+                hull = [_intersect(h, det_of(v, s_)) for s_, h in enumerate(hull)]
+                if any(h is None for h in hull): comp['empty'].append(dict(variable=v, certifier='range')); hull = None
+            if hull is not None:
+                w = max(hi - lo for lo, hi in hull); widths['intersection'][v] = float(w)
+                if w <= 2 * eps - 2 * margin:
+                    p = feasible_point(hull, eps - margin)
+                    if p is not None: best = (w, 'range', hull, p)
         if best is None: need_var.append(v)
         else: chosen[v] = 'range'; rows_r[v] = best[2]; pts[v] = best[3]
     vsets = variance_sets_from(R, set(need_var)) if need_var else {}
     for v in need_var:
-        best = None; hv = [((iv[0][0], iv[-1][1]) if iv else None) for iv in vsets[v]]
+        best = None; segs_v = vsets[v]
+        hv0 = [((iv[0][0], iv[-1][1]) if iv else None) for iv in segs_v]
+        if all(h is not None for h in hv0):
+            w0 = max(hi - lo for lo, hi in hv0); widths['variance'][v] = float(w0); comp['standalone_statistical_ok'][v] = comp['standalone_statistical_ok'].get(v, False) or bool(w0 <= 2 * eps - 2 * margin and feasible_point(hv0, eps - margin) is not None)
+        if det_rows is not None:
+            segs_v = [[x for x in (_intersect(seg, det_of(v, s_)) for seg in iv) if x is not None] for s_, iv in enumerate(segs_v)]
+        hv = [((iv[0][0], iv[-1][1]) if iv else None) for iv in segs_v]
         if all(h is not None for h in hv):
-            w = max(hi - lo for lo, hi in hv); widths['variance'][v] = float(w)
+            w = max(hi - lo for lo, hi in hv); widths['intersection'][v] = min(widths['intersection'].get(v, float('inf')), float(w))
             if w <= 2 * eps - 2 * margin:
                 p = feasible_point(hv, eps - margin)
                 if p is not None: best = (w, 'variance', hv, p)
+        elif det_rows is not None and all(h is not None for h in hv0): comp['empty'].append(dict(variable=v, certifier='variance'))
         if best is None: ok = False
         else: chosen[v] = 'variance'; rows_r[v] = best[2]; pts[v] = best[3]
-    return ok, rows_r, pts, chosen, widths, bU, vsets
+    if comp['empty']: comp['used'] = 'EMPTY_INTERSECTION'; ok = False
+    return ok, rows_r, pts, chosen, widths, bU, vsets, comp
 
 
 # ---------------- publication
@@ -585,12 +668,34 @@ def _deterministic_rows_publish(rows, n, eps, margin):
     return True, ivs, pts
 
 
+# ---------------- REPLAY (candidate v4; review R03): the checker re-executes the recorded design on the bound component model
+def replay_component(comp, design, n_trials, K_total, cap_bytes=3 * 1024 ** 3, rss_entry=0, deadline=None, policy=POLICY):
+    """deterministic replay of a recorded PAC design for exactly n_trials trials: the same seeds, cutset, order, mode, resolution policy and frozen engine code
+    reproduce the draw sequence (PRNG), every leaf evaluation (exact enumeration or the compiled kernel, both deterministic for fixed inputs), every resolution
+    transition and the directed accumulation; the resulting sufficient statistics / frontier / resolved totals must EQUAL the certificate's. The replay derives the
+    statistics from the SOURCE MODEL and the design, not from the certificate's numbers: statistics impossible under the recorded law cannot be reproduced.
+    Cost = the production cost of the recorded trials (charged to the checker); a deadline turns an unaffordable replay into a typed UNVERIFIABLE result."""
+    pol = dict(policy); pol['epsilon'] = F(design['epsilon'])          # the task epsilon is a TASK parameter (bound to the manifest by the gate); every other policy constant is the frozen one
+    return run_component(comp, deadline, int(design['seed_tree']), int(design['seed_point']), design['mode'], F(design['delta_range']), F(design['delta_variance']), K_total, cap_bytes, rss_entry, pol, fixed_cutset=list(design['cutset']), fixed_order=list(design['order_free']), max_trials=int(n_trials), resolve=bool(design.get('resolve')), replay_exact_trials=True)
+
+
+def design_binding_failures(design, policy, seed, component_index, task_epsilon, engine_version=None):
+    """the recorded design must be the FROZEN policy's (never the certificate's own description) with the TASK epsilon and the seeds DERIVED from the cell seed: returns the mismatches"""
+    bad = []
+    want = dict(lambda_rule=policy['lambda_rule'], rho_rule=policy['rho_rule'], stream_scale=policy['stream_scale'], prng=policy['prng'], l_values=list(policy['variance_l_values']), exact_leaf_max_completions=policy['exact_leaf_max_completions'], epsilon=_frac_str(F(task_epsilon)), decimal_margin=_frac_str(policy['decimal_margin']), engine_version=engine_version or ENGINE_VERSION, seed_tree=str(seed_int(seed, 'tree', component_index)), seed_point=str(seed_int(seed, 'point', component_index)))
+    for k, v in want.items():
+        if design.get(k) != v: bad.append('design.%s differs from the frozen policy / derived task seed' % k)
+    if design.get('mode') not in ('point', 'conditional'): bad.append('design.mode invalid')
+    if design.get('mode') == 'point' and design.get('resolve'): bad.append('point mode cannot resolve')
+    return bad
+
+
 # ---------------- one component
 def deterministic_rows(T, U_t, cards, off):
     return T.bounds(U_t, cards, off)
 
 
-def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, delta_var_c, K_total, cap_bytes, rss_entry, policy=POLICY, trace=None, fixed_cutset=None, fixed_order=None, max_trials=None, forced=False, resolve=None, tree_factory=None):
+def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, delta_var_c, K_total, cap_bytes, rss_entry, policy=POLICY, trace=None, fixed_cutset=None, fixed_order=None, max_trials=None, forced=False, resolve=None, tree_factory=None, replay_exact_trials=False):
     """comp: reduced component model (no evidence). Returns dict(status, guarantee, intervals/points per component variable, stats incl. the canonical design record,
     the frontier record, the resolved totals and the sufficient statistics). mode in {'conditional', 'point'}; resolve: insert evaluated cells into the resolved
     region (default: policy for conditional mode; never for point mode); fixed_cutset/fixed_order: the matched ablation's shared law. tree_factory: qualification hook.
@@ -649,7 +754,9 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
         ok, ivs, pts = _deterministic_rows_publish({v: rows[v] for v in range(n)}, n, eps, policy['decimal_margin'])
         return (ivs, pts, rows) if ok else None
     def certify_pac():
-        return hulls_from_record(S.record(), eps, policy['decimal_margin'])
+        """statistical certification COMPOSED with the proved deterministic bounds of the resolved region (when A_lo > 0): hull ∩ det before feasibility (R04)"""
+        det = T.bounds(tree.U_t, cards, S.off) if tree.resolved_count > 0 else None
+        return hulls_from_record(S.record(), eps, policy['decimal_margin'], det_rows=det)
     while True:
         if deadline is not None and time.monotonic() >= deadline: term = 'DEADLINE'; break
         if det_dirty:
@@ -658,9 +765,10 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
             if dr is not None: publish = ('DETERMINISTIC', dr); term = 'DETERMINISTIC_BOUNDS' if tree.U_t > 0 else 'COVER_COMPLETE'; break
             if tree.U_t == 0: term = 'COVER_COMPLETE'; break
         if max_trials is not None and trials >= max_trials: term = 'MAX_TRIALS'; break
-        if trials > 0 and ((trials & (trials - 1)) == 0 or trials % 65536 == 0 or (time.monotonic() - last_cert_t) > max(0.5, 0.1 * (deadline - time.monotonic()) if deadline else 0.5)):
-            tc = time.monotonic(); ok, rows, pts, chosen, widths, bU, vsets = certify_pac(); st['certify_s'] = st.get('certify_s', 0.0) + time.monotonic() - tc; last_check = dict(trial=trials, widths=widths, chosen=chosen); last_cert_t = time.monotonic()
-            if ok: publish = ('PAC', (rows, pts, chosen, widths, vsets)); term = 'CERTIFIED'; break
+        if not replay_exact_trials and trials > 0 and ((trials & (trials - 1)) == 0 or trials % 65536 == 0 or (time.monotonic() - last_cert_t) > max(0.5, 0.1 * (deadline - time.monotonic()) if deadline else 0.5)):
+            tc = time.monotonic(); ok, rows, pts, chosen, widths, bU, vsets, comp_ = certify_pac(); st['certify_s'] = st.get('certify_s', 0.0) + time.monotonic() - tc; last_check = dict(trial=trials, widths=widths, chosen=chosen, composition=comp_['used']); last_cert_t = time.monotonic()
+            if comp_['used'] == 'EMPTY_INTERSECTION': term = 'INTERSECTION_EMPTY'; st['empty_intersection'] = comp_['empty']; break
+            if ok: publish = ('PAC', (rows, pts, chosen, widths, vsets, comp_)); term = 'CERTIFIED'; break
         # ---- one trial: predictable design (frontier fixed before the draw), fresh draw
         U_t = tree.U_t
         assign, q, zero_terminal, trans, u_leaf = tree.draw_leaf(rng_t); trials += 1
@@ -688,13 +796,8 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
                 for k, x in ctr.items(): counters_tot[k] = counters_tot.get(k, 0) + x
                 if B0[0] > u_leaf: raise EngineStop('INVALID_PLAN_OR_CERTIFICATE', 'envelope violated (conditional): B0_lo(leaf) = %s > u_leaf = %s' % (float(B0[0]), float(u_leaf)), st)
                 rlo, rhi = to_dimless(B0[0] / q)[0], to_dimless(B0[1] / q)[1]
-                Ylo = np.zeros(S.tot); Yhi = np.zeros(S.tot); idx = []; rows_lo = []; rows_hi = []
-                for v in range(n):
-                    if v in assign:
-                        j = S.off[v] + assign[v]; Ylo[j] = rlo; Yhi[j] = rhi; idx.append(j); rows_lo.append(B0[0]); rows_hi.append(B0[1])
-                    elif rows_c is not None:
-                        for s_, (lo, hi) in enumerate(rows_c[v]):
-                            j = S.off[v] + s_; Ylo[j] = to_dimless(lo / q)[0]; Yhi[j] = to_dimless(hi / q)[1]; idx.append(j); rows_lo.append(lo); rows_hi.append(hi)
+                Ylo = np.zeros(S.tot); Yhi = np.zeros(S.tot); idx, rows_lo, rows_hi = cell_contribution_rows(cards, cut, assign, B0, rows_c, S.off)
+                for j, lo, hi in zip(idx, rows_lo, rows_hi): Ylo[j] = to_dimless(lo / q)[0]; Yhi[j] = to_dimless(hi / q)[1]     # cut coordinates carry (B0 lo, hi)/q = (rlo, rhi)
                 S.add_residual(rlo, rhi, Ylo, Yhi)
                 if resolve:
                     leaf = tuple(assign[v] for v in cut)
@@ -725,18 +828,19 @@ def run_component(comp, deadline, seed_tree, seed_point, mode, delta_range_c, de
         check('complete cover terminal')
         if T.A_exact_hi == 0: return dict(status='PROVED_ZERO_EVIDENCE', guarantee='DETERMINISTIC', stats=dict(st, proof='complete exact cover (frontier closed) with total mass 0'))
         return dict(status='NUMERICAL_RANGE_OR_PRECISION', guarantee='NONE', stats=dict(st, note='complete exact cover but the enclosure of the resolved totals is too wide for publication at eps (cell enclosures / block-floating rounding)'))
-    if publish is None and S.t > 0 and term not in ('CERTIFIED',):
-        tc = time.monotonic(); ok, rows, pts, chosen, widths, bU, vsets = certify_pac(); st['certify_s'] = st.get('certify_s', 0.0) + time.monotonic() - tc; last_check = dict(trial=S.t, widths=widths, chosen=chosen)
-        if ok: publish = ('PAC', (rows, pts, chosen, widths, vsets))
+    if publish is None and S.t > 0 and term not in ('CERTIFIED', 'INTERSECTION_EMPTY'):
+        tc = time.monotonic(); ok, rows, pts, chosen, widths, bU, vsets, comp_ = certify_pac(); st['certify_s'] = st.get('certify_s', 0.0) + time.monotonic() - tc; last_check = dict(trial=S.t, widths=widths, chosen=chosen, composition=comp_['used'])
+        if comp_['used'] == 'EMPTY_INTERSECTION': term = 'INTERSECTION_EMPTY'; st['empty_intersection'] = comp_['empty']
+        elif ok: publish = ('PAC', (rows, pts, chosen, widths, vsets, comp_))
     st['last_check'] = last_check
     if publish is None:
         if S.positive_trials == 0 and S.t > 0: st['note'] = 'no positive sample observed; NOT a zero-evidence claim'
         if S.t > 0 and S.b_hi > 0 and S.b_lo == 0: st['stream_scale_underflow'] = 'the lower denominator accumulator is 0 while the upper is positive: the dimensionless statistics underflow binary64 at this U_root (numerical width, not statistical width)'
-        return dict(status=term if term not in ('CERTIFIED', 'MAX_TRIALS', 'DETERMINISTIC_BOUNDS', None) else 'TOO_WIDE', guarantee='NONE', stats=st)
+        return dict(status=term if term not in ('CERTIFIED', 'MAX_TRIALS', 'DETERMINISTIC_BOUNDS', None) else 'TOO_WIDE', guarantee='NONE', stats=st)      # INTERSECTION_EMPTY is a typed diagnostic outcome (never a publication)
     check('publication terminal')
     kind, payload = publish
     if kind == 'DETERMINISTIC':
         ivs, pts, rows = payload; st['route'] = 'exact_cover_complete' if tree.U_t == 0 else 'deterministic_partial_cover_bounds'; st['deterministic_widths'] = {v: float(max(hi - lo for lo, hi in rows[v])) for v in range(n)}
         return dict(status='PUBLISHED', guarantee='DETERMINISTIC', intervals=ivs, points=pts, certifier_per_row=[st['route']] * n, widths=dict(deterministic=st['deterministic_widths']), stats=st)
-    rows, pts, chosen, widths, vsets = payload
+    rows, pts, chosen, widths, vsets, comp_ = payload; st['publication_composition'] = comp_; st['route'] = 'pac_statistical' + ('_intersected_with_deterministic' if comp_['used'] == 'intersection_with_deterministic' else '')
     return dict(status='PUBLISHED', guarantee='PAC', intervals=[rows[v] for v in range(n)], points=[pts[v] for v in range(n)], certifier_per_row=[chosen[v] for v in range(n)], widths=widths, variance_sets_nonconvex=[[len(vsets[v][s]) > 1 for s in range(cards[v])] if v in vsets else [False] * cards[v] for v in range(n)], stats=st)
