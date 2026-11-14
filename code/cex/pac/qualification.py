@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path
 for p in (NEWARM, HERE, CODE): sys.path.insert(0, p)
 sys.set_int_max_str_digits(0)
 import engine, contrib, rig, solve, core, gate, support, registry
-SUITE_VERSION = 'pac-qualification-v4 (2026-11-13 repair 3)'
+SUITE_VERSION = 'pac-qualification-v4.1 (2026-11-14 repair 4)'
 SOURCES_AT_START = registry.source_inventory(CODE, scopes=('candidate',))      # the identity of the candidate (incl. this suite file) WHEN THE RUN STARTS; compared again at the end: a source edited during the run invalidates the record
 R = {'groups': [], 'counts': dict(fresh_workers=0, solver_component_executions=0, kernel_cell_calls=0, helper_evaluations=0, truth_coordinates=0, gate_only_coordinates=0), 'suite_version': SUITE_VERSION}; passed = 0; total = 0
 def cnt(k, n=1): R['counts'][k] += n
@@ -144,6 +144,9 @@ def q1_identity_gate():
     fixes['zero'] = fixture('zero', {'cards': [2, 2], 'factors': [{'scope': (0,), 'values': [F(1), F(2)]}, {'scope': (1,), 'values': [F(0), F(0)]}], 'evidence': {}}, 'P1_PAC_CONDITIONAL')
     a_ = F(1, 2 ** 2000); m13 = {'cards': [2] * 13, 'evidence': {}, 'factors': [{'scope': (0, 1), 'values': [F(1), a_, F(1), F(1)]}, {'scope': (0, 1), 'values': [a_, F(1), F(1), F(1)]}] + [{'scope': (0, i), 'values': [F(1)] * 4} for i in range(2, 13)]}
     fixes['rebase13_natural_witness'] = fixture('rebase13', m13, 'P1_PAC_CONDITIONAL', seed='rebase-1')
+    m3 = {'cards': [2] * 3, 'evidence': {}, 'factors': [{'scope': (0,), 'values': [F(2, 5), F(3, 5)]}, {'scope': (0, 1), 'values': [F(4, 5), F(1, 5), F(1, 10), F(9, 10)]}, {'scope': (0, 1, 2), 'values': [F(1, 5), F(4, 5), F(7, 10), F(3, 10), F(1, 10), F(9, 10), F(3, 5), F(2, 5)]}]}
+    fixes['h1_root_identity_dag_natural'] = fixture('rootdag', m3, 'H1_HYBRID', seed='rootdag'); wd = fixes['h1_root_identity_dag_natural']['w']; Z3, N3, marg3 = truth(m3)
+    assert wd['status'] == 'COMPLETED' and [c_['route'] for c_ in wd['certificate']['components']] == ['dag'] and wd['certificate']['K_total'] == 0 and wd['certificate']['delta_ledger']['coordinates'] == 0 and all(F(lo) <= p <= F(hi) for row, ps in zip(wd['intervals'], marg3) for (lo, hi), p in zip(row, ps)), 'root identity-DAG certificate ledger / truth'; cnt('truth_coordinates', 6)
     wr = fixes['rebase13_natural_witness']['w']; assert wr['status'] == 'COMPLETED' and wr['guarantee_type'] == 'DETERMINISTIC' and F(wr['intervals'][0][0][1]) > 0 and F(wr['intervals'][0][0][0]) <= a_ / (1 + a_) <= F(wr['intervals'][0][0][1]), ('the natural rebase witness must publish a positive upper bound containing 1/(2^2000+1)', wr['intervals'][0])
     out['natural_rebase_witness_first_row'] = wr['intervals'][0]
     acc = {}
@@ -205,7 +208,13 @@ def q1_identity_gate():
     def foreign_prng(d, m, rr, w):
         de = w['certificate']['components'][0]['design']; de['seed_tree'] = '1'; de['seed_point'] = '2'; de['prng'] = 'constant generator'; de['lambda_rule'] = 'retrospective U_t'; de['stream_scale'] = 'U_t'
     def partial_map(d, m, rr, w): m['candidate_artifact_hashes'] = {'pac/gate.py': frozen_all['pac/gate.py']}; w['candidate_sources'] = {'pac/gate.py': frozen_all['pac/gate.py']}
-    negatives = {'coherent_impossible_PAC_statistics_diag': impossible_stats, 'coherent_impossible_PAC_statistics_PRIMARY_eps1-200_delta1e-6': impossible_stats_primary, 'foreign_prng_seeds_scale_same_statistics': foreign_prng, 'partial_nonempty_frozen_source_map': partial_map,
+    def relabel_P1(d, m, rr, w): m['cells'][0]['arm'] = rr['arm'] = w['arm'] = 'P1_PAC_CONDITIONAL'; w['certificate']['arm'] = 'P1_PAC_CONDITIONAL'; w['certificate']['components'][0]['route'] = 'pac_conditional'
+    def relabel_A1(d, m, rr, w): m['cells'][0]['arm'] = rr['arm'] = w['arm'] = 'A1_CONDITIONAL'; w['certificate']['arm'] = 'A1_CONDITIONAL'; w['certificate']['components'][0]['route'] = 'pac_conditional'
+    def relabel_H1(d, m, rr, w): m['cells'][0]['arm'] = rr['arm'] = w['arm'] = 'H1_HYBRID'; w['certificate']['arm'] = 'H1_HYBRID'; w['certificate']['components'][0]['route'] = 'pac_conditional'
+    def cert_arm_only(d, m, rr, w): w['certificate']['arm'] = 'P1_PAC_CONDITIONAL'
+    def comp_index_shift(d, m, rr, w): w['certificate']['components'][0]['component'] = 1
+    negatives = {'A0_relabelled_P1_same_lawful_statistics': relabel_P1, 'A0_relabelled_A1': relabel_A1, 'A0_relabelled_H1': relabel_H1, 'certificate_arm_field_only_changed': cert_arm_only, 'component_index_not_partition_position': comp_index_shift,
+                 'coherent_impossible_PAC_statistics_diag': impossible_stats, 'coherent_impossible_PAC_statistics_PRIMARY_eps1-200_delta1e-6': impossible_stats_primary, 'foreign_prng_seeds_scale_same_statistics': foreign_prng, 'partial_nonempty_frozen_source_map': partial_map,
                  'wrong_lift_consistent_decimals': wrong_lift, 'foreign_design': foreign_design, 'false_U_root': false_U, 'false_exact_cover': det_lie, 'false_zero_string': zero_lie, 'false_zero_structured': zero_lie_structured, 'coherent_K_one': coherent_K,
                  'empty_freeze': lambda d, m, r_, w: (m.__setitem__('candidate_artifact_hashes', {}), w.__setitem__('candidate_sources', {})), 'negative_wall': lambda d, m, r_, w: r_.update(launch_relative_wall_s=-1000),
                  'empty_candidate_source_map': lambda d, m, r_, w: w.update(candidate_sources={}), 'missing_certificate_wrong_delta': lambda d, m, r_, w: (w.pop('certificate'), w.update(delta='1/2', epsilon='1/10')),
@@ -253,7 +262,19 @@ def q1_identity_gate():
         comp = w['certificate']['components'][0]; comp['resolved_totals']['cells'] = comp['resolved_totals']['cells'] + [copy.deepcopy(comp['resolved_totals']['cells'][0])]
     rc, f, n = gate_run(fd, mutate=duplicated_contribution); assert rc == 1 and any('duplicate' in x[1] for x in f), f; rej['duplicated_contribution_record'] = f[0][1][:80]
     out['negative_controls_rejected'] = rej
-    out['complete_inventory_with_b0_and_supervisor_valid_candidate_accepted'] = True
+    # checker RESOURCE outcomes are STRUCTURED (review 4 F06): exhausted per-component allowance, exhausted aggregate budget, invalid replay factor -> result written, UNVERIFIABLE failure, exit 1
+    def gate_with(fx, **kw):
+        d = fx['d']; shutil.rmtree(d / 'cells', ignore_errors=True); (d / 'cells/one').mkdir(parents=True); m = copy.deepcopy(fx['man']); ww = copy.deepcopy(fx['w'])
+        r_ = dict(copy.deepcopy(fx['c']), status='COMPLETED', outcome='PUBLISHED', guarantee_type=ww['guarantee_type'], nonce=ww['nonce'], within_budget=True, launch_relative_wall_s=1.0, supervisor={'rc': 0, 'outcome': 'COMPLETED'}, worker_output='cells/one/worker.json')
+        dump(d / 'CAMPAIGN_MANIFEST.json', m); mh = sha(d / 'CAMPAIGN_MANIFEST.json'); ah = hashlib.sha256(json.dumps(m['candidate_artifact_hashes'], sort_keys=True).encode()).hexdigest(); st = {'manifest_sha256': mh, 'manifest': 'CAMPAIGN_MANIFEST.json', 'artifact_hashes_sha256': ah}
+        dump(d / 'CAMPAIGN_START.json', st); (d / 'PAC_LEDGER.jsonl').write_text(json.dumps(dict(kind='CAMPAIGN_START', **st)) + '\n'); dump(d / 'cells/one/worker.json', ww); r_['output_sha256'] = sha(d / 'cells/one/worker.json'); dump(d / 'cells/one/receipt.json', r_)
+        with contextlib.redirect_stdout(io.StringIO()): rc_ = gate.main(str(d), **kw)
+        return rc_, json.load(open(d / 'GATE_RESULT.json'))
+    rc_, g_ = gate_with(fe, replay_factor=1e-9); assert rc_ == 1 and g_['failures'] and 'UNVERIFIABLE' in g_['failures'][0][1] and g_.get('gate_version'), g_['failures'][:1]; out['replay_allowance_exhausted_is_structured_UNVERIFIABLE'] = g_['failures'][0][1][:100]
+    rc_, g_ = gate_with(fe, gate_budget_s=1e-6); assert rc_ == 1 and g_.get('budget_exhausted_at_cell') == 'cell1' and any('aggregate gate budget' in f_[1] for f_ in g_['failures']); out['aggregate_budget_exhausted_is_structured'] = True
+    rc_, g_ = gate_with(fe, replay_factor=-1.0); assert rc_ == 1 and 'invalid replay factor' in g_['failures'][0][1]; out['invalid_replay_factor_refused'] = True
+    rc_, g_ = gate_with(fe); assert rc_ == 0 and g_['gated_set'][0]['verified'] is True and g_['gated_set'][0]['evidence'], 'gated set must carry evidence hashes'; out['gated_set_carries_evidence_hashes'] = sorted(g_['gated_set'][0]['evidence'])[:3]
+    out['complete_inventory_with_b0_supervisor_native_and_glue_valid_candidate_accepted'] = True
     return out
 
 
@@ -314,7 +335,8 @@ def cell_truth(m, cut, leaf):
 def moment_oracle(rng, n_models, label, mutate_stream=None, require_positive_resolved=True):
     """independent exact recomputation of every accumulated statistic of real adaptive runs; returns counts; raises AssertionError on the first enclosure violation.
     mutate_stream: optional callable applied to the engine.Stream class before the runs (Q8 sensitivity); always restored."""
-    orig_add = engine.Stream.add_residual; orig_res = engine.Stream.resolve_add; orig_draw = engine.Tree.draw_leaf; state = {}; seen = dict(trials=0, checked_trials=0, resolutions=0, positive_resolved_trials=0, models=0)
+    pristine_add = engine.Stream.add_residual; pristine_res = engine.Stream.resolve_add; orig_draw = engine.Tree.draw_leaf; state = {}; seen = dict(trials=0, checked_trials=0, resolutions=0, positive_resolved_trials=0, models=0)
+    orig_add = pristine_add; orig_res = pristine_res
     def draw_obs(self, rng_):
         a, q, z, tr, u = orig_draw(self, rng_); state['last'] = (dict(a), q, z); return a, q, z, tr, u
     def add_obs(self, rlo, rhi, Ylo, Yhi):
@@ -344,8 +366,9 @@ def moment_oracle(rng, n_models, label, mutate_stream=None, require_positive_res
         assert F(self.A_lo) <= state['A'] / U <= F(self.A_hi), '%s: resolved mass A not enclosed' % label
         for j in range(self.tot): assert F(float(self.ra_lo[j])) <= state['ra'][j] / U <= F(float(self.ra_hi[j])), '%s: resolved query total ra_%d not enclosed after resolution %d' % (label, j, seen['resolutions'])
         return res
+    if mutate_stream: mutate_stream()                     # the mutation (or a no-op wrapper) is installed FIRST, underneath the oracle's observers (review 4 F07)
+    orig_add = engine.Stream.add_residual; orig_res = engine.Stream.resolve_add
     engine.Stream.add_residual = add_obs; engine.Stream.resolve_add = res_obs; engine.Tree.draw_leaf = draw_obs
-    if mutate_stream: mutate_stream()
     try:
         for trial in range(n_models):
             m = rand_model(rng, 4, 6, 3, zero_p=0.1); n = len(m['cards']); cards = m['cards']; cut = rng.sample(range(n), rng.randint(2, n - 1)); T0 = engine.Tree(m, cut)
@@ -355,7 +378,7 @@ def moment_oracle(rng, n_models, label, mutate_stream=None, require_positive_res
             state.clear(); state.update(m=m, cut=cut, U=T0.u_root, off=off, A=F(0), ra=[F(0)] * off[-1], B=F(0), E=F(0), a=[F(0)] * off[-1], c=[F(0)] * off[-1], d=[F(0)] * off[-1])
             r = engine.run_component(m, time.monotonic() + 30, trial, trial + 1, 'conditional', F(1, 20), F(1, 20), sum(cards), 3 * 2 ** 30, 0, fixed_cutset=cut, fixed_order=[v for v in range(n) if v not in cut], max_trials=12); cnt('solver_component_executions'); seen['models'] += 1
             if r['status'] == 'PUBLISHED': check_publication(r, m, engine.POLICY['epsilon'], label + ' adaptive run')
-    finally: engine.Stream.add_residual = orig_add; engine.Stream.resolve_add = orig_res; engine.Tree.draw_leaf = orig_draw
+    finally: engine.Stream.add_residual = pristine_add; engine.Stream.resolve_add = pristine_res; engine.Tree.draw_leaf = orig_draw
     if require_positive_resolved: assert seen['positive_resolved_trials'] > 0 and seen['resolutions'] > 0 and seen['checked_trials'] == seen['trials'] > 0, seen
     return dict(moment_oracle=seen)
 
@@ -614,12 +637,17 @@ def q8_intersection_and_sensitivity():
             if 'NOT detected' in str(e): raise
             sens[name] = 'DETECTED: ' + str(e)[:90]
     # (e1) query resolution deleted from Stream.resolve_add (the review's mutation): the moment oracle must fail
-    orig_res = engine.Stream.resolve_add
+    orig_res = engine.Stream.resolve_add; calls = {'noop': 0}
+    def noop_wrapper(self, *a, **k): calls['noop'] += 1; return orig_res(self, *a, **k)
+    def mut0(): engine.Stream.resolve_add = noop_wrapper
+    try: moment_oracle(random.Random(3), 6, 'q8-noop', mutate_stream=mut0, require_positive_resolved=False); assert calls['noop'] > 0, 'the no-op wrapper was never reached through the hook'; sens['noop_wrapper_through_the_hook'] = 'PASSES (%d calls): the hook applies mutations underneath the oracle instrumentation' % calls['noop']
+    finally: engine.Stream.resolve_add = orig_res
     def deleted_query(self, B0lo, B0hi, rows_lo, rows_hi, elo, ehi):
         ra_lo, ra_hi = self.ra_lo.copy(), self.ra_hi.copy(); orig_res(self, B0lo, B0hi, rows_lo, rows_hi, elo, ehi); self.ra_lo, self.ra_hi = ra_lo, ra_hi
     def mut1(): engine.Stream.resolve_add = deleted_query
     try: expect_fail('query_resolution_deleted', lambda: moment_oracle(random.Random(3), 6, 'q8-mut1', mutate_stream=mut1, require_positive_resolved=False))
     finally: engine.Stream.resolve_add = orig_res
+    assert 'resolved query total' in sens['query_resolution_deleted'] or 'query moment' in sens['query_resolution_deleted'], ('the deletion must be detected on a QUERY statistic, not on the denominator', sens['query_resolution_deleted'])
     # (e2) rebase direction reverted to ordinary multiplication: the rebase histories must fail (positive upper bound lost / invariant)
     orig_vec = engine.Totals._scale_down_vec; orig_sc = engine.Totals._scale_down_scalar
     def bad_vec(self, arr, k, up): return arr * (2.0 ** k)
@@ -721,9 +749,9 @@ def q9_continuation():
     finally: forest.solve = of
     assert all(v[0] == 'DETERMINISTIC' for v in conts.values()) and len(conts) == 4, conts; out['continuation_per_backend_class'] = conts; out['deadline_refusal_final'] = True
     D = TMP / 'q9'; D.mkdir(exist_ok=True); write_uai({'cards': [2], 'factors': [{'scope': (0,), 'values': [F(0), F(0)]}], 'evidence': {}}, D / 'z.uai'); outp = D / 'w.json'
-    subprocess.run([PY, os.path.join(HERE, 'worker.py'), '--input', str(D / 'z.uai'), '--output', str(outp), '--arm', 'P1_PAC_CONDITIONAL', '--deadline', str(time.monotonic() - 1.0), '--seed', 's', '--nonce', 'n', '--budget', '0'], check=True, cwd=CODE); wz = json.load(open(outp)); R['counts']['solver_component_executions'] += 1
+    subprocess.run([PY, os.path.join(HERE, 'worker.py'), '--input', str(D / 'z.uai'), '--output', str(outp), '--arm', 'P1_PAC_CONDITIONAL', '--deadline', str(time.monotonic() - 1.0), '--seed', 's', '--nonce', 'n', '--budget', '0'], check=True, cwd=CODE); wz = json.load(open(outp)); cnt('fresh_workers')
     assert wz['outcome'] == 'DEADLINE' and wz['guarantee_type'] == 'NONE'
-    subprocess.run([PY, os.path.join(HERE, 'worker.py'), '--input', str(D / 'z.uai'), '--output', str(outp), '--arm', 'P1_PAC_CONDITIONAL', '--deadline', str(time.monotonic() + 10), '--seed', 's', '--nonce', 'n', '--budget', '10'], check=True, cwd=CODE); wz2 = json.load(open(outp)); R['counts']['solver_component_executions'] += 1
+    subprocess.run([PY, os.path.join(HERE, 'worker.py'), '--input', str(D / 'z.uai'), '--output', str(outp), '--arm', 'P1_PAC_CONDITIONAL', '--deadline', str(time.monotonic() + 10), '--seed', 's', '--nonce', 'n', '--budget', '10'], check=True, cwd=CODE); wz2 = json.load(open(outp)); cnt('fresh_workers')
     assert wz2['outcome'] == 'PROVED_ZERO_EVIDENCE' and isinstance(wz2.get('zero_evidence_proof'), dict) and gate.verify_zero_proof(core.read_uai(D / 'z.uai')[0], wz2['zero_evidence_proof']) is None
     out['late_zero_is_DEADLINE_timely_zero_verified'] = True
     bad = {'cards': [2, 2], 'factors': [{'scope': (0, 1), 'values': [F(1), F(1, 10 ** 1000), F(1), F(1)]}], 'evidence': {}}
@@ -906,20 +934,43 @@ def q13_registry_pipeline():
     def altered_conclusion(d2):
         res_ = json.load(open(d2 / 'RESULTS_PAC.json')); k = list(res_['conclusions_by_cohort_budget'])[0]; res_['conclusions_by_cohort_budget'][k]['by_arm']['P1_PAC_CONDITIONAL']['published_pac'] = 1; dump(d2 / 'RESULTS_PAC.json', res_)
     def amendment(d2): dump(d2 / 'MANIFEST_AMENDMENT_1_artifact_hashes.json', {})
-    out['closeout_controls_refused'] = {n_: ctl(n_, f_) for n_, f_ in (('stale_gate_after_worker_and_receipt_change', stale_gate), ('foreign_report_same_count_and_manifest', foreign_rows), ('missing_report_manifest_identity', missing_identity), ('only_one_qualification_group', one_group), ('failed_gate_rows_with_stale_pass_flag', stale_pass_flag), ('foreign_qualification_identity', foreign_qual), ('extra_qualification_group', extra_group), ('altered_conclusion_counts', altered_conclusion), ('amendment_file_present', amendment))}
+    def changed_output_bytes_only(d2):
+        rp = sorted((d2 / 'cells').glob('*/receipt.json'))[0]; r = json.load(open(rp)); wp = d2 / r['worker_output']; w = json.load(open(wp)); w['points'][0] = ['1.00000000', '0.00000000']; w['intervals'][0] = [['1.00000000', '1.00000000'], ['0.00000000', '0.00000000']]; dump(wp, w)      # receipt AND gate untouched
+    def case_alias(d2):
+        res_ = json.load(open(d2 / 'RESULTS_PAC.json')); h1 = [x for x in res_['runs'] if x['arm'] == 'H1_HYBRID']; h1[0]['case'] = 'qgrid_L24_q3_v11-10_s1_deadline_control'; dump(d2 / 'RESULTS_PAC.json', res_)
+    def evidence_file_changed(d2):
+        rp = sorted((d2 / 'cells').glob('*/receipt.json'))[0]; r = json.load(open(rp)); mp_ = Path(r['model_path']); g_ = json.load(open(d2 / 'GATE_RESULT.json'))
+        for e in g_['gated_set']:
+            for rel in list(e.get('evidence') or {}):
+                e['evidence'][rel] = '0' * 64
+        dump(d2 / 'GATE_RESULT.json', g_)
+    out['closeout_controls_refused'] = {n_: ctl(n_, f_) for n_, f_ in (('changed_output_bytes_only_receipt_and_gate_untouched', changed_output_bytes_only), ('coherent_case_alias_false_gain', case_alias), ('evidence_hash_tampered_in_gate_result', evidence_file_changed), ('stale_gate_after_worker_and_receipt_change', stale_gate), ('foreign_report_same_count_and_manifest', foreign_rows), ('missing_report_manifest_identity', missing_identity), ('only_one_qualification_group', one_group), ('failed_gate_rows_with_stale_pass_flag', stale_pass_flag), ('foreign_qualification_identity', foreign_qual), ('extra_qualification_group', extra_group), ('altered_conclusion_counts', altered_conclusion), ('amendment_file_present', amendment))}
     man['cells'].append(dict(man['cells'][0], cell_id='extra')); json.dump(man, open(RD / 'CAMPAIGN_MANIFEST_dev.json', 'w'))
     p3 = subprocess.run([PY, os.path.join(HERE, 'campaign.py'), 'run', str(RD), '--dev'], capture_output=True, text=True); assert p3.returncode != 0 and 'RESUME REFUSED' in (p3.stdout + p3.stderr); out['resume_preflight_refuses_edited_manifest'] = True
     # ---- the ARCHIVED 54-cell dev admission (every registered arm and representation; dev seeds) RE-GATED by gate v4, references dispatched, report + closeout
-    A = os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'PAC_REPAIR_2026-11-13', 'admission_v4')
+    A = os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'PAC_REPAIR_2026-11-13', 'admission_v5')
     if os.path.exists(os.path.join(A, 'CAMPAIGN_MANIFEST_dev.json')) and os.path.isdir(os.path.join(A, 'cells')):
         AM = json.load(open(os.path.join(A, 'CAMPAIGN_MANIFEST_dev.json'))); arms_present = sorted({c['arm'] for c in AM['cells']}); reps_present = sorted({registry.COHORTS[c['cohort']]['representation'] for c in AM['cells']})
-        assert set(arms_present) >= {'B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL', 'LIBDAI_EXACT', 'LBP', 'MERLIN_CTE', 'CBI_NATIVE', 'H4_NATIVE_C', 'H4_NATIVE_PI', 'H4_NATIVE_PP', 'SF_NATIVE_SELECT'} and set(reps_present) == set(registry.REPRESENTATIONS), (arms_present, reps_present)
+        # REGISTRY-DERIVED coverage obligation (review 4 F05): EVERY executable arm of the registry must be planned in the admission AND have a receipt; a missing arm fails
+        missing_arms = sorted(set(registry.ARMS) - set(arms_present)); assert not missing_arms, ('admission plan does not cover every registered executable arm', missing_arms)
+        rec_arms = sorted({cells_a['arm'] for cells_a in AM['cells'] if os.path.exists(os.path.join(A, 'cells'))} )
+        rcpt = {json.load(open(rp))['cell_id'] for rp in glob.glob(os.path.join(A, 'cells', '*', 'receipt.json'))}; assert all(c_['cell_id'] in rcpt for c_ in AM['cells']), 'every planned admission cell must have a receipt'
+        assert set(reps_present) == set(registry.REPRESENTATIONS), reps_present
+        for stage in ('GATE_RESULT.json', 'REFERENCES_R0.json', 'RESULTS_PAC.json'): assert os.path.exists(os.path.join(A, stage)), 'admission chain artifact missing: ' + stage
+        # the admission CLOSEOUT is run HERE with a schema-complete stub record bound to the CURRENT sources (the real record is written after this suite finishes; the development finalization re-runs the closeout with it)
+        stubA = dict(suite_version=SUITE_VERSION + ' (pipeline-test stub)', all_pass=True, passed=len(registry.QUALIFICATION_GROUPS), total=len(registry.QUALIFICATION_GROUPS), groups=[dict(name=n_, ok=True) for n_ in registry.QUALIFICATION_GROUPS], candidate_sources=registry.source_inventory(CODE, scopes=('candidate',)), counts={}); json.dump(stubA, open(D / 'Q_stub_admission.json', 'w'))
+        pA = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), A, '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--qualification', str(D / 'Q_stub_admission.json'), '--out', str(D / 'ADMISSION_CLOSEOUT_stub.md')], capture_output=True, text=True)
+        out['admission_closeout_with_current_identity'] = pA.stdout.strip()[-140:]; assert pA.returncode == 0 or 'differs from the file on disk' in pA.stdout or 'does not match the frozen candidate' in pA.stdout, pA.stdout[-400:]
+        GA = json.load(open(os.path.join(A, 'GATE_RESULT.json'))); assert GA['gate_passed'] and not GA['failures'] and GA['gated_set_sha256'], 'the archived admission gate must have passed on the frozen sources'
+        RF = json.load(open(os.path.join(A, 'REFERENCES_R0.json'))); assert any(v['kind'] == 'R0_cbi_exact_coordinates' for v in RF['references'].values()), 'native CBI reference must be produced by the executable task set'
+        RA = json.load(open(os.path.join(A, 'RESULTS_PAC.json'))); assert any(x.get('arm') == 'CBI_NATIVE' and (x.get('native_reference') or {}).get('kind') == 'R0_cbi_exact_coordinates' and (x.get('native_reference') or {}).get('contains_truth') is True for x in RA['native_query_scores']), 'the report must consume the native CBI reference'
+        assert all(c_['arm'] not in ('WMB', 'IJGP', 'PGMAX_SUMPRODUCT_BP') or any(json.load(open(rp))['cell_id'] == c_['cell_id'] for rp in glob.glob(os.path.join(A, 'cells', '*', 'receipt.json'))) for c_ in AM['cells'])
         frozen_now = registry.source_inventory(CODE); stale_keys = [k for k, v in AM['candidate_artifact_hashes'].items() if frozen_now.get(k) != v]
         # the archived admission was frozen on an earlier source state (the qualification suite itself and later repairs changed afterwards): re-gate against ITS frozen identity by replaying the v4 gate on a copy whose manifest inventory is rebound to the current sources
         # for the IDENTITY checks only (the worker outputs' candidate_sources of changed files will then differ -> the gate must report exactly those identity differences and nothing else)
         with contextlib.redirect_stdout(io.StringIO()): rc_a = gate.main(A, 'CAMPAIGN_MANIFEST_dev.json', out_path=str(D / 'ADMISSION_GATE_RESULT.json'))
         ga = json.load(open(D / 'ADMISSION_GATE_RESULT.json')); fails = [f[1] for f in ga['failures']]
-        non_identity = [f for f in fails if not ('frozen source' in f or 'candidate source' in f or 'INCOMPLETE' in f)]
+        non_identity = [f for f in fails if not ('frozen source' in f or 'candidate source' in f or 'INCOMPLETE' in f or 'not in the required scopes' in f)]
         assert not non_identity, non_identity[:5]
         out['archived_dev_admission_regated'] = dict(cells=ga['planned'], receipts=ga['receipts'], completed=ga['completed_checked'], gated_completed=ga['completed_gated'], pac_replayed=ga['pac_certificates_replayed'], arms=arms_present, representations=reps_present, identity_failures_only=len(fails), identity_note='the admission froze an earlier source state (%d keys since changed); every non-identity check passes incl. the H4 / SF / CBI native validators, the zero and DEADLINE controls' % len(stale_keys))
         # the native validators must REFUSE malformed native outputs (controls on copies of the real admission outputs)
@@ -928,14 +979,40 @@ def q13_registry_pipeline():
             cid = next(k for k, (rp, r) in rec.items() if cells[k]['arm'] == arm and r['status'] == 'COMPLETED'); rp, r = rec[cid]; c = cells[cid]; wp = os.path.join(A, r['worker_output']); tmpd = D / ('nat_' + arm); tmpd.mkdir(exist_ok=True)
             w = json.load(open(wp)); mutate(w); att = tmpd / ('attempt_' + r['nonce']); att.mkdir(exist_ok=True); wp2 = att / os.path.basename(wp); dump(wp2, w); fails_ = []
             fn = {'h4_native': gate.validate_h4_native, 'sf_native': gate.validate_sf_native, 'cbi_native': gate.validate_cbi_native}[registry.validator_of(arm)]
-            r2 = dict(r); ok_ = fn(A, c, r2, str(wp2), lambda cid_, msg: fails_.append(msg)); assert ok_ is False and fails_, (arm, 'malformed native output accepted'); return fails_[0][:80]
+            r2 = dict(r); ok_ = fn(A, c, r2, str(wp2), lambda cid_, msg: fails_.append(msg)); assert ok_ is False and fails_, (arm, 'malformed native output accepted'); return fails_[0][:90]
+        def native_ctl_fs(arm, mutate_dir):
+            cid = next(k for k, (rp, r) in rec.items() if cells[k]['arm'] == arm and r['status'] == 'COMPLETED'); rp, r = rec[cid]; c = cells[cid]; src_att = Path(os.path.join(A, r['worker_output'])).parent
+            tmpd = D / ('natfs_' + arm + '_' + mutate_dir.__name__); att = tmpd / ('attempt_' + r['nonce']); shutil.copytree(src_att, att); wp2 = att / os.path.basename(r['worker_output']); mutate_dir(att); fails_ = []
+            fn = {'h4_native': gate.validate_h4_native, 'sf_native': gate.validate_sf_native, 'cbi_native': gate.validate_cbi_native}[registry.validator_of(arm)]
+            ok_ = fn(A, c, dict(r), str(wp2), lambda cid_, msg: fails_.append(msg)); assert ok_ is False and fails_, (arm, 'malformed native evidence accepted'); return fails_[0][:90]
+        def h4_remove_numeric(att):
+            for child in att.iterdir():
+                if child.is_dir():
+                    for f in child.iterdir():
+                        if f.name != 'verdict.json': f.unlink()
+        def h4_alter_producer_channel(att):
+            pj = json.load(open(att / 'sp_r1' / 'prod.json')); pj['channels'][0]['re'][1] = pj['channels'][0]['re'][1].replace('*2^', '9*2^', 1); dump(att / 'sp_r1' / 'prod.json', pj)
         nat = {}
-        nat['h4_node_verdict_altered'] = native_ctl('H4_NATIVE_C', lambda w: w['nodes'][0].__setitem__('verdict', 'REJECTED'))
+        nat['h4_numeric_evidence_removed_flags_retained'] = native_ctl_fs('H4_NATIVE_C', h4_remove_numeric); assert 'missing' in nat['h4_numeric_evidence_removed_flags_retained']
+        nat['h4_producer_channel_altered'] = native_ctl_fs('H4_NATIVE_C', h4_alter_producer_channel); assert 'RE-RUN' in nat['h4_producer_channel_altered']
         nat['h4_arm_mismatch'] = native_ctl('H4_NATIVE_C', lambda w: w.__setitem__('arm', 'PI'))
         nat['sf_width_not_met'] = native_ctl('SF_NATIVE_SELECT', lambda w: w.__setitem__('width_met', {'1/100': False, '1/20': False}))
         assert 'width' in nat['sf_width_not_met'], nat['sf_width_not_met']
         nat['sf_checker_failed'] = native_ctl('SF_NATIVE_SELECT', lambda w: w['checker'].__setitem__('status', 'FAILED'))
         nat['sf_published_shape'] = native_ctl('SF_NATIVE_SELECT', lambda w: w['published'].pop())
+        def sf_false_zero_n1(w): w.update(n=1, published=[['0', '0']], intervals_exact=[['0', '0']], max_width='0'); w['width_met'] = {k: True for k in w['width_met']}
+        nat['sf_false_zero_truncated_n1'] = native_ctl('SF_NATIVE_SELECT', sf_false_zero_n1); assert 'PANEL dimension' in nat['sf_false_zero_truncated_n1']
+        def sf_one_interval_altered(w): lo, hi = w['intervals_exact'][3]; w['intervals_exact'][3] = [str(F(lo) + F(1, 10 ** 6)), hi]
+        nat['sf_exact_interval_altered'] = native_ctl('SF_NATIVE_SELECT', sf_one_interval_altered); assert 'RE-RUN' in nat['sf_exact_interval_altered']
+        def cbi_empty(w):
+            for b_ in w['intervals'].values(): b_['coordinates'] = []; b_['max_width'] = '0'
+        nat['cbi_empty_coordinates'] = native_ctl('CBI_NATIVE', cbi_empty); assert 'coordinate records' in nat['cbi_empty_coordinates']
+        def cbi_zero(w):
+            for b_ in w['intervals'].values():
+                for x_ in b_['coordinates']: x_.update(lo=0, hi=0, exact=['0', '0'], width='0')
+        nat['cbi_all_zero_intervals'] = native_ctl('CBI_NATIVE', cbi_zero); assert 'RE-RUN' in nat['cbi_all_zero_intervals']
+        def cbi_shift(w): x_ = list(w['intervals'].values())[0]['coordinates'][0]; x_['lo'] = int(x_['lo']) + 5; x_['hi'] = int(x_['hi']) + 5
+        nat['cbi_one_coordinate_shifted'] = native_ctl('CBI_NATIVE', cbi_shift)
         nat['cbi_query_not_certified'] = native_ctl('CBI_NATIVE', lambda w: w['statuses_per_query'].__setitem__(list(w['statuses_per_query'])[0], 'TOO_WIDE'))
         nat['cbi_block_id_map_altered'] = native_ctl('CBI_NATIVE', lambda w: w['id_map'].__setitem__('external_ids', [7, 8]))
         out['native_validators_refuse_malformed'] = nat
@@ -951,7 +1028,7 @@ def q13_registry_pipeline():
 
 
 if __name__ == '__main__':
-    GROUPS = [('Q1_identity_and_gate_end_to_end', q1_identity_gate), ('Q2_exact_cell_oracle', q2_masses), ('Q3_laws_moments_and_actual_adaptive_accumulation', q3_laws_and_actual_accumulation), ('Q4_frontier_invariants_and_rebase_histories', q4_frontier_invariants), ('Q5_actual_sampling_backend', q5_sampling_backend), ('Q6_confidence_arithmetic', q6_confidence), ('Q7_numerical_publication_truth_asserted', q7_publication), ('Q8_intersection_and_mechanism_sensitivity', q8_intersection_and_sensitivity), ('Q9_continuation_every_backend_class', q9_continuation), ('Q10_existing_defects_isolated', q10_existing), ('Q11_diagnostic_coverage_attempted_runs', q11_diagnostic), ('Q12_exact_closure_partial_cover_sensitivity', q12_closure_partial_cover), ('Q13_registry_pipeline_every_arm', q13_registry_pipeline)]
+    GROUPS = [('Q1_identity_and_gate_end_to_end', q1_identity_gate), ('Q2_exact_cell_oracle', q2_masses), ('Q3_laws_moments_and_actual_adaptive_accumulation', q3_laws_and_actual_accumulation), ('Q4_frontier_invariants_and_rebase_histories', q4_frontier_invariants), ('Q5_actual_sampling_backend', q5_sampling_backend), ('Q6_confidence_arithmetic', q6_confidence), ('Q7_numerical_publication_truth_asserted', q7_publication), ('Q8_intersection_and_mechanism_sensitivity', q8_intersection_and_sensitivity), ('Q9_continuation_every_backend_class', q9_continuation), ('Q10_existing_defects_isolated', q10_existing), ('Q11_diagnostic_coverage_attempted_runs', q11_diagnostic), ('Q12_exact_closure_partial_cover_sensitivity', q12_closure_partial_cover), ('Q13_registry_pipeline_every_arm_complete', q13_registry_pipeline)]
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'
     only = sys.argv[sys.argv.index('--only') + 1].split(',') if '--only' in sys.argv else None
     for name, fn in GROUPS:

@@ -9,7 +9,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.pat
 from fractions import Fraction as F
 from itertools import product
 import core, registry
-REFERENCES_VERSION = 'pac-references-v4 (2026-11-13 repair 3: representation dispatch, atomic incremental writes, typed per-case outcomes)'
+REFERENCES_VERSION = 'pac-references-v4.1 (2026-11-14 repair 4: executable task set incl. native CBI instances; manifest-bound)'
 
 
 def brute(model, deadline):
@@ -68,9 +68,11 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', bits=20, cap=300.0):
     if os.path.exists(outp):
         try: refs = json.load(open(outp)).get('references') or {}
         except Exception: refs = {}
-    for r in man['inventory']:
+    rows_all = list(man['inventory']) + [dict(x, cohort=x.get('cohort', 'CBI')) for x in man.get('cbi_instances') or []]      # the SAME executable task set the producer schedules cells from (review 4 F05): inventory rows + native CBI instances
+    executable = {c['case_id'] for c in man['cells']}
+    for r in rows_all:
         cid = r.get('case_id')
-        if cid in refs: continue
+        if cid in refs or cid not in executable: continue
         refs[cid] = reference_for_row(r, bits, cap)
         _write_atomic(outp, dict(references_version=REFERENCES_VERSION, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), manifest_sha256=hashlib.sha256(open(os.path.join(RD, manifest_name), 'rb').read()).hexdigest(), bits_cap=bits, per_case_cap_s=cap, total_s=time.monotonic() - t0, references=refs))
         print(cid, refs[cid]['kind'], round(refs[cid].get('construction_s', 0), 2), flush=True)

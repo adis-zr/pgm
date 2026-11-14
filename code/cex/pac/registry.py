@@ -51,11 +51,12 @@ UAI_COHORTS = tuple(k for k, v in COHORTS.items() if v['representation'] == 'uai
 ADAPTED_COHORTS = tuple(k for k, v in COHORTS.items() if v['native_query'] and v['representation'] == 'uai_table')
 
 # ---- the qualification suite's exact group schema (closeout requires EXACTLY these names, all ok)
-QUALIFICATION_GROUPS = ('Q1_identity_and_gate_end_to_end', 'Q2_exact_cell_oracle', 'Q3_laws_moments_and_actual_adaptive_accumulation', 'Q4_frontier_invariants_and_rebase_histories', 'Q5_actual_sampling_backend', 'Q6_confidence_arithmetic', 'Q7_numerical_publication_truth_asserted', 'Q8_intersection_and_mechanism_sensitivity', 'Q9_continuation_every_backend_class', 'Q10_existing_defects_isolated', 'Q11_diagnostic_coverage_attempted_runs', 'Q12_exact_closure_partial_cover_sensitivity', 'Q13_registry_pipeline_every_arm')
+QUALIFICATION_GROUPS = ('Q1_identity_and_gate_end_to_end', 'Q2_exact_cell_oracle', 'Q3_laws_moments_and_actual_adaptive_accumulation', 'Q4_frontier_invariants_and_rebase_histories', 'Q5_actual_sampling_backend', 'Q6_confidence_arithmetic', 'Q7_numerical_publication_truth_asserted', 'Q8_intersection_and_mechanism_sensitivity', 'Q9_continuation_every_backend_class', 'Q10_existing_defects_isolated', 'Q11_diagnostic_coverage_attempted_runs', 'Q12_exact_closure_partial_cover_sensitivity', 'Q13_registry_pipeline_every_arm_complete')
 
 # ---- the REQUIRED frozen source inventory (identity scopes -> directories under code/cex or code/)
-SOURCE_SCOPES = {'candidate': ('cex/pac', 'cex/newarm'), 'b0_frozen_v14': ('cex/b0_frozen_v14',), 'supervisor': ('gbidi/supervise.py',)}
-SOURCE_EXTS = ('.py', '.cpp', '.sh')
+SOURCE_SCOPES = {'candidate': ('cex/pac', 'cex/newarm'), 'b0_frozen_v14': ('cex/b0_frozen_v14',), 'supervisor': ('gbidi/supervise.py',), 'native_cbi': ('cbi',), 'native_sf': ('sf',), 'native_h4': ('h4a', 'build/h4rect', 'build/h4point', 'build/h4pcheck'), 'comparator_glue': ('cex/pac/comparator_cell.py', 'ext/comparator/merlin_adapter.py', 'bench/cells.py')}
+SOURCE_EXTS = ('.py', '.cpp', '.sh', '.h', '.hpp', '.c')
+SOURCE_BINARIES = ('build/h4rect', 'build/h4point', 'build/h4pcheck')      # native executables actually invoked by h4a/arm.py: identity frozen by content hash; rebuilt binaries change the identity (documented runtime assumption: the recorded hash is the one that ran)
 
 
 def arms_for_cohort(cohort, primary, comparators, ablation):
@@ -79,6 +80,7 @@ def source_inventory(code_dir, scopes=None):
         for d in dirs:
             p = os.path.join(code_dir, d)
             if os.path.isfile(p): out[d] = hashlib.sha256(open(p, 'rb').read()).hexdigest(); continue
+            if not os.path.isdir(p): out[d] = None; continue                        # a REQUIRED artifact that is absent is recorded as None (the gate refuses a None identity)
             tag = os.path.basename(d)
             for f in sorted(os.listdir(p)):
                 if f.endswith(SOURCE_EXTS) and os.path.isfile(os.path.join(p, f)): out['%s/%s' % (tag, f)] = hashlib.sha256(open(os.path.join(p, f), 'rb').read()).hexdigest()
@@ -86,5 +88,15 @@ def source_inventory(code_dir, scopes=None):
 
 
 def scope_of_key(key):
+    if key in ('cex/pac/comparator_cell.py', 'ext/comparator/merlin_adapter.py', 'bench/cells.py'): return 'comparator_glue'
     head = key.split('/', 1)[0]
-    return {'pac': 'candidate', 'newarm': 'candidate', 'b0_frozen_v14': 'b0_frozen_v14', 'gbidi': 'supervisor'}.get(head)
+    return {'pac': 'candidate', 'newarm': 'candidate', 'b0_frozen_v14': 'b0_frozen_v14', 'gbidi': 'supervisor', 'cbi': 'native_cbi', 'sf': 'native_sf', 'h4a': 'native_h4', 'build': 'native_h4'}.get(head)
+
+
+# ---- arm EXECUTION SEMANTICS (review 4 F04): what a PAC component of each candidate arm may look like; the gate binds the recorded design to the planned arm
+ARM_SEMANTICS = {
+    'P1_PAC_CONDITIONAL': dict(mode='conditional', resolve=True, forced=True, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component'), pac_routes=('pac_conditional',), root_routes=()),
+    'H1_HYBRID': dict(mode='conditional', resolve=True, forced=False, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component', 'support', 'stream', 'dag', 'forest'), pac_routes=('pac_conditional',), root_routes=('forest', 'dag')),
+    'A0_POINT': dict(mode='point', resolve=False, forced=False, deterministic_routes=('pac_point_uniform_factorless_component',), pac_routes=('pac_point',), root_routes=()),
+    'A1_CONDITIONAL': dict(mode='conditional', resolve=False, forced=False, deterministic_routes=('pac_conditional_exact_cover_complete', 'pac_conditional_deterministic_partial_cover_bounds', 'pac_conditional_uniform_factorless_component'), pac_routes=('pac_conditional',), root_routes=(), empty_cutset_exception='an empty cutset in conditional mode resolves its single cell (one contraction closes the cover): resolve=True is legitimate for A1 exactly then'),
+}

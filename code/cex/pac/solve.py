@@ -21,7 +21,7 @@ for p in (NEWARM, HERE):
     if p not in sys.path: sys.path.insert(0, p)
 import core, reduction, engine, contrib, support
 POLICY = engine.POLICY
-SOLVER_VERSION = 'pac-solve-v4 (2026-11-13 repair 3)'
+SOLVER_VERSION = 'pac-solve-v4.1 (2026-11-14 repair 4)'
 CONTINUABLE_STOPS = ('MEMORY', 'REPRESENTATION', 'SUPPORT_ROWS_CAP', 'RANGE', 'WIDTH', 'FPENV', 'NUMERICAL_RANGE_OR_PRECISION')   # exact-route refusals after which the PAC engine may continue while time remains (every backend's refusal family is normalized to these in core._execute_component)
 
 
@@ -161,8 +161,15 @@ def _finish(intervals, points, records, stats_extra, decoder, trace, t0, delta, 
     if original_cards is not None: assert len(intervals) == len(original_cards) and all(len(row) == d_ for row, d_ in zip(intervals, original_cards))
     core.verify_output(intervals, points, POLICY['epsilon']); check('publication')
     guarantees = {r['guarantee'] for r in records}; gt = 'PAC' if 'PAC' in guarantees else 'DETERMINISTIC'
-    ledger = trace.get('delta_ledger') or dict(delta=str(delta), range_family=str(delta / 2), variance_family=str(delta / 2), per_coordinate_alpha_each_family=None, coordinates=K_total, components_pac=0, rule='whole-model deterministic root route: no stochastic coordinate')
-    cert = dict(certificate_version='pac-certificate-v4', guarantee_type=gt, delta=str(delta) if gt == 'PAC' else '0', epsilon='%d/%d' % (POLICY['epsilon'].numerator, POLICY['epsilon'].denominator), delta_ledger=ledger, K_total=K_total,
+    # the risk ledger is DERIVED from the EXECUTED result (review 4 F01): a whole-model deterministic root route (reduced_model None) has K_total = 0 and no stochastic
+    # coordinate -- the reduced-planning ledger kept in the trace describes a job that was NOT executed and is never reused here
+    if reduced_model is None:
+        assert K_total == 0 and all(r['guarantee'] == 'DETERMINISTIC' for r in records), 'whole-model root route must carry K_total = 0 and only deterministic components'
+        ledger = dict(delta=str(delta), range_family=str(delta / 2), variance_family=str(delta / 2), per_coordinate_alpha_each_family=None, coordinates=0, components_pac=0, rule='whole-model deterministic root route: no stochastic coordinate (K_total = 0)')
+    else:
+        ledger = dict(delta=str(delta), range_family=str(delta / 2), variance_family=str(delta / 2), per_coordinate_alpha_each_family=str(delta / (2 * K_total)) if K_total else None, coordinates=K_total, components_pac=sum(1 for r in records if r['guarantee'] == 'PAC'), rule='K_total = sum of cardinalities over ALL components of the reduced job (every coordinate that may ever receive a statistical interval); deterministic components leave their allowance unspent')
+    trace['delta_ledger'] = ledger
+    cert = dict(certificate_version='pac-certificate-v4', arm=trace.get('arm'), guarantee_type=gt, delta=str(delta) if gt == 'PAC' else '0', epsilon='%d/%d' % (POLICY['epsilon'].numerator, POLICY['epsilon'].denominator), delta_ledger=ledger, K_total=K_total,
                 components=[dict(component=r['component'], variables=r['variables'], route=r['route'], guarantee=r['guarantee'], certifier_per_row=r.get('certifier_per_row'), design=r.get('design'), sufficient_statistics=r.get('sufficient_statistics'), frontier=r.get('frontier'), resolved_totals=r.get('resolved_totals'), intervals_exact=r.get('intervals_exact'), points_exact=r.get('points_exact'), trials=(r.get('stats') or {}).get('trials_completed'), resolved_cells=(r.get('stats') or {}).get('resolved_cells')) for r in records],
                 lifted_intervals_exact=[[(str(lo), str(hi)) for lo, hi in row] for row in intervals], lifted_points_exact=[[str(x) for x in row] for row in points], decoder=decoder, reduction_certificate=reduction_certificate,
                 reduced_model=(dict(cards=list(reduced_model['cards']), factors=[dict(scope=list(f['scope']), values=[str(x) for x in f['values']]) for f in reduced_model['factors']]) if reduced_model is not None else None), partition=partition,

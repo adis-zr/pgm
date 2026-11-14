@@ -3,7 +3,7 @@
   {
    "name": "Q1_identity_and_gate_end_to_end",
    "ok": true,
-   "wall_s": 8.924,
+   "wall_s": 9.343,
    "detail": {
     "natural_rebase_witness_first_row": [
      [
@@ -49,25 +49,36 @@
        "pac_conditional_exact_cover_complete"
       ],
       "guarantee": "DETERMINISTIC"
+     },
+     "h1_root_identity_dag_natural": {
+      "routes": [
+       "dag"
+      ],
+      "guarantee": "DETERMINISTIC"
      }
     },
     "pac_fixture_trials": 4096,
     "pac_fixture_verified_by_design_replay": true,
     "negative_controls_rejected": {
+     "A0_relabelled_P1_same_lawful_statistics": "PAC component 0: recorded design (mode point, resolve False, route pac_condition",
+     "A0_relabelled_A1": "PAC component 0: recorded design (mode point, resolve False, route pac_condition",
+     "A0_relabelled_H1": "PAC component 0: recorded design (mode point, resolve False, route pac_condition",
+     "certificate_arm_field_only_changed": "certificate arm P1_PAC_CONDITIONAL differs from the planned arm A0_POINT",
+     "component_index_not_partition_position": "component 1: index differs from its position 0 in the verified partition",
      "coherent_impossible_PAC_statistics_diag": "PAC component 0: statistics violate the point-mode identity sum Y^2 = sum Y T at",
      "coherent_impossible_PAC_statistics_PRIMARY_eps1-200_delta1e-6": "PAC component 0: statistics violate the point-mode identity sum Y^2 = sum Y T at",
      "foreign_prng_seeds_scale_same_statistics": "PAC component 0: design.lambda_rule differs from the frozen policy / derived tas",
-     "partial_nonempty_frozen_source_map": "frozen source inventory INCOMPLETE: 81 required sources missing (e.g. b0_frozen_",
+     "partial_nonempty_frozen_source_map": "frozen source inventory INCOMPLETE: 131 required sources missing (e.g. b0_frozen",
      "wrong_lift_consistent_decimals": "the lift of the VERIFIED component rows differs from the certificate lifted rows",
      "foreign_design": "PAC component 0: design.mode invalid",
      "false_U_root": "PAC component 0: U_root differs from the factor-max root bound rebuilt from the ",
-     "false_exact_cover": "component 0: frontier record does not rebuild to the recorded U_t",
+     "false_exact_cover": "component 0: deterministic route pac_conditional_exact_cover_complete is not ava",
      "false_zero_string": "zero-evidence proof NOT re-derivable: proof is not a structured record ('Trust m",
      "false_zero_structured": "zero-evidence proof NOT re-derivable: reduction of the original model is not zer",
      "coherent_K_one": "K_total 1 differs from the sum of cardinalities of the re-derived reduced job (6",
      "empty_freeze": "CAMPAIGN_START does not bind the content hash of the frozen source inventory",
      "negative_wall": "receipt wall is not a finite nonnegative number (-1000)",
-     "empty_candidate_source_map": "worker candidate source identity incomplete: 51 frozen sources not recorded (e.g",
+     "empty_candidate_source_map": "worker candidate source identity incomplete: 52 frozen sources not recorded (e.g",
      "missing_certificate_wrong_delta": "publication with a legacy / missing certificate schema (None): UNVERIFIABLE by t",
      "late_publication_true_boolean": "COMPLETED but recomputed launch-relative wall 200.0 > budget 60.0",
      "duplicate_planned_cell": "duplicate planned cell ids in the manifest: 1 duplicates",
@@ -89,7 +100,14 @@
      "omitted_contribution_record": "component 0: contribution records are not in bijection with the frontier leaves ",
      "duplicated_contribution_record": "component 0: duplicate contribution records"
     },
-    "complete_inventory_with_b0_and_supervisor_valid_candidate_accepted": true
+    "replay_allowance_exhausted_is_structured_UNVERIFIABLE": "PAC component 0: UNVERIFIABLE -- the design replay stopped (DEADLINE: entry) within the checker budg",
+    "aggregate_budget_exhausted_is_structured": true,
+    "invalid_replay_factor_refused": true,
+    "gated_set_carries_evidence_hashes": [
+     "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_rmy_haqv/q1/pac_model.uai",
+     "cells/one/worker.json"
+    ],
+    "complete_inventory_with_b0_supervisor_native_and_glue_valid_candidate_accepted": true
    }
   },
   {
@@ -107,7 +125,7 @@
   {
    "name": "Q3_laws_moments_and_actual_adaptive_accumulation",
    "ok": true,
-   "wall_s": 2.182,
+   "wall_s": 2.192,
    "detail": {
     "models": 27,
     "leaves": 149,
@@ -125,7 +143,7 @@
   {
    "name": "Q4_frontier_invariants_and_rebase_histories",
    "ok": true,
-   "wall_s": 1.632,
+   "wall_s": 1.646,
    "detail": {
     "models": 114,
     "steps": 1112,
@@ -152,7 +170,7 @@
   {
    "name": "Q5_actual_sampling_backend",
    "ok": true,
-   "wall_s": 0.341,
+   "wall_s": 0.347,
    "detail": {
     "production_random_backend_frequencies": [
      10113,
@@ -165,7 +183,7 @@
   {
    "name": "Q6_confidence_arithmetic",
    "ok": true,
-   "wall_s": 0.532,
+   "wall_s": 0.534,
    "detail": {
     "boundary_psi_enclosures": true,
     "review_witness_1": true,
@@ -182,7 +200,7 @@
   {
    "name": "Q7_numerical_publication_truth_asserted",
    "ok": true,
-   "wall_s": 7.781,
+   "wall_s": 7.823,
    "detail": {
     "pac_publication_point": {
      "trials": 4096,
@@ -221,7 +239,7 @@
   {
    "name": "Q8_intersection_and_mechanism_sensitivity",
    "ok": true,
-   "wall_s": 6.211,
+   "wall_s": 6.744,
    "detail": {
     "unit_intersection_narrower_than_either": {
      "0": {
@@ -278,7 +296,8 @@
     "valid_no_publication_TOO_WIDE": true,
     "evidence_alias_components_lift_contains_truth": true,
     "mechanism_sensitivity": {
-     "query_resolution_deleted": "DETECTED: q8-mut1: denominator moments not enclosed at trial 2",
+     "noop_wrapper_through_the_hook": "PASSES (36 calls): the hook applies mutations underneath the oracle instrumentation",
+     "query_resolution_deleted": "DETECTED: q8-mut1: resolved query total ra_0 not enclosed after resolution 1",
      "rebase_direction_ordinary_multiplication": "DETECTED: numerator invariant violated (trial 0 cell 1 coord 1)",
      "frontier_closure_disabled": "DETECTED: frontier did not close",
      "contribution_binding_numerators_altered": "DETECTED: resolved query numerator totals differ from the re-accumulated contributions",
@@ -292,7 +311,7 @@
   {
    "name": "Q9_continuation_every_backend_class",
    "ok": true,
-   "wall_s": 0.932,
+   "wall_s": 0.938,
    "detail": {
     "deadline_refuses": true,
     "failed_trial_terminates": true,
@@ -323,7 +342,7 @@
   {
    "name": "Q10_existing_defects_isolated",
    "ok": true,
-   "wall_s": 38.616,
+   "wall_s": 38.957,
    "detail": {
     "host_budget_control": {
      "host_budget_peak_bytes": 966101,
@@ -341,7 +360,7 @@
   {
    "name": "Q11_diagnostic_coverage_attempted_runs",
    "ok": true,
-   "wall_s": 77.988,
+   "wall_s": 77.814,
    "detail": {
     "attempted": 60,
     "published": 59,
@@ -349,7 +368,7 @@
     "delta": "1/10 per run (two families 1/20)",
     "criterion": "misses <= 14 (P[X > 14] = 6.66e-4 at p = 0.1, n = 60)",
     "note": "bug detection only; cannot verify 1e-6",
-    "wall_s": 78.0,
+    "wall_s": 77.8,
     "rows": [
      {
       "trial": 0,
@@ -397,7 +416,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 90746,
+      "trials": 90995,
       "resolved": 0,
       "contains_truth": true
      },
@@ -447,7 +466,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 22587,
+      "trials": 22785,
       "resolved": 0,
       "contains_truth": true
      },
@@ -507,7 +526,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 25123,
+      "trials": 25331,
       "resolved": 0,
       "contains_truth": true
      },
@@ -517,7 +536,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 60274,
+      "trials": 59946,
       "resolved": 0,
       "contains_truth": true
      },
@@ -557,7 +576,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 60387,
+      "trials": 60543,
       "resolved": 0,
       "contains_truth": true
      },
@@ -687,7 +706,7 @@
       "resolve": false,
       "status": "DEADLINE",
       "guarantee": "NONE",
-      "trials": 48231,
+      "trials": 49297,
       "resolved": 0,
       "contains_truth": null
      },
@@ -747,7 +766,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 13633,
+      "trials": 13891,
       "resolved": 0,
       "contains_truth": true
      },
@@ -757,7 +776,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 61165,
+      "trials": 61336,
       "resolved": 0,
       "contains_truth": true
      },
@@ -867,7 +886,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 37360,
+      "trials": 37318,
       "resolved": 0,
       "contains_truth": true
      },
@@ -927,7 +946,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 22174,
+      "trials": 22354,
       "resolved": 0,
       "contains_truth": true
      },
@@ -957,7 +976,7 @@
   {
    "name": "Q12_exact_closure_partial_cover_sensitivity",
    "ok": true,
-   "wall_s": 6.453,
+   "wall_s": 6.466,
    "detail": {
     "review_slack_cover_a_1/2_1/10_0": true,
     "review_full_solver_cover": true,
@@ -977,9 +996,9 @@
    }
   },
   {
-   "name": "Q13_registry_pipeline_every_arm",
+   "name": "Q13_registry_pipeline_every_arm_complete",
    "ok": true,
-   "wall_s": 22.022,
+   "wall_s": 93.855,
    "detail": {
     "truncated_misshaped_wrongly_bound_refused": true,
     "sf_two_widths_scored_separately_pac_delta_kept_external_id_preserved": {
@@ -1001,22 +1020,26 @@
     },
     "real_pipeline_2_cells_qualified": "closeout written: NO EMPIRICAL GAIN IN ANY COHORT",
     "closeout_controls_refused": {
-     "stale_gate_after_worker_and_receipt_change": "nt, status, outcome, guarantee) differs from the receipts and outputs on disk: STALE gate or changed evidence)",
-     "foreign_report_same_count_and_manifest": "ign / altered rows); report conclusions for qgrid|20 differ from the counts re-derived from the verified rows)",
+     "changed_output_bytes_only_receipt_and_gate_untouched": " gate or changed evidence; 1 evidence files consumed by the gate differ from the current bytes or are missing)",
+     "coherent_case_alias_false_gain": "h the AUTHORITATIVE rows derived from the manifest and receipts by cell id (foreign / aliased / altered rows))",
+     "evidence_hash_tampered_in_gate_result": "s not match the gated set; 3 evidence files consumed by the gate differ from the current bytes or are missing)",
+     "stale_gate_after_worker_and_receipt_change": " gate or changed evidence; 1 evidence files consumed by the gate differ from the current bytes or are missing)",
+     "foreign_report_same_count_and_manifest": "h the AUTHORITATIVE rows derived from the manifest and receipts by cell id (foreign / aliased / altered rows))",
      "missing_report_manifest_identity": "closeout written: UNQUALIFIED / INVALID (prerequisites failed: results manifest identity missing or different)",
      "only_one_qualification_group": "'Q3_laws_moments_and_actual_adaptive_accumulation', 'Q4_frontier_invariants_and_rebase_histories']; extra []))",
      "failed_gate_rows_with_stale_pass_flag": "closeout written: UNQUALIFIED / INVALID (prerequisites failed: receipt/certificate gate lists 1 failures)",
-     "foreign_qualification_identity": "ord identity does not match the frozen candidate (0 missing, 51 differing, 0 extra; e.g. ['pac/campaign.py']))",
+     "foreign_qualification_identity": "ord identity does not match the frozen candidate (0 missing, 52 differing, 0 extra; e.g. ['pac/campaign.py']))",
      "extra_qualification_group": "lification groups differ from the registry schema (14 present / 13 expected; missing []; extra ['Q99_extra']))",
      "altered_conclusion_counts": "rerequisites failed: report conclusions for qgrid|20 differ from the counts re-derived from the verified rows)",
      "amendment_file_present": " UNQUALIFIED / INVALID (prerequisites failed: artifact amendment files present (no amendment mechanism in v4))"
     },
     "resume_preflight_refuses_edited_manifest": true,
+    "admission_closeout_with_current_identity": "closeout written: EMPIRICAL CHANGE OBSERVED (gains: 0; losses: 0; PAC publications: 2; a positive result needs 03 \u00a79)",
     "archived_dev_admission_regated": {
-     "cells": 54,
-     "receipts": 54,
-     "completed": 37,
-     "gated_completed": 37,
+     "cells": 72,
+     "receipts": 72,
+     "completed": 52,
+     "gated_completed": 52,
      "pac_replayed": 2,
      "arms": [
       "A0_POINT",
@@ -1027,11 +1050,14 @@
       "H4_NATIVE_C",
       "H4_NATIVE_PI",
       "H4_NATIVE_PP",
+      "IJGP",
       "LBP",
       "LIBDAI_EXACT",
       "MERLIN_CTE",
       "P1_PAC_CONDITIONAL",
-      "SF_NATIVE_SELECT"
+      "PGMAX_SUMPRODUCT_BP",
+      "SF_NATIVE_SELECT",
+      "WMB"
      ],
      "representations": [
       "cbi_block_json",
@@ -1039,16 +1065,22 @@
       "sf_panel_json",
       "uai_table"
      ],
-     "identity_failures_only": 3,
-     "identity_note": "the admission froze an earlier source state (5 keys since changed); every non-identity check passes incl. the H4 / SF / CBI native validators, the zero and DEADLINE controls"
+     "identity_failures_only": 0,
+     "identity_note": "the admission froze an earlier source state (0 keys since changed); every non-identity check passes incl. the H4 / SF / CBI native validators, the zero and DEADLINE controls"
     },
     "native_validators_refuse_malformed": {
-     "h4_node_verdict_altered": "H4 bundle not fully verified",
+     "h4_numeric_evidence_removed_flags_retained": "H4 node sp_r1: required numeric artifact prod.json missing",
+     "h4_producer_channel_altered": "H4 node sp_r1: RE-RUN of the independent checker does not verify (['C_producer_raw_radius_",
      "h4_arm_mismatch": "H4 bundle arm differs from the cell",
-     "sf_width_not_met": "SF requested width 1/20 not met (max 80198864698009199361/4722366482869645213696",
-     "sf_checker_failed": "SF independent checker not VERIFIED",
-     "sf_published_shape": "SF publication shape differs from the panel dimension",
-     "cbi_query_not_certified": "CBI per-query statuses / intervals incomplete",
+     "sf_width_not_met": "SF recorded width fields differ from the re-derived widths",
+     "sf_checker_failed": "SF recorded checker status not VERIFIED",
+     "sf_published_shape": "SF publication shape (11 / 12 rows) differs from the PANEL dimension n = 12",
+     "sf_false_zero_truncated_n1": "SF publication shape (1 / 1 rows) differs from the PANEL dimension n = 12",
+     "sf_exact_interval_altered": "SF RE-RUN of the native checker FAILS: coordinate 3: published grid endpoints are not the ",
+     "cbi_empty_coordinates": "CBI block 0: 0 coordinate records for dimension d = 6",
+     "cbi_all_zero_intervals": "CBI RE-RUN of the independent verifier REJECTS the output: query 0 coordinate 0: published",
+     "cbi_one_coordinate_shifted": "CBI block 0 coordinate 0: enclosure malformed",
+     "cbi_query_not_certified": "CBI a per-query status is not CERTIFIED",
      "cbi_block_id_map_altered": "CBI output block id map differs from the frozen instance ([7, 8] vs [0, 1])"
     },
     "admission_outcomes": {
@@ -1068,6 +1100,8 @@
      "H4_NATIVE_C|PUBLISHED": 1,
      "H4_NATIVE_PI|PUBLISHED": 1,
      "H4_NATIVE_PP|PUBLISHED": 1,
+     "IJGP|INVALID_PLAN_OR_CERTIFICATE": 1,
+     "IJGP|PUBLISHED": 5,
      "LBP|INVALID_PLAN_OR_CERTIFICATE": 1,
      "LBP|PUBLISHED": 5,
      "LIBDAI_EXACT|INVALID_PLAN_OR_CERTIFICATE": 1,
@@ -1079,50 +1113,56 @@
      "P1_PAC_CONDITIONAL|DEADLINE": 1,
      "P1_PAC_CONDITIONAL|PROVED_ZERO_EVIDENCE": 1,
      "P1_PAC_CONDITIONAL|PUBLISHED": 4,
-     "SF_NATIVE_SELECT|PUBLISHED": 2
+     "PGMAX_SUMPRODUCT_BP|NOT_COMPLETED": 1,
+     "PGMAX_SUMPRODUCT_BP|PUBLISHED": 5,
+     "SF_NATIVE_SELECT|PUBLISHED": 2,
+     "WMB|INVALID_PLAN_OR_CERTIFICATE": 1,
+     "WMB|PUBLISHED": 5
     },
     "references_dispatched_by_representation": {
-     "NONE": 53,
-     "R0_exact_rational": 5,
+     "R0_exact_rational": 4,
      "R0_zero_evidence": 1,
-     "UNAVAILABLE_FOR_R0": 5
+     "NONE": 1,
+     "UNAVAILABLE_FOR_R0": 5,
+     "R0_cbi_exact_coordinates": 1
     }
    }
   }
  ],
  "counts": {
-  "fresh_workers": 8,
-  "solver_component_executions": 149,
+  "fresh_workers": 11,
+  "solver_component_executions": 152,
   "kernel_cell_calls": 202,
   "helper_evaluations": 5433,
-  "truth_coordinates": 15839,
-  "gate_only_coordinates": 358
+  "truth_coordinates": 15890,
+  "gate_only_coordinates": 364
  },
- "suite_version": "pac-qualification-v4 (2026-11-13 repair 3)",
+ "suite_version": "pac-qualification-v4.1 (2026-11-14 repair 4)",
  "passed": 13,
  "total": 13,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
-  "pac/campaign.py": "6594584e193c7c94f7b8deaeffdc40b692a28da7d2ce80926ead3f5d71fbae42",
-  "pac/closeout.py": "42b0d6a8f4675121157880a80a4a6fcf4136d2dc7bd94988f5ba6111a884d253",
+  "pac/campaign.py": "793a39a494daca90d3fbae8a51e0c38bc29555bc80b78fae21174a2a4ba7fe02",
+  "pac/closeout.py": "9ae33af5a7165c8526717e5d5140f16e61cfd9a0c12bb4830fa2ecc508403c37",
   "pac/comparator_cell.py": "1142b72d9448b9d45605d7ca023255db32bbbc9b06f848251dcef5aa90b563eb",
   "pac/contrib.py": "aa6018a1798c5524361459000fa240b70cd11bde367f631e1c8900682fa77678",
   "pac/engine.py": "aafe6c4f0a4f8f60be6efd5a85c6355351f26c3aceb7f24679c97d1db21380a3",
   "pac/finalize_v2.sh": "ad3081fc7923bb1bcb96497848c9a230735a785aac313323438b09a88ba49423",
   "pac/finalize_v3.sh": "7baaa7bb5bf1226bc4f8b6f625b2f2fe7d270ad5b3757b786f147188585a2f0f",
   "pac/finalize_v4.sh": "b9b9ffa5f4aba15eeb38afa7e168cd51646da9ec09136089bc0a9dde05830a93",
-  "pac/gate.py": "271383fa87f27be0163c0aa29fc270174c2efb546f196e317224d0ff14582a22",
+  "pac/finalize_v5.sh": "df89eb579743886993ec4f62b4ec7b13c8509352420e89e915d7d6a35d9f4165",
+  "pac/gate.py": "5f83520e802f9fc27cb100f1a8a32c03859950d9734fc2ecbb3c1a7259e9f9b1",
   "pac/legacy_cbi_uai.py": "84e7c1f254ff2ff0c29be2f9b7b1f2034d287fea68558e94b74ef88cab34902e",
   "pac/legacy_qgrid.py": "1498b648c2dee141fae7f7be709812876c5bf8af2df65a281b1d21ce03ad4b9b",
   "pac/legacy_sf_uai.py": "bce8a1d2c104ab2586f5820c377450b09c2de1a73ee2b230bdfeedae5a7c2185",
   "pac/package.py": "a3d9f7151b010b76d58999607891ef245cbe7cf0f96743b1a6a739163403e6a2",
-  "pac/qualification.py": "4cd235f50f84eb67c2bd6ffb8c2c10338ca27298c58f990f457352b13b2cf27d",
-  "pac/references.py": "1ca127ed8ae5b0ef993cd179d07c1949e59aa59167b569893ddf8cb1c4a7a0aa",
-  "pac/registry.py": "11aa2a8975406d48544ff5ca1d98ca9848c9fca09e31ef62ac9dc6c57b493834",
-  "pac/report.py": "96f95f20e96be0dbcb441d5e226769d8866250d503516a7bc58e9ce9088575ee",
+  "pac/qualification.py": "2b8992b8eff2df3b8ea61f2c8776f4c81dad0feb099bd9c58a94ed22842b6f2d",
+  "pac/references.py": "907512b73b5f68a27c3e2e314dbad76cfec9c4a935d067edabe5426c8dc15952",
+  "pac/registry.py": "08188fed1313103ff74785df3cd6e85c30fbadaf0aaf1eb38767271eba7a8f2f",
+  "pac/report.py": "a37934a32517c15b05b83201b063e74f375a01a6a0517d9dde7462790dc729a8",
   "pac/rig.py": "572b1931f0009a0ca9dd55e0ddd97545b804e989e58104e6ae3b60ac792ccd19",
-  "pac/solve.py": "4a47b3c64f06992027c7b23126a90585a733ff01bcbba1a263fdc71fa7f36b56",
+  "pac/solve.py": "cd238a5e7e71045628e33f6c38fc510908dff1c6a0bc116da6f703a3c88bbd24",
   "pac/uai_export.py": "6cec9b971968843e8c30a19e37e5976d8470755515819ca6a44c1c48109e7265",
   "pac/worker.py": "d5559a2e21edd21f042c2bea9062c36bf8d4958f912e4afb06e013dc7fe50563",
   "newarm/analyze.py": "c994966d5c6e5c0352b61b093d0f1c46699f0f29d592839f3107192072c349f3",
@@ -1156,27 +1196,28 @@
   "newarm/test_forest.py": "7582f75259a7c90f4608f6469eeb1e6aaddbe4d116097ec3349657093404e1a7",
   "newarm/test_reduction.py": "c8623008fa6cd7f0a7bf1731577803b63dde9ccebb87b54c0db3bf7e29c5c33f"
  },
- "utc": "2026-11-14T01:01:29Z",
+ "utc": "2026-11-14T02:14:33Z",
  "candidate_sources": {
-  "pac/campaign.py": "6594584e193c7c94f7b8deaeffdc40b692a28da7d2ce80926ead3f5d71fbae42",
-  "pac/closeout.py": "42b0d6a8f4675121157880a80a4a6fcf4136d2dc7bd94988f5ba6111a884d253",
+  "pac/campaign.py": "793a39a494daca90d3fbae8a51e0c38bc29555bc80b78fae21174a2a4ba7fe02",
+  "pac/closeout.py": "9ae33af5a7165c8526717e5d5140f16e61cfd9a0c12bb4830fa2ecc508403c37",
   "pac/comparator_cell.py": "1142b72d9448b9d45605d7ca023255db32bbbc9b06f848251dcef5aa90b563eb",
   "pac/contrib.py": "aa6018a1798c5524361459000fa240b70cd11bde367f631e1c8900682fa77678",
   "pac/engine.py": "aafe6c4f0a4f8f60be6efd5a85c6355351f26c3aceb7f24679c97d1db21380a3",
   "pac/finalize_v2.sh": "ad3081fc7923bb1bcb96497848c9a230735a785aac313323438b09a88ba49423",
   "pac/finalize_v3.sh": "7baaa7bb5bf1226bc4f8b6f625b2f2fe7d270ad5b3757b786f147188585a2f0f",
   "pac/finalize_v4.sh": "b9b9ffa5f4aba15eeb38afa7e168cd51646da9ec09136089bc0a9dde05830a93",
-  "pac/gate.py": "271383fa87f27be0163c0aa29fc270174c2efb546f196e317224d0ff14582a22",
+  "pac/finalize_v5.sh": "df89eb579743886993ec4f62b4ec7b13c8509352420e89e915d7d6a35d9f4165",
+  "pac/gate.py": "5f83520e802f9fc27cb100f1a8a32c03859950d9734fc2ecbb3c1a7259e9f9b1",
   "pac/legacy_cbi_uai.py": "84e7c1f254ff2ff0c29be2f9b7b1f2034d287fea68558e94b74ef88cab34902e",
   "pac/legacy_qgrid.py": "1498b648c2dee141fae7f7be709812876c5bf8af2df65a281b1d21ce03ad4b9b",
   "pac/legacy_sf_uai.py": "bce8a1d2c104ab2586f5820c377450b09c2de1a73ee2b230bdfeedae5a7c2185",
   "pac/package.py": "a3d9f7151b010b76d58999607891ef245cbe7cf0f96743b1a6a739163403e6a2",
-  "pac/qualification.py": "4cd235f50f84eb67c2bd6ffb8c2c10338ca27298c58f990f457352b13b2cf27d",
-  "pac/references.py": "1ca127ed8ae5b0ef993cd179d07c1949e59aa59167b569893ddf8cb1c4a7a0aa",
-  "pac/registry.py": "11aa2a8975406d48544ff5ca1d98ca9848c9fca09e31ef62ac9dc6c57b493834",
-  "pac/report.py": "96f95f20e96be0dbcb441d5e226769d8866250d503516a7bc58e9ce9088575ee",
+  "pac/qualification.py": "2b8992b8eff2df3b8ea61f2c8776f4c81dad0feb099bd9c58a94ed22842b6f2d",
+  "pac/references.py": "907512b73b5f68a27c3e2e314dbad76cfec9c4a935d067edabe5426c8dc15952",
+  "pac/registry.py": "08188fed1313103ff74785df3cd6e85c30fbadaf0aaf1eb38767271eba7a8f2f",
+  "pac/report.py": "a37934a32517c15b05b83201b063e74f375a01a6a0517d9dde7462790dc729a8",
   "pac/rig.py": "572b1931f0009a0ca9dd55e0ddd97545b804e989e58104e6ae3b60ac792ccd19",
-  "pac/solve.py": "4a47b3c64f06992027c7b23126a90585a733ff01bcbba1a263fdc71fa7f36b56",
+  "pac/solve.py": "cd238a5e7e71045628e33f6c38fc510908dff1c6a0bc116da6f703a3c88bbd24",
   "pac/uai_export.py": "6cec9b971968843e8c30a19e37e5976d8470755515819ca6a44c1c48109e7265",
   "pac/worker.py": "d5559a2e21edd21f042c2bea9062c36bf8d4958f912e4afb06e013dc7fe50563",
   "newarm/analyze.py": "c994966d5c6e5c0352b61b093d0f1c46699f0f29d592839f3107192072c349f3",
@@ -1210,7 +1251,7 @@
   "newarm/test_forest.py": "7582f75259a7c90f4608f6469eeb1e6aaddbe4d116097ec3349657093404e1a7",
   "newarm/test_reduction.py": "c8623008fa6cd7f0a7bf1731577803b63dde9ccebb87b54c0db3bf7e29c5c33f"
  },
- "temp_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_5c7vriri",
+ "temp_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_rmy_haqv",
  "counts_note": "counts BY CLASS, never pooled: fresh_workers = subprocess worker.py runs; solver_component_executions = solve.solve / run_component calls; kernel_cell_calls = contrib cell evaluations; helper_evaluations = arithmetic helper / Totals insertion checks; truth_coordinates = published coordinates compared with the independent original-model enumerator; gate_only_coordinates = coordinates accepted by the production gate without an enumerator comparison",
  "optional_not_implemented": "candidate validation (theory section 9); cost-oracle planner; subtree re-tightening; U_t re-weighting"
 }

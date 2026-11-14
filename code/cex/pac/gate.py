@@ -34,9 +34,12 @@ for p in (os.path.join(CODE, 'cex', 'newarm'), HERE, CODE):
 sys.set_int_max_str_digits(0)
 from fractions import Fraction as F
 import core, registry
-GATE_VERSION = 'pac-gate-v4 (2026-11-13 repair 3: replayed PAC construction, re-evaluated covers, registry validators, content-addressed gated set)'
+GATE_VERSION = 'pac-gate-v4.1 (2026-11-14 repair 4: native numerical checkers re-run on bound evidence, arm-semantics binding, evidence-hashed gated set, structured UNVERIFIABLE outcomes, aggregate budget)'
 CANDIDATE_ARMS = registry.CANDIDATE_ARMS; B0 = 'B0_FROZEN_V14'
 REPLAY_FACTOR = 3.0            # checker budget per PAC component replay = REPLAY_FACTOR x the cell budget (charged to the checker; exceeding it is UNVERIFIABLE)
+GATE_BUDGET_S = None           # aggregate checker budget for the whole gate run (None = unbounded only when the caller supervises; finalize_v4 passes --gate-budget-s)
+class GateBudgetExhausted(Exception): pass
+_evidence = {}                 # evidence files consumed by the validators during one gate run: path -> sha256 (hashed into the gated set)
 
 
 def sha(p):
@@ -44,6 +47,11 @@ def sha(p):
     with open(p, 'rb') as f:
         for b in iter(lambda: f.read(1 << 20), b''): h.update(b)
     return h.hexdigest()
+
+
+def _ev(path):
+    """record an evidence file consumed by a validator (hashed into the gated set; the report / closeout re-hash the same files)"""
+    p = os.path.abspath(path); _evidence[p] = sha(p) if os.path.exists(p) else None; return _evidence[p]
 
 
 def _frows(x): return [[(F(a), F(b)) for a, b in row] for row in x]
@@ -110,6 +118,8 @@ def verify_cover(cm, cut, order_free, frontier, RT, expect_zero=False, deadline=
         return None, dict(T_record=rec2, U_t=Tr.U_t, det_rows=det_rows, checked_exact=checked_exact, checked_kernel=checked_kernel, free_count=free_count)
     except contrib.CellStop as e: return 'UNVERIFIABLE: cell re-evaluation stopped (%s: %s)' % (e.kind, str(e.reason)[:60]), None
     except engine.EngineStop as e: return 'UNVERIFIABLE: %s' % str(e)[:80], None
+    except (MemoryError, OverflowError, RecursionError) as e: return 'UNVERIFIABLE: checker resource failure %s' % type(e).__name__, None
+    except GateBudgetExhausted: raise
     except (KeyError, TypeError, ValueError, ZeroDivisionError, AssertionError) as ex: return 'malformed cover certificate (%s: %s)' % (type(ex).__name__, str(ex)[:60]), None
 
 
@@ -160,8 +170,10 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
     if K != K_expected or led.get('coordinates') != K_expected: fail(cid, 'K_total %s differs from the sum of cardinalities of the re-derived reduced job (%d)' % (K, K_expected)); return
     verified_rows = [None] * len(rm['cards']); verified_pts = [None] * len(rm['cards']); pac_seen = False
     if [sorted(comp.get('variables') or []) for comp in comps] != [sorted(p) for p in partition]: fail(cid, 'component variable lists differ from the partition'); return
-    for comp, old in zip(comps, partition):
+    sem_arm = registry.ARM_SEMANTICS.get(c['arm']) or {}
+    for comp_index, (comp, old) in enumerate(zip(comps, partition)):
         g = comp.get('guarantee'); route = str(comp.get('route', '')); ci = comp.get('component'); cm = comp_models[tuple(old)]; cards = cm['cards']
+        if ci != comp_index: fail(cid, 'component %s: index differs from its position %d in the verified partition' % (ci, comp_index)); return
         ivx = comp.get('intervals_exact'); ptx = comp.get('points_exact')
         if ivx is None or ptx is None: fail(cid, 'component %s: exact rows missing' % ci); return
         try: rows = _frows(ivx); pts = _fpts(ptx)
@@ -174,8 +186,13 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
                 if d.get('K_total') != K or R.get('K') != K: fail(cid, 'PAC component %s: K differs from the job ledger' % ci); return
                 if F(d['alpha_range']) != delta / (2 * K) or F(d['alpha_variance']) != delta / (2 * K) or F(R['alpha_range']) != delta / (2 * K) or F(R['alpha_variance']) != delta / (2 * K): fail(cid, 'PAC component %s: per-coordinate alpha differs from delta/(2K)' % ci); return
                 if F(d['delta_range']) != delta / 2 or F(d['delta_variance']) != delta / 2: fail(cid, 'PAC component %s: family deltas differ from delta/2' % ci); return
-                bad = engine.design_binding_failures(d, engine.POLICY, c.get('seed'), int(ci) if isinstance(ci, int) else 0, eps_t)
+                if ci != comp_index: fail(cid, 'PAC component %s: component index differs from its position %d in the verified partition' % (ci, comp_index)); return
+                bad = engine.design_binding_failures(d, engine.POLICY, c.get('seed'), comp_index, eps_t)
                 if bad: fail(cid, 'PAC component %s: %s' % (ci, bad[0])); return
+                sem = registry.ARM_SEMANTICS.get(c['arm'])
+                if sem is None: fail(cid, 'PAC component %s: arm %s has no PAC execution semantics' % (ci, c['arm'])); return
+                if d.get('mode') != sem['mode'] or bool(d.get('resolve')) != bool(sem['resolve']) or route not in sem['pac_routes']: fail(cid, 'PAC component %s: recorded design (mode %s, resolve %s, route %s) does not match the PLANNED arm %s semantics (mode %s, resolve %s)' % (ci, d.get('mode'), d.get('resolve'), route, c['arm'], sem['mode'], sem['resolve'])); return
+                if cert.get('arm') != c['arm']: fail(cid, 'certificate arm %s differs from the planned arm %s' % (cert.get('arm'), c['arm'])); return
                 cut = d.get('cutset'); order = d.get('order_free')
                 if not isinstance(cut, list) or not isinstance(order, list) or sorted(cut + order) != list(range(len(cards))): fail(cid, 'PAC component %s: design cutset / order is not a partition of the component variables' % ci); return
                 T0 = engine.Tree(cm, cut)
@@ -190,9 +207,11 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
                         if float(R['c_hi'][j]) < float(R['d_lo'][j]) or float(R['d_hi'][j]) < float(R['c_lo'][j]): fail(cid, 'PAC component %s: statistics violate the point-mode identity sum Y^2 = sum Y T at coordinate %d (impossible under the recorded law)' % (ci, j)); return
                 if float(R['b_lo']) > n: fail(cid, 'PAC component %s: the lower denominator accumulator exceeds the trial count (T <= 1 in the dimensionless scale)' % ci); return
                 # ---- DETERMINISTIC REPLAY of the recorded design on the bound component model (charged to the checker)
-                budget = float(c.get('budget_s') or 20.0); dl = time.monotonic() + deadline_factor * budget
-                rp = engine.replay_component(cm, d, n, K, deadline=dl)
-                if rp.get('status') == 'DEADLINE' or str(rp.get('stats', {}).get('terminal')) == 'DEADLINE': fail(cid, 'PAC component %s: UNVERIFIABLE -- the design replay exceeded the checker budget (%.0f s)' % (ci, deadline_factor * budget)); return
+                budget = float(c.get('budget_s') or 20.0); dl = _deadline(deadline_factor * budget)
+                try: rp = engine.replay_component(cm, d, n, K, deadline=dl)
+                except engine.EngineStop as e: fail(cid, 'PAC component %s: UNVERIFIABLE -- the design replay stopped (%s) within the checker budget %.3g s' % (ci, str(e)[:60], deadline_factor * budget)); return
+                except (MemoryError, OverflowError, RecursionError) as e: fail(cid, 'PAC component %s: UNVERIFIABLE -- checker resource failure %s during the replay' % (ci, type(e).__name__)); return
+                if rp.get('status') == 'DEADLINE' or str(rp.get('stats', {}).get('terminal')) == 'DEADLINE': fail(cid, 'PAC component %s: UNVERIFIABLE -- the design replay exceeded the checker budget (%.3g s)' % (ci, deadline_factor * budget)); return
                 if rp.get('status') != 'PUBLISHED' or rp.get('guarantee') != 'PAC': fail(cid, 'PAC component %s: the replayed design does not publish a PAC result at %d trials (replay: %s / %s)' % (ci, n, rp.get('status'), rp.get('guarantee'))); return
                 R2 = rp['stats']['sufficient_statistics']; bad_k = _records_equal(R, R2)
                 if bad_k: fail(cid, 'PAC component %s: sufficient statistic %s is NOT reproduced by the replay of the recorded design (statistics not lawful for this construction)' % (ci, bad_k)); return
@@ -211,6 +230,8 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
                 if [rp['intervals'][v] for v in range(len(cards))] != rows or [rp['points'][v] for v in range(len(cards))] != pts: fail(cid, 'PAC component %s: the replay publishes different rows' % ci); return
             except (KeyError, TypeError, ValueError, ZeroDivisionError) as ex: fail(cid, 'PAC component %s: malformed certificate (%s)' % (ci, str(ex)[:60])); return
         elif g == 'DETERMINISTIC':
+            if sem_arm and route not in sem_arm['deterministic_routes'] and route not in sem_arm['root_routes']: fail(cid, 'component %s: deterministic route %s is not available to the planned arm %s' % (ci, route, c['arm'])); return
+            if route.startswith('pac_conditional') and 'exact_cover' in route and sem_arm.get('mode') == 'conditional' and not sem_arm.get('resolve') and (comp.get('design') or {}).get('cutset'): fail(cid, 'component %s: the planned arm %s does not resolve cells, yet an exact cover with a nonempty cutset is claimed' % (ci, c['arm'])); return
             if route.startswith('pac_'):
                 d = comp.get('design') or {}; fr = comp.get('frontier') or {}; RT = comp.get('resolved_totals') or {}
                 if 'uniform_factorless' in route:
@@ -218,7 +239,7 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
                 else:
                     cut = d.get('cutset'); order = d.get('order_free')
                     if not isinstance(cut, list): fail(cid, 'component %s: design cutset missing' % ci); return
-                    budget = float(c.get('budget_s') or 20.0); dl = time.monotonic() + deadline_factor * budget
+                    budget = float(c.get('budget_s') or 20.0); dl = _deadline(deadline_factor * budget)
                     msg, ver = verify_cover(cm, cut, order or [], fr, RT, expect_zero=False, deadline=dl)
                     if msg: fail(cid, 'component %s: %s' % (ci, msg)); return
                     if 'exact_cover' in route and ver['U_t'] != 0: fail(cid, 'component %s: exact-cover claim but the verified frontier is not closed' % ci); return
@@ -227,16 +248,21 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
                     p_ = [engine.feasible_point(rows[v], eps_t - F(d['decimal_margin'])) for v in range(len(cards))]
                     if any(x is None for x in p_) or any(p_[v] != pts[v] for v in range(len(cards))): fail(cid, 'component %s: recorded points are not the feasible simplex points of the rows' % ci); return
             elif route in ('support', 'dag', 'stream', 'forest'):
+                budget = float(c.get('budget_s') or 20.0); dl = _deadline(deadline_factor * budget)       # bounded deterministic re-execution (never deadline=None)
                 try:
                     if route == 'forest':
-                        import forest; res = forest.solve(model, deadline=None, independent_replay=True); rr = res['intervals']; rp_ = res['points']
+                        import forest; res = forest.solve(model, deadline=dl, independent_replay=True); rr = res['intervals']; rp_ = res['points']
                     elif route == 'dag' and cert.get('reduced_model') is None:
-                        import dag; res = dag.execute_plan(dag.plan(model, deadline=None), deadline=None); rr = res['intervals']; rp_ = res['points']
+                        import dag; res = dag.execute_plan(dag.plan(model, deadline=dl), deadline=dl); rr = res['intervals']; rp_ = res['points']
                     else:
-                        plan = core._discover_component(cm, None, route); res = core._execute_component(plan, None); rr = res['intervals']; rp_ = res.get('points') or [[(lo + hi) / 2 for lo, hi in row] for row in rr]
+                        plan = core._discover_component(cm, dl, route); res = core._execute_component(plan, dl); rr = res['intervals']; rp_ = res.get('points') or [[(lo + hi) / 2 for lo, hi in row] for row in rr]
                     rr = [[(F(a), F(b)) for a, b in row] for row in rr]; rp_ = [[F(x) for x in row] for row in rp_]
                     if rr != rows or rp_ != pts: fail(cid, 'component %s: re-execution of the frozen %s route does not reproduce the recorded rows' % (ci, route)); return
-                except Exception as ex: fail(cid, 'component %s: frozen route %s re-execution failed (%s)' % (ci, route, str(ex)[:60])); return
+                except GateBudgetExhausted: raise
+                except (TimeoutError, MemoryError) as ex: fail(cid, 'component %s: UNVERIFIABLE -- frozen route %s re-execution stopped (%s) within the checker budget' % (ci, route, type(ex).__name__)); return
+                except Exception as ex:
+                    if 'Deadline' in type(ex).__name__ or 'DEADLINE' in str(ex): fail(cid, 'component %s: UNVERIFIABLE -- frozen route %s re-execution exceeded the checker budget' % (ci, route)); return
+                    fail(cid, 'component %s: frozen route %s re-execution failed (%s)' % (ci, route, str(ex)[:60])); return
             else: fail(cid, 'component %s: unknown deterministic route %s' % (ci, route)); return
             core.verify_output(rows, pts, eps_t)
         else: fail(cid, 'component %s with guarantee %s' % (ci, g)); return
@@ -250,6 +276,16 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
         core.verify_output(LI, LP, eps_t); di, dp = core.publish(LI, LP, epsilon=eps_t)
         if di != w.get('intervals') or dp != w.get('points'): fail(cid, 'the published decimals are not the frozen publication of the VERIFIED lifted rows'); return
     except Exception as ex: fail(cid, 'chain verification: %s' % str(ex)[:80]); return
+
+
+def _deadline(seconds):
+    """per-check deadline capped by the aggregate gate budget; raises GateBudgetExhausted when the aggregate budget is already spent"""
+    now = time.monotonic(); d = now + seconds
+    if _agg['deadline'] is not None:
+        if now >= _agg['deadline']: raise GateBudgetExhausted()
+        d = min(d, _agg['deadline'])
+    return d
+_agg = {'deadline': None}
 
 
 def verify_zero_proof(model, proof, seed=None, deadline=None):
@@ -289,7 +325,7 @@ def verify_zero_proof(model, proof, seed=None, deadline=None):
     except Exception as ex: return 're-derivation error %s: %s' % (type(ex).__name__, str(ex)[:60])
 
 
-# ---------------- native validators (registry-driven; each binds its own contract)
+# ---------------- native validators (registry-driven; each RE-RUNS the native numerical checker on hash-bound evidence; review 4 F02)
 def _fresh_attempt(path_in_attempt, r):
     """the output must lie inside attempt_<nonce> of THIS receipt"""
     p = os.path.abspath(path_in_attempt)
@@ -300,93 +336,253 @@ def _fresh_attempt(path_in_attempt, r):
     return False
 
 
-def validate_h4_native(RD, c, r, w_path, fail):
+def validate_h4_native(RD, c, r, w_path, fail, deadline=None):
+    """H4 six frozen nodes: the packet is re-read (hash-bound); the six nodes, their directories and ALL numeric artifacts (prod/chk .json and .txt, masses.json, verdict.json)
+    are required and hashed; the producer / checker caches are rebuilt from the canonical model and the frozen grid, and h4a.certs.verify_node is RE-RUN on the bound prod/chk
+    evidence; the mass verdict is re-derived with h4a.masses.verify_masses from masses.json; every re-derived check must be true"""
     cid = c['cell_id']
-    try: b = json.load(open(w_path))
+    try: b = json.load(open(w_path)); _ev(w_path)
     except Exception: fail(cid, 'H4 bundle unreadable'); return False
     packet = c.get('packet'); fz = os.path.join(packet or '', 'inputs', 'FROZEN_NODES.json')
     if not packet or not os.path.exists(fz): fail(cid, 'H4 packet FROZEN_NODES.json missing on disk'); return False
     if sha(fz) != c.get('model_sha256'): fail(cid, 'H4 packet FROZEN_NODES.json differs from the frozen manifest hash'); return False
-    Fz = json.load(open(fz)); want_nodes = sorted((d['source_sign'], d['processed_ordinal_1based'], tuple(d['positive_node'])) for d in Fz['nodes'])
+    _ev(fz); Fz = json.load(open(fz)); want_nodes = sorted((d['source_sign'], d['processed_ordinal_1based'], tuple(d['positive_node'])) for d in Fz['nodes'])
     if b.get('arm') != c.get('native_arm') or 'H4_NATIVE_%s' % b.get('arm') != c['arm']: fail(cid, 'H4 bundle arm differs from the cell'); return False
     if b.get('repetition') != c.get('replicate'): fail(cid, 'H4 bundle repetition differs from the cell replicate'); return False
     nodes = b.get('nodes') or []
     if len(nodes) != 6 or sorted((n.get('source_sign'), n.get('ordinal'), tuple(n.get('node') or ())) for n in nodes) != want_nodes: fail(cid, 'H4 bundle nodes differ from the frozen six nodes'); return False
-    if not all(n.get('verdict') == 'VERIFIED' for n in nodes) or b.get('all_verified') is not True: fail(cid, 'H4 bundle not fully verified'); return False
     if not _fresh_attempt(w_path, r): fail(cid, 'H4 output is not inside the fresh attempt directory of this receipt'); return False
-    for n in nodes:
-        vp = os.path.join(os.path.dirname(w_path), n['key'], 'verdict.json')
-        if not os.path.exists(vp): fail(cid, 'H4 node %s without a verdict record' % n['key']); return False
-        v = json.load(open(vp))
-        if v.get('verdict') != 'VERIFIED' or v.get('failed_checks') or v.get('arm') != b.get('arm'): fail(cid, 'H4 node %s verdict record not VERIFIED / wrong arm' % n['key']); return False
-        ch = v.get('checks') or {}
-        if not ch or not all(x is True for x in ch.values()): fail(cid, 'H4 node %s: a check is not true' % n['key']); return False
     if not isinstance(b.get('complete_wall_s'), (int, float)) or b['complete_wall_s'] > float(c['budget_s']): fail(cid, 'H4 bundle complete wall exceeds the cell budget'); return False
     if r.get('guarantee_type') != 'DETERMINISTIC': fail(cid, 'H4 receipt guarantee must be DETERMINISTIC'); return False
+    try:
+        if CODE not in sys.path: sys.path.insert(0, CODE)
+        from h4a.model import Model, NodeProblem
+        from h4a.grid import Grid
+        from h4a.emit import Cache
+        from h4a import certs
+        from h4a.masses import verify_masses
+        from fractions import Fraction as Fr
+        m = Model(128, 1)
+        if m.canonical_sha256() != Fz['model_hash']: fail(cid, 'H4 canonical model hash differs from the frozen packet'); return False
+        grids = {int(sg): Grid(Fz['frequency_grids'][sg]) for sg in ('1', '-1')}
+        if deadline is not None and time.monotonic() >= deadline: fail(cid, 'H4: UNVERIFIABLE -- checker budget exhausted before the cache rebuild'); return False
+        cprod = Cache(m, grids[1], 256); cchk = Cache(m, grids[1], 320)
+        d = os.path.dirname(w_path); arm_ = b['arm']
+        for n in nodes:
+            key = n['key']; nd = os.path.join(d, key)
+            for fn in ('prod.json', 'chk.json', 'masses.json', 'verdict.json', 'prod.txt', 'chk.txt'):
+                fp = os.path.join(nd, fn)
+                if not os.path.exists(fp) or os.path.getsize(fp) == 0: fail(cid, 'H4 node %s: required numeric artifact %s missing' % (key, fn)); return False
+                _ev(fp)
+            if deadline is not None and time.monotonic() >= deadline: fail(cid, 'H4 node %s: UNVERIFIABLE -- checker budget exhausted' % key); return False
+            prob = NodeProblem(m, Fz['source_site'], n['source_sign'], Fz['target_site'], n['node'], 'E0')
+            v2 = certs.verify_node(arm_, os.path.join(nd, 'prod.json'), os.path.join(nd, 'chk.json'), cprod, cchk, grids[n['source_sign']], prob)
+            if v2.get('verdict') != 'VERIFIED' or v2.get('failed_checks'): fail(cid, 'H4 node %s: RE-RUN of the independent checker does not verify (%s)' % (key, v2.get('failed_checks'))); return False
+            v = json.load(open(os.path.join(nd, 'verdict.json')))
+            if v.get('verdict') != 'VERIFIED' or v.get('arm') != arm_ or sorted(v.get('checks', {})) != sorted(v2['checks']) or any(v['checks'][k] is not True for k in v['checks']): fail(cid, 'H4 node %s: recorded verdict differs from the re-run check schema' % key); return False
+            mj = json.load(open(os.path.join(nd, 'masses.json')))
+            try:
+                mprod = dict(markers={sg: dict(pub=[Fr(x) for x in mj['marker_masses_published'][str(sg)]], midpoint=Fr(mj['marker_masses_midpoint'][str(sg)])) for sg in (-1, 1)}, total=dict(pub=[Fr(x) for x in mj['total_published']]), node_weight=dict(pub=[Fr(x) for x in mj['node_weight_published']], exponent=mj['node_weight_exponent']))
+                mchk = dict(markers={sg: [Fr(x) for x in mj['checker_unpadded'][str(sg)]] for sg in (-1, 1)}, node_weight=[Fr(x) for x in mj['node_weight_checker_unpadded']], node_weight_exponent=mj['node_weight_exponent'])
+                mv = verify_masses(mprod, mchk)
+                if not all(mv.values()): fail(cid, 'H4 node %s: RE-DERIVED mass verdict fails (%s)' % (key, [k for k, ok in mv.items() if not ok])); return False
+            except (KeyError, TypeError, ValueError) as ex: fail(cid, 'H4 node %s: masses record malformed (%s)' % (key, str(ex)[:60])); return False
+            if not mj.get('verdict') or not all(x is True for x in mj['verdict'].values()): fail(cid, 'H4 node %s: recorded mass / count verdict not all true' % key); return False
+            if n.get('verdict') != 'VERIFIED': fail(cid, 'H4 node %s: bundle verdict not VERIFIED' % key); return False
+        if b.get('all_verified') is not True: fail(cid, 'H4 bundle all_verified flag false'); return False
+    except GateBudgetExhausted: raise
+    except (MemoryError, OverflowError) as ex: fail(cid, 'H4: UNVERIFIABLE -- checker resource failure %s' % type(ex).__name__); return False
+    except Exception as ex: fail(cid, 'H4 checker re-run failed (%s: %s)' % (type(ex).__name__, str(ex)[:80])); return False
     return True
 
 
-def validate_sf_native(RD, c, r, w_path, fail):
+def validate_sf_native(RD, c, r, w_path, fail, deadline=None):
+    """SF: the panel is re-loaded (hash-bound) and ITS dimension n is the authority; the published grid intervals, exact intervals and the route record are RE-CHECKED by
+    sf.check.check on the panel for the cell's coupling and the claimed symmetry; the requested width is checked on the re-derived grid widths"""
     cid = c['cell_id']
-    try: w = json.load(open(w_path))
+    try: w = json.load(open(w_path)); _ev(w_path)
     except Exception: fail(cid, 'SF output unreadable'); return False
     if w.get('mode') != 'select' or w.get('status') != 'OK': fail(cid, 'SF output mode / status (%s / %s)' % (w.get('mode'), w.get('status'))); return False
     mp = c.get('model_path') or ''
-    if w.get('panel') != os.path.basename(mp) or w.get('input_sha256') != c.get('model_sha256') or not os.path.exists(mp) or sha(mp) != c.get('model_sha256'): fail(cid, 'SF output panel / input hash do not bind to the frozen panel'); return False
+    if w.get('panel') != os.path.basename(mp) or not os.path.exists(mp) or sha(mp) != c.get('model_sha256') or w.get('input_sha256') != c.get('model_sha256'): fail(cid, 'SF output panel / input hash do not bind to the frozen panel'); return False
+    _ev(mp)
     try:
-        if F(str(w.get('r'))) != F(str(c.get('sf_r'))) or F(str(w.get('eps'))) != F(str(c.get('sf_eps'))): fail(cid, 'SF coupling / requested width differ from the cell'); return False
-    except Exception: fail(cid, 'SF coupling / width unparseable'); return False
-    if (w.get('checker') or {}).get('status') != 'VERIFIED': fail(cid, 'SF independent checker not VERIFIED'); return False
-    n = w.get('n'); pub = w.get('published'); ivx = w.get('intervals_exact')
-    if not (isinstance(n, int) and isinstance(pub, list) and isinstance(ivx, list) and len(pub) == n == len(ivx)): fail(cid, 'SF publication shape differs from the panel dimension'); return False
-    try:
-        from sf import core as SFC
-        q = 1 << SFC.GRID_BITS; wmax = F(0)
-        for (lg, hg), (lo, hi) in zip(pub, ivx):
-            lg = int(lg); hg = int(hg); lo = F(lo); hi = F(hi)
-            if not (0 <= lg <= hg <= q and F(lg, q) <= lo <= hi <= F(hg, q)): fail(cid, 'SF published grid interval does not enclose its exact interval'); return False
-            wmax = max(wmax, F(hg - lg, q))
-        eps_req = F(str(c['sf_eps']))
-        if wmax > eps_req or not (w.get('width_met') or {}).get(str(eps_req)): fail(cid, 'SF requested width %s not met (max %s)' % (eps_req, wmax)); return False
-        if F(str(w.get('max_width'))) != wmax: fail(cid, 'SF recorded max width differs from the published intervals'); return False
-    except Exception as ex: fail(cid, 'SF publication malformed (%s)' % str(ex)[:60]); return False
-    if not isinstance(w.get('child_wall_s'), (int, float)) or w['child_wall_s'] > float(c['budget_s']): fail(cid, 'SF child wall exceeds the cell budget'); return False
+        if CODE not in sys.path: sys.path.insert(0, CODE)
+        from sf import core as SFC, check as SFK
+        law = SFC.Law.load(mp); n = law.n
+        if law.sha256 != c.get('model_sha256'): fail(cid, 'SF panel re-load hash differs'); return False
+        rr = F(str(w.get('r'))); eps_req = F(str(c['sf_eps']))
+        if rr != F(str(c.get('sf_r'))) or F(str(w.get('eps'))) != eps_req: fail(cid, 'SF coupling / requested width differ from the cell'); return False
+        pub = w.get('published'); ivx = w.get('intervals_exact'); rec = dict(w.get('route_record') or {})
+        if not (isinstance(pub, list) and isinstance(ivx, list) and len(pub) == n and len(ivx) == n): fail(cid, 'SF publication shape (%s / %s rows) differs from the PANEL dimension n = %d' % (len(pub) if isinstance(pub, list) else '?', len(ivx) if isinstance(ivx, list) else '?', n)); return False
+        for k in ('N_int', 'Mk_int'):
+            if k in rec: rec[k] = [int(x) for x in rec[k]]
+        for k in ('k', 'N_k', 'Zk_int', 'Z_int', 'scale_int', 'max_bits', 'Z_k'):
+            if k in rec and isinstance(rec[k], str):
+                try: rec[k] = int(rec[k])
+                except ValueError: pass
+        rec['intervals'] = [(F(lo), F(hi)) for lo, hi in ivx]; rec['published'] = [(int(lg), int(hg)) for lg, hg in pub]; rec['route'] = w.get('route')
+        if deadline is not None and time.monotonic() >= deadline: fail(cid, 'SF: UNVERIFIABLE -- checker budget exhausted'); return False
+        try: chk = SFK.check(law, rr, rec, bool((w.get('symmetry') or {}).get('antipodal_A')))
+        except SFK.CheckFailure as e: fail(cid, 'SF RE-RUN of the native checker FAILS: %s' % str(e)[:100]); return False
+        if not chk.get('ok'): fail(cid, 'SF native checker re-run not ok'); return False
+        if (w.get('checker') or {}).get('status') != 'VERIFIED': fail(cid, 'SF recorded checker status not VERIFIED'); return False
+        q = 1 << SFC.GRID_BITS; wmax = max(F(int(hg) - int(lg), q) for lg, hg in pub)
+        if wmax > eps_req: fail(cid, 'SF requested width %s not met by the re-derived grid widths (max %s)' % (eps_req, wmax)); return False
+        if not (w.get('width_met') or {}).get(str(eps_req)) or F(str(w.get('max_width'))) != wmax: fail(cid, 'SF recorded width fields differ from the re-derived widths'); return False
+        if not isinstance(w.get('child_wall_s'), (int, float)) or w['child_wall_s'] > float(c['budget_s']): fail(cid, 'SF child wall exceeds the cell budget'); return False
+    except GateBudgetExhausted: raise
+    except (MemoryError, OverflowError) as ex: fail(cid, 'SF: UNVERIFIABLE -- checker resource failure %s' % type(ex).__name__); return False
+    except Exception as ex: fail(cid, 'SF checker re-run failed (%s: %s)' % (type(ex).__name__, str(ex)[:80])); return False
     if not _fresh_attempt(w_path, r): fail(cid, 'SF output is not inside the fresh attempt directory of this receipt'); return False
     if r.get('guarantee_type') != 'DETERMINISTIC': fail(cid, 'SF receipt guarantee must be DETERMINISTIC'); return False
     return True
 
 
-def validate_cbi_native(RD, c, r, w_path, fail):
+def validate_cbi_native(RD, c, r, w_path, fail, deadline=None):
+    """CBI: the instance is re-loaded (hash-bound); query count, external ids and dimension d come from the INSTANCE; every block carries exactly d coordinate records with
+    ordered exact endpoints in [0,1], published grid endpoints enclosing them and width <= 1/100; the cbi library's INDEPENDENT verifier (cbi.verify.verify) is RE-RUN on the
+    bound instance and output (proof paths re-derived; published intervals must contain the verifier's enclosures)"""
     cid = c['cell_id']
-    try: w = json.load(open(w_path))
+    try: w = json.load(open(w_path)); _ev(w_path)
     except Exception: fail(cid, 'CBI output unreadable'); return False
     if w.get('status') != 'CERTIFIED': fail(cid, 'CBI output status %s' % w.get('status')); return False
     mp = c.get('model_path') or ''
     if not os.path.exists(mp) or sha(mp) != c.get('model_sha256'): fail(cid, 'CBI frozen instance file missing or differs from the manifest hash'); return False
+    _ev(mp)
     try:
-        from cbi import model as M
-        canon = M.Model.from_json(json.load(open(mp))).sha256()          # the cbi CLI records the CANONICAL-form hash of the instance (external ids restored); re-derived here from the frozen file
-    except Exception as ex: fail(cid, 'CBI frozen instance unparseable (%s)' % str(ex)[:60]); return False
-    if w.get('model_sha256') not in (canon, c.get('model_sha256')): fail(cid, 'CBI output model hash binds neither the frozen file nor its canonical form'); return False
-    ids = (w.get('id_map') or {}).get('external_ids')
-    try:
-        inst = M.Model.from_json(json.load(open(mp))); want_ids = [inst.ext(i) for i in sorted(inst.blocks)]
-    except Exception: want_ids = None
-    if want_ids is not None and (ids is None or sorted(ids) != sorted(want_ids)): fail(cid, 'CBI output block id map differs from the frozen instance (%s vs %s)' % (ids, want_ids)); return False
-    if want_ids is not None and sorted(int(k) for k in (w.get('intervals') or {}).keys() if str(k).lstrip('-').isdigit()) != sorted(want_ids): fail(cid, 'CBI output query keys are not the instance block ids'); return False
-    try:
+        if CODE not in sys.path: sys.path.insert(0, CODE)
+        from cbi import model as M, verify as V
+        instj = json.load(open(mp)); inst = M.Model.from_json(instj); d = int(instj['d']); want_ids = [inst.ext(i) for i in sorted(inst.blocks)]
+        canon = inst.sha256()
+        if w.get('model_sha256') not in (canon, c.get('model_sha256')): fail(cid, 'CBI output model hash binds neither the frozen file nor its canonical form'); return False
+        ids = (w.get('id_map') or {}).get('external_ids')
+        if ids is None or sorted(ids) != sorted(want_ids): fail(cid, 'CBI output block id map differs from the frozen instance (%s vs %s)' % (ids, want_ids)); return False
         if F(str(w.get('requested_width'))) != F(1, 100): fail(cid, 'CBI requested width is not the native 1/100'); return False
-    except Exception: fail(cid, 'CBI requested width unparseable'); return False
-    sq = w.get('statuses_per_query') or {}; iv = w.get('intervals') or {}
-    if not sq or not iv or any(v != 'CERTIFIED' for v in sq.values()) or set(sq) != set(iv): fail(cid, 'CBI per-query statuses / intervals incomplete'); return False
+        sq = w.get('statuses_per_query') or {}; iv = w.get('intervals') or {}
+        if sorted(int(k) for k in sq) != sorted(want_ids) or sorted(int(k) for k in iv) != sorted(want_ids): fail(cid, 'CBI per-query statuses / intervals do not cover exactly the instance blocks'); return False
+        if any(v != 'CERTIFIED' for v in sq.values()): fail(cid, 'CBI a per-query status is not CERTIFIED'); return False
+        q = 1 << int(w.get('grid_bits') or 0)
+        for k, blk in iv.items():
+            co = blk.get('coordinates')
+            if not isinstance(co, list) or len(co) != d: fail(cid, 'CBI block %s: %s coordinate records for dimension d = %d' % (k, len(co) if isinstance(co, list) else '?', d)); return False
+            for jj, x in enumerate(co):
+                lo, hi = F(x['exact'][0]), F(x['exact'][1]); lg, hg = int(x['lo']), int(x['hi'])
+                if not (0 <= lo <= hi <= 1) or not (0 <= lg <= hg <= q) or not (F(lg, q) <= lo and hi <= F(hg, q)): fail(cid, 'CBI block %s coordinate %d: enclosure malformed' % (k, jj)); return False
+                if F(hg - lg, q) > F(1, 100) or F(str(x.get('width', F(hg - lg, q)))) != F(hg - lg, q): fail(cid, 'CBI block %s coordinate %d: width %s exceeds 1/100 or differs from the record' % (k, jj, F(hg - lg, q))); return False
+        if deadline is not None and time.monotonic() >= deadline: fail(cid, 'CBI: UNVERIFIABLE -- checker budget exhausted'); return False
+        out = V.verify(instj, w)
+        if not out.get('accepted'): fail(cid, 'CBI RE-RUN of the independent verifier REJECTS the output: %s' % str((out.get('reasons') or ['?'])[0])[:120]); return False
+    except GateBudgetExhausted: raise
+    except (MemoryError, OverflowError) as ex: fail(cid, 'CBI: UNVERIFIABLE -- checker resource failure %s' % type(ex).__name__); return False
+    except Exception as ex: fail(cid, 'CBI verifier re-run failed (%s: %s)' % (type(ex).__name__, str(ex)[:80])); return False
     if not _fresh_attempt(w_path, r): fail(cid, 'CBI output is not inside the fresh attempt directory of this receipt'); return False
     if r.get('guarantee_type') != 'DETERMINISTIC': fail(cid, 'CBI completed with guarantee %s' % r.get('guarantee_type')); return False
     return True
 
 
+def _check_cell(RD, cid, r, c, man, frozen_candidate, frozen_b0, models, failures, fail, EPS, replay_factor, counters):
+    """all checks of ONE receipt (extracted so that an aggregate-budget exhaustion is a structured per-cell outcome)"""
+    for k in ('case_id', 'arm', 'replicate', 'budget_s', 'seed', 'model_sha256', 'evidence_sha256', 'cohort'):
+        if r.get(k) != c.get(k): fail(cid, 'receipt %s differs from the manifest' % k)
+    wall = r.get('launch_relative_wall_s'); timely = isinstance(wall, (int, float)) and not isinstance(wall, bool) and wall == wall and 0 <= wall <= float(c['budget_s'])
+    if not (isinstance(wall, (int, float)) and not isinstance(wall, bool) and 0 <= wall < float('inf')): fail(cid, 'receipt wall is not a finite nonnegative number (%s)' % wall)
+    sup = r.get('supervisor') or {}; arm = c['arm']; validator = registry.validator_of(arm)
+    wp = os.path.join(RD, r['worker_output']) if r.get('worker_output') else None
+    if r.get('status') == 'COMPLETED':
+        counters['checked'] += 1
+        if sup.get('rc') != 0: fail(cid, 'COMPLETED with supervisor rc %s' % sup.get('rc'))
+        if sup.get('outcome') != 'COMPLETED': fail(cid, 'COMPLETED with supervisor outcome %s' % sup.get('outcome'))
+        if not timely: fail(cid, 'COMPLETED but recomputed launch-relative wall %s > budget %s' % (wall, c['budget_s']))
+        if r.get('outcome') != 'PUBLISHED': fail(cid, 'COMPLETED but outcome %s' % r.get('outcome'))
+        if validator == 'comparator_mar':
+            cmpr = r.get('comparator') or {}; of = cmpr.get('output_file')
+            if not of or not os.path.exists(of): fail(cid, 'COMPLETED comparator without its output file'); return
+            _ev(of)
+            if sha(of) != cmpr.get('output_sha256'): fail(cid, 'comparator output sha256 differs from the receipt')
+            if r.get('guarantee_type') != 'UNGUARANTEED': fail(cid, 'comparator completed with guarantee %s' % r.get('guarantee_type'))
+            counters['gated'] += 1; return
+        if not wp or not os.path.exists(wp): fail(cid, 'COMPLETED without a worker output file'); return
+        _ev(wp)
+        if sha(wp) != r.get('output_sha256'): fail(cid, 'worker output sha256 differs from the receipt'); return
+        if validator == 'h4_native':
+            if validate_h4_native(RD, c, r, wp, fail, deadline=_deadline(replay_factor * float(c['budget_s']))): counters['gated'] += 1
+            return
+        if validator == 'sf_native':
+            if validate_sf_native(RD, c, r, wp, fail, deadline=_deadline(replay_factor * float(c['budget_s']))): counters['gated'] += 1
+            return
+        if validator == 'cbi_native':
+            if validate_cbi_native(RD, c, r, wp, fail, deadline=_deadline(replay_factor * float(c['budget_s']))): counters['gated'] += 1
+            return
+        if validator != 'uai_candidate': fail(cid, 'no validator for arm %s' % arm); return
+        w = json.load(open(wp))
+        if w.get('status') != 'COMPLETED': fail(cid, 'worker status %s' % w.get('status'))
+        mpth = c.get('model_path')
+        if not mpth or not os.path.exists(mpth): fail(cid, 'frozen input file missing on disk'); return
+        if mpth not in models: models[mpth] = core.read_uai(mpth)
+        _ev(mpth)
+        model, binding = models[mpth]
+        if binding.get('model_sha256') != c.get('model_sha256') or binding.get('evidence_sha256') != c.get('evidence_sha256'): fail(cid, 'input files on disk differ from the FROZEN manifest hashes (input changed after freeze)')
+        if w.get('binding') != binding: fail(cid, 'worker binding differs from the actual input files')
+        if w.get('binding') != dict(model_sha256=c.get('model_sha256'), evidence_sha256=c.get('evidence_sha256')): fail(cid, 'worker binding differs from the frozen manifest hashes')
+        if arm in CANDIDATE_ARMS:
+            if w.get('nonce') != r.get('nonce'): fail(cid, 'worker nonce differs from the receipt (stale or foreign output)')
+            if w.get('seed') != c.get('seed'): fail(cid, 'worker seed differs from the manifest')
+            if w.get('arm') != arm: fail(cid, 'worker arm differs')
+            if w.get('guarantee_type') not in ('PAC', 'DETERMINISTIC'): fail(cid, 'completed candidate output without a guarantee type')
+            cs = w.get('candidate_sources') or {}
+            missing = [k for k in frozen_candidate if k not in cs]; differ_ = [k for k in frozen_candidate if k in cs and cs[k] != frozen_candidate[k]]
+            if missing: fail(cid, 'worker candidate source identity incomplete: %d frozen sources not recorded (e.g. %s)' % (len(missing), missing[0]))
+            if differ_: fail(cid, 'worker candidate source %s differs from the frozen artifact' % differ_[0])
+        if arm == B0 and frozen_b0 and isinstance(w.get('source_hashes'), dict):
+            for k, v in frozen_b0.items():
+                if w['source_hashes'].get(k.split('/', 1)[1]) not in (None, v): fail(cid, 'B0 worker source %s differs from the frozen artifact' % k)
+        if r.get('guarantee_type') != w.get('guarantee_type', 'DETERMINISTIC'): fail(cid, 'receipt guarantee_type differs from the worker')
+        iv = w.get('intervals'); pts = w.get('points'); cards = model['cards']; ev = model.get('evidence', {})
+        okshape = isinstance(iv, list) and isinstance(pts, list) and len(iv) == len(cards) and len(pts) == len(cards) and all(isinstance(row, list) and isinstance(pr, list) and len(row) == k and len(pr) == k for row, pr, k in zip(iv, pts, cards))
+        if not okshape: fail(cid, 'output shape differs from the original model'); return
+        try:
+            IV = [[(F(a), F(b)) for a, b in row] for row in iv]; PT = [[F(x) for x in row] for row in pts]; core.verify_output(IV, PT, EPS)
+            for v, a in ev.items():
+                if not all((PT[v][s] == 1 and IV[v][s] == (F(1), F(1))) if s == a else (PT[v][s] == 0 and IV[v][s] == (F(0), F(0))) for s in range(cards[v])): fail(cid, 'observed variable %d not one-hot' % v)
+        except Exception as ex: fail(cid, 'publication contract: %s' % str(ex)[:80]); return
+        if arm in CANDIDATE_ARMS:
+            nf = len(failures); check_pac_certificate(w, c, man, model, fail, deadline_factor=replay_factor)
+            if len(failures) == nf and w.get('guarantee_type') == 'PAC': counters['pac_verified'] += 1
+        counters['gated'] += 1
+    else:
+        if r.get('outcome') == 'PUBLISHED': fail(cid, 'non-COMPLETED receipt with outcome PUBLISHED')
+        if r.get('outcome') == 'PROVED_ZERO_EVIDENCE':
+            if not timely: fail(cid, 'zero-evidence claim after the budget (late proof is not a timely result)')
+            if sup.get('rc') != 0 or 'KILL' in str(sup.get('outcome')): fail(cid, 'zero-evidence claim with supervisor rc %s / outcome %s' % (sup.get('rc'), sup.get('outcome')))
+            if arm in CANDIDATE_ARMS:
+                if not wp or not os.path.exists(wp): fail(cid, 'zero-evidence claim without a worker output')
+                elif sha(wp) != r.get('output_sha256'): fail(cid, 'zero-evidence worker output sha256 differs from the receipt')
+                else:
+                    _ev(wp); w = json.load(open(wp))
+                    if w.get('status') != 'STOPPED' or w.get('outcome') != 'PROVED_ZERO_EVIDENCE' or w.get('late_proof'): fail(cid, 'zero-evidence claim without a recorded timely proof')
+                    if w.get('nonce') != r.get('nonce') or w.get('seed') != c.get('seed') or w.get('arm') != arm: fail(cid, 'zero-evidence output nonce / seed / arm differ from the cell')
+                    cs = w.get('candidate_sources') or {}
+                    if any(k not in cs or cs[k] != v for k, v in frozen_candidate.items()): fail(cid, 'zero-evidence output source identity incomplete or differs from the frozen artifact')
+                    mpth = c.get('model_path')
+                    if not mpth or not os.path.exists(mpth): fail(cid, 'frozen input file missing on disk')
+                    else:
+                        if mpth not in models: models[mpth] = core.read_uai(mpth)
+                        model, binding = models[mpth]
+                        if binding.get('model_sha256') != c.get('model_sha256') or binding.get('evidence_sha256') != c.get('evidence_sha256') or w.get('binding') != binding: fail(cid, 'zero-evidence output binding differs from the frozen input')
+                        else:
+                            msg = verify_zero_proof(model, w.get('zero_evidence_proof'), seed=c.get('seed'), deadline=_deadline(replay_factor * float(c['budget_s'])))
+                            if msg: fail(cid, 'zero-evidence proof NOT re-derivable: %s' % msg)
+            elif arm == B0:
+                if not wp or not os.path.exists(wp): fail(cid, 'zero-evidence claim without a worker output')
+            elif r.get('guarantee_type') in ('PAC', 'DETERMINISTIC'): fail(cid, 'comparator / native zero outcome cannot carry a guarantee (underflow is indistinguishable)')
+        elif r.get('guarantee_type') in ('PAC', 'DETERMINISTIC'): fail(cid, 'guarantee claimed without publication')
+
+
 # ---------------- main
-def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_factor=REPLAY_FACTOR):
-    RD = os.path.abspath(RD); failures = []; t_gate = time.monotonic()
+def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_factor=REPLAY_FACTOR, gate_budget_s=GATE_BUDGET_S):
+    RD = os.path.abspath(RD); failures = []; t_gate = time.monotonic(); _evidence.clear(); _agg['deadline'] = (t_gate + float(gate_budget_s)) if gate_budget_s else None; exhausted_at = None
+    if replay_factor is None or not (replay_factor > 0) or replay_factor != replay_factor: return _write(RD, out_path, dict(gate_version=GATE_VERSION, failures=[('*', 'invalid replay factor %r' % (replay_factor,))], gate_passed=False))
     def fail(cid, msg): failures.append((cid, msg))
     mp = os.path.join(RD, manifest_name)
     if not os.path.exists(mp): fail('*', 'manifest %s missing' % manifest_name); return _write(RD, out_path, dict(gate_version=GATE_VERSION, failures=failures, gate_passed=False))
@@ -439,104 +635,19 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
         if cid not in receipts: fail(cid, 'planned cell without receipt (NOT_RUN)')
     for cid in receipts:
         if cid not in cells: fail(cid, 'receipt for a cell not in the frozen manifest')
-    task = man.get('task') or {}; EPS = F(str(task.get('epsilon', '1/200'))); models = {}; checked = 0; gated = 0; pac_verified = 0; gated_set = []
+    task = man.get('task') or {}; EPS = F(str(task.get('epsilon', '1/200'))); models = {}; gated_set = []; counters = dict(checked=0, gated=0, pac_verified=0)
     for cid in sorted(receipts):
         r = receipts[cid]; c = cells.get(cid)
         if not c: continue
-        gated_set.append(dict(cell_id=cid, receipt_sha256=r['_sha'], output_sha256=r.get('output_sha256'), status=r.get('status'), outcome=r.get('outcome'), guarantee=r.get('guarantee_type'), arm=c['arm'], cohort=c['cohort'], budget_s=c['budget_s'], case_id=c['case_id'], replicate=c['replicate']))
-        for k in ('case_id', 'arm', 'replicate', 'budget_s', 'seed', 'model_sha256', 'evidence_sha256', 'cohort'):
-            if r.get(k) != c.get(k): fail(cid, 'receipt %s differs from the manifest' % k)
-        wall = r.get('launch_relative_wall_s'); timely = isinstance(wall, (int, float)) and not isinstance(wall, bool) and wall == wall and 0 <= wall <= float(c['budget_s'])
-        if not (isinstance(wall, (int, float)) and not isinstance(wall, bool) and 0 <= wall < float('inf')): fail(cid, 'receipt wall is not a finite nonnegative number (%s)' % wall)
-        sup = r.get('supervisor') or {}; arm = c['arm']; validator = registry.validator_of(arm)
-        wp = os.path.join(RD, r['worker_output']) if r.get('worker_output') else None
-        if r.get('status') == 'COMPLETED':
-            checked += 1
-            if sup.get('rc') != 0: fail(cid, 'COMPLETED with supervisor rc %s' % sup.get('rc'))
-            if sup.get('outcome') != 'COMPLETED': fail(cid, 'COMPLETED with supervisor outcome %s' % sup.get('outcome'))
-            if not timely: fail(cid, 'COMPLETED but recomputed launch-relative wall %s > budget %s' % (wall, c['budget_s']))
-            if r.get('outcome') != 'PUBLISHED': fail(cid, 'COMPLETED but outcome %s' % r.get('outcome'))
-            if validator == 'comparator_mar':
-                cmpr = r.get('comparator') or {}; of = cmpr.get('output_file')
-                if not of or not os.path.exists(of): fail(cid, 'COMPLETED comparator without its output file'); continue
-                if sha(of) != cmpr.get('output_sha256'): fail(cid, 'comparator output sha256 differs from the receipt')
-                if r.get('guarantee_type') != 'UNGUARANTEED': fail(cid, 'comparator completed with guarantee %s' % r.get('guarantee_type'))
-                gated += 1; continue
-            if not wp or not os.path.exists(wp): fail(cid, 'COMPLETED without a worker output file'); continue
-            if sha(wp) != r.get('output_sha256'): fail(cid, 'worker output sha256 differs from the receipt'); continue
-            if validator == 'h4_native':
-                if validate_h4_native(RD, c, r, wp, fail): gated += 1
-                continue
-            if validator == 'sf_native':
-                if validate_sf_native(RD, c, r, wp, fail): gated += 1
-                continue
-            if validator == 'cbi_native':
-                if validate_cbi_native(RD, c, r, wp, fail): gated += 1
-                continue
-            if validator != 'uai_candidate': fail(cid, 'no validator for arm %s' % arm); continue
-            w = json.load(open(wp))
-            if w.get('status') != 'COMPLETED': fail(cid, 'worker status %s' % w.get('status'))
-            mpth = c.get('model_path')
-            if not mpth or not os.path.exists(mpth): fail(cid, 'frozen input file missing on disk'); continue
-            if mpth not in models: models[mpth] = core.read_uai(mpth)
-            model, binding = models[mpth]
-            if binding.get('model_sha256') != c.get('model_sha256') or binding.get('evidence_sha256') != c.get('evidence_sha256'): fail(cid, 'input files on disk differ from the FROZEN manifest hashes (input changed after freeze)')
-            if w.get('binding') != binding: fail(cid, 'worker binding differs from the actual input files')
-            if w.get('binding') != dict(model_sha256=c.get('model_sha256'), evidence_sha256=c.get('evidence_sha256')): fail(cid, 'worker binding differs from the frozen manifest hashes')
-            if arm in CANDIDATE_ARMS:
-                if w.get('nonce') != r.get('nonce'): fail(cid, 'worker nonce differs from the receipt (stale or foreign output)')
-                if w.get('seed') != c.get('seed'): fail(cid, 'worker seed differs from the manifest')
-                if w.get('arm') != arm: fail(cid, 'worker arm differs')
-                if w.get('guarantee_type') not in ('PAC', 'DETERMINISTIC'): fail(cid, 'completed candidate output without a guarantee type')
-                cs = w.get('candidate_sources') or {}
-                missing = [k for k in frozen_candidate if k not in cs]; differ_ = [k for k in frozen_candidate if k in cs and cs[k] != frozen_candidate[k]]
-                if missing: fail(cid, 'worker candidate source identity incomplete: %d frozen sources not recorded (e.g. %s)' % (len(missing), missing[0]))
-                if differ_: fail(cid, 'worker candidate source %s differs from the frozen artifact' % differ_[0])
-            if arm == B0 and frozen_b0 and isinstance(w.get('source_hashes'), dict):
-                for k, v in frozen_b0.items():
-                    if w['source_hashes'].get(k.split('/', 1)[1]) not in (None, v): fail(cid, 'B0 worker source %s differs from the frozen artifact' % k)
-            if r.get('guarantee_type') != w.get('guarantee_type', 'DETERMINISTIC'): fail(cid, 'receipt guarantee_type differs from the worker')
-            iv = w.get('intervals'); pts = w.get('points'); cards = model['cards']; ev = model.get('evidence', {})
-            okshape = isinstance(iv, list) and isinstance(pts, list) and len(iv) == len(cards) and len(pts) == len(cards) and all(isinstance(row, list) and isinstance(pr, list) and len(row) == k and len(pr) == k for row, pr, k in zip(iv, pts, cards))
-            if not okshape: fail(cid, 'output shape differs from the original model'); continue
-            try:
-                IV = [[(F(a), F(b)) for a, b in row] for row in iv]; PT = [[F(x) for x in row] for row in pts]; core.verify_output(IV, PT, EPS)
-                for v, a in ev.items():
-                    if not all((PT[v][s] == 1 and IV[v][s] == (F(1), F(1))) if s == a else (PT[v][s] == 0 and IV[v][s] == (F(0), F(0))) for s in range(cards[v])): fail(cid, 'observed variable %d not one-hot' % v)
-            except Exception as ex: fail(cid, 'publication contract: %s' % str(ex)[:80]); continue
-            if arm in CANDIDATE_ARMS:
-                nf = len(failures); check_pac_certificate(w, c, man, model, fail, deadline_factor=replay_factor)
-                if len(failures) == nf and w.get('guarantee_type') == 'PAC': pac_verified += 1
-            gated += 1
-        else:
-            if r.get('outcome') == 'PUBLISHED': fail(cid, 'non-COMPLETED receipt with outcome PUBLISHED')
-            if r.get('outcome') == 'PROVED_ZERO_EVIDENCE':
-                if not timely: fail(cid, 'zero-evidence claim after the budget (late proof is not a timely result)')
-                if sup.get('rc') != 0 or 'KILL' in str(sup.get('outcome')): fail(cid, 'zero-evidence claim with supervisor rc %s / outcome %s' % (sup.get('rc'), sup.get('outcome')))
-                if arm in CANDIDATE_ARMS:
-                    if not wp or not os.path.exists(wp): fail(cid, 'zero-evidence claim without a worker output')
-                    elif sha(wp) != r.get('output_sha256'): fail(cid, 'zero-evidence worker output sha256 differs from the receipt')
-                    else:
-                        w = json.load(open(wp))
-                        if w.get('status') != 'STOPPED' or w.get('outcome') != 'PROVED_ZERO_EVIDENCE' or w.get('late_proof'): fail(cid, 'zero-evidence claim without a recorded timely proof')
-                        if w.get('nonce') != r.get('nonce') or w.get('seed') != c.get('seed') or w.get('arm') != arm: fail(cid, 'zero-evidence output nonce / seed / arm differ from the cell')
-                        cs = w.get('candidate_sources') or {}
-                        if any(k not in cs or cs[k] != v for k, v in frozen_candidate.items()): fail(cid, 'zero-evidence output source identity incomplete or differs from the frozen artifact')
-                        mpth = c.get('model_path')
-                        if not mpth or not os.path.exists(mpth): fail(cid, 'frozen input file missing on disk')
-                        else:
-                            if mpth not in models: models[mpth] = core.read_uai(mpth)
-                            model, binding = models[mpth]
-                            if binding.get('model_sha256') != c.get('model_sha256') or binding.get('evidence_sha256') != c.get('evidence_sha256') or w.get('binding') != binding: fail(cid, 'zero-evidence output binding differs from the frozen input')
-                            else:
-                                msg = verify_zero_proof(model, w.get('zero_evidence_proof'), seed=c.get('seed'), deadline=time.monotonic() + replay_factor * float(c['budget_s']))
-                                if msg: fail(cid, 'zero-evidence proof NOT re-derivable: %s' % msg)
-                elif arm == B0:
-                    if not wp or not os.path.exists(wp): fail(cid, 'zero-evidence claim without a worker output')
-                elif r.get('guarantee_type') in ('PAC', 'DETERMINISTIC'): fail(cid, 'comparator / native zero outcome cannot carry a guarantee (underflow is indistinguishable)')
-            elif r.get('guarantee_type') in ('PAC', 'DETERMINISTIC'): fail(cid, 'guarantee claimed without publication')
+        entry = dict(cell_id=cid, receipt_sha256=r['_sha'], output_sha256=r.get('output_sha256'), status=r.get('status'), outcome=r.get('outcome'), guarantee=r.get('guarantee_type'), arm=c['arm'], cohort=c['cohort'], budget_s=c['budget_s'], case_id=c['case_id'], replicate=c['replicate'], evidence={}, verified=False); gated_set.append(entry)
+        if exhausted_at is not None: fail(cid, 'UNVERIFIABLE: aggregate gate budget exhausted before this cell was checked'); continue
+        ev_before = set(_evidence); nf_before = len(failures)
+        try: _check_cell(RD, cid, r, c, man, frozen_candidate, frozen_b0, models, failures, fail, EPS, replay_factor, counters)
+        except GateBudgetExhausted: exhausted_at = cid; fail(cid, 'UNVERIFIABLE: aggregate gate budget exhausted while checking this cell')
+        entry['evidence'] = {(os.path.relpath(k, RD) if k.startswith(RD + os.sep) else k): v for k, v in _evidence.items() if k not in ev_before}; entry['verified'] = (len(failures) == nf_before)
+    checked, gated, pac_verified = counters['checked'], counters['gated'], counters['pac_verified']
     gs = hashlib.sha256(json.dumps(gated_set, sort_keys=True).encode()).hexdigest()
-    res = dict(gate_version=GATE_VERSION, manifest=manifest_name, manifest_sha256=mh, artifact_hashes_sha256=ah, planned=len(cells), receipts=len(receipts), completed_checked=checked, completed_gated=gated, pac_certificates_replayed=pac_verified, failures=failures, gate_passed=not failures, gated_set=gated_set, gated_set_sha256=gs, gate_wall_s=round(time.monotonic() - t_gate, 3), replay_factor=replay_factor)
+    res = dict(gate_version=GATE_VERSION, manifest=manifest_name, manifest_sha256=mh, artifact_hashes_sha256=ah, planned=len(cells), receipts=len(receipts), completed_checked=checked, completed_gated=gated, pac_certificates_replayed=pac_verified, failures=failures, gate_passed=not failures, gated_set=gated_set, gated_set_sha256=gs, gate_wall_s=round(time.monotonic() - t_gate, 3), replay_factor=replay_factor, gate_budget_s=gate_budget_s, budget_exhausted_at_cell=exhausted_at, verification_policy='every receipt is checked in cell-id order; a check exceeding its per-component allowance or the aggregate budget is UNVERIFIABLE (a failure); cells after an aggregate exhaustion are UNVERIFIABLE; the result file is always written; the gated set records every evidence file each validator consumed with its sha256')
     return _write(RD, out_path, res)
 
 
@@ -550,5 +661,8 @@ def _write(RD, out_path, res):
 
 if __name__ == '__main__':
     mn = sys.argv[sys.argv.index('--manifest') + 1] if '--manifest' in sys.argv else 'CAMPAIGN_MANIFEST.json'; op = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else None
-    rf = float(sys.argv[sys.argv.index('--replay-factor') + 1]) if '--replay-factor' in sys.argv else REPLAY_FACTOR
-    sys.exit(main(sys.argv[1], mn, op, rf))
+    rf = float(sys.argv[sys.argv.index('--replay-factor') + 1]) if '--replay-factor' in sys.argv else REPLAY_FACTOR; gb = float(sys.argv[sys.argv.index('--gate-budget-s') + 1]) if '--gate-budget-s' in sys.argv else GATE_BUDGET_S
+    try: rc = main(sys.argv[1], mn, op, rf, gb)
+    except Exception as ex:
+        import traceback; rc = _write(os.path.abspath(sys.argv[1]), op, dict(gate_version=GATE_VERSION, failures=[('*', 'GATE FAULT: %s: %s' % (type(ex).__name__, str(ex)[:200]))], gate_passed=False, fault_trace=traceback.format_exc()[-2000:]))
+    sys.exit(rc)

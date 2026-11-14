@@ -15,7 +15,7 @@ from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); sys.set_int_max_str_digits(0)
 import core
 sys.path.insert(0, HERE); import registry
-EPS = F(1, 200); REPORT_VERSION = 'pac-report-v4 (2026-11-13 repair 3: registry-derived inventory, gated-set consumption, per-cohort scoped conclusions, both SF widths, comparator native points)'
+EPS = F(1, 200); REPORT_VERSION = 'pac-report-v4.1 (2026-11-14 repair 4: current-byte evidence re-hash, native CBI exact references consumed, cell-id keyed rows)'
 CANDIDATE_ARMS = ('B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL')
 import sys as _sys
 EXACT_CAPACITY_ARMS = ('LIBDAI_EXACT', 'MERLIN_CTE')
@@ -37,6 +37,18 @@ def load(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
                 cid = e.get('cell_id'); seen.add(cid); r = rec.get(cid)
                 if r is None: mism.append('gated cell %s has no receipt on disk' % cid); continue
                 if shas[cid] != e.get('receipt_sha256') or r.get('output_sha256') != e.get('output_sha256') or r.get('status') != e.get('status') or r.get('outcome') != e.get('outcome') or r.get('guarantee_type') != e.get('guarantee'): mism.append('receipt %s differs from the gated set (stale gate or changed output)' % cid)
+                # CURRENT BYTES (review 4 F03): the referenced output file and every evidence file the gate consumed are re-hashed now; a recorded hash is never trusted
+                wp = os.path.join(RD, r['worker_output']) if r.get('worker_output') else None
+                if wp is not None:
+                    cur = hashlib.sha256(open(wp, 'rb').read()).hexdigest() if os.path.exists(wp) else None
+                    if cur != e.get('output_sha256'): mism.append('output bytes of %s differ from the gated hash (%s vs %s): changed or missing output' % (cid, (cur or 'MISSING')[:12], str(e.get('output_sha256'))[:12]))
+                of = (r.get('comparator') or {}).get('output_file')
+                if of and (not os.path.exists(of) or hashlib.sha256(open(of, 'rb').read()).hexdigest() != (r.get('comparator') or {}).get('output_sha256')): mism.append('comparator output bytes of %s differ from the receipt' % cid)
+                for rel, h in (e.get('evidence') or {}).items():
+                    fp = rel if os.path.isabs(rel) else os.path.join(RD, rel)
+                    cur = hashlib.sha256(open(fp, 'rb').read()).hexdigest() if os.path.exists(fp) else None
+                    if cur != h: mism.append('evidence file %s of cell %s differs from the gated hash or is missing' % (rel, cid))
+                if e.get('verified') is False and r.get('status') == 'COMPLETED': mism.append('gated entry %s was not verified by the gate' % cid)
             for cid in rec:
                 if cid not in seen: mism.append('receipt %s is not in the gated set' % cid)
             gate_binding = dict(gate_version=G.get('gate_version'), gated_set_sha256=G.get('gated_set_sha256'), manifest_sha256=G.get('manifest_sha256'), gate_passed=G.get('gate_passed'), mismatch=mism)
@@ -106,10 +118,12 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
     # ---- references with BINDING (F08)
     refs = {}; rp = os.path.join(RD, 'REFERENCES_R0.json'); ref_rejected = []
     if os.path.exists(rp):
-        for k, v in json.load(open(rp))['references'].items():
+        RJ = json.load(open(rp)); out['references_manifest_sha256'] = RJ.get('manifest_sha256'); out['references_version'] = RJ.get('references_version')
+        for k, v in RJ['references'].items():
             b = v.get('binding') or {}
             if v['kind'] == 'R0_exact_rational': refs[k] = dict(kind='R0_exact_rational', rows=[[F(x) for x in row] for row in v['rows']], binding=b)
             elif v['kind'] == 'R0_zero_evidence': refs[k] = dict(kind='R0_zero_evidence', binding=b)
+            elif v['kind'] == 'R0_cbi_exact_coordinates': refs[k] = dict(kind='R0_cbi_exact_coordinates', coordinates={kk: [F(x) for x in row] for kk, row in v['coordinates'].items()}, binding=b)
     b0_ref = {}; b0_binding = {}
     for c in cells:
         r = rec.get(c['cell_id'])
@@ -209,6 +223,24 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json'):
                 sc = LC.native_point_score(meta, pts_, meta_sha256=c.get('blocks_sha256'), instance_json=inst)
                 native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee='UNGUARANTEED', native_completion=sc['native_completion'], native_reference=sc.get('native_reference'), reason=sc.get('reason')))
     except Exception as ex: native_rows.append(dict(error='native scoring failed: %s' % str(ex)[:120]))
+    # CBI_NATIVE completions audited against the R0_cbi_exact_coordinates reference (binding + shape validated; original external ids)
+    for c in cells:
+        r = rec.get(c['cell_id'])
+        if not r or c['arm'] != 'CBI_NATIVE' or r.get('status') != 'COMPLETED': continue
+        ref = refs.get(c['case_id']); w = worker(RD, r)
+        if not ref or ref['kind'] != 'R0_cbi_exact_coordinates': native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee=r.get('guarantee_type'), native_completion='NATIVE_CERTIFIED_NO_R0', reason='no bound R0_cbi_exact_coordinates reference')); continue
+        if ref['binding'].get('model_sha256') != c.get('model_sha256'): native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], native_completion='ADAPTER_REFUSED', reason='R0 reference binding differs from the frozen instance')); continue
+        try:
+            iv = w.get('intervals') or {}; q = 1 << int(w.get('grid_bits') or 80); cmp = 0; cont = True; wmax = F(0)
+            if sorted(iv) != sorted(ref['coordinates']): raise ValueError('block ids differ from the reference')
+            for k, blk in iv.items():
+                co = blk['coordinates']
+                if len(co) != len(ref['coordinates'][k]): raise ValueError('coordinate count differs from the reference')
+                for x, t in zip(co, ref['coordinates'][k]):
+                    lo, hi = F(int(x['lo']), q), F(int(x['hi']), q); cmp += 1; wmax = max(wmax, hi - lo)
+                    if not (lo <= t <= hi): cont = False
+            native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], guarantee=r.get('guarantee_type'), native_completion='NATIVE_WIDTH_MET' if wmax <= F(1, 100) else 'NATIVE_WIDTH_EXCEEDED', max_coordinate_width=float(wmax), native_reference=dict(kind='R0_cbi_exact_coordinates', coordinates_compared=cmp, contains_truth=cont)))
+        except Exception as ex: native_rows.append(dict(cohort=c['cohort'], case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], native_completion='ADAPTER_REFUSED', reason='native reference audit: %s' % str(ex)[:80]))
     out['native_query_scores'] = native_rows
     if native_rows:
         P('## Table 2b — Adapted cohorts scored on the NATIVE query (per-coordinate probabilities) at EVERY width of the native contract; deterministic vs PAC distinct; comparator points = unguaranteed estimates'); P(''); P('| cohort | case | arm | budget | rep | guarantee | native completion (first width) | widths met | max coordinate width | native reference / error |'); P('|---|---|---|---:|---:|---|---|---|---|---|')

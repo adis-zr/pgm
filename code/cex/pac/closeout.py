@@ -17,7 +17,8 @@ RD = os.path.abspath(sys.argv[1]); HERE = os.path.dirname(os.path.abspath(__file
 import registry
 QP = sys.argv[sys.argv.index('--qualification') + 1] if '--qualification' in sys.argv else os.path.join(HERE, 'PAC_QUALIFICATION.json')
 MN = sys.argv[sys.argv.index('--manifest') + 1] if '--manifest' in sys.argv else 'CAMPAIGN_MANIFEST.json'
-CLOSEOUT_VERSION = 'pac-closeout-v4 (2026-11-13 repair 3; fail-closed with content + schema binding; per-cohort scoped verdict)'
+OUTP = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else os.path.join(RD, 'CLOSEOUT_PAC.md')
+CLOSEOUT_VERSION = 'pac-closeout-v4.1 (2026-11-14 repair 4; authoritative cell-id rows, current-byte evidence re-hash, native CBI references)'
 L = []; P = L.append; prereq = []
 def sha(p):
     h = hashlib.sha256()
@@ -44,8 +45,16 @@ completed_disk = sum(1 for k, v in receipts.items() if v[0].get('status') == 'CO
 if dups: prereq.append('duplicate receipts on disk: %d' % len(dups))
 if unrun_disk: prereq.append('matrix incomplete: %d planned cells have no receipt on disk' % len(unrun_disk))
 if extra_disk: prereq.append('%d receipts for cells not in the manifest' % len(extra_disk))
-disk_set = sorted((dict(cell_id=k, receipt_sha256=rsha[k], output_sha256=v[0].get('output_sha256'), status=v[0].get('status'), outcome=v[0].get('outcome'), guarantee=v[0].get('guarantee_type'), arm=cell_by_id[k]['arm'], cohort=cell_by_id[k]['cohort'], budget_s=cell_by_id[k]['budget_s'], case_id=cell_by_id[k]['case_id'], replicate=cell_by_id[k]['replicate']) for k, v in receipts.items() if k in cell_by_id and len(v) == 1), key=lambda e: e['cell_id'])
+def _cur_sha(path):
+    return sha(path) if path and os.path.exists(path) else None
+# the CURRENT output bytes (not the receipt's recorded hash) are the content of every disk-set entry; the gate's evidence hashes are re-derived from the current files below
+disk_set = sorted((dict(cell_id=k, receipt_sha256=rsha[k], output_sha256=_cur_sha(os.path.join(RD, v[0]['worker_output'])) if v[0].get('worker_output') else None, status=v[0].get('status'), outcome=v[0].get('outcome'), guarantee=v[0].get('guarantee_type'), arm=cell_by_id[k]['arm'], cohort=cell_by_id[k]['cohort'], budget_s=cell_by_id[k]['budget_s'], case_id=cell_by_id[k]['case_id'], replicate=cell_by_id[k]['replicate']) for k, v in receipts.items() if k in cell_by_id and len(v) == 1), key=lambda e: e['cell_id'])
+for e in disk_set:
+    r0 = receipts[e['cell_id']][0]; of = (r0.get('comparator') or {}).get('output_file')
+    if of and _cur_sha(of) != (r0.get('comparator') or {}).get('output_sha256'): prereq.append('comparator output bytes of %s differ from the receipt' % e['cell_id'])
 disk_digest = hashlib.sha256(json.dumps(disk_set, sort_keys=True).encode()).hexdigest()
+# AUTHORITATIVE decision rows: manifest (case / arm / cohort / budget / replicate by cell id) + receipts (status / outcome / guarantee); the report's rows are only CHECKED against them
+auth_rows = [dict(cell_id=e['cell_id'], case=e['case_id'], arm=e['arm'], cohort=e['cohort'], budget=e['budget_s'], rep=e['replicate'], status=e['status'], outcome=e['outcome'], guarantee=e['guarantee']) for e in disk_set]
 # ---- START + frozen identity (complete inventory, no amendments)
 if ST is not None:
     if ST.get('manifest_sha256') != mh: prereq.append('CAMPAIGN_START manifest sha256 differs from the manifest on disk')
@@ -69,7 +78,18 @@ if G is not None:
     gs = G.get('gated_set')
     if not isinstance(gs, list): prereq.append('gate result carries no content-addressed gated set')
     else:
-        if sorted(gs, key=lambda e: e['cell_id']) != disk_set or G.get('gated_set_sha256') != disk_digest: prereq.append('the gated set (receipt / output content, status, outcome, guarantee) differs from the receipts and outputs on disk: STALE gate or changed evidence')
+        core_keys = ('cell_id', 'receipt_sha256', 'output_sha256', 'status', 'outcome', 'guarantee', 'arm', 'cohort', 'budget_s', 'case_id', 'replicate')
+        gs_core = sorted(({k: e.get(k) for k in core_keys} for e in gs), key=lambda e: e['cell_id'])
+        if gs_core != disk_set: prereq.append('the gated set (receipt / CURRENT output bytes, status, outcome, guarantee, identity) differs from the receipts and outputs on disk: STALE gate or changed evidence')
+        if G.get('gated_set_sha256') != hashlib.sha256(json.dumps(sorted(gs, key=lambda e: e['cell_id']), sort_keys=True).encode()).hexdigest(): prereq.append('gated set digest does not match the gated set')
+        bad_ev = 0; unverified = 0
+        for e in gs:
+            for rel, h in (e.get('evidence') or {}).items():
+                fp = rel if os.path.isabs(rel) else os.path.join(RD, rel)
+                if _cur_sha(fp) != h: bad_ev += 1
+            if e.get('verified') is False and e.get('status') == 'COMPLETED': unverified += 1
+        if bad_ev: prereq.append('%d evidence files consumed by the gate differ from the current bytes or are missing' % bad_ev)
+        if unverified: prereq.append('%d COMPLETED cells were not verified by the gate' % unverified)
 # ---- qualification: exact schema + identity
 if Q is not None:
     groups = Q.get('groups') or []; names = [g.get('name') for g in groups]
@@ -90,11 +110,11 @@ if R is not None:
     if gb.get('mismatch'): prereq.append('report records %d gated-set mismatches' % len(gb['mismatch']))
     ids_rows = [x.get('cell_id') for x in runs]
     if len(runs) != ncells or len(set(ids_rows)) != len(ids_rows): prereq.append('results rows %d (unique %d) differ from the manifest cells %d' % (len(runs), len(set(ids_rows)), ncells))
-    dset = {e['cell_id']: e for e in disk_set}; bad_rows = 0
+    auth = {a['cell_id']: a for a in auth_rows}; bad_rows = 0
     for x in runs:
-        e = dset.get(x.get('cell_id')); c = cell_by_id.get(x.get('cell_id'))
-        if e is None or c is None or x.get('arm') != c['arm'] or x.get('cohort') != c['cohort'] or x.get('budget') != c['budget_s'] or x.get('rep') != c['replicate'] or x.get('status') != e['status'] or x.get('outcome') != e['outcome'] or x.get('guarantee') != e['guarantee']: bad_rows += 1
-    if bad_rows: prereq.append('%d results rows do not match the gated receipts (foreign / altered rows)' % bad_rows)
+        a = auth.get(x.get('cell_id'))
+        if a is None or any(x.get(k) != a[k] for k in ('case', 'arm', 'cohort', 'budget', 'rep', 'status', 'outcome', 'guarantee')): bad_rows += 1
+    if bad_rows: prereq.append('%d results rows do not match the AUTHORITATIVE rows derived from the manifest and receipts by cell id (foreign / aliased / altered rows)' % bad_rows)
     if unrun or unrun_disk: prereq.append('results report %d unrun / disk %d unrun' % (len(unrun), len(unrun_disk)))
     if not isinstance(R.get('conclusions_by_cohort_budget'), dict): prereq.append('results carry no per-cohort conclusions table')
 # ---- the per-cohort conclusions are RE-DERIVED here from the verified rows (never read as data): PAC / deterministic publication counts and H1-vs-B0 new / lost per cohort and budget
@@ -118,7 +138,7 @@ def rederive_conclusions(rows_):
                 comp = dict(new=sorted(h1all - b0ok), lost=sorted(b0ok - h1all), pending=sorted(set(b0) - observed), observed=len(observed))
             out_[key] = dict(cohort=coh, budget=budget, by_arm=byarm, b0_vs_h1=comp)
     return out_
-re_concl = rederive_conclusions(runs) if runs else {}
+re_concl = rederive_conclusions(auth_rows) if auth_rows else {}      # conclusions from the AUTHORITATIVE rows only (never from report labels)
 rep_concl = (R or {}).get('conclusions_by_cohort_budget') or {}
 if R is not None:
     for key, cc in re_concl.items():
@@ -174,4 +194,4 @@ P('Resource contract as executed: actual kill threshold budget + 5 s (supervisor
 P(''); P('## 6. Ledger'); P('')
 if led: P('Scored + qualification + packaging receipts (this run directory): %.1f s; development campaigns: %.1f s; prospective ceiling %.0f s (scored matrix nominal %.0f s, orchestration %.0f s). Interactive post-processing uncharged (UNKNOWN exposure).' % (led['total'], led['dev_total'], led['ceiling']['total_ceiling_seconds'], led['ceiling']['scored_matrix_seconds'], led['ceiling']['orchestration_seconds']))
 P(''); P('## 7. Verdict'); P(''); P('**%s.** %s STOPPED FOR REVIEW.' % (verdict, 'The full planned matrix of THIS manifest was run, gated (content-addressed) and qualified by artifacts bound to this exact candidate, manifest and evidence set; the verdict is scoped per cohort (Section 1).' if qualified else 'No qualified empirical verdict is issued.'))
-open(os.path.join(RD, 'CLOSEOUT_PAC.md'), 'w').write('\n'.join(L) + '\n'); print('closeout written:', verdict); sys.exit(0 if qualified else 1)
+open(OUTP, 'w').write('\n'.join(L) + '\n'); print('closeout written:', verdict); sys.exit(0 if qualified else 1)
