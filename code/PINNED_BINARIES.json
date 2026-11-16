@@ -1,0 +1,37 @@
+{
+ "note": "the EXACT pinned binaries whose sha256 the frozen build records / manifests carry; a rebuild from source yields a different hash (compiler nondeterminism), which is why the bytes are kept in the repository; the workers only rebuild when the on-disk binary differs from its record",
+ "binaries": {
+  "newarm/libcex_kernel.dylib": {
+   "record_binary_sha256": "720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b",
+   "source_copy": "pgm-repair-2026-11-13/code/cex/newarm/libcex_kernel.dylib",
+   "now_in_pgm": true
+  },
+  "newarm/libstream_kernel.so": {
+   "record_binary_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+   "source_copy": "pgm-repair-2026-11-13/code/cex/newarm/libstream_kernel.so",
+   "now_in_pgm": true
+  },
+  "b0_frozen_v14/libcex_kernel.dylib": {
+   "record_binary_sha256": "846d0ac351329cc89400500bba7f3b21b89b0513bbea1c7aae0a37e7665753d2",
+   "source_copy": "pgm/code/cex/b0_frozen_v14/libcex_kernel.dylib",
+   "now_in_pgm": true
+  },
+  "b0_frozen_v14/libstream_kernel.so": {
+   "record_binary_sha256": "d75a106a80190d7c48e62e46da4b3c64eda156765365f31d9e7d6e910f08f4d1",
+   "source_copy": "pgm/code/cex/b0_frozen_v14/libstream_kernel.so",
+   "now_in_pgm": true
+  },
+  "build/h4rect": {
+   "sha256": "322089d6666c6a6b9ba2b703fc8c17513023c21fc5f20a217b057edbf4b99008",
+   "pinned_in": "every PAC / CQR manifest since v4.2 (registry.SOURCE_BINARIES)"
+  },
+  "build/h4point": {
+   "sha256": "8668d8216076ab8ba9a93ac9c42029d051bcfabb2a09362aa65592e745dd94e2",
+   "pinned_in": "every PAC / CQR manifest since v4.2 (registry.SOURCE_BINARIES)"
+  },
+  "build/h4pcheck": {
+   "sha256": "787be1921b10bc468e93c7ca58cb50dc8fb1912fc51e539b40974baaacce8cac",
+   "pinned_in": "every PAC / CQR manifest since v4.2 (registry.SOURCE_BINARIES)"
+  }
+ }
+}
