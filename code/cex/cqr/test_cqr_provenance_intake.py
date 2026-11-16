@@ -223,6 +223,23 @@ def _():
     shutil.rmtree(td); return 'total = 18000 + %d + 5 x %d + %d; manifest carries kernel_identity (%d tags)' % (nominal, n, ce['verification_stage_seconds'], len(man['kernel_identity']))
 
 
+
+# ------------------------------------------------------------------------------------------------------------------------- (1d) loaded-provenance paths
+@test('receipt_provenance_cache_paths')
+def _t_receipt_cache():
+    """the loaders record the HASH-ADDRESSED cache copy they dlopen'ed (native_cache/cex_<sha>.dylib, native_cache/stream_<sha>.so): such a record with the frozen digest is
+    accepted; the same path with a foreign digest, and an unknown kind, are failures (admission_v4 of 16 Nov 2026 was HALTED by a false positive here: the matcher knew only the
+    libcex_kernel / libstream_kernel basenames)"""
+    fr = KI.collect(CODE); s_cex = fr['newarm_cex']['binary_sha256']; s_str = fr['newarm_stream']['binary_sha256']
+    w_ok = dict(stats=dict(components=[dict(certificate=dict(build=dict(binary_sha256=s_str, loaded_binary_path=os.path.join(CODE, 'cex/newarm/native_cache/stream_%s.so' % s_str), schedule_id='x'))),
+                                      dict(certificate=dict(build=dict(binary_sha256=s_cex, loaded_binary_path=os.path.join(CODE, 'cex/newarm/native_cache/cex_%s.dylib' % s_cex), schedule_id='y')))]))
+    assert KI.receipt_failures(fr, w_ok, 'H1_HYBRID') == [], KI.receipt_failures(fr, w_ok, 'H1_HYBRID')
+    w_bad = dict(certificate=dict(build=dict(binary_sha256='f' * 64, loaded_binary_path=os.path.join(CODE, 'cex/newarm/native_cache/stream_%s.so' % ('f' * 64)))))
+    f1 = KI.receipt_failures(fr, w_bad, 'H1_HYBRID'); assert f1 and 'sha256' in f1[0], f1
+    w_unk = dict(certificate=dict(build=dict(binary_sha256='e' * 64, loaded_binary_path='/tmp/mystery.so'))); f2 = KI.receipt_failures(fr, w_unk, 'H1_HYBRID'); assert f2 and 'unrecognised' in f2[0], f2
+    assert KI.receipt_failures(fr, w_bad, 'N1_CQR') == [], 'a CQR arm loads nothing native'
+    return 'cache-path records with the frozen digest accepted; foreign digest / unknown kind refused'
+
 if __name__ == '__main__':
     bad = [r for r in RESULTS if not r[1]]
     print('%d/%d passed' % (len(RESULTS) - len(bad), len(RESULTS)))

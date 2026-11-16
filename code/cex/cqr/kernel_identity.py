@@ -125,10 +125,15 @@ def _walk(o, path=''):
         for i, v in enumerate(o): yield from _walk(v, '%s[%d]' % (path, i))
 
 
-def _tag_of_loaded(path, group):
+def _tag_of_loaded(path, group, frozen=None, sha=None):
+    """the loaders dlopen a HASH-ADDRESSED copy (cex_executor.load: native_cache/cex_<sha256>.dylib; stream_float: native_cache/stream_<sha256>.so) of the pinned binary,
+    so the recorded loaded_binary_path names the kernel by its kind prefix and its digest; the kind decides the tag, the digest is compared by receipt_failures"""
     b = os.path.basename(str(path))
-    if 'libcex_kernel' in b: return group + '_cex'
-    if 'libstream_kernel' in b: return group + '_stream'
+    if 'libcex_kernel' in b or b.startswith('cex_'): return group + '_cex'
+    if 'libstream_kernel' in b or b.startswith('stream_'): return group + '_stream'
+    # last resort: an exact digest match against a frozen binary of the group identifies the kind
+    for tag in (group + '_cex', group + '_stream'):
+        if sha and (frozen or {}).get(tag, {}).get('binary_sha256') == sha: return tag
     return None
 
 
@@ -142,7 +147,7 @@ def receipt_failures(frozen, worker_output_json, arm, pac_arms=None):
     if group is None: return []                                   # h4 / libDAI executables are exec'ed, not dlopen'ed: no loader provenance exists in their outputs
     fails = []; frozen = frozen or {}
     for path, prov in _walk(worker_output_json or {}):
-        tag = _tag_of_loaded(prov.get('loaded_binary_path'), group)
+        tag = _tag_of_loaded(prov.get('loaded_binary_path'), group, frozen, prov.get('binary_sha256'))
         if tag is None: fails.append('%s: the worker loaded an unrecognised native binary %s (at %s)' % (arm, prov.get('loaded_binary_path'), path)); continue
         f = frozen.get(tag) or {}
         if f.get('binary_sha256') is None: fails.append('%s: no frozen identity for %s but the worker loaded it (at %s)' % (arm, tag, path)); continue
