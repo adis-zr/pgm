@@ -32,6 +32,7 @@ for _p in (HERE, NEWARM):
 import core                                                    # the SHARED UAI reader (cex/newarm/core.py)
 import solve as _cqr_solve                                     # noqa: F401 -- must be imported BEFORE the registry so that 'solve' is cex/cqr/solve.py (the registry inserts cex/pac first)
 import generators as GEN
+import schedule as SCHED                                       # the constructed query/evidence schedule (pure function of slot_index, cards, salt, name; cex/cqr/schedule.py)
 _spec = importlib.util.spec_from_file_location('cqr_registry', os.path.join(HERE, 'registry.py')); REG = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(REG)
 
 SCHEMA = 'proposed_scored_manifest/v1 (resolved from proposed_benchmark_design/v1)'
@@ -213,14 +214,25 @@ def main():
                     d = draft_by_id.get(draft_id)
                     if d is None: mismatch('constructed slot %s not in the draft' % draft_id)
                     r = i % 8
+                    # the schedule is MATERIALIZED here from the rule's inputs where they exist: slot_index, SALT and the slot name are fixed now; the model cardinalities
+                    # (needed for the hashed variable / state selection and the evidence set) depend on the generator seed = the held-out seed root, so only the
+                    # cards-free combination (all_singletons x no_evidence) resolves to a query spec; the other 7 combinations stay DEFERRED on that single dependency
+                    slot_name = 'constructed/%s/n%d/%s/seed_index%d' % (fid, n, regime, seed_index)
+                    sched = SCHED.constructed_schedule(i, None, SALT, slot_name)
+                    assert sched['r'] == r and sched['query_kind'] == KINDS[r % 4] and sched['evidence_regime'] == EVIDENCE[r // 4]
                     constructed.append(OrderedDict(slot_id='constructed/%s/n%d/%s/seed_index%d' % (fid, n, regime, seed_index), draft_slot_id=draft_id, population='primary', group='B_constructed', cohort='constructed', slot_index=i,
                                                    family_id=fid, family=(d or {}).get('family'), n=n, regime=regime, draft_regime=('premise_valid' if regime == 'favorable' else 'near_miss (draft: perturbed/near-miss)'), seed_index=seed_index, seed=None,
                                                    heldout_performance_family=(fid in GEN.RESERVED_PERFORMANCE_FAMILIES), generator='cex/cqr/generators.py generate(family, n, regime, seed)', generator_sha256=generator_sha, generator_version=GEN.GENERATOR_VERSION,
-                                                   materialization='DEFERRED_UNTIL_HELDOUT_SEED_ROOT_FIXED', query_schedule=dict(rule='r = slot_index mod 8; query_kind = KINDS[r mod 4]; evidence_regime = EVIDENCE[r div 4]', r=r, query_kind=KINDS[r % 4], evidence_regime=EVIDENCE[r // 4]),
+                                                   materialization=('SCHEDULE_RESOLVED_MODEL_DEFERRED_UNTIL_HELDOUT_SEED_ROOT_FIXED' if sched['status'] == 'RESOLVED' else 'DEFERRED_UNTIL_HELDOUT_SEED_ROOT_FIXED'),
+                                                   query_schedule=dict(rule='r = slot_index mod 8; query_kind = KINDS[r mod 4]; evidence_regime = EVIDENCE[r div 4]', r=r, query_kind=KINDS[r % 4], evidence_regime=EVIDENCE[r // 4]),
+                                                   schedule=sched, schedule_salt=SALT,
                                                    ablation_arm=REG.ABLATION_OF_FAMILY[fid], draft_ablation_label=(d or {}).get('ablation'), representation_kind='uai_table+query_spec', model_sha256=None, evidence_sha256=None, query_sha256=None,
                                                    semantic_task_id=None, representation_id=None, epsilon=EPS, delta=DELTA, mode=None, comparison=['G0', 'N1'], availability='DEFERRED_GENERATION'))
                     i += 1
     if len(constructed) != 96: mismatch('constructed slots: %d != 96' % len(constructed))
+    sched_check = SCHED.check_schedule([dict(c, name=c['slot_id'], salt=SALT, cards=None) for c in constructed])
+    if not sched_check['ok']: mismatch('constructed schedule re-derivation: %d mismatches, e.g. %s' % (len(sched_check['mismatches']), sched_check['mismatches'][:2]))
+    if not SCHED.coverage([c['slot_index'] for c in constructed]): mismatch('constructed schedule coverage: not every family receives all 8 (kind x regime) combinations once')
 
     # =========================================================================================== PRIMARY (C): 24 external slots
     def draft_uai_id(slot):
@@ -556,7 +568,8 @@ def main():
     # ---- remaining materialization gaps
     if dup_groups: gaps.append(dict(kind='duplicate_planned_runs', count_cells=duplicate_runs['cells_sharing_a_run_id'], redundant_cells=duplicate_runs['redundant_cells_if_executed_once'], nominal_s_of_redundant_cells=sum(sum(c['budget_s'] for c in g[1:]) for g in dup_groups), statement=duplicate_runs['statement']))
     gaps.insert(0, dict(kind='heldout_seeds', statement='the 96 constructed slots have seed=null: the held-out seed root is chosen after the policy is fixed (reviewer-owned or independent script); materialization DEFERRED_UNTIL_HELDOUT_SEED_ROOT_FIXED; the four reserved families M03/M05/M09/M12 must not be executed for tuning', generator_sha256=generator_sha))
-    gaps.insert(1, dict(kind='constructed_query_schedule_application', statement='generators.generate() emits a family-default query spec; applying the published slot schedule (query kind x evidence regime) is part of the deferred materialization and must be implemented and covered by tiny exact enumeration before freeze; KINDS/EVIDENCE are recorded per slot'))
+    gaps.insert(1, dict(kind='constructed_query_schedule_application', implemented='cex/cqr/schedule.py constructed_schedule(slot_index, cards, salt, name) + check_schedule (independent re-derivation; %d slots checked, %d resolved without cards, %d deferred)' % (sched_check['checked'], sched_check['resolved'], sched_check['deferred']),
+                        statement='the slot schedule (query kind x evidence regime, hashed variable/state/evidence selection by the query-transfer rule) is IMPLEMENTED as a pure function and materialized here for every slot whose inputs exist; the ONLY remaining dependency is the held-out seed root: the generated model cardinalities (seed-dependent for M02/M05/M06/M08/M12) fix the selected variables, states and evidence set, so the 84 slots whose combination needs cardinalities carry status DEFERRED_UNTIL_HELDOUT_SEED_ROOT_FIXED and the 12 all_singletons x no_evidence slots carry a resolved query spec; at freeze the schedule is applied to the generated model and re-derived by check_schedule, replacing the family-default query spec of generators.generate(); tiny exact-enumeration coverage of the applied schedule is in cex/cqr/test_cqr_provenance_intake.py (determinism / tamper detection) and remains to be extended to the generated models before freeze'))
     gaps.append(dict(kind='circuit_artifact', row=draft['unavailable_circuit_row'], statement='CIRCUIT_ARTIFACT_PENDING: no qualified fixed trained-model/query archive; kept as an explicit unavailable row, zero cells'))
     gaps.append(dict(kind='environment_identity', placeholder=ENV_PLACEHOLDER, statement='run_id binds a placeholder environment identity; host/kernel/compiler/venv identities are bound at freeze; historic timings are not reusable without qualification'))
     gaps.append(dict(kind='arm_artifact_identities', statement='R0 (=%s), B0 (=%s), N1_CQR / G0_CQR / ablation source identities are NOT frozen here; the current cqr source inventory is recorded for reference only' % (REG.R0_ARM, REG.B0_ARM), cqr_source_inventory_now=REG.cqr_source_inventory(CODE)))
@@ -581,6 +594,15 @@ def main():
                       salted_pools=pools_record, query_transfer_selection=qt_selection_records, duplicate_planned_runs=duplicate_runs,
                       populations=OrderedDict(primary=primary_rows, legacy_historic_unavailable_rows=historic_unavailable, native=native_rows, closest=closest_rows, established=est_rows, not_planned_at_120_primary_task_ids=not_planned_120, circuit_row=dict(draft['unavailable_circuit_row'], cells=0)),
                       cells=cells, materialization_gaps=gaps, notes=notes, mismatches=mismatches)
+    # ---- decisions SURFACED for the overseer after code review (nothing chosen or replaced here; the scored allowance is not spent)
+    out['for_overseer'] = OrderedDict(
+        statement='the following are surfaced unchanged for the overseer\'s decision after code review; this script chooses no replacement, substitutes no easier task and schedules nothing',
+        heldout_seed_root=dict(status='NOT_CHOSEN', dependency='the 96 constructed slots (seed=null); 84 constructed query schedules await the generated cardinalities', gap=[g for g in gaps if g['kind'] == 'heldout_seeds']),
+        duplicate_planned_runs=dict(status='NOT_RESOLVED', cells_sharing_a_run_id=duplicate_runs['cells_sharing_a_run_id'], redundant_cells_if_executed_once=duplicate_runs['redundant_cells_if_executed_once'], detail=duplicate_runs),
+        deep_constructed_choice=dict(status='DECLARED_HERE_NOT_APPROVED', n=DEEP_CONSTRUCTED_N, seed_index=DEEP_CONSTRUCTED_SEED_INDEX, rule=deep_rule),
+        dis_qualification=dict(status=dis_impl, gap=[g for g in gaps if g['kind'] == 'closest_method_arm' and g.get('arm') == 'DIS']),
+        environment_identity=dict(status=ENV_PLACEHOLDER),
+        unavailable_inputs_and_adapters_preserved=dict(gaps=[g['kind'] for g in gaps if 'input' in g['kind'] or g['kind'] in ('closest_method_arm', 'established_comparator_arm', 'circuit_artifact')]))
     jpath = os.path.join(out_dir, 'PROPOSED_SCORED_MANIFEST.json'); open(jpath, 'w').write(json.dumps(out, indent=1) + '\n')
     write_md(os.path.join(out_dir, 'PROPOSED_SCORED_MANIFEST.md'), out)
     print(json.dumps(dict(status=STATUS, json=jpath, md=jpath[:-5] + '.md', cells=total_cells, nominal_s=nominal, total_allowance_s=allowance['total_allowance_s'], totals_match_draft=verification['all_match'], mismatches=len(mismatches), gaps=len(gaps)), indent=1))

@@ -38,6 +38,11 @@ WEIGHT_RE = re.compile(r'^\+?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$')
 FRAC_RE = re.compile(r'^\+?\d+/\d+$')
 HEADER_RE = re.compile(r'^p\s+cnf\s+(\d+)\s+(\d+)\s*$')
 WEIGHT_LINE_RE = re.compile(r'^c\s+p\s+weight\s+(-?\d+)\s+(\S+)\s+0\s*$')
+TYPE_LINE_RE = re.compile(r'^c\s+t\s+([A-Za-z]+)\s*$')                 # 'c t wmc' / 'c t mc' / 'c t pmc' / 'c t pwmc' (MC competition header)
+SHOW_LINE_RE = re.compile(r'^c\s+p\s+show\b')                        # projection set declaration (projected counting)
+PROJECTED_TYPES = ('pmc', 'pwmc')
+ACCEPTED_TYPES = ('wmc', 'mc', None)
+
 
 
 def classify_weight(s):
@@ -71,6 +76,7 @@ def scan_wcnf(path, keep_clauses=False, hash_bytes=True):
     table_entries = 0; aux_vars = 0; other_comment_lines = 0; header_lines = []; sha = hashlib.sha256(); nbytes = 0
     out_of_range_weight_lits = 0; nonnorm_exact = 0; nonnorm_f64 = 0; nonnorm_examples = []; pending = []
     max_digits = 0
+    declared_type = None; type_lines = 0; show_lines = 0; show_examples = []     # 'c t <type>' (wmc / mc / pmc / pwmc) and 'c p show ...' (projected counting; CQR-10)
     with open_text(path) as fh:
         for line in fh:
             if hash_bytes:
@@ -92,6 +98,14 @@ def scan_wcnf(path, keep_clauses=False, hash_bytes=True):
                         bad.append({'lit': lit, 'weight': w, 'kind': kind})
                     max_digits = max(max_digits, sum(ch.isdigit() for ch in w))
                 else:
+                    mt = TYPE_LINE_RE.match(line); ms = SHOW_LINE_RE.match(line)
+                    if mt:
+                        type_lines += 1
+                        if declared_type is None: declared_type = mt.group(1).lower()
+                        elif declared_type != mt.group(1).lower(): declared_type = 'CONFLICTING'
+                    elif ms:
+                        show_lines += 1
+                        if len(show_examples) < 3: show_examples.append(line.rstrip('\n')[:120])
                     other_comment_lines += 1
                     if len(header_lines) < 4:
                         header_lines.append(line.rstrip('\n')[:120])
@@ -167,6 +181,9 @@ def scan_wcnf(path, keep_clauses=False, hash_bytes=True):
                 nonnormalized_examples=nonnorm_examples, max_weight_significant_digits=max_digits,
                 refused_weights=bad[:20], n_refused_weights=len(bad),
                 weight_status=('OK' if not bad else 'REFUSED_NEGATIVE_OR_NONRATIONAL_WEIGHT'),
+                declared_type=declared_type, type_lines=type_lines, show_lines=show_lines, show_examples=show_examples,
+                projected_semantics=(declared_type in PROJECTED_TYPES or show_lines > 0),
+                count_semantics_status=('REFUSED_PROJECTED_COUNT_SEMANTICS' if (declared_type in PROJECTED_TYPES or show_lines > 0) else 'OK'),
                 tautological_clauses=tautologies, empty_clauses=empty_clauses, clauses_with_repeated_literals=dup_literal_clauses,
                 converted_table_entries=table_entries, converted_auxiliary_vars=aux_vars, converted_n_vars=n + aux_vars,
                 converted_n_factors=n + n_clauses - tautologies,
@@ -210,6 +227,11 @@ def convert(cnf_path, uai_path, name=None, cap_entries=None):
     meta, clauses, weights = scan_wcnf(cnf_path, keep_clauses=True)
     if meta['weight_status'] != 'OK':
         raise ValueError('REFUSED_NEGATIVE_OR_NONRATIONAL_WEIGHT: %s' % meta['refused_weights'][:3])
+    if meta['count_semantics_status'] != 'OK':
+        # CQR-10: projected (weighted) model counting sums over the SHOWN variables only; the ordinary count over all variables differs
+        # (the reviewer's control 'c t pmc / c p show 1 0 / p cnf 2 1 / 1 0' has ordinary count 2, projected count 1). The converter emits
+        # ordinary WMC factors, so such a file is refused rather than silently treated as WMC.
+        raise ValueError('REFUSED_PROJECTED_COUNT_SEMANTICS: declared_type=%s show_lines=%d %s' % (meta['declared_type'], meta['show_lines'], meta['show_examples'][:1]))
     if cap_entries is not None and meta['converted_table_entries'] > cap_entries:
         raise CapExceeded(meta['converted_table_entries'])
     n = meta['n_vars']; next_var = n; factors = []     # factor = (scope tuple, values list of strings)

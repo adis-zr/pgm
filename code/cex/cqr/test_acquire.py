@@ -31,8 +31,9 @@ def main():
     for s in json.load(open(os.path.join(E, 'UAI2022_SELECTION.json')))['slots']:
         if s['status'] == 'SELECTED':
             sel_fam[s['family']] = sel_fam.get(s['family'], 0) + 1
-            assert os.path.exists(s['model_path']) and os.path.exists(s['model_path'] + '.evid'), s['name']
-            assert acquire.sha256_file(s['model_path'])[0] == s['byte_sha256'], s['name']
+            mp_ = s['model_path'] if os.path.exists(s['model_path']) else os.path.join(E, 'uai2022_mar', os.path.basename(s['model_path']))     # the selection recorded the pre-split worktree path; the bytes are verified by sha256 below
+            assert os.path.exists(mp_) and os.path.exists(mp_ + '.evid'), s['name']
+            assert acquire.sha256_file(mp_)[0] == s['byte_sha256'], s['name']
     assert all(v <= 2 for v in sel_fam.values()), sel_fam
     print('UAI2022 selection re-derived: %d selected of %d slots; families %s' % (u[0], u[1], sel_fam))
     mp = os.path.join(E, 'MC2024_SELECTION.json')
@@ -41,7 +42,9 @@ def main():
         fam = {}
         for s in json.load(open(mp))['slots']:
             if s['status'] == 'SELECTED':
-                fam[s['family']] = fam.get(s['family'], 0) + 1; assert os.path.exists(s['cnf_xz_path']), s['name']
+                fam[s['family']] = fam.get(s['family'], 0) + 1
+                # the raw .cnf.xz archives are not kept in the records tree (LARGE_FILES_NOT_INCLUDED; re-derivable from DOWNLOADS.json): the converted UAI with its conversion sidecar must then exist
+                conv = os.path.join(E, 'wmc_uai', s['name'] + '.uai'); assert os.path.exists(s['cnf_xz_path']) or os.path.exists(conv + '.conversion.json'), s['name']       # the two largest converted UAI files (> 8 MiB) are themselves listed-not-included; the sidecar carries their sha256
         assert all(v <= 2 for v in fam.values()), fam
         print('MC2024 selection re-derived: %d selected of %d slots; %d distinct family rows' % (m[0], m[1], len(fam)))
     else:
