@@ -1308,7 +1308,31 @@ def _check(model, evidence, iv, eps, pl, p, cap_bytes, t_end, prog,
     # readout fault rejected at 12 binary variables and CERTIFIED (.75, .25)
     # at 13 against a uniform truth. The caller must be told, so this is
     # reported as a FACT about the check that ran, not left implicit.
-    meta = {"checker_precision_bits": cp, "coordinates_checked": nchk,
+    # EXPOSURE (isolated experimental branch nd-certificate-2026-11-05; additive metadata only): the independent
+    # aggregation's exact total with its scale metadata, so a caller can reconcile it to ORIGINAL weight units:
+    # W(x) = restricted_constant * preprocess_scale * prod(simplified factors)(x); the junction-tree aggregations
+    # scale every simplified factor by the LCM of its denominators (VecExact / SparseExact), the enumeration path
+    # does not. Z_original_units = Z_aggregate / aggregate_scale_denominator * preprocess_scale * restricted_constant
+    # (not reconciled when a quotient was declared: the quotient's own constant is then in play).
+    _zmeta = None
+    if _indep is not None:
+        _Zs, _cnts = _indep
+        _den = 1
+        if not str(_indep_scope).startswith("direct exact enumeration"):
+            import math as _math
+            for _f in r.factors:
+                _L = 1
+                for _qv in _f.table:
+                    _dq = Fr(_qv).denominator
+                    _L = _L * _dq // _math.gcd(_L, _dq)
+                _den *= _L
+        _zmeta = {"Z_aggregate": str(_Zs), "aggregate_scale_denominator": str(_den), "preprocess_scale": str(_simp.scale),
+                  "restricted_constant": str(_r_orig.constant), "scope": _indep_scope,
+                  "Z_original_units": (str(Fr(_Zs) / _den * _simp.scale * _r_orig.constant) if _qmeta is None else None),
+                  "counts_original_units": ({"%d:%d" % (int(k[0]), int(k[1])): str(Fr(v) / _den * _simp.scale * _r_orig.constant) for k, v in _cnts.items()}
+                                            if _qmeta is None else None),
+                  "note": "exact rationals as strings; counts are the exact unnormalized numerators of each free coordinate; None when a quotient was declared"}
+    meta = {"checker_precision_bits": cp, "coordinates_checked": nchk, "exact_total": _zmeta,
             "independent_plan_rebuilt": True, "mode": "I",
             "shares": "validated decomposition + MPFR primitives" + (" + the sparse engine class over the checker's OWN reconstructed rows" if _crows is not None else ""),
             "borrows_producer_values": False,
