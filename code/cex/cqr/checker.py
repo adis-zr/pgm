@@ -146,6 +146,7 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         bias = [_F(b) for b in (cert.get('bias') or [])]
         if bias != C.bias: fail('recorded bias ledger differs from the replayed one')
         if mode == 'EXACT_RATIONAL' and any(b != 0 for b in bias): fail('EXACT_RATIONAL publication with nonzero compiler bias')
+        if any(b < 0 for b in bias): fail('negative compiler bias ledger (a bias is an error bound, never negative)')
         if any(b > eps / 4 for b in bias): fail('compiler bias exceeds the reserve eps/4')
         info['commits'] = [c.get('op') for c in journal if c.get('kind') == 'commit']; info['declines'] = [c.get('op') for c in journal if c.get('kind') == 'decline']
         info['bias'] = [str(b) for b in C.bias]; info['compile_outcome'] = dict(interrupted=lg.get('interrupted'), failed=lg.get('failed'))
@@ -171,7 +172,9 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         proven = [('UNDEFINED' if a == 'UNDEFINED' else (a, a)) for a in tr['answers']]
     else:
         bias = C.bias
-        def widen(x, j): return (max(F(0), x[0] - bias[j]), min(F(1), x[1] + bias[j]))
+        def widen(x, j):
+            if bias[j] < 0: fail('negative bias %s on query %d cannot widen an enclosure' % (bias[j], j)); return (F(1), F(0))       # a reversed interval: refused by the validator as a failed proof
+            return (max(F(0), x[0] - bias[j]), min(F(1), x[1] + bias[j]))
         if not C.cards:
             # zero-dimensional compiled model: every compiled query view has empty scope
             if route not in ('exact_zero_dimensional', 'deterministic_zero_dimensional', 'deterministic_concentration'): fail('route %s on a zero-dimensional compiled model' % route); return fails, info
@@ -265,9 +268,11 @@ def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, e
             if not (isinstance(b, (list, tuple)) and b[0] == 'UNDEFINED' and b[1] == 'UNDEFINED' and pt == 'UNDEFINED'): fail('query %d is PROVED undefined but a value was published' % j)
             continue
         if b[0] == 'UNDEFINED' or pt == 'UNDEFINED': fail('query %d is defined but published as UNDEFINED' % j); continue
+        if not (isinstance(pr, (list, tuple)) and len(pr) == 2 and pr[0] <= pr[1]): fail('query %d: the DERIVED enclosure %s is not an ordered interval (a reversed derivation is a failed proof)' % (j, pr)); continue
         lo, hi = _F(b[0]), _F(b[1]); p = _F(pt)
         if lo > hi: fail('query %d: inverted published bounds' % j); continue
         if normalizer:
+            if pr[0] <= 0 or pr[1] < pr[0]: fail('derived Z enclosure [%s, %s] is not a positive ordered interval' % (pr[0], pr[1]))
             if not (lo <= pr[0] and pr[1] <= hi): fail('published Z bounds do not contain the re-derived enclosure [%s, %s]' % (pr[0], pr[1]))
             if lo <= 0: fail('Z lower bound not positive')
             if not ((1 - eps) * hi <= p <= (1 + eps) * lo): fail('Z point outside [(1-eps) U, (1+eps) L] of the PUBLISHED bounds (relative error not certified)')

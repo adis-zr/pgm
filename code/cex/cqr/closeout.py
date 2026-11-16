@@ -126,7 +126,11 @@ def main(RD, MN='CAMPAIGN_MANIFEST.json', QP=None, OUTP=None):
         except Exception as ex: prereq.append('report re-derivation from the current raw records failed: %s: %s' % (type(ex).__name__, str(ex)[:120]))
     if RR is not None and RES is not None:
         if RR.get('summary_sha256') != RES.get('summary_sha256') or RR.get('summary') != RES.get('summary'): prereq.append('RESULTS_CQR.json summary (outcome counts / audit classes / gated set / unrun) differs from the summary RE-DERIVED from the current raw records')
-        core_run = lambda x: {k: x.get(k) for k in ('cell_id', 'case', 'arm', 'cohort', 'budget', 'rep', 'status', 'outcome', 'guarantee', 'route', 'output_sha256')}
+        # the COMPLETE semantic attribution of a run row (third review CQR-R2-06): every report-facing field that carries a claim about the proof is bound to its re-derived value;
+        # only presentation / timing fields (wall, stop_reason text, event counts) are outside the comparison
+        SEMANTIC_RUN_FIELDS = ('cell_id', 'case', 'arm', 'cohort', 'budget', 'rep', 'status', 'outcome', 'guarantee', 'route', 'output_sha256', 'exact', 'bias', 'bias_applied_to_original_answers', 'bias_interpretation',
+                               'committed_operators', 'guarantee_source', 'claimed_route', 'attribution_mismatch', 'mode', 'outcome_class', 'kind', 'work_reference', 'work_optional', 'reference_progress', 'ratio_draws', 'epochs', 'frontier', 'routes')
+        core_run = lambda x: {k: x.get(k) for k in SEMANTIC_RUN_FIELDS}
         if sorted((core_run(x) for x in RES.get('runs') or []), key=lambda x: str(x['cell_id'])) != sorted((core_run(x) for x in RR.get('runs') or []), key=lambda x: str(x['cell_id'])): prereq.append('report run rows differ from the rows RE-DERIVED from the current raw records')
         if RR.get('references_file_sha256') != RES.get('references_file_sha256'): prereq.append('REFERENCES_R0.json differs from the artifact the report was derived from')
     if RR is not None:

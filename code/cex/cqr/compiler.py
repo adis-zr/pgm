@@ -71,15 +71,27 @@ def tick(C, quota=None, op=None):
 
 
 class _Ticker:
-    """counts charged units since the last tick for a scan and calls tick every TICK_ENTRIES units"""
+    """counts charged units since the last tick for a scan and calls tick every TICK_ENTRIES units. CONTRACT (third review, CQR-R2-04): a charge of k units may be posted only
+    for work already DONE in chunks of at most TICK_ENTRIES units with a tick between chunks -- callers that compute a bulk object must build it through `chunks()` or call
+    `entries(1)` / `ratops(1)` per unit inside their own loop; posting one large k after an uninterrupted computation violates the bound and is refused (assertion)."""
     __slots__ = ('C', 'quota', 'op', 'acc')
     def __init__(self, C, quota, op): self.C = C; self.quota = quota; self.op = op; self.acc = 0
     def entries(self, k):
+        assert k <= TICK_ENTRIES, 'bulk charge of %d units: work must be chunked at most TICK_ENTRIES units apart (CQR-R2-04)' % k
         self.C.work.entries += k; self.acc += k
         if self.acc >= TICK_ENTRIES: self.acc = 0; tick(self.C, self.quota, self.op)
     def ratops(self, k):
+        assert k <= TICK_ENTRIES, 'bulk charge of %d units: work must be chunked at most TICK_ENTRIES units apart (CQR-R2-04)' % k
         self.C.work.ratops += k; self.acc += k
         if self.acc >= TICK_ENTRIES: self.acc = 0; tick(self.C, self.quota, self.op)
+    def ratop_each(self, iterable, fn):
+        """map fn over an iterable, charging ONE rational operation per element with a tick every TICK_ENTRIES elements (the computation itself is chunked)"""
+        out = []; n = 0
+        for x in iterable:
+            out.append(fn(x)); n += 1
+            if n >= TICK_ENTRIES: self.ratops(n); n = 0
+        if n: self.ratops(n)
+        return out
 
 
 class Compiled:
@@ -87,7 +99,7 @@ class Compiled:
     def __init__(self, cards, views, queries, decoder, work, bias, normalizer_task=False):
         self.cards = list(cards); self.views = list(views); self.queries = list(queries); self.decoder = list(decoder); self.work = work; self.bias = list(bias)
         self.certs = []; self.scalars = []; self.constant_scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.service = None; self.constant_queries = {}
-        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None
+        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None; self.allowance = None
 
     def n(self): return len(self.cards)
     def measure(self): return (len(self.cards), sum(self.cards), sum(v.size() for v in self.views) + sum(_qsize(q) for q in self.queries))
@@ -110,6 +122,8 @@ class Compiled:
         if constant_queries is not None: self.constant_queries = dict(constant_queries)
         if witness is not None: self.witness = dict(witness)
         if affine_done is not None: self.affine_done = affine_done
+        if any(b < 0 for b in self.bias): raise ValueError('negative bias ledger after %s (CQR-R2-02 invariant 0 <= bias_j)' % rec.get('op'))
+        if self.allowance is not None and any(self.bias[j] > self.allowance[j] for j in range(len(self.bias))): raise ValueError('bias ledger exceeds the allowed reserve after %s' % rec.get('op'))
         rec = dict(rec); rec['kind'] = 'commit'; rec['seq'] = self.commits; self.commits += 1; self.certs = list(self.certs) + [rec]; self._last = self.state()
         _fault_point(self, rec.get('op'), 'after_commit')
         return rec
@@ -404,9 +418,16 @@ def _omission_proofs(C, T=None):
     for comp in _components(C):
         if set(comp) & qscope: continue
         fv = [i for i, v in enumerate(C.views) if set(v.scope) <= set(comp)]
-        proof = None
-        if T is not None: T.entries(sum(C.views[i].size() for i in fv))
-        if all(all(x > 0 for x in C.views[i].values) for i in fv): proof = dict(kind='all_tables_strictly_positive', factors=fv)
+        proof = None; allpos = True; n_ = 0
+        for i in fv:
+            for x in C.views[i].values:
+                n_ += 1
+                if T is not None and n_ >= TICK_ENTRIES: T.entries(n_); n_ = 0
+                if not x > 0: allpos = False; break
+            if not allpos: break
+        if T is not None and n_: T.entries(n_)
+        elif n_: C.work.entries += n_
+        if allpos: proof = dict(kind='all_tables_strictly_positive', factors=fv)
         elif C.witness is not None:
             w = F(1)
             for i in fv: w *= C.views[i].at(C.cards, C.witness); C.work.evals += 1
@@ -448,8 +469,9 @@ def _signatures(C, var, T=None):
             sl = _slice(v, C.cards, var, s, T)
             piv = next((x for x in sl if x), None)
             if piv is None: return None, inc            # a zero slice: support propagation must run first
-            parts.append((tuple(x / piv for x in sl), piv))
-            if T is not None: T.ratops(len(sl))
+            if T is not None: norm = tuple(T.ratop_each(sl, lambda x: x / piv))       # the normalization is performed AND charged in bounded chunks (CQR-R2-04)
+            else: norm = tuple(x / piv for x in sl)
+            parts.append((norm, piv))
         sig[s] = parts
     return sig, inc
 
@@ -457,15 +479,18 @@ def _signatures(C, var, T=None):
 def _quotient_build(C, var, classes, sig, inc, approx, T=None):
     """BUILD the post-quotient state of compiled variable var into `classes` (list of sorted state lists; representative = first state): NEW factor views (slices ->
     representative slices; a unary S_C combined with an existing unary), NEW query views (weighted average kappa_a / S_C), NEW decoder entries; returns (state kwargs, record)"""
-    reps = [g[0] for g in classes]; kappa = {}; S = []
+    reps = [g[0] for g in classes]; kappa = {}; S = []; n_ = 0
     for g in classes:
         tot = F(0)
         for a in g:
             k = F(1)
-            for fi in range(len(inc)): k *= sig[a][fi][1] / sig[g[0]][fi][1]
-            kappa[a] = k; tot += k
-        if T is not None: T.ratops(len(g) * max(1, len(inc)))
+            for fi in range(len(inc)):
+                k *= sig[a][fi][1] / sig[g[0]][fi][1]; n_ += 1
+                if T is not None and n_ >= TICK_ENTRIES: T.ratops(n_); n_ = 0
+            kappa[a] = k; tot += k; n_ += 1
+            if T is not None and n_ >= TICK_ENTRIES: T.ratops(n_); n_ = 0
         S.append(tot)
+    if T is not None and n_: T.ratops(n_)
     inc_idx = [C.views.index(v) for v in inc]; views = list(C.views)
     for i in inc_idx: views[i] = _replace_axis(C.views[i], C.cards, var, reps, len(classes), T)
     un_i = next((i for i, v in enumerate(views) if v.kind == 'table' and v.scope == (var,)), None)
@@ -1010,6 +1035,7 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
         if service is not None: service(op)
     C = from_task(task, work, service=svc)
     C.service = svc; C.fault = fault if isinstance(fault, dict) else None
+    C.allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries'])
     D = quota_for(task); allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries'])
     log = dict(quota=D, steps=[], direct=None, interrupted=None, failed=None, compiler_version=COMPILER_VERSION)
     def q_(k): return C.work.total() + D
@@ -1066,12 +1092,47 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
 # ======================================================================================================================
 # JOURNAL REPLAY (used by the checker): apply EXACTLY the recorded commits, verifying each on the pre-commit model
 # ======================================================================================================================
+def _canon_keys(d, n, what):
+    """a record map keyed by compiled indices must have EXACTLY the canonical domain {'0', ..., 'n-1'} as distinct canonical decimal strings (no aliases such as '00' or ' 0',
+    no extras, no missing); returns an error string or None (third review, CQR-R2-02)"""
+    if not isinstance(d, dict): return '%s is not a map' % what
+    keys = list(d.keys())
+    if len(keys) != n or sorted(keys) != sorted(str(i) for i in range(n)): return '%s keys %s are not the canonical domain 0..%d' % (what, keys[:6], n - 1)
+    return None
+
+
+def _incident_indices(views, var):
+    return [i for i, v in enumerate(views) if var in v.scope]
+
+
+def _check_quotient_record_shape(cards, views, rc):
+    """the structural part of a quotient record (exact or approximate) against the PRE-commit model: variable in range; incident_factors == the COMPLETE actual incident set (exact
+    equality as a list of distinct in-range indices in increasing order); classes a genuine partition of the domain with sorted members and sorted by representative; kappa / S
+    maps over the canonical key sets (CQR-R2-01)"""
+    var = rc.get('var')
+    if not isinstance(var, int) or not (0 <= var < len(cards)): return 'quotient record variable %r out of range' % (var,)
+    inc = rc.get('incident_factors')
+    if not isinstance(inc, list) or any(not isinstance(i, int) for i in inc): return 'incident_factors is not a list of indices'
+    if inc != _incident_indices(views, var): return 'incident_factors %s differ from the complete incident set %s of variable %d on the pre-commit model' % (inc[:8], _incident_indices(views, var)[:8], var)
+    classes = rc.get('classes')
+    if not isinstance(classes, list) or not classes or any(not isinstance(g, list) or not g or any(not isinstance(s, int) for s in g) for g in classes): return 'classes are not non-empty lists of states'
+    flat = [s for g in classes for s in g]
+    if sorted(flat) != list(range(cards[var])) or len(flat) != len(set(flat)): return 'quotient classes are not a partition of the domain'
+    if any(g != sorted(g) for g in classes) or [g[0] for g in classes] != sorted(g[0] for g in classes): return 'quotient classes are not in canonical order'
+    if rc.get('representatives') != [g[0] for g in classes]: return 'representatives differ from the class minima'
+    m = _canon_keys(rc.get('kappa'), cards[var], 'kappa'); 
+    if m: return m
+    if not isinstance(rc.get('S'), list) or len(rc['S']) != len(classes): return 'S has %s entries for %d classes' % (len(rc.get('S') or []), len(classes))
+    return None
+
+
 def verify_commit(C, rc, work, allowance):
     """independent verification of ONE recorded commit against the current (pre-commit) model; returns an error string or None; also returns derived facts for concentration"""
     op = rc.get('op'); cards = list(C.cards); views = [View.from_json(v.to_json()) for v in C.views]
     if op == 'support':
-        var = rc['var']; alive = rc['alive']; dead = rc['dead']
-        if var >= len(cards) or sorted(alive + dead) != list(range(cards[var])) or not alive: return 'support record is not a partition of the domain'
+        var = rc.get('var'); alive = rc.get('alive'); dead = rc.get('dead')
+        if not isinstance(var, int) or not (0 <= var < len(cards)) or not isinstance(alive, list) or not isinstance(dead, list): return 'support record malformed'
+        if sorted(alive + dead) != list(range(cards[var])) or len(set(alive + dead)) != cards[var] or alive != sorted(alive) or not alive: return 'support record is not a partition of the domain'
         for s in dead:
             if not any(not any(_slice(v, cards, var, s)) for v in views if v.kind == 'table' and var in v.scope): return 'support: state %d of variable %d is not dead in any incident factor' % (s, var)
         work.entries += sum(v.size() for v in views if var in v.scope)
@@ -1080,8 +1141,8 @@ def verify_commit(C, rc, work, allowance):
         if sorted(rc['variables']) != [v for v in range(len(cards)) if cards[v] == 1]: return 'fixed substitution variables differ from the one-state variables'
         return None
     if op == 'leaf_sumout':
-        var = rc['var']; fi = rc['factor']
-        if var >= len(cards) or fi >= len(views): return 'leaf record out of range'
+        var = rc.get('var'); fi = rc.get('factor')
+        if not isinstance(var, int) or not isinstance(fi, int) or not (0 <= var < len(cards)) or not (0 <= fi < len(views)): return 'leaf record out of range'
         qs = set().union(*(q_scope(q) for q in C.queries)) if C.queries else set()
         if var in qs or [i for i, v in enumerate(views) if var in v.scope] != [fi] or views[fi].kind != 'table': return 'leaf: variable %d is not a leaf of factor %d' % (var, fi)
         return None
@@ -1101,9 +1162,16 @@ def verify_commit(C, rc, work, allowance):
             if any(not (set(views[i].scope) <= set(o['variables'])) for i in o['factors']) or any(i for i, v in enumerate(views) if set(v.scope) & set(o['variables']) and i not in o['factors']): return 'component omission: factor set is not the component'
         return None
     if op == 'exact_quotient_pass':
+        m = _check_quotient_record_shape(cards, views, rc)
+        if m: return m
+        if rc.get('approx') not in (None, {}): return 'exact quotient record carries an approximate certificate'
         return verify_quotient_step(cards, views, rc, work)
     if op == 'approx_quotient':
+        m = _check_quotient_record_shape(cards, views, rc)
+        if m: return m
         ap = rc.get('approx') or {}; var = rc['var']; inc = [views[i] for i in rc['incident_factors']]
+        if not isinstance(ap.get('groups'), list) or sorted(sorted(g) for g in ap['groups']) != sorted(rc['classes']): return 'approximate quotient groups differ from the classes'
+        if any(g[0] != min(g) for g in ap['groups']): return 'approximate quotient group representatives are not the minima'
         if any(v.kind != 'table' for v in inc): return 'approximate quotient on a non-table view'
         slices = {s: [_slice(v, cards, var, s) for v in inc] for s in range(cards[var])}
         tmp = Compiled(cards, views, [], [], work, [])
@@ -1130,15 +1198,28 @@ def verify_commit(C, rc, work, allowance):
         for i, sv in zip(rc['incident_factors'], sur): sviews[i] = sv
         return verify_quotient_step(cards, sviews, rc, work)
     if op == 'symmetry':
-        for a in rc.get('actions', []):
+        if not isinstance(rc.get('actions'), list) or not rc['actions']: return 'symmetry record without actions'
+        for a in rc['actions']:
+            if not isinstance(a.get('constants'), dict) or any((not qi.isdigit()) or str(int(qi)) != qi or not (0 <= int(qi) < len(C.queries)) for qi in a['constants']): return 'symmetry constants keyed outside the canonical query domain'
             if not verify_symmetry_action(cards, views, a['action'], work): return 'symmetry action does not verify'
             for qi, c in a['constants'].items():
                 q = C.queries[int(qi)]
                 if q['kind'] != 'expectation' or _query_symmetric_constant(cards, q['f'], a['action'], work) != F(c): return 'symmetric query constant does not re-derive'
         return None
     if op == 'concentration':
+        K_ = len(C.queries)
+        for nm in ('xstar', 't'):
+            m = _canon_keys(rc.get(nm), len(cards), nm)
+            if m: return m
+        for nm in ('answers', 'bias'):
+            m = _canon_keys(rc.get(nm), K_, nm)
+            if m: return m
+        if any(not isinstance(v, int) for v in rc['xstar'].values()): return 'xstar states are not integers'
         xs = {int(k): v for k, v in rc['xstar'].items()}
         if sorted(xs) != list(range(len(cards))) or any(not (0 <= xs[v] < cards[v]) for v in xs): return 'concentration: assignment outside the pre-step domains'
+        try:
+            if any(F(b) < 0 or F(b) > 1 for b in rc['bias'].values()): return 'concentration bias outside [0, 1]'
+        except (ValueError, ZeroDivisionError): return 'concentration bias is not a rational'
         wst = F(1)
         for v in views: wst *= v.at(cards, xs)
         if wst <= 0: return 'concentration: the proposed assignment has zero weight on the pre-step model'
@@ -1172,6 +1253,9 @@ def verify_commit(C, rc, work, allowance):
             if C.bias[qi] + bj > allowance[qi]: return 'concentration bias exceeds the allowance of query %d' % qi
         return None
     if op == 'influence_deletion':
+        if not isinstance(rc.get('deleted'), list) or sorted(set(rc['deleted'])) != sorted(rc['deleted']) or any(not isinstance(i, int) or not (0 <= i < len(views)) for i in rc['deleted']): return 'influence deletion set is not a list of distinct in-range factors'
+        if not isinstance(rc.get('bias'), list) or len(rc['bias']) != len(C.queries): return 'influence bias list has the wrong length'
+        if any(F(b) < 0 or F(b) > 1 for b in rc['bias']): return 'influence bias outside [0, 1]'
         if any(x <= 0 for v in views for x in v.values): return 'influence deletion on a model with zeros'
         if F(rc['alpha']) >= 1: return 'influence deletion with alpha >= 1'
         if any(C.bias[j] + F(rc['bias'][j]) > allowance[j] for j in range(len(C.bias))): return 'influence bias exceeds the allowance'
@@ -1234,7 +1318,9 @@ def apply_commit(C, rc):
     if op == 'leaf_sumout': new = _leaf_apply(C, rc['var'], rc['factor']); C.commit(dict(rc), **new); return
     if op == 'component_omission': C.commit(dict(rc), **_omission_apply(C, rc['omitted'])); return
     if op in ('exact_quotient_pass', 'approx_quotient'):
-        var = rc['var']; inc = [C.views[i] for i in rc['incident_factors']]; classes = [list(g) for g in rc['classes']]
+        var = rc['var']
+        if rc['incident_factors'] != _incident_indices(C.views, var): raise ValueError('quotient record incident set differs from the model (application refuses an unverified factor set)')
+        inc = [C.views[i] for i in rc['incident_factors']]; classes = [list(g) for g in rc['classes']]
         if op == 'approx_quotient':
             ap = rc['approx']; slices = {s: [_slice(v, C.cards, var, s) for v in inc] for s in range(C.cards[var])}; sur = []
             for fi, v in enumerate(inc):
@@ -1265,8 +1351,9 @@ def apply_commit(C, rc):
             for qi, c in a['constants'].items(): consts[int(qi)] = F(c)
         C.commit(dict(rc), constant_queries=consts); return
     if op == 'concentration':
-        bias = list(C.bias)
-        for qi, b in rc['bias'].items(): bias[int(qi)] += F(b)
+        if _canon_keys(rc.get('bias'), len(C.queries), 'bias') or _canon_keys(rc.get('xstar'), len(C.cards), 'xstar'): raise ValueError('concentration record keys are not canonical (application refuses an unverified map)')
+        bias = [C.bias[j] + F(rc['bias'][str(j)]) for j in range(len(C.queries))]          # canonical array: one entry per query, read by its canonical key
+        if any(b < 0 for b in bias): raise ValueError('negative accumulated bias')
         C.commit(dict(rc), bias=bias, witness={int(k): v for k, v in rc['xstar'].items()}); return
     if op == 'influence_deletion':
         chosen = set(rc['deleted']); C.commit(dict(rc), views=[v for fi, v in enumerate(C.views) if fi not in chosen], bias=[C.bias[j] + F(rc['bias'][j]) for j in range(len(C.bias))]); return
@@ -1282,7 +1369,7 @@ def replay_journal(task, journal, work, allowance=None, deadline=None, verify=Tr
     checked for shape only (they change nothing). Returns (C, fails, derived). The replayed model's snapshot hash must equal the recorded final_sha256 (checked by the caller)."""
     fails = []; derived = {}
     allowance = allowance if allowance is not None else [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries'])
-    try: C = from_task(task, work)
+    try: C = from_task(task, work); C.allowance = list(allowance)
     except ZeroEvidence: return None, ['journal replay: evidence restriction proves zero'], derived
     if not journal or journal[0].get('kind') != 'evidence': return C, ['journal does not start with the evidence record'], derived
     seq = 0
@@ -1326,6 +1413,7 @@ def verify_quotient_step(cards_before, views_before, step, work):
                     if a * pr != b * ps: return 'proportionality fails for var %d states %d/%d' % (var, s, r)
                 k *= ps / pr
             kappa[s] = k
+    if sorted(step['kappa'].keys()) != sorted(str(s) for s in kappa): return 'kappa keys differ from the domain'
     for s, k in kappa.items():
         if F(step['kappa'][str(s)]) != k: return 'kappa differs for state %d' % s
     for ci, g in enumerate(classes):

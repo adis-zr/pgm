@@ -115,7 +115,7 @@ def arm_order(arm):
 # an even replicate count every arm occupies the first and the last position of a block equally often. Nothing depends on timing or on results.
 ORDERING_RULE = ('sorted by (cohort order, case, budget); within a case/budget BALANCED ARM BLOCKS: block k = replicate k of every planned arm (complete block), blocks '
                  'ascending; arm order inside a block = N1_CQR, G0_CQR, CQR ablations, B0, P1, H1, A0, A1, comparators in registry order, natives for even k and the '
-                 'reverse for odd k (ABBA counterbalancing), with the initial orientation of each CASE predeclared by the parity of sha256(case_id) so that an odd replicate count still alternates the first arm across cases campaign-wide; strictly sequential. Draft: "Run arm order in predeclared balanced blocks to reduce host-temperature/order bias."')
+                 'reverse for odd k (ABBA counterbalancing), with the initial orientation of each CASE predeclared by the parity of sha256(case_id): this is predeclared and results-independent but does NOT guarantee exact global first-position balance (the parities of the planned case ids decide the actual split); strictly sequential. Draft: "Run arm order in predeclared balanced blocks to reduce host-temperature/order bias."')
 ARM_ORDER_SPAN = 100                                                         # arm_order() values lie in [0, 50); the reversal maps o -> SPAN - o
 
 

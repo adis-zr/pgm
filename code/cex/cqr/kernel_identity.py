@@ -131,6 +131,13 @@ def failures_vs_frozen(frozen, current, planned_arms, pac_arms=None):
     for tag, arms in sorted(needed_tags(planned_arms, pac_arms).items()):
         f = frozen.get(tag); c = current.get(tag) or {}; who = ','.join(sorted(set(arms)))
         if not f: fails.append('%s: FROZEN_ABSENT the manifest carries no frozen identity for %s (needed by %s)' % (tag, tag, who)); continue
+        if tag == 'merlin':
+            # BOTH adapter bindings (MERLIN_PIN.json for MERLIN_CTE; bench/cells.MERLIN for WMB / IJGP) must name the SAME executable, at freeze and at every later check;
+            # an inconsistent configuration is refused outright (third review CQR-R2-05) and the executable each adapter actually runs is compared
+            fa = f.get('adapter_paths') or {}; ca = c.get('adapter_paths') or {}
+            if not fa or not fa.get('consistent'): fails.append('merlin: ADAPTER_PATHS_INCONSISTENT at freeze (pin %s vs bench/cells %s): an inconsistent Merlin binding never freezes (needed by %s)' % (fa.get('pin'), fa.get('cells'), who)); continue
+            if not ca or not ca.get('consistent') or ca.get('pin') != fa.get('pin') or ca.get('cells') != fa.get('cells'): fails.append('merlin: ADAPTER_PATHS_CHANGED the adapter bindings now are pin %s / bench/cells %s, frozen %s (needed by %s)' % (ca.get('pin'), ca.get('cells'), fa.get('pin'), who))
+            if c.get('cells_binary_sha256') is not None and c.get('cells_binary_sha256') != f.get('binary_sha256'): fails.append('merlin: BINARY_CHANGED the bench/cells executable %s is %s, frozen %s' % (ca.get('cells'), c['cells_binary_sha256'][:12], str(f.get('binary_sha256'))[:12]))
         if f.get('binary_sha256') is None: fails.append('%s: FROZEN_ABSENT the frozen identity records no binary for %s (%s absent at freeze; needed by %s)' % (tag, tag, f.get('binary_path'), who)); continue
         if c.get('binary_sha256') is None: fails.append('%s: BINARY_ABSENT %s is missing on disk (frozen %s; needed by %s)' % (tag, f.get('binary_path'), f['binary_sha256'][:12], who))
         elif c['binary_sha256'] != f['binary_sha256']: fails.append('%s: BINARY_CHANGED %s is %s, frozen %s (needed by %s)' % (tag, f.get('binary_path'), c['binary_sha256'][:12], f['binary_sha256'][:12], who))

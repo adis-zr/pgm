@@ -16,8 +16,8 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v3 (2026-11-16, after the second adversarial review: group C20 added; journal-shaped certificates)'
-ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v7')
+SUITE_VERSION = 'cqr-qualification-v4 (2026-11-16, after the third adversarial review: group C21 added)'
+ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v8')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
 CNT = R['counts']; passed = 0; total = 0
@@ -989,7 +989,128 @@ def c20_atomic_compilation_replay_service_history_attribution():
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution)]
+
+def c21_checker_soundness_lifecycle_dependencies_closeout():
+    """THIRD adversarial review (16 Nov 2026) CQR-R2-01..06. (01) complete incident set: the forged quotient record that omits the non-proportional pair factor (X0=[1,1], (X0,X1)=[1,1,1,9];
+    truth 5/6; forged 1/2) is refused by verify_commit, replay_journal AND apply_commit; missing / extra / duplicate / out-of-range incident identities, non-partitions and non-canonical
+    class order are refused; honest exact / approximate quotients, factorless variables, normalizers and interrupted prefixes still pass. (02) canonical record keys for every map-shaped record
+    field, nonnegative ledger (producer and replay), ordered derived enclosures; the alias-key forgery (bias '00' = -1 - 3/500003) is refused at the record boundary and would be refused by the
+    ledger / enclosure invariants independently. (03) the natural 9-variable / 5,000-query worker publishes its completed exact reference instead of FAULT; reference completion inside the
+    initial root computation and inside the adaptive publication test is established directly. (04) bounded work before every service / quota check: the 14-binary dense factor shows a maximum
+    tick gap <= TICK_ENTRIES and a quota placed before the bulk normalization is overspent by <= max_irreducible_charge. (05) inconsistent Merlin adapter bindings never freeze; a replaced
+    executable refuses WMB, IJGP and MERLIN_CTE separately; a repointed bench/cells path after freeze is refused. (06) a real finalize -> closeout passes and report-only changes to every
+    semantic attribution field fail the closeout."""
+    d = tempfile.mkdtemp(prefix='cqr_c21_'); out = dict(f01={}, f02={}, f03={}, f04={}, f05={}, f06={})
+    # ---------------- 01
+    mp = _uai(os.path.join(d, 'two_factor.uai'), [2, 2], [((0,), ['1', '1']), ((0, 1), ['1', '1', '1', '9'])]); _spec(mp, mode='EXACT_RATIONAL', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=1, state=1)])
+    w = fresh_worker(mp, 'N1_CQR', budget=10.0, nonce='c21-01'); fails, _ = check_(mp, w, 'N1_CQR'); t, tr = _truth(mp)
+    A(not fails and w['outcome'] == 'PUBLISHED' and tr['answers'][0] == F(5, 6) and _contained(w, tr, F(0)), '01 honest: %s %s' % (w.get('route'), fails[:1])); out['f01']['honest'] = dict(route=w['route'], answer=w['answers'][0]['point'])
+    C0 = CP.from_task(t); C0.allowance = [F(0)]
+    forged = dict(kind='commit', seq=0, op='exact_quotient_pass', var=0, classes=[[0, 1]], representatives=[0], kappa={'0': '1', '1': '1'}, S=['2'], incident_factors=[0], approx=None)
+    m = CP.verify_commit(C0, forged, TK.Work(), [F(0)]); A(m and 'complete incident set' in m, '01 forged record not refused by verify_commit: %s' % m); out['f01']['verify'] = m[:90]
+    C1, jf, _ = CP.replay_journal(t, [C0.certs[0], forged], TK.Work()); A(jf and 'complete incident set' in jf[0], '01 replay accepted the forged record: %s' % jf[:1])
+    try: CP.apply_commit(CP.from_task(t), forged); A(False, '01 apply_commit applied an unverified incident set')
+    except ValueError as ex: A('incident set' in str(ex), str(ex)[:80]); out['f01']['apply_refused'] = True
+    for name, rec in (('extra_index', dict(forged, incident_factors=[0, 1, 1])), ('out_of_range', dict(forged, incident_factors=[0, 7])), ('unsorted', dict(forged, incident_factors=[1, 0])), ('non_partition', dict(forged, incident_factors=[0, 1], classes=[[0, 0]])), ('bad_order', dict(forged, incident_factors=[0, 1], classes=[[1], [0]], representatives=[1, 0], kappa={'0': '1', '1': '1'}, S=['1', '1'])), ('kappa_alias', dict(forged, incident_factors=[0, 1], kappa={'0': '1', '01': '1'}))):
+        m = CP.verify_commit(CP.from_task(t), rec, TK.Work(), [F(0)]); A(m is not None, '01 malformed record %s accepted' % name); out['f01'][name] = m[:70]
+    # honest records: a genuine exact quotient (clones), a genuine approximate quotient, a factorless variable, a normalizer; all replay
+    g = G.generate('M02', 5, 'favorable', 3); tq = mk_task(g['model'], TK.all_singletons(g['model']['cards']), mode='EXACT_RATIONAL'); Cq, lq = compile_(tq); A(any(c['op'] == 'exact_quotient_pass' for c in Cq.commit_records()), '01 clone fixture did not quotient')
+    C2, jf, _ = CP.replay_journal(tq, Cq.certs, TK.Work()); A(not jf and C2.snapshot_json() == Cq.snapshot_json(), '01 honest exact quotient journal: %s' % jf[:1])
+    mf = _uai(os.path.join(d, 'factorless.uai'), [3, 2], [((1,), ['1', '2'])]); _spec(mf, mode='EXACT_RATIONAL', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=1)]); tf = TK.load_task(mf); Cf, _ = compile_(tf)
+    C3, jf, _ = CP.replay_journal(tf, Cf.certs, TK.Work()); A(not jf and C3.snapshot_json() == Cf.snapshot_json(), '01 factorless quotient journal: %s' % jf[:1]); out['f01']['honest_journals'] = 'clones + factorless replay'
+    # ---------------- 02
+    mpc = _concentration_witness(d); w = fresh_worker(mpc, 'N1_CQR', budget=20.0, nonce='c21-02'); fails, _ = check_(mpc, w, 'N1_CQR'); A(not fails and w['route'] == 'deterministic_concentration', '02 honest %s %s' % (w.get('route'), fails[:1]))
+    tk = TK.load_task(mpc); jr = copy.deepcopy(w['certificate']['compile']['certificates']); dc = next(c for c in jr if c.get('kind') == 'commit' and c['op'] == 'concentration'); ob = F(dc['bias']['0']); dc['bias']['00'] = str(-1 - ob)
+    C4, jf, _ = CP.replay_journal(tk, jr, TK.Work()); A(jf and 'canonical domain' in jf[0], '02 alias key accepted by replay: %s' % jf[:1]); out['f02']['alias_replay'] = jf[0][:90]
+    mut = copy.deepcopy(w); mut['certificate']['compile']['certificates'] = jr; mut['certificate']['bias'] = ['-1']; mut['bias'] = ['-1']; mut['certificate']['publication']['bounds'] = [['1', '1']]; mut['certificate']['publication']['point'] = ['1']; mut['answers'][0].update(lo='1', hi='1', point='1')
+    fails, _ = check_(mpc, mut, 'N1_CQR'); A(fails, '02 forged certificate accepted'); out['f02']['forged_checker'] = fails[0][:90]
+    # the ledger invariant independently: a negative ledger with an otherwise consistent certificate (hash regenerated) is refused by the ledger / enclosure checks
+    mut2 = copy.deepcopy(w); mut2['certificate']['bias'] = ['-1']; mut2['bias'] = ['-1']; mut2['certificate']['publication']['bounds'] = [['1', '1']]; mut2['certificate']['publication']['point'] = ['1']; mut2['answers'][0].update(lo='1', hi='1', point='1')
+    fails, _ = check_(mpc, mut2, 'N1_CQR'); A(fails and any('ledger' in f_ or 'negative' in f_ for f_ in fails), '02 negative ledger not refused: %s' % fails[:2]); out['f02']['negative_ledger'] = fails[0][:90]
+    try: CP.Compiled([2], [], [], [], TK.Work(), [F(-1, 10)]).commit(dict(op='x')); A(False, '02 commit accepted a negative ledger')
+    except ValueError as ex: A('negative' in str(ex), str(ex)); out['f02']['commit_refuses_negative'] = True
+    # other map-shaped records: xstar / t / answers aliases; influence deleted duplicates; symmetry constant keys
+    for name, fn in (('xstar_alias', lambda r: r['xstar'].__setitem__('00', r['xstar']['0'])), ('t_missing', lambda r: r['t'].pop('0')), ('answers_extra', lambda r: r['answers'].__setitem__('1', '0'))):
+        jr2 = copy.deepcopy(w['certificate']['compile']['certificates']); dc2 = next(c for c in jr2 if c.get('kind') == 'commit' and c['op'] == 'concentration'); fn(dc2); C5, jf, _ = CP.replay_journal(tk, jr2, TK.Work()); A(jf, '02 %s accepted' % name); out['f02'][name] = jf[0][:80]
+    # first-review regression: forged answer 1 on the same fixture
+    mut3 = copy.deepcopy(w); dc3 = next(c for c in mut3['certificate']['compile']['certificates'] if c.get('kind') == 'commit' and c['op'] == 'concentration'); dc3['answers']['0'] = '1'; mut3['certificate']['publication']['bounds'] = [[str(1 - ob), '1']]; mut3['certificate']['publication']['point'] = ['1']; mut3['answers'][0].update(lo=str(1 - ob), hi='1', point='1')
+    fails, _ = check_(mpc, mut3, 'N1_CQR'); A(fails and any('does not re-derive' in f_ for f_ in fails), '02 regression forged answer: %s' % fails[:1])
+    # honest composition: approximate quotient + concentration (first-review biased-closure witness) still passes
+    mpb = _biased_closure_witness(d); wb = fresh_worker(mpb, 'N1_CQR', budget=20.0, nonce='c21-02b'); fails, _ = check_(mpb, wb, 'N1_CQR'); A(not fails and wb['outcome'] == 'PUBLISHED', '02 honest biased closure: %s' % fails[:1]); out['f02']['honest_composition'] = wb['route']
+    # ---------------- 03
+    mpr = os.path.join(d, 'root5000.uai'); open(mpr, 'w').write('MARKOV\n9\n2 2 2 2 2 2 2 2 2\n0\n')
+    json.dump(dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='table', table=dict(name='q%d' % j, kind='expectation', f=dict(scope=list(range(7)), values=['0'] * 64 + ['1'] * 64))) for j in range(5000)]), open(mpr + '.query.json', 'w'))
+    t0 = time.monotonic(); w = fresh_worker(mpr, 'G0_CQR', budget=30.0, nonce='c21-03'); wall = time.monotonic() - t0
+    if w['outcome'] == 'PUBLISHED':
+        A(w['route'] == 'exact_reference' and len(w['answers']) == 5000 and all(a['lo'] == a['hi'] == a['point'] == '1/2' for a in w['answers']), '03 answers: %s' % w['route']); fails, _ = check_(mpr, w, 'G0_CQR', budget=600.0); A(not fails, '03 checker: %s' % fails[:1]); out['f03']['root5000'] = dict(route=w['route'], wall_s=round(wall, 2), accepted=True)
+    else: A(w['outcome'] == 'DEADLINE' and (w.get('scheduling') or {}).get('reference_progress') is not None, '03 root5000: %s %s' % (w['outcome'], (w.get('reason') or '')[:80])); out['f03']['root5000'] = dict(outcome='DEADLINE on this host', scheduling=w.get('scheduling'))
+    # the completed-reference path directly: a service hook that completes the reference INSIDE the initial root computation and inside the adaptive publication test
+    rng = random.Random(3); c8 = [2] * 14; m8 = rnd_model(rng, 14, c8, 16, 2, lo=1, hi=9); t8 = mk_task(m8, TK.all_singletons(c8), mode='DETERMINISTIC_EPS', delta=F(0)); tr8 = truth_of(m8, TK.all_singletons(c8))
+    orig_db = FR.Frontier.deterministic_bounds
+    def db_hook(self, deadline=None):
+        # the root computation is made to 'spend' a large optional charge: the service hook then serves the reference to parity, which COMPLETES it (16,384 assignments) and
+        # raises CompileStop('reference_done') INSIDE the initial root computation -- the completed-reference path is exercised directly
+        if self.service is not None: self.work.ratops += 10 ** 7; self.service('deterministic_bounds_forced')
+        return orig_db(self, deadline)
+    FR.Frontier.deterministic_bounds = db_hook
+    try: r = solve_(t8, 'G0_CQR', 'c21-03b', budget=20.0)
+    finally: FR.Frontier.deterministic_bounds = orig_db
+    A(r['outcome'] == 'PUBLISHED' and r['publication']['route'] == 'exact_reference' and compare(r['publication'], tr8, F(0), TK.all_singletons(c8)) == 0, '03 forced completion inside the root computation: %s %s' % (r['outcome'], r['publication'].get('route') if r.get('publication') else None)); out['f03']['forced_in_root'] = r['publication']['route']
+    # optional cancellation inside the initial publication test: the reference continues alone
+    def db_cancel(self, deadline=None): raise CP.CompileStop('cancelled', 'deterministic_bounds_forced')
+    FR.Frontier.deterministic_bounds = db_cancel
+    try: r = solve_(t8, 'G0_CQR', 'c21-03c', budget=20.0)
+    finally: FR.Frontier.deterministic_bounds = orig_db
+    A(r['outcome'] == 'PUBLISHED' and r['publication']['route'] == 'exact_reference' and 'cancelled' in (r['certificate'].get('optional_cancelled') or ''), '03 cancellation inside the root computation: %s %s' % (r['outcome'], r['certificate'].get('optional_cancelled'))); out['f03']['cancel_in_root'] = r['certificate']['optional_cancelled'][:60]
+    # ---------------- 04
+    rng = random.Random(82); c14 = [2] * 14; m14 = dict(cards=c14, factors=[dict(scope=tuple(range(14)), values=[F(rng.randint(1, 9)) for _ in range(2 ** 14)])], evidence={}); t14 = mk_task(m14, [TK.singleton_query(v, 0, c14) for v in range(14)])
+    ticks = []; orig_tick = CP.tick
+    def spy(C, quota=None, op=None): ticks.append(C.work.total()); return orig_tick(C, quota, op)
+    CP.tick = spy
+    try:
+        C = CP.from_task(t14); base = C.work.total()
+        try: CP.exact_quotient_pass(C, base + 12000)
+        except CP.CompileStop as cs: A(cs.kind == 'quota', cs.kind)
+        over = C.work.total() - base - 12000; gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]
+        A(over <= CP.POLICY['max_irreducible_charge'] and max(gaps) <= CP.TICK_ENTRIES, '04 quota overspend %d / max gap %d' % (over, max(gaps))); out['f04']['quota_12000'] = dict(overspend=over, max_gap=max(gaps))
+        ticks.clear(); r = solve_(t14, 'N1_CQR', 'c21-04', budget=30.0); gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]
+        A(max(gaps) <= CP.TICK_ENTRIES + CP.POLICY['max_irreducible_charge'], '04 production gap %d' % max(gaps)); out['f04']['production_14bin'] = dict(ticks=len(ticks), max_gap=max(gaps), route=r['publication']['route'])
+        # quotas placed immediately before bulk work in every costly operator on the same dense model (states 2^14 slices of 8,192 entries)
+        for name, fn in (('signatures', lambda C_, q: CP._signatures(C_, 0, CP._Ticker(C_, q, 'x'))), ('leaf', lambda C_, q: CP.leaf_sumout(C_, q)), ('support', lambda C_, q: CP.support_fixpoint(C_, q)), ('approx', lambda C_, q: CP.approx_quotient(C_, q, [F(1, 800)] * 14)), ('concentration', lambda C_, q: CP.concentration(C_, q, [F(1, 800)] * 14))):
+            C = CP.from_task(t14); base = C.work.total(); ticks.clear()
+            try: fn(C, base + 100)
+            except CP.CompileStop as cs: pass
+            over = C.work.total() - base - 100; A(over <= CP.POLICY['max_irreducible_charge'], '04 %s overspent a quota placed before bulk work by %d' % (name, over)); out['f04'][name] = over
+    finally: CP.tick = orig_tick
+    A(CP.POLICY['max_irreducible_charge'] == CP.TICK_ENTRIES + 2, 'policy constant'); out['f04']['bound'] = CP.POLICY['max_irreducible_charge']
+    # ---------------- 05
+    import kernel_identity as KI
+    td = tempfile.mkdtemp(prefix='c21_merlin_'); os.makedirs(os.path.join(td, 'ext', 'comparator')); os.makedirs(os.path.join(td, 'bench')); pa = os.path.join(td, 'A'); pb = os.path.join(td, 'B'); open(pa, 'wb').write(b'fake A never executed'); open(pb, 'wb').write(b'fake B never executed')
+    pin = json.load(open(os.path.join(CODE, 'ext', 'comparator', 'MERLIN_PIN.json'))); pin['binary'] = dict(path=pa, sha256=hashlib.sha256(b'fake A never executed').hexdigest(), bytes=21); json.dump(pin, open(os.path.join(td, 'ext', 'comparator', 'MERLIN_PIN.json'), 'w'))
+    open(os.path.join(td, 'bench', 'cells.py'), 'w').write('MERLIN = "%s"\n' % pb); cur = KI.collect(td); f0 = KI.failures_vs_frozen(cur, cur, ['WMB']); A(f0 and 'INCONSISTENT' in f0[0], '05 inconsistent binding froze: %s' % f0[:1]); out['f05']['inconsistent_refused'] = f0[0][:70]
+    open(os.path.join(td, 'bench', 'cells.py'), 'w').write('MERLIN = "%s"\n' % pa); cur = KI.collect(td); A(not KI.failures_vs_frozen(cur, cur, ['WMB', 'IJGP', 'MERLIN_CTE']), '05 consistent binding refused')
+    open(pa, 'wb').write(b'replaced never executed'); cur2 = KI.collect(td)
+    for arm in ('WMB', 'IJGP', 'MERLIN_CTE'):
+        fz = KI.failures_vs_frozen(cur, cur2, [arm]); A(fz and 'BINARY_CHANGED' in fz[0], '05 %s accepted a replaced executable' % arm); out['f05'][arm] = fz[0][:50]
+    open(pa, 'wb').write(b'fake A never executed'); open(os.path.join(td, 'bench', 'cells.py'), 'w').write('MERLIN = "%s"\n' % pb); cur3 = KI.collect(td); fz = KI.failures_vs_frozen(cur, cur3, ['WMB']); A(fz and 'ADAPTER_PATHS_CHANGED' in fz[0], '05 repointed bench/cells accepted'); out['f05']['repointed'] = fz[0][:60]
+    shutil.rmtree(td); real = KI.collect(CODE); A(real['merlin']['adapter_paths']['consistent'] and not KI.failures_vs_frozen(real, real, ['WMB', 'IJGP', 'MERLIN_CTE']), '05 real configuration inconsistent'); out['f05']['real_consistent'] = True
+    # ---------------- 06 (real finalize -> closeout, with a current-identity qualification stub as in C12)
+    rd = os.path.join(d, 'chain06'); mpc2 = _concentration_witness(os.path.join(d, 'c06')) if os.path.isdir(os.path.join(d, 'c06')) else (os.makedirs(os.path.join(d, 'c06')) or _concentration_witness(os.path.join(d, 'c06')))
+    code_ = "import sys; sys.path.insert(0, %r); import campaign as CA; CA.manifest(%r, [CA.make_row('query_transfer', 'conc16', %r)], dev=True, budgets=[10], plan={'query_transfer': [('N1_CQR', 1)]}, root_seed='c21-06')" % (HERE, rd, mpc2)
+    subprocess.run([PY, '-c', code_], capture_output=True, text=True, cwd=CODE); subprocess.run([PY, os.path.join(HERE, 'campaign.py'), 'run', rd, '--dev'], capture_output=True, text=True, cwd=CODE); CNT['fresh_workers'] += 1
+    pf = subprocess.run(['sh', os.path.join(HERE, 'finalize.sh'), rd, 'CAMPAIGN_MANIFEST_dev.json'], capture_output=True, text=True, cwd=CODE); A('FINALIZE_DONE' in pf.stdout, '06 finalize failed: %s' % pf.stdout[-200:])
+    stub = dict(suite_version=SUITE_VERSION + ' (closeout-attribution control stub)', suite_sha256=registry.suite_sha256(CODE), all_pass=True, passed=len(registry.QUALIFICATION_GROUPS), total=len(registry.QUALIFICATION_GROUPS), groups=[dict(name=g_, ok=True) for g_ in registry.QUALIFICATION_GROUPS], candidate_sources=registry.cqr_source_inventory(CODE), candidate_sources_at_start=registry.cqr_source_inventory(CODE), sources_changed_during_run=[], counts=dict(CNT)); sp = os.path.join(d, 'stub.json'); json.dump(stub, open(sp, 'w'))
+    def closeout():
+        r_ = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--qualification', sp], capture_output=True, text=True, cwd=CODE); return 'DEVELOPMENT ADMISSION QUALIFIED' in r_.stdout, [l.strip()[:90] for l in r_.stdout.splitlines() if l.strip().startswith('- ')][:1]
+    ok, why = closeout(); A(ok, '06 honest closeout not qualified: %s' % why); rp = os.path.join(rd, 'RESULTS_CQR.json'); orig = open(rp).read(); row0 = json.loads(orig)['runs'][0]
+    A(row0.get('exact') is False and row0.get('bias') == ['3/500003'] and row0.get('guarantee_source', '').startswith('checker-verified'), '06 honest report row: %s' % {k: row0.get(k) for k in ('exact', 'bias', 'guarantee_source')})
+    for name, fn in (('exact_true', lambda r: r.__setitem__('exact', True)), ('bias_zero', lambda r: r.__setitem__('bias', ['0'])), ('applied_bias_zero', lambda r: r.__setitem__('bias_applied_to_original_answers', ['0'])), ('commits_emptied', lambda r: r.__setitem__('committed_operators', [])), ('interpretation', lambda r: r.__setitem__('bias_interpretation', 'exact')), ('guarantee_source', lambda r: r.__setitem__('guarantee_source', 'worker fields')), ('route', lambda r: r.__setitem__('route', 'exact_reference')), ('guarantee', lambda r: r.__setitem__('guarantee', 'PAC'))):
+        rr = json.loads(orig); fn(rr['runs'][0]); open(rp, 'w').write(json.dumps(rr)); ok, why = closeout(); A(not ok and why and 'RE-DERIVED' in why[0], '06 report-only %s survived the closeout' % name); out['f06'][name] = 'refused'
+    open(rp, 'w').write(orig); ok, why = closeout(); A(ok, '06 restored report not qualified: %s' % why); out['f06']['honest'] = 'QUALIFIED'
+    return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'
