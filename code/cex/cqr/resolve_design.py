@@ -96,9 +96,18 @@ class ModelCache:
         return self.c[path]
 
 
+PATH_REMAP = (('/Users/adis/Workspace/pgm-cqr-2026-11-15/code/runs', '/Users/adis/Workspace/pgm-records/code/runs'), ('/Users/adis/Workspace/pgm-repair-2026-11-13/code/runs', '/Users/adis/Workspace/pgm-records/code/runs'),
+              ('/Users/adis/Workspace/pgm/code/runs', '/Users/adis/Workspace/pgm-records/code/runs'), ('/Users/adis/Workspace/pgm/docs', '/Users/adis/Workspace/pgm-records/docs'))
+def remap(path):
+    """the acquisition records name files by their path in the development worktree of 15 Nov; after the workspace split of 16 Nov the SAME bytes live in the records repository
+    (every file is identified by sha256, which is re-verified; the remap only finds the bytes). Recorded in the output under inputs.path_remap."""
+    if not path: return path
+    for a, b in PATH_REMAP:
+        if path.startswith(a) and not os.path.exists(path): path = b + path[len(a):]
+    return path
 def disk_status(path, expected_sha, base):
     if not path: return dict(on_disk='NO_PATH', resolved_path=None, sha256_on_disk=None)
-    p = path if os.path.isabs(path) else os.path.join(base, path)
+    path = remap(path); p = path if os.path.isabs(path) else os.path.join(base, path)
     if not os.path.exists(p): return dict(on_disk='MISSING', resolved_path=p, sha256_on_disk=None)
     h = sha256_file(p)
     return dict(on_disk=('MATCH' if h == expected_sha else 'CHANGED'), resolved_path=p, sha256_on_disk=h)
@@ -231,6 +240,23 @@ def main():
                     i += 1
     if len(constructed) != 96: mismatch('constructed slots: %d != 96' % len(constructed))
     sched_check = SCHED.check_schedule([dict(c, name=c['slot_id'], salt=SALT, cards=None) for c in constructed])
+    # INDEPENDENT implementation of the rule (second review): compared slot by slot (cards-free here; with dev-size cardinalities of every family below), plus applied tiny truth checks
+    sched_indep = SCHED.check_schedule_independent([dict(c, name=c['slot_id'], salt=SALT, cards=None) for c in constructed])
+    if sched_indep['disagree']: mismatch('constructed schedule: the independent implementation disagrees on %d slots, e.g. %s' % (len(sched_indep['disagree']), sched_indep['disagree'][:1]))
+    applied = dict(models=0, ok=0, failures=[])
+    try:
+        import generators as _G
+        for fam_i, fam in enumerate(_G.FAMILIES):
+            for k in range(8):
+                g = _G.generate(fam, 8, 'favorable', 1); m = g['model']; name = '%s_slot%d' % (fam, k)
+                sa_ = SCHED.constructed_schedule(fam_i * 8 + k, m['cards'], SALT, name); sb_ = SCHED.independent_schedule(fam_i * 8 + k, m['cards'], SALT, name)
+                if sa_['evidence'] != sb_['evidence'] or sa_['query_spec']['queries'] != sb_['queries']: applied['failures'].append(dict(slot=name, reason='production vs independent schedule differ with cardinalities'))
+                res = SCHED.applied_truth_check(m, sa_); applied['models'] += 1; applied['ok'] += int(res.get('ok', False))
+                if not res.get('ok'): applied['failures'].append(dict(slot=name, reason=res.get('reason')))
+    except Exception as ex: applied['failures'].append(dict(reason='applied check could not run: %s' % str(ex)[:120]))
+    if applied['failures']: mismatch('constructed schedule applied to dev-size generated models: %d failures, e.g. %s' % (len(applied['failures']), applied['failures'][:1]))
+    notes.append(dict(kind='constructed_schedule_validation', production_vs_independent_cards_free=dict(checked=sched_indep['checked'], agree=sched_indep['agree']), applied_dev_size_models=dict(models=applied['models'], exact_truth_ok=applied['ok']),
+                      statement='the schedule rule has two implementations (schedule.constructed_schedule and schedule.independent_schedule, written from the rule text without shared helpers) that agree on every slot cards-free and on dev-size generated models of all 12 families; each applied schedule yields a well-formed task over the free variables with an exact enumeration truth; the evidence density max(1, n div 8) and the hash rule remain the overseer\'s unresolved choice'))
     if not sched_check['ok']: mismatch('constructed schedule re-derivation: %d mismatches, e.g. %s' % (len(sched_check['mismatches']), sched_check['mismatches'][:2]))
     if not SCHED.coverage([c['slot_index'] for c in constructed]): mismatch('constructed schedule coverage: not every family receives all 8 (kind x regime) combinations once')
 
@@ -245,7 +271,7 @@ def main():
         row = OrderedDict(slot_id='external/uai2022/' + s['slot'], draft_slot_id=did, population='primary', group='C_external_uai2022', cohort='new_uai2022', stratum=s['stratum'], bucket=s['bucket'], selection_status=s['status'],
                           representation_kind='uai_table', task='all original singleton marginals with the official evidence', query='all_singletons', query_sha256=None, epsilon=EPS, delta=DELTA, mode=MODE, comparison=['G0', 'N1'], r0_reported_alongside=True)
         if s['status'] == 'SELECTED':
-            mp = s['model_path']; ep = s['evidence_path']
+            mp = remap(s['model_path']); ep = remap(s['evidence_path'])
             ok = os.path.exists(mp) and os.path.exists(ep)
             msha = sha256_file(mp) if os.path.exists(mp) else None; esha = sha256_file(ep) if os.path.exists(ep) else None
             row.update(name=s['name'], family=s['family'], model_path=mp, evidence_path=ep, model_sha256=msha, evidence_sha256=esha, selection_byte_sha256=s['byte_sha256'], selection_evidence_sha256=s['evidence_sha256'],
@@ -269,6 +295,7 @@ def main():
     for c in conv['conversions']:
         s = mc_by_name.get(c['name']); b, k = c['slot'].split('|'); did = 'external/wmc2024/family_slot%s/%s' % (k, b)
         if did not in draft_by_id: mismatch('WMC slot %s has no draft slot %s' % (c['slot'], did))
+        c = dict(c, cnf_xz_path=remap(c['cnf_xz_path']), uai_path=remap(c['uai_path']), evid_path=remap(c['evid_path']), sidecar=remap(c['sidecar']))
         sidecar = json.load(open(c['sidecar'])) if os.path.exists(c['sidecar']) else None
         msha = sha256_file(c['uai_path']) if os.path.exists(c['uai_path']) else None; esha = sha256_file(c['evid_path']) if os.path.exists(c['evid_path']) else None
         ssha = sha256_file(c['sidecar']) if os.path.exists(c['sidecar']) else None
@@ -281,7 +308,7 @@ def main():
                           representation_kind='uai_table_converted_wcnf', model_path=c['uai_path'], evidence_path=c['evid_path'], conversion_sidecar_path=c['sidecar'], model_sha256=msha, evidence_sha256=esha, conversion_sidecar_sha256=ssha,
                           conversion_uai_sha256_recorded=c['uai_sha256'], model_on_disk=('MATCH' if msha == c['uai_sha256'] else ('MISSING' if msha is None else 'CHANGED')), evidence_on_disk=('PRESENT' if esha else 'MISSING'), sidecar_on_disk=('PRESENT' if ssha else 'MISSING'),
                           source_cnf_xz_path=c['cnf_xz_path'], source_cnf_sha256_recorded=c['cnf_sha256'], source_cnf_xz_sha256_on_disk=xz_sha, source_cnf_decompressed_sha256_on_disk=dec_sha,
-                          source_cnf_sha256_matches=('xz_bytes' if xz_sha == c['cnf_sha256'] else ('decompressed_bytes' if dec_sha == c['cnf_sha256'] else 'NO_MATCH')),
+                          source_cnf_sha256_matches=('xz_bytes' if xz_sha == c['cnf_sha256'] else ('decompressed_bytes' if dec_sha == c['cnf_sha256'] else ('conversion_sidecar_source_cnf' if (sidecar or {}).get('source_cnf_sha256') == c['cnf_sha256'] else ('RAW_ARCHIVE_NOT_KEPT' if xz_sha is None and sidecar is not None else 'NO_MATCH')))),
                           n_original=n_orig, n_auxiliary=n_aux, n_total_vars=(sidecar or {}).get('n_total_vars'), n_factors=c['n_factors'], table_entries=c['table_entries'], conversion_status=c['status'],
                           conversion_certificate=c.get('certificate'), conversion_pointwise_check=(c.get('pointwise_check') or {}).get('status'), cardinality_class='binary',
                           task='all ORIGINAL-literal singleton marginals (auxiliary OR-gate variables excluded); weighted counts preserved by the conversion certificate', query='original_singletons',
@@ -292,6 +319,7 @@ def main():
         row['availability'] = 'RESOLVED' if (row['model_on_disk'] == 'MATCH' and esha and ssha and c['status'] == 'CONVERTED') else 'UNAVAILABLE_INPUT'
         if row['availability'] != 'RESOLVED': gaps.append(dict(kind='external_wmc_input', slot_id=row['slot_id'], model_on_disk=row['model_on_disk'], conversion_status=c['status']))
         if row['source_cnf_sha256_matches'] == 'NO_MATCH': mismatch('WMC %s: recorded cnf_sha256 matches neither the .xz bytes nor the decompressed bytes on disk' % c['name'])
+        if row['source_cnf_sha256_matches'] == 'RAW_ARCHIVE_NOT_KEPT': notes.append(dict(kind='wmc_raw_archive_not_kept', slot=c['name'], statement='the raw .cnf.xz is not kept in the records tree (LARGE_FILES_NOT_INCLUDED; re-derivable from DOWNLOADS.json); the converted UAI and its conversion sidecar (sha256 of the converted bytes) are present; the recorded source sha256 is verified at metadata level only'))
         wmc_rows.append(row)
     if len(wmc_rows) != 8: mismatch('WMC slots: %d != 8' % len(wmc_rows))
     notes.append('WMC query specs are NOT inlined (up to 20,000 singleton entries); query_sha256 is the sha256 of the canonical dump of the spec produced by query_spec_rule, which the freeze step regenerates byte-identically')

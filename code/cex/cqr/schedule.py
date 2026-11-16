@@ -132,3 +132,76 @@ def coverage(slot_indices):
 if __name__ == '__main__':
     import sys
     print(json.dumps(constructed_schedule(int(sys.argv[1]), [int(x) for x in sys.argv[2].split(',')] if len(sys.argv) > 2 and sys.argv[2] else None, sys.argv[3] if len(sys.argv) > 3 else 'salt', sys.argv[4] if len(sys.argv) > 4 else 'name'), indent=1))
+
+
+# ======================================================================================================================
+# INDEPENDENT re-implementation of the rule (second review, preparation item): written from the RULE text alone, without calling constructed_schedule or its helpers;
+# check_schedule_independent compares the two on every cell and applies the schedule to a tiny generated original model with an exact enumeration truth
+# ======================================================================================================================
+def _h2(salt, name, k):
+    import hashlib as _hl
+    return int(_hl.sha256(('%s|%s|%d' % (salt, name, k)).encode()).hexdigest(), 16)
+
+
+def independent_schedule(slot_index, cards, salt, name):
+    """the same contract re-derived independently: r = slot mod 8; kind = KINDS[r mod 4]; regime = EVIDENCE[r div 4]; E = max(1, n div 8) evidence variables chosen by
+    h(name, 100+j) mod n with the smallest forward shift avoiding earlier picks, states h(name, 200+j) mod card; free variables in index order; v1, v2, v3 by h(name, 1..3) mod
+    |free| with forward shifts avoiding earlier picks; selected singleton state h(name, 4) mod card(v1); joint states h6 mod card(v1), h7 mod card(v3); parity bit h8 mod 2"""
+    r = slot_index % 8; kind = KINDS[r % 4]; regime = EVIDENCE[r // 4]
+    if cards is None:
+        if kind == 'all_singletons' and regime == 'no_evidence': return dict(r=r, query_kind=kind, evidence_regime=regime, evidence={}, queries=[dict(kind='all_singletons')], status='RESOLVED')
+        return dict(r=r, query_kind=kind, evidence_regime=regime, status=DEFERRED)
+    n = len(cards); ev = {}
+    if regime == 'nontrivial_evidence':
+        for j in range(max(1, n // 8)):
+            base = _h2(salt, name, 100 + j) % n; t = 0
+            while ((base + t) % n) in ev: t += 1
+            v = (base + t) % n; ev[v] = _h2(salt, name, 200 + j) % cards[v]
+    free = [v for v in range(n) if v not in ev]; picks = []
+    for k in (1, 2, 3):
+        base = _h2(salt, name, k) % len(free); t = 0
+        while free[(base + t) % len(free)] in picks: t += 1
+        picks.append(free[(base + t) % len(free)])
+    v1, v2, v3 = picks
+    if kind == 'selected_singleton': q = dict(kind='singleton', variable=v1, state=_h2(salt, name, 4) % cards[v1])
+    elif kind == 'all_singletons': q = dict(kind='all_singletons')
+    elif kind == 'selected_pair_joint': q = dict(kind='joint', assign={str(v1): _h2(salt, name, 6) % cards[v1], str(v3): _h2(salt, name, 7) % cards[v3]})
+    else: q = dict(kind='parity', variables=sorted([v1, v2, v3]), bit=_h2(salt, name, 8) % 2)
+    return dict(r=r, query_kind=kind, evidence_regime=regime, evidence={str(v): s for v, s in sorted(ev.items())}, queries=[q], status='RESOLVED')
+
+
+def check_schedule_independent(cells, salt=None):
+    """compare constructed_schedule against independent_schedule on every constructed cell (query kind, regime, evidence, queries) -> dict(checked, agree, disagree=[...])"""
+    agree = 0; dis = []
+    for c in cells:
+        if c.get('cohort') not in (None, 'constructed') or 'slot_index' not in c: continue
+        name = c.get('name') or c.get('slot_id'); s = c.get('salt', salt)
+        if s is None or name is None: continue
+        a = constructed_schedule(c['slot_index'], c.get('cards'), s, name); b = independent_schedule(c['slot_index'], c.get('cards'), s, name)
+        same = (a['r'] == b['r'] and a['query_kind'] == b['query_kind'] and a['evidence_regime'] == b['evidence_regime'] and a['status'] == b['status'] and (a['status'] != 'RESOLVED' or (a['evidence'] == b['evidence'] and a['query_spec']['queries'] == b['queries'])))
+        if same: agree += 1
+        else: dis.append(dict(slot=name, slot_index=c['slot_index'], a={k: a.get(k) for k in ('r', 'query_kind', 'evidence_regime', 'status', 'evidence')}, b={k: b.get(k) for k in ('r', 'query_kind', 'evidence_regime', 'status', 'evidence')}))
+    return dict(checked=agree + len(dis), agree=agree, disagree=dis)
+
+
+def applied_truth_check(model, sched):
+    """apply a RESOLVED schedule to a tiny ORIGINAL model (cards, factors): the evidence must be inside the domains, every query must be well-formed over the FREE variables,
+    and the exact enumeration truth of the scheduled task must exist (Z of the evidence-restricted model; UNDEFINED coordinates allowed). Returns dict(ok, Z, answers) -- a
+    direct contract check, not a solver run (the production task loader / oracle are the judges)"""
+    import task as TK, oracle as OR
+    cards = model['cards']; ev = {int(k): v for k, v in (sched.get('evidence') or {}).items()}
+    for v, s in ev.items():
+        if not (0 <= v < len(cards)) or not (0 <= s < cards[v]): return dict(ok=False, reason='evidence outside the domain')
+    qspec = sched.get('query_spec') or dict(queries=sched.get('queries'))
+    qs = []
+    for q in qspec['queries']:
+        if q['kind'] == 'all_singletons': qs += [TK.singleton_query(v, a, cards) for v in range(len(cards)) if v not in ev for a in range(cards[v])]       # the FREE variables' singletons (evidence variables are fixed; their singletons are trivial, as in task.load_task's evidence handling)
+        elif q['kind'] == 'singleton': qs.append(TK.singleton_query(q['variable'], q['state'], cards))
+        elif q['kind'] == 'joint': qs.append(TK.joint_query({int(k): v for k, v in q['assign'].items()}, cards))
+        elif q['kind'] == 'parity': qs.append(TK.parity_query(q['variables'], q['bit'], cards))
+        else: return dict(ok=False, reason='unknown query kind %s' % q['kind'])
+    for q in qs:
+        if q.scope() & set(ev): return dict(ok=False, reason='a query touches an evidence variable')
+    m = dict(model, evidence=ev); tr = OR.truth(m, qs, max_assignments=1 << 20, max_table=1 << 22)        # enumeration, else the independent variable-elimination oracle
+    if tr is None: return dict(ok=False, reason='model too large for the tiny check')
+    return dict(ok=True, Z=str(tr['Z']), answers=[str(a) for a in tr['answers']], queries=len(qs))

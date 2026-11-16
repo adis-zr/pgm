@@ -40,6 +40,7 @@ LEGACY_COHORTS = tuple(k for k, v in PR.COHORTS.items() if v['representation'] =
 NEW_TASK_COHORTS = ('constructed', 'new_uai2022', 'new_wmc2024', 'query_transfer', 'bounded_query_osstar')
 NATIVE_COHORTS = tuple(k for k, v in PR.COHORTS.items() if v['representation'] != 'uai_table')
 PAC_BASELINE_ROW_ARMS = ('B0_FROZEN_V14',) + tuple(PR.CANDIDATE_ARMS)
+VATT = {}            # cell_id -> the gate's VERIFIED attribution (route / class / exact / commits / bias ledger) read from GATE_RESULT.gated_set (R6)
 OUTCOME_CLASSES = ('PUBLISHED-DETERMINISTIC', 'PUBLISHED-PAC', 'PUBLISHED-UNGUARANTEED', 'PROVED_ZERO_EVIDENCE', 'DEADLINE', 'MEMORY', 'FAULT', 'other', 'NOT_RUN')
 
 
@@ -59,9 +60,9 @@ def load(RD, manifest_name):
     man = json.load(open(os.path.join(RD, manifest_name))); rec = {}; shas = {}
     for rp in glob.glob(os.path.join(RD, 'cells', '*', 'receipt.json')):
         r = json.load(open(rp)); rec[r['cell_id']] = r; shas[r['cell_id']] = sha(rp)
-    gp = os.path.join(RD, 'GATE_RESULT.json'); gb = None
+    gp = os.path.join(RD, 'GATE_RESULT.json'); gb = None; VATT.clear()
     if os.path.exists(gp):
-        G = json.load(open(gp)); gs = G.get('gated_set'); mism = []
+        G = json.load(open(gp)); gs = G.get('gated_set'); mism = []; VATT.update({e.get('cell_id'): e.get('verified_attribution') for e in (gs or []) if isinstance(e, dict) and e.get('verified_attribution')})
         if isinstance(gs, list):
             seen = set(); by_id = {c['cell_id']: c for c in man['cells']}
             for e in gs:
@@ -203,8 +204,14 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', write=True):
         row = dict(cell_id=c['cell_id'], cohort=c['cohort'], case=c['case_id'], arm=c['arm'], kind=c.get('kind'), budget=c['budget_s'], rep=c['replicate'], status=(r or {}).get('status', 'NOT_RUN'), outcome=(r or {}).get('outcome', 'NOT_RUN'), guarantee=(r or {}).get('guarantee_type', 'NONE'), route=(r or {}).get('route'), wall=(r or {}).get('launch_relative_wall_s'), rss_MB=round(((r or {}).get('supervisor') or {}).get('peak_MB', 0) or 0), nonce=(r or {}).get('nonce'), output_sha256=(r or {}).get('output_sha256'))
         if c['arm'] in R.CQR_ARMS and w:
             cert = w.get('certificate') or {}; wk = cert.get('work') or {}; comp = cert.get('compile') or {}; log = comp.get('log') or {}
-            row['route'] = w.get('route'); row['exact'] = bool(w.get('exact')); row['guarantee_source'] = 'receipt guarantee_type, bound by the gate to the class the checker derives from the validated route (CQR-04)'; row['work_reference'] = (wk.get('reference') or {}).get('total'); row['work_optional'] = (wk.get('optional') or {}).get('total')
-            row['committed_operators'] = [s['op'] for s in (log.get('steps') or []) if s.get('committed')]; row['bias'] = w.get('bias') or cert.get('bias')
+            row['work_reference'] = (wk.get('reference') or {}).get('total'); row['work_optional'] = (wk.get('optional') or {}).get('total'); va = VATT.get(c['cell_id'])
+            if va:        # VERIFIED attribution (second review R6): route / class / exactness / commits / bias come from the checker, not from the worker's or receipt's own fields
+                row['route'] = va.get('route'); row['exact'] = bool(va.get('exact')); row['guarantee_source'] = 'checker-verified attribution recorded in the gated set (R6)'
+                row['committed_operators'] = list(va.get('commits') or []); row['bias'] = va.get('compiled_bias'); row['bias_applied_to_original_answers'] = va.get('bias_applied_to_original_answers'); row['bias_interpretation'] = va.get('bias_interpretation')
+                row['claimed_route'] = w.get('route'); row['attribution_mismatch'] = (w.get('route') != va.get('route')) or ([str(b) for b in (w.get('bias') or [])] != [str(b) for b in (va.get('compiled_bias') or [])])
+            else:
+                row['route'] = w.get('route'); row['exact'] = bool(w.get('exact')); row['guarantee_source'] = 'UNVERIFIED: the gate recorded no attribution for this cell (not gated)'
+                row['committed_operators'] = [c_.get('op') for c_ in (comp.get('certificates') or []) if c_.get('kind') == 'commit']; row['bias'] = w.get('bias') or cert.get('bias')
             fr = cert.get('frontier') or {}; row['frontier'] = {k: fr.get(k) for k in ('open_cells', 'resolved_cells', 'splits', 'closures')} if fr else None
             row['ratio_draws'] = (cert.get('ratio_stream') or {}).get('t'); row['epochs'] = len(cert.get('epochs') or []); row['stop_reason'] = (w.get('reason') or '')[:120]; row['mode'] = w.get('mode')
             row['reference_progress'] = (cert.get('reference') or {}).get('progress'); row['events'] = len(cert.get('events') or [])

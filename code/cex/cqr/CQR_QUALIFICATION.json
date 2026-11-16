@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 3.548,
+   "wall_s": 4.185,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -137,7 +137,7 @@
      "bias_ledger": "recorded bias ledger differs from the replayed one",
      "binding": "worker binding differs from the files on disk",
      "task_identity": "task identity differs from the re-derived identity",
-     "final_sha": "compiled model does not replay (final_sha256 2fb39595172a vs 111111111111)",
+     "final_sha": "compiled model does not replay from the journal (final_sha256 2fb39595172a vs 111111111111)",
      "diagnostic_flag": "a DIAGNOSTIC run (sampling_only) is never a production publication",
      "mode_relabel": "certificate mode EXACT_RATIONAL differs from the authoritative task mode PAC_EPS",
      "exact_value_changed": "published bounds of query 0 do not contain the re-derived enclosure [255819830/1038479171, 255819830",
@@ -151,7 +151,7 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.256,
+   "wall_s": 0.239,
    "detail": {
     "routes": {
      "zero": 30,
@@ -166,7 +166,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.079,
+   "wall_s": 0.077,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -218,14 +218,14 @@
     ],
     "verifier_kappa": "kappa differs for state 0",
     "verifier_S": "S differs for class 0",
-    "verifier_class": "proportionality fails for var 0 states 2/0",
+    "verifier_class": "quotient classes are not a partition of the domain",
     "ablation_ops": []
    }
   },
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.094,
+   "wall_s": 0.092,
    "detail": {
     "within_budget": {
      "cards": [
@@ -252,7 +252,7 @@
      ]
     },
     "chained_steps": 4,
-    "checker_corrupt_beta": "approximate quotient certificate does not re-derive for var 0 (step 0)"
+    "checker_corrupt_beta": "journal replay: commit 0 (approx_quotient): approximate quotient certificate does not re-d"
    }
   },
   {
@@ -281,7 +281,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.138,
+   "wall_s": 0.131,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -326,7 +326,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.451,
+   "wall_s": 1.436,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -344,7 +344,7 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 2.803,
+   "wall_s": 2.791,
    "detail": {
     "draws": 74,
     "carves": 74,
@@ -362,7 +362,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.08,
+   "wall_s": 0.074,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -385,20 +385,20 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.505,
+   "wall_s": 2.49,
    "detail": {
     "reference_shares": [
-     0.587142644431209,
+     0.5869023255813953,
      0.6588065025437109,
      0.5591297793741334,
-     0.49969514824717676,
-     0.5727790963906938,
+     0.5158346867909699,
+     0.5727744754454922,
      0.5266214246052261
     ],
     "no_shortcut": {
      "route": "exact_reference",
      "ops": [],
-     "share": "33846/69"
+     "share": "11282/20"
     },
     "deadline": "typed DEADLINE at loop",
     "worker_deadline": "DEADLINE",
@@ -412,7 +412,7 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 116.058,
+   "wall_s": 109.657,
    "detail": {
     "cells": 373,
     "arms": [
@@ -476,8 +476,8 @@
      "N1_NO_AFFINE|PUBLISHED": 29,
      "N1_NO_CONCENTRATION|DEADLINE": 1,
      "N1_NO_CONCENTRATION|PUBLISHED": 31,
-     "N1_NO_INFLUENCE|DEADLINE": 3,
-     "N1_NO_INFLUENCE|PUBLISHED": 29,
+     "N1_NO_INFLUENCE|DEADLINE": 2,
+     "N1_NO_INFLUENCE|PUBLISHED": 30,
      "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 2,
      "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 30,
      "N1_NO_QUOTIENT|DEADLINE": 5,
@@ -492,8 +492,8 @@
      "WMB|PUBLISHED": 3
     },
     "gate": {
-     "gated": 319,
-     "wall": 111.725
+     "gated": 320,
+     "wall": 105.496
     },
     "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
     "missing_group_refused": true,
@@ -507,7 +507,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 367.167,
+   "wall_s": 350.781,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -537,7 +537,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 171.1
+      "wall_s": 161.3
      },
      {
       "delta": "1/16",
@@ -549,7 +549,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 196.0
+      "wall_s": 189.5
      }
     ]
    }
@@ -557,7 +557,7 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.487,
+   "wall_s": 4.406,
    "detail": {
     "routes": {
      "concentration.uai/N1_CQR": {
@@ -606,7 +606,7 @@
      }
     },
     "mutations": {
-     "concentration_answer_forged": "concentration answer of query 0 does not re-derive (1 recorded, 0 at x*)",
+     "concentration_answer_forged": "journal replay: commit 0 (concentration): concentration answer of query 0 does not re-derive (1 recorded, 0 at",
      "concentration_route_relabel": "published bounds of query 0 do not contain the re-derived enclosure [0, 1]",
      "concentration_output_count": "answers shape differs from the task",
      "concentration_identity": "task identity differs from the re-derived identity",
@@ -655,7 +655,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 31.858,
+   "wall_s": 31.077,
    "detail": {
     "mode_override": [
      "FAULT",
@@ -676,7 +676,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 31.809,
+   "wall_s": 30.948,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -730,19 +730,19 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 13.111,
+   "wall_s": 12.294,
    "detail": {
     "d32_N1_CQR": {
-     "wall_s": 0.14,
+     "wall_s": 0.08,
      "work_reference": 7232,
-     "work_optional": 57979,
+     "work_optional": 10854,
      "compile_interrupted": {
-      "op": "concentration",
+      "op": "approx_quotient",
       "kind": "reference_done"
      }
     },
     "d32_G0_CQR": {
-     "wall_s": 0.08,
+     "wall_s": 0.07,
      "work_reference": 7232,
      "work_optional": 2314,
      "compile_interrupted": null
@@ -750,21 +750,21 @@
     "d32_compile_work_by_operator": {
      "support_fixpoint": 2112,
      "exact_quotient_pass": 4224,
-     "approx_quotient": 50424,
+     "approx_quotient": 50985,
      "concentration": 4159,
-     "influence_deletion": 50752,
+     "influence_deletion": 50176,
      "quota": 50000
     },
     "nb3": {
      "route": "exact_reference",
      "work_reference": 199680,
-     "work_optional": 205516,
+     "work_optional": 205836,
      "reference_done": true
     },
     "nb4": {
      "route": "exact_reference",
      "work_reference": 7344128,
-     "work_optional": 7094213,
+     "work_optional": 7094533,
      "reference_done": true
     },
     "memory_cancellation": {
@@ -778,25 +778,25 @@
      "committed": []
     },
     "loop_failure": {
-     "optional_cancelled": "optional failure in the adaptive loop: RuntimeError: INJECTED optional",
+     "optional_cancelled": "optional failure in adaptive optional turn: RuntimeError: INJECTED opt",
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 9.220093488693237e-08,
-     "work_reference": 4460712,
-     "work_optional": 3950662,
+     "reference_progress": 9.150244295597076e-08,
+     "work_reference": 4426920,
+     "work_optional": 3933519,
      "phase": "adaptive"
     },
     "parity_at_exits": {
      "e_zero": {
       "route": "deterministic_signed_residual_E_zero",
       "work_reference": 25466,
-      "work_optional": 3486
+      "work_optional": 3567
      },
      "signed_pac": {
       "route": "pac_signed_residual_validation",
       "work_reference": 17018,
-      "work_optional": 3340
+      "work_optional": 3456
      }
     }
    }
@@ -804,7 +804,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.153,
+   "wall_s": 0.131,
    "detail": {
     "order_sequence": [
      "norm",
@@ -825,10 +825,10 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.241,
+   "wall_s": 0.369,
    "detail": {
-    "controls": 13,
-    "summary": "13/13 passed",
+    "controls": 17,
+    "summary": "17/17 passed",
     "pmc_refusal": "REFUSED_PROJECTED_COUNT_SEMANTICS: declared_type=pmc show_li",
     "wmc_accepted": true,
     "kernel_tags": [
@@ -838,83 +838,492 @@
      "h4point",
      "h4rect",
      "libdai_mar",
+     "merlin",
      "newarm_cex",
-     "newarm_stream"
+     "newarm_stream",
+     "pgmax_python"
     ]
+   }
+  },
+  {
+   "name": "C20_atomic_compilation_replay_service_history_attribution",
+   "ok": true,
+   "wall_s": 5.167,
+   "detail": {
+    "r1": {
+     "support": {
+      "commits": 1,
+      "interrupted": {
+       "op": "support_fixpoint",
+       "kind": "reference_done"
+      },
+      "steps": [
+       [
+        "support_fixpoint",
+        "interrupted"
+       ]
+      ]
+     },
+     "quotient": {
+      "interrupted": {
+       "op": "exact_quotient_pass",
+       "kind": "reference_done"
+      },
+      "commits": 0
+     },
+     "approx_quota": {
+      "route": "deterministic_frontier",
+      "bias": [
+       "1/4000001",
+       "1/4000001",
+       "1/4000001"
+      ],
+      "commits": [
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "leaf_sumout",
+       "approx_quotient",
+       "fixed_substitution"
+      ],
+      "declines": [
+       "approx_quotient",
+       "concentration",
+       "influence_deletion"
+      ]
+     },
+     "journal_commit_dropped": "journal replay: commit sequence numbers are not contiguous (1 at position 0)",
+     "journal_commits_reordered": "journal replay: commit sequence numbers are not contiguous (1 at position 0)",
+     "journal_class_changed": "journal replay: commit 16 (approx_quotient): quotient classes are not a partition of the domain",
+     "journal_replay_models": 39
+    },
+    "r2": {
+     "support": {
+      "boundaries": [
+       {
+        "where": "build",
+        "k": 0,
+        "failed": "support_fixpoint",
+        "commits": 0
+       },
+       {
+        "where": "build",
+        "k": 1,
+        "failed": null,
+        "commits": 19
+       },
+       {
+        "where": "before_swap",
+        "k": 0,
+        "failed": "support_fixpoint",
+        "commits": 0
+       },
+       {
+        "where": "before_swap",
+        "k": 1,
+        "failed": null,
+        "commits": 19
+       },
+       {
+        "where": "after_commit",
+        "k": 0,
+        "failed": "support_fixpoint",
+        "commits": 1
+       },
+       {
+        "where": "after_commit",
+        "k": 1,
+        "failed": null,
+        "commits": 19
+       }
+      ],
+      "worker_route": "exact_reference",
+      "failed": "support_fixpoint"
+     },
+     "leaf_sumout": {
+      "boundaries": [
+       {
+        "where": "build",
+        "k": 0,
+        "failed": "leaf_sumout",
+        "commits": 0
+       },
+       {
+        "where": "build",
+        "k": 1,
+        "failed": null,
+        "commits": 1
+       },
+       {
+        "where": "before_swap",
+        "k": 0,
+        "failed": "leaf_sumout",
+        "commits": 0
+       },
+       {
+        "where": "before_swap",
+        "k": 1,
+        "failed": null,
+        "commits": 1
+       },
+       {
+        "where": "after_commit",
+        "k": 0,
+        "failed": "leaf_sumout",
+        "commits": 1
+       },
+       {
+        "where": "after_commit",
+        "k": 1,
+        "failed": null,
+        "commits": 1
+       }
+      ],
+      "worker_route": "exact_reference",
+      "failed": "leaf_sumout"
+     },
+     "exact_quotient_pass": {
+      "boundaries": [
+       {
+        "where": "build",
+        "k": 0,
+        "failed": "exact_quotient_pass",
+        "commits": 0
+       },
+       {
+        "where": "build",
+        "k": 1,
+        "failed": "exact_quotient_pass",
+        "commits": 1
+       },
+       {
+        "where": "before_swap",
+        "k": 0,
+        "failed": "exact_quotient_pass",
+        "commits": 0
+       },
+       {
+        "where": "before_swap",
+        "k": 1,
+        "failed": "exact_quotient_pass",
+        "commits": 1
+       },
+       {
+        "where": "after_commit",
+        "k": 0,
+        "failed": "exact_quotient_pass",
+        "commits": 1
+       },
+       {
+        "where": "after_commit",
+        "k": 1,
+        "failed": "exact_quotient_pass",
+        "commits": 2
+       }
+      ],
+      "worker_route": "exact_frontier_closure",
+      "failed": "exact_quotient_pass"
+     },
+     "approx_quotient": {
+      "boundaries": [
+       {
+        "where": "build",
+        "k": 0,
+        "failed": "approx_quotient",
+        "commits": 16
+       },
+       {
+        "where": "build",
+        "k": 1,
+        "failed": null,
+        "commits": 18
+       },
+       {
+        "where": "before_swap",
+        "k": 0,
+        "failed": "approx_quotient",
+        "commits": 16
+       },
+       {
+        "where": "before_swap",
+        "k": 1,
+        "failed": null,
+        "commits": 18
+       },
+       {
+        "where": "after_commit",
+        "k": 0,
+        "failed": "approx_quotient",
+        "commits": 17
+       },
+       {
+        "where": "after_commit",
+        "k": 1,
+        "failed": null,
+        "commits": 18
+       }
+      ],
+      "worker_route": "deterministic_frontier",
+      "failed": "approx_quotient"
+     },
+     "frontier_init": {
+      "route": "deterministic_concentration",
+      "optional_cancelled": ""
+     }
+    },
+    "r3": {
+     "service_gap_3x32": {
+      "ticks": 164,
+      "max_gap": 1024,
+      "bound": 2050,
+      "route": "exact_reference"
+     },
+     "deadline_exit": {
+      "work_reference": 69888,
+      "work_optional": 68704,
+      "progress": 0.2265625
+     },
+     "support_quota": {
+      "quota": 131296,
+      "work": 132096,
+      "outcome": "quota"
+     },
+     "operator_quota_overspend": {
+      "support_fixpoint": -148,
+      "leaf_sumout": -300,
+      "exact_quotient_pass": 13,
+      "symmetry": 6,
+      "approx_quotient": 20,
+      "concentration": -126,
+      "influence_deletion": 0,
+      "affine": -236
+     }
+    },
+    "r5": {
+     "epoch_duplicated_with_completed_draw": "epoch id 1 is not the next allocation (2)",
+     "epoch_id_zero": "epoch id 0 is not the next allocation (1)",
+     "extra_completed_draw": "epoch 1 statistics do not replay",
+     "epoch_record_duplicated": "epoch records [1, 1] do not match the started epochs [1]",
+     "second_epoch_while_open": "epoch 2 started while epoch 1 is still open"
+    },
+    "r6": {
+     "normalizer_honest": {
+      "gate_passed": true,
+      "failures": [],
+      "report_route": "normalizer_pac_ratio_intersected_with_deterministic",
+      "report_bias": [],
+      "source": "checker-verified attribution r",
+      "mismatch": false
+     },
+     "normalizer_route_mutation": {
+      "gate_passed": false,
+      "failures": [
+       "receipt / worker route normalizer_exact_reference / normalizer_exact_reference differ from the verif"
+      ],
+      "report_route": "normalizer_pac_ratio_intersected_with_deterministic",
+      "report_bias": [],
+      "source": "checker-verified attribution r",
+      "mismatch": true
+     },
+     "concentration_honest": {
+      "gate_passed": true,
+      "failures": [],
+      "report_route": "deterministic_concentration",
+      "report_bias": [
+       "3/500003"
+      ],
+      "source": "checker-verified attribution r",
+      "mismatch": false
+     },
+     "concentration_bias_mutation": {
+      "gate_passed": false,
+      "failures": [
+       "receipt / worker bias ledger differs from the verified certificate ledger ['3/500003']"
+      ],
+      "report_route": "deterministic_concentration",
+      "report_bias": [
+       "3/500003"
+      ],
+      "source": "checker-verified attribution r",
+      "mismatch": true
+     }
+    }
+   }
+  },
+  {
+   "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
+   "ok": true,
+   "wall_s": 10.432,
+   "detail": {
+    "f01": {
+     "honest": {
+      "route": "exact_reference",
+      "answer": "5/6"
+     },
+     "verify": "incident_factors [0] differ from the complete incident set [0, 1] of variable 0 on the pre",
+     "apply_refused": true,
+     "extra_index": "incident_factors [0, 1, 1] differ from the complete incident set [0, 1",
+     "out_of_range": "incident_factors [0, 7] differ from the complete incident set [0, 1] o",
+     "unsorted": "incident_factors [1, 0] differ from the complete incident set [0, 1] o",
+     "non_partition": "quotient classes are not a partition of the domain",
+     "bad_order": "quotient classes are not in canonical order",
+     "kappa_alias": "kappa keys ['0', '01'] are not the canonical domain 0..1",
+     "honest_journals": "clones + factorless replay"
+    },
+    "f02": {
+     "alias_replay": "commit 0 (concentration): bias keys ['0', '00'] are not the canonical domain 0..0",
+     "forged_checker": "journal replay: commit 0 (concentration): bias keys ['0', '00'] are not the canonical doma",
+     "negative_ledger": "recorded bias ledger differs from the replayed one",
+     "commit_refuses_negative": true,
+     "xstar_alias": "commit 0 (concentration): xstar keys ['0', '1', '2', '3', '4', '5'] are not the ",
+     "t_missing": "commit 0 (concentration): t keys ['1', '2', '3', '4', '5', '6'] are not the cano",
+     "answers_extra": "commit 0 (concentration): answers keys ['0', '1'] are not the canonical domain 0",
+     "honest_composition": "deterministic_frontier"
+    },
+    "f03": {
+     "root5000": {
+      "route": "exact_reference",
+      "wall_s": 4.67,
+      "accepted": true
+     },
+     "forced_in_root": "exact_reference",
+     "cancel_in_root": "optional work cancelled in initial publication test (cancell"
+    },
+    "f04": {
+     "quota_12000": {
+      "overspend": 288,
+      "max_gap": 1024
+     },
+     "production_14bin": {
+      "ticks": 266,
+      "max_gap": 1024,
+      "route": "exact_reference"
+     },
+     "signatures": 924,
+     "leaf": -100,
+     "support": 924,
+     "approx": 924,
+     "concentration": 925,
+     "bound": 1026
+    },
+    "f05": {
+     "inconsistent_refused": "merlin: ADAPTER_PATHS_INCONSISTENT at freeze (pin /var/folders/gl/8l05",
+     "WMB": "merlin: BINARY_CHANGED /var/folders/gl/8l05l35s32b",
+     "IJGP": "merlin: BINARY_CHANGED /var/folders/gl/8l05l35s32b",
+     "MERLIN_CTE": "merlin: BINARY_CHANGED /var/folders/gl/8l05l35s32b",
+     "repointed": "merlin: ADAPTER_PATHS_CHANGED the adapter bindings now are p",
+     "real_consistent": true
+    },
+    "f06": {
+     "baseline_row": {
+      "arm": "H1_HYBRID",
+      "outcome": "PUBLISHED",
+      "routes": [
+       [
+        "support",
+        "DETERMINISTIC"
+       ]
+      ]
+     },
+     "exact_true": "refused",
+     "bias_zero": "refused",
+     "applied_bias_zero": "refused",
+     "commits_emptied": "refused",
+     "interpretation": "refused",
+     "guarantee_source": "refused",
+     "route": "refused",
+     "guarantee": "refused",
+     "baseline_routes_guarantee": "refused",
+     "baseline_routes_emptied": "refused",
+     "baseline_outcome": "refused",
+     "honest": "QUALIFIED"
+    }
    }
   }
  ],
  "counts": {
-  "fresh_workers": 52,
-  "solver_calls": 377,
-  "compiler_calls": 53,
-  "checker_calls": 106,
-  "oracle_models": 90,
-  "truth_coordinates": 2490,
+  "fresh_workers": 71,
+  "solver_calls": 382,
+  "compiler_calls": 159,
+  "checker_calls": 133,
+  "oracle_models": 99,
+  "truth_coordinates": 2642,
   "stream_draws": 463,
-  "assertions": 2737
+  "assertions": 2961
  },
- "suite_version": "cqr-qualification-v2 (2026-11-16, after the adversarial review: groups C14-C19 added)",
- "suite_sha256": "288535339a7bb7bc15f0d8190312c77482f42bc730c80453bb4a05d0f73c2a0c",
+ "suite_version": "cqr-qualification-v4.1 (2026-11-16, after the third adversarial review: group C21 added; after attempt 7: C21-06 baseline-row routes control)",
+ "suite_sha256": "c3e8d2cf6dbc67a07f50e321f249af7425943f181af3e403a07d78304c75707b",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
-  "cqr/campaign.py": "e0805484938012c5f2fc6758bec6abe123766aefa11792ed3b728d4918fc258b",
-  "cqr/checker.py": "090c65ab9a4f10a9b97f0daf04fe479d5fa431669a9642574e0e8930aac68aa9",
-  "cqr/closeout.py": "34106b35a4a1d5927c9a07654e8037c7f2f5ee52626b92f751542599276b3205",
-  "cqr/compiler.py": "cdb86c3b62156cc9de87318b0ffb749182e022f682511ed8c5e7a84b496f9fb2",
-  "cqr/frontier.py": "af1ee8dd050fd771394fbe05d2b0db83a291ff85cc7fd67f3c29d3bcf726d4b5",
-  "cqr/gate.py": "dd64977f556c483489bc6c9e043607ccf6d61813638491e06f59abdf8477469f",
+  "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
+  "cqr/checker.py": "e568120937b87d7207ed5c0063663fdcf0ddff6d297f905385ba5ec7dec1ae13",
+  "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
+  "cqr/compiler.py": "f57ffd52314ec0ad1436dc65c56c9eb65b4a0be7cba0fde14f6b53e44a1f2f4d",
+  "cqr/frontier.py": "04e0be831cd30368570fcf1bc1a2d46a32399af68cd99f8671dab133f2d12044",
+  "cqr/gate.py": "2c6805baf56a4cdf5b1626a30ce5f548aeb9d1c720bdd35c9f9d0baf33f601f3",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "9b65969992c88bf84651e35a6a6af09a1722ad9ecd052ec21ed7fb37aacaec50",
+  "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
   "cqr/numerics.py": "822bc52f275a7032a7b9341ad7ce7d596a23a995f7b2de087a8277891e7cd9a3",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "cd12809dd07f96611cdbb6ba557a2e0bf2ba45693643c7de40087b7398f8e8dd",
-  "cqr/report.py": "9183be8261745a64535469ef2e85e65973c475c6ce80c069f90381f87a23ae06",
-  "cqr/resolve_design.py": "11107e80b4caf97a5a439dd049addf06e622069289954c93cdc5ae18fc3272cc",
-  "cqr/schedule.py": "ede2d4f27f5e1b4b623f5c4f4281220e87cee68782b540e249dc829284e10624",
-  "cqr/solve.py": "4153ba38390a1661f6a1f5325f52df0702acf1f99b767962c9efce308f4256de",
+  "cqr/registry.py": "80935ab12b9b5247f692bb495dea79d5f848e522e838b4e45c4782b070e786c4",
+  "cqr/report.py": "2b5419c645c1e85e3b014a74d5650b30d4f795723abfa1006924fcc884b17181",
+  "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
+  "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
+  "cqr/solve.py": "392bd400303fdafb2d5debe371bc24757f469edd51f67bad486dfb84d5f391ec",
   "cqr/task.py": "20b39d8110e63d940f69f4435ca5fcb0b9dfa20a9019560510252bbb359c2d68",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "7908eb5b6e72392b31aeda67bc0c7baae363d97e85688ce2502396d4990cebba",
+  "cqr/worker.py": "321aed369e591ef22a6a0bf7688e7360149f7590106780213ef15a400f7e44c7",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v5",
- "passed": 19,
- "total": 19,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v10",
+ "passed": 21,
+ "total": 21,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
-  "cqr/campaign.py": "e0805484938012c5f2fc6758bec6abe123766aefa11792ed3b728d4918fc258b",
-  "cqr/checker.py": "090c65ab9a4f10a9b97f0daf04fe479d5fa431669a9642574e0e8930aac68aa9",
-  "cqr/closeout.py": "34106b35a4a1d5927c9a07654e8037c7f2f5ee52626b92f751542599276b3205",
-  "cqr/compiler.py": "cdb86c3b62156cc9de87318b0ffb749182e022f682511ed8c5e7a84b496f9fb2",
-  "cqr/frontier.py": "af1ee8dd050fd771394fbe05d2b0db83a291ff85cc7fd67f3c29d3bcf726d4b5",
-  "cqr/gate.py": "dd64977f556c483489bc6c9e043607ccf6d61813638491e06f59abdf8477469f",
+  "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
+  "cqr/checker.py": "e568120937b87d7207ed5c0063663fdcf0ddff6d297f905385ba5ec7dec1ae13",
+  "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
+  "cqr/compiler.py": "f57ffd52314ec0ad1436dc65c56c9eb65b4a0be7cba0fde14f6b53e44a1f2f4d",
+  "cqr/frontier.py": "04e0be831cd30368570fcf1bc1a2d46a32399af68cd99f8671dab133f2d12044",
+  "cqr/gate.py": "2c6805baf56a4cdf5b1626a30ce5f548aeb9d1c720bdd35c9f9d0baf33f601f3",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "9b65969992c88bf84651e35a6a6af09a1722ad9ecd052ec21ed7fb37aacaec50",
+  "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
   "cqr/numerics.py": "822bc52f275a7032a7b9341ad7ce7d596a23a995f7b2de087a8277891e7cd9a3",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "cd12809dd07f96611cdbb6ba557a2e0bf2ba45693643c7de40087b7398f8e8dd",
-  "cqr/report.py": "9183be8261745a64535469ef2e85e65973c475c6ce80c069f90381f87a23ae06",
-  "cqr/resolve_design.py": "11107e80b4caf97a5a439dd049addf06e622069289954c93cdc5ae18fc3272cc",
-  "cqr/schedule.py": "ede2d4f27f5e1b4b623f5c4f4281220e87cee68782b540e249dc829284e10624",
-  "cqr/solve.py": "4153ba38390a1661f6a1f5325f52df0702acf1f99b767962c9efce308f4256de",
+  "cqr/registry.py": "80935ab12b9b5247f692bb495dea79d5f848e522e838b4e45c4782b070e786c4",
+  "cqr/report.py": "2b5419c645c1e85e3b014a74d5650b30d4f795723abfa1006924fcc884b17181",
+  "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
+  "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
+  "cqr/solve.py": "392bd400303fdafb2d5debe371bc24757f469edd51f67bad486dfb84d5f391ec",
   "cqr/task.py": "20b39d8110e63d940f69f4435ca5fcb0b9dfa20a9019560510252bbb359c2d68",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "7908eb5b6e72392b31aeda67bc0c7baae363d97e85688ce2502396d4990cebba",
+  "cqr/worker.py": "321aed369e591ef22a6a0bf7688e7360149f7590106780213ef15a400f7e44c7",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "utc": "2026-11-16T16:43:45Z",
- "wall_s": 575.9,
+ "utc": "2026-11-16T22:08:19Z",
+ "wall_s": 566.9,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",

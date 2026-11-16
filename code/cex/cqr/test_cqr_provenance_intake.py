@@ -240,6 +240,59 @@ def _t_receipt_cache():
     assert KI.receipt_failures(fr, w_bad, 'N1_CQR') == [], 'a CQR arm loads nothing native'
     return 'cache-path records with the frozen digest accepted; foreign digest / unknown kind refused'
 
+
+# ------------------------------------------------------------------------------------------------------------------------- (1e) executable dependency coverage (second review R4)
+@test('executable_dependency_map_from_adapters')
+def _():
+    """the arm -> executable map is derived from the adapters' actual command lines: LBP and LIBDAI_EXACT both execute bench/libdai/libdai_mar (bench/cells.py cell_libdai);
+    WMB / IJGP / MERLIN_CTE execute the Merlin binary (bench/cells.MERLIN == MERLIN_PIN.json binary.path); PGMAX_SUMPRODUCT_BP runs under the .venv-pgmax interpreter"""
+    import re
+    src = open(os.path.join(CODE, 'bench', 'cells.py')).read(); cc = open(os.path.join(CODE, 'cex', 'pac', 'comparator_cell.py')).read()
+    assert re.search(r'[\'"]LBP[\'"]:\s*lambda \*a: cell_libdai\(', src) and re.search(r'[\'"]EXACT[\'"]:\s*lambda \*a: cell_libdai\(', src), 'bench/cells.py no longer routes LBP / EXACT through cell_libdai'
+    assert "'LIBDAI_EXACT': 'EXACT', 'LBP': 'LBP'" in cc, 'comparator_cell.py ARMS table changed'
+    assert KI.tags_needed_by('LBP') == KI.tags_needed_by('LIBDAI_EXACT') == ('libdai_mar',), (KI.tags_needed_by('LBP'), KI.tags_needed_by('LIBDAI_EXACT'))
+    assert KI.tags_needed_by('WMB') == KI.tags_needed_by('IJGP') == KI.tags_needed_by('MERLIN_CTE') == ('merlin',)
+    assert KI.tags_needed_by('PGMAX_SUMPRODUCT_BP') == ('pgmax_python',) and KI.tags_needed_by('N1_CQR') == ()
+    cur = KI.collect(CODE); mp = cur['merlin']['adapter_paths']; assert mp['consistent'], 'MERLIN_PIN.json path and bench/cells.MERLIN differ: %s' % mp
+    assert cur['merlin']['record_binary_sha256'] == cur['merlin']['binary_sha256'] or cur['merlin']['binary_sha256'] is None, 'Merlin pin sha differs from the binary on disk'
+    return '%d tags; LBP and LIBDAI_EXACT share libdai_mar; Merlin paths consistent' % len(cur)
+
+
+@test('campaign_run_refuses_replaced_libdai_for_LBP_and_merlin_for_WMB')
+def _():
+    """the reviewer's paired startup witness extended: a frozen libdai identity replaced on disk must refuse LBP (not only LIBDAI_EXACT); the same for Merlin under WMB / MERLIN_CTE and
+    the pgmax interpreter under PGMAX_SUMPRODUCT_BP. Simulated by freezing a manifest whose identity differs from the real disk; nothing is executed; the real files are never modified"""
+    out = []
+    for tag, arms in (('libdai_mar', ('LBP', 'LIBDAI_EXACT')), ('merlin', ('WMB', 'MERLIN_CTE', 'IJGP')), ('pgmax_python', ('PGMAX_SUMPRODUCT_BP',))):
+        for arm in arms:
+            td = tempfile.mkdtemp(prefix='run_'); ki = KI.collect(CODE); ki[tag] = dict(ki[tag], binary_sha256=sha(('review-only fake %s' % tag).encode()))
+            man = _manifest_dict(td, [dict(arm=arm, cohort='x', case_id='c', budget_s=1.0, replicate=0, kind='comparator', cell_id='1' * 16, order_index=0)], ki); json.dump(man, open(os.path.join(td, 'CAMPAIGN_MANIFEST.json'), 'w'))
+            try:
+                C.run(td, max_cells=0); raise AssertionError('%s must be refused when %s is replaced' % (arm, tag))
+            except SystemExit as ex: assert str(ex).startswith('START REFUSED:') and 'BINARY_CHANGED' in str(ex) and tag in str(ex), (arm, str(ex)[:160])
+            out.append(arm); shutil.rmtree(td)
+    # control: the true identity starts for LBP
+    td = tempfile.mkdtemp(prefix='run_'); json.dump(_manifest_dict(td, [dict(arm='LBP', cohort='x', case_id='c', budget_s=1.0, replicate=0, kind='comparator', cell_id='1' * 16, order_index=0)], KI.collect(CODE)), open(os.path.join(td, 'CAMPAIGN_MANIFEST.json'), 'w'))
+    assert C.run(td, max_cells=0) == 0; shutil.rmtree(td)
+    return 'START REFUSED for %s on replaced executables; true identity starts' % ','.join(out)
+
+
+@test('ordering_alternates_initial_orientation_across_cases')
+def _():
+    """with an odd replicate count the first arm of a case's first block alternates across cases by the predeclared parity of sha256(case_id)"""
+    pars = [C.case_parity('case_%d' % i) for i in range(64)]; assert 0 < sum(pars) < 64, pars
+    return 'case parities over 64 synthetic ids: %d odd' % sum(pars)
+
+
+@test('schedule_independent_implementation_agrees')
+def _():
+    import random as _r
+    cells = [dict(cohort='constructed', slot_index=i, slot_id='slot_%02d' % i, cards=[_r.Random(i).choice([2, 2, 3, 4]) for _ in range(8 + (i % 5) * 4)], salt='s') for i in range(96)]
+    r1 = SCHED.check_schedule_independent(cells, salt='s'); r2 = SCHED.check_schedule_independent([dict(c, cards=None) for c in cells], salt='s')
+    assert r1['agree'] == 96 and not r1['disagree'] and r2['agree'] == 96, (r1['disagree'][:1], r2['disagree'][:1])
+    tam = dict(cells[3]); tam['slot_index'] = 4; sched = SCHED.constructed_schedule(3, cells[3]['cards'], 's', 'slot_03'); ck = SCHED.check_schedule([dict(tam, schedule=sched)], salt='s'); assert ck['mismatches'], 'tamper not flagged'
+    return 'production and independent implementations agree on 96 slots (with and without cardinalities); tamper flagged'
+
 if __name__ == '__main__':
     bad = [r for r in RESULTS if not r[1]]
     print('%d/%d passed' % (len(RESULTS) - len(bad), len(RESULTS)))

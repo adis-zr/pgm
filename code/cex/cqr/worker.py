@@ -58,7 +58,9 @@ def main():
         out['parse_s'] = time.monotonic() - t
         kw = {}
         if a.cap_bytes is not None: kw['cap_bytes'] = a.cap_bytes; out['memory_policy'] = (out.get('memory_policy') or '') + '; solver optional-work cancellation cap %d bytes (CLI)' % a.cap_bytes
-        if a.fault_inject: kw['fault_inject'] = a.fault_inject; out['fault_injected'] = a.fault_inject
+        if a.fault_inject:
+            fi = json.loads(a.fault_inject) if a.fault_inject.strip().startswith('{') else a.fault_inject          # dict(op, where, k) = mid-operator injection (after factor / query / decoder construction, before or after the atomic swap)
+            kw['fault_inject'] = fi; out['fault_injected'] = fi
         r = SV.solve(task, a.deadline, a.arm, a.seed, **kw)
         out['outcome'] = r['outcome']; out['guarantee_type'] = r['guarantee_type']; out['certificate'] = r['certificate']; out['stats'] = r['stats']
         if r['outcome'] == 'PROVED_ZERO_EVIDENCE':

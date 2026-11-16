@@ -163,7 +163,26 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     assert [q['orig_index'] for q in cq] == list(range(K)), 'compiled queries must be the original queries in order'
     # a direct concentration answer: deterministic publication candidate (bias already in C.bias)
     direct = compile_log.get('direct')
-    fr = FR.Frontier(cards, C.views, cq, work_opt, order=list(range(len(cards)))) if cards else None
+    # frontier construction + initial root / publication work are OPTIONAL transactions too (second review R2/R3): served to parity, cancellable, and a failure here cancels the optional half
+    fr = None
+    if cards:
+        try:
+            service('frontier_init'); fr = FR.Frontier(cards, C.views, cq, work_opt, order=list(range(len(cards)))); fr.service = service; service('frontier_init')
+            if fault_inject == 'frontier_init': raise RuntimeError('INJECTED optional fault in frontier_init (qualification control; never a production run)')
+        except CP.CompileStop as cs:
+            if cs.kind == 'reference_done': fr = None
+            else: optional_cancelled = 'optional work cancelled during frontier construction (%s)' % cs.kind; fr = None
+        except Stop: raise
+        except MemoryError: optional_cancelled = 'MemoryError during frontier construction'; fr = None
+        except Exception as ex: optional_cancelled = 'optional failure during frontier construction: %s: %s' % (type(ex).__name__, str(ex)[:120]); fr = None
+        if fr is None:
+            parity()
+            while not ref.done: check('reference-only'); ref_quantum(Q)
+            r = ref.result(); check('reference completion')
+            if optional_cancelled: trace['events'].append(dict(op='optional_cancelled', reason=optional_cancelled))
+            if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, None, None, [], trace['events'], ref, work_ref, work_opt, None, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0))
+            pub = _exact_reference_pub(r, normalizer); check('publication')
+            return dict(outcome='PUBLISHED', guarantee_type=pub['guarantee'], publication=pub, certificate=_cert(task, arm, mode, trace, C, compile_log, None, None, [], trace['events'], ref, work_ref, work_opt, pub, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0), bias=[str(b) for b in C.bias])
     trace['phase'] = 'adaptive'; open_cap = max(64, min(POLICY['open_cap'], (4 * 10 ** 7) // max(1, len(cards))))      # memory: prefix cells store <= n ints each
     ratio = FR.RatioStream(Kc, delta / 2, fr.U() if fr and fr.U() > 0 else F(1), random.Random(rng.getrandbits(64))) if (fr is not None and mode == 'PAC_EPS') else None
     if normalizer: spec = dict(spec, signed_stream=False, query_directed_refinement=False)      # recorded in the certificate (signed_stream / query_directed_refinement flags are task-effective)
@@ -330,8 +349,6 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         if all(x is not None for x in b) and positive_mass():
             pt = _feasible_point(task, [_box(lo, hi, tau(j)) for j, (lo, hi) in enumerate(b)], groups)
             if pt is not None: pub = dict(route='deterministic_concentration', bounds=widen(b), compiled_bounds=b, point=pt, guarantee='DETERMINISTIC', tau=[str(tau(j)) for j in range(Kc)])
-    ref_quantum(max(0, work_opt.total() - work_ref.total()))        # parity before the first publication test
-    if pub is None and not ref.done: try_publish('initial')
     trace['normalizer_task'] = normalizer
     def _cancel_optional(reason):
         """the optional half is CANCELLED: its incomplete claims are discarded, every charge it spent stays on the ledger, the last committed compiled model is kept in the
@@ -342,6 +359,35 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         fr = None
         if cur_epoch is not None and cur_epoch.retired is None: cur_epoch.retired = 'optional_cancelled'
         if ratio is not None and ratio.stopped is None: ratio.stopped = 'optional_cancelled'
+    class _RefDone(Exception): pass
+    def optional(fn, where):
+        """ONE typed lifecycle for every optional computation that may hit the service hook (initial / adaptive publication tests, candidate construction, frontier scans):
+        reference_done => the completed original reference will be published (signalled by _RefDone); cancelled / memory / optional failure => the optional half is cancelled
+        and the reference continues alone; deadline => typed Stop (propagated); ZeroEvidence => propagated; anything else is an optional failure (recorded), never a FAULT"""
+        try: return fn()
+        except Stop: raise
+        except CP.ZeroEvidence: raise
+        except CP.CompileStop as cs:
+            if cs.kind == 'reference_done': cache.clear(); raise _RefDone()
+            if cs.kind == 'deadline': raise Stop('DEADLINE', dict(where=where))
+            _cancel_optional('optional work cancelled in %s (%s)' % (where, cs.kind)); return None
+        except TimeoutError: raise Stop('DEADLINE', dict(where=where))
+        except MemoryError: _cancel_optional('MemoryError in %s' % where); return None
+        except Exception as ex: _cancel_optional('optional failure in %s: %s: %s' % (where, type(ex).__name__, str(ex)[:120])); return None
+    def _publish_completed_reference():
+        """the protected reference finished: its exact result IS the publication (zero evidence => the typed proof); the certificate keeps whatever optional state exists"""
+        nonlocal pub
+        r = ref.result(); check('reference completion')
+        if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, disabled, t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, fr, ratio, t0))
+        pub = _exact_reference_pub(r, normalizer); return None
+    # ---- initial publication test (OPTIONAL work; the reference may complete INSIDE the root computation: that completion is the result, never a fault -- third review CQR-R2-03)
+    ref_quantum(max(0, work_opt.total() - work_ref.total()))        # parity before the first publication test
+    if pub is None and not ref.done:                     # zero-dimensional compiled models (fr None) publish here too (constants / exact closures)
+        try: optional(lambda: try_publish('initial'), 'initial publication test')
+        except _RefDone: pass
+    if pub is None and ref.done:
+        z_ = _publish_completed_reference()
+        if z_ is not None: return z_
     while pub is None:
         check('loop')
         if rss() > cap_bytes * 9 // 10 and fr is not None and fr.open: _cancel_optional('memory pressure in the adaptive loop (rss %d)' % rss())
@@ -350,9 +396,9 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         # ---- reference quantum: at least Q units, and at least as many units as the optional half spent in the previous iteration (gamma = 1/2 in Work units)
         ref_quantum(max(Q, last_opt))
         if ref.done:
-            r = ref.result(); check('reference completion')
-            if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, None, t0, zero=dict(kind='reference')), stats=_stats(work_ref, work_opt, fr, ratio, t0))
-            pub = _exact_reference_pub(r, normalizer); break
+            z_ = _publish_completed_reference()
+            if z_ is not None: return z_
+            break
         if fr is None: break
         # ---- optional quantum: refinement (one bounded optional transaction; an optional FAILURE cancels the optional half and the reference continues alone)
         w0 = work_opt.total(); work_opt.cells += len(fr.open)        # the cell-selection scan is charged
@@ -407,12 +453,14 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                                 if iv is not None and positive_mass() and all(Lj[j] > 0 and iv[j][0] >= -tau(j) * Lj[j] and iv[j][1] <= tau(j) * Lj[j] for j in range(Kc)):
                                     pub = dict(route='pac_signed_residual_validation', bounds=[around(c, j, eps - MARGIN) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='PAC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no, L=[str(x) for x in Lj], intervals=[(str(a), str(b_)) for a, b_ in iv]); return
                                 if cur_epoch.t >= 2 ** epoch_no: cur_epoch.retired = 'epoch_length_reached'; events.append(dict(op='epoch_retired', epoch=epoch_no, reason='length 2^e reached'))
-        try:
+        def _turn():
             if fault_inject == 'adaptive_loop' and it == 1: raise RuntimeError('INJECTED optional fault in the adaptive loop (qualification control; never a production run)')
             _optional_turn()
-        except Stop: raise
-        except MemoryError as ex: _cancel_optional('MemoryError in the adaptive loop'); continue
-        except Exception as ex: _cancel_optional('optional failure in the adaptive loop: %s: %s' % (type(ex).__name__, str(ex)[:120])); continue
+        try: optional(_turn, 'adaptive optional turn')
+        except _RefDone:
+            z_ = _publish_completed_reference()
+            if z_ is not None: return z_
+            break
         if fr is None: continue
         if pub is not None: break                                 # a signed-stream publication inside the optional turn: exit to the common parity / publication tail
         # ---- deterministic test first, then PAC (charged; cadence from the policy). BEFORE any publication test the protected reference is brought to PARITY with the optional
@@ -420,11 +468,14 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         if it % max(1, (len(fr.open) * Kc) // 1024) == 0 or not fr.open:
             work_opt.ratops += len(fr.open) * Kc
             ref_quantum(max(0, work_opt.total() - work_ref.total()))
+            if not ref.done:
+                try: optional(lambda: try_publish('loop'), 'adaptive publication test')
+                except _RefDone: pass
             if ref.done:
-                r = ref.result(); check('reference completion')
-                if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, None, t0, zero=dict(kind='reference')), stats=_stats(work_ref, work_opt, fr, ratio, t0))
-                pub = _exact_reference_pub(r, normalizer); break
-            try_publish('loop')
+                z_ = _publish_completed_reference()
+                if z_ is not None: return z_
+                break
+            if fr is None: continue
         if not fr.open and pub is None:
             # frontier fully closed: exact compiled answers
             if normalizer:

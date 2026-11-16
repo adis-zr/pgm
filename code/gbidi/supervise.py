@@ -10,6 +10,9 @@ cancellation, kill-and-reap before the charged wall, completion = the OWNED WORK
     attempt whose own receipt is missing (outcome PARENT_CLEANUP_KILL), and records nested_groups_registered / killed / live_at_receipt; any owned
     process that cannot be shown gone makes the attempt CLEANUP_UNRESOLVED.
   * parent_jid is recorded in START and RECEIPT so the closeout accounts each outer attempt with ITS OWN children (H4).
+Survivor DIAGNOSTICS (16 Nov 2026, after admission_v6 / v9 of the CQR candidate): every process found alive in the owned group after the leader's exit is
+described (pid, ppid, name, cmdline, status, age, relation to the leader) in the receipt's survivor_details BEFORE it is killed; the outcome, the kill and the
+gate's refusal of any non-COMPLETED outcome are unchanged.
 Only processes whose recorded group ids were registered by this job's tree are ever signalled; a recycled pid is never killed by pid alone (group
 membership is re-checked with os.getpgid immediately before the signal).
 
@@ -46,6 +49,26 @@ def group_members(pgid, exclude_pid=None):
 def append(path, rec):
     with open(path, "a") as f:
         f.write(json.dumps(rec, default=str) + "\n"); f.flush(); os.fsync(f.fileno())
+
+
+def describe_members(pids, leader_pid=None):
+    """retained diagnostics for processes found alive in the owned group after the leader's exit (pid, ppid, name, cmdline, status, age, relation to the leader);
+    best effort: a process that disappears while being described is recorded as GONE_WHILE_DESCRIBING. Recorded BEFORE the kill; the policy itself is unchanged"""
+    out = []
+    for pid in pids:
+        d = {"pid": pid}
+        try:
+            pr = psutil.Process(pid)
+            with pr.oneshot():
+                d.update({"ppid": pr.ppid(), "name": pr.name(), "status": pr.status(), "create_time_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(pr.create_time())),
+                          "age_s": round(time.time() - pr.create_time(), 3), "cmdline": " ".join(pr.cmdline())[:300], "parent_name": (pr.parent().name() if pr.parent() is not None else None),
+                          "relation": ("LEADER_STILL_LISTED" if pid == leader_pid else ("CHILD_OF_LEADER" if leader_pid is not None and pr.ppid() == leader_pid else "ORPHANED_OR_DEEPER"))})
+        except (ProcessLookupError, psutil.NoSuchProcess):
+            d["status"] = "GONE_WHILE_DESCRIBING"
+        except (PermissionError, psutil.Error) as ex:
+            d["status"] = "UNDESCRIBABLE: %s" % type(ex).__name__
+        out.append(d)
+    return out
 
 
 def kill_group_and_wait(pgid, wait_s=GROUP_WAIT_S):
@@ -87,7 +110,7 @@ def main():
     groups_file = os.path.join(own_dir, "groups.jsonl"); env["GBIDI_OWNER_DIR"] = own_dir; env["GBIDI_PARENT_JID"] = jid
     maxcharge = (a.timeout + GRACE_S) if a.timeout is not None else None
     proc = None; pgid = None; launching = False; pending_signal = None; error = None
-    peak = 0; overshoot = 0; outcome = "COMPLETED"; samples = 0; rc = None; survivors = 0; group_empty = None; nested = {"registered": 0, "killed": 0, "live_at_receipt": 0, "receipts_written_by_parent": 0}
+    peak = 0; overshoot = 0; outcome = "COMPLETED"; samples = 0; rc = None; survivors = 0; survivor_details = None; survivor_detect_utc = None; survivor_leader_rc = None; survivor_leader_exit_to_detect_s = None; group_empty = None; nested = {"registered": 0, "killed": 0, "live_at_receipt": 0, "receipts_written_by_parent": 0}
     def killgroup():
         nonlocal pgid
         if pgid is None and proc is not None:
@@ -159,6 +182,8 @@ def main():
         if pgid is not None:
             rest = group_members(pgid); survivors = len(rest)
             if rest:
+                survivor_details = describe_members(rest, leader_pid=(proc.pid if proc is not None else None)); survivor_detect_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                survivor_leader_rc = rc; survivor_leader_exit_to_detect_s = round(time.monotonic() - m0, 3)
                 if outcome == "COMPLETED":
                     outcome = "COMPLETED_LEADER_EXIT_SURVIVORS_KILLED"
                 kill_group_and_wait(pgid)
@@ -198,10 +223,10 @@ def main():
             outcome = "CLEANUP_UNRESOLVED"
         wall = time.monotonic() - m0
         append(a.ledger, {"kind": "RECEIPT", "jid": jid, "scope": a.scope, "job": a.job, "start_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)), "end_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "parent_jid": parent_jid,
-                           "wall_s": wall, "returncode": rc, "outcome": outcome, "outcome_before_cleanup": outcome_before_cleanup, "cleanup_unresolved": cleanup_unresolved, "descendants_after_leader_exit": survivors, "group_empty_at_receipt": group_empty, "nested_groups_registered": nested["registered"], "nested_groups_killed": nested["killed"], "nested_groups_live_at_receipt": nested["live_at_receipt"], "nested_receipts_written_by_parent": nested["receipts_written_by_parent"], "nested_live": nested_live, "owner_dir": own_dir, "launch_error": (error if outcome_before_cleanup == "LAUNCH_FAILED" else None), "error": error, "pending_signal": pending_signal,
+                           "wall_s": wall, "returncode": rc, "outcome": outcome, "outcome_before_cleanup": outcome_before_cleanup, "cleanup_unresolved": cleanup_unresolved, "descendants_after_leader_exit": survivors, "survivor_details": survivor_details, "survivor_detect_utc": survivor_detect_utc, "survivor_leader_returncode": survivor_leader_rc, "survivor_detect_wall_s": survivor_leader_exit_to_detect_s, "group_empty_at_receipt": group_empty, "nested_groups_registered": nested["registered"], "nested_groups_killed": nested["killed"], "nested_groups_live_at_receipt": nested["live_at_receipt"], "nested_receipts_written_by_parent": nested["receipts_written_by_parent"], "nested_live": nested_live, "owner_dir": own_dir, "launch_error": (error if outcome_before_cleanup == "LAUNCH_FAILED" else None), "error": error, "pending_signal": pending_signal,
                            "peak_tree_rss_bytes": peak, "rss_samples": samples, "sampling_interval_s": a.interval, "mem_cap_gib": a.mem_gib, "mem_overshoot_bytes": overshoot, "timeout_s": a.timeout, "pid": (proc.pid if proc is not None else None), "pgid": pgid,
                            "enforcement": "sampled process-tree RSS (best effort, not an allocator cap); SIGKILL of RECORDED groups only (membership re-checked at signal time) on threshold, deadline + grace, supervisor signal, survivors after the leader's exit or registered nested groups still alive; cancellation deferred across the launch boundary; completion = every owned group empty; wall measured after cleanup"})
-        print(json.dumps({"job": a.job, "wall_s": round(wall, 3), "rc": rc, "outcome": outcome, "peak_MB": round(peak / 1e6, 1), "survivors": survivors, "nested": nested}), file=sys.stderr)
+        print(json.dumps({"job": a.job, "wall_s": round(wall, 3), "rc": rc, "outcome": outcome, "peak_MB": round(peak / 1e6, 1), "survivors": survivors, "survivor_details": survivor_details, "nested": nested}), file=sys.stderr)
     sys.exit(0 if outcome == "COMPLETED" else 1)
 
 

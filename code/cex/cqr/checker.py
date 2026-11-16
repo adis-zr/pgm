@@ -39,6 +39,19 @@ DET_ROUTES = ('deterministic_frontier', 'deterministic_frontier_closure', 'deter
 PAC_ROUTES = ('pac_ratio_intersected_with_deterministic', 'pac_signed_residual_validation', 'normalizer_pac_ratio_intersected_with_deterministic')
 
 
+
+def _attribution(route, cls, exact_route, C, cert, info):
+    """the report-facing attribution DERIVED from verified information (second review R6): route, proof class, exactness, the committed operators of the journal, the compiled
+    bias ledger, and the interpretation of that ledger for the ORIGINAL answers: on an exact-reference route the compiled surrogate was SUPERSEDED (its bias is a diagnostic
+    of unused optional work, never an error applied to the published exact answers); on a compiled route the bias widens the published original intervals"""
+    bias = [str(b) for b in C.bias] if C is not None else None
+    if route in ('exact_reference', 'normalizer_exact_reference'): interp = 'exact reference: zero error on the original answers; the compiled ledger (if any) is a superseded-surrogate diagnostic'
+    elif exact_route: interp = 'exact closure: zero bias (the route requires every ledger entry to be zero)'
+    else: interp = 'compiled route: the ledger widens every published original interval'
+    return dict(route=route, guarantee=cls, exact=exact_route, commits=info.get('commits') or [], declines=info.get('declines') or [], compiled_bias=bias,
+                bias_applied_to_original_answers=(bias if (bias is not None and not exact_route and route not in ('exact_reference', 'normalizer_exact_reference')) else (['0'] * len(bias) if bias is not None else None)),
+                bias_interpretation=interp, optional_cancelled=(cert or {}).get('optional_cancelled'), compile_outcome=info.get('compile_outcome'))
+
 def guarantee_class_of_route(route):
     """the proof class a route can establish (review CQR-04): exact routes and deterministic routes => DETERMINISTIC (exact routes additionally exact); statistical routes => PAC"""
     if route in EXACT_ROUTES: return 'DETERMINISTIC', True
@@ -114,26 +127,29 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
     if pub.get('guarantee') != cls: fail('publication guarantee %s differs from the class %s of route %s' % (pub.get('guarantee'), cls, route))
     if w.get('guarantee_type') != cls: fail('worker guarantee_type %s differs from the class %s established by route %s' % (w.get('guarantee_type'), cls, route))
     if bool(pub.get('exact')) != exact_route: fail('exact flag %s disagrees with route %s' % (pub.get('exact'), route))
-    # ---------------- 2. compiler chain replay (optional work; None when the compile was cancelled and the reference alone published)
+    # ---------------- 2. compiler JOURNAL replay (second review R1): EXACTLY the recorded commits are verified on their pre-commit model and applied; no operator is re-run,
+    # no prefix is guessed; the replayed final model must hash to the recorded final_sha256; every commit's operator must be in the task-effective policy
     comp = cert.get('compile'); C = None
     if comp is not None:
-        try: C, log = CP.compile_task(task, enabled=enabled_eff, work=work)
-        except CP.ZeroEvidence as z: fail('replayed compile proves ZERO_EVIDENCE but the worker published'); return fails, info
-        if (comp.get('log') or {}).get('interrupted') or (comp.get('log') or {}).get('failed'):
-            # the worker's compile was interrupted (deadline / reference_done / cancelled) or an operator FAILED and was rolled back: replay the SAME committed prefix by stopping
-            # at the same operator (the failed operator contributed nothing: the step is transactional)
-            C = _replay_interrupted(task, enabled_eff, comp, work)
-            if C is None: fail('interrupted / failed compile prefix does not replay'); return fails, info
+        journal = comp.get('certificates') or []
+        C, jf, derived = CP.replay_journal(task, journal, work, deadline=deadline)
+        for m_ in jf: fail('journal replay: ' + m_)
+        if C is None or jf: return fails, info
+        _opname = {'support': 'support_fixpoint'}
+        bad_ops = sorted({c.get('op') for c in journal if c.get('kind') == 'commit' and _opname.get(c.get('op'), c.get('op')) not in enabled_eff and c.get('op') != 'evidence'})
+        if bad_ops: fail('journal commits by operators outside the task-effective policy: %s' % bad_ops)
+        lg = comp.get('log') or {}
+        if lg.get('commits') is not None and lg.get('commits') != sum(1 for c in journal if c.get('kind') == 'commit'): fail('log commit count differs from the journal')
         snap = C.snapshot_json(); sha_ = hashlib.sha256(json.dumps(snap, sort_keys=True, default=str).encode()).hexdigest()
-        if sha_ != comp.get('final_sha256'): fail('compiled model does not replay (final_sha256 %s vs %s)' % (sha_[:12], str(comp.get('final_sha256'))[:12])); return fails, info
-        rec_certs = comp.get('certificates') or []
-        if [c.get('op') for c in rec_certs] != [c.get('op') for c in C.certs]: fail('recorded certificate chain differs from the replayed chain')
-        vf, derived = _verify_chain(task, enabled_eff, rec_certs, work, deadline)
-        fails += vf
+        if sha_ != comp.get('final_sha256'): fail('compiled model does not replay from the journal (final_sha256 %s vs %s)' % (sha_[:12], str(comp.get('final_sha256'))[:12])); return fails, info
+        rec_certs = journal
         bias = [_F(b) for b in (cert.get('bias') or [])]
         if bias != C.bias: fail('recorded bias ledger differs from the replayed one')
         if mode == 'EXACT_RATIONAL' and any(b != 0 for b in bias): fail('EXACT_RATIONAL publication with nonzero compiler bias')
+        if any(b < 0 for b in bias): fail('negative compiler bias ledger (a bias is an error bound, never negative)')
         if any(b > eps / 4 for b in bias): fail('compiler bias exceeds the reserve eps/4')
+        info['commits'] = [c.get('op') for c in journal if c.get('kind') == 'commit']; info['declines'] = [c.get('op') for c in journal if c.get('kind') == 'decline']
+        info['bias'] = [str(b) for b in C.bias]; info['compile_outcome'] = dict(interrupted=lg.get('interrupted'), failed=lg.get('failed'))
     else:
         derived = {}; rec_certs = []
         if route not in ('exact_reference', 'normalizer_exact_reference'): fail('publication without a compile record on a non-reference route'); return fails, info
@@ -147,7 +163,7 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         proven, info_n = _normalizer_enclosure(task, C, cert, pub, route, eps, delta, deadline, work, fail)
         if fails: return fails, info
         _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, eps, fail, normalizer=True)
-        info['route'] = route; info['work'] = work.snapshot(); return fails, info
+        info.update(route=route, work=work.snapshot(), exact=exact_route, guarantee=cls, mode=mode); info['attribution'] = _attribution(route, cls, exact_route, C, cert, info); return fails, info
     cq = C.queries if C is not None else None
     proven = None
     if route == 'exact_reference':
@@ -156,7 +172,9 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         proven = [('UNDEFINED' if a == 'UNDEFINED' else (a, a)) for a in tr['answers']]
     else:
         bias = C.bias
-        def widen(x, j): return (max(F(0), x[0] - bias[j]), min(F(1), x[1] + bias[j]))
+        def widen(x, j):
+            if bias[j] < 0: fail('negative bias %s on query %d cannot widen an enclosure' % (bias[j], j)); return (F(1), F(0))       # a reversed interval: refused by the validator as a failed proof
+            return (max(F(0), x[0] - bias[j]), min(F(1), x[1] + bias[j]))
         if not C.cards:
             # zero-dimensional compiled model: every compiled query view has empty scope
             if route not in ('exact_zero_dimensional', 'deterministic_zero_dimensional', 'deterministic_concentration'): fail('route %s on a zero-dimensional compiled model' % route); return fails, info
@@ -230,7 +248,8 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
     if fails: return fails, info
     # ---------------- 4. ONE final validator for every route and every emitted representation (review CQR-01 / 03 / 05)
     _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, eps, fail)
-    info['route'] = route; info['work'] = work.snapshot(); info['exact'] = exact_route
+    info.update(route=route, work=work.snapshot(), exact=exact_route, guarantee=cls, mode=mode)
+    info['attribution'] = _attribution(route, cls, exact_route, C, cert, info)
     return fails, info
 
 
@@ -249,9 +268,11 @@ def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, e
             if not (isinstance(b, (list, tuple)) and b[0] == 'UNDEFINED' and b[1] == 'UNDEFINED' and pt == 'UNDEFINED'): fail('query %d is PROVED undefined but a value was published' % j)
             continue
         if b[0] == 'UNDEFINED' or pt == 'UNDEFINED': fail('query %d is defined but published as UNDEFINED' % j); continue
+        if not (isinstance(pr, (list, tuple)) and len(pr) == 2 and pr[0] <= pr[1]): fail('query %d: the DERIVED enclosure %s is not an ordered interval (a reversed derivation is a failed proof)' % (j, pr)); continue
         lo, hi = _F(b[0]), _F(b[1]); p = _F(pt)
         if lo > hi: fail('query %d: inverted published bounds' % j); continue
         if normalizer:
+            if pr[0] <= 0 or pr[1] < pr[0]: fail('derived Z enclosure [%s, %s] is not a positive ordered interval' % (pr[0], pr[1]))
             if not (lo <= pr[0] and pr[1] <= hi): fail('published Z bounds do not contain the re-derived enclosure [%s, %s]' % (pr[0], pr[1]))
             if lo <= 0: fail('Z lower bound not positive')
             if not ((1 - eps) * hi <= p <= (1 + eps) * lo): fail('Z point outside [(1-eps) U, (1+eps) L] of the PUBLISHED bounds (relative error not certified)')
@@ -297,19 +318,6 @@ def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, e
     elif iv is not None or pts is not None: fail('legacy rows emitted for a task that is not the all-singleton contract (or has undefined coordinates)')
 
 
-def _replay_interrupted(task, enabled_eff, comp, work):
-    """replay a compile that the worker interrupted (deadline / reference_done / memory): the SAME operator sequence is run and stopped after the recorded interrupted operator's
-    committed prefix is unavailable in general, so the replay re-runs the operators that COMMITTED (recorded steps) and refuses if the interrupted operator committed anything"""
-    log = comp.get('log') or {}; steps = log.get('steps') or []; done_ops = [st['op'] for st in steps if st.get('committed')]
-    inter = log.get('interrupted') or log.get('failed') or {}
-    if any(st.get('op') == inter.get('op') and st.get('committed') for st in steps): return None
-    # re-run with a service hook that raises at the recorded operator (an interrupted operator is stopped at its first tick; a failed one was rolled back, so stopping there is equivalent)
-    stop_at = inter.get('op'); kind = inter.get('kind', 'deadline') if 'kind' in inter else 'deadline'
-    def svc(op):
-        if op == stop_at: raise CP.CompileStop(kind, op)
-    try: C, _ = CP.compile_task(task, enabled=enabled_eff, work=work, service=svc)
-    except CP.ZeroEvidence: return None
-    return C
 
 
 def _replay_frontier(task, C, cert, delta, work, deadline, fail):
@@ -318,7 +326,7 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
     fr = FR.Frontier(C.cards, C.views, cq, work, order=fr_rec.get('order') if fr_rec else None)
     ratio_rec = cert.get('ratio_stream'); epochs = cert.get('epochs') or []
     H = F(0); Hj = [F(0)] * K; G = [F(0)] * K; V = F(0); t_r = 0; U_star = _F(ratio_rec['U_star']) if ratio_rec else None
-    ep_state = {}
+    ep_state = {}; ep_order = []
     for ev in events:
         if deadline is not None and time.monotonic() >= deadline: fail('UNVERIFIABLE: allowance expired during the frontier replay'); return None, None
         op = ev.get('op')
@@ -341,14 +349,24 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
                     fj, gj = fq[j]; G[j] += b * (fr.resolved_num[j] + W * fj); Hj[j] += b * ((fr.resolved_mass + W) if cq[j]['kind'] == 'expectation' else (fr.resolved_den[j] + W * gj))
                 V += b * b * U * U / 4
             elif op == 'epoch_start':
-                e = ev['epoch']; de = delta / (2 * e * (e + 1))
+                e = ev['epoch']
+                # APPEND-ONLY HISTORY (second review R5): epoch ids are the positive integers in order of allocation, each allocated ONCE (its risk delta/(2e(e+1)) is spent once);
+                # a new epoch may start only after the previous one is retired (an epoch that still accumulates observations is never restarted or abandoned silently)
+                if not isinstance(e, int) or e != len(ep_order) + 1: fail('epoch id %r is not the next allocation (%d)' % (e, len(ep_order) + 1)); return None, None
+                if ep_order and ep_state[ep_order[-1]].get('retired') is None: fail('epoch %d started while epoch %d is still open' % (e, ep_order[-1])); return None, None
+                de = delta / (2 * e * (e + 1))
                 if _F(ev['delta_e']) != de: fail('epoch %d risk differs from delta/(2e(e+1))' % e); return None, None
                 cand = [_F(c_) for c_ in ev['candidate']]; cells, E0 = fr.signed_law(cand, key=('epoch', e))
                 if _F(ev['E_star']) != (E0 if E0 > 0 else F(1)): fail('epoch %d E_star differs from the launch envelope' % e); return None, None
-                ep_state[e] = dict(cand=cand, H=F(0), G=[F(0)] * K, V=F(0), t=0, E_star=_F(ev['E_star']), alpha=de / max(1, K))
+                ep_state[e] = dict(cand=cand, H=F(0), G=[F(0)] * K, V=F(0), t=0, E_star=_F(ev['E_star']), alpha=de / max(1, K), retired=None); ep_order.append(e)
+            elif op in ('epoch_retired', 'epoch_E_zero'):
+                st = ep_state.get(ev.get('epoch'))
+                if st is None: fail('%s for an epoch that never started' % op); return None, None
+                if op == 'epoch_retired' or not ev.get('certified'): st['retired'] = ev.get('reason') or op
             elif op == 'signed_draw':
                 st = ep_state.get(ev['epoch'])
                 if st is None: fail('signed draw before its epoch start'); return None, None
+                if ev['epoch'] != ep_order[-1] or st.get('retired') is not None: fail('signed draw for epoch %s which is not the current open epoch' % ev['epoch']); return None, None
                 cells, E = fr.signed_law(st['cand'], key=('epoch', ev['epoch'])); c = fr.open.get(ev['cell'])
                 if c is None or _F(ev['E']) != E: fail('signed draw: launch envelope differs (E %s vs %s)' % (ev['E'], E)); return None, None
                 a_c = next((a for cc, a in cells if cc.id == c.id), None)
@@ -363,7 +381,7 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
                     if abs(R) > E: fail('signed contribution exceeds E'); return None, None
                     st['G'][j] += b * (d[j] + R)
                 st['V'] += b * b * E * E
-            elif op in ('epoch_E_zero', 'epoch_retired', 'ratio_stream_stopped', 'prune_zero', 'optional_cancelled', 'optional_operator_failed'): pass      # informational: the compile replay / rollback is verified separately
+            elif op in ('ratio_stream_stopped', 'prune_zero', 'optional_cancelled', 'optional_operator_failed'): pass      # informational: the compile replay / rollback is verified separately
             else: fail('unknown event %s' % op); return None, None
         except AssertionError as ax: fail('frontier replay assertion: %s' % str(ax)[:80]); return None, None
     if fr_rec is not None:
@@ -373,124 +391,20 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
         if t_r != ratio_rec['t'] or str(H) != ratio_rec['H'] or [str(x) for x in G] != ratio_rec['G'] or str(V) != ratio_rec['V']: fail('ratio stream statistics do not replay')
         if _F(ratio_rec['alpha']) != delta / 2 / max(1, K) or _F(ratio_rec['rho']) != U_star * U_star / 4: fail('ratio stream risk / rho differ from the policy')
         ratio = dict(H=H, Hj=Hj, G=G, V=V, t=t_r, U_star=U_star, Hb=None)
+    # every start reconciles with exactly one epoch record and vice versa; every completed draw was counted in exactly one epoch (t sums); the records carry the replayed statistics
+    if [e.get('epoch') for e in epochs] != ep_order: fail('epoch records %s do not match the started epochs %s' % ([e.get('epoch') for e in epochs], ep_order))
+    n_draws = sum(1 for ev in events if ev.get('op') == 'signed_draw')
+    if sum(st['t'] for st in ep_state.values()) != n_draws: fail('completed signed draws (%d) are not all accounted in the epochs' % n_draws)
     for e in epochs:
         st = ep_state.get(e['epoch'])
         if st is None: fail('recorded epoch %s has no start event' % e['epoch']); continue
         if st['t'] != e['t'] or str(st['H']) != e['H'] or [str(x) for x in st['G']] != e['G'] or str(st['V']) != e['V']: fail('epoch %s statistics do not replay' % e['epoch'])
+        if len(e.get('draws') or []) != e['t']: fail('epoch %s draw records (%d) differ from its count t = %d' % (e['epoch'], len(e.get('draws') or []), e['t']))
     return fr, dict(ratio=ratio, epochs=ep_state)
 
 
-def verify_quotient_step_views(cards, views, step, inc_idx, work):
-    """independent cross-multiplication check of a recorded quotient step against the given pre-step views (inc_idx = indices of the incident views)"""
-    st = dict(step, incident_factors=inc_idx); return CP.verify_quotient_step(cards, views, st, work)
 
 
-def _verify_chain(task, enabled, rec_certs, work, deadline):
-    """replay the compile step by step, verifying each recorded certificate on the PRE-step model with the independent verifiers; returns (fails, derived) where derived
-    carries independently RE-DERIVED facts the publication check must use instead of recorded fields (concentration_answers; review CQR-01)"""
-    fails = []; derived = {}
-    try:
-        C = CP.from_task(task, work)
-    except CP.ZeroEvidence: return ['chain verification: evidence restriction proves zero'], derived
-    # walk the recorded certificates in order, applying the same operators and verifying before each commit
-    import copy
-    allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries']); D = CP.quota_for(task)
-    for rc in rec_certs:
-        op = rc.get('op')
-        if op == 'evidence': continue
-        before_cards = list(C.cards); before_views = [View.from_json(v.to_json()) for v in C.views]
-        if op == 'support': CP.support_fixpoint(C, C.work.total() + D)
-        elif op == 'fixed_substitution': CP.fixed_substitution(C)
-        elif op == 'leaf_sumout': CP.leaf_sumout(C, C.work.total() + D)
-        elif op == 'component_omission':
-            for o in rc.get('omitted', []):
-                pr = o.get('proof') or {}
-                if pr.get('kind') == 'all_tables_strictly_positive':
-                    if not all(all(x > 0 for x in before_views[i].values) for i in o['factors']): fails.append('component omission: positivity proof fails')
-                elif pr.get('kind') == 'witness_restricted_positive':
-                    x = {int(k): v for k, v in pr['witness'].items()}; wgt = F(1)
-                    for i in o['factors']: wgt *= before_views[i].at(before_cards, x)
-                    if wgt <= 0: fails.append('component omission: witness has zero weight')
-                else: fails.append('component omission: unknown proof kind')
-            CP.component_omission(C)
-        elif op in ('exact_quotient_pass', 'approx_quotient'):
-            # per-step INDEPENDENT verification on the exact pre-step state through the operator hook (the operator stops before each commit)
-            rec_steps = list(rc.get('steps', [])); seen = []
-            def hook(kind, var, classes_or_groups, sig_or_slices, inc, *rest):
-                i = len(seen); seen.append(var)
-                if i >= len(rec_steps): fails.append('%s: more steps replayed than recorded' % op); return
-                st = rec_steps[i]
-                if st['var'] != var: fails.append('%s: step %d variable differs (%s vs %s)' % (op, i, st['var'], var)); return
-                cards_now = list(C.cards); views_now = [View.from_json(v.to_json()) for v in C.views]
-                if kind == 'exact':
-                    m = verify_quotient_step_views(cards_now, views_now, st, [C.views.index(v) for v in inc], work)
-                    if m: fails.append('quotient step %d: %s' % (i, m))
-                else:
-                    groups, slices, R, beta = classes_or_groups, sig_or_slices, rest[0], rest[1]; ap = st.get('approx') or {}
-                    R2, _b = CP._surrogate_ratio(C, var, inc, slices, [dict(rep=g[0], states=g) for g in ap.get('groups', [])])
-                    if R2 is None or str(R2) != ap.get('R') or str((R2 - 1) / (R2 + 3)) != ap.get('beta') or [g['states'] for g in groups] != ap.get('groups'): fails.append('approximate quotient certificate does not re-derive for var %d (step %d)' % (var, i))
-            if op == 'approx_quotient': CP.approx_quotient(C, C.work.total() + D, allowance, hook=hook)
-            else: CP.exact_quotient_pass(C, C.work.total() + D, hook=hook)
-            if len(seen) != len(rec_steps): fails.append('%s: %d steps replayed, %d recorded' % (op, len(seen), len(rec_steps)))
-        elif op == 'symmetry':
-            for a in rc.get('actions', []):
-                if not CP.verify_symmetry_action(before_cards, before_views, a['action'], work): fails.append('symmetry action does not verify')
-            CP.symmetry(C, C.work.total() + D)
-        elif op == 'concentration':
-            if 'answers' in rc:
-                # INDEPENDENTLY re-derive the whole direct certificate on the PRE-step model: x* has positive weight; every pre-step query evaluated at x*; t_i; biases
-                xs = {int(k): v for k, v in rc['xstar'].items()}
-                if sorted(xs) != list(range(len(before_cards))) or any(not (0 <= xs[v] < before_cards[v]) for v in xs): fails.append('concentration: assignment outside the pre-step domains')
-                else:
-                    wst = F(1)
-                    for v in before_views: wst *= v.at(before_cards, xs)
-                    if wst <= 0: fails.append('concentration: the proposed assignment has zero weight on the pre-step model')
-                    before_queries = [dict(q, f=View.from_json(q['f'].to_json())) if q['kind'] == 'expectation' else None for q in C.queries]
-                    if any(q is None for q in before_queries): fails.append('concentration on a ratio query')
-                    else:
-                        ca = {}
-                        for qi, q in enumerate(before_queries):
-                            val = q['f'].at(before_cards, xs); ca[qi] = val
-                            if str(val) != str(rc['answers'].get(str(qi))): fails.append('concentration answer of query %d does not re-derive (%s recorded, %s at x*)' % (qi, rc['answers'].get(str(qi)), val))
-                        derived['concentration_answers'] = ca; derived['concentration_scopes'] = [tuple(q['f'].scope) for q in before_queries]
-                for var in range(len(before_cards)):
-                    Ri = F(0); inf = False
-                    for s in range(before_cards[var]):
-                        if s == xs[var]: continue
-                        r = F(1); zb = False
-                        for v in before_views:
-                            if var not in v.scope: continue
-                            sl_s = CP._slice(v, before_cards, var, s); sl_r = CP._slice(v, before_cards, var, xs[var]); bound = F(0); hp = False
-                            for a_, b_ in zip(sl_s, sl_r):
-                                if a_ == 0: continue
-                                hp = True
-                                if b_ == 0: bound = None; break
-                                bound = max(bound, a_ / b_)
-                            if not hp: r = F(0); zb = True; break
-                            if bound is None: r = None; break
-                            r *= bound
-                        if zb: continue
-                        if r is None: inf = True; break
-                        Ri += r
-                    t = F(1) if inf else Ri / (1 + Ri)
-                    if str(t) != rc['t'][str(var)]: fails.append('concentration t_%d does not re-derive' % var)
-                if 'concentration_scopes' in derived:
-                    for qi, sc in enumerate(derived['concentration_scopes']):
-                        bj = min(F(1), sum(F(rc['t'][str(u)]) for u in sc)) if sc else F(0)
-                        if str(bj) != str((rc.get('bias') or {}).get(str(qi))): fails.append('concentration bias of query %d does not re-derive' % qi)
-            CP.concentration(C, C.work.total() + D, allowance)
-        elif op == 'influence_deletion':
-            if 'deleted' in rc:
-                if any(x <= 0 for v in before_views for x in v.values): fails.append('influence deletion on a model with zeros')
-                if _F(rc['alpha']) >= 1: fails.append('influence deletion with alpha >= 1')
-            CP.influence_deletion(C, C.work.total() + D, allowance)
-        elif op == 'affine':
-            m = CP.verify_affine_record(before_cards, before_views, rc, work)
-            if m: fails.append('affine: ' + m)
-            CP.affine(C, C.work.total() + D)
-        else: fails.append('unknown certificate op %s' % op)
-        if deadline is not None and time.monotonic() >= deadline: fails.append('UNVERIFIABLE: allowance expired in the chain verification'); break
-    return fails, derived
 
 
 def _normalizer_enclosure(task, C, cert, pub, route, eps, delta, deadline, work, fail):

@@ -25,11 +25,31 @@ ARTIFACTS = {
     'h4rect':                ('build/h4rect',                          None,                                  'h4a/arm.py'),
     'h4point':               ('build/h4point',                         None,                                  'h4a/arm.py'),
     'h4pcheck':              ('build/h4pcheck',                        None,                                  'h4a/arm.py'),
-    'libdai_mar':            ('bench/libdai/libdai_mar',               None,                                  'cex/pac/comparator_cell.py'),
+    'libdai_mar':            ('bench/libdai/libdai_mar',               None,                                  'bench/cells.py (cell_libdai: arms LIBDAI_EXACT and LBP)'),
+    'merlin':                ('__MERLIN__',                            'ext/comparator/MERLIN_PIN.json',      'ext/comparator/merlin_adapter.py (MERLIN_CTE) and bench/cells.py (cell_merlin_ladder: WMB, IJGP)'),
+    'pgmax_python':          ('.venv-pgmax/bin/python',                None,                                  'bench/cells.py (cell_pgmax: PGMAX_SUMPRODUCT_BP; the interpreter of the JAX/pgmax environment)'),
 }
 GROUPS = {'newarm': ('newarm_cex', 'newarm_stream'), 'b0_frozen_v14': ('b0_frozen_v14_cex', 'b0_frozen_v14_stream'),
-          'h4': ('h4rect', 'h4point', 'h4pcheck'), 'libdai': ('libdai_mar',)}
-LIBDAI_COMPARATOR_ARM = 'LIBDAI_EXACT'          # cex/pac/registry.py: the only comparator that executes bench/libdai/libdai_mar
+          'h4': ('h4rect', 'h4point', 'h4pcheck'), 'libdai': ('libdai_mar',), 'merlin': ('merlin',), 'pgmax': ('pgmax_python',)}
+# ARM -> EXECUTED ARTIFACTS, derived from the adapters' actual command lines (second review R4): cex/cqr/campaign.py run() routes every comparator arm to
+# cex/pac/comparator_cell.py, whose ARMS table maps LIBDAI_EXACT -> bench/cells.py cell_libdai(JTREE) and LBP -> cell_libdai(BP) -- BOTH execute bench/libdai/libdai_mar;
+# WMB / IJGP -> cell_merlin_ladder (the Merlin executable bench/cells.MERLIN); MERLIN_CTE -> ext/comparator/merlin_adapter.run_cell (the executable named by MERLIN_PIN.json;
+# the two paths are compared by `merlin_paths`); PGMAX_SUMPRODUCT_BP -> cell_pgmax under the .venv-pgmax interpreter.
+COMPARATOR_EXECUTABLES = {'LIBDAI_EXACT': ('libdai',), 'LBP': ('libdai',), 'WMB': ('merlin',), 'IJGP': ('merlin',), 'MERLIN_CTE': ('merlin',), 'PGMAX_SUMPRODUCT_BP': ('pgmax',)}
+COMPARATOR_ARMS = tuple(COMPARATOR_EXECUTABLES)
+
+
+def merlin_paths(code_dir):
+    """(adapter pin path, bench/cells.py MERLIN constant) -- both must name the same executable; the collection records both"""
+    pin = None; cells = None
+    try: pin = os.path.expanduser(json.load(open(os.path.join(code_dir, 'ext', 'comparator', 'MERLIN_PIN.json')))['binary']['path'])
+    except Exception: pass
+    try:
+        for line in open(os.path.join(code_dir, 'bench', 'cells.py')):
+            if line.startswith('MERLIN = '): cells = line.split('=', 1)[1].strip().strip('"').strip("'"); break
+    except Exception: pass
+    return pin, cells
+
 B0_ARM = 'B0_FROZEN_V14'
 H4_PREFIX = 'H4_NATIVE_'
 VERSION = 'kernel_identity_v1 (2026-11-16)'
@@ -49,16 +69,24 @@ def _record_inner(p):
         d = json.load(open(p))
     except Exception:
         return None
-    return d.get('binary_sha256') if isinstance(d, dict) else None
+    if not isinstance(d, dict): return None
+    if isinstance(d.get('binary'), dict) and d['binary'].get('sha256'): return d['binary']['sha256']       # MERLIN_PIN.json shape
+    return d.get('binary_sha256')
 
 
 def collect(code_dir, artifacts=None):
     """identity of every natively loaded artifact under code_dir (absent files -> None hashes; never raises on absence)"""
     code_dir = os.path.abspath(code_dir); out = {}
     for tag, (binrel, recrel, loader) in (artifacts or ARTIFACTS).items():
-        bp = os.path.join(code_dir, binrel); rp = os.path.join(code_dir, recrel) if recrel else None
+        if binrel == '__MERLIN__':
+            pin_p, cells_p = merlin_paths(code_dir); bp = pin_p or cells_p or ''; binrel = bp
+        else: bp = binrel if os.path.isabs(binrel) else os.path.join(code_dir, binrel)
+        rp = os.path.join(code_dir, recrel) if recrel else None
         out[tag] = dict(binary_path=binrel, binary_sha256=sha256_file(bp), record_path=recrel, record_sha256=sha256_file(rp) if rp else None,
                         record_binary_sha256=_record_inner(rp) if rp else None, loader=loader)
+        if tag == 'merlin':
+            pin_p, cells_p = merlin_paths(code_dir); out[tag]['adapter_paths'] = dict(pin=pin_p, cells=cells_p, consistent=(pin_p == cells_p))
+            if cells_p and cells_p != pin_p: out[tag]['cells_binary_sha256'] = sha256_file(cells_p)
     return out
 
 
@@ -77,7 +105,7 @@ def tags_needed_by(arm, pac_arms=None):
     """which artifact tags an arm's worker loads; CQR arms (N1_CQR, G0_CQR, N1_NO_*) -> ()"""
     if arm == B0_ARM: return GROUPS['b0_frozen_v14']
     if arm.startswith(H4_PREFIX): return GROUPS['h4']
-    if arm == LIBDAI_COMPARATOR_ARM: return GROUPS['libdai']
+    if arm in COMPARATOR_EXECUTABLES: return tuple(t for g in COMPARATOR_EXECUTABLES[arm] for t in GROUPS[g])
     if arm in (pac_arms if pac_arms is not None else pac_candidate_arms()): return GROUPS['newarm']
     return ()
 
@@ -85,7 +113,7 @@ def tags_needed_by(arm, pac_arms=None):
 def arms_needing(tag, registered_arms=None, pac_arms=None):
     """the registered arms that load `tag`; registered_arms defaults to the baseline candidate arms + B0 + libDAI + the H4 native arm prefix"""
     pac_arms = tuple(pac_arms if pac_arms is not None else pac_candidate_arms())
-    arms = list(registered_arms) if registered_arms is not None else list(pac_arms) + [B0_ARM, LIBDAI_COMPARATOR_ARM, H4_PREFIX + '*']
+    arms = list(registered_arms) if registered_arms is not None else list(pac_arms) + [B0_ARM, H4_PREFIX + '*'] + list(COMPARATOR_ARMS)
     return [a for a in arms if tag in tags_needed_by(a, pac_arms)]
 
 
@@ -103,6 +131,13 @@ def failures_vs_frozen(frozen, current, planned_arms, pac_arms=None):
     for tag, arms in sorted(needed_tags(planned_arms, pac_arms).items()):
         f = frozen.get(tag); c = current.get(tag) or {}; who = ','.join(sorted(set(arms)))
         if not f: fails.append('%s: FROZEN_ABSENT the manifest carries no frozen identity for %s (needed by %s)' % (tag, tag, who)); continue
+        if tag == 'merlin':
+            # BOTH adapter bindings (MERLIN_PIN.json for MERLIN_CTE; bench/cells.MERLIN for WMB / IJGP) must name the SAME executable, at freeze and at every later check;
+            # an inconsistent configuration is refused outright (third review CQR-R2-05) and the executable each adapter actually runs is compared
+            fa = f.get('adapter_paths') or {}; ca = c.get('adapter_paths') or {}
+            if not fa or not fa.get('consistent'): fails.append('merlin: ADAPTER_PATHS_INCONSISTENT at freeze (pin %s vs bench/cells %s): an inconsistent Merlin binding never freezes (needed by %s)' % (fa.get('pin'), fa.get('cells'), who)); continue
+            if not ca or not ca.get('consistent') or ca.get('pin') != fa.get('pin') or ca.get('cells') != fa.get('cells'): fails.append('merlin: ADAPTER_PATHS_CHANGED the adapter bindings now are pin %s / bench/cells %s, frozen %s (needed by %s)' % (ca.get('pin'), ca.get('cells'), fa.get('pin'), who))
+            if c.get('cells_binary_sha256') is not None and c.get('cells_binary_sha256') != f.get('binary_sha256'): fails.append('merlin: BINARY_CHANGED the bench/cells executable %s is %s, frozen %s' % (ca.get('cells'), c['cells_binary_sha256'][:12], str(f.get('binary_sha256'))[:12]))
         if f.get('binary_sha256') is None: fails.append('%s: FROZEN_ABSENT the frozen identity records no binary for %s (%s absent at freeze; needed by %s)' % (tag, tag, f.get('binary_path'), who)); continue
         if c.get('binary_sha256') is None: fails.append('%s: BINARY_ABSENT %s is missing on disk (frozen %s; needed by %s)' % (tag, f.get('binary_path'), f['binary_sha256'][:12], who))
         elif c['binary_sha256'] != f['binary_sha256']: fails.append('%s: BINARY_CHANGED %s is %s, frozen %s (needed by %s)' % (tag, f.get('binary_path'), c['binary_sha256'][:12], f['binary_sha256'][:12], who))
