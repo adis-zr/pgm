@@ -1,7 +1,7 @@
 """CQR CAMPAIGN CHAIN -- manifest producer + dispatcher (candidate CQR; composition over the FROZEN baseline chain cex/pac/campaign.py, which is imported, never edited).
 `manifest` FREEZES the complete matrix (explicit input rows incl. UNAVAILABLE rows, arms per cohort from a `plan`, budgets, replicates, seeds, ordering rule, the complete
 frozen source inventory registry.full_inventory(), prospective ceiling) BEFORE any scored run; `run` executes the frozen cells sequentially, each in a fresh attempt directory
-with a nonce, under the project supervisor (gbidi.supervise, unchanged; 3 GiB sampled process-tree RSS, interval 0.05 s, timeout = budget + 1 s cleanup grace, caffeinate -s).
+with a nonce, under the project supervisor (gbidi.supervise; since 16 Nov 2026 it also RETAINS a description of every process found alive in the owned group after the leader's exit, before killing it -- policy unchanged; 3 GiB sampled process-tree RSS, interval 0.05 s, timeout = budget + 1 s cleanup grace, caffeinate -s).
 The baseline arms run EXACTLY the command lines of cex/pac/campaign.py (B0 evaluate.py --worker, pac worker.py, cbi.cli, h4a/arm.py, sf/invoke.py, comparator_cell.py);
 the CQR arms run cex/cqr/worker.py. A receipt is written once; a crashed campaign resumes by skipping cells whose receipt exists (the manifest is immutable).
     python cex/cqr/campaign.py run <RD> [--dev] [--only COHORT] [--max-cells N]
