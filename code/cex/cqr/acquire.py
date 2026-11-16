@@ -391,10 +391,11 @@ def cmd_mc_inventory(a):
         row = dict(name=name, index=idx, odd_index=(idx % 2 == 1), originally_private=(idx % 2 == 1), cnf_xz_path=p, cnf_xz_bytes=os.path.getsize(p),
                    cnf_sha1_uncompressed=h1.hexdigest(), organizer_sha1=shas.get(name + '.cnf'), organizer_sha1_matches=(shas.get(name + '.cnf') == h1.hexdigest()),
                    family=(fam[0] if fam else 'UNMAPPED:' + name), family_mapped=bool(fam), collected_match=(fam[1] if fam else None),
-                   selection_eligible=(meta['weight_status'] == 'OK'), conversion_within_cap=(meta['converted_table_entries'] <= CONVERSION_CAP))
+                   selection_eligible=(meta['weight_status'] == 'OK' and meta['count_semantics_status'] == 'OK'), conversion_within_cap=(meta['converted_table_entries'] <= CONVERSION_CAP),
+                   intake_refusal=(meta['weight_status'] if meta['weight_status'] != 'OK' else (meta['count_semantics_status'] if meta['count_semantics_status'] != 'OK' else None)))
         row.update(meta)
         rows.append(row)
-        print('  %3d/%d %s n=%d m=%d maxk=%d bytes=%d %s' % (i + 1, len(files), name, meta['n_vars'], meta['m_header'], meta['max_clause_length_raw'], meta['cnf_bytes'], meta['weight_status']), flush=True)
+        print('  %3d/%d %s n=%d m=%d maxk=%d bytes=%d %s %s type=%s show=%d' % (i + 1, len(files), name, meta['n_vars'], meta['m_header'], meta['max_clause_length_raw'], meta['cnf_bytes'], meta['weight_status'], meta['count_semantics_status'], meta['declared_type'], meta['show_lines']), flush=True)
     fmt = dict(observed='c t wmc / c file <name>.cnf / p cnf <n> <m> / c p weight <lit> <w> 0 (one line per literal; decimal weight strings) / clauses "<lit> ... 0" one per line',
                weight_lines_per_instance='2n for every instance (both literals of every variable)' if all(r['n_weight_lines'] == 2 * r['n_vars'] for r in rows) else 'VARIES (see rows)',
                both_literal_weights_all=all(r['both_literal_weights_given_for_all_vars'] for r in rows),
@@ -480,7 +481,9 @@ def cmd_convert(a):
         try:
             side = wcnf.convert(s['cnf_xz_path'], up, name=name, cap_entries=CONVERSION_CAP)
         except ValueError as ex:
-            row.update(status='REFUSED_NEGATIVE_OR_NONRATIONAL_WEIGHT', detail=str(ex)[:200]); results.append(row); continue
+            # the converter's refusal code is the message prefix: REFUSED_NEGATIVE_OR_NONRATIONAL_WEIGHT or REFUSED_PROJECTED_COUNT_SEMANTICS (CQR-10; 'c t pmc' / 'c t pwmc' / any 'c p show' line)
+            code = str(ex).split(':', 1)[0].strip() if str(ex).startswith('REFUSED_') else 'REFUSED_NEGATIVE_OR_NONRATIONAL_WEIGHT'
+            row.update(status=code, detail=str(ex)[:200]); results.append(row); print(' ', name, code); continue
         row.update(status='CONVERTED', uai_path=up, uai_sha256=side['uai_sha256'], uai_bytes=side['uai_bytes'], evid_path=up + '.evid', sidecar=up + '.conversion.json',
                    n_original_vars=side['n_original_vars'], n_auxiliary_vars=side['n_auxiliary_vars'], n_factors=side['n_factors'], table_entries=side['table_entries'],
                    missing_weights_defaulted=len(side['missing_weight_literals_defaulted_to_1']), conversion_wall_s=round(time.monotonic() - t0, 3))

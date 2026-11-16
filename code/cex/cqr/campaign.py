@@ -29,7 +29,8 @@ R = load_module('cqr_registry', os.path.join(HERE, 'registry.py'))
 PC = load_module('pac_campaign', os.path.join(PAC, 'campaign.py'))          # the baseline producer / dispatcher: command-line constants, ensure_h4_native_build
 if HERE in sys.path: sys.path.remove(HERE)
 sys.path.insert(0, HERE)                                                   # pac campaign re-inserted PAC at the front; the CQR directory stays first for later bare imports
-CAMPAIGN_VERSION = 'cqr-campaign-v1 (2026-11-16)'
+import kernel_identity as KI                                               # frozen identity of EVERY natively loaded artifact (binaries + build records; CQR-09)
+CAMPAIGN_VERSION = 'cqr-campaign-v2 (2026-11-16; kernel identity frozen, balanced arm blocks, no second-matrix contingency)'
 MANIFEST_SCHEMA = 'cqr_campaign_manifest_v1'
 KINDS = ('cqr_primary', 'cqr_ablation', 'legacy_primary', 'comparator', 'legacy_native', 'cqr_normalizer')
 BUDGETS = [20.0, 120.0]
@@ -106,6 +107,24 @@ def arm_order(arm):
     return 40 + (list(PR.NATIVE_ARMS).index(arm) if arm in PR.NATIVE_ARMS else 9)
 
 
+# ---- balanced arm blocks (review of 16 Nov 2026). The draft (docs/handoff-received-2026-11-15-cqr/packet/benchmark_expansion.txt, resource contract) states verbatim:
+#      "Run arm order in predeclared balanced blocks to reduce host-temperature/order bias."
+# The producer previously sorted (arm, replicate), i.e. every N1 replicate before the first G0 replicate. Now, within one (cohort, case, budget):
+# block k holds replicate k of EVERY planned arm of that case/budget (a complete block); blocks ascend; inside a block the predeclared arm order (arm_order:
+# N1_CQR, G0_CQR, ablations, B0, P1, H1, A0, A1, comparators, natives) is used for even k and REVERSED for odd k (ABBA counterbalancing), so that over
+# an even replicate count every arm occupies the first and the last position of a block equally often. Nothing depends on timing or on results.
+ORDERING_RULE = ('sorted by (cohort order, case, budget); within a case/budget BALANCED ARM BLOCKS: block k = replicate k of every planned arm (complete block), blocks '
+                 'ascending; arm order inside a block = N1_CQR, G0_CQR, CQR ablations, B0, P1, H1, A0, A1, comparators in registry order, natives for even k and the '
+                 'reverse for odd k (ABBA counterbalancing); strictly sequential. Draft: "Run arm order in predeclared balanced blocks to reduce host-temperature/order bias."')
+ARM_ORDER_SPAN = 100                                                         # arm_order() values lie in [0, 50); the reversal maps o -> SPAN - o
+
+
+def block_key(c):
+    """(replicate block, position inside the block) for one cell; the block alternates the predeclared arm order (ABBA)"""
+    o = arm_order(c['arm']); k = int(c['replicate'])
+    return (k, o if k % 2 == 0 else ARM_ORDER_SPAN - o)
+
+
 def kernel_identity_failures(planned_arms):
     """the frozen kernel BINARIES the baseline workers load (cex/newarm, cex/b0_frozen_v14): an absent / foreign binary makes the frozen worker REBUILD and rewrite the frozen
     build record inside a scored attempt; a manifest planning such an arm is refused until the pinned binary (sha256 of cex_build.json) is present"""
@@ -148,7 +167,7 @@ def manifest(RD, rows, dev=False, dev_restrictions=None, budgets=None, plan=None
             for budget in [float(b) for b in (budgets_by_cohort or {}).get(row['cohort'], budgets)]:        # a cohort may carry its own budgets (natives at their contract budgets)
                 for rep in range(int(reps)): cells.append(mk(row, arm, rep, budget, kind))
     order_coh = {k: R.COHORTS[k]['order'] for k in R.COHORTS}
-    cells.sort(key=lambda c: (order_coh[c['cohort']], c['case_id'], c['budget_s'], arm_order(c['arm']), c['replicate']))
+    cells.sort(key=lambda c: (order_coh[c['cohort']], c['case_id'], c['budget_s']) + block_key(c))
     for i, c in enumerate(cells): c['order_index'] = i
     ids_ = [c['cell_id'] for c in cells]
     if len(ids_) != len(set(ids_)): raise SystemExit('refuse: duplicate cell ids')
@@ -158,22 +177,36 @@ def manifest(RD, rows, dev=False, dev_restrictions=None, budgets=None, plan=None
     if id_fail: raise SystemExit('refuse: ' + '; '.join(id_fail))
     k_fail, kernel_rec = kernel_identity_failures(planned_arms)
     if k_fail: raise SystemExit('refuse: ' + '; '.join(k_fail))
+    kernel_identity = KI.collect(CODE)                                     # EVERY natively loaded artifact: binary sha256 + build-record FILE sha256 + the record's inner claim
+    ki_fail = KI.failures_vs_frozen(kernel_identity, kernel_identity, planned_arms)
+    if ki_fail: raise SystemExit('refuse: kernel identity not freezable: ' + '; '.join(ki_fail))
     nominal = sum(c['budget_s'] for c in cells); n = len(cells); orch = 2 * n + max(600, math.ceil(0.05 * nominal))
     ver_cells = [c for c in cells if c['kind'] in ('cqr_primary', 'cqr_ablation', 'cqr_normalizer', 'legacy_primary', 'legacy_native')]
     verification = REPLAY_FACTOR * sum(c['budget_s'] for c in ver_cells)
+    # ceiling = ALLOWANCE (hard upper allocation), the same accounting as resolve_design.py: fixed stages + solver nominal + per-child cleanup/kill (5 s x cells) + verification
+    # (REPLAY_FACTOR x the guaranteed cells' budgets). Review of 16 Nov 2026: the previous formula reserved a second full matrix (2 x (nominal + orchestration)) for a
+    # 'correctness contingency' that the draft explicitly excludes; resolve_design.py: 'no implicit second-matrix contingency is reserved'. Both formulas are recorded below.
+    FIXED = 3600 + 3600 + 7200 + 3600; cleanup = 5 * n
+    old_formula = '(3600 availability + 3600 qualification + 7200 references + 3600 report/closeout/package) + verification + 2 x (scored matrix nominal + orchestration); the second matrix is reserved for one correctness contingency'
+    new_formula = '(3600 availability + 3600 qualification + 7200 references + 3600 report/closeout/package) + scored matrix nominal + 5 s x cells (per-child cleanup/kill) + verification; no implicit second-matrix contingency is reserved (a correctness contingency needs a new manifest and a new decision)'
     ceiling = dict(availability_environment_build_total_seconds=3600, qualification_total_seconds=3600, offline_reference_total_seconds=7200.0, verification_stage_seconds=verification,
                    verification_stage_rule='aggregate cap for gate.py (--gate-budget-s) = REPLAY_FACTOR (%.1f) x sum of the budgets of every cqr / legacy_primary / legacy_native cell (%d cells); per cell the checker stops at REPLAY_FACTOR x the cell budget; exhaustion is a structured UNVERIFIABLE result' % (REPLAY_FACTOR, len(ver_cells)),
-                   reporting_closeout_packaging_total_seconds=3600, scored_matrix_seconds=nominal, orchestration_seconds=orch, total_ceiling_seconds=18000 + verification + 2 * (nominal + orch),
-                   formula='(3600 availability + 3600 qualification + 7200 references + 3600 report/closeout/package) + verification + 2 x (scored matrix nominal + orchestration); the second matrix is reserved for one correctness contingency')
+                   reporting_closeout_packaging_total_seconds=3600, scored_matrix_seconds=nominal, per_child_cleanup_kill_seconds=cleanup, orchestration_seconds=orch,
+                   orchestration_note='orchestration_seconds (2 s x cells + max(600, 5 %% of nominal)) is an informational forecast of dispatcher overhead, NOT a term of the allowance; the allowance term is per_child_cleanup_kill_seconds as in resolve_design.py',
+                   total_ceiling_seconds=FIXED + nominal + cleanup + verification, formula=new_formula, statement='ALLOWANCES (hard upper allocations), not runtime forecasts or predictions; no implicit second-matrix contingency is reserved',
+                   formula_change_2026_11_16=dict(old_formula=old_formula, old_total_seconds=18000 + verification + 2 * (nominal + orch), new_formula=new_formula, new_total_seconds=FIXED + nominal + cleanup + verification,
+                                                  reason='adversarial review of 16 Nov 2026: the executable ceiling reserved a second full matrix contrary to the draft; aligned with resolve_design.py allowance (solver_nominal + 5 x cells + 3 x guaranteed nominal + fixed 18000)'))
+    ceiling['formula_change_2026-11-16'] = ceiling['formula_change_2026_11_16']
     arms_rec = {a: dict(kind=d['kind'], representation=d['representation'], guarantee=d['guarantee'], validator=d['validator'], identity_scope=d['identity_scope'], task=d.get('task'), feature_flags=d.get('feature_flags'), role=d.get('role')) for a, d in R.ARMS.items()}
     man = dict(schema=MANIFEST_SCHEMA, campaign_version=CAMPAIGN_VERSION, registry_version=R.REGISTRY_VERSION, frozen_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), dev=dev, dev_restrictions=(DR or None), host=dict(platform=platform.platform(), machine=platform.machine(), python=sys.version, cpu_count=os.cpu_count()),
                inventory=rows, task=dict(TASK), arms=dict(registry=arms_rec, cqr_arms=sorted(R.CQR_ARMS), plan={k: [[a, int(r)] for a, r in v] for k, v in plan.items()}, unavailable=dict(R.UNAVAILABLE_ARMS), kinds=list(KINDS), legacy_ablation_note='baseline ablation arms (A0 / A1), if planned, are scheduled under kind legacy_primary'),
                cohorts={k: dict(order=v['order'], representation=v['representation'], original_task=v['original_task'], arms=list(v['arms']), comparison=v.get('comparison')) for k, v in R.COHORTS.items()}, budgets_s=sorted(set(budgets)), budgets_by_cohort={k: [float(b) for b in v] for k, v in (budgets_by_cohort or {}).items()},
                resource_contract=dict(memory='3 GiB sampled process-tree RSS kill (interval 0.05 s), identical for every arm; RLIMIT_AS requested by the CQR worker', clock='launch-relative absolute deadline on the host monotonic clock; host sleep prohibited (caffeinate -s)', cleanup_grace_s=1.0, supervisor_internal_grace_s=4.0, actual_kill_threshold_s='budget + 5', late_output_counts_as_success=False, threads='single worker at a time; OMP/BLAS threads 1'),
                seeds=dict(root_seed=root_seed, generation='sha256(root | model_sha | evidence_sha | query_sha | arm | budget | replicate) for the CQR arms and the baseline PAC arms; B0 / comparators / natives unseeded'),
-               ordering_rule='sorted by (cohort order, case, budget); within a case/budget: N1_CQR, G0_CQR, CQR ablations, B0, P1, H1, A0, A1, comparators in registry order, natives; replicates ascending; strictly sequential',
+               ordering_rule=ORDERING_RULE,
                cells=cells, counts=dict(cells=n, by_arm={a: sum(1 for c in cells if c['arm'] == a) for a in planned_arms}, by_cohort={k: sum(1 for c in cells if c['cohort'] == k) for k in sorted({c['cohort'] for c in cells})}, by_kind={k: sum(1 for c in cells if c['kind'] == k) for k in sorted({c['kind'] for c in cells})}, rows=len(rows), rows_available=len(avail), rows_unavailable=len(rows) - len(avail)),
-               ceiling=ceiling, candidate_artifact_hashes=artifact, cqr_scope_keys=sorted(k for k in artifact if k.startswith('cqr/') or k == 'newarm/core.py'), kernel_binaries=kernel_rec, replay_factor=REPLAY_FACTOR)
+               ceiling=ceiling, candidate_artifact_hashes=artifact, cqr_scope_keys=sorted(k for k in artifact if k.startswith('cqr/') or k == 'newarm/core.py'), kernel_binaries=kernel_rec, kernel_identity=kernel_identity, kernel_identity_version=KI.VERSION,
+               kernel_identity_rule='every tag needed by a planned arm must match binary_sha256 AND record_sha256 (build-record file bytes) AND the record inner binary_sha256 at launch, resume, before and after every native cell; rebuilds under this identity are prohibited', replay_factor=REPLAY_FACTOR)
     man['manifest_sha256_without_self'] = hashlib.sha256(json.dumps(man, sort_keys=True, default=str).encode()).hexdigest()
     man['unavailable_artifacts_not_needed_by_planned_arms'] = unavailable_artifacts
     if os.path.exists(p): raise SystemExit('refuse: %s exists' % p)
@@ -215,8 +248,19 @@ def run(RD, manifest_name='CAMPAIGN_MANIFEST.json', only=None, max_cells=None):
             raise SystemExit('START REFUSED: the source files on disk differ from the frozen inventory of the manifest (%d differ, e.g. %s)' % (len(d), d[:3]))
         st_row = dict(kind='CAMPAIGN_START', manifest=manifest_name, manifest_sha256=mh, artifact_hashes_sha256=ah, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), only=only, max_cells=max_cells, resume=False, candidate_artifact_hashes=man.get('candidate_artifact_hashes'), campaign_version=CAMPAIGN_VERSION, note='the frozen source inventory (content hash artifact_hashes_sha256) and the manifest are bound here; no amendment mechanism exists')
         json.dump(st_row, open(sp, 'w'), indent=1)
-    k_fail, _krec = kernel_identity_failures(sorted({c['arm'] for c in man['cells']}))
-    if k_fail: raise SystemExit('START REFUSED: ' + '; '.join(k_fail))
+    planned_arms = sorted({c['arm'] for c in man['cells']}); resume = os.path.exists(sp) and st_row.get('resume')
+    def refuse(msg):                                                       # a refused START leaves no CAMPAIGN_START binding behind (the next attempt is a START again, not a RESUME)
+        if not resume and os.path.exists(sp): os.remove(sp)
+        raise SystemExit(('RESUME REFUSED: ' if resume else 'START REFUSED: ') + msg)
+    k_fail, _krec = kernel_identity_failures(planned_arms)
+    if k_fail: refuse('; '.join(k_fail))
+    # ---- CQR-09: the FROZEN kernel identity of the manifest (binary + build-record file + inner claim, every natively loaded artifact) must be the identity on disk
+    # at launch and at every resume; a manifest without the frozen field cannot be run (no fallback to the mutable on-disk pair)
+    if not man.get('kernel_identity'): refuse('the manifest carries no frozen kernel_identity (pre-2026-11-16 manifest schema content; freeze a new manifest)')
+    cur_ki = KI.collect(CODE); ki_fail = KI.failures_vs_frozen(man['kernel_identity'], cur_ki, planned_arms)
+    if ki_fail: refuse('frozen kernel identity violated: ' + '; '.join(ki_fail))
+    st_row['kernel_identity_sha256'] = hashlib.sha256(json.dumps(man['kernel_identity'], sort_keys=True).encode()).hexdigest(); st_row['kernel_identity_verified_tags'] = sorted(KI.needed_tags(planned_arms))
+    if not resume: json.dump(st_row, open(sp, 'w'), indent=1)
     open(L, 'a').write(json.dumps(st_row) + '\n')
     if any(c['arm'].startswith('H4_NATIVE_') for c in man['cells']): json.dump(PC.ensure_h4_native_build(L), open(os.path.join(RD, 'H4_NATIVE_BUILD.json'), 'w'), indent=1)
     for c in man['cells']:
@@ -225,7 +269,13 @@ def run(RD, manifest_name='CAMPAIGN_MANIFEST.json', only=None, max_cells=None):
         cdir = os.path.join(cells_dir, '%05d__%s__%s__%s__r%d' % (c['order_index'], c['case_id'], c['arm'], int(c['budget_s']), c['replicate'])); rp = os.path.join(cdir, 'receipt.json')
         if os.path.exists(rp): continue
         os.makedirs(cdir, exist_ok=True); nonce = secrets.token_hex(8); attempt = os.path.join(cdir, 'attempt_' + nonce); os.makedirs(attempt); budget = c['budget_s']; out = os.path.join(attempt, 'worker.json')
-        launch = time.monotonic(); deadline = launch + budget; arm = c['arm']
+        arm = c['arm']; ki_tags = KI.tags_needed_by(arm)
+        if ki_tags:                                                           # BEFORE a native cell: the frozen identity must still hold (a rebuild between cells is a halt, not a silent relaunch)
+            pre = KI.collect(CODE); pre_fail = KI.failures_vs_frozen(man['kernel_identity'], pre, [arm])
+            if pre_fail:
+                json.dump(dict(c, nonce=nonce, attempt_dir=attempt, status='REBUILT_UNDER_FROZEN_IDENTITY', outcome='NOT_COMPLETED', guarantee_type='NONE', kernel_identity_failures=pre_fail, phase='before_launch', utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())), open(rp, 'w'), indent=1, default=str)
+                raise SystemExit('CAMPAIGN HALTED: kernel identity changed before cell %s (%s)' % (c['cell_id'], '; '.join(pre_fail)))
+        launch = time.monotonic(); deadline = launch + budget
         # ---- command lines: the CQR arms -> cex/cqr/worker.py; every baseline arm EXACTLY as cex/pac/campaign.py run()
         if arm in R.CQR_ARMS: cmd = [PY, os.path.join(HERE, 'worker.py'), '--input', c['model_path'], '--output', out, '--arm', arm, '--deadline', str(deadline), '--seed', c['seed'], '--nonce', nonce, '--budget', str(budget)]
         elif arm == 'B0_FROZEN_V14': cmd = [PY, os.path.join(CODE, 'cex', 'b0_frozen_v14', 'evaluate.py'), '--worker', '--input', c['model_path'], '--output', out, '--route', 'auto', '--deadline', str(deadline)]
@@ -271,6 +321,13 @@ def run(RD, manifest_name='CAMPAIGN_MANIFEST.json', only=None, max_cells=None):
             if srec.get('outcome') == 'MEMORY_KILL': status = 'MEMORY_KILL'; outcome = 'MEMORY'
             gt = 'UNGUARANTEED' if outcome == 'PUBLISHED' else 'NONE'
         if arm.startswith('H4_NATIVE_'): out = os.path.join(attempt, 'h4', 'bundle.json')
+        if ki_tags:                                                           # AFTER a native cell: a frozen worker that rebuilt (binary or build record rewritten inside the attempt) halts the campaign
+            post = KI.collect(CODE); post_fail = KI.failures_vs_frozen(man['kernel_identity'], post, [arm])
+            w_ = json.load(open(out)) if (os.path.exists(out) and out.endswith('.json')) else {}
+            post_fail += KI.receipt_failures(man['kernel_identity'], w_ if isinstance(w_, dict) else {}, arm)
+            if post_fail:
+                json.dump(dict(c, nonce=nonce, attempt_dir=attempt, launch_relative_wall_s=wall, status='REBUILT_UNDER_FROZEN_IDENTITY', outcome='NOT_COMPLETED', guarantee_type='NONE', supervisor=srec, kernel_identity_failures=post_fail, phase='after_cell', worker_status_discarded=status, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())), open(rp, 'w'), indent=1, default=str)
+                raise SystemExit('CAMPAIGN HALTED: kernel identity changed during cell %s (%s)' % (c['cell_id'], '; '.join(post_fail)))
         rec = dict(c, nonce=nonce, attempt_dir=attempt, launch_relative_wall_s=wall, status=status, outcome=outcome, guarantee_type=gt, supervisor=srec, output_sha256=(sha(out) if os.path.exists(out) else None), worker_output=os.path.relpath(out, RD) if os.path.exists(out) else None, cmd=cmd, within_budget=wall <= budget, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
         if validator == 'cqr_candidate': rec['route'] = w.get('route'); rec['bias'] = w.get('bias'); rec['worker_reason'] = (w.get('reason') or None)
         if validator == 'comparator_mar': rec['comparator'] = {k: w.get(k) for k in ('adapter_status', 'execution_capacity', 'capacity_note', 'output_sha256', 'output_file')}

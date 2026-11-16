@@ -46,7 +46,7 @@ def legacy_rows(task, pub, eps):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--arm', required=True); ap.add_argument('--deadline', type=float, required=True)
-    ap.add_argument('--seed', required=True); ap.add_argument('--nonce', required=True); ap.add_argument('--budget', type=float, default=None); ap.add_argument('--mode', default=None)
+    ap.add_argument('--seed', required=True); ap.add_argument('--nonce', required=True); ap.add_argument('--budget', type=float, default=None); ap.add_argument('--mode', default=None); ap.add_argument('--cap-bytes', type=int, default=None); ap.add_argument('--fault-inject', default=None)
     a = ap.parse_args(); t = time.monotonic()
     out = dict(status='STARTED', worker_version=WORKER_VERSION, solver_version=SV.SOLVER_VERSION, arm=a.arm, seed=a.seed, nonce=a.nonce, deadline_abs=a.deadline, budget_s=a.budget, candidate_sources=candidate_sources(), host_pid=os.getpid())
     try: resource.setrlimit(resource.RLIMIT_AS, (3 * 1024 ** 3, 3 * 1024 ** 3)); out['memory_policy'] = 'RLIMIT_AS 3 GiB'
@@ -56,7 +56,10 @@ def main():
         task = TK.load_task(a.input, mode=a.mode); out['binding'] = task['binding']; out['task_identity'] = TK.task_identity(task); out['mode'] = task['mode']; out['epsilon'] = str(task['epsilon']); out['delta'] = str(task['delta'])
         out['queries'] = [q.to_json() | dict(name=q.name) for q in task['queries']] if len(task['queries']) <= 64 else dict(count=len(task['queries']), all_singletons=task['all_singletons'])
         out['parse_s'] = time.monotonic() - t
-        r = SV.solve(task, a.deadline, a.arm, a.seed)
+        kw = {}
+        if a.cap_bytes is not None: kw['cap_bytes'] = a.cap_bytes; out['memory_policy'] = (out.get('memory_policy') or '') + '; solver optional-work cancellation cap %d bytes (CLI)' % a.cap_bytes
+        if a.fault_inject: kw['fault_inject'] = a.fault_inject; out['fault_injected'] = a.fault_inject
+        r = SV.solve(task, a.deadline, a.arm, a.seed, **kw)
         out['outcome'] = r['outcome']; out['guarantee_type'] = r['guarantee_type']; out['certificate'] = r['certificate']; out['stats'] = r['stats']
         if r['outcome'] == 'PROVED_ZERO_EVIDENCE':
             out['zero_evidence_proof'] = r['zero_proof']; out['status'] = 'STOPPED'
@@ -66,7 +69,7 @@ def main():
             pub = r['publication']; eps = task['epsilon']
             if (task.get('query_spec') or {}).get('normalizer_task'): out['answers'] = [dict(query='Z', lo=str(pub['bounds'][0][0]), hi=str(pub['bounds'][0][1]), point=str(pub['point'][0]), status='OK', contract='relative error %s: point in [(1-eps) U, (1+eps) L]' % task['epsilon'])]
             else: out['answers'] = [dict(query=task['queries'][j].name, lo=str(lo), hi=str(hi), point=str(pub['point'][j]), status=('UNDEFINED' if lo == 'UNDEFINED' else 'OK')) for j, (lo, hi) in enumerate(pub['bounds'])]
-            out['route'] = pub['route']; out['bias'] = r.get('bias')
+            out['route'] = pub['route']; out['bias'] = r.get('bias'); out['exact'] = bool(pub.get('exact'))
             if task['all_singletons'] and all(x[0] != 'UNDEFINED' for x in pub['bounds']):
                 import core
                 iv, pt = legacy_rows(task, pub, eps); core.verify_output(iv, pt, eps); out['publication_check'] = True
@@ -75,6 +78,7 @@ def main():
             else: out['status'] = 'COMPLETED'
     except SV.Stop as e:
         out['status'] = 'STOPPED'; out['outcome'] = e.kind; out['guarantee_type'] = 'NONE'; out['reason'] = '%s %s' % (e.kind, json.dumps(jsonable(e.info))[:200])
+        out['scheduling'] = jsonable(e.info)                 # reference progress / work ledgers at the typed stop (instrumentation; never a claim)
     except MemoryError:
         out['status'] = 'STOPPED'; out['outcome'] = 'MEMORY'; out['guarantee_type'] = 'NONE'; out['reason'] = 'MemoryError'
     except Exception as e:

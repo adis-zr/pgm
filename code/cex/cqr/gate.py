@@ -18,6 +18,7 @@ if HERE in sys.path: sys.path.remove(HERE)
 sys.path.insert(0, HERE)
 from fractions import Fraction as F
 import checker as CK, task as TK
+import kernel_identity as KI
 
 
 def load_module(name, path):
@@ -110,10 +111,11 @@ def bind_task_dependencies(c, fail):
 
 
 def _manifest_task_for(c, man):
-    """the task declaration the certificate must match: the row's frozen query spec (mode / epsilon / delta) when one exists, else the campaign task"""
+    """the FROZEN task declaration the worker output must match (review CQR-04): the row's frozen query spec (mode / epsilon / delta / normalizer) when one exists, else the
+    campaign default (PAC_EPS, all singletons, no normalizer)"""
     tp = c.get('task_params') or {}
-    if c.get('query_sha256') and tp: return dict(epsilon=str(tp.get('epsilon')), delta=str(tp.get('delta')))
-    t = man.get('task') or {}; return dict(epsilon=str(t.get('epsilon', '1/200')), delta=str(t.get('delta', '1/1000000')))
+    if c.get('query_sha256') and tp: return dict(epsilon=str(tp.get('epsilon')), delta=str(tp.get('delta')), mode=tp.get('mode', 'PAC_EPS'), normalizer_task=bool(tp.get('normalizer_task')))
+    t = man.get('task') or {}; return dict(epsilon=str(t.get('epsilon', '1/200')), delta=str(t.get('delta', '1/1000000')), mode='PAC_EPS', normalizer_task=False)
 
 
 def _identity_failures(cs, frozen_cqr):
@@ -183,6 +185,11 @@ def _check_cqr_cell(RD, cid, r, c, man, frozen_cqr, failures, fail, replay_facto
             else: fail(cid, 'checker: %s' % m)
         if len(failures) == nf and _late(dl): fail(cid, 'UNVERIFIABLE -- the certificate verification finished after the cell allowance (%.3g s)' % (replay_factor * float(c['budget_s']))); counters['unverifiable'] += 1
         if len(failures) == nf:
+            # the proof class is DERIVED by the checker from the validated route (review CQR-04): receipt and worker labels must equal it; the report consumes the receipt
+            cls_, _ex = CK.guarantee_class_of_route(info.get('route'))
+            if r.get('guarantee_type') != cls_ or w.get('guarantee_type') != cls_: fail(cid, 'receipt / worker guarantee %s / %s differ from the class %s derived from route %s' % (r.get('guarantee_type'), w.get('guarantee_type'), cls_, info.get('route')))
+            elif r.get('exact') not in (None, bool(_ex)) or bool(w.get('exact')) != bool(_ex): fail(cid, 'exact flag differs from the class derived from route %s' % info.get('route'))
+        if len(failures) == nf:
             counters['gated'] += 1; counters['cqr_verified'] += 1
             if w.get('guarantee_type') == 'PAC': counters['pac_verified'] += 1
         return
@@ -223,6 +230,11 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
     man = json.load(open(mp)); mh = sha(mp)
     if man.get('schema') != 'cqr_campaign_manifest_v1': fail('*', 'manifest schema %s is not cqr_campaign_manifest_v1' % man.get('schema'))
     ch = man.get('candidate_artifact_hashes') or {}; ah = hashlib.sha256(json.dumps(ch, sort_keys=True).encode()).hexdigest() if ch else None
+    planned_arms = sorted({c['arm'] for c in (man.get('cells') or [])})
+    if not man.get('kernel_identity'): fail('*', 'manifest carries no frozen kernel_identity (every natively loaded binary + build record; review CQR-09)')
+    else:
+        # the identity ON DISK at gate time must equal the frozen one for every tag a planned arm loads (launch/resume compare it too; closeout compares it again)
+        for m_ in KI.failures_vs_frozen(man['kernel_identity'], KI.collect(CODE), planned_arms): fail('*', 'kernel identity at gate: ' + m_)
     sp = os.path.join(RD, 'CAMPAIGN_START.json')
     if not os.path.exists(sp): fail('*', 'CAMPAIGN_START.json missing (no pre-execution binding of the manifest)')
     else:
@@ -291,6 +303,11 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
                 n0 = counters['checked']; bind_task_dependencies(c, fail)              # the EFFECTIVE dependency set incl. .query.json for every arm (the baseline enumerator knows only its own cohorts)
                 PG._check_cell(RD, cid, r, c, man, frozen_candidate, frozen_b0, models, failures, fail, EPS, replay_factor, counters)
                 counters['baseline_checked'] += counters['checked'] - n0
+                if man.get('kernel_identity') and r.get('worker_output') and os.path.exists(os.path.join(RD, r['worker_output'])):
+                    try: w_ = json.load(open(os.path.join(RD, r['worker_output'])))
+                    except (ValueError, OSError): w_ = None
+                    if w_ is not None:
+                        for m_ in KI.receipt_failures(man['kernel_identity'], w_, c['arm']): fail(cid, 'loaded kernel provenance: ' + m_)
         except (GateBudgetExhausted, PG.GateBudgetExhausted): exhausted_at = cid; fail(cid, 'UNVERIFIABLE -- aggregate verification budget exhausted while checking this cell')
         paths = set(_cell_paths) | set(PG._cell_paths)
         for p_ in PG._cell_paths: _evidence[p_] = PG._evidence.get(p_)

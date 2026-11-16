@@ -142,6 +142,8 @@ def load_task(model_path, mode=None):
                 all_singletons=(spec is None or (bool(spec['queries']) and all(q['kind'] == 'all_singletons' for q in spec['queries']) and not spec.get('normalizer_task'))), query_spec=spec)
     if task['mode'] not in MODES: raise ValueError('unknown mode %s' % task['mode'])
     if not task['queries'] and not (spec or {}).get('normalizer_task'): raise ValueError('a task needs at least one query (or normalizer_task)')
+    if (spec or {}).get('normalizer_task') and task['queries']: raise ValueError('a normalizer task (Z with relative error) carries NO queries: the combined normalizer + query contract is not supported (review CQR-08)')
+    if mode is not None and spec is not None and spec.get('mode') and spec['mode'] != mode: raise ValueError('mode override %s disagrees with the task file mode %s' % (mode, spec['mode']))
     return task
 
 

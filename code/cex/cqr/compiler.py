@@ -39,11 +39,25 @@ class ZeroEvidence(Exception):
     def __init__(self, proof): super().__init__('ZERO_EVIDENCE'); self.proof = proof
 
 
+class CompileStop(Exception):
+    """raised by `tick` at a CONSISTENT point of an operator (between committed transactions): the compiled model is the last committed state. kind in
+    {'deadline', 'reference_done', 'cancelled'}; the driver records the interrupted operator and returns the committed model."""
+    def __init__(self, kind, op=None): super().__init__(kind); self.kind = kind; self.op = op
+
+
+def tick(C, quota=None, op=None):
+    """called inside every costly loop at points where the model is consistent: (1) enforces the operator quota (raises CompileStop('quota') => the operator DECLINES the
+    rest, keeping what it committed); (2) calls the solver's service hook (reference parity; deadline) which may raise CompileStop('deadline' | 'reference_done')."""
+    if quota is not None and C.work.total() >= quota: raise CompileStop('quota', op)
+    fn = getattr(C, 'service', None)                         # TASK-LOCAL hook (no module state; it lives on this task's Compiled object, so it cannot leak across tasks)
+    if fn is not None: fn(op)
+
+
 class Compiled:
     """the compiled task state"""
     def __init__(self, cards, views, queries, decoder, work, bias, normalizer_task=False):
         self.cards = list(cards); self.views = views; self.queries = queries; self.decoder = decoder; self.work = work; self.bias = bias
-        self.certs = []; self.scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.constant_queries = {}
+        self.certs = []; self.scalars = []; self.constant_scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.service = None; self.constant_queries = {}
 
     def n(self): return len(self.cards)
     def measure(self): return (len(self.cards), sum(self.cards), sum(v.size() for v in self.views) + sum(_qsize(q) for q in self.queries))
@@ -84,15 +98,12 @@ def from_task(task, work=None):
             work.entries += 1
             if all(v in new_of or ev[v] == s for v, s in zip(scope, xs)): vals.append(F(w))
         return ns, vals
-    views = []
+    views = []; constant_scalars = []           # TASK-LOCAL (review CQR-07: a module-global list leaked constants across tasks when ZeroEvidence bypassed its clearing)
     for fi, f in enumerate(m['factors']):
         ns, vals = restrict(f['scope'], f['values'])
         if not ns:
             if vals[0] == 0: raise ZeroEvidence(dict(kind='fully_observed_factor_zero', factor=fi))
-            if vals[0] != 1:
-                views.append(View('table', (), vals)) if False else None
-                # a positive constant factor: cancelled for normalized tasks (symbolic scalar), kept as an exact scalar for normalizer tasks
-                _record_scalar(None, vals[0], fi)
+            if vals[0] != 1: constant_scalars.append(dict(factor=fi, value=str(vals[0])))      # a positive constant factor: cancelled for normalized tasks (symbolic scalar), kept as an exact scalar for normalizer tasks
             continue
         views.append(View('table', ns, vals))
     queries = []
@@ -104,12 +115,9 @@ def from_task(task, work=None):
     decoder = [dict(kind='fixed', state=ev[v]) if v in ev else dict(kind='map', var=new_of[v], states={a: [(a, F(1))] for a in range(cards0[v])}) for v in range(n0)]
     normalizer_task = bool((task.get('query_spec') or {}).get('normalizer_task'))
     C = Compiled(cards, views, queries, decoder, work, [F(0)] * len(task['queries']), normalizer_task=normalizer_task)
-    C.certs.append(dict(op='evidence', evidence={str(k): v for k, v in sorted(ev.items())}, free=free, constant_factor_scalars=_SCALARS[:]))
-    _SCALARS.clear()
+    C.constant_scalars = constant_scalars
+    C.certs.append(dict(op='evidence', evidence={str(k): v for k, v in sorted(ev.items())}, free=free, constant_factor_scalars=list(constant_scalars)))
     return C
-
-_SCALARS = []
-def _record_scalar(C, value, fi): _SCALARS.append(dict(factor=fi, value=str(value)))
 
 
 # ======================================================================================================================
@@ -183,6 +191,7 @@ def support_fixpoint(C, quota):
     while changed and C.work.total() < quota:
         changed = False; passes += 1
         for var in range(C.n()):
+            tick(C, None, 'support_fixpoint')
             inc = [v for v in C.views if v.kind == 'table' and var in v.scope]
             dead = set()
             for v in inc:
@@ -236,6 +245,7 @@ def leaf_sumout(C, quota):
     results cancel (normalized) / are retained (normalizer); a zero sum is ZERO_EVIDENCE only when the resulting factor is identically zero"""
     done = []
     while C.work.total() < quota:
+        tick(C, None, 'leaf_sumout')
         qscope = set().union(*(q_scope(q) for q in C.queries)) if C.queries else set()
         cand = None
         for var in range(C.n()):
@@ -327,8 +337,12 @@ def exact_quotient_pass(C, quota, hook=None):
     hook(kind, var, classes, sig, inc) is called BEFORE each commit (the checker verifies the step on the exact pre-step state)."""
     committed = []
     for var in range(C.n()):
-        if C.work.total() >= quota: break
         if var >= C.n(): break
+        try: tick(C, quota, 'exact_quotient_pass')
+        except CompileStop as cs:
+            if cs.kind == 'quota': break
+            if committed: C.certs.append(dict(op='exact_quotient_pass', steps=committed, interrupted=cs.kind))
+            raise
         sig, inc = _signatures(C, var)
         if sig is None: continue
         if not inc: sig = {s: [] for s in range(C.cards[var])}
@@ -387,7 +401,11 @@ def approx_quotient(C, quota, allowance, hook=None):
     if all(a <= 0 for a in allowance): return False
     committed = []
     for var in range(C.n()):
-        if C.work.total() >= quota: break
+        try: tick(C, quota, 'approx_quotient')
+        except CompileStop as cs:
+            if cs.kind == 'quota': break
+            if committed: C.certs.append(dict(op='approx_quotient', steps=committed, interrupted=cs.kind))
+            raise
         inc = [v for v in C.views if var in v.scope]
         if not inc or any(v.kind != 'table' for v in inc): continue
         d = C.cards[var]
@@ -396,12 +414,14 @@ def approx_quotient(C, quota, allowance, hook=None):
         masks = {s: tuple(tuple(bool(x) for x in sl) for sl in slices[s]) for s in range(d)}
         remaining = min(allowance[j] - C.bias[j] for j in range(len(C.bias))) if C.bias else F(0)
         if remaining <= 0: break
-        groups = []; pairs = 0
+        groups = []; pairs = 0; over = False
         for s in range(d):
             placed = False
+            if C.work.total() >= quota: over = True; break                      # INNER quota (review CQR-06: 350,208 units were spent against a 50,000 quota)
             for g in groups:
                 pairs += 1
                 if pairs > d * d: break
+                if C.work.total() >= quota: over = True; break
                 r = g['rep']
                 if masks[s] != masks[r]: continue
                 # candidate: add s to g; compute the ratio bounds of the whole factor under the surrogate for the proposed grouping of this variable
@@ -410,10 +430,16 @@ def approx_quotient(C, quota, allowance, hook=None):
                 if R is None: continue
                 beta = (R - 1) / (R + 3)
                 if beta <= remaining: g['states'].append(s); placed = True; break
+            if over: break
             if not placed: groups.append(dict(rep=s, states=[s]))
+        if over: C.certs.append(dict(op='approx_quotient', declined='quota exhausted inside the pair scan of variable %d (nothing of this variable committed)' % var)); break
         if all(len(g['states']) == 1 for g in groups): continue
         R, bounds = _surrogate_ratio(C, var, inc, slices, groups); beta = (R - 1) / (R + 3)
         if beta > remaining: continue
+        try: tick(C, None, 'approx_quotient')                                    # last consistent point before the surrogate is written
+        except CompileStop as cs:
+            if committed: C.certs.append(dict(op='approx_quotient', steps=committed, interrupted=cs.kind))
+            raise
         if hook is not None: hook('approx', var, groups, slices, inc, R, beta)          # the checker recomputes R / beta on the exact pre-step slices
         # apply the surrogate to the incident factors: phi~(s, y) = c_a(s) phi(r, y) with c from the first common positive pivot
         for fi, v in enumerate(inc):
@@ -471,6 +497,10 @@ def symmetry(C, quota):
     found = []
     for cand in cands:
         if C.work.total() >= quota: break
+        try: tick(C, quota, 'symmetry')                               # service / deadline / quota inside the candidate scan (review CQR-06)
+        except CompileStop as cs:
+            if cs.kind == 'quota': break
+            raise
         if verify_symmetry_action(C.cards, C.views, cand, C.work):
             consts = {}
             for qi, q in enumerate(C.queries):
@@ -551,7 +581,10 @@ def concentration(C, quota, allowance):
     C.witness = dict(xstar)
     t = {}
     for var in range(C.n()):
-        if C.work.total() >= quota: return None
+        try: tick(C, quota, 'concentration')
+        except CompileStop as cs:
+            if cs.kind == 'quota': C.certs.append(dict(op='concentration', declined='quota exhausted during the ratio scans')); return None
+            raise
         Ri = F(0); inf = False
         for s in range(C.cards[var]):
             if s == xstar[var]: continue
@@ -577,7 +610,7 @@ def concentration(C, quota, allowance):
         b = min(F(1), sum(t[u] for u in q['f'].scope)) if q['f'].scope else F(0)
         if b > allowance[qi] - C.bias[qi]: C.certs.append(dict(op='concentration', declined='bias %s exceeds the allowance of query %d' % (b, qi), t={str(k): str(v) for k, v in t.items()})); return None
         answers[qi] = q['f'].at(C.cards, xstar); biases[qi] = b
-    rec = dict(op='concentration', xstar={str(k): v for k, v in xstar.items()}, weight=str(wst), t={str(k): str(v) for k, v in t.items()}, answers={str(k): str(v) for k, v in answers.items()}, bias={str(k): str(v) for k, v in biases.items()})
+    rec = dict(op='concentration', xstar={str(k): v for k, v in xstar.items()}, weight=str(wst), t={str(k): str(v) for k, v in t.items()}, answers={str(k): str(v) for k, v in answers.items()}, bias={str(k): str(v) for k, v in biases.items()}, query_scopes={str(qi): list(q['f'].scope) for qi, q in enumerate(C.queries)})
     for qi, b in biases.items(): C.bias[qi] += b                 # the certified bias is SPENT in the ledger (the publication is widened by it; tau shrinks)
     C.certs.append(rec); return dict(answers=answers, bias=biases, record=rec)
 
@@ -595,20 +628,40 @@ def influence_deletion(C, quota, allowance, neumann_T=8):
     def cb(i, j): return Cbar.get(i, {}).get(j, F(0))
     for fi, v in enumerate(C.views):
         if len(v.scope) < 1: continue
+        try: tick(C, quota, 'influence_deletion')
+        except CompileStop as cs:
+            if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
+            raise
         sc = v.scope
         for i in sc:
+            try: tick(C, quota, 'influence_deletion')                 # quota / deadline / service INSIDE the costly per-site scans (review CQR-06: 32-state factors cost 2^16 units each)
+            except CompileStop as cs:
+                if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
+                raise
             rest = [u for u in sc if u != i]; best = F(1)
             for xs in product(*(range(C.cards[u]) for u in rest)):
+                try: tick(C, quota, 'influence_deletion')
+                except CompileStop as cs:
+                    if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
+                    raise
                 x = dict(zip(rest, xs)); vals = []
                 for s_ in range(C.cards[i]): x[i] = s_; vals.append(v.at(C.cards, x)); C.work.entries += 1
                 best = max(best, max(vals) / min(vals))
             Dai[(fi, i)] = best
             for j in sc:
                 if j == i: continue
+                try: tick(C, quota, 'influence_deletion')
+                except CompileStop as cs:
+                    if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
+                    raise
                 rest2 = [u for u in sc if u not in (i, j)]; Rmax = F(1)
                 for xs in product(*(range(C.cards[u]) for u in rest2)):
                     x = dict(zip(rest2, xs))
                     for u_ in range(C.cards[i]):
+                        try: tick(C, quota, 'influence_deletion')         # innermost granularity: one row of state pairs (<= 2 * card_i * card_j entries)
+                        except CompileStop as cs:
+                            if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
+                            raise
                         for v_ in range(u_ + 1, C.cards[i]):
                             qs = []
                             for s_ in range(C.cards[j]):
@@ -682,6 +735,10 @@ def affine(C, quota):
     pos = {v: i for i, v in enumerate(bin_vars)}; nb = len(bin_vars); eqs = []; local = []
     for fi, v in enumerate(C.views):
         if C.work.total() >= quota: break
+        try: tick(C, quota, 'affine')
+        except CompileStop as cs:
+            if cs.kind == 'quota': break
+            raise
         if not all(C.cards[u] == 2 for u in v.scope): continue
         le = local_affine(v, C.cards, C.work)
         if not le: continue
@@ -798,15 +855,55 @@ def quota_for(task):
     return max(50_000, 8 * ent)
 
 
-def compile_task(task, enabled=None, deadline=None, work=None):
-    """returns (Compiled, log). `enabled` = set of operator names (POLICY['order']) that may run (G0: only 'evidence'); every other operator records 'disabled'"""
+NORMALIZER_FORBIDDEN = ('component_omission', 'approx_quotient', 'influence_deletion', 'concentration')      # TV-only / unknown-scalar / normalized-only rewrites (manuscript §9)
+
+
+def effective_operators(arm_enabled, task):
+    """the ONE task-effective operator policy shared by the producer and the checker (review CQR-08): the arm's set minus the rewrites a normalizer task forbids"""
+    en = set(arm_enabled)
+    if (task.get('query_spec') or {}).get('normalizer_task'): en -= set(NORMALIZER_FORBIDDEN)
+    return en
+
+
+def _save_state(C):
+    """the committed compiled model (every field an operator may change); views / queries / decoder entries are replaced, never mutated in place, by the operators (list copies suffice)"""
+    import copy as _copy
+    return dict(cards=list(C.cards), views=list(C.views), queries=list(C.queries), decoder=_copy.deepcopy(C.decoder), bias=list(C.bias), certs=list(C.certs), scalars=list(C.scalars),
+                constant_scalars=list(C.constant_scalars), witness=_copy.deepcopy(C.witness), affine_done=C.affine_done, constant_queries=dict(C.constant_queries))
+def _restore_state(C, s):
+    C.cards = s['cards']; C.views = s['views']; C.queries = s['queries']; C.decoder = s['decoder']; C.bias = s['bias']; C.certs = s['certs']; C.scalars = s['scalars']
+    C.constant_scalars = s['constant_scalars']; C.witness = s['witness']; C.affine_done = s['affine_done']; C.constant_queries = s['constant_queries']
+
+
+def compile_task(task, enabled=None, deadline=None, work=None, service=None, fault=None):
+    """returns (Compiled, log). `enabled` = the TASK-EFFECTIVE operator set (effective_operators); every other operator records 'disabled'. `service(op)` is called at every
+    consistent point (review CQR-06): it may raise CompileStop('deadline' | 'reference_done' | 'cancelled'); the driver then returns the LAST COMMITTED model with
+    log['interrupted'] set and every charge preserved. A quota exhaustion inside an operator makes that operator decline the rest (its commits stay)."""
     enabled = set(POLICY['order']) if enabled is None else set(enabled); t0 = time.monotonic(); C = from_task(task, work)
-    D = quota_for(task); allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries']); log = dict(quota=D, steps=[], direct=None)
+    D = quota_for(task); allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries']); log = dict(quota=D, steps=[], direct=None, interrupted=None, failed=None)
     def q_(k): return C.work.total() + D if k == 'exact_quotient_pass' else C.work.total() + D
+    def svc(op):
+        if deadline is not None and time.monotonic() >= deadline: raise CompileStop('deadline', op)
+        if service is not None: service(op)
+    C.service = svc
     def step(name, fn):
+        if log['interrupted']: log['steps'].append(dict(op=name, skipped='interrupted')); return False
         if deadline is not None and time.monotonic() >= deadline: log['steps'].append(dict(op=name, skipped='deadline')); return False
         if name not in enabled: log['steps'].append(dict(op=name, disabled=True)); return False
-        w0 = C.work.total(); m0 = C.measure(); r = fn(); log['steps'].append(dict(op=name, committed=bool(r), work=C.work.total() - w0, measure_before=m0, measure_after=C.measure())); return r
+        if log.get('failed'): log['steps'].append(dict(op=name, skipped='optional_failure')); return False
+        w0 = C.work.total(); m0 = C.measure(); saved = _save_state(C)
+        try:
+            if fault == name: raise RuntimeError('INJECTED optional fault in %s (qualification control; never a production run)' % name)      # an optional failure: NOT a CompileStop
+            r = fn()
+        except CompileStop as cs:
+            log['steps'].append(dict(op=name, interrupted=cs.kind, work=C.work.total() - w0, measure_before=m0, measure_after=C.measure())); log['interrupted'] = dict(op=name, kind=cs.kind); return False
+        except (ZeroEvidence, MemoryError): raise
+        except Exception as ex:
+            # an OPTIONAL FAILURE inside one operator: the transaction is rolled back to the LAST COMMITTED model (its certificates and bias ledger intact), every unit spent stays charged,
+            # the failure is recorded, and no later operator runs; the caller publishes from the committed model or lets the protected reference finish
+            _restore_state(C, saved); log['steps'].append(dict(op=name, failed='%s: %s' % (type(ex).__name__, str(ex)[:160]), work=C.work.total() - w0, measure_before=m0, measure_after=C.measure()))
+            log['failed'] = dict(op=name, error='%s: %s' % (type(ex).__name__, str(ex)[:160])); return False
+        log['steps'].append(dict(op=name, committed=bool(r), work=C.work.total() - w0, measure_before=m0, measure_after=C.measure())); return r
     step('support_fixpoint', lambda: support_fixpoint(C, q_('support')))
     step('fixed_substitution', lambda: fixed_substitution(C))
     step('leaf_sumout', lambda: leaf_sumout(C, q_('leaf')))
@@ -817,15 +914,17 @@ def compile_task(task, enabled=None, deadline=None, work=None):
     step('symmetry', lambda: symmetry(C, q_('symmetry')))
     if task['mode'] != 'EXACT_RATIONAL':
         if step('approx_quotient', lambda: approx_quotient(C, q_('approx'), allowance)): step('fixed_substitution', lambda: fixed_substitution(C))
-        direct = None
-        if 'concentration' in enabled: direct = concentration(C, q_('conc'), allowance); log['steps'].append(dict(op='concentration', committed=direct is not None))
-        else: log['steps'].append(dict(op='concentration', disabled=True))
-        log['direct'] = direct
-        if direct is None: step('influence_deletion', lambda: influence_deletion(C, q_('infl'), allowance))
-        if direct is None: step('leaf_sumout', lambda: leaf_sumout(C, q_('leaf')))
+        direct = [None]
+        def _conc():
+            direct[0] = concentration(C, q_('conc'), allowance); return direct[0] is not None
+        step('concentration', _conc)                      # under the SAME deadline / interruption wrapper as every other operator (review CQR-06)
+        log['direct'] = direct[0]
+        if direct[0] is None: step('influence_deletion', lambda: influence_deletion(C, q_('infl'), allowance))
+        if direct[0] is None: step('leaf_sumout', lambda: leaf_sumout(C, q_('leaf')))
     else:
         for name in ('approx_quotient', 'concentration', 'influence_deletion'): log['steps'].append(dict(op=name, disabled='EXACT_RATIONAL mode'))
     step('affine', lambda: affine(C, q_('affine')))
+    C.service = None                                           # the hook is released with the task (the certificate serializer never sees it)
     log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]
     return C, log
 

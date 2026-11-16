@@ -15,10 +15,10 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v1 (2026-11-16)'
-ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v1')
+SUITE_VERSION = 'cqr-qualification-v2 (2026-11-16, after the adversarial review: groups C14-C19 added)'
+ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v5')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
-R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
+R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
 CNT = R['counts']; passed = 0; total = 0
 # ---- C13 PREREGISTRATION (fixed before data): two settings on ONE tiny 3-binary-variable chain model; sampling-only diagnostic (deterministic routes withheld), eps = 1/10;
 # setting A: delta = 1/4, N = 120 runs; setting B: delta = 1/16, N = 120 runs. Test: misses_among_publications <= binomial 1 - 0.0005 quantile of Binomial(publications, delta)
@@ -97,9 +97,9 @@ def write_task(d, name, m, spec=None):
     return p
 
 
-def fresh_worker(mp, arm, budget=8.0, seed='s', nonce='n', mode=None):
+def fresh_worker(mp, arm, budget=8.0, seed='s', nonce='n', mode=None, extra=()):
     CNT['fresh_workers'] += 1; out = mp + '.%s.%s.json' % (arm, nonce); dl = subprocess.run([PY, '-c', 'import time; print(time.monotonic()+%f)' % budget], capture_output=True, text=True).stdout.strip()
-    cmd = [PY, os.path.join(HERE, 'worker.py'), '--input', mp, '--output', out, '--arm', arm, '--deadline', dl, '--seed', seed, '--nonce', nonce, '--budget', str(budget)] + (['--mode', mode] if mode else [])
+    cmd = [PY, os.path.join(HERE, 'worker.py'), '--input', mp, '--output', out, '--arm', arm, '--deadline', dl, '--seed', seed, '--nonce', nonce, '--budget', str(budget)] + (['--mode', mode] if mode else []) + list(extra)
     subprocess.run(cmd, capture_output=True, text=True, cwd=CODE); return json.load(open(out))
 
 
@@ -137,16 +137,16 @@ def c1_identity_checker():
     def expect(mp, w, arm, name, fn, needle):
         x = copy.deepcopy(w); fn(x); fails, _ = check_(mp, x, arm); needles = needle if isinstance(needle, tuple) else (needle,); A(fails and any(any(nd in f for nd in needles) for f in fails), 'mutation %s not refused for the intended reason: %s' % (name, fails[:2])); out['mutations'][name] = fails[0][:100]
     mp, w = accepted[('pac_frontier', 'N1_CQR')]
-    expect(mp, w, 'N1_CQR', 'point_shift', lambda x: (x['answers'][0].__setitem__('point', str(F(x['answers'][0]['point']) + F(1, 50))), x['certificate']['publication']['point'].__setitem__(0, x['answers'][0]['point'])), 'feasibility box')
-    expect(mp, w, 'N1_CQR', 'bounds_widened', lambda x: x['certificate']['publication']['bounds'].__setitem__(0, [str(F(x['certificate']['publication']['bounds'][0][0]) - F(1, 20)), x['certificate']['publication']['bounds'][0][1]]), ('feasibility box', 'do not contain', 'differs'))
-    expect(mp, w, 'N1_CQR', 'operator_set_relabel', lambda x: x['certificate'].__setitem__('enabled_operators', ['evidence']), 'differ from the registered arm')
+    expect(mp, w, 'N1_CQR', 'point_shift', lambda x: (x['answers'][0].__setitem__('point', str(F(x['answers'][0]['point']) + F(1, 50))), x['certificate']['publication']['point'].__setitem__(0, x['answers'][0]['point'])), ('feasibility box', 'not within eps of every value', 'outside its published bounds'))
+    expect(mp, w, 'N1_CQR', 'bounds_widened', lambda x: x['certificate']['publication']['bounds'].__setitem__(0, [str(F(x['certificate']['publication']['bounds'][0][0]) - F(1, 20)), x['certificate']['publication']['bounds'][0][1]]), ('feasibility box', 'do not contain', 'differs', 'not within eps of every value', 'does not agree with the certificate'))
+    expect(mp, w, 'N1_CQR', 'operator_set_relabel', lambda x: x['certificate'].__setitem__('enabled_operators', ['evidence']), ('differ from the registered arm', 'differs from the registered arm'))
     expect(mp, w, 'N1_CQR', 'arm_relabel', lambda x: (x['certificate'].__setitem__('arm', 'G0_CQR'), x.__setitem__('arm', 'G0_CQR')), 'differ')
     expect(mp, w, 'N1_CQR', 'bias_ledger', lambda x: x['certificate'].__setitem__('bias', [str(F(b) + F(1, 10 ** 5)) for b in x['certificate']['bias']]), 'bias ledger')
     expect(mp, w, 'N1_CQR', 'binding', lambda x: x['binding'].__setitem__('model_sha256', '0' * 64), 'binding')
     expect(mp, w, 'N1_CQR', 'task_identity', lambda x: x.__setitem__('task_identity', '1' * 64), 'identity')
     expect(mp, w, 'N1_CQR', 'final_sha', lambda x: x['certificate']['compile'].__setitem__('final_sha256', '1' * 64), 'does not replay')
     expect(mp, w, 'N1_CQR', 'diagnostic_flag', lambda x: x['certificate'].__setitem__('diagnostic', 'sampling_only'), 'DIAGNOSTIC')
-    expect(mp, w, 'N1_CQR', 'mode_relabel', lambda x: x['certificate'].__setitem__('mode', 'EXACT_RATIONAL'), 'mode differs')
+    expect(mp, w, 'N1_CQR', 'mode_relabel', lambda x: x['certificate'].__setitem__('mode', 'EXACT_RATIONAL'), ('mode differs', 'differs from the authoritative task mode'))
     if w['route'] in ('deterministic_frontier', 'pac_ratio_intersected_with_deterministic'):
         ev = w['certificate']['events']
         if ev: expect(mp, w, 'N1_CQR', 'event_deleted', lambda x: x['certificate']['events'].pop(len(x['certificate']['events']) // 2), '')
@@ -154,9 +154,9 @@ def c1_identity_checker():
         if dr: expect(mp, w, 'N1_CQR', 'draw_point_changed', lambda x: (lambda e: e['x'].__setitem__(list(e['x'])[0], 1 - e['x'][list(e['x'])[0]]))(next(e for e in x['certificate']['events'] if e['op'] == 'ratio_draw')), '')
         if w['certificate'].get('ratio_stream') and w['certificate']['ratio_stream']['t']: expect(mp, w, 'N1_CQR', 'variance_halved', lambda x: x['certificate']['ratio_stream'].__setitem__('V', str(F(x['certificate']['ratio_stream']['V']) / 2)), 'do not replay')
     mp2, w2 = accepted[('exact_mode', 'N1_CQR')]
-    expect(mp2, w2, 'N1_CQR', 'exact_value_changed', lambda x: (x['certificate']['publication']['bounds'].__setitem__(0, [str(F(x['certificate']['publication']['bounds'][0][0]) + F(1, 1000))] * 2), x['certificate']['publication']['point'].__setitem__(0, x['certificate']['publication']['bounds'][0][0])), 'differs from the independent enumerator' if w2['route'] == 'exact_reference' else '')
+    expect(mp2, w2, 'N1_CQR', 'exact_value_changed', lambda x: (x['certificate']['publication']['bounds'].__setitem__(0, [str(F(x['certificate']['publication']['bounds'][0][0]) + F(1, 1000))] * 2), x['certificate']['publication']['point'].__setitem__(0, x['certificate']['publication']['bounds'][0][0])), ('differs from the independent enumerator', 'do not contain', 'zero-width proven value', 'differs'))
     mp3, w3 = accepted[('normalizer', 'N1_CQR')]
-    expect(mp3, w3, 'N1_CQR', 'normalizer_point_out', lambda x: x['certificate']['publication']['point'].__setitem__(0, str(F(x['certificate']['publication']['bounds'][0][1]) * F(11, 10))), 'Z point outside' if w3['route'] != 'normalizer_exact_reference' else '')
+    expect(mp3, w3, 'N1_CQR', 'normalizer_point_out', lambda x: x['certificate']['publication']['point'].__setitem__(0, str(F(x['certificate']['publication']['bounds'][0][1]) * F(11, 10))), ('Z point outside', 'point', 'do not contain', 'differs'))
     # zero proof mutations: claim zero on a positive model
     mp4, w4 = accepted[('clones_det', 'G0_CQR')]; x = copy.deepcopy(w4); x.update(outcome='PROVED_ZERO_EVIDENCE', status='STOPPED', zero_evidence_proof=dict(kind='reference_enumeration', assignments=1)); fails, _ = check_(mp4, x, 'G0_CQR'); A(fails and any('contradicted by the independent enumerator' in f for f in fails), 'false zero not refused: %s' % fails[:1]); out['mutations']['false_zero_claim'] = fails[0][:100]
     # no-op control: a byte-identical re-serialization is accepted
@@ -547,7 +547,321 @@ def c13_delta_falsification():
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification)]
+
+# ======================================================================================================================
+# ---- groups added after the adversarial review of 16 Nov 2026 (findings CQR-01..CQR-10). Fixtures regenerate the reviewer's witnesses from their recorded construction
+# rules (never read from the evidence archive); truths come from cex/cqr/oracle.py (enumeration, or variable elimination for models beyond 2^22 assignments: never the decoder).
+def _uai(path, cards, fs):
+    toks = ['MARKOV', str(len(cards)), ' '.join(map(str, cards)), str(len(fs))]
+    for sc, vals in fs: toks.append(' '.join(map(str, [len(sc)] + list(sc))))
+    for sc, vals in fs: toks.extend([str(len(vals)), ' '.join(str(v) for v in vals)])
+    open(path, 'w').write('\n'.join(toks) + '\n'); return path
+
+
+def _spec(path, **spec): json.dump(spec, open(path + '.query.json', 'w')); return path
+
+
+def _concentration_witness(d):
+    """review CQR-01: 16 binary variables, unaries [1000000, 1] on every variable, ring factors [1,2;3,5]; query x0 = 1 (DETERMINISTIC_EPS); truth ~ 6e-6"""
+    n = 16; fs = [([i], [1000000, 1]) for i in range(n)] + [([i, (i + 1) % n], [1, 2, 3, 5]) for i in range(n)]
+    return _spec(_uai(os.path.join(d, 'concentration.uai'), [2] * n, fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=1)])
+
+
+def _biased_closure_witness(d):
+    """review CQR-05: x0 has 4 states nearly proportional to x1 (approximate quotient, bias 1/40001); original answer 20953/74287; second query h = g = 0 is UNDEFINED"""
+    n = 18; fs = [([0, 1], ['1', '3', '1', '30001/10000', '4', '1', '4', '10001/10000']), ([0, 2], ['1', '2', '1', '2', '3', '1', '3', '1']), ([1, 2], ['1', '2', '3', '5'])] + [([i], ['1', '2']) for i in range(3, n)]
+    return _spec(_uai(os.path.join(d, 'biased_closure.uai'), [4] + [2] * (n - 1), fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000',
+                 queries=[dict(kind='singleton', variable=0, state=1), dict(kind='table', table=dict(name='zero denominator', kind='ratio', h=dict(scope=[], values=['0']), g=dict(scope=[], values=['0'])))])
+
+
+def _normalizer_witness(d):
+    """review CQR-02: 30 binary variables, ONE unary factor [1, 2] on x29 (every other variable free): Z = 3 * 2^29 exactly; PAC normalizer at eps 3/10, delta 1/5"""
+    return _spec(_uai(os.path.join(d, 'normalizer.uai'), [2] * 30, [([29], ['1', '2'])]), mode='PAC_EPS', normalizer_task=True, queries=[], epsilon='3/10', delta='1/5')
+
+
+def _constant_witness(d):
+    """review CQR-03: 20 binary variables with unaries [1,2]; the query is the CONSTANT table 1/3 (zero-dimensional)"""
+    return _spec(_uai(os.path.join(d, 'constant20.uai'), [2] * 20, [([i], ['1', '2']) for i in range(20)]), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000',
+                 queries=[dict(kind='table', table=dict(name='constant', kind='expectation', f=dict(scope=[], values=['1/3'])))])
+
+
+def _d32_witness(d, seed=32):
+    """review CQR-06: two 32-state variables (1,024 original assignments), one dense pair factor + unaries; all singletons of x0 = 0 and x1 = 0 (campaign default PAC task)"""
+    rng = random.Random(seed); fs = [([0, 1], [rng.randint(1, 9) for _ in range(32 * 32)]), ([0], [rng.randint(1, 9) for _ in range(32)]), ([1], [rng.randint(1, 9) for _ in range(32)])]
+    return _spec(_uai(os.path.join(d, 'd32.uai'), [32, 32], fs), queries=[dict(kind='singleton', variable=0, state=0), dict(kind='singleton', variable=1, state=0)])
+
+
+def _sprinkled(seed, n, nf, ar, big=10, small=1, holes=1):
+    """arity-4 factors of value `big` with `holes` entries of value `small`: pointwise caps stay tight while cell lower bounds vanish -> the deterministic frontier cannot close but the ratio stream does"""
+    rng = random.Random(seed); fs = []; cover = list(range(n)); rng.shuffle(cover); k = 0
+    for i in range(nf):
+        if k + ar <= n: sc = tuple(sorted(cover[k:k + ar])); k += ar
+        else: sc = tuple(sorted(rng.sample(range(n), ar)))
+        vals = [big] * (2 ** ar)
+        for h in rng.sample(range(2 ** ar), holes): vals[h] = small
+        fs.append((sc, vals))
+    return [2] * n, fs
+
+
+def _ring_hardzero(seed, n, lo, hi, p0=9):
+    """near-uniform ring with ONE hard zero at (x0 = 1, x1 = 1) and a rare x0 = 1: the query 'mostly 1/2' is constant off a region of tiny mass -> the signed residual stream validates 1/2"""
+    rng = random.Random(seed); fs = []
+    for i in range(n):
+        vals = [rng.randint(lo, hi) for _ in range(4)]
+        if i == 0: vals[3] = 0
+        fs.append(([i, (i + 1) % n], vals))
+    fs.append(([0], [p0, 1])); return [2] * n, fs
+
+
+def _truth(mp):
+    t = TK.load_task(mp); CNT['oracle_models'] += 1; return t, OR.truth(t['model'], t['queries'], max_assignments=1 << 22, max_table=1 << 24)
+
+
+def _contained(w, tr, eps):
+    ok = True
+    for j, a in enumerate(w['answers']):
+        CNT['truth_coordinates'] += 1; v = tr['answers'][j]
+        if v == 'UNDEFINED': ok &= (a['status'] == 'UNDEFINED'); continue
+        if a['status'] != 'OK': ok = False; continue
+        ok &= (F(a['lo']) <= v <= F(a['hi']) and abs(F(a['point']) - v) <= eps)
+    return ok
+
+
+def _mut(mp, w, arm, name, fn, needles, out):
+    """apply `fn` to a COPY of a worker output (receipt hashes are irrelevant to the semantic checker) and require a refusal naming one of `needles`"""
+    x = copy.deepcopy(w); fn(x); fails, _ = check_(mp, x, arm, budget=300.0); needles = needles if isinstance(needles, tuple) else (needles,)
+    A(fails and any(any(nd in f for nd in needles) for f in fails), 'mutation %s not refused for the intended reason: %s' % (name, fails[:2])); out[name] = fails[0][:110]
+
+
+def c14_publication_contract_every_route():
+    """review item 1 (CQR-01, CQR-02, CQR-03, CQR-05): for EVERY publication route an honest fresh-worker acceptance and content mutations refused for their semantic reason
+    (point, bounds, bias, exactness, typed undefined, output count / identity, legacy serialization, route relabel); the reviewer's witnesses regenerated from their rules"""
+    d = tempfile.mkdtemp(prefix='cqr_c14_'); out = dict(routes={}, mutations={}); routes_seen = set()
+    def honest(mp, arm, budget=20.0, seed='s', extra=()):
+        w = fresh_worker(mp, arm, budget=budget, seed=seed, nonce='c14-%s-%s' % (os.path.basename(mp), arm), extra=extra); fails, info = check_(mp, w, arm, budget=300.0)
+        A(not fails, '%s/%s honest refused: %s' % (os.path.basename(mp), arm, fails[:2])); A(w['outcome'] == 'PUBLISHED', '%s/%s outcome %s %s' % (os.path.basename(mp), arm, w['outcome'], (w.get('reason') or '')[:80]))
+        t, tr = _truth(mp)
+        if not (t.get('query_spec') or {}).get('normalizer_task'): A(_contained(w, tr, t['epsilon']), '%s/%s published answers miss the independent truth' % (os.path.basename(mp), arm))
+        else: a = w['answers'][0]; CNT['truth_coordinates'] += 1; A(F(a['lo']) <= tr['Z'] <= F(a['hi']) and abs(F(a['point']) - tr['Z']) <= t['epsilon'] * tr['Z'], 'normalizer miss')
+        routes_seen.add(w['route']); out['routes'][os.path.basename(mp) + '/' + arm] = dict(route=w['route'], guarantee=w['guarantee_type'], exact=w.get('exact')); return w, t, tr
+    # ---- CQR-01 concentration: the forged direct answer (nearly-zero answer changed to 1 with consistent bounds / point) must fail on re-evaluation at x*
+    mp = _concentration_witness(d); w, t, tr = honest(mp, 'N1_CQR'); A(w['route'] == 'deterministic_concentration', 'concentration route not taken: %s' % w['route'])
+    def forge(x):
+        dc = next(c for c in x['certificate']['compile']['certificates'] if c.get('op') == 'concentration' and 'answers' in c); b = F(x['certificate']['bias'][0])
+        dc['answers']['0'] = '1'; x['certificate']['publication']['bounds'] = [[str(1 - b), '1']]; x['certificate']['publication']['point'] = ['1']; x['answers'][0].update(lo=str(1 - b), hi='1', point='1')
+    _mut(mp, w, 'N1_CQR', 'concentration_answer_forged', forge, 'does not re-derive', out['mutations']); out['concentration_truth'] = str(tr['answers'][0])
+    _mut(mp, w, 'N1_CQR', 'concentration_route_relabel', lambda x: (x.__setitem__('route', 'deterministic_frontier'), x['certificate']['publication'].__setitem__('route', 'deterministic_frontier')), ('route', 'frontier', 'do not contain'), out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'concentration_output_count', lambda x: x['answers'].append(dict(x['answers'][0])), ('shape', 'count', 'answers'), out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'concentration_identity', lambda x: x.__setitem__('task_identity', '2' * 64), 'identity', out['mutations'])
+    # ---- CQR-05 biased closure: bias 1/40001 stays on the original interval; never exact; the undefined coordinate stays typed
+    mp = _biased_closure_witness(d); w, t, tr = honest(mp, 'N1_CQR'); A(tr['answers'][0] == F(20953, 74287) and tr['answers'][1] == 'UNDEFINED', 'biased-closure fixture truth %s' % tr['answers'])
+    A(w.get('exact') is False and any(F(b) > 0 for b in w['certificate']['bias']), 'biased closure published exact or without bias'); A(w['answers'][1]['status'] == 'UNDEFINED', 'second coordinate not typed UNDEFINED')
+    out['biased_closure'] = dict(route=w['route'], bounds=[w['answers'][0]['lo'], w['answers'][0]['hi']], bias=w['certificate']['bias'])
+    _mut(mp, w, 'N1_CQR', 'biased_exact_claim', lambda x: (x.__setitem__('exact', True), x['certificate']['publication'].__setitem__('exact', True)), ('exact', 'route'), out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'biased_bias_zeroed', lambda x: x['certificate'].__setitem__('bias', ['0', '0']), 'bias ledger', out['mutations'])
+    def narrow(x):
+        c = x['certificate']['publication']['compiled_bounds'][0][0]; x['answers'][0].update(lo=str(c), hi=str(c), point=str(c)); x['certificate']['publication']['bounds'][0] = [str(c), str(c)]; x['certificate']['publication']['point'][0] = str(c)
+    _mut(mp, w, 'N1_CQR', 'biased_bounds_narrowed_to_compiled', narrow, ('do not contain', 'not within eps'), out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'biased_undefined_given_value', lambda x: (x['answers'][1].update(status='OK', lo='0', hi='1', point='1/2'), x['certificate']['publication']['bounds'].__setitem__(1, ['0', '1']), x['certificate']['publication']['point'].__setitem__(1, '1/2')), ('undefined', 'UNDEFINED'), out['mutations'])
+    # ---- CQR-03 zero-dimensional constant 1/3: point 0 with correct bounds; CQR-03 legacy rows [0,1] on the exact-reference unary [1,2]
+    mp = _constant_witness(d); w, t, tr = honest(mp, 'N1_CQR', budget=10.0); A(tr['answers'][0] == F(1, 3), 'constant fixture')
+    _mut(mp, w, 'N1_CQR', 'zero_dim_point_zero', lambda x: (x['answers'][0].__setitem__('point', '0'), x['certificate']['publication']['point'].__setitem__(0, '0')), ('outside its published bounds', 'not within eps'), out['mutations'])
+    mp = _uai(os.path.join(d, 'unary.uai'), [2], [([0], ['1', '2'])]); w, t, tr = honest(mp, 'G0_CQR', budget=10.0)        # NO query file: the campaign default all-singleton contract (legacy rows emitted), as in the reviewer's witness
+    A(w['route'] == 'exact_reference' and w.get('intervals') is not None, 'unary exact reference without legacy rows')
+    _mut(mp, w, 'G0_CQR', 'legacy_rows_wrong', lambda x: (x.__setitem__('intervals', [[['0', '0'], ['1', '1']]]), x.__setitem__('points', [['0', '1']])), ('legacy', 'rows'), out['mutations'])
+    _mut(mp, w, 'G0_CQR', 'legacy_rows_dropped', lambda x: (x.pop('intervals'), x.pop('points')), ('legacy', 'rows'), out['mutations'])
+    _mut(mp, w, 'G0_CQR', 'exact_value_changed', lambda x: (x['answers'][0].update(lo='1/2', hi='1/2', point='1/2'), x['certificate']['publication'].__setitem__('bounds', [['1/2', '1/2']]), x['certificate']['publication'].__setitem__('point', ['1/2']), x.__setitem__('intervals', [[['1/2', '1/2'], ['1/2', '1/2']]]), x.__setitem__('points', [['1/2', '1/2']])), ('differs', 'do not contain', 'enumerator'), out['mutations'])
+    # ---- exact closure (clones, EXACT_RATIONAL): zero-width; an exactness downgrade / widening is refused
+    g = G.generate('M02', 6, 'favorable', 1); mp = write_task(d, 'clones_exact', g['model'], dict(mode='EXACT_RATIONAL', queries=[dict(kind='all_singletons')], epsilon='1/200', delta='0')); w, t, tr = honest(mp, 'N1_CQR', budget=10.0)
+    A(w['route'] in ('exact_frontier_closure', 'exact_zero_dimensional', 'exact_reference') and w.get('exact') is True, 'clones exact route %s' % w['route'])
+    _mut(mp, w, 'N1_CQR', 'exact_widened', lambda x: (x['answers'][0].__setitem__('hi', str(F(x['answers'][0]['hi']) + F(1, 1000))), x['certificate']['publication']['bounds'][0].__setitem__(1, x['answers'][0]['hi'])), ('zero-width', 'exact', 'differs'), out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'exact_flag_dropped', lambda x: (x.__setitem__('exact', False), x['certificate']['publication'].__setitem__('exact', False)), ('exact', 'route'), out['mutations'])
+    # ---- CQR-02 normalizer PAC: narrowed singleton refused, valid small outward widening accepted, relabel refused; exact normalizer routes
+    mp = _normalizer_witness(d); w = None
+    for seed in range(6):
+        w_ = fresh_worker(mp, 'G0_CQR', budget=10.0, seed=str(seed), nonce='c14-norm-%d' % seed)
+        if w_['outcome'] == 'PUBLISHED' and w_['guarantee_type'] == 'PAC': w = w_; break
+    A(w is not None, 'the normalizer witness produced no PAC publication in 6 seeds'); fails, _ = check_(mp, w, 'G0_CQR', budget=300.0); A(not fails, 'normalizer honest refused %s' % fails[:1]); routes_seen.add(w['route'])
+    Z = 3 * 2 ** 29; lo, hi = F(w['answers'][0]['lo']), F(w['answers'][0]['hi']); A(lo <= Z <= hi, 'normalizer honest bounds miss Z'); CNT['truth_coordinates'] += 1; out['routes']['normalizer/G0_CQR'] = dict(route=w['route'], rel_width=float((hi - lo) / lo))
+    wrong = lo if abs(lo - Z) > abs(hi - Z) else hi; A(abs(wrong - Z) > F(3, 10) * Z, 'narrowing fixture: the far end is within tolerance (seed-dependent); draws %s' % w['certificate']['ratio_stream']['t'])
+    _mut(mp, w, 'G0_CQR', 'normalizer_narrowed_singleton', lambda x: (x['answers'][0].update(lo=str(wrong), hi=str(wrong), point=str(wrong)), x['certificate']['publication'].__setitem__('bounds', [[str(wrong), str(wrong)]]), x['certificate']['publication'].__setitem__('point', [str(wrong)])), 'do not contain', out['mutations'])
+    fac = F(10005, 10000); x = copy.deepcopy(w); x['answers'][0].update(lo=str(lo / fac), hi=str(hi * fac)); x['certificate']['publication']['bounds'] = [[str(lo / fac), str(hi * fac)]]; fails, _ = check_(mp, x, 'G0_CQR', budget=300.0)
+    A(not fails, 'VALID outward widening (x1.0005, point still tolerance-feasible) refused: %s' % fails[:1]); out['normalizer_valid_widening_accepted'] = True
+    x = copy.deepcopy(w); x['answers'][0].update(lo=str(lo / 2), hi=str(hi * 2)); x['certificate']['publication']['bounds'] = [[str(lo / 2), str(hi * 2)]]; fails, _ = check_(mp, x, 'G0_CQR', budget=300.0)
+    A(fails and any('point outside' in f or 'relative error' in f for f in fails), 'a widening that breaks the relative-error feasibility of the point was accepted'); out['mutations']['normalizer_widened_beyond_feasibility'] = fails[0][:100]
+    _mut(mp, w, 'G0_CQR', 'normalizer_relabelled_deterministic', lambda x: (x.__setitem__('guarantee_type', 'DETERMINISTIC'), x['certificate']['publication'].__setitem__('guarantee', 'DETERMINISTIC')), 'class PAC', out['mutations'])
+    mp = _spec(_uai(os.path.join(d, 'norm20.uai'), [2] * 20, []), normalizer_task=True, queries=[], mode='EXACT_RATIONAL', epsilon='1/200', delta='0'); w, t, tr = honest(mp, 'N1_CQR', budget=10.0); A(F(w['answers'][0]['lo']) == 2 ** 20 == tr['Z'], 'free normalizer Z')
+    _mut(mp, w, 'N1_CQR', 'normalizer_exact_value_changed', lambda x: (x['answers'][0].update(lo='1048577', hi='1048577', point='1048577'), x['certificate']['publication'].__setitem__('bounds', [['1048577', '1048577']]), x['certificate']['publication'].__setitem__('point', ['1048577'])), ('differs', 'do not contain', 'scalar'), out['mutations'])
+    mp = write_task(d, 'norm_small', G.generate('M11', 8, 'favorable', 3)['model'], dict(mode='PAC_EPS', normalizer_task=True, queries=[], epsilon='1/200', delta='1/1000000')); w, t, tr = honest(mp, 'G0_CQR', budget=10.0)
+    # ---- deterministic signed E_ZERO and the PAC routes (fresh workers; mutations in C16)
+    cards, fs = _ring_hardzero(1, 30, 9, 10); vals = [str(F(1, 2) if not (x0 == 1 and x1 == 1) else F(x2)) for x0 in range(2) for x1 in range(2) for x2 in range(2)]
+    mp = _spec(_uai(os.path.join(d, 'ez30.uai'), cards, fs), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='table', table=dict(name='half_off_zero', kind='expectation', f=dict(scope=[0, 1, 2], values=vals)))]); w, t, tr = honest(mp, 'N1_CQR', budget=20.0)
+    if w['route'] == 'deterministic_signed_residual_E_zero': _mut(mp, w, 'N1_CQR', 'e_zero_point_shift', lambda x: (x['answers'][0].__setitem__('point', str(F(x['answers'][0]['point']) + F(1, 50))), x['certificate']['publication']['point'].__setitem__(0, x['answers'][0]['point'])), ('candidate', 'not within eps', 'outside'), out['mutations'])
+    required = {'exact_reference', 'deterministic_concentration', 'deterministic_frontier', 'normalizer_pac_ratio_intersected_with_deterministic', 'normalizer_exact_zero_dimensional'}
+    A(required <= routes_seen, 'routes not exercised: %s' % sorted(required - routes_seen)); out['routes_seen'] = sorted(routes_seen); out['mutation_count'] = len(out['mutations']); return out
+
+
+def c15_semantics_and_guarantee_binding():
+    """review item 2 (CQR-04, CQR-08): the task FILE is authoritative (a CLI mode override that disagrees with a frozen EXACT_RATIONAL task fails in the worker AND the checker);
+    the proof class is derived from the validated route (an honest PAC relabelled DETERMINISTIC fails even with correct numbers); DETERMINISTIC_EPS consumes no statistical
+    proof; EXACT_RATIONAL publishes no approximate surrogate; the normalizer + nonempty-queries contract is refused at parsing; manifest declaration vs worker binding"""
+    d = tempfile.mkdtemp(prefix='cqr_c15_'); out = {}
+    mp = _concentration_witness(d); json.dump(dict(mode='EXACT_RATIONAL', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=1)]), open(mp + '.query.json', 'w'))
+    w = fresh_worker(mp, 'N1_CQR', budget=20.0, nonce='c15-override', mode='DETERMINISTIC_EPS'); A(w['outcome'] in ('FAULT', 'REFUSED') and 'disagrees' in (w.get('reason') or w.get('error') or ''), 'mode override accepted by the worker: %s %s' % (w['outcome'], (w.get('reason') or '')[:80]))
+    fails, _ = check_(mp, w, 'N1_CQR'); A(fails, 'checker accepted the overridden worker'); out['mode_override'] = (w['outcome'], fails[0][:80])
+    w = fresh_worker(mp, 'N1_CQR', budget=20.0, nonce='c15-exact'); fails, _ = check_(mp, w, 'N1_CQR'); A(not fails and w['outcome'] == 'PUBLISHED' and w['exact'] is True and w['mode'] == 'EXACT_RATIONAL', 'exact task honest run refused %s' % fails[:1])
+    # DETERMINISTIC_EPS never consumes a statistical proof; EXACT_RATIONAL never a deterministic surrogate (unit + fresh worker)
+    for mode, route, ok in (('DETERMINISTIC_EPS', 'pac_ratio_intersected_with_deterministic', False), ('DETERMINISTIC_EPS', 'pac_signed_residual_validation', False), ('EXACT_RATIONAL', 'deterministic_frontier', False), ('EXACT_RATIONAL', 'deterministic_concentration', False), ('PAC_EPS', 'deterministic_frontier', True), ('DETERMINISTIC_EPS', 'exact_reference', True), ('EXACT_RATIONAL', 'exact_frontier_closure', True)):
+        A(CK.mode_permits(mode, route) is ok, 'mode_permits(%s, %s) != %s' % (mode, route, ok))
+    cards, fs = _sprinkled(1, 28, 14, 4); mp2 = _spec(_uai(os.path.join(d, 'spr_det.uai'), cards, fs), mode='DETERMINISTIC_EPS', epsilon='1/10', delta='0', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5, 6, 7], bit=1)])
+    w2 = fresh_worker(mp2, 'N1_CQR', budget=12.0, nonce='c15-det'); A(w2['outcome'] != 'PUBLISHED' or w2['route'] in CK.DET_ROUTES + CK.EXACT_ROUTES, 'DETERMINISTIC_EPS task published a statistical route %s' % w2.get('route')); out['deterministic_task_route'] = (w2['outcome'], w2.get('route'))
+    # the PAC output of the SAME model under a PAC task, relabelled DETERMINISTIC, fails even though its numbers are right (C16 has the honest acceptance)
+    mp3 = _spec(_uai(os.path.join(d, 'spr_pac.uai'), cards, fs), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5, 6, 7], bit=1)])
+    w3 = fresh_worker(mp3, 'N1_CQR', budget=40.0, nonce='c15-pac'); fails, info = check_(mp3, w3, 'N1_CQR', budget=300.0); A(not fails and w3['outcome'] == 'PUBLISHED', 'PAC fixture refused / not published: %s %s' % (w3['outcome'], fails[:1]))
+    if w3['guarantee_type'] == 'PAC':
+        _mut(mp3, w3, 'N1_CQR', 'pac_relabelled_deterministic', lambda x: (x.__setitem__('guarantee_type', 'DETERMINISTIC'), x['certificate']['publication'].__setitem__('guarantee', 'DETERMINISTIC')), 'class PAC', out)
+        _mut(mp3, w3, 'N1_CQR', 'pac_cert_guarantee_only', lambda x: x['certificate']['publication'].__setitem__('guarantee', 'DETERMINISTIC'), ('class PAC', 'differs'), out)
+    else: out['note'] = 'the PAC fixture published deterministically this run (%s); the relabel control ran on the normalizer witness in C14' % w3['route']
+    # manifest declaration vs worker: epsilon / mode / normalizer flag disagreements are refused by the checker's manifest binding
+    for name, mt in (('eps', dict(epsilon='1/100', delta='1/10', mode='PAC_EPS', normalizer_task=False)), ('mode', dict(epsilon='1/10', delta='1/10', mode='DETERMINISTIC_EPS', normalizer_task=False)), ('normalizer', dict(epsilon='1/10', delta='1/10', mode='PAC_EPS', normalizer_task=True))):
+        fails, _ = check_(mp3, w3, 'N1_CQR', budget=300.0, manifest_task=mt); A(fails and any('manifest' in f or 'differ' in f for f in fails), 'manifest %s disagreement accepted' % name); out['manifest_' + name] = fails[0][:90]
+    # CQR-08: normalizer + nonempty queries refused at parsing (worker) and by the loader
+    mp4 = _spec(_uai(os.path.join(d, 'normq.uai'), [2] * 4, [([i], ['1', '2']) for i in range(4)]), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000', normalizer_task=True, queries=[dict(kind='singleton', variable=0, state=1)])
+    w4 = fresh_worker(mp4, 'G0_CQR', budget=5.0, nonce='c15-normq'); A(w4['outcome'] != 'PUBLISHED' and 'NO queries' in (w4.get('reason') or w4.get('error') or ''), 'normalizer+queries contract not refused: %s' % (w4.get('reason') or '')[:80])
+    try: TK.load_task(mp4); A(False, 'loader accepted normalizer + queries')
+    except ValueError as e: A('NO queries' in str(e), str(e)[:80]); out['normalizer_plus_queries'] = 'refused at parsing'
+    return out
+
+
+def c16_fresh_process_pac_routes():
+    """review item 7: GENUINE fresh-process ratio-PAC and signed-PAC publications at tractable declared tolerances (eps 1/10, delta 1/10) on models the reference cannot finish,
+    judged by the independent variable-elimination oracle; stream mutations refused; counts of models / workers / coordinates / draws kept separately. Gross-calibration (C13)
+    is a separate falsification; nothing here validates the 1e-6 tail."""
+    d = tempfile.mkdtemp(prefix='cqr_c16_'); out = dict(ratio=None, signed=None, mutations={})
+    cards, fs = _sprinkled(1, 28, 14, 4); mp = _spec(_uai(os.path.join(d, 'spr28.uai'), cards, fs), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5, 6, 7], bit=1)])
+    t, tr = _truth(mp); A(tr is not None and tr.get('method') == 'elimination', 'the ratio fixture must be beyond enumeration (independent elimination oracle)')
+    w = None
+    for seed in ('pp', 'pq', 'pr'):
+        w_ = fresh_worker(mp, 'N1_CQR', budget=45.0, seed=seed, nonce='c16-ratio-' + seed)
+        if w_['outcome'] == 'PUBLISHED' and w_['route'] == 'pac_ratio_intersected_with_deterministic': w = w_; break
+        if w is None and w_['outcome'] == 'PUBLISHED': w = w_
+    A(w is not None and w['outcome'] == 'PUBLISHED', 'ratio fixture did not publish'); fails, info = check_(mp, w, 'N1_CQR', budget=600.0); A(not fails, 'ratio-PAC honest refused: %s' % fails[:2])
+    A(_contained(w, tr, F(1, 10)), 'ratio-PAC answers miss the elimination truth'); rs = w['certificate'].get('ratio_stream') or {}; CNT['stream_draws'] += int(rs.get('t') or 0)
+    out['ratio'] = dict(route=w['route'], guarantee=w['guarantee_type'], draws=rs.get('t'), epochs=len(w['certificate'].get('epochs') or []), truth=[str(a) for a in tr['answers']], bounds=[(a['lo'][:12], a['hi'][:12]) for a in w['answers']])
+    A(w['route'] == 'pac_ratio_intersected_with_deterministic', 'ratio fixture published via %s (no fresh ratio-PAC publication in 3 seeds)' % w['route'])
+    _mut(mp, w, 'N1_CQR', 'ratio_draw_point_moved', lambda x: (lambda e: e['x'].__setitem__(list(e['x'])[0], 1 - e['x'][list(e['x'])[0]]))(next(e for e in x['certificate']['events'] if e['op'] == 'ratio_draw')), ('draw', 'replay'), out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'ratio_variance_halved', lambda x: x['certificate']['ratio_stream'].__setitem__('V', str(F(x['certificate']['ratio_stream']['V']) / 2)), 'do not replay', out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'ratio_bounds_narrowed', lambda x: (x['answers'][0].update(lo=x['answers'][0]['point'], hi=x['answers'][0]['point']), x['certificate']['publication']['bounds'].__setitem__(0, [x['answers'][0]['point']] * 2)), 'do not contain', out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'ratio_relabelled_deterministic', lambda x: (x.__setitem__('guarantee_type', 'DETERMINISTIC'), x['certificate']['publication'].__setitem__('guarantee', 'DETERMINISTIC')), 'class PAC', out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'ratio_delta_halved_in_cert', lambda x: x['certificate'].__setitem__('delta', '1/20'), ('delta', 'differ'), out['mutations'])
+    # signed-residual validation
+    cards, fs = _ring_hardzero(1, 30, 39, 40); vals = [str(F(1, 2) if x0 == 0 or x1 == 1 else F(x2)) for x0 in range(2) for x1 in range(2) for x2 in range(2)]
+    mp = _spec(_uai(os.path.join(d, 'ring30.uai'), cards, fs), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='table', table=dict(name='mostly_half', kind='expectation', f=dict(scope=[0, 1, 2], values=vals)))])
+    t, tr = _truth(mp); A(tr.get('method') == 'elimination', 'signed fixture beyond enumeration'); w = fresh_worker(mp, 'N1_CQR', budget=20.0, nonce='c16-signed'); fails, info = check_(mp, w, 'N1_CQR', budget=300.0)
+    A(not fails and w['outcome'] == 'PUBLISHED', 'signed fixture refused / unpublished %s' % fails[:1]); A(_contained(w, tr, F(1, 10)), 'signed answers miss the truth'); eps_ = w['certificate'].get('epochs') or []; CNT['stream_draws'] += sum(int(e.get('t') or 0) for e in eps_)
+    out['signed'] = dict(route=w['route'], guarantee=w['guarantee_type'], epochs=len(eps_), draws=sum(int(e.get('t') or 0) for e in eps_), truth=str(tr['answers'][0]), bounds=(w['answers'][0]['lo'][:12], w['answers'][0]['hi'][:12]))
+    A(w['route'] == 'pac_signed_residual_validation', 'signed fixture published via %s' % w['route'])
+    _mut(mp, w, 'N1_CQR', 'signed_candidate_shift', lambda x: (lambda e: e['candidate'].__setitem__(0, str(F(e['candidate'][0]) + F(1, 100))))(next(e for e in x['certificate']['events'] if e['op'] == 'epoch_start')), ('envelope', 'candidate', 'replay'), out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'signed_point_shift', lambda x: (x['answers'][0].__setitem__('point', str(F(x['answers'][0]['point']) + F(1, 20))), x['certificate']['publication']['point'].__setitem__(0, x['answers'][0]['point'])), ('candidate', 'not within eps', 'outside'), out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'signed_epoch_risk_doubled', lambda x: (lambda e: e.__setitem__('delta_e', str(F(e['delta_e']) * 2)))(next(e for e in x['certificate']['events'] if e['op'] == 'epoch_start')), 'risk', out['mutations'])
+    _mut(mp, w, 'N1_CQR', 'signed_draw_point_moved', lambda x: (lambda e: e['x'].__setitem__('1', 1 - e['x']['1']))(next(e for e in x['certificate']['events'] if e['op'] == 'signed_draw')), ('replay', 'draw', 'cell'), out['mutations'])      # x1 flips the hard-zero / residual structure (an x0 flip is inert: both points contribute R = 0)
+    _mut(mp, w, 'N1_CQR', 'signed_relabelled_deterministic', lambda x: (x.__setitem__('guarantee_type', 'DETERMINISTIC'), x['certificate']['publication'].__setitem__('guarantee', 'DETERMINISTIC')), 'class PAC', out['mutations'])
+    # the G0 arm (no signed stream) on the signed fixture never publishes a signed route
+    wg = fresh_worker(mp, 'G0_CQR', budget=20.0, nonce='c16-signed-g0'); A(wg.get('route') != 'pac_signed_residual_validation' and not (wg['certificate'].get('epochs') if wg.get('certificate') else []), 'G0 ran the signed stream'); out['g0_on_signed_fixture'] = (wg['outcome'], wg.get('route'))
+    return out
+
+
+def c17_protected_reference_scheduling():
+    """review item 4 (CQR-06): with PRODUCTION workers and scheduling instrumentation -- the natural small nonbinary witness (two 32-state variables) publishes the exact reference
+    in both arms; nonbinary models with 32,768 / 1,048,576 assignments interleave reference and optional work from the start; inner-loop quotas hold in the approximate quotient
+    and the influence scans; optional cancellation under memory pressure and an optional FAILURE (fault injection, recorded, refused as production) both keep the complete reference;
+    every typed DEADLINE records reference progress and both work ledgers; parity (reference >= optional, or reference done) holds at every publication exit incl. signed exits"""
+    d = tempfile.mkdtemp(prefix='cqr_c17_'); out = {}
+    mp = _d32_witness(d)
+    for arm in ('N1_CQR', 'G0_CQR'):
+        t0 = time.monotonic(); w = fresh_worker(mp, arm, budget=20.0, nonce='c17-d32-' + arm); wall = time.monotonic() - t0; fails, _ = check_(mp, w, arm); c = w.get('certificate') or {}
+        A(not fails and w['outcome'] == 'PUBLISHED' and w['route'] == 'exact_reference' and c['reference']['done'], 'd32 %s: %s %s %s' % (arm, w['outcome'], w.get('route'), fails[:1]))
+        lg = (c.get('compile') or {}).get('log') or {}; out['d32_' + arm] = dict(wall_s=round(wall, 2), work_reference=c['work']['reference']['total'], work_optional=c['work']['optional']['total'], compile_interrupted=lg.get('interrupted'))
+    t, tr = _truth(mp); w = json.load(open(mp + '.N1_CQR.c17-d32-N1_CQR.json')); A(_contained(w, tr, F(0)), 'd32 exact answers differ from the oracle')
+    # compile quotas inside the costly loops (the review measured approx_quotient 350,208 vs 50,000): every operator's work <= quota + one tick granularity
+    tk = TK.load_task(mp); C, log = compile_(tk, enabled=CP.effective_operators(SV.ARMS['N1_CQR']['enabled'], tk)); Dq = log['quota']; worst = {}
+    for s in log['steps']:
+        if s.get('work'): worst[s['op']] = max(worst.get(s['op'], 0), s['work'])
+    A(all(wk <= Dq + 4096 for wk in worst.values()), 'an operator exceeded its quota share by more than one tick: %s (quota %d)' % (worst, Dq)); out['d32_compile_work_by_operator'] = dict(worst, quota=Dq)
+    # interleaving on nonbinary models (3 and 4 variables of 32 states): the reference finishes; parity holds at the exit
+    rng = random.Random(7)
+    for n in (3, 4):
+        fs = [([i, (i + 1) % n], [rng.randint(1, 9) for _ in range(32 * 32)]) for i in range(n)]; mpn = _spec(_uai(os.path.join(d, 'nb%d.uai' % n), [32] * n, fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=0), dict(kind='singleton', variable=1, state=3)])
+        w = fresh_worker(mpn, 'N1_CQR', budget=30.0, nonce='c17-nb%d' % n); fails, _ = check_(mpn, w, 'N1_CQR', budget=300.0); c = w['certificate']
+        A(not fails and w['outcome'] == 'PUBLISHED', 'nb%d: %s %s' % (n, w['outcome'], fails[:1])); A(c['reference']['done'] or c['work']['reference']['total'] >= c['work']['optional']['total'], 'nb%d parity violated' % n)
+        out['nb%d' % n] = dict(route=w['route'], work_reference=c['work']['reference']['total'], work_optional=c['work']['optional']['total'], reference_done=c['reference']['done'])
+    # optional cancellation under memory pressure (a 1-byte cancellation cap): the reference alone completes the original task; the certificate records the cancellation
+    mpc = _concentration_witness(d); w = fresh_worker(mpc, 'N1_CQR', budget=20.0, nonce='c17-cap', extra=('--cap-bytes', '1')); fails, _ = check_(mpc, w, 'N1_CQR'); c = w['certificate']
+    A(not fails and w['outcome'] == 'PUBLISHED' and w['route'] == 'exact_reference' and c['reference']['done'] and 'memory pressure' in (c.get('optional_cancelled') or ''), 'cap cancellation: %s %s %s %s' % (w['outcome'], w.get('route'), c.get('optional_cancelled'), fails[:1]))
+    out['memory_cancellation'] = dict(optional_cancelled=c['optional_cancelled'][:60], work_optional=c['work']['optional']['total'], work_reference=c['work']['reference']['total'])
+    # optional FAILURE with reference progress: (a) inside an operator -> rolled back to the committed model, run continues; (b) inside the adaptive loop -> optional cancelled, reference alone
+    w = fresh_worker(mpc, 'N1_CQR', budget=20.0, nonce='c17-fault-op', extra=('--fault-inject', 'approx_quotient')); c = w['certificate']; lg = c['compile']['log']
+    A(w['outcome'] == 'PUBLISHED' and lg.get('failed', {}).get('op') == 'approx_quotient' and not any(s.get('committed') and s['op'] == 'approx_quotient' for s in lg['steps']), 'operator fault not rolled back: %s' % lg.get('failed'))
+    fails, _ = check_(mpc, w, 'N1_CQR'); A(fails and any('FAULT-INJECTION' in f for f in fails), 'fault-injected output accepted as production'); x = json.loads(json.dumps(w)); x.pop('fault_injected', None); x['certificate']['fault_injected'] = None
+    fails, _ = check_(mpc, x, 'N1_CQR'); A(not fails, 'a genuine optional-failure record (committed prefix) does not replay: %s' % fails[:1]); out['operator_failure'] = dict(route=w['route'], failed=lg['failed']['op'], committed=[s['op'] for s in lg['steps'] if s.get('committed')])
+    mpl = os.path.join(d, 'nb3.uai'); w = fresh_worker(mpl, 'N1_CQR', budget=30.0, nonce='c17-fault-loop', extra=('--fault-inject', 'adaptive_loop')); c = w['certificate']
+    A(w['outcome'] == 'PUBLISHED' and 'adaptive loop' in (c.get('optional_cancelled') or '') and c['reference']['done'] and w['route'] == 'exact_reference' and c['work']['optional']['total'] > 0, 'loop fault: %s %s %s' % (w['outcome'], w.get('route'), c.get('optional_cancelled')))
+    out['loop_failure'] = dict(optional_cancelled=c['optional_cancelled'][:70], reference_done=True)
+    # every typed DEADLINE after binding records reference progress > 0 and both ledgers (the review's witness expired with zero reference steps)
+    rng = random.Random(44); n = 40; fs = [(tuple(sorted(rng.sample(range(n), 2))), [rng.randint(1, 2) for _ in range(4)]) for _ in range(n + 2)]
+    mpd = _spec(_uai(os.path.join(d, 'big40.uai'), [2] * n, fs), mode='PAC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=1)])
+    w = fresh_worker(mpd, 'N1_CQR', budget=1.5, nonce='c17-deadline'); A(w['outcome'] == 'DEADLINE', 'expected DEADLINE, got %s' % w['outcome']); sch = w.get('scheduling') or {}
+    A((sch.get('work_reference') or {}).get('total', 0) > 0 and sch.get('reference_progress') is not None and (sch.get('work_optional') or {}).get('total') is not None, 'typed deadline without scheduling instrumentation: %s' % str(sch)[:120])
+    out['deadline_instrumentation'] = dict(reference_progress=sch.get('reference_progress'), work_reference=sch['work_reference']['total'], work_optional=sch['work_optional']['total'], phase=sch.get('phase'))
+    # parity at signed exits (E_ZERO and signed PAC) and at the ratio exit
+    cards, fs = _ring_hardzero(1, 30, 9, 10); vals = [str(F(1, 2) if not (x0 == 1 and x1 == 1) else F(x2)) for x0 in range(2) for x1 in range(2) for x2 in range(2)]
+    mpe = _spec(_uai(os.path.join(d, 'ez30.uai'), cards, fs), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='table', table=dict(name='half_off_zero', kind='expectation', f=dict(scope=[0, 1, 2], values=vals)))])
+    cards2, fs2 = _ring_hardzero(1, 30, 39, 40); vals2 = [str(F(1, 2) if x0 == 0 or x1 == 1 else F(x2)) for x0 in range(2) for x1 in range(2) for x2 in range(2)]
+    mps = _spec(_uai(os.path.join(d, 'ring30.uai'), cards2, fs2), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='table', table=dict(name='mostly_half', kind='expectation', f=dict(scope=[0, 1, 2], values=vals2)))])
+    par = {}
+    for nm, mpx in (('e_zero', mpe), ('signed_pac', mps)):
+        w = fresh_worker(mpx, 'N1_CQR', budget=20.0, nonce='c17-par-' + nm); c = w['certificate']; A(w['outcome'] == 'PUBLISHED', nm)
+        A(c['reference']['done'] or c['work']['reference']['total'] >= c['work']['optional']['total'], '%s exit without reference parity' % nm); par[nm] = dict(route=w['route'], work_reference=c['work']['reference']['total'], work_optional=c['work']['optional']['total'])
+    out['parity_at_exits'] = par; return out
+
+
+def c18_task_local_state_and_policy():
+    """review item 5 (CQR-07, CQR-08): no module-global compiler state (the service hook and the constant scalars live on the task's Compiled object); the checker's verdict on the
+    20-variable normalizer is identical before / after / between zero-evidence models with constants 7 and 0, repeated; the task-effective operator policy is ONE function shared by
+    producer and checker (a certificate whose enabled set disagrees with it is refused)"""
+    d = tempfile.mkdtemp(prefix='cqr_c18_'); out = {}
+    A(not hasattr(CP, '_SCALARS') and not hasattr(CP, '_SERVICE'), 'module-global compiler state present')
+    a = _spec(_uai(os.path.join(d, 'zero.uai'), [2], [([], ['7']), ([], ['0']), ([0], ['1', '1'])]), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=1)])
+    b = _spec(_uai(os.path.join(d, 'norm20.uai'), [2] * 20, []), normalizer_task=True, queries=[], mode='EXACT_RATIONAL', epsilon='1/200', delta='0')
+    wa = fresh_worker(a, 'N1_CQR', budget=20.0, nonce='c18-zero'); wb = fresh_worker(b, 'N1_CQR', budget=20.0, nonce='c18-norm'); A(wa['outcome'] == 'PROVED_ZERO_EVIDENCE' and wb['outcome'] == 'PUBLISHED', 'fixtures')
+    seq = []
+    for k in range(3):
+        seq.append(('norm', check_(b, wb, 'N1_CQR')[0])); seq.append(('zero', check_(a, wa, 'N1_CQR')[0])); seq.append(('norm', check_(b, wb, 'N1_CQR')[0]))
+    A(all(not f for _, f in seq), 'order-dependent verdicts: %s' % [(n, f[:1]) for n, f in seq if f]); out['order_sequence'] = [n for n, _ in seq]; out['all_accepted'] = True
+    C1, _ = compile_(TK.load_task(b)); C2, _ = compile_(TK.load_task(a)) if False else (None, None)
+    A(all(cs['value'] != '7' for cs in C1.constant_scalars), 'a scalar of the zero model leaked into the normalizer compile'); out['normalizer_constant_scalars'] = C1.constant_scalars
+    # one effective policy
+    tb = TK.load_task(b); eff = CP.effective_operators(SV.ARMS['N1_CQR']['enabled'], tb); A(not (set(eff) & set(CP.NORMALIZER_FORBIDDEN)), 'forbidden rewrites in the normalizer policy'); A(sorted(wb['certificate']['enabled_operators']) == sorted(eff), 'certificate policy differs from effective_operators')
+    _mut(b, wb, 'N1_CQR', 'normalizer_policy_relabel', lambda x: x['certificate'].__setitem__('enabled_operators', sorted(set(x['certificate']['enabled_operators']) | {'component_omission'})), ('differ', 'effective', 'polic'), out)
+    tz = TK.load_task(a); A(set(CP.effective_operators(SV.ARMS['N1_CQR']['enabled'], tz)) == set(SV.ARMS['N1_CQR']['enabled']), 'a non-normalizer task lost operators'); return out
+
+
+def c19_provenance_and_intake():
+    """review item 6 (CQR-09, CQR-10): the provenance / intake control script (kernel identity frozen for every natively loaded binary + build record on temporary copies;
+    replacing both binary and record after the freeze fails; START refused; a valid-binary identity control; projected-count WCNF refused; constructed schedule deterministic;
+    balanced arm blocks; no second-matrix ceiling) must pass completely in a fresh process; plus the parser guard asserted here directly"""
+    p = subprocess.run([PY, os.path.join(HERE, 'test_cqr_provenance_intake.py')], capture_output=True, text=True, cwd=CODE); CNT['assertions'] += 1
+    A(p.returncode == 0, 'provenance / intake controls failed: %s' % (p.stdout[-600:] + p.stderr[-400:])); lines = [l for l in p.stdout.splitlines() if l.startswith(('PASS', 'FAIL'))]
+    A(lines and all(l.startswith('PASS') for l in lines), 'control lines: %s' % lines[:3]); out = dict(controls=len(lines), summary=p.stdout.strip().splitlines()[-1])
+    import wcnf as WC; d = tempfile.mkdtemp(prefix='cqr_c19_'); cp = os.path.join(d, 'projected.cnf'); open(cp, 'w').write('c t pmc\nc p show 1 0\np cnf 2 1\n1 0\n')
+    try: WC.convert(cp, os.path.join(d, 'projected.uai')); A(False, 'projected count converted as WMC')
+    except ValueError as e: A('REFUSED_PROJECTED_COUNT_SEMANTICS' in str(e), str(e)[:80]); out['pmc_refusal'] = str(e)[:60]
+    open(cp, 'w').write('c t wmc\np cnf 2 1\n1 0\n'); side = WC.convert(cp, os.path.join(d, 'ordinary.uai')); A(side is not None, 'ordinary wmc refused'); out['wmc_accepted'] = True
+    import kernel_identity as KI; cur = KI.collect(CODE); A(cur.get('newarm_cex', {}).get('binary_sha256') and cur.get('newarm_stream', {}).get('binary_sha256'), 'kernel identity collection incomplete: %s' % sorted(cur))
+    A(not KI.failures_vs_frozen(cur, cur, ['H1_HYBRID', 'B0_FROZEN_V14']), 'identity vs itself fails'); out['kernel_tags'] = sorted(cur); return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'
@@ -555,7 +869,7 @@ if __name__ == '__main__':
     if '--admission' in sys.argv: ADMISSION_DIR = sys.argv[sys.argv.index('--admission') + 1]; R['admission_dir'] = ADMISSION_DIR
     t0 = time.monotonic()
     for name, fn in GROUPS:
-        if only and not any(name.startswith(o) for o in only): continue
+        if only and not any(name == o or name.startswith(o + '_') for o in only): continue
         group(name, fn)
     srcs = registry.cqr_source_inventory(CODE); changed = sorted(k for k in set(srcs) | set(SOURCES_AT_START) if srcs.get(k) != SOURCES_AT_START.get(k))
     if changed: print('SOURCES CHANGED DURING THE RUN: %s -- the record is INVALID' % changed)

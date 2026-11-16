@@ -24,6 +24,7 @@ def load_module(name, path):
 
 
 R = load_module('cqr_registry', os.path.join(HERE, 'registry.py'))
+KI = load_module('cqr_kernel_identity', os.path.join(HERE, 'kernel_identity.py'))
 RP = load_module('cqr_report', os.path.join(HERE, 'report.py'))
 CLOSEOUT_VERSION = 'cqr-closeout-v1 (2026-11-16)'
 LEDGER = 'CQR_LEDGER.jsonl'
@@ -66,6 +67,15 @@ def main(RD, MN='CAMPAIGN_MANIFEST.json', QP=None, OUTP=None):
         if diff_inv: prereq.append('frozen source %s differs from the file on disk (%d differ)' % (diff_inv[0], len(diff_inv)))
         for f_ in PR.identity_failures(frozen, sorted({c['arm'] for c in cells}))[0]: prereq.append(f_)
     frozen_cqr = {k: v for k, v in frozen.items() if k.startswith('cqr/') or k == 'newarm/core.py'}
+    # ---- frozen kernel identity (every natively loaded binary + build record; review CQR-09): manifest vs disk NOW, and the START binding of its content hash
+    ki = M.get('kernel_identity')
+    if not ki: prereq.append('manifest carries no frozen kernel_identity')
+    else:
+        for m_ in KI.failures_vs_frozen(ki, KI.collect(CODE), sorted({c['arm'] for c in cells})): prereq.append('kernel identity at closeout: ' + m_)
+        kh = hashlib.sha256(json.dumps(ki, sort_keys=True).encode()).hexdigest()
+        if ST is not None and ST.get('kernel_identity_sha256') not in (None, kh): prereq.append('CAMPAIGN_START kernel identity hash differs from the manifest')
+        if ST is not None and ST.get('kernel_identity_sha256') is None: prereq.append('CAMPAIGN_START does not bind the kernel identity')
+        L.append('kernel identity: %d frozen tags; tags needed by the planned arms verified against disk at closeout: %s' % (len(ki), ', '.join(sorted(KI.needed_tags(sorted({c['arm'] for c in cells})))) or 'none (no planned arm loads a native artifact)'))
     # ---- gate
     if G is not None:
         if not str(G.get('gate_version', '')).startswith('cqr-gate-v1'): prereq.append('gate result produced by an unknown gate (%s)' % G.get('gate_version'))

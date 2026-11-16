@@ -64,14 +64,18 @@ def _box(lo, hi, tau):
 
 
 def _feasible_point(task, bounds, groups):
-    """bounds: per original query (lo, hi) boxes; groups: list of lists of query indices forming simplex rows (singleton families) -> point list or None"""
+    """bounds: per original query (lo, hi) boxes or the string 'UNDEFINED' (a PROVED undefined ratio coordinate: its point is 'UNDEFINED'); groups: lists of query indices
+    forming simplex rows (singleton families; never contain undefined coordinates) -> point list or None"""
     pt = [None] * len(bounds)
     for g in groups:
+        if any(bounds[j] == 'UNDEFINED' for j in g): return None
         p = _simplex_feasible([bounds[j] for j in g])
         if p is None: return None
         for j, x in zip(g, p): pt[j] = x
-    for j, (lo, hi) in enumerate(bounds):
+    for j, bx in enumerate(bounds):
         if pt[j] is None:
+            if bx == 'UNDEFINED': pt[j] = 'UNDEFINED'; continue
+            lo, hi = bx
             if lo > hi: return None
             pt[j] = min(max((lo + hi) / 2, F(0)), F(1))
     return pt
@@ -86,19 +90,24 @@ def _singleton_groups(task):
     return [[d[s] for s in range(cards[v])] for v, d in by.items() if len(d) == cards[v]]
 
 
-def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
+def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, fault_inject=None):
     """diagnostic (QUALIFICATION ONLY, never a production arm; recorded in the certificate and REFUSED by the checker): 'sampling_only' switches off the protected reference,
     the frontier refinement and deterministic publication so only the statistical streams can publish (confidence-sequence calibration on tiny models at large delta);
     'no_reference' switches off only the protected reference so the frontier + streams must publish (stream / refinement interaction controls)"""
     t0 = time.monotonic(); spec = ARMS[arm]; work_ref = Work(); work_opt = Work(); rng = random.Random(int(hashlib.sha256(('cqr|%s|%s' % (seed, arm)).encode()).hexdigest(), 16))
     model = task['model']; queries = task['queries']; K = len(queries); eps = task['epsilon']; delta = task['delta']; mode = task['mode']; normalizer = bool((task.get('query_spec') or {}).get('normalizer_task'))
-    trace = dict(arm=arm, diagnostic=diagnostic, solver_version=SOLVER_VERSION, policy_sha256=hashlib.sha256(json.dumps(POLICY, sort_keys=True, default=str).encode()).hexdigest(), phase='bind', events=[])
+    trace = dict(arm=arm, diagnostic=diagnostic, fault_injected=fault_inject, cap_bytes=cap_bytes, solver_version=SOLVER_VERSION, policy_sha256=hashlib.sha256(json.dumps(POLICY, sort_keys=True, default=str).encode()).hexdigest(), phase='bind', events=[])
     def late(): return deadline is not None and time.monotonic() >= deadline
+    sched = {'ref': None}
     def check(where):
-        if late(): raise Stop('DEADLINE', dict(where=where))
+        if late():
+            # a typed DEADLINE carries the SCHEDULING state (review CQR-06: reference progress and both work ledgers are reported, so an expiry with zero reference progress is visible)
+            r_ = sched['ref']; raise Stop('DEADLINE', dict(where=where, reference_progress=(r_.progress() if r_ is not None else None), reference_done=(r_.done if r_ is not None else None), work_reference=work_ref.snapshot(), work_optional=work_opt.snapshot(), phase=trace.get('phase'), optional_cancelled=trace.get('optional_cancelled')))
     groups = _singleton_groups(task) if not normalizer else []
-    # ---------------- 1. protected reference
-    ref = RF.Reference(model, queries, work_ref); check('bind')
+    # ---------------- 1. protected reference (its construction is charged to the reference half)
+    ref = RF.Reference(model, queries, work_ref); sched['ref'] = ref; check('bind'); work_ref.entries += sum(len(f['values']) for f in model['factors'])
+    import core as _core
+    def rss(): return _core.rss_bytes()
     def ref_quantum(units):
         if diagnostic in ('sampling_only', 'no_reference'): return 0
         w0 = work_ref.total()
@@ -106,22 +115,58 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
             ref.step(256)
             if late(): break
         return work_ref.total() - w0
-    # ---------------- 2. compile (optional half) then catch-up
-    trace['phase'] = 'compile'; C = None; compile_log = None; zero_proof = None
-    try: C, compile_log = CP.compile_task(task, enabled=spec['enabled'] if normalizer is False else (spec['enabled'] - {'component_omission', 'approx_quotient', 'influence_deletion', 'concentration'}), deadline=deadline, work=work_opt)
+    def parity():
+        """bring the reference to >= the optional half's cumulative work (gamma = 1/2 at this point; rounding <= one reference step)"""
+        ref_quantum(max(0, work_opt.total() - work_ref.total()))
+    optional_cancelled = None
+    def service(op):
+        """called by the compiler at every consistent point (review CQR-06): serve the reference to parity whenever the optional half is a quantum ahead; stop optional work
+        when the reference has finished; cancel optional work on memory pressure (the reference keeps its state)"""
+        if work_opt.total() - work_ref.total() >= Q: parity()
+        if ref.done: raise CP.CompileStop('reference_done', op)
+        if rss() > cap_bytes * 9 // 10: raise CP.CompileStop('cancelled', op)
+    Q = POLICY['quantum_units']
+    # ---------------- 2. compile (optional half) WITH interleaved reference service; the compile is one or more bounded transactions
+    trace['phase'] = 'compile'; C = None; compile_log = None; zero_proof = None; enabled_eff = CP.effective_operators(spec['enabled'], task)
+    # the compile is the first optional transaction; the service hook inside every costly compiler loop serves the reference to parity as soon as the optional half is one
+    # quantum ahead, so the reference is interleaved FROM THE START (review CQR-06) and no optional transaction runs more than Q units without reference progress
+    try: C, compile_log = CP.compile_task(task, enabled=enabled_eff, deadline=deadline, work=work_opt, service=service, fault=fault_inject)
     except CP.ZeroEvidence as z: zero_proof = z.proof
+    except MemoryError: optional_cancelled = 'MemoryError during compilation'; C = None
+    except Stop: raise
+    except Exception as ex:
+        # an OPTIONAL failure (a defect or resource fault inside a reduction) never loses the complete original task: the optional half is cancelled with its charges kept,
+        # the protected reference keeps every assignment it has summed and continues alone
+        optional_cancelled = 'optional failure during compilation: %s: %s' % (type(ex).__name__, str(ex)[:120]); C = None
+    if compile_log and compile_log.get('interrupted') and compile_log['interrupted']['kind'] == 'cancelled': optional_cancelled = 'memory pressure during compilation (%s)' % compile_log['interrupted']['op']
+    if compile_log and compile_log.get('failed'): trace['events'].append(dict(op='optional_operator_failed', operator=compile_log['failed']['op'], error=compile_log['failed']['error']))       # rolled back to the last committed model; recorded; the run continues from that model
+    parity()                                                          # the reference is at parity with the optional half before anything else happens
+    if ref.done and zero_proof is None:
+        r = ref.result(); check('reference completion')
+        if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, None, None, [], [], ref, work_ref, work_opt, None, [], t0, zero=dict(kind='reference'), enabled_eff=enabled_eff), stats=_stats(work_ref, work_opt, None, None, t0))
+        pub = _exact_reference_pub(r, normalizer); check('publication')
+        cert = _cert(task, arm, mode, trace, C, compile_log, None, None, [], [], ref, work_ref, work_opt, pub, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled)
+        return dict(outcome='PUBLISHED', guarantee_type=pub['guarantee'], publication=pub, certificate=cert, stats=_stats(work_ref, work_opt, None, None, t0), bias=([str(b) for b in C.bias] if C is not None else None))
     check('after compile')
-    ref_quantum(work_opt.total())                      # the reference catches up to the optional half's spend
     if zero_proof is not None:
-        return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='compiler', proof=zero_proof), certificate=_cert(task, arm, mode, trace, None, None, None, None, None, [], ref, work_ref, work_opt, None, None, t0, zero=zero_proof), stats=_stats(work_ref, work_opt, None, None, t0))
+        return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='compiler', proof=zero_proof), certificate=_cert(task, arm, mode, trace, None, None, None, None, None, [], ref, work_ref, work_opt, None, None, t0, zero=zero_proof, enabled_eff=enabled_eff), stats=_stats(work_ref, work_opt, None, None, t0))
+    if C is None or optional_cancelled:
+        # optional work cancelled (memory): the protected reference continues ALONE until it finishes or the deadline (typed refusal); nothing optional is claimed
+        trace['events'].append(dict(op='optional_cancelled', reason=optional_cancelled or 'compile unavailable'))
+        while not ref.done:
+            check('reference-only'); ref_quantum(Q)
+        r = ref.result(); check('reference completion')
+        if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, None, None, None, None, [], trace['events'], ref, work_ref, work_opt, None, [], t0, zero=dict(kind='reference'), enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0))
+        pub = _exact_reference_pub(r, normalizer); check('publication')
+        return dict(outcome='PUBLISHED', guarantee_type=pub['guarantee'], publication=pub, certificate=_cert(task, arm, mode, trace, None, None, None, None, [], trace['events'], ref, work_ref, work_opt, pub, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0), bias=None)
     cards = C.cards; cq = C.queries; Kc = len(cq)
     assert [q['orig_index'] for q in cq] == list(range(K)), 'compiled queries must be the original queries in order'
     # a direct concentration answer: deterministic publication candidate (bias already in C.bias)
     direct = compile_log.get('direct')
     fr = FR.Frontier(cards, C.views, cq, work_opt, order=list(range(len(cards)))) if cards else None
-    trace['phase'] = 'adaptive'; Q = POLICY['quantum_units']; open_cap = max(64, min(POLICY['open_cap'], (4 * 10 ** 7) // max(1, len(cards))))      # memory: prefix cells store <= n ints each
+    trace['phase'] = 'adaptive'; open_cap = max(64, min(POLICY['open_cap'], (4 * 10 ** 7) // max(1, len(cards))))      # memory: prefix cells store <= n ints each
     ratio = FR.RatioStream(Kc, delta / 2, fr.U() if fr and fr.U() > 0 else F(1), random.Random(rng.getrandbits(64))) if (fr is not None and mode == 'PAC_EPS') else None
-    if normalizer: spec = dict(spec, signed_stream=False, query_directed_refinement=False)
+    if normalizer: spec = dict(spec, signed_stream=False, query_directed_refinement=False)      # recorded in the certificate (signed_stream / query_directed_refinement flags are task-effective)
     def known_scale():
         """Z_original = Z_compiled * prod(known positive scalars) (normalizer tasks never omit a component, so every cancelled scalar is a KNOWN exact rational)"""
         sc = F(1)
@@ -164,11 +209,17 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
     def around(c, j, r):
         return (max(F(0), c - r), min(F(1), c + r))
     # ------------------------------------------------ publication tests
+    def proved_undefined(j):
+        """a ratio query's denominator is PROVED zero: zero-dimensional g == 0, or every open cell's denominator upper bound and the resolved denominator are zero"""
+        q = cq[j]
+        if q['kind'] != 'ratio': return False
+        if fr is None: return q['g'].values[0] == 0
+        return fr.resolved_den[j] == 0 and all(c.B * c.qhi[j][1] == 0 for c in fr.open.values())
     def query_bounds_original():
-        """per ORIGINAL query: (lo, hi) deterministic from constants / frontier; compiled queries are the original queries carried through the chain"""
-        if fr is None:   # zero-dimensional compiled model: every query is exact = its table value at the empty assignment... all variables fixed: compiled query views have empty scope
+        """per ORIGINAL query (compiled units): (lo, hi) deterministic from constants / frontier, or ('UNDEFINED','UNDEFINED') when the denominator is PROVED zero"""
+        if fr is None:   # zero-dimensional compiled model: every compiled query view has empty scope
             out = []
-            for q in cq:
+            for j, q in enumerate(cq):
                 if q['kind'] == 'expectation': v = q['f'].values[0]; out.append((v, v))
                 else:
                     g = q['g'].values[0]
@@ -180,7 +231,8 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
         except TimeoutError: raise Stop('DEADLINE', dict(where='deterministic bounds'))
         out = []
         for j in range(Kc):
-            if j in C.constant_queries: c = C.constant_queries[j]; out.append((c, c))
+            if proved_undefined(j): out.append(('UNDEFINED', 'UNDEFINED'))
+            elif j in C.constant_queries: c = C.constant_queries[j]; out.append((c, c))
             else: out.append(b[j])
         cache['det'] = out; return out
     def positive_mass():
@@ -205,6 +257,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
         if normalizer: return try_publish_normalizer()
         if mode == 'EXACT_RATIONAL':
             if fr is not None and fr.open: return None
+            if any(bb != 0 for bb in C.bias): return None                                   # an approximate surrogate is never exact for the ORIGINAL task
             b = query_bounds_original()
             if any(x[0] != x[1] for x in b if x[0] != 'UNDEFINED'): return None
             if not positive_mass(): return None
@@ -214,13 +267,17 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
         if diagnostic == 'sampling_only': b = [(F(0), F(1)) if x[0] != 'UNDEFINED' else x for x in b]       # deterministic information withheld: only the streams may certify
         for j in range(Kc):
             lo, hi = b[j]
-            if lo == 'UNDEFINED': boxes.append(None); continue
-            if cq[j]['kind'] == 'ratio' and Lj[j] <= 0: boxes.append(None); continue        # denominator not yet proved positive: no claim for this query
+            if lo == 'UNDEFINED': boxes.append('UNDEFINED'); continue                        # PROVED undefined: a typed coordinate, certified independently of the others
+            if cq[j]['kind'] == 'ratio' and Lj[j] <= 0: boxes.append(None); continue        # denominator neither proved positive nor proved zero: no claim yet for this query
             boxes.append(_box(lo, hi, tau(j)))
         det_ok = all(bx is not None for bx in boxes) and diagnostic != 'sampling_only'
         if det_ok:
             pt = _feasible_point(task, boxes, groups)
-            if pt is not None: pub = dict(route='deterministic_frontier' if fr is not None else 'deterministic_zero_dimensional', bounds=widen(b), compiled_bounds=b, point=pt, guarantee='DETERMINISTIC', tau=[str(tau(j)) for j in range(Kc)]); return pub
+            if pt is not None:
+                closed = fr is not None and not fr.open
+                exact = closed and all(bb == 0 for bb in C.bias) and all(x[0] == x[1] for x in b if x[0] != 'UNDEFINED')
+                route = ('exact_frontier_closure' if exact else 'deterministic_frontier') if fr is not None else ('exact_zero_dimensional' if all(bb == 0 for bb in C.bias) else 'deterministic_zero_dimensional')
+                pub = dict(route=route, bounds=widen(b), compiled_bounds=b, point=pt, guarantee='DETERMINISTIC', exact=exact or route == 'exact_zero_dimensional', tau=[str(tau(j)) for j in range(Kc)]); return pub
         if mode != 'PAC_EPS' or fr is None: return None
         # PAC: ratio stream intervals ∩ deterministic
         if ratio is not None and ratio.stopped is None:
@@ -229,14 +286,16 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
                 inter = []; empty = False
                 for j in range(Kc):
                     lo, hi = b[j]
-                    if lo == 'UNDEFINED' or (cq[j]['kind'] == 'ratio' and Lj[j] <= 0): inter.append(None); continue
+                    if lo == 'UNDEFINED': inter.append('UNDEFINED'); continue
+                    if cq[j]['kind'] == 'ratio' and Lj[j] <= 0: inter.append(None); continue
                     l2, h2 = max(lo, iv[j][0]), min(hi, iv[j][1])
                     if l2 > h2: empty = True; inter.append(None); continue
                     inter.append((l2, h2))
                 if empty: disabled.append(dict(kind='INTERSECTION_EMPTY', t=ratio.t)); ratio.stopped = 'INTERSECTION_EMPTY (statistical claim disabled; diagnostic)'
                 elif all(x is not None for x in inter):
-                    pt = _feasible_point(task, [_box(l, h, tau(j)) for j, (l, h) in enumerate(inter)], groups)
-                    if pt is not None: pub = dict(route='pac_ratio_intersected_with_deterministic', bounds=widen(inter), compiled_bounds=inter, det_bounds=b, stat_bounds=[(str(a), str(c)) for a, c in iv], point=pt, guarantee='PAC', tau=[str(tau(j)) for j in range(Kc)], ratio_t=ratio.t); return pub
+                    pt = _feasible_point(task, [('UNDEFINED' if x == 'UNDEFINED' else _box(x[0], x[1], tau(j))) for j, x in enumerate(inter)], groups)
+                    inter_b = [(x if x != 'UNDEFINED' else ('UNDEFINED', 'UNDEFINED')) for x in inter]
+                    if pt is not None: pub = dict(route='pac_ratio_intersected_with_deterministic', bounds=widen(inter_b), compiled_bounds=inter_b, det_bounds=b, stat_bounds=[(str(a), str(c)) for a, c in iv], point=pt, guarantee='PAC', tau=[str(tau(j)) for j in range(Kc)], ratio_t=ratio.t); return pub
         return None
     # ------------------------------------------------ candidate construction (schema feasible; outer intervals)
     def make_candidate():
@@ -274,67 +333,88 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
     ref_quantum(max(0, work_opt.total() - work_ref.total()))        # parity before the first publication test
     if pub is None and not ref.done: try_publish('initial')
     trace['normalizer_task'] = normalizer
+    def _cancel_optional(reason):
+        """the optional half is CANCELLED: its incomplete claims are discarded, every charge it spent stays on the ledger, the last committed compiled model is kept in the
+        certificate, and the protected reference (which has lost nothing) continues ALONE to its exact result or the typed deadline"""
+        nonlocal optional_cancelled, fr, cur_epoch
+        optional_cancelled = reason; trace['optional_cancelled'] = reason; events.append(dict(op='optional_cancelled', reason=reason))
+        if fr is not None: fr.open.clear()
+        fr = None
+        if cur_epoch is not None and cur_epoch.retired is None: cur_epoch.retired = 'optional_cancelled'
+        if ratio is not None and ratio.stopped is None: ratio.stopped = 'optional_cancelled'
     while pub is None:
         check('loop')
+        if rss() > cap_bytes * 9 // 10 and fr is not None and fr.open: _cancel_optional('memory pressure in the adaptive loop (rss %d)' % rss())
+        if fr is None and optional_cancelled:
+            while not ref.done: check('reference-only'); ref_quantum(Q)      # reference alone (every optional charge kept)
         # ---- reference quantum: at least Q units, and at least as many units as the optional half spent in the previous iteration (gamma = 1/2 in Work units)
         ref_quantum(max(Q, last_opt))
         if ref.done:
             r = ref.result(); check('reference completion')
             if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, None, t0, zero=dict(kind='reference')), stats=_stats(work_ref, work_opt, fr, ratio, t0))
-            if normalizer: z = F(r['Z']); pub = dict(route='normalizer_exact_reference', bounds=[(z, z)], point=[z], guarantee='DETERMINISTIC', exact=True, reference=r); break
-            pub = dict(route='exact_reference', bounds=[(F(a), F(a)) if a != 'UNDEFINED' else ('UNDEFINED', 'UNDEFINED') for a in r['answers']], point=[F(a) if a != 'UNDEFINED' else 'UNDEFINED' for a in r['answers']], guarantee='DETERMINISTIC', exact=True, reference=r); break
+            pub = _exact_reference_pub(r, normalizer); break
         if fr is None: break
-        # ---- optional quantum: refinement
+        # ---- optional quantum: refinement (one bounded optional transaction; an optional FAILURE cancels the optional half and the reference continues alone)
         w0 = work_opt.total(); work_opt.cells += len(fr.open)        # the cell-selection scan is charged
         it += 1; cache.clear()
-        if fr.open and diagnostic != 'sampling_only':
-            cand = cur_epoch.cand if (cur_epoch is not None and cur_epoch.retired is None) else None
-            if cand is not None and spec['query_directed_refinement']:
-                cells, _E = fr.signed_law(cand, key=('epoch', cur_epoch.epoch)); best = max(cells, key=lambda ca: (ca[1], -ca[0].id))[0] if cells else max(fr.open.values(), key=lambda c: (c.E, -c.id))
-            else: best = max(fr.open.values(), key=lambda c: (c.E, -c.id))
-            if best.N <= POLICY['leaf_cap'] or len(fr.open) > open_cap: fr.close(best.id); events.append(dict(op='close', cell=best.id))
-            else: kids = fr.split(best.id); events.append(dict(op='split', cell=best.id, children=kids))
-            cache.clear()
-        # ---- optional quantum: statistics (one ratio draw, one signed draw)
-        if mode == 'PAC_EPS' and fr.open:
-            if ratio is not None and ratio.stopped is None:
-                s = ratio.launch(fr)
-                if s is not None:
-                    events.append(dict(op='ratio_draw', cell=s['cell'], x={str(k): v for k, v in s['x'].items()}, U=str(s['U']), b=str(s['b']), A=str(s['A']), a=[str(v) for v in s['a']], d=[str(v) for v in s['d']]))
-                    try:
-                        w, fq = fr.weight_and_queries(s['x']); ratio.complete(fr, w, fq)
-                    except Exception as ex: ratio.stopped = 'draw failed: %s' % str(ex)[:80]; events.append(dict(op='ratio_stream_stopped', reason=ratio.stopped)); ratio.in_flight = None
-                    else:
-                        if diagnostic != 'sampling_only' and s['cell'] in fr.open and (fr.n - fr.open[s['cell']].depth) <= POLICY['carve_max_free'] and len(fr.open) <= open_cap:
-                            fr.carve_point(s['cell'], s['x']); events.append(dict(op='carve', cell=s['cell'], x={str(k): v for k, v in s['x'].items()})); cache.clear()
-            if spec['signed_stream']:
-                if cur_epoch is None or cur_epoch.retired is not None:
-                    cand = make_candidate()
-                    if cand is not None:
-                        epoch_no += 1; de = delta / (2 * epoch_no * (epoch_no + 1)); cells, E0 = fr.signed_law(cand, key=('epoch', epoch_no))
-                        cur_epoch = FR.SignedStream(cand, Kc, de, E0 if E0 > 0 else F(1), random.Random(rng.getrandbits(64)), epoch_no); epochs.append(cur_epoch)
-                        events.append(dict(op='epoch_start', epoch=epoch_no, candidate=[str(c) for c in cand], delta_e=str(de), E_star=str(cur_epoch.E_star)))
-                if cur_epoch is not None and cur_epoch.retired is None:
-                    s = cur_epoch.launch(fr)
-                    if s == 'E_ZERO':
-                        # deterministic residual test: S_j(c) = d_j exactly; certify if |d_j| <= tau_j L_j for all j, else retire
-                        Lj = denominators_positive(); ok = True; rn = fr.resolved_num; rd_ = fr.resolved_den; rm = fr.resolved_mass
-                        for j in range(Kc):
-                            d = rn[j] - cur_epoch.cand[j] * (rm if cq[j]['kind'] == 'expectation' else rd_[j])
-                            if Lj[j] <= 0 or abs(d) > tau(j) * Lj[j]: ok = False; break
-                        events.append(dict(op='epoch_E_zero', epoch=epoch_no, certified=ok))
-                        if ok and positive_mass() and diagnostic != 'sampling_only': pub = dict(route='deterministic_signed_residual_E_zero', bounds=[around(c, j, eps - MARGIN) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='DETERMINISTIC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no); break
-                        cur_epoch.retired = 'E_ZERO_not_certified'
-                    elif s is not None:
-                        events.append(dict(op='signed_draw', epoch=epoch_no, cell=s['cell'], x={str(k): v for k, v in s['x'].items()}, p=str(s['p']), E=str(s['E']), b=str(s['b']), d=[str(v) for v in s['d']]))
+        def _optional_turn():
+            nonlocal cur_epoch, epoch_no, pub
+            if fr.open and diagnostic != 'sampling_only':
+                cand = cur_epoch.cand if (cur_epoch is not None and cur_epoch.retired is None) else None
+                if cand is not None and spec['query_directed_refinement']:
+                    cells, _E = fr.signed_law(cand, key=('epoch', cur_epoch.epoch)); best = max(cells, key=lambda ca: (ca[1], -ca[0].id))[0] if cells else max(fr.open.values(), key=lambda c: (c.E, -c.id))
+                else: best = max(fr.open.values(), key=lambda c: (c.E, -c.id))
+                if best.N <= POLICY['leaf_cap'] or len(fr.open) > open_cap: fr.close(best.id); events.append(dict(op='close', cell=best.id))
+                else: kids = fr.split(best.id); events.append(dict(op='split', cell=best.id, children=kids))
+                cache.clear()
+            # ---- optional quantum: statistics (one ratio draw, one signed draw)
+            if mode == 'PAC_EPS' and fr.open:
+                if ratio is not None and ratio.stopped is None:
+                    s = ratio.launch(fr)
+                    if s is not None:
+                        events.append(dict(op='ratio_draw', cell=s['cell'], x={str(k): v for k, v in s['x'].items()}, U=str(s['U']), b=str(s['b']), A=str(s['A']), a=[str(v) for v in s['a']], d=[str(v) for v in s['d']]))
                         try:
-                            w, fq = fr.weight_and_queries(s['x']); cur_epoch.complete(fr, w, fq)
-                        except Exception as ex: cur_epoch.retired = 'draw failed: %s' % str(ex)[:80]; events.append(dict(op='epoch_retired', epoch=epoch_no, reason=cur_epoch.retired)); cur_epoch.in_flight = None
+                            w, fq = fr.weight_and_queries(s['x']); ratio.complete(fr, w, fq)
+                        except Exception as ex: ratio.stopped = 'draw failed: %s' % str(ex)[:80]; events.append(dict(op='ratio_stream_stopped', reason=ratio.stopped)); ratio.in_flight = None
                         else:
-                            iv = cur_epoch.intervals(); Lj = denominators_positive()
-                            if iv is not None and positive_mass() and all(Lj[j] > 0 and iv[j][0] >= -tau(j) * Lj[j] and iv[j][1] <= tau(j) * Lj[j] for j in range(Kc)):
-                                pub = dict(route='pac_signed_residual_validation', bounds=[around(c, j, eps - MARGIN) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='PAC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no, L=[str(x) for x in Lj], intervals=[(str(a), str(b_)) for a, b_ in iv]); break
-                            if cur_epoch.t >= 2 ** epoch_no: cur_epoch.retired = 'epoch_length_reached'; events.append(dict(op='epoch_retired', epoch=epoch_no, reason='length 2^e reached'))
+                            if diagnostic != 'sampling_only' and s['cell'] in fr.open and (fr.n - fr.open[s['cell']].depth) <= POLICY['carve_max_free'] and len(fr.open) <= open_cap:
+                                fr.carve_point(s['cell'], s['x']); events.append(dict(op='carve', cell=s['cell'], x={str(k): v for k, v in s['x'].items()})); cache.clear()
+                if spec['signed_stream']:
+                    if cur_epoch is None or cur_epoch.retired is not None:
+                        cand = make_candidate()
+                        if cand is not None:
+                            epoch_no += 1; de = delta / (2 * epoch_no * (epoch_no + 1)); cells, E0 = fr.signed_law(cand, key=('epoch', epoch_no))
+                            cur_epoch = FR.SignedStream(cand, Kc, de, E0 if E0 > 0 else F(1), random.Random(rng.getrandbits(64)), epoch_no); epochs.append(cur_epoch)
+                            events.append(dict(op='epoch_start', epoch=epoch_no, candidate=[str(c) for c in cand], delta_e=str(de), E_star=str(cur_epoch.E_star)))
+                    if cur_epoch is not None and cur_epoch.retired is None:
+                        s = cur_epoch.launch(fr)
+                        if s == 'E_ZERO':
+                            # deterministic residual test: S_j(c) = d_j exactly; certify if |d_j| <= tau_j L_j for all j, else retire
+                            Lj = denominators_positive(); ok = True; rn = fr.resolved_num; rd_ = fr.resolved_den; rm = fr.resolved_mass
+                            for j in range(Kc):
+                                d = rn[j] - cur_epoch.cand[j] * (rm if cq[j]['kind'] == 'expectation' else rd_[j])
+                                if Lj[j] <= 0 or abs(d) > tau(j) * Lj[j]: ok = False; break
+                            events.append(dict(op='epoch_E_zero', epoch=epoch_no, certified=ok))
+                            if ok and positive_mass() and diagnostic != 'sampling_only': pub = dict(route='deterministic_signed_residual_E_zero', bounds=[around(c, j, eps - MARGIN) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='DETERMINISTIC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no); return
+                            cur_epoch.retired = 'E_ZERO_not_certified'
+                        elif s is not None:
+                            events.append(dict(op='signed_draw', epoch=epoch_no, cell=s['cell'], x={str(k): v for k, v in s['x'].items()}, p=str(s['p']), E=str(s['E']), b=str(s['b']), d=[str(v) for v in s['d']]))
+                            try:
+                                w, fq = fr.weight_and_queries(s['x']); cur_epoch.complete(fr, w, fq)
+                            except Exception as ex: cur_epoch.retired = 'draw failed: %s' % str(ex)[:80]; events.append(dict(op='epoch_retired', epoch=epoch_no, reason=cur_epoch.retired)); cur_epoch.in_flight = None
+                            else:
+                                iv = cur_epoch.intervals(); Lj = denominators_positive()
+                                if iv is not None and positive_mass() and all(Lj[j] > 0 and iv[j][0] >= -tau(j) * Lj[j] and iv[j][1] <= tau(j) * Lj[j] for j in range(Kc)):
+                                    pub = dict(route='pac_signed_residual_validation', bounds=[around(c, j, eps - MARGIN) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='PAC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no, L=[str(x) for x in Lj], intervals=[(str(a), str(b_)) for a, b_ in iv]); return
+                                if cur_epoch.t >= 2 ** epoch_no: cur_epoch.retired = 'epoch_length_reached'; events.append(dict(op='epoch_retired', epoch=epoch_no, reason='length 2^e reached'))
+        try:
+            if fault_inject == 'adaptive_loop' and it == 1: raise RuntimeError('INJECTED optional fault in the adaptive loop (qualification control; never a production run)')
+            _optional_turn()
+        except Stop: raise
+        except MemoryError as ex: _cancel_optional('MemoryError in the adaptive loop'); continue
+        except Exception as ex: _cancel_optional('optional failure in the adaptive loop: %s: %s' % (type(ex).__name__, str(ex)[:120])); continue
+        if fr is None: continue
+        if pub is not None: break                                 # a signed-stream publication inside the optional turn: exit to the common parity / publication tail
         # ---- deterministic test first, then PAC (charged; cadence from the policy). BEFORE any publication test the protected reference is brought to PARITY with the optional
         # half (gamma = 1/2 holds at every publication, not one iteration late: the quantum rounding is bounded by one reference step of 256 assignments)
         if it % max(1, (len(fr.open) * Kc) // 1024) == 0 or not fr.open:
@@ -343,23 +423,38 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
             if ref.done:
                 r = ref.result(); check('reference completion')
                 if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, None, t0, zero=dict(kind='reference')), stats=_stats(work_ref, work_opt, fr, ratio, t0))
-                if normalizer: z = F(r['Z']); pub = dict(route='normalizer_exact_reference', bounds=[(z, z)], point=[z], guarantee='DETERMINISTIC', exact=True, reference=r); break
-                pub = dict(route='exact_reference', bounds=[(F(a), F(a)) if a != 'UNDEFINED' else ('UNDEFINED', 'UNDEFINED') for a in r['answers']], point=[F(a) if a != 'UNDEFINED' else 'UNDEFINED' for a in r['answers']], guarantee='DETERMINISTIC', exact=True, reference=r); break
+                pub = _exact_reference_pub(r, normalizer); break
             try_publish('loop')
         if not fr.open and pub is None:
             # frontier fully closed: exact compiled answers
             if normalizer:
                 z = fr.resolved_mass / fr.scale_den * known_scale(); pub = dict(route='normalizer_exact_frontier_closure', bounds=[(z, z)], point=[z], guarantee='DETERMINISTIC', exact=True, scale=str(known_scale())) if z > 0 else None
             else:
-                b = query_bounds_original(); pub = dict(route='exact_frontier_closure', bounds=b, point=[x[0] for x in b], guarantee='DETERMINISTIC', exact=True) if positive_mass() else None
+                b = query_bounds_original()
+                if positive_mass():
+                    exact = all(bb == 0 for bb in C.bias)
+                    boxes = [('UNDEFINED' if x[0] == 'UNDEFINED' else _box(x[0], x[1], tau(j))) for j, x in enumerate(b)]
+                    pt = _feasible_point(task, boxes, groups) if not exact else [x[0] for x in b]
+                    if pt is not None: pub = dict(route='exact_frontier_closure' if exact else 'deterministic_frontier_closure', bounds=(b if exact else widen(b)), compiled_bounds=b, point=pt, guarantee='DETERMINISTIC', exact=exact, tau=[str(tau(j)) for j in range(Kc)])
+                else: pub = None
             if pub is None:
                 return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='frontier_closed_zero_mass'), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, None, t0, zero=dict(kind='frontier')), stats=_stats(work_ref, work_opt, fr, ratio, t0))
         if work_opt.total() - w0 == 0: work_opt.cells += 1       # a no-work optional turn still yields its service (bounded)
         last_opt = work_opt.total() - w0
+    if pub is None: check('publication'); raise Stop('DEADLINE', dict(where='loop end'))
+    # ---- EVERY exit (deterministic, PAC ratio, signed E_ZERO, signed PAC, closure): the reference is brought to parity first; if it finished, the exact result dominates
+    parity()
+    if ref.done and not pub.get('exact'):
+        r = ref.result(); check('reference completion')
+        if r['kind'] != 'ZERO_EVIDENCE': pub = _exact_reference_pub(r, normalizer)
     check('publication')
-    if pub is None: raise Stop('DEADLINE', dict(where='loop end'))
-    cert = _cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, pub, disabled, t0)
+    cert = _cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, pub, disabled, t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled)
     return dict(outcome='PUBLISHED', guarantee_type=pub['guarantee'], publication=pub, certificate=cert, stats=_stats(work_ref, work_opt, fr, ratio, t0), bias=[str(b) for b in C.bias])
+
+
+def _exact_reference_pub(r, normalizer):
+    if normalizer: z = F(r['Z']); return dict(route='normalizer_exact_reference', bounds=[(z, z)], point=[z], guarantee='DETERMINISTIC', exact=True, reference=r)
+    return dict(route='exact_reference', bounds=[(F(a), F(a)) if a != 'UNDEFINED' else ('UNDEFINED', 'UNDEFINED') for a in r['answers']], point=[F(a) if a != 'UNDEFINED' else 'UNDEFINED' for a in r['answers']], guarantee='DETERMINISTIC', exact=True, reference=r)
 
 
 def _stats(wr, wo, fr, ratio, t0):
@@ -367,10 +462,11 @@ def _stats(wr, wo, fr, ratio, t0):
                 frontier=(dict(open=len(fr.open), resolved=fr.resolved_cells, splits=fr.splits, closures=fr.closures) if fr is not None else None), ratio_draws=(ratio.t if ratio is not None else 0))
 
 
-def _cert(task, arm, mode, trace, C, log, fr, ratio, epochs, events, ref, wr, wo, pub, disabled, t0, zero=None):
-    snap = C.snapshot_json() if C is not None else None
-    cert = dict(certificate_version='cqr-certificate-v1', arm=arm, mode=mode, diagnostic=trace.get('diagnostic'), epsilon=str(task['epsilon']), delta=str(task['delta']), task_identity=task_identity(task), solver_version=SOLVER_VERSION, policy=POLICY,
-                enabled_operators=sorted(ARMS[arm]['enabled']), signed_stream=ARMS[arm]['signed_stream'], query_directed_refinement=ARMS[arm]['query_directed_refinement'],
+def _cert(task, arm, mode, trace, C, log, fr, ratio, epochs, events, ref, wr, wo, pub, disabled, t0, zero=None, enabled_eff=None, optional_cancelled=None):
+    snap = C.snapshot_json() if C is not None else None; normalizer = bool((task.get('query_spec') or {}).get('normalizer_task'))
+    cert = dict(certificate_version='cqr-certificate-v1', arm=arm, mode=mode, diagnostic=trace.get('diagnostic'), fault_injected=trace.get('fault_injected'), cap_bytes=trace.get('cap_bytes'), epsilon=str(task['epsilon']), delta=str(task['delta']), task_identity=task_identity(task), solver_version=SOLVER_VERSION, policy=POLICY,
+                arm_operators=sorted(ARMS[arm]['enabled']), enabled_operators=sorted(enabled_eff if enabled_eff is not None else CP.effective_operators(ARMS[arm]['enabled'], task)), normalizer_task=normalizer,
+                signed_stream=(ARMS[arm]['signed_stream'] and not normalizer), query_directed_refinement=(ARMS[arm]['query_directed_refinement'] and not normalizer), optional_cancelled=optional_cancelled,
                 compile=dict(log=log, certificates=C.certs if C is not None else None, final=snap, final_sha256=hashlib.sha256(json.dumps(snap, sort_keys=True, default=str).encode()).hexdigest() if snap is not None else None) if C is not None else None,
                 frontier=fr.record() if fr is not None else None, events=events, ratio_stream=ratio.record() if ratio is not None else None, epochs=[e.record() for e in (epochs or [])],
                 reference=dict(progress=ref.progress(), done=ref.done, assignments_total=ref.total, result=ref.result() if ref.done else None),
