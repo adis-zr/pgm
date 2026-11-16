@@ -1,6 +1,20 @@
 """CQR REDUCTION COMPILER (manuscript §3; supporting notes query_structure_algorithm.txt, reduction_algorithms.txt). Transactional: every operator PROPOSES from
-source data, CONSTRUCTS a candidate, VERIFIES its certificate against the current compiled model with exact arithmetic (the `verify_*` functions below are the same
-ones the independent checker calls on the recorded chain), then COMMITS. Finite work quota (policy); canonical order; no unchanged proposal is retried.
+source data, CONSTRUCTS a candidate on NEW objects, VERIFIES its certificate against the current compiled model with exact arithmetic (the `verify_*` functions below are
+the same ones the independent checker calls on the recorded chain), then COMMITS atomically. Finite work quota (policy); canonical order; no unchanged proposal is retried.
+
+ATOMIC LOCAL COMMITS (second review, R1/R2): the compiled state (cards, views, queries, decoder, bias, scalars, constant queries, witness) is a sequence of IMMUTABLE
+snapshots; committed View / query / decoder objects are never mutated in place -- every change builds new objects and `Compiled.commit` swaps the whole state in one step
+while appending ONE replayable certificate record (kind 'commit') to the journal `C.certs`. A decline is a journal record of kind 'decline' (no state change). The service /
+quota / deadline hook `tick` may raise inside any read-only scan or candidate construction (state unchanged) and never between the swap and its record. An optional
+FAILURE anywhere therefore leaves the state at the LAST COMMIT (asserted; `_restore_state` is a belt-and-braces safety net), and the checker replays EXACTLY the
+recorded commits (`apply_commit` after `verify_commit` on the pre-commit model) -- never 'the first tick of the named operator', never a whole operator per fragment.
+One representation for every operator outcome (log['steps'][i]['outcome']): committed | no_change | declined | quota | interrupted(deadline | reference_done | cancelled) |
+failed | disabled | skipped, each with the number of commits it left in the journal.
+
+SERVICE GRANULARITY (R3): `tick` is called inside every bounded scan (slices, axis rebuilds, leaf integration, signatures, surrogate ratios, symmetry checks, affine rows,
+influence pair scans, evidence restriction) at most TICK_ENTRIES charged units apart; the largest irreducible charge between two ticks is TICK_ENTRIES + one table
+entry / rational op (recorded in POLICY as max_irreducible_charge).
+
 Operators (mandatory set A-E of the handoff):
   A  evidence restriction; checked support propagation (identically-zero incident slices remove states; empty domain / zero factor => ZERO_EVIDENCE); fixed-variable
      substitution; local leaf sum-out of a nonquery variable in exactly one factor; omission of a query-free component after a positivity proof (normalized tasks only);
@@ -21,18 +35,21 @@ from itertools import product
 from math import prod
 from views import View, gf2_rank_basis, gf2_reduce, gf2_span
 from task import Work
-
-COMPILER_VERSION = 'cqr-compiler-v1 (2026-11-16)'
+COMPILER_VERSION = 'cqr-compiler-v2 (2026-11-16: atomic local commits, journal replay, inner service ticks)'
+TICK_ENTRIES = 1024                   # service / quota / deadline check at most this many charged units apart inside every scan
 POLICY = dict(
     compiler_version=COMPILER_VERSION,
     order=('evidence', 'support_fixpoint', 'fixed_substitution', 'leaf_sumout', 'component_omission', 'exact_quotient_pass', 'symmetry', 'approx_quotient', 'concentration', 'influence_deletion', 'affine'),
-    quota_rule='discovery work quota D = max(50_000, 8 * (sum of source table entries + sum of query table entries)) work units; each operator stops at its share; the complete exact quotient pass gets its own share of the same size (so the clone-family attainment is reachable)',
+    quota_rule='discovery work quota D = max(50_000, 8 * (sum of source table entries + sum of query table entries)) work units; each operator stops at its share (the quota is tested inside every scan, so an operator overspends its share by at most max_irreducible_charge); the complete exact quotient pass gets its own share of size D',
     bias_reserve='DETERMINISTIC_EPS / PAC_EPS: at most epsilon/4 of every query allowance for compiler bias (manuscript §3.2); EXACT_RATIONAL: zero',
     symmetry_proposer='global binary complement; for each variable the state swap induced by sorting its unary signature (bounded: at most n + 1 candidates)',
-    approx_quotient_order='variables in canonical order; states in canonical order; first representative group with a matching zero mask whose widened ratio certificate still fits the remaining bias allowance; pair-scan cap d_v^2',
+    approx_quotient_order='variables in canonical order; states in canonical order; first representative group with a matching zero mask whose widened ratio certificate still fits the remaining bias allowance',
     influence_policy='all non-unary factors first; then greedy in order of decreasing table size (ties: factor index), each candidate accepted only if every query bias fits; Neumann T = 8',
     concentration_proposal='per variable the maximizer of the product of its unary factors (ties: first state); no coordinate ascent',
-    well_founded='every committed operator strictly decreases (variables, total domain, factor+query entries) in lexicographic order, except affine (once, last)')
+    well_founded='every committed operator strictly decreases (variables, total domain, factor+query entries) in lexicographic order, except affine (once, last)',
+    transaction_rule='immutable committed objects; one atomic swap per local commit; one journal record per commit (replayable); declines recorded, never replayed; failure => state == last commit',
+    service_rule='tick(C, quota, op) inside every scan at most TICK_ENTRIES units apart; it enforces the operator quota, the deadline and the controller service hook (reference parity / completion / memory)',
+    tick_entries=TICK_ENTRIES, max_irreducible_charge=TICK_ENTRIES + 2)
 
 
 class ZeroEvidence(Exception):
@@ -40,35 +57,79 @@ class ZeroEvidence(Exception):
 
 
 class CompileStop(Exception):
-    """raised by `tick` at a CONSISTENT point of an operator (between committed transactions): the compiled model is the last committed state. kind in
-    {'deadline', 'reference_done', 'cancelled'}; the driver records the interrupted operator and returns the committed model."""
+    """a controlled interruption at a consistent point: kind in ('deadline', 'reference_done', 'cancelled', 'quota'); the compiled state is the LAST COMMIT"""
     def __init__(self, kind, op=None): super().__init__(kind); self.kind = kind; self.op = op
 
 
 def tick(C, quota=None, op=None):
-    """called inside every costly loop at points where the model is consistent: (1) enforces the operator quota (raises CompileStop('quota') => the operator DECLINES the
-    rest, keeping what it committed); (2) calls the solver's service hook (reference parity; deadline) which may raise CompileStop('deadline' | 'reference_done')."""
+    """called inside every costly loop: (1) the operator quota (CompileStop('quota') => the operator stops; its commits stay); (2) the controller service hook (deadline /
+    reference parity / reference completion / memory cancellation) -- it may raise CompileStop; the compiled state is always a committed one when this is called"""
+    C.ticks += 1
     if quota is not None and C.work.total() >= quota: raise CompileStop('quota', op)
-    fn = getattr(C, 'service', None)                         # TASK-LOCAL hook (no module state; it lives on this task's Compiled object, so it cannot leak across tasks)
+    fn = getattr(C, 'service', None)
     if fn is not None: fn(op)
 
 
+class _Ticker:
+    """counts charged units since the last tick for a scan and calls tick every TICK_ENTRIES units"""
+    __slots__ = ('C', 'quota', 'op', 'acc')
+    def __init__(self, C, quota, op): self.C = C; self.quota = quota; self.op = op; self.acc = 0
+    def entries(self, k):
+        self.C.work.entries += k; self.acc += k
+        if self.acc >= TICK_ENTRIES: self.acc = 0; tick(self.C, self.quota, self.op)
+    def ratops(self, k):
+        self.C.work.ratops += k; self.acc += k
+        if self.acc >= TICK_ENTRIES: self.acc = 0; tick(self.C, self.quota, self.op)
+
+
 class Compiled:
-    """the compiled task state"""
+    """the compiled task state: a sequence of immutable committed snapshots with a journal of certificate records"""
     def __init__(self, cards, views, queries, decoder, work, bias, normalizer_task=False):
-        self.cards = list(cards); self.views = views; self.queries = queries; self.decoder = decoder; self.work = work; self.bias = bias
+        self.cards = list(cards); self.views = list(views); self.queries = list(queries); self.decoder = list(decoder); self.work = work; self.bias = list(bias)
         self.certs = []; self.scalars = []; self.constant_scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.service = None; self.constant_queries = {}
+        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None
 
     def n(self): return len(self.cards)
     def measure(self): return (len(self.cards), sum(self.cards), sum(v.size() for v in self.views) + sum(_qsize(q) for q in self.queries))
     def snapshot_json(self):
         return dict(cards=list(self.cards), factors=[v.to_json() for v in self.views], queries=[_q_json(q) for q in self.queries], decoder=_dec_json(self.decoder), bias=[str(b) for b in self.bias],
                     scalars=list(self.scalars), constant_queries={str(k): str(v) for k, v in self.constant_queries.items()}, affine_done=self.affine_done)
+    def state(self):
+        """the committed state as a shallow structure (every object inside is immutable by the transaction rule)"""
+        return dict(cards=list(self.cards), views=list(self.views), queries=list(self.queries), decoder=list(self.decoder), bias=list(self.bias), certs=list(self.certs), scalars=list(self.scalars),
+                    constant_scalars=list(self.constant_scalars), witness=self.witness, affine_done=self.affine_done, constant_queries=dict(self.constant_queries), commits=self.commits)
+    def commit(self, rec, cards=None, views=None, queries=None, decoder=None, bias=None, scalars_add=(), constant_queries=None, witness=None, affine_done=None):
+        """ATOMIC: every new object was built beforehand; the swap is a sequence of plain attribute assignments with no computation; the record is appended last"""
+        _fault_point(self, rec.get('op'), 'before_swap')
+        if cards is not None: self.cards = list(cards)
+        if views is not None: self.views = list(views)
+        if queries is not None: self.queries = list(queries)
+        if decoder is not None: self.decoder = list(decoder)
+        if bias is not None: self.bias = list(bias)
+        if scalars_add: self.scalars = list(self.scalars) + list(scalars_add)
+        if constant_queries is not None: self.constant_queries = dict(constant_queries)
+        if witness is not None: self.witness = dict(witness)
+        if affine_done is not None: self.affine_done = affine_done
+        rec = dict(rec); rec['kind'] = 'commit'; rec['seq'] = self.commits; self.commits += 1; self.certs = list(self.certs) + [rec]; self._last = self.state()
+        _fault_point(self, rec.get('op'), 'after_commit')
+        return rec
+    def decline(self, op, reason, **extra):
+        rec = dict(kind='decline', op=op, declined=reason, **extra); self.certs = list(self.certs) + [rec]; return rec
+    def commit_records(self): return [c for c in self.certs if c.get('kind') == 'commit']
+
+
+def _fault_point(C, op, where):
+    """qualification fault injection (never a production path): C.fault = dict(op, where in ('build', 'before_swap', 'after_commit'), k = the commit index of `op` at which to fail)"""
+    f = getattr(C, 'fault', None)
+    if not f or f.get('op') != op or f.get('where') != where: return
+    k = f.get('k', 0); n_op = sum(1 for c in C.certs if c.get('kind') == 'commit' and c.get('op') == op)
+    if where == 'after_commit': n_op -= 1          # the record of the current commit is already in the journal
+    if n_op == k: raise RuntimeError('INJECTED optional fault in %s at %s (commit %d of this operator; qualification control; never a production run)' % (op, where, k))
 
 
 def _qsize(q): return q['f'].size() if q['kind'] == 'expectation' else q['h'].size() + q['g'].size()
 def _q_json(q):
-    d = dict(name=q['name'], kind=q['kind'], output=q.get('output'), orig_index=q['orig_index'])
+    d = dict(name=q['name'], kind=q['kind'], output=q['output'], orig_index=q['orig_index'])
     if q['kind'] == 'expectation': d['f'] = q['f'].to_json()
     else: d['h'] = q['h'].to_json(); d['g'] = q['g'].to_json()
     return d
@@ -76,29 +137,39 @@ def _dec_json(dec):
     out = []
     for d in dec:
         e = dict(d)
-        if d['kind'] == 'map': e['states'] = {str(k): [(a, str(w)) for a, w in v] for k, v in d['states'].items()}
+        if 'states' in e and isinstance(e['states'], dict): e['states'] = {str(k): [[o, str(w)] for o, w in v] for k, v in e['states'].items()}
         out.append(e)
     return out
-
-
 def q_views(q): return [q['f']] if q['kind'] == 'expectation' else [q['h'], q['g']]
 def q_scope(q): return set().union(*(set(v.scope) for v in q_views(q)))
+def _q_with(q, **views):
+    """a NEW query dict with replaced view objects (the committed one is never mutated)"""
+    n = dict(q); n.update(views); return n
+def _q_map(q, fn):
+    return _q_with(q, f=fn(q['f'])) if q['kind'] == 'expectation' else _q_with(q, h=fn(q['h']), g=fn(q['g']))
 
 
 # ======================================================================================================================
-# construction from the original task (operator A: evidence restriction)
+# evidence restriction (the first record of every journal)
 # ======================================================================================================================
-def from_task(task, work=None):
-    """evidence-restricted compiled task over the FREE original variables (observed variables: decoder 'fixed'); factor and query tables restricted to the evidence"""
+def from_task(task, work=None, service=None):
+    """evidence-restricted compiled task over the FREE original variables (observed variables: decoder 'fixed'); factor and query tables restricted to the evidence.
+    `service` (optional) is the controller hook: the restriction scan is charged optional work and ticks every TICK_ENTRIES entries (R3: evidence restriction is a scan too)"""
     work = work or Work(); m = task['model']; cards0 = m['cards']; ev = m.get('evidence', {}); n0 = len(cards0)
     free = [v for v in range(n0) if v not in ev]; new_of = {v: i for i, v in enumerate(free)}; cards = [cards0[v] for v in free]
+    acc = [0]
+    def charge(k):
+        work.entries += k; acc[0] += k
+        if acc[0] >= TICK_ENTRIES:
+            acc[0] = 0
+            if service is not None: service('evidence')
     def restrict(scope, values):
         ns = tuple(new_of[v] for v in scope if v not in ev); vals = []
         for xs, w in zip(product(*(range(cards0[v]) for v in scope)), values):
-            work.entries += 1
+            charge(1)
             if all(v in new_of or ev[v] == s for v, s in zip(scope, xs)): vals.append(F(w))
         return ns, vals
-    views = []; constant_scalars = []           # TASK-LOCAL (review CQR-07: a module-global list leaked constants across tasks when ZeroEvidence bypassed its clearing)
+    views = []; constant_scalars = []           # TASK-LOCAL (review CQR-07)
     for fi, f in enumerate(m['factors']):
         ns, vals = restrict(f['scope'], f['values'])
         if not ns:
@@ -115,160 +186,200 @@ def from_task(task, work=None):
     decoder = [dict(kind='fixed', state=ev[v]) if v in ev else dict(kind='map', var=new_of[v], states={a: [(a, F(1))] for a in range(cards0[v])}) for v in range(n0)]
     normalizer_task = bool((task.get('query_spec') or {}).get('normalizer_task'))
     C = Compiled(cards, views, queries, decoder, work, [F(0)] * len(task['queries']), normalizer_task=normalizer_task)
-    C.constant_scalars = constant_scalars
-    C.certs.append(dict(op='evidence', evidence={str(k): v for k, v in sorted(ev.items())}, free=free, constant_factor_scalars=list(constant_scalars)))
-    return C
+    C.constant_scalars = constant_scalars; C.service = service
+    C.certs = [dict(kind='evidence', op='evidence', evidence={str(k): v for k, v in sorted(ev.items())}, free=free, constant_factor_scalars=list(constant_scalars))]
+    C._last = C.state(); return C
 
 
 # ======================================================================================================================
-# helpers on views that are plain tables
+# helpers on views that are plain tables -- every helper RETURNS NEW objects and ticks inside its scan when given a ticker
 # ======================================================================================================================
-def _slice(view, cards, var, state):
-    """the slice of a table view over the other scope variables at var = state, as a tuple in row-major order of the remaining scope"""
-    assert view.kind == 'table'; k = view.scope.index(var); rest = [v for v in view.scope if v != var]; out = []
+def _slice(view, cards, var, state, T=None):
+    """the slice of a table view over the other scope variables at var = state, as a tuple in row-major order of the remaining scope (charged + ticked through T)"""
+    assert view.kind == 'table'; rest = [v for v in view.scope if v != var]; out = []; vals = view.values; scope = view.scope; n = 0
     for xs in product(*(range(cards[v]) for v in rest)):
         x = dict(zip(rest, xs)); x[var] = state; i = 0
-        for v in view.scope: i = i * cards[v] + x[v]
-        out.append(view.values[i])
+        for v in scope: i = i * cards[v] + x[v]
+        out.append(vals[i]); n += 1
+        if T is not None and n % TICK_ENTRIES == 0: T.entries(TICK_ENTRIES)
+    if T is not None and n % TICK_ENTRIES: T.entries(n % TICK_ENTRIES)
     return tuple(out)
 
 
-def _replace_axis(view, cards, var, new_states, new_card):
-    """rebuild a table view with the axis `var` replaced: new_states[s'] = the OLD state whose slice represents new state s' (table), returns the new View (cards must carry the new card)"""
-    rest_axes = []; scope = view.scope; vals = []
-    old_cards = dict(zip(scope, [cards[v] for v in scope])); old_cards[var] = cards[var]
+def _replace_axis(view, cards, var, new_states, new_card, T=None):
+    """a NEW table view with the axis `var` replaced: new_states[s'] = the OLD state whose slice represents new state s' (cards carry the OLD card of var)"""
+    scope = view.scope; vals = []; old_cards = {v: cards[v] for v in scope}
     def idx(x):
         i = 0
         for v in scope: i = i * old_cards[v] + x[v]
         return i
+    n = 0
     for xs in product(*((range(new_card) if v == var else range(old_cards[v])) for v in scope)):
-        x = dict(zip(scope, xs)); x[var] = new_states[x[var]]; vals.append(view.values[idx(x)])
+        x = dict(zip(scope, xs)); x[var] = new_states[x[var]]; vals.append(view.values[idx(x)]); n += 1
+        if T is not None and n % TICK_ENTRIES == 0: T.entries(TICK_ENTRIES)
+    if T is not None and n % TICK_ENTRIES: T.entries(n % TICK_ENTRIES)
     return View('table', scope, vals)
 
 
-def _average_axis(view, cards, var, classes, weights):
-    """query pullback for a quotient: new value at class C = sum_{a in C} weights[a] * old value at a"""
+def _average_axis(view, cards, var, classes, weights, T=None):
+    """query pullback for a quotient (NEW view): value at class C = sum_{a in C} weights[a] * old value at a"""
     scope = view.scope; vals = []
     def idx(x):
         i = 0
         for v in scope: i = i * cards[v] + x[v]
         return i
+    n = 0
     for xs in product(*((range(len(classes)) if v == var else range(cards[v])) for v in scope)):
         x = dict(zip(scope, xs)); c = x[var]; s = F(0)
-        for a in classes[c]: x[var] = a; s += weights[a] * view.values[idx(x)]
+        for a in classes[c]: x[var] = a; s += weights[a] * view.values[idx(x)]; n += 1
         vals.append(s)
+        if T is not None and n >= TICK_ENTRIES: T.ratops(n); n = 0
+    if T is not None and n: T.ratops(n)
     return View('table', scope, vals)
 
 
-def _remove_var_from_scope_fixed(view, cards, var, state):
-    scope = view.scope; rest = tuple(v for v in scope if v != var); vals = []
+def _remove_var_from_scope_fixed(view, cards, var, state, T=None):
+    scope = view.scope; rest = tuple(v for v in scope if v != var); vals = []; n = 0
     for xs in product(*(range(cards[v]) for v in rest)):
         x = dict(zip(rest, xs)); x[var] = state; i = 0
         for v in scope: i = i * cards[v] + x[v]
-        vals.append(view.values[i])
+        vals.append(view.values[i]); n += 1
+        if T is not None and n % TICK_ENTRIES == 0: T.entries(TICK_ENTRIES)
+    if T is not None and n % TICK_ENTRIES: T.entries(n % TICK_ENTRIES)
     return View('table', rest, vals)
 
 
-def _renumber(C, removed):
-    """remove compiled variables `removed` (set) from every view / query / decoder; they must not occur in any scope any more"""
-    keep = [v for v in range(C.n()) if v not in removed]; new = {v: i for i, v in enumerate(keep)}
-    for v in C.views + [vv for q in C.queries for vv in q_views(q)]:
+def _renumbered(views, queries, decoder, cards, removed):
+    """NEW views / queries / decoder / cards with the compiled variables `removed` (set) deleted from every scope; they must not occur in any scope any more"""
+    keep = [v for v in range(len(cards)) if v not in removed]; new = {v: i for i, v in enumerate(keep)}
+    def rv(v):
         assert not (set(v.scope) & removed), 'variable still in a scope'
-        v.scope = tuple(new[u] for u in v.scope)
-        if v.kind == 'affine': v.cat_scope = tuple(new[u] for u in v.cat_scope); v.zcols = tuple(new[u] for u in v.zcols)
+        if v.kind == 'affine': return View('affine', tuple(new[u] for u in v.scope), v.values, cat_scope=tuple(new[u] for u in v.cat_scope), zcols=tuple(new[u] for u in v.zcols), urows=v.urows)
+        return View('table', tuple(new[u] for u in v.scope), v.values)
+    nviews = [rv(v) for v in views]; nqueries = [_q_map(q, rv) for q in queries]; ndec = []
+    for d in decoder:
+        e = dict(d)
+        if e['kind'] == 'map': e['var'] = new[e['var']]
+        if e['kind'] == 'affine_map': e['zvars'] = [new[u] for u in e['zvars']]
+        ndec.append(e)
+    return nviews, nqueries, ndec, [cards[v] for v in keep]
+
+
+# ======================================================================================================================
+# operator A: support fixpoint, fixed substitution, leaf sum-out, component omission -- each local change is ONE atomic commit with a replayable record
+# ======================================================================================================================
+def _dead_states(C, var, T):
+    """states of compiled variable var whose slice is identically zero in some incident table factor (read-only scan)"""
+    inc = [v for v in C.views if v.kind == 'table' and var in v.scope]; dead = set()
+    for v in inc:
+        for s in range(C.cards[var]):
+            sl = _slice(v, C.cards, var, s, T)
+            if not any(sl): dead.add(s)
+    return dead
+
+
+def _support_apply(C, var, alive, T=None):
+    """NEW state with only the states `alive` (ordered) of compiled variable var; tables / queries re-indexed; decoder maps composed"""
+    def rv(v): return _replace_axis(v, C.cards, var, alive, len(alive), T) if var in v.scope else v
+    views = [rv(v) for v in C.views]; queries = [_q_map(q, rv) for q in C.queries]; pos = {s: i for i, s in enumerate(alive)}; dec = []
     for d in C.decoder:
-        if d['kind'] == 'map': d['var'] = new[d['var']]
-        if d['kind'] == 'affine': d['zvars'] = [new[u] for u in d['zvars']]
-    C.cards = [C.cards[v] for v in keep]
+        if d['kind'] == 'map' and d['var'] == var: e = dict(d); e['states'] = {pos[s]: lst for s, lst in d['states'].items() if s in pos}; dec.append(e)
+        else: dec.append(d)
+    cards = list(C.cards); cards[var] = len(alive)
+    _fault_point(C, 'support', 'build')
+    return dict(cards=cards, views=views, queries=queries, decoder=dec)
 
 
-# ======================================================================================================================
-# operator A: support fixpoint, fixed substitution, leaf sum-out, component omission
-# ======================================================================================================================
 def support_fixpoint(C, quota):
-    """remove compiled states whose slice is identically zero in some incident table factor; fixpoint; an empty domain => ZERO_EVIDENCE"""
-    changed = True; removed = []; passes = 0
-    while changed and C.work.total() < quota:
+    """remove compiled states whose slice is identically zero in some incident table factor; fixpoint; an empty domain => ZERO_EVIDENCE. ONE COMMIT PER RESTRICTED VARIABLE
+    (record: var, alive, dead, pass); the quota / service hook is tested inside every slice scan"""
+    changed = True; committed = 0; passes = 0; T = _Ticker(C, quota, 'support_fixpoint')
+    while changed:
         changed = False; passes += 1
         for var in range(C.n()):
-            tick(C, None, 'support_fixpoint')
-            inc = [v for v in C.views if v.kind == 'table' and var in v.scope]
-            dead = set()
-            for v in inc:
-                for s in range(C.cards[var]):
-                    sl = _slice(v, C.cards, var, s); C.work.entries += len(sl)
-                    if not any(sl): dead.add(s)
-            if dead:
-                alive = [s for s in range(C.cards[var]) if s not in dead]
-                if not alive: raise ZeroEvidence(dict(kind='empty_domain_after_support_propagation', compiled_variable=var, pass_=passes))
-                _restrict_states(C, var, alive); removed.append(dict(var=var, dead=sorted(dead))); changed = True
-    if removed: C.certs.append(dict(op='support', removed=removed, passes=passes))
-    return bool(removed)
+            tick(C, quota, 'support_fixpoint')
+            dead = _dead_states(C, var, T)
+            if not dead: continue
+            alive = [s for s in range(C.cards[var]) if s not in dead]
+            if not alive: raise ZeroEvidence(dict(kind='empty_domain_after_support_propagation', compiled_variable=var, pass_=passes))
+            new = _support_apply(C, var, alive, T)
+            C.commit(dict(op='support', var=var, alive=alive, dead=sorted(dead), pass_=passes), **new); committed += 1; changed = True
+    return committed > 0
 
 
-def _restrict_states(C, var, alive):
-    """keep only states `alive` (ordered) of compiled variable var; tables / queries re-indexed; decoder maps composed (dead original states get weight through nothing: removed)"""
-    for v in C.views + [vv for q in C.queries for vv in q_views(q)]:
-        if var in v.scope:
-            assert v.kind == 'table'
-            nv = _replace_axis(v, C.cards, var, alive, len(alive)); v.values = nv.values
-    pos = {s: i for i, s in enumerate(alive)}
-    for d in C.decoder:
-        if d['kind'] == 'map' and d['var'] == var: d['states'] = {pos[s]: lst for s, lst in d['states'].items() if s in pos}
-    C.cards[var] = len(alive)
+def _fixed_apply(C, T=None):
+    """NEW state with every one-state compiled variable substituted into every factor / query and removed; constant factors become scalars (zero => ZERO_EVIDENCE)"""
+    fixed = [v for v in range(C.n()) if C.cards[v] == 1]
+    if not fixed: return None, []
+    views = list(C.views); queries = list(C.queries); dec = list(C.decoder)
+    for var in fixed:
+        def rv(v): return _remove_var_from_scope_fixed(v, C.cards, var, 0, T) if var in v.scope else v
+        views = [rv(v) for v in views]; queries = [_q_map(q, rv) for q in queries]; nd = []
+        for d in dec:
+            if d['kind'] == 'map' and d['var'] == var:
+                lst = d['states'][0]
+                nd.append(dict(kind='fixed', state=lst[0][0]) if len(lst) == 1 and lst[0][1] == 1 else dict(kind='fixed_mixture', states=lst))   # a class fixed as a whole: original states keep their conditional weights
+            else: nd.append(d)
+        dec = nd
+    keep = []; scalars = []
+    for i, v in enumerate(views):
+        if not v.scope:
+            if v.values[0] == 0: raise ZeroEvidence(dict(kind='constant_factor_zero_after_substitution', factor=i))
+            scalars.append(dict(kind='constant_factor', value=str(v.values[0])))
+        else: keep.append(v)
+    nviews, nqueries, ndec, ncards = _renumbered(keep, queries, dec, C.cards, set(fixed))
+    _fault_point(C, 'fixed_substitution', 'build')
+    return dict(cards=ncards, views=nviews, queries=nqueries, decoder=ndec, scalars_add=scalars), fixed
 
 
 def fixed_substitution(C):
-    """compiled variables with one state are substituted into every factor / query and removed; decoder: the original states mapped to it become fixed (weighted among themselves if several)"""
-    fixed = [v for v in range(C.n()) if C.cards[v] == 1]
-    if not fixed: return False
-    for var in fixed:
-        for v in C.views + [vv for q in C.queries for vv in q_views(q)]:
-            if var in v.scope: nv = _remove_var_from_scope_fixed(v, C.cards, var, 0); v.scope = nv.scope; v.values = nv.values
-        for d in C.decoder:
-            if d['kind'] == 'map' and d['var'] == var:
-                lst = d['states'][0]
-                if len(lst) == 1 and lst[0][1] == 1: d.clear(); d.update(kind='fixed', state=lst[0][0])
-                else: d.clear(); d.update(kind='fixed_mixture', states=lst)   # a class fixed as a whole: original states keep their conditional weights
-    # constant (empty-scope) factors created by substitution: positive scalars cancel (normalized) or are retained (normalizer task); zero => ZERO_EVIDENCE
-    keep = []
-    for i, v in enumerate(C.views):
-        if not v.scope:
-            if v.values[0] == 0: raise ZeroEvidence(dict(kind='constant_factor_zero_after_substitution', factor=i))
-            C.scalars.append(dict(kind='constant_factor', value=str(v.values[0])))
-        else: keep.append(v)
-    C.views = keep; _renumber(C, set(fixed)); C.certs.append(dict(op='fixed_substitution', variables=fixed)); return True
+    new, fixed = _fixed_apply(C, _Ticker(C, None, 'fixed_substitution'))
+    if new is None: return False
+    C.commit(dict(op='fixed_substitution', variables=fixed, scalars=new['scalars_add']), **new); return True
+
+
+def _leaf_candidate(C):
+    qscope = set().union(*(q_scope(q) for q in C.queries)) if C.queries else set()
+    for var in range(C.n()):
+        if var in qscope: continue
+        inc = [i for i, v in enumerate(C.views) if var in v.scope]
+        if len(inc) == 1 and C.views[inc[0]].kind == 'table': return var, inc[0]
+    return None
+
+
+def _leaf_apply(C, var, fi, T=None):
+    """NEW state with factor fi summed over var (var removed); returns (state-kwargs, scalar-or-None)"""
+    v = C.views[fi]; rest = tuple(u for u in v.scope if u != var); vals = []; n = 0
+    for xs in product(*(range(C.cards[u]) for u in rest)):
+        x = dict(zip(rest, xs)); s = F(0)
+        for a in range(C.cards[var]):
+            x[var] = a; i = 0
+            for u in v.scope: i = i * C.cards[u] + x[u]
+            s += v.values[i]; n += 1
+            if T is not None and n >= TICK_ENTRIES: T.entries(n); n = 0
+        vals.append(s)
+    if T is not None and n: T.entries(n)
+    if not any(vals): raise ZeroEvidence(dict(kind='leaf_sum_identically_zero', compiled_variable=var, factor=fi))
+    views = list(C.views); scalars = []
+    if rest: views[fi] = View('table', rest, vals)
+    else: scalars.append(dict(kind='leaf_sum_scalar', value=str(vals[0]))); views.pop(fi)
+    dec = [dict(kind='summed') if (d['kind'] == 'map' and d['var'] == var) else d for d in C.decoder]
+    nviews, nqueries, ndec, ncards = _renumbered(views, C.queries, dec, C.cards, {var})
+    _fault_point(C, 'leaf_sumout', 'build')
+    return dict(cards=ncards, views=nviews, queries=nqueries, decoder=ndec, scalars_add=scalars)
 
 
 def leaf_sumout(C, quota):
-    """a compiled variable outside every query scope occurring in exactly ONE table factor: replace that factor by its sum over the variable (no fill); positive scalar
-    results cancel (normalized) / are retained (normalizer); a zero sum is ZERO_EVIDENCE only when the resulting factor is identically zero"""
-    done = []
-    while C.work.total() < quota:
-        tick(C, None, 'leaf_sumout')
-        qscope = set().union(*(q_scope(q) for q in C.queries)) if C.queries else set()
-        cand = None
-        for var in range(C.n()):
-            if var in qscope: continue
-            inc = [i for i, v in enumerate(C.views) if var in v.scope]
-            if len(inc) == 1 and C.views[inc[0]].kind == 'table': cand = (var, inc[0]); break
+    """a compiled variable outside every query scope occurring in exactly ONE table factor: replace that factor by its sum over the variable (no fill); ONE COMMIT PER LEAF
+    (record: var, factor); positive scalar results cancel (normalized) / are retained (normalizer); a zero sum is ZERO_EVIDENCE only when the resulting factor is identically zero"""
+    committed = 0; T = _Ticker(C, quota, 'leaf_sumout')
+    while True:
+        tick(C, quota, 'leaf_sumout')
+        cand = _leaf_candidate(C)
         if cand is None: break
-        var, fi = cand; v = C.views[fi]; rest = tuple(u for u in v.scope if u != var); vals = []
-        for xs in product(*(range(C.cards[u]) for u in rest)):
-            x = dict(zip(rest, xs)); s = F(0)
-            for a in range(C.cards[var]):
-                x[var] = a; i = 0
-                for u in v.scope: i = i * C.cards[u] + x[u]
-                s += v.values[i]; C.work.entries += 1
-            vals.append(s)
-        if not any(vals): raise ZeroEvidence(dict(kind='leaf_sum_identically_zero', compiled_variable=var, factor=fi))
-        if rest: v.scope = rest; v.values = vals
-        else: C.scalars.append(dict(kind='leaf_sum_scalar', value=str(vals[0]))); C.views.pop(fi)
-        for d in C.decoder:
-            if d['kind'] == 'map' and d['var'] == var: d.clear(); d.update(kind='summed')
-        _renumber(C, {var}); done.append(dict(var=var, factor=fi))
-    if done: C.certs.append(dict(op='leaf_sumout', steps=done))
-    return bool(done)
+        var, fi = cand; new = _leaf_apply(C, var, fi, T)
+        C.commit(dict(op='leaf_sumout', var=var, factor=fi, scalars=new['scalars_add']), **new); committed += 1
+    return committed > 0
 
 
 def _components(C):
@@ -287,35 +398,46 @@ def _components(C):
     return comps
 
 
-def component_omission(C):
-    """omit a query-free connected component ONLY with a positivity proof (all its tables strictly positive, or a witness restricted to it has positive weight); normalized tasks only"""
-    if C.normalizer_task: return False
+def _omission_proofs(C, T=None):
+    """query-free connected components with a positivity proof (all its tables strictly positive, or a witness restricted to it has positive weight)"""
     qscope = set().union(*(q_scope(q) for q in C.queries)) if C.queries else set(); omitted = []
     for comp in _components(C):
         if set(comp) & qscope: continue
         fv = [i for i, v in enumerate(C.views) if set(v.scope) <= set(comp)]
         proof = None
-        if all(all(x > 0 for x in C.views[i].values) for i in fv): proof = dict(kind='all_tables_strictly_positive', factors=fv); C.work.entries += sum(C.views[i].size() for i in fv)
+        if T is not None: T.entries(sum(C.views[i].size() for i in fv))
+        if all(all(x > 0 for x in C.views[i].values) for i in fv): proof = dict(kind='all_tables_strictly_positive', factors=fv)
         elif C.witness is not None:
             w = F(1)
             for i in fv: w *= C.views[i].at(C.cards, C.witness); C.work.evals += 1
             if w > 0: proof = dict(kind='witness_restricted_positive', factors=fv, witness={str(v): C.witness[v] for v in comp}, weight=str(w))
         if proof is None: continue
         omitted.append(dict(variables=comp, factors=fv, proof=proof))
-    if not omitted: return False
+    return omitted
+
+
+def _omission_apply(C, omitted):
     drop_f = set(); drop_v = set()
     for o in omitted: drop_f |= set(o['factors']); drop_v |= set(o['variables'])
-    C.views = [v for i, v in enumerate(C.views) if i not in drop_f]
-    for d in C.decoder:
-        if d['kind'] == 'map' and d['var'] in drop_v: d.clear(); d.update(kind='omitted')
-    _renumber(C, drop_v); C.scalars.append(dict(kind='omitted_component_mass', count=len(omitted), note='symbolic positive scalar; unknown numeric value; never reused as a numeric bound'))
-    C.certs.append(dict(op='component_omission', omitted=omitted)); return True
+    views = [v for i, v in enumerate(C.views) if i not in drop_f]
+    dec = [dict(kind='omitted') if (d['kind'] == 'map' and d['var'] in drop_v) else d for d in C.decoder]
+    nviews, nqueries, ndec, ncards = _renumbered(views, C.queries, dec, C.cards, drop_v)
+    _fault_point(C, 'component_omission', 'build')
+    return dict(cards=ncards, views=nviews, queries=nqueries, decoder=ndec, scalars_add=[dict(kind='omitted_component_mass', count=len(omitted), note='symbolic positive scalar; unknown numeric value; never reused as a numeric bound')])
+
+
+def component_omission(C):
+    """omit query-free connected components ONLY with a positivity proof; normalized tasks only; ONE commit for the whole set"""
+    if C.normalizer_task: return False
+    omitted = _omission_proofs(C, _Ticker(C, None, 'component_omission'))
+    if not omitted: return False
+    C.commit(dict(op='component_omission', omitted=omitted), **_omission_apply(C, omitted)); return True
 
 
 # ======================================================================================================================
-# operator B / C: proportional-slice quotient (exact) and the checked approximate variant
+# operator B / C: proportional-slice quotient (exact) and the checked approximate variant -- ONE COMMIT PER VARIABLE
 # ======================================================================================================================
-def _signatures(C, var):
+def _signatures(C, var, T=None):
     """per state: tuple over incident table factors of (normalized slice tuple, pivot); None if an incident view is not a plain table (quotient declines)"""
     inc = [v for v in C.views if var in v.scope]
     if any(v.kind != 'table' for v in inc): return None, inc
@@ -323,63 +445,36 @@ def _signatures(C, var):
     for s in range(C.cards[var]):
         parts = []
         for v in inc:
-            sl = _slice(v, C.cards, var, s); C.work.entries += len(sl)
+            sl = _slice(v, C.cards, var, s, T)
             piv = next((x for x in sl if x), None)
             if piv is None: return None, inc            # a zero slice: support propagation must run first
-            parts.append((tuple(x / piv for x in sl), piv)); C.work.ratops += len(sl)
+            parts.append((tuple(x / piv for x in sl), piv))
+            if T is not None: T.ratops(len(sl))
         sig[s] = parts
     return sig, inc
 
 
-def exact_quotient_pass(C, quota, hook=None):
-    """one complete pass over the compiled variables in canonical order (manuscript §3.1): classes of equal normalized incident slices; commit when some class has >= 2 states.
-    A variable with NO incident factor has identical (empty) slices: all its states form one class (kappa = 1, S = d: the uniform marginal through the decoder).
-    hook(kind, var, classes, sig, inc) is called BEFORE each commit (the checker verifies the step on the exact pre-step state)."""
-    committed = []
-    for var in range(C.n()):
-        if var >= C.n(): break
-        try: tick(C, quota, 'exact_quotient_pass')
-        except CompileStop as cs:
-            if cs.kind == 'quota': break
-            if committed: C.certs.append(dict(op='exact_quotient_pass', steps=committed, interrupted=cs.kind))
-            raise
-        sig, inc = _signatures(C, var)
-        if sig is None: continue
-        if not inc: sig = {s: [] for s in range(C.cards[var])}
-        groups = {}
-        for s in range(C.cards[var]): groups.setdefault(tuple(p[0] for p in sig[s]), []).append(s)
-        classes = [sorted(g) for g in groups.values()]; classes.sort(key=lambda g: g[0])
-        if len(classes) == C.cards[var]: continue
-        if hook is not None: hook('exact', var, classes, sig, inc)
-        step = _quotient_commit(C, var, classes, sig, inc, approx=None)
-        committed.append(step)
-    if committed: C.certs.append(dict(op='exact_quotient_pass', steps=committed))
-    return bool(committed)
-
-
-def _quotient_commit(C, var, classes, sig, inc, approx):
-    """commit a quotient of compiled variable var into `classes` (list of sorted state lists) with representative = first state; sig gives pivots; approx records the surrogate certificate"""
+def _quotient_build(C, var, classes, sig, inc, approx, T=None):
+    """BUILD the post-quotient state of compiled variable var into `classes` (list of sorted state lists; representative = first state): NEW factor views (slices ->
+    representative slices; a unary S_C combined with an existing unary), NEW query views (weighted average kappa_a / S_C), NEW decoder entries; returns (state kwargs, record)"""
     reps = [g[0] for g in classes]; kappa = {}; S = []
     for g in classes:
         tot = F(0)
         for a in g:
             k = F(1)
-            for fi in range(len(inc)): k *= sig[a][fi][1] / sig[g[0]][fi][1]; C.work.ratops += 1
+            for fi in range(len(inc)): k *= sig[a][fi][1] / sig[g[0]][fi][1]
             kappa[a] = k; tot += k
+        if T is not None: T.ratops(len(g) * max(1, len(inc)))
         S.append(tot)
-    # factor slices -> representative slices (surrogate already applied in the approximate case)
-    for v in inc:
-        nv = _replace_axis(v, C.cards, var, reps, len(classes)); v.values = nv.values
-    # unary S_C (combined with an existing unary over var if present)
-    un = next((v for v in C.views if v.kind == 'table' and v.scope == (var,)), None)
-    if un is not None: un.values = [un.values[i] * S[i] for i in range(len(classes))]
-    else: C.views.append(View('table', (var,), list(S)))
-    # queries: weighted average with kappa_a / S_C
+    inc_idx = [C.views.index(v) for v in inc]; views = list(C.views)
+    for i in inc_idx: views[i] = _replace_axis(C.views[i], C.cards, var, reps, len(classes), T)
+    un_i = next((i for i, v in enumerate(views) if v.kind == 'table' and v.scope == (var,)), None)
+    if un_i is not None: views[un_i] = View('table', (var,), [views[un_i].values[i] * S[i] for i in range(len(classes))])
+    else: views.append(View('table', (var,), list(S)))
     weights = {a: kappa[a] / S[ci] for ci, g in enumerate(classes) for a in g}
-    for q in C.queries:
-        for vv in q_views(q):
-            if var in vv.scope: nv = _average_axis(vv, C.cards, var, classes, weights); vv.values = nv.values; C.work.ratops += len(nv.values)
-    # decoder: compose
+    def rq(v): return _average_axis(v, C.cards, var, classes, weights, T) if var in v.scope else v
+    queries = [_q_map(q, rq) for q in C.queries]
+    dec = []
     for d in C.decoder:
         if d['kind'] == 'map' and d['var'] == var:
             new = {}
@@ -388,82 +483,43 @@ def _quotient_commit(C, var, classes, sig, inc, approx):
                 for a in g:
                     for (orig, w) in d['states'][a]: lst.append((orig, w * weights[a]))
                 new[ci] = lst
-            d['states'] = new
-    C.cards[var] = len(classes)
-    rec = dict(var=var, classes=classes, representatives=reps, kappa={str(a): str(k) for a, k in kappa.items()}, S=[str(s) for s in S], incident_factors=[C.views.index(v) for v in inc], approx=approx)
-    return rec
+            e = dict(d); e['states'] = new; dec.append(e)
+        else: dec.append(d)
+    cards = list(C.cards); cards[var] = len(classes)
+    rec = dict(op=('approx_quotient' if approx else 'exact_quotient_pass'), var=var, classes=classes, representatives=reps, kappa={str(a): str(k) for a, k in kappa.items()}, S=[str(s) for s in S], incident_factors=inc_idx, approx=approx)
+    _fault_point(C, rec['op'], 'build')
+    return dict(cards=cards, views=views, queries=queries, decoder=dec), rec
 
 
-def approx_quotient(C, quota, allowance, hook=None):
-    """operator C: for each variable (canonical order) try to merge states whose normalized slices are CLOSE: common zero masks; surrogate = scaled representative slice;
-    ALL-entry ratio bounds per incident factor; beta = h(prod u/l) must fit min_j (allowance_j - bias_j); then the exact quotient of the surrogate. Declines when any
-    incident view is not a plain table, when zero masks differ, or when the bias does not fit."""
-    if all(a <= 0 for a in allowance): return False
-    committed = []
-    for var in range(C.n()):
-        try: tick(C, quota, 'approx_quotient')
-        except CompileStop as cs:
-            if cs.kind == 'quota': break
-            if committed: C.certs.append(dict(op='approx_quotient', steps=committed, interrupted=cs.kind))
-            raise
-        inc = [v for v in C.views if var in v.scope]
-        if not inc or any(v.kind != 'table' for v in inc): continue
-        d = C.cards[var]
-        if d < 2: continue
-        slices = {s: [(_slice(v, C.cards, var, s)) for v in inc] for s in range(d)}; C.work.entries += sum(len(sl) for s in slices for sl in slices[s])
-        masks = {s: tuple(tuple(bool(x) for x in sl) for sl in slices[s]) for s in range(d)}
-        remaining = min(allowance[j] - C.bias[j] for j in range(len(C.bias))) if C.bias else F(0)
-        if remaining <= 0: break
-        groups = []; pairs = 0; over = False
-        for s in range(d):
-            placed = False
-            if C.work.total() >= quota: over = True; break                      # INNER quota (review CQR-06: 350,208 units were spent against a 50,000 quota)
-            for g in groups:
-                pairs += 1
-                if pairs > d * d: break
-                if C.work.total() >= quota: over = True; break
-                r = g['rep']
-                if masks[s] != masks[r]: continue
-                # candidate: add s to g; compute the ratio bounds of the whole factor under the surrogate for the proposed grouping of this variable
-                trial = [dict(gg) for gg in groups]; tg = trial[groups.index(g)]; tg['states'] = tg['states'] + [s]
-                R, _ = _surrogate_ratio(C, var, inc, slices, trial)
-                if R is None: continue
-                beta = (R - 1) / (R + 3)
-                if beta <= remaining: g['states'].append(s); placed = True; break
-            if over: break
-            if not placed: groups.append(dict(rep=s, states=[s]))
-        if over: C.certs.append(dict(op='approx_quotient', declined='quota exhausted inside the pair scan of variable %d (nothing of this variable committed)' % var)); break
-        if all(len(g['states']) == 1 for g in groups): continue
-        R, bounds = _surrogate_ratio(C, var, inc, slices, groups); beta = (R - 1) / (R + 3)
-        if beta > remaining: continue
-        try: tick(C, None, 'approx_quotient')                                    # last consistent point before the surrogate is written
-        except CompileStop as cs:
-            if committed: C.certs.append(dict(op='approx_quotient', steps=committed, interrupted=cs.kind))
-            raise
-        if hook is not None: hook('approx', var, groups, slices, inc, R, beta)          # the checker recomputes R / beta on the exact pre-step slices
-        # apply the surrogate to the incident factors: phi~(s, y) = c_a(s) phi(r, y) with c from the first common positive pivot
-        for fi, v in enumerate(inc):
-            scope = v.scope; k = scope.index(var); rest = [u for u in scope if u != var]
-            for g in groups:
-                r = g['rep']; sl_r = slices[r][fi]; piv_i = next(i for i, x in enumerate(sl_r) if x)
-                for s in g['states']:
-                    if s == r: continue
-                    c = slices[s][fi][piv_i] / sl_r[piv_i]
-                    for ri, xs in enumerate(product(*(range(C.cards[u]) for u in rest))):
-                        x = dict(zip(rest, xs)); x[var] = s; i = 0
-                        for u in scope: i = i * C.cards[u] + x[u]
-                        v.values[i] = c * sl_r[ri]; C.work.ratops += 1
-        for j in range(len(C.bias)): C.bias[j] += beta
-        sig, inc2 = _signatures(C, var); classes = [sorted(g['states']) for g in groups]; classes.sort(key=lambda g: g[0])
-        step = _quotient_commit(C, var, classes, sig, inc2, approx=dict(R=str(R), beta=str(beta), factor_bounds=[(str(l), str(u)) for l, u in bounds], groups=[g['states'] for g in groups]))
-        committed.append(step)
-    if committed: C.certs.append(dict(op='approx_quotient', steps=committed))
-    return bool(committed)
+def _classes_of(C, var, sig, inc):
+    if not inc: sig = {s: [] for s in range(C.cards[var])}
+    groups = {}
+    for s in range(C.cards[var]): groups.setdefault(tuple(p[0] for p in sig[s]), []).append(s)
+    classes = [sorted(g) for g in groups.values()]; classes.sort(key=lambda g: g[0]); return classes
 
 
-def _surrogate_ratio(C, var, inc, slices, groups):
+def exact_quotient_pass(C, quota, hook=None):
+    """one complete pass over the compiled variables in canonical order (manuscript §3.1): classes of equal normalized incident slices; ONE COMMIT per variable with >= 2
+    states in some class. A variable with NO incident factor has identical (empty) slices: all its states form one class (kappa = 1, S = d: the uniform marginal through the
+    decoder). hook(kind, var, classes, sig, inc) is called BEFORE each commit (the checker verifies the step on the exact pre-step state). The quota / service hook is
+    tested inside every slice scan; a CompileStop leaves the state at the last commit (its records are already in the journal)."""
+    committed = 0; T = _Ticker(C, quota, 'exact_quotient_pass'); var = 0
+    while var < C.n():
+        tick(C, quota, 'exact_quotient_pass')
+        sig, inc = _signatures(C, var, T)
+        if sig is None: var += 1; continue
+        classes = _classes_of(C, var, sig, inc)
+        if len(classes) == C.cards[var]: var += 1; continue
+        if not inc: sig = {s: [] for s in range(C.cards[var])}
+        if hook is not None: hook('exact', var, classes, sig, inc)
+        new, rec = _quotient_build(C, var, classes, sig, inc, None, T)
+        C.commit(rec, **new); committed += 1; var += 1
+    return committed > 0
+
+
+def _surrogate_ratio(C, var, inc, slices, groups, T=None):
     """R = prod_a (u_a / l_a) with l_a, u_a the extrema of phi/phi~ over ALL positive entries of incident factor a under the grouping; None if a mask mismatch"""
-    R = F(1); bounds = []
+    R = F(1); bounds = []; n = 0
     for fi in range(len(inc)):
         lo = hi = None
         for g in groups:
@@ -475,43 +531,111 @@ def _surrogate_ratio(C, var, inc, slices, groups):
                 c = sl[piv_i] / sl_r[piv_i]
                 for a, b in zip(sl, sl_r):
                     if a:
-                        rho = a / (c * b); C.work.ratops += 1
+                        rho = a / (c * b); n += 1
                         lo = rho if lo is None or rho < lo else lo; hi = rho if hi is None or rho > hi else hi
+                        if T is not None and n >= TICK_ENTRIES: T.ratops(n); n = 0
         bounds.append((lo, hi)); R *= hi / lo
+    if T is not None and n: T.ratops(n)
+    elif T is None: C.work.ratops += n
     return R, bounds
 
 
+def approx_quotient(C, quota, allowance, hook=None):
+    """operator C: for each variable (canonical order) try to merge states whose normalized slices are CLOSE: common zero masks; surrogate = scaled representative slice;
+    ALL-entry ratio bounds per incident factor; beta = h(prod u/l) must fit min_j (allowance_j - bias_j); then the exact quotient of the surrogate. ONE COMMIT per merged
+    variable (surrogate + quotient + bias together); declines when any incident view is not a plain table, when zero masks differ, or when the bias does not fit; a quota
+    exhaustion inside the scan of a variable leaves that variable untouched (its commits of earlier variables stand) and records one decline."""
+    if all(a <= 0 for a in allowance): return False
+    committed = 0; T = _Ticker(C, quota, 'approx_quotient'); var = 0
+    while var < C.n():
+        try:
+            tick(C, quota, 'approx_quotient')
+            inc = [v for v in C.views if var in v.scope]
+            if not inc or any(v.kind != 'table' for v in inc) or C.cards[var] < 2: var += 1; continue
+            d = C.cards[var]
+            slices = {s: [_slice(v, C.cards, var, s, T) for v in inc] for s in range(d)}
+            masks = {s: tuple(tuple(bool(x) for x in sl) for sl in slices[s]) for s in range(d)}
+            remaining = min(allowance[j] - C.bias[j] for j in range(len(C.bias))) if C.bias else F(0)
+            if remaining <= 0: break
+            groups = []; pairs = 0
+            for s in range(d):
+                placed = False
+                for g in groups:
+                    pairs += 1
+                    if pairs > d * d: break
+                    r = g['rep']
+                    if masks[s] != masks[r]: continue
+                    trial = [dict(gg) for gg in groups]; tg = trial[groups.index(g)]; tg['states'] = tg['states'] + [s]
+                    R, _ = _surrogate_ratio(C, var, inc, slices, trial, T)
+                    if R is None: continue
+                    beta = (R - 1) / (R + 3)
+                    if beta <= remaining: g['states'].append(s); placed = True; break
+                if not placed: groups.append(dict(rep=s, states=[s]))
+            if all(len(g['states']) == 1 for g in groups): var += 1; continue
+            R, bounds = _surrogate_ratio(C, var, inc, slices, groups, T); beta = (R - 1) / (R + 3)
+            if beta > remaining: var += 1; continue
+            if hook is not None: hook('approx', var, groups, slices, inc, R, beta)          # the checker recomputes R / beta on the exact pre-step slices
+            # BUILD the surrogate on NEW incident views: phi~(s, y) = c_a(s) phi(r, y) with c from the first common positive pivot
+            sur = []
+            for fi, v in enumerate(inc):
+                scope = v.scope; rest = [u for u in scope if u != var]; vals = list(v.values); n = 0
+                for g in groups:
+                    r = g['rep']; sl_r = slices[r][fi]; piv_i = next(i for i, x in enumerate(sl_r) if x)
+                    for s in g['states']:
+                        if s == r: continue
+                        c = slices[s][fi][piv_i] / sl_r[piv_i]
+                        for ri, xs in enumerate(product(*(range(C.cards[u]) for u in rest))):
+                            x = dict(zip(rest, xs)); x[var] = s; i = 0
+                            for u in scope: i = i * C.cards[u] + x[u]
+                            vals[i] = c * sl_r[ri]; n += 1
+                            if n >= TICK_ENTRIES: T.ratops(n); n = 0
+                if n: T.ratops(n)
+                sur.append(View('table', scope, vals))
+            # the exact quotient of the surrogate (signatures on the surrogate views; the quotient build reads the surrogate through a temporary view list)
+            saved_views = C.views; tmp = list(C.views)
+            for v, sv in zip(inc, sur): tmp[C.views.index(v)] = sv
+            C.views = tmp
+            try:
+                sig, inc2 = _signatures(C, var, T); classes = [sorted(g['states']) for g in groups]; classes.sort(key=lambda g: g[0])
+                new, rec = _quotient_build(C, var, classes, sig, inc2, dict(R=str(R), beta=str(beta), factor_bounds=[(str(l), str(u)) for l, u in bounds], groups=[g['states'] for g in groups]), T)
+            finally: C.views = saved_views
+            bias = [b + beta for b in C.bias]
+            C.commit(rec, bias=bias, **new); committed += 1; var += 1
+        except CompileStop as cs:
+            if cs.kind == 'quota': C.decline('approx_quotient', 'quota exhausted inside the scan of variable %d (nothing of this variable committed)' % var); break
+            raise
+    return committed > 0
+
+
 # ======================================================================================================================
-# operator A (symmetry): bounded proposer + generic verifier
+# operator A (symmetry): bounded proposer + generic verifier (constants only; no table change)
 # ======================================================================================================================
 def symmetry(C, quota):
-    """candidates: global complement on all-binary compiled models; per-variable state swap induced by the unary signature. Verifier: the action maps the MULTISET of
-    table factors to itself (scope-wise, with reordered coordinates). For an involution tau, a query table with f(x) + f(tau x) = 2c everywhere becomes the constant c
-    (recorded; published only with a positive-mass proof). Declines on affine views."""
+    """candidates: global complement on all-binary compiled models; per-variable state swap. Verifier: the action maps the MULTISET of table factors to itself. For an
+    involution tau, a query table with f(x) + f(tau x) = 2c everywhere becomes the constant c (recorded; published only with a positive-mass proof). ONE commit for all
+    constants found. Declines on affine views."""
     if any(v.kind != 'table' for v in C.views) or not C.views: return False
     cands = []
     if all(c == 2 for c in C.cards): cands.append(dict(name='global_complement', perm=list(range(C.n())), state_maps=[[1, 0]] * C.n()))
     for var in range(min(C.n(), 64)):
         if C.cards[var] == 2:
             maps = [[0, 1]] * C.n(); maps = list(maps); maps[var] = [1, 0]; cands.append(dict(name='swap_var_%d' % var, perm=list(range(C.n())), state_maps=maps))
-    found = []
+    found = []; consts_all = dict(C.constant_queries); T = _Ticker(C, quota, 'symmetry')
     for cand in cands:
-        if C.work.total() >= quota: break
-        try: tick(C, quota, 'symmetry')                               # service / deadline / quota inside the candidate scan (review CQR-06)
+        try: tick(C, quota, 'symmetry')
         except CompileStop as cs:
             if cs.kind == 'quota': break
             raise
-        if verify_symmetry_action(C.cards, C.views, cand, C.work):
+        if verify_symmetry_action(C.cards, C.views, cand, C.work, T):
             consts = {}
             for qi, q in enumerate(C.queries):
                 if q['kind'] != 'expectation': continue
-                c = _query_symmetric_constant(C.cards, q['f'], cand, C.work)
+                c = _query_symmetric_constant(C.cards, q['f'], cand, C.work, T)
                 if c is not None: consts[qi] = c
-            if consts:
-                found.append(dict(action=cand, constants={str(k): str(v) for k, v in consts.items()}))
-                for qi, c in consts.items(): C.constant_queries[qi] = c
-    if found: C.certs.append(dict(op='symmetry', actions=found))
-    return bool(found)
+            if consts: found.append(dict(action=cand, constants={str(k): str(v) for k, v in consts.items()})); consts_all.update(consts)
+    if not found: return False
+    _fault_point(C, 'symmetry', 'build')
+    C.commit(dict(op='symmetry', actions=found), constant_queries=consts_all); return True
 
 
 def _apply_action(cand, x):
@@ -520,12 +644,12 @@ def _apply_action(cand, x):
     return y
 
 
-def verify_symmetry_action(cards, views, cand, work):
+def verify_symmetry_action(cards, views, cand, work, T=None):
     """the action maps every table factor to a table factor of the multiset (as functions)"""
     perm = cand['perm']
     if sorted(perm) != list(range(len(cards))): return False
     if any(cards[perm[v]] != cards[v] or sorted(cand['state_maps'][v]) != list(range(cards[v])) for v in range(len(cards))): return False
-    used = [False] * len(views)
+    used = [False] * len(views); n = 0
     for v in views:
         img_scope = tuple(perm[u] for u in v.scope); match = None
         for i, w in enumerate(views):
@@ -533,25 +657,37 @@ def verify_symmetry_action(cards, views, cand, work):
             ok = True
             for xs in product(*(range(cards[u]) for u in v.scope)):
                 x = {u: s for u, s in zip(v.scope, xs)}; y = {perm[u]: cand['state_maps'][u][s] for u, s in x.items()}
-                work.entries += 2
+                n += 2
+                if T is not None and n >= TICK_ENTRIES: T.entries(n); n = 0
                 if v.at(cards, x) != w.at(cards, y): ok = False; break
             if ok: match = i; break
-        if match is None: return False
+        if match is None:
+            if T is not None and n: T.entries(n)
+            elif n: work.entries += n
+            return False
         used[match] = True
+    if T is not None and n: T.entries(n)
+    elif n: work.entries += n
     return True
 
 
-def _query_symmetric_constant(cards, f, cand, work):
+def _query_symmetric_constant(cards, f, cand, work, T=None):
     """c such that f(x) + f(tau x) = 2c for every x (tau an involution on f's scope); None otherwise"""
     perm = cand['perm']
     if any(perm[u] not in f.scope for u in f.scope): return None
-    c = None
+    c = None; n = 0
     for xs in product(*(range(cards[u]) for u in f.scope)):
         x = dict(zip(f.scope, xs)); y = {perm[u]: cand['state_maps'][u][s] for u, s in x.items()}; z = {perm[u]: cand['state_maps'][u][s] for u, s in y.items()}
         if z != x: return None
-        s = (f.at(cards, x) + f.at(cards, y)) / 2; work.entries += 2
+        s = (f.at(cards, x) + f.at(cards, y)) / 2; n += 2
+        if T is not None and n >= TICK_ENTRIES: T.entries(n); n = 0
         if c is None: c = s
-        elif s != c: return None
+        elif s != c:
+            if T is not None and n: T.entries(n)
+            elif n: work.entries += n
+            return None
+    if T is not None and n: T.entries(n)
+    elif n: work.entries += n
     return c
 
 
@@ -571,19 +707,19 @@ def _unary_product_argmax(C, var):
 def concentration(C, quota, allowance):
     """reduction note §4: propose x* (unary argmax), compute per-site ratio sums R_i from local ratio inequalities over every incident factor (zeros handled: 0/0 no
     constraint, pos/0 = infinity, all-zero bad slice = 0), t_i = R_i / (1 + R_i); certify |E f_j - f_j(x*)| <= sum_{i in scope(f_j)} t_i; accept only when it fits
-    every query's remaining allowance. Returns the direct answer record or None."""
+    every query's remaining allowance. ONE commit (bias spent; witness recorded); returns the direct answer record or None."""
     if any(v.kind != 'table' for v in C.views) or any(q['kind'] != 'expectation' for q in C.queries) or not C.queries: return None
     if all(a <= 0 for a in allowance): return None
+    T = _Ticker(C, quota, 'concentration')
     xstar = {var: _unary_product_argmax(C, var) for var in range(C.n())}
     wst = F(1)
     for v in C.views: wst *= v.at(C.cards, xstar); C.work.evals += 1
-    if wst == 0: C.certs.append(dict(op='concentration', declined='proposed assignment has zero weight (no positive witness)')); return None
-    C.witness = dict(xstar)
+    if wst == 0: C.decline('concentration', 'proposed assignment has zero weight (no positive witness)'); return None
     t = {}
     for var in range(C.n()):
         try: tick(C, quota, 'concentration')
         except CompileStop as cs:
-            if cs.kind == 'quota': C.certs.append(dict(op='concentration', declined='quota exhausted during the ratio scans')); return None
+            if cs.kind == 'quota': C.decline('concentration', 'quota exhausted during the ratio scans'); return None
             raise
         Ri = F(0); inf = False
         for s in range(C.cards[var]):
@@ -591,7 +727,11 @@ def concentration(C, quota, allowance):
             r = F(1); zero_bound = False
             for v in C.views:
                 if var not in v.scope: continue
-                sl_s = _slice(v, C.cards, var, s); sl_r = _slice(v, C.cards, var, xstar[var]); C.work.entries += 2 * len(sl_s)
+                try:
+                    sl_s = _slice(v, C.cards, var, s, T); sl_r = _slice(v, C.cards, var, xstar[var], T)
+                except CompileStop as cs:
+                    if cs.kind == 'quota': C.decline('concentration', 'quota exhausted during the ratio scans'); return None
+                    raise
                 bound = F(0); has_pos = False
                 for a, b in zip(sl_s, sl_r):
                     if a == 0: continue
@@ -608,11 +748,14 @@ def concentration(C, quota, allowance):
     answers = {}; biases = {}
     for qi, q in enumerate(C.queries):
         b = min(F(1), sum(t[u] for u in q['f'].scope)) if q['f'].scope else F(0)
-        if b > allowance[qi] - C.bias[qi]: C.certs.append(dict(op='concentration', declined='bias %s exceeds the allowance of query %d' % (b, qi), t={str(k): str(v) for k, v in t.items()})); return None
+        if b > allowance[qi] - C.bias[qi]: C.decline('concentration', 'bias %s exceeds the allowance of query %d' % (b, qi), t={str(k): str(v) for k, v in t.items()}); return None
         answers[qi] = q['f'].at(C.cards, xstar); biases[qi] = b
-    rec = dict(op='concentration', xstar={str(k): v for k, v in xstar.items()}, weight=str(wst), t={str(k): str(v) for k, v in t.items()}, answers={str(k): str(v) for k, v in answers.items()}, bias={str(k): str(v) for k, v in biases.items()}, query_scopes={str(qi): list(q['f'].scope) for qi, q in enumerate(C.queries)})
-    for qi, b in biases.items(): C.bias[qi] += b                 # the certified bias is SPENT in the ledger (the publication is widened by it; tau shrinks)
-    C.certs.append(rec); return dict(answers=answers, bias=biases, record=rec)
+    rec = dict(op='concentration', xstar={str(k): v for k, v in xstar.items()}, weight=str(wst), t={str(k): str(v) for k, v in t.items()}, answers={str(k): str(v) for k, v in answers.items()}, bias={str(k): str(v) for k, v in biases.items()},
+               query_scopes={str(qi): list(q['f'].scope) for qi, q in enumerate(C.queries)})
+    bias = list(C.bias)
+    for qi, b in biases.items(): bias[qi] += b                 # the certified bias is SPENT in the ledger (the publication is widened by it; tau shrinks)
+    _fault_point(C, 'concentration', 'build')
+    rec = C.commit(rec, bias=bias, witness=xstar); return dict(answers=answers, bias=biases, record=rec)
 
 
 def _h(R): return (R - 1) / (R + 3)
@@ -620,57 +763,44 @@ def _h(R): return (R - 1) / (R + 3)
 
 def influence_deletion(C, quota, allowance, neumann_T=8):
     """reduction note §3: strictly positive table factors only (zeros decline); Cbar_ij = min(1, sum_a h(R_aij)); D_ai; alpha = max_i sum_j Cbar_ij < 1 required;
-    deletion set: all non-unary factors first, then greedy by decreasing size; e = Neumann sum + tail; beta_j = sum_{i in scope(f_j)} e_i; accepted only within the allowance"""
+    deletion set: all non-unary factors first, then greedy by decreasing size; e = Neumann sum + tail; beta_j = sum_{i in scope(f_j)} e_i; ONE commit (deletion + bias)"""
     if any(v.kind != 'table' for v in C.views) or any(q['kind'] != 'expectation' for q in C.queries): return False
     if all(a <= 0 for a in allowance): return False
-    if any(x <= 0 for v in C.views for x in v.values): C.certs.append(dict(op='influence_deletion', declined='hard zeros remain: the strictly positive comparison operator does not apply')); return False
-    n = C.n(); Cbar = {}; Dai = {}            # SPARSE: Cbar[i][j] exists only for pairs sharing a factor (no dense n x n table)
+    if any(x <= 0 for v in C.views for x in v.values): C.decline('influence_deletion', 'hard zeros remain: the strictly positive comparison operator does not apply'); return False
+    T = _Ticker(C, quota, 'influence_deletion'); Cbar = {}; Dai = {}            # SPARSE: Cbar[i][j] exists only for pairs sharing a factor (no dense n x n table)
     def cb(i, j): return Cbar.get(i, {}).get(j, F(0))
-    for fi, v in enumerate(C.views):
-        if len(v.scope) < 1: continue
-        try: tick(C, quota, 'influence_deletion')
-        except CompileStop as cs:
-            if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
-            raise
-        sc = v.scope
-        for i in sc:
-            try: tick(C, quota, 'influence_deletion')                 # quota / deadline / service INSIDE the costly per-site scans (review CQR-06: 32-state factors cost 2^16 units each)
-            except CompileStop as cs:
-                if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
-                raise
-            rest = [u for u in sc if u != i]; best = F(1)
-            for xs in product(*(range(C.cards[u]) for u in rest)):
-                try: tick(C, quota, 'influence_deletion')
-                except CompileStop as cs:
-                    if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
-                    raise
-                x = dict(zip(rest, xs)); vals = []
-                for s_ in range(C.cards[i]): x[i] = s_; vals.append(v.at(C.cards, x)); C.work.entries += 1
-                best = max(best, max(vals) / min(vals))
-            Dai[(fi, i)] = best
-            for j in sc:
-                if j == i: continue
-                try: tick(C, quota, 'influence_deletion')
-                except CompileStop as cs:
-                    if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
-                    raise
-                rest2 = [u for u in sc if u not in (i, j)]; Rmax = F(1)
-                for xs in product(*(range(C.cards[u]) for u in rest2)):
-                    x = dict(zip(rest2, xs))
-                    for u_ in range(C.cards[i]):
-                        try: tick(C, quota, 'influence_deletion')         # innermost granularity: one row of state pairs (<= 2 * card_i * card_j entries)
-                        except CompileStop as cs:
-                            if cs.kind == 'quota': C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
-                            raise
-                        for v_ in range(u_ + 1, C.cards[i]):
-                            qs = []
-                            for s_ in range(C.cards[j]):
-                                x[i] = u_; x[j] = s_; a = v.at(C.cards, x); x[i] = v_; b = v.at(C.cards, x); qs.append(a / b); C.work.entries += 2
-                            Rmax = max(Rmax, max(qs) / min(qs))
-                Cbar.setdefault(i, {})[j] = min(F(1), cb(i, j) + _h(Rmax))
-        if C.work.total() >= quota: C.certs.append(dict(op='influence_deletion', declined='quota exhausted during the local scans')); return False
+    try:
+        for fi, v in enumerate(C.views):
+            if len(v.scope) < 1: continue
+            sc = v.scope
+            for i in sc:
+                tick(C, quota, 'influence_deletion'); rest = [u for u in sc if u != i]; best = F(1); n = 0
+                for xs in product(*(range(C.cards[u]) for u in rest)):
+                    x = dict(zip(rest, xs)); vals = []
+                    for s_ in range(C.cards[i]): x[i] = s_; vals.append(v.at(C.cards, x)); n += 1
+                    if n >= TICK_ENTRIES: T.entries(n); n = 0
+                    best = max(best, max(vals) / min(vals))
+                if n: T.entries(n); n = 0
+                Dai[(fi, i)] = best
+                for j in sc:
+                    if j == i: continue
+                    rest2 = [u for u in sc if u not in (i, j)]; Rmax = F(1)
+                    for xs in product(*(range(C.cards[u]) for u in rest2)):
+                        x = dict(zip(rest2, xs))
+                        for u_ in range(C.cards[i]):
+                            for v_ in range(u_ + 1, C.cards[i]):
+                                qs = []
+                                for s_ in range(C.cards[j]):
+                                    x[i] = u_; x[j] = s_; a = v.at(C.cards, x); x[i] = v_; b = v.at(C.cards, x); qs.append(a / b); n += 2
+                                    if n >= TICK_ENTRIES: T.entries(n); n = 0
+                                Rmax = max(Rmax, max(qs) / min(qs))
+                    if n: T.entries(n); n = 0
+                    Cbar.setdefault(i, {})[j] = min(F(1), cb(i, j) + _h(Rmax))
+    except CompileStop as cs:
+        if cs.kind == 'quota': C.decline('influence_deletion', 'quota exhausted during the local scans'); return False
+        raise
     alpha = max((sum(row.values()) for row in Cbar.values()), default=F(0))
-    if alpha >= 1: C.certs.append(dict(op='influence_deletion', declined='alpha = %s >= 1: the contraction condition fails (not a statement about the model)' % alpha)); return False
+    if alpha >= 1: C.decline('influence_deletion', 'alpha = %s >= 1: the contraction condition fails (not a statement about the model)' % alpha); return False
     sites = sorted({i for v in C.views for i in v.scope})
     def bias_of(dset):
         bbar = {i: min(F(1), sum(_h(Dai[(fi, i)]) for fi in dset if i in C.views[fi].scope)) for i in sites}
@@ -692,29 +822,31 @@ def influence_deletion(C, quota, allowance, neumann_T=8):
             b, e_, _ = bias_of(D | {fi})
             if all(b[j] <= allowance[j] - C.bias[j] for j in range(len(C.queries))): D.add(fi); cur = b; e = e_
         if D: chosen = D; bias = cur
-    if not chosen: C.certs.append(dict(op='influence_deletion', declined='no deletion set fits the allowance (alpha %s)' % alpha)); return False
-    for j in range(len(C.queries)): C.bias[j] += bias[j]
-    C.views = [v for fi, v in enumerate(C.views) if fi not in chosen]
-    C.certs.append(dict(op='influence_deletion', deleted=sorted(chosen), alpha=str(alpha), bias=[str(b) for b in bias], e={str(i): str(x) for i, x in e.items()}, neumann_T=neumann_T, sparse_pairs=sum(len(r) for r in Cbar.values())))
+    if not chosen: C.decline('influence_deletion', 'no deletion set fits the allowance (alpha %s)' % alpha); return False
+    nbias = [C.bias[j] + bias[j] for j in range(len(C.queries))]; views = [v for fi, v in enumerate(C.views) if fi not in chosen]
+    _fault_point(C, 'influence_deletion', 'build')
+    C.commit(dict(op='influence_deletion', deleted=sorted(chosen), alpha=str(alpha), bias=[str(b) for b in bias], e={str(i): str(x) for i, x in e.items()}, neumann_T=neumann_T, sparse_pairs=sum(len(r) for r in Cbar.values())), views=views, bias=nbias)
     return True
 
 
 # ======================================================================================================================
-# operator D: affine support (local recognizer, global elimination, compact views, query pullback)
+# operator D: affine support (ONE commit; the representation change)
 # ======================================================================================================================
-def local_affine(view, cards, work):
+def local_affine(view, cards, work, T=None):
     """for an all-binary table view: positive rows R; affine iff |R| == 2^rank(differences); returns (equations as (rowmask over view.scope bits, rhs)) or None"""
     k = len(view.scope)
     if any(cards[u] != 2 for u in view.scope) or k == 0: return None
-    rows = []
+    rows = []; n = 0
     for i, w in enumerate(view.values):
-        work.entries += 1
+        n += 1
+        if T is not None and n >= TICK_ENTRIES: T.entries(n); n = 0
         if w > 0: rows.append(i)        # row index i = bits of the scope in row-major order (first scope var = most significant bit)
+    if T is not None and n: T.entries(n)
+    elif work is not None: work.entries += n
     if not rows: raise ZeroEvidence(dict(kind='table_with_no_positive_entry'))
     r0 = rows[0]; rank, basis = gf2_rank_basis([r ^ r0 for r in rows])
     if len(rows) != 1 << rank: return None
     if rank == k: return []             # full support: no equation
-    # orthogonal complement of span(basis) in GF(2)^k: solve H b = 0 for basis vectors
     comp = []
     for cand in range(1, 1 << k):
         if all(bin(cand & b).count('1') % 2 == 0 for b in basis):
@@ -725,22 +857,16 @@ def local_affine(view, cards, work):
     return eqs
 
 
-def affine(C, quota):
-    """collect local equations over the compiled BINARY variables; eliminate globally; inconsistency => ZERO_EVIDENCE; otherwise x_bin = c + B z with pivot-free z;
-    rewrite every factor / query touching the binary block into an affine view (y = U z); decoder: original binary states = c_i XOR B_i z. Applied once; declines if no
-    nontrivial equation or if any view is already affine."""
-    if C.affine_done or any(v.kind != 'table' for v in C.views): return False
+def _affine_build(C, quota, T):
+    """collect local equations over the compiled BINARY variables; eliminate globally; inconsistency => ZERO_EVIDENCE; otherwise x_bin = c + B z with pivot-free z; NEW views /
+    queries / decoder / cards; returns (state kwargs, record) or (None, None) when nothing nontrivial was found"""
     bin_vars = [v for v in range(C.n()) if C.cards[v] == 2]
-    if not bin_vars: return False
+    if not bin_vars: return None, None
     pos = {v: i for i, v in enumerate(bin_vars)}; nb = len(bin_vars); eqs = []; local = []
     for fi, v in enumerate(C.views):
-        if C.work.total() >= quota: break
-        try: tick(C, quota, 'affine')
-        except CompileStop as cs:
-            if cs.kind == 'quota': break
-            raise
+        tick(C, quota, 'affine')
         if not all(C.cards[u] == 2 for u in v.scope): continue
-        le = local_affine(v, C.cards, C.work)
+        le = local_affine(v, C.cards, C.work, T)
         if not le: continue
         local.append(dict(factor=fi, equations=[(h, b) for h, b in le]))
         for h, b in le:
@@ -748,8 +874,7 @@ def affine(C, quota):
             for bit in range(len(v.scope)):
                 if (h >> (len(v.scope) - 1 - bit)) & 1: row |= 1 << pos[v.scope[bit]]
             eqs.append((row, b))
-    if not eqs: return False
-    # Gaussian elimination over GF(2) on augmented rows (bit nb = rhs)
+    if not eqs: return None, None
     aug = [(r | (b << nb)) for r, b in eqs]; basis = []
     for r in aug:
         for bb in basis:
@@ -759,11 +884,9 @@ def affine(C, quota):
             if r >> nb: raise ZeroEvidence(dict(kind='inconsistent_affine_equations', equations=len(eqs)))
             continue
         basis.append(r); basis.sort(reverse=True)
-    # reduced echelon: pivots = highest bit of each basis row
     basis = _rref(basis, nb); pivots = [(_msb(r & ((1 << nb) - 1))) for r in basis]; free_bits = [i for i in range(nb) if i not in pivots]
     rank = len(basis)
-    if rank == 0: return False
-    # parametrization: x_i = c_i + sum_{z} B_{i z} z over free bits; free bit i -> z coordinate index
+    if rank == 0: return None, None
     zidx = {fb: k for k, fb in enumerate(free_bits)}; crow = {}; Brow = {}
     for i in range(nb):
         if i in zidx: crow[i] = 0; Brow[i] = 1 << zidx[i]
@@ -772,13 +895,11 @@ def affine(C, quota):
         for fb in free_bits:
             if (others >> fb) & 1: brow |= 1 << zidx[fb]
         crow[pv] = rhs; Brow[pv] = brow
-    # new compiled variables: z coordinates (binary) + categorical (nonbinary) in canonical order
     cat_vars = [v for v in range(C.n()) if C.cards[v] != 2]; newcards = [2] * len(free_bits) + [C.cards[v] for v in cat_vars]; cat_new = {v: len(free_bits) + i for i, v in enumerate(cat_vars)}
     def make_view(v):
         bin_in = [u for u in v.scope if C.cards[u] == 2]; cat_in = [u for u in v.scope if C.cards[u] != 2]
         if not bin_in: return View('table', tuple(cat_new[u] for u in v.scope), list(v.values))
         rows = [Brow[pos[u]] for u in bin_in]; rank_u, ub = gf2_rank_basis(rows)
-        # U rows = ub (rank rho rows over z); T maps each bin var's B-row to its coordinates in the ub basis: express B_u = sum T_uk ub_k
         coords = []
         for r in rows:
             coord = 0; x = r
@@ -792,8 +913,7 @@ def affine(C, quota):
             for kk, zc in enumerate(zcols):
                 if (bvec >> zc) & 1: loc |= 1 << kk
             ub_local.append(loc)
-        # g(y, cat): for each y (rho bits, as a tuple y_0..y_{rho-1} with y_k = coefficient of ub_k) and cat assignment: x_u = c_u XOR <coords_u, y>
-        rho = len(ub); vals = []
+        rho = len(ub); vals = []; n = 0
         for yb in product((0, 1), repeat=rho):
             for cs in product(*(range(C.cards[u]) for u in cat_in)):
                 x = dict(zip(cat_in, cs))
@@ -802,32 +922,38 @@ def affine(C, quota):
                     for k in range(rho):
                         if (coords[ui] >> k) & 1 and yb[k]: bit ^= 1
                     x[u] = bit
-                vals.append(v.at(C.cards, x)); C.work.entries += 1
-        # urows as rows over the LOCAL zcols; the View indexes y as y_0 most significant -> urows[0] is y_0 = ub_0
+                vals.append(v.at(C.cards, x)); n += 1
+                if n >= TICK_ENTRIES: T.entries(n); n = 0
+        if n: T.entries(n)
         return View('affine', tuple(zcols) + tuple(cat_new[u] for u in cat_in), vals, cat_scope=tuple(cat_new[u] for u in cat_in), zcols=tuple(zcols), urows=ub_local)
     new_views = [make_view(v) for v in C.views]
-    for q in C.queries:
-        if q['kind'] == 'expectation': q['f'] = make_view(q['f'])
-        else: q['h'] = make_view(q['h']); q['g'] = make_view(q['g'])
-    # constant affine views (rank 0, no cat): scalars
-    keep = []
+    queries = [_q_map(q, make_view) for q in C.queries]
+    keep = []; scalars = []
     for v in new_views:
         if not v.scope:
             if v.values[0] == 0: raise ZeroEvidence(dict(kind='affine_image_zero'))
-            C.scalars.append(dict(kind='affine_constant_factor', value=str(v.values[0])))
+            scalars.append(dict(kind='affine_constant_factor', value=str(v.values[0])))
         else: keep.append(v)
-    C.views = keep
-    # decoder
+    dec = []
     for d in C.decoder:
         if d['kind'] == 'map':
             var = d['var']
             if C.cards[var] == 2:
                 sts = d['states']; b = Brow[pos[var]]; zv = [k for k in range(len(free_bits)) if (b >> k) & 1]
-                d.clear(); d.update(kind='affine_map', c=crow[pos[var]], zvars=zv, states={k: lst for k, lst in sts.items()})
-            else: d['var'] = cat_new[var]
-    C.cards = newcards; C.affine_done = True
-    C.certs.append(dict(op='affine', local=local, rank=rank, binary_variables=bin_vars, free_bits=free_bits, c={str(i): crow[i] for i in range(nb)}, B={str(i): Brow[i] for i in range(nb)}))
-    return True
+                dec.append(dict(kind='affine_map', c=crow[pos[var]], zvars=zv, states={k: lst for k, lst in sts.items()}))
+            else: e = dict(d); e['var'] = cat_new[var]; dec.append(e)
+        else: dec.append(d)
+    rec = dict(op='affine', local=local, rank=rank, binary_variables=bin_vars, free_bits=free_bits, c={str(i): crow[i] for i in range(nb)}, B={str(i): Brow[i] for i in range(nb)})
+    _fault_point(C, 'affine', 'build')
+    return dict(cards=newcards, views=keep, queries=queries, decoder=dec, scalars_add=scalars, affine_done=True), rec
+
+
+def affine(C, quota):
+    """applied once, last; declines if no nontrivial equation or if any view is already affine"""
+    if C.affine_done or any(v.kind != 'table' for v in C.views): return False
+    new, rec = _affine_build(C, quota, _Ticker(C, quota, 'affine'))
+    if new is None: return False
+    C.commit(rec, **new); return True
 
 
 def _msb(x): return x.bit_length() - 1
@@ -838,7 +964,6 @@ def _rref(basis, nb):
             pv = _msb(o & ((1 << nb) - 1))
             if (r >> pv) & 1: r ^= o
         if r & ((1 << nb) - 1): out.append(r)
-    # back-substitute
     out.sort(reverse=True)
     for i in range(len(out)):
         pv = _msb(out[i] & ((1 << nb) - 1))
@@ -848,7 +973,7 @@ def _rref(basis, nb):
 
 
 # ======================================================================================================================
-# the compile driver (reference policy order) and the independent verifiers used by the checker
+# the compile driver (reference policy order): ONE outcome representation per operator step
 # ======================================================================================================================
 def quota_for(task):
     m = task['model']; ent = sum(len(f['values']) for f in m['factors']) + sum((len(q.f.values) if q.kind == 'expectation' else len(q.h.values) + len(q.g.values)) for q in task['queries'])
@@ -865,50 +990,59 @@ def effective_operators(arm_enabled, task):
     return en
 
 
-def _save_state(C):
-    """the committed compiled model (every field an operator may change); views / queries / decoder entries are replaced, never mutated in place, by the operators (list copies suffice)"""
-    import copy as _copy
-    return dict(cards=list(C.cards), views=list(C.views), queries=list(C.queries), decoder=_copy.deepcopy(C.decoder), bias=list(C.bias), certs=list(C.certs), scalars=list(C.scalars),
-                constant_scalars=list(C.constant_scalars), witness=_copy.deepcopy(C.witness), affine_done=C.affine_done, constant_queries=dict(C.constant_queries))
+def _save_state(C): return C.state()
 def _restore_state(C, s):
-    C.cards = s['cards']; C.views = s['views']; C.queries = s['queries']; C.decoder = s['decoder']; C.bias = s['bias']; C.certs = s['certs']; C.scalars = s['scalars']
-    C.constant_scalars = s['constant_scalars']; C.witness = s['witness']; C.affine_done = s['affine_done']; C.constant_queries = s['constant_queries']
+    """belt-and-braces: every operator builds NEW objects and commits atomically, so after an exception the state already equals the last commit; this restores the
+    attribute tuple from the saved snapshot (whose objects are immutable) in case an operator ever assigned an attribute outside commit()"""
+    C.cards = list(s['cards']); C.views = list(s['views']); C.queries = list(s['queries']); C.decoder = list(s['decoder']); C.bias = list(s['bias']); C.certs = list(s['certs']); C.scalars = list(s['scalars'])
+    C.constant_scalars = list(s['constant_scalars']); C.witness = s['witness']; C.affine_done = s['affine_done']; C.constant_queries = dict(s['constant_queries']); C.commits = s['commits']
 
 
 def compile_task(task, enabled=None, deadline=None, work=None, service=None, fault=None):
-    """returns (Compiled, log). `enabled` = the TASK-EFFECTIVE operator set (effective_operators); every other operator records 'disabled'. `service(op)` is called at every
-    consistent point (review CQR-06): it may raise CompileStop('deadline' | 'reference_done' | 'cancelled'); the driver then returns the LAST COMMITTED model with
-    log['interrupted'] set and every charge preserved. A quota exhaustion inside an operator makes that operator decline the rest (its commits stay)."""
-    enabled = set(POLICY['order']) if enabled is None else set(enabled); t0 = time.monotonic(); C = from_task(task, work)
-    D = quota_for(task); allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries']); log = dict(quota=D, steps=[], direct=None, interrupted=None, failed=None)
-    def q_(k): return C.work.total() + D if k == 'exact_quotient_pass' else C.work.total() + D
+    """returns (Compiled, log). `enabled` = the TASK-EFFECTIVE operator set (effective_operators). `service(op)` is called inside every costly scan (R3) and may raise
+    CompileStop('deadline' | 'reference_done' | 'cancelled'); the driver returns the LAST COMMITTED model with log['interrupted'] set and every charge preserved.
+    log['steps'][i] = dict(op, outcome, commits, work, measure_before, measure_after [, kind | error | reason]) with outcome in
+    committed | no_change | declined | quota | interrupted | failed | disabled | skipped  -- the ONE representation of every operator outcome (R1).
+    `fault` (qualification only): a string op name (fails before the operator starts) or dict(op, where in 'build' | 'before_swap' | 'after_commit', k) (fails mid-operator)."""
+    enabled = set(POLICY['order']) if enabled is None else set(enabled); t0 = time.monotonic()
     def svc(op):
         if deadline is not None and time.monotonic() >= deadline: raise CompileStop('deadline', op)
         if service is not None: service(op)
-    C.service = svc
+    C = from_task(task, work, service=svc)
+    C.service = svc; C.fault = fault if isinstance(fault, dict) else None
+    D = quota_for(task); allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries'])
+    log = dict(quota=D, steps=[], direct=None, interrupted=None, failed=None, compiler_version=COMPILER_VERSION)
+    def q_(k): return C.work.total() + D
     def step(name, fn):
-        if log['interrupted']: log['steps'].append(dict(op=name, skipped='interrupted')); return False
-        if deadline is not None and time.monotonic() >= deadline: log['steps'].append(dict(op=name, skipped='deadline')); return False
-        if name not in enabled: log['steps'].append(dict(op=name, disabled=True)); return False
-        if log.get('failed'): log['steps'].append(dict(op=name, skipped='optional_failure')); return False
-        w0 = C.work.total(); m0 = C.measure(); saved = _save_state(C)
+        if log['interrupted']: log['steps'].append(dict(op=name, outcome='skipped', reason='interrupted', commits=0)); return False
+        if log.get('failed'): log['steps'].append(dict(op=name, outcome='skipped', reason='optional_failure', commits=0)); return False
+        if name not in enabled: log['steps'].append(dict(op=name, outcome='disabled', commits=0)); return False
+        w0 = C.work.total(); m0 = C.measure(); c0 = C.commits; saved = _save_state(C); rec = dict(op=name, work=0, measure_before=m0)
         try:
-            if fault == name: raise RuntimeError('INJECTED optional fault in %s (qualification control; never a production run)' % name)      # an optional failure: NOT a CompileStop
+            if fault == name: raise RuntimeError('INJECTED optional fault in %s (qualification control; never a production run)' % name)      # before the operator starts
             r = fn()
+            if C.commits > c0: rec.update(outcome='committed')
+            elif any(c.get('kind') == 'decline' and c.get('op') == name for c in C.certs[len(saved['certs']):]): rec.update(outcome='declined', reason=[c['declined'] for c in C.certs[len(saved['certs']):] if c.get('kind') == 'decline'][-1][:160])
+            else: rec.update(outcome='no_change')
         except CompileStop as cs:
-            log['steps'].append(dict(op=name, interrupted=cs.kind, work=C.work.total() - w0, measure_before=m0, measure_after=C.measure())); log['interrupted'] = dict(op=name, kind=cs.kind); return False
+            # the state IS the last commit (ticks only happen between commits); nothing to restore
+            if cs.kind == 'quota': rec.update(outcome='quota')
+            else: rec.update(outcome='interrupted', kind=cs.kind); log['interrupted'] = dict(op=name, kind=cs.kind)
+            r = C.commits > c0
         except (ZeroEvidence, MemoryError): raise
         except Exception as ex:
-            # an OPTIONAL FAILURE inside one operator: the transaction is rolled back to the LAST COMMITTED model (its certificates and bias ledger intact), every unit spent stays charged,
-            # the failure is recorded, and no later operator runs; the caller publishes from the committed model or lets the protected reference finish
-            _restore_state(C, saved); log['steps'].append(dict(op=name, failed='%s: %s' % (type(ex).__name__, str(ex)[:160]), work=C.work.total() - w0, measure_before=m0, measure_after=C.measure()))
-            log['failed'] = dict(op=name, error='%s: %s' % (type(ex).__name__, str(ex)[:160])); return False
-        log['steps'].append(dict(op=name, committed=bool(r), work=C.work.total() - w0, measure_before=m0, measure_after=C.measure())); return r
+            # an OPTIONAL FAILURE: the state equals the last commit by construction (asserted below); every unit spent stays charged; the failure is recorded; later operators are skipped
+            last = C._last
+            _restore_state(C, last if last is not None else saved)
+            rec.update(outcome='failed', error='%s: %s' % (type(ex).__name__, str(ex)[:160])); log['failed'] = dict(op=name, error='%s: %s' % (type(ex).__name__, str(ex)[:160]), commits_kept=C.commits - c0)
+            r = C.commits > c0
+        rec.update(work=C.work.total() - w0, measure_after=C.measure(), commits=C.commits - c0); rec['committed'] = (rec['outcome'] == 'committed') or (C.commits > c0)
+        if rec['outcome'] in ('quota', 'interrupted', 'failed') and C.commits > c0: rec['partial'] = True       # commits of this operator stand; the rest of it did not run
+        log['steps'].append(rec); return r
     step('support_fixpoint', lambda: support_fixpoint(C, q_('support')))
     step('fixed_substitution', lambda: fixed_substitution(C))
     step('leaf_sumout', lambda: leaf_sumout(C, q_('leaf')))
     step('component_omission', lambda: component_omission(C))
-    # the exact quotient pass gets its own share; support / fixed may re-apply after it (domains shrink)
     if step('exact_quotient_pass', lambda: exact_quotient_pass(C, q_('exact_quotient_pass'))):
         step('fixed_substitution', lambda: fixed_substitution(C)); step('leaf_sumout', lambda: leaf_sumout(C, q_('leaf')))
     step('symmetry', lambda: symmetry(C, q_('symmetry')))
@@ -917,16 +1051,259 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
         direct = [None]
         def _conc():
             direct[0] = concentration(C, q_('conc'), allowance); return direct[0] is not None
-        step('concentration', _conc)                      # under the SAME deadline / interruption wrapper as every other operator (review CQR-06)
+        step('concentration', _conc)
         log['direct'] = direct[0]
         if direct[0] is None: step('influence_deletion', lambda: influence_deletion(C, q_('infl'), allowance))
         if direct[0] is None: step('leaf_sumout', lambda: leaf_sumout(C, q_('leaf')))
     else:
-        for name in ('approx_quotient', 'concentration', 'influence_deletion'): log['steps'].append(dict(op=name, disabled='EXACT_RATIONAL mode'))
+        for name in ('approx_quotient', 'concentration', 'influence_deletion'): log['steps'].append(dict(op=name, outcome='disabled', reason='EXACT_RATIONAL mode', commits=0))
     step('affine', lambda: affine(C, q_('affine')))
-    C.service = None                                           # the hook is released with the task (the certificate serializer never sees it)
-    log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]
+    C.service = None; C.fault = None                               # the hooks are released with the task (the certificate serializer never sees them)
+    log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]; log['commits'] = C.commits; log['ticks'] = C.ticks
     return C, log
+
+
+# ======================================================================================================================
+# JOURNAL REPLAY (used by the checker): apply EXACTLY the recorded commits, verifying each on the pre-commit model
+# ======================================================================================================================
+def verify_commit(C, rc, work, allowance):
+    """independent verification of ONE recorded commit against the current (pre-commit) model; returns an error string or None; also returns derived facts for concentration"""
+    op = rc.get('op'); cards = list(C.cards); views = [View.from_json(v.to_json()) for v in C.views]
+    if op == 'support':
+        var = rc['var']; alive = rc['alive']; dead = rc['dead']
+        if var >= len(cards) or sorted(alive + dead) != list(range(cards[var])) or not alive: return 'support record is not a partition of the domain'
+        for s in dead:
+            if not any(not any(_slice(v, cards, var, s)) for v in views if v.kind == 'table' and var in v.scope): return 'support: state %d of variable %d is not dead in any incident factor' % (s, var)
+        work.entries += sum(v.size() for v in views if var in v.scope)
+        return None
+    if op == 'fixed_substitution':
+        if sorted(rc['variables']) != [v for v in range(len(cards)) if cards[v] == 1]: return 'fixed substitution variables differ from the one-state variables'
+        return None
+    if op == 'leaf_sumout':
+        var = rc['var']; fi = rc['factor']
+        if var >= len(cards) or fi >= len(views): return 'leaf record out of range'
+        qs = set().union(*(q_scope(q) for q in C.queries)) if C.queries else set()
+        if var in qs or [i for i, v in enumerate(views) if var in v.scope] != [fi] or views[fi].kind != 'table': return 'leaf: variable %d is not a leaf of factor %d' % (var, fi)
+        return None
+    if op == 'component_omission':
+        if C.normalizer_task: return 'component omission on a normalizer task'
+        qs = set().union(*(q_scope(q) for q in C.queries)) if C.queries else set()
+        for o in rc.get('omitted', []):
+            if set(o['variables']) & qs: return 'component omission touches a query scope'
+            pr = o.get('proof') or {}
+            if pr.get('kind') == 'all_tables_strictly_positive':
+                if not all(all(x > 0 for x in views[i].values) for i in o['factors']): return 'component omission: positivity proof fails'
+            elif pr.get('kind') == 'witness_restricted_positive':
+                x = {int(k): v for k, v in pr['witness'].items()}; wgt = F(1)
+                for i in o['factors']: wgt *= views[i].at(cards, x)
+                if wgt <= 0: return 'component omission: witness has zero weight'
+            else: return 'component omission: unknown proof kind'
+            if any(not (set(views[i].scope) <= set(o['variables'])) for i in o['factors']) or any(i for i, v in enumerate(views) if set(v.scope) & set(o['variables']) and i not in o['factors']): return 'component omission: factor set is not the component'
+        return None
+    if op == 'exact_quotient_pass':
+        return verify_quotient_step(cards, views, rc, work)
+    if op == 'approx_quotient':
+        ap = rc.get('approx') or {}; var = rc['var']; inc = [views[i] for i in rc['incident_factors']]
+        if any(v.kind != 'table' for v in inc): return 'approximate quotient on a non-table view'
+        slices = {s: [_slice(v, cards, var, s) for v in inc] for s in range(cards[var])}
+        tmp = Compiled(cards, views, [], [], work, [])
+        R2, bounds = _surrogate_ratio(tmp, var, inc, slices, [dict(rep=g[0], states=g) for g in ap.get('groups', [])])
+        if R2 is None or str(R2) != ap.get('R') or str((R2 - 1) / (R2 + 3)) != ap.get('beta'): return 'approximate quotient certificate does not re-derive (R / beta)'
+        if [g for g in ap.get('groups', [])] != [sorted(g) for g in ap.get('groups', [])] and sorted(sorted(g) for g in ap.get('groups', [])) != sorted(rc['classes']): return 'approximate quotient groups / classes differ'
+        beta = F(ap['beta'])
+        if any(C.bias[j] + beta > allowance[j] for j in range(len(C.bias))): return 'approximate quotient bias exceeds the allowance'
+        # the exact quotient identities hold on the SURROGATE: rebuild it and run the exact verifier on it
+        sur = []
+        for fi, v in enumerate(inc):
+            scope = v.scope; rest = [u for u in scope if u != var]; vals = list(v.values)
+            for g in ap['groups']:
+                r = g[0]; sl_r = slices[r][fi]; piv_i = next(i for i, x in enumerate(sl_r) if x)
+                for s in g:
+                    if s == r: continue
+                    c = slices[s][fi][piv_i] / sl_r[piv_i]
+                    for ri, xs in enumerate(product(*(range(cards[u]) for u in rest))):
+                        x = dict(zip(rest, xs)); x[var] = s; i = 0
+                        for u in scope: i = i * cards[u] + x[u]
+                        vals[i] = c * sl_r[ri]
+            sur.append(View('table', scope, vals))
+        sviews = list(views)
+        for i, sv in zip(rc['incident_factors'], sur): sviews[i] = sv
+        return verify_quotient_step(cards, sviews, rc, work)
+    if op == 'symmetry':
+        for a in rc.get('actions', []):
+            if not verify_symmetry_action(cards, views, a['action'], work): return 'symmetry action does not verify'
+            for qi, c in a['constants'].items():
+                q = C.queries[int(qi)]
+                if q['kind'] != 'expectation' or _query_symmetric_constant(cards, q['f'], a['action'], work) != F(c): return 'symmetric query constant does not re-derive'
+        return None
+    if op == 'concentration':
+        xs = {int(k): v for k, v in rc['xstar'].items()}
+        if sorted(xs) != list(range(len(cards))) or any(not (0 <= xs[v] < cards[v]) for v in xs): return 'concentration: assignment outside the pre-step domains'
+        wst = F(1)
+        for v in views: wst *= v.at(cards, xs)
+        if wst <= 0: return 'concentration: the proposed assignment has zero weight on the pre-step model'
+        if any(q['kind'] != 'expectation' for q in C.queries): return 'concentration on a ratio query'
+        for qi, q in enumerate(C.queries):
+            if str(q['f'].at(cards, xs)) != str(rc['answers'].get(str(qi))): return 'concentration answer of query %d does not re-derive (%s recorded, %s at x*)' % (qi, rc['answers'].get(str(qi)), q['f'].at(cards, xs))
+        for var in range(len(cards)):
+            Ri = F(0); inf = False
+            for s in range(cards[var]):
+                if s == xs[var]: continue
+                r = F(1); zb = False
+                for v in views:
+                    if var not in v.scope: continue
+                    sl_s = _slice(v, cards, var, s); sl_r = _slice(v, cards, var, xs[var]); bound = F(0); hp = False; work.entries += 2 * len(sl_s)
+                    for a_, b_ in zip(sl_s, sl_r):
+                        if a_ == 0: continue
+                        hp = True
+                        if b_ == 0: bound = None; break
+                        bound = max(bound, a_ / b_)
+                    if not hp: r = F(0); zb = True; break
+                    if bound is None: r = None; break
+                    r *= bound
+                if zb: continue
+                if r is None: inf = True; break
+                Ri += r
+            t = F(1) if inf else Ri / (1 + Ri)
+            if str(t) != rc['t'][str(var)]: return 'concentration t_%d does not re-derive' % var
+        for qi, q in enumerate(C.queries):
+            bj = min(F(1), sum(F(rc['t'][str(u)]) for u in q['f'].scope)) if q['f'].scope else F(0)
+            if str(bj) != str((rc.get('bias') or {}).get(str(qi))): return 'concentration bias of query %d does not re-derive' % qi
+            if C.bias[qi] + bj > allowance[qi]: return 'concentration bias exceeds the allowance of query %d' % qi
+        return None
+    if op == 'influence_deletion':
+        if any(x <= 0 for v in views for x in v.values): return 'influence deletion on a model with zeros'
+        if F(rc['alpha']) >= 1: return 'influence deletion with alpha >= 1'
+        if any(C.bias[j] + F(rc['bias'][j]) > allowance[j] for j in range(len(C.bias))): return 'influence bias exceeds the allowance'
+        # re-derive alpha, e and the bias for the recorded deletion set with the SAME formulas (independent of the proposer's search)
+        tmp = Compiled(cards, views, list(C.queries), [], Work(), list(C.bias)); tmp.normalizer_task = C.normalizer_task
+        chk = _influence_recompute(tmp, set(rc['deleted']), rc.get('neumann_T', 8))
+        if chk is None or str(chk['alpha']) != rc['alpha'] or [str(b) for b in chk['bias']] != rc['bias']: return 'influence alpha / bias do not re-derive for the recorded deletion set'
+        return None
+    if op == 'affine':
+        return verify_affine_record(cards, views, rc, work)
+    return 'unknown commit op %s' % op
+
+
+def _influence_recompute(C, dset, neumann_T):
+    """alpha, e, bias for a GIVEN deletion set (the certificate check of influence_deletion; same formulas as the proposer, no search)"""
+    Cbar = {}; Dai = {}
+    def cb(i, j): return Cbar.get(i, {}).get(j, F(0))
+    for fi, v in enumerate(C.views):
+        sc = v.scope
+        for i in sc:
+            rest = [u for u in sc if u != i]; best = F(1)
+            for xs in product(*(range(C.cards[u]) for u in rest)):
+                x = dict(zip(rest, xs)); vals = []
+                for s_ in range(C.cards[i]): x[i] = s_; vals.append(v.at(C.cards, x))
+                best = max(best, max(vals) / min(vals))
+            Dai[(fi, i)] = best
+            for j in sc:
+                if j == i: continue
+                rest2 = [u for u in sc if u not in (i, j)]; Rmax = F(1)
+                for xs in product(*(range(C.cards[u]) for u in rest2)):
+                    x = dict(zip(rest2, xs))
+                    for u_ in range(C.cards[i]):
+                        for v_ in range(u_ + 1, C.cards[i]):
+                            qs = []
+                            for s_ in range(C.cards[j]):
+                                x[i] = u_; x[j] = s_; a = v.at(C.cards, x); x[i] = v_; b = v.at(C.cards, x); qs.append(a / b)
+                            Rmax = max(Rmax, max(qs) / min(qs))
+                Cbar.setdefault(i, {})[j] = min(F(1), cb(i, j) + _h(Rmax))
+    alpha = max((sum(row.values()) for row in Cbar.values()), default=F(0))
+    if alpha >= 1: return None
+    sites = sorted({i for v in C.views for i in v.scope})
+    bbar = {i: min(F(1), sum(_h(Dai[(fi, i)]) for fi in dset if i in C.views[fi].scope)) for i in sites}
+    e = {i: F(0) for i in sites}; term = dict(bbar)
+    for _ in range(neumann_T):
+        for i in sites: e[i] += term[i]
+        term = {i: sum(cij * term[j] for j, cij in Cbar.get(i, {}).items()) for i in sites}
+    tail = (alpha ** neumann_T) * (max(bbar.values()) if bbar else F(0)) / (1 - alpha)
+    e = {i: x + tail for i, x in e.items()}
+    return dict(alpha=alpha, e=e, bias=[min(F(1), sum(e.get(u, F(0)) for u in q['f'].scope)) for q in C.queries])
+
+
+def apply_commit(C, rc):
+    """apply ONE recorded commit to the current model with the SAME constructive helpers the producer used (no search, no proposer): the record carries every choice"""
+    op = rc.get('op')
+    if op == 'support': new = _support_apply(C, rc['var'], list(rc['alive'])); C.commit(dict(rc), **new); return
+    if op == 'fixed_substitution':
+        new, fixed = _fixed_apply(C)
+        if new is None: raise ValueError('fixed substitution record on a model without one-state variables')
+        C.commit(dict(rc), **new); return
+    if op == 'leaf_sumout': new = _leaf_apply(C, rc['var'], rc['factor']); C.commit(dict(rc), **new); return
+    if op == 'component_omission': C.commit(dict(rc), **_omission_apply(C, rc['omitted'])); return
+    if op in ('exact_quotient_pass', 'approx_quotient'):
+        var = rc['var']; inc = [C.views[i] for i in rc['incident_factors']]; classes = [list(g) for g in rc['classes']]
+        if op == 'approx_quotient':
+            ap = rc['approx']; slices = {s: [_slice(v, C.cards, var, s) for v in inc] for s in range(C.cards[var])}; sur = []
+            for fi, v in enumerate(inc):
+                scope = v.scope; rest = [u for u in scope if u != var]; vals = list(v.values)
+                for g in ap['groups']:
+                    r = g[0]; sl_r = slices[r][fi]; piv_i = next(i for i, x in enumerate(sl_r) if x)
+                    for s in g:
+                        if s == r: continue
+                        c = slices[s][fi][piv_i] / sl_r[piv_i]
+                        for ri, xs in enumerate(product(*(range(C.cards[u]) for u in rest))):
+                            x = dict(zip(rest, xs)); x[var] = s; i = 0
+                            for u in scope: i = i * C.cards[u] + x[u]
+                            vals[i] = c * sl_r[ri]
+                sur.append(View('table', scope, vals))
+            saved = C.views; tmp = list(C.views)
+            for i, sv in zip(rc['incident_factors'], sur): tmp[i] = sv
+            C.views = tmp
+            try:
+                sig, inc2 = _signatures(C, var); new, rec = _quotient_build(C, var, classes, sig, inc2, ap)
+            finally: C.views = saved
+            C.commit(dict(rc), bias=[b + F(ap['beta']) for b in C.bias], **new); return
+        sig, inc2 = _signatures(C, var)
+        if not inc2: sig = {s: [] for s in range(C.cards[var])}
+        new, rec = _quotient_build(C, var, classes, sig, inc2, None); C.commit(dict(rc), **new); return
+    if op == 'symmetry':
+        consts = dict(C.constant_queries)
+        for a in rc['actions']:
+            for qi, c in a['constants'].items(): consts[int(qi)] = F(c)
+        C.commit(dict(rc), constant_queries=consts); return
+    if op == 'concentration':
+        bias = list(C.bias)
+        for qi, b in rc['bias'].items(): bias[int(qi)] += F(b)
+        C.commit(dict(rc), bias=bias, witness={int(k): v for k, v in rc['xstar'].items()}); return
+    if op == 'influence_deletion':
+        chosen = set(rc['deleted']); C.commit(dict(rc), views=[v for fi, v in enumerate(C.views) if fi not in chosen], bias=[C.bias[j] + F(rc['bias'][j]) for j in range(len(C.bias))]); return
+    if op == 'affine':
+        new, rec = _affine_build(C, None, _Ticker(C, None, 'affine'))
+        if new is None: raise ValueError('affine record on a model without equations')
+        C.commit(dict(rc), **new); return
+    raise ValueError('unknown commit op %s' % op)
+
+
+def replay_journal(task, journal, work, allowance=None, deadline=None, verify=True):
+    """the checker's compile replay: start from the evidence restriction, then for every recorded COMMIT verify it on the pre-commit model and apply it; declines are
+    checked for shape only (they change nothing). Returns (C, fails, derived). The replayed model's snapshot hash must equal the recorded final_sha256 (checked by the caller)."""
+    fails = []; derived = {}
+    allowance = allowance if allowance is not None else [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries'])
+    try: C = from_task(task, work)
+    except ZeroEvidence: return None, ['journal replay: evidence restriction proves zero'], derived
+    if not journal or journal[0].get('kind') != 'evidence': return C, ['journal does not start with the evidence record'], derived
+    seq = 0
+    for rc in journal[1:]:
+        if deadline is not None and time.monotonic() >= deadline: fails.append('UNVERIFIABLE: allowance expired in the journal replay'); break
+        k = rc.get('kind')
+        if k == 'decline':
+            if not rc.get('op') or not rc.get('declined'): fails.append('malformed decline record')
+            C.certs = list(C.certs) + [dict(rc)]; continue
+        if k != 'commit': fails.append('unknown journal record kind %s' % k); break
+        if rc.get('seq') != seq: fails.append('commit sequence numbers are not contiguous (%s at position %d)' % (rc.get('seq'), seq)); break
+        if verify:
+            m = verify_commit(C, rc, work, allowance)
+            if m: fails.append('commit %d (%s): %s' % (seq, rc.get('op'), m)); break
+            if rc.get('op') == 'concentration':
+                derived['concentration_answers'] = {qi: q['f'].at(C.cards, {int(kk): v for kk, v in rc['xstar'].items()}) for qi, q in enumerate(C.queries)}
+                derived['concentration_scopes'] = [tuple(q['f'].scope) for q in C.queries]
+        try: apply_commit(C, rc)
+        except (ZeroEvidence, ValueError, AssertionError, KeyError, IndexError) as ex: fails.append('commit %d (%s) does not apply: %s' % (seq, rc.get('op'), str(ex)[:100])); break
+        seq += 1
+    return C, fails, derived
 
 
 # ---------------------------------------------------------------------------------------------------------------- verifiers (independent of the proposers)
@@ -935,6 +1312,7 @@ def verify_quotient_step(cards_before, views_before, step, work):
     phi(s, y) * pivot(r) == phi(r, y) * pivot(s) for all y; kappa / S recomputed and compared"""
     var = step['var']; classes = step['classes']; inc = [views_before[i] for i in step['incident_factors']]
     if not inc and any(var in v.scope for v in views_before): return 'factor-less quotient recorded for a variable with incident factors'
+    if sorted(s for g in classes for s in g) != list(range(cards_before[var])): return 'quotient classes are not a partition of the domain'
     kappa = {}
     for g in classes:
         r = g[0]
@@ -958,6 +1336,7 @@ def verify_quotient_step(cards_before, views_before, step, work):
 def verify_affine_record(cards_before, views_before, rec, work):
     """re-derive the local equations of every listed factor (|R| == 2^rank), check Hx = b on every positive row, and that c, B satisfy every equation"""
     pos = {v: i for i, v in enumerate(rec['binary_variables'])}; nb = len(pos)
+    if rec['binary_variables'] != [v for v in range(len(cards_before)) if cards_before[v] == 2]: return 'affine binary variable list differs from the model'
     for loc in rec['local']:
         v = views_before[loc['factor']]; le = local_affine(v, cards_before, work)
         if le is None or sorted(le) != sorted(tuple(e) for e in loc['equations']): return 'local affine equations of factor %d do not re-derive' % loc['factor']
@@ -965,7 +1344,6 @@ def verify_affine_record(cards_before, views_before, rec, work):
             if w > 0:
                 for h, b in le:
                     if bin(h & i).count('1') % 2 != b: return 'positive row violates a local equation'
-    # c + B z satisfies every local equation for all z: H c = b and H B = 0 (checked via the free-bit parametrization)
     for loc in rec['local']:
         v = views_before[loc['factor']]
         for h, b in loc['equations']:

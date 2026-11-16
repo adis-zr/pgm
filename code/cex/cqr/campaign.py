@@ -115,14 +115,20 @@ def arm_order(arm):
 # an even replicate count every arm occupies the first and the last position of a block equally often. Nothing depends on timing or on results.
 ORDERING_RULE = ('sorted by (cohort order, case, budget); within a case/budget BALANCED ARM BLOCKS: block k = replicate k of every planned arm (complete block), blocks '
                  'ascending; arm order inside a block = N1_CQR, G0_CQR, CQR ablations, B0, P1, H1, A0, A1, comparators in registry order, natives for even k and the '
-                 'reverse for odd k (ABBA counterbalancing); strictly sequential. Draft: "Run arm order in predeclared balanced blocks to reduce host-temperature/order bias."')
+                 'reverse for odd k (ABBA counterbalancing), with the initial orientation of each CASE predeclared by the parity of sha256(case_id) so that an odd replicate count still alternates the first arm across cases campaign-wide; strictly sequential. Draft: "Run arm order in predeclared balanced blocks to reduce host-temperature/order bias."')
 ARM_ORDER_SPAN = 100                                                         # arm_order() values lie in [0, 50); the reversal maps o -> SPAN - o
 
 
+def case_parity(case_id):
+    """predeclared initial orientation of a case's first block: the parity of sha256(case_id) (fixed before any run; independent of results and timing), so that with an odd
+    replicate count (AB/BA/AB) the first arm of a case's first block alternates ACROSS cases campaign-wide (second review, preparation item)"""
+    return int(hashlib.sha256(str(case_id).encode()).hexdigest(), 16) % 2
+
+
 def block_key(c):
-    """(replicate block, position inside the block) for one cell; the block alternates the predeclared arm order (ABBA)"""
-    o = arm_order(c['arm']); k = int(c['replicate'])
-    return (k, o if k % 2 == 0 else ARM_ORDER_SPAN - o)
+    """(replicate block, position inside the block) for one cell; the block alternates the predeclared arm order (ABBA), starting from the case's predeclared orientation"""
+    o = arm_order(c['arm']); k = int(c['replicate']); flip = (k + case_parity(c['case_id'])) % 2
+    return (k, o if flip == 0 else ARM_ORDER_SPAN - o)
 
 
 def kernel_identity_failures(planned_arms):

@@ -19,6 +19,8 @@ sys.path.insert(0, HERE)
 from fractions import Fraction as F
 import checker as CK, task as TK
 import kernel_identity as KI
+_F = F
+_attrib = {}            # cell_id -> the checker's authoritative attribution (route / class / exact / bias ledger / commits), written into the gated set for the report
 
 
 def load_module(name, path):
@@ -186,9 +188,15 @@ def _check_cqr_cell(RD, cid, r, c, man, frozen_cqr, failures, fail, replay_facto
         if len(failures) == nf and _late(dl): fail(cid, 'UNVERIFIABLE -- the certificate verification finished after the cell allowance (%.3g s)' % (replay_factor * float(c['budget_s']))); counters['unverifiable'] += 1
         if len(failures) == nf:
             # the proof class is DERIVED by the checker from the validated route (review CQR-04): receipt and worker labels must equal it; the report consumes the receipt
-            cls_, _ex = CK.guarantee_class_of_route(info.get('route'))
+            cls_, _ex = CK.guarantee_class_of_route(info.get('route')); att = info.get('attribution') or {}
             if r.get('guarantee_type') != cls_ or w.get('guarantee_type') != cls_: fail(cid, 'receipt / worker guarantee %s / %s differ from the class %s derived from route %s' % (r.get('guarantee_type'), w.get('guarantee_type'), cls_, info.get('route')))
             elif r.get('exact') not in (None, bool(_ex)) or bool(w.get('exact')) != bool(_ex): fail(cid, 'exact flag differs from the class derived from route %s' % info.get('route'))
+            # report-facing attribution (second review R6): the receipt's and the worker's route / bias must equal the VERIFIED certificate's (the checker's authoritative attribution)
+            if r.get('route') != att.get('route') or w.get('route') != att.get('route'): fail(cid, 'receipt / worker route %s / %s differ from the verified certificate route %s' % (r.get('route'), w.get('route'), att.get('route')))
+            cb = att.get('compiled_bias')
+            if cb is not None and ([str(_F(b)) for b in (r.get('bias') or [])] != [str(_F(b)) for b in cb] or [str(_F(b)) for b in (w.get('bias') or [])] != [str(_F(b)) for b in cb]): fail(cid, 'receipt / worker bias ledger differs from the verified certificate ledger %s' % cb)
+            if cb is None and (r.get('bias') or w.get('bias')): fail(cid, 'receipt / worker carry a bias ledger but the verified certificate has no compiled model')
+            _attrib[cid] = att
         if len(failures) == nf:
             counters['gated'] += 1; counters['cqr_verified'] += 1
             if w.get('guarantee_type') == 'PAC': counters['pac_verified'] += 1
@@ -291,10 +299,11 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
         if cid not in cells: fail(cid, 'receipt for a cell not in the frozen manifest')
     task = man.get('task') or {}; EPS = F(str(task.get('epsilon', '1/200'))); models = {}; gated_set = []
     counters = dict(checked=0, gated=0, pac_verified=0, cqr_checked=0, cqr_verified=0, zero_checked=0, zero_verified=0, unverifiable=0, baseline_checked=0)
+    _attrib.clear()
     for cid in sorted(receipts):
         r = receipts[cid]; c = cells.get(cid)
         if not c: continue
-        entry = dict(cell_id=cid, receipt_sha256=r['_sha'], output_sha256=r.get('output_sha256'), status=r.get('status'), outcome=r.get('outcome'), guarantee=r.get('guarantee_type'), arm=c['arm'], cohort=c['cohort'], budget_s=c['budget_s'], case_id=c['case_id'], replicate=c['replicate'], kind=c.get('kind'), evidence={}, verified=False); gated_set.append(entry)
+        entry = dict(cell_id=cid, receipt_sha256=r['_sha'], output_sha256=r.get('output_sha256'), status=r.get('status'), outcome=r.get('outcome'), guarantee=r.get('guarantee_type'), arm=c['arm'], cohort=c['cohort'], budget_s=c['budget_s'], case_id=c['case_id'], replicate=c['replicate'], kind=c.get('kind'), evidence={}, verified=False, verified_attribution=_attrib.get(cid)); gated_set.append(entry)
         if exhausted_at is not None: fail(cid, 'UNVERIFIABLE -- aggregate verification budget exhausted before this cell was checked'); continue
         _cell_paths.clear(); PG._cell_paths.clear(); nf_before = len(failures)
         try:
@@ -309,6 +318,7 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
                     if w_ is not None:
                         for m_ in KI.receipt_failures(man['kernel_identity'], w_, c['arm']): fail(cid, 'loaded kernel provenance: ' + m_)
         except (GateBudgetExhausted, PG.GateBudgetExhausted): exhausted_at = cid; fail(cid, 'UNVERIFIABLE -- aggregate verification budget exhausted while checking this cell')
+        entry['verified_attribution'] = _attrib.get(cid)                     # the checker's authoritative attribution (R6), known only after the check
         paths = set(_cell_paths) | set(PG._cell_paths)
         for p_ in PG._cell_paths: _evidence[p_] = PG._evidence.get(p_)
         entry['evidence'] = {(os.path.relpath(k, RD) if k.startswith(RD + os.sep) else k): _evidence.get(k) for k in sorted(paths)}; entry['verified'] = (len(failures) == nf_before)

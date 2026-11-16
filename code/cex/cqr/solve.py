@@ -163,7 +163,26 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     assert [q['orig_index'] for q in cq] == list(range(K)), 'compiled queries must be the original queries in order'
     # a direct concentration answer: deterministic publication candidate (bias already in C.bias)
     direct = compile_log.get('direct')
-    fr = FR.Frontier(cards, C.views, cq, work_opt, order=list(range(len(cards)))) if cards else None
+    # frontier construction + initial root / publication work are OPTIONAL transactions too (second review R2/R3): served to parity, cancellable, and a failure here cancels the optional half
+    fr = None
+    if cards:
+        try:
+            service('frontier_init'); fr = FR.Frontier(cards, C.views, cq, work_opt, order=list(range(len(cards)))); fr.service = service; service('frontier_init')
+            if fault_inject == 'frontier_init': raise RuntimeError('INJECTED optional fault in frontier_init (qualification control; never a production run)')
+        except CP.CompileStop as cs:
+            if cs.kind == 'reference_done': fr = None
+            else: optional_cancelled = 'optional work cancelled during frontier construction (%s)' % cs.kind; fr = None
+        except Stop: raise
+        except MemoryError: optional_cancelled = 'MemoryError during frontier construction'; fr = None
+        except Exception as ex: optional_cancelled = 'optional failure during frontier construction: %s: %s' % (type(ex).__name__, str(ex)[:120]); fr = None
+        if fr is None:
+            parity()
+            while not ref.done: check('reference-only'); ref_quantum(Q)
+            r = ref.result(); check('reference completion')
+            if optional_cancelled: trace['events'].append(dict(op='optional_cancelled', reason=optional_cancelled))
+            if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, None, None, [], trace['events'], ref, work_ref, work_opt, None, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0))
+            pub = _exact_reference_pub(r, normalizer); check('publication')
+            return dict(outcome='PUBLISHED', guarantee_type=pub['guarantee'], publication=pub, certificate=_cert(task, arm, mode, trace, C, compile_log, None, None, [], trace['events'], ref, work_ref, work_opt, pub, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0), bias=[str(b) for b in C.bias])
     trace['phase'] = 'adaptive'; open_cap = max(64, min(POLICY['open_cap'], (4 * 10 ** 7) // max(1, len(cards))))      # memory: prefix cells store <= n ints each
     ratio = FR.RatioStream(Kc, delta / 2, fr.U() if fr and fr.U() > 0 else F(1), random.Random(rng.getrandbits(64))) if (fr is not None and mode == 'PAC_EPS') else None
     if normalizer: spec = dict(spec, signed_stream=False, query_directed_refinement=False)      # recorded in the certificate (signed_stream / query_directed_refinement flags are task-effective)
@@ -411,6 +430,10 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             if fault_inject == 'adaptive_loop' and it == 1: raise RuntimeError('INJECTED optional fault in the adaptive loop (qualification control; never a production run)')
             _optional_turn()
         except Stop: raise
+        except CP.CompileStop as cs:
+            # the service hook stopped an optional scan inside the frontier: reference finished (publish it below) or memory cancellation (reference alone)
+            if cs.kind == 'reference_done': cache.clear(); continue
+            _cancel_optional('optional work cancelled inside the frontier (%s)' % cs.kind); continue
         except MemoryError as ex: _cancel_optional('MemoryError in the adaptive loop'); continue
         except Exception as ex: _cancel_optional('optional failure in the adaptive loop: %s: %s' % (type(ex).__name__, str(ex)[:120])); continue
         if fr is None: continue

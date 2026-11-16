@@ -52,7 +52,7 @@ class Cell:
 
 class Frontier:
     def __init__(self, cards, views, queries, work, order=None):
-        self.cards = list(cards); self.views = views; self.queries = queries; self.work = work; self.n = len(cards)
+        self.cards = list(cards); self.views = views; self.queries = queries; self.work = work; self.n = len(cards); self.service = None        # service(op): controller hook ticked inside bounded scans (second review R3)
         self.order = list(order) if order is not None else list(range(self.n))      # fixed structural split order (canonical)
         for v in views: v.refresh()
         for q in queries:
@@ -134,8 +134,8 @@ class Frontier:
 
     def close(self, cid):
         """exact closure by enumeration of the cell's completions (charged per evaluation); returns the exact (b, n_j, d_j)"""
-        c = self.open.pop(cid); self.sumE -= c.E; self.sumL -= c.L; self.sumB -= c.B; free = self.order[c.depth:]; b = 0; K = len(self.queries); nj = [0] * K; dj = [0] * K
-        x = dict(c.assign); views = self.views; cards = self.cards; qs = self.queries; qd = self.qden; ent = 0
+        c = self.open[cid]; free = self.order[c.depth:]; b = 0; K = len(self.queries); nj = [0] * K; dj = [0] * K
+        x = dict(c.assign); views = self.views; cards = self.cards; qs = self.queries; qd = self.qden; ent = 0; svc = self.service; since = 0
         for xs in product(*(range(cards[v]) for v in free)):
             for v, s in zip(free, xs): x[v] = s
             w = 1
@@ -143,13 +143,18 @@ class Frontier:
                 w *= vw.at_i(cards, x); ent += 1
                 if not w: break
             self.work.evals += 1
+            if svc is not None:
+                since += 1
+                if since >= 256: self.work.entries += ent; ent = 0; since = 0; svc('frontier_close')       # charge so far, then the controller may serve the reference / stop (the cell stays popped only if we finish: see below)
             if not w: continue
             ent += K; b += w
             for j in range(K):
                 q = qs[j]
                 if q['kind'] == 'expectation': nj[j] += w * q['f'].at_i(cards, x) * (qd[j] // q['f'].den)
                 else: nj[j] += w * q['h'].at_i(cards, x) * (qd[j] // q['h'].den); dj[j] += w * q['g'].at_i(cards, x) * (qd[j] // q['g'].den)
-        self.work.entries += ent; self._add_resolved(cid, b, nj, dj); self.closures += 1; self.history.append(dict(op='close', cell=cid, mass=str(b))); return b, nj, dj
+        self.work.entries += ent
+        self.open.pop(cid); self.sumE -= c.E; self.sumL -= c.L; self.sumB -= c.B          # the cell leaves the frontier only when its enumeration COMPLETED (an interruption inside the scan leaves the frontier unchanged)
+        self._add_resolved(cid, b, nj, dj); self.closures += 1; self.history.append(dict(op='close', cell=cid, mass=str(b))); return b, nj, dj
 
     def _add_resolved(self, cid, b, nj, dj):
         assert cid not in self.resolved_ids, 'duplicate resolution'
@@ -174,6 +179,7 @@ class Frontier:
         rn = self.resolved_num; rd = self.resolved_den; rm = self.resolved_mass
         for j, q in enumerate(self.queries):
             if deadline is not None and (j & 7) == 7 and _t.monotonic() >= deadline: raise TimeoutError('deterministic bounds: deadline')
+            if self.service is not None and j and (j * max(1, len(cells))) % 1024 < max(1, len(cells)): self.service('deterministic_bounds')
             A = rm if q['kind'] == 'expectation' else rd[j]; a = rn[j]
             if q['kind'] == 'expectation': items = [(c.L, c.B, c.qlo[j][0], c.qhi[j][0]) for c in cells]
             else:
