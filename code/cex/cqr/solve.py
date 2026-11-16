@@ -24,7 +24,7 @@ from task import Work, task_identity
 
 SOLVER_VERSION = 'cqr-solve-v1 (2026-11-16)'
 POLICY = dict(solver_version=SOLVER_VERSION, compiler=CP.POLICY, frontier=FR.FRONTIER_VERSION,
-              quantum_units=4096, work_unit_commensurability='every table lookup (factor or query, in the reference, in cell closures, in draws and in compiler scans) is ONE entry unit; cell / rational operations one unit each: the two halves are measured in the same currency', deterministic_test_cadence='every max(1, |F| // 32) optional quanta (the root computation is O(|F| log |F|) per query; charged |F| x K ratops per test)', reference_share='1/2 of charged Work units (gamma = 1/2): the reference runs one quantum for every optional quantum; the compile is charged to the optional half and the reference catches up before the adaptive loop',
+              quantum_units=4096, reference_parity='before EVERY publication test the reference is brought to >= the cumulative work of the optional half (gamma = 1/2 at every publication; rounding <= one reference step of 256 assignments)', work_unit_commensurability='every table lookup (factor or query, in the reference, in cell closures, in draws and in compiler scans) is ONE entry unit; cell / rational operations one unit each: the two halves are measured in the same currency', deterministic_test_cadence='every max(1, |F| x K // 1024) optional quanta (the root computation is O(|F| log |F|) per query, K queries; charged |F| x K ratops per test; the cadence bounds the test cost to a constant fraction of the optional half)', reference_share='1/2 of charged Work units (gamma = 1/2): the reference runs one quantum for every optional quantum; the compile is charged to the optional half and the reference catches up before the adaptive loop',
               leaf_cap=4096, open_cap=40000, open_cap_rule='min(40000, 4e7 / n_compiled) (prefix cells store <= n ints)', carve_max_free=14, deterministic_test='after every optional quantum (charged: cells x queries ratops)',
               risk='delta/2 ratio stream; delta/(2 e (e+1)) validation epoch e; epoch length 2^e completed observations',
               predictable_weights='b_t = the largest power of two <= (U*/U_t)^2 (ratio) / (E*/E_t)^2 (signed): positive, predictable, dyadic (bit growth bounded; statistics stay EXACT rationals; max bit length recorded in work.max_bits)',
@@ -271,7 +271,8 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
         if all(x is not None for x in b) and positive_mass():
             pt = _feasible_point(task, [_box(lo, hi, tau(j)) for j, (lo, hi) in enumerate(b)], groups)
             if pt is not None: pub = dict(route='deterministic_concentration', bounds=widen(b), compiled_bounds=b, point=pt, guarantee='DETERMINISTIC', tau=[str(tau(j)) for j in range(Kc)])
-    if pub is None: try_publish('initial')
+    ref_quantum(max(0, work_opt.total() - work_ref.total()))        # parity before the first publication test
+    if pub is None and not ref.done: try_publish('initial')
     trace['normalizer_task'] = normalizer
     while pub is None:
         check('loop')
@@ -334,9 +335,16 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None):
                             if iv is not None and positive_mass() and all(Lj[j] > 0 and iv[j][0] >= -tau(j) * Lj[j] and iv[j][1] <= tau(j) * Lj[j] for j in range(Kc)):
                                 pub = dict(route='pac_signed_residual_validation', bounds=[around(c, j, eps - MARGIN) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='PAC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no, L=[str(x) for x in Lj], intervals=[(str(a), str(b_)) for a, b_ in iv]); break
                             if cur_epoch.t >= 2 ** epoch_no: cur_epoch.retired = 'epoch_length_reached'; events.append(dict(op='epoch_retired', epoch=epoch_no, reason='length 2^e reached'))
-        # ---- deterministic test first, then PAC (charged; cadence from the policy)
-        if it % max(1, len(fr.open) // 32) == 0 or not fr.open:
+        # ---- deterministic test first, then PAC (charged; cadence from the policy). BEFORE any publication test the protected reference is brought to PARITY with the optional
+        # half (gamma = 1/2 holds at every publication, not one iteration late: the quantum rounding is bounded by one reference step of 256 assignments)
+        if it % max(1, (len(fr.open) * Kc) // 1024) == 0 or not fr.open:
             work_opt.ratops += len(fr.open) * Kc
+            ref_quantum(max(0, work_opt.total() - work_ref.total()))
+            if ref.done:
+                r = ref.result(); check('reference completion')
+                if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, None, t0, zero=dict(kind='reference')), stats=_stats(work_ref, work_opt, fr, ratio, t0))
+                if normalizer: z = F(r['Z']); pub = dict(route='normalizer_exact_reference', bounds=[(z, z)], point=[z], guarantee='DETERMINISTIC', exact=True, reference=r); break
+                pub = dict(route='exact_reference', bounds=[(F(a), F(a)) if a != 'UNDEFINED' else ('UNDEFINED', 'UNDEFINED') for a in r['answers']], point=[F(a) if a != 'UNDEFINED' else 'UNDEFINED' for a in r['answers']], guarantee='DETERMINISTIC', exact=True, reference=r); break
             try_publish('loop')
         if not fr.open and pub is None:
             # frontier fully closed: exact compiled answers

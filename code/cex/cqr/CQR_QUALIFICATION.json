@@ -1,0 +1,520 @@
+{
+ "groups": [
+  {
+   "name": "C1_identity_and_checker_end_to_end",
+   "ok": true,
+   "wall_s": 4.816,
+   "detail": {
+    "fixtures": {
+     "clones_det/N1_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "deterministic_frontier",
+      "guarantee": "DETERMINISTIC",
+      "ops": [
+       "exact_quotient_pass"
+      ]
+     },
+     "clones_det/G0_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": []
+     },
+     "affine_parity/N1_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": [
+       "leaf_sumout",
+       "affine"
+      ]
+     },
+     "affine_parity/G0_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": []
+     },
+     "concentration/N1_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "deterministic_frontier",
+      "guarantee": "DETERMINISTIC",
+      "ops": [
+       "leaf_sumout"
+      ]
+     },
+     "concentration/G0_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "deterministic_frontier",
+      "guarantee": "DETERMINISTIC",
+      "ops": []
+     },
+     "exact_mode/N1_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": [
+       "support_fixpoint",
+       "fixed_substitution"
+      ]
+     },
+     "exact_mode/G0_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": []
+     },
+     "conditional_undefined/N1_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": [
+       "support_fixpoint",
+       "fixed_substitution",
+       "exact_quotient_pass",
+       "fixed_substitution"
+      ]
+     },
+     "conditional_undefined/G0_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": []
+     },
+     "pac_frontier/N1_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "deterministic_frontier",
+      "guarantee": "DETERMINISTIC",
+      "ops": [
+       "leaf_sumout",
+       "component_omission",
+       "exact_quotient_pass",
+       "fixed_substitution"
+      ]
+     },
+     "pac_frontier/G0_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": []
+     },
+     "normalizer/N1_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "normalizer_deterministic_frontier",
+      "guarantee": "DETERMINISTIC",
+      "ops": [
+       "leaf_sumout"
+      ]
+     },
+     "normalizer/G0_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "normalizer_deterministic_frontier",
+      "guarantee": "DETERMINISTIC",
+      "ops": []
+     },
+     "zero_evidence/N1_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "deterministic_concentration",
+      "guarantee": "DETERMINISTIC",
+      "ops": [
+       "support_fixpoint",
+       "fixed_substitution",
+       "concentration"
+      ]
+     },
+     "zero_evidence/G0_CQR": {
+      "outcome": "PUBLISHED",
+      "route": "exact_reference",
+      "guarantee": "DETERMINISTIC",
+      "ops": []
+     }
+    },
+    "mutations": {
+     "point_shift": "point of query 0 outside the feasibility box",
+     "bounds_widened": "point of query 0 outside the feasibility box",
+     "operator_set_relabel": "recorded operator set / stream flags differ from the registered arm",
+     "arm_relabel": "arm differs from the planned arm",
+     "bias_ledger": "recorded bias ledger differs from the replayed one",
+     "binding": "worker binding differs from the files on disk",
+     "task_identity": "task identity differs from the re-derived identity",
+     "final_sha": "compiled model does not replay (final_sha256 2fb39595172a vs 111111111111)",
+     "diagnostic_flag": "a DIAGNOSTIC run (sampling_only) is never a production publication",
+     "mode_relabel": "mode differs from the task",
+     "exact_value_changed": "query 0: exact reference value differs from the independent enumerator",
+     "normalizer_point_out": "Z point outside [(1-eps) U, (1+eps) L]",
+     "false_zero_claim": "zero-evidence claim contradicted by the independent enumerator (Z = 35226954574555584)"
+    },
+    "noop_control": "accepted",
+    "mutation_count": 13
+   }
+  },
+  {
+   "name": "C2_independent_oracle_and_modes",
+   "ok": true,
+   "wall_s": 0.295,
+   "detail": {
+    "routes": {
+     "zero": 30,
+     "EXACT_RATIONAL/exact_reference": 29,
+     "PAC_EPS/exact_reference": 21,
+     "DETERMINISTIC_EPS/exact_reference": 24,
+     "PAC_EPS/deterministic_frontier": 3,
+     "EXACT_RATIONAL/exact_zero_dimensional": 1
+    },
+    "zero_models": 30
+   }
+  },
+  {
+   "name": "C3_quotient_exact_and_mutations",
+   "ok": true,
+   "wall_s": 0.076,
+   "detail": {
+    "clones_n4": {
+     "cards": 6,
+     "compiled": [
+      3,
+      3,
+      3,
+      3
+     ],
+     "route": "exact_frontier_closure"
+    },
+    "alias_control_discriminating": true,
+    "clones_n5": {
+     "cards": 6,
+     "compiled": [
+      3,
+      3,
+      3,
+      3
+     ],
+     "route": "exact_frontier_closure"
+    },
+    "clones_n3": {
+     "cards": 6,
+     "compiled": [
+      3,
+      3
+     ],
+     "route": "exact_reference"
+    },
+    "perturbation": {
+     "before": [
+      3,
+      3,
+      3,
+      3
+     ],
+     "after": [
+      4,
+      4,
+      3,
+      3
+     ]
+    },
+    "evidence_first": [
+     3,
+     3,
+     3
+    ],
+    "verifier_kappa": "kappa differs for state 0",
+    "verifier_S": "S differs for class 0",
+    "verifier_class": "proportionality fails for var 0 states 2/0",
+    "ablation_ops": []
+   }
+  },
+  {
+   "name": "C4_approximate_quotient_budget",
+   "ok": true,
+   "wall_s": 0.104,
+   "detail": {
+    "within_budget": {
+     "cards": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "compiled": [
+      2,
+      2
+     ],
+     "beta": "49229492339307351541723065230817692253846/1230720001530742615738458715400846113846230769",
+     "actual_error": "24857668063537416166756900148600/11155800139104071680038725332484214761"
+    },
+    "publication": "exact_reference",
+    "budget_excess_declined": true,
+    "zero_mismatch": {
+     "compiled": [
+      3,
+      3,
+      2,
+      2
+     ]
+    },
+    "chained_steps": 4,
+    "checker_corrupt_beta": "approximate quotient certificate does not re-derive for var 0 (step 0)"
+   }
+  },
+  {
+   "name": "C5_affine_support_and_pullbacks",
+   "ok": true,
+   "wall_s": 0.005,
+   "detail": {
+    "m04": {
+     "n": 8,
+     "rank": 4,
+     "compiled": 3,
+     "route": "exact_reference",
+     "weights_nonuniform": true
+    },
+    "pow2_nonaffine_declined": true,
+    "inconsistent": "inconsistent_affine_equations",
+    "verifier_c": "global parametrization violates a local equation of factor 0",
+    "verifier_B": "global parametrization violates a local equation of factor 0",
+    "verifier_equation": "local affine equations of factor 0 do not re-derive",
+    "ablation_ops": [
+     "exact_quotient_pass",
+     "fixed_substitution"
+    ]
+   }
+  },
+  {
+   "name": "C6_influence_and_concentration_conditions",
+   "ok": true,
+   "wall_s": 0.161,
+   "detail": {
+    "m07": {
+     "alpha": "1838389040009/40926032399343",
+     "deleted": 3,
+     "max_bias": "666685054716997989737385166658383434457817469589428971306426724992490496688019309277900690161973520409176507607225700881956902682404519058952945713/664482756648582279573721760010951688827602852445151400302926567995555186490244384941041885663300618752165601973701791454986848978892352791804484249850",
+     "max_actual": "29367854610028175609054752690945115724727517326932138489184056524824556750031959107462054499111079993938018304/38533593564067078026696883720766820353385972404261159833734795229328796393067301862537949168915424405137556812039"
+    },
+    "m07_route": "exact_reference",
+    "m07_near_miss": "alpha = 341371/297037 >= 1: the contraction condition fails ",
+    "zeros_declined": true,
+    "rescale_invariant": true,
+    "m08": {
+     "direct": true,
+     "route": "deterministic_concentration"
+    },
+    "m08_near_miss_declined": [
+     "bias 8/9 exceeds the allowance of query 18"
+    ],
+    "zero_weight_declined": true,
+    "sum_of_ratios": "1/6",
+    "ablation_ops": []
+   }
+  },
+  {
+   "name": "C7_frontier_typed_bounds_and_envelopes",
+   "ok": true,
+   "wall_s": 0.092,
+   "detail": {
+    "children_checked": 416,
+    "pointwise_vs_conditional_mean": {
+     "E": "2",
+     "range": [
+      "0",
+      "1"
+     ]
+    },
+    "roots_checked": 400,
+    "prune_zero": true,
+    "unsafe_substitution_refused": true
+   }
+  },
+  {
+   "name": "C8_signed_residual_stream_and_epochs",
+   "ok": false,
+   "wall_s": 8.444,
+   "detail": {
+    "error": "fresh pac worker refused ['unknown certificate version None']",
+    "trace": "Traceback (most recent call last):\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 37, in group\n    try: detail = fn()\n                  ^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 399, in c8_signed_stream\n    d = tempfile.mkdtemp(prefix='cqr_c8_'); m3b = grid_model(rng, 5, 4); mp = write_task(d, 'pacfront', m3b, dict(mode='PAC_EPS', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[0, 1, 2], bit=1)], epsilon='1/200', delta='1/1000000')); w = fresh_worker(mp, 'N1_CQR', budget=8.0); fails, _ = check_(mp, w, 'N1_CQR'); A(not fails, 'fresh pac worker refused %s' % fails[:1])\n                                                                                                                                                                                                                                                                                                                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 31, in A\n    if not cond: raise AssertionError(msg)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: fresh pac worker refused ['unknown certificate version None']\n"
+   }
+  },
+  {
+   "name": "C9_ratio_stream_history_and_record_before_resolve",
+   "ok": false,
+   "wall_s": 9.184,
+   "detail": {
+    "error": "fresh ratio worker did not publish: DEADLINE DEADLINE {\"where\": \"loop\"}",
+    "trace": " \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 37, in group\n    try: detail = fn()\n                  ^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 439, in c9_ratio_stream\n    d = tempfile.mkdtemp(prefix='cqr_c9_'); mbig = grid_model(rng, 5, 4); mp = write_task(d, 'ratio', mbig, dict(mode='PAC_EPS', queries=[dict(kind='singleton', variable=v, state=1) for v in range(4)], epsilon='1/200', delta='1/1000000')); w = fresh_worker(mp, 'N1_CQR', budget=8.0); fails, _ = check_(mp, w, 'N1_CQR'); A(w['outcome'] == 'PUBLISHED', 'fresh ratio worker did not publish: %s %s' % (w['outcome'], (w.get('reason') or '')[:80])); A(not fails, 'fresh ratio worker refused %s' % fails[:1]); out['fresh_route'] = w.get('route')\n                                                                                                                                                                                                                                                                                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 31, in A\n    if not cond: raise AssertionError(msg)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: fresh ratio worker did not publish: DEADLINE DEADLINE {\"where\": \"loop\"}\n"
+   }
+  },
+  {
+   "name": "C10_publication_feasibility_denominators_normalizer",
+   "ok": true,
+   "wall_s": 0.093,
+   "detail": {
+    "undefined_typed": true,
+    "normalizer": {
+     "route": "normalizer_exact_zero_dimensional",
+     "Z": "200"
+    },
+    "normalizer_ops": [
+     "leaf_sumout"
+    ],
+    "normalized_omits": [
+     "leaf_sumout",
+     "exact_quotient_pass",
+     "fixed_substitution",
+     "concentration"
+    ],
+    "exact_mode": "exact_zero_dimensional",
+    "legacy_rows_contract": true
+   }
+  },
+  {
+   "name": "C11_protected_reference_and_resource_refusal",
+   "ok": false,
+   "wall_s": 0.012,
+   "detail": {
+    "error": "reference share 10496/21587 below 1/2 while the reference did not finish",
+    "trace": "Traceback (most recent call last):\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 37, in group\n    try: detail = fn()\n                  ^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 477, in c11_reference_resources\n    A(r['outcome'] == 'PUBLISHED', r['outcome']); sh = F(r['stats']['reference_share']); shares.append(float(sh)); A(sh >= F(1, 2) or r['certificate']['reference']['done'] or r['stats']['work_optional']['total'] <= SV.POLICY['quantum_units'], 'reference share %s below 1/2 while the reference did not finish' % sh)\n                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 31, in A\n    if not cond: raise AssertionError(msg)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: reference share 10496/21587 below 1/2 while the reference did not finish\n"
+   }
+  },
+  {
+   "name": "C12_registry_pipeline_dev_admission",
+   "ok": false,
+   "wall_s": 0.936,
+   "detail": {
+    "error": "closeout not qualified: CE\": 0, \"DEADLINE\": 0, \"MEMORY\": 0, \"FAULT\": 0, \"other\": 0}, \"WMB\": {\"PUBLISHED-DETERMINISTIC\": 0, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 0, \"MEMORY\": 0, \"FAULT\": 0, \"other\": 0}}\n  - qualification record was produced by a different suite file (suite_sha256 None vs the current cex/cqr/qualification.py 7f4f725af58e): the suite that qualified the candidate must be the one on disk\n",
+    "trace": "ile \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 37, in group\n    try: detail = fn()\n                  ^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 517, in c12_pipeline_admission\n    p = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), ADMISSION_DIR, '--manifest', mn, '--qualification', sp], capture_output=True, text=True, cwd=CODE); A(p.returncode == 0 and 'QUALIFIED' in p.stdout, 'closeout not qualified: %s' % (p.stdout[-400:] + p.stderr[-300:])); out['closeout'] = p.stdout.strip().splitlines()[-1][:160]\n                                                                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 31, in A\n    if not cond: raise AssertionError(msg)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: closeout not qualified: CE\": 0, \"DEADLINE\": 0, \"MEMORY\": 0, \"FAULT\": 0, \"other\": 0}, \"WMB\": {\"PUBLISHED-DETERMINISTIC\": 0, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 0, \"MEMORY\": 0, \"FAULT\": 0, \"other\": 0}}\n  - qualification record was produced by a different suite file (suite_sha256 None vs the current cex/cqr/qualification.py 7f4f725af58e): the suite that qualified the candidate must be the one on disk\n\n"
+   }
+  },
+  {
+   "name": "C13_tiny_model_delta_falsification",
+   "ok": true,
+   "wall_s": 348.449,
+   "detail": {
+    "plan": {
+     "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
+     "epsilon": "1/10",
+     "settings": [
+      {
+       "delta": "1/4",
+       "runs": 120
+      },
+      {
+       "delta": "1/16",
+       "runs": 120
+      }
+     ],
+     "test": "one-sided binomial, family-wise alpha 0.001 (0.0005 per setting)",
+     "deadline_per_run_s": 12,
+     "note": "a pass does not validate the 1e-6 tail"
+    },
+    "settings": [
+     {
+      "delta": "1/4",
+      "runs": 120,
+      "publications": 120,
+      "misses": 0,
+      "binomial_quantile_1_minus_0_0005": 46,
+      "expected_misses": 30.0,
+      "routes": {
+       "pac_ratio_intersected_with_deterministic": 120
+      },
+      "wall_s": 160.7
+     },
+     {
+      "delta": "1/16",
+      "runs": 120,
+      "publications": 120,
+      "misses": 0,
+      "binomial_quantile_1_minus_0_0005": 17,
+      "expected_misses": 7.5,
+      "routes": {
+       "pac_ratio_intersected_with_deterministic": 120
+      },
+      "wall_s": 187.8
+     }
+    ]
+   }
+  }
+ ],
+ "counts": {
+  "fresh_workers": 21,
+  "solver_calls": 369,
+  "compiler_calls": 51,
+  "checker_calls": 36,
+  "oracle_models": 78,
+  "truth_coordinates": 2419,
+  "assertions": 2595
+ },
+ "suite_version": "cqr-qualification-v1 (2026-11-16)",
+ "suite_sha256": "7f4f725af58eda34e55ec117d56406eac398abd334c1d9171d65c29e90c2faf2",
+ "candidate_sources": {
+  "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "cqr/acquire.py": "dbadc37bc5844c8523f5df64d7cd6605ee76a487d2f98d16f24d6b2baa4389cc",
+  "cqr/campaign.py": "b907d97ea123f9fd33dd9ae7c3eb408752eff8441284f644dfc3f39e31752996",
+  "cqr/checker.py": "706e9a5876668d34b8da631d920324bedbf0d7ad482bc5085d82f4eeed98e69d",
+  "cqr/closeout.py": "7db2e0057df99726241332dea7e8db8d790f497be4d27a6dce975658e2f2c284",
+  "cqr/compiler.py": "0be64083ea325f3b9fd93d7a40163666b095922081c208f9f58d03ac19771448",
+  "cqr/frontier.py": "af1ee8dd050fd771394fbe05d2b0db83a291ff85cc7fd67f3c29d3bcf726d4b5",
+  "cqr/gate.py": "8b0f7ca1a97de77ddce29831c0d1f23aefc655b22d9f593c13a81c1de49115ab",
+  "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
+  "cqr/numerics.py": "822bc52f275a7032a7b9341ad7ce7d596a23a995f7b2de087a8277891e7cd9a3",
+  "cqr/oracle.py": "01a3df3068c25480491b10f6e4244390294c812abf3bcb1f063c109837e05d22",
+  "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
+  "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
+  "cqr/registry.py": "4ab6a44508f14a829345590c677907cfe5945ac5f8e749dbc53f8c4d857d4267",
+  "cqr/report.py": "53bd9249d9877049dde4213d5cc4e5ea8210b34760d5d42bf319154a3f9bb59a",
+  "cqr/resolve_design.py": "f59caff0bbc93e1f06764733eeaf0061e2aa4bea4a923cedb60bf507d481882f",
+  "cqr/solve.py": "6705dfd0529e32f4d0883417cd5dd6b12857f5007cfe7c9b890f831b5a33047b",
+  "cqr/task.py": "166fcb7ad13bb1ef66d08990c91eecb295962863ab34a02edde03f176bc5e296",
+  "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
+  "cqr/wcnf.py": "b29636a1da7cc461e492b69d7dc52d7a69ed3c20f5a9f7cc9af2c2216094fc70",
+  "cqr/worker.py": "841f368354a3e7a41048a5ba2993c89278696465a2d969eda44088233980e335",
+  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
+ },
+ "admission_dir": "/Users/adis/Workspace/pgm-cqr-2026-11-15/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v2",
+ "passed": 9,
+ "total": 13,
+ "all_pass": false,
+ "sources_changed_during_run": [],
+ "candidate_sources_at_start": {
+  "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "cqr/acquire.py": "dbadc37bc5844c8523f5df64d7cd6605ee76a487d2f98d16f24d6b2baa4389cc",
+  "cqr/campaign.py": "b907d97ea123f9fd33dd9ae7c3eb408752eff8441284f644dfc3f39e31752996",
+  "cqr/checker.py": "706e9a5876668d34b8da631d920324bedbf0d7ad482bc5085d82f4eeed98e69d",
+  "cqr/closeout.py": "7db2e0057df99726241332dea7e8db8d790f497be4d27a6dce975658e2f2c284",
+  "cqr/compiler.py": "0be64083ea325f3b9fd93d7a40163666b095922081c208f9f58d03ac19771448",
+  "cqr/frontier.py": "af1ee8dd050fd771394fbe05d2b0db83a291ff85cc7fd67f3c29d3bcf726d4b5",
+  "cqr/gate.py": "8b0f7ca1a97de77ddce29831c0d1f23aefc655b22d9f593c13a81c1de49115ab",
+  "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
+  "cqr/numerics.py": "822bc52f275a7032a7b9341ad7ce7d596a23a995f7b2de087a8277891e7cd9a3",
+  "cqr/oracle.py": "01a3df3068c25480491b10f6e4244390294c812abf3bcb1f063c109837e05d22",
+  "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
+  "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
+  "cqr/registry.py": "4ab6a44508f14a829345590c677907cfe5945ac5f8e749dbc53f8c4d857d4267",
+  "cqr/report.py": "53bd9249d9877049dde4213d5cc4e5ea8210b34760d5d42bf319154a3f9bb59a",
+  "cqr/resolve_design.py": "f59caff0bbc93e1f06764733eeaf0061e2aa4bea4a923cedb60bf507d481882f",
+  "cqr/solve.py": "6705dfd0529e32f4d0883417cd5dd6b12857f5007cfe7c9b890f831b5a33047b",
+  "cqr/task.py": "166fcb7ad13bb1ef66d08990c91eecb295962863ab34a02edde03f176bc5e296",
+  "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
+  "cqr/wcnf.py": "b29636a1da7cc461e492b69d7dc52d7a69ed3c20f5a9f7cc9af2c2216094fc70",
+  "cqr/worker.py": "841f368354a3e7a41048a5ba2993c89278696465a2d969eda44088233980e335",
+  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
+ },
+ "utc": "2026-11-16T05:10:44Z",
+ "wall_s": 372.7,
+ "c13_plan": {
+  "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
+  "epsilon": "1/10",
+  "settings": [
+   {
+    "delta": "1/4",
+    "runs": 120
+   },
+   {
+    "delta": "1/16",
+    "runs": 120
+   }
+  ],
+  "test": "one-sided binomial, family-wise alpha 0.001 (0.0005 per setting)",
+  "deadline_per_run_s": 12,
+  "note": "a pass does not validate the 1e-6 tail"
+ }
+}
