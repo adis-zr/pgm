@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 3.984,
+   "wall_s": 4.185,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -151,7 +151,7 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.254,
+   "wall_s": 0.239,
    "detail": {
     "routes": {
      "zero": 30,
@@ -166,7 +166,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.086,
+   "wall_s": 0.077,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -225,7 +225,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.106,
+   "wall_s": 0.092,
    "detail": {
     "within_budget": {
      "cards": [
@@ -281,7 +281,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.148,
+   "wall_s": 0.131,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -308,7 +308,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.086,
+   "wall_s": 0.078,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -326,7 +326,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.683,
+   "wall_s": 1.436,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -344,7 +344,7 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 3.073,
+   "wall_s": 2.791,
    "detail": {
     "draws": 74,
     "carves": 74,
@@ -362,7 +362,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.082,
+   "wall_s": 0.074,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -385,14 +385,14 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.6,
+   "wall_s": 2.49,
    "detail": {
     "reference_shares": [
-     0.5869241646200789,
+     0.5869023255813953,
      0.6588065025437109,
      0.5591297793741334,
      0.5158346867909699,
-     0.5727753996285677,
+     0.5727744754454922,
      0.5266214246052261
     ],
     "no_shortcut": {
@@ -412,7 +412,7 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 108.877,
+   "wall_s": 109.657,
    "detail": {
     "cells": 373,
     "arms": [
@@ -470,30 +470,30 @@
      "LBP|PUBLISHED": 7,
      "LIBDAI_EXACT|PUBLISHED": 3,
      "MERLIN_CTE|PUBLISHED": 3,
-     "N1_CQR|DEADLINE": 14,
-     "N1_CQR|PUBLISHED": 37,
+     "N1_CQR|DEADLINE": 13,
+     "N1_CQR|PUBLISHED": 38,
      "N1_NO_AFFINE|DEADLINE": 3,
      "N1_NO_AFFINE|PUBLISHED": 29,
-     "N1_NO_CONCENTRATION|DEADLINE": 2,
-     "N1_NO_CONCENTRATION|PUBLISHED": 30,
-     "N1_NO_INFLUENCE|DEADLINE": 3,
-     "N1_NO_INFLUENCE|PUBLISHED": 29,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 1,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 31,
+     "N1_NO_CONCENTRATION|DEADLINE": 1,
+     "N1_NO_CONCENTRATION|PUBLISHED": 31,
+     "N1_NO_INFLUENCE|DEADLINE": 2,
+     "N1_NO_INFLUENCE|PUBLISHED": 30,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 2,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 30,
      "N1_NO_QUOTIENT|DEADLINE": 5,
      "N1_NO_QUOTIENT|PUBLISHED": 27,
      "N1_NO_SIGNED_STREAM|DEADLINE": 1,
      "N1_NO_SIGNED_STREAM|PUBLISHED": 31,
-     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 3,
-     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 29,
+     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 2,
+     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 30,
      "P1_PAC_CONDITIONAL|PUBLISHED": 3,
      "PGMAX_SUMPRODUCT_BP|PUBLISHED": 3,
      "SF_NATIVE_SELECT|PUBLISHED": 2,
      "WMB|PUBLISHED": 3
     },
     "gate": {
-     "gated": 317,
-     "wall": 107.049
+     "gated": 320,
+     "wall": 105.496
     },
     "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
     "missing_group_refused": true,
@@ -507,7 +507,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 393.958,
+   "wall_s": 350.781,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -537,7 +537,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 176.7
+      "wall_s": 161.3
      },
      {
       "delta": "1/16",
@@ -549,7 +549,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 217.2
+      "wall_s": 189.5
      }
     ]
    }
@@ -557,7 +557,7 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.972,
+   "wall_s": 4.406,
    "detail": {
     "routes": {
      "concentration.uai/N1_CQR": {
@@ -655,7 +655,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 38.708,
+   "wall_s": 31.077,
    "detail": {
     "mode_override": [
      "FAULT",
@@ -676,7 +676,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 34.998,
+   "wall_s": 30.948,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -730,10 +730,10 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 15.61,
+   "wall_s": 12.294,
    "detail": {
     "d32_N1_CQR": {
-     "wall_s": 0.17,
+     "wall_s": 0.08,
      "work_reference": 7232,
      "work_optional": 10854,
      "compile_interrupted": {
@@ -742,7 +742,7 @@
      }
     },
     "d32_G0_CQR": {
-     "wall_s": 0.14,
+     "wall_s": 0.07,
      "work_reference": 7232,
      "work_optional": 2314,
      "compile_interrupted": null
@@ -778,25 +778,25 @@
      "committed": []
     },
     "loop_failure": {
-     "optional_cancelled": "optional failure in the adaptive loop: RuntimeError: INJECTED optional",
+     "optional_cancelled": "optional failure in adaptive optional turn: RuntimeError: INJECTED opt",
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 6.891787052154541e-08,
-     "work_reference": 3334312,
-     "work_optional": 3003493,
+     "reference_progress": 9.150244295597076e-08,
+     "work_reference": 4426920,
+     "work_optional": 3933519,
      "phase": "adaptive"
     },
     "parity_at_exits": {
      "e_zero": {
       "route": "deterministic_signed_residual_E_zero",
       "work_reference": 25466,
-      "work_optional": 3549
+      "work_optional": 3567
      },
      "signed_pac": {
       "route": "pac_signed_residual_validation",
       "work_reference": 17018,
-      "work_optional": 3432
+      "work_optional": 3456
      }
     }
    }
@@ -804,7 +804,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.178,
+   "wall_s": 0.131,
    "detail": {
     "order_sequence": [
      "norm",
@@ -825,7 +825,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.64,
+   "wall_s": 0.369,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -848,7 +848,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 7.169,
+   "wall_s": 5.167,
    "detail": {
     "r1": {
      "support": {
@@ -1091,9 +1091,9 @@
       "route": "exact_reference"
      },
      "deadline_exit": {
-      "work_reference": 49408,
-      "work_optional": 52320,
-      "progress": 0.1015625
+      "work_reference": 69888,
+      "work_optional": 68704,
+      "progress": 0.2265625
      },
      "support_quota": {
       "quota": 131296,
@@ -1103,9 +1103,9 @@
      "operator_quota_overspend": {
       "support_fixpoint": -148,
       "leaf_sumout": -300,
-      "exact_quotient_pass": 11,
+      "exact_quotient_pass": 13,
       "symmetry": 6,
-      "approx_quotient": 18,
+      "approx_quotient": 20,
       "concentration": -126,
       "influence_deletion": 0,
       "affine": -236
@@ -1161,79 +1161,169 @@
      }
     }
    }
+  },
+  {
+   "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
+   "ok": true,
+   "wall_s": 10.432,
+   "detail": {
+    "f01": {
+     "honest": {
+      "route": "exact_reference",
+      "answer": "5/6"
+     },
+     "verify": "incident_factors [0] differ from the complete incident set [0, 1] of variable 0 on the pre",
+     "apply_refused": true,
+     "extra_index": "incident_factors [0, 1, 1] differ from the complete incident set [0, 1",
+     "out_of_range": "incident_factors [0, 7] differ from the complete incident set [0, 1] o",
+     "unsorted": "incident_factors [1, 0] differ from the complete incident set [0, 1] o",
+     "non_partition": "quotient classes are not a partition of the domain",
+     "bad_order": "quotient classes are not in canonical order",
+     "kappa_alias": "kappa keys ['0', '01'] are not the canonical domain 0..1",
+     "honest_journals": "clones + factorless replay"
+    },
+    "f02": {
+     "alias_replay": "commit 0 (concentration): bias keys ['0', '00'] are not the canonical domain 0..0",
+     "forged_checker": "journal replay: commit 0 (concentration): bias keys ['0', '00'] are not the canonical doma",
+     "negative_ledger": "recorded bias ledger differs from the replayed one",
+     "commit_refuses_negative": true,
+     "xstar_alias": "commit 0 (concentration): xstar keys ['0', '1', '2', '3', '4', '5'] are not the ",
+     "t_missing": "commit 0 (concentration): t keys ['1', '2', '3', '4', '5', '6'] are not the cano",
+     "answers_extra": "commit 0 (concentration): answers keys ['0', '1'] are not the canonical domain 0",
+     "honest_composition": "deterministic_frontier"
+    },
+    "f03": {
+     "root5000": {
+      "route": "exact_reference",
+      "wall_s": 4.67,
+      "accepted": true
+     },
+     "forced_in_root": "exact_reference",
+     "cancel_in_root": "optional work cancelled in initial publication test (cancell"
+    },
+    "f04": {
+     "quota_12000": {
+      "overspend": 288,
+      "max_gap": 1024
+     },
+     "production_14bin": {
+      "ticks": 266,
+      "max_gap": 1024,
+      "route": "exact_reference"
+     },
+     "signatures": 924,
+     "leaf": -100,
+     "support": 924,
+     "approx": 924,
+     "concentration": 925,
+     "bound": 1026
+    },
+    "f05": {
+     "inconsistent_refused": "merlin: ADAPTER_PATHS_INCONSISTENT at freeze (pin /var/folders/gl/8l05",
+     "WMB": "merlin: BINARY_CHANGED /var/folders/gl/8l05l35s32b",
+     "IJGP": "merlin: BINARY_CHANGED /var/folders/gl/8l05l35s32b",
+     "MERLIN_CTE": "merlin: BINARY_CHANGED /var/folders/gl/8l05l35s32b",
+     "repointed": "merlin: ADAPTER_PATHS_CHANGED the adapter bindings now are p",
+     "real_consistent": true
+    },
+    "f06": {
+     "baseline_row": {
+      "arm": "H1_HYBRID",
+      "outcome": "PUBLISHED",
+      "routes": [
+       [
+        "support",
+        "DETERMINISTIC"
+       ]
+      ]
+     },
+     "exact_true": "refused",
+     "bias_zero": "refused",
+     "applied_bias_zero": "refused",
+     "commits_emptied": "refused",
+     "interpretation": "refused",
+     "guarantee_source": "refused",
+     "route": "refused",
+     "guarantee": "refused",
+     "baseline_routes_guarantee": "refused",
+     "baseline_routes_emptied": "refused",
+     "baseline_outcome": "refused",
+     "honest": "QUALIFIED"
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 65,
-  "solver_calls": 379,
-  "compiler_calls": 157,
-  "checker_calls": 126,
-  "oracle_models": 97,
-  "truth_coordinates": 2613,
+  "fresh_workers": 71,
+  "solver_calls": 382,
+  "compiler_calls": 159,
+  "checker_calls": 133,
+  "oracle_models": 99,
+  "truth_coordinates": 2642,
   "stream_draws": 463,
-  "assertions": 2902
+  "assertions": 2961
  },
- "suite_version": "cqr-qualification-v3 (2026-11-16, after the second adversarial review: group C20 added; journal-shaped certificates)",
- "suite_sha256": "9a3790d843f26690602e8d3d7093ae6d5c4a1deff3261aa236335783b4a930bb",
+ "suite_version": "cqr-qualification-v4.1 (2026-11-16, after the third adversarial review: group C21 added; after attempt 7: C21-06 baseline-row routes control)",
+ "suite_sha256": "c3e8d2cf6dbc67a07f50e321f249af7425943f181af3e403a07d78304c75707b",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
-  "cqr/campaign.py": "0045ea11a7db231264931ec7aeb51e162b1c4cf18beffc2088ef3e57cbedb1b6",
-  "cqr/checker.py": "108731563a6cad79912ff940c45c7cefcf2214f0b0fdd6708482b64d7c9218b4",
-  "cqr/closeout.py": "34106b35a4a1d5927c9a07654e8037c7f2f5ee52626b92f751542599276b3205",
-  "cqr/compiler.py": "97af72c08a446634006388cc82059d89150729a6122c4093e8aed147b5afed66",
+  "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
+  "cqr/checker.py": "e568120937b87d7207ed5c0063663fdcf0ddff6d297f905385ba5ec7dec1ae13",
+  "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
+  "cqr/compiler.py": "f57ffd52314ec0ad1436dc65c56c9eb65b4a0be7cba0fde14f6b53e44a1f2f4d",
   "cqr/frontier.py": "04e0be831cd30368570fcf1bc1a2d46a32399af68cd99f8671dab133f2d12044",
   "cqr/gate.py": "2c6805baf56a4cdf5b1626a30ce5f548aeb9d1c720bdd35c9f9d0baf33f601f3",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "ad8feda831ec6b74b3ecdb4b92fe5a9412eb72997adb0eb5eabbd299ba9fbcd9",
+  "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
   "cqr/numerics.py": "822bc52f275a7032a7b9341ad7ce7d596a23a995f7b2de087a8277891e7cd9a3",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "949a85992ebe077a52faf75b3fdbe4dfe534def3ca708d278f9265b4ec1bb48a",
+  "cqr/registry.py": "80935ab12b9b5247f692bb495dea79d5f848e522e838b4e45c4782b070e786c4",
   "cqr/report.py": "2b5419c645c1e85e3b014a74d5650b30d4f795723abfa1006924fcc884b17181",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "c6f89bd35c0b313f7f9bfaa192712911f1adece42d5c60c0d619f49c9c7c483b",
+  "cqr/solve.py": "392bd400303fdafb2d5debe371bc24757f469edd51f67bad486dfb84d5f391ec",
   "cqr/task.py": "20b39d8110e63d940f69f4435ca5fcb0b9dfa20a9019560510252bbb359c2d68",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
   "cqr/worker.py": "321aed369e591ef22a6a0bf7688e7360149f7590106780213ef15a400f7e44c7",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v7",
- "passed": 20,
- "total": 20,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v10",
+ "passed": 21,
+ "total": 21,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
-  "cqr/campaign.py": "0045ea11a7db231264931ec7aeb51e162b1c4cf18beffc2088ef3e57cbedb1b6",
-  "cqr/checker.py": "108731563a6cad79912ff940c45c7cefcf2214f0b0fdd6708482b64d7c9218b4",
-  "cqr/closeout.py": "34106b35a4a1d5927c9a07654e8037c7f2f5ee52626b92f751542599276b3205",
-  "cqr/compiler.py": "97af72c08a446634006388cc82059d89150729a6122c4093e8aed147b5afed66",
+  "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
+  "cqr/checker.py": "e568120937b87d7207ed5c0063663fdcf0ddff6d297f905385ba5ec7dec1ae13",
+  "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
+  "cqr/compiler.py": "f57ffd52314ec0ad1436dc65c56c9eb65b4a0be7cba0fde14f6b53e44a1f2f4d",
   "cqr/frontier.py": "04e0be831cd30368570fcf1bc1a2d46a32399af68cd99f8671dab133f2d12044",
   "cqr/gate.py": "2c6805baf56a4cdf5b1626a30ce5f548aeb9d1c720bdd35c9f9d0baf33f601f3",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "ad8feda831ec6b74b3ecdb4b92fe5a9412eb72997adb0eb5eabbd299ba9fbcd9",
+  "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
   "cqr/numerics.py": "822bc52f275a7032a7b9341ad7ce7d596a23a995f7b2de087a8277891e7cd9a3",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "949a85992ebe077a52faf75b3fdbe4dfe534def3ca708d278f9265b4ec1bb48a",
+  "cqr/registry.py": "80935ab12b9b5247f692bb495dea79d5f848e522e838b4e45c4782b070e786c4",
   "cqr/report.py": "2b5419c645c1e85e3b014a74d5650b30d4f795723abfa1006924fcc884b17181",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "c6f89bd35c0b313f7f9bfaa192712911f1adece42d5c60c0d619f49c9c7c483b",
+  "cqr/solve.py": "392bd400303fdafb2d5debe371bc24757f469edd51f67bad486dfb84d5f391ec",
   "cqr/task.py": "20b39d8110e63d940f69f4435ca5fcb0b9dfa20a9019560510252bbb359c2d68",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
   "cqr/worker.py": "321aed369e591ef22a6a0bf7688e7360149f7590106780213ef15a400f7e44c7",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "utc": "2026-11-16T19:29:42Z",
- "wall_s": 617.2,
+ "utc": "2026-11-16T22:08:19Z",
+ "wall_s": 566.9,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
