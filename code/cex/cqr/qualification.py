@@ -16,8 +16,8 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v4 (2026-11-16, after the third adversarial review: group C21 added)'
-ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v8')
+SUITE_VERSION = 'cqr-qualification-v4.1 (2026-11-16, after the third adversarial review: group C21 added; after attempt 7: C21-06 baseline-row routes control)'
+ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v9')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
 CNT = R['counts']; passed = 0; total = 0
@@ -1096,16 +1096,24 @@ def c21_checker_soundness_lifecycle_dependencies_closeout():
     shutil.rmtree(td); real = KI.collect(CODE); A(real['merlin']['adapter_paths']['consistent'] and not KI.failures_vs_frozen(real, real, ['WMB', 'IJGP', 'MERLIN_CTE']), '05 real configuration inconsistent'); out['f05']['real_consistent'] = True
     # ---------------- 06 (real finalize -> closeout, with a current-identity qualification stub as in C12)
     rd = os.path.join(d, 'chain06'); mpc2 = _concentration_witness(os.path.join(d, 'c06')) if os.path.isdir(os.path.join(d, 'c06')) else (os.makedirs(os.path.join(d, 'c06')) or _concentration_witness(os.path.join(d, 'c06')))
-    code_ = "import sys; sys.path.insert(0, %r); import campaign as CA; CA.manifest(%r, [CA.make_row('query_transfer', 'conc16', %r)], dev=True, budgets=[10], plan={'query_transfer': [('N1_CQR', 1)]}, root_seed='c21-06')" % (HERE, rd, mpc2)
-    subprocess.run([PY, '-c', code_], capture_output=True, text=True, cwd=CODE); subprocess.run([PY, os.path.join(HERE, 'campaign.py'), 'run', rd, '--dev'], capture_output=True, text=True, cwd=CODE); CNT['fresh_workers'] += 1
+    code_ = "import sys; sys.path.insert(0, %r); import campaign as CA; CA.manifest(%r, [CA.make_row('query_transfer', 'conc16', %r)], dev=True, budgets=[10], plan={'query_transfer': [('N1_CQR', 1), ('H1_HYBRID', 1)]}, root_seed='c21-06')" % (HERE, rd, mpc2)
+    subprocess.run([PY, '-c', code_], capture_output=True, text=True, cwd=CODE); subprocess.run([PY, os.path.join(HERE, 'campaign.py'), 'run', rd, '--dev'], capture_output=True, text=True, cwd=CODE); CNT['fresh_workers'] += 2
     pf = subprocess.run(['sh', os.path.join(HERE, 'finalize.sh'), rd, 'CAMPAIGN_MANIFEST_dev.json'], capture_output=True, text=True, cwd=CODE); A('FINALIZE_DONE' in pf.stdout, '06 finalize failed: %s' % pf.stdout[-200:])
     stub = dict(suite_version=SUITE_VERSION + ' (closeout-attribution control stub)', suite_sha256=registry.suite_sha256(CODE), all_pass=True, passed=len(registry.QUALIFICATION_GROUPS), total=len(registry.QUALIFICATION_GROUPS), groups=[dict(name=g_, ok=True) for g_ in registry.QUALIFICATION_GROUPS], candidate_sources=registry.cqr_source_inventory(CODE), candidate_sources_at_start=registry.cqr_source_inventory(CODE), sources_changed_during_run=[], counts=dict(CNT)); sp = os.path.join(d, 'stub.json'); json.dump(stub, open(sp, 'w'))
     def closeout():
         r_ = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--qualification', sp], capture_output=True, text=True, cwd=CODE); return 'DEVELOPMENT ADMISSION QUALIFIED' in r_.stdout, [l.strip()[:90] for l in r_.stdout.splitlines() if l.strip().startswith('- ')][:1]
-    ok, why = closeout(); A(ok, '06 honest closeout not qualified: %s' % why); rp = os.path.join(rd, 'RESULTS_CQR.json'); orig = open(rp).read(); row0 = json.loads(orig)['runs'][0]
+    ok, why = closeout(); A(ok, '06 honest closeout not qualified: %s' % why); rp = os.path.join(rd, 'RESULTS_CQR.json'); orig = open(rp).read(); runs = json.loads(orig)['runs']
+    i0 = next(i for i, x in enumerate(runs) if x['arm'] == 'N1_CQR'); row0 = runs[i0]
     A(row0.get('exact') is False and row0.get('bias') == ['3/500003'] and row0.get('guarantee_source', '').startswith('checker-verified'), '06 honest report row: %s' % {k: row0.get(k) for k in ('exact', 'bias', 'guarantee_source')})
-    for name, fn in (('exact_true', lambda r: r.__setitem__('exact', True)), ('bias_zero', lambda r: r.__setitem__('bias', ['0'])), ('applied_bias_zero', lambda r: r.__setitem__('bias_applied_to_original_answers', ['0'])), ('commits_emptied', lambda r: r.__setitem__('committed_operators', [])), ('interpretation', lambda r: r.__setitem__('bias_interpretation', 'exact')), ('guarantee_source', lambda r: r.__setitem__('guarantee_source', 'worker fields')), ('route', lambda r: r.__setitem__('route', 'exact_reference')), ('guarantee', lambda r: r.__setitem__('guarantee', 'PAC'))):
-        rr = json.loads(orig); fn(rr['runs'][0]); open(rp, 'w').write(json.dumps(rr)); ok, why = closeout(); A(not ok and why and 'RE-DERIVED' in why[0], '06 report-only %s survived the closeout' % name); out['f06'][name] = 'refused'
+    # attempt-7 regression (admission_v8 closeout UNQUALIFIED on an HONEST report): a baseline row whose `routes` are pairs is serialized as lists in RESULTS_CQR.json but re-derived as tuples;
+    # the closeout must compare in the published JSON domain -- the honest closeout above already QUALIFIED with such a row present, and a change to that row must still be refused
+    ib = next((i for i, x in enumerate(runs) if x['arm'] == 'H1_HYBRID'), None); rb = runs[ib] if ib is not None else {}
+    A(ib is not None and isinstance(rb.get('routes'), list) and rb['routes'] and all(isinstance(pr, list) and len(pr) == 2 for pr in rb['routes']), '06 baseline row without a published routes list of pairs: %s' % {k: rb.get(k) for k in ('arm', 'status', 'outcome', 'routes')})
+    out['f06']['baseline_row'] = dict(arm=rb.get('arm'), outcome=rb.get('outcome'), routes=rb.get('routes'))
+    muts = [(name, i0, fn) for name, fn in (('exact_true', lambda r: r.__setitem__('exact', True)), ('bias_zero', lambda r: r.__setitem__('bias', ['0'])), ('applied_bias_zero', lambda r: r.__setitem__('bias_applied_to_original_answers', ['0'])), ('commits_emptied', lambda r: r.__setitem__('committed_operators', [])), ('interpretation', lambda r: r.__setitem__('bias_interpretation', 'exact')), ('guarantee_source', lambda r: r.__setitem__('guarantee_source', 'worker fields')), ('route', lambda r: r.__setitem__('route', 'exact_reference')), ('guarantee', lambda r: r.__setitem__('guarantee', 'PAC')))]
+    muts += [('baseline_routes_guarantee', ib, lambda r: r['routes'][0].__setitem__(1, 'PAC' if r['routes'][0][1] != 'PAC' else 'DETERMINISTIC')), ('baseline_routes_emptied', ib, lambda r: r.__setitem__('routes', [])), ('baseline_outcome', ib, lambda r: r.__setitem__('outcome', 'DEADLINE' if r.get('outcome') != 'DEADLINE' else 'PUBLISHED'))]
+    for name, idx, fn in muts:
+        rr = json.loads(orig); fn(rr['runs'][idx]); open(rp, 'w').write(json.dumps(rr)); ok, why = closeout(); A(not ok and why and 'RE-DERIVED' in why[0], '06 report-only %s survived the closeout' % name); out['f06'][name] = 'refused'
     open(rp, 'w').write(orig); ok, why = closeout(); A(ok, '06 restored report not qualified: %s' % why); out['f06']['honest'] = 'QUALIFIED'
     return out
 

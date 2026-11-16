@@ -26,7 +26,7 @@ def load_module(name, path):
 R = load_module('cqr_registry', os.path.join(HERE, 'registry.py'))
 KI = load_module('cqr_kernel_identity', os.path.join(HERE, 'kernel_identity.py'))
 RP = load_module('cqr_report', os.path.join(HERE, 'report.py'))
-CLOSEOUT_VERSION = 'cqr-closeout-v1 (2026-11-16)'
+CLOSEOUT_VERSION = 'cqr-closeout-v1.1 (2026-11-16; complete semantic attribution compared in the published JSON domain)'
 LEDGER = 'CQR_LEDGER.jsonl'
 
 
@@ -130,7 +130,9 @@ def main(RD, MN='CAMPAIGN_MANIFEST.json', QP=None, OUTP=None):
         # only presentation / timing fields (wall, stop_reason text, event counts) are outside the comparison
         SEMANTIC_RUN_FIELDS = ('cell_id', 'case', 'arm', 'cohort', 'budget', 'rep', 'status', 'outcome', 'guarantee', 'route', 'output_sha256', 'exact', 'bias', 'bias_applied_to_original_answers', 'bias_interpretation',
                                'committed_operators', 'guarantee_source', 'claimed_route', 'attribution_mismatch', 'mode', 'outcome_class', 'kind', 'work_reference', 'work_optional', 'reference_progress', 'ratio_draws', 'epochs', 'frontier', 'routes')
-        core_run = lambda x: {k: x.get(k) for k in SEMANTIC_RUN_FIELDS}
+        # compared in the domain the report is PUBLISHED in (the JSON serialization report.main writes, default=str): the in-memory re-derivation carries tuples / Fractions that the
+        # file carries as lists / strings; a non-canonical comparison refused the honest admission_v8 report (attempt 7, C12) on 13 baseline rows whose `routes` are tuple pairs
+        core_run = lambda x: json.loads(json.dumps({k: x.get(k) for k in SEMANTIC_RUN_FIELDS}, sort_keys=True, default=str))
         if sorted((core_run(x) for x in RES.get('runs') or []), key=lambda x: str(x['cell_id'])) != sorted((core_run(x) for x in RR.get('runs') or []), key=lambda x: str(x['cell_id'])): prereq.append('report run rows differ from the rows RE-DERIVED from the current raw records')
         if RR.get('references_file_sha256') != RES.get('references_file_sha256'): prereq.append('REFERENCES_R0.json differs from the artifact the report was derived from')
     if RR is not None:
