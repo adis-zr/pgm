@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 4.816,
+   "wall_s": 4.343,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -45,7 +45,7 @@
      },
      "concentration/G0_CQR": {
       "outcome": "PUBLISHED",
-      "route": "deterministic_frontier",
+      "route": "exact_reference",
       "guarantee": "DETERMINISTIC",
       "ops": []
      },
@@ -108,7 +108,7 @@
      },
      "normalizer/G0_CQR": {
       "outcome": "PUBLISHED",
-      "route": "normalizer_deterministic_frontier",
+      "route": "normalizer_exact_reference",
       "guarantee": "DETERMINISTIC",
       "ops": []
      },
@@ -151,15 +151,14 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.295,
+   "wall_s": 0.275,
    "detail": {
     "routes": {
      "zero": 30,
-     "EXACT_RATIONAL/exact_reference": 29,
-     "PAC_EPS/exact_reference": 21,
+     "EXACT_RATIONAL/exact_reference": 30,
+     "PAC_EPS/exact_reference": 23,
      "DETERMINISTIC_EPS/exact_reference": 24,
-     "PAC_EPS/deterministic_frontier": 3,
-     "EXACT_RATIONAL/exact_zero_dimensional": 1
+     "PAC_EPS/deterministic_frontier": 1
     },
     "zero_models": 30
    }
@@ -167,7 +166,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.076,
+   "wall_s": 0.075,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -226,7 +225,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.104,
+   "wall_s": 0.095,
    "detail": {
     "within_budget": {
      "cards": [
@@ -282,7 +281,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.161,
+   "wall_s": 0.135,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -309,7 +308,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.092,
+   "wall_s": 0.08,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -326,30 +325,48 @@
   },
   {
    "name": "C8_signed_residual_stream_and_epochs",
-   "ok": false,
-   "wall_s": 8.444,
+   "ok": true,
+   "wall_s": 1.537,
    "detail": {
-    "error": "fresh pac worker refused ['unknown certificate version None']",
-    "trace": "Traceback (most recent call last):\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 37, in group\n    try: detail = fn()\n                  ^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 399, in c8_signed_stream\n    d = tempfile.mkdtemp(prefix='cqr_c8_'); m3b = grid_model(rng, 5, 4); mp = write_task(d, 'pacfront', m3b, dict(mode='PAC_EPS', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[0, 1, 2], bit=1)], epsilon='1/200', delta='1/1000000')); w = fresh_worker(mp, 'N1_CQR', budget=8.0); fails, _ = check_(mp, w, 'N1_CQR'); A(not fails, 'fresh pac worker refused %s' % fails[:1])\n                                                                                                                                                                                                                                                                                                                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 31, in A\n    if not cond: raise AssertionError(msg)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: fresh pac worker refused ['unknown certificate version None']\n"
+    "omitted_cells": 5,
+    "omitted_envelope_fraction_of_U": 0.9994082451180222,
+    "near_miss_omits": 0,
+    "m10_route": "deterministic_frontier",
+    "E_zero": true,
+    "E_positive_other_candidate": "6/5",
+    "epochs": 6,
+    "route": "deterministic_frontier",
+    "changed_candidate_refused": "epoch 1 E_star differs from the launch envelope",
+    "wrong_epoch_risk_refused": true,
+    "ablation_no_epochs": true
    }
   },
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
-   "ok": false,
-   "wall_s": 9.184,
+   "ok": true,
+   "wall_s": 2.941,
    "detail": {
-    "error": "fresh ratio worker did not publish: DEADLINE DEADLINE {\"where\": \"loop\"}",
-    "trace": " \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 37, in group\n    try: detail = fn()\n                  ^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 439, in c9_ratio_stream\n    d = tempfile.mkdtemp(prefix='cqr_c9_'); mbig = grid_model(rng, 5, 4); mp = write_task(d, 'ratio', mbig, dict(mode='PAC_EPS', queries=[dict(kind='singleton', variable=v, state=1) for v in range(4)], epsilon='1/200', delta='1/1000000')); w = fresh_worker(mp, 'N1_CQR', budget=8.0); fails, _ = check_(mp, w, 'N1_CQR'); A(w['outcome'] == 'PUBLISHED', 'fresh ratio worker did not publish: %s %s' % (w['outcome'], (w.get('reason') or '')[:80])); A(not fails, 'fresh ratio worker refused %s' % fails[:1]); out['fresh_route'] = w.get('route')\n                                                                                                                                                                                                                                                                                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 31, in A\n    if not cond: raise AssertionError(msg)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: fresh ratio worker did not publish: DEADLINE DEADLINE {\"where\": \"loop\"}\n"
+    "draws": 74,
+    "carves": 74,
+    "record_before_resolve_checked": 74,
+    "duplicate_refused": true,
+    "failed_draw_stops_stream": true,
+    "scale_invariant": {
+     "draws": 74
+    },
+    "fresh_route": "deterministic_frontier",
+    "deleted_draw_refused": "ratio stream statistics do not replay",
+    "wrong_rho_refused": true
    }
   },
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.093,
+   "wall_s": 0.075,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
-     "route": "normalizer_exact_zero_dimensional",
+     "route": "normalizer_exact_reference",
      "Z": "200"
     },
     "normalizer_ops": [
@@ -361,32 +378,136 @@
      "fixed_substitution",
      "concentration"
     ],
-    "exact_mode": "exact_zero_dimensional",
+    "exact_mode": "exact_reference",
     "legacy_rows_contract": true
    }
   },
   {
    "name": "C11_protected_reference_and_resource_refusal",
-   "ok": false,
-   "wall_s": 0.012,
+   "ok": true,
+   "wall_s": 2.549,
    "detail": {
-    "error": "reference share 10496/21587 below 1/2 while the reference did not finish",
-    "trace": "Traceback (most recent call last):\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 37, in group\n    try: detail = fn()\n                  ^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 477, in c11_reference_resources\n    A(r['outcome'] == 'PUBLISHED', r['outcome']); sh = F(r['stats']['reference_share']); shares.append(float(sh)); A(sh >= F(1, 2) or r['certificate']['reference']['done'] or r['stats']['work_optional']['total'] <= SV.POLICY['quantum_units'], 'reference share %s below 1/2 while the reference did not finish' % sh)\n                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 31, in A\n    if not cond: raise AssertionError(msg)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: reference share 10496/21587 below 1/2 while the reference did not finish\n"
+    "reference_shares": [
+     0.5866964784795975,
+     0.6587616053805103,
+     0.559075074218035,
+     0.4995820355611879,
+     0.5727508318299613,
+     0.5266020012364118
+    ],
+    "no_shortcut": {
+     "route": "exact_reference",
+     "ops": [],
+     "share": "33792/69"
+    },
+    "deadline": "typed DEADLINE at loop",
+    "worker_deadline": "DEADLINE",
+    "memory_capped_worker": {
+     "status": "NO_OUTPUT",
+     "outcome": "KILLED_rc_1",
+     "exception": null
+    }
    }
   },
   {
    "name": "C12_registry_pipeline_dev_admission",
-   "ok": false,
-   "wall_s": 0.936,
+   "ok": true,
+   "wall_s": 128.169,
    "detail": {
-    "error": "closeout not qualified: CE\": 0, \"DEADLINE\": 0, \"MEMORY\": 0, \"FAULT\": 0, \"other\": 0}, \"WMB\": {\"PUBLISHED-DETERMINISTIC\": 0, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 0, \"MEMORY\": 0, \"FAULT\": 0, \"other\": 0}}\n  - qualification record was produced by a different suite file (suite_sha256 None vs the current cex/cqr/qualification.py 7f4f725af58e): the suite that qualified the candidate must be the one on disk\n",
-    "trace": "ile \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 37, in group\n    try: detail = fn()\n                  ^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 517, in c12_pipeline_admission\n    p = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), ADMISSION_DIR, '--manifest', mn, '--qualification', sp], capture_output=True, text=True, cwd=CODE); A(p.returncode == 0 and 'QUALIFIED' in p.stdout, 'closeout not qualified: %s' % (p.stdout[-400:] + p.stderr[-300:])); out['closeout'] = p.stdout.strip().splitlines()[-1][:160]\n                                                                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-cqr-2026-11-15/code/cex/cqr/qualification.py\", line 31, in A\n    if not cond: raise AssertionError(msg)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: closeout not qualified: CE\": 0, \"DEADLINE\": 0, \"MEMORY\": 0, \"FAULT\": 0, \"other\": 0}, \"WMB\": {\"PUBLISHED-DETERMINISTIC\": 0, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 0, \"MEMORY\": 0, \"FAULT\": 0, \"other\": 0}}\n  - qualification record was produced by a different suite file (suite_sha256 None vs the current cex/cqr/qualification.py 7f4f725af58e): the suite that qualified the candidate must be the one on disk\n\n"
+    "cells": 373,
+    "arms": [
+     "A0_POINT",
+     "A1_CONDITIONAL",
+     "B0_FROZEN_V14",
+     "CBI_NATIVE",
+     "G0_CQR",
+     "H1_HYBRID",
+     "H4_NATIVE_C",
+     "H4_NATIVE_PI",
+     "H4_NATIVE_PP",
+     "IJGP",
+     "LBP",
+     "LIBDAI_EXACT",
+     "MERLIN_CTE",
+     "N1_CQR",
+     "N1_NO_AFFINE",
+     "N1_NO_CONCENTRATION",
+     "N1_NO_INFLUENCE",
+     "N1_NO_QUERY_DIRECTED_REFINEMENT",
+     "N1_NO_QUOTIENT",
+     "N1_NO_SIGNED_STREAM",
+     "N1_NO_SYMMETRY_RELEVANCE",
+     "P1_PAC_CONDITIONAL",
+     "PGMAX_SUMPRODUCT_BP",
+     "SF_NATIVE_SELECT",
+     "WMB"
+    ],
+    "cohorts": [
+     "CBI",
+     "H4_native",
+     "SF_native",
+     "constructed",
+     "external_core",
+     "new_uai2022",
+     "new_wmc2024",
+     "normalizer_dis",
+     "query_transfer"
+    ],
+    "identity_differences": 0,
+    "outcomes": {
+     "A0_POINT|DEADLINE": 3,
+     "A1_CONDITIONAL|PUBLISHED": 3,
+     "B0_FROZEN_V14|PUBLISHED": 3,
+     "CBI_NATIVE|PUBLISHED": 1,
+     "G0_CQR|DEADLINE": 18,
+     "G0_CQR|PUBLISHED": 33,
+     "H1_HYBRID|DEADLINE": 3,
+     "H1_HYBRID|PUBLISHED": 4,
+     "H4_NATIVE_C|PUBLISHED": 1,
+     "H4_NATIVE_PI|PUBLISHED": 1,
+     "H4_NATIVE_PP|PUBLISHED": 1,
+     "IJGP|PUBLISHED": 3,
+     "LBP|PUBLISHED": 7,
+     "LIBDAI_EXACT|PUBLISHED": 3,
+     "MERLIN_CTE|PUBLISHED": 3,
+     "N1_CQR|DEADLINE": 14,
+     "N1_CQR|PUBLISHED": 37,
+     "N1_NO_AFFINE|DEADLINE": 3,
+     "N1_NO_AFFINE|PUBLISHED": 29,
+     "N1_NO_CONCENTRATION|DEADLINE": 1,
+     "N1_NO_CONCENTRATION|PUBLISHED": 31,
+     "N1_NO_INFLUENCE|DEADLINE": 2,
+     "N1_NO_INFLUENCE|PUBLISHED": 30,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 2,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 30,
+     "N1_NO_QUOTIENT|DEADLINE": 5,
+     "N1_NO_QUOTIENT|PUBLISHED": 27,
+     "N1_NO_SIGNED_STREAM|DEADLINE": 1,
+     "N1_NO_SIGNED_STREAM|PUBLISHED": 31,
+     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 2,
+     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 30,
+     "P1_PAC_CONDITIONAL|PUBLISHED": 3,
+     "PGMAX_SUMPRODUCT_BP|PUBLISHED": 3,
+     "SF_NATIVE_SELECT|PUBLISHED": 2,
+     "WMB|PUBLISHED": 3
+    },
+    "gate": {
+     "gated": 319,
+     "wall": 122.236
+    },
+    "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
+    "missing_group_refused": true,
+    "stale_identity_refused": true,
+    "stale_suite_refused": true,
+    "gate_rerun_refuses_mutation": [
+     "worker output sha256 differs from the receipt"
+    ]
    }
   },
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 348.449,
+   "wall_s": 350.813,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -416,7 +537,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 160.7
+      "wall_s": 161.6
      },
      {
       "delta": "1/16",
@@ -428,23 +549,23 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 187.8
+      "wall_s": 189.2
      }
     ]
    }
   }
  ],
  "counts": {
-  "fresh_workers": 21,
-  "solver_calls": 369,
+  "fresh_workers": 23,
+  "solver_calls": 377,
   "compiler_calls": 51,
-  "checker_calls": 36,
-  "oracle_models": 78,
-  "truth_coordinates": 2419,
-  "assertions": 2595
+  "checker_calls": 40,
+  "oracle_models": 79,
+  "truth_coordinates": 2439,
+  "assertions": 2607
  },
  "suite_version": "cqr-qualification-v1 (2026-11-16)",
- "suite_sha256": "7f4f725af58eda34e55ec117d56406eac398abd334c1d9171d65c29e90c2faf2",
+ "suite_sha256": "c78e34fbfc7d2b31d51b334cf3f38335fb9eea63cabad21c1bb96d9e737616ea",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "dbadc37bc5844c8523f5df64d7cd6605ee76a487d2f98d16f24d6b2baa4389cc",
@@ -462,17 +583,17 @@
   "cqr/registry.py": "4ab6a44508f14a829345590c677907cfe5945ac5f8e749dbc53f8c4d857d4267",
   "cqr/report.py": "53bd9249d9877049dde4213d5cc4e5ea8210b34760d5d42bf319154a3f9bb59a",
   "cqr/resolve_design.py": "f59caff0bbc93e1f06764733eeaf0061e2aa4bea4a923cedb60bf507d481882f",
-  "cqr/solve.py": "6705dfd0529e32f4d0883417cd5dd6b12857f5007cfe7c9b890f831b5a33047b",
+  "cqr/solve.py": "31105cd7ee3c9d41453702c4f99675c330908ab76f89901ea1201ff36e6ef91d",
   "cqr/task.py": "166fcb7ad13bb1ef66d08990c91eecb295962863ab34a02edde03f176bc5e296",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "b29636a1da7cc461e492b69d7dc52d7a69ed3c20f5a9f7cc9af2c2216094fc70",
   "cqr/worker.py": "841f368354a3e7a41048a5ba2993c89278696465a2d969eda44088233980e335",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-cqr-2026-11-15/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v2",
- "passed": 9,
+ "admission_dir": "/Users/adis/Workspace/pgm-cqr-2026-11-15/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v3",
+ "passed": 13,
  "total": 13,
- "all_pass": false,
+ "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -491,15 +612,15 @@
   "cqr/registry.py": "4ab6a44508f14a829345590c677907cfe5945ac5f8e749dbc53f8c4d857d4267",
   "cqr/report.py": "53bd9249d9877049dde4213d5cc4e5ea8210b34760d5d42bf319154a3f9bb59a",
   "cqr/resolve_design.py": "f59caff0bbc93e1f06764733eeaf0061e2aa4bea4a923cedb60bf507d481882f",
-  "cqr/solve.py": "6705dfd0529e32f4d0883417cd5dd6b12857f5007cfe7c9b890f831b5a33047b",
+  "cqr/solve.py": "31105cd7ee3c9d41453702c4f99675c330908ab76f89901ea1201ff36e6ef91d",
   "cqr/task.py": "166fcb7ad13bb1ef66d08990c91eecb295962863ab34a02edde03f176bc5e296",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "b29636a1da7cc461e492b69d7dc52d7a69ed3c20f5a9f7cc9af2c2216094fc70",
   "cqr/worker.py": "841f368354a3e7a41048a5ba2993c89278696465a2d969eda44088233980e335",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "utc": "2026-11-16T05:10:44Z",
- "wall_s": 372.7,
+ "utc": "2026-11-16T05:46:09Z",
+ "wall_s": 491.1,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
