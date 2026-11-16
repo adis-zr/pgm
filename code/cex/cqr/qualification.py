@@ -146,7 +146,7 @@ def c1_identity_checker():
     expect(mp, w, 'N1_CQR', 'task_identity', lambda x: x.__setitem__('task_identity', '1' * 64), 'identity')
     expect(mp, w, 'N1_CQR', 'final_sha', lambda x: x['certificate']['compile'].__setitem__('final_sha256', '1' * 64), 'does not replay')
     expect(mp, w, 'N1_CQR', 'diagnostic_flag', lambda x: x['certificate'].__setitem__('diagnostic', 'sampling_only'), 'DIAGNOSTIC')
-    expect(mp, w, 'N1_CQR', 'mode_relabel', lambda x: x['certificate'].__setitem__('mode', 'EXACT_RATIONAL'), 'mode differs')
+    expect(mp, w, 'N1_CQR', 'mode_relabel', lambda x: x['certificate'].__setitem__('mode', 'EXACT_RATIONAL'), ('mode differs', 'differs from the authoritative task mode'))
     if w['route'] in ('deterministic_frontier', 'pac_ratio_intersected_with_deterministic'):
         ev = w['certificate']['events']
         if ev: expect(mp, w, 'N1_CQR', 'event_deleted', lambda x: x['certificate']['events'].pop(len(x['certificate']['events']) // 2), '')
@@ -154,9 +154,9 @@ def c1_identity_checker():
         if dr: expect(mp, w, 'N1_CQR', 'draw_point_changed', lambda x: (lambda e: e['x'].__setitem__(list(e['x'])[0], 1 - e['x'][list(e['x'])[0]]))(next(e for e in x['certificate']['events'] if e['op'] == 'ratio_draw')), '')
         if w['certificate'].get('ratio_stream') and w['certificate']['ratio_stream']['t']: expect(mp, w, 'N1_CQR', 'variance_halved', lambda x: x['certificate']['ratio_stream'].__setitem__('V', str(F(x['certificate']['ratio_stream']['V']) / 2)), 'do not replay')
     mp2, w2 = accepted[('exact_mode', 'N1_CQR')]
-    expect(mp2, w2, 'N1_CQR', 'exact_value_changed', lambda x: (x['certificate']['publication']['bounds'].__setitem__(0, [str(F(x['certificate']['publication']['bounds'][0][0]) + F(1, 1000))] * 2), x['certificate']['publication']['point'].__setitem__(0, x['certificate']['publication']['bounds'][0][0])), 'differs from the independent enumerator' if w2['route'] == 'exact_reference' else '')
+    expect(mp2, w2, 'N1_CQR', 'exact_value_changed', lambda x: (x['certificate']['publication']['bounds'].__setitem__(0, [str(F(x['certificate']['publication']['bounds'][0][0]) + F(1, 1000))] * 2), x['certificate']['publication']['point'].__setitem__(0, x['certificate']['publication']['bounds'][0][0])), ('differs from the independent enumerator', 'do not contain', 'zero-width proven value', 'differs'))
     mp3, w3 = accepted[('normalizer', 'N1_CQR')]
-    expect(mp3, w3, 'N1_CQR', 'normalizer_point_out', lambda x: x['certificate']['publication']['point'].__setitem__(0, str(F(x['certificate']['publication']['bounds'][0][1]) * F(11, 10))), 'Z point outside' if w3['route'] != 'normalizer_exact_reference' else '')
+    expect(mp3, w3, 'N1_CQR', 'normalizer_point_out', lambda x: x['certificate']['publication']['point'].__setitem__(0, str(F(x['certificate']['publication']['bounds'][0][1]) * F(11, 10))), ('Z point outside', 'point', 'do not contain', 'differs'))
     # zero proof mutations: claim zero on a positive model
     mp4, w4 = accepted[('clones_det', 'G0_CQR')]; x = copy.deepcopy(w4); x.update(outcome='PROVED_ZERO_EVIDENCE', status='STOPPED', zero_evidence_proof=dict(kind='reference_enumeration', assignments=1)); fails, _ = check_(mp4, x, 'G0_CQR'); A(fails and any('contradicted by the independent enumerator' in f for f in fails), 'false zero not refused: %s' % fails[:1]); out['mutations']['false_zero_claim'] = fails[0][:100]
     # no-op control: a byte-identical re-serialization is accepted
