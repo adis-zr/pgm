@@ -3,8 +3,54 @@
   {
    "name": "Q1_identity_and_gate_end_to_end",
    "ok": true,
-   "wall_s": 10.698,
+   "wall_s": 40.841,
    "detail": {
+    "zero_dimensional_jobs_every_arm": {
+     "fully_observed": {
+      "P1_PAC_CONDITIONAL": "zero_dimensional_reduced_job",
+      "H1_HYBRID": [
+       "forest"
+      ],
+      "A0_POINT": "zero_dimensional_reduced_job",
+      "A1_CONDITIONAL": "zero_dimensional_reduced_job"
+     },
+     "higher_arity_forced": {
+      "P1_PAC_CONDITIONAL": "zero_dimensional_reduced_job",
+      "H1_HYBRID": "zero_dimensional_reduced_job",
+      "A0_POINT": "zero_dimensional_reduced_job",
+      "A1_CONDITIONAL": "zero_dimensional_reduced_job"
+     },
+     "all_states_forced": {
+      "P1_PAC_CONDITIONAL": "zero_dimensional_reduced_job",
+      "H1_HYBRID": [
+       "forest"
+      ],
+      "A0_POINT": "zero_dimensional_reduced_job",
+      "A1_CONDITIONAL": "zero_dimensional_reduced_job"
+     },
+     "mixed_fixed_and_free": {
+      "P1_PAC_CONDITIONAL": [
+       "pac_conditional_exact_cover_complete"
+      ],
+      "H1_HYBRID": [
+       "forest"
+      ],
+      "A0_POINT": [
+       "pac_point"
+      ],
+      "A1_CONDITIONAL": [
+       "pac_conditional_exact_cover_complete"
+      ]
+     },
+     "zero_variable_model": {
+      "P1_PAC_CONDITIONAL": "zero_dimensional_reduced_job",
+      "H1_HYBRID": [
+       "forest"
+      ],
+      "A0_POINT": "zero_dimensional_reduced_job",
+      "A1_CONDITIONAL": "zero_dimensional_reduced_job"
+     }
+    },
     "natural_rebase_witness_first_row": [
      [
       "0.00000000",
@@ -42,6 +88,100 @@
      },
      "zero": {
       "routes": "PROVED_ZERO_EVIDENCE",
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_fully_observed_P1_PAC_CONDITIONAL": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_fully_observed_H1_HYBRID": {
+      "routes": [
+       "forest"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_fully_observed_A0_POINT": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_fully_observed_A1_CONDITIONAL": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_higher_arity_forced_P1_PAC_CONDITIONAL": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_higher_arity_forced_H1_HYBRID": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_higher_arity_forced_A0_POINT": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_higher_arity_forced_A1_CONDITIONAL": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_all_states_forced_P1_PAC_CONDITIONAL": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_all_states_forced_H1_HYBRID": {
+      "routes": [
+       "forest"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_all_states_forced_A0_POINT": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_all_states_forced_A1_CONDITIONAL": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_mixed_fixed_and_free_P1_PAC_CONDITIONAL": {
+      "routes": [
+       "pac_conditional_exact_cover_complete"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_mixed_fixed_and_free_H1_HYBRID": {
+      "routes": [
+       "forest"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_mixed_fixed_and_free_A0_POINT": {
+      "routes": [
+       "pac_point"
+      ],
+      "guarantee": "PAC"
+     },
+     "zd_mixed_fixed_and_free_A1_CONDITIONAL": {
+      "routes": [
+       "pac_conditional_exact_cover_complete"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_zero_variable_model_P1_PAC_CONDITIONAL": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_zero_variable_model_H1_HYBRID": {
+      "routes": [
+       "forest"
+      ],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_zero_variable_model_A0_POINT": {
+      "routes": [],
+      "guarantee": "DETERMINISTIC"
+     },
+     "zd_zero_variable_model_A1_CONDITIONAL": {
+      "routes": [],
       "guarantee": "DETERMINISTIC"
      },
      "rebase13_natural_witness": {
@@ -102,6 +242,11 @@
      "natural_P1_partial_cover_relabelled_A1": "component 0: EXECUTION SEMANTICS of the planned arm A1_CONDITIONAL violated (cov",
      "natural_P1_partial_cover_relabelled_A1_resolve_false": "component 0: EXECUTION SEMANTICS of the planned arm A1_CONDITIONAL violated (cov",
      "P1_exact_cover_nonempty_cutset_relabelled_A1": "component 0: EXECUTION SEMANTICS of the planned arm A1_CONDITIONAL violated (cov",
+     "components_deleted_on_a_nonempty_reduced_job": "certificate without components but the re-derived reduced job still has 3 variab",
+     "components_and_partition_deleted": "certificate partition differs from the re-derived component split",
+     "empty_components_without_reduced_model": "certificate without components and without a reduced model (not a zero-dimension",
+     "zero_dimensional_fabricated_fixed_state": "certificate decoder differs from the re-derived reduction decoder",
+     "zero_dimensional_claims_PAC": "zero-dimensional job must be a DETERMINISTIC publication with no PAC component",
      "zero_proof_kind_pac_exact_cover_on_A0": "zero-evidence proof NOT re-derivable: zero-proof kind pac_exact_cover is not ava",
      "evidence_file_only_changed_after_freeze": "task EVIDENCE file pac_model.uai.evid differs from the frozen evidence hash (pre",
      "evidence_file_deleted_after_freeze": "task EVIDENCE file pac_model.uai.evid differs from the frozen evidence hash (pre"
@@ -120,8 +265,8 @@
     "aggregate_budget_exhausted_is_structured": true,
     "invalid_replay_factor_refused": true,
     "gated_set_carries_evidence_hashes": [
-     "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_apvurtl3/q1/pac_model.uai",
-     "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_apvurtl3/q1/pac_model.uai.evid",
+     "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_0a2o5vlv/q1/pac_model.uai",
+     "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_0a2o5vlv/q1/pac_model.uai.evid",
      "cells/one/worker.json"
     ],
     "complete_inventory_with_b0_supervisor_native_and_glue_valid_candidate_accepted": true
@@ -142,7 +287,7 @@
   {
    "name": "Q3_laws_moments_and_actual_adaptive_accumulation",
    "ok": true,
-   "wall_s": 2.172,
+   "wall_s": 2.306,
    "detail": {
     "models": 27,
     "leaves": 149,
@@ -160,7 +305,7 @@
   {
    "name": "Q4_frontier_invariants_and_rebase_histories",
    "ok": true,
-   "wall_s": 1.633,
+   "wall_s": 1.758,
    "detail": {
     "models": 114,
     "steps": 1112,
@@ -187,7 +332,7 @@
   {
    "name": "Q5_actual_sampling_backend",
    "ok": true,
-   "wall_s": 0.351,
+   "wall_s": 0.362,
    "detail": {
     "production_random_backend_frequencies": [
      10113,
@@ -200,7 +345,7 @@
   {
    "name": "Q6_confidence_arithmetic",
    "ok": true,
-   "wall_s": 0.531,
+   "wall_s": 0.551,
    "detail": {
     "boundary_psi_enclosures": true,
     "review_witness_1": true,
@@ -217,7 +362,7 @@
   {
    "name": "Q7_numerical_publication_truth_asserted",
    "ok": true,
-   "wall_s": 7.841,
+   "wall_s": 7.774,
    "detail": {
     "pac_publication_point": {
      "trials": 4096,
@@ -256,7 +401,7 @@
   {
    "name": "Q8_intersection_and_mechanism_sensitivity",
    "ok": true,
-   "wall_s": 6.726,
+   "wall_s": 6.668,
    "detail": {
     "unit_intersection_narrower_than_either": {
      "0": {
@@ -328,7 +473,7 @@
   {
    "name": "Q9_continuation_every_backend_class",
    "ok": true,
-   "wall_s": 0.931,
+   "wall_s": 0.925,
    "detail": {
     "deadline_refuses": true,
     "failed_trial_terminates": true,
@@ -359,7 +504,7 @@
   {
    "name": "Q10_existing_defects_isolated",
    "ok": true,
-   "wall_s": 38.537,
+   "wall_s": 38.668,
    "detail": {
     "host_budget_control": {
      "host_budget_peak_bytes": 966101,
@@ -377,7 +522,7 @@
   {
    "name": "Q11_diagnostic_coverage_attempted_runs",
    "ok": true,
-   "wall_s": 77.396,
+   "wall_s": 78.409,
    "detail": {
     "attempted": 60,
     "published": 59,
@@ -385,7 +530,7 @@
     "delta": "1/10 per run (two families 1/20)",
     "criterion": "misses <= 14 (P[X > 14] = 6.66e-4 at p = 0.1, n = 60)",
     "note": "bug detection only; cannot verify 1e-6",
-    "wall_s": 77.4,
+    "wall_s": 78.4,
     "rows": [
      {
       "trial": 0,
@@ -433,7 +578,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 90317,
+      "trials": 91101,
       "resolved": 0,
       "contains_truth": true
      },
@@ -483,7 +628,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 22666,
+      "trials": 22705,
       "resolved": 0,
       "contains_truth": true
      },
@@ -543,7 +688,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 25304,
+      "trials": 25366,
       "resolved": 0,
       "contains_truth": true
      },
@@ -553,7 +698,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 60020,
+      "trials": 59759,
       "resolved": 0,
       "contains_truth": true
      },
@@ -593,7 +738,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 60500,
+      "trials": 58341,
       "resolved": 0,
       "contains_truth": true
      },
@@ -723,7 +868,7 @@
       "resolve": false,
       "status": "DEADLINE",
       "guarantee": "NONE",
-      "trials": 49288,
+      "trials": 47813,
       "resolved": 0,
       "contains_truth": null
      },
@@ -783,7 +928,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 13897,
+      "trials": 13879,
       "resolved": 0,
       "contains_truth": true
      },
@@ -793,7 +938,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 61229,
+      "trials": 58754,
       "resolved": 0,
       "contains_truth": true
      },
@@ -903,7 +1048,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 37352,
+      "trials": 37060,
       "resolved": 0,
       "contains_truth": true
      },
@@ -963,7 +1108,7 @@
       "resolve": false,
       "status": "PUBLISHED",
       "guarantee": "PAC",
-      "trials": 22399,
+      "trials": 21477,
       "resolved": 0,
       "contains_truth": true
      },
@@ -993,7 +1138,7 @@
   {
    "name": "Q12_exact_closure_partial_cover_sensitivity",
    "ok": true,
-   "wall_s": 6.434,
+   "wall_s": 6.722,
    "detail": {
     "review_slack_cover_a_1/2_1/10_0": true,
     "review_full_solver_cover": true,
@@ -1015,7 +1160,7 @@
   {
    "name": "Q13_registry_pipeline_every_arm_complete",
    "ok": true,
-   "wall_s": 128.458,
+   "wall_s": 138.531,
    "detail": {
     "truncated_misshaped_wrongly_bound_refused": true,
     "sf_two_widths_scored_separately_pac_delta_kept_external_id_preserved": {
@@ -1125,6 +1270,52 @@
       "genuine_proofs_verified_truth_contained": 40,
       "forged_radii_refused": 48
      },
+     "sf_exact_moments_accepted_domain": {
+      "cli": {
+       "route_F2": {
+        "rc": 0,
+        "status": "OK",
+        "route": "F2",
+        "checker": "VERIFIED",
+        "truth_contained": true,
+        "arithmetic": "exact arbitrary-precision integers (bound 23058430092136939516 >= 2^62)"
+       },
+       "route_E": {
+        "rc": 0,
+        "status": "OK",
+        "route": "E",
+        "checker": "VERIFIED",
+        "truth_contained": true,
+        "arithmetic": "exact Python integers (B0 >= 2^62)"
+       },
+       "select": {
+        "rc": 0,
+        "status": "OK",
+        "route": "E",
+        "checker": "VERIFIED",
+        "truth_contained": true,
+        "arithmetic": "exact Python integers (B0 >= 2^62)"
+       }
+      },
+      "boundary_families": {
+       "verified_truth_contained": 427,
+       "statuses": {
+        "OK": 427,
+        "REJECT": 23,
+        "REFUSE": 2
+       },
+       "tiers": {
+        "S|python-int": 109,
+        "F|int64": 54,
+        "E|int64 scatter-add": 14,
+        "W|exact arbitrary-precision integers": 58,
+        "F|exact arbitrary-precision integers": 148,
+        "E|exact Python integers": 43,
+        "E|float64 bincount": 1
+       }
+      }
+     },
+     "sf_forged_full_degree_record_refused": "F2: Z_k differs from the moment reconstruction",
      "h4_alias_all_keys_first_node": "H4 bundle nodes / directory keys differ from the frozen six nodes in the frozen order (ali",
      "h4_coherent_directory_swap": "H4 node sp_r1: producer witness on disk is NOT the witness of this frozen node / source si",
      "h4_foreign_gaussian_exponent": "H4 node sp_r1: recorded Gaussian exponent -34 differs from the exponent DERIVED from the f",
@@ -1136,6 +1327,8 @@
      ],
      "native_checker_expired_or_tiny_allowance_UNVERIFIABLE": true
     },
+    "decoy_evidence_path_refused_by_producer": "refuse: 1 cells declare an evidence_path that is not the reader's effective evidence file <model>.evid (e.g. qgrid_tiny_",
+    "decoy_evidence_path_refused_by_gate": "declared evidence_path /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_0a2o5vlv/q13/ctl",
     "comparator_controls": {
      "genuine_accepted": true,
      "MAR_0_empty_answer": "comparator answer has 0 rows for 4 variables of the ORIGINAL model: an incomplete answer i",
@@ -1144,7 +1337,23 @@
      "packet_foreign_nonce": "comparator adapter packet arm / nonce differ from the planned cell and its receipt",
      "packet_other_task_hash": "comparator adapter packet input hashes differ from the frozen task",
      "row_truncated": "comparator answer row 0 has 1 entries for cardinality 2",
-     "row_not_a_simplex_point": "comparator answer row 0 is not a simplex point (sum 1.80000000)"
+     "row_not_a_simplex_point": "comparator answer row 0 is not normalized (sum 1.8; tolerance 0.005 derived from the print"
+    },
+    "comparator_normalization_controls": {
+     "genuine_uniform_100000": "ACCEPTED",
+     "genuine_uniform_100000_six_digits": "ACCEPTED",
+     "all_zero_100000": "comparator answer row 0 has no probability mass (sum 0): not a distribution",
+     "mis_scaled_half_100000": "comparator answer row 0 is not normalized (sum 0.5; tolerance 0.005 derived from the printed digits ",
+     "nonfinite_entry": "comparator answer unparseable or non-finite (ValueError)",
+     "off_by_more_than_epsilon_1000": "comparator answer row 0 is not normalized (sum 0.99; tolerance 0.005 derived from the printed digits",
+     "within_digits_perturbation_1000_accepted": "ACCEPTED",
+     "genuine_low_cardinality_2": "ACCEPTED"
+    },
+    "small_exact_reference_contradiction_INVESTIGATE": "2 DETERMINISTIC candidate publications are contradicted by an exact R0 reference (point error above epsilon OR interval not containing the reference; INVESTIGAT",
+    "failed_recheck_refused_then_rerun_qualified": {
+     "killed": "MEMORY_KILL",
+     "closeout_after_kill": "iny_memory) ended MEMORY_KILL with rc -9: a failed retry invalidates the closeout until the gate is re-run successfully)",
+     "closeout_after_rerun": "closeout written: NO EMPIRICAL GAIN IN ANY COHORT"
     },
     "admission_outcomes": {
      "A0_POINT|DEADLINE": 3,
@@ -1193,21 +1402,21 @@
   }
  ],
  "counts": {
-  "fresh_workers": 13,
+  "fresh_workers": 33,
   "solver_component_executions": 154,
   "kernel_cell_calls": 202,
   "helper_evaluations": 5433,
-  "truth_coordinates": 16077,
-  "gate_only_coordinates": 364
+  "truth_coordinates": 17661,
+  "gate_only_coordinates": 448
  },
- "suite_version": "pac-qualification-v4.2 (2026-11-14 repair 5)",
+ "suite_version": "pac-qualification-v4.3 (2026-11-15 repair 6)",
  "passed": 13,
  "total": 13,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
-  "pac/campaign.py": "0baa1398c4685b335d5e5fb22aec7127994540c9e66303bac1340c45ea121e72",
-  "pac/closeout.py": "cc673e71b5303ac5dd96a353f6f32b47c463ee4ebedcd53b93fc4890e8b92ab1",
+  "pac/campaign.py": "329e3d5eff6e1123f1ff2652d946e40f433acc10e4daad9e9a8caca09ac1917c",
+  "pac/closeout.py": "b12afe0b8524940c7ca4cb0a1ce665ec9edf581dcac349effcdacb85e8509466",
   "pac/comparator_cell.py": "c1d20912e96836eae40fc27c5f158ce23686b5591b25416db5ca8c72c0ce3616",
   "pac/contrib.py": "aa6018a1798c5524361459000fa240b70cd11bde367f631e1c8900682fa77678",
   "pac/engine.py": "aafe6c4f0a4f8f60be6efd5a85c6355351f26c3aceb7f24679c97d1db21380a3",
@@ -1215,17 +1424,17 @@
   "pac/finalize_v3.sh": "7baaa7bb5bf1226bc4f8b6f625b2f2fe7d270ad5b3757b786f147188585a2f0f",
   "pac/finalize_v4.sh": "b9b9ffa5f4aba15eeb38afa7e168cd51646da9ec09136089bc0a9dde05830a93",
   "pac/finalize_v5.sh": "df89eb579743886993ec4f62b4ec7b13c8509352420e89e915d7d6a35d9f4165",
-  "pac/finalize_v6.sh": "118d12ab1b26205e94a3c04323921de7d608f09246423f048c9801b0f2ff1eb3",
-  "pac/gate.py": "fed30388de45f4553bb7cc875923efe0b15a1905c64cd960e785c95bf5dd191b",
+  "pac/finalize_v6.sh": "7f7e1153d257328c068e1fd75bfe7ffb62d2ac5bb0f8277b7ea3b81d81cf4827",
+  "pac/gate.py": "c6742eb203171dd483a121f71fcbe49808467d224272b2a6cfaef08fa98b33c3",
   "pac/legacy_cbi_uai.py": "84e7c1f254ff2ff0c29be2f9b7b1f2034d287fea68558e94b74ef88cab34902e",
   "pac/legacy_qgrid.py": "1498b648c2dee141fae7f7be709812876c5bf8af2df65a281b1d21ce03ad4b9b",
   "pac/legacy_sf_uai.py": "bce8a1d2c104ab2586f5820c377450b09c2de1a73ee2b230bdfeedae5a7c2185",
   "pac/native_isolated.py": "4858b3845a147ce30b9c190f0a98b7d2898a932162f35725ac43f343ce365478",
   "pac/package.py": "a3d9f7151b010b76d58999607891ef245cbe7cf0f96743b1a6a739163403e6a2",
-  "pac/qualification.py": "364454b920b291b5dcde0ab6234969e39190b77669218d168c35c37a4075bb1d",
+  "pac/qualification.py": "007534020aa5d5022b469dda9609b182e0c34d5a6dd4ce8562dac25dce1a6b75",
   "pac/references.py": "ac60798bd0532f711aaac4e8d759db58c43a1b5512762c2439fc058c0902351f",
-  "pac/registry.py": "a77adb97c401238240db13b84b55afa5c70676546137f105a74be772a441beb4",
-  "pac/report.py": "244fd140be8e58a0a4ff4bbfeb923a089c8ca7621a05e2bbdaf848ad24cc15fb",
+  "pac/registry.py": "014d117382810889de3d77110f335752bf2a682f68e5d4eb25013ea859736365",
+  "pac/report.py": "008f513a9498f041de6fd3cac90d6220291280163cdc8dae91edc4985c643e69",
   "pac/rig.py": "572b1931f0009a0ca9dd55e0ddd97545b804e989e58104e6ae3b60ac792ccd19",
   "pac/solve.py": "cd238a5e7e71045628e33f6c38fc510908dff1c6a0bc116da6f703a3c88bbd24",
   "pac/uai_export.py": "6cec9b971968843e8c30a19e37e5976d8470755515819ca6a44c1c48109e7265",
@@ -1261,10 +1470,10 @@
   "newarm/test_forest.py": "7582f75259a7c90f4608f6469eeb1e6aaddbe4d116097ec3349657093404e1a7",
   "newarm/test_reduction.py": "c8623008fa6cd7f0a7bf1731577803b63dde9ccebb87b54c0db3bf7e29c5c33f"
  },
- "utc": "2026-11-14T05:24:09Z",
+ "utc": "2026-11-16T00:32:20Z",
  "candidate_sources": {
-  "pac/campaign.py": "0baa1398c4685b335d5e5fb22aec7127994540c9e66303bac1340c45ea121e72",
-  "pac/closeout.py": "cc673e71b5303ac5dd96a353f6f32b47c463ee4ebedcd53b93fc4890e8b92ab1",
+  "pac/campaign.py": "329e3d5eff6e1123f1ff2652d946e40f433acc10e4daad9e9a8caca09ac1917c",
+  "pac/closeout.py": "b12afe0b8524940c7ca4cb0a1ce665ec9edf581dcac349effcdacb85e8509466",
   "pac/comparator_cell.py": "c1d20912e96836eae40fc27c5f158ce23686b5591b25416db5ca8c72c0ce3616",
   "pac/contrib.py": "aa6018a1798c5524361459000fa240b70cd11bde367f631e1c8900682fa77678",
   "pac/engine.py": "aafe6c4f0a4f8f60be6efd5a85c6355351f26c3aceb7f24679c97d1db21380a3",
@@ -1272,17 +1481,17 @@
   "pac/finalize_v3.sh": "7baaa7bb5bf1226bc4f8b6f625b2f2fe7d270ad5b3757b786f147188585a2f0f",
   "pac/finalize_v4.sh": "b9b9ffa5f4aba15eeb38afa7e168cd51646da9ec09136089bc0a9dde05830a93",
   "pac/finalize_v5.sh": "df89eb579743886993ec4f62b4ec7b13c8509352420e89e915d7d6a35d9f4165",
-  "pac/finalize_v6.sh": "118d12ab1b26205e94a3c04323921de7d608f09246423f048c9801b0f2ff1eb3",
-  "pac/gate.py": "fed30388de45f4553bb7cc875923efe0b15a1905c64cd960e785c95bf5dd191b",
+  "pac/finalize_v6.sh": "7f7e1153d257328c068e1fd75bfe7ffb62d2ac5bb0f8277b7ea3b81d81cf4827",
+  "pac/gate.py": "c6742eb203171dd483a121f71fcbe49808467d224272b2a6cfaef08fa98b33c3",
   "pac/legacy_cbi_uai.py": "84e7c1f254ff2ff0c29be2f9b7b1f2034d287fea68558e94b74ef88cab34902e",
   "pac/legacy_qgrid.py": "1498b648c2dee141fae7f7be709812876c5bf8af2df65a281b1d21ce03ad4b9b",
   "pac/legacy_sf_uai.py": "bce8a1d2c104ab2586f5820c377450b09c2de1a73ee2b230bdfeedae5a7c2185",
   "pac/native_isolated.py": "4858b3845a147ce30b9c190f0a98b7d2898a932162f35725ac43f343ce365478",
   "pac/package.py": "a3d9f7151b010b76d58999607891ef245cbe7cf0f96743b1a6a739163403e6a2",
-  "pac/qualification.py": "364454b920b291b5dcde0ab6234969e39190b77669218d168c35c37a4075bb1d",
+  "pac/qualification.py": "007534020aa5d5022b469dda9609b182e0c34d5a6dd4ce8562dac25dce1a6b75",
   "pac/references.py": "ac60798bd0532f711aaac4e8d759db58c43a1b5512762c2439fc058c0902351f",
-  "pac/registry.py": "a77adb97c401238240db13b84b55afa5c70676546137f105a74be772a441beb4",
-  "pac/report.py": "244fd140be8e58a0a4ff4bbfeb923a089c8ca7621a05e2bbdaf848ad24cc15fb",
+  "pac/registry.py": "014d117382810889de3d77110f335752bf2a682f68e5d4eb25013ea859736365",
+  "pac/report.py": "008f513a9498f041de6fd3cac90d6220291280163cdc8dae91edc4985c643e69",
   "pac/rig.py": "572b1931f0009a0ca9dd55e0ddd97545b804e989e58104e6ae3b60ac792ccd19",
   "pac/solve.py": "cd238a5e7e71045628e33f6c38fc510908dff1c6a0bc116da6f703a3c88bbd24",
   "pac/uai_export.py": "6cec9b971968843e8c30a19e37e5976d8470755515819ca6a44c1c48109e7265",
@@ -1318,7 +1527,7 @@
   "newarm/test_forest.py": "7582f75259a7c90f4608f6469eeb1e6aaddbe4d116097ec3349657093404e1a7",
   "newarm/test_reduction.py": "c8623008fa6cd7f0a7bf1731577803b63dde9ccebb87b54c0db3bf7e29c5c33f"
  },
- "temp_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_apvurtl3",
+ "temp_dir": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pac_qual_v3_0a2o5vlv",
  "counts_note": "counts BY CLASS, never pooled: fresh_workers = subprocess worker.py runs; solver_component_executions = solve.solve / run_component calls; kernel_cell_calls = contrib cell evaluations; helper_evaluations = arithmetic helper / Totals insertion checks; truth_coordinates = published coordinates compared with the independent original-model enumerator; gate_only_coordinates = coordinates accepted by the production gate without an enumerator comparison",
  "optional_not_implemented": "candidate validation (theory section 9); cost-oracle planner; subtree re-tightening; U_t re-weighting"
 }

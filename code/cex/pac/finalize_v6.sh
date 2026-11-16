@@ -4,6 +4,9 @@
 # a stage KILLED by its supervisor (timeout / memory) leaves NO qualified artifact: the supervisor RECEIPT in PAC_LEDGER.jsonl is the authoritative failure record and the
 # chain stops (set -e); no stage promises to write a result after SIGKILL -- the closeout then finds the stage artifact missing / stale / unbound and refuses;
 # the reporting / closeout / packaging allowance of the manifest ceiling (3600 s) is the SUM of the three per-stage hard caps below (1200 + 600 + 1800; reconciled).
+# RETRY POLICY (sixth review S2): the closeout binds to the LATEST verification-stage attempt recorded in the ledger (scope pac_finalize_gate): a failed or killed retry
+# leaves the chain UNQUALIFIED until the gate is re-run successfully, even when an earlier GATE_RESULT is unchanged (the earlier proof may still be mathematically valid;
+# the completion criterion is the latest attempt).
 # nothing downstream runs after a failed stage; a gate that exhausts its budget writes a structured UNVERIFIABLE result and the closeout refuses it.
 # Usage: sh finalize_v6.sh <RUN_DIR> <OUT_ZIP> [CODE_DIR] [MANIFEST_NAME]
 set -eu

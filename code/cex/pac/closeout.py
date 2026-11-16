@@ -18,7 +18,7 @@ import registry, gate, report
 QP = sys.argv[sys.argv.index('--qualification') + 1] if '--qualification' in sys.argv else os.path.join(HERE, 'PAC_QUALIFICATION.json')
 MN = sys.argv[sys.argv.index('--manifest') + 1] if '--manifest' in sys.argv else 'CAMPAIGN_MANIFEST.json'
 OUTP = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else os.path.join(RD, 'CLOSEOUT_PAC.md')
-CLOSEOUT_VERSION = 'pac-closeout-v4.2 (2026-11-14 repair 5: complete task dependency set re-hashed, EVERY decision-bearing summary (rows, conclusions incl. native widths, reference audit classifications, native query scores) RE-DERIVED from the current raw records and compared with the report artifacts, reference artifact bound by hash, null identities refused)'
+CLOSEOUT_VERSION = 'pac-closeout-v4.3 (2026-11-15 repair 6: deterministic interval / exact-reference contradictions block a verdict, latest verification-stage attempt must have succeeded, effective evidence path; v4.2 re-derivation of every summary retained)'
 L = []; P = L.append; prereq = []
 def sha(p):
     h = hashlib.sha256()
@@ -100,6 +100,16 @@ if G is not None:
             if c_ is None or r_ is None or not (r_.get('status') == 'COMPLETED' or r_.get('outcome') == 'PROVED_ZERO_EVIDENCE'): continue
             dep_fail += gate.dependency_closure_failures(RD, c_, e.get('evidence'))
         if dep_fail: prereq.append('%d task dependencies (model / .evid / blocks metadata) of completed cells are not bound by the gate (never hashed, or changed since): %s' % (len(dep_fail), dep_fail[0][:120]))
+# ---- LATEST verification-stage attempt (sixth review S2; stated policy): when the run directory's ledger records verification-stage attempts (scope pac_finalize_gate), the
+# LATEST attempt must have COMPLETED with rc 0; a failed / killed retry invalidates the closeout until a successful re-run, even though the earlier GATE_RESULT bytes are unchanged
+# (the earlier proof may still be mathematically valid; the chain's completion criterion is the latest attempt). Receipts are the supervisor's: a killed child writes nothing.
+lp_ = os.path.join(RD, 'PAC_LEDGER.jsonl'); gate_attempts = []
+if os.path.exists(lp_):
+    for line in open(lp_):
+        try: row = json.loads(line)
+        except Exception: continue
+        if row.get('kind') == 'RECEIPT' and row.get('scope') == 'pac_finalize_gate': gate_attempts.append(row)
+if gate_attempts and not (gate_attempts[-1].get('outcome') == 'COMPLETED' and gate_attempts[-1].get('returncode') == 0): prereq.append('the LATEST verification-stage attempt (%s) ended %s with rc %s: a failed retry invalidates the closeout until the gate is re-run successfully' % (gate_attempts[-1].get('job'), gate_attempts[-1].get('outcome'), gate_attempts[-1].get('returncode')))
 # ---- qualification: exact schema + identity
 if Q is not None:
     groups = Q.get('groups') or []; names = [g.get('name') for g in groups]
@@ -183,8 +193,8 @@ if R is not None:
         if cc['b0_vs_h1'] and ((rc_.get('b0_vs_h1') or {}).get('new') != cc['b0_vs_h1']['new'] or (rc_.get('b0_vs_h1') or {}).get('lost') != cc['b0_vs_h1']['lost']): prereq.append('report B0-vs-H1 new / lost for %s differ from the rows' % key); break
     if set(rep_concl) != set(re_concl): prereq.append('report conclusions cover %d cohort/budget keys, the rows %d' % (len(rep_concl), len(re_concl)))
 if 'RR' in dir() and RR:
-    det_inacc = [a for a in (RR.get('reference_audit') or []) if a.get('accurate') == 'CONFIRMED_INACCURATE' and a.get('arm') in registry.CANDIDATE_ARMS and str(a.get('reference', '')).startswith('R0_exact') and any(x.get('cell_id') == a.get('cell_id') and x.get('guarantee') == 'DETERMINISTIC' for x in RR.get('runs') or [])]
-    if det_inacc: prereq.append('%d DETERMINISTIC candidate publications are contradicted by an exact R0 reference (INVESTIGATE before any verdict): %s' % (len(det_inacc), [a.get('cell_id') for a in det_inacc][:3]))
+    det_inacc = [a for a in (RR.get('reference_audit') or []) if (a.get('accurate') == 'CONFIRMED_INACCURATE' or a.get('intervals_contain_truth') is False) and a.get('arm') in registry.CANDIDATE_ARMS and str(a.get('reference', '')).startswith('R0_exact') and any(x.get('cell_id') == a.get('cell_id') and x.get('guarantee') == 'DETERMINISTIC' for x in RR.get('runs') or [])]
+    if det_inacc: prereq.append('%d DETERMINISTIC candidate publications are contradicted by an exact R0 reference (point error above epsilon OR interval not containing the reference; INVESTIGATE before any verdict -- the contradiction is between two exact artifacts, whichever is wrong): %s' % (len(det_inacc), [a.get('cell_id') for a in det_inacc][:3]))
 qualified = not prereq
 # ---- SCOPED verdict from the RE-DERIVED per-cohort conclusions (the report's table was checked against them above)
 rr_concl = ((RR or {}).get('conclusions_by_cohort_budget') or {}) if 'RR' in dir() and RR else {}

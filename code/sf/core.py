@@ -28,15 +28,16 @@ class InputError(ValueError):
 
 
 class Law:
-    """Validated coupled-block input. Rows are integer masks (BIT_CONVENTION); weights positive integers; duplicate rows
-    (within A or within B) are REJECTED; every mask lies in [0, 2^n)."""
+    """Validated coupled-block input. Rows are integer masks (BIT_CONVENTION); weights positive integers of ARBITRARY size (Python integers: the accepted numeric
+    domain has NO upper bound; every route and checker uses fixed-width acceleration only where a pre-operation bound proves every intermediate in range, else exact
+    arbitrary-precision integers -- sixth review F02); duplicate rows (within A or within B) are REJECTED; every mask lies in [0, 2^n)."""
 
     def __init__(self, n, A, B, source=None):
         self.n = int(n)
         if self.n < 1 or self.n > 63:
             raise InputError("n must be in 1..63 (packed-word model); got %d" % self.n)
         self.A_rows, self.A_w = self._rows(A, "A"); self.B_rows, self.B_w = self._rows(B, "B")
-        self.A0 = int(sum(self.A_w)); self.B0 = int(sum(self.B_w))
+        self.A0 = int(sum(self.A_w)); self.B0 = int(sum(self.B_w)); self.max_weight_bits = max(max(w.bit_length() for w in self.A_w), max(w.bit_length() for w in self.B_w))
         self.mA = len(self.A_rows); self.mB = len(self.B_rows)
         self.X = np.array(self.A_rows, dtype=np.uint64); self.Y = np.array(self.B_rows, dtype=np.uint64)
         self.full = (1 << self.n) - 1

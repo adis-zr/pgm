@@ -37,8 +37,8 @@ HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path
 for p in (NEWARM, HERE, CODE): sys.path.insert(0, p)
 sys.set_int_max_str_digits(0)
 import engine, contrib, rig, solve, core, gate, support, registry
-SUITE_VERSION = 'pac-qualification-v4.2 (2026-11-14 repair 5)'
-ADMISSION_DIR = 'admission_v9'      # the MANDATORY development admission this suite re-gates (fifth review QF1: its absence FAILS Q13); admission_v6 / v7 / v8 are preserved (their inventories froze earlier suite / closeout / gate sources)
+SUITE_VERSION = 'pac-qualification-v4.3 (2026-11-15 repair 6)'
+ADMISSION_DIR = 'admission_v14'     # the MANDATORY development admission this suite re-gates (fifth review QF1: its absence FAILS Q13; sixth review S3: it must be the admission of the CURRENT candidate -- zero identity differences and a QUALIFIED current-identity closeout); admission_v6..v9 are preserved history
 SOURCES_AT_START = registry.source_inventory(CODE, scopes=('candidate',))      # the identity of the candidate (incl. this suite file) WHEN THE RUN STARTS; compared again at the end: a source edited during the run invalidates the record
 R = {'groups': [], 'counts': dict(fresh_workers=0, solver_component_executions=0, kernel_cell_calls=0, helper_evaluations=0, truth_coordinates=0, gate_only_coordinates=0), 'suite_version': SUITE_VERSION}; passed = 0; total = 0
 def cnt(k, n=1): R['counts'][k] += n
@@ -146,6 +146,24 @@ def q1_identity_gate():
             if r_ < 2: g9['factors'].append({'scope': (v, v + 3), 'values': [F(rng.randrange(1, 6)) for _ in range(9)]})
     fixes['h1_support_grid'] = fixture('h1_support_grid', g9, 'H1_HYBRID')
     fixes['zero'] = fixture('zero', {'cards': [2, 2], 'factors': [{'scope': (0,), 'values': [F(1), F(2)]}, {'scope': (1,), 'values': [F(0), F(0)]}], 'evidence': {}}, 'P1_PAC_CONDITIONAL')
+    # ---- ZERO-DIMENSIONAL remaining jobs (sixth review F01): every variable fixed by evidence or by hard constraints -> an EMPTY reduced job with the decoder's one-hot rows;
+    # fresh workers on every candidate arm, truth from the independent enumerator, full gate ACCEPTS; mixed fixed / free and the zero-variable representation too
+    zd = {'fully_observed': ({'cards': [2, 2], 'factors': [{'scope': (0, 1), 'values': [F(1), F(2), F(3), F(4)]}], 'evidence': {0: 0, 1: 1}}),
+          'higher_arity_forced': ({'cards': [2, 2, 2], 'factors': [{'scope': (0, 1, 2), 'values': [F(1)] + [F(0)] * 7}], 'evidence': {}}),
+          'all_states_forced': ({'cards': [2, 2], 'factors': [{'scope': (0,), 'values': [F(0), F(1)]}, {'scope': (1,), 'values': [F(1), F(0)]}], 'evidence': {}}),
+          'mixed_fixed_and_free': ({'cards': [2, 3, 2], 'factors': [{'scope': (0, 1), 'values': [F(1), F(2), F(3), F(4), F(5), F(6)]}, {'scope': (2,), 'values': [F(0), F(5)]}], 'evidence': {0: 1}}),
+          'zero_variable_model': ({'cards': [], 'factors': [], 'evidence': {}})}
+    zd_routes = {}
+    for zname, zm in zd.items():
+        Zz, Nz, margz = truth(zm) if zm['cards'] else (F(1), [], [])
+        for arm_ in registry.CANDIDATE_ARMS:
+            fx_ = fixture('zd_%s_%s' % (zname, arm_), zm, arm_); wz = fx_['w']; assert wz['status'] == 'COMPLETED' and (wz['guarantee_type'] == 'DETERMINISTIC' or (zname == 'mixed_fixed_and_free' and wz['guarantee_type'] == 'PAC')), (zname, arm_, wz.get('status'), wz.get('reason'))      # the mixed job keeps one free 3-state variable: A0 (point mode) publishes it PAC, the conditional arms close it exactly
+            assert all(F(lo) <= p_ <= F(hi) for row, ps in zip(wz['intervals'], margz) for (lo, hi), p_ in zip(row, ps)), (zname, arm_, 'truth not contained'); cnt('truth_coordinates', sum(zm['cards']))
+            if zname != 'mixed_fixed_and_free' and wz['certificate'].get('reduced_model') is not None: assert wz['certificate']['components'] == [] and wz['certificate']['K_total'] == 0 and wz['certificate']['reduced_model'] == {'cards': [], 'factors': []}, (zname, arm_)      # H1 may legitimately take the forest / dag ROOT route instead (a whole-model root certificate)
+            zd_routes.setdefault(zname, {})[arm_] = 'zero_dimensional_reduced_job' if (wz['certificate'].get('reduced_model') is not None and wz['certificate']['components'] == []) else [c_['route'] for c_ in wz['certificate']['components']]
+            fixes['zd_%s_%s' % (zname, arm_)] = fx_
+    assert sum(1 for zn in zd for a_ in registry.CANDIDATE_ARMS if zd_routes[zn][a_] == 'zero_dimensional_reduced_job') >= 12, zd_routes
+    out['zero_dimensional_jobs_every_arm'] = zd_routes
     a_ = F(1, 2 ** 2000); m13 = {'cards': [2] * 13, 'evidence': {}, 'factors': [{'scope': (0, 1), 'values': [F(1), a_, F(1), F(1)]}, {'scope': (0, 1), 'values': [a_, F(1), F(1), F(1)]}] + [{'scope': (0, i), 'values': [F(1)] * 4} for i in range(2, 13)]}
     fixes['rebase13_natural_witness'] = fixture('rebase13', m13, 'P1_PAC_CONDITIONAL', seed='rebase-1')
     m3 = {'cards': [2] * 3, 'evidence': {}, 'factors': [{'scope': (0,), 'values': [F(2, 5), F(3, 5)]}, {'scope': (0, 1), 'values': [F(4, 5), F(1, 5), F(1, 10), F(9, 10)]}, {'scope': (0, 1, 2), 'values': [F(1, 5), F(4, 5), F(7, 10), F(3, 10), F(1, 10), F(9, 10), F(3, 5), F(2, 5)]}]}
@@ -277,6 +295,19 @@ def q1_identity_gate():
     for name, mut, fx_ in (('natural_P1_partial_cover_relabelled_A1', relabel_cell_A1, fp_), ('natural_P1_partial_cover_relabelled_A1_resolve_false', relabel_cell_A1_resolve_false, fp_), ('P1_exact_cover_nonempty_cutset_relabelled_A1', relabel_cell_A1, fd)):
         rc, f, n = gate_run(fx_, mutate=mut); assert rc == 1 and any('EXECUTION SEMANTICS' in x[1] for x in f), (name, f); rej[name] = f[0][1][:80]
     def zero_kind_foreign_to_arm(d, m, rr, w): zero_lie(d, m, rr, w); w['zero_evidence_proof'] = {'kind': 'pac_exact_cover', 'component': 0, 'variables': [0, 1, 2], 'cutset': [0], 'frontier': {}, 'resolved_totals': {}}
+    # ---- NEGATIVE controls for the zero-dimensional branch (sixth review F01): an empty component list must NOT bypass verification
+    def components_deleted_nonempty_job(d, m, rr, w): w['certificate']['components'] = []; w['certificate']['K_total'] = 0; w['certificate']['delta_ledger']['coordinates'] = 0; w['certificate']['delta_ledger']['components_pac'] = 0; rr['guarantee_type'] = w['guarantee_type'] = 'DETERMINISTIC'; w['certificate']['guarantee_type'] = 'DETERMINISTIC'; w['certificate']['delta'] = '0'      # partition kept coherent: the refusal must come from the zero-dimensional branch itself
+    rc, f, n = gate_run(fe, mutate=components_deleted_nonempty_job); assert rc == 1 and any('still has' in x[1] for x in f), f; rej['components_deleted_on_a_nonempty_reduced_job'] = f[0][1][:80]
+    def components_and_partition_deleted(d, m, rr, w): components_deleted_nonempty_job(d, m, rr, w); w['certificate']['partition'] = []
+    rc, f, n = gate_run(fe, mutate=components_and_partition_deleted); assert rc == 1 and any('partition differs' in x[1] for x in f), f; rej['components_and_partition_deleted'] = f[0][1][:80]
+    def empty_components_no_reduced_model(d, m, rr, w): components_deleted_nonempty_job(d, m, rr, w); w['certificate']['reduced_model'] = None
+    rc, f, n = gate_run(fe, mutate=empty_components_no_reduced_model); assert rc == 1 and any('without a reduced model' in x[1] for x in f), f; rej['empty_components_without_reduced_model'] = f[0][1][:80]
+    fz_ = fixes['zd_higher_arity_forced_P1_PAC_CONDITIONAL']
+    def fabricated_fixed_state(d, m, rr, w):
+        w['certificate']['decoder'][0]['state'] = 1; w['certificate']['lifted_intervals_exact'][0] = [['0', '0'], ['1', '1']]; w['certificate']['lifted_points_exact'][0] = ['0', '1']; w['intervals'][0] = [['0.00000000', '0.00000000'], ['1.00000000', '1.00000000']]; w['points'][0] = ['0.00000000', '1.00000000']
+    rc, f, n = gate_run(fz_, mutate=fabricated_fixed_state); assert rc == 1 and any('decoder' in x[1] for x in f), f; rej['zero_dimensional_fabricated_fixed_state'] = f[0][1][:80]
+    def zd_claims_pac(d, m, rr, w): rr['guarantee_type'] = w['guarantee_type'] = 'PAC'; w['certificate']['guarantee_type'] = 'PAC'; w['certificate']['delta'] = '1/1000000'; w['delta'] = '1/1000000'
+    rc, f, n = gate_run(fz_, mutate=zd_claims_pac); assert rc == 1, f; rej['zero_dimensional_claims_PAC'] = f[0][1][:80]
     rc, f, n = gate_run(fe, mutate=zero_kind_foreign_to_arm); assert rc == 1 and any('not available to the planned arm' in x[1] for x in f), f; rej['zero_proof_kind_pac_exact_cover_on_A0'] = f[0][1][:80]
     # ---- fifth review R02: the .evid file is part of the TASK dependency set: changing ONLY the evidence bytes after the freeze is refused (the frozen task is not the task on disk)
     evp_ = Path(str(fe['mp']) + '.evid'); ev_old = evp_.read_bytes() if evp_.exists() else None
@@ -1025,8 +1056,9 @@ def q13_registry_pipeline():
         out['closeout_controls_refused']['task_evidence_file_only_changed_after_gate'] = p3.stdout.strip()[-110:]
     finally: ev_qg.write_bytes(ev_bytes)
     rc0b, msg0b = closeout(); assert rc0b == 0, ('qualified again after restoring the evidence file', msg0b)
-    man['cells'].append(dict(man['cells'][0], cell_id='extra')); json.dump(man, open(RD / 'CAMPAIGN_MANIFEST_dev.json', 'w'))
-    p3 = subprocess.run([PY, os.path.join(HERE, 'campaign.py'), 'run', str(RD), '--dev'], capture_output=True, text=True); assert p3.returncode != 0 and 'RESUME REFUSED' in (p3.stdout + p3.stderr); out['resume_preflight_refuses_edited_manifest'] = True
+    man_bytes = (RD / 'CAMPAIGN_MANIFEST_dev.json').read_bytes(); man['cells'].append(dict(man['cells'][0], cell_id='extra')); json.dump(man, open(RD / 'CAMPAIGN_MANIFEST_dev.json', 'w'))
+    try: p3 = subprocess.run([PY, os.path.join(HERE, 'campaign.py'), 'run', str(RD), '--dev'], capture_output=True, text=True); assert p3.returncode != 0 and 'RESUME REFUSED' in (p3.stdout + p3.stderr); out['resume_preflight_refuses_edited_manifest'] = True
+    finally: (RD / 'CAMPAIGN_MANIFEST_dev.json').write_bytes(man_bytes)      # the pipeline directory is PRISTINE again for the controls copied from it below
     # ---- the ARCHIVED 54-cell dev admission (every registered arm and representation; dev seeds) RE-GATED by gate v4, references dispatched, report + closeout
     A = os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'PAC_REPAIR_2026-11-13', ADMISSION_DIR)
     try: admission_required(str(TMP / 'no_such_admission')); raise AssertionError('an ABSENT admission directory was accepted')
@@ -1044,7 +1076,7 @@ def q13_registry_pipeline():
         # the admission CLOSEOUT is run HERE with a schema-complete stub record bound to the CURRENT sources (the real record is written after this suite finishes; the development finalization re-runs the closeout with it)
         stubA = dict(suite_version=SUITE_VERSION + ' (pipeline-test stub)', all_pass=True, passed=len(registry.QUALIFICATION_GROUPS), total=len(registry.QUALIFICATION_GROUPS), groups=[dict(name=n_, ok=True) for n_ in registry.QUALIFICATION_GROUPS], candidate_sources=registry.source_inventory(CODE, scopes=('candidate',)), counts={}); json.dump(stubA, open(D / 'Q_stub_admission.json', 'w'))
         pA = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), A, '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--qualification', str(D / 'Q_stub_admission.json'), '--out', str(D / 'ADMISSION_CLOSEOUT_stub.md')], capture_output=True, text=True)
-        out['admission_closeout_with_current_identity'] = pA.stdout.strip()[-140:]; assert pA.returncode == 0 or 'differs from the file on disk' in pA.stdout or 'does not match the frozen candidate' in pA.stdout, pA.stdout[-400:]
+        out['admission_closeout_with_current_identity'] = pA.stdout.strip()[-140:]; assert pA.returncode == 0, ('the admission closeout with the CURRENT candidate identity must be QUALIFIED (sixth review S3: an identity-stale admission is not an admission of this candidate)', pA.stdout[-400:])
         GA = json.load(open(os.path.join(A, 'GATE_RESULT.json'))); assert GA['gate_passed'] and not GA['failures'] and GA['gated_set_sha256'], 'the archived admission gate must have passed on the frozen sources'
         RF = json.load(open(os.path.join(A, 'REFERENCES_R0.json'))); assert any(v['kind'] == 'R0_cbi_exact_coordinates' for v in RF['references'].values()), 'native CBI reference must be produced by the executable task set'
         RA = json.load(open(os.path.join(A, 'RESULTS_PAC.json'))); assert any(x.get('arm') == 'CBI_NATIVE' and (x.get('native_reference') or {}).get('kind') == 'R0_cbi_exact_coordinates' and (x.get('native_reference') or {}).get('contains_truth') is True for x in RA['native_query_scores']), 'the report must consume the native CBI reference'
@@ -1054,8 +1086,8 @@ def q13_registry_pipeline():
         # for the IDENTITY checks only (the worker outputs' candidate_sources of changed files will then differ -> the gate must report exactly those identity differences and nothing else)
         with contextlib.redirect_stdout(io.StringIO()): rc_a = gate.main(A, 'CAMPAIGN_MANIFEST_dev.json', out_path=str(D / 'ADMISSION_GATE_RESULT.json'))
         ga = json.load(open(D / 'ADMISSION_GATE_RESULT.json')); fails = [f[1] for f in ga['failures']]
-        non_identity = [f for f in fails if not ('frozen source' in f or 'candidate source' in f or 'source identity' in f or 'INCOMPLETE' in f or 'not in the required scopes' in f or 'was not verified' in f)]
-        assert not non_identity, non_identity[:5]
+        assert not fails and ga['gate_passed'], ('the admission re-gated against the CURRENT sources must pass with ZERO failures (sixth review S3: stale identities are not tolerated)', fails[:5])
+        assert not stale_keys, ('the admission inventory must equal the current frozen sources', stale_keys[:5])
         out['archived_dev_admission_regated'] = dict(cells=ga['planned'], receipts=ga['receipts'], completed=ga['completed_checked'], gated_completed=ga['completed_gated'], pac_replayed=ga['pac_certificates_replayed'], arms=arms_present, representations=reps_present, identity_failures_only=len(fails), identity_note='the admission froze an earlier source state (%d keys since changed); every non-identity check passes incl. the H4 / SF / CBI native validators, the zero and DEADLINE controls' % len(stale_keys))
         # the native validators must REFUSE malformed native outputs (controls on copies of the real admission outputs)
         rec = {json.load(open(rp))['cell_id']: (rp, json.load(open(rp))) for rp in glob.glob(os.path.join(A, 'cells', '*', 'receipt.json'))}; cells = {c['cell_id']: c for c in AM['cells']}
@@ -1151,6 +1183,38 @@ def q13_registry_pipeline():
                         try: SFK.check(law, r_, rec_, sym_); raise AssertionError('forged radius accepted: h=%d n=%d' % (bad_h, n_))
                         except SFK.CheckFailure: refused_sf += 1
         assert ok_sf >= 20 and refused_sf >= 20, (ok_sf, refused_sf); nat['sf_generic_small_laws'] = dict(genuine_proofs_verified_truth_contained=ok_sf, forged_radii_refused=refused_sf)
+        # ---- sixth review F02: EXACT integer moments over the accepted domain. (a) the review's fixed witness (weights up to 2^63 - 1; total > 2^64) through the REAL CLI in route F2,
+        # route E and select: every published interval must contain the exact pair-enumeration truth and the checker must verify; (b) weight-boundary families (around 2^53, 2^62,
+        # 2^63, 2^64, random 70-bit) on random small laws: every OK route verified + truth-contained, every fixed-width tier exercised; refusals recorded as refusals, never as inferences
+        sfd = D / 'sf_arith'; sfd.mkdir(); wit = dict(n=2, A=[[3, 7], [0, 8]], B=[[1, 2 ** 61 - 1], [3, 2 ** 63 - 1], [2, 2 ** 63 - 1], [0, 2 ** 61 - 1]]); json.dump(wit, open(sfd / 'witness.json', 'w'))
+        lawW = SFC.Law(2, [(3, 7), (0, 8)], [(1, 2 ** 61 - 1), (3, 2 ** 63 - 1), (2, 2 ** 63 - 1), (0, 2 ** 61 - 1)]); trW = sf_truth(lawW, F(3, 4)); cli = {}
+        for name_, args in (('route_F2', ['route', str(sfd / 'witness.json'), '3', '4', 'F2', str(sfd / 'o_F2.json'), '30']), ('route_E', ['route', str(sfd / 'witness.json'), '3', '4', 'E', str(sfd / 'o_E.json'), '30']), ('select', ['select', str(sfd / 'witness.json'), '3', '4', '1', '100', str(sfd / 'o_sel.json'), '30'])):
+            p_ = subprocess.run([PY, os.path.join(CODE, 'sf', 'invoke.py')] + args, capture_output=True, text=True, timeout=60); wj = json.load(open(args[5] if args[0] == 'route' else args[6]))
+            cont_ = wj.get('status') == 'OK' and all(F(lo) <= t_ <= F(hi) for (lo, hi), t_ in zip(wj['intervals_exact'], trW))
+            assert wj.get('status') == 'OK' and (wj.get('checker') or {}).get('status') == 'VERIFIED' and cont_, (name_, wj.get('status'), wj.get('reason'), wj.get('intervals_exact'))
+            cli[name_] = dict(rc=p_.returncode, status=wj['status'], route=wj['route'], checker=wj['checker']['status'], truth_contained=cont_, arithmetic=(wj.get('route_record') or {}).get('moment_arithmetic') or (wj.get('route_record') or {}).get('histogram_arithmetic')); cnt('truth_coordinates', 2)
+        rng_w = random.Random(2026); okw = 0; tiers_ = collections.Counter(); statuses_ = collections.Counter()
+        FAM = [lambda: rng_w.randint(1, 9), lambda: 2 ** 53 - rng_w.randint(0, 3), lambda: 2 ** 53 + rng_w.randint(0, 3), lambda: 2 ** 62 - rng_w.randint(0, 3), lambda: 2 ** 62 + rng_w.randint(0, 3), lambda: 2 ** 63 - 1, lambda: 2 ** 64 + rng_w.randint(0, 5), lambda: rng_w.randint(1, 2 ** 70)]
+        for trial in range(60):
+            n_ = rng_w.randint(1, 6); fa, fb = rng_w.choice(FAM), rng_w.choice(FAM); A_ = [(x, fa()) for x in rng_w.sample(range(2 ** n_), rng_w.randint(1, min(8, 2 ** n_)))]; B_ = [(x, fb()) for x in rng_w.sample(range(2 ** n_), rng_w.randint(1, min(8, 2 ** n_)))]
+            if rng_w.random() < 0.3: B_ = [(x, fb()) for x, _ in A_]
+            law = SFC.Law(n_, A_, B_); sym_, _ = law.antipodal(); r_ = rng_w.choice([F(3, 4), F(1, 64), F(1, 2), F(1), F(1, 128)]); u_, v_ = SFC.uv(r_)
+            Zt = sum(a * b * (v_ + u_) ** (n_ - bin(x ^ y).count('1')) * (v_ - u_) ** bin(x ^ y).count('1') for x, a in zip(law.A_rows, law.A_w) for y, b in zip(law.B_rows, law.B_w)); tr_ = sf_truth(law, r_) if Zt else None
+            for route in ('S0', 'S1', 'F0', 'F1', 'F2', 'F3', 'E', 'W'):
+                if route[0] == 'F' and int(route[1]) > n_: continue
+                if route == 'W' and not SFC.W_admitted(n_, law.mA)[0]: continue
+                res = SFR.run_route(law, r_, route, {'h': int(route[1])} if route[0] == 'S' else ({'k': int(route[1])} if route[0] == 'F' else {}), sym_); statuses_[res['status']] += 1
+                if res['status'] != 'OK':
+                    assert res['status'] in ('REJECT', 'REFUSE'), (trial, route, res['status'], res.get('reason')); continue
+                assert tr_ is not None, (trial, route, 'OK on an undefined (zero-mass) law')
+                res['published'] = [SFC.publish(lo, hi) for lo, hi in res['intervals']]; SFK.check(law, r_, res, sym_); assert all(lo <= t_ <= hi for (lo, hi), t_ in zip(res['intervals'], tr_)), (trial, route, 'truth not contained'); okw += 1; cnt('truth_coordinates', n_)
+                tiers_[(route[0], (res.get('moment_arithmetic') or res.get('histogram_arithmetic') or res.get('transform_arithmetic') or 'python-int').split(' (')[0])] += 1
+        assert okw >= 300 and any(k[1].startswith('exact') for k in tiers_) and any(k[1].startswith('int64') for k in tiers_), (okw, dict(tiers_))
+        nat['sf_exact_moments_accepted_domain'] = dict(cli=cli, boundary_families=dict(verified_truth_contained=okw, statuses={str(k): v for k, v in statuses_.items()}, tiers={'%s|%s' % k: v for k, v in tiers_.items()}))
+        # the checker-aligned forged full-degree record built from int64-WRAPPED moments (the review's second control) must be REFUSED by the repaired checker
+        rec_bad = dict(route='F2', k=2, Zk_int='1', Mk_int=['0', '0'], eta_Z='0', eta_M='0', intervals=[(F(1, 2), F(1, 2))] * 2, published=[SFC.publish(F(1, 2), F(1, 2))] * 2)
+        try: SFK.check(lawW, F(3, 4), rec_bad, False); raise AssertionError('forged F2 record accepted')
+        except SFK.CheckFailure as e_: nat['sf_forged_full_degree_record_refused'] = str(e_)[:90]
         # ---- fifth review R01 (H4): genuine first-node evidence reused for every node (alias), a coherent directory SWAP of two nodes, a foreign Gaussian exponent
         def h4_alias(att):
             b_ = json.load(open(att / 'bundle.json')); key0 = b_['nodes'][0]['key']
@@ -1180,6 +1244,18 @@ def q13_registry_pipeline():
         assert gate.validate_sf_native(A, cells[cidS_], dict(rS), os.path.join(A, rS['worker_output']), lambda cid__, msg: fails_.append(msg), deadline=time.monotonic() + 0.002) is False and 'UNVERIFIABLE' in fails_[0], fails_
         nat['native_checker_expired_or_tiny_allowance_UNVERIFIABLE'] = True
         out['native_validators_refuse_malformed'] = nat
+        # ---- sixth review F03: ONE effective-input resolver -- a manifest declaring an evidence_path that is not <model>.evid is REFUSED by the producer AND by the gate
+        import campaign as CP2
+        shutil.copy2(exq['evidence_path'], D / 'QG_decoy.evid'); json.dump(dict(instances=[dict(json.load(open(D / 'QG.json'))['instances'][0], evidence_path=str(D / 'QG_decoy.evid'))]), open(D / 'QG_decoy.json', 'w'))
+        try:
+            with contextlib.redirect_stdout(io.StringIO()): CP2.manifest(str(D / 'decoy_manifest'), '/Users/adis/Workspace/pgm/docs/handoff-received-2026-11-11-certified-executor/packet/inputs', dev=True, qgrid_inventory=str(D / 'QG_decoy.json'), include=('qgrid',), dev_restrictions=dict(primary=[('P1_PAC_CONDITIONAL', 1)], comparators=[], ablation=[], budgets=[20.0]))
+            raise AssertionError('manifest with a decoy evidence_path was produced')
+        except SystemExit as e_: assert 'effective evidence file' in str(e_), str(e_); out['decoy_evidence_path_refused_by_producer'] = str(e_)[:120]
+        d_dec = D / 'ctl_decoy_gate'; sh.copytree(RD, d_dec); mdec = json.load(open(d_dec / 'CAMPAIGN_MANIFEST_dev.json')); c0 = mdec['cells'][0]; shutil.copy2(c0['model_path'] + '.evid', d_dec / 'alternate.evid'); c0['evidence_path'] = str(d_dec / 'alternate.evid'); dump(d_dec / 'CAMPAIGN_MANIFEST_dev.json', mdec)
+        mh_d = hashlib.sha256((d_dec / 'CAMPAIGN_MANIFEST_dev.json').read_bytes()).hexdigest(); st_d = json.load(open(d_dec / 'CAMPAIGN_START.json')); st_d['manifest_sha256'] = mh_d; dump(d_dec / 'CAMPAIGN_START.json', st_d)
+        L_ = [json.loads(l) for l in open(d_dec / 'PAC_LEDGER.jsonl') if l.strip()]; L_[0]['manifest_sha256'] = mh_d; (d_dec / 'PAC_LEDGER.jsonl').write_text('\n'.join(json.dumps(x) for x in L_) + '\n')
+        with contextlib.redirect_stdout(io.StringIO()): rc_d = gate.main(str(d_dec), 'CAMPAIGN_MANIFEST_dev.json')
+        g_d = json.load(open(d_dec / 'GATE_RESULT.json')); assert rc_d == 1 and any('effective evidence file' in f_[1] for f_ in g_d['failures']), g_d['failures'][:3]; out['decoy_evidence_path_refused_by_gate'] = next(f_[1] for f_ in g_d['failures'] if 'effective evidence file' in f_[1])[:100]
         # ---- fifth review R03: comparator answers must be WELL-FORMED for the ORIGINAL model and bound to a fresh adapter packet of THIS task; controls on copies of the real PGMax admission cell
         import report as RPm
         cidP = next(k for k, (rp_, r_) in rec.items() if cells[k]['arm'] == 'PGMAX_SUMPRODUCT_BP' and r_['status'] == 'COMPLETED' and cells[k]['case_id'].startswith('qgrid_tiny')); rpP, rP = rec[cidP]; cP = cells[cidP]
@@ -1206,9 +1282,49 @@ def q13_registry_pipeline():
         def not_simplex(d_, c_, r_, att, mp_):
             txt = (att / 'cmp' / 'output.MAR').read_text(); toks = txt.split(); i_ = toks.index('MAR') + 1; k_ = int(toks[i_ + 1]); toks[i_ + 2] = '0.9'; toks[i_ + 3] = '0.9'
             (att / 'cmp' / 'output.MAR').write_text(' '.join(toks) + '\n'); h_ = hashlib.sha256((att / 'cmp' / 'output.MAR').read_bytes()).hexdigest(); r_['comparator']['output_sha256'] = h_; pk_ = json.load(open(att / 'cmp' / 'pac_receipt.json')); pk_['output_sha256'] = h_; json.dump(pk_, open(att / 'cmp' / 'pac_receipt.json', 'w'))
-        for name_, mut_, want_ in (('MAR_0_empty_answer', zero_rows, 'incomplete answer'), ('adapter_packet_deleted', deleted_packet, 'packet'), ('input_bytes_changed_frozen_hash_kept', changed_input, 'differs from the manifest hash'), ('packet_foreign_nonce', foreign_nonce_packet, 'nonce'), ('packet_other_task_hash', packet_other_task, 'input hashes'), ('row_truncated', truncated_row, 'entries for cardinality'), ('row_not_a_simplex_point', not_simplex, 'simplex')):
+        for name_, mut_, want_ in (('MAR_0_empty_answer', zero_rows, 'incomplete answer'), ('adapter_packet_deleted', deleted_packet, 'packet'), ('input_bytes_changed_frozen_hash_kept', changed_input, 'differs from the manifest hash'), ('packet_foreign_nonce', foreign_nonce_packet, 'nonce'), ('packet_other_task_hash', packet_other_task, 'input hashes'), ('row_truncated', truncated_row, 'entries for cardinality'), ('row_not_a_simplex_point', not_simplex, 'not normalized')):
             rc_, f_ = cmp_ctl(name_, mut_); assert rc_ == 1 and any(want_ in x for x in f_), (name_, f_); cmpc[name_] = next(x for x in f_ if want_ in x)[:90]
         out['comparator_controls'] = cmpc
+        # ---- sixth review F04: comparator normalization contract -- positive mass + a tolerance derived from the printed digits and the DECLARED representation (PGMax float32),
+        # capped at the task epsilon: genuine uniform rows at 100,000 states accepted (10 and 6 printed digits); all-zero, mis-scaled, nonfinite and off-by-more-than-epsilon rows
+        # refused; a within-digits perturbation and genuine low-cardinality rows accepted
+        def cmp_card(name, card, rowfn, want=None):
+            d_ = D / ('cmp_card_' + name); src_cell = Path(rpP).parent; dst_cell = d_ / 'cells' / src_cell.name; shutil.copytree(src_cell, dst_cell); c_ = copy.deepcopy(cP); r_ = copy.deepcopy(rP)
+            mp_ = d_ / 'model.uai'; mp_.write_text('MARKOV\n1\n%d\n1\n1 0\n%d\n%s\n' % (card, card, ' '.join(['1'] * card))); Path(str(mp_) + '.evid').write_text('0\n'); _, bnd = core.read_uai(mp_)
+            c_.update(model_path=str(mp_), evidence_path=str(mp_) + '.evid', case_id='uniform_card_%d' % card, cohort='qgrid', **bnd); r_.update(c_); att = dst_cell / Path(rP['attempt_dir']).name; r_['attempt_dir'] = str(att); of_ = att / 'cmp' / 'output.MAR'; of_.write_text('MAR\n1 %d %s\n' % (card, rowfn(card)))
+            h_ = hashlib.sha256(of_.read_bytes()).hexdigest(); r_['comparator'].update(output_file=str(of_), output_sha256=h_); pk_ = json.load(open(att / 'cmp' / 'pac_receipt.json')); pk_.update(model_sha256=bnd['model_sha256'], evidence_sha256=bnd['evidence_sha256'], output_file=str(of_), output_sha256=h_); json.dump(pk_, open(att / 'cmp' / 'pac_receipt.json', 'w'))
+            json.dump(r_, open(dst_cell / 'receipt.json', 'w'), indent=1, default=str); m_ = copy.deepcopy(AM); m_.update(cells=[c_], inventory=[dict(c_, status='CONTROL')], cbi_instances=[], candidate_artifact_hashes=registry.source_inventory(CODE)); json.dump(m_, open(d_ / 'CAMPAIGN_MANIFEST.json', 'w'), indent=1, default=str)
+            mh_ = hashlib.sha256((d_ / 'CAMPAIGN_MANIFEST.json').read_bytes()).hexdigest(); ah_ = hashlib.sha256(json.dumps(m_['candidate_artifact_hashes'], sort_keys=True).encode()).hexdigest(); st_ = dict(kind='CAMPAIGN_START', manifest='CAMPAIGN_MANIFEST.json', manifest_sha256=mh_, artifact_hashes_sha256=ah_); json.dump(st_, open(d_ / 'CAMPAIGN_START.json', 'w')); (d_ / 'PAC_LEDGER.jsonl').write_text(json.dumps(st_) + '\n')
+            with contextlib.redirect_stdout(io.StringIO()): rc_ = gate.main(str(d_), gate_budget_s=60)
+            g_ = json.load(open(d_ / 'GATE_RESULT.json')); f_ = [x[1][:100] for x in g_['failures']]
+            if want is None: assert rc_ == 0 and not f_, (name, f_)
+            else: assert rc_ == 1 and any(want in x for x in f_), (name, f_)
+            return 'ACCEPTED' if rc_ == 0 else next(x for x in f_ if want in x)
+        K_ = 100000; cmpn = {}
+        cmpn['genuine_uniform_100000'] = cmp_card('genuine_uniform', K_, lambda k: ' '.join(['%.10g' % (1 / k)] * k))
+        cmpn['genuine_uniform_100000_six_digits'] = cmp_card('genuine_uniform_6dig', K_, lambda k: ' '.join(['%.6g' % (1 / k)] * k))
+        cmpn['all_zero_100000'] = cmp_card('all_zero', K_, lambda k: ' '.join(['0'] * k), 'no probability mass')
+        cmpn['mis_scaled_half_100000'] = cmp_card('half', K_, lambda k: ' '.join(['%.10g' % (0.5 / k)] * k), 'not normalized')
+        cmpn['nonfinite_entry'] = cmp_card('nan', 4, lambda k: 'nan 0.5 0.25 0.25', 'non-finite')
+        cmpn['off_by_more_than_epsilon_1000'] = cmp_card('off_eps', 1000, lambda k: ' '.join(['0.00099'] * k), 'not normalized')
+        cmpn['within_digits_perturbation_1000_accepted'] = cmp_card('within_digits', 1000, lambda k: ' '.join(['%.10g' % (1 / k)] * (k - 1) + ['%.10g' % (1 / k + 1e-10)]))
+        cmpn['genuine_low_cardinality_2'] = cmp_card('low', 2, lambda k: '0.3023470938 0.6976529062')
+        out['comparator_normalization_controls'] = cmpn
+        # ---- sixth review S1 / S2 policies on the in-suite pipeline: (S1) a conflicting exact reference shifted by 1/10000 (the deterministic interval does not contain it; point error
+        # inside epsilon) -> INVESTIGATE refusal after an HONEST report regeneration; (S2) a supervisor-killed verification retry -> the closeout refuses until the gate is re-run successfully
+        d_s1 = D / 'ctl_small_reference_contradiction'; sh.copytree(RD, d_s1); RJ_ = json.load(open(d_s1 / 'REFERENCES_R0.json')); row0 = RJ_['references']['qgrid_tiny_L2']['rows'][0]; row0[0] = str(F(row0[0]) + F(1, 10000)); row0[1] = str(F(row0[1]) - F(1, 10000)); dump(d_s1 / 'REFERENCES_R0.json', RJ_)
+        with contextlib.redirect_stdout(io.StringIO()): RP.main(str(d_s1), 'CAMPAIGN_MANIFEST_dev.json')
+        p_s1 = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), str(d_s1), '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--qualification', str(d_s1 / 'Q_stub.json')], capture_output=True, text=True); reasons_s1 = p_s1.stdout[p_s1.stdout.index('prerequisites failed:') + 21:].strip().rstrip(')') if 'prerequisites failed:' in p_s1.stdout else p_s1.stdout
+        OTHER_PREREQ = ('differ', 'not bound', 'different manifest', 'frozen source', 'gate lists', 'not verified', 'missing', 'incomplete', 'LATEST verification')
+        assert p_s1.returncode == 1 and 'INVESTIGATE' in reasons_s1 and 'interval not containing' in reasons_s1 and not any(x in reasons_s1 for x in OTHER_PREREQ), ('the small contradiction must be refused for EXACTLY the investigation reason (no other prerequisite may fail on the honest regeneration)', reasons_s1[-400:]); out['small_exact_reference_contradiction_INVESTIGATE'] = reasons_s1[:160]
+        d_s2 = D / 'ctl_failed_recheck'; sh.copytree(RD, d_s2)
+        subprocess.run([PY, '-m', 'gbidi.supervise', '--ledger', str(d_s2 / 'PAC_LEDGER.jsonl'), '--scope', 'pac_finalize_gate', '--job', 'q13:gate_recheck_tiny_memory', '--timeout', '10', '--mem-gib', '0.001', '--', PY, os.path.join(HERE, 'gate.py'), str(d_s2), '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--gate-budget-s', '5'], cwd=CODE, capture_output=True, text=True, timeout=60)
+        last_ = [json.loads(x) for x in (d_s2 / 'PAC_LEDGER.jsonl').read_text().splitlines() if x.strip() and json.loads(x).get('kind') == 'RECEIPT'][-1]; assert last_['outcome'] == 'MEMORY_KILL', last_
+        p_s2 = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), str(d_s2), '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--qualification', str(d_s2 / 'Q_stub.json')], capture_output=True, text=True); assert p_s2.returncode == 1 and 'LATEST verification-stage attempt' in p_s2.stdout, p_s2.stdout[-300:]
+        subprocess.run([PY, '-m', 'gbidi.supervise', '--ledger', str(d_s2 / 'PAC_LEDGER.jsonl'), '--scope', 'pac_finalize_gate', '--job', 'q13:gate_recheck_rerun', '--timeout', '120', '--mem-gib', '8', '--', PY, os.path.join(HERE, 'gate.py'), str(d_s2), '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--gate-budget-s', '60'], cwd=CODE, capture_output=True, text=True, timeout=180)
+        with contextlib.redirect_stdout(io.StringIO()): RP.main(str(d_s2), 'CAMPAIGN_MANIFEST_dev.json')      # the production chain re-runs the report after a gate re-run (the report binds the gated set of the LATEST gate)
+        p_s2b = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), str(d_s2), '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--qualification', str(d_s2 / 'Q_stub.json')], capture_output=True, text=True); assert p_s2b.returncode == 0, p_s2b.stdout[-300:]
+        out['failed_recheck_refused_then_rerun_qualified'] = dict(killed=last_['outcome'], closeout_after_kill=p_s2.stdout.strip()[-120:], closeout_after_rerun=p_s2b.stdout.strip()[-80:])
         # typed outcomes present in the admission: PROVED_ZERO_EVIDENCE (candidate arms), DEADLINE, MEMORY, comparator unresolved zero
         oc = collections.Counter((cells[k]['arm'], r['outcome']) for k, (rp, r) in rec.items())
         assert oc[('P1_PAC_CONDITIONAL', 'PROVED_ZERO_EVIDENCE')] >= 1 and oc[('P1_PAC_CONDITIONAL', 'DEADLINE')] >= 1 and oc[('MERLIN_CTE', 'ZERO_EVIDENCE_OR_UNDERFLOW_UNRESOLVED')] >= 1 and oc[('H4_NATIVE_C', 'PUBLISHED')] == 1 and oc[('SF_NATIVE_SELECT', 'PUBLISHED')] >= 1 and oc[('CBI_NATIVE', 'PUBLISHED')] == 1, dict(oc)

@@ -43,7 +43,7 @@ for p in (os.path.join(CODE, 'cex', 'newarm'), HERE, CODE):
 sys.set_int_max_str_digits(0)
 from fractions import Fraction as F
 import core, registry
-GATE_VERSION = 'pac-gate-v4.2 (2026-11-14 repair 5: native proof premises + task binding (SF radius domain, H4 witness regeneration / kernel re-execution / derived node weights), complete dependency set incl. .evid / blocks / adapter packets, well-formed task-bound comparator answers, ONE execution-semantics predicate for every terminal family, deadlines on every proof route with isolated native checkers and post-acceptance clock checks, null identities refused)'
+GATE_VERSION = 'pac-gate-v4.3 (2026-11-15 repair 6: zero-dimensional reduced jobs verified through the re-derived reduction, ONE effective evidence-path resolver, comparator normalization contract with positive mass and digit-derived tolerance capped at epsilon; v4.2 repair 5: native proof premises + task binding (SF radius domain, H4 witness regeneration / kernel re-execution / derived node weights), complete dependency set incl. .evid / blocks / adapter packets, well-formed task-bound comparator answers, ONE execution-semantics predicate for every terminal family, deadlines on every proof route with isolated native checkers and post-acceptance clock checks, null identities refused)'
 CANDIDATE_ARMS = registry.CANDIDATE_ARMS; B0 = 'B0_FROZEN_V14'
 REPLAY_FACTOR = 3.0            # checker budget per PAC component replay = REPLAY_FACTOR x the cell budget (charged to the checker; exceeding it is UNVERIFIABLE)
 GATE_BUDGET_S = None           # aggregate checker budget for the whole gate run (None = unbounded only when the caller supervises; finalize_v4 passes --gate-budget-s)
@@ -158,7 +158,10 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
         if str(cert.get('delta')) != str(task.get('delta', '1/1000000')) or str(w.get('delta')) != str(task.get('delta', '1/1000000')): fail(cid, 'delta differs from the manifest task')
     elif str(cert.get('delta')) != '0': fail(cid, 'deterministic certificate with nonzero delta')
     comps = cert.get('components') or []
-    if not comps: fail(cid, 'certificate without components'); return
+    # ---- ZERO-DIMENSIONAL remaining job (sixth review F01): an EMPTY component list is legal ONLY when the certificate carries a reduced model and the RE-DERIVED reduction of
+    # the ORIGINAL model proves that every variable is fixed (reduced cards [], partition []): the answer is then the decoder's fixed rows, lifted below like every other job
+    # (K_total = 0, no PAC component). An empty list without a reduced model, or with a re-derived reduced job that still has variables, is refused.
+    if not comps and cert.get('reduced_model') is None: fail(cid, 'certificate without components and without a reduced model (not a zero-dimensional job, not a root route)'); return
     cards0 = model['cards']; rm = None; decoder = None; partition = None
     if cert.get('reduced_model') is None:
         if not (len(comps) == 1 and comps[0].get('guarantee') == 'DETERMINISTIC' and comps[0].get('route') in ('forest', 'dag') and list(comps[0].get('variables') or []) == list(range(len(cards0)))): fail(cid, 'certificate without a reduced model but not a whole-model root route'); return
@@ -177,6 +180,10 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
         partition = [old for old, _ in split]
         if [list(p) for p in (cert.get('partition') or [])] != [list(p) for p in partition]: fail(cid, 'certificate partition differs from the re-derived component split'); return
         comp_models = {tuple(old): cm for old, cm in split}
+        if not comps:
+            if rm['cards'] or partition: fail(cid, 'certificate without components but the re-derived reduced job still has %d variables in %d components' % (len(rm['cards']), len(partition))); return
+            if any(d_.get('kind') != 'fixed' for d_ in decoder): fail(cid, 'zero-dimensional job whose re-derived decoder is not all-fixed'); return
+            if w.get('guarantee_type') != 'DETERMINISTIC' or (cert.get('delta_ledger') or {}).get('components_pac') not in (0, None): fail(cid, 'zero-dimensional job must be a DETERMINISTIC publication with no PAC component'); return
     K_expected = sum(rm['cards']) if cert.get('reduced_model') is not None else 0
     K = cert.get('K_total'); led = cert.get('delta_ledger') or {}
     if K != K_expected or led.get('coordinates') != K_expected: fail(cid, 'K_total %s differs from the sum of cardinalities of the re-derived reduced job (%d)' % (K, K_expected)); return
@@ -286,6 +293,7 @@ def check_pac_certificate(w, c, man, model, fail, deadline_factor=REPLAY_FACTOR)
         else: fail(cid, 'component %s with guarantee %s' % (ci, g)); return
         for v, row, q in zip(old, rows, pts): verified_rows[v] = row; verified_pts[v] = q
     if w.get('guarantee_type') == 'PAC' and not pac_seen: fail(cid, 'PAC guarantee without any PAC component'); return
+    if rm is not None and len(rm['cards']) > 0 and not comps: fail(cid, 'nonempty reduced job without components'); return
     if w.get('guarantee_type') == 'DETERMINISTIC' and pac_seen: fail(cid, 'DETERMINISTIC guarantee with a PAC component'); return
     try:
         if cert.get('reduced_model') is None: LI, LP = verified_rows, verified_pts
@@ -631,6 +639,20 @@ def dependency_closure_failures(RD, c, evidence):
     return out
 
 
+def effective_evidence_path(model_path):
+    """the ONE effective evidence file of a UAI task: the reader (core.read_uai, the B0 reader, the references, the report) consumes <model_path>.evid, present or absent;
+    a manifest that declares a different evidence_path does not identify the reader's input and is REFUSED (sixth review F03)"""
+    return model_path + '.evid'
+
+
+def evidence_declaration_failure(c):
+    """None when the cell's declared evidence_path (if any) IS the effective evidence path of its model, else the refusal message"""
+    mp = c.get('model_path'); ep = c.get('evidence_path')
+    if not mp or ep is None: return None
+    if os.path.abspath(ep) != os.path.abspath(effective_evidence_path(mp)): return 'declared evidence_path %s does not identify the reader\'s effective evidence file %s (one effective-input resolver)' % (ep, effective_evidence_path(mp))
+    return None
+
+
 def task_dependencies(c):
     """the COMPLETE task dependency set of a cell (candidate v4.2; fifth review R02): every file the task is DEFINED by -- the model file, its evidence file (UAI
     representation: <model>.evid, present or absent -- an absent file is the empty-evidence task and is recorded as such), the adapter blocks metadata of the adapted
@@ -639,7 +661,7 @@ def task_dependencies(c):
     mp = c.get('model_path')
     if mp: deps.append(mp)
     rep_ = (registry.COHORTS.get(c.get('cohort')) or {}).get('representation')
-    if rep_ == 'uai_table' and mp: deps.append(c.get('evidence_path') or (mp + '.evid'))
+    if rep_ == 'uai_table' and mp: deps.append(effective_evidence_path(mp))                 # the EFFECTIVE path (never the declared one): the reader's input
     if c.get('blocks_path'): deps.append(c['blocks_path'])
     return deps
 
@@ -648,11 +670,13 @@ def _bind_task_dependencies(c, fail):
     """hash the task dependency set into the gated set and check the frozen manifest hashes: the model file must equal model_sha256; the UAI evidence file (or its ABSENCE
     = sha256(b'0')) must equal evidence_sha256; the blocks metadata must equal blocks_sha256 (semantic hash of blocks / d / cards)"""
     cid = c['cell_id']; ok = True
+    bad_decl = evidence_declaration_failure(c)
+    if bad_decl: fail(cid, bad_decl); ok = False
     for dep in task_dependencies(c):
         h = _ev(dep)
         if dep == c.get('model_path'):
             if h != c.get('model_sha256'): fail(cid, 'frozen input file %s differs from the manifest hash or is missing (input changed after freeze)' % os.path.basename(dep)); ok = False
-        elif dep.endswith('.evid') or dep == c.get('evidence_path'):
+        elif dep == effective_evidence_path(c.get('model_path') or ''):
             cur = h if h is not None else hashlib.sha256(b'0').hexdigest()
             if cur != c.get('evidence_sha256'): fail(cid, 'task EVIDENCE file %s differs from the frozen evidence hash (present / absent / changed): the task on disk is not the frozen task' % os.path.basename(dep)); ok = False
         elif dep == c.get('blocks_path'):
@@ -663,12 +687,49 @@ def _bind_task_dependencies(c, fail):
     return ok
 
 
+NORMALIZATION_TOL_MAX = F(1, 200)     # a row whose printed digits cannot certify normalization within the task epsilon is not a verifiable answer at that resolution
+
+
+def _token_half_ulp(tok):
+    """half of the decimal unit in the last printed place of a token (the maximal rounding error of a correctly rounded decimal serialization)"""
+    t = tok.lower(); mant, exp10 = (t.split('e') + ['0'])[:2]
+    digits = len(mant.split('.')[1]) if '.' in mant else 0
+    return F(1, 2) * F(1, 10 ** digits) * (F(10) ** int(exp10))
+
+
+def validate_mar_rows(tokens, cards, ev, mantissa_bits=53, entry_error_ulps=4):
+    """ONE comparator answer contract (sixth review F04) shared by the gate and the report: tokens = the MAR file split; returns (rows as Fractions, failure message or None).
+    Shape: one row per ORIGINAL variable with card(v) entries. Entries: finite decimals in [0, 1]. Normalization: POSITIVE total mass and |Σ row − 1| ≤ tol where
+    tol = min(Σ_i half-ulp(token_i) + k·entry_error_ulps·2^-mantissa_bits, NORMALIZATION_TOL_MAX): the aggregate decimal-serialization error of THIS row's printed digits plus
+    the DECLARED per-entry error budget of the comparator's numeric pipeline (registry mantissa_bits / entry_error_ulps: binary64 point pipelines 4 ulps, PGMax float32
+    exp-of-log beliefs 64 ulps), never more than the task epsilon --
+    it can never become vacuous with the cardinality (an all-zero row, a mis-scaled row, a row off by more than epsilon are refused). Observed variables are point masses
+    on their state. No renormalization is applied: the scored vector is the printed vector."""
+    try:
+        i = tokens.index('MAR') + 1 if 'MAR' in tokens else 0
+        n = int(tokens[i]); i += 1; rows = []; raw = []
+        for _ in range(n):
+            k = int(tokens[i]); i += 1; raw.append(tokens[i:i + k]); rows.append([F(x) for x in tokens[i:i + k]]); i += k
+        if i != len(tokens): return None, 'comparator answer carries trailing tokens'
+    except (ValueError, IndexError, ZeroDivisionError) as ex: return None, 'comparator answer unparseable or non-finite (%s)' % type(ex).__name__
+    if len(rows) != len(cards): return None, 'comparator answer has %d rows for %d variables of the ORIGINAL model: an incomplete answer is not a completed inference' % (len(rows), len(cards))
+    for v, (row, toks, k) in enumerate(zip(rows, raw, cards)):
+        if len(row) != k: return None, 'comparator answer row %d has %d entries for cardinality %d' % (v, len(row), k)
+        if any(t.lower() in ('nan', 'inf', '-inf', '+inf', 'infinity', '-infinity') for t in toks) or any(x < 0 or x > 1 for x in row): return None, 'comparator answer row %d has a non-finite or out-of-range probability' % v
+        total = sum(row)
+        if total <= 0: return None, 'comparator answer row %d has no probability mass (sum 0): not a distribution' % v
+        tol = min(sum(_token_half_ulp(t) for t in toks) + F(k * int(entry_error_ulps), 2 ** int(mantissa_bits)), NORMALIZATION_TOL_MAX)
+        if abs(total - 1) > tol: return None, 'comparator answer row %d is not normalized (sum %s; tolerance %s derived from the printed digits and the declared representation, capped at the task epsilon)' % (v, float(total), float(tol))
+        if v in ev and row[ev[v]] < 1 - F(1, 10 ** 6): return None, 'comparator answer row %d is not a point mass on the observed state' % v
+    return rows, None
+
+
 def validate_comparator(RD, c, r, fail, model, deadline=None):
     """comparator (UNGUARANTEED) completion (candidate v4.2; fifth review R03): a completed comparator cell counts as a publication ONLY when (1) the adapter packet
     cmp/pac_receipt.json exists inside the fresh attempt of THIS receipt and binds arm, nonce, model / evidence sha256 (= the frozen task), budget and the output
     sha256; (2) the output file exists, is hashed, equals the packet and the receipt; (3) the answer is WELL-FORMED for the ORIGINAL model: exactly one row per variable,
-    exactly card(v) finite entries in [0, 1] per row, every row a simplex point within 1e-5 * card (the adapters' own normalization tolerance) and every observed
-    variable a point mass on its observed state. Approximation error against any reference is NOT checked here (diagnostic in the report)."""
+    exactly card(v) finite entries in [0, 1] per row, POSITIVE total mass and normalization within a tolerance derived from the printed digits and capped at the task
+    epsilon (validate_mar_rows; sixth review F04: never vacuous with the cardinality), every observed variable a point mass on its observed state. Approximation error against any reference is NOT checked here (diagnostic in the report)."""
     cid = c['cell_id']; cmpr = r.get('comparator') or {}; of = cmpr.get('output_file')
     if not of or not os.path.exists(of): fail(cid, 'COMPLETED comparator without its output file'); return False
     _ev(of)
@@ -685,20 +746,10 @@ def validate_comparator(RD, c, r, fail, model, deadline=None):
     if not isinstance(P.get('budget_s'), (int, float)) or float(P['budget_s']) != float(c['budget_s']): fail(cid, 'comparator adapter packet budget differs from the cell'); return False
     if P.get('outcome') != 'PUBLISHED' or P.get('output_sha256') != cmpr.get('output_sha256') or P.get('output_sha256') != sha(of) or os.path.basename(str(P.get('output_file') or '')) != os.path.basename(of) or os.path.dirname(os.path.abspath(pk)) != os.path.dirname(os.path.abspath(of)): fail(cid, 'comparator adapter packet does not bind this output (outcome / output sha256 / file name / same attempt directory)'); return False
     if not _fresh_attempt(pk, r): fail(cid, 'comparator adapter packet is not inside the fresh attempt directory of this receipt'); return False
-    try:
-        toks = open(of).read().split(); i = toks.index('MAR') + 1 if 'MAR' in toks else 0
-        n = int(toks[i]); i += 1; rows = []
-        for _ in range(n):
-            k = int(toks[i]); i += 1; rows.append([float(toks[i + j]) for j in range(k)]); i += k
-        if i != len(toks): fail(cid, 'comparator answer carries trailing tokens'); return False
-    except Exception as ex: fail(cid, 'comparator answer unparseable (%s)' % type(ex).__name__); return False
-    cards = model['cards']; ev = model.get('evidence', {})
-    if len(rows) != len(cards): fail(cid, 'comparator answer has %d rows for %d variables of the ORIGINAL model: an incomplete answer is not a completed inference' % (len(rows), len(cards))); return False
-    for v, (row, k) in enumerate(zip(rows, cards)):
-        if len(row) != k: fail(cid, 'comparator answer row %d has %d entries for cardinality %d' % (v, len(row), k)); return False
-        if any(not (x == x and abs(x) != float('inf')) or x < 0 or x > 1 for x in row): fail(cid, 'comparator answer row %d has a non-finite or out-of-range probability' % v); return False
-        if abs(sum(row) - 1.0) > 1e-5 * max(1, k): fail(cid, 'comparator answer row %d is not a simplex point (sum %.8f)' % (v, sum(row))); return False
-        if v in ev and row[ev[v]] < 1 - 1e-6: fail(cid, 'comparator answer row %d is not a point mass on the observed state' % v); return False
+    try: toks = open(of).read().split()
+    except Exception as ex: fail(cid, 'comparator answer unreadable (%s)' % type(ex).__name__); return False
+    rows, bad = validate_mar_rows(toks, model['cards'], model.get('evidence', {}), mantissa_bits=(registry.ARMS.get(c['arm']) or {}).get('mantissa_bits', 53), entry_error_ulps=(registry.ARMS.get(c['arm']) or {}).get('entry_error_ulps', 4))
+    if bad: fail(cid, bad); return False
     if _late(deadline): fail(cid, 'comparator: UNVERIFIABLE -- the validation finished after its allowance'); return False
     return True
 

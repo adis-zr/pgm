@@ -15,7 +15,7 @@ from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); sys.set_int_max_str_digits(0)
 import core
 sys.path.insert(0, HERE); import registry
-EPS = F(1, 200); REPORT_VERSION = 'pac-report-v4.2 (2026-11-14 repair 5: task dependency set re-hashed (model, .evid, blocks, packets), malformed comparator answers never counted as publications, reference audit bound to manifest / gated set / inputs, native and reference summaries re-derivable from verified raw records)'
+EPS = F(1, 200); REPORT_VERSION = 'pac-report-v4.3 (2026-11-15 repair 6: ONE comparator answer contract shared with the gate (positive mass, digit-derived normalization tolerance capped at epsilon), deterministic interval / exact-reference contradictions classified CONFIRMED_INACCURATE, effective evidence path)'
 CANDIDATE_ARMS = ('B0_FROZEN_V14', 'P1_PAC_CONDITIONAL', 'H1_HYBRID', 'A0_POINT', 'A1_CONDITIONAL')
 import sys as _sys
 EXACT_CAPACITY_ARMS = ('LIBDAI_EXACT', 'MERLIN_CTE')
@@ -156,9 +156,8 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', write=True):
             if model_ is None: bad_ = 'input unavailable'
             elif not mar or not os.path.exists(mar): bad_ = 'comparator output missing'
             else:
-                try:
-                    pts_ = read_mar(mar)
-                    if not shape_ok(pts_, model_['cards']) or any(not (0 <= x <= 1) for rw in pts_ for x in rw) or any(abs(sum(rw) - 1) > F(1, 10 ** 5) * max(1, k) for rw, k in zip(pts_, model_['cards'])): bad_ = 'comparator answer malformed for the original model (shape / range / simplex)'
+                import gate as _gate
+                try: _rows, bad_ = _gate.validate_mar_rows(open(mar).read().split(), model_['cards'], model_.get('evidence', {}), mantissa_bits=(registry.ARMS.get(c['arm']) or {}).get('mantissa_bits', 53), entry_error_ulps=(registry.ARMS.get(c['arm']) or {}).get('entry_error_ulps', 4))      # the ONE comparator answer contract (shared with the gate)
                 except Exception: bad_ = 'comparator output unparseable'
             if bad_: row['outcome'] = 'MALFORMED_NOT_A_PUBLICATION'; row['guarantee'] = 'NONE'; row['report_stage_remap'] = bad_
         if w:
@@ -202,8 +201,12 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', write=True):
         if bref is not None and (b0_binding.get((c['case_id'], c['budget_s'])) != frozen_binding or not shape_ok(bref, cards)): bref = None
         if ref and ref['kind'] == 'R0_exact_rational':
             truth = ref['rows']; worst = max(abs(p - t) for pr, tr in zip(pts, truth) for p, t in zip(pr, tr)); cont = all(lo <= t <= hi for ivr, tr in zip(ivs, truth) for (lo, hi), t in zip(ivr, tr)) if ivs else None
-            res = 'CONFIRMED_ACCURATE' if worst <= EPS else 'CONFIRMED_INACCURATE'; cat[(c['arm'], res)] += 1
-            audit.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], reference='R0_exact_rational', reference_binding=ref['binding'], max_abs_error=float(worst), accurate=res, intervals_contain_truth=cont, coordinates=sum(len(x) for x in truth)))
+            res = 'CONFIRMED_ACCURATE' if worst <= EPS else 'CONFIRMED_INACCURATE'
+            # a DETERMINISTIC certificate whose interval does not CONTAIN the exact reference is a contradiction between two exact artifacts regardless of the point error
+            # (sixth review S1): classified CONFIRMED_INACCURATE with the containment reason; a PAC realization missing the truth is a PAC event, not a proof contradiction, and keeps the point rule
+            if cont is False and r.get('guarantee_type') == 'DETERMINISTIC' and c['arm'] in CANDIDATE_ARMS: res = 'CONFIRMED_INACCURATE'
+            cat[(c['arm'], res)] += 1
+            audit.append(dict(case=c['case_id'], arm=c['arm'], budget=c['budget_s'], rep=c['replicate'], reference='R0_exact_rational', reference_binding=ref['binding'], max_abs_error=float(worst), accurate=res, intervals_contain_truth=cont, guarantee=r.get('guarantee_type'), contradiction=('deterministic interval does not contain the exact reference' if (cont is False and r.get('guarantee_type') == 'DETERMINISTIC') else None), coordinates=sum(len(x) for x in truth)))
         elif bref is not None:
             upper = max(max(abs(p - lo), abs(p - hi)) for ivr, pr in zip(bref, pts) for (lo, hi), p in zip(ivr, pr)); lower = max(max(lo - p, p - hi, F(0)) for ivr, pr in zip(bref, pts) for (lo, hi), p in zip(ivr, pr))
             res = 'CONFIRMED_ACCURATE' if upper <= EPS else ('CONFIRMED_INACCURATE' if lower > EPS else 'UNRESOLVED_INTERVAL')

@@ -4,6 +4,9 @@ sf.routes: S via sorted-array intersection and set membership; F via the section
 beta_S for |S| <= k, contracted per degree; the producer uses the section-5 streaming form); E via the TRANSPOSED accumulation
 (loop over y, vectorized over x, with the coordinate split done by bit masks); W via the pair reconstruction (frozen). Tails via
 math.comb (the producer's tails are compared exactly).
+ARITHMETIC DOMAIN (sixth adversarial review, 15 Nov 2026, F02): weights are positive integers of ARBITRARY size; every fixed-width (int64 / float64) accumulation in this
+checker is executed only while a PRE-OPERATION bound proves every intermediate in range (the sum of the weights accumulated so far), else exact Python integers are used;
+the zero-order moments must reconcile with the exact totals (a necessary cross-check, never the proof).
 PREMISE CHECKS (fifth adversarial review, 14 Nov 2026, R01): every bound is accepted only inside the domain its reconstruction actually covers -- the sparse route's
 radius must be one of SPARSE_RADII (distances 0 and 1 are enumerated; nothing deeper is reconstructed) and the omitted-region bound is derived from the RECONSTRUCTED
 retained set; the spectral degree must lie in 0..n; the route label must name the declared parameter. Out-of-domain parameters are refused, never coerced."""
@@ -106,17 +109,26 @@ def _subsets(n, k):
     return out
 
 
+INT64_SAFE = 1 << 62          # the checker's fixed-width accumulation is used only while a PRE-OPERATION bound (the sum of the weights added since the last flush) proves every entry in range
+
+
 def _moments_rowwise(masks, weights, Sarr):
-    """Σ_x w(x) chi_S(x) for every S in Sarr, vectorized over SUBSETS per row (the opposite axis from the producer)."""
+    """Σ_x w(x) chi_S(x) for every S in Sarr, vectorized over SUBSETS per row (the opposite axis from the producer). EXACT for arbitrary positive integer weights:
+    `pending` is the sum of the weights accumulated in the int64 buffer since its last flush, hence a bound on |every entry|; BEFORE adding w the buffer is flushed to
+    exact Python integers unless pending + w < 2^62; a single weight >= 2^62 is added to the exact accumulator directly (never to the int64 buffer)."""
     acc = np.zeros(len(Sarr), dtype=object)
     S64 = Sarr.astype(np.uint64)
-    tmp = np.zeros(len(Sarr), dtype=np.int64)
+    tmp = np.zeros(len(Sarr), dtype=np.int64); pending = 0
     pS = np.array([bin(int(S)).count("1") for S in Sarr.tolist()], dtype=np.int64)        # |S|
     for x, w in zip(masks, weights):
         par = ((pS - np.bitwise_count(np.uint64(x) & S64).astype(np.int64)) & 1)           # CLEAR bits of x inside S: chi_S(x) = (-1)^par
-        tmp += np.int64(w) * (1 - 2 * par)
-        if tmp.dtype == np.int64 and abs(int(np.abs(tmp).max())) > (1 << 61):
-            acc += tmp.astype(object); tmp[:] = 0
+        sg = (1 - 2 * par)
+        if w >= INT64_SAFE:
+            if pending: acc += tmp.astype(object); tmp[:] = 0; pending = 0
+            acc += int(w) * sg.astype(object); continue
+        if pending + w >= INT64_SAFE:
+            acc += tmp.astype(object); tmp[:] = 0; pending = 0
+        tmp += np.int64(w) * sg; pending += w
     acc += tmp.astype(object)
     return acc
 
@@ -130,6 +142,7 @@ def check_F(law, r, rec, claimed_symmetric):
     Sk1 = np.array([S for d in subs_k1 for S in subs_k1[d]], dtype=np.uint64); Sk = np.array([S for d in subs_k for S in subs_k[d]], dtype=np.uint64)
     alpha = dict(zip(Sk1.tolist(), (int(x) for x in _moments_rowwise(law.A_rows, law.A_w, Sk1))))
     beta = dict(zip(Sk.tolist(), (int(x) for x in _moments_rowwise(law.B_rows, law.B_w, Sk))))
+    _req(alpha[0] == law.A0 and beta[0] == law.B0, "F%d: zero-order moments (%d, %d) do not reconcile with the exact totals (%d, %d)" % (k, alpha[0], beta[0], law.A0, law.B0))      # NECESSARY cross-check (the bound above is the proof)
     # section-3 identities: Z_k = Σ_{|S|<=k} r^|S| alpha_S beta_S ; M_{i,k} = Σ_{|S|<=k} r^|S| alpha_{S Δ {i}} beta_S  (scale A0 B0 v^k)
     Zk = 0; Mk = [0] * n
     for d in range(k + 1):
@@ -164,20 +177,41 @@ def _pair_reconstruction(law, r, chunk=256):
     """TRANSPOSED exact accumulation: loop over y-chunks, vectorized over ALL x; per-y distance histograms split by each x-coordinate."""
     n = law.n; u, v = C.uv(r)
     kap = [_kappa(n, u, v, d) for d in range(n + 1)]
-    X = law.X; aw = np.array(law.A_w, dtype=np.float64); assert law.A0 < (1 << 53)
-    bits = np.array([[(x >> i) & 1 for i in range(n)] for x in law.A_rows], dtype=np.float64)       # (mA, n)
-    Z = 0; N = [0] * n
-    Y = law.Y
+    X = law.X; Y = law.Y; Z = 0; N = [0] * n
+    # the per-y distance histograms of the A weights (and of the A weights restricted to each set coordinate) are EXACT for arbitrary weights: every partial sum is bounded by
+    # A0, so float64 bincount is used only when A0 < 2^53, int64 scatter-add when A0 < 2^62, else Python integers (bound decided BEFORE the accumulation)
+    if law.A0 < (1 << 53): mode = 'float64'
+    elif law.A0 < INT64_SAFE: mode = 'int64'
+    else: mode = 'object'
     for s in range(0, law.mB, chunk):
-        ys = Y[s:s + chunk]; bws = law.B_w[s:s + chunk]
+        ys = Y[s:s + chunk]; bws = law.B_w[s:s + chunk]; ny = len(ys)
         D = np.bitwise_count(ys[:, None] ^ X[None, :]).astype(np.int64)                                 # (chunk, mA)
-        ids = (np.arange(len(ys))[:, None] * (n + 1) + D).ravel()
-        tot = np.bincount(ids, weights=np.broadcast_to(aw, D.shape).ravel(), minlength=len(ys) * (n + 1)).reshape(len(ys), n + 1)
-        per_i = [np.bincount(ids, weights=np.broadcast_to(aw * bits[:, i], D.shape).ravel(), minlength=len(ys) * (n + 1)).reshape(len(ys), n + 1) for i in range(n)]
-        for j, b in enumerate(bws):
-            Z += b * sum(int(round(tot[j, d])) * kap[d] for d in range(n + 1))
+        if mode == 'float64':
+            aw = np.array(law.A_w, dtype=np.float64); bits = np.array([[(x >> i) & 1 for i in range(n)] for x in law.A_rows], dtype=np.float64)
+            ids = (np.arange(ny)[:, None] * (n + 1) + D).ravel()
+            tot = np.bincount(ids, weights=np.broadcast_to(aw, D.shape).ravel(), minlength=ny * (n + 1)).reshape(ny, n + 1)
+            per_i = [np.bincount(ids, weights=np.broadcast_to(aw * bits[:, i], D.shape).ravel(), minlength=ny * (n + 1)).reshape(ny, n + 1) for i in range(n)]
+            T = [[int(round(tot[j, d])) for d in range(n + 1)] for j in range(ny)]; P = [[[int(round(per_i[i][j, d])) for d in range(n + 1)] for i in range(n)] for j in range(ny)]
+        elif mode == 'int64':
+            aw = np.array(law.A_w, dtype=np.int64); rows_idx = np.repeat(np.arange(ny), D.shape[1]); dv = D.ravel()
+            tot = np.zeros((ny, n + 1), dtype=np.int64); np.add.at(tot, (rows_idx, dv), np.tile(aw, ny)); T = tot.tolist(); P = []
+            for j in range(ny): P.append([])
             for i in range(n):
-                N[i] += b * sum(int(round(per_i[i][j, d])) * kap[d] for d in range(n + 1))
+                awi = np.array([a if (x >> i) & 1 else 0 for x, a in zip(law.A_rows, law.A_w)], dtype=np.int64); pi = np.zeros((ny, n + 1), dtype=np.int64); np.add.at(pi, (rows_idx, dv), np.tile(awi, ny)); pl = pi.tolist()
+                for j in range(ny): P[j].append(pl[j])
+        else:
+            T = []; P = []
+            for j in range(ny):
+                h = [0] * (n + 1); hi_ = [[0] * (n + 1) for _ in range(n)]
+                for xi, (x, a) in enumerate(zip(law.A_rows, law.A_w)):
+                    d = int(D[j, xi]); h[d] += a
+                    for i in range(n):
+                        if (x >> i) & 1: hi_[i][d] += a
+                T.append(h); P.append(hi_)
+        for j, b in enumerate(bws):
+            Z += b * sum(T[j][d] * kap[d] for d in range(n + 1))
+            for i in range(n):
+                N[i] += b * sum(P[j][i][d] * kap[d] for d in range(n + 1))
     return Z, N
 
 

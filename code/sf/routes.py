@@ -37,6 +37,34 @@ def subsets_up_to(n, k):
     return out
 
 
+INT64_SAFE = 1 << 62          # a fixed-width (int64) reduction is executed only when a PRE-OPERATION bound on every intermediate (every partial sum, every product) is < 2^62
+
+
+def _weights_array(ws, total, bound=None):
+    """weights for a fixed-width reduction whose intermediates are bounded by `bound` (default: the exact total of the weights, which bounds every partial sum of a
+    signed combination): int64 when the bound is proved in range, else exact Python integers (object dtype). Decided BEFORE the arithmetic, never after."""
+    b = total if bound is None else bound
+    return (np.array(ws, dtype=np.int64), 'int64 (bound %d < 2^62 proved before the reduction)' % b) if b < INT64_SAFE else (np.array(ws, dtype=object), 'exact arbitrary-precision integers (bound %d >= 2^62)' % b)
+
+
+def _hist_by_distance(D, bws, B0, nrows, n):
+    """per-row distance histograms of integer weights: Σ_{y: D[j, y] = d} b_y, EXACT for any weights. Tiers chosen by the proved bound on every partial sum (= B0):
+    float64 bincount when B0 < 2^53 (every partial sum exactly representable), int64 scatter-add when B0 < 2^62, else Python integers."""
+    if B0 < (1 << 53):
+        ids = (np.arange(nrows, dtype=np.int64)[:, None] * (n + 1) + D).ravel()
+        cnt = np.bincount(ids, weights=np.broadcast_to(np.array(bws, dtype=np.float64), D.shape).ravel(), minlength=nrows * (n + 1)).reshape(nrows, n + 1)
+        return [[int(round(c)) for c in cnt[j]] for j in range(nrows)], 'float64 bincount (B0 < 2^53)'
+    if B0 < INT64_SAFE:
+        cnt = np.zeros((nrows, n + 1), dtype=np.int64); np.add.at(cnt, (np.repeat(np.arange(nrows), D.shape[1]), D.ravel()), np.tile(np.array(bws, dtype=np.int64), nrows))
+        return [[int(c) for c in cnt[j]] for j in range(nrows)], 'int64 scatter-add (B0 < 2^62)'
+    out = []
+    for j in range(nrows):
+        h = [0] * (n + 1)
+        for d, b in zip(D[j].tolist(), bws): h[d] += b
+        out.append(h)
+    return out, 'exact Python integers (B0 >= 2^62)'
+
+
 def interval_from_counts(Nint, Rint, Uint):
     """[N/(R+U), (N+U)/(R+U)] (section 2)."""
     den = Rint + Uint
@@ -81,14 +109,16 @@ def route_S(law, r, h, deadline=None):
 def route_F(law, r, k, symmetric, deadline=None):
     t0 = time.monotonic(); n = law.n; u, v = C.uv(r); k = min(k, n)
     subs = subsets_up_to(n, k)
-    Y = law.Y; bw = np.array(law.B_w, dtype=np.int64)
-    # beta_S integers for |S| <= k (vectorized over y per subset)
+    Y = law.Y; bw, barith = _weights_array(law.B_w, law.B0)            # |Σ ± b_y| and every partial sum are bounded by B0: int64 only when B0 < 2^62 (proved BEFORE the dot products)
+    # beta_S integers for |S| <= k (vectorized over y per subset); EXACT for every accepted law
     beta = {}
     for d in range(k + 1):
         for S in subs[d]:
-            beta[S] = int(np.dot(_signs(Y, S).astype(np.int64), bw))
+            sg = _signs(Y, S); beta[S] = int(np.dot(sg.astype(bw.dtype) if bw.dtype != object else sg.astype(object), bw))
         if deadline is not None:
             deadline()
+    if beta[0] != law.B0:                                              # NECESSARY cross-check: the zero-order moment IS the exact total (never a substitute for the bound above)
+        return {"route": "F%d" % k, "status": "FAULT", "reason": "zero-order B moment %d does not reconcile with the exact total %d" % (beta[0], law.B0), "wall": {"construction": time.monotonic() - t0}}
     t1 = time.monotonic()
     # g_k(x) integers: Σ_S u^|S| v^(k-|S|) beta_S chi_S(x), vectorized over x per subset; object dtype if the bound exceeds int64
     X = law.X
@@ -108,9 +138,11 @@ def route_F(law, r, k, symmetric, deadline=None):
                 g += np.int64(coef) * s.astype(np.int64)
         if deadline is not None:
             deadline()
-    aw = np.array(law.A_w, dtype=object if use_obj else np.int64)
     gl = g.tolist(); awl = law.A_w
-    Zk = sum(int(a) * int(gg) for a, gg in zip(awl, gl))
+    Zk = sum(int(a) * int(gg) for a, gg in zip(awl, gl))              # Python integers: exact
+    alpha0 = sum(awl)
+    if alpha0 != law.A0:
+        return {"route": "F%d" % k, "status": "FAULT", "reason": "zero-order A moment does not reconcile with the exact total", "wall": {"construction": t1 - t0}}
     Mk = [0] * n
     for x, a, gg in zip(law.A_rows, awl, gl):
         ag = int(a) * int(gg); xx = x; i = 0
@@ -120,7 +152,7 @@ def route_F(law, r, k, symmetric, deadline=None):
     t2 = time.monotonic()
     scale = law.A0 * law.B0 * v ** k
     rec = {"route": "F%d" % k, "k": k, "N_k": sum(len(subs[d]) for d in subs), "Zk_int": Zk, "Mk_int": Mk, "scale": "A0 B0 v^k", "scale_int": scale, "beta_int": {str(S): b for S, b in beta.items()} if law.mA <= 512 else None,
-           "object_dtype": use_obj, "max_bits": max(abs(Zk).bit_length(), max(abs(m).bit_length() for m in Mk)), "symmetric_used": bool(symmetric)}
+           "object_dtype": use_obj, "moment_arithmetic": barith, "max_bits": max(abs(Zk).bit_length(), max(abs(m).bit_length() for m in Mk)), "symmetric_used": bool(symmetric)}
     if Zk <= 0:
         rec.update({"status": "REFUSE", "reason": "Z_k <= 0: the ratio certificate refuses", "wall": {"construction": t1 - t0, "evaluation": t2 - t1}}); return rec
     if symmetric and n % 2 == 0:
@@ -142,8 +174,7 @@ def route_F(law, r, k, symmetric, deadline=None):
 def route_E(law, r, symmetric, deadline=None, chunk=512):
     t0 = time.monotonic(); n = law.n; u, v = C.uv(r)
     kap = [C.kappa_int(n, u, v, d) for d in range(n + 1)]
-    Y = law.Y; bw = np.array(law.B_w, dtype=np.float64)
-    assert law.B0 < (1 << 53)
+    Y = law.Y; harith = None                                            # histogram arithmetic tier decided by the PROVED bound B0 on every partial sum (see _hist_by_distance)
     rows = law.A_rows; aw = law.A_w
     # with VERIFIED symmetry, histogram one row of each antipodal pair; the antipode's histogram is the reversal d -> n-d
     if symmetric:
@@ -158,10 +189,9 @@ def route_E(law, r, symmetric, deadline=None, chunk=512):
     for s in range(0, len(todo), chunk):
         xs = X[s:s + chunk]
         D = _popcount(xs[:, None] ^ Y[None, :]).astype(np.int64)                    # (chunk, mB) distances
-        ids = (np.arange(len(xs), dtype=np.int64)[:, None] * (n + 1) + D).ravel()
-        cnt = np.bincount(ids, weights=np.broadcast_to(bw, D.shape).ravel(), minlength=len(xs) * (n + 1)).reshape(len(xs), n + 1)
+        cnt, harith = _hist_by_distance(D, law.B_w, law.B0, len(xs), n)
         for j, x in enumerate(todo[s:s + chunk]):
-            hist[x] = [int(round(c)) for c in cnt[j]]
+            hist[x] = cnt[j]
         if deadline is not None:
             deadline()
     t1 = time.monotonic()
@@ -181,13 +211,14 @@ def route_E(law, r, symmetric, deadline=None, chunk=512):
     if Zint <= 0:
         return {"route": "E", "status": "REJECT", "reason": "Z = 0: the law is undefined (r = 1 with empty intersection)", "wall": {"construction": t1 - t0, "evaluation": t2 - t1}}
     iv = [(Fr(Nint[i], Zint), Fr(Nint[i], Zint)) for i in range(n)]
-    return {"route": "E", "status": "OK", "Z_int": Zint, "N_int": Nint, "scale": "A0 B0 v^n", "rows_histogrammed": len(todo), "symmetric_halving": bool(symmetric), "max_bits": Zint.bit_length(),
+    return {"route": "E", "status": "OK", "Z_int": Zint, "N_int": Nint, "scale": "A0 B0 v^n", "rows_histogrammed": len(todo), "symmetric_halving": bool(symmetric), "histogram_arithmetic": harith, "max_bits": Zint.bit_length(),
             "intervals": iv, "exact": True, "wall": {"construction": t1 - t0, "evaluation": t2 - t1, "certificate": 0.0}}
 
 
 # ------------------------------------------------------------------ W (exact degree-filtered Walsh contraction)
 def fwht_int64(a):
-    """In-place-style iterative Walsh-Hadamard transform (unnormalized) on an int64 array of length 2^n."""
+    """In-place-style iterative Walsh-Hadamard transform (unnormalized) on an array of length 2^n; the dtype (int64 or exact object integers) is chosen by the CALLER
+    from a pre-operation bound (every intermediate of the transform is bounded by the L1 norm of the input)."""
     h = 1; m = a.shape[0]
     while h < m:
         a = a.reshape(-1, 2, h)
@@ -199,15 +230,17 @@ def fwht_int64(a):
 
 def route_W(law, r, deadline=None):
     t0 = time.monotonic(); n = law.n; u, v = C.uv(r); m = 1 << n
-    bvec = np.zeros(m, dtype=np.int64); bvec[law.Y.astype(np.int64)] = np.array(law.B_w, dtype=np.int64)
+    # PRE-OPERATION bound: |T_d(x)| <= C(n, d) B0 <= 2^n B0 and |Σ_x a_x T_d(x)| <= A0 2^n B0 -- int64 only when that bound is < 2^62, else exact object integers
+    wbound = law.A0 * law.B0 << n; dt = np.int64 if wbound < INT64_SAFE else object; warith = ('int64 (bound %d < 2^62 proved before the transforms)' % wbound) if dt is np.int64 else ('exact arbitrary-precision integers (bound %d >= 2^62)' % wbound)
+    bvec = np.zeros(m, dtype=dt); bvec[law.Y.astype(np.int64)] = np.array(law.B_w, dtype=dt)
     Wb = fwht_int64(bvec.copy())                                        # beta_S integers for ALL S
     pc = _popcount(np.arange(m, dtype=np.uint64)).astype(np.int64)
-    Xi = law.X.astype(np.int64); aw = np.array(law.A_w, dtype=np.int64)
-    bits = np.array([[(x >> i) & 1 for i in range(n)] for x in law.A_rows], dtype=np.int64)   # (mA, n)
+    Xi = law.X.astype(np.int64); aw = np.array(law.A_w, dtype=dt)
+    bits = np.array([[(x >> i) & 1 for i in range(n)] for x in law.A_rows], dtype=dt)   # (mA, n)
     Tagg = []; Tagg_i = []
     t1 = time.monotonic()
     for d in range(n + 1):
-        Td = fwht_int64(np.where(pc == d, Wb, 0).astype(np.int64))       # T_d(x) = Σ_{|S|=d} beta_S chi_S(x), exact int64 (|T_d| <= C(n,d) B0)
+        Td = fwht_int64(np.where(pc == d, Wb, 0).astype(dt))             # T_d(x) = Σ_{|S|=d} beta_S chi_S(x), exact (|T_d| <= C(n,d) B0 < the proved bound)
         tx = Td[Xi]                                                        # at the rows of A
         Tagg.append(int(np.dot(aw, tx)))
         Tagg_i.append([int(np.dot(aw * bits[:, i], tx)) for i in range(n)])
@@ -219,7 +252,7 @@ def route_W(law, r, deadline=None):
     if Zint <= 0:
         return {"route": "W", "status": "REJECT", "reason": "Z = 0", "wall": {"construction": t1 - t0, "evaluation": t2 - t1}}
     iv = [(Fr(Nint[i], Zint), Fr(Nint[i], Zint)) for i in range(n)]
-    return {"route": "W", "status": "OK", "Z_int": Zint, "N_int": Nint, "scale": "A0 B0 v^n", "transforms": n + 2, "max_bits": Zint.bit_length(), "intervals": iv, "exact": True,
+    return {"route": "W", "status": "OK", "Z_int": Zint, "N_int": Nint, "scale": "A0 B0 v^n", "transforms": n + 2, "transform_arithmetic": warith, "max_bits": Zint.bit_length(), "intervals": iv, "exact": True,
             "wall": {"construction": t1 - t0, "evaluation": t2 - t1, "certificate": 0.0}}
 
 
@@ -232,6 +265,10 @@ def route_PI(law):
 
 
 def run_route(law, r, route, params, symmetric, deadline=None):
+    # the law is UNDEFINED (total mass 0) exactly when r = 1 and A ∩ B = ∅ (every kernel weight is positive otherwise): every route refuses at the interface (the selector
+    # refuses too; sixth review F02 qualification: an interval for an undefined law is never a publication)
+    if Fr(r) == 1 and law.overlap_int()[0] <= 0:
+        return {"route": route, "status": "REJECT", "reason": "r = 1 with empty A∩B: the law is undefined (total mass 0); no route publishes", "wall": {}}
     if route == "PI":
         return route_PI(law)
     if route[0] == "S":
