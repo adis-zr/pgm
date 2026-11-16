@@ -10,3 +10,7 @@ code/.venv-pgmax/
 code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/sources/
 code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/setup/emul/
 code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/setup/ibia/*.pdf
+
+# the research record lives in the separate pgm-records repository; locally these are symlinks into it
+/docs
+/code/runs

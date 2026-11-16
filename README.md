@@ -1,30 +1,32 @@
-# pgm — certified inference research
+# pgm — certified inference: implementation library
 
-Two parts:
+This repository holds the implementation only: every solver, checker, supervisor, adapter, generator and test written for the certified-inference
+research program (October–November 2026). The research record (handoffs, reviews, ledgers, run directories with receipts and results) lives in a
+separate full-history repository, `pgm-records`, which is not published; this code is what those records were produced with.
 
-- `docs/` — the research record (prose only). This is the authoritative statement of what was established, what failed, and what is open.
-  - `docs/handoff/` — the prose-only research handoff, version 5.2 (26 Oct 2026). Start at `docs/handoff/README.md` and
-    `docs/handoff/START_NEW_CHAT.md`; ledgers: THEORY_LEDGER, EMPIRICAL_LEDGER, GRAVEYARD, HYPOTHESES_AND_RESEARCH_IDEAS, NEXT_DECISION;
-    complete proof notes under `historical/v4` and `theory/extension-2026-10-25`; frozen experiment specifications under `reproduction/`.
-  - `docs/lab-reports/` — byte-for-byte copies (183 files, with `INDEX.md` giving repo, commit, bytes, SHA-256) of every result report,
-    closeout/audit document, ledger, manifest, source lock, results table and accounting record produced by the H4 lab (run1 → external
-    benchmark → moment audit → closeout → centering pilot). This answers the handoff's `reports/REQUEST_MISSING_REPORTS.md`.
-- `docs/prose-handoff-2026-11-09/` — the overseer's prose-only research handoff of 9 Nov 2026 (`INFERENCE_RESEARCH_PROSE_HANDOFF_2026-11-09.zip`,
-  SHA-256 `033c9e8810e8b4de4d7bca11ad8cc93d705f7b482db8bf4119f7f90fbe8f4a4d`, 1,123,565 bytes; `PACKAGE_MANIFEST.txt` verifies 101/101). A different
-  series from `docs/handoff/` (not extracted over it). Start at `00_START_HERE.txt`; `README_REPO_NOTE.md` (local) records what the packet predates:
-  the BIDI native pilot result (E-MDI-40), GENERAL_BIDI_V1 (paused at cell 219) and the GENERAL_BIDI_V2 repair, all recorded under `code/runs/`.
-- `docs/LEDGER_ADDITIONS_*.md` — append-only empirical ledger entries; the running MDI ledger is `LEDGER_ADDITIONS_mdi_capacity_2026-11-02.md`
-  (E-MDI-02 … E-MDI-40 and corrections).
-- `code/` — the direct chain-query certificate pilot (26 Oct 2026): `code/README.md`, `code/dq/`, `code/native/`, `code/tests/`, and the
-  durable campaign records under `code/runs/dq_pilot_2026-10-26/` (REPORT.md leads with the decision). The earlier `strongcompact`
-  implementation was deleted on 26 Oct 2026 and exists only as prose in `docs/`.
-- `docs/normalization-free-diagnostic-v1/` — the frozen spec packet for the normalization-free certificate clearance diagnostic (26/27 Oct 2026; code under
-  `code/nf/`, records under `code/runs/nf_diag_2026-10-26/`, ledger entry `docs/LEDGER_ADDITIONS_nf_diagnostic_2026-10-26.md`: OLD_CHEAP_ALREADY_SUFFICIENT).
-- `docs/direct-query-theory-pass-2026-10-26/` — the theory pass packet that specified the pilot (proofs, witness, Fourier baseline, frozen spec);
-  `docs/LEDGER_ADDITIONS_direct_query_pilot_2026-10-26.md` — the pilot's scoped empirical entry (E-DQ-01).
+## Layout (`code/`)
 
-Procedure for a new handoff version: re-extract it over `docs/handoff/`, verify its `CHECKSUMS.txt`, record the ZIP's SHA-256 in the commit
-message, commit; `git diff` then shows what changed between versions.
+| package | role |
+|---|---|
+| `cex/cqr` | **Certified Query Refinement** candidate (16 Nov 2026): finite task language, certificate-carrying reduction compiler (evidence / support / leaf sum-out / component omission / symmetry; exact proportional-slice quotient; checked approximate quotient; affine support with linear-map views; influence deletion; concentration), prefix-cell frontier with typed bounds, deterministic root bounds, full-support ratio stream and fixed-candidate signed-residual stream, protected exact reference, end-to-end checker, worker, independent oracle, mechanism-family generators, external-input acquisition, campaign chain, 13-group qualification suite |
+| `cex/pac` | the repaired PAC empirical candidate (v4.3): hybrid controller, PAC engine, gate, references, report, closeout, registry, qualification |
+| `cex/newarm` | the exact executor and reduction core (`core.py` shared reader, `reduction.py`, `support.py`, `dag.py`, `forest.py`, kernels in C++) |
+| `cex/b0_frozen_v14`, `cex/newarm_dev`, `cex/baseline` | frozen snapshots of the executor kept for identity (the B0 anchor arm; the qualification's isolated replay copy) |
+| `gbidi`, `gbidi3`, `bidi` | bidirectional kernels and the charging supervisor (`gbidi/supervise.py`: sampled process-tree RSS, deadlines, receipts) |
+| `sf`, `cbi`, `h4a`, `native` | native cohorts: sparse/Fourier two-block laws, coupled-block inference library, H4 arithmetic nodes |
+| `mdi`, `adp`, `nd`, `nf`, `dq`, `h4q`, `portfolio`, `validation` | earlier passes (direct-query pilot, aggregate DP, census, certificates); retained as implemented |
+| `ext`, `bench` | repository readers and the comparator adapters (libDAI, Merlin, PGMax glue); the external binaries themselves are not included |
+| `tests` | the test suites of every pass |
+| `build/`, `PINNED_BINARIES.json` | the exact pinned H4 executables and kernel binaries whose sha256 the frozen build records carry (a rebuild from source yields a different hash) |
 
-Identities for the record: handoff v5.2 ZIP SHA-256 `237babe7042184d5d49f42ce58340d06dc8ddc7c912989bbe1da27c70aac708b` (1,044,412 bytes);
-the extracted tree's own `CHECKSUMS.txt` verifies 187/187 files.
+## Running
+
+Python 3.12 virtual environment at `code/.venv` (numpy, gmpy2); PGMax lives in a separate `code/.venv-pgmax`. Both are ignored by git. Workers are
+invoked per cell by the campaign chain (`cex/cqr/campaign.py`, `cex/pac/campaign.py`) under `gbidi/supervise.py`; everything a worker writes goes to
+`code/runs/…`, which is ignored here and tracked in `pgm-records`. A few scripts read overseer-supplied inputs under `docs/…` (also in `pgm-records`);
+locally, `docs` and `code/runs` are symlinks into that repository.
+
+## Status
+
+Nothing here is a performance claim. The most recent candidate (`cex/cqr`) is qualified (13/13) and admitted on development seeds only; the proposed
+scored campaign is resolved but not frozen and not launched. See the research ledger in `pgm-records/docs/LEDGER_ADDITIONS_mdi_capacity_2026-11-02.md`.
