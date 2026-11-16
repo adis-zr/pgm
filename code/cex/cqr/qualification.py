@@ -139,7 +139,7 @@ def c1_identity_checker():
     mp, w = accepted[('pac_frontier', 'N1_CQR')]
     expect(mp, w, 'N1_CQR', 'point_shift', lambda x: (x['answers'][0].__setitem__('point', str(F(x['answers'][0]['point']) + F(1, 50))), x['certificate']['publication']['point'].__setitem__(0, x['answers'][0]['point'])), ('feasibility box', 'not within eps of every value', 'outside its published bounds'))
     expect(mp, w, 'N1_CQR', 'bounds_widened', lambda x: x['certificate']['publication']['bounds'].__setitem__(0, [str(F(x['certificate']['publication']['bounds'][0][0]) - F(1, 20)), x['certificate']['publication']['bounds'][0][1]]), ('feasibility box', 'do not contain', 'differs', 'not within eps of every value', 'does not agree with the certificate'))
-    expect(mp, w, 'N1_CQR', 'operator_set_relabel', lambda x: x['certificate'].__setitem__('enabled_operators', ['evidence']), 'differ from the registered arm')
+    expect(mp, w, 'N1_CQR', 'operator_set_relabel', lambda x: x['certificate'].__setitem__('enabled_operators', ['evidence']), ('differ from the registered arm', 'differs from the registered arm'))
     expect(mp, w, 'N1_CQR', 'arm_relabel', lambda x: (x['certificate'].__setitem__('arm', 'G0_CQR'), x.__setitem__('arm', 'G0_CQR')), 'differ')
     expect(mp, w, 'N1_CQR', 'bias_ledger', lambda x: x['certificate'].__setitem__('bias', [str(F(b) + F(1, 10 ** 5)) for b in x['certificate']['bias']]), 'bias ledger')
     expect(mp, w, 'N1_CQR', 'binding', lambda x: x['binding'].__setitem__('model_sha256', '0' * 64), 'binding')
