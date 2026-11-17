@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.4 (2026-11-17: the certificate frontier order is validated as a permutation of the compiled variables AND bound to the registered canonical producer policy before any cell is built; structural frontier faults are typed refusals; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
+CHECKER_VERSION = 'cqr-checker-v1.5 (2026-11-17: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -32,6 +32,39 @@ class Unverifiable(Exception): pass
 
 
 def _F(x): return x if isinstance(x, F) else F(str(x))
+
+
+# the recorded-event schema (ninth review, nonblocking correction 1): op -> required fields; a rational operand must parse as a finite Fraction (a zero denominator is malformed)
+EVENT_SCHEMA = dict(split=('cell', 'children'), close=('cell',), carve=('cell', 'x'), ratio_draw=('cell', 'U', 'x', 'A', 'a', 'd', 'b'), epoch_start=('epoch', 'delta_e', 'candidate', 'E_star'),
+                    epoch_retired=('epoch',), epoch_E_zero=('epoch',), signed_draw=('epoch', 'cell', 'E', 'p', 'd', 'x'), ratio_stream_stopped=(), prune_zero=(), optional_cancelled=(), optional_operator_failed=())
+EVENT_RATIONALS = dict(ratio_draw=('U', 'A', 'b'), epoch_start=('delta_e', 'E_star'), signed_draw=('E', 'p'))
+EVENT_RATIONAL_LISTS = dict(ratio_draw=('a', 'd'), epoch_start=('candidate',), signed_draw=('d',))
+
+
+def _event_problem(ev):
+    """None if the recorded event is well-formed (an object with a known op, its required fields present, its rational operands parsable); else the reason"""
+    if not isinstance(ev, dict): return 'event is not an object (%s)' % type(ev).__name__
+    op = ev.get('op')
+    if op not in EVENT_SCHEMA: return 'unknown event op %r' % (op,)
+    missing = [k for k in EVENT_SCHEMA[op] if k not in ev or ev[k] is None]
+    if missing: return 'event %s lacks %s' % (op, missing)
+    if 'cell' in EVENT_SCHEMA[op] and (isinstance(ev['cell'], bool) or not isinstance(ev['cell'], int)): return 'event %s: cell id is not an integer' % op
+    if 'x' in EVENT_SCHEMA[op]:
+        x = ev['x']
+        if not isinstance(x, dict): return 'event %s: point is not an object' % op
+        try:
+            if any(not isinstance(v, int) or isinstance(v, bool) for v in x.values()) or any(int(k) < 0 for k in x): return 'event %s: point states must be integers' % op
+        except (ValueError, TypeError): return 'event %s: point keys are not variable indices' % op
+    for k in EVENT_RATIONALS.get(op, ()):
+        try: _F(ev[k])
+        except (ValueError, ZeroDivisionError, TypeError): return 'event %s: operand %s = %r is not a finite rational' % (op, k, ev[k])
+    for k in EVENT_RATIONAL_LISTS.get(op, ()):
+        if not isinstance(ev[k], (list, tuple)): return 'event %s: %s is not a list' % (op, k)
+        try: [_F(v) for v in ev[k]]
+        except (ValueError, ZeroDivisionError, TypeError): return 'event %s: %s holds a non-rational' % (op, k)
+    if op == 'split' and (not isinstance(ev['children'], list) or any(isinstance(c, bool) or not isinstance(c, int) for c in ev['children'])): return 'event split: children must be a list of integers'
+    if op in ('epoch_start', 'epoch_retired', 'epoch_E_zero', 'signed_draw') and (isinstance(ev['epoch'], bool) or not isinstance(ev['epoch'], int)): return 'event %s: epoch id is not an integer' % op
+    return None
 
 
 EXACT_ROUTES = ('exact_reference', 'exact_frontier_closure', 'exact_zero_dimensional', 'normalizer_exact_reference', 'normalizer_exact_frontier_closure', 'normalizer_exact_zero_dimensional')
@@ -355,10 +388,18 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
     # the ratio prior U_star is the producer's REGISTERED pre-sampling choice: the initial compiled frontier's positive U (fallback 1 when U = 0), fixed BEFORE any recorded event or
     # draw. It is derived here from the independently constructed root frontier and the record must match it (seventh review, CQR-R6-01); rho = U_star^2 / 4 follows from it
     U0 = fr.U(); U_star = U0 if U0 > 0 else F(1)
+    if ratio_rec is not None:
+        if not isinstance(ratio_rec, dict) or any(k not in ratio_rec for k in ('U_star', 'rho', 'H', 'G', 'V', 't', 'alpha')): fail('ratio stream record malformed'); return None, None
+        try: _F(ratio_rec['U_star']); _F(ratio_rec['rho']); _F(ratio_rec['alpha']); _F(ratio_rec['H']); _F(ratio_rec['V']); [_F(v) for v in ratio_rec['G']]
+        except (ValueError, ZeroDivisionError, TypeError): fail('ratio stream record holds a non-rational operand'); return None, None
+    if not isinstance(epochs, list) or any(not isinstance(e, dict) or any(k not in e for k in ('epoch', 't', 'H', 'G', 'V')) for e in epochs): fail('epoch records malformed'); return None, None
     if ratio_rec is not None and _F(ratio_rec['U_star']) != U_star: fail('ratio prior U_star %s differs from the registered pre-sampling choice %s (the initial frontier envelope; a prior chosen after the draws is not budgeted)' % (ratio_rec['U_star'], U_star)); return None, None
     ep_state = {}; ep_order = []
+    if not isinstance(events, list): fail('certificate events are not a list'); return None, None
     for ev in events:
         if deadline is not None and time.monotonic() >= deadline: fail('UNVERIFIABLE: allowance expired during the frontier replay'); return None, None
+        pb = _event_problem(ev)
+        if pb: fail('malformed frontier event refused: %s' % pb); return None, None            # the typed boundary of the direct API (ninth review): no field access before validation
         op = ev.get('op')
         try:
             if op == 'split':
