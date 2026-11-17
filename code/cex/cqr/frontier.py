@@ -13,7 +13,7 @@ from math import prod
 import numerics as NM
 from math import lcm, gcd
 
-FRONTIER_VERSION = 'cqr-frontier-v1.1 (2026-11-16: closure enumeration serviced per 1,024 charged units)'
+FRONTIER_VERSION = 'cqr-frontier-v1.2 (2026-11-16: closure enumeration serviced per 1,024 charged units; the pending tail charged on every exit)'
 
 
 def draw_categorical(rng, weights):
@@ -142,21 +142,22 @@ class Frontier:
         def post(k, ev=0):
             nonlocal ent, pend
             ent += k; pend += k + ev
-            if pend >= ROOM and svc is not None: self.work.entries += ent; ent = 0; pend = 0; svc('frontier_close')
-        for xs in product(*(range(cards[v]) for v in free)):
-            for v, s in zip(free, xs): x[v] = s
-            w = 1
-            for vw in views:
-                w *= vw.at_i(cards, x); post(1)
-                if not w: break
-            self.work.evals += 1; post(0, 1)
-            if not w: continue
-            b += w
-            for j in range(K):
-                q = qs[j]; post(1)
-                if q['kind'] == 'expectation': nj[j] += w * q['f'].at_i(cards, x) * (qd[j] // q['f'].den)
-                else: nj[j] += w * q['h'].at_i(cards, x) * (qd[j] // q['h'].den); dj[j] += w * q['g'].at_i(cards, x) * (qd[j] // q['g'].den)
-        self.work.entries += ent
+            if pend >= ROOM and svc is not None: k_ = ent; ent = 0; pend = 0; self.work.entries += k_; svc('frontier_close')      # charged BEFORE the service point (exactly once)
+        try:
+            for xs in product(*(range(cards[v]) for v in free)):
+                for v, s in zip(free, xs): x[v] = s
+                w = 1
+                for vw in views:
+                    w *= vw.at_i(cards, x); post(1)
+                    if not w: break
+                self.work.evals += 1; post(0, 1)
+                if not w: continue
+                b += w
+                for j in range(K):
+                    q = qs[j]; post(1)
+                    if q['kind'] == 'expectation': nj[j] += w * q['f'].at_i(cards, x) * (qd[j] // q['f'].den)
+                    else: nj[j] += w * q['h'].at_i(cards, x) * (qd[j] // q['h'].den); dj[j] += w * q['g'].at_i(cards, x) * (qd[j] // q['g'].den)
+        finally: self.work.entries += ent; ent = 0           # the completed tail is charged on every exit (a stop inside the scan loses no performed work)
         self.open.pop(cid); self.sumE -= c.E; self.sumL -= c.L; self.sumB -= c.B          # the cell leaves the frontier only when its enumeration COMPLETED (an interruption inside the scan leaves the frontier unchanged)
         self._add_resolved(cid, b, nj, dj); self.closures += 1; self.history.append(dict(op='close', cell=cid, mass=str(b))); return b, nj, dj
 

@@ -16,8 +16,8 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v5 (2026-11-16, after the fourth adversarial review: group C22 added -- precision reservation, zero mass vs feasibility, witness lifecycle, service interval across helpers)'
-ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v11')
+SUITE_VERSION = 'cqr-qualification-v6 (2026-11-16, after the fifth adversarial review: group C23 added -- exactly-once accounting under every stop, quota inheritance in commit validation, tolerance input domain)'
+ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v12')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
 CNT = R['counts']; passed = 0; total = 0
@@ -708,7 +708,7 @@ def c15_semantics_and_guarantee_binding():
     proof; EXACT_RATIONAL publishes no approximate surrogate; the normalizer + nonempty-queries contract is refused at parsing; manifest declaration vs worker binding"""
     d = tempfile.mkdtemp(prefix='cqr_c15_'); out = {}
     mp = _concentration_witness(d); json.dump(dict(mode='EXACT_RATIONAL', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=1)]), open(mp + '.query.json', 'w'))
-    w = fresh_worker(mp, 'N1_CQR', budget=20.0, nonce='c15-override', mode='DETERMINISTIC_EPS'); A(w['outcome'] in ('FAULT', 'REFUSED') and 'disagrees' in (w.get('reason') or w.get('error') or ''), 'mode override accepted by the worker: %s %s' % (w['outcome'], (w.get('reason') or '')[:80]))
+    w = fresh_worker(mp, 'N1_CQR', budget=20.0, nonce='c15-override', mode='DETERMINISTIC_EPS'); A(w['outcome'] == 'INVALID_TASK' and w['status'] == 'STOPPED' and w['guarantee_type'] == 'NONE' and 'disagrees' in (w.get('reason') or '') and w.get('certificate') is None, 'mode override accepted by the worker: %s %s' % (w['outcome'], (w.get('reason') or '')[:80]))      # since worker v1.2 a parse-time refusal is the TYPED outcome INVALID_TASK (fifth review CQR-R4-03), never a FAULT
     fails, _ = check_(mp, w, 'N1_CQR'); A(fails, 'checker accepted the overridden worker'); out['mode_override'] = (w['outcome'], fails[0][:80])
     w = fresh_worker(mp, 'N1_CQR', budget=20.0, nonce='c15-exact'); fails, _ = check_(mp, w, 'N1_CQR'); A(not fails and w['outcome'] == 'PUBLISHED' and w['exact'] is True and w['mode'] == 'EXACT_RATIONAL', 'exact task honest run refused %s' % fails[:1])
     # DETERMINISTIC_EPS never consumes a statistical proof; EXACT_RATIONAL never a deterministic surrogate (unit + fresh worker)
@@ -1240,7 +1240,182 @@ def c22_precision_zero_mass_witness_service():
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service)]
+def c23_exactly_once_accounting_quota_inheritance_tolerance_domain():
+    """FIFTH adversarial review (CQR-R4-01..03), invariant-focused. (01) EXACTLY-ONCE accounting: for every metered helper and for ratop_each, the Work ledger equals the number
+    of completed logical operations (counted independently of the meter's posting) on normal return AND when a service point raises quota / reference_done / cancelled /
+    deadline AND when the callback itself fails -- at partial tails, exact 1,024 boundaries and cross-helper offsets; the typed stop is kept, no second service call happens, the
+    model stays at the last commit; the reviewer's natural [2,750] worker, the direct 4,097-quota control, the injected 300-unit tail and the witness-validation interruption
+    repeat with the identities holding. (02) the commit-time witness validation runs under the ACTIVE operator's ticker: the production-quota concentration control stops typed at
+    quota exhaustion within the declared overspend (no silent over-budget commit), a quota ending INSIDE the validation leaves the model unchanged with truthful work, the ticker
+    carries the operator's quota, and replay has the explicit quota-less context. (03) epsilon's domain is 0 < eps <= 1 and delta's 0 <= delta < 1: 0, negative and > 1 are rejected
+    at parsing (the worker returns a typed INVALID_TASK refusal in well under its budget), legacy_digits itself refuses a non-positive tolerance, 1e-100 is accepted, the default
+    is 1/200, and the positive-tolerance publications of C22 are unchanged."""
+    d = tempfile.mkdtemp(prefix='cqr_c23_'); out = dict(f01={}, f02={}, f03={})
+    bound = CP.POLICY['max_irreducible_charge']
+    # ---------------- 01: exactly-once identities on every metered helper under every stop kind, at every boundary
+    def fresh(views_n=3, cards=(2, 3, 5)):
+        views = [View('table', (0, 1, 2), [F(i % 7 + 1) for i in range(30)]) for _ in range(views_n)]
+        return CP.Compiled(list(cards), views, [], [], TK.Work(), [])
+    class _Svc(Exception): pass
+    def run_helper(name, offset, stop_kind, stop_at):
+        """run helper `name` on a fresh state whose since-service counter starts at `offset`; the service hook raises `stop_kind` at the stop_at-th service call (None = never);
+        returns (ledger delta, independently counted completed operations, service calls, exception type)"""
+        C = fresh(); C.acc_since = offset; calls = [0]; svc_n = [0]
+        def svc(op):
+            svc_n[0] += 1
+            if stop_at is not None and svc_n[0] == stop_at:
+                if stop_kind == 'deadline': raise TimeoutError('deadline')
+                raise CP.CompileStop(stop_kind, op)
+        C.service = svc; T = CP._Ticker(C, None, 'probe'); w0 = C.work.total()
+        orig_add = CP._Meter.add
+        def counting_add(self, k=1): calls[0] += k; return orig_add(self, k)          # counts LOGICAL operations (add events), independent of posting / flushing
+        CP._Meter.add = counting_add; exc = None
+        try:
+            if name == 'slice': CP._slice(C.views[0], C.cards, 1, 1, T)
+            elif name == 'replace_axis': CP._replace_axis(C.views[0], C.cards, 2, [0, 2, 4], 3, T)
+            elif name == 'average_axis': CP._average_axis(C.views[0], C.cards, 2, [[0, 1], [2, 3, 4]], {a: F(1, 5) for a in range(5)}, T)
+            elif name == 'fixed': CP._remove_var_from_scope_fixed(C.views[0], C.cards, 0, 1, T)
+            elif name == 'ratop_each': T.ratop_each(range(2500), lambda x: F(x) + 1)
+            elif name == 'witness': CP._witness_problem(C.cards, C.views * 400, {0: 0, 1: 0, 2: 0}, T)
+            elif name == 'local_affine': CP.local_affine(View('table', (0, 1, 2), [F(1)] * 8), [2, 2, 2], C.work, T)
+            elif name == 'big_slice': CP._slice(View('table', (0, 1), [F(1)] * 3000), [2, 1500], 0, 1, T)
+        except (CP.CompileStop, TimeoutError, RuntimeError) as ex: exc = type(ex).__name__ + ':' + getattr(ex, 'kind', '')
+        finally: CP._Meter.add = orig_add
+        return C.work.total() - w0, calls[0], svc_n[0], exc
+    for name in ('slice', 'replace_axis', 'average_axis', 'fixed', 'ratop_each', 'witness', 'local_affine', 'big_slice'):
+        for offset in (0, 300, 1023):
+            for kind, at in ((None, None), ('quota', 1), ('reference_done', 1), ('cancelled', 1), ('deadline', 1), ('quota', 2)):
+                delta, ops, svc_n, exc = run_helper(name, offset, kind, at)
+                A(delta == ops, '01 %s offset %d stop %s@%s: ledger %d != completed operations %d (exactly-once violated)' % (name, offset, kind, at, delta, ops))
+                if exc is not None: A(exc.endswith(kind or '') or kind == 'deadline', '01 %s: the typed stop was replaced by %s' % (name, exc))
+                if kind is not None and at is not None and exc is not None: A(svc_n == at, '01 %s: %d service calls after a stop at call %d (a second service call happened)' % (name, svc_n, at))
+    out['f01']['helpers_x_offsets_x_stops'] = '8 helpers x 3 offsets x 6 stop settings: ledger == completed operations'
+    # exact boundaries: a tail of 0 / 1 / 1023 / 1024 units left when a stop hits
+    for n_ops, offset in ((1024, 0), (1025, 0), (2047, 0), (2048, 0), (1024, 1), (724, 300), (1, 1023)):
+        C = fresh(); C.acc_since = offset; stop = [0]
+        def svc(op):
+            stop[0] += 1; raise CP.CompileStop('quota', op)
+        C.service = svc; T = CP._Ticker(C, None, 'probe'); done = [0]
+        def f(x): done[0] += 1; return x
+        try: T.ratop_each(range(n_ops), f)
+        except CP.CompileStop: pass
+        A(C.work.ratops == done[0] and (stop[0] <= 1), '01 boundary n=%d offset=%d: charged %d completed %d services %d' % (n_ops, offset, C.work.ratops, done[0], stop[0]))
+    out['f01']['exact_boundaries'] = 'ok'
+    # injected callback failure (the reviewer's 1,324 / 300 control): completed operations charged exactly once, the failure propagates unchanged
+    a = CP.Compiled([], [], [], [], TK.Work(), []); T = CP._Ticker(a, None, 'probe'); calls = [0]
+    def f(x):
+        if x == 1324: raise RuntimeError('injected failure before operation 1325')
+        calls[0] += 1; return F(x) + 1
+    try: T.ratop_each(range(2048), f); A(False, '01 injected failure swallowed')
+    except RuntimeError as ex: A('1325' in str(ex), '01 injected failure replaced')
+    A(calls[0] == 1324 and a.work.ratops == 1324, '01 injected tail: completed %d charged %d' % (calls[0], a.work.ratops)); out['f01']['injected_tail'] = dict(completed=calls[0], charged=a.work.ratops)
+    # the reviewer's direct 4,097-quota approximate operator on [2,2048]: ONE exception post, nothing posted after it, overspend within the bound, variable declined
+    def task2(cards, vals): return mk_task(dict(cards=cards, factors=[dict(scope=(0, 1), values=vals)], evidence={}), [TK.singleton_query(v, 0, cards) for v in range(2)], mode='DETERMINISTIC_EPS', delta=F(0))
+    tk = task2([2, 2048], [F(1)] * 4096); C = CP.from_task(tk); base = C.work.total(); posts = []; orig_post = CP._Ticker._post
+    def observe(self, attr, k):
+        before = self.C.work.total()
+        try: r_ = orig_post(self, attr, k)
+        except Exception as ex: posts.append((k, before, self.C.work.total(), type(ex).__name__)); raise
+        posts.append((k, before, self.C.work.total(), None)); return r_
+    CP._Ticker._post = observe
+    try: ret = CP.approx_quotient(C, base + 4097, [F(1, 800)] * 2)
+    finally: CP._Ticker._post = orig_post
+    over = C.work.total() - base - 4097; exc_i = [i for i, p_ in enumerate(posts) if p_[3]]
+    A(ret is False and over <= bound and len(exc_i) == 1 and exc_i[0] == len(posts) - 1 and C.certs[-1].get('kind') == 'decline', '01 direct 4097 control: overspend %d posts %s' % (over, posts[-3:]))
+    out['f01']['direct_4097'] = dict(overspend=over, posts=len(posts), exception_posts=len(exc_i))
+    # the reviewer's natural [2,750] worker (entries 10000000+i; eps 1/200): approximate step within its quota bound; correct checker-accepted answer
+    dd = 750; cards = [2, dd] + [2] * 16; vals = list(range(10000000, 10000000 + 2 * dd)); fs = [([0, 1], vals)] + [([v], [1, 2]) for v in range(2, 18)]
+    mp = _spec(_uai(os.path.join(d, 'meter_quota_worker.uai'), cards, fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=v, state=0) for v in range(2)])
+    w = fresh_worker(mp, 'N1_CQR', budget=30.0, nonce='c23-01w'); fails, _ = check_(mp, w, 'N1_CQR', budget=300.0); log = w['certificate']['compile']['log']; st = [s_ for s_ in log['steps'] if s_['op'] == 'approx_quotient']
+    truths = [F(sum(vals[:dd]), sum(vals)), F(vals[0] + vals[dd], sum(vals))]; CNT['truth_coordinates'] += 2
+    A(w['outcome'] == 'PUBLISHED' and not fails and all(F(x['lo']) <= v <= F(x['hi']) for x, v in zip(w['answers'], truths)) and st and all(s_['work'] - log['quota'] <= bound for s_ in st), '01 natural worker: %s %s approx %s quota %s' % (w['outcome'], fails[:1], [(s_['outcome'], s_['work']) for s_ in st], log['quota']))
+    out['f01']['natural_2x750'] = dict(route=w['route'], approx=[(s_['outcome'], s_['work'], s_['work'] - log['quota']) for s_ in st], quota=log['quota'])
+    # witness-validation interruption: 1,024 completed evaluations charged ONCE, ONE service call, the model unchanged (the reviewer's double-post control)
+    C = CP.Compiled([2], [View('table', (0,), [F(1), F(1)]) for _ in range(1500)], [], [], TK.Work(), []); n_svc = [0]
+    def svc1(op):
+        n_svc[0] += 1; raise CP.CompileStop('cancelled', op)
+    C.service = svc1; T = CP._Ticker(C, None, 'probe'); snap = C.state()
+    try: C.commit(dict(op='probe'), cards=[2], witness={0: 0}); A(False, '01 witness interruption did not stop')
+    except CP.CompileStop as ex: A(ex.kind == 'cancelled', '01 stop kind %s' % ex.kind)
+    A(C.work.evals == 1024 and n_svc[0] == 1 and C.commits == 0 and C.witness is None and C.state()['cards'] == snap['cards'], '01 witness interruption: evals %d services %d commits %d' % (C.work.evals, n_svc[0], C.commits))
+    out['f01']['witness_interruption'] = dict(evals=C.work.evals, service_calls=n_svc[0])
+    # rollback restores the model, never the spent work: an operator failing after metered work keeps every unit
+    t_ = mk_task(dict(cards=[2048] + [2] * 10, factors=[dict(scope=(0,), values=[F(1)] * 2048)], evidence={}), [TK.singleton_query(0, 0, [2048] + [2] * 10)], mode='DETERMINISTIC_EPS', delta=F(0))
+    C, lg = compile_(t_, fault=dict(op='exact_quotient_pass', where='build', k=0)); st = next(s_ for s_ in lg['steps'] if s_['op'] == 'exact_quotient_pass')
+    A(st['outcome'] == 'failed' and st['work'] >= 2048 and st['commits'] == 0 and lg['work']['total'] >= st['work'], '01 rollback kept spent work: %s' % st); out['f01']['rollback_keeps_work'] = st['work']
+    # ---------------- 02: commit-time witness validation under the ACTIVE operator's quota
+    fs2 = [dict(scope=tuple(range(7)), values=[F(1)] * 128) for _ in range(10)] + [dict(scope=tuple(range(8)), values=[F(1)] * 256) for _ in range(1260)] + [dict(scope=(0,), values=[F(10 ** 9), F(1)])]
+    c8 = [2] * 8; t8 = mk_task(dict(cards=c8, factors=fs2, evidence={}), [TK.singleton_query(0, 0, c8)], mode='DETERMINISTIC_EPS', delta=F(0)); quota = CP.quota_for(t8)
+    C = CP.from_task(t8); base = C.work.total(); stop = None
+    try: direct = CP.concentration(C, base + quota, [F(1, 800)])
+    except CP.CompileStop as ex: stop = ex.kind; direct = None
+    over = C.work.total() - base - quota
+    A(over <= bound, '02 production-quota concentration overspent by %d' % over); A(stop == 'quota' and C.commits == 0 and C.witness is None, '02 production-quota concentration: stop %s commits %d (an over-budget commit must not happen silently)' % (stop, C.commits))
+    A(C.active is not None and C.active.quota == base + quota, '02 the active ticker does not carry the operator quota'); out['f02']['production_quota'] = dict(quota=quota, work=C.work.total() - base, overspend=over, stop=stop)
+    # the same model through the step driver: a replayable 'quota' outcome with zero commits of that operator
+    C2, lg2 = compile_(t8, enabled={'concentration'}); st2 = next(s_ for s_ in lg2['steps'] if s_['op'] == 'concentration')
+    A(st2['outcome'] == 'quota' and st2['commits'] == 0 and st2['work'] - lg2['quota'] <= bound, '02 step outcome %s' % st2); out['f02']['step_outcome'] = dict(outcome=st2['outcome'], work=st2['work'], quota=lg2['quota'])
+    # a quota ending INSIDE the witness validation: measure the work at commit entry without a quota, then set the quota just above it
+    C3 = CP.from_task(t8); base3 = C3.work.total(); at_entry = [None]; orig_wp = CP._witness_problem
+    def spy_wp(cards, views, w_, T=None): at_entry[0] = C3.work.total() if at_entry[0] is None else at_entry[0]; return orig_wp(cards, views, w_, T)
+    CP._witness_problem = spy_wp
+    try: CP.concentration(C3, None, [F(1, 800)])
+    finally: CP._witness_problem = orig_wp
+    A(at_entry[0] is not None and C3.commits == 1 and C3.witness is not None, '02 unlimited concentration did not commit')
+    val_cost = C3.work.total() - at_entry[0]; A(val_cost >= 1271, '02 validation cost %d' % val_cost)
+    # the quota is tested at service points (every TICK_ENTRIES charged units): a quota crossed inside the validation is either DETECTED (typed stop before the swap, zero commits,
+    # witness None) or, when the remaining validation ends before the next service point, the commit completes within the declared overspend bound -- never an over-budget commit
+    stops = 0
+    for inside in (1, 500, 1023, 1024, 1025, 1270):
+        C4 = CP.from_task(t8); base4 = C4.work.total(); q4 = (at_entry[0] - base3) + inside + base4
+        try: r4 = CP.concentration(C4, q4, [F(1, 800)]); stop4 = None
+        except CP.CompileStop as ex: stop4 = ex.kind; r4 = None
+        over4 = C4.work.total() - q4
+        if stop4 is not None: stops += 1; A(stop4 == 'quota' and C4.commits == 0 and C4.witness is None and -bound <= over4 <= bound, '02 quota ending %d units inside validation: stop %s commits %d overspend %d' % (inside, stop4, C4.commits, over4))
+        else: A(C4.commits == 1 and C4.witness is not None and 0 <= over4 <= bound, '02 quota ending %d units inside validation: committed with overspend %d (bound %d)' % (inside, over4, bound))
+        A(C4.active is not None and C4.active.quota == q4, '02 active ticker quota lost'); out['f02']['inside_%d' % inside] = dict(overspend=over4, stop=stop4, commits=C4.commits)
+    A(stops >= 1, '02 no quota ending inside the validation was ever detected (the inherited quota is not enforced)')
+    # a quota ending AFTER the validation commits normally; replay runs in the explicit quota-less context and reproduces the witness
+    C5 = CP.from_task(t8); q5 = C5.work.total() + (at_entry[0] - base3) + val_cost + 10
+    r5 = CP.concentration(C5, q5, [F(1, 800)]); A(r5 is not None and C5.commits == 1 and C5.witness == {v: 0 for v in range(8)}, '02 commit after validation within quota')
+    j = [dict(c) for c in C5.certs]; Cr, fails_r, _ = CP.replay_journal(t8, j, TK.Work()); A(not fails_r and Cr.witness == C5.witness and Cr.active is not None and Cr.active.quota is None, '02 replay of the committed witness (quota-less context): %s' % fails_r[:1])
+    out['f02']['replay_quota_less'] = 'ok'
+    # ---------------- 03: epsilon / delta domain
+    def tiny(name, eps, delta='1/1000000', mode='EXACT_RATIONAL', legacy=False):
+        p = os.path.join(d, name + '.uai'); open(p, 'w').write('MARKOV\n1\n2\n1\n1 0\n2\n1 1\n')
+        json.dump(dict(mode=mode, epsilon=eps, delta=delta, queries=[dict(kind='all_singletons')] if legacy else [dict(kind='singleton', variable=0, state=1)]), open(p + '.query.json', 'w')); return p
+    for eps in ('0', '-1/200', '2', '0/1'):
+        for legacy in (False, True):
+            p = tiny('eps_%s_%s' % (hashlib.sha256(eps.encode()).hexdigest()[:5], legacy), eps, legacy=legacy)
+            try: TK.load_task(p); A(False, '03 epsilon %s accepted at parsing' % eps)
+            except ValueError as ex: A('epsilon' in str(ex) and 'domain' in str(ex), '03 wrong rejection reason: %s' % str(ex)[:60])
+            t0 = time.monotonic(); w = fresh_worker(p, 'N1_CQR', budget=0.5, nonce='c23-03-%s-%s' % (hashlib.sha256(eps.encode()).hexdigest()[:5], legacy)); wall = time.monotonic() - t0
+            A(w['outcome'] == 'INVALID_TASK' and w['status'] == 'STOPPED' and w['guarantee_type'] == 'NONE' and 'epsilon' in w.get('reason', '') and wall < 5.0 and w.get('certificate') is None and w.get('answers') is None, '03 worker on epsilon %s (legacy %s): %s %s in %.2f s' % (eps, legacy, w.get('outcome'), (w.get('reason') or '')[:60], wall))
+    out['f03']['rejected'] = ['0', '-1/200', '2', '0/1']
+    for delta in ('1', '-1/10', '3/2'):
+        p = tiny('delta_%s' % hashlib.sha256(delta.encode()).hexdigest()[:5], '1/200', delta=delta, mode='PAC_EPS')
+        try: TK.load_task(p); A(False, '03 delta %s accepted' % delta)
+        except ValueError as ex: A('delta' in str(ex), '03 delta rejection reason: %s' % str(ex)[:60])
+    try: TK.legacy_digits(F(0)); A(False, '03 legacy_digits(0) returned')
+    except ValueError: pass
+    try: TK.legacy_digits(F(-1, 5)); A(False, '03 legacy_digits(-1/5) returned')
+    except ValueError: pass
+    A(TK.legacy_digits(F(1, 10 ** 12)) == 13 and TK.legacy_digits(F(1, 200)) == 8 and TK.legacy_digits(F(1)) == 8 and TK.legacy_digits(F(1, 10 ** 100)) == 101, '03 legacy digits values')
+    # accepted: 1e-100 (exact rational and legacy), 1 (the upper bound), the default 1/200; publications correct and checked
+    for eps, legacy in (('1/' + '1' + '0' * 100, False), ('1/' + '1' + '0' * 100, True), ('1', True), (None, False)):
+        p = os.path.join(d, 'ok_%s_%s.uai' % (hashlib.sha256(str(eps).encode()).hexdigest()[:5], legacy)); open(p, 'w').write('MARKOV\n1\n2\n1\n1 0\n2\n1 1\n')
+        spec = dict(mode='EXACT_RATIONAL', delta='1/1000000', queries=[dict(kind='all_singletons')] if legacy else [dict(kind='singleton', variable=0, state=1)])
+        if eps is not None: spec['epsilon'] = eps
+        json.dump(spec, open(p + '.query.json', 'w')); t_ = TK.load_task(p); A(t_['epsilon'] == (F(eps) if eps is not None else F(1, 200)), '03 parsed epsilon')
+        w = fresh_worker(p, 'N1_CQR', budget=10.0, nonce='c23-03ok-%s-%s' % (hashlib.sha256(str(eps).encode()).hexdigest()[:5], legacy)); fails, _ = check_(p, w, 'N1_CQR')
+        A(w['outcome'] == 'PUBLISHED' and not fails and all(a_['point'] == str(F(1, 2)) for a_ in w['answers']), '03 accepted epsilon %s legacy %s: %s %s' % (str(eps)[:12], legacy, w['outcome'], fails[:1]))
+        if legacy: A(w.get('legacy_digits') == TK.legacy_digits(t_['epsilon']) and w.get('intervals') is not None, '03 legacy digits at eps %s' % str(eps)[:12])
+    out['f03']['accepted'] = ['1e-100 rational', '1e-100 legacy (101 digits)', '1 legacy', 'default 1/200']
+    A('0 < epsilon <= 1' in TK.EPSILON_DOMAIN and '0 <= delta < 1' in TK.DELTA_DOMAIN, '03 domain statements')
+    return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'

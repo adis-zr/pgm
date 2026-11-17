@@ -16,7 +16,11 @@ ratios and construction, symmetry checks, affine rows, influence pair scans, con
 _Meter bound to the operator's _Ticker; the charged-since-service counter lives on the compiled state, the meter compares its pending count with the REMAINING
 allowance after every indivisible step (<= POLICY['max_step_charge'] = 2 units) and posts when reached, so leftovers carry across helpers and operators and `tick`
 is called at most TICK_ENTRIES + max_step_charge - 1 = 1,025 charged units apart (POLICY['service_gap_proof']); the declared max_irreducible_charge = 1,026 is a
-valid upper bound. Performed work is always charged, also when the operator then fails; an over-size raw post is charged and then reported.
+valid upper bound. EXACTLY-ONCE ACCOUNTING (fifth review CQR-R4-01 / 02): a meter hands its pending count to the ledger BEFORE the service point runs and every metered
+loop is a context manager that flushes its completed tail on every exit (serviced on a normal exit, charge-only while an exception propagates), so the ledger increment of a
+loop equals its completed operations on every exit path, no stop triggers a second service call, and rollback restores model state only; work delegated by `commit` (witness
+validation) runs under the compiled state's ACTIVE operator ticker (quota / deadline / service inherited; replay = the explicit quota-less context). An over-size raw post
+is charged and then reported.
 
 Operators (mandatory set A-E of the handoff):
   A  evidence restriction; checked support propagation (identically-zero incident slices remove states; empty domain / zero factor => ZERO_EVIDENCE); fixed-variable
@@ -38,7 +42,7 @@ from itertools import product
 from math import prod
 from views import View, gf2_rank_basis, gf2_reduce, gf2_span
 from task import Work
-COMPILER_VERSION = 'cqr-compiler-v2.1 (2026-11-16: atomic local commits, journal replay, service points at the remaining allowance inside every scan, witness lifecycle)'
+COMPILER_VERSION = 'cqr-compiler-v2.2 (2026-11-16: atomic local commits, journal replay, exactly-once metered service points inside every scan, witness lifecycle under the operator quota)'
 TICK_ENTRIES = 1024                   # service / quota / deadline check at most this many charged units apart inside every scan
 POLICY = dict(
     compiler_version=COMPILER_VERSION,
@@ -52,6 +56,7 @@ POLICY = dict(
     well_founded='every committed operator strictly decreases (variables, total domain, factor+query entries) in lexicographic order, except affine (once, last)',
     transaction_rule='immutable committed objects; one atomic swap per local commit; one journal record per commit (replayable); declines recorded, never replayed; failure => state == last commit',
     service_rule='every scan posts its units through a _Ticker meter that checks the REMAINING allowance after every indivisible step (1 or 2 units) and services as soon as TICK_ENTRIES units have been charged since the previous service point; leftovers of one helper count toward the next; posted work is never refused (an over-size post is charged, then reported)',
+    accounting_rule='EXACTLY ONCE: a meter transfers its pending count to the Work ledger before the service point runs (a stop raised there leaves nothing pending); every metered loop flushes its completed tail on every exit (serviced on a normal exit, charge-only while an exception propagates: the tail is below the allowance, so no service point is skipped and the typed stop is kept); rollback restores model state, never spent work; work delegated by commit (witness validation) runs under the ACTIVE operator ticker (its quota / deadline / service), the quota-less ticker is the explicit replay context',
     tick_entries=TICK_ENTRIES, max_step_charge=2, max_irreducible_charge=TICK_ENTRIES + 2,
     service_gap_proof='between two consecutive service points at most TICK_ENTRIES + max_step_charge - 1 = %d charged units (the counter of charged-since-service units lives on the compiled state, so leftovers carry across helpers and across operators): the meter compares its pending count with the remaining allowance after EVERY step of at most max_step_charge units and posts (servicing when the allowance is reached), so a post never exceeds the allowance by more than max_step_charge - 1; the declared bound max_irreducible_charge = %d is a valid (non-tight) upper bound; an operator quota is therefore overspent by at most that many units' % (TICK_ENTRIES + 1, TICK_ENTRIES + 2),
     witness_rule='the positivity witness is model-dependent auxiliary state: every commit that changes cards, views or variable numbering must TRANSFORM it (support / fixed / leaf / omission / quotient / affine re-coordinate it; influence keeps it) or INVALIDATE it (None); the committed witness is validated on the resulting model (domain + strictly positive weight) and dropped with a recorded reason otherwise')
@@ -78,20 +83,26 @@ def tick(C, quota=None, op=None):
 
 
 class _Ticker:
-    """charged-unit accountant of ONE operator: `acc` = units charged since the last service point. CONTRACT (fourth review, CQR-R3-04): work is posted through a per-loop
-    meter (`meter()`) that compares its pending count with the REMAINING allowance (TICK_ENTRIES - acc) after every indivisible step (<= max_step_charge units) and posts
-    as soon as the allowance is reached, so leftovers of one helper count toward the next and no post exceeds the allowance by more than max_step_charge - 1 units. Posted
-    work is ALWAYS charged (performed work is never uncounted, also when the operator then fails); a post larger than the allowance + max_step_charge - 1 is charged and then
-    reported as a contract violation (never silently accepted)."""
+    """charged-unit accountant of ONE operator. CONTRACT (fourth review CQR-R3-04; fifth review CQR-R4-01 / 02): work is posted through per-loop meters (`_Meter`) that compare
+    their pending count with the REMAINING allowance (TICK_ENTRIES - units charged since the last service point; ONE counter on the compiled state) after every indivisible step
+    (<= max_step_charge units) and post as soon as the allowance is reached. EXACTLY-ONCE: a meter transfers ownership of its pending count to the ledger BEFORE the service
+    point runs, so a stop raised by the service point (quota / deadline / reference_done / cancelled) leaves nothing pending and a later flush posts nothing again; a meter used
+    as a context manager flushes its completed tail on EVERY exit -- with a service point on a normal exit, WITHOUT one while an exception propagates (the tail is < the
+    allowance, so no service point is missed, and the original typed stop is never replaced). Constructing a ticker registers it as the compiled state's ACTIVE ticker, so work
+    delegated by `commit` (witness validation) inherits the operator's quota and service context. A post larger than the allowance + max_step_charge - 1 is charged and then
+    reported as a contract violation."""
     __slots__ = ('C', 'quota', 'op', 'max_post')
-    def __init__(self, C, quota, op): self.C = C; self.quota = quota; self.op = op; self.max_post = 0
+    def __init__(self, C, quota, op): self.C = C; self.quota = quota; self.op = op; self.max_post = 0; C.active = self
     @property
-    def acc(self): return self.C.acc_since                        # charged units since the last service point: ONE counter per compiled state (leftovers carry across helpers AND operators)
+    def acc(self): return self.C.acc_since                        # charged units since the last service point
     def room(self): return TICK_ENTRIES - self.C.acc_since        # >= 1: the units that may still be performed before the next service point
-    def _post(self, attr, k):
-        room = TICK_ENTRIES - self.C.acc_since
+    def _charge(self, attr, k):
         setattr(self.C.work, attr, getattr(self.C.work, attr) + k); self.C.acc_since += k
         if k > self.max_post: self.max_post = k
+    def _post(self, attr, k):
+        """charge k units (already performed) and service if the allowance is reached; the charge happens FIRST, so a stop raised by the service point never uncharges it"""
+        room = TICK_ENTRIES - self.C.acc_since
+        self._charge(attr, k)
         if self.C.acc_since >= TICK_ENTRIES: tick(self.C, self.quota, self.op)
         if k > room + POLICY['max_step_charge'] - 1: raise AssertionError('post of %d units exceeded the remaining service allowance %d by more than %d (CQR-R3-04 contract; the units ARE charged)' % (k, room, POLICY['max_step_charge'] - 1))
     def entries(self, k): self._post('entries', k)
@@ -99,45 +110,51 @@ class _Ticker:
     def evals(self, k): self._post('evals', k)
     def meter(self, attr='entries'): return _Meter(self, attr)
     def ratop_each(self, iterable, fn):
-        """map fn over an iterable, charging ONE rational operation per element through a meter (the computation is split at the remaining allowance)"""
-        out = []; m = _Meter(self, 'ratops')
-        for x in iterable: out.append(fn(x)); m.add()
-        m.flush(); return out
+        """map fn over an iterable, charging ONE rational operation per element through a meter (the computation is split at the remaining allowance; a failing fn leaves every
+        completed operation charged exactly once)"""
+        out = []
+        with _Meter(self, 'ratops') as m:
+            for x in iterable: out.append(fn(x)); m.add()
+        return out
 
 
 class _Meter:
-    """per-loop counter bound to a ticker (or to a plain Work when there is no ticker: the checker's helpers charge lumps without service points): add(k) records k units of
-    work DONE; the pending count is compared with the ticker's remaining allowance after every add and posted when reached"""
+    """per-loop counter bound to a ticker (or to a plain Work when there is no ticker: the checker's helpers charge lumps without service points). add(k) records k units of
+    work DONE; when the pending count reaches the ticker's remaining allowance it is posted -- ownership moves to the ledger BEFORE the post (exactly once). Use as a context
+    manager: the completed tail is flushed on every exit (serviced on a normal exit; charge-only while an exception propagates)."""
     __slots__ = ('T', 'attr', 'n', 'room', 'work')
     def __init__(self, T, attr='entries', work=None):
         self.T = T; self.attr = attr; self.n = 0; self.work = work; self.room = (TICK_ENTRIES - T.C.acc_since) if T is not None else None
     def add(self, k=1):
         self.n += k
-        if self.T is not None and self.n >= self.room: self.T._post(self.attr, self.n); self.n = 0; self.room = TICK_ENTRIES - self.T.C.acc_since
-    def flush(self):
-        if not self.n: return
-        if self.T is not None: self.T._post(self.attr, self.n)
-        elif self.work is not None: setattr(self.work, self.attr, getattr(self.work, self.attr) + self.n)
-        self.n = 0
+        if self.T is not None and self.n >= self.room:
+            k_ = self.n; self.n = 0                                 # ownership transferred before the post: nothing stays pending if the service point raises
+            self.T._post(self.attr, k_); self.room = TICK_ENTRIES - self.T.C.acc_since
+    def flush(self, service=True):
+        k_ = self.n; self.n = 0
+        if not k_: return
+        if self.T is not None:
+            if service: self.T._post(self.attr, k_)
+            else: self.T._charge(self.attr, k_)                   # while an exception propagates: the completed tail is charged, no second service point, the stop is kept
+        elif self.work is not None: setattr(self.work, self.attr, getattr(self.work, self.attr) + k_)
+    def __enter__(self): return self
+    def __exit__(self, et, ev, tb): self.flush(service=(et is None)); return False
 
 
 KEEP = object()        # commit(witness=KEEP): the witness is unchanged (allowed only when the variable domain is unchanged)
 
 
-def _witness_problem(cards, views, w, m=None):
-    """None if w is a complete in-range assignment of the model (cards, views) with strictly positive weight; else the reason (m: an optional meter charging one evaluation per view)"""
+def _witness_problem(cards, views, w, T=None):
+    """None if w is a complete in-range assignment of the model (cards, views) with strictly positive weight; else the reason (T: the ticker charging one evaluation per view)"""
     n = len(cards)
     if not isinstance(w, dict) or sorted(w.keys()) != list(range(n)): return 'witness domain %s differs from the variables 0..%d' % (sorted(w.keys())[:6] if isinstance(w, dict) else type(w).__name__, n - 1)
     if any(not isinstance(w[v], int) or not (0 <= w[v] < cards[v]) for v in range(n)): return 'witness state out of range for the resulting domain'
     wt = F(1)
-    try:
+    with _Meter(T, 'evals') as m:
         for v in views:
-            wt *= v.at(cards, w)
-            if m is not None: m.add()
+            wt *= v.at(cards, w); m.add()
             if wt == 0: return 'witness has zero weight on the resulting model'
-        return None
-    finally:
-        if m is not None: m.flush()
+    return None
 
 
 def _witness_renumbered(w, cards, removed):
@@ -152,7 +169,7 @@ class Compiled:
     def __init__(self, cards, views, queries, decoder, work, bias, normalizer_task=False):
         self.cards = list(cards); self.views = list(views); self.queries = list(queries); self.decoder = list(decoder); self.work = work; self.bias = list(bias)
         self.certs = []; self.scalars = []; self.constant_scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.service = None; self.constant_queries = {}
-        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None; self.allowance = None; self.max_gap = 0; self.acc_since = 0
+        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None; self.allowance = None; self.max_gap = 0; self.acc_since = 0; self.active = None
 
     def n(self): return len(self.cards)
     def measure(self): return (len(self.cards), sum(self.cards), sum(v.size() for v in self.views) + sum(_qsize(q) for q in self.queries))
@@ -174,7 +191,10 @@ class Compiled:
         new_cards = list(cards) if cards is not None else self.cards; new_views = list(views) if views is not None else self.views
         w_new = self.witness if witness is KEEP else (dict(witness) if witness is not None else None); w_drop = None
         if w_new is not None:
-            bad = _witness_problem(new_cards, new_views, w_new, _Meter(_Ticker(self, None, rec.get('op')), 'evals'))      # charged + serviced; nothing has been swapped yet
+            # charged + serviced under the ACTIVE operator's ticker (its quota, deadline and service context; fifth review CQR-R4-02); a replay without a producer quota is the
+            # explicit quota-less context. Nothing has been swapped yet: a stop raised here leaves the state at the last commit with every unit charged
+            T_ = self.active if (self.active is not None and self.active.C is self) else _Ticker(self, None, rec.get('op'))
+            bad = _witness_problem(new_cards, new_views, w_new, T_)
             if bad: w_drop = bad; w_new = None
         if cards is not None: self.cards = list(cards)
         if views is not None: self.views = list(views)
@@ -276,12 +296,12 @@ def from_task(task, work=None, service=None):
 # ======================================================================================================================
 def _slice(view, cards, var, state, T=None):
     """the slice of a table view over the other scope variables at var = state, as a tuple in row-major order of the remaining scope (charged + serviced through T's meter)"""
-    assert view.kind == 'table'; rest = [v for v in view.scope if v != var]; out = []; vals = view.values; scope = view.scope; m = _Meter(T, 'entries')
-    for xs in product(*(range(cards[v]) for v in rest)):
-        x = dict(zip(rest, xs)); x[var] = state; i = 0
-        for v in scope: i = i * cards[v] + x[v]
-        out.append(vals[i]); m.add()
-    m.flush()
+    assert view.kind == 'table'; rest = [v for v in view.scope if v != var]; out = []; vals = view.values; scope = view.scope
+    with _Meter(T, 'entries') as m:
+        for xs in product(*(range(cards[v]) for v in rest)):
+            x = dict(zip(rest, xs)); x[var] = state; i = 0
+            for v in scope: i = i * cards[v] + x[v]
+            out.append(vals[i]); m.add()
     return tuple(out)
 
 
@@ -292,10 +312,9 @@ def _replace_axis(view, cards, var, new_states, new_card, T=None):
         i = 0
         for v in scope: i = i * old_cards[v] + x[v]
         return i
-    m = _Meter(T, 'entries')
-    for xs in product(*((range(new_card) if v == var else range(old_cards[v])) for v in scope)):
-        x = dict(zip(scope, xs)); x[var] = new_states[x[var]]; vals.append(view.values[idx(x)]); m.add()
-    m.flush()
+    with _Meter(T, 'entries') as m:
+        for xs in product(*((range(new_card) if v == var else range(old_cards[v])) for v in scope)):
+            x = dict(zip(scope, xs)); x[var] = new_states[x[var]]; vals.append(view.values[idx(x)]); m.add()
     return View('table', scope, vals)
 
 
@@ -306,22 +325,21 @@ def _average_axis(view, cards, var, classes, weights, T=None):
         i = 0
         for v in scope: i = i * cards[v] + x[v]
         return i
-    m = _Meter(T, 'ratops')
-    for xs in product(*((range(len(classes)) if v == var else range(cards[v])) for v in scope)):
-        x = dict(zip(scope, xs)); c = x[var]; s = F(0)
-        for a in classes[c]: x[var] = a; s += weights[a] * view.values[idx(x)]; m.add()       # the class sum is split at the remaining allowance (CQR-R3-04: a 2,048-state class is not one post)
-        vals.append(s)
-    m.flush()
+    with _Meter(T, 'ratops') as m:
+        for xs in product(*((range(len(classes)) if v == var else range(cards[v])) for v in scope)):
+            x = dict(zip(scope, xs)); c = x[var]; s = F(0)
+            for a in classes[c]: x[var] = a; s += weights[a] * view.values[idx(x)]; m.add()       # the class sum is split at the remaining allowance (CQR-R3-04: a 2,048-state class is not one post)
+            vals.append(s)
     return View('table', scope, vals)
 
 
 def _remove_var_from_scope_fixed(view, cards, var, state, T=None):
-    scope = view.scope; rest = tuple(v for v in scope if v != var); vals = []; m = _Meter(T, 'entries')
-    for xs in product(*(range(cards[v]) for v in rest)):
-        x = dict(zip(rest, xs)); x[var] = state; i = 0
-        for v in scope: i = i * cards[v] + x[v]
-        vals.append(view.values[i]); m.add()
-    m.flush()
+    scope = view.scope; rest = tuple(v for v in scope if v != var); vals = []
+    with _Meter(T, 'entries') as m:
+        for xs in product(*(range(cards[v]) for v in rest)):
+            x = dict(zip(rest, xs)); x[var] = state; i = 0
+            for v in scope: i = i * cards[v] + x[v]
+            vals.append(view.values[i]); m.add()
     return View('table', rest, vals)
 
 
@@ -430,15 +448,15 @@ def _leaf_candidate(C):
 
 def _leaf_apply(C, var, fi, T=None):
     """NEW state with factor fi summed over var (var removed); returns (state-kwargs, scalar-or-None)"""
-    v = C.views[fi]; rest = tuple(u for u in v.scope if u != var); vals = []; m = _Meter(T, 'entries')
-    for xs in product(*(range(C.cards[u]) for u in rest)):
-        x = dict(zip(rest, xs)); s = F(0)
-        for a in range(C.cards[var]):
-            x[var] = a; i = 0
-            for u in v.scope: i = i * C.cards[u] + x[u]
-            s += v.values[i]; m.add()
-        vals.append(s)
-    m.flush()
+    v = C.views[fi]; rest = tuple(u for u in v.scope if u != var); vals = []
+    with _Meter(T, 'entries') as m:
+        for xs in product(*(range(C.cards[u]) for u in rest)):
+            x = dict(zip(rest, xs)); s = F(0)
+            for a in range(C.cards[var]):
+                x[var] = a; i = 0
+                for u in v.scope: i = i * C.cards[u] + x[u]
+                s += v.values[i]; m.add()
+            vals.append(s)
     if not any(vals): raise ZeroEvidence(dict(kind='leaf_sum_identically_zero', compiled_variable=var, factor=fi))
     views = list(C.views); scalars = []
     if rest: views[fi] = View('table', rest, vals)
@@ -485,19 +503,18 @@ def _omission_proofs(C, T=None):
     for comp in _components(C):
         if set(comp) & qscope: continue
         fv = [i for i, v in enumerate(C.views) if set(v.scope) <= set(comp)]
-        proof = None; allpos = True; m = _Meter(T, 'entries', work=C.work)
-        for i in fv:
-            for x in C.views[i].values:
-                m.add()
-                if not x > 0: allpos = False; break
-            if not allpos: break
-        m.flush()
+        proof = None; allpos = True
+        with _Meter(T, 'entries', work=C.work) as m:
+            for i in fv:
+                for x in C.views[i].values:
+                    m.add()
+                    if not x > 0: allpos = False; break
+                if not allpos: break
         if allpos: proof = dict(kind='all_tables_strictly_positive', factors=fv)
         elif C.witness is not None:
             w = F(1)
-            m2 = _Meter(T, 'evals', work=C.work)
-            for i in fv: w *= C.views[i].at(C.cards, C.witness); m2.add()
-            m2.flush()
+            with _Meter(T, 'evals', work=C.work) as m2:
+                for i in fv: w *= C.views[i].at(C.cards, C.witness); m2.add()
             if w > 0: proof = dict(kind='witness_restricted_positive', factors=fv, witness={str(v): C.witness[v] for v in comp}, weight=str(w))
         if proof is None: continue
         omitted.append(dict(variables=comp, factors=fv, proof=proof))
@@ -547,16 +564,16 @@ def _signatures(C, var, T=None):
 def _quotient_build(C, var, classes, sig, inc, approx, T=None):
     """BUILD the post-quotient state of compiled variable var into `classes` (list of sorted state lists; representative = first state): NEW factor views (slices ->
     representative slices; a unary S_C combined with an existing unary), NEW query views (weighted average kappa_a / S_C), NEW decoder entries; returns (state kwargs, record)"""
-    reps = [g[0] for g in classes]; kappa = {}; S = []; m = _Meter(T, 'ratops')
-    for g in classes:
-        tot = F(0)
-        for a in g:
-            k = F(1)
-            for fi in range(len(inc)):
-                k *= sig[a][fi][1] / sig[g[0]][fi][1]; m.add()
-            kappa[a] = k; tot += k; m.add()
-        S.append(tot)
-    m.flush()
+    reps = [g[0] for g in classes]; kappa = {}; S = []
+    with _Meter(T, 'ratops') as m:
+        for g in classes:
+            tot = F(0)
+            for a in g:
+                k = F(1)
+                for fi in range(len(inc)):
+                    k *= sig[a][fi][1] / sig[g[0]][fi][1]; m.add()
+                kappa[a] = k; tot += k; m.add()
+            S.append(tot)
     inc_idx = [C.views.index(v) for v in inc]; views = list(C.views)
     for i in inc_idx: views[i] = _replace_axis(C.views[i], C.cards, var, reps, len(classes), T)
     un_i = next((i for i, v in enumerate(views) if v.kind == 'table' and v.scope == (var,)), None)
@@ -612,8 +629,8 @@ def exact_quotient_pass(C, quota, hook=None):
 
 def _surrogate_ratio(C, var, inc, slices, groups, T=None):
     """R = prod_a (u_a / l_a) with l_a, u_a the extrema of phi/phi~ over ALL positive entries of incident factor a under the grouping; None if a mask mismatch"""
-    R = F(1); bounds = []; m = _Meter(T, 'ratops', work=C.work)
-    try:
+    R = F(1); bounds = []
+    with _Meter(T, 'ratops', work=C.work) as m:            # performed work is charged exactly once on every exit (mask mismatch, stop, failure included)
         for fi in range(len(inc)):
             lo = hi = None
             for g in groups:
@@ -628,7 +645,6 @@ def _surrogate_ratio(C, var, inc, slices, groups, T=None):
                             rho = a / (c * b); m.add()
                             lo = rho if lo is None or rho < lo else lo; hi = rho if hi is None or rho > hi else hi
             bounds.append((lo, hi)); R *= hi / lo
-    finally: m.flush()                                     # performed work is charged on every exit (mask mismatch included)
     return R, bounds
 
 
@@ -670,17 +686,17 @@ def approx_quotient(C, quota, allowance, hook=None):
             # BUILD the surrogate on NEW incident views: phi~(s, y) = c_a(s) phi(r, y) with c from the first common positive pivot
             sur = []
             for fi, v in enumerate(inc):
-                scope = v.scope; rest = [u for u in scope if u != var]; vals = list(v.values); m = _Meter(T, 'ratops')
-                for g in groups:
-                    r = g['rep']; sl_r = slices[r][fi]; piv_i = next(i for i, x in enumerate(sl_r) if x)
-                    for s in g['states']:
-                        if s == r: continue
-                        c = slices[s][fi][piv_i] / sl_r[piv_i]
-                        for ri, xs in enumerate(product(*(range(C.cards[u]) for u in rest))):
-                            x = dict(zip(rest, xs)); x[var] = s; i = 0
-                            for u in scope: i = i * C.cards[u] + x[u]
-                            vals[i] = c * sl_r[ri]; m.add()
-                m.flush()
+                scope = v.scope; rest = [u for u in scope if u != var]; vals = list(v.values)
+                with _Meter(T, 'ratops') as m:
+                    for g in groups:
+                        r = g['rep']; sl_r = slices[r][fi]; piv_i = next(i for i, x in enumerate(sl_r) if x)
+                        for s in g['states']:
+                            if s == r: continue
+                            c = slices[s][fi][piv_i] / sl_r[piv_i]
+                            for ri, xs in enumerate(product(*(range(C.cards[u]) for u in rest))):
+                                x = dict(zip(rest, xs)); x[var] = s; i = 0
+                                for u in scope: i = i * C.cards[u] + x[u]
+                                vals[i] = c * sl_r[ri]; m.add()
                 sur.append(View('table', scope, vals))
             # the exact quotient of the surrogate (signatures on the surrogate views; the quotient build reads the surrogate through a temporary view list)
             saved_views = C.views; tmp = list(C.views)
@@ -740,8 +756,8 @@ def verify_symmetry_action(cards, views, cand, work, T=None):
     perm = cand['perm']
     if sorted(perm) != list(range(len(cards))): return False
     if any(cards[perm[v]] != cards[v] or sorted(cand['state_maps'][v]) != list(range(cards[v])) for v in range(len(cards))): return False
-    used = [False] * len(views); m = _Meter(T, 'entries', work=work)
-    try:
+    used = [False] * len(views)
+    with _Meter(T, 'entries', work=work) as m:
         for v in views:
             img_scope = tuple(perm[u] for u in v.scope); match = None
             for i, w in enumerate(views):
@@ -755,15 +771,14 @@ def verify_symmetry_action(cards, views, cand, work, T=None):
             if match is None: return False
             used[match] = True
         return True
-    finally: m.flush()
 
 
 def _query_symmetric_constant(cards, f, cand, work, T=None):
     """c such that f(x) + f(tau x) = 2c for every x (tau an involution on f's scope); None otherwise"""
     perm = cand['perm']
     if any(perm[u] not in f.scope for u in f.scope): return None
-    c = None; m = _Meter(T, 'entries', work=work)
-    try:
+    c = None
+    with _Meter(T, 'entries', work=work) as m:
         for xs in product(*(range(cards[u]) for u in f.scope)):
             x = dict(zip(f.scope, xs)); y = {perm[u]: cand['state_maps'][u][s] for u, s in x.items()}; z = {perm[u]: cand['state_maps'][u][s] for u, s in y.items()}
             if z != x: return None
@@ -771,20 +786,20 @@ def _query_symmetric_constant(cards, f, cand, work, T=None):
             if c is None: c = s
             elif s != c: return None
         return c
-    finally: m.flush()
 
 
 # ======================================================================================================================
 # operator E: concentration certificate and influence deletion
 # ======================================================================================================================
 def _unary_product_argmax(C, var, T=None):
-    best = None; bw = None; m = _Meter(T, 'entries', work=C.work)
-    for s in range(C.cards[var]):
-        w = F(1)
-        for v in C.views:
-            if v.kind == 'table' and v.scope == (var,): w *= v.values[s]; m.add()
-        if bw is None or w > bw: bw = w; best = s
-    m.flush(); return best
+    best = None; bw = None
+    with _Meter(T, 'entries', work=C.work) as m:
+        for s in range(C.cards[var]):
+            w = F(1)
+            for v in C.views:
+                if v.kind == 'table' and v.scope == (var,): w *= v.values[s]; m.add()
+            if bw is None or w > bw: bw = w; best = s
+    return best
 
 
 def concentration(C, quota, allowance):
@@ -795,9 +810,9 @@ def concentration(C, quota, allowance):
     if all(a <= 0 for a in allowance): return None
     T = _Ticker(C, quota, 'concentration')
     xstar = {var: _unary_product_argmax(C, var, T) for var in range(C.n())}
-    wst = F(1); m = _Meter(T, 'evals')
-    for v in C.views: wst *= v.at(C.cards, xstar); m.add()
-    m.flush()
+    wst = F(1)
+    with _Meter(T, 'evals') as m:
+        for v in C.views: wst *= v.at(C.cards, xstar); m.add()
     if wst == 0: C.decline('concentration', 'proposed assignment has zero weight (no positive witness)'); return None
     t = {}
     for var in range(C.n()):
@@ -858,25 +873,25 @@ def influence_deletion(C, quota, allowance, neumann_T=8):
             if len(v.scope) < 1: continue
             sc = v.scope
             for i in sc:
-                tick(C, quota, 'influence_deletion'); rest = [u for u in sc if u != i]; best = F(1); m = _Meter(T, 'entries')
-                for xs in product(*(range(C.cards[u]) for u in rest)):
-                    x = dict(zip(rest, xs)); vals = []
-                    for s_ in range(C.cards[i]): x[i] = s_; vals.append(v.at(C.cards, x)); m.add()
-                    best = max(best, max(vals) / min(vals))
-                m.flush()
+                tick(C, quota, 'influence_deletion'); rest = [u for u in sc if u != i]; best = F(1)
+                with _Meter(T, 'entries') as m:
+                    for xs in product(*(range(C.cards[u]) for u in rest)):
+                        x = dict(zip(rest, xs)); vals = []
+                        for s_ in range(C.cards[i]): x[i] = s_; vals.append(v.at(C.cards, x)); m.add()
+                        best = max(best, max(vals) / min(vals))
                 Dai[(fi, i)] = best
                 for j in sc:
                     if j == i: continue
-                    rest2 = [u for u in sc if u not in (i, j)]; Rmax = F(1); m = _Meter(T, 'entries')
-                    for xs in product(*(range(C.cards[u]) for u in rest2)):
-                        x = dict(zip(rest2, xs))
-                        for u_ in range(C.cards[i]):
-                            for v_ in range(u_ + 1, C.cards[i]):
-                                qs = []
-                                for s_ in range(C.cards[j]):
-                                    x[i] = u_; x[j] = s_; a = v.at(C.cards, x); x[i] = v_; b = v.at(C.cards, x); qs.append(a / b); m.add(2)
-                                Rmax = max(Rmax, max(qs) / min(qs))
-                    m.flush()
+                    rest2 = [u for u in sc if u not in (i, j)]; Rmax = F(1)
+                    with _Meter(T, 'entries') as m:
+                        for xs in product(*(range(C.cards[u]) for u in rest2)):
+                            x = dict(zip(rest2, xs))
+                            for u_ in range(C.cards[i]):
+                                for v_ in range(u_ + 1, C.cards[i]):
+                                    qs = []
+                                    for s_ in range(C.cards[j]):
+                                        x[i] = u_; x[j] = s_; a = v.at(C.cards, x); x[i] = v_; b = v.at(C.cards, x); qs.append(a / b); m.add(2)
+                                    Rmax = max(Rmax, max(qs) / min(qs))
                     Cbar.setdefault(i, {})[j] = min(F(1), cb(i, j) + _h(Rmax))
     except CompileStop as cs:
         if cs.kind == 'quota': C.decline('influence_deletion', 'quota exhausted during the local scans'); return False
@@ -918,11 +933,11 @@ def local_affine(view, cards, work, T=None):
     """for an all-binary table view: positive rows R; affine iff |R| == 2^rank(differences); returns (equations as (rowmask over view.scope bits, rhs)) or None"""
     k = len(view.scope)
     if any(cards[u] != 2 for u in view.scope) or k == 0: return None
-    rows = []; m = _Meter(T, 'entries', work=work)
-    for i, w in enumerate(view.values):
-        m.add()
-        if w > 0: rows.append(i)        # row index i = bits of the scope in row-major order (first scope var = most significant bit)
-    m.flush()
+    rows = []
+    with _Meter(T, 'entries', work=work) as m:
+        for i, w in enumerate(view.values):
+            m.add()
+            if w > 0: rows.append(i)        # row index i = bits of the scope in row-major order (first scope var = most significant bit)
     if not rows: raise ZeroEvidence(dict(kind='table_with_no_positive_entry'))
     r0 = rows[0]; rank, basis = gf2_rank_basis([r ^ r0 for r in rows])
     if len(rows) != 1 << rank: return None
@@ -993,17 +1008,17 @@ def _affine_build(C, quota, T):
             for kk, zc in enumerate(zcols):
                 if (bvec >> zc) & 1: loc |= 1 << kk
             ub_local.append(loc)
-        rho = len(ub); vals = []; m = _Meter(T, 'entries')
-        for yb in product((0, 1), repeat=rho):
-            for cs in product(*(range(C.cards[u]) for u in cat_in)):
-                x = dict(zip(cat_in, cs))
-                for ui, u in enumerate(bin_in):
-                    bit = crow[pos[u]]
-                    for k in range(rho):
-                        if (coords[ui] >> k) & 1 and yb[k]: bit ^= 1
-                    x[u] = bit
-                vals.append(v.at(C.cards, x)); m.add()
-        m.flush()
+        rho = len(ub); vals = []
+        with _Meter(T, 'entries') as m:
+            for yb in product((0, 1), repeat=rho):
+                for cs in product(*(range(C.cards[u]) for u in cat_in)):
+                    x = dict(zip(cat_in, cs))
+                    for ui, u in enumerate(bin_in):
+                        bit = crow[pos[u]]
+                        for k in range(rho):
+                            if (coords[ui] >> k) & 1 and yb[k]: bit ^= 1
+                        x[u] = bit
+                    vals.append(v.at(C.cards, x)); m.add()
         return View('affine', tuple(zcols) + tuple(cat_new[u] for u in cat_in), vals, cat_scope=tuple(cat_new[u] for u in cat_in), zcols=tuple(zcols), urows=ub_local)
     new_views = [make_view(v) for v in C.views]
     queries = [_q_map(q, make_view) for q in C.queries]
@@ -1116,7 +1131,7 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
         if log['interrupted']: log['steps'].append(dict(op=name, outcome='skipped', reason='interrupted', commits=0)); return False
         if log.get('failed'): log['steps'].append(dict(op=name, outcome='skipped', reason='optional_failure', commits=0)); return False
         if name not in enabled: log['steps'].append(dict(op=name, outcome='disabled', commits=0)); return False
-        w0 = C.work.total(); m0 = C.measure(); c0 = C.commits; saved = _save_state(C); rec = dict(op=name, work=0, measure_before=m0)
+        w0 = C.work.total(); m0 = C.measure(); c0 = C.commits; saved = _save_state(C); rec = dict(op=name, work=0, measure_before=m0); C.active = None
         try:
             if fault == name: raise RuntimeError('INJECTED optional fault in %s (qualification control; never a production run)' % name)      # before the operator starts
             r = fn()
@@ -1157,7 +1172,7 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
     else:
         for name in ('approx_quotient', 'concentration', 'influence_deletion'): log['steps'].append(dict(op=name, outcome='disabled', reason='EXACT_RATIONAL mode', commits=0))
     step('affine', lambda: affine(C, q_('affine')))
-    C.service = None; C.fault = None                               # the hooks are released with the task (the certificate serializer never sees them)
+    C.service = None; C.fault = None; C.active = None              # the hooks are released with the task (the certificate serializer never sees them)
     log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]; log['commits'] = C.commits; log['ticks'] = C.ticks; log['max_service_gap'] = C.max_gap
     return C, log
 

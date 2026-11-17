@@ -117,10 +117,25 @@ def conditional_query(event, given, cards):
 LEGACY_BASE_DIGITS = 8          # the legacy comparator contract: outward decimal rows with at least 8 digits
 
 
+EPSILON_DOMAIN = 'a rational with 0 < epsilon <= 1 in every mode (DETERMINISTIC_EPS / PAC_EPS: the published tolerance; EXACT_RATIONAL: publications are exact regardless, epsilon only sizes the optional legacy decimal rows); 0 and negative values are REJECTED at parsing (an exact tolerance is requested through EXACT_RATIONAL, not through epsilon = 0: arbitrary rational probabilities have no finite exact decimal expansion)'
+DELTA_DOMAIN = 'a rational with 0 <= delta < 1 (0 = no statistical risk; PAC publications need delta > 0)'
+
+
+def check_tolerances(eps, delta):
+    """the input domain of the tolerances (fifth review, CQR-R4-03): rejected clearly at parsing, never discovered by an unbounded precision search"""
+    eps = F(eps); delta = F(delta)
+    if not (0 < eps <= 1): raise ValueError('epsilon %s is outside the supported domain: %s' % (eps, EPSILON_DOMAIN))
+    if not (0 <= delta < 1): raise ValueError('delta %s is outside the supported domain: %s' % (delta, DELTA_DOMAIN))
+    return eps, delta
+
+
 def legacy_digits(eps):
     """digits of the legacy decimal rows for a task of tolerance eps: the smallest d >= 8 with 2 / 10^d <= eps / 4, so the rounding reservation never consumes more than a
-    quarter of the tolerance (eps = 1/200 -> 8 digits, as before; eps = 1e-12 -> 14 digits). The rows are an OUTPUT REPRESENTATION; their precision follows the request."""
-    d = LEGACY_BASE_DIGITS; eps = F(eps)
+    quarter of the tolerance (eps = 1/200 -> 8 digits, as before; eps = 1e-12 -> 13 digits). The rows are an OUTPUT REPRESENTATION; their precision follows the request.
+    Guarded: eps must be positive (a non-positive tolerance has no finite decimal reservation; the task parser rejects it before any worker runs)."""
+    eps = F(eps)
+    if eps <= 0: raise ValueError('legacy_digits needs a positive tolerance (epsilon %s): %s' % (eps, EPSILON_DOMAIN))
+    d = LEGACY_BASE_DIGITS
     while F(2, 10 ** d) > eps / 4: d += 1
     return d
 
@@ -157,7 +172,8 @@ def load_task(model_path, mode=None):
     else:
         qs = all_singletons(cards); binding = dict(binding, query_sha256=None)
     m = (spec or {}).get('mode') if mode is None else mode
-    task = dict(model=model, queries=qs, mode=m or 'PAC_EPS', epsilon=F(str((spec or {}).get('epsilon', '1/200'))), delta=F(str((spec or {}).get('delta', '1/1000000'))), binding=binding,
+    eps_, delta_ = check_tolerances(F(str((spec or {}).get('epsilon', '1/200'))), F(str((spec or {}).get('delta', '1/1000000'))))
+    task = dict(model=model, queries=qs, mode=m or 'PAC_EPS', epsilon=eps_, delta=delta_, binding=binding,
                 all_singletons=(spec is None or (bool(spec['queries']) and all(q['kind'] == 'all_singletons' for q in spec['queries']) and not spec.get('normalizer_task'))), query_spec=spec)
     if task['mode'] not in MODES: raise ValueError('unknown mode %s' % task['mode'])
     if not task['queries'] and not (spec or {}).get('normalizer_task'): raise ValueError('a task needs at least one query (or normalizer_task)')
