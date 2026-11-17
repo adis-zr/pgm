@@ -16,8 +16,8 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v4.1 (2026-11-16, after the third adversarial review: group C21 added; after attempt 7: C21-06 baseline-row routes control)'
-ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v9')
+SUITE_VERSION = 'cqr-qualification-v5 (2026-11-16, after the fourth adversarial review: group C22 added -- precision reservation, zero mass vs feasibility, witness lifecycle, service interval across helpers)'
+ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v11')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
 CNT = R['counts']; passed = 0; total = 0
@@ -1118,7 +1118,129 @@ def c21_checker_soundness_lifecycle_dependencies_closeout():
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout)]
+def c22_precision_zero_mass_witness_service():
+    """FOURTH adversarial review (CQR-R3-01..04), invariant-focused: (01) zero mass and publication feasibility are distinct states -- a closed positive-mass frontier whose
+    optional publication is infeasible at the requested tolerance is NEVER zero evidence (the protected reference publishes the exact answer, the checker accepts); genuine
+    zero evidence (compiler proof; reference enumeration) still proves; the typed UNDEFINED coordinate is preserved. (02) the accuracy reservation follows the OUTPUT
+    REPRESENTATION: exact rational reference / closure publications are accepted at tolerances below, at and above the old 2e-8 margin (1e-12, 2e-8, 1e-7, 1/200) with mixed
+    defined / UNDEFINED coordinates; the legacy decimal rows carry the digits the tolerance requires and keep their contract; producer and checker agree on the reservation.
+    (03) the positivity witness is model-dependent state: concentration followed by affine (mixed categorical / binary) publishes a checker-accepted interval containing the
+    independent truth and the journal replays the transformed witness; every domain-changing commit transforms or invalidates the witness (a commit that would keep a stale one
+    is refused; an invalid one is dropped with its reason); an optional failure inside the direct publication preparation never loses the original reference. (04) the service
+    interval is bounded in charged units ACROSS helpers and operators: uneven domains [3,750,2] / [3,513,2] / [3,700,2], class sizes 1023 / 1024 / 1025 / 2048 / 2049 and the
+    14-binary witness all show a maximal gap <= TICK_ENTRIES + max_step_charge - 1 and a quota placed before bulk work overspent by <= max_irreducible_charge; high-cardinality
+    quotients COMMIT with their work charged; an injected failing pullback keeps its performed work charged and the later publication is still correct."""
+    d = tempfile.mkdtemp(prefix='cqr_c22_'); out = dict(f01={}, f02={}, f03={}, f04={})
+    # ---------------- 01 (the reviewer's 18-variable positive-mass model; eps 1e-12, 1/200, 1e-7)
+    n = 18; cards = [4] + [2] * (n - 1)
+    fs = [([0, 1], ['1', '3', '1', '30000000000000001/10000000000000000', '4', '1', '4', '10000000000000001/10000000000000000']), ([0, 2], ['1', '2', '1', '2', '3', '1', '3', '1']), ([1, 2], ['1', '2', '3', '5'])] + [([i], ['1', '2']) for i in range(3, n)]
+    qs01 = [dict(kind='singleton', variable=0, state=1), dict(kind='table', table=dict(name='zero denominator', kind='ratio', h=dict(scope=[1], values=['0', '0']), g=dict(scope=[1], values=['0', '0'])))]
+    for tag, eps in (('1e-12', '1/1000000000000'), ('1/200', '1/200'), ('1e-7', '1/10000000')):
+        mp = _spec(_uai(os.path.join(d, 'r01_%s.uai' % tag.replace('/', '_')), cards, fs), mode='DETERMINISTIC_EPS', epsilon=eps, delta='1/1000000', queries=qs01)
+        t, tr = _truth(mp); w = fresh_worker(mp, 'N1_CQR', budget=30.0, nonce='c22-01-' + tag.replace('/', '_'))
+        A(w['outcome'] == 'PUBLISHED', '01 eps %s: outcome %s (%s)' % (tag, w['outcome'], (w.get('reason') or '')[:80])); fails, _ = check_(mp, w, 'N1_CQR', budget=300.0); A(not fails, '01 eps %s: %s' % (tag, fails[:1]))
+        A(_contained(w, tr, t['epsilon']) and w['answers'][1]['status'] == 'UNDEFINED', '01 eps %s: containment / typed UNDEFINED' % tag); out['f01'][tag] = dict(route=w['route'], point=w['answers'][0]['point'], undefined=w['answers'][1]['status'])
+    A(tr['Z'] > 0 and tr['answers'][0] == F(20952380952380953, 74285714285714287), '01 independent truth'); out['f01']['truth'] = str(tr['answers'][0])
+    # genuine zero evidence still proves: compiler proof (a factor with no positive entry) and reference enumeration (frontier-closed zero mass with every slice positive somewhere)
+    mpz = _spec(_uai(os.path.join(d, 'zero_compiler.uai'), [2, 2], [([0], ['0', '0']), ([0, 1], ['1', '1', '1', '1'])]), mode='DETERMINISTIC_EPS', epsilon='1/1000000000000', delta='1/1000000', queries=[dict(kind='singleton', variable=1, state=0)])
+    w = fresh_worker(mpz, 'N1_CQR', budget=20.0, nonce='c22-01z'); fails, _ = check_(mpz, w, 'N1_CQR'); A(w['outcome'] == 'PROVED_ZERO_EVIDENCE' and not fails, '01 genuine zero (compiler): %s %s' % (w['outcome'], fails[:1])); out['f01']['zero_compiler'] = w['zero_evidence_proof']['kind']
+    mpz2 = _spec(_uai(os.path.join(d, 'zero_frontier.uai'), [2] * 14, [([0, 1], ['0', '1', '1', '0']), ([0, 1], ['1', '0', '0', '1'])] + [([v], ['1', '2']) for v in range(2, 14)]), mode='DETERMINISTIC_EPS', epsilon='1/1000000000000', delta='0', queries=[dict(kind='singleton', variable=5, state=0)])
+    w = fresh_worker(mpz2, 'N1_CQR', budget=20.0, nonce='c22-01z2'); fails, _ = check_(mpz2, w, 'N1_CQR'); A(w['outcome'] == 'PROVED_ZERO_EVIDENCE' and not fails, '01 genuine zero (product): %s %s' % (w['outcome'], fails[:1])); out['f01']['zero_product'] = w['zero_evidence_proof']['kind']
+    # the solver's closed-frontier exit in process: a closed frontier with positive mass and no feasible box cancels the optional half (reference publishes), never zero evidence
+    t12 = TK.load_task(os.path.join(d, 'r01_1e-12.uai')); r = solve_(t12, 'N1_CQR', 'c22-01p', budget=30.0)
+    A(r['outcome'] == 'PUBLISHED' and r['publication']['route'] in ('exact_reference', 'deterministic_frontier', 'exact_frontier_closure'), '01 in-process: %s' % r['outcome']); out['f01']['in_process_route'] = r['publication']['route']
+    # ---------------- 02 (exact rational publications at tolerances below / at / above the old margin; legacy rows at tight tolerance)
+    for tag, eps in (('1e-12', '1/1000000000000'), ('2e-8', '1/50000000'), ('1e-7', '1/10000000'), ('1/200', '1/200')):
+        mp = _spec(_uai(os.path.join(d, 'r02_%s.uai' % tag.replace('/', '_')), [2], [([0], ['1', '1'])]), mode='EXACT_RATIONAL', epsilon=eps, delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=1)])
+        w = fresh_worker(mp, 'N1_CQR', budget=20.0, nonce='c22-02-' + tag.replace('/', '_')); fails, _ = check_(mp, w, 'N1_CQR')
+        A(w['outcome'] == 'PUBLISHED' and w['answers'][0]['lo'] == w['answers'][0]['hi'] == w['answers'][0]['point'] == '1/2' and not fails, '02 exact 1/2 at eps %s: %s %s' % (tag, w['outcome'], fails[:1])); out['f02'][tag] = w['route']
+        mpc = _spec(_uai(os.path.join(d, 'r02c_%s.uai' % tag.replace('/', '_')), cards, fs), mode='EXACT_RATIONAL', epsilon=eps, delta='1/1000000', queries=qs01)
+        t, tr = _truth(mpc); w = fresh_worker(mpc, 'N1_CQR', budget=30.0, nonce='c22-02c-' + tag.replace('/', '_')); fails, _ = check_(mpc, w, 'N1_CQR', budget=300.0)
+        A(w['outcome'] == 'PUBLISHED' and w['exact'] is True and not fails and _contained(w, tr, F(0)) and w['answers'][1]['status'] == 'UNDEFINED', '02 exact closure at eps %s: %s %s' % (tag, w['outcome'], fails[:1])); out['f02']['closure_' + tag] = w['route']
+    # the reservation is a function of the representation: 0 for rational answers, 2/10^d (d >= 8, <= eps/4) for legacy rows; producer and checker use the same function
+    for e_ in (F(1, 200), F(1, 50000000), F(1, 10 ** 7), F(1, 10 ** 12), F(3, 10 ** 15)):
+        d_ = TK.legacy_digits(e_); A(d_ >= 8 and F(2, 10 ** d_) <= e_ / 4 and (d_ == 8 or F(2, 10 ** (d_ - 1)) > e_ / 4), '02 legacy digits for eps %s: %d' % (e_, d_))
+        A(TK.output_reservation(dict(all_singletons=False, epsilon=e_)) == 0 and TK.output_reservation(dict(all_singletons=True, epsilon=e_)) == F(2, 10 ** d_), '02 reservation for eps %s' % e_)
+    A(TK.legacy_digits(F(1, 200)) == 8 and TK.legacy_digits(F(1, 10 ** 12)) == 13, '02 reservation boundary values'); D12 = TK.legacy_digits(F(1, 10 ** 12))
+    mpl = _uai(os.path.join(d, 'legacy_tight.uai'), [2, 3], [([0], ['1', '2']), ([0, 1], ['1', '2', '3', '4', '5', '6'])]); _spec(mpl, mode='DETERMINISTIC_EPS', epsilon='1/1000000000000', delta='1/1000000', queries=[dict(kind='all_singletons')])
+    t, tr = _truth(mpl); w = fresh_worker(mpl, 'N1_CQR', budget=20.0, nonce='c22-02l'); fails, _ = check_(mpl, w, 'N1_CQR')
+    A(w['outcome'] == 'PUBLISHED' and not fails and w.get('legacy_digits') == D12 and w.get('intervals') is not None and _contained(w, tr, t['epsilon']), '02 legacy rows at eps 1e-12: %s %s %s' % (w['outcome'], fails[:1], w.get('legacy_digits'))); out['f02']['legacy_digits_1e-12'] = w['legacy_digits']
+    import core
+    IV = [[(F(a), F(b)) for a, b in row] for row in w['intervals']]; PT = [[F(x) for x in row] for row in w['points']]; A(core.verify_output(IV, PT, t['epsilon']), '02 legacy rows violate the publication contract')
+    mpl8 = _uai(os.path.join(d, 'legacy_200.uai'), [2, 3], [([0], ['1', '2']), ([0, 1], ['1', '2', '3', '4', '5', '6'])]); _spec(mpl8, mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='all_singletons')])
+    w8 = fresh_worker(mpl8, 'N1_CQR', budget=20.0, nonce='c22-02l8'); fails, _ = check_(mpl8, w8, 'N1_CQR'); A(not fails and w8.get('legacy_digits') == 8, '02 legacy rows at 1/200 keep 8 digits: %s' % fails[:1])
+    _mut(mpl, w, 'N1_CQR', 'legacy_point_moved_beyond_reservation', lambda x: x['points'][0].__setitem__(0, str(F(x['points'][0][0]) + F(1, 10 ** 11))), ('rounding reservation', 'publication contract', 'legacy'), out['f02'])
+    # ---------------- 03 (concentration -> affine on the reviewer's mixed model; witness lifecycle; optional failure in the direct publication preparation)
+    c03 = [3, 5, 2, 2, 2] + [2] * 16
+    f03 = [([0], ['1', '1', '1000000']), ([1], ['1', '1', '1', '1', '1000000']), ([0, 1], ['1'] * 15), ([2, 3], ['1', '0', '0', '1']), ([3, 4], ['1', '0', '0', '1']), ([4, 2], ['1', '0', '0', '1']), ([0, 2], ['1', '0', '1', '1', '1', '1'])] + [([v], ['1', '2']) for v in range(5, len(c03))]
+    mp3 = _spec(_uai(os.path.join(d, 'conc_affine.uai'), c03, f03), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=2)])
+    t3, tr3 = _truth(mp3); A(tr3['answers'][0] == F(2000000, 2000003), '03 independent truth')
+    for arm in ('N1_NO_QUOTIENT', 'N1_CQR', 'N1_NO_AFFINE'):
+        w = fresh_worker(mp3, arm, budget=30.0, nonce='c22-03-' + arm); fails, info = check_(mp3, w, arm, budget=300.0)
+        A(w['outcome'] == 'PUBLISHED' and not fails and _contained(w, tr3, t3['epsilon']), '03 %s: %s %s' % (arm, w['outcome'], fails[:1]))
+        ops = [c['op'] for c in w['certificate']['compile']['certificates'] if c.get('kind') == 'commit']; fin = w['certificate']['compile']['final']
+        out['f03'][arm] = dict(route=w['route'], ops=ops, cards=fin['cards'], witness=fin.get('witness'))
+        if arm == 'N1_NO_QUOTIENT':
+            A('concentration' in ops and 'affine' in ops and fin['cards'] == [2, 3, 5] and fin.get('witness') == {'0': 0, '1': 2, '2': 4}, '03 transformed witness: cards %s witness %s' % (fin['cards'], fin.get('witness')))
+            aff = next(c for c in w['certificate']['compile']['certificates'] if c.get('kind') == 'commit' and c['op'] == 'affine'); A(aff.get('witness_after') == {'0': 0, '1': 2, '2': 4}, '03 affine record witness_after')
+            # the journal replays the witness (bound into final_sha256) and a tampered final witness is refused
+            _mut(mp3, w, arm, 'final_witness_tampered', lambda x: x['certificate']['compile']['final'].__setitem__('witness', {'0': 1, '1': 2, '2': 4}), ('does not replay', 'final_sha256'), out['f03'])
+            _mut(mp3, w, arm, 'affine_witness_after_tampered', lambda x: next(c for c in x['certificate']['compile']['certificates'] if c.get('kind') == 'commit' and c['op'] == 'affine').__setitem__('witness_after', {'0': 1, '1': 2, '2': 4}), ('transformed witness differs', 'does not replay'), out['f03'])
+    # optional failure inside the direct publication preparation: the reference publishes the exact answer; never a FAULT
+    w = fresh_worker(mp3, 'N1_NO_QUOTIENT', budget=30.0, nonce='c22-03f', extra=('--fault-inject', 'direct_publication'))
+    A(w['outcome'] == 'PUBLISHED' and w['route'] == 'exact_reference' and 'direct publication preparation' in str(w['certificate'].get('optional_cancelled')) and _contained(w, tr3, F(0)), '03 injected direct-publication fault: %s %s' % (w['outcome'], (w.get('reason') or '')[:60])); out['f03']['injected_direct_fault'] = w['route']
+    # the commit invariant in process: a domain change without a witness is refused; an invalid witness is dropped with its reason; every committed witness has positive weight
+    C, log = compile_(t3, enabled=set(SV.ARMS['N1_NO_QUOTIENT']['enabled'])); A(C.witness is not None and CP._witness_problem(C.cards, C.views, C.witness) is None, '03 compiled witness invalid: %s' % CP._witness_problem(C.cards, C.views, C.witness))
+    for rc in C.commit_records():
+        if rc.get('witness_after') is not None: A(all(isinstance(v, int) for v in rc['witness_after'].values()), '03 record witness typed')
+    C0 = CP.from_task(t3); C0.witness = {v: 0 for v in range(C0.n())}
+    try: C0.commit(dict(op='probe'), cards=list(C0.cards[:-1])); A(False, '03 commit kept a stale witness across a domain change')
+    except ValueError as ex: A('witness' in str(ex), '03 refusal reason: %s' % str(ex)[:60]); out['f03']['stale_commit_refused'] = str(ex)[:70]
+    rec = C0.commit(dict(op='probe2'), cards=list(C0.cards), witness={v: 99 for v in range(C0.n())}); A(C0.witness is None and 'out of range' in rec.get('witness_dropped', ''), '03 invalid witness not dropped'); out['f03']['invalid_witness_dropped'] = rec['witness_dropped'][:60]
+    # every domain-changing operator transforms the witness: a random positive model with a concentration witness installed before support / leaf / quotient / fixed / affine
+    rng = random.Random(22); c_ = [3, 2, 4, 2, 2, 2, 3, 2]; m_ = rnd_model(rng, 8, c_, 9, 2, lo=1, hi=5); m_['factors'].append(dict(scope=(1, 3), values=[F(1), F(0), F(0), F(1)])); m_['factors'].append(dict(scope=(5,), values=[F(1), F(0)]))
+    t_ = mk_task(m_, [TK.singleton_query(0, 0, c_)], mode='DETERMINISTIC_EPS'); C_ = CP.from_task(t_); C_.witness = {v: 0 for v in range(C_.n())}
+    for name, fn in (('support', lambda: CP.support_fixpoint(C_, None)), ('fixed', lambda: CP.fixed_substitution(C_)), ('leaf', lambda: CP.leaf_sumout(C_, None)), ('quotient', lambda: CP.exact_quotient_pass(C_, None)), ('affine', lambda: CP.affine(C_, None))):
+        fn(); A(C_.witness is None or CP._witness_problem(C_.cards, C_.views, C_.witness) is None, '03 witness invalid after %s' % name)
+    out['f03']['operators_preserving_witness'] = dict(commits=C_.commits, final_witness=C_.witness, cards=C_.cards); A(C_.commits >= 2, '03 operator battery committed nothing')
+    # ---------------- 04 (service interval across helpers / operators; class sizes around the quantum; failing pullback keeps its charge)
+    bound = CP.TICK_ENTRIES + CP.POLICY['max_step_charge'] - 1; A(CP.POLICY['max_irreducible_charge'] >= bound and CP.POLICY['max_step_charge'] == 2, '04 policy constants'); out['f04']['bound'] = bound
+    ticks = []; orig_tick = CP.tick
+    def spy(C, quota=None, op=None): ticks.append(C.work.total()); return orig_tick(C, quota, op)
+    CP.tick = spy
+    try:
+        for cards_ in ([3, 750, 2], [3, 513, 2], [3, 700, 2], [2] * 14):
+            rng = random.Random(832 if cards_ != [2] * 14 else 82); size = 1
+            for c in cards_: size *= c
+            m = dict(cards=cards_, factors=[dict(scope=tuple(range(len(cards_))), values=[F(rng.randint(1, 9)) for _ in range(size)])], evidence={}); tk = mk_task(m, [TK.singleton_query(v, 0, cards_) for v in range(min(3, len(cards_)))], mode='DETERMINISTIC_EPS')
+            ticks.clear(); r = solve_(tk, 'N1_CQR', 'c22-04', budget=30.0); gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]
+            A(r['outcome'] == 'PUBLISHED' and max(gaps) <= bound, '04 %s production gap %d > %d' % (cards_, max(gaps), bound))
+            C = CP.from_task(tk); base = C.work.total(); ticks.clear()
+            try: CP.exact_quotient_pass(C, base + 1025)
+            except CP.CompileStop as cs: A(cs.kind == 'quota', cs.kind)
+            over = C.work.total() - base - 1025; A(over <= CP.POLICY['max_irreducible_charge'], '04 %s quota 1025 overspent by %d' % (cards_, over))
+            out['f04'][str(cards_)] = dict(production_max_gap=max(gaps), quota_1025_overspend=over, log_gap=r['certificate']['compile']['log'].get('max_service_gap'))
+        for dd in (1023, 1024, 1025, 2048, 2049):
+            cd = [dd] + [2] * 10; mpd = os.path.join(d, 'cls%d.uai' % dd); open(mpd, 'w').write('MARKOV\n11\n' + ' '.join(map(str, cd)) + '\n1\n1 0\n' + str(dd) + '\n' + ' '.join(['1'] * dd) + '\n')
+            _spec(mpd, mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=0)])
+            w = fresh_worker(mpd, 'N1_CQR', budget=30.0, nonce='c22-04-%d' % dd); fails, _ = check_(mpd, w, 'N1_CQR', budget=300.0); log = w['certificate']['compile']['log']; st = next(s_ for s_ in log['steps'] if s_['op'] == 'exact_quotient_pass')
+            A(w['outcome'] == 'PUBLISHED' and not fails and w['answers'][0]['point'] == str(F(1, dd)) and st['outcome'] == 'committed' and st['work'] >= dd and log.get('max_service_gap', 0) <= bound and log.get('failed') is None, '04 class %d: %s %s quotient %s gap %s' % (dd, w['outcome'], fails[:1], st['outcome'], log.get('max_service_gap')))
+            out['f04']['class_%d' % dd] = dict(route=w['route'], quotient_work=st['work'], max_gap=log.get('max_service_gap'))
+        # an injected failing pullback (fault at the quotient build point, after the class sums were computed): the performed work stays charged, the operator fails, the answer is still correct
+        mpd = os.path.join(d, 'cls2048.uai'); w = fresh_worker(mpd, 'N1_CQR', budget=30.0, nonce='c22-04f', extra=('--fault-inject', json.dumps(dict(op='exact_quotient_pass', where='build', k=0)))); log = w['certificate']['compile']['log']; st = next(s_ for s_ in log['steps'] if s_['op'] == 'exact_quotient_pass')
+        A(w['outcome'] == 'PUBLISHED' and w['answers'][0]['point'] == '1/2048' and st['outcome'] == 'failed' and st['work'] >= 2048 and st['commits'] == 0 and log['work']['total'] >= st['work'], '04 failing pullback: %s %s work %s' % (w['outcome'], st['outcome'], st['work'])); out['f04']['failing_pullback'] = dict(work_charged=st['work'], route=w['route'])
+        # the posting contract itself: a meter splits a 2,048-unit class at the remaining allowance; a raw over-size post is charged and then reported
+        C = CP.from_task(mk_task(dict(cards=[2, 2], factors=[dict(scope=(0, 1), values=[F(1)] * 4)], evidence={}), [TK.singleton_query(0, 0, [2, 2])])); T = CP._Ticker(C, None, 'probe'); ticks.clear(); m = T.meter('ratops')
+        for _ in range(2048): m.add()
+        m.flush(); A(len(ticks) == 2 and C.work.ratops == 2048, '04 meter did not service twice over 2,048 units (%d ticks)' % len(ticks))
+        w0 = C.work.entries
+        try: T.entries(3000); A(False, '04 over-size post accepted silently')
+        except AssertionError as ex: A('exceeded the remaining service allowance' in str(ex) and C.work.entries - w0 == 3000, '04 over-size post: %s' % str(ex)[:60])
+    finally: CP.tick = orig_tick
+    return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'

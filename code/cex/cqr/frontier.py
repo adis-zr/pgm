@@ -13,7 +13,7 @@ from math import prod
 import numerics as NM
 from math import lcm, gcd
 
-FRONTIER_VERSION = 'cqr-frontier-v1 (2026-11-16)'
+FRONTIER_VERSION = 'cqr-frontier-v1.1 (2026-11-16: closure enumeration serviced per 1,024 charged units)'
 
 
 def draw_categorical(rng, weights):
@@ -135,21 +135,25 @@ class Frontier:
     def close(self, cid):
         """exact closure by enumeration of the cell's completions (charged per evaluation); returns the exact (b, n_j, d_j)"""
         c = self.open[cid]; free = self.order[c.depth:]; b = 0; K = len(self.queries); nj = [0] * K; dj = [0] * K
-        x = dict(c.assign); views = self.views; cards = self.cards; qs = self.queries; qd = self.qden; ent = 0; svc = self.service; since = 0
+        x = dict(c.assign); views = self.views; cards = self.cards; qs = self.queries; qd = self.qden; ent = 0; pend = 0; svc = self.service; ROOM = 1024
+        # the enumeration is charged per unit (one view lookup / one query lookup = an entry; one assignment = an evaluation) and SERVICED as soon as ROOM units are pending
+        # (fourth review, CQR-R3-04: the service interval is bounded in charged units, every unit kind counted); nothing is mutated before the scan completes, so a stop inside
+        # it leaves the frontier unchanged (the entries pending at the stop are charged first)
+        def post(k, ev=0):
+            nonlocal ent, pend
+            ent += k; pend += k + ev
+            if pend >= ROOM and svc is not None: self.work.entries += ent; ent = 0; pend = 0; svc('frontier_close')
         for xs in product(*(range(cards[v]) for v in free)):
             for v, s in zip(free, xs): x[v] = s
             w = 1
             for vw in views:
-                w *= vw.at_i(cards, x); ent += 1
+                w *= vw.at_i(cards, x); post(1)
                 if not w: break
-            self.work.evals += 1
-            if svc is not None:
-                since += 1
-                if since >= 256: self.work.entries += ent; ent = 0; since = 0; svc('frontier_close')       # charge so far, then the controller may serve the reference / stop (the cell stays popped only if we finish: see below)
+            self.work.evals += 1; post(0, 1)
             if not w: continue
-            ent += K; b += w
+            b += w
             for j in range(K):
-                q = qs[j]
+                q = qs[j]; post(1)
                 if q['kind'] == 'expectation': nj[j] += w * q['f'].at_i(cards, x) * (qd[j] // q['f'].den)
                 else: nj[j] += w * q['h'].at_i(cards, x) * (qd[j] // q['h'].den); dj[j] += w * q['g'].at_i(cards, x) * (qd[j] // q['g'].den)
         self.work.entries += ent

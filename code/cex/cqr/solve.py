@@ -8,7 +8,7 @@
  4. risk: delta/2 to the ratio stream; delta / (2 e (e+1)) to validation epoch e; an epoch ends after 2^e completed observations unless it certifies; candidate = schema-
     feasible rational projection of the ratio estimate (or a feasible deterministic point); E = 0 => deterministic residual test (certify or retire), never inverse-zero;
  5. after every completed transaction: deterministic publication first (roots of F-/F+ intersected with every earlier proved interval; feasibility (4) with tau = eps - bias -
-    rounding), then PAC (ratio intervals ∩ deterministic, or a certified candidate). An empty intersection DISABLES the statistical claim (diagnostic) and never the reference.
+    reservation, where the reservation is derived from the OUTPUT REPRESENTATION by task.output_reservation: 0 for rational answers, 2/10^legacy_digits(eps) for legacy rows), then PAC (ratio intervals ∩ deterministic, or a certified candidate). An empty intersection DISABLES the statistical claim (diagnostic) and never the reference.
  6. the reference completing => EXACT publication (any mode). EXACT_RATIONAL mode publishes only exact results (reference / fully closed frontier / proved constants with a positive witness).
 Normalizer tasks (query_spec.normalizer_task): Z with relative error; component omission and TV-only surrogates disabled; publish c in [(1-eps) U, (1+eps) L].
 Memory: open cells capped (OPEN_CAP): on pressure refinement only closes, carving stops; the reference is never cancelled."""
@@ -21,15 +21,16 @@ for p in (HERE, NEWARM):
     if p not in sys.path: sys.path.insert(0, p)
 import compiler as CP, frontier as FR, reference as RF, numerics as NM
 from task import Work, task_identity
+import task as TK
 
-SOLVER_VERSION = 'cqr-solve-v1 (2026-11-16)'
+SOLVER_VERSION = 'cqr-solve-v1.1 (2026-11-16: representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation)'
 POLICY = dict(solver_version=SOLVER_VERSION, compiler=CP.POLICY, frontier=FR.FRONTIER_VERSION,
               quantum_units=4096, reference_parity='before EVERY publication test the reference is brought to >= the cumulative work of the optional half (gamma = 1/2 at every publication; rounding <= one reference step of 256 assignments)', work_unit_commensurability='every table lookup (factor or query, in the reference, in cell closures, in draws and in compiler scans) is ONE entry unit; cell / rational operations one unit each: the two halves are measured in the same currency', deterministic_test_cadence='every max(1, |F| x K // 1024) optional quanta (the root computation is O(|F| log |F|) per query, K queries; charged |F| x K ratops per test; the cadence bounds the test cost to a constant fraction of the optional half)', reference_share='1/2 of charged Work units (gamma = 1/2): the reference runs one quantum for every optional quantum; the compile is charged to the optional half and the reference catches up before the adaptive loop',
               leaf_cap=4096, open_cap=40000, open_cap_rule='min(40000, 4e7 / n_compiled) (prefix cells store <= n ints)', carve_max_free=14, deterministic_test='after every optional quantum (charged: cells x queries ratops)',
               risk='delta/2 ratio stream; delta/(2 e (e+1)) validation epoch e; epoch length 2^e completed observations',
               predictable_weights='b_t = the largest power of two <= (U*/U_t)^2 (ratio) / (E*/E_t)^2 (signed): positive, predictable, dyadic (bit growth bounded; statistics stay EXACT rationals; max bit length recorded in work.max_bits)',
               candidate='schema-feasible rational projection of the ratio estimate onto the dyadic grid of resolution eps/16 inside the deterministic boxes (simplex rows for singleton families; clip to [0,1] otherwise), else the un-snapped projection, else deterministic interval midpoints; fixed within the epoch',
-              rounding_margin='2/10^8 (8 outward decimal digits)', work_unit='one table entry read / rational op / point evaluation / cell op (task.Work)')
+              rounding_margin='representation-derived (task.output_reservation): 0 for rational answers; 2/10^d for the legacy decimal rows with d = legacy_digits(eps) >= 8 so that the reservation is <= eps/4', work_unit='one table entry read / rational op / point evaluation / cell op (task.Work)')
 ARMS = {
     'N1_CQR': dict(enabled=set(CP.POLICY['order']), signed_stream=True, query_directed_refinement=True),
     'G0_CQR': dict(enabled={'evidence'}, signed_stream=False, query_directed_refinement=False),
@@ -41,7 +42,7 @@ ARMS = {
     'N1_NO_SIGNED_STREAM': dict(enabled=set(CP.POLICY['order']), signed_stream=False, query_directed_refinement=True),
     'N1_NO_QUERY_DIRECTED_REFINEMENT': dict(enabled=set(CP.POLICY['order']), signed_stream=True, query_directed_refinement=False),
 }
-MARGIN = F(2, 10 ** 8)
+MARGIN = F(2, 10 ** 8)        # the legacy 8-digit rounding reservation (historical constant; the reservation in force is task.output_reservation(task): 0 for exact rational answers)
 
 
 class Stop(Exception):
@@ -217,7 +218,8 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                     c = ((1 - eps) * u2 + (1 + eps) * l2) / 2; pub = dict(route='normalizer_pac_ratio_intersected_with_deterministic', bounds=[(l2, u2)], det_bounds=[(L, U)], stat_bounds=[(str(zi[0] / fr.scale_den * sc), str(zi[1] / fr.scale_den * sc))], point=[c], guarantee='PAC', scale=str(sc), ratio_t=ratio.t); return pub
         return None
     epochs = []; cur_epoch = None; epoch_no = 0; stat_toggle = 0; events = trace['events']; det_bounds = None; pub = None; disabled = []
-    def tau(j): return eps - C.bias[j] - MARGIN
+    RES = TK.output_reservation(task); trace['output_reservation'] = str(RES)       # the accuracy reservation of the output representation (0 unless legacy decimal rows are emitted)
+    def tau(j): return eps - C.bias[j] - RES
     def widen(b):
         """PUBLISHED bounds for the ORIGINAL task: the compiled-model enclosure widened by the proved compiler bias beta_j (|mu_orig - mu_compiled| <= beta_j); clipped to [0,1]"""
         out = []
@@ -237,6 +239,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     def query_bounds_original():
         """per ORIGINAL query (compiled units): (lo, hi) deterministic from constants / frontier, or ('UNDEFINED','UNDEFINED') when the denominator is PROVED zero"""
         if fr is None:   # zero-dimensional compiled model: every compiled query view has empty scope
+            if cards: raise RuntimeError('deterministic bounds requested without a frontier on a %d-variable compiled model (optional half cancelled)' % len(cards))
             out = []
             for j, q in enumerate(cq):
                 if q['kind'] == 'expectation': v = q['f'].values[0]; out.append((v, v))
@@ -343,8 +346,11 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         return w
     # ------------------------------------------------ the loop
     direct_pub = None; it = 0; last_opt = 0
-    if direct is not None and mode != 'EXACT_RATIONAL':
-        # concentration gave a direct certified answer with bias in C.bias: publish deterministically (point = f(x*), interval = point ± bias handled by tau)
+    def _direct_publication():
+        """concentration gave a direct certified answer with bias in C.bias: publish deterministically (point = f(x*), interval = point ± bias handled by tau). OPTIONAL
+        preparation (fourth review, CQR-R3-03): the positivity test evaluates the committed witness on the committed model; a failure here cancels the optional half, never the task"""
+        nonlocal pub
+        if fault_inject == 'direct_publication': raise RuntimeError('INJECTED optional fault in the direct publication preparation (qualification control; never a production run)')
         b = [(direct['answers'][j], direct['answers'][j]) if j in direct['answers'] else None for j in range(Kc)]
         if all(x is not None for x in b) and positive_mass():
             pt = _feasible_point(task, [_box(lo, hi, tau(j)) for j, (lo, hi) in enumerate(b)], groups)
@@ -380,9 +386,12 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         r = ref.result(); check('reference completion')
         if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, disabled, t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, fr, ratio, t0))
         pub = _exact_reference_pub(r, normalizer); return None
+    if direct is not None and mode != 'EXACT_RATIONAL':
+        try: optional(_direct_publication, 'direct publication preparation')
+        except _RefDone: pass
     # ---- initial publication test (OPTIONAL work; the reference may complete INSIDE the root computation: that completion is the result, never a fault -- third review CQR-R2-03)
     ref_quantum(max(0, work_opt.total() - work_ref.total()))        # parity before the first publication test
-    if pub is None and not ref.done:                     # zero-dimensional compiled models (fr None) publish here too (constants / exact closures)
+    if pub is None and not ref.done and not optional_cancelled:          # zero-dimensional compiled models (fr None) publish here too (constants / exact closures); a cancelled optional half never does
         try: optional(lambda: try_publish('initial'), 'initial publication test')
         except _RefDone: pass
     if pub is None and ref.done:
@@ -441,7 +450,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                                 d = rn[j] - cur_epoch.cand[j] * (rm if cq[j]['kind'] == 'expectation' else rd_[j])
                                 if Lj[j] <= 0 or abs(d) > tau(j) * Lj[j]: ok = False; break
                             events.append(dict(op='epoch_E_zero', epoch=epoch_no, certified=ok))
-                            if ok and positive_mass() and diagnostic != 'sampling_only': pub = dict(route='deterministic_signed_residual_E_zero', bounds=[around(c, j, eps - MARGIN) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='DETERMINISTIC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no); return
+                            if ok and positive_mass() and diagnostic != 'sampling_only': pub = dict(route='deterministic_signed_residual_E_zero', bounds=[around(c, j, eps - RES) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='DETERMINISTIC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no); return
                             cur_epoch.retired = 'E_ZERO_not_certified'
                         elif s is not None:
                             events.append(dict(op='signed_draw', epoch=epoch_no, cell=s['cell'], x={str(k): v for k, v in s['x'].items()}, p=str(s['p']), E=str(s['E']), b=str(s['b']), d=[str(v) for v in s['d']]))
@@ -451,7 +460,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                             else:
                                 iv = cur_epoch.intervals(); Lj = denominators_positive()
                                 if iv is not None and positive_mass() and all(Lj[j] > 0 and iv[j][0] >= -tau(j) * Lj[j] and iv[j][1] <= tau(j) * Lj[j] for j in range(Kc)):
-                                    pub = dict(route='pac_signed_residual_validation', bounds=[around(c, j, eps - MARGIN) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='PAC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no, L=[str(x) for x in Lj], intervals=[(str(a), str(b_)) for a, b_ in iv]); return
+                                    pub = dict(route='pac_signed_residual_validation', bounds=[around(c, j, eps - RES) for j, c in enumerate(cur_epoch.cand)], point=list(cur_epoch.cand), guarantee='PAC', tau=[str(tau(j)) for j in range(Kc)], epoch=epoch_no, L=[str(x) for x in Lj], intervals=[(str(a), str(b_)) for a, b_ in iv]); return
                                 if cur_epoch.t >= 2 ** epoch_no: cur_epoch.retired = 'epoch_length_reached'; events.append(dict(op='epoch_retired', epoch=epoch_no, reason='length 2^e reached'))
         def _turn():
             if fault_inject == 'adaptive_loop' and it == 1: raise RuntimeError('INJECTED optional fault in the adaptive loop (qualification control; never a production run)')
@@ -477,19 +486,28 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                 break
             if fr is None: continue
         if not fr.open and pub is None:
-            # frontier fully closed: exact compiled answers
-            if normalizer:
-                z = fr.resolved_mass / fr.scale_den * known_scale(); pub = dict(route='normalizer_exact_frontier_closure', bounds=[(z, z)], point=[z], guarantee='DETERMINISTIC', exact=True, scale=str(known_scale())) if z > 0 else None
-            else:
+            # frontier fully closed: the compiled mass is EXACT. Zero mass (no open cell, resolved mass 0) is a PROOF of zero evidence; positive mass without a feasible publication at
+            # this tolerance / representation is NOT (fourth review, CQR-R3-01): then the optional half has nothing more to offer and the protected reference continues alone
+            if fr.resolved_mass == 0 and not (C.witness is not None and FR_weight(C, C.witness) > 0):
+                return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='frontier_closed_zero_mass', resolved_mass='0', open_cells=0), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, None, t0, zero=dict(kind='frontier')), stats=_stats(work_ref, work_opt, fr, ratio, t0))
+            def _closure_publication():
+                nonlocal pub
+                if normalizer:
+                    z = fr.resolved_mass / fr.scale_den * known_scale(); pub = dict(route='normalizer_exact_frontier_closure', bounds=[(z, z)], point=[z], guarantee='DETERMINISTIC', exact=True, scale=str(known_scale())) if z > 0 else None; return
                 b = query_bounds_original()
-                if positive_mass():
-                    exact = all(bb == 0 for bb in C.bias)
-                    boxes = [('UNDEFINED' if x[0] == 'UNDEFINED' else _box(x[0], x[1], tau(j))) for j, x in enumerate(b)]
-                    pt = _feasible_point(task, boxes, groups) if not exact else [x[0] for x in b]
-                    if pt is not None: pub = dict(route='exact_frontier_closure' if exact else 'deterministic_frontier_closure', bounds=(b if exact else widen(b)), compiled_bounds=b, point=pt, guarantee='DETERMINISTIC', exact=exact, tau=[str(tau(j)) for j in range(Kc)])
-                else: pub = None
-            if pub is None:
-                return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='frontier_closed_zero_mass'), certificate=_cert(task, arm, mode, trace, C, compile_log, fr, ratio, epochs, events, ref, work_ref, work_opt, None, None, t0, zero=dict(kind='frontier')), stats=_stats(work_ref, work_opt, fr, ratio, t0))
+                if not positive_mass(): return
+                exact = all(bb == 0 for bb in C.bias)
+                boxes = [('UNDEFINED' if x[0] == 'UNDEFINED' else _box(x[0], x[1], tau(j))) for j, x in enumerate(b)]
+                pt = _feasible_point(task, boxes, groups) if not exact else [x[0] for x in b]
+                if pt is not None: pub = dict(route='exact_frontier_closure' if exact else 'deterministic_frontier_closure', bounds=(b if exact else widen(b)), compiled_bounds=b, point=pt, guarantee='DETERMINISTIC', exact=exact, tau=[str(tau(j)) for j in range(Kc)])
+            try: optional(_closure_publication, 'closed-frontier publication')
+            except _RefDone:
+                z_ = _publish_completed_reference()
+                if z_ is not None: return z_
+                break
+            if pub is None and fr is not None:
+                _cancel_optional('closed frontier with positive compiled mass but no feasible publication at this tolerance (reservation %s, bias %s): the protected reference continues alone' % (RES, [str(x) for x in C.bias]))
+                continue
         if work_opt.total() - w0 == 0: work_opt.cells += 1       # a no-work optional turn still yields its service (bounded)
         last_opt = work_opt.total() - w0
     if pub is None: check('publication'); raise Stop('DEADLINE', dict(where='loop end'))
