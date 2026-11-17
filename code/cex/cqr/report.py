@@ -231,8 +231,8 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', write=True):
         r = rec.get(c['cell_id'])
         if not r or r.get('status') == 'NOT_RUN': continue
         arm = c['arm']; a = dict(cell_id=c['cell_id'], cohort=c['cohort'], case=c['case_id'], arm=arm, budget=c['budget_s'], rep=c['replicate'], guarantee=r.get('guarantee_type'), outcome=r.get('outcome'))
+        if r.get('outcome') not in ('PUBLISHED', 'PROVED_ZERO_EVIDENCE'): continue          # a refused / stopped row carries no accuracy claim: its tolerance is NOT parsed (seventh review, CQR-R6-05: a typed INVALID_TASK row stays reportable)
         ref = refs.get(c['case_id']); eps = eps_of(c)
-        if r.get('outcome') not in ('PUBLISHED', 'PROVED_ZERO_EVIDENCE'): continue
         if ref is None: a['reference'] = 'NONE'; a['accurate'] = 'UNRESOLVED_NO_REFERENCE'; audit.append(a); acat[(arm, a['accurate'])] += 1; continue
         a['reference'] = ref['kind']
         if r.get('outcome') == 'PROVED_ZERO_EVIDENCE':

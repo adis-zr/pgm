@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.2 (2026-11-16: accuracy reservation derived from the output representation; witness weight re-evaluated; no statistical route at zero risk)'
+CHECKER_VERSION = 'cqr-checker-v1.3 (2026-11-17: ratio prior bound to the replayed root frontier before any draw; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -79,7 +79,13 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
     except Exception as ex: return ['task not readable: %s' % str(ex)[:80]], info
     if manifest_task:
         for k in ('epsilon', 'delta'):
-            if k in manifest_task and str(manifest_task[k]) != str(task[k]): fail('the frozen manifest task %s (%s) differs from the input file (%s)' % (k, manifest_task[k], task[k]))
+            if k in manifest_task:
+                # the frozen declaration keeps the source spelling (0.005, 2/400, 1/200 are the same rational); it is compared by EXACT rational value with the same parser
+                # semantics as the authoritative task (seventh review, CQR-R6-03); the file bytes themselves are bound separately through the task binding hashes
+                if str(manifest_task[k]) == str(task[k]): continue
+                try: mv = F(str(manifest_task[k]))
+                except (ValueError, ZeroDivisionError, TypeError): fail('the frozen manifest task %s (%s) is not a rational' % (k, manifest_task[k])); continue
+                if mv != task[k]: fail('the frozen manifest task %s (%s) differs from the input file (%s)' % (k, manifest_task[k], task[k]))
         if manifest_task.get('mode') and manifest_task['mode'] != task['mode']: fail('the frozen manifest task mode %s differs from the input file mode %s' % (manifest_task['mode'], task['mode']))
         if 'normalizer_task' in manifest_task and bool(manifest_task['normalizer_task']) != bool((task.get('query_spec') or {}).get('normalizer_task')): fail('the frozen manifest normalizer flag differs from the input file')
     if w.get('binding') != task['binding']: fail('worker binding differs from the files on disk')
@@ -91,8 +97,11 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
     mode = task['mode']; eps = task['epsilon']; delta = task['delta']; normalizer = bool((task.get('query_spec') or {}).get('normalizer_task'))
     if w.get('mode') != mode: fail('worker mode %s differs from the authoritative task mode %s' % (w.get('mode'), mode))
     if cert.get('mode') != mode: fail('certificate mode %s differs from the authoritative task mode %s' % (cert.get('mode'), mode))
-    if str(cert.get('epsilon')) != str(eps) or str(w.get('epsilon')) != str(eps): fail('epsilon differs from the authoritative task')
-    if str(cert.get('delta')) != str(delta) or str(w.get('delta')) != str(delta): fail('delta differs from the authoritative task')
+    def _same(v, ref):
+        try: return F(str(v)) == ref
+        except (ValueError, ZeroDivisionError, TypeError): return False
+    if not _same(cert.get('epsilon'), eps) or not _same(w.get('epsilon'), eps): fail('epsilon differs from the authoritative task')
+    if not _same(cert.get('delta'), delta) or not _same(w.get('delta'), delta): fail('delta differs from the authoritative task')
     if bool(cert.get('normalizer_task')) != normalizer: fail('certificate normalizer flag differs from the task')
     if arm is not None:
         if cert.get('arm') != arm or w.get('arm') != arm: fail('arm differs from the planned arm')
@@ -334,7 +343,11 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
     cq = C.queries; K = len(cq); fr_rec = cert.get('frontier'); events = cert.get('events') or []
     fr = FR.Frontier(C.cards, C.views, cq, work, order=fr_rec.get('order') if fr_rec else None)
     ratio_rec = cert.get('ratio_stream'); epochs = cert.get('epochs') or []
-    H = F(0); Hj = [F(0)] * K; G = [F(0)] * K; V = F(0); t_r = 0; U_star = _F(ratio_rec['U_star']) if ratio_rec else None
+    H = F(0); Hj = [F(0)] * K; G = [F(0)] * K; V = F(0); t_r = 0
+    # the ratio prior U_star is the producer's REGISTERED pre-sampling choice: the initial compiled frontier's positive U (fallback 1 when U = 0), fixed BEFORE any recorded event or
+    # draw. It is derived here from the independently constructed root frontier and the record must match it (seventh review, CQR-R6-01); rho = U_star^2 / 4 follows from it
+    U0 = fr.U(); U_star = U0 if U0 > 0 else F(1)
+    if ratio_rec is not None and _F(ratio_rec['U_star']) != U_star: fail('ratio prior U_star %s differs from the registered pre-sampling choice %s (the initial frontier envelope; a prior chosen after the draws is not budgeted)' % (ratio_rec['U_star'], U_star)); return None, None
     ep_state = {}; ep_order = []
     for ev in events:
         if deadline is not None and time.monotonic() >= deadline: fail('UNVERIFIABLE: allowance expired during the frontier replay'); return None, None
@@ -398,7 +411,7 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
     ratio = None
     if ratio_rec is not None:
         if t_r != ratio_rec['t'] or str(H) != ratio_rec['H'] or [str(x) for x in G] != ratio_rec['G'] or str(V) != ratio_rec['V']: fail('ratio stream statistics do not replay')
-        if _F(ratio_rec['alpha']) != delta / 2 / max(1, K) or _F(ratio_rec['rho']) != U_star * U_star / 4: fail('ratio stream risk / rho differ from the policy')
+        if _F(ratio_rec['alpha']) != delta / 2 / max(1, K) or _F(ratio_rec['rho']) != U_star * U_star / 4: fail('ratio stream risk / rho differ from the policy (rho must be the bound prior squared over four)')
         ratio = dict(H=H, Hj=Hj, G=G, V=V, t=t_r, U_star=U_star, Hb=None)
     # every start reconciles with exactly one epoch record and vice versa; every completed draw was counted in exactly one epoch (t sums); the records carry the replayed statistics
     if [e.get('epoch') for e in epochs] != ep_order: fail('epoch records %s do not match the started epochs %s' % ([e.get('epoch') for e in epochs], ep_order))

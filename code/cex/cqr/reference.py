@@ -19,7 +19,7 @@ class Reference:
         for q in queries:
             if q.kind == 'expectation': d = lcm(*[F(v).denominator for v in q.f.values]); self.qden.append(d); self.qtab.append(([int(F(v) * d) for v in q.f.values], None))
             else: d = lcm(*[F(v).denominator for v in q.h.values + q.g.values]); self.qden.append(d); self.qtab.append(([int(F(v) * d) for v in q.h.values], [int(F(v) * d) for v in q.g.values]))
-        self.Zi = 0; self.numi = [0] * len(queries); self.deni = [0] * len(queries)
+        self.Zi = 0; self.numi = [0] * len(queries); self.deni = [0] * len(queries); self.qreads = sum(1 if q.kind == 'expectation' else 2 for q in queries)
     def _set(self, k):
         for v, c in zip(reversed(self.free), reversed(self.radix)): self.x[v] = k % c; k //= c
     def step(self, quantum):
@@ -35,7 +35,7 @@ class Reference:
                 if not w: break
             self.work.evals += 1
             if not w: continue
-            ent += len(qs)
+            ent += self.qreads                      # one lookup per expectation query, two per ratio query (numerator AND denominator; seventh review, CQR-R6-04)
             self.Zi += w
             for j, q in enumerate(qs):
                 ht, gt = qtab[j]
