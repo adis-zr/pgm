@@ -20,7 +20,9 @@ valid upper bound. EXACTLY-ONCE ACCOUNTING (fifth review CQR-R4-01 / 02): a mete
 loop is a context manager that flushes its completed tail on every exit (serviced on a normal exit, charge-only while an exception propagates), so the ledger increment of a
 loop equals its completed operations on every exit path, no stop triggers a second service call, and rollback restores model state only; work delegated by `commit` (witness
 validation) runs under the compiled state's ACTIVE operator ticker (quota / deadline / service inherited; replay = the explicit quota-less context). An over-size raw post
-is charged and then reported.
+is charged and then reported. EVERY TICK IS A CONTROLLER SERVICE (sixth review CQR-R5-02): `tick` invokes the controller hook before testing the operator quota, so a quota exit
+never skips or resets a pending service; the controller's stops dominate; `max_service_gap` and `controller_calls` describe actual controller invocations. Charges are placed
+AFTER the evaluation they count (CQR-R5-03), so the ledger equals the number of successful evaluations on every exit.
 
 Operators (mandatory set A-E of the handoff):
   A  evidence restriction; checked support propagation (identically-zero incident slices remove states; empty domain / zero factor => ZERO_EVIDENCE); fixed-variable
@@ -42,7 +44,7 @@ from itertools import product
 from math import prod
 from views import View, gf2_rank_basis, gf2_reduce, gf2_span
 from task import Work
-COMPILER_VERSION = 'cqr-compiler-v2.2 (2026-11-16: atomic local commits, journal replay, exactly-once metered service points inside every scan, witness lifecycle under the operator quota)'
+COMPILER_VERSION = 'cqr-compiler-v2.3 (2026-11-16: atomic local commits, journal replay, exactly-once metered service points inside every scan, every tick a controller service, witness lifecycle under the operator quota)'
 TICK_ENTRIES = 1024                   # service / quota / deadline check at most this many charged units apart inside every scan
 POLICY = dict(
     compiler_version=COMPILER_VERSION,
@@ -55,7 +57,7 @@ POLICY = dict(
     concentration_proposal='per variable the maximizer of the product of its unary factors (ties: first state); no coordinate ascent',
     well_founded='every committed operator strictly decreases (variables, total domain, factor+query entries) in lexicographic order, except affine (once, last)',
     transaction_rule='immutable committed objects; one atomic swap per local commit; one journal record per commit (replayable); declines recorded, never replayed; failure => state == last commit',
-    service_rule='every scan posts its units through a _Ticker meter that checks the REMAINING allowance after every indivisible step (1 or 2 units) and services as soon as TICK_ENTRIES units have been charged since the previous service point; leftovers of one helper count toward the next; posted work is never refused (an over-size post is charged, then reported)',
+    service_rule='every scan posts its units through a _Ticker meter that checks the REMAINING allowance after every indivisible step (1 or 2 units) and services as soon as TICK_ENTRIES units have been charged since the previous service point; leftovers of one helper count toward the next; posted work is never refused (an over-size post is charged, then reported); EVERY tick invokes the controller BEFORE the operator quota is tested (controller stops dominate; a quota exit never skips or resets a pending service), so max_service_gap is the spacing of actual controller invocations',
     accounting_rule='EXACTLY ONCE: a meter transfers its pending count to the Work ledger before the service point runs (a stop raised there leaves nothing pending); every metered loop flushes its completed tail on every exit (serviced on a normal exit, charge-only while an exception propagates: the tail is below the allowance, so no service point is skipped and the typed stop is kept); rollback restores model state, never spent work; work delegated by commit (witness validation) runs under the ACTIVE operator ticker (its quota / deadline / service), the quota-less ticker is the explicit replay context',
     tick_entries=TICK_ENTRIES, max_step_charge=2, max_irreducible_charge=TICK_ENTRIES + 2,
     service_gap_proof='between two consecutive service points at most TICK_ENTRIES + max_step_charge - 1 = %d charged units (the counter of charged-since-service units lives on the compiled state, so leftovers carry across helpers and across operators): the meter compares its pending count with the remaining allowance after EVERY step of at most max_step_charge units and posts (servicing when the allowance is reached), so a post never exceeds the allowance by more than max_step_charge - 1; the declared bound max_irreducible_charge = %d is a valid (non-tight) upper bound; an operator quota is therefore overspent by at most that many units' % (TICK_ENTRIES + 1, TICK_ENTRIES + 2),
@@ -72,14 +74,16 @@ class CompileStop(Exception):
 
 
 def tick(C, quota=None, op=None):
-    """called inside every costly loop: (1) the operator quota (CompileStop('quota') => the operator stops; its commits stay); (2) the controller service hook (deadline /
-    reference parity / reference completion / memory cancellation) -- it may raise CompileStop; the compiled state is always a committed one when this is called"""
+    """called inside every costly loop; EVERY tick is a controller service point (sixth review, CQR-R5-02): (1) the controller hook (deadline / reference parity / reference
+    completion / memory cancellation) runs FIRST and may raise CompileStop -- its stops take precedence over the operator quota; (2) only then the operator quota (CompileStop('quota')
+    => the operator stops; its commits stay). The charged-since-service counter restarts only when the controller has actually been invoked, so a quota exit never leaves a pending
+    service obligation undischarged and `max_gap` measures the spacing of ACTUAL controller invocations. The compiled state is always a committed one when this is called."""
     C.ticks += 1
     if C.acc_since > C.max_gap: C.max_gap = C.acc_since
-    C.acc_since = 0                                   # a service point: the charged-since-service counter (shared by every ticker of this compiled state) restarts
-    if quota is not None and C.work.total() >= quota: raise CompileStop('quota', op)
+    C.acc_since = 0
     fn = getattr(C, 'service', None)
-    if fn is not None: fn(op)
+    if fn is not None: C.service_calls += 1; fn(op)
+    if quota is not None and C.work.total() >= quota: raise CompileStop('quota', op)
 
 
 class _Ticker:
@@ -169,7 +173,7 @@ class Compiled:
     def __init__(self, cards, views, queries, decoder, work, bias, normalizer_task=False):
         self.cards = list(cards); self.views = list(views); self.queries = list(queries); self.decoder = list(decoder); self.work = work; self.bias = list(bias)
         self.certs = []; self.scalars = []; self.constant_scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.service = None; self.constant_queries = {}
-        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None; self.allowance = None; self.max_gap = 0; self.acc_since = 0; self.active = None
+        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None; self.allowance = None; self.max_gap = 0; self.acc_since = 0; self.active = None; self.service_calls = 0
 
     def n(self): return len(self.cards)
     def measure(self): return (len(self.cards), sum(self.cards), sum(v.size() for v in self.views) + sum(_qsize(q) for q in self.queries))
@@ -765,8 +769,8 @@ def verify_symmetry_action(cards, views, cand, work, T=None):
                 ok = True
                 for xs in product(*(range(cards[u]) for u in v.scope)):
                     x = {u: s for u, s in zip(v.scope, xs)}; y = {perm[u]: cand['state_maps'][u][s] for u, s in x.items()}
-                    m.add(2)
-                    if v.at(cards, x) != w.at(cards, y): ok = False; break
+                    a_ = v.at(cards, x); m.add(); b_ = w.at(cards, y); m.add()            # each unit is charged AFTER the evaluation it counts (sixth review, CQR-R5-03)
+                    if a_ != b_: ok = False; break
                 if ok: match = i; break
             if match is None: return False
             used[match] = True
@@ -782,7 +786,7 @@ def _query_symmetric_constant(cards, f, cand, work, T=None):
         for xs in product(*(range(cards[u]) for u in f.scope)):
             x = dict(zip(f.scope, xs)); y = {perm[u]: cand['state_maps'][u][s] for u, s in x.items()}; z = {perm[u]: cand['state_maps'][u][s] for u, s in y.items()}
             if z != x: return None
-            s = (f.at(cards, x) + f.at(cards, y)) / 2; m.add(2)
+            fa = f.at(cards, x); m.add(); fb = f.at(cards, y); m.add(); s = (fa + fb) / 2
             if c is None: c = s
             elif s != c: return None
         return c
@@ -890,7 +894,7 @@ def influence_deletion(C, quota, allowance, neumann_T=8):
                                 for v_ in range(u_ + 1, C.cards[i]):
                                     qs = []
                                     for s_ in range(C.cards[j]):
-                                        x[i] = u_; x[j] = s_; a = v.at(C.cards, x); x[i] = v_; b = v.at(C.cards, x); qs.append(a / b); m.add(2)
+                                        x[i] = u_; x[j] = s_; a = v.at(C.cards, x); m.add(); x[i] = v_; b = v.at(C.cards, x); m.add(); qs.append(a / b)
                                     Rmax = max(Rmax, max(qs) / min(qs))
                     Cbar.setdefault(i, {})[j] = min(F(1), cb(i, j) + _h(Rmax))
     except CompileStop as cs:
@@ -1173,7 +1177,7 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
         for name in ('approx_quotient', 'concentration', 'influence_deletion'): log['steps'].append(dict(op=name, outcome='disabled', reason='EXACT_RATIONAL mode', commits=0))
     step('affine', lambda: affine(C, q_('affine')))
     C.service = None; C.fault = None; C.active = None              # the hooks are released with the task (the certificate serializer never sees them)
-    log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]; log['commits'] = C.commits; log['ticks'] = C.ticks; log['max_service_gap'] = C.max_gap
+    log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]; log['commits'] = C.commits; log['ticks'] = C.ticks; log['max_service_gap'] = C.max_gap; log['controller_calls'] = C.service_calls
     return C, log
 
 

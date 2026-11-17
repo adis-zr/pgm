@@ -124,6 +124,8 @@ def sqrt_lower(x, digits=40):
 
 def boundary_upper(rho, V, alpha):
     """upper enclosure of sqrt((rho + V) log((rho + V) / (rho alpha^2))) -- the normal-mixture all-time boundary (manuscript (5), Theorem 6.2)"""
-    rho = F(rho); V = F(V); alpha = F(alpha); a = rho + V; arg = a / (rho * alpha * alpha)
+    rho = F(rho); V = F(V); alpha = F(alpha)
+    if alpha <= 0 or rho <= 0: raise ValueError('the normal-mixture boundary needs a positive risk alpha and a positive rho (alpha %s, rho %s): at zero risk no statistical boundary exists' % (alpha, rho))
+    a = rho + V; arg = a / (rho * alpha * alpha)
     if arg <= 1: return F(0)
     return sqrt_upper_decimal(a * ln_upper(arg))

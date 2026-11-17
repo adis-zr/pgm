@@ -7,6 +7,8 @@
     resolve; one draw in flight per stream; a failed draw stops its stream);
  4. risk: delta/2 to the ratio stream; delta / (2 e (e+1)) to validation epoch e; an epoch ends after 2^e completed observations unless it certifies; candidate = schema-
     feasible rational projection of the ratio estimate (or a feasible deterministic point); E = 0 => deterministic residual test (certify or retire), never inverse-zero;
+    ZERO RISK (delta = 0 in PAC_EPS; sixth review CQR-R5-01): no statistical claim and no statistical boundary -- no ratio stream is constructed, signed epochs define no interval
+    (only their deterministic E = 0 residual test can certify), every deterministic route stays usable, the guarantee is derived from the actual route, the certificate records ZERO_RISK;
  5. after every completed transaction: deterministic publication first (roots of F-/F+ intersected with every earlier proved interval; feasibility (4) with tau = eps - bias -
     reservation, where the reservation is derived from the OUTPUT REPRESENTATION by task.output_reservation: 0 for rational answers, 2/10^legacy_digits(eps) for legacy rows), then PAC (ratio intervals ∩ deterministic, or a certified candidate). An empty intersection DISABLES the statistical claim (diagnostic) and never the reference.
  6. the reference completing => EXACT publication (any mode). EXACT_RATIONAL mode publishes only exact results (reference / fully closed frontier / proved constants with a positive witness).
@@ -23,7 +25,7 @@ import compiler as CP, frontier as FR, reference as RF, numerics as NM
 from task import Work, task_identity
 import task as TK
 
-SOLVER_VERSION = 'cqr-solve-v1.1 (2026-11-16: representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation)'
+SOLVER_VERSION = 'cqr-solve-v1.2 (2026-11-16: representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation; zero-risk PAC = deterministic routes only)'
 POLICY = dict(solver_version=SOLVER_VERSION, compiler=CP.POLICY, frontier=FR.FRONTIER_VERSION,
               quantum_units=4096, reference_parity='before EVERY publication test the reference is brought to >= the cumulative work of the optional half (gamma = 1/2 at every publication; rounding <= one reference step of 256 assignments)', work_unit_commensurability='every table lookup (factor or query, in the reference, in cell closures, in draws and in compiler scans) is ONE entry unit; cell / rational operations one unit each: the two halves are measured in the same currency', deterministic_test_cadence='every max(1, |F| x K // 1024) optional quanta (the root computation is O(|F| log |F|) per query, K queries; charged |F| x K ratops per test; the cadence bounds the test cost to a constant fraction of the optional half)', reference_share='1/2 of charged Work units (gamma = 1/2): the reference runs one quantum for every optional quantum; the compile is charged to the optional half and the reference catches up before the adaptive loop',
               leaf_cap=4096, open_cap=40000, open_cap_rule='min(40000, 4e7 / n_compiled) (prefix cells store <= n ints)', carve_max_free=14, deterministic_test='after every optional quantum (charged: cells x queries ratops)',
@@ -185,7 +187,9 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             pub = _exact_reference_pub(r, normalizer); check('publication')
             return dict(outcome='PUBLISHED', guarantee_type=pub['guarantee'], publication=pub, certificate=_cert(task, arm, mode, trace, C, compile_log, None, None, [], trace['events'], ref, work_ref, work_opt, pub, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0), bias=[str(b) for b in C.bias])
     trace['phase'] = 'adaptive'; open_cap = max(64, min(POLICY['open_cap'], (4 * 10 ** 7) // max(1, len(cards))))      # memory: prefix cells store <= n ints each
-    ratio = FR.RatioStream(Kc, delta / 2, fr.U() if fr and fr.U() > 0 else F(1), random.Random(rng.getrandbits(64))) if (fr is not None and mode == 'PAC_EPS') else None
+    zero_risk = (mode == 'PAC_EPS' and delta == 0)             # the documented no-risk semantics (sixth review, CQR-R5-01): no statistical claim or boundary; every deterministic route stays usable
+    ratio = FR.RatioStream(Kc, delta / 2, fr.U() if fr and fr.U() > 0 else F(1), random.Random(rng.getrandbits(64))) if (fr is not None and mode == 'PAC_EPS' and not zero_risk) else None
+    trace['zero_risk'] = zero_risk
     if normalizer: spec = dict(spec, signed_stream=False, query_directed_refinement=False)      # recorded in the certificate (signed_stream / query_directed_refinement flags are task-effective)
     def known_scale():
         """Z_original = Z_compiled * prod(known positive scalars) (normalizer tasks never omit a component, so every cancelled scalar is a KNOWN exact rational)"""
@@ -218,6 +222,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                     c = ((1 - eps) * u2 + (1 + eps) * l2) / 2; pub = dict(route='normalizer_pac_ratio_intersected_with_deterministic', bounds=[(l2, u2)], det_bounds=[(L, U)], stat_bounds=[(str(zi[0] / fr.scale_den * sc), str(zi[1] / fr.scale_den * sc))], point=[c], guarantee='PAC', scale=str(sc), ratio_t=ratio.t); return pub
         return None
     epochs = []; cur_epoch = None; epoch_no = 0; stat_toggle = 0; events = trace['events']; det_bounds = None; pub = None; disabled = []
+    if zero_risk: disabled.append(dict(kind='ZERO_RISK', note='delta = 0: no statistical boundary is defined, so the ratio stream is not constructed and signed epochs certify only through the deterministic E = 0 residual test; deterministic compilation, frontier refinement, zero proofs and the exact reference are unaffected'))
     RES = TK.output_reservation(task); trace['output_reservation'] = str(RES)       # the accuracy reservation of the output representation (0 unless legacy decimal rows are emitted)
     def tau(j): return eps - C.bias[j] - RES
     def widen(b):
