@@ -44,7 +44,7 @@ from itertools import product
 from math import prod
 from views import View, gf2_rank_basis, gf2_reduce, gf2_span
 from task import Work
-COMPILER_VERSION = 'cqr-compiler-v2.5 (2026-11-17: the concentration answer evaluations run under the operator ticker (charged after each lookup, serviced, typed quota decline before the atomic commit); the affine image copies a categorical-only table through the meter; max_service_gap covers the evidence-restriction phase; every producer table-read site declared in EVALUATION_SITES; atomic local commits, journal replay, exactly-once metered service points inside every scan incl. the influence applicability scan, every tick a controller service, witness lifecycle under the operator quota)'
+COMPILER_VERSION = 'cqr-compiler-v2.6 (2026-11-17: views own IMMUTABLE tuple storage borrowed without traversal by scope-only renumbering (no copy, no read); every builder freezes its metered scratch once; the approximate-quotient surrogate copy and the quotient unary rescale are charged; the concentration answer evaluations run under the operator ticker; the affine image copies a categorical-only table through the meter; max_service_gap covers the evidence-restriction phase; every producer table-read site declared in EVALUATION_SITES; atomic local commits, journal replay, exactly-once metered service points inside every scan, every tick a controller service, witness lifecycle under the operator quota)'
 TICK_ENTRIES = 1024                   # service / quota / deadline check at most this many charged units apart inside every scan
 POLICY = dict(
     compiler_version=COMPILER_VERSION,
@@ -61,7 +61,7 @@ POLICY = dict(
     accounting_rule='EXACTLY ONCE: a meter transfers its pending count to the Work ledger before the service point runs (a stop raised there leaves nothing pending); every metered loop flushes its completed tail on every exit (serviced on a normal exit, charge-only while an exception propagates: the tail is below the allowance, so no service point is skipped and the typed stop is kept); rollback restores model state, never spent work; work delegated by commit (witness validation) runs under the ACTIVE operator ticker (its quota / deadline / service), the quota-less ticker is the explicit replay context',
     tick_entries=TICK_ENTRIES, max_step_charge=2, max_irreducible_charge=TICK_ENTRIES + 2,
     service_gap_proof='between two consecutive service points at most TICK_ENTRIES + max_step_charge - 1 = %d charged units (the counter of charged-since-service units lives on the compiled state, so leftovers carry across helpers and across operators): the meter compares its pending count with the remaining allowance after EVERY step of at most max_step_charge units and posts (servicing when the allowance is reached), so a post never exceeds the allowance by more than max_step_charge - 1; the declared bound max_irreducible_charge = %d is a valid (non-tight) upper bound; an operator quota is therefore overspent by at most that many units' % (TICK_ENTRIES + 1, TICK_ENTRIES + 2),
-    evaluation_sites_rule='EVALUATION_SITES declares every producer function of this module that reads a table entry (View.at / View.at_i / view.values) together with the meter phase that charges the read; the qualification suite re-derives the set of such functions from the source and refuses a producer read site that is not declared (eighth review, CQR-R7-02 audit); arithmetic on values already read (ratio / max / sum of read entries) is bounded by the charged reads and not separately charged unless listed as ratops',
+    evaluation_sites_rule='EVALUATION_SITES declares every producer function of this module that reads a table entry (View.at / View.at_i / view.values) together with the meter phase that charges the read; the qualification suite re-derives the set of such functions from the source and refuses a producer read site that is not declared (eighth review, CQR-R7-02 audit) AND verifies the declarations behaviourally with independent storage-level read counters (ninth review, CQR-R8-01: a "no read" declaration must show zero traversal and identical storage); view storage is an immutable tuple that the constructor borrows without traversal (views.VIEW_STORAGE_RULE), so delegated constructor work never copies; arithmetic on values already read (ratio / max / sum of read entries) is bounded by the charged reads and not separately charged unless listed as ratops',
     witness_rule='the positivity witness is model-dependent auxiliary state: every commit that changes cards, views or variable numbering must TRANSFORM it (support / fixed / leaf / omission / quotient / affine re-coordinate it; influence keeps it) or INVALIDATE it (None); the committed witness is validated on the resulting model (domain + strictly positive weight) and dropped with a recorded reason otherwise')
 
 
@@ -73,14 +73,14 @@ EVALUATION_SITES = dict(
     from_task='evidence-restriction phase: one entry per source / query table entry, serviced every TICK_ENTRIES (controller_calls_evidence; counted in max_service_gap)',
     _slice='entries meter of the caller\'s ticker (support / exact + approximate quotient / concentration ratio scans)',
     _replace_axis='entries meter (support apply / quotient build)', _average_axis='entries meter (quotient query averaging; the class sum split at the allowance)',
-    _remove_var_from_scope_fixed='entries meter (fixed substitution)', _renumbered='no read: scopes renumbered, value lists passed by reference',
-    _fixed_apply='reads only constant (scalar) tables after the metered substitution: one entry each (constant check; charged by _remove_var_from_scope_fixed)',
+    _remove_var_from_scope_fixed='entries meter (fixed substitution)', _renumbered='NO READ: scopes renumbered; the new view BORROWS the old view\'s immutable value tuple (the identical object; VIEW_STORAGE_RULE) -- verified behaviourally by C28 (storage identity, zero traversal)',
+    _fixed_apply='entries meter (the constant check reads one entry of each new scalar table)',
     _leaf_apply='entries meter (leaf sum-out)', _omission_proofs='entries meter (positivity scan, charged before the test) + evals meter (witness-restricted proof)',
-    _quotient_build='ratops meter (kappa); the unary rescale reads len(classes) entries of the NEW unary built from metered reads', approx_quotient='ratops meter (surrogate build)',
+    _quotient_build='ratops meter (kappa) + entries meter (unary rescale: one read of the new unary per class)', approx_quotient='entries meter (the surrogate starts from a charged copy of each incident table) + ratops meter (surrogate build)',
     verify_symmetry_action='entries meter (two lookups per compared assignment, charged after each)', _query_symmetric_constant='entries meter (two lookups per assignment)',
     _unary_product_argmax='entries meter (unary factor entries)', concentration='evals meter (witness weight) + _slice entries (ratio scans) + evals meter (answers at x*: CQR-R7-02)',
     influence_deletion='entries meter from the first read (applicability scan: CQR-R6-02) + entries meter (local D / R scans)', local_affine='entries meter (row support scan)',
-    _affine_build='entries meter (image tables: binary-involved views evaluated per image row; categorical-only views copied entry by entry) + constant-image check (one entry)',
+    _affine_build='entries meter (image tables: binary-involved views evaluated per image row; categorical-only views copied entry by entry; the constant-image check reads one entry)',
     quota_for='declared quota sizing from table SIZES (len), not a read')
 
 
@@ -302,13 +302,13 @@ def from_task(task, work=None, service=None):
             if vals[0] == 0: raise ZeroEvidence(dict(kind='fully_observed_factor_zero', factor=fi))
             if vals[0] != 1: constant_scalars.append(dict(factor=fi, value=str(vals[0])))      # a positive constant factor: cancelled for normalized tasks (symbolic scalar), kept as an exact scalar for normalizer tasks
             continue
-        views.append(View('table', ns, vals))
+        views.append(View('table', ns, tuple(vals)))
     queries = []
     for j, q in enumerate(task['queries']):
         if q.kind == 'expectation':
-            ns, vals = restrict(q.f.scope, q.f.values); queries.append(dict(name=q.name, kind='expectation', f=View('table', ns, vals), output=q.output, orig_index=j))
+            ns, vals = restrict(q.f.scope, q.f.values); queries.append(dict(name=q.name, kind='expectation', f=View('table', ns, tuple(vals)), output=q.output, orig_index=j))
         else:
-            nh, vh = restrict(q.h.scope, q.h.values); ng, vg = restrict(q.g.scope, q.g.values); queries.append(dict(name=q.name, kind='ratio', h=View('table', nh, vh), g=View('table', ng, vg), output=q.output, orig_index=j))
+            nh, vh = restrict(q.h.scope, q.h.values); ng, vg = restrict(q.g.scope, q.g.values); queries.append(dict(name=q.name, kind='ratio', h=View('table', nh, tuple(vh)), g=View('table', ng, tuple(vg)), output=q.output, orig_index=j))
     decoder = [dict(kind='fixed', state=ev[v]) if v in ev else dict(kind='map', var=new_of[v], states={a: [(a, F(1))] for a in range(cards0[v])}) for v in range(n0)]
     normalizer_task = bool((task.get('query_spec') or {}).get('normalizer_task'))
     C = Compiled(cards, views, queries, decoder, work, [F(0)] * len(task['queries']), normalizer_task=normalizer_task)
@@ -341,7 +341,7 @@ def _replace_axis(view, cards, var, new_states, new_card, T=None):
     with _Meter(T, 'entries') as m:
         for xs in product(*((range(new_card) if v == var else range(old_cards[v])) for v in scope)):
             x = dict(zip(scope, xs)); x[var] = new_states[x[var]]; vals.append(view.values[idx(x)]); m.add()
-    return View('table', scope, vals)
+    return View('table', scope, tuple(vals))
 
 
 def _average_axis(view, cards, var, classes, weights, T=None):
@@ -351,12 +351,12 @@ def _average_axis(view, cards, var, classes, weights, T=None):
         i = 0
         for v in scope: i = i * cards[v] + x[v]
         return i
-    with _Meter(T, 'ratops') as m:
+    with _Meter(T, 'entries') as m:                                   # one ENTRY per old value read (the weighted sum is arithmetic on the read value); the class sum is split at the remaining allowance (CQR-R3-04)
         for xs in product(*((range(len(classes)) if v == var else range(cards[v])) for v in scope)):
             x = dict(zip(scope, xs)); c = x[var]; s = F(0)
-            for a in classes[c]: x[var] = a; s += weights[a] * view.values[idx(x)]; m.add()       # the class sum is split at the remaining allowance (CQR-R3-04: a 2,048-state class is not one post)
+            for a in classes[c]: x[var] = a; s += weights[a] * view.values[idx(x)]; m.add()
             vals.append(s)
-    return View('table', scope, vals)
+    return View('table', scope, tuple(vals))
 
 
 def _remove_var_from_scope_fixed(view, cards, var, state, T=None):
@@ -366,13 +366,14 @@ def _remove_var_from_scope_fixed(view, cards, var, state, T=None):
             x = dict(zip(rest, xs)); x[var] = state; i = 0
             for v in scope: i = i * cards[v] + x[v]
             vals.append(view.values[i]); m.add()
-    return View('table', rest, vals)
+    return View('table', rest, tuple(vals))
 
 
 def _renumbered(views, queries, decoder, cards, removed):
     """NEW views / queries / decoder / cards with the compiled variables `removed` (set) deleted from every scope; they must not occur in any scope any more"""
     keep = [v for v in range(len(cards)) if v not in removed]; new = {v: i for i, v in enumerate(keep)}
     def rv(v):
+        # SCOPE-ONLY: the new view BORROWS the old view's immutable storage (the same tuple object; no entry is read or copied -- VIEW_STORAGE_RULE, ninth review CQR-R8-01)
         assert not (set(v.scope) & removed), 'variable still in a scope'
         if v.kind == 'affine': return View('affine', tuple(new[u] for u in v.scope), v.values, cat_scope=tuple(new[u] for u in v.cat_scope), zcols=tuple(new[u] for u in v.zcols), urows=v.urows)
         return View('table', tuple(new[u] for u in v.scope), v.values)
@@ -446,11 +447,13 @@ def _fixed_apply(C, T=None):
             else: nd.append(d)
         dec = nd
     keep = []; scalars = []
-    for i, v in enumerate(views):
-        if not v.scope:
-            if v.values[0] == 0: raise ZeroEvidence(dict(kind='constant_factor_zero_after_substitution', factor=i))
-            scalars.append(dict(kind='constant_factor', value=str(v.values[0])))
-        else: keep.append(v)
+    with _Meter(T, 'entries') as m:
+        for i, v in enumerate(views):
+            if not v.scope:
+                c0 = v.values[0]; m.add()                                  # the constant check reads ONE entry of the new scalar table (charged; ninth review audit)
+                if c0 == 0: raise ZeroEvidence(dict(kind='constant_factor_zero_after_substitution', factor=i))
+                scalars.append(dict(kind='constant_factor', value=str(c0)))
+            else: keep.append(v)
     nviews, nqueries, ndec, ncards = _renumbered(keep, queries, dec, C.cards, set(fixed))
     w = _witness_renumbered(C.witness, C.cards, set(fixed))        # the fixed variables have one state (0): the witness there is 0 by domain; the rest is renumbered
     _fault_point(C, 'fixed_substitution', 'build')
@@ -485,7 +488,7 @@ def _leaf_apply(C, var, fi, T=None):
             vals.append(s)
     if not any(vals): raise ZeroEvidence(dict(kind='leaf_sum_identically_zero', compiled_variable=var, factor=fi))
     views = list(C.views); scalars = []
-    if rest: views[fi] = View('table', rest, vals)
+    if rest: views[fi] = View('table', rest, tuple(vals))
     else: scalars.append(dict(kind='leaf_sum_scalar', value=str(vals[0]))); views.pop(fi)
     dec = [dict(kind='summed') if (d['kind'] == 'map' and d['var'] == var) else d for d in C.decoder]
     nviews, nqueries, ndec, ncards = _renumbered(views, C.queries, dec, C.cards, {var})
@@ -603,8 +606,12 @@ def _quotient_build(C, var, classes, sig, inc, approx, T=None):
     inc_idx = [C.views.index(v) for v in inc]; views = list(C.views)
     for i in inc_idx: views[i] = _replace_axis(C.views[i], C.cards, var, reps, len(classes), T)
     un_i = next((i for i, v in enumerate(views) if v.kind == 'table' and v.scope == (var,)), None)
-    if un_i is not None: views[un_i] = View('table', (var,), [views[un_i].values[i] * S[i] for i in range(len(classes))])
-    else: views.append(View('table', (var,), list(S)))
+    if un_i is not None:
+        with _Meter(T, 'entries') as m:                              # one entry read of the NEW unary per class (charged; the product is arithmetic on the read value)
+            uvals = []
+            for i in range(len(classes)): uvals.append(views[un_i].values[i] * S[i]); m.add()
+        views[un_i] = View('table', (var,), tuple(uvals))
+    else: views.append(View('table', (var,), tuple(S)))
     weights = {a: kappa[a] / S[ci] for ci, g in enumerate(classes) for a in g}
     def rq(v): return _average_axis(v, C.cards, var, classes, weights, T) if var in v.scope else v
     queries = [_q_map(q, rq) for q in C.queries]
@@ -712,7 +719,10 @@ def approx_quotient(C, quota, allowance, hook=None):
             # BUILD the surrogate on NEW incident views: phi~(s, y) = c_a(s) phi(r, y) with c from the first common positive pivot
             sur = []
             for fi, v in enumerate(inc):
-                scope = v.scope; rest = [u for u in scope if u != var]; vals = list(v.values)
+                scope = v.scope; rest = [u for u in scope if u != var]
+                with _Meter(T, 'entries') as m:                       # the surrogate starts from a COPY of the pre-step table: every entry read is charged (ninth review audit; a stop here commits nothing)
+                    vals = []
+                    for w_ in v.values: vals.append(w_); m.add()
                 with _Meter(T, 'ratops') as m:
                     for g in groups:
                         r = g['rep']; sl_r = slices[r][fi]; piv_i = next(i for i, x in enumerate(sl_r) if x)
@@ -723,7 +733,7 @@ def approx_quotient(C, quota, allowance, hook=None):
                                 x = dict(zip(rest, xs)); x[var] = s; i = 0
                                 for u in scope: i = i * C.cards[u] + x[u]
                                 vals[i] = c * sl_r[ri]; m.add()
-                sur.append(View('table', scope, vals))
+                sur.append(View('table', scope, tuple(vals)))
             # the exact quotient of the surrogate (signatures on the surrogate views; the quotient build reads the surrogate through a temporary view list)
             saved_views = C.views; tmp = list(C.views)
             for v, sv in zip(inc, sur): tmp[C.views.index(v)] = sv
@@ -1043,7 +1053,7 @@ def _affine_build(C, quota, T):
             with _Meter(T, 'entries') as m:                       # the image of a categorical-only table is a copy: every entry read is charged (eighth review audit)
                 vals = []
                 for w_ in v.values: vals.append(w_); m.add()
-            return View('table', tuple(cat_new[u] for u in v.scope), vals)
+            return View('table', tuple(cat_new[u] for u in v.scope), tuple(vals))
         rows = [Brow[pos[u]] for u in bin_in]; rank_u, ub = gf2_rank_basis(rows)
         coords = []
         for r in rows:
@@ -1069,15 +1079,17 @@ def _affine_build(C, quota, T):
                             if (coords[ui] >> k) & 1 and yb[k]: bit ^= 1
                         x[u] = bit
                     vals.append(v.at(C.cards, x)); m.add()
-        return View('affine', tuple(zcols) + tuple(cat_new[u] for u in cat_in), vals, cat_scope=tuple(cat_new[u] for u in cat_in), zcols=tuple(zcols), urows=ub_local)
+        return View('affine', tuple(zcols) + tuple(cat_new[u] for u in cat_in), tuple(vals), cat_scope=tuple(cat_new[u] for u in cat_in), zcols=tuple(zcols), urows=tuple(ub_local))
     new_views = [make_view(v) for v in C.views]
     queries = [_q_map(q, make_view) for q in C.queries]
     keep = []; scalars = []
-    for v in new_views:
-        if not v.scope:
-            if v.values[0] == 0: raise ZeroEvidence(dict(kind='affine_image_zero'))
-            scalars.append(dict(kind='affine_constant_factor', value=str(v.values[0])))
-        else: keep.append(v)
+    with _Meter(T, 'entries') as m:
+        for v in new_views:
+            if not v.scope:
+                c0 = v.values[0]; m.add()                                  # the constant-image check reads ONE entry (charged; ninth review audit)
+                if c0 == 0: raise ZeroEvidence(dict(kind='affine_image_zero'))
+                scalars.append(dict(kind='affine_constant_factor', value=str(c0)))
+            else: keep.append(v)
     dec = []
     for d in C.decoder:
         if d['kind'] == 'map':
@@ -1331,7 +1343,7 @@ def verify_commit(C, rc, work, allowance):
                         x = dict(zip(rest, xs)); x[var] = s; i = 0
                         for u in scope: i = i * cards[u] + x[u]
                         vals[i] = c * sl_r[ri]
-            sur.append(View('table', scope, vals))
+            sur.append(View('table', scope, tuple(vals)))
         sviews = list(views)
         for i, sv in zip(rc['incident_factors'], sur): sviews[i] = sv
         return verify_quotient_step(cards, sviews, rc, work)
@@ -1472,7 +1484,7 @@ def apply_commit(C, rc):
                             x = dict(zip(rest, xs)); x[var] = s; i = 0
                             for u in scope: i = i * C.cards[u] + x[u]
                             vals[i] = c * sl_r[ri]
-                sur.append(View('table', scope, vals))
+                sur.append(View('table', scope, tuple(vals)))
             saved = C.views; tmp = list(C.views)
             for i, sv in zip(rc['incident_factors'], sur): tmp[i] = sv
             C.views = tmp

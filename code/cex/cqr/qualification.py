@@ -16,8 +16,8 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK, reference as RF
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v9 (2026-11-17, after the eighth adversarial review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
-ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v15')
+SUITE_VERSION = 'cqr-qualification-v10 (2026-11-17, after the ninth adversarial review: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
+ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v16')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
 CNT = R['counts']; passed = 0; total = 0
@@ -265,11 +265,11 @@ def c5_affine():
     A(any(v.kind == 'affine' for v in C.views), 'no affine view (dense expansion would be wrong)'); r = solve_(task, 'N1_CQR', 'c5'); A(r['outcome'] == 'PUBLISHED' and compare(r['publication'], tr, F(0), qs) == 0, 'affine answers wrong')
     out['m04'] = dict(n=len(m['cards']), rank=rec['rank'], compiled=len(C.cards), route=r['publication']['route'], weights_nonuniform=any(len({x for x in v.values if x}) > 1 for v in C.views))
     # {000,001,010,100}: power-of-two size, not affine
-    v = View('table', (0, 1, 2), [F(1) if i in (0, 1, 2, 4) else F(0) for i in range(8)]); A(CP.local_affine(v, [2, 2, 2], TK.Work()) is None, 'non-affine support accepted'); out['pow2_nonaffine_declined'] = True
+    v = View('table', (0, 1, 2), tuple(F(1) if i in (0, 1, 2, 4) else F(0) for i in range(8))); A(CP.local_affine(v, [2, 2, 2], TK.Work()) is None, 'non-affine support accepted'); out['pow2_nonaffine_declined'] = True
     # genuine parity relation accepted with rank 1 equation
-    v2 = View('table', (0, 1, 2), [F(2) if bin(i).count('1') % 2 == 0 else F(0) for i in range(8)]); le = CP.local_affine(v2, [2, 2, 2], TK.Work()); A(le is not None and len(le) == 1, 'parity relation not recognized')
+    v2 = View('table', (0, 1, 2), tuple(F(2) if bin(i).count('1') % 2 == 0 else F(0) for i in range(8))); le = CP.local_affine(v2, [2, 2, 2], TK.Work()); A(le is not None and len(le) == 1, 'parity relation not recognized')
     # small positive forbidden entry declines
-    v3 = View('table', (0, 1, 2), [F(2) if bin(i).count('1') % 2 == 0 else F(1, 9) for i in range(8)]); A(CP.local_affine(v3, [2, 2, 2], TK.Work()) == [], 'full support must give no equation')
+    v3 = View('table', (0, 1, 2), tuple(F(2) if bin(i).count('1') % 2 == 0 else F(1, 9) for i in range(8))); A(CP.local_affine(v3, [2, 2, 2], TK.Work()) == [], 'full support must give no equation')
     # inconsistent equations -> ZERO_EVIDENCE
     mz = dict(cards=[2, 2], factors=[dict(scope=(0, 1), values=[F(1), F(0), F(0), F(1)]), dict(scope=(0, 1), values=[F(0), F(1), F(1), F(0)])], evidence={})
     try: compile_(mk_task(mz, TK.all_singletons([2, 2]), mode='EXACT_RATIONAL')); A(False, 'inconsistent system not detected')
@@ -1254,7 +1254,7 @@ def c23_exactly_once_accounting_quota_inheritance_tolerance_domain():
     bound = CP.POLICY['max_irreducible_charge']
     # ---------------- 01: exactly-once identities on every metered helper under every stop kind, at every boundary
     def fresh(views_n=3, cards=(2, 3, 5)):
-        views = [View('table', (0, 1, 2), [F(i % 7 + 1) for i in range(30)]) for _ in range(views_n)]
+        views = [View('table', (0, 1, 2), tuple(F(i % 7 + 1) for i in range(30))) for _ in range(views_n)]
         return CP.Compiled(list(cards), views, [], [], TK.Work(), [])
     class _Svc(Exception): pass
     def run_helper(name, offset, stop_kind, stop_at):
@@ -1277,8 +1277,8 @@ def c23_exactly_once_accounting_quota_inheritance_tolerance_domain():
             elif name == 'fixed': CP._remove_var_from_scope_fixed(C.views[0], C.cards, 0, 1, T)
             elif name == 'ratop_each': T.ratop_each(range(2500), lambda x: F(x) + 1)
             elif name == 'witness': CP._witness_problem(C.cards, C.views * 400, {0: 0, 1: 0, 2: 0}, T)
-            elif name == 'local_affine': CP.local_affine(View('table', (0, 1, 2), [F(1)] * 8), [2, 2, 2], C.work, T)
-            elif name == 'big_slice': CP._slice(View('table', (0, 1), [F(1)] * 3000), [2, 1500], 0, 1, T)
+            elif name == 'local_affine': CP.local_affine(View('table', (0, 1, 2), (F(1),) * 8), [2, 2, 2], C.work, T)
+            elif name == 'big_slice': CP._slice(View('table', (0, 1), (F(1),) * 3000), [2, 1500], 0, 1, T)
         except (CP.CompileStop, TimeoutError, RuntimeError) as ex: exc = type(ex).__name__ + ':' + getattr(ex, 'kind', '')
         finally: CP._Meter.add = orig_add
         return C.work.total() - w0, calls[0], svc_n[0], exc
@@ -1331,7 +1331,7 @@ def c23_exactly_once_accounting_quota_inheritance_tolerance_domain():
     A(w['outcome'] == 'PUBLISHED' and not fails and all(F(x['lo']) <= v <= F(x['hi']) for x, v in zip(w['answers'], truths)) and st and all(s_['work'] - log['quota'] <= bound for s_ in st), '01 natural worker: %s %s approx %s quota %s' % (w['outcome'], fails[:1], [(s_['outcome'], s_['work']) for s_ in st], log['quota']))
     out['f01']['natural_2x750'] = dict(route=w['route'], approx=[(s_['outcome'], s_['work'], s_['work'] - log['quota']) for s_ in st], quota=log['quota'])
     # witness-validation interruption: 1,024 completed evaluations charged ONCE, ONE service call, the model unchanged (the reviewer's double-post control)
-    C = CP.Compiled([2], [View('table', (0,), [F(1), F(1)]) for _ in range(1500)], [], [], TK.Work(), []); n_svc = [0]
+    C = CP.Compiled([2], [View('table', (0,), (F(1), F(1))) for _ in range(1500)], [], [], TK.Work(), []); n_svc = [0]
     def svc1(op):
         n_svc[0] += 1; raise CP.CompileStop('cancelled', op)
     C.service = svc1; T = CP._Ticker(C, None, 'probe'); snap = C.state()
@@ -1539,7 +1539,7 @@ def c24_zero_risk_controller_cadence_completed_charges():
         except CP.CompileStop as ex: stop = ex.kind
     finally: View.at = oat
     A(stop == 'quota' and C.commits == 0 and C.work.total() - base == reads[0], '03 symmetry under the production quota: charged %d completed reads %d stop %s' % (C.work.total() - base, reads[0], stop)); out['f03']['symmetry'] = dict(charged=C.work.total() - base, completed=reads[0], quota=quota)
-    cards10 = [2] * 10; views10 = [View('table', tuple(range(10)), [F(1)] * 1024)]; q10 = dict(kind='expectation', f=View('table', (0,), [F(0), F(1)]), orig_index=0, name='q', output=None)
+    cards10 = [2] * 10; views10 = [View('table', tuple(range(10)), (F(1),) * 1024)]; q10 = dict(kind='expectation', f=View('table', (0,), (F(0), F(1))), orig_index=0, name='q', output=None)
     for stop_at in (1, None):
         fr = FR.Frontier(cards10, views10, [q10], TK.Work()); done = [0]; oati = View.at_i
         def obs_ati(self, cards_, x): v_ = oati(self, cards_, x); done[0] += 1; return v_
@@ -1570,7 +1570,7 @@ def c24_zero_risk_controller_cadence_completed_charges():
     try: T.ratop_each(range(2048), f_)
     except RuntimeError: pass
     A(calls_[0] == 1324 and a_.work.ratops == 1324, '03 injected tail'); out['f03']['injected_tail'] = a_.work.ratops
-    Cw = CP.Compiled([2], [View('table', (0,), [F(1), F(1)]) for _ in range(1500)], [], [], TK.Work(), []); n_svc = [0]
+    Cw = CP.Compiled([2], [View('table', (0,), (F(1), F(1))) for _ in range(1500)], [], [], TK.Work(), []); n_svc = [0]
     def svc1(op): n_svc[0] += 1; raise CP.CompileStop('cancelled', op)
     Cw.service = svc1; CP._Ticker(Cw, None, 'probe')
     try: Cw.commit(dict(op='probe'), cards=[2], witness={0: 0}); A(False, '03 witness interruption did not stop')
@@ -1605,8 +1605,9 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
     ratio draw; a deterministic fallback FAILS the group -- eighth review correction 1), checked against independent truth with the full replay; on BOTH the coherent prior
     mutation (U_star/2, rho/4, statistics/4, V/16; publication recomputed from the altered statistics and TIGHTER, as the reviewer's) is refused for the prior, not merely for
     containment; the SAME tightened publication with the original prior and statistics is refused for containment ('do not contain the re-derived enclosure'); a prior scaled UP
-    is refused for the prior; a certificate whose U_star equals the root but whose rho differs is refused; the signed E_star mutation is refused on a fresh signed-PAC worker
-    (required to publish with an epoch); the root derivation runs on compiled models with nontrivial scaling (table denominators). (02) the influence applicability scan is metered under the operator's ticker from its
+    is refused for the prior; a certificate whose U_star equals the root but whose rho differs is refused; the signed E_star mutation is refused on a GENUINE signed-route
+    publication (pac_signed_residual_validation with an epoch, REQUIRED) and separately as an epoch-replay control on a ratio-PAC publication carrying epochs; the root derivation
+    runs on compiled models with nontrivial scaling (table denominators). (02) the influence applicability scan is metered under the operator's ticker from its
     first read: on the reviewer's positive [2,1000] fixture the operator's charged work equals the independently counted successful reads (scan + evaluations), the overspend of
     the production quota is <= max_irreducible_charge, controller calls happen during the scan, and the plain worker publishes the exact answers; early / middle / last hard zeros
     charge exactly the entries read and decline; a quota placed inside the scan stops typed with the scan's reads charged; a controller stop inside the scan propagates. (03)
@@ -1671,21 +1672,35 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
         zt, wt_, newb = _tightened(w_, F(1, 2), mp_); ob = w_['certificate']['publication']['bounds']
         tighter = all(F(ob[j][0]) <= F(newb[j][0]) and F(newb[j][1]) <= F(ob[j][1]) for j in range(len(newb))) and any(F(newb[j][1]) - F(newb[j][0]) < F(ob[j][1]) - F(ob[j][0]) for j in range(len(newb)))
         A(tighter, '01 %s: the halved-prior recomputation is not tighter than the original publication (%s vs %s)' % (name, newb[:1], ob[:1]))
-        fails, _ = check_(mp_, zt, arm_, budget=300.0); A(fails and any('prior U_star' in f_ for f_ in fails), '01 %s halved prior WITH its recomputed tighter publication not refused for the prior: %s' % (name, fails[:1]))
-        fails, _ = check_(mp_, wt_, arm_, budget=300.0); A(fails and any('do not contain the re-derived enclosure' in f_ for f_ in fails), '01 %s tightened publication with the ORIGINAL prior not refused for containment: %s' % (name, fails[:1]))
-        out['f01'][name + '_tightened'] = dict(original=ob[0], tightened=newb[0], altered_prior=fails and 'prior' in str(fails[:1]), original_prior=fails[0][:60])
+        fails_alt, _ = check_(mp_, zt, arm_, budget=300.0); A(fails_alt and any('prior U_star' in f_ for f_ in fails_alt), '01 %s halved prior WITH its recomputed tighter publication not refused for the prior: %s' % (name, fails_alt[:1]))
+        fails_orig, _ = check_(mp_, wt_, arm_, budget=300.0); A(fails_orig and any('do not contain the re-derived enclosure' in f_ for f_ in fails_orig), '01 %s tightened publication with the ORIGINAL prior not refused for containment: %s' % (name, fails_orig[:1]))
+        out['f01'][name + '_tightened'] = dict(original=ob[0], tightened=newb[0], altered_prior_refusal=fails_alt[0][:60], original_prior_refusal=fails_orig[0][:60])      # two separate results (ninth review, correction 3)
         z = copy.deepcopy(w_); z['certificate']['ratio_stream']['rho'] = str(F(z['certificate']['ratio_stream']['rho']) / 4); fails, _ = check_(mp_, z, arm_, budget=300.0)
         A(fails and any('rho' in f_ for f_ in fails), '01 %s rho mutation not refused: %s' % (name, fails[:1])); out['f01'][name + '_rho'] = fails[0][:60]
-    # a fresh genuine signed-PAC worker (REQUIRED to publish with an epoch): the signed launch envelope E_star halved is refused against the replayed launch law
-    sg_c, sg_f = _sprinkled(3, 26, 12, 4); mps = _spec(_uai(os.path.join(d, 'signed26.uai'), sg_c, sg_f), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1)]); ws = None; tried = []
+    # the signed launch envelope E_star halved is refused against the replayed launch law -- on a GENUINE signed-route publication (route pac_signed_residual_validation REQUIRED:
+    # the C16 ring fixture, whose query is constant off a tiny-mass region) AND, as a separate EPOCH-REPLAY control, on a ratio-PAC publication that carries signed epochs
+    cards_r, fs_r = _ring_hardzero(1, 30, 39, 40); vals_r = [str(F(1, 2) if x0 == 0 or x1 == 1 else F(x2)) for x0 in range(2) for x1 in range(2) for x2 in range(2)]
+    mps = _spec(_uai(os.path.join(d, 'signed_ring30.uai'), cards_r, fs_r), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='table', table=dict(name='mostly_half', kind='expectation', f=dict(scope=[0, 1, 2], values=vals_r)))]); ws = None; tried = []
     for seed in ('sa', 'sb', 'sc', 'sd'):
-        w_ = fresh_worker(mps, 'N1_CQR', budget=45.0, seed=seed, nonce='c25-01-signed-' + seed); tried.append((w_['outcome'], w_.get('route'), len(w_['certificate'].get('epochs') or [])))
-        if w_['outcome'] == 'PUBLISHED' and w_['certificate'].get('epochs'): ws = w_; break
-    A(ws is not None, '01 no published signed-PAC worker with an epoch in %d seeds (MANDATORY): %s' % (len(tried), tried))
-    z = copy.deepcopy(ws); e0 = z['certificate']['epochs'][0]; e0['E_star'] = str(F(e0['E_star']) / 2)
-    for ev in z['certificate']['events']:
-        if ev.get('op') == 'epoch_start' and ev.get('epoch') == e0['epoch']: ev['E_star'] = str(F(ev['E_star']) / 2)
-    fails, _ = check_(mps, z, 'N1_CQR', budget=300.0); A(fails and any('E_star' in f_ for f_ in fails), '01 signed E_star mutation not refused: %s' % fails[:1]); out['f01']['signed_E_star'] = dict(route=ws['route'], epochs=len(ws['certificate']['epochs']), refusal=fails[0][:60])
+        w_ = fresh_worker(mps, 'N1_CQR', budget=30.0, seed=seed, nonce='c25-01-signed-' + seed); tried.append((w_['outcome'], w_.get('route'), len(w_['certificate'].get('epochs') or [])))
+        if w_['outcome'] == 'PUBLISHED' and w_['route'] == 'pac_signed_residual_validation' and w_['certificate'].get('epochs'): ws = w_; break
+    A(ws is not None, '01 no genuine signed-route publication (pac_signed_residual_validation with an epoch) in %d seeds (MANDATORY): %s' % (len(tried), tried))
+    t_s, tr_s = _truth(mps); A(_contained(ws, tr_s, F(1, 10)), '01 signed publication misses the independent truth')
+    def halve_E_star(w0):
+        z = copy.deepcopy(w0); e0 = z['certificate']['epochs'][0]; e0['E_star'] = str(F(e0['E_star']) / 2)
+        for ev in z['certificate']['events']:
+            if ev.get('op') == 'epoch_start' and ev.get('epoch') == e0['epoch']: ev['E_star'] = str(F(ev['E_star']) / 2)
+        return z
+    fails, _ = check_(mps, halve_E_star(ws), 'N1_CQR', budget=300.0); A(fails and any('E_star' in f_ for f_ in fails), '01 signed-route E_star mutation not refused: %s' % fails[:1])
+    out['f01']['signed_E_star'] = dict(role='GENUINE signed-route publication', route=ws['route'], epochs=len(ws['certificate']['epochs']), draws=sum(int(e.get('t') or 0) for e in ws['certificate']['epochs']), refusal=fails[0][:60])
+    sg_c, sg_f = _sprinkled(3, 26, 12, 4); mpe = _spec(_uai(os.path.join(d, 'epochs26.uai'), sg_c, sg_f), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1)]); we = None
+    for seed in ('sa', 'sb', 'sc', 'sd'):
+        w_ = fresh_worker(mpe, 'N1_CQR', budget=45.0, seed=seed, nonce='c25-01-epochs-' + seed)
+        if w_['outcome'] == 'PUBLISHED' and w_['certificate'].get('epochs'): we = w_; break
+    if we is not None:
+        fails, _ = check_(mpe, halve_E_star(we), 'N1_CQR', budget=300.0); A(fails and any('E_star' in f_ for f_ in fails), '01 epoch-replay E_star mutation not refused: %s' % fails[:1])
+        out['f01']['epoch_replay_E_star'] = dict(role='EPOCH-REPLAY control on a %s publication that carries signed epochs (not a signed-publication test)' % we['route'], route=we['route'], epochs=len(we['certificate']['epochs']), refusal=fails[0][:60])
+    else: out['f01']['epoch_replay_E_star'] = 'no publication with epochs in 4 seeds on the sprinkled fixture (the genuine signed-route control above is the mandatory one)'
     # ---------------- 02: influence applicability scan under the operator ticker
     def infl_model(d_, zero_at=None):
         vals = [F(i) for i in range(1, d_ + 1)] + [F(i) for i in range(2001, 2001 + d_)]
@@ -1694,9 +1709,9 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
     def count_scan(C_, fn):
         """independent counters: entries of the applicability scan (view.values iteration) and successful View.at evaluations"""
         n_vals = [0]; at_ = [0]; oat = View.at
-        class Counted(list):
+        class Counted(tuple):
             def __iter__(self_):
-                for x in list.__iter__(self_): n_vals[0] += 1; yield x
+                for x in tuple.__iter__(self_): n_vals[0] += 1; yield x
         for v in C_.views: v.values = Counted(v.values)
         def obs_at(self, cards_, x): r_ = oat(self, cards_, x); at_[0] += 1; return r_
         View.at = obs_at
@@ -1848,7 +1863,7 @@ def c26_partition_premise_order_validation_structural_negative():
     for name, o in (('default', None), ('canonical', [0, 1, 2]), ('reversed', [2, 1, 0]), ('tuple', (1, 2, 0))):
         fr = FR.Frontier([2, 3, 2], [], [], TK.Work(), order=o); A(sorted(fr.order) == [0, 1, 2] and fr.open[0].N == 12, 'legal order %s refused' % name); out['constructor'][name] = fr.order
     fr0 = FR.Frontier([], [], [], TK.Work(), order=[]); A(fr0.open[0].N == 1 and fr0.close(0) == (1, [], []) and not fr0.open, 'zero-variable frontier'); out['constructor']['zero_variables'] = 'root N 1, closes to mass 1'
-    fr1 = FR.Frontier([3], [View('table', (0,), [F(1), F(0), F(2)])], [], TK.Work()); kids = fr1.split(0); A(len(kids) == 2 and fr1.history[-2]['op'] == 'prune_zero' and fr1.Zlo() == 3 == fr1.Zhi(), 'singleton domain split / prune: %s' % fr1.history); out['constructor']['singleton_domain'] = 'split prunes the zero state, Zlo == Zhi == 3'
+    fr1 = FR.Frontier([3], [View('table', (0,), (F(1), F(0), F(2)))], [], TK.Work()); kids = fr1.split(0); A(len(kids) == 2 and fr1.history[-2]['op'] == 'prune_zero' and fr1.Zlo() == 3 == fr1.Zhi(), 'singleton domain split / prune: %s' % fr1.history); out['constructor']['singleton_domain'] = 'split prunes the zero state, Zlo == Zhi == 3'
     # ---------------- the reviewer's exact witness: checker + actual chain
     U24 = 'MARKOV\n24\n' + ' '.join(['2'] * 24) + '\n0\n'; spec = dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[], normalizer_task=True)
     mp = os.path.join(d, 'uniform24.uai'); open(mp, 'w').write(U24); json.dump(spec, open(mp + '.query.json', 'w'))
@@ -1952,7 +1967,7 @@ def c26_partition_premise_order_validation_structural_negative():
                     agg['invariant_checks'] += res['steps'] + 1; agg['Z'] = res['Z']; agg['n_compiled'] = len(C_.cards)
                 out['invariants']['%s/%s/%s' % (tag, en_name, oname)] = agg
     # a split on an already assigned variable is refused structurally (internal misuse): forge a cell whose prefix repeats a variable
-    fr = FR.Frontier([2, 2, 2], [View('table', (0, 1), [F(1), F(2), F(3), F(4)])], [], TK.Work()); kids = fr.split(0); fr.order[1] = 0        # corrupt the order AFTER construction (only reachable by internal misuse)
+    fr = FR.Frontier([2, 2, 2], [View('table', (0, 1), (F(1), F(2), F(3), F(4)))], [], TK.Work()); kids = fr.split(0); fr.order[1] = 0        # corrupt the order AFTER construction (only reachable by internal misuse)
     try: fr.split(kids[0]); A(False, 'split on an already assigned variable was not refused')
     except FR.FrontierStructureError as ex: out['invariants']['split_assigned_variable_refused'] = str(ex)[:70]
     return out
@@ -1960,7 +1975,7 @@ def c26_partition_premise_order_validation_structural_negative():
 
 def c27_final_query_accounting_evaluation_site_audit():
     """EIGHTH adversarial review, CQR-R7-02 (P2), invariant-focused. (a) the concentration operator's answer evaluations run under the operator ticker: on the reviewer's 24-chain
-    fixture (unary [10^12, 1], pairs [5, 1, 1, 5]) with 1,000 / 1,024 / 1,025 / 5,000 repeated and 48 distinct supported singleton queries the operator's charged work equals the
+    fixture (unary [10^12, 1], pairs [5, 1, 1, 5]) with 1,000 / 1,024 / 1,025 / 5,000 repeated singleton queries and 48 / 1,025 / 5,000 pairwise-DISTINCT bounded table queries (materialized cardinality asserted) the operator's charged work equals the
     INDEPENDENTLY counted table reads (every values[] indexing, incl. View.at) and actual controller callbacks happen inside the query loop at spacing <= TICK_ENTRIES; the plain
     worker publishes every interval, the checker accepts and the independent exact chain truth lies inside; the recorded concentration step work equals the observed charge and is
     below the production quota. (b) a quota placed INSIDE the query loop stops typed (decline naming the query evaluations) with every completed read charged, overspend <=
@@ -1979,17 +1994,21 @@ def c27_final_query_accounting_evaluation_site_audit():
     def counted(C_):
         """independent read counter: every indexing / iteration of a view's value list (View.at indexes values too) -- no production counter is consulted"""
         cnt = [0]
-        class CL(list):
-            def __getitem__(s_, i): cnt[0] += 1; return list.__getitem__(s_, i)
+        class CL(tuple):
+            def __getitem__(s_, i): cnt[0] += 1; return tuple.__getitem__(s_, i)
             def __iter__(s_):
-                for x in list.__iter__(s_): cnt[0] += 1; yield x
+                for x in tuple.__iter__(s_): cnt[0] += 1; yield x
         for v in C_.views: v.values = CL(v.values)
         for q in C_.queries: q['f'].values = CL(q['f'].values)
         return cnt
     class Stop(Exception): pass
+    def distinct_queries(nq):
+        """nq pairwise-DISTINCT bounded expectation tables on x0 (supported: values in [0, 1]): f_k = [k / (nq + 1), 1 - k / (nq + 1)] -- genuinely different queries, each a table"""
+        return [dict(kind='table', table=dict(name='q%d' % k, kind='expectation', f=dict(scope=[0], values=[str(F(k + 1, nq + 2)), str(1 - F(k + 1, nq + 2))]))) for k in range(nq)]
     def probe(nq, distinct=False, quota=None, stop_at=None, fault=None):
-        qs = ([dict(kind='singleton', variable=v, state=s) for v in range(n) for s in range(2)][:nq] if distinct else [dict(kind='singleton', variable=0, state=0)] * nq)
-        json.dump(qspec(qs), open(mp + '.query.json', 'w')); t_ = TK.load_task(mp); C_ = CP.from_task(t_); base = C_.work.total(); cnt = counted(C_); calls = []; q_ids = {id(q['f']) for q in C_.queries}; loop_start = [None]; oat = View.at
+        qs = distinct_queries(nq) if distinct else [dict(kind='singleton', variable=0, state=0)] * nq
+        json.dump(qspec(qs), open(mp + '.query.json', 'w')); t_ = TK.load_task(mp); A(len(t_['queries']) == nq and (not distinct or len({tuple(q.f.values) for q in t_['queries']}) == nq), 'materialized query cardinality %d / distinct %d != %d' % (len(t_['queries']), len({tuple(q.f.values) for q in t_['queries']}), nq))
+        C_ = CP.from_task(t_); base = C_.work.total(); cnt = counted(C_); calls = []; q_ids = {id(q['f']) for q in C_.queries}; loop_start = [None]; oat = View.at
         def at_(self, cards_, x):
             if id(self) in q_ids and loop_start[0] is None: loop_start[0] = C_.work.total()
             return oat(self, cards_, x)
@@ -2007,7 +2026,7 @@ def c27_final_query_accounting_evaluation_site_audit():
         return dict(kind=kind, committed=res is not None, charged=charged, reads=cnt[0], calls=len(calls), calls_in_loop=len(in_loop), max_gap=max(gaps or [0]), loop_start=(loop_start[0] - base) if loop_start[0] is not None else None, quota=Q,
                     decline=(C_.certs[-1].get('declined') if C_.certs and C_.certs[-1].get('kind') == 'decline' else None), commits_added=sum(1 for c_ in C_.certs[j0:] if c_.get('kind') == 'commit'), measure_same=(C_.measure() == m0), bias_same=(list(C_.bias) == b0), C=C_, task=t_)
     # ---------------- (a) production quota: charged == independent reads; callbacks inside the loop
-    for nq, distinct in ((1000, False), (1024, False), (1025, False), (5000, False), (48, True), (1025, True)):
+    for nq, distinct in ((1000, False), (1024, False), (1025, False), (5000, False), (48, True), (1025, True), (5000, True)):
         pr = probe(nq, distinct); A(pr['committed'] and pr['charged'] == pr['reads'] and pr['charged'] < pr['quota'] and pr['max_gap'] <= CP.TICK_ENTRIES + 1, '(a) %d%s: %s' % (nq, ' distinct' if distinct else '', {k: v for k, v in pr.items() if k not in ('C', 'task')}))
         need = (nq + (pr['loop_start'] % CP.TICK_ENTRIES)) // CP.TICK_ENTRIES
         A(pr['calls_in_loop'] >= need - 1, '(a) %d: only %d controller calls inside the query loop (expected >= %d)' % (nq, pr['calls_in_loop'], need - 1))
@@ -2057,7 +2076,207 @@ def c27_final_query_accounting_evaluation_site_audit():
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics), ('C26_partition_premise_order_validation_structural_negative', c26_partition_premise_order_validation_structural_negative), ('C27_final_query_accounting_evaluation_site_audit', c27_final_query_accounting_evaluation_site_audit)]
+def c28_view_storage_ownership_renumbering_declarations_event_schema():
+    """NINTH adversarial review, CQR-R8-01 (P2), invariant-focused. (a) STORAGE CONTRACT (views.VIEW_STORAGE_RULE): a View owns an immutable tuple; the constructor BORROWS the tuple
+    it is given (the stored object IS the argument; no traversal: a counting tuple records zero accesses through construction), refuses a list with TypeError, and no production
+    path mutates a view's values (every view of every committed snapshot of a 16-operator compile holds a tuple). (b) RENUMBERING IS A NO-READ: on the reviewer's two-variable
+    (5,000-state) and eleven-variable production-quota fixtures, independent storage-level counters (every indexing / iteration of every value tuple of every factor and query
+    view, installed BEFORE the operator runs) show that leaf sum-out charges exactly the entries it sums (2 per removal), performs NO other read -- the surviving 5,000-entry factor
+    and query storage are the IDENTICAL tuple objects after every removal -- and ten removals under the real quota 80,160 read 20 entries, record 20, commit ten times with the
+    controller serviced at the operator's cadence; the plain worker publishes exact 1/29985, checker accepted. The same storage-identity check runs through fixed substitution and
+    component omission, through affine views, through expectation and ratio query views, on evidence-restricted and already-transformed models, with surviving tables below / at /
+    above 1,024 entries carried through a tiny domain removal. (c) EVERY EVALUATION_SITES DECLARATION IS VERIFIED BEHAVIOURALLY: for each producer operator the operator's charged
+    work equals the independent storage-level read count (+ the declared ratops) on fixtures that exercise it (support, fixed, leaf, omission, exact quotient incl. the unary rescale,
+    approximate quotient incl. the charged surrogate copy, symmetry, concentration, influence, affine incl. categorical copies); a declared "no read" site shows zero traversal.
+    (d) STOPS INSIDE A BUILDER never leave a partially mutated committed model: a quota crossed, a controller cancellation and injected failures at several offsets inside leaf /
+    fixed / omission / affine / approximate-quotient builders leave the journal, model measure, every view's storage identity and the bias at the last commit, with the completed
+    reads charged exactly once; a fresh ordinary worker then continues to a checked publication. (e) MALFORMED-EVENT TYPED BOUNDARY (ninth review, correction 1): a null / non-object /
+    string event, a null or non-object carve point, a non-list events field, U = 1/0, missing fields, a boolean cell id, a string epoch id, a string children list and an unknown op
+    are typed refusals of the DIRECT checker API (never a traceback), while the honest publication is accepted."""
+    d = tempfile.mkdtemp(prefix='cqr_c28_'); out = dict(a={}, b={}, c={}, d={}, e={}); bound = CP.POLICY['max_irreducible_charge']
+    # ---------------- (a) the storage contract
+    class CT(tuple):
+        hits = [0]
+        def __getitem__(s_, i): CT.hits[0] += 1; return tuple.__getitem__(s_, i)
+        def __iter__(s_):
+            for x in tuple.__iter__(s_): CT.hits[0] += 1; yield x
+    src = CT(F(k) for k in range(1, 2049)); CT.hits[0] = 0; v = View('table', tuple(range(11)), src); A(v.values is src and CT.hits[0] == 0, '(a) the constructor copied or traversed its storage (%d accesses)' % CT.hits[0])
+    try: View('table', (0,), [F(1), F(2)]); A(False, '(a) a list was accepted as view storage')
+    except TypeError as ex: out['a']['list_refused'] = str(ex)[:60]
+    try: View('affine', (0,), (F(1), F(2)), cat_scope=(), zcols=(0,), urows=[1]); A(False, '(a) a list was accepted as affine urows')
+    except TypeError: out['a']['affine_urows_list_refused'] = True
+    out['a']['borrowed_without_traversal'] = True
+    rng = random.Random(2801); m_all = rnd_model(rng, 14, [2, 3, 2, 2, 3, 2, 2, 2, 3, 2, 2, 2, 2, 2], 16, 3, zeros=0.1, ev=2, lo=1, hi=5)
+    qs_all = [TK.singleton_query(0, 0, m_all['cards']), TK.Query('r', 'ratio', h=TK.Table((1,), (F(1), F(0), F(1))), g=TK.Table((1,), (F(1), F(1), F(1))), output=None), TK.Query('p', 'expectation', f=TK.Table((2, 3), (F(1), F(0), F(0), F(1))), output=None)]
+    C_all, lg_all = compile_(mk_task(m_all, qs_all, mode='DETERMINISTIC_EPS', eps=F(1, 2), delta=F(0)))
+    n_views = 0
+    for v in C_all.views: A(type(v.values) is tuple and (v.kind != 'affine' or type(v.urows) is tuple), '(a) a committed view holds mutable storage'); n_views += 1
+    for q in C_all.queries:
+        for v in ([q['f']] if q['kind'] == 'expectation' else [q['h'], q['g']]): A(type(v.values) is tuple, '(a) a committed query view holds mutable storage'); n_views += 1
+    out['a']['committed_views_immutable'] = dict(views=n_views, commits=C_all.commits, ops=[s_['op'] for s_ in lg_all['steps'] if s_['outcome'] == 'committed'])
+    # ---------------- helpers: storage-level counters on EVERY view storage -- the committed views' tuples AND every tuple a builder freezes into a NEW view (a test-side hook on
+    # View.__init__ wraps uncounted storage in a counting tuple; a BORROWED tuple is already counted and keeps its identity, so the storage-identity checks below stay meaningful).
+    # The production meter is never consulted. The hook is installed at the first instrument() call (after the raw constructor test above) and removed on exit.
+    CNTR = [0]
+    class CL(tuple):
+        def __getitem__(s_, i): CNTR[0] += 1; return tuple.__getitem__(s_, i)
+        def __iter__(s_):
+            for x in tuple.__iter__(s_): CNTR[0] += 1; yield x
+    _orig_init = View.__init__; hooked = [False]
+    def _init_hook(self, kind, scope, values, cat_scope=None, zcols=None, urows=None):
+        _orig_init(self, kind, scope, values, cat_scope=cat_scope, zcols=zcols, urows=urows)
+        if not isinstance(self.values, CL): self.values = CL(self.values)
+    def instrument(C_):
+        if not hooked[0]: View.__init__ = _init_hook; hooked[0] = True
+        for v in C_.views:
+            if not isinstance(v.values, CL): v.values = CL(v.values)
+        for q in C_.queries:
+            for v in ([q['f']] if q['kind'] == 'expectation' else [q['h'], q['g']]):
+                if not isinstance(v.values, CL): v.values = CL(v.values)
+        class Cnt:
+            def __getitem__(s_, i): return CNTR[0]
+        return Cnt()
+    try: return _c28_body(d, out, bound, instrument)
+    finally: View.__init__ = _orig_init
+
+
+def _c28_body(d, out, bound, instrument):
+    def storage_ids(C_):
+        ids = {}
+        for i, v in enumerate(C_.views): ids['f%d' % i] = (id(v.values), len(v.values))
+        for j, q in enumerate(C_.queries):
+            for tag, v in ([('f', q['f'])] if q['kind'] == 'expectation' else [('h', q['h']), ('g', q['g'])]): ids['q%d%s' % (j, tag)] = (id(v.values), len(v.values))
+        return ids
+    # ---------------- (b) renumbering is a no-read: the reviewer's fixtures
+    def renumber_fixture(n_leaves, big=5000):
+        cards = [2] * n_leaves + [big]; fs = [dict(scope=(v,), values=[F(1), F(2)]) for v in range(n_leaves)] + [dict(scope=(n_leaves,), values=[F(1 + (s % 11)) for s in range(big)])]
+        return dict(cards=cards, factors=fs, evidence={})
+    for n_leaves, tag in ((1, 'two_variable'), (10, 'eleven_variable')):
+        m_ = renumber_fixture(n_leaves); t_ = mk_task(m_, [TK.singleton_query(n_leaves, 0, m_['cards'])], mode='EXACT_RATIONAL', delta=F(0)); C_ = CP.from_task(t_); base = C_.work.total(); quota = CP.quota_for(t_)
+        cnt = instrument(C_); c0 = cnt[0]; big_ids = {id(v.values) for v in C_.views if len(v.values) == 5000} | {id(q['f'].values) for q in C_.queries}; calls = []; C_.service = lambda op: calls.append(C_.work.total())      # identity baseline AFTER the counters are installed
+        ok = CP.leaf_sumout(C_, base + quota); charged = C_.work.total() - base; reads = cnt[0] - c0
+        A(ok and C_.commits == n_leaves and charged == reads == 2 * n_leaves and charged < quota, '(b) %s: committed %s commits %d charged %d independent reads %d quota %d' % (tag, ok, C_.commits, charged, reads, quota))
+        surv = [v for v in C_.views if len(v.values) == 5000]; A(len(surv) == 1 and id(surv[0].values) in big_ids and all(id(q['f'].values) in big_ids for q in C_.queries), '(b) %s: the surviving 5,000-entry storage was copied' % tag)
+        out['b'][tag] = dict(commits=C_.commits, charged=charged, independent_reads=reads, quota=quota, controller_calls=len(calls), surviving_storage_identical=True)
+    mp10 = write_task(d, 'renumber10', renumber_fixture(10), dict(mode='EXACT_RATIONAL', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=10, state=0)]))
+    w = fresh_worker(mp10, 'N1_CQR', budget=30.0, nonce='c28-r10'); fails, _ = check_(mp10, w, 'N1_CQR', budget=300.0); st = [s_ for s_ in w['certificate']['compile']['log']['steps'] if s_['op'] == 'leaf_sumout' and s_['outcome'] == 'committed']
+    A(w['outcome'] == 'PUBLISHED' and not fails and w['answers'][0]['point'] == str(F(1, 29985)) and st and st[0]['work'] == 20 and st[0]['commits'] == 10, '(b) plain eleven-variable worker: %s %s %s %s' % (w['outcome'], fails[:1], w['answers'][0].get('point'), st[:1])); CNT['truth_coordinates'] += 1
+    out['b']['plain_worker'] = dict(route=w['route'], point=w['answers'][0]['point'], leaf_work=st[0]['work'], leaf_commits=st[0]['commits'], quota=w['certificate']['compile']['log']['quota'])
+    # storage identity through fixed substitution / component omission / affine / ratio queries / evidence; surviving tables of 1,000 / 1,024 / 1,025 / 4,096 entries
+    for size, tag in ((1000, 'below_1024'), (1024, 'at_1024'), (1025, 'above_1024'), (4096, 'affine_4096')):
+        if tag == 'affine_4096':
+            vals = [F(0)] * 4096
+            for i in range(4096):
+                if bin(i).count('1') % 2 == 0: vals[i] = F(1 + (i % 5))
+            fs = [dict(scope=tuple(range(12)), values=vals), dict(scope=(12,), values=[F(1), F(1)]), dict(scope=(13,), values=[F(3), F(0)]), dict(scope=(14, 15), values=[F(1), F(2), F(3), F(4)])]; cards = [2] * 16; ev = {15: 1}
+            qs = [TK.singleton_query(0, 1, cards), TK.Query('r', 'ratio', h=TK.Table((1,), (F(1), F(0))), g=TK.Table((1,), (F(1), F(1))), output=None)]
+            en = {'evidence', 'support_fixpoint', 'fixed_substitution', 'leaf_sumout', 'component_omission', 'affine'}
+        else:
+            fs = [dict(scope=(0,), values=[F(1 + (s % 7)) for s in range(size)]), dict(scope=(1,), values=[F(1), F(2)]), dict(scope=(2,), values=[F(5), F(0)]), dict(scope=(3, 4), values=[F(1), F(2), F(3), F(4)])]; cards = [size, 2, 2, 2, 2]; ev = {4: 0}
+            qs = [TK.singleton_query(0, 0, cards), TK.Query('r', 'ratio', h=TK.Table((0,), tuple(F(1) if s % 2 else F(0) for s in range(size))), g=TK.Table((0,), (F(1),) * size), output=None)]
+            en = {'evidence', 'support_fixpoint', 'fixed_substitution', 'leaf_sumout', 'component_omission'}
+        m_ = dict(cards=cards, factors=fs, evidence=ev); t_ = mk_task(m_, qs, mode='DETERMINISTIC_EPS', eps=F(1, 2), delta=F(0)); C_ = CP.from_task(t_)
+        cnt = instrument(C_); ids0 = storage_ids(C_); big0 = {i_ for i_, n_ in ids0.values() if n_ >= 1000}; base = C_.work.total()
+        ops = []
+        for name, fn in (('support_fixpoint', lambda: CP.support_fixpoint(C_, base + 10 ** 6)), ('fixed_substitution', lambda: CP.fixed_substitution(C_)), ('leaf_sumout', lambda: CP.leaf_sumout(C_, base + 10 ** 6)), ('component_omission', lambda: CP.component_omission(C_)), ('affine', lambda: CP.affine(C_, base + 10 ** 6))):
+            if name not in en: continue
+            w0 = C_.work.total(); r0 = cnt[0]; rp0 = C_.work.ratops; r_ = fn(); ops.append((name, bool(r_), C_.work.total() - w0, cnt[0] - r0))
+            A(C_.work.total() - w0 - (C_.work.ratops - rp0) == cnt[0] - r0, '(b) %s / %s: charged entries+evals %d != independent reads %d' % (tag, name, C_.work.total() - w0 - (C_.work.ratops - rp0), cnt[0] - r0))
+        survivors = {i_ for i_, n_ in storage_ids(C_).values() if n_ >= 1000}
+        A(not survivors - big0 or tag == 'affine_4096', '(b) %s: a large surviving table was copied through a domain removal' % tag)
+        out['b'][tag] = dict(ops=ops, large_storage_identical=not (survivors - big0), n_views=len(C_.views), cards=list(C_.cards))
+    # ---------------- (c) every declared evaluation site verified behaviourally (charged == independent storage reads + declared ratops)
+    def run_op(name, m_, qs, mode='DETERMINISTIC_EPS', eps=F(1, 2), allowance_frac=F(1, 8), enabled_before=('evidence',)):
+        t_ = mk_task(m_, qs, mode=mode, eps=eps, delta=F(0)); C_ = CP.from_task(t_); base0 = C_.work.total()
+        for pre in enabled_before:
+            if pre == 'support_fixpoint': CP.support_fixpoint(C_, base0 + 10 ** 6)
+            if pre == 'fixed_substitution': CP.fixed_substitution(C_)
+        cnt = instrument(C_); c0 = cnt[0]; base = C_.work.total(); r0 = C_.work.ratops; allowance = [eps * allowance_frac] * len(C_.queries)
+        if name == 'support_fixpoint': r_ = CP.support_fixpoint(C_, base + 10 ** 6)
+        elif name == 'fixed_substitution': r_ = CP.fixed_substitution(C_)
+        elif name == 'leaf_sumout': r_ = CP.leaf_sumout(C_, base + 10 ** 6)
+        elif name == 'component_omission': r_ = CP.component_omission(C_)
+        elif name == 'exact_quotient_pass': r_ = CP.exact_quotient_pass(C_, base + 10 ** 6)
+        elif name == 'approx_quotient': r_ = CP.approx_quotient(C_, base + 10 ** 6, allowance)
+        elif name == 'symmetry': r_ = CP.symmetry(C_, base + 10 ** 6)
+        elif name == 'concentration': r_ = CP.concentration(C_, base + 10 ** 6, allowance) is not None
+        elif name == 'influence_deletion': r_ = CP.influence_deletion(C_, base + 10 ** 6, allowance)
+        elif name == 'affine': r_ = CP.affine(C_, base + 10 ** 6)
+        charged = C_.work.total() - base; ratops = C_.work.ratops - r0
+        return dict(committed=bool(r_), charged=charged, reads=cnt[0] - c0, ratops=ratops, entries_evals=charged - ratops, commits=C_.commits)
+    fixtures = {
+        'support_fixpoint': (dict(cards=[3, 3, 2], factors=[dict(scope=(0, 1), values=[F(1), F(0), F(0), F(2), F(0), F(0), F(3), F(0), F(0)]), dict(scope=(1, 2), values=[F(1), F(2), F(3), F(4), F(5), F(6)])], evidence={}), lambda c: [TK.singleton_query(0, 0, c)], ('evidence',)),
+        'fixed_substitution': (dict(cards=[3, 3, 2], factors=[dict(scope=(0, 1), values=[F(1), F(0), F(0), F(2), F(0), F(0), F(3), F(0), F(0)]), dict(scope=(1, 2), values=[F(1), F(2), F(3), F(4), F(5), F(6)])], evidence={}), lambda c: [TK.singleton_query(0, 0, c)], ('evidence', 'support_fixpoint')),
+        'leaf_sumout': (renumber_fixture(3, 1500), lambda c: [TK.singleton_query(3, 0, c)], ('evidence',)),
+        'component_omission': (dict(cards=[2, 2, 3, 3], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(3), F(4)]), dict(scope=(2, 3), values=[F(i + 1) for i in range(9)])], evidence={}), lambda c: [TK.singleton_query(0, 0, c)], ('evidence',)),
+        'exact_quotient_pass': (dict(cards=[4, 2], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(2), F(4), F(1), F(2), F(3), F(6)]), dict(scope=(0,), values=[F(1), F(1), F(1), F(1)])], evidence={}), lambda c: [TK.singleton_query(1, 0, c)], ('evidence',)),
+        'approx_quotient': (dict(cards=[4, 2], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(100), F(201), F(1), F(2), F(3), F(6)]), dict(scope=(0,), values=[F(1), F(1), F(1), F(1)])], evidence={}), lambda c: [TK.singleton_query(1, 0, c)], ('evidence',)),
+        'symmetry': (dict(cards=[2, 2, 2], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(2), F(1)]), dict(scope=(1, 2), values=[F(3), F(5), F(5), F(3)])], evidence={}), lambda c: [TK.Query('h', 'expectation', f=TK.Table((0,), (F(1, 3), F(2, 3))), output=None)], ('evidence',)),
+        'concentration': (dict(cards=[2, 2, 2], factors=[dict(scope=(v,), values=[F(10 ** 9), F(1)]) for v in range(3)] + [dict(scope=(0, 1), values=[F(5), F(1), F(1), F(5)])], evidence={}), lambda c: [TK.singleton_query(0, 0, c), TK.singleton_query(2, 0, c)], ('evidence',)),
+        'influence_deletion': (dict(cards=[2, 2, 2], factors=[dict(scope=(0, 1), values=[F(10), F(11), F(11), F(10)]), dict(scope=(1, 2), values=[F(10), F(11), F(11), F(10)])] + [dict(scope=(v,), values=[F(1), F(2)]) for v in range(3)], evidence={}), lambda c: [TK.singleton_query(0, 0, c)], ('evidence',)),
+        'affine': (dict(cards=[2, 2, 2, 3], factors=[dict(scope=(0, 1, 2), values=[F(1), F(0), F(0), F(1), F(0), F(1), F(1), F(0)]), dict(scope=(2, 3), values=[F(1), F(2), F(3), F(4), F(5), F(6)]), dict(scope=(3,), values=[F(1), F(2), F(3)])], evidence={}), lambda c: [TK.singleton_query(0, 1, c)], ('evidence',)),
+    }
+    for name, (m_, qf, pre) in fixtures.items():
+        r = run_op(name, m_, qf(m_['cards']), mode=('DETERMINISTIC_EPS' if name in ('approx_quotient', 'concentration', 'influence_deletion') else 'EXACT_RATIONAL'), enabled_before=pre)
+        A(r['committed'], '(c) %s did not commit on its fixture: %s' % (name, r))
+        # entries / evals charged == independent storage reads (ratops are arithmetic on values already read: declared separately)
+        A(r['entries_evals'] == r['reads'], '(c) %s: charged entries+evals %d != independent storage reads %d (ratops %d)' % (name, r['entries_evals'], r['reads'], r['ratops']))
+        out['c'][name] = r
+    out['c']['declared_sites'] = len(CP.EVALUATION_SITES); A('_renumbered' in CP.EVALUATION_SITES and 'BORROWS' in CP.EVALUATION_SITES['_renumbered'], '(c) _renumbered declaration not updated')
+    # ---------------- (d) stops inside builders: last-commit state preserved, reads charged once, storage identity intact, fresh worker continues
+    m_leaf = renumber_fixture(6, 3000); t_leaf = mk_task(m_leaf, [TK.singleton_query(6, 0, m_leaf['cards'])], mode='EXACT_RATIONAL', delta=F(0))
+    def consistent(C_):
+        """the live state equals the last commit: the same cards / views / queries objects, the journal's commit count, immutable storage everywhere"""
+        last = C_._last
+        return last is not None and C_.commits == last['commits'] and C_.views == last['views'] and C_.queries == last['queries'] and list(C_.cards) == list(last['cards']) and list(C_.bias) == list(last['bias']) and all(isinstance(v.values, tuple) for v in C_.views) and sum(1 for c_ in C_.certs if c_.get('kind') == 'commit') == C_.commits      # isinstance: the counting tuple is a tuple subclass
+    # quota crossing inside the leaf loop (quota = base + 7: the 4th removal's tick crosses): typed stop; the commits that completed stand; the state IS the last commit
+    C_ = CP.from_task(t_leaf); cnt = instrument(C_); c0 = cnt[0]; base = C_.work.total()
+    try: CP.leaf_sumout(C_, base + 7); kind = 'returned'
+    except CP.CompileStop as cs: kind = 'stop:' + cs.kind
+    A(kind == 'stop:quota' and 3 <= C_.commits <= 4 and C_.work.total() - base == cnt[0] - c0 and consistent(C_), '(d) leaf quota stop: %s commits %d charged %d reads %d consistent %s' % (kind, C_.commits, C_.work.total() - base, cnt[0] - c0, consistent(C_)))
+    out['d']['leaf_quota_stop'] = dict(kind=kind, commits=C_.commits, charged=C_.work.total() - base, reads=cnt[0] - c0)
+    # controller cancellation at the second service inside leaf removals; injected failures at build / before_swap / after_commit of the k-th leaf
+    for where, k in (('build', 0), ('build', 2), ('before_swap', 1), ('after_commit', 3)):
+        C_ = CP.from_task(t_leaf); cnt = instrument(C_); c0 = cnt[0]; base = C_.work.total(); C_.fault = dict(op='leaf_sumout', where=where, k=k)
+        try: CP.leaf_sumout(C_, base + 10 ** 6); kind = 'returned'
+        except CP.CompileStop as cs: kind = 'stop:' + cs.kind
+        except RuntimeError as ex: kind = 'failed'
+        exp_commits = k if where != 'after_commit' else k + 1
+        A(kind == 'failed' and C_.commits == exp_commits and C_.work.total() - base == cnt[0] - c0 and consistent(C_), '(d) injected %s@%d: %s commits %d (expected %d) charged %d reads %d consistent %s' % (where, k, kind, C_.commits, exp_commits, C_.work.total() - base, cnt[0] - c0, consistent(C_)))
+        out['d']['injected_%s_%d' % (where, k)] = dict(kind=kind, commits=C_.commits, charged=C_.work.total() - base, reads=cnt[0] - c0)
+    C_ = CP.from_task(t_leaf); cnt = instrument(C_); c0 = cnt[0]; base = C_.work.total(); n_ = [0]
+    def svc(op):
+        n_[0] += 1
+        if n_[0] == 2: raise CP.CompileStop('cancelled', op)
+    C_.service = svc
+    try: CP.leaf_sumout(C_, base + 10 ** 6); kind = 'returned'
+    except CP.CompileStop as cs: kind = 'stop:' + cs.kind
+    A(kind == 'stop:cancelled' and C_.work.total() - base == cnt[0] - c0 and C_.commits >= 1 and consistent(C_), '(d) controller cancellation: %s commits %d charged %d reads %d' % (kind, C_.commits, C_.work.total() - base, cnt[0] - c0))
+    out['d']['controller_cancelled'] = dict(kind=kind, commits=C_.commits, charged=C_.work.total() - base, reads=cnt[0] - c0)
+    # compile_task: an injected failure in the approximate-quotient builder (inside the charged surrogate copy) leaves the state at the last commit with the reads charged
+    m_aq = fixtures['approx_quotient'][0]; t_aq = mk_task(m_aq, [TK.singleton_query(1, 0, m_aq['cards'])], mode='DETERMINISTIC_EPS', eps=F(1, 2), delta=F(0))
+    C_, lg = compile_(t_aq, fault=dict(op='approx_quotient', where='build', k=0)); st = next(s_ for s_ in lg['steps'] if s_['op'] == 'approx_quotient')
+    A(st['outcome'] == 'failed' and st['work'] > 0 and st['commits'] == 0 and all(isinstance(v.values, tuple) for v in C_.views), '(d) approx builder failure: %s' % st); out['d']['approx_builder_failure'] = dict(outcome=st['outcome'], work=st['work'], commits=st['commits'])
+    mpl = write_task(d, 'leaf6', m_leaf, dict(mode='EXACT_RATIONAL', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=6, state=0)])); w2 = fresh_worker(mpl, 'N1_CQR', budget=30.0, nonce='c28-cont'); fails, _ = check_(mpl, w2, 'N1_CQR', budget=300.0)
+    A(w2['outcome'] == 'PUBLISHED' and not fails, '(d) fresh worker continuation: %s %s' % (w2['outcome'], fails[:1])); out['d']['fresh_worker'] = w2['route']
+    # ---------------- (e) malformed-event typed boundary of the direct checker API
+    U24 = 'MARKOV\n24\n' + ' '.join(['2'] * 24) + '\n0\n'; mp = os.path.join(d, 'u24.uai'); open(mp, 'w').write(U24); json.dump(dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[], normalizer_task=True), open(mp + '.query.json', 'w'))
+    w = fresh_worker(mp, 'G0_CQR', budget=20.0, nonce='c28-u24'); fails, _ = check_(mp, w, 'G0_CQR', budget=120.0); A(w['outcome'] == 'PUBLISHED' and not fails and w['answers'][0]['point'] == str(2 ** 24), '(e) honest uniform-24 refused: %s' % fails[:1]); CNT['truth_coordinates'] += 1
+    muts = {'null_event': lambda z: z['certificate']['events'].insert(0, None), 'nonobject_event': lambda z: z['certificate']['events'].insert(0, 7), 'string_event': lambda z: z['certificate']['events'].insert(0, 'split'),
+            'null_carve_x': lambda z: z['certificate']['events'].insert(0, dict(op='carve', cell=0, x=None)), 'carve_x_list': lambda z: z['certificate']['events'].insert(0, dict(op='carve', cell=0, x=[0, 1])),
+            'ratio_U_1_over_0': lambda z: z['certificate']['events'].insert(0, dict(op='ratio_draw', cell=0, U='1/0', x={'0': 0}, A='0', a=[], d=[], b='1')), 'ratio_missing_fields': lambda z: z['certificate']['events'].insert(0, dict(op='ratio_draw', cell=0)),
+            'split_children_str': lambda z: z['certificate']['events'].insert(0, dict(op='split', cell=0, children='ab')), 'cell_bool': lambda z: z['certificate']['events'].insert(0, dict(op='close', cell=True)),
+            'epoch_str': lambda z: z['certificate']['events'].insert(0, dict(op='epoch_start', epoch='1', delta_e='1/4', candidate=[], E_star='1')), 'events_not_list': lambda z: z['certificate'].__setitem__('events', {'op': 'split'}),
+            'unknown_op': lambda z: z['certificate']['events'].insert(0, dict(op='teleport')), 'carve_state_str': lambda z: z['certificate']['events'].insert(0, dict(op='carve', cell=0, x={'0': 'a'}))}
+    for name, fn in muts.items():
+        z = copy.deepcopy(w); fn(z)
+        try: fails, _ = check_(mp, z, 'G0_CQR', budget=120.0)
+        except Exception as ex: A(False, '(e) %s escaped the direct checker as %s: %s' % (name, type(ex).__name__, str(ex)[:60]))
+        A(fails and ('malformed frontier event refused' in fails[0] or 'events are not a list' in fails[0]), '(e) %s not refused typed: %s' % (name, fails[:1])); out['e'][name] = fails[0][:70]
+    return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics), ('C26_partition_premise_order_validation_structural_negative', c26_partition_premise_order_validation_structural_negative), ('C27_final_query_accounting_evaluation_site_audit', c27_final_query_accounting_evaluation_site_audit), ('C28_view_storage_ownership_renumbering_declarations_event_schema', c28_view_storage_ownership_renumbering_declarations_event_schema)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'

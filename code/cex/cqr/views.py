@@ -33,14 +33,22 @@ def gf2_span(basis):
     return out
 
 
+VIEW_STORAGE_RULE = ('a View OWNS an IMMUTABLE tuple `values` (and, for affine views, an immutable tuple `urows`); the constructor BORROWS the tuple it is given without traversing it '
+                     '(the stored object IS the argument: a scope-only transformation such as renumbering shares storage and reads nothing), and REFUSES mutable storage (a list) with a '
+                     'TypeError -- a builder produces its table in scratch storage under the operator meter (every produced entry charged as it is produced) and freezes it ONCE into the '
+                     'view\'s owned tuple; no code path mutates a view\'s values (ninth adversarial review, CQR-R8-01). `den` / `ivals` are per-view derived caches set by refresh().')
+
+
 class View:
     __slots__ = ('kind', 'scope', 'values', 'cat_scope', 'zcols', 'urows', 'rho', 'ycards', 'den', 'ivals')
     def __init__(self, kind, scope, values, cat_scope=None, zcols=None, urows=None):
-        self.kind = kind; self.scope = tuple(scope); self.values = list(values)
+        if not isinstance(values, tuple): raise TypeError('View storage must be an immutable tuple owned by the view (got %s): freeze the builder\'s scratch list once with tuple(...)' % type(values).__name__)
+        self.kind = kind; self.scope = tuple(scope); self.values = values                 # BORROWED, never traversed here (VIEW_STORAGE_RULE)
         if kind == 'affine':
             # urows: rho GF(2) rows over the compiled z variables (bit position = index into zcols); g indexed row-major by (y bits as a rho-tuple, then cat axes)
-            self.cat_scope = tuple(cat_scope); self.zcols = tuple(zcols); self.urows = list(urows); self.rho = len(urows)
-        else: self.cat_scope = self.scope; self.zcols = (); self.urows = []; self.rho = 0
+            if not isinstance(urows, tuple): raise TypeError('affine urows must be an immutable tuple')
+            self.cat_scope = tuple(cat_scope); self.zcols = tuple(zcols); self.urows = urows; self.rho = len(urows)
+        else: self.cat_scope = self.scope; self.zcols = (); self.urows = (); self.rho = 0
         self.den = None; self.ivals = None
 
     def refresh(self):
@@ -141,8 +149,8 @@ class View:
 
     @staticmethod
     def from_json(d):
-        vals = [F(v) for v in d['values']]
-        if d['kind'] == 'affine': return View('affine', d['scope'], vals, cat_scope=d['cat_scope'], zcols=d['zcols'], urows=[int(r) for r in d['urows']])
+        vals = tuple(F(v) for v in d['values'])
+        if d['kind'] == 'affine': return View('affine', d['scope'], vals, cat_scope=d['cat_scope'], zcols=d['zcols'], urows=tuple(int(r) for r in d['urows']))
         return View('table', d['scope'], vals)
 
     def table_json(self): return dict(scope=list(self.scope), values=[str(v) for v in self.values])
