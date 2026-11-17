@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 3.861,
+   "wall_s": 3.726,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -151,7 +151,7 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.249,
+   "wall_s": 0.251,
    "detail": {
     "routes": {
      "zero": 30,
@@ -166,7 +166,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.08,
+   "wall_s": 0.081,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -281,7 +281,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.136,
+   "wall_s": 0.137,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -308,7 +308,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.079,
+   "wall_s": 0.086,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -326,7 +326,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.596,
+   "wall_s": 1.593,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -344,7 +344,7 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 3.073,
+   "wall_s": 3.269,
    "detail": {
     "draws": 74,
     "carves": 74,
@@ -362,7 +362,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.077,
+   "wall_s": 0.073,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -385,7 +385,7 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.63,
+   "wall_s": 2.599,
    "detail": {
     "reference_shares": [
      0.5869023255813953,
@@ -412,7 +412,7 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 116.626,
+   "wall_s": 119.498,
    "detail": {
     "cells": 373,
     "arms": [
@@ -476,24 +476,24 @@
      "N1_NO_AFFINE|PUBLISHED": 29,
      "N1_NO_CONCENTRATION|DEADLINE": 1,
      "N1_NO_CONCENTRATION|PUBLISHED": 31,
-     "N1_NO_INFLUENCE|DEADLINE": 3,
-     "N1_NO_INFLUENCE|PUBLISHED": 29,
+     "N1_NO_INFLUENCE|DEADLINE": 2,
+     "N1_NO_INFLUENCE|PUBLISHED": 30,
      "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 1,
      "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 31,
      "N1_NO_QUOTIENT|DEADLINE": 5,
      "N1_NO_QUOTIENT|PUBLISHED": 27,
      "N1_NO_SIGNED_STREAM|DEADLINE": 1,
      "N1_NO_SIGNED_STREAM|PUBLISHED": 31,
-     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 3,
-     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 29,
+     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 2,
+     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 30,
      "P1_PAC_CONDITIONAL|PUBLISHED": 3,
      "PGMAX_SUMPRODUCT_BP|PUBLISHED": 3,
      "SF_NATIVE_SELECT|PUBLISHED": 2,
      "WMB|PUBLISHED": 3
     },
     "gate": {
-     "gated": 319,
-     "wall": 115.787
+     "gated": 321,
+     "wall": 118.634
     },
     "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
     "missing_group_refused": true,
@@ -507,7 +507,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 359.271,
+   "wall_s": 360.794,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -537,7 +537,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 167.3
+      "wall_s": 163.6
      },
      {
       "delta": "1/16",
@@ -549,7 +549,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 192.0
+      "wall_s": 197.2
      }
     ]
    }
@@ -557,7 +557,7 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.379,
+   "wall_s": 4.49,
    "detail": {
     "routes": {
      "concentration.uai/N1_CQR": {
@@ -655,10 +655,10 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 33.532,
+   "wall_s": 34.053,
    "detail": {
     "mode_override": [
-     "FAULT",
+     "INVALID_TASK",
      "worker binding differs from the files on disk"
     ],
     "deterministic_task_route": [
@@ -676,7 +676,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 34.235,
+   "wall_s": 34.557,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -730,19 +730,19 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 12.702,
+   "wall_s": 12.698,
    "detail": {
     "d32_N1_CQR": {
-     "wall_s": 0.07,
+     "wall_s": 0.09,
      "work_reference": 7232,
-     "work_optional": 10662,
+     "work_optional": 10560,
      "compile_interrupted": {
       "op": "approx_quotient",
       "kind": "reference_done"
      }
     },
     "d32_G0_CQR": {
-     "wall_s": 0.07,
+     "wall_s": 0.08,
      "work_reference": 7232,
      "work_optional": 2314,
      "compile_interrupted": null
@@ -750,7 +750,7 @@
     "d32_compile_work_by_operator": {
      "support_fixpoint": 2112,
      "exact_quotient_pass": 4224,
-     "approx_quotient": 50489,
+     "approx_quotient": 50176,
      "concentration": 4159,
      "influence_deletion": 50176,
      "quota": 50000
@@ -758,13 +758,13 @@
     "nb3": {
      "route": "exact_reference",
      "work_reference": 199680,
-     "work_optional": 205324,
+     "work_optional": 204684,
      "reference_done": true
     },
     "nb4": {
      "route": "exact_reference",
      "work_reference": 7344128,
-     "work_optional": 7094021,
+     "work_optional": 7093381,
      "reference_done": true
     },
     "memory_cancellation": {
@@ -782,9 +782,9 @@
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 8.42846930027008e-08,
-     "work_reference": 4077736,
-     "work_optional": 3616012,
+     "reference_progress": 8.102506399154663e-08,
+     "work_reference": 3920040,
+     "work_optional": 3507385,
      "phase": "adaptive"
     },
     "parity_at_exits": {
@@ -825,7 +825,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.388,
+   "wall_s": 0.411,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -848,7 +848,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 5.499,
+   "wall_s": 5.529,
    "detail": {
     "r1": {
      "support": {
@@ -1091,9 +1091,9 @@
       "route": "exact_reference"
      },
      "deadline_exit": {
-      "work_reference": 64768,
-      "work_optional": 66656,
-      "progress": 0.1953125
+      "work_reference": 48128,
+      "work_optional": 48224,
+      "progress": 0.09375
      },
      "support_quota": {
       "quota": 131296,
@@ -1165,7 +1165,7 @@
   {
    "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
    "ok": true,
-   "wall_s": 10.652,
+   "wall_s": 11.236,
    "detail": {
     "f01": {
      "honest": {
@@ -1195,7 +1195,7 @@
     "f03": {
      "root5000": {
       "route": "exact_reference",
-      "wall_s": 4.75,
+      "wall_s": 4.99,
       "accepted": true
      },
      "forced_in_root": "exact_reference",
@@ -1255,7 +1255,7 @@
   {
    "name": "C22_precision_zero_mass_witness_service",
    "ok": true,
-   "wall_s": 22.946,
+   "wall_s": 23.029,
    "detail": {
     "f01": {
      "1e-12": {
@@ -1469,28 +1469,122 @@
      }
     }
    }
+  },
+  {
+   "name": "C23_exactly_once_accounting_quota_inheritance_tolerance_domain",
+   "ok": true,
+   "wall_s": 30.392,
+   "detail": {
+    "f01": {
+     "helpers_x_offsets_x_stops": "8 helpers x 3 offsets x 6 stop settings: ledger == completed operations",
+     "exact_boundaries": "ok",
+     "injected_tail": {
+      "completed": 1324,
+      "charged": 1324
+     },
+     "direct_4097": {
+      "overspend": 1023,
+      "posts": 5,
+      "exception_posts": 1
+     },
+     "natural_2x750": {
+      "route": "deterministic_frontier",
+      "approx": [
+       [
+        "committed",
+        50990,
+        990
+       ]
+      ],
+      "quota": 50000
+     },
+     "witness_interruption": {
+      "evals": 1024,
+      "service_calls": 1
+     },
+     "rollback_keeps_work": 10241
+    },
+    "f02": {
+     "production_quota": {
+      "quota": 2590752,
+      "work": 2591739,
+      "overspend": 987,
+      "stop": "quota"
+     },
+     "step_outcome": {
+      "outcome": "quota",
+      "work": 2591739,
+      "quota": 2590752
+     },
+     "inside_1": {
+      "overspend": 1023,
+      "stop": "quota",
+      "commits": 0
+     },
+     "inside_500": {
+      "overspend": 524,
+      "stop": "quota",
+      "commits": 0
+     },
+     "inside_1023": {
+      "overspend": 1,
+      "stop": "quota",
+      "commits": 0
+     },
+     "inside_1024": {
+      "overspend": 0,
+      "stop": "quota",
+      "commits": 0
+     },
+     "inside_1025": {
+      "overspend": 246,
+      "stop": null,
+      "commits": 1
+     },
+     "inside_1270": {
+      "overspend": 1,
+      "stop": null,
+      "commits": 1
+     },
+     "replay_quota_less": "ok"
+    },
+    "f03": {
+     "rejected": [
+      "0",
+      "-1/200",
+      "2",
+      "0/1"
+     ],
+     "accepted": [
+      "1e-100 rational",
+      "1e-100 legacy (101 digits)",
+      "1 legacy",
+      "default 1/200"
+     ]
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 96,
+  "fresh_workers": 109,
   "solver_calls": 387,
-  "compiler_calls": 160,
-  "checker_calls": 159,
+  "compiler_calls": 162,
+  "checker_calls": 164,
   "oracle_models": 108,
-  "truth_coordinates": 2665,
+  "truth_coordinates": 2667,
   "stream_draws": 463,
-  "assertions": 3038
+  "assertions": 3370
  },
- "suite_version": "cqr-qualification-v5 (2026-11-16, after the fourth adversarial review: group C22 added -- precision reservation, zero mass vs feasibility, witness lifecycle, service interval across helpers)",
- "suite_sha256": "cc6efe50470711414d2aac4619a19708115232efca02a037213c37bb22ca7af9",
+ "suite_version": "cqr-qualification-v6 (2026-11-16, after the fifth adversarial review: group C23 added -- exactly-once accounting under every stop, quota inheritance in commit validation, tolerance input domain)",
+ "suite_sha256": "e1a1b67a73ea3e118ee1d900befb1eb12a054a83ae78521caf080278c7919550",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
   "cqr/checker.py": "c5205539b8e106d321338ca582280aced7a214a0648f898b171e11ccce4fcbb2",
   "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "c3ec5e5c8fa0ef30d2ca4bec2b27be7a7b1ebcd68df86dbfba7401aec3c86070",
-  "cqr/frontier.py": "19c3c8f4df270e68b36518fb63cc1f9d5a39cabbd3e0abbb54d2dacdfd7497d9",
+  "cqr/compiler.py": "18580d0c359f879c25e568c43d0fb75b66c8bd0a803e2df2692242ae4ced2210",
+  "cqr/frontier.py": "32b8607f3ed68124ed58c382c8b13ed5d6b5b44c7ed3601c312d2bd97eb383c8",
   "cqr/gate.py": "2c6805baf56a4cdf5b1626a30ce5f548aeb9d1c720bdd35c9f9d0baf33f601f3",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
   "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
@@ -1498,20 +1592,20 @@
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "7aacb0cc885024b369c29d635f5277307cfc1bf1a965a434a8c0721d7b217ba5",
+  "cqr/registry.py": "162dbe6a280c4f6f62c5b0c4425dc28dd83c2abedee019aa862799f27b48885f",
   "cqr/report.py": "2b5419c645c1e85e3b014a74d5650b30d4f795723abfa1006924fcc884b17181",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
   "cqr/solve.py": "7dd8c01a417ca4b104487fe046f3a93189fed8b309473d408743a307eb420788",
-  "cqr/task.py": "b85d22588c1ac0d6654bee4983234c12077e1d3cc0a45b263021868e2c7606a6",
+  "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "86c98bf8370ab8e46063ff339c8e8d088eb48b05aad750e797645f7b7b52b8ba",
+  "cqr/worker.py": "60ec86d788d2867c24b5ecc9c07b1afefb2a0624429b423ecf8b965c41223265",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v11",
- "passed": 22,
- "total": 22,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v12",
+ "passed": 23,
+ "total": 23,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
@@ -1520,8 +1614,8 @@
   "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
   "cqr/checker.py": "c5205539b8e106d321338ca582280aced7a214a0648f898b171e11ccce4fcbb2",
   "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "c3ec5e5c8fa0ef30d2ca4bec2b27be7a7b1ebcd68df86dbfba7401aec3c86070",
-  "cqr/frontier.py": "19c3c8f4df270e68b36518fb63cc1f9d5a39cabbd3e0abbb54d2dacdfd7497d9",
+  "cqr/compiler.py": "18580d0c359f879c25e568c43d0fb75b66c8bd0a803e2df2692242ae4ced2210",
+  "cqr/frontier.py": "32b8607f3ed68124ed58c382c8b13ed5d6b5b44c7ed3601c312d2bd97eb383c8",
   "cqr/gate.py": "2c6805baf56a4cdf5b1626a30ce5f548aeb9d1c720bdd35c9f9d0baf33f601f3",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
   "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
@@ -1529,19 +1623,19 @@
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "7aacb0cc885024b369c29d635f5277307cfc1bf1a965a434a8c0721d7b217ba5",
+  "cqr/registry.py": "162dbe6a280c4f6f62c5b0c4425dc28dd83c2abedee019aa862799f27b48885f",
   "cqr/report.py": "2b5419c645c1e85e3b014a74d5650b30d4f795723abfa1006924fcc884b17181",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
   "cqr/solve.py": "7dd8c01a417ca4b104487fe046f3a93189fed8b309473d408743a307eb420788",
-  "cqr/task.py": "b85d22588c1ac0d6654bee4983234c12077e1d3cc0a45b263021868e2c7606a6",
+  "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "86c98bf8370ab8e46063ff339c8e8d088eb48b05aad750e797645f7b7b52b8ba",
+  "cqr/worker.py": "60ec86d788d2867c24b5ecc9c07b1afefb2a0624429b423ecf8b965c41223265",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "utc": "2026-11-17T01:15:10Z",
- "wall_s": 612.2,
+ "utc": "2026-11-17T02:57:25Z",
+ "wall_s": 648.7,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
