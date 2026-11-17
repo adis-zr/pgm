@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 3.75,
+   "wall_s": 3.949,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -151,7 +151,7 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.252,
+   "wall_s": 0.268,
    "detail": {
     "routes": {
      "zero": 30,
@@ -166,7 +166,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.082,
+   "wall_s": 0.084,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -225,7 +225,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.095,
+   "wall_s": 0.099,
    "detail": {
     "within_budget": {
      "cards": [
@@ -258,7 +258,7 @@
   {
    "name": "C5_affine_support_and_pullbacks",
    "ok": true,
-   "wall_s": 0.005,
+   "wall_s": 0.006,
    "detail": {
     "m04": {
      "n": 8,
@@ -281,7 +281,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.137,
+   "wall_s": 0.144,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -308,7 +308,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.078,
+   "wall_s": 0.08,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -326,7 +326,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.628,
+   "wall_s": 1.642,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -344,7 +344,7 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 3.141,
+   "wall_s": 3.189,
    "detail": {
     "draws": 74,
     "carves": 74,
@@ -362,7 +362,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.073,
+   "wall_s": 0.081,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -385,7 +385,7 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.624,
+   "wall_s": 2.725,
    "detail": {
     "reference_shares": [
      0.5862914916552058,
@@ -412,7 +412,7 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 114.475,
+   "wall_s": 120.769,
    "detail": {
     "cells": 373,
     "arms": [
@@ -470,16 +470,16 @@
      "LBP|PUBLISHED": 7,
      "LIBDAI_EXACT|PUBLISHED": 3,
      "MERLIN_CTE|PUBLISHED": 3,
-     "N1_CQR|DEADLINE": 14,
-     "N1_CQR|PUBLISHED": 37,
+     "N1_CQR|DEADLINE": 13,
+     "N1_CQR|PUBLISHED": 38,
      "N1_NO_AFFINE|DEADLINE": 3,
      "N1_NO_AFFINE|PUBLISHED": 29,
-     "N1_NO_CONCENTRATION|DEADLINE": 1,
-     "N1_NO_CONCENTRATION|PUBLISHED": 31,
-     "N1_NO_INFLUENCE|DEADLINE": 3,
-     "N1_NO_INFLUENCE|PUBLISHED": 29,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 1,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 31,
+     "N1_NO_CONCENTRATION|DEADLINE": 2,
+     "N1_NO_CONCENTRATION|PUBLISHED": 30,
+     "N1_NO_INFLUENCE|DEADLINE": 2,
+     "N1_NO_INFLUENCE|PUBLISHED": 30,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 2,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 30,
      "N1_NO_QUOTIENT|DEADLINE": 5,
      "N1_NO_QUOTIENT|PUBLISHED": 27,
      "N1_NO_SIGNED_STREAM|DEADLINE": 1,
@@ -493,7 +493,7 @@
     },
     "gate": {
      "gated": 318,
-     "wall": 110.202
+     "wall": 113.235
     },
     "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
     "missing_group_refused": true,
@@ -507,7 +507,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 361.466,
+   "wall_s": 378.234,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -537,7 +537,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 167.3
+      "wall_s": 172.9
      },
      {
       "delta": "1/16",
@@ -549,7 +549,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 194.2
+      "wall_s": 205.3
      }
     ]
    }
@@ -557,7 +557,7 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.526,
+   "wall_s": 4.815,
    "detail": {
     "routes": {
      "concentration.uai/N1_CQR": {
@@ -655,7 +655,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 34.122,
+   "wall_s": 35.23,
    "detail": {
     "mode_override": [
      "INVALID_TASK",
@@ -676,7 +676,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 35.27,
+   "wall_s": 36.771,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -730,10 +730,10 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 12.398,
+   "wall_s": 12.441,
    "detail": {
     "d32_N1_CQR": {
-     "wall_s": 0.08,
+     "wall_s": 0.07,
      "work_reference": 7232,
      "work_optional": 10560,
      "compile_interrupted": {
@@ -782,9 +782,9 @@
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 8.242204785346985e-08,
-     "work_reference": 3987624,
-     "work_optional": 3575467,
+     "reference_progress": 8.35862010717392e-08,
+     "work_reference": 4043944,
+     "work_optional": 3600398,
      "phase": "adaptive"
     },
     "parity_at_exits": {
@@ -804,7 +804,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.182,
+   "wall_s": 0.161,
    "detail": {
     "order_sequence": [
      "norm",
@@ -825,7 +825,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.407,
+   "wall_s": 0.362,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -848,7 +848,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 5.487,
+   "wall_s": 5.42,
    "detail": {
     "r1": {
      "support": {
@@ -1091,9 +1091,9 @@
       "route": "exact_reference"
      },
      "deadline_exit": {
-      "work_reference": 53248,
-      "work_optional": 53344,
-      "progress": 0.125
+      "work_reference": 64768,
+      "work_optional": 67680,
+      "progress": 0.1953125
      },
      "support_quota": {
       "quota": 131296,
@@ -1165,7 +1165,7 @@
   {
    "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
    "ok": true,
-   "wall_s": 10.788,
+   "wall_s": 10.482,
    "detail": {
     "f01": {
      "honest": {
@@ -1195,7 +1195,7 @@
     "f03": {
      "root5000": {
       "route": "exact_reference",
-      "wall_s": 4.7,
+      "wall_s": 4.69,
       "accepted": true
      },
      "forced_in_root": "exact_reference",
@@ -1255,7 +1255,7 @@
   {
    "name": "C22_precision_zero_mass_witness_service",
    "ok": true,
-   "wall_s": 22.855,
+   "wall_s": 22.685,
    "detail": {
     "f01": {
      "1e-12": {
@@ -1473,7 +1473,7 @@
   {
    "name": "C23_exactly_once_accounting_quota_inheritance_tolerance_domain",
    "ok": true,
-   "wall_s": 30.167,
+   "wall_s": 30.05,
    "detail": {
     "f01": {
      "helpers_x_offsets_x_stops": "8 helpers x 3 offsets x 6 stop settings: ledger == completed operations",
@@ -1517,24 +1517,24 @@
       "quota": 2590752
      },
      "inside_1": {
-      "overspend": 1023,
+      "overspend": 1022,
       "stop": "quota",
       "commits": 0
      },
      "inside_500": {
-      "overspend": 524,
+      "overspend": 523,
       "stop": "quota",
       "commits": 0
      },
      "inside_1023": {
-      "overspend": 1,
+      "overspend": 0,
       "stop": "quota",
       "commits": 0
      },
      "inside_1024": {
-      "overspend": 0,
-      "stop": "quota",
-      "commits": 0
+      "overspend": 247,
+      "stop": null,
+      "commits": 1
      },
      "inside_1025": {
       "overspend": 246,
@@ -1567,7 +1567,7 @@
   {
    "name": "C24_zero_risk_controller_cadence_completed_charges",
    "ok": true,
-   "wall_s": 43.967,
+   "wall_s": 43.595,
    "detail": {
     "f01": {
      "singleton_PAC_EPS_0": "deterministic_frontier",
@@ -1660,16 +1660,54 @@
   {
    "name": "C25_ratio_prior_binding_influence_scan_tolerance_semantics",
    "ok": true,
-   "wall_s": 31.165,
+   "wall_s": 36.894,
    "detail": {
     "f01": {
-     "ratio_route": "pac_ratio_intersected_with_deterministic",
-     "normalizer_route": "normalizer_exact_zero_dimensional",
+     "ratio": {
+      "route": "pac_ratio_intersected_with_deterministic",
+      "draws": 450,
+      "seeds_tried": 1
+     },
+     "normalizer": {
+      "route": "normalizer_pac_ratio_intersected_with_deterministic",
+      "draws": 47,
+      "seeds_tried": 1
+     },
      "ratio_prior_halved": "ratio prior U_star 13421772800000000000000 differs from the registered pre-sampl",
      "ratio_prior_doubled": "ratio prior U_star 53687091200000000000000 differs from the registered pre-sampl",
+     "ratio_tightened": {
+      "original": [
+       "547483988814959585142480152021260105123585042688731218669633/1654514272621997963987500000000000000000000000000000000000000",
+       "874692710113079844987519847978739894876414957311268781330367/1654514272621997963987500000000000000000000000000000000000000"
+      ],
+      "tightened": [
+       "277680655651018926447242306895677930272252800307190214585593/827257136310998981993750000000000000000000000000000000000000",
+       "433407693813000788617757693104322069727747199692809785414407/827257136310998981993750000000000000000000000000000000000000"
+      ],
+      "altered_prior": false,
+      "original_prior": "published bounds of query 0 do not contain the re-derived en"
+     },
      "ratio_rho": "ratio stream risk / rho differ from the policy (rho must be ",
-     "normalizer_prior": "no ratio stream in this publication (deterministic route); mutation controls skipped",
-     "signed_E_star": "epoch 1 E_star differs from the launch envelope"
+     "normalizer_prior_halved": "ratio prior U_star 1073741824 differs from the registered pre-sampling choice 21",
+     "normalizer_prior_doubled": "ratio prior U_star 4294967296 differs from the registered pre-sampling choice 21",
+     "normalizer_tightened": {
+      "original": [
+       "1073741824",
+       "935990574186042877355457028244973177439005561261766483339139/470000000000000000000000000000000000000000000000000"
+      ],
+      "tightened": [
+       "1285893136364935980414208260998967028034738712442472869521387/1175000000000000000000000000000000000000000000000000",
+       "2311141974035064019585791739001032971965261287557527130478613/1175000000000000000000000000000000000000000000000000"
+      ],
+      "altered_prior": false,
+      "original_prior": "published Z bounds do not contain the re-derived enclosure ["
+     },
+     "normalizer_rho": "ratio stream risk / rho differ from the policy (rho must be ",
+     "signed_E_star": {
+      "route": "pac_ratio_intersected_with_deterministic",
+      "epochs": 5,
+      "refusal": "epoch 1 E_star differs from the launch envelope"
+     }
     },
     "f02": {
      "positive": {
@@ -1752,28 +1790,460 @@
      }
     }
    }
+  },
+  {
+   "name": "C26_partition_premise_order_validation_structural_negative",
+   "ok": true,
+   "wall_s": 26.283,
+   "detail": {
+    "constructor": {
+     "duplicate": "frontier order refused: order repeats variable(s) [0] (not a permutati",
+     "all_zero": "frontier order refused: order repeats variable(s) [0] (not a permutati",
+     "short": "frontier order refused: order has 2 entries for 3 compiled variables",
+     "long": "frontier order refused: order has 4 entries for 3 compiled variables",
+     "out_of_range": "frontier order refused: order contains an out-of-range variable index",
+     "negative": "frontier order refused: order contains an out-of-range variable index",
+     "bool": "frontier order refused: order contains a non-integer entry",
+     "string_entry": "frontier order refused: order contains a non-integer entry",
+     "float_entry": "frontier order refused: order contains a non-integer entry",
+     "not_a_sequence": "frontier order refused: order is not a sequence (str)",
+     "dict": "frontier order refused: order is not a sequence (dict)",
+     "default": [
+      0,
+      1,
+      2
+     ],
+     "canonical": [
+      0,
+      1,
+      2
+     ],
+     "reversed": [
+      2,
+      1,
+      0
+     ],
+     "tuple": [
+      1,
+      2,
+      0
+     ],
+     "zero_variables": "root N 1, closes to mass 1",
+     "singleton_domain": "split prunes the zero state, Zlo == Zhi == 3"
+    },
+    "checker": {
+     "honest": {
+      "route": "normalizer_deterministic_frontier",
+      "Z": "16777216"
+     },
+     "false_duplicate_order": "frontier order refused: order repeats variable(s) [0] (not a permutation: cells would over",
+     "false_canonical_order": "published Z bounds do not contain the re-derived enclosure [16777216, 16777216]",
+     "order_all_zero": "frontier order refused: order repeats variable(s) [0] (not a permutati",
+     "order_short": "frontier order refused: order has 23 entries for 24 compiled variables",
+     "order_long": "frontier order refused: order has 25 entries for 24 compiled variables",
+     "order_out_of_range": "frontier order refused: order contains an out-of-range variable index",
+     "order_negative": "frontier order refused: order contains an out-of-range variable index",
+     "order_bool_entry": "frontier order refused: order contains a non-integer entry",
+     "order_string_entry": "frontier order refused: order contains a non-integer entry",
+     "order_none": "frontier order refused: order is not a sequence (NoneType)",
+     "order_string": "frontier order refused: order is not a sequence (str)",
+     "order_dict": "frontier order refused: order is not a sequence (dict)",
+     "order_rotated_legal_permutation": "frontier order [23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1 differ",
+     "order_reversed_legal_permutation": "frontier order [23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, differ",
+     "order_missing": "frontier record without a split order",
+     "record_removed": "frontier-based route without a frontier record",
+     "split_not_open_cell": "frontier event split is malformed or refers to a cell that is not open"
+    },
+    "chain": {
+     "honest": {
+      "gated": 1,
+      "closeout": "QUALIFIED",
+      "Z": "16777216"
+     },
+     "false_duplicate_order": {
+      "finalize_rc": 6,
+      "gate_passed": false,
+      "failure": "checker: frontier order refused: order repeats variable(s) [0] (not a permutatio",
+      "closeout": "NOT QUALIFIED"
+     },
+     "false_canonical_order": "checker: published Z bounds do not contain the re-derived enclosure [16777216, 1"
+    },
+    "entry_points": {
+     "deterministic_query": {
+      "route": "deterministic_frontier",
+      "events": 25,
+      "draws": null,
+      "refusals": {
+       "duplicate": "frontier order refused: order repeats variable(s) [0] (not a",
+       "short": "frontier order refused: order has 15 entries for 16 compiled",
+       "rotated_legal": "frontier order [15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+      }
+     },
+     "exact_closure": {
+      "route": "exact_frontier_closure",
+      "events": 13,
+      "draws": null,
+      "refusals": {
+       "duplicate": "frontier order refused: order repeats variable(s) [0] (not a",
+       "short": "frontier order refused: order has 23 entries for 24 compiled",
+       "rotated_legal": "frontier order [23, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+      }
+     },
+     "pac_replay": {
+      "route": "pac_ratio_intersected_with_deterministic",
+      "events": 1764,
+      "draws": 450,
+      "refusals": {
+       "duplicate": "frontier order refused: order repeats variable(s) [0] (not a",
+       "short": "frontier order refused: order has 19 entries for 20 compiled",
+       "rotated_legal": "frontier order [19, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+      }
+     }
+    },
+    "invariants": {
+     "mixed_cards/evidence_only/canonical": {
+      "seeds": 3,
+      "steps": 204,
+      "splits": 115,
+      "closures": 116,
+      "pruned": 114,
+      "invariant_checks": 207,
+      "Z": "140919645600",
+      "n_compiled": 5
+     },
+     "mixed_cards/evidence_only/reversed": {
+      "seeds": 3,
+      "steps": 224,
+      "splits": 165,
+      "closures": 103,
+      "pruned": 113,
+      "invariant_checks": 227,
+      "Z": "140919645600",
+      "n_compiled": 5
+     },
+     "mixed_cards/support_fixed_quotient/canonical": {
+      "seeds": 3,
+      "steps": 204,
+      "splits": 115,
+      "closures": 116,
+      "pruned": 114,
+      "invariant_checks": 207,
+      "Z": "140919645600",
+      "n_compiled": 5
+     },
+     "mixed_cards/support_fixed_quotient/reversed": {
+      "seeds": 3,
+      "steps": 224,
+      "splits": 165,
+      "closures": 103,
+      "pruned": 113,
+      "invariant_checks": 227,
+      "Z": "140919645600",
+      "n_compiled": 5
+     },
+     "evidence/evidence_only/canonical": {
+      "seeds": 3,
+      "steps": 26,
+      "splits": 16,
+      "closures": 13,
+      "pruned": 14,
+      "invariant_checks": 29,
+      "Z": "17280",
+      "n_compiled": 4
+     },
+     "evidence/evidence_only/reversed": {
+      "seeds": 3,
+      "steps": 41,
+      "splits": 30,
+      "closures": 17,
+      "pruned": 33,
+      "invariant_checks": 44,
+      "Z": "17280",
+      "n_compiled": 4
+     },
+     "evidence/support_fixed_quotient/canonical": {
+      "seeds": 3,
+      "steps": 17,
+      "splits": 8,
+      "closures": 9,
+      "pruned": 2,
+      "invariant_checks": 20,
+      "Z": "288",
+      "n_compiled": 2
+     },
+     "evidence/support_fixed_quotient/reversed": {
+      "seeds": 3,
+      "steps": 16,
+      "splits": 8,
+      "closures": 8,
+      "pruned": 3,
+      "invariant_checks": 19,
+      "Z": "288",
+      "n_compiled": 2
+     },
+     "hard_zeros/evidence_only/canonical": {
+      "seeds": 3,
+      "steps": 31,
+      "splits": 20,
+      "closures": 18,
+      "pruned": 10,
+      "invariant_checks": 34,
+      "Z": "44",
+      "n_compiled": 4
+     },
+     "hard_zeros/evidence_only/reversed": {
+      "seeds": 3,
+      "steps": 38,
+      "splits": 26,
+      "closures": 18,
+      "pruned": 16,
+      "invariant_checks": 41,
+      "Z": "44",
+      "n_compiled": 4
+     },
+     "hard_zeros/support_fixed_quotient/canonical": {
+      "seeds": 3,
+      "steps": 14,
+      "splits": 8,
+      "closures": 6,
+      "pruned": 5,
+      "invariant_checks": 17,
+      "Z": "11",
+      "n_compiled": 2
+     },
+     "hard_zeros/support_fixed_quotient/reversed": {
+      "seeds": 3,
+      "steps": 14,
+      "splits": 8,
+      "closures": 6,
+      "pruned": 5,
+      "invariant_checks": 17,
+      "Z": "11",
+      "n_compiled": 2
+     },
+     "single_var/evidence_only/canonical": {
+      "seeds": 3,
+      "steps": 12,
+      "splits": 3,
+      "closures": 9,
+      "pruned": 3,
+      "invariant_checks": 15,
+      "Z": "7",
+      "n_compiled": 1
+     },
+     "single_var/evidence_only/reversed": {
+      "seeds": 3,
+      "steps": 12,
+      "splits": 3,
+      "closures": 9,
+      "pruned": 3,
+      "invariant_checks": 15,
+      "Z": "7",
+      "n_compiled": 1
+     },
+     "single_var/support_fixed_quotient": {
+      "zero_dimensional": true
+     },
+     "split_assigned_variable_refused": "split of cell 1 on variable 0 which its prefix already assigns"
+    }
+   }
+  },
+  {
+   "name": "C27_final_query_accounting_evaluation_site_audit",
+   "ok": true,
+   "wall_s": 2.545,
+   "detail": {
+    "a": {
+     "1000": {
+      "kind": "returned",
+      "committed": true,
+      "charged": 1374,
+      "reads": 1374,
+      "calls": 25,
+      "calls_in_loop": 1,
+      "max_gap": 1024,
+      "loop_start": 327,
+      "quota": 50000,
+      "commits_added": 1,
+      "measure_same": true,
+      "bias_same": false
+     },
+     "1024": {
+      "kind": "returned",
+      "committed": true,
+      "charged": 1398,
+      "reads": 1398,
+      "calls": 25,
+      "calls_in_loop": 1,
+      "max_gap": 1024,
+      "loop_start": 327,
+      "quota": 50000,
+      "commits_added": 1,
+      "measure_same": true,
+      "bias_same": false
+     },
+     "1025": {
+      "kind": "returned",
+      "committed": true,
+      "charged": 1399,
+      "reads": 1399,
+      "calls": 25,
+      "calls_in_loop": 1,
+      "max_gap": 1024,
+      "loop_start": 327,
+      "quota": 50000,
+      "commits_added": 1,
+      "measure_same": true,
+      "bias_same": false
+     },
+     "5000": {
+      "kind": "returned",
+      "committed": true,
+      "charged": 5374,
+      "reads": 5374,
+      "calls": 28,
+      "calls_in_loop": 4,
+      "max_gap": 1024,
+      "loop_start": 327,
+      "quota": 81120,
+      "commits_added": 1,
+      "measure_same": true,
+      "bias_same": false
+     },
+     "48_distinct": {
+      "kind": "returned",
+      "committed": true,
+      "charged": 422,
+      "reads": 422,
+      "calls": 24,
+      "calls_in_loop": 0,
+      "max_gap": 10,
+      "loop_start": 327,
+      "quota": 50000,
+      "commits_added": 1,
+      "measure_same": true,
+      "bias_same": false
+     },
+     "1025_distinct": {
+      "kind": "returned",
+      "committed": true,
+      "charged": 422,
+      "reads": 422,
+      "calls": 24,
+      "calls_in_loop": 0,
+      "max_gap": 10,
+      "loop_start": 327,
+      "quota": 50000,
+      "commits_added": 1,
+      "measure_same": true,
+      "bias_same": false
+     },
+     "plain_worker": {
+      "route": "deterministic_concentration",
+      "answers": 5000,
+      "first": [
+       "200000000000/200000000001",
+       "1"
+      ],
+      "step_work": 5374,
+      "quota": 81120,
+      "log_gap": 1024,
+      "truth_inside_all": true
+     }
+    },
+    "b": {
+     "quota_inside_loop": {
+      "charged": 1345,
+      "reads": 1345,
+      "overspend": 668,
+      "decline": "quota exhausted during the query evaluations at x* (nothing ",
+      "committed": false
+     },
+     "controller_stop_before_first_in_loop_service": {
+      "charged": 1345,
+      "reads": 1345,
+      "calls_in_loop": 1
+     },
+     "controller_stop_after_a_later_read": {
+      "charged": 2369,
+      "reads": 2369,
+      "calls_in_loop": 2
+     },
+     "injected_failure_after_reads": {
+      "charged": 5327,
+      "reads": 5327,
+      "committed": false
+     },
+     "compile_step_failed": {
+      "outcome": "failed",
+      "work": 5327,
+      "commits": 0
+     },
+     "fresh_worker": "deterministic_concentration"
+    },
+    "c": {
+     "ratio_draw_lookups": 5,
+     "affine_categorical_copy": {
+      "charged": 29,
+      "reads": 29
+     },
+     "evidence_only_gap": 1024
+    },
+    "d": {
+     "producer_sites": [
+      "_affine_build",
+      "_average_axis",
+      "_fixed_apply",
+      "_leaf_apply",
+      "_omission_proofs",
+      "_query_symmetric_constant",
+      "_quotient_build",
+      "_remove_var_from_scope_fixed",
+      "_renumbered",
+      "_replace_axis",
+      "_slice",
+      "_unary_product_argmax",
+      "_witness_problem",
+      "approx_quotient",
+      "concentration",
+      "from_task",
+      "influence_deletion",
+      "local_affine",
+      "quota_for",
+      "verify_symmetry_action"
+     ],
+     "verification_sites": [
+      "_influence_recompute",
+      "apply_commit",
+      "replay_journal",
+      "verify_affine_record",
+      "verify_commit"
+     ],
+     "declared": 20
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 139,
+  "fresh_workers": 146,
   "solver_calls": 389,
-  "compiler_calls": 162,
-  "checker_calls": 185,
-  "oracle_models": 113,
-  "truth_coordinates": 2690,
-  "stream_draws": 463,
-  "assertions": 3459
+  "compiler_calls": 172,
+  "checker_calls": 224,
+  "oracle_models": 117,
+  "truth_coordinates": 2697,
+  "stream_draws": 960,
+  "assertions": 105071
  },
- "suite_version": "cqr-qualification-v8 (2026-11-17, after the seventh adversarial review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
- "suite_sha256": "f1c3c4169553e4843838a73ac31924c8ea1536ef04d3ab1cffb65d03241c5623",
+ "suite_version": "cqr-qualification-v9 (2026-11-17, after the eighth adversarial review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
+ "suite_sha256": "59280ea797f07482bc0a22e2cb36b22f3f31490e26d56fb719f24d91e38aca18",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "1b9d70e06a0b2211324bbb4f4aca7b12185f693b5869a3d126ab817394441dec",
+  "cqr/checker.py": "c3df049ed7812fef96ebc85cf39f589f521c41d8785602c2ea8b4a97b7b3fb64",
   "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "11da544b6516a12a28885d388d2ebbc6c0bafbda30129b1a0b2d539a41915156",
-  "cqr/frontier.py": "d40ab9b44216972b599ecc896abbff50daa1db938a777235d5b52971676fc0ad",
+  "cqr/compiler.py": "c26e223422db08c42d33a043dad3dd5f010927b9f8e91138ea92c534aed56b19",
+  "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
   "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
   "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
@@ -1781,30 +2251,30 @@
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "92426094131a53c84f8616c751f5786b076bc2af1c7d4aa674ad61d2a97f9e0a",
+  "cqr/registry.py": "ab971c27011758e59cff911916e3a1abf4b695b04f5571e0dae670653d92761f",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "fc76883e62470d355c8896495287b5a9daabe7c9a01c8c82f38fc630d77ab8cb",
+  "cqr/solve.py": "d9b4afd8b62359adea9176c61ee19a9c8d7a3658c5285279f9fc90b224aa0eb2",
   "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
   "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v14",
- "passed": 25,
- "total": 25,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v15",
+ "passed": 27,
+ "total": 27,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "1b9d70e06a0b2211324bbb4f4aca7b12185f693b5869a3d126ab817394441dec",
+  "cqr/checker.py": "c3df049ed7812fef96ebc85cf39f589f521c41d8785602c2ea8b4a97b7b3fb64",
   "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "11da544b6516a12a28885d388d2ebbc6c0bafbda30129b1a0b2d539a41915156",
-  "cqr/frontier.py": "d40ab9b44216972b599ecc896abbff50daa1db938a777235d5b52971676fc0ad",
+  "cqr/compiler.py": "c26e223422db08c42d33a043dad3dd5f010927b9f8e91138ea92c534aed56b19",
+  "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
   "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
   "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
@@ -1812,19 +2282,19 @@
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "92426094131a53c84f8616c751f5786b076bc2af1c7d4aa674ad61d2a97f9e0a",
+  "cqr/registry.py": "ab971c27011758e59cff911916e3a1abf4b695b04f5571e0dae670653d92761f",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "fc76883e62470d355c8896495287b5a9daabe7c9a01c8c82f38fc630d77ab8cb",
+  "cqr/solve.py": "d9b4afd8b62359adea9176c61ee19a9c8d7a3658c5285279f9fc90b224aa0eb2",
   "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
   "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
   "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "utc": "2026-11-17T16:37:40Z",
- "wall_s": 719.1,
+ "utc": "2026-11-17T18:53:55Z",
+ "wall_s": 779.0,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
