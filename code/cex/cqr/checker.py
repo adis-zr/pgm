@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1 (2026-11-16)'
+CHECKER_VERSION = 'cqr-checker-v1.1 (2026-11-16: accuracy reservation derived from the output representation; witness weight re-evaluated)'
 ORACLE_CAP = 1 << 22
 
 
@@ -141,6 +141,7 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         lg = comp.get('log') or {}
         if lg.get('commits') is not None and lg.get('commits') != sum(1 for c in journal if c.get('kind') == 'commit'): fail('log commit count differs from the journal')
         snap = C.snapshot_json(); sha_ = hashlib.sha256(json.dumps(snap, sort_keys=True, default=str).encode()).hexdigest()
+        if comp.get('final') is not None and hashlib.sha256(json.dumps(comp.get('final'), sort_keys=True, default=str).encode()).hexdigest() != comp.get('final_sha256'): fail('the recorded final snapshot does not hash to final_sha256 (altered certificate)')
         if sha_ != comp.get('final_sha256'): fail('compiled model does not replay from the journal (final_sha256 %s vs %s)' % (sha_[:12], str(comp.get('final_sha256'))[:12])); return fails, info
         rec_certs = journal
         bias = [_F(b) for b in (cert.get('bias') or [])]
@@ -190,11 +191,11 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
             K_ = len(cq); det = fr.deterministic_bounds()
             for j in range(K_):
                 if j in C.constant_queries: det[j] = (C.constant_queries[j], C.constant_queries[j])
-            positive = fr.resolved_mass > 0 or any(c.L > 0 for c in fr.open.values()) or (C.witness is not None)
+            positive = fr.resolved_mass > 0 or any(c.L > 0 for c in fr.open.values()) or (C.witness is not None and _witness_weight(C) > 0)       # the replayed witness is RE-EVALUATED on the replayed model
             if not positive: fail('publication without a proved positive mass')
             Lj = [(fr.Zlo() if q['kind'] == 'expectation' else fr.resolved_den[j] + sum(c.L * c.qlo[j][1] for c in fr.open.values())) for j, q in enumerate(cq)]
             undefined = [q['kind'] == 'ratio' and fr.resolved_den[j] == 0 and all(c.B * c.qhi[j][1] == 0 for c in fr.open.values()) for j, q in enumerate(cq)]
-            tau = [eps - bias[j] - SV.MARGIN for j in range(K_)]
+            RES = TK.output_reservation(task); tau = [eps - bias[j] - RES for j in range(K_)]
             closed = not fr.open
             if route in ('exact_frontier_closure', 'deterministic_frontier_closure'):
                 if not closed: fail('closure route with open cells'); return fails, info
@@ -253,6 +254,12 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
     return fails, info
 
 
+def _witness_weight(C):
+    w = F(1)
+    for v in C.views: w *= v.at(C.cards, C.witness)
+    return w
+
+
 def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, eps, fail, normalizer=False):
     """the common contract (review item 1): shape / query identity; typed definedness per coordinate; the independently PROVEN enclosure of the original answer lies INSIDE
     the published bounds; the point lies inside the published bounds and within eps - margin of both ends (so every value in the published bounds is within eps of the point);
@@ -261,7 +268,7 @@ def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, e
     the rounding margin and form simplex rows; an unexpected legacy representation is refused."""
     K = 1 if normalizer else len(task['queries']); bounds = pub.get('bounds') or []; point = pub.get('point') or []
     if len(bounds) != K or len(point) != K: fail('publication shape differs from the task (%d bounds / %d points for %d queries)' % (len(bounds), len(point), K)); return
-    tau_pub = eps - SV.MARGIN
+    RES = TK.output_reservation(task); tau_pub = eps - RES          # 0 reservation for rational answers: exact equality passes at every supported tolerance (CQR-R3-02)
     for j in range(K):
         pr = proven[j]; b = bounds[j]; pt = point[j]
         if pr == 'UNDEFINED':
@@ -313,7 +320,7 @@ def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, e
             o = q.output or {}; lo, hi = IV[o['variable']][o['state']]; p = PT[o['variable']][o['state']]
             if not (lo <= _F(bounds[j][0]) and _F(bounds[j][1]) <= hi): fail('legacy row of query %d does not contain the certified bounds' % j)
             if not (lo <= proven[j][0] and proven[j][1] <= hi): fail('legacy row of query %d does not contain the re-derived enclosure' % j)
-            if abs(p - _F(point[j])) > SV.MARGIN: fail('legacy point of query %d differs from the certified point beyond the rounding margin' % j)
+            if abs(p - _F(point[j])) > RES: fail('legacy point of query %d differs from the certified point beyond the rounding reservation %s' % (j, RES))
             if not (lo <= p <= hi): fail('legacy point of query %d outside its legacy row' % j)
     elif iv is not None or pts is not None: fail('legacy rows emitted for a task that is not the all-singleton contract (or has undefined coordinates)')
 

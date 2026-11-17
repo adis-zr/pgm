@@ -11,7 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.pat
 for p in (HERE, NEWARM):
     if p not in sys.path: sys.path.insert(0, p)
 import task as TK, solve as SV
-WORKER_VERSION = 'cqr-worker-v1 (2026-11-16)'
+WORKER_VERSION = 'cqr-worker-v1.1 (2026-11-16: legacy decimal rows at the precision the tolerance requires)'
 
 
 def jsonable(x):
@@ -75,7 +75,7 @@ def main():
             if task['all_singletons'] and all(x[0] != 'UNDEFINED' for x in pub['bounds']):
                 import core
                 iv, pt = legacy_rows(task, pub, eps); core.verify_output(iv, pt, eps); out['publication_check'] = True
-                pt_ = time.monotonic(); out['intervals'], out['points'] = core.publish(iv, pt, epsilon=eps); out['publication_s'] = time.monotonic() - pt_
+                pt_ = time.monotonic(); out['legacy_digits'] = TK.legacy_digits(eps); out['intervals'], out['points'] = core.publish(iv, pt, digits=out['legacy_digits'], epsilon=eps); out['publication_s'] = time.monotonic() - pt_
             if late(): out['status'] = 'STOPPED'; out['outcome'] = 'DEADLINE'; out['guarantee_type'] = 'NONE'; out['reason'] = 'publication completed after the deadline'; out['late_publication'] = True; out.pop('intervals', None); out.pop('points', None); out.pop('answers', None)
             else: out['status'] = 'COMPLETED'
     except SV.Stop as e:

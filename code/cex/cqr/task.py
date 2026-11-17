@@ -114,6 +114,25 @@ def conditional_query(event, given, cards):
                  output=dict(kind='conditional', event={str(k): v for k, v in event.items()}, given={str(k): v for k, v in given.items()}))
 
 
+LEGACY_BASE_DIGITS = 8          # the legacy comparator contract: outward decimal rows with at least 8 digits
+
+
+def legacy_digits(eps):
+    """digits of the legacy decimal rows for a task of tolerance eps: the smallest d >= 8 with 2 / 10^d <= eps / 4, so the rounding reservation never consumes more than a
+    quarter of the tolerance (eps = 1/200 -> 8 digits, as before; eps = 1e-12 -> 14 digits). The rows are an OUTPUT REPRESENTATION; their precision follows the request."""
+    d = LEGACY_BASE_DIGITS; eps = F(eps)
+    while F(2, 10 ** d) > eps / 4: d += 1
+    return d
+
+
+def output_reservation(task):
+    """the accuracy reservation of the task's OUTPUT REPRESENTATION (fourth review, CQR-R3-01 / 02): exact rational `answers` need none (0); the legacy all-singleton decimal
+    rows (emitted only for the all-singleton contract) move the point and both endpoints by at most 1 / 10^d each, so 2 / 10^d of the tolerance is reserved for them.
+    Producer (solve) and checker derive the same number from the same task; nothing else subtracts a fixed margin."""
+    if task.get('all_singletons'): return F(2, 10 ** legacy_digits(task['epsilon']))
+    return F(0)
+
+
 def all_singletons(cards):
     return [singleton_query(v, a, cards) for v in range(len(cards)) for a in range(cards[v])]
 
