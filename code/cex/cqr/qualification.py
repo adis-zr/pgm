@@ -5,7 +5,7 @@ with the oracle), assertions. Mutations are applied to COPIES of worker outputs 
 REAL implementation (arm operator sets / in-process operator calls), beneath the independent oracle. Refusal REASONS are asserted so a control cannot pass through an unrelated error.
 C13 is PREREGISTERED (plan constants below, fixed before any data): tiny-model falsification of the confidence sequences at LARGE delta; a pass does NOT validate the 1e-6 tail.
 Usage: python cex/cqr/qualification.py [--only C1,C2] [--admission DIR]   (writes cex/cqr/CQR_QUALIFICATION.json)"""
-import os, sys, json, time, copy, random, hashlib, subprocess, collections, math, shutil, tempfile, io, contextlib
+import os, sys, json, time, copy, random, hashlib, subprocess, collections, math, shutil, tempfile, io, contextlib, glob
 from fractions import Fraction as F
 from itertools import product
 from math import prod
@@ -16,8 +16,8 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK, reference as RF
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v7 (2026-11-16, after the sixth adversarial review: group C24 added -- zero-risk PAC keeps deterministic routes, every tick an actual controller service, charges equal completed operations by independent read counters)'
-ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v13')
+SUITE_VERSION = 'cqr-qualification-v8 (2026-11-17, after the seventh adversarial review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
+ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v14')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
 CNT = R['counts']; passed = 0; total = 0
@@ -1498,12 +1498,13 @@ def c24_zero_risk_controller_cadence_completed_charges():
         comp = [c for c in calls if c['op'] not in ('frontier_init', 'frontier_close', 'deterministic_bounds')]
         gaps = [comp[i]['optional'] - comp[i - 1]['optional'] for i in range(1, len(comp))]; deficit = max((c['optional'] - c['reference'] for c in comp if not c['done']), default=0)
         log = (r.get('certificate') or {}).get('compile', {}).get('log', {})
-        return r, dict(controller_calls=len(calls), max_gap=max(gaps or [0]), max_precall_deficit=deficit, log_gap=log.get('max_service_gap'), log_calls=log.get('controller_calls'), approx=[(s_['outcome'], s_['work']) for s_ in log.get('steps', []) if s_['op'] == 'approx_quotient'], quota=log.get('quota'))
+        return r, dict(controller_calls=len(calls), max_gap=max(gaps or [0]), max_precall_deficit=deficit, log_gap=log.get('max_service_gap'), log_calls=log.get('controller_calls'), log_calls_evidence=log.get('controller_calls_evidence'), approx=[(s_['outcome'], s_['work']) for s_ in log.get('steps', []) if s_['op'] == 'approx_quotient'], quota=log.get('quota'))
     dd = 750; cards = [2, dd] + [2] * 16; vals = list(range(10000000, 10000000 + 2 * dd)); fs = [([0, 1], vals)] + [([v], [1, 2]) for v in range(2, 18)]
     mpm = _spec(_uai(os.path.join(d, 'meter_quota_worker.uai'), cards, fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=v, state=0) for v in range(2)]); tm = TK.load_task(mpm)
     for name, t_ in (('natural', tm), ('unary_padding', dict(tm, model=dict(tm['model'], factors=tm['model']['factors'] + [dict(scope=(0,), values=[F(1), F(1)])])))):
         r, pr = probe(t_)
-        A(r['outcome'] == 'PUBLISHED' and pr['max_gap'] <= bound and pr['max_precall_deficit'] <= Q + bound and pr['log_calls'] == pr['controller_calls'] and all(w_ - pr['quota'] <= bound for _, w_ in pr['approx']), '02 %s: %s' % (name, pr))
+        # the observer wraps the hook at the first compiler tick, so it sees the post-evidence calls; the log counts ALL actual controller invocations and reports the evidence phase's share separately
+        A(r['outcome'] == 'PUBLISHED' and pr['max_gap'] <= bound and pr['max_precall_deficit'] <= Q + bound and pr['log_calls'] - (pr['log_calls_evidence'] or 0) == pr['controller_calls'] and all(w_ - pr['quota'] <= bound for _, w_ in pr['approx']), '02 %s: %s' % (name, pr))
         out['f02'][name] = pr
     # the uninstrumented worker on the same bytes publishes a correct checker-accepted answer
     w = fresh_worker(mpm, 'N1_CQR', budget=30.0, nonce='c24-02w'); fails, _ = check_(mpm, w, 'N1_CQR', budget=300.0); truths = [F(sum(vals[:dd]), sum(vals)), F(vals[0] + vals[dd], sum(vals))]; CNT['truth_coordinates'] += 2
@@ -1583,7 +1584,159 @@ def c24_zero_risk_controller_cadence_completed_charges():
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges)]
+def _dev_campaign(rd, case_specs, root_seed, arm='G0_CQR'):
+    """write <case>.uai (one binary variable, unary [1,2]) + .query.json for each (case, spec), then build the dev manifest and run the dispatcher in SUBPROCESSES (campaign.py is
+    never imported in-process: the pac and cqr packages both have a `registry` module). Returns the run dir."""
+    os.makedirs(rd, exist_ok=True); names = []
+    for case, spec in case_specs:
+        mp_ = os.path.join(rd, case + '.uai'); open(mp_, 'w').write('MARKOV\n1\n2\n1\n1 0\n2\n1 2\n'); json.dump(spec, open(mp_ + '.query.json', 'w')); names.append((case, mp_))
+    code_ = "import sys, json; sys.path.insert(0, %r); import campaign as CA; names = %r; CA.manifest(%r, [CA.make_row('constructed', c, m) for c, m in names], dev=True, budgets=[10], plan={'constructed': [(%r, 1)]}, root_seed=%r)" % (HERE, names, rd, arm, root_seed)
+    r_ = subprocess.run([PY, '-c', code_], capture_output=True, text=True, cwd=CODE); A(r_.returncode == 0, 'dev campaign manifest failed: %s' % r_.stderr[-200:])
+    subprocess.run([PY, os.path.join(HERE, 'campaign.py'), 'run', rd, '--dev'], capture_output=True, text=True, cwd=CODE); CNT['fresh_workers'] += len(names)
+    subprocess.run([PY, os.path.join(HERE, 'gate.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--gate-budget-s', '120'], capture_output=True, text=True, cwd=CODE)
+    rp_ = subprocess.run([PY, os.path.join(HERE, 'report.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST_dev.json'], capture_output=True, text=True, cwd=CODE)
+    return json.load(open(os.path.join(rd, 'GATE_RESULT.json'))), rp_
+
+
+def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
+    """SEVENTH adversarial review (CQR-R6-01..05), invariant-focused. (01) the ratio prior is BOUND to the replayed root frontier before any draw: genuine fresh ratio-PAC and
+    normalizer-PAC publications (independent truth, full checker replay) are accepted; the coherent prior mutation (U_star/2, rho/4, statistics/4, V/16, publication recomputed
+    and TIGHTER) is refused for the prior, not merely for containment; the same tightened publication with the original prior is refused for containment; a prior scaled UP (looser
+    enclosure) is refused too; a certificate whose U_star equals the root but whose rho differs is refused; the signed E_star mutation is refused; zero-risk deterministic routes
+    unchanged; the root derivation is exercised on a compiled model with nontrivial scaling. (02) the influence applicability scan is metered under the operator's ticker from its
+    first read: on the reviewer's positive [2,1000] fixture the operator's charged work equals the independently counted successful reads (scan + evaluations), the overspend of
+    the production quota is <= max_irreducible_charge, controller calls happen during the scan, and the plain worker publishes the exact answers; early / middle / last hard zeros
+    charge exactly the entries read and decline; a quota placed inside the scan stops typed with the scan's reads charged; a controller stop inside the scan propagates. (03)
+    tolerance semantics through the REAL dispatcher + gate: canonical, decimal, unreduced, scientific and numeric-JSON spellings of 1/200 (and of delta 1/10) are gated as
+    equal; a genuinely different rational is refused; identical unparsable spellings of an INVALID_TASK cell still bind. (04) the protected reference charges one lookup per
+    expectation query and two per ratio query: independently counted lookups equal the charged entries for all-positive and half-positive models at quanta 1 / 3 / 256; the
+    mixed-query worker publishes correct exact answers. (05) typed INVALID_TASK rows (epsilon 1/0, 0, text; delta 1/0; no queries) pass the gate, are reported as refusals
+    without a tolerance or a score, and the mixed campaign's report completes with the valid cell scored."""
+    d = tempfile.mkdtemp(prefix='cqr_c25_'); out = dict(f01={}, f02={}, f03={}, f04={}, f05={}); bound = CP.POLICY['max_irreducible_charge']
+    # ---------------- 01: ratio prior binding
+    def _rescale(w_, s_):
+        """the reviewer's coherent mutation with scale s_ on U_star: statistics scale by s_^2, V by s_^4, weights by s_^2; the publication is recomputed from the altered statistics"""
+        z = copy.deepcopy(w_); r = z['certificate']['ratio_stream']; k2 = s_ * s_
+        r['U_star'] = str(F(r['U_star']) * s_); r['rho'] = str(F(r['rho']) * k2)
+        for k in ('H', 'Hb'): r[k] = str(F(r[k]) * k2)
+        for k in ('G', 'Hj'): r[k] = [str(F(v) * k2) for v in r[k]]
+        r['V'] = str(F(r['V']) * k2 * k2)
+        for dr in r.get('draws') or r.get('records') or []: dr['b'] = str(F(dr['b']) * k2)
+        for ev in z['certificate']['events']:
+            if ev.get('op') == 'ratio_draw': ev['b'] = str(F(ev['b']) * k2)
+        return z
+    # fresh genuine ratio-PAC worker (the C16 fixture: beyond enumeration, elimination truth)
+    cards_s, fs_s = _sprinkled(1, 28, 14, 4); mpr = _spec(_uai(os.path.join(d, 'ratio28.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5], bit=1)])
+    t_r, tr_r = _truth(mpr); wr = None
+    for seed in ('pp', 'pq', 'pr'):
+        w_ = fresh_worker(mpr, 'N1_CQR', budget=45.0, seed=seed, nonce='c25-01-ratio-' + seed)
+        if w_['outcome'] == 'PUBLISHED' and w_['route'] == 'pac_ratio_intersected_with_deterministic': wr = w_; break
+        if wr is None and w_['outcome'] == 'PUBLISHED': wr = w_
+    A(wr is not None and wr['outcome'] == 'PUBLISHED', '01 ratio fixture did not publish'); fails, _ = check_(mpr, wr, 'N1_CQR', budget=600.0); A(not fails and _contained(wr, tr_r, t_r['epsilon']), '01 genuine ratio-PAC refused: %s' % fails[:1]); out['f01']['ratio_route'] = wr['route']
+    mpn = _normalizer_witness(d); t_n, tr_n = _truth(mpn); wn = fresh_worker(mpn, 'N1_CQR', budget=30.0, nonce='c25-01-norm'); fails, _ = check_(mpn, wn, 'N1_CQR', budget=300.0)
+    A(wn['outcome'] == 'PUBLISHED' and not fails and F(wn['answers'][0]['lo']) <= tr_n['Z'] <= F(wn['answers'][0]['hi']), '01 genuine normalizer refused: %s %s' % (wn['outcome'], fails[:1])); CNT['truth_coordinates'] += 1; out['f01']['normalizer_route'] = wn['route']
+    for name, mp_, w_ in (('ratio', mpr, wr), ('normalizer', mpn, wn)):
+        if w_['certificate'].get('ratio_stream') is None: out['f01'][name + '_prior'] = 'no ratio stream in this publication (deterministic route); mutation controls skipped'; continue
+        for s_, tag in ((F(1, 2), 'halved'), (F(2), 'doubled')):
+            z = _rescale(w_, s_); fails, _ = check_(mp_, z, 'N1_CQR', budget=300.0)
+            A(fails and any('prior U_star' in f_ and 'registered pre-sampling choice' in f_ for f_ in fails), '01 %s prior %s not refused for the prior: %s' % (name, tag, fails[:2])); out['f01']['%s_prior_%s' % (name, tag)] = fails[0][:80]
+        z = copy.deepcopy(w_); z['certificate']['ratio_stream']['rho'] = str(F(z['certificate']['ratio_stream']['rho']) / 4); fails, _ = check_(mp_, z, 'N1_CQR', budget=300.0)
+        A(fails and any('rho' in f_ for f_ in fails), '01 %s rho mutation not refused: %s' % (name, fails[:1])); out['f01'][name + '_rho'] = fails[0][:60]
+    # the reviewer's exact fixtures: the halved-prior mutation and the tightened-publication / original-prior negatives, re-checked from their retained bytes when available
+    sg_c, sg_f = _sprinkled(3, 26, 12, 4); mps = _spec(_uai(os.path.join(d, 'signed26.uai'), sg_c, sg_f), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1)]); ws = None
+    for seed in ('sa', 'sb'):
+        w_ = fresh_worker(mps, 'N1_CQR', budget=45.0, seed=seed, nonce='c25-01-signed-' + seed)
+        if w_['outcome'] == 'PUBLISHED': ws = w_; break
+    if ws is not None and ws['certificate'].get('epochs'):
+        z = copy.deepcopy(ws); e0 = z['certificate']['epochs'][0]; e0['E_star'] = str(F(e0['E_star']) / 2)
+        for ev in z['certificate']['events']:
+            if ev.get('op') == 'epoch_start' and ev.get('epoch') == e0['epoch']: ev['E_star'] = str(F(ev['E_star']) / 2)
+        fails, _ = check_(mps, z, 'N1_CQR', budget=300.0); A(fails and any('E_star' in f_ for f_ in fails), '01 signed E_star mutation not refused: %s' % fails[:1]); out['f01']['signed_E_star'] = fails[0][:60]
+    else: out['f01']['signed_E_star'] = 'no epoch in this publication; the retained C8 / C16 controls cover the envelope binding'
+    # ---------------- 02: influence applicability scan under the operator ticker
+    def infl_model(d_, zero_at=None):
+        vals = [F(i) for i in range(1, d_ + 1)] + [F(i) for i in range(2001, 2001 + d_)]
+        if zero_at is not None: vals[zero_at] = F(0)
+        return dict(cards=[2, d_] + [2] * 18, factors=[dict(scope=(0, 1), values=vals)] + [dict(scope=(v,), values=[F(1), F(2)]) for v in range(2, 20)], evidence={})
+    def count_scan(C_, fn):
+        """independent counters: entries of the applicability scan (view.values iteration) and successful View.at evaluations"""
+        n_vals = [0]; at_ = [0]; oat = View.at
+        class Counted(list):
+            def __iter__(self_):
+                for x in list.__iter__(self_): n_vals[0] += 1; yield x
+        for v in C_.views: v.values = Counted(v.values)
+        def obs_at(self, cards_, x): r_ = oat(self, cards_, x); at_[0] += 1; return r_
+        View.at = obs_at
+        try: res = fn()
+        finally: View.at = oat
+        return res, n_vals[0], at_[0]
+    m_pos = infl_model(1000); t_pos = mk_task(m_pos, [TK.singleton_query(0, 0, m_pos['cards']), TK.singleton_query(1, 0, m_pos['cards'])], mode='DETERMINISTIC_EPS', eps=F(1, 10 ** 100), delta=F(0))
+    C = CP.from_task(t_pos); base = C.work.total(); quota = CP.quota_for(t_pos); calls = []
+    C.service = lambda op: calls.append(C.work.total())
+    (ret, stop), nv, na = count_scan(C, lambda: (lambda: (CP.influence_deletion(C, base + quota, [F(1, 800)] * 2), None))() if True else None)
+    charged = C.work.total() - base
+    A(charged == nv + na and charged - quota <= bound and ret is False and C.certs[-1].get('kind') == 'decline' and any(c_ <= base + 2000 for c_ in calls), '02 positive scan: charged %d completed %d (scan %d + at %d) quota %d calls-in-scan %s' % (charged, nv + na, nv, na, quota, [c_ - base for c_ in calls][:3]))
+    out['f02']['positive'] = dict(charged=charged, completed=nv + na, scan_reads=nv, evaluations=na, quota=quota, overspend=charged - quota, controller_calls=len(calls))
+    mpp = write_task(d, 'infl_pos', m_pos, dict(mode='DETERMINISTIC_EPS', epsilon='1e-100', delta='0', queries=[dict(kind='singleton', variable=0, state=0), dict(kind='singleton', variable=1, state=0)]))
+    w = fresh_worker(mpp, 'N1_CQR', budget=30.0, nonce='c25-02w'); fails, _ = check_(mpp, w, 'N1_CQR', budget=300.0); st = next(s_ for s_ in w['certificate']['compile']['log']['steps'] if s_['op'] == 'influence_deletion')
+    A(w['outcome'] == 'PUBLISHED' and not fails and [a_['point'] for a_ in w['answers']] == [str(F(1001, 6002)), str(F(1001, 1500500))] and st['work'] - w['certificate']['compile']['log']['quota'] <= bound, '02 plain worker: %s %s %s' % (w['outcome'], fails[:1], st)); out['f02']['plain_worker'] = dict(route=w['route'], influence_work=st['work'])
+    for where, zero_at in (('first', 0), ('middle', 999), ('last', 1999)):
+        m_z = infl_model(1000, zero_at); t_z = mk_task(m_z, [TK.singleton_query(0, 0, m_z['cards'])], mode='DETERMINISTIC_EPS', eps=F(1, 10 ** 100), delta=F(0)); C = CP.from_task(t_z); base = C.work.total(); calls = []
+        C.service = lambda op: calls.append(C.work.total())
+        (ret, _), nv, na = count_scan(C, lambda: (CP.influence_deletion(C, base + 50000, [F(1, 800)]), None))
+        A(ret is False and C.work.total() - base == nv == zero_at + 1 and na == 0 and 'hard zeros' in C.certs[-1].get('declined', ''), '02 hard zero at %s: charged %d scan %d at %d decline %s' % (where, C.work.total() - base, nv, na, str(C.certs[-1])[:60]))
+        out['f02']['hard_zero_' + where] = dict(charged=C.work.total() - base, controller_calls=len(calls))
+    # a quota crossed INSIDE the scan is detected at the scan's first service point (quota 500 < 1,024: typed decline naming the scan) or, when the scan ends before a service point,
+    # at the next operator tick (quota 1,500 of a 2,036-entry scan): either way charged == completed and the overspend is within the bound
+    for q_, inside in ((500, True), (1500, False)):
+        C = CP.from_task(t_pos); base = C.work.total(); (ret, _), nv, na = count_scan(C, lambda: (CP.influence_deletion(C, base + q_, [F(1, 800)] * 2), None))
+        dec = C.certs[-1].get('declined', '') if C.certs and C.certs[-1].get('kind') == 'decline' else ''
+        A(ret is False and 'quota' in dec and (not inside or 'applicability scan' in dec) and C.work.total() - base == nv + na and C.work.total() - base - q_ <= bound, '02 quota %d inside the scan: %s charged %d completed %d' % (q_, dec[:60], C.work.total() - base, nv + na))
+        out['f02']['quota_%d' % q_] = dict(charged=C.work.total() - base, decline=dec[:50])
+    C = CP.from_task(t_pos); n_ = [0]
+    def svc_c(op):
+        n_[0] += 1
+        if n_[0] == 1: raise CP.CompileStop('cancelled', op)
+    C.service = svc_c; base = C.work.total(); left = C.acc_since                 # the evidence phase's leftover carries into the scan: the first service point comes after TICK_ENTRIES - left reads
+    def run_c():
+        try: CP.influence_deletion(C, base + 50000, [F(1, 800)] * 2); return 'NO_STOP'
+        except CP.CompileStop as ex: return ex.kind
+    kind, nv, na = count_scan(C, run_c)
+    A(kind == 'cancelled' and C.work.total() - base == nv and na == 0 and nv == CP.TICK_ENTRIES - left and C.commits == 0, '02 controller stop inside the scan: %s charged %d completed %d (leftover %d)' % (kind, C.work.total() - base, nv, left))
+    out['f02']['controller_stop_inside_scan'] = dict(kind=kind, charged=C.work.total() - base, leftover_before=left)
+    # ---------------- 03: tolerance semantics through the real dispatcher + gate
+    rd = os.path.join(d, 'tol')
+    gr, rp_ = _dev_campaign(rd, [('tol_%s' % label, dict(mode='PAC_EPS', epsilon=eps, delta=delta, queries=[dict(kind='all_singletons')])) for label, eps, delta in (('canonical', '1/200', '1/10'), ('decimal', '0.005', '0.1'), ('unreduced', '2/400', '2/20'), ('scientific', '5e-3', '1e-1'), ('json_number', 0.005, 0.1))], 'c25-03')
+    A(gr['gate_passed'] and gr['counters'].get('gated') == 5, '03 equivalent spellings gated: %s %s' % (gr['gate_passed'], gr['failures'][:2])); out['f03']['equivalent_spellings'] = 'all 5 gated'
+    A(rp_.returncode == 0, '03 report failed: %s' % rp_.stderr[-120:])
+    # a genuinely different rational must reject: the frozen declaration keeps 1/200 while the on-disk spec says 1/201 (file re-hash refuses first; the semantic comparison is exercised directly below)
+    mt = dict(epsilon='1/200', delta='1/10', mode='PAC_EPS', normalizer_task=False); mp_ = os.path.join(rd, 'tol_canonical.uai'); w_ = json.load(open(glob.glob(os.path.join(rd, 'cells', '*tol_canonical*', 'attempt_*', 'worker.json'))[0]))
+    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, epsilon='1/201'), arm='G0_CQR', deadline=time.monotonic() + 60); A(fails and any('differs from the input file' in f_ for f_ in fails), '03 a different rational was not refused: %s' % fails[:1])
+    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, epsilon='0.005', delta='0.1'), arm='G0_CQR', deadline=time.monotonic() + 60); A(not fails, '03 equal rationals refused: %s' % fails[:1])
+    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, delta='1/11'), arm='G0_CQR', deadline=time.monotonic() + 60); A(fails and any('delta' in f_ for f_ in fails), '03 a different delta was not refused: %s' % fails[:1]); out['f03']['different_values_refused'] = True
+    # ---------------- 04: reference ratio reads
+    for positive, vals in (('all', [1] * 8), ('half', [1] * 4 + [0] * 4)):
+        mp_ = os.path.join(d, 'ref_%s.uai' % positive); open(mp_, 'w').write('MARKOV\n3\n2 2 2\n1\n3 0 1 2\n8\n' + ' '.join(map(str, vals)) + '\n')
+        json.dump(dict(mode='EXACT_RATIONAL', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=0), dict(kind='conditional', event={'1': 0}, given={'2': 0}), dict(kind='conditional', event={'0': 1}, given={'1': 1})]), open(mp_ + '.query.json', 'w')); t_ = TK.load_task(mp_)
+        for quantum in (1, 3, 256):
+            wk = TK.Work(); r = RF.Reference(t_['model'], t_['queries'], wk); actual = [0]
+            class CL(list):
+                def __getitem__(s_, i): actual[0] += 1; return list.__getitem__(s_, i)
+            r.ftab = [CL(x) for x in r.ftab]; r.qtab = [(CL(h), CL(g) if g is not None else None) for h, g in r.qtab]
+            while not r.done: r.step(quantum)
+            A(actual[0] == wk.entries, '04 reference %s quantum %d: actual %d charged %d' % (positive, quantum, actual[0], wk.entries)); out['f04']['%s_q%d' % (positive, quantum)] = dict(actual=actual[0], charged=wk.entries)
+        t2, tr2 = _truth(mp_); w = fresh_worker(mp_, 'G0_CQR', budget=10.0, nonce='c25-04-' + positive); fails, _ = check_(mp_, w, 'G0_CQR'); A(w['outcome'] == 'PUBLISHED' and not fails and _contained(w, tr2, F(0)), '04 mixed-query worker %s: %s %s' % (positive, w['outcome'], fails[:1]))
+    # ---------------- 05: typed INVALID_TASK rows stay reportable
+    rd = os.path.join(d, 'refusal')
+    gr, rp_ = _dev_campaign(rd, [('c_eps_bad', dict(mode='PAC_EPS', epsilon='1/0', delta='1/10', queries=[dict(kind='all_singletons')])), ('c_eps_zero', dict(mode='PAC_EPS', epsilon='0', delta='1/10', queries=[dict(kind='all_singletons')])), ('c_eps_text', dict(mode='PAC_EPS', epsilon='abc', delta='1/10', queries=[dict(kind='all_singletons')])), ('c_delta_bad', dict(mode='PAC_EPS', epsilon='1/200', delta='1/0', queries=[dict(kind='all_singletons')])), ('c_no_queries', dict(mode='PAC_EPS', epsilon='1/200', delta='1/10', queries=[])), ('c_valid', dict(mode='PAC_EPS', epsilon='1/200', delta='1/10', queries=[dict(kind='all_singletons')]))], 'c25-05')
+    res = json.load(open(os.path.join(rd, 'RESULTS_CQR.json'))) if os.path.exists(os.path.join(rd, 'RESULTS_CQR.json')) else None
+    A(gr['gate_passed'] and gr['counters'].get('gated') == 1 and rp_.returncode == 0 and res is not None, '05 mixed campaign: gate %s %s report rc %d %s' % (gr['gate_passed'], gr['failures'][:1], rp_.returncode, rp_.stderr[-100:]))
+    rows_ = {x['case']: x for x in res['runs']}; A(all(rows_['c_' + k]['outcome'] == 'INVALID_TASK' and rows_['c_' + k]['status'] == 'STOPPED' for k in ('eps_bad', 'eps_zero', 'eps_text', 'delta_bad', 'no_queries')) and rows_['c_valid']['outcome'] == 'PUBLISHED', '05 report rows: %s' % [(k, v['outcome']) for k, v in rows_.items()])
+    A(all(a_['case'] != 'c_eps_bad' for a_ in res.get('reference_audit') or []), '05 an INVALID_TASK row was audited'); out['f05']['rows'] = {k: v['outcome'] for k, v in rows_.items()}
+    return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'

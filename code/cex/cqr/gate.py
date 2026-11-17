@@ -112,6 +112,15 @@ def bind_task_dependencies(c, fail):
     return ok
 
 
+def _rat_eq(a, b):
+    """two tolerance spellings denote the same exact rational (the same semantics as the task parser; CQR-R6-03). Identical spellings are always equal (an INVALID_TASK cell's
+    declaration and its on-disk spec may both carry an unparsable value such as 1/0: the binding still holds and the refusal is reported as such); otherwise both must parse to the
+    same rational"""
+    if str(a) == str(b): return True
+    try: return F(str(a)) == F(str(b))
+    except (ValueError, ZeroDivisionError, TypeError): return False
+
+
 def _manifest_task_for(c, man):
     """the FROZEN task declaration the worker output must match (review CQR-04): the row's frozen query spec (mode / epsilon / delta / normalizer) when one exists, else the
     campaign default (PAC_EPS, all singletons, no normalizer)"""
@@ -152,7 +161,7 @@ def _check_cqr_cell(RD, cid, r, c, man, frozen_cqr, failures, fail, replay_facto
     if deps_ok and c.get('query_sha256'):
         try:
             spec = json.load(open(effective_paths(c['model_path'])[2])); qs = spec.get('queries') or []; tp = c.get('task_params') or {}
-            if str(spec.get('mode', 'PAC_EPS')) != str(tp.get('mode')) or str(spec.get('epsilon', '1/200')) != str(tp.get('epsilon')) or str(spec.get('delta', '1/1000000')) != str(tp.get('delta')) or bool(spec.get('normalizer_task')) != bool(tp.get('normalizer_task')): fail(cid, 'the frozen task declaration (mode / epsilon / delta / normalizer) differs from the query spec on disk'); deps_ok = False
+            if str(spec.get('mode', 'PAC_EPS')) != str(tp.get('mode')) or not _rat_eq(spec.get('epsilon', '1/200'), tp.get('epsilon')) or not _rat_eq(spec.get('delta', '1/1000000'), tp.get('delta')) or bool(spec.get('normalizer_task')) != bool(tp.get('normalizer_task')): fail(cid, 'the frozen task declaration (mode / epsilon / delta / normalizer) differs from the query spec on disk'); deps_ok = False
         except Exception as ex: fail(cid, 'query spec unreadable: %s' % type(ex).__name__); deps_ok = False
     status = r.get('status'); outcome = r.get('outcome')
     if wp is not None and os.path.exists(wp) and sha(wp) != r.get('output_sha256'): fail(cid, 'worker output sha256 differs from the receipt'); return

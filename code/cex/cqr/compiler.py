@@ -44,7 +44,7 @@ from itertools import product
 from math import prod
 from views import View, gf2_rank_basis, gf2_reduce, gf2_span
 from task import Work
-COMPILER_VERSION = 'cqr-compiler-v2.3 (2026-11-16: atomic local commits, journal replay, exactly-once metered service points inside every scan, every tick a controller service, witness lifecycle under the operator quota)'
+COMPILER_VERSION = 'cqr-compiler-v2.4 (2026-11-17: atomic local commits, journal replay, exactly-once metered service points inside every scan incl. the influence applicability scan, every tick a controller service, witness lifecycle under the operator quota)'
 TICK_ENTRIES = 1024                   # service / quota / deadline check at most this many charged units apart inside every scan
 POLICY = dict(
     compiler_version=COMPILER_VERSION,
@@ -173,7 +173,7 @@ class Compiled:
     def __init__(self, cards, views, queries, decoder, work, bias, normalizer_task=False):
         self.cards = list(cards); self.views = list(views); self.queries = list(queries); self.decoder = list(decoder); self.work = work; self.bias = list(bias)
         self.certs = []; self.scalars = []; self.constant_scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.service = None; self.constant_queries = {}
-        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None; self.allowance = None; self.max_gap = 0; self.acc_since = 0; self.active = None; self.service_calls = 0
+        self.ticks = 0; self.commits = 0; self.fault = None; self._last = None; self.allowance = None; self.max_gap = 0; self.acc_since = 0; self.active = None; self.service_calls = 0; self.service_calls_evidence = 0
 
     def n(self): return len(self.cards)
     def measure(self): return (len(self.cards), sum(self.cards), sum(v.size() for v in self.views) + sum(_qsize(q) for q in self.queries))
@@ -261,12 +261,12 @@ def from_task(task, work=None, service=None):
     `service` (optional) is the controller hook: the restriction scan is charged optional work and ticks every TICK_ENTRIES entries (R3: evidence restriction is a scan too)"""
     work = work or Work(); m = task['model']; cards0 = m['cards']; ev = m.get('evidence', {}); n0 = len(cards0)
     free = [v for v in range(n0) if v not in ev]; new_of = {v: i for i, v in enumerate(free)}; cards = [cards0[v] for v in free]
-    acc = [0]
+    acc = [0]; ev_calls = [0]
     def charge(k):
         work.entries += k; acc[0] += k
         if acc[0] >= TICK_ENTRIES:
             acc[0] = 0
-            if service is not None: service('evidence')
+            if service is not None: ev_calls[0] += 1; service('evidence')
     def restrict(scope, values):
         ns = tuple(new_of[v] for v in scope if v not in ev); vals = []
         for xs, w in zip(product(*(range(cards0[v]) for v in scope)), values):
@@ -292,7 +292,7 @@ def from_task(task, work=None, service=None):
     C = Compiled(cards, views, queries, decoder, work, [F(0)] * len(task['queries']), normalizer_task=normalizer_task)
     C.constant_scalars = constant_scalars; C.service = service
     C.certs = [dict(kind='evidence', op='evidence', evidence={str(k): v for k, v in sorted(ev.items())}, free=free, constant_factor_scalars=list(constant_scalars))]
-    C.acc_since = acc[0]; C._last = C.state(); return C
+    C.acc_since = acc[0]; C.service_calls = ev_calls[0]; C.service_calls_evidence = ev_calls[0]; C._last = C.state(); return C
 
 
 # ======================================================================================================================
@@ -869,8 +869,21 @@ def influence_deletion(C, quota, allowance, neumann_T=8):
     deletion set: all non-unary factors first, then greedy by decreasing size; e = Neumann sum + tail; beta_j = sum_{i in scope(f_j)} e_i; ONE commit (deletion + bias)"""
     if any(v.kind != 'table' for v in C.views) or any(q['kind'] != 'expectation' for q in C.queries): return False
     if all(a <= 0 for a in allowance): return False
-    if any(x <= 0 for v in C.views for x in v.values): C.decline('influence_deletion', 'hard zeros remain: the strictly positive comparison operator does not apply'); return False
     T = _Ticker(C, quota, 'influence_deletion'); Cbar = {}; Dai = {}            # SPARSE: Cbar[i][j] exists only for pairs sharing a factor (no dense n x n table)
+    # the strict-positivity APPLICABILITY scan is operator work: every entry read is charged through the ticker from the first read (seventh review, CQR-R6-02), so the quota,
+    # the controller cadence and the exactly-once rule hold whether the scan ends at an early / middle / late hard zero, completes, or is stopped
+    try:
+        hard_zero = False
+        with _Meter(T, 'entries') as m:
+            for v in C.views:
+                for x in v.values:
+                    m.add()
+                    if not x > 0: hard_zero = True; break
+                if hard_zero: break
+    except CompileStop as cs:
+        if cs.kind == 'quota': C.decline('influence_deletion', 'quota exhausted during the applicability scan'); return False
+        raise
+    if hard_zero: C.decline('influence_deletion', 'hard zeros remain: the strictly positive comparison operator does not apply'); return False
     def cb(i, j): return Cbar.get(i, {}).get(j, F(0))
     try:
         for fi, v in enumerate(C.views):
@@ -1177,7 +1190,7 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
         for name in ('approx_quotient', 'concentration', 'influence_deletion'): log['steps'].append(dict(op=name, outcome='disabled', reason='EXACT_RATIONAL mode', commits=0))
     step('affine', lambda: affine(C, q_('affine')))
     C.service = None; C.fault = None; C.active = None              # the hooks are released with the task (the certificate serializer never sees them)
-    log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]; log['commits'] = C.commits; log['ticks'] = C.ticks; log['max_service_gap'] = C.max_gap; log['controller_calls'] = C.service_calls
+    log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]; log['commits'] = C.commits; log['ticks'] = C.ticks; log['max_service_gap'] = C.max_gap; log['controller_calls'] = C.service_calls; log['controller_calls_evidence'] = getattr(C, 'service_calls_evidence', 0); log['controller_calls_note'] = 'actual controller invocations INCLUDING the evidence-restriction phase (from_task; its share in controller_calls_evidence) and every compiler scan; frontier construction, deterministic bounds and the sampling laws are outside the compile log'
     return C, log
 
 
