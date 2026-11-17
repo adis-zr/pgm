@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 3.711,
+   "wall_s": 3.75,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -151,7 +151,7 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.253,
+   "wall_s": 0.252,
    "detail": {
     "routes": {
      "zero": 30,
@@ -225,7 +225,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.089,
+   "wall_s": 0.095,
    "detail": {
     "within_budget": {
      "cards": [
@@ -281,7 +281,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.138,
+   "wall_s": 0.137,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -308,7 +308,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.077,
+   "wall_s": 0.078,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -326,7 +326,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.57,
+   "wall_s": 1.628,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -344,7 +344,7 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 3.028,
+   "wall_s": 3.141,
    "detail": {
     "draws": 74,
     "carves": 74,
@@ -362,7 +362,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.072,
+   "wall_s": 0.073,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -385,14 +385,14 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.586,
+   "wall_s": 2.624,
    "detail": {
     "reference_shares": [
-     0.5869023255813953,
+     0.5862914916552058,
      0.6588065025437109,
-     0.5591297793741334,
+     0.5590604172546295,
      0.5089961676537862,
-     0.5727744754454922,
+     0.5727384346316491,
      0.5266214246052261
     ],
     "no_shortcut": {
@@ -412,7 +412,7 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 114.179,
+   "wall_s": 114.475,
    "detail": {
     "cells": 373,
     "arms": [
@@ -476,24 +476,24 @@
      "N1_NO_AFFINE|PUBLISHED": 29,
      "N1_NO_CONCENTRATION|DEADLINE": 1,
      "N1_NO_CONCENTRATION|PUBLISHED": 31,
-     "N1_NO_INFLUENCE|DEADLINE": 2,
-     "N1_NO_INFLUENCE|PUBLISHED": 30,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 2,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 30,
+     "N1_NO_INFLUENCE|DEADLINE": 3,
+     "N1_NO_INFLUENCE|PUBLISHED": 29,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 1,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 31,
      "N1_NO_QUOTIENT|DEADLINE": 5,
      "N1_NO_QUOTIENT|PUBLISHED": 27,
      "N1_NO_SIGNED_STREAM|DEADLINE": 1,
      "N1_NO_SIGNED_STREAM|PUBLISHED": 31,
-     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 2,
-     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 30,
+     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 3,
+     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 29,
      "P1_PAC_CONDITIONAL|PUBLISHED": 3,
      "PGMAX_SUMPRODUCT_BP|PUBLISHED": 3,
      "SF_NATIVE_SELECT|PUBLISHED": 2,
      "WMB|PUBLISHED": 3
     },
     "gate": {
-     "gated": 319,
-     "wall": 111.148
+     "gated": 318,
+     "wall": 110.202
     },
     "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
     "missing_group_refused": true,
@@ -507,7 +507,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 364.694,
+   "wall_s": 361.466,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -537,7 +537,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 163.5
+      "wall_s": 167.3
      },
      {
       "delta": "1/16",
@@ -549,7 +549,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 201.2
+      "wall_s": 194.2
      }
     ]
    }
@@ -557,7 +557,7 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.891,
+   "wall_s": 4.526,
    "detail": {
     "routes": {
      "concentration.uai/N1_CQR": {
@@ -655,7 +655,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 34.677,
+   "wall_s": 34.122,
    "detail": {
     "mode_override": [
      "INVALID_TASK",
@@ -676,7 +676,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 36.267,
+   "wall_s": 35.27,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -730,7 +730,7 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 12.774,
+   "wall_s": 12.398,
    "detail": {
     "d32_N1_CQR": {
      "wall_s": 0.08,
@@ -752,7 +752,7 @@
      "exact_quotient_pass": 4224,
      "approx_quotient": 50176,
      "concentration": 4159,
-     "influence_deletion": 50176,
+     "influence_deletion": 50240,
      "quota": 50000
     },
     "nb3": {
@@ -782,21 +782,21 @@
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 8.12578946352005e-08,
-     "work_reference": 3931304,
-     "work_optional": 3507385,
+     "reference_progress": 8.242204785346985e-08,
+     "work_reference": 3987624,
+     "work_optional": 3575467,
      "phase": "adaptive"
     },
     "parity_at_exits": {
      "e_zero": {
       "route": "deterministic_signed_residual_E_zero",
       "work_reference": 25466,
-      "work_optional": 3567
+      "work_optional": 3571
      },
      "signed_pac": {
       "route": "pac_signed_residual_validation",
       "work_reference": 17018,
-      "work_optional": 3456
+      "work_optional": 3460
      }
     }
    }
@@ -804,7 +804,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.177,
+   "wall_s": 0.182,
    "detail": {
     "order_sequence": [
      "norm",
@@ -825,7 +825,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.44,
+   "wall_s": 0.407,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -848,7 +848,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 5.718,
+   "wall_s": 5.487,
    "detail": {
     "r1": {
      "support": {
@@ -1091,9 +1091,9 @@
       "route": "exact_reference"
      },
      "deadline_exit": {
-      "work_reference": 64768,
-      "work_optional": 63584,
-      "progress": 0.1953125
+      "work_reference": 53248,
+      "work_optional": 53344,
+      "progress": 0.125
      },
      "support_quota": {
       "quota": 131296,
@@ -1107,7 +1107,7 @@
       "symmetry": 6,
       "approx_quotient": 20,
       "concentration": -126,
-      "influence_deletion": 0,
+      "influence_deletion": 6,
       "affine": -236
      }
     },
@@ -1165,7 +1165,7 @@
   {
    "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
    "ok": true,
-   "wall_s": 13.013,
+   "wall_s": 10.788,
    "detail": {
     "f01": {
      "honest": {
@@ -1195,7 +1195,7 @@
     "f03": {
      "root5000": {
       "route": "exact_reference",
-      "wall_s": 6.31,
+      "wall_s": 4.7,
       "accepted": true
      },
      "forced_in_root": "exact_reference",
@@ -1255,7 +1255,7 @@
   {
    "name": "C22_precision_zero_mass_witness_service",
    "ok": true,
-   "wall_s": 23.644,
+   "wall_s": 22.855,
    "detail": {
     "f01": {
      "1e-12": {
@@ -1473,7 +1473,7 @@
   {
    "name": "C23_exactly_once_accounting_quota_inheritance_tolerance_domain",
    "ok": true,
-   "wall_s": 31.291,
+   "wall_s": 30.167,
    "detail": {
     "f01": {
      "helpers_x_offsets_x_stops": "8 helpers x 3 offsets x 6 stop settings: ledger == completed operations",
@@ -1567,7 +1567,7 @@
   {
    "name": "C24_zero_risk_controller_cadence_completed_charges",
    "ok": true,
-   "wall_s": 43.008,
+   "wall_s": 43.967,
    "detail": {
     "f01": {
      "singleton_PAC_EPS_0": "deterministic_frontier",
@@ -1590,11 +1590,12 @@
     },
     "f02": {
      "natural": {
-      "controller_calls": 100,
+      "controller_calls": 101,
       "max_gap": 1024,
       "max_precall_deficit": 4840,
       "log_gap": 1024,
-      "log_calls": 100,
+      "log_calls": 103,
+      "log_calls_evidence": 2,
       "approx": [
        [
         "committed",
@@ -1604,11 +1605,12 @@
       "quota": 50000
      },
      "unary_padding": {
-      "controller_calls": 100,
+      "controller_calls": 101,
       "max_gap": 1024,
       "max_precall_deficit": 5018,
       "log_gap": 1024,
-      "log_calls": 100,
+      "log_calls": 103,
+      "log_calls_evidence": 2,
       "approx": [
        [
         "committed",
@@ -1654,37 +1656,133 @@
      }
     }
    }
+  },
+  {
+   "name": "C25_ratio_prior_binding_influence_scan_tolerance_semantics",
+   "ok": true,
+   "wall_s": 31.165,
+   "detail": {
+    "f01": {
+     "ratio_route": "pac_ratio_intersected_with_deterministic",
+     "normalizer_route": "normalizer_exact_zero_dimensional",
+     "ratio_prior_halved": "ratio prior U_star 13421772800000000000000 differs from the registered pre-sampl",
+     "ratio_prior_doubled": "ratio prior U_star 53687091200000000000000 differs from the registered pre-sampl",
+     "ratio_rho": "ratio stream risk / rho differ from the policy (rho must be ",
+     "normalizer_prior": "no ratio stream in this publication (deterministic route); mutation controls skipped",
+     "signed_E_star": "epoch 1 E_star differs from the launch envelope"
+    },
+    "f02": {
+     "positive": {
+      "charged": 50068,
+      "completed": 50068,
+      "scan_reads": 2036,
+      "evaluations": 48032,
+      "quota": 50000,
+      "overspend": 68,
+      "controller_calls": 50
+     },
+     "plain_worker": {
+      "route": "exact_frontier_closure",
+      "influence_work": 50032
+     },
+     "hard_zero_first": {
+      "charged": 1,
+      "controller_calls": 0
+     },
+     "hard_zero_middle": {
+      "charged": 1000,
+      "controller_calls": 1
+     },
+     "hard_zero_last": {
+      "charged": 2000,
+      "controller_calls": 2
+     },
+     "quota_500": {
+      "charged": 1058,
+      "decline": "quota exhausted during the applicability scan"
+     },
+     "quota_1500": {
+      "charged": 2036,
+      "decline": "quota exhausted during the local scans"
+     },
+     "controller_stop_inside_scan": {
+      "kind": "cancelled",
+      "charged": 34,
+      "leftover_before": 990
+     }
+    },
+    "f03": {
+     "equivalent_spellings": "all 5 gated",
+     "different_values_refused": true
+    },
+    "f04": {
+     "all_q1": {
+      "actual": 48,
+      "charged": 48
+     },
+     "all_q3": {
+      "actual": 48,
+      "charged": 48
+     },
+     "all_q256": {
+      "actual": 48,
+      "charged": 48
+     },
+     "half_q1": {
+      "actual": 28,
+      "charged": 28
+     },
+     "half_q3": {
+      "actual": 28,
+      "charged": 28
+     },
+     "half_q256": {
+      "actual": 28,
+      "charged": 28
+     }
+    },
+    "f05": {
+     "rows": {
+      "c_delta_bad": "INVALID_TASK",
+      "c_eps_bad": "INVALID_TASK",
+      "c_eps_text": "INVALID_TASK",
+      "c_eps_zero": "INVALID_TASK",
+      "c_no_queries": "INVALID_TASK",
+      "c_valid": "PUBLISHED"
+     }
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 122,
+  "fresh_workers": 139,
   "solver_calls": 389,
   "compiler_calls": 162,
-  "checker_calls": 176,
-  "oracle_models": 109,
-  "truth_coordinates": 2681,
+  "checker_calls": 185,
+  "oracle_models": 113,
+  "truth_coordinates": 2690,
   "stream_draws": 463,
-  "assertions": 3426
+  "assertions": 3459
  },
- "suite_version": "cqr-qualification-v7 (2026-11-16, after the sixth adversarial review: group C24 added -- zero-risk PAC keeps deterministic routes, every tick an actual controller service, charges equal completed operations by independent read counters)",
- "suite_sha256": "cb02cd3f5b44469e322459d680885e5f85ea30cb73aaf0a79c1c4dfa927bee05",
+ "suite_version": "cqr-qualification-v8 (2026-11-17, after the seventh adversarial review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
+ "suite_sha256": "f1c3c4169553e4843838a73ac31924c8ea1536ef04d3ab1cffb65d03241c5623",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "8d495baca37509e4a1de8140d71ce44780fb7453b3ef2dcc54d0c83d8d2f142f",
+  "cqr/checker.py": "1b9d70e06a0b2211324bbb4f4aca7b12185f693b5869a3d126ab817394441dec",
   "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "31e44241f238fb15b29de61d46611522930294eabacd073b3206004c542d02a0",
+  "cqr/compiler.py": "11da544b6516a12a28885d388d2ebbc6c0bafbda30129b1a0b2d539a41915156",
   "cqr/frontier.py": "d40ab9b44216972b599ecc896abbff50daa1db938a777235d5b52971676fc0ad",
-  "cqr/gate.py": "2c6805baf56a4cdf5b1626a30ce5f548aeb9d1c720bdd35c9f9d0baf33f601f3",
+  "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
   "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
   "cqr/numerics.py": "b3325a5bcd0e21cf060ace2e9008f2737e34023893fca1d0b68c5e3582ffd6ec",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
-  "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
+  "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "957dba1169cadaefb823de8edc93f0438163a7012fbc709cdbe6b153eb02b883",
-  "cqr/report.py": "2b5419c645c1e85e3b014a74d5650b30d4f795723abfa1006924fcc884b17181",
+  "cqr/registry.py": "92426094131a53c84f8616c751f5786b076bc2af1c7d4aa674ad61d2a97f9e0a",
+  "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
   "cqr/solve.py": "fc76883e62470d355c8896495287b5a9daabe7c9a01c8c82f38fc630d77ab8cb",
@@ -1694,28 +1792,28 @@
   "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v13",
- "passed": 24,
- "total": 24,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v14",
+ "passed": 25,
+ "total": 25,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "8d495baca37509e4a1de8140d71ce44780fb7453b3ef2dcc54d0c83d8d2f142f",
+  "cqr/checker.py": "1b9d70e06a0b2211324bbb4f4aca7b12185f693b5869a3d126ab817394441dec",
   "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "31e44241f238fb15b29de61d46611522930294eabacd073b3206004c542d02a0",
+  "cqr/compiler.py": "11da544b6516a12a28885d388d2ebbc6c0bafbda30129b1a0b2d539a41915156",
   "cqr/frontier.py": "d40ab9b44216972b599ecc896abbff50daa1db938a777235d5b52971676fc0ad",
-  "cqr/gate.py": "2c6805baf56a4cdf5b1626a30ce5f548aeb9d1c720bdd35c9f9d0baf33f601f3",
+  "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
   "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
   "cqr/numerics.py": "b3325a5bcd0e21cf060ace2e9008f2737e34023893fca1d0b68c5e3582ffd6ec",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
-  "cqr/reference.py": "ee143ae5bcee312d081b5b9f271476d07b46f41c803793711284ae0173341012",
+  "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "957dba1169cadaefb823de8edc93f0438163a7012fbc709cdbe6b153eb02b883",
-  "cqr/report.py": "2b5419c645c1e85e3b014a74d5650b30d4f795723abfa1006924fcc884b17181",
+  "cqr/registry.py": "92426094131a53c84f8616c751f5786b076bc2af1c7d4aa674ad61d2a97f9e0a",
+  "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
   "cqr/solve.py": "fc76883e62470d355c8896495287b5a9daabe7c9a01c8c82f38fc630d77ab8cb",
@@ -1725,8 +1823,8 @@
   "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "utc": "2026-11-17T07:50:46Z",
- "wall_s": 696.4,
+ "utc": "2026-11-17T16:37:40Z",
+ "wall_s": 719.1,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
