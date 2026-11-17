@@ -26,7 +26,7 @@ from task import Work, task_identity
 import task as TK
 
 SOLVER_VERSION = 'cqr-solve-v1.2 (2026-11-16: representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation; zero-risk PAC = deterministic routes only)'
-POLICY = dict(solver_version=SOLVER_VERSION, compiler=CP.POLICY, frontier=FR.FRONTIER_VERSION,
+POLICY = dict(solver_version=SOLVER_VERSION, compiler=CP.POLICY, frontier=FR.FRONTIER_VERSION, frontier_order=FR.FRONTIER_ORDER_POLICY,
               quantum_units=4096, reference_parity='before EVERY publication test the reference is brought to >= the cumulative work of the optional half (gamma = 1/2 at every publication; rounding <= one reference step of 256 assignments)', work_unit_commensurability='every table lookup (factor or query, in the reference, in cell closures, in draws and in compiler scans) is ONE entry unit; cell / rational operations one unit each: the two halves are measured in the same currency', deterministic_test_cadence='every max(1, |F| x K // 1024) optional quanta (the root computation is O(|F| log |F|) per query, K queries; charged |F| x K ratops per test; the cadence bounds the test cost to a constant fraction of the optional half)', reference_share='1/2 of charged Work units (gamma = 1/2): the reference runs one quantum for every optional quantum; the compile is charged to the optional half and the reference catches up before the adaptive loop',
               leaf_cap=4096, open_cap=40000, open_cap_rule='min(40000, 4e7 / n_compiled) (prefix cells store <= n ints)', carve_max_free=14, deterministic_test='after every optional quantum (charged: cells x queries ratops)',
               risk='delta/2 ratio stream; delta/(2 e (e+1)) validation epoch e; epoch length 2^e completed observations',
@@ -170,7 +170,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     fr = None
     if cards:
         try:
-            service('frontier_init'); fr = FR.Frontier(cards, C.views, cq, work_opt, order=list(range(len(cards)))); fr.service = service; service('frontier_init')
+            service('frontier_init'); fr = FR.Frontier(cards, C.views, cq, work_opt, order=FR.canonical_order(len(cards))); fr.service = service      # the REGISTERED split order (FR.FRONTIER_ORDER_POLICY); the checker binds every certificate to it; service('frontier_init')
             if fault_inject == 'frontier_init': raise RuntimeError('INJECTED optional fault in frontier_init (qualification control; never a production run)')
         except CP.CompileStop as cs:
             if cs.kind == 'reference_done': fr = None

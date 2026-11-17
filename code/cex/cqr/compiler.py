@@ -44,7 +44,7 @@ from itertools import product
 from math import prod
 from views import View, gf2_rank_basis, gf2_reduce, gf2_span
 from task import Work
-COMPILER_VERSION = 'cqr-compiler-v2.4 (2026-11-17: atomic local commits, journal replay, exactly-once metered service points inside every scan incl. the influence applicability scan, every tick a controller service, witness lifecycle under the operator quota)'
+COMPILER_VERSION = 'cqr-compiler-v2.5 (2026-11-17: the concentration answer evaluations run under the operator ticker (charged after each lookup, serviced, typed quota decline before the atomic commit); the affine image copies a categorical-only table through the meter; max_service_gap covers the evidence-restriction phase; every producer table-read site declared in EVALUATION_SITES; atomic local commits, journal replay, exactly-once metered service points inside every scan incl. the influence applicability scan, every tick a controller service, witness lifecycle under the operator quota)'
 TICK_ENTRIES = 1024                   # service / quota / deadline check at most this many charged units apart inside every scan
 POLICY = dict(
     compiler_version=COMPILER_VERSION,
@@ -61,7 +61,27 @@ POLICY = dict(
     accounting_rule='EXACTLY ONCE: a meter transfers its pending count to the Work ledger before the service point runs (a stop raised there leaves nothing pending); every metered loop flushes its completed tail on every exit (serviced on a normal exit, charge-only while an exception propagates: the tail is below the allowance, so no service point is skipped and the typed stop is kept); rollback restores model state, never spent work; work delegated by commit (witness validation) runs under the ACTIVE operator ticker (its quota / deadline / service), the quota-less ticker is the explicit replay context',
     tick_entries=TICK_ENTRIES, max_step_charge=2, max_irreducible_charge=TICK_ENTRIES + 2,
     service_gap_proof='between two consecutive service points at most TICK_ENTRIES + max_step_charge - 1 = %d charged units (the counter of charged-since-service units lives on the compiled state, so leftovers carry across helpers and across operators): the meter compares its pending count with the remaining allowance after EVERY step of at most max_step_charge units and posts (servicing when the allowance is reached), so a post never exceeds the allowance by more than max_step_charge - 1; the declared bound max_irreducible_charge = %d is a valid (non-tight) upper bound; an operator quota is therefore overspent by at most that many units' % (TICK_ENTRIES + 1, TICK_ENTRIES + 2),
+    evaluation_sites_rule='EVALUATION_SITES declares every producer function of this module that reads a table entry (View.at / View.at_i / view.values) together with the meter phase that charges the read; the qualification suite re-derives the set of such functions from the source and refuses a producer read site that is not declared (eighth review, CQR-R7-02 audit); arithmetic on values already read (ratio / max / sum of read entries) is bounded by the charged reads and not separately charged unless listed as ratops',
     witness_rule='the positivity witness is model-dependent auxiliary state: every commit that changes cards, views or variable numbering must TRANSFORM it (support / fixed / leaf / omission / quotient / affine re-coordinate it; influence keeps it) or INVALIDATE it (None); the committed witness is validated on the resulting model (domain + strictly positive weight) and dropped with a recorded reason otherwise')
+
+
+# every PRODUCER function of this module that reads a table entry (View.at / View.at_i / iteration or indexing of view.values) -> the meter / declared cost phase of the read.
+# Verification-phase functions (the checker's re-derivations: verify_commit, _influence_recompute, apply_commit, replay_journal, verify_affine_record) charge lumps to the checker's
+# Work ledger without service points (declared exclusion of the service theorem: verification). Audited by qualification group C27 against the source (eighth review, CQR-R7-02).
+EVALUATION_SITES = dict(
+    _witness_problem='evals meter of the ACTIVE operator ticker (commit-time witness validation; quota-less ticker in replay)',
+    from_task='evidence-restriction phase: one entry per source / query table entry, serviced every TICK_ENTRIES (controller_calls_evidence; counted in max_service_gap)',
+    _slice='entries meter of the caller\'s ticker (support / exact + approximate quotient / concentration ratio scans)',
+    _replace_axis='entries meter (support apply / quotient build)', _average_axis='entries meter (quotient query averaging; the class sum split at the allowance)',
+    _remove_var_from_scope_fixed='entries meter (fixed substitution)', _renumbered='no read: scopes renumbered, value lists passed by reference',
+    _fixed_apply='reads only constant (scalar) tables after the metered substitution: one entry each (constant check; charged by _remove_var_from_scope_fixed)',
+    _leaf_apply='entries meter (leaf sum-out)', _omission_proofs='entries meter (positivity scan, charged before the test) + evals meter (witness-restricted proof)',
+    _quotient_build='ratops meter (kappa); the unary rescale reads len(classes) entries of the NEW unary built from metered reads', approx_quotient='ratops meter (surrogate build)',
+    verify_symmetry_action='entries meter (two lookups per compared assignment, charged after each)', _query_symmetric_constant='entries meter (two lookups per assignment)',
+    _unary_product_argmax='entries meter (unary factor entries)', concentration='evals meter (witness weight) + _slice entries (ratio scans) + evals meter (answers at x*: CQR-R7-02)',
+    influence_deletion='entries meter from the first read (applicability scan: CQR-R6-02) + entries meter (local D / R scans)', local_affine='entries meter (row support scan)',
+    _affine_build='entries meter (image tables: binary-involved views evaluated per image row; categorical-only views copied entry by entry) + constant-image check (one entry)',
+    quota_for='declared quota sizing from table SIZES (len), not a read')
 
 
 class ZeroEvidence(Exception):
@@ -262,9 +282,11 @@ def from_task(task, work=None, service=None):
     work = work or Work(); m = task['model']; cards0 = m['cards']; ev = m.get('evidence', {}); n0 = len(cards0)
     free = [v for v in range(n0) if v not in ev]; new_of = {v: i for i, v in enumerate(free)}; cards = [cards0[v] for v in free]
     acc = [0]; ev_calls = [0]
+    ev_gap = [0]
     def charge(k):
         work.entries += k; acc[0] += k
         if acc[0] >= TICK_ENTRIES:
+            if acc[0] > ev_gap[0]: ev_gap[0] = acc[0]          # the spacing of the evidence phase's actual controller invocations enters max_service_gap (eighth review, correction 2)
             acc[0] = 0
             if service is not None: ev_calls[0] += 1; service('evidence')
     def restrict(scope, values):
@@ -292,7 +314,7 @@ def from_task(task, work=None, service=None):
     C = Compiled(cards, views, queries, decoder, work, [F(0)] * len(task['queries']), normalizer_task=normalizer_task)
     C.constant_scalars = constant_scalars; C.service = service
     C.certs = [dict(kind='evidence', op='evidence', evidence={str(k): v for k, v in sorted(ev.items())}, free=free, constant_factor_scalars=list(constant_scalars))]
-    C.acc_since = acc[0]; C.service_calls = ev_calls[0]; C.service_calls_evidence = ev_calls[0]; C._last = C.state(); return C
+    C.acc_since = acc[0]; C.service_calls = ev_calls[0]; C.service_calls_evidence = ev_calls[0]; C.max_gap = ev_gap[0]; C._last = C.state(); return C
 
 
 # ======================================================================================================================
@@ -849,10 +871,17 @@ def concentration(C, quota, allowance):
             Ri += r
         t[var] = F(1) if inf else Ri / (1 + Ri)
     answers = {}; biases = {}
-    for qi, q in enumerate(C.queries):
-        b = min(F(1), sum(t[u] for u in q['f'].scope)) if q['f'].scope else F(0)
-        if b > allowance[qi] - C.bias[qi]: C.decline('concentration', 'bias %s exceeds the allowance of query %d' % (b, qi), t={str(k): str(v) for k, v in t.items()}); return None
-        answers[qi] = q['f'].at(C.cards, xstar); biases[qi] = b
+    # the answer of every requested query at x* is a table lookup: charged AFTER it completed through the operator's meter and serviced at the declared interval (eighth review,
+    # CQR-R7-02); a controller stop inside the loop propagates (nothing committed: the journal, model and bias are the last commit), a quota stop is a typed decline
+    try:
+        with _Meter(T, 'evals') as m:
+            for qi, q in enumerate(C.queries):
+                b = min(F(1), sum(t[u] for u in q['f'].scope)) if q['f'].scope else F(0)
+                if b > allowance[qi] - C.bias[qi]: C.decline('concentration', 'bias %s exceeds the allowance of query %d' % (b, qi), t={str(k): str(v) for k, v in t.items()}); return None
+                answers[qi] = q['f'].at(C.cards, xstar); m.add(); biases[qi] = b
+    except CompileStop as cs:
+        if cs.kind == 'quota': C.decline('concentration', 'quota exhausted during the query evaluations at x* (nothing committed)'); return None
+        raise
     rec = dict(op='concentration', xstar={str(k): v for k, v in xstar.items()}, weight=str(wst), t={str(k): str(v) for k, v in t.items()}, answers={str(k): str(v) for k, v in answers.items()}, bias={str(k): str(v) for k, v in biases.items()},
                query_scopes={str(qi): list(q['f'].scope) for qi, q in enumerate(C.queries)})
     bias = list(C.bias)
@@ -1010,7 +1039,11 @@ def _affine_build(C, quota, T):
     cat_vars = [v for v in range(C.n()) if C.cards[v] != 2]; newcards = [2] * len(free_bits) + [C.cards[v] for v in cat_vars]; cat_new = {v: len(free_bits) + i for i, v in enumerate(cat_vars)}
     def make_view(v):
         bin_in = [u for u in v.scope if C.cards[u] == 2]; cat_in = [u for u in v.scope if C.cards[u] != 2]
-        if not bin_in: return View('table', tuple(cat_new[u] for u in v.scope), list(v.values))
+        if not bin_in:
+            with _Meter(T, 'entries') as m:                       # the image of a categorical-only table is a copy: every entry read is charged (eighth review audit)
+                vals = []
+                for w_ in v.values: vals.append(w_); m.add()
+            return View('table', tuple(cat_new[u] for u in v.scope), vals)
         rows = [Brow[pos[u]] for u in bin_in]; rank_u, ub = gf2_rank_basis(rows)
         coords = []
         for r in rows:
@@ -1190,7 +1223,7 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
         for name in ('approx_quotient', 'concentration', 'influence_deletion'): log['steps'].append(dict(op=name, outcome='disabled', reason='EXACT_RATIONAL mode', commits=0))
     step('affine', lambda: affine(C, q_('affine')))
     C.service = None; C.fault = None; C.active = None              # the hooks are released with the task (the certificate serializer never sees them)
-    log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]; log['commits'] = C.commits; log['ticks'] = C.ticks; log['max_service_gap'] = C.max_gap; log['controller_calls'] = C.service_calls; log['controller_calls_evidence'] = getattr(C, 'service_calls_evidence', 0); log['controller_calls_note'] = 'actual controller invocations INCLUDING the evidence-restriction phase (from_task; its share in controller_calls_evidence) and every compiler scan; frontier construction, deterministic bounds and the sampling laws are outside the compile log'
+    log['wall_s'] = time.monotonic() - t0; log['work'] = C.work.snapshot(); log['final_measure'] = C.measure(); log['bias'] = [str(b) for b in C.bias]; log['commits'] = C.commits; log['ticks'] = C.ticks; log['max_service_gap'] = C.max_gap; log['controller_calls'] = C.service_calls; log['controller_calls_evidence'] = getattr(C, 'service_calls_evidence', 0); log['controller_calls_note'] = 'actual controller invocations INCLUDING the evidence-restriction phase (from_task; its share in controller_calls_evidence) and every compiler scan; max_service_gap is the largest number of charged units between two consecutive actual invocations INCLUDING the evidence phase (its leftover carries into the first compiler scan); frontier construction, deterministic bounds and the sampling laws are bulk phases outside this count (solve.py services around them)'
     return C, log
 
 

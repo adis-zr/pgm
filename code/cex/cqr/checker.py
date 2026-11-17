@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.3 (2026-11-17: ratio prior bound to the replayed root frontier before any draw; tolerances compared as exact rationals)'
+CHECKER_VERSION = 'cqr-checker-v1.4 (2026-11-17: the certificate frontier order is validated as a permutation of the compiled variables AND bound to the registered canonical producer policy before any cell is built; structural frontier faults are typed refusals; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -340,8 +340,16 @@ def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, e
 
 def _replay_frontier(task, C, cert, delta, work, deadline, fail):
     """replay every recorded frontier / stream event on the replayed compiled model; returns (frontier, state) with the recomputed stream statistics; fails on any divergence"""
-    cq = C.queries; K = len(cq); fr_rec = cert.get('frontier'); events = cert.get('events') or []
-    fr = FR.Frontier(C.cards, C.views, cq, work, order=fr_rec.get('order') if fr_rec else None)
+    cq = C.queries; K = len(cq); fr_rec = cert.get('frontier'); events = cert.get('events') or []; n = len(C.cards)
+    # THE PARTITION PREMISE (eighth review, CQR-R7-01): the split order is validated at the data boundary -- a permutation of the compiled variables -- and BOUND to the
+    # registered producer policy (canonical) BEFORE any cell is constructed, bound derived or draw replayed: a certificate does not choose the execution structure
+    if not isinstance(fr_rec, dict): fail('frontier-based route without a frontier record'); return None, None          # every frontier route of the producer records fr.record()
+    if 'order' not in fr_rec: fail('frontier record without a split order'); return None, None
+    pb = FR.order_problem(fr_rec['order'], n)
+    if pb: fail('frontier order refused: %s' % pb); return None, None
+    if list(fr_rec['order']) != FR.canonical_order(n): fail('frontier order %s differs from the registered producer policy (%s): a certificate does not choose the split structure' % (str(list(fr_rec['order']))[:48], FR.FRONTIER_ORDER_POLICY)); return None, None
+    try: fr = FR.Frontier(C.cards, C.views, cq, work, order=FR.canonical_order(n))
+    except FR.FrontierStructureError as fx: fail('frontier construction refused: %s' % str(fx)[:100]); return None, None
     ratio_rec = cert.get('ratio_stream'); epochs = cert.get('epochs') or []
     H = F(0); Hj = [F(0)] * K; G = [F(0)] * K; V = F(0); t_r = 0
     # the ratio prior U_star is the producer's REGISTERED pre-sampling choice: the initial compiled frontier's positive U (fallback 1 when U = 0), fixed BEFORE any recorded event or
@@ -405,9 +413,10 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
                 st['V'] += b * b * E * E
             elif op in ('ratio_stream_stopped', 'prune_zero', 'optional_cancelled', 'optional_operator_failed'): pass      # informational: the compile replay / rollback is verified separately
             else: fail('unknown event %s' % op); return None, None
+        except FR.FrontierStructureError as fx: fail('frontier structure violated during the replay: %s' % str(fx)[:100]); return None, None
         except AssertionError as ax: fail('frontier replay assertion: %s' % str(ax)[:80]); return None, None
-    if fr_rec is not None:
-        if fr.resolved_mass != _F(fr_rec['resolved_mass']) or [str(x) for x in fr.resolved_num] != fr_rec['resolved_num'] or len(fr.open) != fr_rec['open_cells']: fail('replayed frontier totals differ from the recorded frontier')
+        except (KeyError, TypeError, ValueError, IndexError) as ex: fail('frontier event %s is malformed or refers to a cell that is not open (%s)' % (op, type(ex).__name__)); return None, None
+    if fr.resolved_mass != _F(fr_rec['resolved_mass']) or [str(x) for x in fr.resolved_num] != fr_rec['resolved_num'] or len(fr.open) != fr_rec['open_cells']: fail('replayed frontier totals differ from the recorded frontier')
     ratio = None
     if ratio_rec is not None:
         if t_r != ratio_rec['t'] or str(H) != ratio_rec['H'] or [str(x) for x in G] != ratio_rec['G'] or str(V) != ratio_rec['V']: fail('ratio stream statistics do not replay')
