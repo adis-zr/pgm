@@ -13,7 +13,27 @@ from math import prod
 import numerics as NM
 from math import lcm, gcd
 
-FRONTIER_VERSION = 'cqr-frontier-v1.3 (2026-11-16: closure enumeration serviced per 1,024 charged units, each lookup charged after it completes; streams define no boundary at zero risk)'
+FRONTIER_VERSION = 'cqr-frontier-v1.4 (2026-11-17: the split order is a VALIDATED permutation of the compiled variables (duplicate / missing / out-of-range / non-integer orders are refused at construction); split / carve premises enforced structurally; a ratio draw charges every query lookup)'
+FRONTIER_ORDER_POLICY = 'canonical'          # the REGISTERED producer policy: the split order is the identity permutation of the compiled variables (solve.py constructs it; checker.py binds a certificate to it)
+
+
+class FrontierStructureError(ValueError):
+    """a frontier operation would break the partition (eighth review, CQR-R7-01): an order that is not a permutation of the compiled variables, a cell whose prefix is not a prefix
+    of the order, a split on an already assigned variable. Typed: internal callers cannot silently build overlapping cells; the checker turns it into a refusal"""
+
+
+def canonical_order(n): return list(range(n))
+
+
+def order_problem(order, n):
+    """None if `order` is a permutation of range(n) given as a list / tuple of Python ints (bool excluded); otherwise the reason (the data-boundary validation of CQR-R7-01)"""
+    if not isinstance(order, (list, tuple)): return 'order is not a sequence (%s)' % type(order).__name__
+    if len(order) != n: return 'order has %d entries for %d compiled variables' % (len(order), n)
+    if any(isinstance(v, bool) or not isinstance(v, int) for v in order): return 'order contains a non-integer entry'
+    if any(not (0 <= v < n) for v in order): return 'order contains an out-of-range variable index'
+    if len(set(order)) != n:
+        dup = sorted({v for v in order if order.count(v) > 1}); return 'order repeats variable(s) %s (not a permutation: cells would overlap)' % dup[:6]
+    return None
 
 
 def draw_categorical(rng, weights):
@@ -53,7 +73,9 @@ class Cell:
 class Frontier:
     def __init__(self, cards, views, queries, work, order=None):
         self.cards = list(cards); self.views = views; self.queries = queries; self.work = work; self.n = len(cards); self.service = None        # service(op): controller hook ticked inside bounded scans (second review R3)
-        self.order = list(order) if order is not None else list(range(self.n))      # fixed structural split order (canonical)
+        pb = order_problem(order, self.n) if order is not None else None
+        if pb: raise FrontierStructureError('frontier order refused: ' + pb)
+        self.order = list(order) if order is not None else canonical_order(self.n)      # fixed structural split order: a VALIDATED permutation (the producer uses the canonical one)
         for v in views: v.refresh()
         for q in queries:
             for v in ([q['f']] if q['kind'] == 'expectation' else [q['h'], q['g']]): v.refresh()
@@ -77,7 +99,9 @@ class Frontier:
     # ---- cell construction (universal bounds (3))
     def _make_cell(self, assign, parent=None, var=None):
         """universal bounds (3). parent given: only the views / queries touching `var` are rescanned; untouched extrema are inherited exactly (same cell restriction on them)"""
-        states = tuple(assign[self.order[i]] for i in range(len(assign)))
+        d = len(assign)
+        if any(self.order[i] not in assign for i in range(d)): raise FrontierStructureError('cell prefix %s is not a prefix of the split order' % sorted(assign)[:8])       # a prefix cell assigns EXACTLY the first d variables of the order
+        states = tuple(assign[self.order[i]] for i in range(d))
         free_n = self.n - len(states); N = 1
         for i in range(len(states), self.n): N *= self.cards[self.order[i]]
         if parent is None:
@@ -125,9 +149,12 @@ class Frontier:
     def split(self, cid):
         c = self.open.pop(cid)
         if c.depth >= self.n: self.open[cid] = c; return self.close(cid)
-        var = self.order[c.depth]; kids = []; passign = c.assign; self.sumE -= c.E; self.sumL -= c.L; self.sumB -= c.B
+        var = self.order[c.depth]; kids = []; passign = c.assign
+        if var in passign or len(passign) != c.depth: raise FrontierStructureError('split of cell %d on variable %d which its prefix already assigns' % (cid, var))      # premise: the child extends the parent by ONE new variable
+        self.sumE -= c.E; self.sumL -= c.L; self.sumB -= c.B
         for s in range(self.cards[var]):
             a = dict(passign); a[var] = s; k = self._make_cell(a, parent=c, var=var)
+            if k.depth != c.depth + 1 or k.states[:c.depth] != c.states: raise FrontierStructureError('child of cell %d does not extend its parent by one variable' % cid)
             if k.B == 0: self.history.append(dict(op='prune_zero', cell=k.id, parent=cid)); continue
             self.open[k.id] = k; kids.append(k.id); self.sumE += k.E; self.sumL += k.L; self.sumB += k.B
         self.splits += 1; self.history.append(dict(op='split', cell=cid, var=var, children=kids)); return kids
@@ -242,17 +269,17 @@ class Frontier:
         for vw in self.views:
             w *= vw.at_i(self.cards, x); self.work.entries += 1
             if not w: break
-        self.work.evals += 1; self.work.entries += len(self.queries)
+        self.work.evals += 1
         fq = []
-        for q in self.queries:
-            if q['kind'] == 'expectation': fq.append((q['f'].at(self.cards, x), F(1)))
-            else: fq.append((q['h'].at(self.cards, x), q['g'].at(self.cards, x)))
+        for q in self.queries:                                     # every lookup charged AFTER it completed: one per expectation query, TWO per ratio query (eighth review audit)
+            if q['kind'] == 'expectation': fq.append((q['f'].at(self.cards, x), F(1))); self.work.entries += 1
+            else: h = q['h'].at(self.cards, x); self.work.entries += 1; g = q['g'].at(self.cards, x); self.work.entries += 1; fq.append((h, g))
         return F(w), fq
 
     def record(self):
         return dict(version=FRONTIER_VERSION, scale_den=str(self.scale_den), qden=[str(d) for d in self.qden], open_cells=len(self.open), resolved_cells=self.resolved_cells, splits=self.splits, closures=self.closures, resolved_mass=str(self.resolved_mass),
                     resolved_num=[str(x) for x in self.resolved_num], resolved_den=[str(x) for x in self.resolved_den], U=str(self.U()), Zlo=str(self.Zlo()), Zhi=str(self.Zhi()),
-                    open_summary=dict(count=len(self.open), max_depth=max((c.depth for c in self.open.values()), default=0)), order=self.order)
+                    open_summary=dict(count=len(self.open), max_depth=max((c.depth for c in self.open.values()), default=0)), order=self.order, order_policy=FRONTIER_ORDER_POLICY)
 
 
 def _root(a, A, items, lower):
