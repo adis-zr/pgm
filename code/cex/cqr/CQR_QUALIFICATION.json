@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 3.949,
+   "wall_s": 3.727,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -151,7 +151,7 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.268,
+   "wall_s": 0.252,
    "detail": {
     "routes": {
      "zero": 30,
@@ -166,7 +166,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.084,
+   "wall_s": 0.082,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -225,7 +225,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.099,
+   "wall_s": 0.091,
    "detail": {
     "within_budget": {
      "cards": [
@@ -258,7 +258,7 @@
   {
    "name": "C5_affine_support_and_pullbacks",
    "ok": true,
-   "wall_s": 0.006,
+   "wall_s": 0.005,
    "detail": {
     "m04": {
      "n": 8,
@@ -281,7 +281,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.144,
+   "wall_s": 0.134,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -308,7 +308,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.08,
+   "wall_s": 0.078,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -326,7 +326,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.642,
+   "wall_s": 1.602,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -344,7 +344,7 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 3.189,
+   "wall_s": 3.046,
    "detail": {
     "draws": 74,
     "carves": 74,
@@ -362,7 +362,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.081,
+   "wall_s": 0.072,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -385,14 +385,14 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.725,
+   "wall_s": 2.635,
    "detail": {
     "reference_shares": [
-     0.5862914916552058,
+     0.586247909310537,
      0.6588065025437109,
      0.5590604172546295,
      0.5089961676537862,
-     0.5727384346316491,
+     0.5727370485370791,
      0.5266214246052261
     ],
     "no_shortcut": {
@@ -412,7 +412,7 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 120.769,
+   "wall_s": 115.408,
    "detail": {
     "cells": 373,
     "arms": [
@@ -478,8 +478,8 @@
      "N1_NO_CONCENTRATION|PUBLISHED": 30,
      "N1_NO_INFLUENCE|DEADLINE": 2,
      "N1_NO_INFLUENCE|PUBLISHED": 30,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 2,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 30,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 1,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 31,
      "N1_NO_QUOTIENT|DEADLINE": 5,
      "N1_NO_QUOTIENT|PUBLISHED": 27,
      "N1_NO_SIGNED_STREAM|DEADLINE": 1,
@@ -492,8 +492,8 @@
      "WMB|PUBLISHED": 3
     },
     "gate": {
-     "gated": 318,
-     "wall": 113.235
+     "gated": 319,
+     "wall": 111.458
     },
     "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
     "missing_group_refused": true,
@@ -507,7 +507,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 378.234,
+   "wall_s": 353.473,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -537,7 +537,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 172.9
+      "wall_s": 163.0
      },
      {
       "delta": "1/16",
@@ -549,7 +549,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 205.3
+      "wall_s": 190.5
      }
     ]
    }
@@ -557,7 +557,7 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.815,
+   "wall_s": 4.392,
    "detail": {
     "routes": {
      "concentration.uai/N1_CQR": {
@@ -655,7 +655,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 35.23,
+   "wall_s": 33.404,
    "detail": {
     "mode_override": [
      "INVALID_TASK",
@@ -676,7 +676,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 36.771,
+   "wall_s": 34.198,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -730,7 +730,7 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 12.441,
+   "wall_s": 12.457,
    "detail": {
     "d32_N1_CQR": {
      "wall_s": 0.07,
@@ -782,21 +782,21 @@
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 8.35862010717392e-08,
-     "work_reference": 4043944,
-     "work_optional": 3600398,
+     "reference_progress": 8.42846930027008e-08,
+     "work_reference": 4077736,
+     "work_optional": 3616152,
      "phase": "adaptive"
     },
     "parity_at_exits": {
      "e_zero": {
       "route": "deterministic_signed_residual_E_zero",
       "work_reference": 25466,
-      "work_optional": 3571
+      "work_optional": 3585
      },
      "signed_pac": {
       "route": "pac_signed_residual_validation",
       "work_reference": 17018,
-      "work_optional": 3460
+      "work_optional": 3499
      }
     }
    }
@@ -804,7 +804,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.161,
+   "wall_s": 0.136,
    "detail": {
     "order_sequence": [
      "norm",
@@ -825,7 +825,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.362,
+   "wall_s": 0.364,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -848,7 +848,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 5.42,
+   "wall_s": 5.463,
    "detail": {
     "r1": {
      "support": {
@@ -1091,9 +1091,9 @@
       "route": "exact_reference"
      },
      "deadline_exit": {
-      "work_reference": 64768,
-      "work_optional": 67680,
-      "progress": 0.1953125
+      "work_reference": 59648,
+      "work_optional": 60512,
+      "progress": 0.1640625
      },
      "support_quota": {
       "quota": 131296,
@@ -1103,9 +1103,9 @@
      "operator_quota_overspend": {
       "support_fixpoint": -148,
       "leaf_sumout": -300,
-      "exact_quotient_pass": 13,
+      "exact_quotient_pass": 14,
       "symmetry": 6,
-      "approx_quotient": 20,
+      "approx_quotient": 23,
       "concentration": -126,
       "influence_deletion": 6,
       "affine": -236
@@ -1165,7 +1165,7 @@
   {
    "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
    "ok": true,
-   "wall_s": 10.482,
+   "wall_s": 10.739,
    "detail": {
     "f01": {
      "honest": {
@@ -1195,7 +1195,7 @@
     "f03": {
      "root5000": {
       "route": "exact_reference",
-      "wall_s": 4.69,
+      "wall_s": 4.82,
       "accepted": true
      },
      "forced_in_root": "exact_reference",
@@ -1255,7 +1255,7 @@
   {
    "name": "C22_precision_zero_mass_witness_service",
    "ok": true,
-   "wall_s": 22.685,
+   "wall_s": 22.504,
    "detail": {
     "f01": {
      "1e-12": {
@@ -1440,31 +1440,31 @@
      },
      "class_1023": {
       "route": "deterministic_concentration",
-      "quotient_work": 5116,
+      "quotient_work": 5117,
       "max_gap": 1024
      },
      "class_1024": {
       "route": "deterministic_concentration",
-      "quotient_work": 5121,
+      "quotient_work": 5122,
       "max_gap": 1024
      },
      "class_1025": {
       "route": "deterministic_concentration",
-      "quotient_work": 5126,
+      "quotient_work": 5127,
       "max_gap": 1024
      },
      "class_2048": {
       "route": "deterministic_concentration",
-      "quotient_work": 10241,
+      "quotient_work": 10242,
       "max_gap": 1024
      },
      "class_2049": {
       "route": "deterministic_concentration",
-      "quotient_work": 10246,
+      "quotient_work": 10247,
       "max_gap": 1024
      },
      "failing_pullback": {
-      "work_charged": 10241,
+      "work_charged": 10242,
       "route": "exact_frontier_closure"
      }
     }
@@ -1473,7 +1473,7 @@
   {
    "name": "C23_exactly_once_accounting_quota_inheritance_tolerance_domain",
    "ok": true,
-   "wall_s": 30.05,
+   "wall_s": 29.97,
    "detail": {
     "f01": {
      "helpers_x_offsets_x_stops": "8 helpers x 3 offsets x 6 stop settings: ledger == completed operations",
@@ -1492,8 +1492,8 @@
       "approx": [
        [
         "committed",
-        50990,
-        990
+        50442,
+        442
        ]
       ],
       "quota": 50000
@@ -1502,7 +1502,7 @@
       "evals": 1024,
       "service_calls": 1
      },
-     "rollback_keeps_work": 10241
+     "rollback_keeps_work": 10242
     },
     "f02": {
      "production_quota": {
@@ -1567,7 +1567,7 @@
   {
    "name": "C24_zero_risk_controller_cadence_completed_charges",
    "ok": true,
-   "wall_s": 43.595,
+   "wall_s": 42.954,
    "detail": {
     "f01": {
      "singleton_PAC_EPS_0": "deterministic_frontier",
@@ -1592,14 +1592,14 @@
      "natural": {
       "controller_calls": 101,
       "max_gap": 1024,
-      "max_precall_deficit": 4840,
+      "max_precall_deficit": 4962,
       "log_gap": 1024,
       "log_calls": 103,
       "log_calls_evidence": 2,
       "approx": [
        [
         "committed",
-        50990
+        50442
        ]
       ],
       "quota": 50000
@@ -1607,14 +1607,14 @@
      "unary_padding": {
       "controller_calls": 101,
       "max_gap": 1024,
-      "max_precall_deficit": 5018,
+      "max_precall_deficit": 4985,
       "log_gap": 1024,
       "log_calls": 103,
       "log_calls_evidence": 2,
       "approx": [
        [
         "committed",
-        51004
+        50459
        ]
       ],
       "quota": 50000
@@ -1643,7 +1643,7 @@
      "natural_approx": [
       [
        "committed",
-       50990,
+       50442,
        50000
       ]
      ],
@@ -1660,7 +1660,7 @@
   {
    "name": "C25_ratio_prior_binding_influence_scan_tolerance_semantics",
    "ok": true,
-   "wall_s": 36.894,
+   "wall_s": 36.11,
    "detail": {
     "f01": {
      "ratio": {
@@ -1684,8 +1684,8 @@
        "277680655651018926447242306895677930272252800307190214585593/827257136310998981993750000000000000000000000000000000000000",
        "433407693813000788617757693104322069727747199692809785414407/827257136310998981993750000000000000000000000000000000000000"
       ],
-      "altered_prior": false,
-      "original_prior": "published bounds of query 0 do not contain the re-derived en"
+      "altered_prior_refusal": "ratio prior U_star 13421772800000000000000 differs from the ",
+      "original_prior_refusal": "published bounds of query 0 do not contain the re-derived en"
      },
      "ratio_rho": "ratio stream risk / rho differ from the policy (rho must be ",
      "normalizer_prior_halved": "ratio prior U_star 1073741824 differs from the registered pre-sampling choice 21",
@@ -1699,11 +1699,19 @@
        "1285893136364935980414208260998967028034738712442472869521387/1175000000000000000000000000000000000000000000000000",
        "2311141974035064019585791739001032971965261287557527130478613/1175000000000000000000000000000000000000000000000000"
       ],
-      "altered_prior": false,
-      "original_prior": "published Z bounds do not contain the re-derived enclosure ["
+      "altered_prior_refusal": "ratio prior U_star 1073741824 differs from the registered pr",
+      "original_prior_refusal": "published Z bounds do not contain the re-derived enclosure ["
      },
      "normalizer_rho": "ratio stream risk / rho differ from the policy (rho must be ",
      "signed_E_star": {
+      "role": "GENUINE signed-route publication",
+      "route": "pac_signed_residual_validation",
+      "epochs": 1,
+      "draws": 1,
+      "refusal": "epoch 1 E_star differs from the launch envelope"
+     },
+     "epoch_replay_E_star": {
+      "role": "EPOCH-REPLAY control on a pac_ratio_intersected_with_deterministic publication that carries signed epochs (not a signed-publication test)",
       "route": "pac_ratio_intersected_with_deterministic",
       "epochs": 5,
       "refusal": "epoch 1 E_star differs from the launch envelope"
@@ -1794,7 +1802,7 @@
   {
    "name": "C26_partition_premise_order_validation_structural_negative",
    "ok": true,
-   "wall_s": 26.283,
+   "wall_s": 25.903,
    "detail": {
     "constructor": {
      "duplicate": "frontier order refused: order repeats variable(s) [0] (not a permutati",
@@ -2051,7 +2059,7 @@
   {
    "name": "C27_final_query_accounting_evaluation_site_audit",
    "ok": true,
-   "wall_s": 2.545,
+   "wall_s": 2.708,
    "detail": {
     "a": {
      "1000": {
@@ -2127,13 +2135,27 @@
      "1025_distinct": {
       "kind": "returned",
       "committed": true,
-      "charged": 422,
-      "reads": 422,
-      "calls": 24,
-      "calls_in_loop": 0,
-      "max_gap": 10,
+      "charged": 1399,
+      "reads": 1399,
+      "calls": 25,
+      "calls_in_loop": 1,
+      "max_gap": 1024,
       "loop_start": 327,
       "quota": 50000,
+      "commits_added": 1,
+      "measure_same": true,
+      "bias_same": false
+     },
+     "5000_distinct": {
+      "kind": "returned",
+      "committed": true,
+      "charged": 5374,
+      "reads": 5374,
+      "calls": 28,
+      "calls_in_loop": 4,
+      "max_gap": 1024,
+      "loop_start": 327,
+      "quota": 81120,
       "commits_added": 1,
       "measure_same": true,
       "bias_same": false
@@ -2222,27 +2244,353 @@
      "declared": 20
     }
    }
+  },
+  {
+   "name": "C28_view_storage_ownership_renumbering_declarations_event_schema",
+   "ok": true,
+   "wall_s": 0.786,
+   "detail": {
+    "a": {
+     "list_refused": "View storage must be an immutable tuple owned by the view (g",
+     "affine_urows_list_refused": true,
+     "borrowed_without_traversal": true,
+     "committed_views_immutable": {
+      "views": 20,
+      "commits": 2,
+      "ops": [
+       "support_fixpoint",
+       "leaf_sumout"
+      ]
+     }
+    },
+    "b": {
+     "two_variable": {
+      "commits": 1,
+      "charged": 2,
+      "independent_reads": 2,
+      "quota": 80016,
+      "controller_calls": 2,
+      "surviving_storage_identical": true
+     },
+     "eleven_variable": {
+      "commits": 10,
+      "charged": 20,
+      "independent_reads": 20,
+      "quota": 80160,
+      "controller_calls": 11,
+      "surviving_storage_identical": true
+     },
+     "plain_worker": {
+      "route": "exact_zero_dimensional",
+      "point": "1/29985",
+      "leaf_work": 20,
+      "leaf_commits": 10,
+      "quota": 80160
+     },
+     "below_1024": {
+      "ops": [
+       [
+        "support_fixpoint",
+        true,
+        2012,
+        2012
+       ],
+       [
+        "fixed_substitution",
+        true,
+        2,
+        2
+       ],
+       [
+        "leaf_sumout",
+        true,
+        4,
+        4
+       ],
+       [
+        "component_omission",
+        false,
+        0,
+        0
+       ]
+      ],
+      "large_storage_identical": true,
+      "n_views": 1,
+      "cards": [
+       1000
+      ]
+     },
+     "at_1024": {
+      "ops": [
+       [
+        "support_fixpoint",
+        true,
+        2060,
+        2060
+       ],
+       [
+        "fixed_substitution",
+        true,
+        2,
+        2
+       ],
+       [
+        "leaf_sumout",
+        true,
+        4,
+        4
+       ],
+       [
+        "component_omission",
+        false,
+        0,
+        0
+       ]
+      ],
+      "large_storage_identical": true,
+      "n_views": 1,
+      "cards": [
+       1024
+      ]
+     },
+     "above_1024": {
+      "ops": [
+       [
+        "support_fixpoint",
+        true,
+        2062,
+        2062
+       ],
+       [
+        "fixed_substitution",
+        true,
+        2,
+        2
+       ],
+       [
+        "leaf_sumout",
+        true,
+        4,
+        4
+       ],
+       [
+        "component_omission",
+        false,
+        0,
+        0
+       ]
+      ],
+      "large_storage_identical": true,
+      "n_views": 1,
+      "cards": [
+       1025
+      ]
+     },
+     "affine_4096": {
+      "ops": [
+       [
+        "support_fixpoint",
+        true,
+        98316,
+        98316
+       ],
+       [
+        "fixed_substitution",
+        true,
+        2,
+        2
+       ],
+       [
+        "leaf_sumout",
+        true,
+        8188,
+        8188
+       ],
+       [
+        "component_omission",
+        false,
+        0,
+        0
+       ],
+       [
+        "affine",
+        false,
+        4,
+        4
+       ]
+      ],
+      "large_storage_identical": true,
+      "n_views": 1,
+      "cards": [
+       2,
+       2
+      ]
+     }
+    },
+    "c": {
+     "support_fixpoint": {
+      "committed": true,
+      "charged": 41,
+      "reads": 41,
+      "ratops": 0,
+      "entries_evals": 41,
+      "commits": 1
+     },
+     "fixed_substitution": {
+      "committed": true,
+      "charged": 5,
+      "reads": 5,
+      "ratops": 0,
+      "entries_evals": 5,
+      "commits": 2
+     },
+     "leaf_sumout": {
+      "committed": true,
+      "charged": 6,
+      "reads": 6,
+      "ratops": 0,
+      "entries_evals": 6,
+      "commits": 3
+     },
+     "component_omission": {
+      "committed": true,
+      "charged": 9,
+      "reads": 9,
+      "ratops": 0,
+      "entries_evals": 9,
+      "commits": 1
+     },
+     "exact_quotient_pass": {
+      "committed": true,
+      "charged": 51,
+      "reads": 21,
+      "ratops": 30,
+      "entries_evals": 21,
+      "commits": 2
+     },
+     "approx_quotient": {
+      "committed": true,
+      "charged": 132,
+      "reads": 49,
+      "ratops": 83,
+      "entries_evals": 49,
+      "commits": 2
+     },
+     "symmetry": {
+      "committed": true,
+      "charged": 34,
+      "reads": 34,
+      "ratops": 0,
+      "entries_evals": 34,
+      "commits": 1
+     },
+     "concentration": {
+      "committed": true,
+      "charged": 30,
+      "reads": 30,
+      "ratops": 0,
+      "entries_evals": 30,
+      "commits": 1
+     },
+     "influence_deletion": {
+      "committed": true,
+      "charged": 52,
+      "reads": 52,
+      "ratops": 0,
+      "entries_evals": 52,
+      "commits": 1
+     },
+     "affine": {
+      "committed": true,
+      "charged": 23,
+      "reads": 23,
+      "ratops": 0,
+      "entries_evals": 23,
+      "commits": 1
+     },
+     "declared_sites": 20
+    },
+    "d": {
+     "leaf_quota_stop": {
+      "kind": "stop:quota",
+      "commits": 4,
+      "charged": 8,
+      "reads": 8
+     },
+     "injected_build_0": {
+      "kind": "failed",
+      "commits": 0,
+      "charged": 2,
+      "reads": 2
+     },
+     "injected_build_2": {
+      "kind": "failed",
+      "commits": 2,
+      "charged": 6,
+      "reads": 6
+     },
+     "injected_before_swap_1": {
+      "kind": "failed",
+      "commits": 1,
+      "charged": 4,
+      "reads": 4
+     },
+     "injected_after_commit_3": {
+      "kind": "failed",
+      "commits": 4,
+      "charged": 8,
+      "reads": 8
+     },
+     "controller_cancelled": {
+      "kind": "stop:cancelled",
+      "commits": 1,
+      "charged": 2,
+      "reads": 2
+     },
+     "approx_builder_failure": {
+      "outcome": "failed",
+      "work": 49,
+      "commits": 0
+     },
+     "fresh_worker": "exact_zero_dimensional"
+    },
+    "e": {
+     "null_event": "malformed frontier event refused: event is not an object (NoneType)",
+     "nonobject_event": "malformed frontier event refused: event is not an object (int)",
+     "string_event": "malformed frontier event refused: event is not an object (str)",
+     "null_carve_x": "malformed frontier event refused: event carve lacks ['x']",
+     "carve_x_list": "malformed frontier event refused: event carve: point is not an object",
+     "ratio_U_1_over_0": "malformed frontier event refused: event ratio_draw: operand U = '1/0' ",
+     "ratio_missing_fields": "malformed frontier event refused: event ratio_draw lacks ['U', 'x', 'A",
+     "split_children_str": "malformed frontier event refused: event split: children must be a list",
+     "cell_bool": "malformed frontier event refused: event close: cell id is not an integ",
+     "epoch_str": "malformed frontier event refused: event epoch_start: epoch id is not a",
+     "events_not_list": "certificate events are not a list",
+     "unknown_op": "malformed frontier event refused: unknown event op 'teleport'",
+     "carve_state_str": "malformed frontier event refused: event carve: point states must be in"
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 146,
+  "fresh_workers": 150,
   "solver_calls": 389,
-  "compiler_calls": 172,
-  "checker_calls": 224,
-  "oracle_models": 117,
-  "truth_coordinates": 2697,
+  "compiler_calls": 174,
+  "checker_calls": 241,
+  "oracle_models": 118,
+  "truth_coordinates": 2700,
   "stream_draws": 960,
-  "assertions": 105071
+  "assertions": 105177
  },
- "suite_version": "cqr-qualification-v9 (2026-11-17, after the eighth adversarial review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
- "suite_sha256": "59280ea797f07482bc0a22e2cb36b22f3f31490e26d56fb719f24d91e38aca18",
+ "suite_version": "cqr-qualification-v10 (2026-11-17, after the ninth adversarial review: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
+ "suite_sha256": "dbe85a4b3598027ecb31ec4843143284ddc8d15e1f21fc7b385b85197cf69447",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "c3df049ed7812fef96ebc85cf39f589f521c41d8785602c2ea8b4a97b7b3fb64",
+  "cqr/checker.py": "965ae02ea84a666f5b1b61db9860056c2f4d5f8cab0a70e37622079698c47b3c",
   "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "c26e223422db08c42d33a043dad3dd5f010927b9f8e91138ea92c534aed56b19",
+  "cqr/compiler.py": "64d1946c8702781b5493975a8b11a437228cba1f0b77091ae3c81d8258ad9f9c",
   "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
   "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
@@ -2251,29 +2599,29 @@
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "ab971c27011758e59cff911916e3a1abf4b695b04f5571e0dae670653d92761f",
+  "cqr/registry.py": "cb711db73427b3b9d0a0731e3a74a09be90773098c1fa4668f415be924f0c2a7",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
   "cqr/solve.py": "d9b4afd8b62359adea9176c61ee19a9c8d7a3658c5285279f9fc90b224aa0eb2",
   "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
-  "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
+  "cqr/views.py": "23dac816716cfcfe2299ad467e3b369a0ba8d605c9b94b01d7ccee17e9187f2d",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
   "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v15",
- "passed": 27,
- "total": 27,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v16",
+ "passed": 28,
+ "total": 28,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "c3df049ed7812fef96ebc85cf39f589f521c41d8785602c2ea8b4a97b7b3fb64",
+  "cqr/checker.py": "965ae02ea84a666f5b1b61db9860056c2f4d5f8cab0a70e37622079698c47b3c",
   "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "c26e223422db08c42d33a043dad3dd5f010927b9f8e91138ea92c534aed56b19",
+  "cqr/compiler.py": "64d1946c8702781b5493975a8b11a437228cba1f0b77091ae3c81d8258ad9f9c",
   "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
   "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
@@ -2282,19 +2630,19 @@
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "ab971c27011758e59cff911916e3a1abf4b695b04f5571e0dae670653d92761f",
+  "cqr/registry.py": "cb711db73427b3b9d0a0731e3a74a09be90773098c1fa4668f415be924f0c2a7",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
   "cqr/solve.py": "d9b4afd8b62359adea9176c61ee19a9c8d7a3658c5285279f9fc90b224aa0eb2",
   "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
-  "cqr/views.py": "225b587a457233c3f6a8579f1867dc4133e546a3608013f801ff2ae10b722056",
+  "cqr/views.py": "23dac816716cfcfe2299ad467e3b369a0ba8d605c9b94b01d7ccee17e9187f2d",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
   "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
  },
- "utc": "2026-11-17T18:53:55Z",
- "wall_s": 779.0,
+ "utc": "2026-11-17T20:37:38Z",
+ "wall_s": 742.7,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
