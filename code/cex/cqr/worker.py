@@ -11,7 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.pat
 for p in (HERE, NEWARM):
     if p not in sys.path: sys.path.insert(0, p)
 import task as TK, solve as SV
-WORKER_VERSION = 'cqr-worker-v1.1 (2026-11-16: legacy decimal rows at the precision the tolerance requires)'
+WORKER_VERSION = 'cqr-worker-v1.2 (2026-11-16: legacy decimal rows at the precision the tolerance requires; INVALID_TASK typed refusal of out-of-domain inputs)'
 
 
 def jsonable(x):
@@ -53,7 +53,12 @@ def main():
     except (ValueError, OSError) as e: out['memory_policy'] = 'RLIMIT_AS unavailable (%s); the supervisor enforces 3 GiB by sampled process-tree RSS' % e
     late = lambda: time.monotonic() >= a.deadline
     try:
-        task = TK.load_task(a.input, mode=a.mode); out['binding'] = task['binding']; out['task_identity'] = TK.task_identity(task); out['mode'] = task['mode']; out['epsilon'] = str(task['epsilon']); out['delta'] = str(task['delta'])
+        try: task = TK.load_task(a.input, mode=a.mode)
+        except ValueError as e:
+            # the task is outside the supported input domain (mode / tolerance / query schema): a typed refusal BEFORE any inference (fifth review, CQR-R4-03); never a FAULT
+            out.update(status='STOPPED', outcome='INVALID_TASK', guarantee_type='NONE', reason='INVALID_TASK: %s' % str(e)[:400], worker_elapsed_s=time.monotonic() - t)
+            tmp = a.output + '.tmp'; open(tmp, 'w').write(json.dumps(jsonable(out), indent=1, default=str)); os.replace(tmp, a.output); return
+        out['binding'] = task['binding']; out['task_identity'] = TK.task_identity(task); out['mode'] = task['mode']; out['epsilon'] = str(task['epsilon']); out['delta'] = str(task['delta'])
         out['queries'] = [q.to_json() | dict(name=q.name) for q in task['queries']] if len(task['queries']) <= 64 else dict(count=len(task['queries']), all_singletons=task['all_singletons'])
         out['parse_s'] = time.monotonic() - t
         kw = {}
