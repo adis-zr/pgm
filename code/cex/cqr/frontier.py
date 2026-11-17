@@ -13,7 +13,7 @@ from math import prod
 import numerics as NM
 from math import lcm, gcd
 
-FRONTIER_VERSION = 'cqr-frontier-v1.2 (2026-11-16: closure enumeration serviced per 1,024 charged units; the pending tail charged on every exit)'
+FRONTIER_VERSION = 'cqr-frontier-v1.3 (2026-11-16: closure enumeration serviced per 1,024 charged units, each lookup charged after it completes; streams define no boundary at zero risk)'
 
 
 def draw_categorical(rng, weights):
@@ -154,9 +154,9 @@ class Frontier:
                 if not w: continue
                 b += w
                 for j in range(K):
-                    q = qs[j]; post(1)
-                    if q['kind'] == 'expectation': nj[j] += w * q['f'].at_i(cards, x) * (qd[j] // q['f'].den)
-                    else: nj[j] += w * q['h'].at_i(cards, x) * (qd[j] // q['h'].den); dj[j] += w * q['g'].at_i(cards, x) * (qd[j] // q['g'].den)
+                    q = qs[j]                                      # each lookup is charged AFTER it completed (sixth review, CQR-R5-03); a ratio query is two lookups
+                    if q['kind'] == 'expectation': nj[j] += w * q['f'].at_i(cards, x) * (qd[j] // q['f'].den); post(1)
+                    else: nj[j] += w * q['h'].at_i(cards, x) * (qd[j] // q['h'].den); post(1); dj[j] += w * q['g'].at_i(cards, x) * (qd[j] // q['g'].den); post(1)
         finally: self.work.entries += ent; ent = 0           # the completed tail is charged on every exit (a stop inside the scan loses no performed work)
         self.open.pop(cid); self.sumE -= c.E; self.sumL -= c.L; self.sumB -= c.B          # the cell leaves the frontier only when its enumeration COMPLETED (an interruption inside the scan leaves the frontier unchanged)
         self._add_resolved(cid, b, nj, dj); self.closures += 1; self.history.append(dict(op='close', cell=cid, mass=str(b))); return b, nj, dj
@@ -305,7 +305,7 @@ class RatioStream:
         self.records.append(dict(t=self.t, cell=s['cell'], U=str(s['U']), W=str(W), b=str(b), x={str(k): v for k, v in s['x'].items()}))
         return W
     def intervals(self):
-        if self.H <= 0: return None
+        if self.H <= 0 or self.alpha <= 0: return None          # zero risk: no statistical boundary is defined (sixth review, CQR-R5-01); never a zero radius
         B = NM.boundary_upper(self.rho, self.V, self.alpha); out = []
         for j in range(self.K):
             Hj = self.Hj[j]
@@ -314,7 +314,7 @@ class RatioStream:
         return out
     def Z_interval(self):
         """all-time interval for Z (integer weight units): center H/Hb, radius B/Hb (T_t has conditional range width U_t => V = sum b^2 U^2 / 4)"""
-        if self.Hb <= 0: return None
+        if self.Hb <= 0 or self.alpha <= 0: return None
         B = NM.boundary_upper(self.rho, self.V, self.alpha); return (max(F(0), (self.H - B) / self.Hb), (self.H + B) / self.Hb)
     def record(self): return dict(t=self.t, H=str(self.H), Hb=str(self.Hb), Hj=[str(x) for x in self.Hj], G=[str(x) for x in self.G], V=str(self.V), rho=str(self.rho), alpha=str(self.alpha), U_star=str(self.U_star), stopped=self.stopped, draws=self.records)
 
@@ -338,7 +338,7 @@ class SignedStream:
         self.V += b * b * s['E'] * s['E']; fr.work.note_bits(self.G[0] if self.K else self.H); fr.work.ratops += 3 * self.K + 3
         self.records.append(dict(t=self.t, cell=s['cell'], E=str(s['E']), b=str(b), x={str(k): v for k, v in s['x'].items()}))
     def intervals(self):
-        if self.H <= 0: return None
+        if self.H <= 0 or self.alpha <= 0: return None          # zero risk: no statistical boundary (the E = 0 deterministic residual test is unaffected)
         B = NM.boundary_upper(self.rho, self.V, self.alpha)
         return [((self.G[j] - B) / self.H, (self.G[j] + B) / self.H) for j in range(self.K)]
     def record(self): return dict(epoch=self.epoch, candidate=[str(c) for c in self.cand], t=self.t, H=str(self.H), G=[str(x) for x in self.G], V=str(self.V), rho=str(self.rho), alpha=str(self.alpha), E_star=str(self.E_star), draws=self.records, retired=self.retired)

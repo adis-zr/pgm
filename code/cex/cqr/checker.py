@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.1 (2026-11-16: accuracy reservation derived from the output representation; witness weight re-evaluated)'
+CHECKER_VERSION = 'cqr-checker-v1.2 (2026-11-16: accuracy reservation derived from the output representation; witness weight re-evaluated; no statistical route at zero risk)'
 ORACLE_CAP = 1 << 22
 
 
@@ -124,6 +124,8 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
     cls, exact_route = guarantee_class_of_route(route)
     if cls is None: fail('unknown publication route %s' % route); return fails, info
     if not mode_permits(mode, route): fail('route %s is not permitted by the task mode %s (EXACT_RATIONAL needs an exact route; DETERMINISTIC_EPS may not consume a statistical proof)' % (route, mode))
+    if cls == 'PAC' and delta == 0: fail('statistical route %s claimed at zero risk (delta = 0 defines no boundary)' % route); return fails, info
+    if delta == 0 and cert.get('ratio_stream') is not None: fail('a ratio stream was recorded at zero risk')
     if pub.get('guarantee') != cls: fail('publication guarantee %s differs from the class %s of route %s' % (pub.get('guarantee'), cls, route))
     if w.get('guarantee_type') != cls: fail('worker guarantee_type %s differs from the class %s established by route %s' % (w.get('guarantee_type'), cls, route))
     if bool(pub.get('exact')) != exact_route: fail('exact flag %s disagrees with route %s' % (pub.get('exact'), route))
