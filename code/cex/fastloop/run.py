@@ -29,14 +29,16 @@ def identity(build, timeout):
 
 # ---------------------------------------------------------------- coverage predicates (CQR-FL-07): precise, from CHECKER-VERIFIED facts only
 def predicates(cell):
-    """every predicate is decided from the verified certificate facts of a cell (never from a sidecar); None when the cell did not publish / was not verified"""
-    if cell.get('outcome') not in ('PUBLISHED', 'PROVED_ZERO_EVIDENCE') or (cell.get('check') or {}).get('status') != 'ACCEPTED': return {}
+    """VERIFIED predicates are decided from the checker-replayed certificate (channel A) only. The ONE observed predicate, `signed_stream_executed_OBSERVED`, is decided from the sidecar
+    (channel B) and is labelled as such: it states that signed epochs with draws were OBSERVED at the last checkpoint (never that anything was published or verified)"""
+    obs = cell.get('activation_observed') or {}; observed = dict(signed_stream_executed_OBSERVED=(sum(int(e.get('draws') or 0) for e in (obs.get('signed_epochs_observed') or [])) > 0), ratio_stream_executed_OBSERVED=(int(obs.get('ratio_draws_observed') or 0) > 0))
+    if cell.get('outcome') not in ('PUBLISHED', 'PROVED_ZERO_EVIDENCE') or (cell.get('check') or {}).get('status') != 'ACCEPTED': return observed
     a = cell.get('activation_verified') or {}; r = cell.get('route') or ''; bias = [str(b) for b in (a.get('bias') or [])]
     ep = a.get('signed_epochs') or []
     return dict(structural_publication=r.startswith('structural'), exact_publication=(r in EXACT_ROUTES), deterministic_approx_publication=(cell['outcome'] == 'PUBLISHED' and not r.startswith('structural') and r not in EXACT_ROUTES and 'pac' not in r),
                 approx_quotient_nonzero_bias=('approx_quotient' in (a.get('compile_commits') or []) and any(b not in ('0', 'None') for b in bias)), exact_quotient_commit=('exact_quotient_pass' in (a.get('compile_commits') or [])),
                 concentration_nonzero_bias=('concentration' in (a.get('compile_commits') or []) and any(b not in ('0', 'None') for b in bias)), signed_epochs_with_draws=(sum(int(e.get('t') or 0) for e in ep) > 0), signed_pac_publication=(r == 'pac_signed_residual_validation'),
-                ratio_draws=(int(a.get('ratio_draws') or 0) > 0), ratio_pac_publication=('pac_ratio' in r), zero_evidence_proof_verified=(cell['outcome'] == 'PROVED_ZERO_EVIDENCE'), normalizer_publication=r.startswith('normalizer'))
+                ratio_draws=(int(a.get('ratio_draws') or 0) > 0), ratio_pac_publication=('pac_ratio' in r), zero_evidence_proof_verified=(cell['outcome'] == 'PROVED_ZERO_EVIDENCE'), normalizer_publication=r.startswith('normalizer'), **observed)
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--manifest', required=True); ap.add_argument('--candidate', required=True); ap.add_argument('--baseline', required=True); ap.add_argument('--out', required=True); ap.add_argument('--mode', choices=['smoke', 'full'], default='full')
