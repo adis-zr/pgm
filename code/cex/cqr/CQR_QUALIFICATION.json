@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 2.959,
+   "wall_s": 2.97,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -136,6 +136,7 @@
      "normalizer_point_out": "Z point outside [(1-eps) U, (1+eps) L] of the PUBLISHED bounds (relative error not certified)",
      "false_zero_claim": "zero-evidence claim contradicted by the independent enumerator (Z = 35226954574555584)"
     },
+    "pac_routes_seen_in_c1": [],
     "noop_control": "accepted",
     "mutation_count": 13
    }
@@ -143,7 +144,7 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.269,
+   "wall_s": 0.271,
    "detail": {
     "routes": {
      "zero": 30,
@@ -159,7 +160,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.079,
+   "wall_s": 0.081,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -218,7 +219,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.11,
+   "wall_s": 0.113,
    "detail": {
     "within_budget": {
      "cards": [
@@ -274,7 +275,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.137,
+   "wall_s": 0.136,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -301,7 +302,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.079,
+   "wall_s": 0.08,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -319,7 +320,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.604,
+   "wall_s": 1.602,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -337,7 +338,7 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 2.928,
+   "wall_s": 2.933,
    "detail": {
     "draws": 72,
     "carves": 72,
@@ -355,7 +356,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.116,
+   "wall_s": 0.094,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -378,7 +379,7 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.716,
+   "wall_s": 2.671,
    "detail": {
     "reference_shares": [
      0.586247909310537,
@@ -393,7 +394,7 @@
      "ops": [],
      "share": "11282/21"
     },
-    "deadline": "typed DEADLINE at deterministic bounds",
+    "deadline": "typed DEADLINE at adaptive publication test",
     "worker_deadline": "DEADLINE",
     "memory_capped_worker": {
      "status": "NO_OUTPUT",
@@ -405,7 +406,7 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 69.312,
+   "wall_s": 71.699,
    "detail": {
     "cells": 411,
     "arms": [
@@ -454,8 +455,8 @@
      "A1_CONDITIONAL|PUBLISHED": 3,
      "B0_FROZEN_V14|PUBLISHED": 3,
      "CBI_NATIVE|PUBLISHED": 1,
-     "G0_CQR|DEADLINE": 10,
-     "G0_CQR|PUBLISHED": 41,
+     "G0_CQR|DEADLINE": 9,
+     "G0_CQR|PUBLISHED": 42,
      "G0_NO_STRUCTURAL|DEADLINE": 2,
      "G0_NO_STRUCTURAL|PUBLISHED": 1,
      "H1_HYBRID|DEADLINE": 3,
@@ -467,16 +468,16 @@
      "LBP|PUBLISHED": 7,
      "LIBDAI_EXACT|PUBLISHED": 3,
      "MERLIN_CTE|PUBLISHED": 3,
-     "N1_CQR|DEADLINE": 10,
-     "N1_CQR|PUBLISHED": 41,
+     "N1_CQR|DEADLINE": 9,
+     "N1_CQR|PUBLISHED": 42,
      "N1_NO_AFFINE|PUBLISHED": 32,
      "N1_NO_CONCENTRATION|PUBLISHED": 32,
      "N1_NO_INFLUENCE|PUBLISHED": 32,
      "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 32,
      "N1_NO_QUOTIENT|PUBLISHED": 32,
      "N1_NO_SIGNED_STREAM|PUBLISHED": 32,
-     "N1_NO_STRUCTURAL|DEADLINE": 4,
-     "N1_NO_STRUCTURAL|PUBLISHED": 31,
+     "N1_NO_STRUCTURAL|DEADLINE": 3,
+     "N1_NO_STRUCTURAL|PUBLISHED": 32,
      "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 32,
      "P1_PAC_CONDITIONAL|PUBLISHED": 3,
      "PGMAX_SUMPRODUCT_BP|PUBLISHED": 3,
@@ -484,10 +485,10 @@
      "WMB|PUBLISHED": 3
     },
     "gate": {
-     "gated": 379,
-     "wall": 65.221
+     "gated": 382,
+     "wall": 67.061
     },
-    "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 41, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 10, \"MEMORY\": 0",
+    "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 42, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 9, \"MEMORY\": 0,",
     "missing_group_refused": true,
     "stale_identity_refused": true,
     "stale_suite_refused": true,
@@ -499,7 +500,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 361.548,
+   "wall_s": 363.219,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -529,7 +530,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 165.5
+      "wall_s": 167.2
      },
      {
       "delta": "1/16",
@@ -549,7 +550,7 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.487,
+   "wall_s": 4.498,
    "detail": {
     "routes": {
      "concentration.uai/N1_NO_STRUCTURAL": {
@@ -647,7 +648,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 33.753,
+   "wall_s": 33.791,
    "detail": {
     "mode_override": [
      "INVALID_TASK",
@@ -668,7 +669,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 35.016,
+   "wall_s": 34.338,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -722,10 +723,10 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 13.233,
+   "wall_s": 13.17,
    "detail": {
     "d32_N1_NO_STRUCTURAL": {
-     "wall_s": 0.11,
+     "wall_s": 0.09,
      "work_reference": 7232,
      "work_optional": 10560,
      "compile_interrupted": {
@@ -774,9 +775,9 @@
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 7.264316082000732e-08,
-     "work_reference": 3514536,
-     "work_optional": 3517833,
+     "reference_progress": 7.497146725654602e-08,
+     "work_reference": 3627176,
+     "work_optional": 3623457,
      "phase": "adaptive"
     },
     "parity_at_exits": {
@@ -796,7 +797,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.18,
+   "wall_s": 0.182,
    "detail": {
     "order_sequence": [
      "norm",
@@ -817,7 +818,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.423,
+   "wall_s": 0.4,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -840,7 +841,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 6.275,
+   "wall_s": 6.082,
    "detail": {
     "r1": {
      "support": {
@@ -1083,9 +1084,9 @@
       "route": "exact_reference"
      },
      "deadline_exit": {
-      "work_reference": 59648,
-      "work_optional": 60512,
-      "progress": 0.1640625
+      "work_reference": 63488,
+      "work_optional": 66656,
+      "progress": 0.1875
      },
      "support_quota": {
       "quota": 131296,
@@ -1157,7 +1158,7 @@
   {
    "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
    "ok": true,
-   "wall_s": 11.217,
+   "wall_s": 11.12,
    "detail": {
     "f01": {
      "honest": {
@@ -1187,7 +1188,7 @@
     "f03": {
      "root5000": {
       "route": "exact_reference",
-      "wall_s": 4.8,
+      "wall_s": 4.81,
       "accepted": true
      },
      "forced_in_root": "exact_reference",
@@ -1247,7 +1248,7 @@
   {
    "name": "C22_precision_zero_mass_witness_service",
    "ok": true,
-   "wall_s": 23.363,
+   "wall_s": 23.274,
    "detail": {
     "f01": {
      "1e-12": {
@@ -1465,7 +1466,7 @@
   {
    "name": "C23_exactly_once_accounting_quota_inheritance_tolerance_domain",
    "ok": true,
-   "wall_s": 30.055,
+   "wall_s": 30.163,
    "detail": {
     "f01": {
      "helpers_x_offsets_x_stops": "8 helpers x 3 offsets x 6 stop settings: ledger == completed operations",
@@ -1559,7 +1560,7 @@
   {
    "name": "C24_zero_risk_controller_cadence_completed_charges",
    "ok": true,
-   "wall_s": 44.403,
+   "wall_s": 44.509,
    "detail": {
     "f01": {
      "singleton_PAC_EPS_0": "deterministic_frontier",
@@ -1652,7 +1653,7 @@
   {
    "name": "C25_ratio_prior_binding_influence_scan_tolerance_semantics",
    "ok": true,
-   "wall_s": 38.814,
+   "wall_s": 39.022,
    "detail": {
     "f01": {
      "ratio": {
@@ -1794,7 +1795,7 @@
   {
    "name": "C26_partition_premise_order_validation_structural_negative",
    "ok": true,
-   "wall_s": 27.503,
+   "wall_s": 27.629,
    "detail": {
     "constructor": {
      "duplicate": "frontier order refused: order repeats variable(s) [0] (not a permutati",
@@ -2051,7 +2052,7 @@
   {
    "name": "C27_final_query_accounting_evaluation_site_audit",
    "ok": true,
-   "wall_s": 2.775,
+   "wall_s": 2.855,
    "detail": {
     "a": {
      "1000": {
@@ -2240,7 +2241,7 @@
   {
    "name": "C28_view_storage_ownership_renumbering_declarations_event_schema",
    "ok": true,
-   "wall_s": 0.859,
+   "wall_s": 0.866,
    "detail": {
     "a": {
      "list_refused": "View storage must be an immutable tuple owned by the view (g",
@@ -2566,11 +2567,11 @@
   {
    "name": "C29_failure_telemetry_survives_graceful_and_hard_kills",
    "ok": true,
-   "wall_s": 3.81,
+   "wall_s": 3.814,
    "detail": {
     "a": {
      "checkpoints": 10,
-     "overhead_s": 0.003054,
+     "overhead_s": 0.002996,
      "phases": [
       "start",
       "parse",
@@ -2585,31 +2586,32 @@
     },
     "b": {
      "phase": "adaptive",
-     "last_enclosure_age_s": 0.071,
+     "last_enclosure_age_s": 0.086,
      "ref_progress": 6.29425048828125e-05,
      "checkpoints": 16
     },
     "c": {
      "phase": "adaptive",
-     "elapsed_at_write": 1.291553,
+     "elapsed_at_write": 1.285062,
      "checkpoints": 13,
      "journal_lines": 1,
      "durable": 1,
      "ref_progress": 4.100799560546875e-05,
-     "open_cells": 111
+     "open_cells": 109
     },
     "d": {
      "no_diag_route": "deterministic_concentration"
     },
     "e": {
      "finalized": true
-    }
+    },
+    "c_kill_gap_s": 0.177
    }
   },
   {
    "name": "C30_cumulative_credit_reference_scheduling",
    "ok": true,
-   "wall_s": 30.442,
+   "wall_s": 30.415,
    "detail": {
     "a": {
      "route": "exact_frontier_closure",
@@ -2684,14 +2686,14 @@
     "c": {
      "no_structural": "exact_reference",
      "structural": "structural_original",
-     "structural_wall_s": 0.06465366715565324
+     "structural_wall_s": 0.06356849987059832
     },
     "d": {
      "where": "loop",
-     "steps": 76,
+     "steps": 74,
      "max_step": 256,
-     "ref_progress": 0.0002899169921875,
-     "scheduling": 76
+     "ref_progress": 0.00028228759765625,
+     "scheduling": 74
     },
     "e": {
      "mean_served_per_request": 15104.0,
@@ -2702,7 +2704,7 @@
   {
    "name": "C31_structural_adapters_composition_checker_reachability",
    "ok": true,
-   "wall_s": 105.508,
+   "wall_s": 108.141,
    "detail": {
     "a": {
      "rates": {
@@ -2720,8 +2722,8 @@
        "forest"
       ],
       "native_calls": 0,
-      "wall_s": 0.0026,
-      "verified": "bounded re-execution on the bound model; rows reproduced exactly"
+      "wall_s": 0.0025,
+      "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
      },
      "dag": {
       "which": "whole_dag",
@@ -2730,7 +2732,7 @@
       ],
       "native_calls": 0,
       "wall_s": 0.0015,
-      "verified": "bounded re-execution on the bound model; rows reproduced exactly"
+      "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
      },
      "blocks": {
       "which": "components",
@@ -2738,17 +2740,17 @@
        "support"
       ],
       "native_calls": 3,
-      "wall_s": 0.006,
-      "verified": "bounded re-execution on the bound model; rows reproduced exactly"
+      "wall_s": 0.0059,
+      "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
      },
-     "K12_36": {
+     "K6_12": {
       "which": "components",
       "component_kinds": [
        "stream"
       ],
       "native_calls": 1,
-      "wall_s": 0.0131,
-      "verified": "bounded re-execution on the bound model; rows reproduced exactly"
+      "wall_s": 0.0027,
+      "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
      }
     },
     "c": {
@@ -2763,7 +2765,20 @@
       "0",
       "0"
      ],
-     "interpretation": "structural route on the COMPILED model: deterministic kernel enclosures of the c"
+     "interpretation": "structural route on the COMPILED model: deterministic kernel enclosures of the c",
+     "nonzero_bias": {
+      "route": "structural_compiled",
+      "bias": [
+       "1/1765",
+       "1/1765"
+      ],
+      "committed": [
+       "exact_quotient_pass",
+       "approx_quotient"
+      ],
+      "oracle": "elimination",
+      "contained": true
+     }
     },
     "d": {
      "conditional": "inapplicable",
@@ -2788,11 +2803,11 @@
      "point": "point of query 0 outside its published bounds",
      "guarantee": "publication guarantee PAC differs from the class DETERMINISTIC of route structural_original",
      "exact_flag": "exact flag True disagrees with route structural_original",
-     "version": "structural re-execution: structural record version cqr-structural-v0 is not cqr-structural-v1 (2026-11-17: typ",
+     "version": "structural re-execution: structural record version cqr-structural-v0 is not cqr-structural-v2 (2026-11-17, str",
      "optional_work_charged": "structural_original publication with 7 optional Work units charged (the route runs before the compile; a compi",
-     "provenance_stripped": "structural record with native calls but no kernel provenance",
+     "provenance_stripped": "structural re-execution: structural record names no kernel digest for the support kernel the re-execution used",
      "epsilon_record": "structural record epsilon 1/100 differs from the task epsilon",
-     "component_dropped": "structural re-execution: structural re-execution leaves variables uncovered",
+     "component_dropped": "structural re-execution: recorded component count 2 differs from the re-derived partition (3)",
      "binding": "structural re-execution: structural re-execution does not reproduce the recorded rows (components)",
      "compiled_bias_changed": "recorded bias ledger differs from the replayed one",
      "compiled_tau_changed": "structural_compiled tau differs from eps - bias - reservation",
@@ -2829,8 +2844,8 @@
     "h": {
      "counters": {
       "attempts": 1,
-      "discovery_s": 0.0008192909881472588,
-      "execution_s": 0.006915540900081396,
+      "discovery_s": 0.0007959580980241299,
+      "execution_s": 0.005525749642401934,
       "native_calls": 3,
       "source_entries_read": 616
      },
@@ -2838,46 +2853,307 @@
      "work_optional": 0
     }
    }
+  },
+  {
+   "name": "C32_query_semantics_arm_eligibility_provenance_attribution",
+   "ok": true,
+   "wall_s": 28.318,
+   "detail": {
+    "a": {
+     "false_table_meta": "INVALID_TASK (both arms)",
+     "negative_state": "INVALID_TASK (both arms)",
+     "state_out_of_range": "INVALID_TASK (both arms)",
+     "variable_out_of_range": "INVALID_TASK (both arms)",
+     "indicator_wrong_meta_state": "INVALID_TASK (both arms)",
+     "wrong_length": "INVALID_TASK (both arms)",
+     "repeated_scope": "INVALID_TASK (both arms)",
+     "joint_negative_state": "INVALID_TASK (both arms)",
+     "conditional_contradiction": "INVALID_TASK (both arms)",
+     "indicator_matching_meta": "PUBLISHED, truth 3/4 contained (both arms)",
+     "table_no_meta_zero": "PUBLISHED, truth 0 contained (both arms)",
+     "honest_singleton": "PUBLISHED, truth 3/4 contained (both arms)",
+     "general_table_marker": "PUBLISHED, truth 7/20 contained (both arms)",
+     "subset_N1_CQR": "structural_original",
+     "subset_N1_NO_STRUCTURAL": "exact_reference",
+     "mixed_N1_CQR": "exact_reference",
+     "mixed_N1_NO_STRUCTURAL": "exact_reference",
+     "indicator_random_tables": {
+      "checked": 400,
+      "singletons": 153
+     },
+     "meta_swap_refused": "task not readable: query ind: output metadata {\"kind\": \"singleton\", \"state\": 0, \"variable\""
+    },
+    "b": {
+     "relabel_N1_NO_STRUCTURAL": "structural route structural_original published under arm N1_NO_STRUCTURAL whose ",
+     "relabel_G0_NO_STRUCTURAL": "structural route structural_original published under arm G0_NO_STRUCTURAL whose ",
+     "relabel_N1_NO_QUOTIENT_NO_STRUCTURAL": "structural route structural_original published under arm N1_NO_QUOTIENT_NO_STRUC",
+     "relabel_N1_NO_AFFINE_NO_STRUCTURAL": "structural route structural_original published under arm N1_NO_AFFINE_NO_STRUCTU",
+     "relabel_N1_NO_INFLUENCE_NO_STRUCTURAL": "structural route structural_original published under arm N1_NO_INFLUENCE_NO_STRU",
+     "honest_N1_NO_STRUCTURAL": "exact_reference",
+     "honest_G0_NO_STRUCTURAL": "exact_reference",
+     "honest_pac_N1_NO_STRUCTURAL": "pac_ratio_intersected_with_deterministic",
+     "full_gate_relabel": [
+      "worker arm differs from the planned arm"
+     ],
+     "full_gate_honest_attribution": {
+      "route": "structural_original",
+      "which": "forest",
+      "components": [
+       {
+        "kind": "forest",
+        "variables": 5
+       }
+      ],
+      "native_calls": 0,
+      "native_kinds": [],
+      "kernel_digests_verified": {},
+      "producer_observed_wall_s": 0.0019451668485999107,
+      "verified_by": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
+     }
+    },
+    "c": {
+     "forged_checker": "structural re-execution: recorded component attribution disagrees with the whole-model for",
+     "forged_gate": [
+      "checker: structural re-execution: recorded component attribution disagrees with the whole-model fore",
+      "loaded kernel provenance: N1_CQR: the worker loaded newarm_stream with sha256 000000000000, frozen 5"
+     ],
+     "native_digest_altered": "structural re-execution: structural record kernel digest for support (000000000000) differ",
+     "native_digest_omitted": "structural re-execution: structural record names no kernel digest for the support kernel t",
+     "native_path_altered": "structural re-execution: structural record loaded path 'mystery.so' for support is not the",
+     "native_native_calls_zeroed": "structural re-execution: recorded native_calls 0 differs from the 3 native component execu",
+     "native_component_kind_dag": "structural re-execution: structural re-execution refused: requested DAG route unavailable",
+     "native_component_kind_stream": "structural re-execution: structural re-execution refused: REPRESENTATION",
+     "native_partition_merged": "structural re-execution: recorded component count 2 differs from the re-derived partition ",
+     "native_false_exact_fallback": "structural re-execution: uniform component recorded on a component with factors",
+     "native_wall_negative": "structural re-execution: structural record wall -1.0 is outside its domain (finite, nonneg",
+     "native_wall_nan": "structural re-execution: structural record wall nan is outside its domain (finite, nonnega",
+     "full_gate_digest_altered": [
+      "checker: structural re-execution: structural record kernel digest for support (000000000000) differs",
+      "loaded kernel provenance: N1_CQR: the worker loaded newarm_cex with sha256 000000000000, frozen 720a"
+     ]
+    }
+   }
+  },
+  {
+   "name": "C33_compositional_discovery_deadline_propagation_reduction_lift",
+   "ok": true,
+   "wall_s": 45.738,
+   "detail": {
+    "a": {
+     "component_search_timeout": {
+      "candidates": [
+       "forest"
+      ],
+      "declines": [
+       "dag",
+       "component"
+      ],
+      "admitted": "forest"
+     },
+     "component_search_failure": {
+      "candidates": [
+       "forest"
+      ],
+      "declines": [
+       "dag",
+       "component"
+      ],
+      "admitted": "forest"
+     },
+     "component_split_timeout": {
+      "candidates": [
+       "forest"
+      ],
+      "declines": [
+       "dag",
+       "components"
+      ],
+      "admitted": "forest"
+     },
+     "n3000_natural": {
+      "candidates": [
+       "forest",
+       "components"
+      ],
+      "declines": [
+       "dag"
+      ],
+      "components_complete": true
+     },
+     "n500_allow_0.05": "forest",
+     "chain12000": {
+      "route": "structural_original",
+      "wall_s": 8.57,
+      "discovery": [
+       [
+        "dag",
+        "source DAG requires one nonempty factor "
+       ],
+       [
+        "component",
+        "geometry deadline"
+       ]
+      ]
+     }
+    },
+    "b": {
+     "observer": {
+      "elapsed_s": 0.2,
+      "calls": 371,
+      "post_deadline": 0,
+      "where": "adaptive optional turn"
+     },
+     "fresh_0.5": {
+      "wall_s": 0.536,
+      "outcome": "DEADLINE",
+      "expired_requests": null
+     },
+     "fresh_6": {
+      "route": "exact_reference",
+      "contained": true
+     },
+     "service_ops_observed": [
+      "affine",
+      "approx_quotient",
+      "concentration",
+      "deterministic_bounds",
+      "enter:deterministic_bounds",
+      "enter:make_candidate",
+      "exact_quotient_pass",
+      "feasible_point",
+      "frontier_close",
+      "frontier_init",
+      "influence_deletion",
+      "leaf_sumout",
+      "signed_law",
+      "support_fixpoint",
+      "symmetry"
+     ],
+     "1qt9_N1_NO_STRUCTURAL": {
+      "wall_s": 20.24,
+      "checkpoints": 64,
+      "max_gap_s": 1.48
+     }
+    },
+    "c": {
+     "tiny": {
+      "reduced_models": 21,
+      "contained": 21,
+      "declined_zero_or_fixed": 19
+     },
+     "BN_31": {
+      "wall_s": 1.57,
+      "route": "structural_reduced",
+      "reduced_variables": 238,
+      "original_not_admitted_estimate_s": 551166
+     },
+     "reduced_decoder_tampered": "recorded reduction decoder differs from the re-derived one",
+     "reduced_model_digest_tampered": "recorded reduced model differs from the re-derived reduction",
+     "reduced_row_tampered": "structural re-execution: structural re-execution does not reproduce the recorded rows (components)"
+    }
+   }
+  },
+  {
+   "name": "C34_terminal_diagnostics_freshness_and_operation_observability",
+   "ok": true,
+   "wall_s": 5.82,
+   "detail": {
+    "a": {
+     "route": "deterministic_frontier",
+     "draws": 69,
+     "overhead_s": 0.006172,
+     "wall_s": 1.2220944170840085,
+     "section_ages": {
+      "compiler": 1.207625,
+      "frontier": 8e-06,
+      "identity": 1.218322,
+      "memory": 0.007899,
+      "reference": 3.2e-05,
+      "scheduling": 2e-06,
+      "service": 0.002848,
+      "streams": 4e-06,
+      "work": 1e-06
+     }
+    },
+    "b": {
+     "equal": true,
+     "last_enclosure_age_s": 0.067,
+     "overhead_s": 0.007131
+    },
+    "c": {
+     "route": "exact_reference",
+     "frontier_section": "no frontier yet"
+    },
+    "d": {
+     "checkpoints": 104,
+     "draws": 58,
+     "stream_age_at_final_s": 4e-06
+    },
+    "e": {
+     "gap_s": 0.172,
+     "in_flight": null,
+     "last_completed": {
+      "op": "deterministic_bounds",
+      "wall_s": 0.054476
+     },
+     "section_ages": {
+      "compiler": 1.265842,
+      "frontier": 0.008761,
+      "identity": 1.283278,
+      "memory": 0.011007,
+      "reference": 0.047331,
+      "scheduling": 0.047325,
+      "service": 0.008857,
+      "streams": 0.190767,
+      "work": 0.011007
+     }
+    },
+    "f": {
+     "a": 0.0051,
+     "b": 0.0049,
+     "c": 0.0071
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 181,
-  "solver_calls": 394,
+  "fresh_workers": 227,
+  "solver_calls": 397,
   "compiler_calls": 174,
-  "checker_calls": 271,
-  "oracle_models": 123,
-  "truth_coordinates": 2803,
+  "checker_calls": 317,
+  "oracle_models": 167,
+  "truth_coordinates": 3132,
   "stream_draws": 977,
-  "assertions": 105369
+  "assertions": 105977
  },
- "suite_version": "cqr-qualification-v11 (2026-11-17, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
- "suite_sha256": "69526a4f0a26fa5cf9dff6b219487e9820cd80ca226363638084cdc5e6b6398a",
+ "suite_version": "cqr-qualification-v12 (2026-11-17, after the independent review of the structured-execution revision (CQR-S1-01..07): groups C32 (authoritative query semantics incl. the false-answer witness, index domains, arm eligibility incl. the coherent relabel through the full gate, provenance / attribution incl. the forged record and native digest / path / count / partition / wall mutations through the full gate), C33 (compositional discovery incl. the 12,000-chain fresh worker, deadline propagation incl. the 1,024-query observer / fresh workers / long-helper hooks / 1qt9 gaps, reduction + lift incl. BN_31 and tampered decoder / digest / row) and C34 (terminal diagnostics freshness vs the certificate on publication / deadline / cancellation, per-section ages, aligned SIGKILL freshness, overhead) added; C29 vacuous assertions removed; C31 covers an oracle-checked native stream fixture and an honest nonzero-bias compiled publication; v11, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
+ "suite_sha256": "d705d19bc8106c8930a57fe85fbe802c333f06ad58fafa3962e8f98bceafd928",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "2ed619e6e2d3c27c114a6f98ce43a95a93a7178119221eca790e20c6d6d8de4a",
-  "cqr/checker.py": "a78068e2426a57d6128b6ea450f8679b95e3d86634933982ae8aa16b76fcf6db",
+  "cqr/checker.py": "c54a274cb986165747f334163525acea66c53f768334f3390b39b68f2facdaf9",
   "cqr/closeout.py": "f8c1a3ba2f47d83fb5ba3e9ff366b50e14a74bf3a39deecf55e4b0c9fd55d331",
   "cqr/compiler.py": "97590e971d4099f12650b7f678367ebd5b80a732e3fe363ff574a8acc1be3480",
-  "cqr/diag.py": "5d2134cd691e15989e61ad61d4c57cb85fb4cde4788c437e4674879809d58837",
-  "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
-  "cqr/gate.py": "5bc3292fb532d73a7ed232ed4174028d675bcaacb52d9c1df226c6503202927b",
+  "cqr/diag.py": "0e89d664f936f4eb8ec53b7190b8e41f5fd7ebf6d7477ac50113ad44ce172d38",
+  "cqr/frontier.py": "081b480e22d4f5a42dfa1f6224c9c6b2a7e93588c4ff9983038f34d59b4cb2b2",
+  "cqr/gate.py": "2f8dda34aea1e5dfd318c8652bd63f71c887c4ff6b8857fd90990050253496cd",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "4b2b3ca617246a20cc554107c05e8959329b1a85800bb621ecf66ed136d56229",
+  "cqr/kernel_identity.py": "bdb73e42ea07502bf6772724b212add7d3ce27697aae6968e6c07b0673701301",
   "cqr/numerics.py": "b3325a5bcd0e21cf060ace2e9008f2737e34023893fca1d0b68c5e3582ffd6ec",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "4cc5fdbfab68c243eec40bc728286cd0bf948bb8bb291a70b1a007e896313672",
-  "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "814f152e68d897666797314ddd8cd5a265c4dc860bb17ef7947ffd748dbae96e",
+  "cqr/references.py": "085d8fd49d78bc3dee009e8d581fdd11f0e4ea0b813e2ce10025234b0d68679c",
+  "cqr/registry.py": "f1807504e4cfecb192dd2b37cd9d34359b35bfeed69051a0a2f9e3c4cd64dc17",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "8447a6427486cbf5baba1c0bf6c25faf82d22744b47e91fd0ecafb6e324bebd3",
-  "cqr/structural.py": "8eeccab45749b328538392b6af2a1b3e435f3224a4b473294a0f018d85822168",
-  "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
+  "cqr/solve.py": "51ae4caa041767a421d3879fc66d9f95fc82c2b8acd5628aead3adb310a61839",
+  "cqr/structural.py": "19fdf9502044dab32cb54d0dd7013b0c26705f41b76d7f5d5e87c26be8698bb5",
+  "cqr/task.py": "ba73cc60121730e851f99d5c367c7329ec055b76049e8934b333b8349912b84f",
   "cqr/views.py": "23dac816716cfcfe2299ad467e3b369a0ba8d605c9b94b01d7ccee17e9187f2d",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "4aba2d6c01eefcede7e04ae5bc47c513dd9b2deabdc2a0e8ef899726a24f8d74",
+  "cqr/worker.py": "9054f1f342cfd49525d4058cb07052aae702df90288a2c64f33b31723d82fe51",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
   "newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
   "newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
@@ -2888,37 +3164,37 @@
   "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
   "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v17",
- "passed": 31,
- "total": 31,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v18",
+ "passed": 34,
+ "total": 34,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "2ed619e6e2d3c27c114a6f98ce43a95a93a7178119221eca790e20c6d6d8de4a",
-  "cqr/checker.py": "a78068e2426a57d6128b6ea450f8679b95e3d86634933982ae8aa16b76fcf6db",
+  "cqr/checker.py": "c54a274cb986165747f334163525acea66c53f768334f3390b39b68f2facdaf9",
   "cqr/closeout.py": "f8c1a3ba2f47d83fb5ba3e9ff366b50e14a74bf3a39deecf55e4b0c9fd55d331",
   "cqr/compiler.py": "97590e971d4099f12650b7f678367ebd5b80a732e3fe363ff574a8acc1be3480",
-  "cqr/diag.py": "5d2134cd691e15989e61ad61d4c57cb85fb4cde4788c437e4674879809d58837",
-  "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
-  "cqr/gate.py": "5bc3292fb532d73a7ed232ed4174028d675bcaacb52d9c1df226c6503202927b",
+  "cqr/diag.py": "0e89d664f936f4eb8ec53b7190b8e41f5fd7ebf6d7477ac50113ad44ce172d38",
+  "cqr/frontier.py": "081b480e22d4f5a42dfa1f6224c9c6b2a7e93588c4ff9983038f34d59b4cb2b2",
+  "cqr/gate.py": "2f8dda34aea1e5dfd318c8652bd63f71c887c4ff6b8857fd90990050253496cd",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "4b2b3ca617246a20cc554107c05e8959329b1a85800bb621ecf66ed136d56229",
+  "cqr/kernel_identity.py": "bdb73e42ea07502bf6772724b212add7d3ce27697aae6968e6c07b0673701301",
   "cqr/numerics.py": "b3325a5bcd0e21cf060ace2e9008f2737e34023893fca1d0b68c5e3582ffd6ec",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "4cc5fdbfab68c243eec40bc728286cd0bf948bb8bb291a70b1a007e896313672",
-  "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "814f152e68d897666797314ddd8cd5a265c4dc860bb17ef7947ffd748dbae96e",
+  "cqr/references.py": "085d8fd49d78bc3dee009e8d581fdd11f0e4ea0b813e2ce10025234b0d68679c",
+  "cqr/registry.py": "f1807504e4cfecb192dd2b37cd9d34359b35bfeed69051a0a2f9e3c4cd64dc17",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "8447a6427486cbf5baba1c0bf6c25faf82d22744b47e91fd0ecafb6e324bebd3",
-  "cqr/structural.py": "8eeccab45749b328538392b6af2a1b3e435f3224a4b473294a0f018d85822168",
-  "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
+  "cqr/solve.py": "51ae4caa041767a421d3879fc66d9f95fc82c2b8acd5628aead3adb310a61839",
+  "cqr/structural.py": "19fdf9502044dab32cb54d0dd7013b0c26705f41b76d7f5d5e87c26be8698bb5",
+  "cqr/task.py": "ba73cc60121730e851f99d5c367c7329ec055b76049e8934b333b8349912b84f",
   "cqr/views.py": "23dac816716cfcfe2299ad467e3b369a0ba8d605c9b94b01d7ccee17e9187f2d",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "4aba2d6c01eefcede7e04ae5bc47c513dd9b2deabdc2a0e8ef899726a24f8d74",
+  "cqr/worker.py": "9054f1f342cfd49525d4058cb07052aae702df90288a2c64f33b31723d82fe51",
   "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
   "newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
   "newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
@@ -2929,8 +3205,8 @@
   "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
   "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90"
  },
- "utc": "2026-11-18T03:24:02Z",
- "wall_s": 854.0,
+ "utc": "2026-11-18T06:19:57Z",
+ "wall_s": 940.0,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
