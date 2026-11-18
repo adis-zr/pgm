@@ -13,7 +13,8 @@ def main():
     def cell(r, arm, tag):
         d = os.path.join(RUN, 'cells', '%s__%s__%s' % (r['id'], tag, arm)); os.makedirs(d, exist_ok=True); out = os.path.join(d, 'worker.json'); b = r['budget_s']
         if left() < b + 8: return dict(id=r['id'], arm=arm, tag=tag, status='NOT_RUN', reason='calibration cap', wall_s=0.0)
-        cmd = [PY, os.path.join(base, 'cex', 'cqr', 'worker.py'), '--input', r['model'], '--output', out, '--arm', arm, '--deadline', str(time.monotonic() + b), '--budget', str(b), '--seed', 'cal', '--nonce', 'cal-%s-%s' % (r['id'], arm)]
+        wk = os.path.join(base, 'cex', 'pac', 'worker.py') if arm in ('H1_HYBRID', 'P1_PAC_CONDITIONAL', 'A0_POINT', 'A1_CONDITIONAL') else os.path.join(base, 'cex', 'cqr', 'worker.py')      # the R0 anchor is a pac arm: dispatched EXACTLY as the campaign dispatcher does
+        cmd = [PY, wk, '--input', r['model'], '--output', out, '--arm', arm, '--deadline', str(time.monotonic() + b), '--budget', str(b), '--seed', 'cal', '--nonce', 'cal-%s-%s' % (r['id'], arm)]
         sup = [PY, '-m', 'gbidi.supervise', '--ledger', L, '--scope', 'cqr_fastloop_calibration', '--job', 'cal:%s:%s:%s' % (r['id'], tag, arm), '--timeout', str(b + 1.0), '--mem-gib', '3', '--interval', '0.05', '--stdout', os.path.join(d, 'stdout.txt'), '--stderr', os.path.join(d, 'stderr.txt'), '--'] + cmd
         t = time.monotonic(); p = subprocess.run(sup, capture_output=True, text=True, cwd=base, env=dict(os.environ, OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1', VECLIB_MAXIMUM_THREADS='1')); wall = time.monotonic() - t
         try: srec = json.loads(p.stderr.strip().splitlines()[-1])
