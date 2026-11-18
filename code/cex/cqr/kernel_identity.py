@@ -102,11 +102,12 @@ def pac_candidate_arms():
 
 
 def tags_needed_by(arm, pac_arms=None):
-    """which artifact tags an arm's worker loads; CQR arms (N1_CQR, G0_CQR, N1_NO_*) -> ()"""
+    """which artifact tags an arm's worker loads; CQR arms (N1_*, G0_*) -> the newarm kernels (structural backend; 17 Nov 2026)"""
     if arm == B0_ARM: return GROUPS['b0_frozen_v14']
     if arm.startswith(H4_PREFIX): return GROUPS['h4']
     if arm in COMPARATOR_EXECUTABLES: return tuple(t for g in COMPARATOR_EXECUTABLES[arm] for t in GROUPS[g])
     if arm in (pac_arms if pac_arms is not None else pac_candidate_arms()): return GROUPS['newarm']
+    if arm.startswith('N1_') or arm.startswith('G0_'): return GROUPS['newarm']   # the CQR arms' structural backend (cqr/structural.py) loads the newarm kernels (support / stream routes); the no-structural controls share the identity scope
     return ()
 
 

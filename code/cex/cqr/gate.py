@@ -68,7 +68,7 @@ def _late(deadline):
     return _agg['deadline'] is not None and time.monotonic() > _agg['deadline']
 
 
-def cqr_scope(ch): return {k: v for k, v in (ch or {}).items() if k.startswith('cqr/') or k == 'newarm/core.py'}
+def cqr_scope(ch): return {k: v for k, v in (ch or {}).items() if R.is_cqr_scope_key(k)}
 
 
 def effective_paths(model_path):

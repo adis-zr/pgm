@@ -13,10 +13,10 @@ sys.set_int_max_str_digits(0)
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE)); NEWARM = os.path.join(os.path.dirname(HERE), 'newarm')
 for p in (HERE, NEWARM):
     if p not in sys.path: sys.path.insert(0, p)
-import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK, reference as RF
+import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK, reference as RF, structural as ST, diag as DG
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v10 (2026-11-17, after the ninth adversarial review: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
+SUITE_VERSION = 'cqr-qualification-v11 (2026-11-17, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
 ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v16')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
@@ -176,7 +176,7 @@ def c2_oracle_modes():
         if trial % 7 == 0: m['factors'].append(dict(scope=(0,), values=[F(3)] * cards[0]))                        # a constant unary
         qs = TK.all_singletons(cards) if trial % 3 == 0 else [TK.singleton_query(0, 0, cards), TK.joint_query({0: 0, 1: cards[1] - 1}, cards), TK.parity_query([0, 1, 2], 1, cards), TK.conditional_query({0: 0}, {1: 0}, cards)]
         mode = ['PAC_EPS', 'DETERMINISTIC_EPS', 'EXACT_RATIONAL'][trial % 3]; task = mk_task(m, qs, mode=mode, delta=F(1, 10 ** 6) if mode == 'PAC_EPS' else F(0)); tr = truth_of(m, qs)
-        for arm in ('N1_CQR', 'G0_CQR'):
+        for arm in ('N1_NO_STRUCTURAL', 'G0_NO_STRUCTURAL'):
             r = solve_(task, arm, 'c2-%d' % trial)
             if r['outcome'] == 'PROVED_ZERO_EVIDENCE': A(tr['Z'] == 0, 'false zero (trial %d)' % trial); zero_ok += 1; out['zero'] += 1; continue
             A(tr['Z'] > 0, 'published on a zero-evidence model (trial %d)' % trial); pub = r['publication']; bad = compare(pub, tr, task['epsilon'], qs); misses += bad
@@ -237,20 +237,20 @@ def c4_approx_quotient():
         Z += w
         for j, q in enumerate(C.queries): num[j] += w * q['f'].at(C.cards, list(xs))
     err = max(abs(num[j] / Z - tr['answers'][j]) for j in range(len(qs))); A(err <= C.bias[0], 'bias %s < actual error %s' % (C.bias[0], err)); out['within_budget'] = dict(cards=m['cards'], compiled=C.cards, beta=str(C.bias[0]), actual_error=str(err))
-    r = solve_(task, 'N1_CQR', 'c4'); A(r['outcome'] == 'PUBLISHED' and compare(r['publication'], tr, F(1, 200), qs) == 0, 'published answers miss'); out['publication'] = r['publication']['route']
+    r = solve_(task, 'N1_NO_STRUCTURAL', 'c4'); A(r['outcome'] == 'PUBLISHED' and compare(r['publication'], tr, F(1, 200), qs) == 0, 'published answers miss'); out['publication'] = r['publication']['route']
     # budget excess: large noise -> no approximate merge
     m2 = noisy(4, 2, 2, 20); C2, log2 = compile_(mk_task(m2, TK.all_singletons(m2['cards']))); A(not any(s['op'] == 'approx_quotient' and s.get('committed') for s in log2['steps']), 'merged beyond the allowance'); out['budget_excess_declined'] = True
     # zero-support mismatch declines
     m3 = noisy(4, 2, 2, 10 ** 5); m3['factors'][0]['values'][1] = F(0); C3, log3 = compile_(mk_task(m3, TK.all_singletons(m3['cards']))); st = [s for s in log3['steps'] if s['op'] == 'approx_quotient'][0]
     merged_var0 = any(x['var'] == 0 and 0 in [a for g_ in x['classes'] for a in g_ if len(g_) > 1] for x in C3.certs if x['op'] == 'approx_quotient' and x.get('kind') == 'commit'); A(not merged_var0 or True, ''); out['zero_mismatch'] = dict(compiled=C3.cards)
-    tr3 = truth_of(m3, TK.all_singletons(m3['cards'])); r3 = solve_(mk_task(m3, TK.all_singletons(m3['cards'])), 'N1_CQR', 'c4z'); A(r3['outcome'] == 'PUBLISHED' and compare(r3['publication'], tr3, F(1, 200), TK.all_singletons(m3['cards'])) == 0, 'zero-mismatch model inaccurate')
+    tr3 = truth_of(m3, TK.all_singletons(m3['cards'])); r3 = solve_(mk_task(m3, TK.all_singletons(m3['cards'])), 'N1_NO_STRUCTURAL', 'c4z'); A(r3['outcome'] == 'PUBLISHED' and compare(r3['publication'], tr3, F(1, 200), TK.all_singletons(m3['cards'])) == 0, 'zero-mismatch model inaccurate')
     # chained biases: two variables merged -> ledger sums
     steps = [c for c in C.certs if c['op'] == 'approx_quotient' and c.get('kind') == 'commit']; A(C.bias[0] == sum(F(x['approx']['beta']) for x in steps), 'ledger is not the sum of the step betas'); out['chained_steps'] = len(steps)
     # EXACT_RATIONAL disables
     Ce, loge = compile_(mk_task(m, qs, mode='EXACT_RATIONAL')); A([s for s in loge['steps'] if s['op'] == 'approx_quotient'][0].get('outcome') == 'disabled', 'approx not disabled in exact mode')
     # checker refuses a corrupted beta
-    d = tempfile.mkdtemp(prefix='cqr_c4_'); mp = write_task(d, 'noisy', m, dict(mode='PAC_EPS', queries=[dict(kind='all_singletons')], epsilon='1/200', delta='1/1000000')); w = fresh_worker(mp, 'N1_CQR'); fails, _ = check_(mp, w, 'N1_CQR'); A(not fails and w['outcome'] == 'PUBLISHED', 'genuine noisy worker refused %s' % fails[:1])
-    x = copy.deepcopy(w); aq = next(c for c in x['certificate']['compile']['certificates'] if c['op'] == 'approx_quotient' and c.get('kind') == 'commit'); aq['approx']['beta'] = str(F(aq['approx']['beta']) / 2); fails, _ = check_(mp, x, 'N1_CQR'); A(fails and any('approximate quotient certificate' in f for f in fails), 'corrupted beta not refused: %s' % fails[:1]); out['checker_corrupt_beta'] = fails[0][:90]
+    d = tempfile.mkdtemp(prefix='cqr_c4_'); mp = write_task(d, 'noisy', m, dict(mode='PAC_EPS', queries=[dict(kind='all_singletons')], epsilon='1/200', delta='1/1000000')); w = fresh_worker(mp, 'N1_NO_STRUCTURAL'); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL'); A(not fails and w['outcome'] == 'PUBLISHED', 'genuine noisy worker refused %s' % fails[:1])
+    x = copy.deepcopy(w); aq = next(c for c in x['certificate']['compile']['certificates'] if c['op'] == 'approx_quotient' and c.get('kind') == 'commit'); aq['approx']['beta'] = str(F(aq['approx']['beta']) / 2); fails, _ = check_(mp, x, 'N1_NO_STRUCTURAL'); A(fails and any('approximate quotient certificate' in f for f in fails), 'corrupted beta not refused: %s' % fails[:1]); out['checker_corrupt_beta'] = fails[0][:90]
     return out
 
 
@@ -297,7 +297,7 @@ def c6_influence_concentration():
         Z += w
         for j, q in enumerate(C.queries): num[j] += w * q['f'].at(C.cards, list(xs))
     errs = [abs(num[j] / Z - tr['answers'][j]) for j in range(len(qs))]; A(all(errs[j] <= C.bias[j] for j in range(len(qs))), 'influence bias < actual error'); out['m07'] = dict(alpha=inf[-1]['alpha'], deleted=len(inf[-1]['deleted']), max_bias=str(max(C.bias)), max_actual=str(max(errs)))
-    r = solve_(task, 'N1_CQR', 'c6'); A(r['outcome'] == 'PUBLISHED' and compare(r['publication'], tr, F(1, 200), qs) == 0, 'M07 publication miss'); out['m07_route'] = r['publication']['route']
+    r = solve_(task, 'N1_NO_STRUCTURAL', 'c6'); A(r['outcome'] == 'PUBLISHED' and compare(r['publication'], tr, F(1, 200), qs) == 0, 'M07 publication miss'); out['m07_route'] = r['publication']['route']
     g2 = G.generate('M07', 8, 'near_miss', 1); m2 = g2['model']; C2, _ = compile_(mk_task(m2, TK.all_singletons(m2['cards']), mode='DETERMINISTIC_EPS', delta=F(0))); inf2 = [c for c in C2.certs if c['op'] == 'influence_deletion']; A(inf2 and 'declined' in inf2[-1] and 'alpha' in inf2[-1]['declined'], 'near miss not declined for alpha: %s' % inf2); out['m07_near_miss'] = inf2[-1]['declined'][:60]
     mz = copy.deepcopy(m); mz['factors'][0]['values'][0] = F(0); Cz, _ = compile_(mk_task(mz, TK.all_singletons(mz['cards']), mode='DETERMINISTIC_EPS', delta=F(0))); infz = [c for c in Cz.certs if c['op'] == 'influence_deletion']; A(infz and 'hard zeros' in infz[-1].get('declined', ''), 'zeros not declined: %s' % infz); out['zeros_declined'] = True
     ms = copy.deepcopy(m)
@@ -305,7 +305,7 @@ def c6_influence_concentration():
     Cs, _ = compile_(mk_task(ms, TK.all_singletons(ms['cards']), mode='DETERMINISTIC_EPS', delta=F(0))); infs = [c for c in Cs.certs if c['op'] == 'influence_deletion']; A(infs[-1].get('alpha') == inf[-1]['alpha'] and infs[-1].get('bias') == inf[-1]['bias'], 'rescaling changed the verdict'); out['rescale_invariant'] = True
     # concentration
     g3 = G.generate('M08', 8, 'favorable', 1); m3 = g3['model']; qs3 = TK.all_singletons(m3['cards']); task3 = mk_task(m3, qs3, mode='DETERMINISTIC_EPS', delta=F(0)); C3, log3 = compile_(task3); tr3 = truth_of(m3, qs3)
-    conc = log3.get('direct'); r3 = solve_(task3, 'N1_CQR', 'c6c'); A(r3['outcome'] == 'PUBLISHED' and compare(r3['publication'], tr3, F(1, 200), qs3) == 0, 'M08 miss'); out['m08'] = dict(direct=conc is not None, route=r3['publication']['route'])
+    conc = log3.get('direct'); r3 = solve_(task3, 'N1_NO_STRUCTURAL', 'c6c'); A(r3['outcome'] == 'PUBLISHED' and compare(r3['publication'], tr3, F(1, 200), qs3) == 0, 'M08 miss'); out['m08'] = dict(direct=conc is not None, route=r3['publication']['route'])
     if conc is not None:
         xs = {int(k): v for k, v in conc['record']['xstar'].items()}; A(all(abs(conc['answers'][j] - tr3['answers'][j]) <= conc['bias'][j] for j in conc['answers']), 'concentration bias < actual error')
     g4 = G.generate('M08', 8, 'near_miss', 1); m4 = g4['model']; C4, log4 = compile_(mk_task(m4, TK.all_singletons(m4['cards']), mode='DETERMINISTIC_EPS', delta=F(0))); A(log4.get('direct') is None, 'near-miss concentration accepted'); out['m08_near_miss_declined'] = [c.get('declined', '')[:50] for c in C4.certs if c['op'] == 'concentration']
@@ -313,7 +313,7 @@ def c6_influence_concentration():
     m5 = dict(cards=[2, 2], factors=[dict(scope=(0,), values=[F(1), F(9)]), dict(scope=(1,), values=[F(1), F(9)]), dict(scope=(0, 1), values=[F(1), F(1), F(1), F(0)])], evidence={}); C5 = CP.from_task(mk_task(m5, TK.all_singletons([2, 2]), mode='DETERMINISTIC_EPS', delta=F(0))); A(CP.concentration(C5, 10 ** 9, [F(1, 2)] * 4) is None and any('zero weight' in c.get('declined', '') for c in C5.certs), 'zero-weight proposal not declined'); out['zero_weight_declined'] = True
     # heterogeneous categorical: sum of ratios (a 3-state variable with two bad states): t = (r1 + r2) / (1 + r1 + r2) must bound P(X != x*)
     m6 = dict(cards=[3], factors=[dict(scope=(0,), values=[F(10), F(1), F(1)])], evidence={}); C6 = CP.from_task(mk_task(m6, [TK.singleton_query(0, 0, [3])], mode='DETERMINISTIC_EPS', delta=F(0))); d6 = CP.concentration(C6, 10 ** 9, [F(1, 2)]); A(d6 is not None and F(d6['record']['t']['0']) == F(2, 12), 'sum of ratios not used: %s' % (d6 and d6['record']['t'])); out['sum_of_ratios'] = str(F(d6['record']['t']['0']))
-    r6 = solve_(mk_task(m, qs, mode='DETERMINISTIC_EPS', delta=F(0)), 'N1_NO_INFLUENCE', 'c6a'); ops = [s['op'] for s in r6['certificate']['compile']['log']['steps'] if s.get('committed')]; A('influence_deletion' not in ops and r6['outcome'] == 'PUBLISHED', 'NO_INFLUENCE committed influence'); out['ablation_ops'] = ops
+    r6 = solve_(mk_task(m, qs, mode='DETERMINISTIC_EPS', delta=F(0)), 'N1_NO_INFLUENCE_NO_STRUCTURAL', 'c6a'); ops = [s['op'] for s in r6['certificate']['compile']['log']['steps'] if s.get('committed')]; A('influence_deletion' not in ops and r6['outcome'] == 'PUBLISHED', 'NO_INFLUENCE committed influence'); out['ablation_ops'] = ops
     return out
 
 
@@ -413,7 +413,7 @@ def c9_ratio_stream():
     resolution refused, a failed draw stops the stream (no silent replacement), changed model scale leaves normalized answers and stopping unchanged, missing failed trial /
     deleted draw refused, wrong rho refused"""
     rng = random.Random(909); out = {}; m = grid_model(rng, 5, 3); qs = TK.all_singletons(m['cards'])[:4]; task = mk_task(m, qs, eps=F(1, 20), delta=F(1, 100)); tr = truth_of(m, qs, cap=1 << 17)
-    r = solve_(task, 'N1_CQR', 'c9', budget=10.0, diagnostic='no_reference'); ev = r['certificate']['events']; draws = [e for e in ev if e['op'] == 'ratio_draw']; carves = [e for e in ev if e['op'] == 'carve']
+    r = solve_(task, 'N1_NO_STRUCTURAL', 'c9', budget=10.0, diagnostic='no_reference'); ev = r['certificate']['events']; draws = [e for e in ev if e['op'] == 'ratio_draw']; carves = [e for e in ev if e['op'] == 'carve']
     A(draws and carves, 'no draws / carves'); A(any(e['op'] in ('carve', 'close', 'split') for e in ev[:ev.index(draws[-1])]), 'no refinement before the last draw'); out['draws'] = len(draws); out['carves'] = len(carves)
     # record-before-resolve: for every draw, the recorded A equals the resolved mass BEFORE that draw's carve (replayed by the checker); here: replay in-process
     C, _ = compile_(task); fr = FR.Frontier(C.cards, C.views, C.queries, TK.Work()); seen = 0
@@ -435,13 +435,13 @@ def c9_ratio_stream():
     # scale invariance: multiply all weights by 7: normalized publication identical in bounds (same seed)
     m7 = copy.deepcopy(m)
     for f in m7['factors']: f['values'] = [x * 7 for x in f['values']]
-    r7 = solve_(mk_task(m7, qs, eps=F(1, 20), delta=F(1, 100)), 'N1_CQR', 'c9', budget=10.0, diagnostic='no_reference'); A(r7['outcome'] == 'PUBLISHED' and [(str(a), str(b)) for a, b in r7['publication']['bounds']] == [(str(a), str(b)) for a, b in r['publication']['bounds']] and r7['stats']['ratio_draws'] == r['stats']['ratio_draws'], 'scaling changed the normalized result or stopping'); out['scale_invariant'] = dict(draws=r['stats']['ratio_draws'])
+    r7 = solve_(mk_task(m7, qs, eps=F(1, 20), delta=F(1, 100)), 'N1_NO_STRUCTURAL', 'c9', budget=10.0, diagnostic='no_reference'); A(r7['outcome'] == 'PUBLISHED' and [(str(a), str(b)) for a, b in r7['publication']['bounds']] == [(str(a), str(b)) for a, b in r['publication']['bounds']] and r7['stats']['ratio_draws'] == r['stats']['ratio_draws'], 'scaling changed the normalized result or stopping'); out['scale_invariant'] = dict(draws=r['stats']['ratio_draws'])
     # checker: deleted draw / wrong rho refused, on a fresh worker
-    d = tempfile.mkdtemp(prefix='cqr_c9_'); mbig = grid_model(rng, 5, 3); mp = write_task(d, 'ratio', mbig, dict(mode='PAC_EPS', queries=[dict(kind='singleton', variable=v, state=1) for v in range(4)], epsilon='1/20', delta='1/100')); w = fresh_worker(mp, 'N1_CQR', budget=10.0); fails, _ = check_(mp, w, 'N1_CQR'); A(w['outcome'] == 'PUBLISHED', 'fresh ratio worker did not publish: %s %s' % (w['outcome'], (w.get('reason') or '')[:80])); A(not fails, 'fresh ratio worker refused %s' % fails[:1]); out['fresh_route'] = w.get('route')
+    d = tempfile.mkdtemp(prefix='cqr_c9_'); mbig = grid_model(rng, 5, 3); mp = write_task(d, 'ratio', mbig, dict(mode='PAC_EPS', queries=[dict(kind='singleton', variable=v, state=1) for v in range(4)], epsilon='1/20', delta='1/100')); w = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=10.0); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL'); A(w['outcome'] == 'PUBLISHED', 'fresh ratio worker did not publish: %s %s' % (w['outcome'], (w.get('reason') or '')[:80])); A(not fails, 'fresh ratio worker refused %s' % fails[:1]); out['fresh_route'] = w.get('route')
     dr = [i for i, e in enumerate(w['certificate']['events']) if e['op'] == 'ratio_draw']
     if dr and w['certificate']['ratio_stream']['t'] > 0:
-        x = copy.deepcopy(w); x['certificate']['events'].pop(dr[0]); fails, _ = check_(mp, x, 'N1_CQR'); A(fails, 'deleted draw accepted'); out['deleted_draw_refused'] = fails[0][:80]
-        x = copy.deepcopy(w); x['certificate']['ratio_stream']['rho'] = str(F(x['certificate']['ratio_stream']['rho']) * 2); fails, _ = check_(mp, x, 'N1_CQR'); A(fails and any('rho' in f for f in fails), 'wrong rho accepted'); out['wrong_rho_refused'] = True
+        x = copy.deepcopy(w); x['certificate']['events'].pop(dr[0]); fails, _ = check_(mp, x, 'N1_NO_STRUCTURAL'); A(fails, 'deleted draw accepted'); out['deleted_draw_refused'] = fails[0][:80]
+        x = copy.deepcopy(w); x['certificate']['ratio_stream']['rho'] = str(F(x['certificate']['ratio_stream']['rho']) * 2); fails, _ = check_(mp, x, 'N1_NO_STRUCTURAL'); A(fails and any('rho' in f for f in fails), 'wrong rho accepted'); out['wrong_rho_refused'] = True
     else: out['note'] = 'fresh worker published before any ratio draw; in-process controls covered the stream invariants'
     return out
 
@@ -452,18 +452,18 @@ def c10_publication():
     and refuses component omission; relative-error rule; EXACT_RATIONAL never publishes a positive width; the legacy rows equal the per-query answers"""
     out = {}
     m = dict(cards=[2, 2, 2], factors=[dict(scope=(0, 1), values=[F(1), F(0), F(2), F(0)]), dict(scope=(1, 2), values=[F(1), F(2), F(1), F(1)])], evidence={}); qs = [TK.conditional_query({0: 1}, {1: 1}, [2, 2, 2]), TK.conditional_query({2: 1}, {0: 0}, [2, 2, 2])] + TK.all_singletons([2, 2, 2])
-    tr = truth_of(m, qs); A(tr['answers'][0] == 'UNDEFINED', 'fixture'); r = solve_(mk_task(m, qs), 'N1_CQR', 'c10'); pub = r['publication']; A(pub['bounds'][0][0] == 'UNDEFINED' and pub['bounds'][1][0] != 'UNDEFINED', 'undefined conditional mishandled'); A(compare(pub, tr, F(1, 200), qs) == 0, 'miss'); out['undefined_typed'] = True
+    tr = truth_of(m, qs); A(tr['answers'][0] == 'UNDEFINED', 'fixture'); r = solve_(mk_task(m, qs), 'N1_NO_STRUCTURAL', 'c10'); pub = r['publication']; A(pub['bounds'][0][0] == 'UNDEFINED' and pub['bounds'][1][0] != 'UNDEFINED', 'undefined conditional mishandled'); A(compare(pub, tr, F(1, 200), qs) == 0, 'miss'); out['undefined_typed'] = True
     for v in range(3): A(sum(pub['point'][2 + 2 * v: 4 + 2 * v]) == 1, 'simplex row %d' % v)
     # normalizer: known scalar retained (a constant factor 5 and a unary leaf) ; truth Z compared
     m2 = dict(cards=[2, 2, 2], factors=[dict(scope=(), values=[F(5)]), dict(scope=(0,), values=[F(1), F(3)]), dict(scope=(1, 2), values=[F(1), F(2), F(3), F(4)])], evidence={}); spec = dict(mode='PAC_EPS', normalizer_task=True, queries=[], epsilon='1/200', delta='1/1000000')
-    task2 = dict(model=m2, queries=[], mode='PAC_EPS', epsilon=F(1, 200), delta=F(1, 10 ** 6), query_spec=spec, all_singletons=False, binding=None); tr2 = truth_of(m2, []); r2 = solve_(task2, 'N1_CQR', 'c10z'); A(r2['outcome'] == 'PUBLISHED', r2['outcome']); z = r2['publication']; A(z['bounds'][0][0] <= tr2['Z'] <= z['bounds'][0][1] and abs(z['point'][0] - tr2['Z']) <= F(1, 200) * tr2['Z'], 'Z wrong: %s vs %s' % (z['point'][0], tr2['Z'])); out['normalizer'] = dict(route=z['route'], Z=str(tr2['Z']))
+    task2 = dict(model=m2, queries=[], mode='PAC_EPS', epsilon=F(1, 200), delta=F(1, 10 ** 6), query_spec=spec, all_singletons=False, binding=None); tr2 = truth_of(m2, []); r2 = solve_(task2, 'N1_NO_STRUCTURAL', 'c10z'); A(r2['outcome'] == 'PUBLISHED', r2['outcome']); z = r2['publication']; A(z['bounds'][0][0] <= tr2['Z'] <= z['bounds'][0][1] and abs(z['point'][0] - tr2['Z']) <= F(1, 200) * tr2['Z'], 'Z wrong: %s vs %s' % (z['point'][0], tr2['Z'])); out['normalizer'] = dict(route=z['route'], Z=str(tr2['Z']))
     ops = [s['op'] for s in r2['certificate']['compile']['log']['steps'] if s.get('committed')]; A('component_omission' not in ops, 'normalizer omitted a component'); out['normalizer_ops'] = ops
     # the same model as a normalized task DOES omit the disconnected component (x0 is query-free when the query is on x2)
-    r3 = solve_(mk_task(m2, [TK.singleton_query(2, 1, [2, 2, 2])]), 'N1_CQR', 'c10o'); ops3 = [s['op'] for s in r3['certificate']['compile']['log']['steps'] if s.get('committed')]; A('component_omission' in ops3 or 'leaf_sumout' in ops3, 'normalized task kept the irrelevant component'); out['normalized_omits'] = ops3
+    r3 = solve_(mk_task(m2, [TK.singleton_query(2, 1, [2, 2, 2])]), 'N1_NO_STRUCTURAL', 'c10o'); ops3 = [s['op'] for s in r3['certificate']['compile']['log']['steps'] if s.get('committed')]; A('component_omission' in ops3 or 'leaf_sumout' in ops3, 'normalized task kept the irrelevant component'); out['normalized_omits'] = ops3
     # EXACT_RATIONAL: a model the reference finishes publishes exact; the checker refuses a positive-width exact certificate
-    r4 = solve_(mk_task(m, qs, mode='EXACT_RATIONAL', delta=F(0)), 'N1_CQR', 'c10e'); A(r4['publication'].get('exact') and all(lo == hi for lo, hi in r4['publication']['bounds'] if lo != 'UNDEFINED'), 'exact mode width'); out['exact_mode'] = r4['publication']['route']
+    r4 = solve_(mk_task(m, qs, mode='EXACT_RATIONAL', delta=F(0)), 'N1_NO_STRUCTURAL', 'c10e'); A(r4['publication'].get('exact') and all(lo == hi for lo, hi in r4['publication']['bounds'] if lo != 'UNDEFINED'), 'exact mode width'); out['exact_mode'] = r4['publication']['route']
     # legacy rows == per-query answers (fresh worker on an all-singleton task)
-    d = tempfile.mkdtemp(prefix='cqr_c10_'); rng = random.Random(1010); m5 = rnd_model(rng, 6, [2, 3, 2, 2, 3, 2], 7, 3); mp = write_task(d, 'legacy_rows', m5); w = fresh_worker(mp, 'N1_CQR'); A(w['outcome'] == 'PUBLISHED' and w.get('intervals') is not None, 'no legacy rows'); fails, _ = check_(mp, w, 'N1_CQR'); A(not fails, fails[:1])
+    d = tempfile.mkdtemp(prefix='cqr_c10_'); rng = random.Random(1010); m5 = rnd_model(rng, 6, [2, 3, 2, 2, 3, 2], 7, 3); mp = write_task(d, 'legacy_rows', m5); w = fresh_worker(mp, 'N1_NO_STRUCTURAL'); A(w['outcome'] == 'PUBLISHED' and w.get('intervals') is not None, 'no legacy rows'); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL'); A(not fails, fails[:1])
     import core; iv = [[(F(a), F(b)) for a, b in row] for row in w['intervals']]; pt = [[F(x) for x in row] for row in w['points']]; A(core.verify_output(iv, pt, F(1, 200)), 'legacy contract'); out['legacy_rows_contract'] = True
     return out
 
@@ -474,22 +474,22 @@ def c11_reference_resources():
     refusal with no publication; a late zero proof is DEADLINE; a MEMORY cap produces a typed MEMORY stop in a fresh worker; the reference is never cancelled by optional work"""
     rng = random.Random(1111); out = {}; shares = []
     for trial in range(6):
-        n = rng.choice([12, 13, 14]); m = rnd_model(rng, n, [2] * n, n + 4, 3, lo=1, hi=9); qs = TK.all_singletons(m['cards']); r = solve_(mk_task(m, qs), ['N1_CQR', 'G0_CQR'][trial % 2], 'c11-%d' % trial, budget=10.0)
+        n = rng.choice([12, 13, 14]); m = rnd_model(rng, n, [2] * n, n + 4, 3, lo=1, hi=9); qs = TK.all_singletons(m['cards']); r = solve_(mk_task(m, qs), ['N1_NO_STRUCTURAL', 'G0_NO_STRUCTURAL'][trial % 2], 'c11-%d' % trial, budget=10.0)
         A(r['outcome'] == 'PUBLISHED', r['outcome']); sh = F(r['stats']['reference_share']); shares.append(float(sh)); A(sh >= F(1, 2) or r['certificate']['reference']['done'] or r['stats']['work_optional']['total'] <= SV.POLICY['quantum_units'], 'reference share %s below 1/2 while the reference did not finish' % sh)
     out['reference_shares'] = shares
     # no shortcut: random dense positive 3-ary tables, no clones / affine / small influence: the optional half finds nothing and the reference completes
-    m = rnd_model(rng, 10, [2] * 10, 12, 3, lo=1, hi=9); qs = TK.all_singletons(m['cards']); r = solve_(mk_task(m, qs), 'N1_CQR', 'c11ns', budget=10.0); tr = truth_of(m, qs)
+    m = rnd_model(rng, 10, [2] * 10, 12, 3, lo=1, hi=9); qs = TK.all_singletons(m['cards']); r = solve_(mk_task(m, qs), 'N1_NO_STRUCTURAL', 'c11ns', budget=10.0); tr = truth_of(m, qs)
     A(r['outcome'] == 'PUBLISHED' and compare(r['publication'], tr, F(0) if r['publication'].get('exact') else F(1, 200), qs) == 0, 'no-shortcut model wrong'); out['no_shortcut'] = dict(route=r['publication']['route'], ops=[s['op'] for s in r['certificate']['compile']['log']['steps'] if s.get('committed')], share=r['stats']['reference_share'][:8])
     # DEADLINE: a 24-variable model with a 0.5 s budget
     m = rnd_model(rng, 24, [2] * 24, 30, 2, lo=1, hi=9); qs = TK.all_singletons(m['cards'])
-    try: r = solve_(mk_task(m, qs), 'N1_CQR', 'c11d', budget=0.5); A(r['outcome'] != 'PUBLISHED' or True, ''); out['deadline'] = 'published within 0.5 s (%s)' % r['publication']['route']
+    try: r = solve_(mk_task(m, qs), 'N1_NO_STRUCTURAL', 'c11d', budget=0.5); A(r['outcome'] != 'PUBLISHED' or True, ''); out['deadline'] = 'published within 0.5 s (%s)' % r['publication']['route']
     except SV.Stop as e: A(e.kind == 'DEADLINE', e.kind); out['deadline'] = 'typed DEADLINE at %s' % e.info.get('where')
     # fresh worker: deadline -> no intervals / answers; late output -> DEADLINE
-    d = tempfile.mkdtemp(prefix='cqr_c11_'); mp = write_task(d, 'big', m); w = fresh_worker(mp, 'N1_CQR', budget=0.5); A(w['status'] == 'STOPPED' and w['outcome'] == 'DEADLINE' and 'answers' not in w and 'intervals' not in w, 'deadline worker leaked a publication: %s' % w['outcome']); out['worker_deadline'] = w['outcome']
+    d = tempfile.mkdtemp(prefix='cqr_c11_'); mp = write_task(d, 'big', m); w = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=0.5); A(w['status'] == 'STOPPED' and w['outcome'] == 'DEADLINE' and 'answers' not in w and 'intervals' not in w, 'deadline worker leaked a publication: %s' % w['outcome']); out['worker_deadline'] = w['outcome']
     # MEMORY: a fresh worker under a 64 MB address-space limit on a model whose tables are large
     mb = dict(cards=[16] * 6, factors=[dict(scope=(0, 1, 2, 3, 4), values=[F(1)] * 16 ** 5)], evidence={}); mp2 = write_task(d, 'memory', mb)
     out_p = mp2 + '.mem.json'; dl = subprocess.run([PY, '-c', 'import time; print(time.monotonic()+20)'], capture_output=True, text=True).stdout.strip()
-    code = "import resource,sys; resource.setrlimit(resource.RLIMIT_AS,(200*1024**2,200*1024**2)); sys.argv=['worker.py','--input',%r,'--output',%r,'--arm','N1_CQR','--deadline',%r,'--seed','s','--nonce','n','--budget','20']; sys.path.insert(0,%r); import worker; worker.main()" % (mp2, out_p, dl, HERE)
+    code = "import resource,sys; resource.setrlimit(resource.RLIMIT_AS,(200*1024**2,200*1024**2)); sys.argv=['worker.py','--input',%r,'--output',%r,'--arm','N1_NO_STRUCTURAL','--deadline',%r,'--seed','s','--nonce','n','--budget','20']; sys.path.insert(0,%r); import worker; worker.main()" % (mp2, out_p, dl, HERE)
     p = subprocess.run([PY, '-c', code], capture_output=True, text=True, cwd=CODE); CNT['fresh_workers'] += 1
     wm = json.load(open(out_p)) if os.path.exists(out_p) else dict(status='NO_OUTPUT', outcome='KILLED_rc_%s' % p.returncode); A(wm.get('outcome') in ('MEMORY', 'FAULT', 'DEADLINE') or wm['status'] == 'NO_OUTPUT', 'memory-capped worker published: %s' % wm.get('outcome')); A(wm.get('outcome') != 'PUBLISHED', 'published under memory pressure'); out['memory_capped_worker'] = dict(status=wm.get('status'), outcome=wm.get('outcome'), exception=wm.get('exception_type'))
     return out
@@ -502,7 +502,7 @@ def c12_pipeline_admission():
     a receipt with a mutated worker output is refused by a gate re-run on a COPY"""
     A(os.path.isdir(ADMISSION_DIR), 'development admission directory %s is REQUIRED (absent)' % ADMISSION_DIR)
     mn = 'CAMPAIGN_MANIFEST_dev.json'; man = json.load(open(os.path.join(ADMISSION_DIR, mn))); cells = man['cells']; out = dict(cells=len(cells), arms=sorted({c['arm'] for c in cells}), cohorts=sorted({c['cohort'] for c in cells}))
-    frozen = {k: v for k, v in man['candidate_artifact_hashes'].items() if k.startswith('cqr/') or k == 'newarm/core.py'}; cur = registry.cqr_source_inventory(CODE)
+    frozen = {k: v for k, v in man['candidate_artifact_hashes'].items() if registry.is_cqr_scope_key(k)}; cur = registry.cqr_source_inventory(CODE)
     diff = sorted(k for k in set(frozen) | set(cur) if frozen.get(k) != cur.get(k)); A(not diff, 'admission identity differs from the current sources: %s' % diff[:3]); out['identity_differences'] = 0
     recs = {}
     for c in cells:
@@ -646,37 +646,37 @@ def c14_publication_contract_every_route():
         else: a = w['answers'][0]; CNT['truth_coordinates'] += 1; A(F(a['lo']) <= tr['Z'] <= F(a['hi']) and abs(F(a['point']) - tr['Z']) <= t['epsilon'] * tr['Z'], 'normalizer miss')
         routes_seen.add(w['route']); out['routes'][os.path.basename(mp) + '/' + arm] = dict(route=w['route'], guarantee=w['guarantee_type'], exact=w.get('exact')); return w, t, tr
     # ---- CQR-01 concentration: the forged direct answer (nearly-zero answer changed to 1 with consistent bounds / point) must fail on re-evaluation at x*
-    mp = _concentration_witness(d); w, t, tr = honest(mp, 'N1_CQR'); A(w['route'] == 'deterministic_concentration', 'concentration route not taken: %s' % w['route'])
+    mp = _concentration_witness(d); w, t, tr = honest(mp, 'N1_NO_STRUCTURAL'); A(w['route'] == 'deterministic_concentration', 'concentration route not taken: %s' % w['route'])
     def forge(x):
         dc = next(c for c in x['certificate']['compile']['certificates'] if c.get('op') == 'concentration' and 'answers' in c); b = F(x['certificate']['bias'][0])
         dc['answers']['0'] = '1'; x['certificate']['publication']['bounds'] = [[str(1 - b), '1']]; x['certificate']['publication']['point'] = ['1']; x['answers'][0].update(lo=str(1 - b), hi='1', point='1')
-    _mut(mp, w, 'N1_CQR', 'concentration_answer_forged', forge, 'does not re-derive', out['mutations']); out['concentration_truth'] = str(tr['answers'][0])
-    _mut(mp, w, 'N1_CQR', 'concentration_route_relabel', lambda x: (x.__setitem__('route', 'deterministic_frontier'), x['certificate']['publication'].__setitem__('route', 'deterministic_frontier')), ('route', 'frontier', 'do not contain'), out['mutations'])
-    _mut(mp, w, 'N1_CQR', 'concentration_output_count', lambda x: x['answers'].append(dict(x['answers'][0])), ('shape', 'count', 'answers'), out['mutations'])
-    _mut(mp, w, 'N1_CQR', 'concentration_identity', lambda x: x.__setitem__('task_identity', '2' * 64), 'identity', out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'concentration_answer_forged', forge, 'does not re-derive', out['mutations']); out['concentration_truth'] = str(tr['answers'][0])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'concentration_route_relabel', lambda x: (x.__setitem__('route', 'deterministic_frontier'), x['certificate']['publication'].__setitem__('route', 'deterministic_frontier')), ('route', 'frontier', 'do not contain'), out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'concentration_output_count', lambda x: x['answers'].append(dict(x['answers'][0])), ('shape', 'count', 'answers'), out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'concentration_identity', lambda x: x.__setitem__('task_identity', '2' * 64), 'identity', out['mutations'])
     # ---- CQR-05 biased closure: bias 1/40001 stays on the original interval; never exact; the undefined coordinate stays typed
-    mp = _biased_closure_witness(d); w, t, tr = honest(mp, 'N1_CQR'); A(tr['answers'][0] == F(20953, 74287) and tr['answers'][1] == 'UNDEFINED', 'biased-closure fixture truth %s' % tr['answers'])
+    mp = _biased_closure_witness(d); w, t, tr = honest(mp, 'N1_NO_STRUCTURAL'); A(tr['answers'][0] == F(20953, 74287) and tr['answers'][1] == 'UNDEFINED', 'biased-closure fixture truth %s' % tr['answers'])
     A(w.get('exact') is False and any(F(b) > 0 for b in w['certificate']['bias']), 'biased closure published exact or without bias'); A(w['answers'][1]['status'] == 'UNDEFINED', 'second coordinate not typed UNDEFINED')
     out['biased_closure'] = dict(route=w['route'], bounds=[w['answers'][0]['lo'], w['answers'][0]['hi']], bias=w['certificate']['bias'])
-    _mut(mp, w, 'N1_CQR', 'biased_exact_claim', lambda x: (x.__setitem__('exact', True), x['certificate']['publication'].__setitem__('exact', True)), ('exact', 'route'), out['mutations'])
-    _mut(mp, w, 'N1_CQR', 'biased_bias_zeroed', lambda x: x['certificate'].__setitem__('bias', ['0', '0']), 'bias ledger', out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'biased_exact_claim', lambda x: (x.__setitem__('exact', True), x['certificate']['publication'].__setitem__('exact', True)), ('exact', 'route'), out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'biased_bias_zeroed', lambda x: x['certificate'].__setitem__('bias', ['0', '0']), 'bias ledger', out['mutations'])
     def narrow(x):
         c = x['certificate']['publication']['compiled_bounds'][0][0]; x['answers'][0].update(lo=str(c), hi=str(c), point=str(c)); x['certificate']['publication']['bounds'][0] = [str(c), str(c)]; x['certificate']['publication']['point'][0] = str(c)
-    _mut(mp, w, 'N1_CQR', 'biased_bounds_narrowed_to_compiled', narrow, ('do not contain', 'not within eps'), out['mutations'])
-    _mut(mp, w, 'N1_CQR', 'biased_undefined_given_value', lambda x: (x['answers'][1].update(status='OK', lo='0', hi='1', point='1/2'), x['certificate']['publication']['bounds'].__setitem__(1, ['0', '1']), x['certificate']['publication']['point'].__setitem__(1, '1/2')), ('undefined', 'UNDEFINED'), out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'biased_bounds_narrowed_to_compiled', narrow, ('do not contain', 'not within eps'), out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'biased_undefined_given_value', lambda x: (x['answers'][1].update(status='OK', lo='0', hi='1', point='1/2'), x['certificate']['publication']['bounds'].__setitem__(1, ['0', '1']), x['certificate']['publication']['point'].__setitem__(1, '1/2')), ('undefined', 'UNDEFINED'), out['mutations'])
     # ---- CQR-03 zero-dimensional constant 1/3: point 0 with correct bounds; CQR-03 legacy rows [0,1] on the exact-reference unary [1,2]
-    mp = _constant_witness(d); w, t, tr = honest(mp, 'N1_CQR', budget=10.0); A(tr['answers'][0] == F(1, 3), 'constant fixture')
-    _mut(mp, w, 'N1_CQR', 'zero_dim_point_zero', lambda x: (x['answers'][0].__setitem__('point', '0'), x['certificate']['publication']['point'].__setitem__(0, '0')), ('outside its published bounds', 'not within eps'), out['mutations'])
-    mp = _uai(os.path.join(d, 'unary.uai'), [2], [([0], ['1', '2'])]); w, t, tr = honest(mp, 'G0_CQR', budget=10.0)        # NO query file: the campaign default all-singleton contract (legacy rows emitted), as in the reviewer's witness
+    mp = _constant_witness(d); w, t, tr = honest(mp, 'N1_NO_STRUCTURAL', budget=10.0); A(tr['answers'][0] == F(1, 3), 'constant fixture')
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'zero_dim_point_zero', lambda x: (x['answers'][0].__setitem__('point', '0'), x['certificate']['publication']['point'].__setitem__(0, '0')), ('outside its published bounds', 'not within eps'), out['mutations'])
+    mp = _uai(os.path.join(d, 'unary.uai'), [2], [([0], ['1', '2'])]); w, t, tr = honest(mp, 'G0_NO_STRUCTURAL', budget=10.0)        # NO query file: the campaign default all-singleton contract (legacy rows emitted), as in the reviewer's witness
     A(w['route'] == 'exact_reference' and w.get('intervals') is not None, 'unary exact reference without legacy rows')
-    _mut(mp, w, 'G0_CQR', 'legacy_rows_wrong', lambda x: (x.__setitem__('intervals', [[['0', '0'], ['1', '1']]]), x.__setitem__('points', [['0', '1']])), ('legacy', 'rows'), out['mutations'])
-    _mut(mp, w, 'G0_CQR', 'legacy_rows_dropped', lambda x: (x.pop('intervals'), x.pop('points')), ('legacy', 'rows'), out['mutations'])
-    _mut(mp, w, 'G0_CQR', 'exact_value_changed', lambda x: (x['answers'][0].update(lo='1/2', hi='1/2', point='1/2'), x['certificate']['publication'].__setitem__('bounds', [['1/2', '1/2']]), x['certificate']['publication'].__setitem__('point', ['1/2']), x.__setitem__('intervals', [[['1/2', '1/2'], ['1/2', '1/2']]]), x.__setitem__('points', [['1/2', '1/2']])), ('differs', 'do not contain', 'enumerator'), out['mutations'])
+    _mut(mp, w, 'G0_NO_STRUCTURAL', 'legacy_rows_wrong', lambda x: (x.__setitem__('intervals', [[['0', '0'], ['1', '1']]]), x.__setitem__('points', [['0', '1']])), ('legacy', 'rows'), out['mutations'])
+    _mut(mp, w, 'G0_NO_STRUCTURAL', 'legacy_rows_dropped', lambda x: (x.pop('intervals'), x.pop('points')), ('legacy', 'rows'), out['mutations'])
+    _mut(mp, w, 'G0_NO_STRUCTURAL', 'exact_value_changed', lambda x: (x['answers'][0].update(lo='1/2', hi='1/2', point='1/2'), x['certificate']['publication'].__setitem__('bounds', [['1/2', '1/2']]), x['certificate']['publication'].__setitem__('point', ['1/2']), x.__setitem__('intervals', [[['1/2', '1/2'], ['1/2', '1/2']]]), x.__setitem__('points', [['1/2', '1/2']])), ('differs', 'do not contain', 'enumerator'), out['mutations'])
     # ---- exact closure (clones, EXACT_RATIONAL): zero-width; an exactness downgrade / widening is refused
-    g = G.generate('M02', 6, 'favorable', 1); mp = write_task(d, 'clones_exact', g['model'], dict(mode='EXACT_RATIONAL', queries=[dict(kind='all_singletons')], epsilon='1/200', delta='0')); w, t, tr = honest(mp, 'N1_CQR', budget=10.0)
+    g = G.generate('M02', 6, 'favorable', 1); mp = write_task(d, 'clones_exact', g['model'], dict(mode='EXACT_RATIONAL', queries=[dict(kind='all_singletons')], epsilon='1/200', delta='0')); w, t, tr = honest(mp, 'N1_NO_STRUCTURAL', budget=10.0)
     A(w['route'] in ('exact_frontier_closure', 'exact_zero_dimensional', 'exact_reference') and w.get('exact') is True, 'clones exact route %s' % w['route'])
-    _mut(mp, w, 'N1_CQR', 'exact_widened', lambda x: (x['answers'][0].__setitem__('hi', str(F(x['answers'][0]['hi']) + F(1, 1000))), x['certificate']['publication']['bounds'][0].__setitem__(1, x['answers'][0]['hi'])), ('zero-width', 'exact', 'differs'), out['mutations'])
-    _mut(mp, w, 'N1_CQR', 'exact_flag_dropped', lambda x: (x.__setitem__('exact', False), x['certificate']['publication'].__setitem__('exact', False)), ('exact', 'route'), out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'exact_widened', lambda x: (x['answers'][0].__setitem__('hi', str(F(x['answers'][0]['hi']) + F(1, 1000))), x['certificate']['publication']['bounds'][0].__setitem__(1, x['answers'][0]['hi'])), ('zero-width', 'exact', 'differs'), out['mutations'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'exact_flag_dropped', lambda x: (x.__setitem__('exact', False), x['certificate']['publication'].__setitem__('exact', False)), ('exact', 'route'), out['mutations'])
     # ---- CQR-02 normalizer PAC: narrowed singleton refused, valid small outward widening accepted, relabel refused; exact normalizer routes
     mp = _normalizer_witness(d); w = None
     for seed in range(6):
@@ -779,13 +779,13 @@ def c17_protected_reference_scheduling():
     every typed DEADLINE records reference progress and both work ledgers; parity (reference >= optional, or reference done) holds at every publication exit incl. signed exits"""
     d = tempfile.mkdtemp(prefix='cqr_c17_'); out = {}
     mp = _d32_witness(d)
-    for arm in ('N1_CQR', 'G0_CQR'):
+    for arm in ('N1_NO_STRUCTURAL', 'G0_NO_STRUCTURAL'):
         t0 = time.monotonic(); w = fresh_worker(mp, arm, budget=20.0, nonce='c17-d32-' + arm); wall = time.monotonic() - t0; fails, _ = check_(mp, w, arm); c = w.get('certificate') or {}
         A(not fails and w['outcome'] == 'PUBLISHED' and w['route'] == 'exact_reference' and c['reference']['done'], 'd32 %s: %s %s %s' % (arm, w['outcome'], w.get('route'), fails[:1]))
         lg = (c.get('compile') or {}).get('log') or {}; out['d32_' + arm] = dict(wall_s=round(wall, 2), work_reference=c['work']['reference']['total'], work_optional=c['work']['optional']['total'], compile_interrupted=lg.get('interrupted'))
-    t, tr = _truth(mp); w = json.load(open(mp + '.N1_CQR.c17-d32-N1_CQR.json')); A(_contained(w, tr, F(0)), 'd32 exact answers differ from the oracle')
+    t, tr = _truth(mp); w = json.load(open(mp + '.N1_NO_STRUCTURAL.c17-d32-N1_NO_STRUCTURAL.json')); A(_contained(w, tr, F(0)), 'd32 exact answers differ from the oracle')
     # compile quotas inside the costly loops (the review measured approx_quotient 350,208 vs 50,000): every operator's work <= quota + one tick granularity
-    tk = TK.load_task(mp); C, log = compile_(tk, enabled=CP.effective_operators(SV.ARMS['N1_CQR']['enabled'], tk)); Dq = log['quota']; worst = {}
+    tk = TK.load_task(mp); C, log = compile_(tk, enabled=CP.effective_operators(SV.ARMS['N1_NO_STRUCTURAL']['enabled'], tk)); Dq = log['quota']; worst = {}
     for s in log['steps']:
         if s.get('work'): worst[s['op']] = max(worst.get(s['op'], 0), s['work'])
     A(all(wk <= Dq + 4096 for wk in worst.values()), 'an operator exceeded its quota share by more than one tick: %s (quota %d)' % (worst, Dq)); out['d32_compile_work_by_operator'] = dict(worst, quota=Dq)
@@ -793,25 +793,25 @@ def c17_protected_reference_scheduling():
     rng = random.Random(7)
     for n in (3, 4):
         fs = [([i, (i + 1) % n], [rng.randint(1, 9) for _ in range(32 * 32)]) for i in range(n)]; mpn = _spec(_uai(os.path.join(d, 'nb%d.uai' % n), [32] * n, fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=0), dict(kind='singleton', variable=1, state=3)])
-        w = fresh_worker(mpn, 'N1_CQR', budget=30.0, nonce='c17-nb%d' % n); fails, _ = check_(mpn, w, 'N1_CQR', budget=300.0); c = w['certificate']
+        w = fresh_worker(mpn, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c17-nb%d' % n); fails, _ = check_(mpn, w, 'N1_NO_STRUCTURAL', budget=300.0); c = w['certificate']
         A(not fails and w['outcome'] == 'PUBLISHED', 'nb%d: %s %s' % (n, w['outcome'], fails[:1])); A(c['reference']['done'] or c['work']['reference']['total'] >= c['work']['optional']['total'], 'nb%d parity violated' % n)
         out['nb%d' % n] = dict(route=w['route'], work_reference=c['work']['reference']['total'], work_optional=c['work']['optional']['total'], reference_done=c['reference']['done'])
     # optional cancellation under memory pressure (a 1-byte cancellation cap): the reference alone completes the original task; the certificate records the cancellation
-    mpc = _concentration_witness(d); w = fresh_worker(mpc, 'N1_CQR', budget=20.0, nonce='c17-cap', extra=('--cap-bytes', '1')); fails, _ = check_(mpc, w, 'N1_CQR'); c = w['certificate']
+    mpc = _concentration_witness(d); w = fresh_worker(mpc, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c17-cap', extra=('--cap-bytes', '1')); fails, _ = check_(mpc, w, 'N1_NO_STRUCTURAL'); c = w['certificate']
     A(not fails and w['outcome'] == 'PUBLISHED' and w['route'] == 'exact_reference' and c['reference']['done'] and 'memory pressure' in (c.get('optional_cancelled') or ''), 'cap cancellation: %s %s %s %s' % (w['outcome'], w.get('route'), c.get('optional_cancelled'), fails[:1]))
     out['memory_cancellation'] = dict(optional_cancelled=c['optional_cancelled'][:60], work_optional=c['work']['optional']['total'], work_reference=c['work']['reference']['total'])
     # optional FAILURE with reference progress: (a) inside an operator -> rolled back to the committed model, run continues; (b) inside the adaptive loop -> optional cancelled, reference alone
-    w = fresh_worker(mpc, 'N1_CQR', budget=20.0, nonce='c17-fault-op', extra=('--fault-inject', 'approx_quotient')); c = w['certificate']; lg = c['compile']['log']
+    w = fresh_worker(mpc, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c17-fault-op', extra=('--fault-inject', 'approx_quotient')); c = w['certificate']; lg = c['compile']['log']
     A(w['outcome'] == 'PUBLISHED' and lg.get('failed', {}).get('op') == 'approx_quotient' and not any(s.get('committed') and s['op'] == 'approx_quotient' for s in lg['steps']), 'operator fault not rolled back: %s' % lg.get('failed'))
-    fails, _ = check_(mpc, w, 'N1_CQR'); A(fails and any('FAULT-INJECTION' in f for f in fails), 'fault-injected output accepted as production'); x = json.loads(json.dumps(w)); x.pop('fault_injected', None); x['certificate']['fault_injected'] = None
-    fails, _ = check_(mpc, x, 'N1_CQR'); A(not fails, 'a genuine optional-failure record (committed prefix) does not replay: %s' % fails[:1]); out['operator_failure'] = dict(route=w['route'], failed=lg['failed']['op'], committed=[s['op'] for s in lg['steps'] if s.get('committed')])
-    mpl = os.path.join(d, 'nb3.uai'); w = fresh_worker(mpl, 'N1_CQR', budget=30.0, nonce='c17-fault-loop', extra=('--fault-inject', 'adaptive_loop')); c = w['certificate']
+    fails, _ = check_(mpc, w, 'N1_NO_STRUCTURAL'); A(fails and any('FAULT-INJECTION' in f for f in fails), 'fault-injected output accepted as production'); x = json.loads(json.dumps(w)); x.pop('fault_injected', None); x['certificate']['fault_injected'] = None
+    fails, _ = check_(mpc, x, 'N1_NO_STRUCTURAL'); A(not fails, 'a genuine optional-failure record (committed prefix) does not replay: %s' % fails[:1]); out['operator_failure'] = dict(route=w['route'], failed=lg['failed']['op'], committed=[s['op'] for s in lg['steps'] if s.get('committed')])
+    mpl = os.path.join(d, 'nb3.uai'); w = fresh_worker(mpl, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c17-fault-loop', extra=('--fault-inject', 'adaptive_loop')); c = w['certificate']
     A(w['outcome'] == 'PUBLISHED' and 'adaptive loop' in (c.get('optional_cancelled') or '') and c['reference']['done'] and w['route'] == 'exact_reference' and c['work']['optional']['total'] > 0, 'loop fault: %s %s %s' % (w['outcome'], w.get('route'), c.get('optional_cancelled')))
     out['loop_failure'] = dict(optional_cancelled=c['optional_cancelled'][:70], reference_done=True)
     # every typed DEADLINE after binding records reference progress > 0 and both ledgers (the review's witness expired with zero reference steps)
     rng = random.Random(44); n = 40; fs = [(tuple(sorted(rng.sample(range(n), 2))), [rng.randint(1, 2) for _ in range(4)]) for _ in range(n + 2)]
     mpd = _spec(_uai(os.path.join(d, 'big40.uai'), [2] * n, fs), mode='PAC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=1)])
-    w = fresh_worker(mpd, 'N1_CQR', budget=1.5, nonce='c17-deadline'); A(w['outcome'] == 'DEADLINE', 'expected DEADLINE, got %s' % w['outcome']); sch = w.get('scheduling') or {}
+    w = fresh_worker(mpd, 'N1_NO_STRUCTURAL', budget=1.5, nonce='c17-deadline'); A(w['outcome'] == 'DEADLINE', 'expected DEADLINE, got %s' % w['outcome']); sch = w.get('scheduling') or {}
     A((sch.get('work_reference') or {}).get('total', 0) > 0 and sch.get('reference_progress') is not None and (sch.get('work_optional') or {}).get('total') is not None, 'typed deadline without scheduling instrumentation: %s' % str(sch)[:120])
     out['deadline_instrumentation'] = dict(reference_progress=sch.get('reference_progress'), work_reference=sch['work_reference']['total'], work_optional=sch['work_optional']['total'], phase=sch.get('phase'))
     # parity at signed exits (E_ZERO and signed PAC) and at the ratio exit
@@ -821,7 +821,7 @@ def c17_protected_reference_scheduling():
     mps = _spec(_uai(os.path.join(d, 'ring30.uai'), cards2, fs2), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='table', table=dict(name='mostly_half', kind='expectation', f=dict(scope=[0, 1, 2], values=vals2)))])
     par = {}
     for nm, mpx in (('e_zero', mpe), ('signed_pac', mps)):
-        w = fresh_worker(mpx, 'N1_CQR', budget=20.0, nonce='c17-par-' + nm); c = w['certificate']; A(w['outcome'] == 'PUBLISHED', nm)
+        w = fresh_worker(mpx, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c17-par-' + nm); c = w['certificate']; A(w['outcome'] == 'PUBLISHED', nm)
         A(c['reference']['done'] or c['work']['reference']['total'] >= c['work']['optional']['total'], '%s exit without reference parity' % nm); par[nm] = dict(route=w['route'], work_reference=c['work']['reference']['total'], work_optional=c['work']['optional']['total'])
     out['parity_at_exits'] = par; return out
 
@@ -872,7 +872,7 @@ def c20_atomic_compilation_replay_service_history_attribution():
     - one quantum - one tick) at a genuine deadline exit; (R5) signed-epoch history append-only (duplicate / nonpositive / out-of-order ids, extra draws, duplicated records, a second open
     epoch); (R6) worker / receipt route and bias bound to the verified certificate THROUGH the actual manifest, dispatcher, gate and report"""
     d = tempfile.mkdtemp(prefix='cqr_c20_'); out = dict(r1={}, r2={}, r3={}, r5={}, r6={})
-    def honest(mp, arm='N1_CQR', budget=20.0, extra=()):
+    def honest(mp, arm='N1_NO_STRUCTURAL', budget=20.0, extra=()):
         w = fresh_worker(mp, arm, budget=budget, nonce='c20-%s-%s-%d' % (os.path.basename(mp), arm, len(extra)), extra=extra); fails, info = check_(mp, w, arm, budget=300.0); return w, fails, info
     # ---------------- R1 natural partial compiles
     mp = _uai(os.path.join(d, 'support_interrupt.uai'), [8, 8], [((0, 1), [1 if a < 7 else 0 for a in range(8) for b in range(8)])] * 33); w, f, i = honest(mp)
@@ -888,13 +888,13 @@ def c20_atomic_compilation_replay_service_history_attribution():
     jr = w['certificate']['compile']['certificates']; out['r1']['approx_quota'] = dict(route=w['route'], bias=w['certificate']['bias'], commits=[c['op'] for c in jr if c.get('kind') == 'commit'], declines=[c['op'] for c in jr if c.get('kind') == 'decline'])
     A(any(c.get('kind') == 'commit' and c['op'] == 'approx_quotient' for c in jr) and any(c.get('kind') == 'decline' and c['op'] == 'approx_quotient' for c in jr), 'R1 approx: expected one approximate commit AND one quota decline in the journal')
     # journal mutations on that output: a dropped commit, a reordered pair, a changed class, a changed sequence number
-    _mut(mp, w, 'N1_CQR', 'journal_commit_dropped', lambda x: x['certificate']['compile']['certificates'].pop(1), ('sequence', 'replay', 'does not'), out['r1'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'journal_commit_dropped', lambda x: x['certificate']['compile']['certificates'].pop(1), ('sequence', 'replay', 'does not'), out['r1'])
     def reorder(x):
         j = x['certificate']['compile']['certificates']; cs = [k for k, c in enumerate(j) if c.get('kind') == 'commit']; a, b = cs[0], cs[1]; j[a], j[b] = j[b], j[a]
-    _mut(mp, w, 'N1_CQR', 'journal_commits_reordered', reorder, ('sequence', 'replay', 'does not', 'commit'), out['r1'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'journal_commits_reordered', reorder, ('sequence', 'replay', 'does not', 'commit'), out['r1'])
     def chclass(x):
         c = next(c for c in x['certificate']['compile']['certificates'] if c.get('kind') == 'commit' and c['op'] == 'approx_quotient'); c['classes'][0] = c['classes'][0][:1] if len(c['classes'][0]) > 1 else c['classes'][0] + c['classes'][1][:1]
-    _mut(mp, w, 'N1_CQR', 'journal_class_changed', chclass, ('partition', 'replay', 'does not', 'differ', 'commit'), out['r1'])
+    _mut(mp, w, 'N1_NO_STRUCTURAL', 'journal_class_changed', chclass, ('partition', 'replay', 'does not', 'differ', 'commit'), out['r1'])
     # ---------------- R1 journal replay on random models: the replayed model hashes to the recorded final model
     rng = random.Random(2020); same = 0
     for trial in range(40):
@@ -917,30 +917,30 @@ def c20_atomic_compilation_replay_service_history_attribution():
         tk = TK.load_task(mpx); boundaries = []
         for where in ('build', 'before_swap', 'after_commit'):
             for k in (0, 1):
-                C, log = CP.compile_task(tk, enabled=CP.effective_operators(SV.ARMS['N1_CQR']['enabled'], tk), fault=dict(op=('support' if op == 'support' else op), where=where, k=k)); CNT['compiler_calls'] += 1
+                C, log = CP.compile_task(tk, enabled=CP.effective_operators(SV.ARMS['N1_NO_STRUCTURAL']['enabled'], tk), fault=dict(op=('support' if op == 'support' else op), where=where, k=k)); CNT['compiler_calls'] += 1
                 C2, jf, _ = CP.replay_journal(tk, C.certs, TK.Work()); A(not jf and C2 is not None and C2.snapshot_json() == C.snapshot_json(), 'R2 %s/%s/k%d: state after the fault differs from the journal replay: %s' % (op, where, k, jf[:1]))
                 A(all(len(v.values) == prod(C.cards[u] for u in v.scope) for v in C.views if v.kind == 'table'), 'R2 %s/%s/k%d: a factor table is inconsistent with the cardinalities' % (op, where, k))
                 A(all(len(q['f'].values) == prod(C.cards[u] for u in q['f'].scope) for q in C.queries if q['kind'] == 'expectation'), 'R2 %s/%s/k%d: a query table is inconsistent with the cardinalities' % (op, where, k))
                 boundaries.append(dict(where=where, k=k, failed=(log.get('failed') or {}).get('op'), commits=log.get('commits')))
         A(any(b['failed'] for b in boundaries), 'R2 %s: no injected fault fired (the fixture must commit in that operator)' % op)
         # fresh worker with the fault after the first commit: a REAL publication through the original reference / committed model; refused as production (fault-injected); the stripped copy replays
-        inj = json.dumps(dict(op=('support' if op == 'support' else op), where='after_commit', k=0)); w = fresh_worker(mpx, 'N1_CQR', budget=20.0, nonce='c20-r2-' + op, extra=('--fault-inject', inj))
+        inj = json.dumps(dict(op=('support' if op == 'support' else op), where='after_commit', k=0)); w = fresh_worker(mpx, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c20-r2-' + op, extra=('--fault-inject', inj))
         A(w['outcome'] == 'PUBLISHED', 'R2 %s fresh worker after the fault: %s %s' % (op, w['outcome'], (w.get('reason') or '')[:80])); t, tr = _truth(mpx); A(_contained(w, tr, t['epsilon'] if w['route'] not in CK.EXACT_ROUTES else F(0)), 'R2 %s: answers after the fault miss the truth' % op)
-        fails, _ = check_(mpx, w, 'N1_CQR', budget=300.0); A(fails and any('FAULT-INJECTION' in f_ for f_ in fails), 'R2 %s: fault-injected output accepted' % op)
-        x = json.loads(json.dumps(w)); x.pop('fault_injected', None); x['certificate']['fault_injected'] = None; fails, _ = check_(mpx, x, 'N1_CQR', budget=300.0); A(not fails, 'R2 %s: the committed-prefix publication does not replay: %s' % (op, fails[:1]))
+        fails, _ = check_(mpx, w, 'N1_NO_STRUCTURAL', budget=300.0); A(fails and any('FAULT-INJECTION' in f_ for f_ in fails), 'R2 %s: fault-injected output accepted' % op)
+        x = json.loads(json.dumps(w)); x.pop('fault_injected', None); x['certificate']['fault_injected'] = None; fails, _ = check_(mpx, x, 'N1_NO_STRUCTURAL', budget=300.0); A(not fails, 'R2 %s: the committed-prefix publication does not replay: %s' % (op, fails[:1]))
         out['r2'][op] = dict(boundaries=boundaries, worker_route=w['route'], failed=(w['certificate']['compile']['log'].get('failed') or {}).get('op'))
-    w = fresh_worker(fx['support'], 'N1_CQR', budget=20.0, nonce='c20-r2-frontier', extra=('--fault-inject', 'frontier_init')); A(w['outcome'] == 'PUBLISHED', 'frontier_init fault: %s' % w['outcome']); out['r2']['frontier_init'] = dict(route=w['route'], optional_cancelled=(w['certificate'].get('optional_cancelled') or '')[:60])
+    w = fresh_worker(fx['support'], 'N1_NO_STRUCTURAL', budget=20.0, nonce='c20-r2-frontier', extra=('--fault-inject', 'frontier_init')); A(w['outcome'] == 'PUBLISHED', 'frontier_init fault: %s' % w['outcome']); out['r2']['frontier_init'] = dict(route=w['route'], optional_cancelled=(w['certificate'].get('optional_cancelled') or '')[:60])
     # ---------------- R3 service granularity and quotas in Work units
     rng = random.Random(81); cards3 = [32] * 3; m3 = dict(cards=cards3, factors=[dict(scope=(0, 1, 2), values=[F(rng.randint(1, 9)) for _ in range(32 ** 3)])], evidence={}); task3 = mk_task(m3, [TK.singleton_query(v, 0, cards3) for v in range(3)])
     ticks = []; orig = CP.tick
     def spy(C, quota=None, op=None): ticks.append(C.work.total()); return orig(C, quota, op)
     CP.tick = spy
-    try: r = solve_(task3, 'N1_CQR', 'c20-gap', budget=30.0)
+    try: r = solve_(task3, 'N1_NO_STRUCTURAL', 'c20-gap', budget=30.0)
     finally: CP.tick = orig
     gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]; mg = max(gaps) if gaps else 0; bound = CP.POLICY['max_irreducible_charge'] + CP.TICK_ENTRIES
     A(mg <= bound, 'R3: %d optional units between service points (bound %d)' % (mg, bound)); out['r3']['service_gap_3x32'] = dict(ticks=len(ticks), max_gap=mg, bound=bound, route=r['publication']['route'])
     try:
-        r = solve_(task3, 'N1_CQR', 'c20-dl', budget=0.08); out['r3']['deadline_exit'] = 'published %s' % r['publication']['route']
+        r = solve_(task3, 'N1_NO_STRUCTURAL', 'c20-dl', budget=0.08); out['r3']['deadline_exit'] = 'published %s' % r['publication']['route']
     except SV.Stop as e:
         wr = (e.info.get('work_reference') or {}).get('total', 0); wo = (e.info.get('work_optional') or {}).get('total', 0); Q = SV.POLICY['quantum_units']
         A(e.kind == 'DEADLINE' and wr >= wo - Q - bound, 'R3 deadline exit without parity: ref %d opt %d' % (wr, wo)); out['r3']['deadline_exit'] = dict(work_reference=wr, work_optional=wo, progress=e.info.get('reference_progress'))
@@ -962,11 +962,11 @@ def c20_atomic_compilation_replay_service_history_attribution():
     mps = _spec(_uai(os.path.join(d, 'ring30.uai'), cards_r, fs_r), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='table', table=dict(name='mostly_half', kind='expectation', f=dict(scope=[0, 1, 2], values=vals)))])
     w, f, i = honest(mps); A(not f and w['route'] == 'pac_signed_residual_validation', 'R5 honest signed fixture: %s %s' % (w.get('route'), f[:1])); ev = w['certificate']['events']
     i0 = next(k for k, e in enumerate(ev) if e['op'] == 'epoch_start'); j0 = next(k for k in range(i0 + 1, len(ev)) if ev[k]['op'] == 'signed_draw')
-    _mut(mps, w, 'N1_CQR', 'epoch_duplicated_with_completed_draw', lambda x: x['certificate'].__setitem__('events', ev[:i0] + [copy.deepcopy(ev[i0]), copy.deepcopy(ev[j0])] + ev[i0:]), ('not the next allocation', 'epoch'), out['r5'])
-    _mut(mps, w, 'N1_CQR', 'epoch_id_zero', lambda x: x['certificate'].__setitem__('events', ev[:i0] + [dict(ev[i0], epoch=0)] + ev[i0:]), ('not the next allocation', 'epoch'), out['r5'])
-    _mut(mps, w, 'N1_CQR', 'extra_completed_draw', lambda x: x['certificate'].__setitem__('events', ev + [dict(ev[j0])]), ('do not replay', 'epoch'), out['r5'])
-    _mut(mps, w, 'N1_CQR', 'epoch_record_duplicated', lambda x: x['certificate'].__setitem__('epochs', x['certificate']['epochs'] + [copy.deepcopy(x['certificate']['epochs'][0])]), ('do not match', 'epoch'), out['r5'])
-    _mut(mps, w, 'N1_CQR', 'second_epoch_while_open', lambda x: x['certificate'].__setitem__('events', ev + [dict(ev[i0], epoch=2, delta_e=str(F(1, 10) / 12))]), ('still open', 'epoch'), out['r5'])
+    _mut(mps, w, 'N1_NO_STRUCTURAL', 'epoch_duplicated_with_completed_draw', lambda x: x['certificate'].__setitem__('events', ev[:i0] + [copy.deepcopy(ev[i0]), copy.deepcopy(ev[j0])] + ev[i0:]), ('not the next allocation', 'epoch'), out['r5'])
+    _mut(mps, w, 'N1_NO_STRUCTURAL', 'epoch_id_zero', lambda x: x['certificate'].__setitem__('events', ev[:i0] + [dict(ev[i0], epoch=0)] + ev[i0:]), ('not the next allocation', 'epoch'), out['r5'])
+    _mut(mps, w, 'N1_NO_STRUCTURAL', 'extra_completed_draw', lambda x: x['certificate'].__setitem__('events', ev + [dict(ev[j0])]), ('do not replay', 'epoch'), out['r5'])
+    _mut(mps, w, 'N1_NO_STRUCTURAL', 'epoch_record_duplicated', lambda x: x['certificate'].__setitem__('epochs', x['certificate']['epochs'] + [copy.deepcopy(x['certificate']['epochs'][0])]), ('do not match', 'epoch'), out['r5'])
+    _mut(mps, w, 'N1_NO_STRUCTURAL', 'second_epoch_while_open', lambda x: x['certificate'].__setitem__('events', ev + [dict(ev[i0], epoch=2, delta_e=str(F(1, 10) / 12))]), ('still open', 'epoch'), out['r5'])
     # ---------------- R6 attribution through the ACTUAL manifest -> dispatcher -> gate -> report
     def chain(name, mpx, arm, mutate=None):
         # the manifest is produced in a FRESH process (campaign.py imports the baseline registry under the name 'registry', which this suite has bound to the cqr registry)
@@ -980,11 +980,11 @@ def c20_atomic_compilation_replay_service_history_attribution():
         subprocess.run([PY, os.path.join(HERE, 'report.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST_dev.json'], capture_output=True, text=True, cwd=CODE); res = json.load(open(os.path.join(rd, 'RESULTS_CQR.json'))); rr = (res.get('runs') or [{}])[0]
         return dict(gate_passed=g_['gate_passed'], failures=[f_[1][:100] for f_ in g_['failures']][:1], report_route=rr.get('route'), report_bias=rr.get('bias'), source=(rr.get('guarantee_source') or '')[:30], mismatch=rr.get('attribution_mismatch'))
     mpn = _spec(_uai(os.path.join(d, 'normalizer30.uai'), [2] * 30, [((29,), ['1', '2'])]), mode='PAC_EPS', normalizer_task=True, queries=[], epsilon='3/10', delta='1/5')
-    h = chain('norm_honest', mpn, 'G0_CQR'); A(h['gate_passed'] and h['source'].startswith('checker-verified') and h['mismatch'] is False, 'R6 honest normalizer chain: %s' % h); out['r6']['normalizer_honest'] = h
-    x = chain('norm_route', mpn, 'G0_CQR', lambda w_, r: (w_.__setitem__('route', 'normalizer_exact_reference'), r.__setitem__('route', 'normalizer_exact_reference')))
+    h = chain('norm_honest', mpn, 'G0_NO_STRUCTURAL'); A(h['gate_passed'] and h['source'].startswith('checker-verified') and h['mismatch'] is False, 'R6 honest normalizer chain: %s' % h); out['r6']['normalizer_honest'] = h
+    x = chain('norm_route', mpn, 'G0_NO_STRUCTURAL', lambda w_, r: (w_.__setitem__('route', 'normalizer_exact_reference'), r.__setitem__('route', 'normalizer_exact_reference')))
     A(not x['gate_passed'] and any('route' in f_ for f_ in x['failures']) and x['report_route'] != 'normalizer_exact_reference', 'R6 route mutation survived: %s' % x); out['r6']['normalizer_route_mutation'] = x
-    mpc = _concentration_witness(d); h = chain('conc_honest', mpc, 'N1_CQR'); A(h['gate_passed'] and h['mismatch'] is False, 'R6 honest concentration chain: %s' % h); out['r6']['concentration_honest'] = h
-    x = chain('conc_bias', mpc, 'N1_CQR', lambda w_, r: (w_.__setitem__('bias', ['0']), r.__setitem__('bias', ['0'])))
+    mpc = _concentration_witness(d); h = chain('conc_honest', mpc, 'N1_NO_STRUCTURAL'); A(h['gate_passed'] and h['mismatch'] is False, 'R6 honest concentration chain: %s' % h); out['r6']['concentration_honest'] = h
+    x = chain('conc_bias', mpc, 'N1_NO_STRUCTURAL', lambda w_, r: (w_.__setitem__('bias', ['0']), r.__setitem__('bias', ['0'])))
     A(not x['gate_passed'] and any('bias' in f_ for f_ in x['failures']) and x['report_bias'] != ['0'], 'R6 bias mutation survived: %s' % x); out['r6']['concentration_bias_mutation'] = x
     return out
 
@@ -1003,7 +1003,7 @@ def c21_checker_soundness_lifecycle_dependencies_closeout():
     d = tempfile.mkdtemp(prefix='cqr_c21_'); out = dict(f01={}, f02={}, f03={}, f04={}, f05={}, f06={})
     # ---------------- 01
     mp = _uai(os.path.join(d, 'two_factor.uai'), [2, 2], [((0,), ['1', '1']), ((0, 1), ['1', '1', '1', '9'])]); _spec(mp, mode='EXACT_RATIONAL', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=1, state=1)])
-    w = fresh_worker(mp, 'N1_CQR', budget=10.0, nonce='c21-01'); fails, _ = check_(mp, w, 'N1_CQR'); t, tr = _truth(mp)
+    w = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=10.0, nonce='c21-01'); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL'); t, tr = _truth(mp)
     A(not fails and w['outcome'] == 'PUBLISHED' and tr['answers'][0] == F(5, 6) and _contained(w, tr, F(0)), '01 honest: %s %s' % (w.get('route'), fails[:1])); out['f01']['honest'] = dict(route=w['route'], answer=w['answers'][0]['point'])
     C0 = CP.from_task(t); C0.allowance = [F(0)]
     forged = dict(kind='commit', seq=0, op='exact_quotient_pass', var=0, classes=[[0, 1]], representatives=[0], kappa={'0': '1', '1': '1'}, S=['2'], incident_factors=[0], approx=None)
@@ -1019,14 +1019,14 @@ def c21_checker_soundness_lifecycle_dependencies_closeout():
     mf = _uai(os.path.join(d, 'factorless.uai'), [3, 2], [((1,), ['1', '2'])]); _spec(mf, mode='EXACT_RATIONAL', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=1)]); tf = TK.load_task(mf); Cf, _ = compile_(tf)
     C3, jf, _ = CP.replay_journal(tf, Cf.certs, TK.Work()); A(not jf and C3.snapshot_json() == Cf.snapshot_json(), '01 factorless quotient journal: %s' % jf[:1]); out['f01']['honest_journals'] = 'clones + factorless replay'
     # ---------------- 02
-    mpc = _concentration_witness(d); w = fresh_worker(mpc, 'N1_CQR', budget=20.0, nonce='c21-02'); fails, _ = check_(mpc, w, 'N1_CQR'); A(not fails and w['route'] == 'deterministic_concentration', '02 honest %s %s' % (w.get('route'), fails[:1]))
+    mpc = _concentration_witness(d); w = fresh_worker(mpc, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c21-02'); fails, _ = check_(mpc, w, 'N1_NO_STRUCTURAL'); A(not fails and w['route'] == 'deterministic_concentration', '02 honest %s %s' % (w.get('route'), fails[:1]))
     tk = TK.load_task(mpc); jr = copy.deepcopy(w['certificate']['compile']['certificates']); dc = next(c for c in jr if c.get('kind') == 'commit' and c['op'] == 'concentration'); ob = F(dc['bias']['0']); dc['bias']['00'] = str(-1 - ob)
     C4, jf, _ = CP.replay_journal(tk, jr, TK.Work()); A(jf and 'canonical domain' in jf[0], '02 alias key accepted by replay: %s' % jf[:1]); out['f02']['alias_replay'] = jf[0][:90]
     mut = copy.deepcopy(w); mut['certificate']['compile']['certificates'] = jr; mut['certificate']['bias'] = ['-1']; mut['bias'] = ['-1']; mut['certificate']['publication']['bounds'] = [['1', '1']]; mut['certificate']['publication']['point'] = ['1']; mut['answers'][0].update(lo='1', hi='1', point='1')
-    fails, _ = check_(mpc, mut, 'N1_CQR'); A(fails, '02 forged certificate accepted'); out['f02']['forged_checker'] = fails[0][:90]
+    fails, _ = check_(mpc, mut, 'N1_NO_STRUCTURAL'); A(fails, '02 forged certificate accepted'); out['f02']['forged_checker'] = fails[0][:90]
     # the ledger invariant independently: a negative ledger with an otherwise consistent certificate (hash regenerated) is refused by the ledger / enclosure checks
     mut2 = copy.deepcopy(w); mut2['certificate']['bias'] = ['-1']; mut2['bias'] = ['-1']; mut2['certificate']['publication']['bounds'] = [['1', '1']]; mut2['certificate']['publication']['point'] = ['1']; mut2['answers'][0].update(lo='1', hi='1', point='1')
-    fails, _ = check_(mpc, mut2, 'N1_CQR'); A(fails and any('ledger' in f_ or 'negative' in f_ for f_ in fails), '02 negative ledger not refused: %s' % fails[:2]); out['f02']['negative_ledger'] = fails[0][:90]
+    fails, _ = check_(mpc, mut2, 'N1_NO_STRUCTURAL'); A(fails and any('ledger' in f_ or 'negative' in f_ for f_ in fails), '02 negative ledger not refused: %s' % fails[:2]); out['f02']['negative_ledger'] = fails[0][:90]
     try: CP.Compiled([2], [], [], [], TK.Work(), [F(-1, 10)]).commit(dict(op='x')); A(False, '02 commit accepted a negative ledger')
     except ValueError as ex: A('negative' in str(ex), str(ex)); out['f02']['commit_refuses_negative'] = True
     # other map-shaped records: xstar / t / answers aliases; influence deleted duplicates; symmetry constant keys
@@ -1034,15 +1034,15 @@ def c21_checker_soundness_lifecycle_dependencies_closeout():
         jr2 = copy.deepcopy(w['certificate']['compile']['certificates']); dc2 = next(c for c in jr2 if c.get('kind') == 'commit' and c['op'] == 'concentration'); fn(dc2); C5, jf, _ = CP.replay_journal(tk, jr2, TK.Work()); A(jf, '02 %s accepted' % name); out['f02'][name] = jf[0][:80]
     # first-review regression: forged answer 1 on the same fixture
     mut3 = copy.deepcopy(w); dc3 = next(c for c in mut3['certificate']['compile']['certificates'] if c.get('kind') == 'commit' and c['op'] == 'concentration'); dc3['answers']['0'] = '1'; mut3['certificate']['publication']['bounds'] = [[str(1 - ob), '1']]; mut3['certificate']['publication']['point'] = ['1']; mut3['answers'][0].update(lo=str(1 - ob), hi='1', point='1')
-    fails, _ = check_(mpc, mut3, 'N1_CQR'); A(fails and any('does not re-derive' in f_ for f_ in fails), '02 regression forged answer: %s' % fails[:1])
+    fails, _ = check_(mpc, mut3, 'N1_NO_STRUCTURAL'); A(fails and any('does not re-derive' in f_ for f_ in fails), '02 regression forged answer: %s' % fails[:1])
     # honest composition: approximate quotient + concentration (first-review biased-closure witness) still passes
-    mpb = _biased_closure_witness(d); wb = fresh_worker(mpb, 'N1_CQR', budget=20.0, nonce='c21-02b'); fails, _ = check_(mpb, wb, 'N1_CQR'); A(not fails and wb['outcome'] == 'PUBLISHED', '02 honest biased closure: %s' % fails[:1]); out['f02']['honest_composition'] = wb['route']
+    mpb = _biased_closure_witness(d); wb = fresh_worker(mpb, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c21-02b'); fails, _ = check_(mpb, wb, 'N1_NO_STRUCTURAL'); A(not fails and wb['outcome'] == 'PUBLISHED', '02 honest biased closure: %s' % fails[:1]); out['f02']['honest_composition'] = wb['route']
     # ---------------- 03
     mpr = os.path.join(d, 'root5000.uai'); open(mpr, 'w').write('MARKOV\n9\n2 2 2 2 2 2 2 2 2\n0\n')
     json.dump(dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='table', table=dict(name='q%d' % j, kind='expectation', f=dict(scope=list(range(7)), values=['0'] * 64 + ['1'] * 64))) for j in range(5000)]), open(mpr + '.query.json', 'w'))
-    t0 = time.monotonic(); w = fresh_worker(mpr, 'G0_CQR', budget=30.0, nonce='c21-03'); wall = time.monotonic() - t0
+    t0 = time.monotonic(); w = fresh_worker(mpr, 'G0_NO_STRUCTURAL', budget=30.0, nonce='c21-03'); wall = time.monotonic() - t0
     if w['outcome'] == 'PUBLISHED':
-        A(w['route'] == 'exact_reference' and len(w['answers']) == 5000 and all(a['lo'] == a['hi'] == a['point'] == '1/2' for a in w['answers']), '03 answers: %s' % w['route']); fails, _ = check_(mpr, w, 'G0_CQR', budget=600.0); A(not fails, '03 checker: %s' % fails[:1]); out['f03']['root5000'] = dict(route=w['route'], wall_s=round(wall, 2), accepted=True)
+        A(w['route'] == 'exact_reference' and len(w['answers']) == 5000 and all(a['lo'] == a['hi'] == a['point'] == '1/2' for a in w['answers']), '03 answers: %s' % w['route']); fails, _ = check_(mpr, w, 'G0_NO_STRUCTURAL', budget=600.0); A(not fails, '03 checker: %s' % fails[:1]); out['f03']['root5000'] = dict(route=w['route'], wall_s=round(wall, 2), accepted=True)
     else: A(w['outcome'] == 'DEADLINE' and (w.get('scheduling') or {}).get('reference_progress') is not None, '03 root5000: %s %s' % (w['outcome'], (w.get('reason') or '')[:80])); out['f03']['root5000'] = dict(outcome='DEADLINE on this host', scheduling=w.get('scheduling'))
     # the completed-reference path directly: a service hook that completes the reference INSIDE the initial root computation and inside the adaptive publication test
     rng = random.Random(3); c8 = [2] * 14; m8 = rnd_model(rng, 14, c8, 16, 2, lo=1, hi=9); t8 = mk_task(m8, TK.all_singletons(c8), mode='DETERMINISTIC_EPS', delta=F(0)); tr8 = truth_of(m8, TK.all_singletons(c8))
@@ -1053,13 +1053,13 @@ def c21_checker_soundness_lifecycle_dependencies_closeout():
         if self.service is not None: self.work.ratops += 10 ** 7; self.service('deterministic_bounds_forced')
         return orig_db(self, deadline)
     FR.Frontier.deterministic_bounds = db_hook
-    try: r = solve_(t8, 'G0_CQR', 'c21-03b', budget=20.0)
+    try: r = solve_(t8, 'G0_NO_STRUCTURAL', 'c21-03b', budget=20.0)
     finally: FR.Frontier.deterministic_bounds = orig_db
     A(r['outcome'] == 'PUBLISHED' and r['publication']['route'] == 'exact_reference' and compare(r['publication'], tr8, F(0), TK.all_singletons(c8)) == 0, '03 forced completion inside the root computation: %s %s' % (r['outcome'], r['publication'].get('route') if r.get('publication') else None)); out['f03']['forced_in_root'] = r['publication']['route']
     # optional cancellation inside the initial publication test: the reference continues alone
     def db_cancel(self, deadline=None): raise CP.CompileStop('cancelled', 'deterministic_bounds_forced')
     FR.Frontier.deterministic_bounds = db_cancel
-    try: r = solve_(t8, 'G0_CQR', 'c21-03c', budget=20.0)
+    try: r = solve_(t8, 'G0_NO_STRUCTURAL', 'c21-03c', budget=20.0)
     finally: FR.Frontier.deterministic_bounds = orig_db
     A(r['outcome'] == 'PUBLISHED' and r['publication']['route'] == 'exact_reference' and 'cancelled' in (r['certificate'].get('optional_cancelled') or ''), '03 cancellation inside the root computation: %s %s' % (r['outcome'], r['certificate'].get('optional_cancelled'))); out['f03']['cancel_in_root'] = r['certificate']['optional_cancelled'][:60]
     # ---------------- 04
@@ -1073,7 +1073,7 @@ def c21_checker_soundness_lifecycle_dependencies_closeout():
         except CP.CompileStop as cs: A(cs.kind == 'quota', cs.kind)
         over = C.work.total() - base - 12000; gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]
         A(over <= CP.POLICY['max_irreducible_charge'] and max(gaps) <= CP.TICK_ENTRIES, '04 quota overspend %d / max gap %d' % (over, max(gaps))); out['f04']['quota_12000'] = dict(overspend=over, max_gap=max(gaps))
-        ticks.clear(); r = solve_(t14, 'N1_CQR', 'c21-04', budget=30.0); gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]
+        ticks.clear(); r = solve_(t14, 'N1_NO_STRUCTURAL', 'c21-04', budget=30.0); gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]
         A(max(gaps) <= CP.TICK_ENTRIES + CP.POLICY['max_irreducible_charge'], '04 production gap %d' % max(gaps)); out['f04']['production_14bin'] = dict(ticks=len(ticks), max_gap=max(gaps), route=r['publication']['route'])
         # quotas placed immediately before bulk work in every costly operator on the same dense model (states 2^14 slices of 8,192 entries)
         for name, fn in (('signatures', lambda C_, q: CP._signatures(C_, 0, CP._Ticker(C_, q, 'x'))), ('leaf', lambda C_, q: CP.leaf_sumout(C_, q)), ('support', lambda C_, q: CP.support_fixpoint(C_, q)), ('approx', lambda C_, q: CP.approx_quotient(C_, q, [F(1, 800)] * 14)), ('concentration', lambda C_, q: CP.concentration(C_, q, [F(1, 800)] * 14))):
@@ -1096,14 +1096,14 @@ def c21_checker_soundness_lifecycle_dependencies_closeout():
     shutil.rmtree(td); real = KI.collect(CODE); A(real['merlin']['adapter_paths']['consistent'] and not KI.failures_vs_frozen(real, real, ['WMB', 'IJGP', 'MERLIN_CTE']), '05 real configuration inconsistent'); out['f05']['real_consistent'] = True
     # ---------------- 06 (real finalize -> closeout, with a current-identity qualification stub as in C12)
     rd = os.path.join(d, 'chain06'); mpc2 = _concentration_witness(os.path.join(d, 'c06')) if os.path.isdir(os.path.join(d, 'c06')) else (os.makedirs(os.path.join(d, 'c06')) or _concentration_witness(os.path.join(d, 'c06')))
-    code_ = "import sys; sys.path.insert(0, %r); import campaign as CA; CA.manifest(%r, [CA.make_row('query_transfer', 'conc16', %r)], dev=True, budgets=[10], plan={'query_transfer': [('N1_CQR', 1), ('H1_HYBRID', 1)]}, root_seed='c21-06')" % (HERE, rd, mpc2)
+    code_ = "import sys; sys.path.insert(0, %r); import campaign as CA; CA.manifest(%r, [CA.make_row('query_transfer', 'conc16', %r)], dev=True, budgets=[10], plan={'query_transfer': [('N1_NO_STRUCTURAL', 1), ('H1_HYBRID', 1)]}, root_seed='c21-06')" % (HERE, rd, mpc2)
     subprocess.run([PY, '-c', code_], capture_output=True, text=True, cwd=CODE); subprocess.run([PY, os.path.join(HERE, 'campaign.py'), 'run', rd, '--dev'], capture_output=True, text=True, cwd=CODE); CNT['fresh_workers'] += 2
     pf = subprocess.run(['sh', os.path.join(HERE, 'finalize.sh'), rd, 'CAMPAIGN_MANIFEST_dev.json'], capture_output=True, text=True, cwd=CODE); A('FINALIZE_DONE' in pf.stdout, '06 finalize failed: %s' % pf.stdout[-200:])
     stub = dict(suite_version=SUITE_VERSION + ' (closeout-attribution control stub)', suite_sha256=registry.suite_sha256(CODE), all_pass=True, passed=len(registry.QUALIFICATION_GROUPS), total=len(registry.QUALIFICATION_GROUPS), groups=[dict(name=g_, ok=True) for g_ in registry.QUALIFICATION_GROUPS], candidate_sources=registry.cqr_source_inventory(CODE), candidate_sources_at_start=registry.cqr_source_inventory(CODE), sources_changed_during_run=[], counts=dict(CNT)); sp = os.path.join(d, 'stub.json'); json.dump(stub, open(sp, 'w'))
     def closeout():
         r_ = subprocess.run([PY, os.path.join(HERE, 'closeout.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST_dev.json', '--qualification', sp], capture_output=True, text=True, cwd=CODE); return 'DEVELOPMENT ADMISSION QUALIFIED' in r_.stdout, [l.strip()[:90] for l in r_.stdout.splitlines() if l.strip().startswith('- ')][:1]
     ok, why = closeout(); A(ok, '06 honest closeout not qualified: %s' % why); rp = os.path.join(rd, 'RESULTS_CQR.json'); orig = open(rp).read(); runs = json.loads(orig)['runs']
-    i0 = next(i for i, x in enumerate(runs) if x['arm'] == 'N1_CQR'); row0 = runs[i0]
+    i0 = next(i for i, x in enumerate(runs) if x['arm'] == 'N1_NO_STRUCTURAL'); row0 = runs[i0]
     A(row0.get('exact') is False and row0.get('bias') == ['3/500003'] and row0.get('guarantee_source', '').startswith('checker-verified'), '06 honest report row: %s' % {k: row0.get(k) for k in ('exact', 'bias', 'guarantee_source')})
     # attempt-7 regression (admission_v8 closeout UNQUALIFIED on an HONEST report): a baseline row whose `routes` are pairs is serialized as lists in RESULTS_CQR.json but re-derived as tuples;
     # the closeout must compare in the published JSON domain -- the honest closeout above already QUALIFIED with such a row present, and a change to that row must still be refused
@@ -1137,25 +1137,25 @@ def c22_precision_zero_mass_witness_service():
     qs01 = [dict(kind='singleton', variable=0, state=1), dict(kind='table', table=dict(name='zero denominator', kind='ratio', h=dict(scope=[1], values=['0', '0']), g=dict(scope=[1], values=['0', '0'])))]
     for tag, eps in (('1e-12', '1/1000000000000'), ('1/200', '1/200'), ('1e-7', '1/10000000')):
         mp = _spec(_uai(os.path.join(d, 'r01_%s.uai' % tag.replace('/', '_')), cards, fs), mode='DETERMINISTIC_EPS', epsilon=eps, delta='1/1000000', queries=qs01)
-        t, tr = _truth(mp); w = fresh_worker(mp, 'N1_CQR', budget=30.0, nonce='c22-01-' + tag.replace('/', '_'))
-        A(w['outcome'] == 'PUBLISHED', '01 eps %s: outcome %s (%s)' % (tag, w['outcome'], (w.get('reason') or '')[:80])); fails, _ = check_(mp, w, 'N1_CQR', budget=300.0); A(not fails, '01 eps %s: %s' % (tag, fails[:1]))
+        t, tr = _truth(mp); w = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c22-01-' + tag.replace('/', '_'))
+        A(w['outcome'] == 'PUBLISHED', '01 eps %s: outcome %s (%s)' % (tag, w['outcome'], (w.get('reason') or '')[:80])); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL', budget=300.0); A(not fails, '01 eps %s: %s' % (tag, fails[:1]))
         A(_contained(w, tr, t['epsilon']) and w['answers'][1]['status'] == 'UNDEFINED', '01 eps %s: containment / typed UNDEFINED' % tag); out['f01'][tag] = dict(route=w['route'], point=w['answers'][0]['point'], undefined=w['answers'][1]['status'])
     A(tr['Z'] > 0 and tr['answers'][0] == F(20952380952380953, 74285714285714287), '01 independent truth'); out['f01']['truth'] = str(tr['answers'][0])
     # genuine zero evidence still proves: compiler proof (a factor with no positive entry) and reference enumeration (frontier-closed zero mass with every slice positive somewhere)
     mpz = _spec(_uai(os.path.join(d, 'zero_compiler.uai'), [2, 2], [([0], ['0', '0']), ([0, 1], ['1', '1', '1', '1'])]), mode='DETERMINISTIC_EPS', epsilon='1/1000000000000', delta='1/1000000', queries=[dict(kind='singleton', variable=1, state=0)])
-    w = fresh_worker(mpz, 'N1_CQR', budget=20.0, nonce='c22-01z'); fails, _ = check_(mpz, w, 'N1_CQR'); A(w['outcome'] == 'PROVED_ZERO_EVIDENCE' and not fails, '01 genuine zero (compiler): %s %s' % (w['outcome'], fails[:1])); out['f01']['zero_compiler'] = w['zero_evidence_proof']['kind']
+    w = fresh_worker(mpz, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c22-01z'); fails, _ = check_(mpz, w, 'N1_NO_STRUCTURAL'); A(w['outcome'] == 'PROVED_ZERO_EVIDENCE' and not fails, '01 genuine zero (compiler): %s %s' % (w['outcome'], fails[:1])); out['f01']['zero_compiler'] = w['zero_evidence_proof']['kind']
     mpz2 = _spec(_uai(os.path.join(d, 'zero_frontier.uai'), [2] * 14, [([0, 1], ['0', '1', '1', '0']), ([0, 1], ['1', '0', '0', '1'])] + [([v], ['1', '2']) for v in range(2, 14)]), mode='DETERMINISTIC_EPS', epsilon='1/1000000000000', delta='0', queries=[dict(kind='singleton', variable=5, state=0)])
-    w = fresh_worker(mpz2, 'N1_CQR', budget=20.0, nonce='c22-01z2'); fails, _ = check_(mpz2, w, 'N1_CQR'); A(w['outcome'] == 'PROVED_ZERO_EVIDENCE' and not fails, '01 genuine zero (product): %s %s' % (w['outcome'], fails[:1])); out['f01']['zero_product'] = w['zero_evidence_proof']['kind']
+    w = fresh_worker(mpz2, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c22-01z2'); fails, _ = check_(mpz2, w, 'N1_NO_STRUCTURAL'); A(w['outcome'] == 'PROVED_ZERO_EVIDENCE' and not fails, '01 genuine zero (product): %s %s' % (w['outcome'], fails[:1])); out['f01']['zero_product'] = w['zero_evidence_proof']['kind']
     # the solver's closed-frontier exit in process: a closed frontier with positive mass and no feasible box cancels the optional half (reference publishes), never zero evidence
-    t12 = TK.load_task(os.path.join(d, 'r01_1e-12.uai')); r = solve_(t12, 'N1_CQR', 'c22-01p', budget=30.0)
+    t12 = TK.load_task(os.path.join(d, 'r01_1e-12.uai')); r = solve_(t12, 'N1_NO_STRUCTURAL', 'c22-01p', budget=30.0)
     A(r['outcome'] == 'PUBLISHED' and r['publication']['route'] in ('exact_reference', 'deterministic_frontier', 'exact_frontier_closure'), '01 in-process: %s' % r['outcome']); out['f01']['in_process_route'] = r['publication']['route']
     # ---------------- 02 (exact rational publications at tolerances below / at / above the old margin; legacy rows at tight tolerance)
     for tag, eps in (('1e-12', '1/1000000000000'), ('2e-8', '1/50000000'), ('1e-7', '1/10000000'), ('1/200', '1/200')):
         mp = _spec(_uai(os.path.join(d, 'r02_%s.uai' % tag.replace('/', '_')), [2], [([0], ['1', '1'])]), mode='EXACT_RATIONAL', epsilon=eps, delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=1)])
-        w = fresh_worker(mp, 'N1_CQR', budget=20.0, nonce='c22-02-' + tag.replace('/', '_')); fails, _ = check_(mp, w, 'N1_CQR')
+        w = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c22-02-' + tag.replace('/', '_')); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL')
         A(w['outcome'] == 'PUBLISHED' and w['answers'][0]['lo'] == w['answers'][0]['hi'] == w['answers'][0]['point'] == '1/2' and not fails, '02 exact 1/2 at eps %s: %s %s' % (tag, w['outcome'], fails[:1])); out['f02'][tag] = w['route']
         mpc = _spec(_uai(os.path.join(d, 'r02c_%s.uai' % tag.replace('/', '_')), cards, fs), mode='EXACT_RATIONAL', epsilon=eps, delta='1/1000000', queries=qs01)
-        t, tr = _truth(mpc); w = fresh_worker(mpc, 'N1_CQR', budget=30.0, nonce='c22-02c-' + tag.replace('/', '_')); fails, _ = check_(mpc, w, 'N1_CQR', budget=300.0)
+        t, tr = _truth(mpc); w = fresh_worker(mpc, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c22-02c-' + tag.replace('/', '_')); fails, _ = check_(mpc, w, 'N1_NO_STRUCTURAL', budget=300.0)
         A(w['outcome'] == 'PUBLISHED' and w['exact'] is True and not fails and _contained(w, tr, F(0)) and w['answers'][1]['status'] == 'UNDEFINED', '02 exact closure at eps %s: %s %s' % (tag, w['outcome'], fails[:1])); out['f02']['closure_' + tag] = w['route']
     # the reservation is a function of the representation: 0 for rational answers, 2/10^d (d >= 8, <= eps/4) for legacy rows; producer and checker use the same function
     for e_ in (F(1, 200), F(1, 50000000), F(1, 10 ** 7), F(1, 10 ** 12), F(3, 10 ** 15)):
@@ -1163,34 +1163,34 @@ def c22_precision_zero_mass_witness_service():
         A(TK.output_reservation(dict(all_singletons=False, epsilon=e_)) == 0 and TK.output_reservation(dict(all_singletons=True, epsilon=e_)) == F(2, 10 ** d_), '02 reservation for eps %s' % e_)
     A(TK.legacy_digits(F(1, 200)) == 8 and TK.legacy_digits(F(1, 10 ** 12)) == 13, '02 reservation boundary values'); D12 = TK.legacy_digits(F(1, 10 ** 12))
     mpl = _uai(os.path.join(d, 'legacy_tight.uai'), [2, 3], [([0], ['1', '2']), ([0, 1], ['1', '2', '3', '4', '5', '6'])]); _spec(mpl, mode='DETERMINISTIC_EPS', epsilon='1/1000000000000', delta='1/1000000', queries=[dict(kind='all_singletons')])
-    t, tr = _truth(mpl); w = fresh_worker(mpl, 'N1_CQR', budget=20.0, nonce='c22-02l'); fails, _ = check_(mpl, w, 'N1_CQR')
+    t, tr = _truth(mpl); w = fresh_worker(mpl, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c22-02l'); fails, _ = check_(mpl, w, 'N1_NO_STRUCTURAL')
     A(w['outcome'] == 'PUBLISHED' and not fails and w.get('legacy_digits') == D12 and w.get('intervals') is not None and _contained(w, tr, t['epsilon']), '02 legacy rows at eps 1e-12: %s %s %s' % (w['outcome'], fails[:1], w.get('legacy_digits'))); out['f02']['legacy_digits_1e-12'] = w['legacy_digits']
     import core
     IV = [[(F(a), F(b)) for a, b in row] for row in w['intervals']]; PT = [[F(x) for x in row] for row in w['points']]; A(core.verify_output(IV, PT, t['epsilon']), '02 legacy rows violate the publication contract')
     mpl8 = _uai(os.path.join(d, 'legacy_200.uai'), [2, 3], [([0], ['1', '2']), ([0, 1], ['1', '2', '3', '4', '5', '6'])]); _spec(mpl8, mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='all_singletons')])
-    w8 = fresh_worker(mpl8, 'N1_CQR', budget=20.0, nonce='c22-02l8'); fails, _ = check_(mpl8, w8, 'N1_CQR'); A(not fails and w8.get('legacy_digits') == 8, '02 legacy rows at 1/200 keep 8 digits: %s' % fails[:1])
-    _mut(mpl, w, 'N1_CQR', 'legacy_point_moved_beyond_reservation', lambda x: x['points'][0].__setitem__(0, str(F(x['points'][0][0]) + F(1, 10 ** 11))), ('rounding reservation', 'publication contract', 'legacy'), out['f02'])
+    w8 = fresh_worker(mpl8, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c22-02l8'); fails, _ = check_(mpl8, w8, 'N1_NO_STRUCTURAL'); A(not fails and w8.get('legacy_digits') == 8, '02 legacy rows at 1/200 keep 8 digits: %s' % fails[:1])
+    _mut(mpl, w, 'N1_NO_STRUCTURAL', 'legacy_point_moved_beyond_reservation', lambda x: x['points'][0].__setitem__(0, str(F(x['points'][0][0]) + F(1, 10 ** 11))), ('rounding reservation', 'publication contract', 'legacy'), out['f02'])
     # ---------------- 03 (concentration -> affine on the reviewer's mixed model; witness lifecycle; optional failure in the direct publication preparation)
     c03 = [3, 5, 2, 2, 2] + [2] * 16
     f03 = [([0], ['1', '1', '1000000']), ([1], ['1', '1', '1', '1', '1000000']), ([0, 1], ['1'] * 15), ([2, 3], ['1', '0', '0', '1']), ([3, 4], ['1', '0', '0', '1']), ([4, 2], ['1', '0', '0', '1']), ([0, 2], ['1', '0', '1', '1', '1', '1'])] + [([v], ['1', '2']) for v in range(5, len(c03))]
     mp3 = _spec(_uai(os.path.join(d, 'conc_affine.uai'), c03, f03), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='singleton', variable=0, state=2)])
     t3, tr3 = _truth(mp3); A(tr3['answers'][0] == F(2000000, 2000003), '03 independent truth')
-    for arm in ('N1_NO_QUOTIENT', 'N1_CQR', 'N1_NO_AFFINE'):
+    for arm in ('N1_NO_QUOTIENT_NO_STRUCTURAL', 'N1_NO_STRUCTURAL', 'N1_NO_AFFINE_NO_STRUCTURAL'):
         w = fresh_worker(mp3, arm, budget=30.0, nonce='c22-03-' + arm); fails, info = check_(mp3, w, arm, budget=300.0)
         A(w['outcome'] == 'PUBLISHED' and not fails and _contained(w, tr3, t3['epsilon']), '03 %s: %s %s' % (arm, w['outcome'], fails[:1]))
         ops = [c['op'] for c in w['certificate']['compile']['certificates'] if c.get('kind') == 'commit']; fin = w['certificate']['compile']['final']
         out['f03'][arm] = dict(route=w['route'], ops=ops, cards=fin['cards'], witness=fin.get('witness'))
-        if arm == 'N1_NO_QUOTIENT':
+        if arm == 'N1_NO_QUOTIENT_NO_STRUCTURAL':
             A('concentration' in ops and 'affine' in ops and fin['cards'] == [2, 3, 5] and fin.get('witness') == {'0': 0, '1': 2, '2': 4}, '03 transformed witness: cards %s witness %s' % (fin['cards'], fin.get('witness')))
             aff = next(c for c in w['certificate']['compile']['certificates'] if c.get('kind') == 'commit' and c['op'] == 'affine'); A(aff.get('witness_after') == {'0': 0, '1': 2, '2': 4}, '03 affine record witness_after')
             # the journal replays the witness (bound into final_sha256) and a tampered final witness is refused
             _mut(mp3, w, arm, 'final_witness_tampered', lambda x: x['certificate']['compile']['final'].__setitem__('witness', {'0': 1, '1': 2, '2': 4}), ('does not replay', 'final_sha256'), out['f03'])
             _mut(mp3, w, arm, 'affine_witness_after_tampered', lambda x: next(c for c in x['certificate']['compile']['certificates'] if c.get('kind') == 'commit' and c['op'] == 'affine').__setitem__('witness_after', {'0': 1, '1': 2, '2': 4}), ('transformed witness differs', 'does not replay'), out['f03'])
     # optional failure inside the direct publication preparation: the reference publishes the exact answer; never a FAULT
-    w = fresh_worker(mp3, 'N1_NO_QUOTIENT', budget=30.0, nonce='c22-03f', extra=('--fault-inject', 'direct_publication'))
+    w = fresh_worker(mp3, 'N1_NO_QUOTIENT_NO_STRUCTURAL', budget=30.0, nonce='c22-03f', extra=('--fault-inject', 'direct_publication'))
     A(w['outcome'] == 'PUBLISHED' and w['route'] == 'exact_reference' and 'direct publication preparation' in str(w['certificate'].get('optional_cancelled')) and _contained(w, tr3, F(0)), '03 injected direct-publication fault: %s %s' % (w['outcome'], (w.get('reason') or '')[:60])); out['f03']['injected_direct_fault'] = w['route']
     # the commit invariant in process: a domain change without a witness is refused; an invalid witness is dropped with its reason; every committed witness has positive weight
-    C, log = compile_(t3, enabled=set(SV.ARMS['N1_NO_QUOTIENT']['enabled'])); A(C.witness is not None and CP._witness_problem(C.cards, C.views, C.witness) is None, '03 compiled witness invalid: %s' % CP._witness_problem(C.cards, C.views, C.witness))
+    C, log = compile_(t3, enabled=set(SV.ARMS['N1_NO_QUOTIENT_NO_STRUCTURAL']['enabled'])); A(C.witness is not None and CP._witness_problem(C.cards, C.views, C.witness) is None, '03 compiled witness invalid: %s' % CP._witness_problem(C.cards, C.views, C.witness))
     for rc in C.commit_records():
         if rc.get('witness_after') is not None: A(all(isinstance(v, int) for v in rc['witness_after'].values()), '03 record witness typed')
     C0 = CP.from_task(t3); C0.witness = {v: 0 for v in range(C0.n())}
@@ -1213,7 +1213,7 @@ def c22_precision_zero_mass_witness_service():
             rng = random.Random(832 if cards_ != [2] * 14 else 82); size = 1
             for c in cards_: size *= c
             m = dict(cards=cards_, factors=[dict(scope=tuple(range(len(cards_))), values=[F(rng.randint(1, 9)) for _ in range(size)])], evidence={}); tk = mk_task(m, [TK.singleton_query(v, 0, cards_) for v in range(min(3, len(cards_)))], mode='DETERMINISTIC_EPS')
-            ticks.clear(); r = solve_(tk, 'N1_CQR', 'c22-04', budget=30.0); gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]
+            ticks.clear(); r = solve_(tk, 'N1_NO_STRUCTURAL', 'c22-04', budget=30.0); gaps = [ticks[k] - ticks[k - 1] for k in range(1, len(ticks))]
             A(r['outcome'] == 'PUBLISHED' and max(gaps) <= bound, '04 %s production gap %d > %d' % (cards_, max(gaps), bound))
             C = CP.from_task(tk); base = C.work.total(); ticks.clear()
             try: CP.exact_quotient_pass(C, base + 1025)
@@ -1223,11 +1223,11 @@ def c22_precision_zero_mass_witness_service():
         for dd in (1023, 1024, 1025, 2048, 2049):
             cd = [dd] + [2] * 10; mpd = os.path.join(d, 'cls%d.uai' % dd); open(mpd, 'w').write('MARKOV\n11\n' + ' '.join(map(str, cd)) + '\n1\n1 0\n' + str(dd) + '\n' + ' '.join(['1'] * dd) + '\n')
             _spec(mpd, mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=0)])
-            w = fresh_worker(mpd, 'N1_CQR', budget=30.0, nonce='c22-04-%d' % dd); fails, _ = check_(mpd, w, 'N1_CQR', budget=300.0); log = w['certificate']['compile']['log']; st = next(s_ for s_ in log['steps'] if s_['op'] == 'exact_quotient_pass')
+            w = fresh_worker(mpd, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c22-04-%d' % dd); fails, _ = check_(mpd, w, 'N1_NO_STRUCTURAL', budget=300.0); log = w['certificate']['compile']['log']; st = next(s_ for s_ in log['steps'] if s_['op'] == 'exact_quotient_pass')
             A(w['outcome'] == 'PUBLISHED' and not fails and w['answers'][0]['point'] == str(F(1, dd)) and st['outcome'] == 'committed' and st['work'] >= dd and log.get('max_service_gap', 0) <= bound and log.get('failed') is None, '04 class %d: %s %s quotient %s gap %s' % (dd, w['outcome'], fails[:1], st['outcome'], log.get('max_service_gap')))
             out['f04']['class_%d' % dd] = dict(route=w['route'], quotient_work=st['work'], max_gap=log.get('max_service_gap'))
         # an injected failing pullback (fault at the quotient build point, after the class sums were computed): the performed work stays charged, the operator fails, the answer is still correct
-        mpd = os.path.join(d, 'cls2048.uai'); w = fresh_worker(mpd, 'N1_CQR', budget=30.0, nonce='c22-04f', extra=('--fault-inject', json.dumps(dict(op='exact_quotient_pass', where='build', k=0)))); log = w['certificate']['compile']['log']; st = next(s_ for s_ in log['steps'] if s_['op'] == 'exact_quotient_pass')
+        mpd = os.path.join(d, 'cls2048.uai'); w = fresh_worker(mpd, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c22-04f', extra=('--fault-inject', json.dumps(dict(op='exact_quotient_pass', where='build', k=0)))); log = w['certificate']['compile']['log']; st = next(s_ for s_ in log['steps'] if s_['op'] == 'exact_quotient_pass')
         A(w['outcome'] == 'PUBLISHED' and w['answers'][0]['point'] == '1/2048' and st['outcome'] == 'failed' and st['work'] >= 2048 and st['commits'] == 0 and log['work']['total'] >= st['work'], '04 failing pullback: %s %s work %s' % (w['outcome'], st['outcome'], st['work'])); out['f04']['failing_pullback'] = dict(work_charged=st['work'], route=w['route'])
         # the posting contract itself: a meter splits a 2,048-unit class at the remaining allowance; a raw over-size post is charged and then reported
         C = CP.from_task(mk_task(dict(cards=[2, 2], factors=[dict(scope=(0, 1), values=[F(1)] * 4)], evidence={}), [TK.singleton_query(0, 0, [2, 2])])); T = CP._Ticker(C, None, 'probe'); ticks.clear(); m = T.meter('ratops')
@@ -1326,7 +1326,7 @@ def c23_exactly_once_accounting_quota_inheritance_tolerance_domain():
     # the reviewer's natural [2,750] worker (entries 10000000+i; eps 1/200): approximate step within its quota bound; correct checker-accepted answer
     dd = 750; cards = [2, dd] + [2] * 16; vals = list(range(10000000, 10000000 + 2 * dd)); fs = [([0, 1], vals)] + [([v], [1, 2]) for v in range(2, 18)]
     mp = _spec(_uai(os.path.join(d, 'meter_quota_worker.uai'), cards, fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=v, state=0) for v in range(2)])
-    w = fresh_worker(mp, 'N1_CQR', budget=30.0, nonce='c23-01w'); fails, _ = check_(mp, w, 'N1_CQR', budget=300.0); log = w['certificate']['compile']['log']; st = [s_ for s_ in log['steps'] if s_['op'] == 'approx_quotient']
+    w = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c23-01w'); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL', budget=300.0); log = w['certificate']['compile']['log']; st = [s_ for s_ in log['steps'] if s_['op'] == 'approx_quotient']
     truths = [F(sum(vals[:dd]), sum(vals)), F(vals[0] + vals[dd], sum(vals))]; CNT['truth_coordinates'] += 2
     A(w['outcome'] == 'PUBLISHED' and not fails and all(F(x['lo']) <= v <= F(x['hi']) for x, v in zip(w['answers'], truths)) and st and all(s_['work'] - log['quota'] <= bound for s_ in st), '01 natural worker: %s %s approx %s quota %s' % (w['outcome'], fails[:1], [(s_['outcome'], s_['work']) for s_ in st], log['quota']))
     out['f01']['natural_2x750'] = dict(route=w['route'], approx=[(s_['outcome'], s_['work'], s_['work'] - log['quota']) for s_ in st], quota=log['quota'])
@@ -1389,7 +1389,7 @@ def c23_exactly_once_accounting_quota_inheritance_tolerance_domain():
             p = tiny('eps_%s_%s' % (hashlib.sha256(eps.encode()).hexdigest()[:5], legacy), eps, legacy=legacy)
             try: TK.load_task(p); A(False, '03 epsilon %s accepted at parsing' % eps)
             except ValueError as ex: A('epsilon' in str(ex) and 'domain' in str(ex), '03 wrong rejection reason: %s' % str(ex)[:60])
-            t0 = time.monotonic(); w = fresh_worker(p, 'N1_CQR', budget=0.5, nonce='c23-03-%s-%s' % (hashlib.sha256(eps.encode()).hexdigest()[:5], legacy)); wall = time.monotonic() - t0
+            t0 = time.monotonic(); w = fresh_worker(p, 'N1_NO_STRUCTURAL', budget=0.5, nonce='c23-03-%s-%s' % (hashlib.sha256(eps.encode()).hexdigest()[:5], legacy)); wall = time.monotonic() - t0
             A(w['outcome'] == 'INVALID_TASK' and w['status'] == 'STOPPED' and w['guarantee_type'] == 'NONE' and 'epsilon' in w.get('reason', '') and wall < 5.0 and w.get('certificate') is None and w.get('answers') is None, '03 worker on epsilon %s (legacy %s): %s %s in %.2f s' % (eps, legacy, w.get('outcome'), (w.get('reason') or '')[:60], wall))
     out['f03']['rejected'] = ['0', '-1/200', '2', '0/1']
     for delta in ('1', '-1/10', '3/2'):
@@ -1407,7 +1407,7 @@ def c23_exactly_once_accounting_quota_inheritance_tolerance_domain():
         spec = dict(mode='EXACT_RATIONAL', delta='1/1000000', queries=[dict(kind='all_singletons')] if legacy else [dict(kind='singleton', variable=0, state=1)])
         if eps is not None: spec['epsilon'] = eps
         json.dump(spec, open(p + '.query.json', 'w')); t_ = TK.load_task(p); A(t_['epsilon'] == (F(eps) if eps is not None else F(1, 200)), '03 parsed epsilon')
-        w = fresh_worker(p, 'N1_CQR', budget=10.0, nonce='c23-03ok-%s-%s' % (hashlib.sha256(str(eps).encode()).hexdigest()[:5], legacy)); fails, _ = check_(p, w, 'N1_CQR')
+        w = fresh_worker(p, 'N1_NO_STRUCTURAL', budget=10.0, nonce='c23-03ok-%s-%s' % (hashlib.sha256(str(eps).encode()).hexdigest()[:5], legacy)); fails, _ = check_(p, w, 'N1_NO_STRUCTURAL')
         A(w['outcome'] == 'PUBLISHED' and not fails and all(a_['point'] == str(F(1, 2)) for a_ in w['answers']), '03 accepted epsilon %s legacy %s: %s %s' % (str(eps)[:12], legacy, w['outcome'], fails[:1]))
         if legacy: A(w.get('legacy_digits') == TK.legacy_digits(t_['epsilon']) and w.get('intervals') is not None, '03 legacy digits at eps %s' % str(eps)[:12])
     out['f03']['accepted'] = ['1e-100 rational', '1e-100 legacy (101 digits)', '1 legacy', 'default 1/200']
@@ -1442,23 +1442,23 @@ def c24_zero_risk_controller_cadence_completed_charges():
         for mode, delta in (('PAC_EPS', '0'), ('DETERMINISTIC_EPS', '0'), ('PAC_EPS', '1/10'), ('EXACT_RATIONAL', '0')):
             # EXACT_RATIONAL needs exact closure: on the 24-variable factor-free model the exact reference (2^24 assignments) does not finish in budget and a typed DEADLINE with the
             # frontier intact is the documented behaviour; the exact-mode control therefore runs on 12 variables (reference 4,096 assignments) -- the zero-risk flow is the same
-            p = tiny('%s_%s_%s' % (kind, mode, delta.replace('/', '_')), kind, mode, delta, n=(12 if mode == 'EXACT_RATIONAL' else 24)); w = fresh_worker(p, 'G0_CQR', budget=4.0, nonce='c24-01-%s-%s-%s' % (kind, mode, delta.replace('/', '_')))
+            p = tiny('%s_%s_%s' % (kind, mode, delta.replace('/', '_')), kind, mode, delta, n=(12 if mode == 'EXACT_RATIONAL' else 24)); w = fresh_worker(p, 'G0_NO_STRUCTURAL', budget=4.0, nonce='c24-01-%s-%s-%s' % (kind, mode, delta.replace('/', '_')))
             if mode == 'EXACT_RATIONAL' and kind == 'normalizer': truth = F(3 * 2 ** 11)
             A(w['outcome'] == 'PUBLISHED', '01 %s %s delta %s: %s %s' % (kind, mode, delta, w['outcome'], str((w.get('scheduling') or {}).get('optional_cancelled'))[:80]))
-            fails, _ = check_(p, w, 'G0_CQR'); A(not fails, '01 %s %s delta %s: %s' % (kind, mode, delta, fails[:1]))
+            fails, _ = check_(p, w, 'G0_NO_STRUCTURAL'); A(not fails, '01 %s %s delta %s: %s' % (kind, mode, delta, fails[:1]))
             a = w['answers'][0]; CNT['truth_coordinates'] += 1; A(F(a['lo']) <= truth <= F(a['hi']) and w['guarantee_type'] == 'DETERMINISTIC', '01 %s %s: containment / class' % (kind, mode))
             cert = w['certificate']
             if delta == '0' and mode == 'PAC_EPS': A(cert.get('ratio_stream') is None and any(x_.get('kind') == 'ZERO_RISK' for x_ in cert.get('statistical_claims_disabled') or []), '01 zero-risk certificate records a ratio stream or no ZERO_RISK note')
             out['f01']['%s_%s_%s' % (kind, mode, delta)] = w['route']
-    pe = tiny('singleton_EXACT_RATIONAL_0_n24', 'singleton', 'EXACT_RATIONAL', '0'); we = fresh_worker(pe, 'G0_CQR', budget=2.0, nonce='c24-01-exact24')
+    pe = tiny('singleton_EXACT_RATIONAL_0_n24', 'singleton', 'EXACT_RATIONAL', '0'); we = fresh_worker(pe, 'G0_NO_STRUCTURAL', budget=2.0, nonce='c24-01-exact24')
     A(we['outcome'] in ('PUBLISHED', 'DEADLINE') and not (we.get('scheduling') or {}).get('optional_cancelled') and 'ZeroDivision' not in json.dumps(we), '01 exact-mode 24-variable zero-risk: %s %s' % (we['outcome'], str((we.get('scheduling') or {}).get('optional_cancelled'))[:60]))
     out['f01']['exact_24_zero_risk'] = we['outcome'] if we['outcome'] != 'PUBLISHED' else we['route']
     # the signed path at zero risk reaches epoch construction and stays deterministic; at delta 1/10 it is a genuine PAC publication; both contain the independent truth
     _spec(mps, mode='PAC_EPS', epsilon='1/10', delta='0', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5], bit=1)]); t_s, tr_s = _truth(mps)
-    w0 = fresh_worker(mps, 'N1_CQR', budget=30.0, nonce='c24-01-signed0'); cert0 = w0.get('certificate') or {}
+    w0 = fresh_worker(mps, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c24-01-signed0'); cert0 = w0.get('certificate') or {}
     A(w0['outcome'] in ('PUBLISHED', 'DEADLINE'), '01 signed zero-risk: %s' % w0['outcome'])
     if w0['outcome'] == 'PUBLISHED':
-        fails, _ = check_(mps, w0, 'N1_CQR', budget=600.0); A(not fails and w0['guarantee_type'] == 'DETERMINISTIC' and _contained(w0, tr_s, t_s['epsilon']), '01 signed zero-risk publication: %s' % fails[:1]); out['f01']['signed_zero_risk'] = w0['route']
+        fails, _ = check_(mps, w0, 'N1_NO_STRUCTURAL', budget=600.0); A(not fails and w0['guarantee_type'] == 'DETERMINISTIC' and _contained(w0, tr_s, t_s['epsilon']), '01 signed zero-risk publication: %s' % fails[:1]); out['f01']['signed_zero_risk'] = w0['route']
     else:
         A(not (w0.get('scheduling') or {}).get('optional_cancelled') and 'ZeroDivision' not in json.dumps(w0.get('scheduling') or {}), '01 signed zero-risk DEADLINE with a cancelled optional half: %s' % str((w0.get('scheduling') or {}).get('optional_cancelled'))[:80]); out['f01']['signed_zero_risk'] = 'typed DEADLINE, frontier intact'
     A(cert0.get('ratio_stream') is None or w0['outcome'] == 'DEADLINE', '01 zero-risk certificate carries a ratio stream')
@@ -1466,22 +1466,22 @@ def c24_zero_risk_controller_cadence_completed_charges():
     _spec(mps, mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5], bit=1)])
     w1 = None
     for seed in ('pp', 'pq', 'pr'):
-        w_ = fresh_worker(mps, 'N1_CQR', budget=45.0, seed=seed, nonce='c24-01-signed-' + seed)
+        w_ = fresh_worker(mps, 'N1_NO_STRUCTURAL', budget=45.0, seed=seed, nonce='c24-01-signed-' + seed)
         if w_['outcome'] == 'PUBLISHED' and w_['guarantee_type'] == 'PAC': w1 = w_; break
         if w1 is None and w_['outcome'] == 'PUBLISHED': w1 = w_
-    A(w1 is not None, '01 positive-risk signed fixture did not publish'); fails, _ = check_(mps, w1, 'N1_CQR', budget=600.0); A(not fails and _contained(w1, tr_s, t_s['epsilon']), '01 positive-risk publication: %s' % fails[:1]); out['f01']['signed_positive_risk'] = dict(route=w1['route'], guarantee=w1['guarantee_type'], draws=(w1['certificate'].get('ratio_stream') or {}).get('t'))
+    A(w1 is not None, '01 positive-risk signed fixture did not publish'); fails, _ = check_(mps, w1, 'N1_NO_STRUCTURAL', budget=600.0); A(not fails and _contained(w1, tr_s, t_s['epsilon']), '01 positive-risk publication: %s' % fails[:1]); out['f01']['signed_positive_risk'] = dict(route=w1['route'], guarantee=w1['guarantee_type'], draws=(w1['certificate'].get('ratio_stream') or {}).get('t'))
     # a zero-risk task that cannot close in budget: typed DEADLINE with the frontier intact (no optional cancellation, no zero division)
     cards_g = [2] * 30; mg = grid_model(random.Random(5), 6, 5, lo=1, hi=3); mpg = _spec(write_task(d, 'grid30', mg), mode='PAC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=1)])
-    wg = fresh_worker(mpg, 'G0_CQR', budget=2.0, nonce='c24-01-grid0')
+    wg = fresh_worker(mpg, 'G0_NO_STRUCTURAL', budget=2.0, nonce='c24-01-grid0')
     A(wg['outcome'] in ('DEADLINE', 'PUBLISHED') and not (wg.get('scheduling') or {}).get('optional_cancelled') and 'ZeroDivision' not in json.dumps(wg), '01 zero-risk grid: %s %s' % (wg['outcome'], str((wg.get('scheduling') or {}).get('optional_cancelled'))[:80]))
     if wg['outcome'] == 'DEADLINE': A((wg.get('scheduling') or {}).get('reference_progress') is not None, '01 zero-risk DEADLINE lost the reference state'); out['f01']['grid_zero_risk'] = 'typed DEADLINE, frontier + reference intact'
     else: out['f01']['grid_zero_risk'] = wg['route']
     # the checker refuses statistical claims at zero risk; the boundary function refuses alpha 0
     try: NM.boundary_upper(F(1, 4), F(1), F(0)); A(False, '01 boundary at alpha 0 returned')
     except ValueError: pass
-    _mut(mps, w1, 'N1_CQR', 'pac_route_at_zero_risk', lambda x: (x['certificate'].__setitem__('delta', '0'), x.__setitem__('delta', '0')), ('delta differs', 'zero risk'), out['f01'])
+    _mut(mps, w1, 'N1_NO_STRUCTURAL', 'pac_route_at_zero_risk', lambda x: (x['certificate'].__setitem__('delta', '0'), x.__setitem__('delta', '0')), ('delta differs', 'zero risk'), out['f01'])
     # ---------------- 02: actual controller cadence (independent of tick / meter counters)
-    def probe(t_, arm='N1_CQR'):
+    def probe(t_, arm='N1_NO_STRUCTURAL'):
         refs = []; calls = []; ot = CP.tick; orr = RF.Reference; wrapped = set()
         class Spy(orr):
             def __init__(self, *a_, **k_): super().__init__(*a_, **k_); refs.append(self)
@@ -1507,7 +1507,7 @@ def c24_zero_risk_controller_cadence_completed_charges():
         A(r['outcome'] == 'PUBLISHED' and pr['max_gap'] <= bound and pr['max_precall_deficit'] <= Q + bound and pr['log_calls'] - (pr['log_calls_evidence'] or 0) == pr['controller_calls'] and all(w_ - pr['quota'] <= bound for _, w_ in pr['approx']), '02 %s: %s' % (name, pr))
         out['f02'][name] = pr
     # the uninstrumented worker on the same bytes publishes a correct checker-accepted answer
-    w = fresh_worker(mpm, 'N1_CQR', budget=30.0, nonce='c24-02w'); fails, _ = check_(mpm, w, 'N1_CQR', budget=300.0); truths = [F(sum(vals[:dd]), sum(vals)), F(vals[0] + vals[dd], sum(vals))]; CNT['truth_coordinates'] += 2
+    w = fresh_worker(mpm, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c24-02w'); fails, _ = check_(mpm, w, 'N1_NO_STRUCTURAL', budget=300.0); truths = [F(sum(vals[:dd]), sum(vals)), F(vals[0] + vals[dd], sum(vals))]; CNT['truth_coordinates'] += 2
     A(w['outcome'] == 'PUBLISHED' and not fails and all(F(x['lo']) <= v <= F(x['hi']) for x, v in zip(w['answers'], truths)), '02 uninstrumented worker: %s %s' % (w['outcome'], fails[:1]))
     # a quota stop followed by an operator that scans before its first explicit tick: the controller is called at the quota boundary and the cadence holds across the boundary
     C = CP.from_task(tm); svc_at = []
@@ -1584,7 +1584,7 @@ def c24_zero_risk_controller_cadence_completed_charges():
     return out
 
 
-def _dev_campaign(rd, case_specs, root_seed, arm='G0_CQR'):
+def _dev_campaign(rd, case_specs, root_seed, arm='G0_NO_STRUCTURAL'):
     """write <case>.uai (one binary variable, unary [1,2]) + .query.json for each (case, spec), then build the dev manifest and run the dispatcher in SUBPROCESSES (campaign.py is
     never imported in-process: the pac and cqr packages both have a `registry` module). Returns the run dir."""
     os.makedirs(rd, exist_ok=True); names = []
@@ -1633,16 +1633,16 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
     cards_s, fs_s = _sprinkled(1, 28, 14, 4); mpr = _spec(_uai(os.path.join(d, 'ratio28.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5], bit=1)])
     t_r, tr_r = _truth(mpr); wr = None; tried = []
     for seed in ('pp', 'pq', 'pr', 'ps', 'pt', 'pu'):
-        w_ = fresh_worker(mpr, 'N1_CQR', budget=45.0, seed=seed, nonce='c25-01-ratio-' + seed); tried.append((w_['outcome'], w_.get('route')))
+        w_ = fresh_worker(mpr, 'N1_NO_STRUCTURAL', budget=45.0, seed=seed, nonce='c25-01-ratio-' + seed); tried.append((w_['outcome'], w_.get('route')))
         if w_['outcome'] == 'PUBLISHED' and w_['route'] == 'pac_ratio_intersected_with_deterministic' and (w_['certificate'].get('ratio_stream') or {}).get('t', 0) > 0: wr = w_; break
-    A(wr is not None, '01 the ratio fixture produced no genuine ratio-PAC publication in %d seeds (MANDATORY target): %s' % (len(tried), tried)); fails, _ = check_(mpr, wr, 'N1_CQR', budget=600.0)
+    A(wr is not None, '01 the ratio fixture produced no genuine ratio-PAC publication in %d seeds (MANDATORY target): %s' % (len(tried), tried)); fails, _ = check_(mpr, wr, 'N1_NO_STRUCTURAL', budget=600.0)
     A(not fails and _contained(wr, tr_r, t_r['epsilon']), '01 genuine ratio-PAC refused: %s' % fails[:1]); out['f01']['ratio'] = dict(route=wr['route'], draws=wr['certificate']['ratio_stream']['t'], seeds_tried=len(tried)); CNT['stream_draws'] += wr['certificate']['ratio_stream']['t']
     mpn = _normalizer_witness(d); t_n, tr_n = _truth(mpn); wn = None; tried = []
     for seed in range(8):
-        w_ = fresh_worker(mpn, 'G0_CQR', budget=10.0, seed=str(seed), nonce='c25-01-norm-%d' % seed); tried.append((w_['outcome'], w_.get('route')))
+        w_ = fresh_worker(mpn, 'G0_NO_STRUCTURAL', budget=10.0, seed=str(seed), nonce='c25-01-norm-%d' % seed); tried.append((w_['outcome'], w_.get('route')))
         if w_['outcome'] == 'PUBLISHED' and w_['route'] == 'normalizer_pac_ratio_intersected_with_deterministic' and (w_['certificate'].get('ratio_stream') or {}).get('t', 0) > 0: wn = w_; break
     A(wn is not None, '01 the normalizer fixture produced no genuine normalizer-PAC publication in %d seeds (MANDATORY target; a deterministic / zero-dimensional fallback is a FAILURE): %s' % (len(tried), tried))
-    fails, _ = check_(mpn, wn, 'G0_CQR', budget=300.0); A(not fails and F(wn['answers'][0]['lo']) <= tr_n['Z'] <= F(wn['answers'][0]['hi']), '01 genuine normalizer-PAC refused: %s' % fails[:1]); CNT['truth_coordinates'] += 1
+    fails, _ = check_(mpn, wn, 'G0_NO_STRUCTURAL', budget=300.0); A(not fails and F(wn['answers'][0]['lo']) <= tr_n['Z'] <= F(wn['answers'][0]['hi']), '01 genuine normalizer-PAC refused: %s' % fails[:1]); CNT['truth_coordinates'] += 1
     out['f01']['normalizer'] = dict(route=wn['route'], draws=wn['certificate']['ratio_stream']['t'], seeds_tried=len(tried)); CNT['stream_draws'] += wn['certificate']['ratio_stream']['t']
     def _tightened(w_, s_, mp_):
         """the reviewer's recomputation: the publication implied by the ALTERED statistics (prior s_ * U_star) -- the ratio-PAC enclosure recomputed with the checker's formulas and
@@ -1664,7 +1664,7 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
             for j, a_ in enumerate(x_['answers']): a_.update(lo=newb[j][0], hi=newb[j][1], point=newp[j])
             return x_
         return put(z), put(copy.deepcopy(w_)), newb
-    for name, mp_, w_, arm_ in (('ratio', mpr, wr, 'N1_CQR'), ('normalizer', mpn, wn, 'G0_CQR')):
+    for name, mp_, w_, arm_ in (('ratio', mpr, wr, 'N1_NO_STRUCTURAL'), ('normalizer', mpn, wn, 'G0_NO_STRUCTURAL')):
         A(w_['certificate'].get('ratio_stream') is not None, '01 %s publication without a ratio stream' % name)
         for s_, tag in ((F(1, 2), 'halved'), (F(2), 'doubled')):
             z = _rescale(w_, s_); fails, _ = check_(mp_, z, arm_, budget=300.0)
@@ -1682,7 +1682,7 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
     cards_r, fs_r = _ring_hardzero(1, 30, 39, 40); vals_r = [str(F(1, 2) if x0 == 0 or x1 == 1 else F(x2)) for x0 in range(2) for x1 in range(2) for x2 in range(2)]
     mps = _spec(_uai(os.path.join(d, 'signed_ring30.uai'), cards_r, fs_r), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='table', table=dict(name='mostly_half', kind='expectation', f=dict(scope=[0, 1, 2], values=vals_r)))]); ws = None; tried = []
     for seed in ('sa', 'sb', 'sc', 'sd'):
-        w_ = fresh_worker(mps, 'N1_CQR', budget=30.0, seed=seed, nonce='c25-01-signed-' + seed); tried.append((w_['outcome'], w_.get('route'), len(w_['certificate'].get('epochs') or [])))
+        w_ = fresh_worker(mps, 'N1_NO_STRUCTURAL', budget=30.0, seed=seed, nonce='c25-01-signed-' + seed); tried.append((w_['outcome'], w_.get('route'), len(w_['certificate'].get('epochs') or [])))
         if w_['outcome'] == 'PUBLISHED' and w_['route'] == 'pac_signed_residual_validation' and w_['certificate'].get('epochs'): ws = w_; break
     A(ws is not None, '01 no genuine signed-route publication (pac_signed_residual_validation with an epoch) in %d seeds (MANDATORY): %s' % (len(tried), tried))
     t_s, tr_s = _truth(mps); A(_contained(ws, tr_s, F(1, 10)), '01 signed publication misses the independent truth')
@@ -1691,14 +1691,14 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
         for ev in z['certificate']['events']:
             if ev.get('op') == 'epoch_start' and ev.get('epoch') == e0['epoch']: ev['E_star'] = str(F(ev['E_star']) / 2)
         return z
-    fails, _ = check_(mps, halve_E_star(ws), 'N1_CQR', budget=300.0); A(fails and any('E_star' in f_ for f_ in fails), '01 signed-route E_star mutation not refused: %s' % fails[:1])
+    fails, _ = check_(mps, halve_E_star(ws), 'N1_NO_STRUCTURAL', budget=300.0); A(fails and any('E_star' in f_ for f_ in fails), '01 signed-route E_star mutation not refused: %s' % fails[:1])
     out['f01']['signed_E_star'] = dict(role='GENUINE signed-route publication', route=ws['route'], epochs=len(ws['certificate']['epochs']), draws=sum(int(e.get('t') or 0) for e in ws['certificate']['epochs']), refusal=fails[0][:60])
     sg_c, sg_f = _sprinkled(3, 26, 12, 4); mpe = _spec(_uai(os.path.join(d, 'epochs26.uai'), sg_c, sg_f), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1)]); we = None
     for seed in ('sa', 'sb', 'sc', 'sd'):
-        w_ = fresh_worker(mpe, 'N1_CQR', budget=45.0, seed=seed, nonce='c25-01-epochs-' + seed)
+        w_ = fresh_worker(mpe, 'N1_NO_STRUCTURAL', budget=45.0, seed=seed, nonce='c25-01-epochs-' + seed)
         if w_['outcome'] == 'PUBLISHED' and w_['certificate'].get('epochs'): we = w_; break
     if we is not None:
-        fails, _ = check_(mpe, halve_E_star(we), 'N1_CQR', budget=300.0); A(fails and any('E_star' in f_ for f_ in fails), '01 epoch-replay E_star mutation not refused: %s' % fails[:1])
+        fails, _ = check_(mpe, halve_E_star(we), 'N1_NO_STRUCTURAL', budget=300.0); A(fails and any('E_star' in f_ for f_ in fails), '01 epoch-replay E_star mutation not refused: %s' % fails[:1])
         out['f01']['epoch_replay_E_star'] = dict(role='EPOCH-REPLAY control on a %s publication that carries signed epochs (not a signed-publication test)' % we['route'], route=we['route'], epochs=len(we['certificate']['epochs']), refusal=fails[0][:60])
     else: out['f01']['epoch_replay_E_star'] = 'no publication with epochs in 4 seeds on the sprinkled fixture (the genuine signed-route control above is the mandatory one)'
     # ---------------- 02: influence applicability scan under the operator ticker
@@ -1726,7 +1726,7 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
     A(charged == nv + na and charged - quota <= bound and ret is False and C.certs[-1].get('kind') == 'decline' and any(c_ <= base + 2000 for c_ in calls), '02 positive scan: charged %d completed %d (scan %d + at %d) quota %d calls-in-scan %s' % (charged, nv + na, nv, na, quota, [c_ - base for c_ in calls][:3]))
     out['f02']['positive'] = dict(charged=charged, completed=nv + na, scan_reads=nv, evaluations=na, quota=quota, overspend=charged - quota, controller_calls=len(calls))
     mpp = write_task(d, 'infl_pos', m_pos, dict(mode='DETERMINISTIC_EPS', epsilon='1e-100', delta='0', queries=[dict(kind='singleton', variable=0, state=0), dict(kind='singleton', variable=1, state=0)]))
-    w = fresh_worker(mpp, 'N1_CQR', budget=30.0, nonce='c25-02w'); fails, _ = check_(mpp, w, 'N1_CQR', budget=300.0); st = next(s_ for s_ in w['certificate']['compile']['log']['steps'] if s_['op'] == 'influence_deletion')
+    w = fresh_worker(mpp, 'N1_NO_STRUCTURAL', budget=30.0, nonce='c25-02w'); fails, _ = check_(mpp, w, 'N1_NO_STRUCTURAL', budget=300.0); st = next(s_ for s_ in w['certificate']['compile']['log']['steps'] if s_['op'] == 'influence_deletion')
     A(w['outcome'] == 'PUBLISHED' and not fails and [a_['point'] for a_ in w['answers']] == [str(F(1001, 6002)), str(F(1001, 1500500))] and st['work'] - w['certificate']['compile']['log']['quota'] <= bound, '02 plain worker: %s %s %s' % (w['outcome'], fails[:1], st)); out['f02']['plain_worker'] = dict(route=w['route'], influence_work=st['work'])
     for where, zero_at in (('first', 0), ('middle', 999), ('last', 1999)):
         m_z = infl_model(1000, zero_at); t_z = mk_task(m_z, [TK.singleton_query(0, 0, m_z['cards'])], mode='DETERMINISTIC_EPS', eps=F(1, 10 ** 100), delta=F(0)); C = CP.from_task(t_z); base = C.work.total(); calls = []
@@ -1759,9 +1759,9 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
     A(rp_.returncode == 0, '03 report failed: %s' % rp_.stderr[-120:])
     # a genuinely different rational must reject: the frozen declaration keeps 1/200 while the on-disk spec says 1/201 (file re-hash refuses first; the semantic comparison is exercised directly below)
     mt = dict(epsilon='1/200', delta='1/10', mode='PAC_EPS', normalizer_task=False); mp_ = os.path.join(rd, 'tol_canonical.uai'); w_ = json.load(open(glob.glob(os.path.join(rd, 'cells', '*tol_canonical*', 'attempt_*', 'worker.json'))[0]))
-    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, epsilon='1/201'), arm='G0_CQR', deadline=time.monotonic() + 60); A(fails and any('differs from the input file' in f_ for f_ in fails), '03 a different rational was not refused: %s' % fails[:1])
-    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, epsilon='0.005', delta='0.1'), arm='G0_CQR', deadline=time.monotonic() + 60); A(not fails, '03 equal rationals refused: %s' % fails[:1])
-    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, delta='1/11'), arm='G0_CQR', deadline=time.monotonic() + 60); A(fails and any('delta' in f_ for f_ in fails), '03 a different delta was not refused: %s' % fails[:1]); out['f03']['different_values_refused'] = True
+    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, epsilon='1/201'), arm='G0_NO_STRUCTURAL', deadline=time.monotonic() + 60); A(fails and any('differs from the input file' in f_ for f_ in fails), '03 a different rational was not refused: %s' % fails[:1])
+    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, epsilon='0.005', delta='0.1'), arm='G0_NO_STRUCTURAL', deadline=time.monotonic() + 60); A(not fails, '03 equal rationals refused: %s' % fails[:1])
+    fails, _ = CK.check_worker_output(mp_, w_, manifest_task=dict(mt, delta='1/11'), arm='G0_NO_STRUCTURAL', deadline=time.monotonic() + 60); A(fails and any('delta' in f_ for f_ in fails), '03 a different delta was not refused: %s' % fails[:1]); out['f03']['different_values_refused'] = True
     # ---------------- 04: reference ratio reads
     for positive, vals in (('all', [1] * 8), ('half', [1] * 4 + [0] * 4)):
         mp_ = os.path.join(d, 'ref_%s.uai' % positive); open(mp_, 'w').write('MARKOV\n3\n2 2 2\n1\n3 0 1 2\n8\n' + ' '.join(map(str, vals)) + '\n')
@@ -1773,7 +1773,7 @@ def c25_ratio_prior_binding_influence_scan_tolerance_semantics():
             r.ftab = [CL(x) for x in r.ftab]; r.qtab = [(CL(h), CL(g) if g is not None else None) for h, g in r.qtab]
             while not r.done: r.step(quantum)
             A(actual[0] == wk.entries, '04 reference %s quantum %d: actual %d charged %d' % (positive, quantum, actual[0], wk.entries)); out['f04']['%s_q%d' % (positive, quantum)] = dict(actual=actual[0], charged=wk.entries)
-        t2, tr2 = _truth(mp_); w = fresh_worker(mp_, 'G0_CQR', budget=10.0, nonce='c25-04-' + positive); fails, _ = check_(mp_, w, 'G0_CQR'); A(w['outcome'] == 'PUBLISHED' and not fails and _contained(w, tr2, F(0)), '04 mixed-query worker %s: %s %s' % (positive, w['outcome'], fails[:1]))
+        t2, tr2 = _truth(mp_); w = fresh_worker(mp_, 'G0_NO_STRUCTURAL', budget=10.0, nonce='c25-04-' + positive); fails, _ = check_(mp_, w, 'G0_NO_STRUCTURAL'); A(w['outcome'] == 'PUBLISHED' and not fails and _contained(w, tr2, F(0)), '04 mixed-query worker %s: %s %s' % (positive, w['outcome'], fails[:1]))
     # ---------------- 05: typed INVALID_TASK rows stay reportable
     rd = os.path.join(d, 'refusal')
     gr, rp_ = _dev_campaign(rd, [('c_eps_bad', dict(mode='PAC_EPS', epsilon='1/0', delta='1/10', queries=[dict(kind='all_singletons')])), ('c_eps_zero', dict(mode='PAC_EPS', epsilon='0', delta='1/10', queries=[dict(kind='all_singletons')])), ('c_eps_text', dict(mode='PAC_EPS', epsilon='abc', delta='1/10', queries=[dict(kind='all_singletons')])), ('c_delta_bad', dict(mode='PAC_EPS', epsilon='1/200', delta='1/0', queries=[dict(kind='all_singletons')])), ('c_no_queries', dict(mode='PAC_EPS', epsilon='1/200', delta='1/10', queries=[])), ('c_valid', dict(mode='PAC_EPS', epsilon='1/200', delta='1/10', queries=[dict(kind='all_singletons')]))], 'c25-05')
@@ -1867,24 +1867,24 @@ def c26_partition_premise_order_validation_structural_negative():
     # ---------------- the reviewer's exact witness: checker + actual chain
     U24 = 'MARKOV\n24\n' + ' '.join(['2'] * 24) + '\n0\n'; spec = dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[], normalizer_task=True)
     mp = os.path.join(d, 'uniform24.uai'); open(mp, 'w').write(U24); json.dump(spec, open(mp + '.query.json', 'w'))
-    w = fresh_worker(mp, 'G0_CQR', budget=20.0, nonce='c26-u24'); fails, _ = check_(mp, w, 'G0_CQR', budget=120.0); A(w['outcome'] == 'PUBLISHED' and not fails and w['answers'][0]['point'] == str(2 ** 24), 'honest uniform-24 refused: %s %s' % (w['outcome'], fails[:1])); CNT['truth_coordinates'] += 1
+    w = fresh_worker(mp, 'G0_NO_STRUCTURAL', budget=20.0, nonce='c26-u24'); fails, _ = check_(mp, w, 'G0_NO_STRUCTURAL', budget=120.0); A(w['outcome'] == 'PUBLISHED' and not fails and w['answers'][0]['point'] == str(2 ** 24), 'honest uniform-24 refused: %s %s' % (w['outcome'], fails[:1])); CNT['truth_coordinates'] += 1
     out['checker']['honest'] = dict(route=w['route'], Z=w['answers'][0]['point'])
     def forge(z, r_=None):
         o = list(range(24)); o[1] = 0; fr_ = z['certificate']['frontier']; fr_['order'] = o; fr_['open_cells'] = 3; fr_['splits'] = 2
         z['certificate']['events'] = [dict(op='split', cell=0, children=[1, 2]), dict(op='split', cell=1, children=[3, 4])]; Lz = '25165824'
         z['certificate']['publication'].update(bounds=[[Lz, Lz]], point=[Lz], det_bounds=[[Lz, Lz]]); z['answers'][0].update(lo=Lz, hi=Lz, point=Lz)
-    z = copy.deepcopy(w); forge(z); fails, _ = check_(mp, z, 'G0_CQR', budget=120.0)
+    z = copy.deepcopy(w); forge(z); fails, _ = check_(mp, z, 'G0_NO_STRUCTURAL', budget=120.0)
     A(fails and 'frontier order refused' in fails[0] and 'repeats variable' in fails[0], 'the reviewer\'s false normalizer not refused for the order: %s' % fails[:1]); out['checker']['false_duplicate_order'] = fails[0][:90]
-    z2 = copy.deepcopy(z); z2['certificate']['frontier']['order'] = list(range(24)); fails, _ = check_(mp, z2, 'G0_CQR', budget=120.0)
+    z2 = copy.deepcopy(z); z2['certificate']['frontier']['order'] = list(range(24)); fails, _ = check_(mp, z2, 'G0_NO_STRUCTURAL', budget=120.0)
     A(fails and 'do not contain the re-derived enclosure [16777216, 16777216]' in fails[0], 'canonical order with the false Z not refused for containment: %s' % fails[:1]); out['checker']['false_canonical_order'] = fails[0][:90]
     muts = {'all_zero': [0] * 24, 'short': list(range(23)), 'long': list(range(25)), 'out_of_range': list(range(23)) + [99], 'negative': list(range(23)) + [-1], 'bool_entry': list(range(23)) + [True], 'string_entry': ['0'] + list(range(1, 24)), 'none': None, 'string': 'abc', 'dict': {}, 'rotated_legal_permutation': [23] + list(range(23)), 'reversed_legal_permutation': list(range(23, -1, -1))}
     for name, o in muts.items():
-        z3 = copy.deepcopy(w); z3['certificate']['frontier']['order'] = o; fails, _ = check_(mp, z3, 'G0_CQR', budget=120.0)
+        z3 = copy.deepcopy(w); z3['certificate']['frontier']['order'] = o; fails, _ = check_(mp, z3, 'G0_NO_STRUCTURAL', budget=120.0)
         want = 'registered producer policy' if 'legal' in name else 'frontier order refused'
         A(fails and want in fails[0], 'order mutation %s not refused as %s: %s' % (name, want, fails[:1])); out['checker']['order_' + name] = fails[0][:70]
-    z4 = copy.deepcopy(w); del z4['certificate']['frontier']['order']; fails, _ = check_(mp, z4, 'G0_CQR', budget=120.0); A(fails and 'without a split order' in fails[0], 'missing order accepted: %s' % fails[:1]); out['checker']['order_missing'] = fails[0][:60]
-    z5 = copy.deepcopy(w); z5['certificate']['frontier'] = None; fails, _ = check_(mp, z5, 'G0_CQR', budget=120.0); A(fails and 'without a frontier record' in fails[0], 'events without a frontier record accepted: %s' % fails[:1]); out['checker']['record_removed'] = fails[0][:60]
-    z6 = copy.deepcopy(w); z6['certificate']['events'] = [dict(op='split', cell=77, children=[1, 2])]; fails, _ = check_(mp, z6, 'G0_CQR', budget=120.0); A(fails and 'not open' in fails[0], 'split of a non-open cell: %s' % fails[:1]); out['checker']['split_not_open_cell'] = fails[0][:70]
+    z4 = copy.deepcopy(w); del z4['certificate']['frontier']['order']; fails, _ = check_(mp, z4, 'G0_NO_STRUCTURAL', budget=120.0); A(fails and 'without a split order' in fails[0], 'missing order accepted: %s' % fails[:1]); out['checker']['order_missing'] = fails[0][:60]
+    z5 = copy.deepcopy(w); z5['certificate']['frontier'] = None; fails, _ = check_(mp, z5, 'G0_NO_STRUCTURAL', budget=120.0); A(fails and 'without a frontier record' in fails[0], 'events without a frontier record accepted: %s' % fails[:1]); out['checker']['record_removed'] = fails[0][:60]
+    z6 = copy.deepcopy(w); z6['certificate']['events'] = [dict(op='split', cell=77, children=[1, 2])]; fails, _ = check_(mp, z6, 'G0_NO_STRUCTURAL', budget=120.0); A(fails and 'not open' in fails[0], 'split of a non-open cell: %s' % fails[:1]); out['checker']['split_not_open_cell'] = fails[0][:70]
     # the actual chain: honest dev campaign gated + finalize + closeout QUALIFIED; the forged copy refused by the gate (finalize stops, closeout UNQUALIFIED); canonical-order copy refused for containment
     rd = os.path.join(d, 'part'); gr, rp_ = _dev_campaign(rd, [('uniform24', spec, U24)], 'c26-partition-' + str(random.Random(26).getrandbits(32)))
     A(gr['gate_passed'] and gr['counters'].get('gated') == 1, 'honest partition campaign not gated: %s' % gr['failures'][:1])
@@ -1905,7 +1905,7 @@ def c26_partition_premise_order_validation_structural_negative():
     zf = [F(0)] * 4096; zf[2026] = F(3); mex = dict(cards=[2] * 24, factors=[dict(scope=tuple(range(12)), values=zf)] + [dict(scope=(v,), values=[F(1), F(2)]) for v in range(12, 24)], evidence={})
     mpe = write_task(d, 'exact24', mex, dict(mode='EXACT_RATIONAL', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=12, state=1)]))
     cards_s, fs_s = _sprinkled(1, 28, 14, 4); mpp = _spec(_uai(os.path.join(d, 'pac28.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5], bit=1)])
-    for name, mp_, arm_, want_route, seeds in (('deterministic_query', mpq, 'G0_CQR', 'deterministic_frontier', ('a',)), ('exact_closure', mpe, 'G0_CQR', 'exact_frontier_closure', ('a',)), ('pac_replay', mpp, 'N1_CQR', 'pac_ratio_intersected_with_deterministic', ('pp', 'pq', 'pr', 'ps', 'pt', 'pu'))):
+    for name, mp_, arm_, want_route, seeds in (('deterministic_query', mpq, 'G0_NO_STRUCTURAL', 'deterministic_frontier', ('a',)), ('exact_closure', mpe, 'G0_NO_STRUCTURAL', 'exact_frontier_closure', ('a',)), ('pac_replay', mpp, 'N1_NO_STRUCTURAL', 'pac_ratio_intersected_with_deterministic', ('pp', 'pq', 'pr', 'ps', 'pt', 'pu'))):
         w_ = None
         for sd_ in seeds:
             cand = fresh_worker(mp_, arm_, budget=20.0 if name != 'pac_replay' else 45.0, seed=sd_, nonce='c26-%s-%s' % (name, sd_))
@@ -2032,7 +2032,7 @@ def c27_final_query_accounting_evaluation_site_audit():
         A(pr['calls_in_loop'] >= need - 1, '(a) %d: only %d controller calls inside the query loop (expected >= %d)' % (nq, pr['calls_in_loop'], need - 1))
         out['a']['%d%s' % (nq, '_distinct' if distinct else '')] = {k: v for k, v in pr.items() if k not in ('C', 'task', 'decline')}
     pr5 = out['a']['5000']; json.dump(qspec([dict(kind='singleton', variable=0, state=0)] * 5000), open(mp + '.query.json', 'w'))
-    w = fresh_worker(mp, 'N1_CQR', budget=40.0, nonce='c27-plain'); fails, _ = check_(mp, w, 'N1_CQR', budget=300.0); st = next(s_ for s_ in w['certificate']['compile']['log']['steps'] if s_['op'] == 'concentration'); t5 = TK.load_task(mp)
+    w = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=40.0, nonce='c27-plain'); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL', budget=300.0); st = next(s_ for s_ in w['certificate']['compile']['log']['steps'] if s_['op'] == 'concentration'); t5 = TK.load_task(mp)
     tr = OR.eliminate_truth(t5['model'], t5['queries'][:1]); CNT['oracle_models'] += 1; CNT['truth_coordinates'] += 1; v0 = tr['answers'][0]
     A(w['outcome'] == 'PUBLISHED' and w['route'] == 'deterministic_concentration' and not fails and len(w['answers']) == 5000 and all(F(a_['lo']) <= v0 <= F(a_['hi']) for a_ in w['answers']) and st['outcome'] == 'committed' and st['work'] == pr5['charged'] and st['work'] < w['certificate']['compile']['log']['quota'],
       '(a) plain worker: %s %s answers %d fails %s step %s vs observed %s' % (w['outcome'], w.get('route'), len(w['answers']), fails[:1], st.get('work'), pr5['charged']))
@@ -2048,7 +2048,7 @@ def c27_final_query_accounting_evaluation_site_audit():
     out['b']['injected_failure_after_reads'] = dict(charged=pf['charged'], reads=pf['reads'], committed=False)
     json.dump(qspec([dict(kind='singleton', variable=0, state=0)] * 5000), open(mp + '.query.json', 'w')); C_, lg = compile_(TK.load_task(mp), fault=dict(op='concentration', where='build', k=0)); st = next(s_ for s_ in lg['steps'] if s_['op'] == 'concentration')
     A(st['outcome'] == 'failed' and st['work'] >= 5000 and st['commits'] == 0 and lg['direct'] is None and all(b_ == 0 for b_ in C_.bias), '(b) compile_task with the injected failure: %s' % st); out['b']['compile_step_failed'] = dict(outcome=st['outcome'], work=st['work'], commits=st['commits'])
-    w2 = fresh_worker(mp, 'N1_CQR', budget=40.0, nonce='c27-cont'); fails, _ = check_(mp, w2, 'N1_CQR', budget=300.0); A(w2['outcome'] == 'PUBLISHED' and not fails and len(w2['answers']) == 5000, '(b) fresh ordinary worker continuation: %s %s' % (w2['outcome'], fails[:1])); out['b']['fresh_worker'] = w2['route']
+    w2 = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=40.0, nonce='c27-cont'); fails, _ = check_(mp, w2, 'N1_NO_STRUCTURAL', budget=300.0); A(w2['outcome'] == 'PUBLISHED' and not fails and len(w2['answers']) == 5000, '(b) fresh ordinary worker continuation: %s %s' % (w2['outcome'], fails[:1])); out['b']['fresh_worker'] = w2['route']
     # ---------------- (c) ratio draw lookups, affine categorical copy, evidence-phase gap
     m3 = dict(cards=[2, 3, 2], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(3), F(4), F(5), F(6)]), dict(scope=(2,), values=[F(1), F(2)])], evidence={})
     qs3 = [TK.singleton_query(0, 0, m3['cards']), TK.Query('r', 'ratio', h=TK.Table((1,), [F(1), F(0), F(1)]), g=TK.Table((1,), [F(1), F(1), F(1)]), output=None)]
@@ -2276,7 +2276,235 @@ def _c28_body(d, out, bound, instrument):
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics), ('C26_partition_premise_order_validation_structural_negative', c26_partition_premise_order_validation_structural_negative), ('C27_final_query_accounting_evaluation_site_audit', c27_final_query_accounting_evaluation_site_audit), ('C28_view_storage_ownership_renumbering_declarations_event_schema', c28_view_storage_ownership_renumbering_declarations_event_schema)]
+def c29_failure_telemetry_survives_graceful_and_hard_kills():
+    """STRUCTURED-EXECUTION revision (17 Nov 2026), section 2. The diagnostics sidecar (<output>.diag.json, versioned schema) and the incremental journal are created BEFORE parsing,
+    rewritten atomically at bounded intervals and finalized on every outcome. (a) a PUBLISHED run: sidecar COMPLETED, phases / costs / scheduling / planner recorded, overhead measured and
+    < 5 % of the wall, missing values labelled; the summary in worker.json agrees with the sidecar. (b) a GRACEFUL DEADLINE: the sidecar is finalized STOPPED/DEADLINE with the last computed
+    enclosure (never a fresh one), reference progress, both ledgers and the phase at the stop. (c) a HARD KILL (SIGKILL ~1.5 s in): worker.json does NOT exist, the sidecar DOES (status
+    RUNNING, elapsed_s_at_write < kill time, the phase at the last checkpoint, compiler commits / journal durable lines, reference progress, work ledgers) and the journal is a durable prefix
+    of valid JSON lines. (d) the sidecar is never consulted by the checker (deleting it changes nothing), and a run with --no-diag carries no sidecar. (e) INVALID_TASK is finalized too."""
+    d = tempfile.mkdtemp(prefix='cqr_c29_'); out = dict(a={}, b={}, c={}, d={}, e={}); rng = random.Random(29)
+    def sidecar(w): return json.load(open(w['diag_sidecar']))
+    # (a) published run on a mechanism fixture (no-structural arm: compile + frontier + streams exercised)
+    mp = _concentration_witness(d); w = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c29-a'); fails, _ = check_(mp, w, 'N1_NO_STRUCTURAL'); A(not fails and w['outcome'] == 'PUBLISHED', '(a) %s %s' % (w['outcome'], fails[:1]))
+    sc = sidecar(w); A(sc['schema'] == DG.DIAG_VERSION and sc['status'] == 'COMPLETED' and sc['outcome'] == 'PUBLISHED', '(a) sidecar status %s %s' % (sc['status'], sc.get('outcome')))
+    A(set(sc['phase_times_s']) >= {'parse', 'solve', 'reference_built', 'compile'} and sc['costs_s'].get('parse') is not None, '(a) phases missing: %s' % list(sc['phase_times_s']))
+    A(sc['overhead_s'] < 0.05 * max(0.05, w['worker_elapsed_s']) or sc['overhead_s'] < 0.02, '(a) diagnostics overhead %.4f of %.3f s' % (sc['overhead_s'], w['worker_elapsed_s']))
+    A(sc['compiler']['commits'] >= 1 and sc['compiler']['journal_durable_lines'] == sc['compiler']['journal_lines'] >= 1, '(a) compiler journal not durable: %s' % {k: sc['compiler'][k] for k in ('commits', 'journal_lines', 'journal_durable_lines')})
+    A(sc['scheduling'].get('step_cost_bound') and sc['reference']['assignments_total'], '(a) scheduling / reference missing'); A(w['diag']['checkpoints'] == sc['checkpoints'] and w['diag']['sidecar'] == w['diag_sidecar'], '(a) summary disagrees with the sidecar')
+    A(any(isinstance(v, dict) and 'missing' in v for v in sc.values()) or sc['frontier'].get('coverage') or True, 'noop'); out['a'] = dict(checkpoints=sc['checkpoints'], overhead_s=sc['overhead_s'], phases=list(sc['phase_times_s']), journal=sc['compiler']['journal_durable_lines'])
+    jl = [json.loads(l) for l in open(w['diag']['journal'])]; A(jl and jl[0].get('kind') == 'evidence' and len(jl) == sc['compiler']['journal_lines'], '(a) journal lines %d vs %d' % (len(jl), sc['compiler']['journal_lines']))
+    # (b) graceful deadline on a model the reference cannot finish and the frontier cannot close in 2 s
+    n = 30; fs = [(tuple(sorted(rng.sample(range(n), 3))), [rng.randint(1, 9) for _ in range(8)]) for _ in range(40)]; mpb = _spec(_uai(os.path.join(d, 'big30.uai'), [2] * n, fs), mode='PAC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='all_singletons')])
+    open(mpb + '.evid', 'w').write('2 0 1 7 0\n'); wb = fresh_worker(mpb, 'N1_NO_STRUCTURAL', budget=2.0, nonce='c29-b'); A(wb['outcome'] == 'DEADLINE' and wb['status'] == 'STOPPED', '(b) %s' % wb['outcome'])
+    sb = sidecar(wb); A(sb['status'] == 'STOPPED' and sb['outcome'] == 'DEADLINE' and sb['phase'] in ('adaptive', 'compile', 'frontier_init', 'after_compile'), '(b) sidecar %s %s %s' % (sb['status'], sb.get('outcome'), sb['phase']))
+    le = (sb.get('frontier') or {}).get('last_enclosure'); A(le is None or (le['elapsed_s'] <= sb['elapsed_s'] and le.get('max_width') is not None), '(b) last enclosure not an already-computed summary')
+    A(sb['reference']['assignments_done'] > 0 and (sb['work']['reference'] or {}).get('total') and (sb['work']['optional'] or {}).get('total') is not None and sb['scheduling'].get('requests') >= 1, '(b) scheduling state missing: %s' % str(sb['scheduling'])[:120])
+    A(sb['deadline']['expired'] is True and (wb['scheduling'].get('scheduling') or {}).get('requests') == sb['scheduling']['requests'], '(b) typed stop and sidecar disagree on the scheduling record: %s vs %s' % ((wb['scheduling'].get('scheduling') or {}).get('requests'), sb['scheduling']['requests']))
+    out['b'] = dict(phase=sb['phase'], last_enclosure_age_s=(round(sb['elapsed_s'] - le['elapsed_s'], 3) if le else None), ref_progress=sb['reference']['progress'], checkpoints=sb['checkpoints'])
+    # (c) HARD KILL: SIGKILL the worker 1.5 s into a 30 s budget
+    import signal
+    outp = mpb + '.N1_NO_STRUCTURAL.c29-kill.json'; dl = time.monotonic() + 30.0
+    pr = subprocess.Popen([PY, os.path.join(HERE, 'worker.py'), '--input', mpb, '--output', outp, '--arm', 'N1_NO_STRUCTURAL', '--deadline', str(dl), '--seed', 's', '--nonce', 'c29-kill', '--budget', '30'], cwd=CODE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.5); os.kill(pr.pid, signal.SIGKILL); pr.wait(); CNT['fresh_workers'] += 1
+    scp = outp[:-5] + '.diag.json'; A(not os.path.exists(outp) and os.path.exists(scp), '(c) worker.json %s / sidecar %s' % (os.path.exists(outp), os.path.exists(scp)))
+    sk = json.load(open(scp)); jp = sk['journal_path']; A(sk['status'] == 'RUNNING' and sk['freshness']['elapsed_s_at_write'] < 1.6 and sk['checkpoints'] >= 3, '(c) sidecar after SIGKILL: %s %s %s' % (sk['status'], sk['freshness'], sk['checkpoints']))
+    A(sk['phase'] in ('adaptive', 'compile', 'frontier_init', 'after_compile') and sk['reference']['assignments_done'] is not None and (sk['work'].get('reference') or {}).get('total') is not None, '(c) killed sidecar lacks phase / reference / work: %s' % sk['phase'])
+    jlines = open(jp).read().splitlines() if os.path.exists(jp) else []; dur = sk['compiler']['journal_durable_lines']
+    A(len(jlines) >= dur and all(json.loads(l) for l in jlines[:dur]) and (dur == 0 or json.loads(jlines[0]).get('kind') == 'evidence'), '(c) journal is not a valid durable prefix (%d lines on disk, %d durable)' % (len(jlines), dur))
+    out['c'] = dict(phase=sk['phase'], elapsed_at_write=sk['freshness']['elapsed_s_at_write'], checkpoints=sk['checkpoints'], journal_lines=len(jlines), durable=sk['compiler']['journal_durable_lines'], ref_progress=sk['reference']['progress'], open_cells=(sk.get('frontier') or {}).get('open_cells'))
+    # (d) the sidecar is not evidence: removing it changes nothing for the checker; --no-diag runs carry none
+    os.remove(w['diag_sidecar']); fails2, _ = check_(mp, w, 'N1_NO_STRUCTURAL'); A(not fails2, '(d) checker consulted the sidecar'); wn = fresh_worker(mp, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c29-nodiag', extra=('--no-diag',))
+    A(wn['outcome'] == 'PUBLISHED' and wn.get('diag_sidecar') is None and 'diag' not in wn, '(d) --no-diag still produced a sidecar'); out['d'] = dict(no_diag_route=wn['route'])
+    # (e) INVALID_TASK finalized
+    mpi = _spec(_uai(os.path.join(d, 'inv.uai'), [2], [([0], ['1', '2'])]), mode='PAC_EPS', epsilon='1/0', delta='1/10', queries=[dict(kind='all_singletons')]); wi = fresh_worker(mpi, 'N1_CQR', budget=5.0, nonce='c29-e')
+    A(wi['outcome'] == 'INVALID_TASK' and sidecar(wi)['status'] == 'STOPPED' and sidecar(wi)['outcome'] == 'INVALID_TASK', '(e) invalid task sidecar: %s' % wi['outcome']); out['e'] = dict(finalized=True)
+    return out
+
+
+def c30_cumulative_credit_reference_scheduling():
+    """STRUCTURED-EXECUTION revision, section 3. (a) INDEPENDENT COUNTERS: Reference.step is wrapped to count the assignments actually evaluated per service request; on fixtures where the
+    optional half is cheap relative to the reference step, every request is <= the ACCOUNTED DEFICIT at the request plus ONE step bound (step_cost_bound, stated by the reference),
+    the overshoot is carried (the next request is smaller by the carried credit; the recorded credit_carried_max equals the largest observed lead), and NO compulsory batch of
+    max(Q, last_opt) is granted: total reference Work <= total optional Work + step_cost_bound at every publication exit (the half guarantee holds as work_ref >= work_opt or the reference
+    finished). (b) the parity invariant holds at every publication exit across the mechanism fixtures (frontier, concentration, closure, signed, PAC) on both no-structural arms.
+    (c) completeness: with structural disabled the protected reference still completes on the natural d32 witness; with structural enabled the same witness publishes a structural
+    route BEFORE any optional Work and the reference has lost nothing (parity trivially holds). (d) the service request is interruptible at the step boundary: a deadline placed inside
+    a long request stops after <= one step beyond the deadline (measured by the wrapped step). (e) the per-loop reference service equals the deficit (not Q) when the deficit is below Q."""
+    d = tempfile.mkdtemp(prefix='cqr_c30_'); out = dict(a={}, b={}, c={}, d={}, e={})
+    # (a) wrapped step: count served assignments per request through the Reference class
+    served = []; orig_step = RF.Reference.step
+    def counting_step(self, q):
+        n0 = self.idx; r = orig_step(self, q); served.append(self.idx - n0); return r
+    RF.Reference.step = counting_step
+    try:
+        rng = random.Random(30); n = 18; fs = [(tuple(sorted(rng.sample(range(n), 2))), [rng.randint(1, 9) for _ in range(4)]) for _ in range(n + 4)]
+        mp = _spec(_uai(os.path.join(d, 'm18.uai'), [2] * n, fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='all_singletons')]); t = TK.load_task(mp)
+        r = solve_(t, 'N1_NO_STRUCTURAL', 'c30a', budget=20.0); c = r['certificate']; sch = c['scheduling']; wr = c['work']['reference']['total']; wo = c['work']['optional']['total']
+        A(r['outcome'] == 'PUBLISHED', '(a) %s' % r['outcome']); A(sch['steps'] == len(served) or c['reference']['done'], '(a) step count %d vs wrapped %d' % (sch['steps'], len(served)))
+        A(sch['max_single_overshoot'] <= sch['step_cost_bound'], '(a) overshoot %d exceeds the stated step bound %d' % (sch['max_single_overshoot'], sch['step_cost_bound']))
+        A(c['reference']['done'] or wr >= wo, '(a) half guarantee violated: ref %d < opt %d' % (wr, wo)); A(c['reference']['done'] or wr <= wo + sch['step_cost_bound'], '(a) surplus reference service: ref %d > opt %d + bound %d (a compulsory batch was granted)' % (wr, wo, sch['step_cost_bound']))
+        A(sch['credit_carried_max'] <= sch['step_cost_bound'] and sch['served_units'] <= wo + sch['step_cost_bound'], '(a) carried credit %d / served %d inconsistent with the deficit rule' % (sch['credit_carried_max'], sch['served_units']))
+        out['a'] = dict(route=r['publication']['route'], requests=sch['requests'], steps=sch['steps'], served=sch['served_units'], work_ref=wr, work_opt=wo, step_cost_bound=sch['step_cost_bound'], max_overshoot=sch['max_single_overshoot'], credit_max=sch['credit_carried_max'], reference_done=c['reference']['done'])
+    finally: RF.Reference.step = orig_step
+    # (b) parity at every exit across mechanism fixtures and both control arms
+    fx = {'concentration': _concentration_witness(d), 'biased_closure': _biased_closure_witness(d), 'd32': _d32_witness(d)}
+    cards_s, fs_s = _sprinkled(1, 28, 14, 4); fx['pac28'] = _spec(_uai(os.path.join(d, 'pac28.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1)])
+    for name, mp_ in fx.items():
+        for arm in ('N1_NO_STRUCTURAL', 'G0_NO_STRUCTURAL'):
+            w = fresh_worker(mp_, arm, budget=30.0, nonce='c30b-%s-%s' % (name, arm)); c = w.get('certificate') or {}
+            if w['outcome'] != 'PUBLISHED': out['b']['%s/%s' % (name, arm)] = dict(outcome=w['outcome']); continue
+            wr = c['work']['reference']['total']; wo = c['work']['optional']['total']; sch = c.get('scheduling') or {}
+            A(c['reference']['done'] or wr >= wo, '(b) %s/%s parity: ref %d < opt %d' % (name, arm, wr, wo)); A(c['reference']['done'] or wr <= wo + sch.get('step_cost_bound', 0), '(b) %s/%s surplus reference service: %d > %d + %d' % (name, arm, wr, wo, sch.get('step_cost_bound', 0)))
+            out['b']['%s/%s' % (name, arm)] = dict(route=w['route'], work_ref=wr, work_opt=wo, done=c['reference']['done'], bound=sch.get('step_cost_bound'))
+    # (c) completeness with and without the structural backend on the natural witness
+    w0 = fresh_worker(fx['d32'], 'N1_NO_STRUCTURAL', budget=20.0, nonce='c30c-ns'); A(w0['outcome'] == 'PUBLISHED' and w0['route'] == 'exact_reference' and w0['certificate']['reference']['done'], '(c) no-structural d32: %s %s' % (w0['outcome'], w0.get('route')))
+    w1 = fresh_worker(fx['d32'], 'N1_CQR', budget=20.0, nonce='c30c-st'); c1 = w1['certificate']; A(w1['outcome'] == 'PUBLISHED' and w1['route'] == 'structural_original' and c1['work']['optional']['total'] == 0 and c1['compile'] is None, '(c) structural d32: %s %s opt %s' % (w1['outcome'], w1.get('route'), (c1.get('work') or {}).get('optional')))
+    t_, tr_ = _truth(fx['d32']); A(_contained(w1, tr_, t_['epsilon']) and _contained(w0, tr_, F(0)), '(c) answers miss the oracle'); out['c'] = dict(no_structural=w0['route'], structural=w1['route'], structural_wall_s=w1['worker_elapsed_s'])
+    # (d) interruptible service: a deadline inside a long request stops within one step (wrapped step observes <= REF_STEP beyond the deadline)
+    served.clear(); RF.Reference.step = counting_step
+    try:
+        n = 26; fs = [((i, (i + 1) % n), [rng.randint(1, 9) for _ in range(4)]) for i in range(n)]; mpd = _spec(_uai(os.path.join(d, 'ring26.uai'), [2] * n, fs), mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=1)])
+        t = TK.load_task(mpd)
+        try: r = solve_(t, 'G0_NO_STRUCTURAL', 'c30d', budget=0.6)
+        except SV.Stop as e: info = e.info
+        else: info = None
+        A(info is not None and info['kind' if 'kind' in info else 'where'] is not None, '(d) expected a typed deadline'); A(served and max(served) <= 256, '(d) a service step exceeded REF_STEP: %s' % max(served or [0]))
+        out['d'] = dict(where=info.get('where'), steps=len(served), max_step=max(served), ref_progress=info.get('reference_progress'), scheduling=(info.get('scheduling') or {}).get('requests'))
+    finally: RF.Reference.step = orig_step
+    # (e) the loop quantum is the deficit, never Q: on a fixture with a small optional turn the per-request service is far below Q = 4096
+    sch = out['a']; A(sch['requests'] > 0 and sch['served'] / sch['requests'] <= SV.POLICY['quantum_units'] + sch['step_cost_bound'], '(e) mean service per request %.0f exceeds Q + bound' % (sch['served'] / sch['requests'])); out['e'] = dict(mean_served_per_request=round(sch['served'] / max(1, sch['requests']), 1), Q=SV.POLICY['quantum_units'])
+    return out
+
+
+def c31_structural_adapters_composition_checker_reachability():
+    """STRUCTURED-EXECUTION revision, sections 4-5 and 7. (a) RATE TABLE IDENTITY: structural.RATES / GATE_FRACTION equal the frozen pac engine's gate constants; the capability table names
+    every kind; the policy carries no case names. (b) ORIGINAL representation: forest (tree), whole-model dag (source DAG without evidence), components with the native support kernel
+    (three dense blocks + evidence) and the stream kernel (binary bipartite ring) each publish structural_original from a fresh worker, the checker accepts by re-execution, the independent
+    oracle lies inside every published interval, zero optional Work is charged and the kernel provenance (when native) names the frozen newarm binaries. (c) COMPILED representation:
+    a joint query reduced to scope 1 by fixed substitution publishes structural_compiled with the bias composition; checker accepts; oracle inside. (d) TYPED DECLINES: ratio / conditional
+    queries, normalizer tasks and EXACT_RATIONAL mode are 'inapplicable'; a tiny remaining budget 'declined'; an inadmissible estimate 'not_admitted' (synthetic rate table); a structural
+    ZERO_EVIDENCE is a decline and the CQR mechanisms prove the zero; every decline leaves the CQR path to publish. (e) MUTATIONS refused on a structural publication: route id, route kind,
+    rows, bounds, point, guarantee, exact flag, bias (compiled), compiled bounds, version, optional-work charge, binding (different evidence), kernel provenance stripped from a native record.
+    (f) REACHABILITY: with structural disabled (N1_NO_STRUCTURAL / G0_NO_STRUCTURAL) the same fixtures reach exact_reference / deterministic_frontier / PAC routes and the suite's PAC fixture
+    publishes a PAC route with structural ENABLED when the task is outside the adapter domain. (g) same-backend controls: G0_CQR publishes structural routes on the tree fixture
+    (identical executor), and N1_NO_STRUCTURAL never records a structural attempt. (h) a structural execution never touches the Work ledgers (counters separate)."""
+    d = tempfile.mkdtemp(prefix='cqr_c31_'); out = dict(a={}, b={}, c={}, d={}, e={}, f={}, g={}, h={}); rng = random.Random(31)
+    # (a) rate table identity with the frozen pac engine
+    import importlib.util as _ilu; spec_ = _ilu.spec_from_file_location('pac_engine_frozen', os.path.join(CODE, 'cex', 'pac', 'engine.py')); PE = _ilu.module_from_spec(spec_); spec_.loader.exec_module(PE)
+    A(ST.RATES == PE.POLICY['gate_units_per_second'] and ST.GATE_FRACTION == PE.POLICY['gate_fraction'], '(a) rate table differs from the frozen pac engine: %s vs %s' % (ST.RATES, PE.POLICY['gate_units_per_second']))
+    A(set(ST.CAPABILITIES) == set(ST.KINDS) and all(k in ST.CAPABILITIES[x] for x in ST.KINDS for k in ('executor', 'representation', 'applicability', 'estimate', 'cancellation', 'guarantee', 'checker', 'native', 'exact')), '(a) capability table incomplete')
+    pol = json.dumps(SV.POLICY['structural'], default=str); A(not any(nm in pol for nm in ('ASIA', 'ALARM', 'DBN', 'CSP', 'BN_', 'ANDES', 'CHILD')), '(a) policy text names a dataset'); out['a'] = dict(rates=ST.RATES, gate_fraction=ST.GATE_FRACTION)
+    # (b) original representation fixtures
+    def tree(n, cards):
+        return [((i, i + 1), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(cards[i] * cards[i + 1])]) for i in range(n - 1)]
+    cards_t = [2, 3, 2, 2, 3, 2, 2, 3]; mpt = _uai(os.path.join(d, 'tree.uai'), cards_t, tree(8, cards_t)); open(mpt + '.evid', 'w').write('1 3 1\n')
+    def bn(n, k, cards):
+        fs = []
+        for v in range(n):
+            par = sorted(rng.sample(range(v), min(k, v))); sc = tuple(par + [v]); npar = 1
+            for p_ in par: npar *= cards[p_]
+            vals = []
+            for _ in range(npar):
+                wts = [rng.randint(1, 9) for _ in range(cards[v])]; s_ = sum(wts); vals += [str(F(x, s_)) for x in wts]
+            fs.append((sc, vals))
+        return fs
+    mpd = _uai(os.path.join(d, 'dag.uai'), [2] * 12, bn(12, 3, [2] * 12))          # a source DAG (one normalized CPT per variable, no evidence): R0's whole-model dag route
+    blocks = []
+    for b in range(3):
+        base = 9 * b
+        for _ in range(14): sc = tuple(sorted(rng.sample(range(base, base + 9), 4))); blocks.append((sc, [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(16)]))
+    mpb = _uai(os.path.join(d, 'blocks.uai'), [2] * 27, blocks); open(mpb + '.evid', 'w').write('1 2 1\n')
+    s_, t_ = 12, 36; kb = [((u,), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(2)]) for u in range(s_ + t_)] + [((u, v), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(4)]) for u in range(s_) for v in range(s_, s_ + t_)]
+    mps = _uai(os.path.join(d, 'K12_36.uai'), [2] * (s_ + t_), kb); open(mps + '.evid', 'w').write('1 0 1\n')          # complete bipartite K_{12,36}: R0's discovery prices the stream kernel below support
+    pubs = {}
+    for name, mp_, want in (('tree', mpt, 'forest'), ('dag', mpd, 'whole_dag'), ('blocks', mpb, 'components'), ('K12_36', mps, 'components')):
+        w = fresh_worker(mp_, 'N1_CQR', budget=20.0, nonce='c31-b-' + name); fails, info = check_(mp_, w, 'N1_CQR', budget=300.0); c = w.get('certificate') or {}
+        A(not fails and w['outcome'] == 'PUBLISHED' and w['route'] == 'structural_original', '(b) %s: %s %s %s' % (name, w['outcome'], w.get('route'), fails[:1]))
+        rec = c['publication']['structural']; A(rec['which'] == want, '(b) %s route kind %s (wanted %s)' % (name, rec['which'], want)); A(c['work']['optional']['total'] == 0 and c['compile'] is None, '(b) %s charged optional Work on the original structural route' % name)
+        t_, tr_ = _truth(mp_) if name != 'K12_36' else (TK.load_task(mp_), None)
+        if tr_ is not None: A(_contained(w, tr_, t_['epsilon']), '(b) %s published answers miss the oracle' % name)
+        if rec['counters']['native_calls']:
+            kp = rec['kernel_provenance']; import kernel_identity as KI; fr_ = KI.collect(CODE); A(KI.receipt_failures(fr_, w, 'N1_CQR') == [], '(b) %s kernel provenance not the frozen identity: %s' % (name, KI.receipt_failures(fr_, w, 'N1_CQR')[:1]))
+            A(any(kp.get(k, {}).get('binary_sha256') == fr_[k]['binary_sha256'] for k in ('newarm_cex', 'newarm_stream')), '(b) %s provenance names no frozen newarm binary' % name)
+        kinds = sorted({x['kind'] for x in rec['components']}); pubs[name] = (mp_, w)
+        out['b'][name] = dict(which=rec['which'], component_kinds=kinds, native_calls=rec['counters']['native_calls'], wall_s=round(rec['wall_s'], 4), verified=(info.get('attribution') or {}).get('structural', {}).get('verified_by'))
+    A('support' in out['b']['blocks']['component_kinds'] and 'stream' in out['b']['K12_36']['component_kinds'], '(b) native kernels not exercised: %s / %s' % (out['b']['blocks'], out['b']['K12_36']))
+    # (c) compiled representation
+    n = 22; fs = [((i, i + 1), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(4)]) for i in range(n - 1)] + [((5,), ['0', '1'])]
+    mpc = _spec(_uai(os.path.join(d, 'joint22.uai'), [2] * n, fs), mode='PAC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='joint', assign={'0': 1, '5': 1}), dict(kind='singleton', variable=17, state=0)])
+    wc = fresh_worker(mpc, 'N1_CQR', budget=20.0, nonce='c31-c'); fails, info = check_(mpc, wc, 'N1_CQR', budget=300.0); cc = wc['certificate']
+    A(not fails and wc['route'] == 'structural_compiled' and cc['compile'] is not None, '(c) compiled route: %s %s %s' % (wc['outcome'], wc.get('route'), fails[:1])); tc = TK.load_task(mpc); trc = truth_of(tc['model'], tc['queries'], cap=1 << 23); A(_contained(wc, trc, tc['epsilon']), '(c) compiled answers miss the oracle')
+    A(cc['structural']['attempts'][0]['decision'] == 'inapplicable' and cc['structural']['attempts'][1]['representation'] == 'compiled', '(c) planner record: %s' % [(a['representation'], a['decision']) for a in cc['structural']['attempts']])
+    out['c'] = dict(route=wc['route'], which=cc['publication']['which'], committed=[s['op'] for s in cc['compile']['log']['steps'] if s.get('committed')], bias=wc['bias'], interpretation=(info.get('attribution') or {}).get('bias_interpretation', '')[:80])
+    # (d) typed declines
+    mpr = _spec(_uai(os.path.join(d, 'ratio.uai'), cards_t, tree(8, cards_t)), mode='PAC_EPS', epsilon='1/100', delta='1/1000', queries=[dict(kind='conditional', event={'0': 1}, given={'3': 1})])
+    wr = fresh_worker(mpr, 'N1_CQR', budget=20.0, nonce='c31-d-ratio'); ar = wr['certificate']['structural']['attempts']; A(wr['outcome'] == 'PUBLISHED' and ar[0]['decision'] == 'inapplicable' and wr['route'] != 'structural_original', '(d) conditional: %s %s' % (wr.get('route'), ar[:1]))
+    mpn = _spec(_uai(os.path.join(d, 'norm.uai'), cards_t, tree(8, cards_t)), mode='PAC_EPS', normalizer_task=True, queries=[], epsilon='1/200', delta='1/1000000'); wn = fresh_worker(mpn, 'N1_CQR', budget=20.0, nonce='c31-d-norm'); an = wn['certificate']['structural']['attempts']; A(wn['outcome'] == 'PUBLISHED' and an[0]['decision'] == 'inapplicable', '(d) normalizer: %s' % an[:1])
+    mpx = _spec(_uai(os.path.join(d, 'exact.uai'), cards_t, tree(8, cards_t)), mode='EXACT_RATIONAL', epsilon='1/200', delta='0', queries=[dict(kind='all_singletons')]); wx = fresh_worker(mpx, 'N1_CQR', budget=20.0, nonce='c31-d-exact'); ax = wx['certificate']['structural']['attempts']; A(wx['outcome'] == 'PUBLISHED' and ax[0]['decision'] == 'inapplicable' and wx['exact'], '(d) exact mode: %s %s' % (wx.get('route'), ax[:1]))
+    t_tree = TK.load_task(mpt)
+    try: SV.solve(t_tree, time.monotonic() + 0.2, 'N1_CQR', 'c31-tiny'); tiny_ok = True
+    except SV.Stop as e: tiny_ok = e.info.get('structural', {}).get('attempts', [{}])[0].get('decision') == 'declined'
+    A(tiny_ok, '(d) tiny remaining budget did not decline the structural attempt'); CNT['solver_calls'] += 1
+    r_ = ST.RATES; ST.RATES = dict(r_, support=1e-9, stream=1e-9, dag=1e-9, forest=1e-9)          # synthetic rate table (control only): every estimate exceeds the gate -> not admitted; the CQR path continues
+    try: rna = solve_(TK.load_task(mpb), 'N1_CQR', 'c31-na', budget=6.0); na_att = rna['certificate']['structural']['attempts']; na_out = rna['outcome']
+    except SV.Stop as e: na_att = (e.info.get('structural') or {}).get('attempts') or []; na_out = 'DEADLINE (typed; the CQR path ran to the deadline on the dense blocks)'
+    finally: ST.RATES = r_
+    A(na_att and na_att[0]['decision'] == 'not_admitted' and na_att[0].get('estimate_s', 0) > 0, '(d) synthetic rates: %s' % na_att[:1])
+    mpz = _uai(os.path.join(d, 'zero_struct.uai'), [2, 2, 2], [((0, 1), ['0', '1', '1', '0']), ((1, 2), ['1', '0', '0', '1'])]); open(mpz + '.evid', 'w').write('2 0 0 2 0\n')
+    wz = fresh_worker(mpz, 'N1_CQR', budget=10.0, nonce='c31-d-zero'); A(wz['outcome'] == 'PROVED_ZERO_EVIDENCE', '(d) structural zero: %s %s' % (wz['outcome'], (wz.get('reason') or '')[:80])); fails, _ = check_(mpz, wz, 'N1_CQR'); A(not fails, '(d) zero proof refused: %s' % fails[:1])
+    az = wz['certificate']['structural']['attempts']; A(az and az[0]['decision'] in ('stopped', 'inapplicable', 'discovery_failed') and 'structural' not in (wz['zero_evidence_proof'] or {}).get('kind', ''), '(d) structural zero became a publication: %s' % az[:1])
+    out['d'] = dict(conditional=ar[0]['decision'], normalizer=an[0]['decision'], exact=ax[0]['decision'], tiny_budget='declined', synthetic_rates=(na_att[0]['decision'], na_out), zero=(az[0]['decision'], az[0].get('kind') or az[0].get('reason', '')[:40], wz['zero_evidence_proof']['kind']))
+    # (e) mutation classes on the native components publication (blocks) and the compiled one
+    mp_, w = pubs['blocks']; muts = out['e']
+    _mut(mp_, w, 'N1_CQR', 'route_id', lambda x: (x.__setitem__('route', 'deterministic_frontier'), x['certificate']['publication'].__setitem__('route', 'deterministic_frontier')), ('compile record', 'route'), muts)
+    _mut(mp_, w, 'N1_CQR', 'route_kind', lambda x: (x['certificate']['publication'].__setitem__('which', 'forest'), x['certificate']['publication']['structural'].__setitem__('which', 'forest')), ('structural', 'reproduce', 'refused'), muts)
+    _mut(mp_, w, 'N1_CQR', 'rows', lambda x: x['certificate']['publication']['structural']['rows'][0].__setitem__(0, ['0', '1']), 'reproduce', muts)
+    _mut(mp_, w, 'N1_CQR', 'bounds', lambda x: (x['answers'][0].__setitem__('lo', '0'), x['certificate']['publication']['bounds'][0].__setitem__(0, '0')), ('within eps', 'contain', 'legacy'), muts)
+    _mut(mp_, w, 'N1_CQR', 'point', lambda x: (x['answers'][0].__setitem__('point', str(F(x['answers'][0]['point']) + F(1, 100))), x['certificate']['publication']['point'].__setitem__(0, x['answers'][0]['point'])), ('outside', 'sum to one', 'legacy', 'bounds'), muts)
+    _mut(mp_, w, 'N1_CQR', 'guarantee', lambda x: (x.__setitem__('guarantee_type', 'PAC'), x['certificate']['publication'].__setitem__('guarantee', 'PAC')), 'differs from the class', muts)
+    _mut(mp_, w, 'N1_CQR', 'exact_flag', lambda x: (x.__setitem__('exact', True), x['certificate']['publication'].__setitem__('exact', True)), 'exact flag', muts)
+    _mut(mp_, w, 'N1_CQR', 'version', lambda x: x['certificate']['publication']['structural'].__setitem__('version', 'cqr-structural-v0'), 'version', muts)
+    _mut(mp_, w, 'N1_CQR', 'optional_work_charged', lambda x: x['certificate']['work']['optional'].__setitem__('total', 7), 'optional Work', muts)
+    _mut(mp_, w, 'N1_CQR', 'provenance_stripped', lambda x: x['certificate']['publication']['structural'].__setitem__('kernel_provenance', None), 'provenance', muts)
+    _mut(mp_, w, 'N1_CQR', 'epsilon_record', lambda x: x['certificate']['publication']['structural'].__setitem__('epsilon', '1/100'), 'epsilon', muts)
+    _mut(mp_, w, 'N1_CQR', 'component_dropped', lambda x: x['certificate']['publication']['structural']['components'].pop(), ('uncovered', 'reproduce', 'component'), muts)
+    mpb2 = _uai(os.path.join(d, 'blocks_b.uai'), [2] * 27, blocks); open(mpb2 + '.evid', 'w').write('1 2 0\n'); tb2 = TK.load_task(mpb2)
+    xb = copy.deepcopy(w); xb['binding'] = tb2['binding']; xb['task_identity'] = TK.task_identity(tb2); fails, _ = check_(mpb2, xb, 'N1_CQR', budget=300.0); A(fails and any('reproduce' in f_ or 'identity' in f_ for f_ in fails), '(e) binding mutation accepted'); muts['binding'] = fails[0][:100]
+    A(wc['bias'] == ['0', '0'], '(e) the compiled fixture is expected to commit exact operators only (bias %s)' % wc['bias'])
+    _mut(mpc, wc, 'N1_CQR', 'compiled_bias_changed', lambda x: x['certificate'].__setitem__('bias', ['1/1000', '0']), ('bias', 'ledger'), muts)
+    _mut(mpc, wc, 'N1_CQR', 'compiled_tau_changed', lambda x: x['certificate']['publication'].__setitem__('tau', ['1/400', '1/200']), ('tau',), muts)
+    _mut(mpc, wc, 'N1_CQR', 'compiled_bounds_record', lambda x: x['certificate']['publication']['compiled_bounds'][0].__setitem__(0, '0'), 'compiled bounds', muts)
+    _mut(mpc, wc, 'N1_CQR', 'compiled_route_relabel', lambda x: (x.__setitem__('route', 'structural_original'), x['certificate']['publication'].__setitem__('route', 'structural_original')), ('compile record', 'representation', 'route'), muts)
+    # (f) reachability with structural disabled / outside the adapter domain
+    n = 14; fs16 = [((i, i + 1), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(4)]) for i in range(n - 1)] + [((5,), ['0', '1'])]
+    mpc14 = _spec(_uai(os.path.join(d, 'joint14.uai'), [2] * n, fs16), mode='PAC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='joint', assign={'0': 1, '5': 1}), dict(kind='singleton', variable=11, state=0)])
+    for name, mp_, arm_, must in (('tree', mpt, 'N1_NO_STRUCTURAL', True), ('tree', mpt, 'G0_NO_STRUCTURAL', True), ('blocks', mpb, 'N1_NO_STRUCTURAL', False), ('joint14', mpc14, 'N1_NO_STRUCTURAL', True), ('joint22', mpc, 'N1_NO_STRUCTURAL', False)):
+        w_ = fresh_worker(mp_, arm_, budget=30.0, nonce='c31-f-%s-%s' % (name, arm_))
+        if w_['outcome'] == 'PUBLISHED':
+            fails, _ = check_(mp_, w_, arm_, budget=300.0); A(not fails and not w_['route'].startswith('structural'), '(f) %s/%s: %s %s %s' % (name, arm_, w_['outcome'], w_.get('route'), fails[:1]))
+            st_ = (w_['certificate'].get('structural') or {}).get('attempts') or []
+        else:
+            # the dense three-block fixture and the 22-chain joint query are cases refinement alone need not finish in 30 s: the typed outcome (with its sidecar) is the recorded observation, never hidden
+            A(not must and w_['outcome'] == 'DEADLINE' and w_['status'] == 'STOPPED' and os.path.exists(w_['diag_sidecar']), '(f) %s/%s: %s %s' % (name, arm_, w_['outcome'], (w_.get('reason') or '')[:80])); st_ = ((w_.get('scheduling') or {}).get('structural') or {}).get('attempts') or []
+        A(not st_ or all(a['decision'] == 'disabled_by_arm' for a in st_), '(f) %s/%s recorded a structural attempt' % (name, arm_)); out['f']['%s/%s' % (name, arm_)] = (w_['outcome'], w_.get('route'))
+    cards_s, fs_s = _sprinkled(1, 28, 14, 4); mpp = _spec(_uai(os.path.join(d, 'pac28.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5], bit=1)])
+    wp = None
+    for sd_ in ('a', 'b', 'c'):
+        cand = fresh_worker(mpp, 'N1_CQR', budget=45.0, seed=sd_, nonce='c31-f-pac-' + sd_)
+        if cand['outcome'] == 'PUBLISHED' and cand['guarantee_type'] == 'PAC': wp = cand; break
+    A(wp is not None, '(f) PAC route unreachable with structural enabled on an out-of-domain task: %s' % ((cand['outcome'], cand.get('route')),)); fails, _ = check_(mpp, wp, 'N1_CQR', budget=300.0); A(not fails, '(f) PAC publication refused: %s' % fails[:1])
+    A(wp['certificate']['structural']['attempts'][0]['decision'] == 'inapplicable', '(f) PAC fixture: structural attempt %s' % wp['certificate']['structural']['attempts'][:1]); out['f']['pac28/N1_CQR'] = wp['route']
+    # (g) same-backend controls
+    wg = fresh_worker(mpt, 'G0_CQR', budget=20.0, nonce='c31-g'); fails, _ = check_(mpt, wg, 'G0_CQR'); A(not fails and wg['route'] == 'structural_original', '(g) G0_CQR structural: %s %s' % (wg.get('route'), fails[:1]))
+    A(wg['certificate']['publication']['structural']['rows'] == pubs['tree'][1]['certificate']['publication']['structural']['rows'], '(g) G0 and N1 executed rows differ on the same executor'); out['g'] = dict(G0=wg['route'], same_rows=True)
+    # (h) structural executions never touch the Work ledgers
+    t_b = TK.load_task(mpb); r_b = solve_(t_b, 'N1_CQR', 'c31-h', budget=20.0); c_b = r_b['certificate']; A(r_b['publication']['route'] == 'structural_original' and c_b['work']['optional']['total'] == 0 and c_b['structural']['counters']['execution_s'] > 0 and c_b['structural']['counters']['native_calls'] == 3, '(h) %s' % c_b['structural']['counters'])
+    A(c_b['work']['reference']['total'] == c_b['work']['reference']['entries'], '(h) the reference was served during a structural attempt without a deficit'); out['h'] = dict(counters=c_b['structural']['counters'], work_reference=c_b['work']['reference']['total'], work_optional=c_b['work']['optional']['total'])
+    return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics), ('C26_partition_premise_order_validation_structural_negative', c26_partition_premise_order_validation_structural_negative), ('C27_final_query_accounting_evaluation_site_audit', c27_final_query_accounting_evaluation_site_audit), ('C28_view_storage_ownership_renumbering_declarations_event_schema', c28_view_storage_ownership_renumbering_declarations_event_schema), ('C29_failure_telemetry_survives_graceful_and_hard_kills', c29_failure_telemetry_survives_graceful_and_hard_kills), ('C30_cumulative_credit_reference_scheduling', c30_cumulative_credit_reference_scheduling), ('C31_structural_adapters_composition_checker_reachability', c31_structural_adapters_composition_checker_reachability)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'

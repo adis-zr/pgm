@@ -21,28 +21,36 @@ from math import prod
 HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path.dirname(HERE), 'newarm')
 for p in (HERE, NEWARM):
     if p not in sys.path: sys.path.insert(0, p)
-import compiler as CP, frontier as FR, reference as RF, numerics as NM
+import compiler as CP, frontier as FR, reference as RF, numerics as NM, structural as ST, diag as DG
 from task import Work, task_identity
 import task as TK
 
-SOLVER_VERSION = 'cqr-solve-v1.2 (2026-11-16: representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation; zero-risk PAC = deterministic routes only)'
+SOLVER_VERSION = 'cqr-solve-v2.0 (2026-11-17: structural executors (forest / dag / support / stream adapters) dispatched by a bounded planner on the ORIGINAL task and on committed compiled models; cumulative-credit reference scheduling (deficit-based, overshoot carried); bounded diagnostics sidecar; representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation; zero-risk PAC = deterministic routes only)'
 POLICY = dict(solver_version=SOLVER_VERSION, compiler=CP.POLICY, frontier=FR.FRONTIER_VERSION, frontier_order=FR.FRONTIER_ORDER_POLICY,
-              quantum_units=4096, reference_parity='before EVERY publication test the reference is brought to >= the cumulative work of the optional half (gamma = 1/2 at every publication; rounding <= one reference step of 256 assignments)', work_unit_commensurability='every table lookup (factor or query, in the reference, in cell closures, in draws and in compiler scans) is ONE entry unit; cell / rational operations one unit each: the two halves are measured in the same currency', deterministic_test_cadence='every max(1, |F| x K // 1024) optional quanta (the root computation is O(|F| log |F|) per query, K queries; charged |F| x K ratops per test; the cadence bounds the test cost to a constant fraction of the optional half)', reference_share='1/2 of charged Work units (gamma = 1/2): the reference runs one quantum for every optional quantum; the compile is charged to the optional half and the reference catches up before the adaptive loop',
+              quantum_units=4096, reference_parity='before EVERY publication test the reference is brought to >= the cumulative Work of the optional half (gamma = 1/2 at every publication; rounding <= one reference step of REF_STEP assignments)',
+              reference_scheduling='CUMULATIVE CREDIT (eighth-round revision, 17 Nov 2026): the reference is served only against the accounted deficit D = work_opt - work_ref; every overshoot is carried forward as credit (an inherited lead permits optional progress without another compulsory batch); service is interruptible at the reference step boundary (REF_STEP assignments); the largest irreducible overshoot is ONE step = REF_STEP assignments x (factors + query reads) entries + REF_STEP evals, stated in reference.step_cost_bound; the periodic quantum of the loop is the deficit itself, never a compulsory max(Q, last_opt) batch',
+              structural=dict(version=ST.STRUCTURAL_VERSION, policy='bounded planner: (1) ORIGINAL-task structural discovery FIRST (allowance = min(2 s, 10 %% of the remaining budget)) and execution under an explicit wall allocation gated by R0\'s rule (estimate <= 0.85 x remaining) when every query is an original singleton; (2) after the compile, the committed compiled model (table views, scope-<=1 expectation queries) through the same adapters, bias-widened like every compiled route; (3) refinement / PAC unchanged for everything else; structural executions are charged in their own counters (never Work) and bracketed by reference parity; a structural attempt that stops (typed) is recorded and the CQR path continues; no case-name branches, no lookup tables; discovery is capped and never restarted on the same representation', rates=ST.RATES, gate_fraction=ST.GATE_FRACTION, representations=['original', 'compiled']), work_unit_commensurability='every table lookup (factor or query, in the reference, in cell closures, in draws and in compiler scans) is ONE entry unit; cell / rational operations one unit each: the two halves are measured in the same currency', deterministic_test_cadence='every max(1, |F| x K // 1024) optional quanta (the root computation is O(|F| log |F|) per query, K queries; charged |F| x K ratops per test; the cadence bounds the test cost to a constant fraction of the optional half)', reference_share='1/2 of charged Work units (gamma = 1/2): the reference runs one quantum for every optional quantum; the compile is charged to the optional half and the reference catches up before the adaptive loop',
               leaf_cap=4096, open_cap=40000, open_cap_rule='min(40000, 4e7 / n_compiled) (prefix cells store <= n ints)', carve_max_free=14, deterministic_test='after every optional quantum (charged: cells x queries ratops)',
               risk='delta/2 ratio stream; delta/(2 e (e+1)) validation epoch e; epoch length 2^e completed observations',
               predictable_weights='b_t = the largest power of two <= (U*/U_t)^2 (ratio) / (E*/E_t)^2 (signed): positive, predictable, dyadic (bit growth bounded; statistics stay EXACT rationals; max bit length recorded in work.max_bits)',
               candidate='schema-feasible rational projection of the ratio estimate onto the dyadic grid of resolution eps/16 inside the deterministic boxes (simplex rows for singleton families; clip to [0,1] otherwise), else the un-snapped projection, else deterministic interval midpoints; fixed within the epoch',
               rounding_margin='representation-derived (task.output_reservation): 0 for rational answers; 2/10^d for the legacy decimal rows with d = legacy_digits(eps) >= 8 so that the reservation is <= eps/4', work_unit='one table entry read / rational op / point evaluation / cell op (task.Work)')
 ARMS = {
-    'N1_CQR': dict(enabled=set(CP.POLICY['order']), signed_stream=True, query_directed_refinement=True),
-    'G0_CQR': dict(enabled={'evidence'}, signed_stream=False, query_directed_refinement=False),
-    'N1_NO_QUOTIENT': dict(enabled=set(CP.POLICY['order']) - {'exact_quotient_pass', 'approx_quotient'}, signed_stream=True, query_directed_refinement=True),
-    'N1_NO_AFFINE': dict(enabled=set(CP.POLICY['order']) - {'affine'}, signed_stream=True, query_directed_refinement=True),
-    'N1_NO_INFLUENCE': dict(enabled=set(CP.POLICY['order']) - {'influence_deletion'}, signed_stream=True, query_directed_refinement=True),
-    'N1_NO_CONCENTRATION': dict(enabled=set(CP.POLICY['order']) - {'concentration'}, signed_stream=True, query_directed_refinement=True),
-    'N1_NO_SYMMETRY_RELEVANCE': dict(enabled=set(CP.POLICY['order']) - {'symmetry', 'leaf_sumout', 'component_omission'}, signed_stream=True, query_directed_refinement=True),
-    'N1_NO_SIGNED_STREAM': dict(enabled=set(CP.POLICY['order']), signed_stream=False, query_directed_refinement=True),
-    'N1_NO_QUERY_DIRECTED_REFINEMENT': dict(enabled=set(CP.POLICY['order']), signed_stream=True, query_directed_refinement=False),
+    'N1_CQR': dict(enabled=set(CP.POLICY['order']), signed_stream=True, query_directed_refinement=True, structural=True),
+    'G0_CQR': dict(enabled={'evidence'}, signed_stream=False, query_directed_refinement=False, structural=True),
+    'N1_NO_STRUCTURAL': dict(enabled=set(CP.POLICY['order']), signed_stream=True, query_directed_refinement=True, structural=False),
+    'G0_NO_STRUCTURAL': dict(enabled={'evidence'}, signed_stream=False, query_directed_refinement=False, structural=False),
+    # mechanism CONTROLS of the qualification suite (compiler operators exercised without the structural backend pre-empting the compile); never scored arms
+    'N1_NO_QUOTIENT_NO_STRUCTURAL': dict(enabled=set(CP.POLICY['order']) - {'exact_quotient_pass', 'approx_quotient'}, signed_stream=True, query_directed_refinement=True, structural=False),
+    'N1_NO_AFFINE_NO_STRUCTURAL': dict(enabled=set(CP.POLICY['order']) - {'affine'}, signed_stream=True, query_directed_refinement=True, structural=False),
+    'N1_NO_INFLUENCE_NO_STRUCTURAL': dict(enabled=set(CP.POLICY['order']) - {'influence_deletion'}, signed_stream=True, query_directed_refinement=True, structural=False),
+    'N1_NO_QUOTIENT': dict(enabled=set(CP.POLICY['order']) - {'exact_quotient_pass', 'approx_quotient'}, signed_stream=True, query_directed_refinement=True, structural=True),
+    'N1_NO_AFFINE': dict(enabled=set(CP.POLICY['order']) - {'affine'}, signed_stream=True, query_directed_refinement=True, structural=True),
+    'N1_NO_INFLUENCE': dict(enabled=set(CP.POLICY['order']) - {'influence_deletion'}, signed_stream=True, query_directed_refinement=True, structural=True),
+    'N1_NO_CONCENTRATION': dict(enabled=set(CP.POLICY['order']) - {'concentration'}, signed_stream=True, query_directed_refinement=True, structural=True),
+    'N1_NO_SYMMETRY_RELEVANCE': dict(enabled=set(CP.POLICY['order']) - {'symmetry', 'leaf_sumout', 'component_omission'}, signed_stream=True, query_directed_refinement=True, structural=True),
+    'N1_NO_SIGNED_STREAM': dict(enabled=set(CP.POLICY['order']), signed_stream=False, query_directed_refinement=True, structural=True),
+    'N1_NO_QUERY_DIRECTED_REFINEMENT': dict(enabled=set(CP.POLICY['order']), signed_stream=True, query_directed_refinement=False, structural=True),
 }
 MARGIN = F(2, 10 ** 8)        # the legacy 8-digit rounding reservation (historical constant; the reservation in force is task.output_reservation(task): 0 for exact rational answers)
 
@@ -93,7 +101,7 @@ def _singleton_groups(task):
     return [[d[s] for s in range(cards[v])] for v, d in by.items() if len(d) == cards[v]]
 
 
-def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, fault_inject=None):
+def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, fault_inject=None, diag=None):
     """diagnostic (QUALIFICATION ONLY, never a production arm; recorded in the certificate and REFUSED by the checker): 'sampling_only' switches off the protected reference,
     the frontier refinement and deterministic publication so only the statistical streams can publish (confidence-sequence calibration on tiny models at large delta);
     'no_reference' switches off only the protected reference so the frontier + streams must publish (stream / refinement interaction controls)"""
@@ -101,39 +109,122 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     model = task['model']; queries = task['queries']; K = len(queries); eps = task['epsilon']; delta = task['delta']; mode = task['mode']; normalizer = bool((task.get('query_spec') or {}).get('normalizer_task'))
     trace = dict(arm=arm, diagnostic=diagnostic, fault_injected=fault_inject, cap_bytes=cap_bytes, solver_version=SOLVER_VERSION, policy_sha256=hashlib.sha256(json.dumps(POLICY, sort_keys=True, default=str).encode()).hexdigest(), phase='bind', events=[])
     def late(): return deadline is not None and time.monotonic() >= deadline
-    sched = {'ref': None}
+    sched = {'ref': None}; D = diag if diag is not None else DG.NullDiag(); D.set('identity', arm=arm, seed=seed, mode=mode, queries=K, epsilon=str(eps), delta=str(delta), normalizer=normalizer)
+    def stop_info(where):
+        r_ = sched['ref']
+        return dict(where=where, reference_progress=(r_.progress() if r_ is not None else None), reference_done=(r_.done if r_ is not None else None), work_reference=work_ref.snapshot(), work_optional=work_opt.snapshot(), phase=trace.get('phase'), optional_cancelled=trace.get('optional_cancelled'), scheduling=trace.get('scheduling'), structural=(dict(trace['structural'], attempts=[dict(a, discovery=None) for a in trace['structural']['attempts']]) if trace.get('structural') else None))
+    def typed_deadline(where):
+        """EVERY typed DEADLINE carries the same scheduling state and finalizes the diagnostics sidecar from already-maintained state (no fresh bounds)"""
+        r_ = sched['ref']
+        if r_ is not None: D.reference(r_)
+        D.final('STOPPED', 'DEADLINE', where); return Stop('DEADLINE', stop_info(where))
     def check(where):
         if late():
-            # a typed DEADLINE carries the SCHEDULING state (review CQR-06: reference progress and both work ledgers are reported, so an expiry with zero reference progress is visible)
-            r_ = sched['ref']; raise Stop('DEADLINE', dict(where=where, reference_progress=(r_.progress() if r_ is not None else None), reference_done=(r_.done if r_ is not None else None), work_reference=work_ref.snapshot(), work_optional=work_opt.snapshot(), phase=trace.get('phase'), optional_cancelled=trace.get('optional_cancelled')))
+            # a typed DEADLINE carries the SCHEDULING state (review CQR-06: reference progress and both work ledgers are reported, so an expiry with zero reference progress is visible);
+            # the diagnostics sidecar is finalized from ALREADY-MAINTAINED state (no fresh bounds, no proof completion -- eighth-round revision)
+            raise typed_deadline(where)
     groups = _singleton_groups(task) if not normalizer else []
     # ---------------- 1. protected reference (its construction is charged to the reference half)
-    ref = RF.Reference(model, queries, work_ref); sched['ref'] = ref; check('bind'); work_ref.entries += sum(len(f['values']) for f in model['factors'])
+    REF_STEP = 256; sched_rec = dict(requests=0, steps=0, served_units=0, max_single_overshoot=0, credit_carried_max=0, step_cost_bound=None)
+    ref = RF.Reference(model, queries, work_ref); sched['ref'] = ref; check('bind'); work_ref.entries += sum(len(f['values']) for f in model['factors']); sched_rec['step_cost_bound'] = ref.step_cost_bound(REF_STEP); D.reference(ref); D.phase('reference_built')
     import core as _core
     def rss(): return _core.rss_bytes()
-    def ref_quantum(units):
+    def deficit(): return work_opt.total() - work_ref.total()
+    def ref_serve(units):
+        """serve the reference for AT MOST the accounted deficit (`units` <= deficit at the call), interruptible at the step boundary; the step's overshoot is carried forward as credit
+        (work_ref > work_opt), so the next request is smaller by exactly that amount: no compulsory batch is ever granted beyond the deficit"""
         if diagnostic in ('sampling_only', 'no_reference'): return 0
-        w0 = work_ref.total()
+        if units <= 0 or ref.done: return 0
+        w0 = work_ref.total(); sched_rec['requests'] += 1
         while work_ref.total() - w0 < units and not ref.done:
-            ref.step(256)
+            b0 = work_ref.total(); ref.step(REF_STEP); sched_rec['steps'] += 1
+            over = (work_ref.total() - w0) - units
+            if over > sched_rec['max_single_overshoot']: sched_rec['max_single_overshoot'] = over
             if late(): break
-        return work_ref.total() - w0
+        served = work_ref.total() - w0; sched_rec['served_units'] += served
+        c = -deficit()
+        if c > sched_rec['credit_carried_max']: sched_rec['credit_carried_max'] = c
+        trace['scheduling'] = dict(sched_rec, deficit_now=deficit(), REF_STEP=REF_STEP); D.reference(ref); D.set('scheduling', **trace['scheduling']); return served
+    def ref_quantum(units):
+        """legacy name kept for the reference-only phases: serves exactly `units` (the caller passes the deficit or, when the optional half is cancelled, Q as a progress quantum)"""
+        return ref_serve(units)
     def parity():
-        """bring the reference to >= the optional half's cumulative work (gamma = 1/2 at this point; rounding <= one reference step)"""
-        ref_quantum(max(0, work_opt.total() - work_ref.total()))
+        """bring the reference to >= the optional half's cumulative Work (gamma = 1/2 at this point; rounding <= one reference step); a reference already ahead is NOT served"""
+        ref_serve(max(0, deficit()))
     optional_cancelled = None
     def service(op):
         """called by the compiler at every consistent point (review CQR-06): serve the reference to parity whenever the optional half is a quantum ahead; stop optional work
         when the reference has finished; cancel optional work on memory pressure (the reference keeps its state)"""
-        if work_opt.total() - work_ref.total() >= Q: parity()
+        if deficit() >= Q: parity()
+        r_ = rss(); D.service_tick(op, work_ref, work_opt, r_)
         if ref.done: raise CP.CompileStop('reference_done', op)
-        if rss() > cap_bytes * 9 // 10: raise CP.CompileStop('cancelled', op)
-    Q = POLICY['quantum_units']
+        if r_ > cap_bytes * 9 // 10: raise CP.CompileStop('cancelled', op)
+    Q = POLICY['quantum_units']; enabled_eff = CP.effective_operators(spec['enabled'], task)
+    RES = TK.output_reservation(task); trace['output_reservation'] = str(RES)       # the accuracy reservation of the output representation (0 unless legacy decimal rows are emitted)
+    # ---------------- 1b. STRUCTURAL ROUTES (eighth-round revision, section 4): typed adapters over the baseline's executors (structural.py). Bounded discovery, R0's admission
+    # rule, an EXPLICIT wall allocation, execution charged in ITS OWN counters (never Work: the Work-parity guarantee of the protected reference is a statement about Work units and is
+    # unaffected; the wall spent here is reported separately and is NOT protected for the reference), every typed stop recorded (the CQR path continues with the rest of the budget).
+    # Deterministic class only (the kernels' enclosures are TRUSTED at the checker's re-execution boundary), never exact. No case-name branches; one attempt per representation.
+    zero_risk = (mode == 'PAC_EPS' and delta == 0); disabled = []             # the documented no-risk semantics (sixth review, CQR-R5-01): no statistical claim or boundary; every deterministic route stays usable
+    if zero_risk: disabled.append(dict(kind='ZERO_RISK', note='delta = 0: no statistical boundary is defined, so the ratio stream is not constructed and signed epochs certify only through the deterministic E = 0 residual test; deterministic compilation, frontier refinement, structural routes and the protected reference are unaffected'))
+    structural = dict(version=ST.STRUCTURAL_VERSION, attempts=[], counters=dict(attempts=0, discovery_s=0.0, execution_s=0.0, native_calls=0, source_entries_read=0),
+                      accounting='structural discovery / execution are wall-timed and counted in these counters; they charge NO Work unit to either half'); trace['structural'] = structural
+    def structural_try(representation, m, why, answers_fn, tau_fn, widen_fn):
+        """ONE bounded attempt on ONE representation; returns a publication dict or None; every decision is recorded in trace['structural'] and the diagnostics planner section"""
+        now = time.monotonic(); remaining = (deadline - now) if deadline is not None else float('inf')
+        att = dict(representation=representation, t_start_s=now - t0, remaining_s=remaining, decision=None); structural['attempts'].append(att); structural['counters']['attempts'] += 1
+        def decide(what, **kw):
+            att['decision'] = what; att.update(kw); D.planner(decision=dict(representation=representation, decision=what, **{k: (v if isinstance(v, (int, float, type(None), str)) else str(v)[:200]) for k, v in kw.items()})); return None
+        if not spec.get('structural'): return decide('disabled_by_arm')
+        if mode == 'EXACT_RATIONAL': return decide('inapplicable', reason='EXACT_RATIONAL mode: structural enclosures are deterministic, never exact')
+        if diagnostic == 'sampling_only': return decide('inapplicable', reason='sampling_only diagnostic withholds deterministic information')
+        if m is None: return decide('inapplicable', reason=why)
+        if remaining < ST.MIN_REMAINING_S: return decide('declined', reason='remaining budget %.3f s below the structural minimum %.1f s' % (remaining, ST.MIN_REMAINING_S))
+        allowance = min(ST.DISCOVERY_ALLOWANCE_S, ST.DISCOVERY_FRACTION * remaining); td = time.monotonic(); D.phase('structural_discovery_' + representation)
+        try: disc = ST.discover(m, deadline, allowance, epsilon=eps)
+        except Exception as ex: structural['counters']['discovery_s'] += time.monotonic() - td; return decide('discovery_failed', reason='%s: %s' % (type(ex).__name__, str(ex)[:120]))
+        structural['counters']['discovery_s'] += time.monotonic() - td
+        att['discovery'] = dict(allowance_s=allowance, candidates=disc['candidates'], declines=disc['declines'], n_components=disc.get('n_components'), components_estimate_s=disc.get('components_estimate_s'), discovery_s=disc['discovery_s'], applicable=disc.get('applicable'),
+                                components=[dict(kind=c['kind'], variables=len(c['variables']), estimate_s=c.get('estimate_s')) for c in (disc.get('components') or [])][:64])
+        for c in disc['candidates']: D.planner(candidate=dict(representation=representation, kind=c['kind'], scope=c.get('scope'), estimate_s=c.get('estimate_s')))
+        for c in (disc.get('components') or [])[:64]: D.planner(candidate=dict(representation=representation, kind=c['kind'], scope='component', variables=len(c['variables']), estimate_s=c.get('estimate_s')))
+        check('structural discovery')
+        remaining = (deadline - time.monotonic()) if deadline is not None else float('inf'); ok, est, which = ST.admitted(disc, remaining)
+        if not ok: return decide('not_admitted', estimate_s=est, which=which, remaining_s=remaining, rule='estimate <= %.2f x remaining' % ST.GATE_FRACTION, declines=disc['declines'][:4])
+        alloc = ST.allocation(est, remaining, which); adl = time.monotonic() + alloc; adl = min(deadline, adl) if deadline is not None else adl
+        att.update(which=which, estimate_s=est, allocation_s=alloc); D.planner(decision=dict(representation=representation, decision='admitted', which=which, estimate_s=est, allocation_s=alloc, remaining_s=remaining))
+        parity(); D.phase('structural_execute_' + representation); te = time.monotonic()
+        try: res = ST.execute(m, disc, adl, which, epsilon=eps)
+        except ST.StructuralStop as e:
+            dt = time.monotonic() - te; structural['counters']['execution_s'] += dt; att['stop'] = dict(kind=e.kind, reason=e.reason, stats=e.stats); D.cost('structural', dt); check('structural execution')
+            return decide('stopped', kind=e.kind, reason=e.reason, execution_s=dt)
+        dt = time.monotonic() - te; structural['counters']['execution_s'] += dt; rec = res['record']; structural['counters']['native_calls'] += rec['counters']['native_calls']; structural['counters']['source_entries_read'] += rec['counters']['source_entries_read']
+        D.set('work', structural=dict(structural['counters'])); D.cost('structural', dt); check('structural execution')
+        ans = answers_fn(res['rows']); boxes = [_box(lo, hi, tau_fn(j)) for j, (lo, hi) in enumerate(ans)]
+        if any(bx[0] > bx[1] for bx in boxes): return decide('infeasible', reason='an executed enclosure is wider than its tolerance box (2 tau)', which=which, execution_s=dt, max_width=str(max(hi - lo for lo, hi in ans)))
+        pt = _feasible_point(task, boxes, groups)
+        if pt is None: return decide('infeasible', reason='no feasible point inside the tolerance boxes (simplex rows)', which=which, execution_s=dt)
+        att['decision'] = 'published'; att['execution_s'] = dt; D.planner(decision=dict(representation=representation, decision='published', which=which, execution_s=dt))
+        pub_ = dict(route='structural_' + representation, bounds=widen_fn(ans), point=pt, guarantee='DETERMINISTIC', exact=False, tau=[str(tau_fn(j)) for j in range(len(ans))], structural=rec, which=which, representation=representation)
+        if representation == 'compiled': pub_['compiled_bounds'] = ans
+        return pub_
+    if spec.get('structural'):
+        m0, why0 = ST.model_from_task(task)
+        pub0 = structural_try('original', m0, why0, lambda rows: ST.answers_original(task, rows), lambda j: eps - RES, lambda b: list(b))
+        if pub0 is not None:
+            parity()                                                        # bracket: the reference is at parity with the (zero) optional Work before publication
+            if ref.done:
+                r = ref.result(); check('reference completion')
+                if r['kind'] == 'ZERO_EVIDENCE': return dict(outcome='PROVED_ZERO_EVIDENCE', guarantee_type='DETERMINISTIC', zero_proof=dict(kind='reference_enumeration', assignments=r['assignments']), certificate=_cert(task, arm, mode, trace, None, None, None, None, [], trace['events'], ref, work_ref, work_opt, None, [], t0, zero=dict(kind='reference'), enabled_eff=enabled_eff), stats=_stats(work_ref, work_opt, None, None, t0))
+                pub0 = _exact_reference_pub(r, normalizer)
+            check('publication'); D.phase('publication')
+            cert = _cert(task, arm, mode, trace, None, None, None, None, [], trace['events'], ref, work_ref, work_opt, pub0, disabled, t0, enabled_eff=enabled_eff)
+            return dict(outcome='PUBLISHED', guarantee_type=pub0['guarantee'], publication=pub0, certificate=cert, stats=_stats(work_ref, work_opt, None, None, t0), bias=None)
     # ---------------- 2. compile (optional half) WITH interleaved reference service; the compile is one or more bounded transactions
-    trace['phase'] = 'compile'; C = None; compile_log = None; zero_proof = None; enabled_eff = CP.effective_operators(spec['enabled'], task)
+    trace['phase'] = 'compile'; C = None; compile_log = None; zero_proof = None; D.phase('compile')
     # the compile is the first optional transaction; the service hook inside every costly compiler loop serves the reference to parity as soon as the optional half is one
     # quantum ahead, so the reference is interleaved FROM THE START (review CQR-06) and no optional transaction runs more than Q units without reference progress
-    try: C, compile_log = CP.compile_task(task, enabled=enabled_eff, deadline=deadline, work=work_opt, service=service, fault=fault_inject)
+    try: C, compile_log = CP.compile_task(task, enabled=enabled_eff, deadline=deadline, work=work_opt, service=service, fault=fault_inject, on_commit=(D.journal if diag is not None else None), on_step=(D.compiler if diag is not None else None))
     except CP.ZeroEvidence as z: zero_proof = z.proof
     except MemoryError: optional_cancelled = 'MemoryError during compilation'; C = None
     except Stop: raise
@@ -143,6 +234,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         optional_cancelled = 'optional failure during compilation: %s: %s' % (type(ex).__name__, str(ex)[:120]); C = None
     if compile_log and compile_log.get('interrupted') and compile_log['interrupted']['kind'] == 'cancelled': optional_cancelled = 'memory pressure during compilation (%s)' % compile_log['interrupted']['op']
     if compile_log and compile_log.get('failed'): trace['events'].append(dict(op='optional_operator_failed', operator=compile_log['failed']['op'], error=compile_log['failed']['error']))       # rolled back to the last committed model; recorded; the run continues from that model
+    D.compiler(C, compile_log); D.phase('after_compile')
     parity()                                                          # the reference is at parity with the optional half before anything else happens
     if ref.done and zero_proof is None:
         r = ref.result(); check('reference completion')
@@ -170,7 +262,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     fr = None
     if cards:
         try:
-            service('frontier_init'); fr = FR.Frontier(cards, C.views, cq, work_opt, order=FR.canonical_order(len(cards))); fr.service = service      # the REGISTERED split order (FR.FRONTIER_ORDER_POLICY); the checker binds every certificate to it; service('frontier_init')
+            D.phase('frontier_init'); service('frontier_init'); fr = FR.Frontier(cards, C.views, cq, work_opt, order=FR.canonical_order(len(cards))); fr.service = service      # the REGISTERED split order (FR.FRONTIER_ORDER_POLICY); the checker binds every certificate to it; service('frontier_init')
             if fault_inject == 'frontier_init': raise RuntimeError('INJECTED optional fault in frontier_init (qualification control; never a production run)')
         except CP.CompileStop as cs:
             if cs.kind == 'reference_done': fr = None
@@ -187,7 +279,6 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             pub = _exact_reference_pub(r, normalizer); check('publication')
             return dict(outcome='PUBLISHED', guarantee_type=pub['guarantee'], publication=pub, certificate=_cert(task, arm, mode, trace, C, compile_log, None, None, [], trace['events'], ref, work_ref, work_opt, pub, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0), bias=[str(b) for b in C.bias])
     trace['phase'] = 'adaptive'; open_cap = max(64, min(POLICY['open_cap'], (4 * 10 ** 7) // max(1, len(cards))))      # memory: prefix cells store <= n ints each
-    zero_risk = (mode == 'PAC_EPS' and delta == 0)             # the documented no-risk semantics (sixth review, CQR-R5-01): no statistical claim or boundary; every deterministic route stays usable
     ratio = FR.RatioStream(Kc, delta / 2, fr.U() if fr and fr.U() > 0 else F(1), random.Random(rng.getrandbits(64))) if (fr is not None and mode == 'PAC_EPS' and not zero_risk) else None
     trace['zero_risk'] = zero_risk
     if normalizer: spec = dict(spec, signed_stream=False, query_directed_refinement=False)      # recorded in the certificate (signed_stream / query_directed_refinement flags are task-effective)
@@ -221,9 +312,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                 if (1 - eps) * u2 <= (1 + eps) * l2:
                     c = ((1 - eps) * u2 + (1 + eps) * l2) / 2; pub = dict(route='normalizer_pac_ratio_intersected_with_deterministic', bounds=[(l2, u2)], det_bounds=[(L, U)], stat_bounds=[(str(zi[0] / fr.scale_den * sc), str(zi[1] / fr.scale_den * sc))], point=[c], guarantee='PAC', scale=str(sc), ratio_t=ratio.t); return pub
         return None
-    epochs = []; cur_epoch = None; epoch_no = 0; stat_toggle = 0; events = trace['events']; det_bounds = None; pub = None; disabled = []
-    if zero_risk: disabled.append(dict(kind='ZERO_RISK', note='delta = 0: no statistical boundary is defined, so the ratio stream is not constructed and signed epochs certify only through the deterministic E = 0 residual test; deterministic compilation, frontier refinement, zero proofs and the exact reference are unaffected'))
-    RES = TK.output_reservation(task); trace['output_reservation'] = str(RES)       # the accuracy reservation of the output representation (0 unless legacy decimal rows are emitted)
+    epochs = []; cur_epoch = None; epoch_no = 0; stat_toggle = 0; events = trace['events']; det_bounds = None; pub = None
     def tau(j): return eps - C.bias[j] - RES
     def widen(b):
         """PUBLISHED bounds for the ORIGINAL task: the compiled-model enclosure widened by the proved compiler bias beta_j (|mu_orig - mu_compiled| <= beta_j); clipped to [0,1]"""
@@ -255,13 +344,13 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             return out
         if 'det' in cache: return cache['det']
         try: b = fr.deterministic_bounds(deadline=deadline)
-        except TimeoutError: raise Stop('DEADLINE', dict(where='deterministic bounds'))
+        except TimeoutError: raise typed_deadline('deterministic bounds')
         out = []
         for j in range(Kc):
             if proved_undefined(j): out.append(('UNDEFINED', 'UNDEFINED'))
             elif j in C.constant_queries: c = C.constant_queries[j]; out.append((c, c))
             else: out.append(b[j])
-        cache['det'] = out; return out
+        cache['det'] = out; D.frontier(fr, det=out, work_now=work_opt.total(), queries=cq); return out
     def positive_mass():
         """Z > 0 proved (compiled units): resolved mass > 0, or sum L_C > 0, or the compiler's witness"""
         if fr is None: return True
@@ -380,9 +469,9 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         except CP.ZeroEvidence: raise
         except CP.CompileStop as cs:
             if cs.kind == 'reference_done': cache.clear(); raise _RefDone()
-            if cs.kind == 'deadline': raise Stop('DEADLINE', dict(where=where))
+            if cs.kind == 'deadline': raise typed_deadline(where)
             _cancel_optional('optional work cancelled in %s (%s)' % (where, cs.kind)); return None
-        except TimeoutError: raise Stop('DEADLINE', dict(where=where))
+        except TimeoutError: raise typed_deadline(where)
         except MemoryError: _cancel_optional('MemoryError in %s' % where); return None
         except Exception as ex: _cancel_optional('optional failure in %s: %s: %s' % (where, type(ex).__name__, str(ex)[:120])); return None
     def _publish_completed_reference():
@@ -402,13 +491,22 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     if pub is None and ref.done:
         z_ = _publish_completed_reference()
         if z_ is not None: return z_
+    # ---- the COMPILED-representation structural route (table views, scope-<=1 expectation queries) AFTER the cheap initial publication test and only while the frontier is open:
+    # bias-widened like every compiled route; skipped when the optional half is cancelled or a direct concentration answer exists
+    if pub is None and not ref.done and fr is not None and fr.open and cards and direct is None and not optional_cancelled and spec.get('structural'):
+        m1, why1 = ST.model_from_compiled(C)
+        pub = structural_try('compiled', m1, why1, lambda rows: ST.answers_compiled(C, rows), tau, widen)
+    D.phase('adaptive')
     while pub is None:
         check('loop')
         if rss() > cap_bytes * 9 // 10 and fr is not None and fr.open: _cancel_optional('memory pressure in the adaptive loop (rss %d)' % rss())
         if fr is None and optional_cancelled:
             while not ref.done: check('reference-only'); ref_quantum(Q)      # reference alone (every optional charge kept)
-        # ---- reference quantum: at least Q units, and at least as many units as the optional half spent in the previous iteration (gamma = 1/2 in Work units)
-        ref_quantum(max(Q, last_opt))
+        # ---- reference service against the ACCOUNTED DEFICIT only (cumulative credit; eighth-round revision): an inherited lead permits optional progress without a compulsory batch
+        ref_serve(max(0, deficit()))
+        if D.due():
+            if fr is not None: D.frontier(fr)
+            D.streams(ratio, epochs); D.reference(ref); D.set('work', reference=work_ref.snapshot(), optional=work_opt.snapshot()); D.write('loop')
         if ref.done:
             z_ = _publish_completed_reference()
             if z_ is not None: return z_
@@ -515,9 +613,9 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                 continue
         if work_opt.total() - w0 == 0: work_opt.cells += 1       # a no-work optional turn still yields its service (bounded)
         last_opt = work_opt.total() - w0
-    if pub is None: check('publication'); raise Stop('DEADLINE', dict(where='loop end'))
-    # ---- EVERY exit (deterministic, PAC ratio, signed E_ZERO, signed PAC, closure): the reference is brought to parity first; if it finished, the exact result dominates
-    parity()
+    if pub is None: check('publication'); raise typed_deadline('loop end')
+    # ---- EVERY exit (deterministic, PAC ratio, signed E_ZERO, signed PAC, closure, structural): the reference is brought to parity first; if it finished, the exact result dominates
+    parity(); D.phase('publication')
     if ref.done and not pub.get('exact'):
         r = ref.result(); check('reference completion')
         if r['kind'] != 'ZERO_EVIDENCE': pub = _exact_reference_pub(r, normalizer)
@@ -546,5 +644,6 @@ def _cert(task, arm, mode, trace, C, log, fr, ratio, epochs, events, ref, wr, wo
                 reference=dict(progress=ref.progress(), done=ref.done, assignments_total=ref.total, result=ref.result() if ref.done else None),
                 publication=(dict(pub, bounds=[(str(a), str(b)) if a != 'UNDEFINED' else ('UNDEFINED', 'UNDEFINED') for a, b in pub['bounds']], point=[str(x) for x in pub['point']], det_bounds=[(str(a), str(b)) if a != 'UNDEFINED' else ('UNDEFINED', 'UNDEFINED') for a, b in pub['det_bounds']] if pub.get('det_bounds') else None, compiled_bounds=[(str(a), str(b)) if a != 'UNDEFINED' else ('UNDEFINED', 'UNDEFINED') for a, b in pub['compiled_bounds']] if pub.get('compiled_bounds') else None) if pub else None),
                 statistical_claims_disabled=disabled, zero=zero, work=dict(reference=wr.snapshot(), optional=wo.snapshot()), bias=[str(b) for b in C.bias] if C is not None else None,
+                structural=trace.get('structural'), scheduling=trace.get('scheduling'), output_reservation=trace.get('output_reservation'),
                 chain='original task (binding) -> compiler chain (each step verified by its own certificate on the pre-step model; deterministic replay reproduces final_sha256) -> frontier events (partition replayed; every closed cell re-enumerated; every draw recomputed from its recorded law and point) -> streams (statistics and outward boundary recomputed) -> publication (feasibility, tau = eps - bias - rounding, positive mass / denominators) -> original queries are the compiled queries carried through the chain')
     return cert

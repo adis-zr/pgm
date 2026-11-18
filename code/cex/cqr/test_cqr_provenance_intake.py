@@ -54,8 +54,10 @@ def _():
     cur = KI.collect(td, NEWARM_COPY); assert cur['newarm_cex']['record_binary_sha256'] == cur['newarm_cex']['binary_sha256'], 'replacement is internally consistent (the old check passed it)'
     fails = KI.failures_vs_frozen(frozen, cur, ['H1_HYBRID'])
     assert any('BINARY_CHANGED' in f for f in fails) and any('RECORD_CHANGED' in f for f in fails), fails
-    assert KI.failures_vs_frozen(frozen, cur, ['N1_CQR', 'G0_CQR']) == [], 'CQR arms load nothing native'
-    shutil.rmtree(td); return '%d failures for H1_HYBRID (BINARY_CHANGED + RECORD_CHANGED), 0 for N1/G0' % len(fails)
+    norm = lambda fs, who: [x.replace('needed by %s' % who, 'needed by *') for x in fs]
+    f_cqr = KI.failures_vs_frozen(frozen, cur, ['N1_CQR', 'G0_CQR']); assert norm(f_cqr, 'G0_CQR,N1_CQR') == norm(fails, 'H1_HYBRID'), 'the CQR arms load the newarm kernels through the structural backend (17 Nov 2026): the same freeze applies: %s' % f_cqr
+    f_ns = KI.failures_vs_frozen(frozen, cur, ['N1_NO_STRUCTURAL']); assert norm(f_ns, 'N1_NO_STRUCTURAL') == norm(fails, 'H1_HYBRID'), 'the no-structural control is frozen under the same identity (it shares the candidate scope)'
+    shutil.rmtree(td); return '%d failures for H1_HYBRID (BINARY_CHANGED + RECORD_CHANGED), the same for N1/G0 (structural backend)' % len(fails)
 
 
 @test('kernel_freeze_distinct_messages')
@@ -86,8 +88,9 @@ def _():
     assert KI.receipt_failures(real, good, 'H1_HYBRID') == []
     bad = dict(stats=dict(components=[dict(build=dict(binary_sha256='00' * 32, loaded_binary_path='/x/libstream_kernel.so'))]))
     f = KI.receipt_failures(real, bad, 'H1_HYBRID'); assert len(f) == 1 and 'newarm_stream' in f[0], f
-    assert KI.receipt_failures(real, bad, 'N1_CQR') == []
-    return 'loaded-binary provenance compared to the frozen identity'
+    assert [x.replace('N1_CQR:', '*:') for x in KI.receipt_failures(real, bad, 'N1_CQR')] == [x.replace('H1_HYBRID:', '*:') for x in f], 'the CQR arms load the newarm kernels through the structural backend (17 Nov 2026): same provenance check'
+    assert KI.receipt_failures(real, bad, 'B0_FROZEN_V14') and 'b0_frozen' in KI.receipt_failures(real, bad, 'B0_FROZEN_V14')[0]
+    return 'loaded-binary provenance compared to the frozen identity (pac arms AND cqr arms)'
 
 
 def _tiny_uai(td):
@@ -237,7 +240,9 @@ def _t_receipt_cache():
     w_bad = dict(certificate=dict(build=dict(binary_sha256='f' * 64, loaded_binary_path=os.path.join(CODE, 'cex/newarm/native_cache/stream_%s.so' % ('f' * 64)))))
     f1 = KI.receipt_failures(fr, w_bad, 'H1_HYBRID'); assert f1 and 'sha256' in f1[0], f1
     w_unk = dict(certificate=dict(build=dict(binary_sha256='e' * 64, loaded_binary_path='/tmp/mystery.so'))); f2 = KI.receipt_failures(fr, w_unk, 'H1_HYBRID'); assert f2 and 'unrecognised' in f2[0], f2
-    assert KI.receipt_failures(fr, w_bad, 'N1_CQR') == [], 'a CQR arm loads nothing native'
+    strip = lambda fs: [x.split(': ', 1)[1] for x in fs]
+    assert strip(KI.receipt_failures(fr, w_bad, 'N1_CQR')) == strip(f1), 'a CQR arm may load the newarm kernels (structural backend): the same refusal applies'
+    assert KI.receipt_failures(fr, w_ok, 'N1_NO_STRUCTURAL') == [] and strip(KI.receipt_failures(fr, w_bad, 'G0_CQR')) == strip(f1)
     return 'cache-path records with the frozen digest accepted; foreign digest / unknown kind refused'
 
 
@@ -252,7 +257,7 @@ def _():
     assert "'LIBDAI_EXACT': 'EXACT', 'LBP': 'LBP'" in cc, 'comparator_cell.py ARMS table changed'
     assert KI.tags_needed_by('LBP') == KI.tags_needed_by('LIBDAI_EXACT') == ('libdai_mar',), (KI.tags_needed_by('LBP'), KI.tags_needed_by('LIBDAI_EXACT'))
     assert KI.tags_needed_by('WMB') == KI.tags_needed_by('IJGP') == KI.tags_needed_by('MERLIN_CTE') == ('merlin',)
-    assert KI.tags_needed_by('PGMAX_SUMPRODUCT_BP') == ('pgmax_python',) and KI.tags_needed_by('N1_CQR') == ()
+    assert KI.tags_needed_by('PGMAX_SUMPRODUCT_BP') == ('pgmax_python',) and KI.tags_needed_by('N1_CQR') == KI.tags_needed_by('G0_CQR') == KI.tags_needed_by('N1_NO_STRUCTURAL') == KI.GROUPS['newarm']       # the CQR arms load the newarm kernels through the structural backend (17 Nov 2026)
     cur = KI.collect(CODE); mp = cur['merlin']['adapter_paths']; assert mp['consistent'], 'MERLIN_PIN.json path and bench/cells.MERLIN differ: %s' % mp
     assert cur['merlin']['record_binary_sha256'] == cur['merlin']['binary_sha256'] or cur['merlin']['binary_sha256'] is None, 'Merlin pin sha differs from the binary on disk'
     return '%d tags; LBP and LIBDAI_EXACT share libdai_mar; Merlin paths consistent' % len(cur)

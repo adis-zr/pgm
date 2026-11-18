@@ -22,6 +22,10 @@ class Reference:
         self.Zi = 0; self.numi = [0] * len(queries); self.deni = [0] * len(queries); self.qreads = sum(1 if q.kind == 'expectation' else 2 for q in queries)
     def _set(self, k):
         for v, c in zip(reversed(self.free), reversed(self.radix)): self.x[v] = k % c; k //= c
+    def step_cost_bound(self, quantum):
+        """the LARGEST Work one step of `quantum` assignments can charge: every assignment reads every factor once (early zero exit may read fewer) + the query lookups + one eval
+        -- the irreducible overshoot of an interruptible service request (stated, not assumed)"""
+        return quantum * (len(self.ftab) + self.qreads + 1)
     def step(self, quantum):
         """evaluate up to `quantum` assignments; returns the number evaluated"""
         if self.done: return 0

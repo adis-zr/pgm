@@ -192,7 +192,7 @@ class Compiled:
     """the compiled task state: a sequence of immutable committed snapshots with a journal of certificate records"""
     def __init__(self, cards, views, queries, decoder, work, bias, normalizer_task=False):
         self.cards = list(cards); self.views = list(views); self.queries = list(queries); self.decoder = list(decoder); self.work = work; self.bias = list(bias)
-        self.certs = []; self.scalars = []; self.constant_scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.service = None; self.constant_queries = {}
+        self.on_commit = None; self.certs = []; self.scalars = []; self.constant_scalars = []; self.witness = None; self.normalizer_task = normalizer_task; self.affine_done = False; self.service = None; self.constant_queries = {}
         self.ticks = 0; self.commits = 0; self.fault = None; self._last = None; self.allowance = None; self.max_gap = 0; self.acc_since = 0; self.active = None; self.service_calls = 0; self.service_calls_evidence = 0
 
     def n(self): return len(self.cards)
@@ -235,6 +235,7 @@ class Compiled:
         if w_drop: rec['witness_dropped'] = w_drop
         if witness is not KEEP and witness is not None and self.witness is not None: rec['witness_after'] = {str(k): v for k, v in self.witness.items()}
         self.commits += 1; self.certs = list(self.certs) + [rec]; self._last = self.state()
+        if self.on_commit is not None: self.on_commit(rec)                 # incremental durable journal (diagnostics; never consulted by the certificate)
         _fault_point(self, rec.get('op'), 'after_commit')
         return rec
     def decline(self, op, reason, **extra):
@@ -1173,7 +1174,7 @@ def _restore_state(C, s):
     C.constant_scalars = list(s['constant_scalars']); C.witness = s['witness']; C.affine_done = s['affine_done']; C.constant_queries = dict(s['constant_queries']); C.commits = s['commits']
 
 
-def compile_task(task, enabled=None, deadline=None, work=None, service=None, fault=None):
+def compile_task(task, enabled=None, deadline=None, work=None, service=None, fault=None, on_commit=None, on_step=None):
     """returns (Compiled, log). `enabled` = the TASK-EFFECTIVE operator set (effective_operators). `service(op)` is called inside every costly scan (R3) and may raise
     CompileStop('deadline' | 'reference_done' | 'cancelled'); the driver returns the LAST COMMITTED model with log['interrupted'] set and every charge preserved.
     log['steps'][i] = dict(op, outcome, commits, work, measure_before, measure_after [, kind | error | reason]) with outcome in
@@ -1184,7 +1185,9 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
         if deadline is not None and time.monotonic() >= deadline: raise CompileStop('deadline', op)
         if service is not None: service(op)
     C = from_task(task, work, service=svc)
-    C.service = svc; C.fault = fault if isinstance(fault, dict) else None
+    C.service = svc; C.fault = fault if isinstance(fault, dict) else None; C.on_commit = on_commit
+    if on_commit is not None:
+        for c_ in C.certs: on_commit(c_)                                   # the evidence record is the journal's first line
     C.allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries'])
     D = quota_for(task); allowance = [(task['epsilon'] / 4 if task['mode'] != 'EXACT_RATIONAL' else F(0))] * len(task['queries'])
     log = dict(quota=D, steps=[], direct=None, interrupted=None, failed=None, compiler_version=COMPILER_VERSION)
@@ -1214,7 +1217,9 @@ def compile_task(task, enabled=None, deadline=None, work=None, service=None, fau
             r = C.commits > c0
         rec.update(work=C.work.total() - w0, measure_after=C.measure(), commits=C.commits - c0); rec['committed'] = (rec['outcome'] == 'committed') or (C.commits > c0)
         if rec['outcome'] in ('quota', 'interrupted', 'failed') and C.commits > c0: rec['partial'] = True       # commits of this operator stand; the rest of it did not run
-        log['steps'].append(rec); return r
+        log['steps'].append(rec)
+        if on_step is not None: on_step(C, log)
+        return r
     step('support_fixpoint', lambda: support_fixpoint(C, q_('support')))
     step('fixed_substitution', lambda: fixed_substitution(C))
     step('leaf_sumout', lambda: leaf_sumout(C, q_('leaf')))

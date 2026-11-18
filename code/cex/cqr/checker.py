@@ -20,11 +20,11 @@ from math import prod
 HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path.dirname(HERE), 'newarm')
 for p in (HERE, NEWARM):
     if p not in sys.path: sys.path.insert(0, p)
-import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR, solve as SV
+import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR, solve as SV, structural as ST
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.5 (2026-11-17: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
+CHECKER_VERSION = 'cqr-checker-v1.6 (2026-11-17: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -68,7 +68,8 @@ def _event_problem(ev):
 
 
 EXACT_ROUTES = ('exact_reference', 'exact_frontier_closure', 'exact_zero_dimensional', 'normalizer_exact_reference', 'normalizer_exact_frontier_closure', 'normalizer_exact_zero_dimensional')
-DET_ROUTES = ('deterministic_frontier', 'deterministic_frontier_closure', 'deterministic_zero_dimensional', 'deterministic_concentration', 'deterministic_signed_residual_E_zero', 'normalizer_deterministic_frontier')
+DET_ROUTES = ('deterministic_frontier', 'deterministic_frontier_closure', 'deterministic_zero_dimensional', 'deterministic_concentration', 'deterministic_signed_residual_E_zero', 'normalizer_deterministic_frontier', 'structural_original', 'structural_compiled')
+STRUCTURAL_ROUTES = ('structural_original', 'structural_compiled')
 PAC_ROUTES = ('pac_ratio_intersected_with_deterministic', 'pac_signed_residual_validation', 'normalizer_pac_ratio_intersected_with_deterministic')
 
 
@@ -79,9 +80,11 @@ def _attribution(route, cls, exact_route, C, cert, info):
     of unused optional work, never an error applied to the published exact answers); on a compiled route the bias widens the published original intervals"""
     bias = [str(b) for b in C.bias] if C is not None else None
     if route in ('exact_reference', 'normalizer_exact_reference'): interp = 'exact reference: zero error on the original answers; the compiled ledger (if any) is a superseded-surrogate diagnostic'
+    elif route == 'structural_original': interp = 'structural route on the ORIGINAL model: deterministic kernel enclosures (trusted at the bounded re-execution boundary), no compiler bias'
+    elif route == 'structural_compiled': interp = 'structural route on the COMPILED model: deterministic kernel enclosures of the compiled singleton rows, composed per query and widened by the compiler bias ledger'
     elif exact_route: interp = 'exact closure: zero bias (the route requires every ledger entry to be zero)'
     else: interp = 'compiled route: the ledger widens every published original interval'
-    return dict(route=route, guarantee=cls, exact=exact_route, commits=info.get('commits') or [], declines=info.get('declines') or [], compiled_bias=bias,
+    return dict(route=route, guarantee=cls, exact=exact_route, commits=info.get('commits') or [], declines=info.get('declines') or [], compiled_bias=bias, structural=info.get('structural'),
                 bias_applied_to_original_answers=(bias if (bias is not None and not exact_route and route not in ('exact_reference', 'normalizer_exact_reference')) else (['0'] * len(bias) if bias is not None else None)),
                 bias_interpretation=interp, optional_cancelled=(cert or {}).get('optional_cancelled'), compile_outcome=info.get('compile_outcome'))
 
@@ -197,10 +200,13 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         info['bias'] = [str(b) for b in C.bias]; info['compile_outcome'] = dict(interrupted=lg.get('interrupted'), failed=lg.get('failed'))
     else:
         derived = {}; rec_certs = []
-        if route not in ('exact_reference', 'normalizer_exact_reference'): fail('publication without a compile record on a non-reference route'); return fails, info
+        if route not in ('exact_reference', 'normalizer_exact_reference', 'structural_original'): fail('publication without a compile record on a non-reference route'); return fails, info
         # honest absence: the protected reference finished before ANY optional work was spent (no compile transaction opened), or optional work was cancelled
         wo_tot = ((cert.get('work') or {}).get('optional') or {}).get('total')
-        if not cert.get('optional_cancelled') and not (wo_tot == 0 and ((cert.get('reference') or {}).get('done') is True)): fail('compile record absent without a recorded optional cancellation or a reference-first completion with zero optional work')
+        if route == 'structural_original':
+            # the structural route on the original model publishes BEFORE any compile transaction: no optional Work may have been charged (structural executions charge their own counters)
+            if wo_tot != 0: fail('structural_original publication with %s optional Work units charged (the route runs before the compile; a compile record would be required)' % wo_tot)
+        elif not cert.get('optional_cancelled') and not (wo_tot == 0 and ((cert.get('reference') or {}).get('done') is True)): fail('compile record absent without a recorded optional cancellation or a reference-first completion with zero optional work')
     if fails: return fails, info
     if late(): fail('UNVERIFIABLE: allowance expired after the compiler replay'); return fails, info
     # ---------------- 3. the PROVEN enclosure of the ORIGINAL answers, per route (compiled units widened by the proved bias)
@@ -211,16 +217,53 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         info.update(route=route, work=work.snapshot(), exact=exact_route, guarantee=cls, mode=mode); info['attribution'] = _attribution(route, cls, exact_route, C, cert, info); return fails, info
     cq = C.queries if C is not None else None
     proven = None
+    def _structural_rows(model, representation):
+        """the structural publication record is validated (shape / representation / route consistency / version) and RE-EXECUTED on the bound model under the checker deadline; the rows must
+        reproduce exactly (bounded re-execution, as the frozen pac gate verifies R0's structural routes; the kernels' enclosures are TRUSTED at this boundary). Mutations of the route id,
+        the representation, the executed route kind, any row, or the model binding are refused here; mutated bounds / points / bias fail the common validator below."""
+        rec = pub.get('structural')
+        if not isinstance(rec, dict): fail('structural route without its execution record'); return None
+        if pub.get('representation') != representation: fail('structural route %s with representation %s' % (route, pub.get('representation'))); return None
+        if rec.get('which') != pub.get('which') or rec.get('which') not in ('forest', 'whole_dag', 'components'): fail('structural record route kind %s disagrees with the publication (%s)' % (rec.get('which'), pub.get('which'))); return None
+        if not isinstance(rec.get('rows'), list) or not isinstance(rec.get('components'), list): fail('malformed structural record'); return None
+        try:
+            if F(str(rec.get('epsilon'))) != eps: fail('structural record epsilon %s differs from the task epsilon' % rec.get('epsilon')); return None
+        except (ValueError, ZeroDivisionError, TypeError): fail('structural record epsilon is not a rational'); return None
+        if (rec.get('counters') or {}).get('native_calls') and not rec.get('kernel_provenance'): fail('structural record with native calls but no kernel provenance')
+        rows, msg = ST.verify(model, rec, deadline)
+        if msg: fail('structural re-execution: ' + msg); return None
+        info['structural'] = dict(route=route, which=rec.get('which'), components=[dict(kind=c.get('kind'), variables=len(c.get('variables') or [])) for c in rec['components']][:64], native_calls=(rec.get('counters') or {}).get('native_calls'), wall_s=rec.get('wall_s'), kernel_provenance=rec.get('kernel_provenance'), verified_by='bounded re-execution on the bound model; rows reproduced exactly')
+        return rows
     if route == 'exact_reference':
         tr = OR.enumerate_truth(task['model'], task['queries'], deadline=deadline, max_assignments=ORACLE_CAP)
         if tr is None: fail('UNVERIFIABLE_REFERENCE_SIZE: the exact reference publication exceeds the checker cap / allowance (not shown wrong)'); return fails, info
         proven = [('UNDEFINED' if a == 'UNDEFINED' else (a, a)) for a in tr['answers']]
+    elif route == 'structural_original':
+        if C is not None: fail('structural_original route with a compile record (the route runs before the compile)'); return fails, info
+        m0, why0 = ST.model_from_task(task)
+        if m0 is None: fail('structural_original route on a task outside the adapter domain: %s' % why0); return fails, info
+        rows = _structural_rows(m0, 'original')
+        if fails: return fails, info
+        proven = ST.answers_original(task, rows)
+        RES = TK.output_reservation(task); tau0 = eps - RES
+        if [str(x) for x in (pub.get('tau') or [])] != [str(tau0)] * K: fail('structural_original tau differs from eps - reservation')
     else:
         bias = C.bias
         def widen(x, j):
             if bias[j] < 0: fail('negative bias %s on query %d cannot widen an enclosure' % (bias[j], j)); return (F(1), F(0))       # a reversed interval: refused by the validator as a failed proof
             return (max(F(0), x[0] - bias[j]), min(F(1), x[1] + bias[j]))
-        if not C.cards:
+        if route == 'structural_compiled':
+            if not C.cards: fail('structural_compiled route on a zero-dimensional compiled model'); return fails, info
+            m1, why1 = ST.model_from_compiled(C)
+            if m1 is None: fail('structural_compiled route on a compiled model outside the adapter domain: %s' % why1); return fails, info
+            rows = _structural_rows(m1, 'compiled')
+            if fails: return fails, info
+            ans = ST.answers_compiled(C, rows); proven = [widen(a, j) for j, a in enumerate(ans)]
+            RES = TK.output_reservation(task); tau_c = [eps - bias[j] - RES for j in range(len(cq))]
+            if [str(x) for x in (pub.get('tau') or [])] != [str(t) for t in tau_c]: fail('structural_compiled tau differs from eps - bias - reservation')
+            cb = pub.get('compiled_bounds')
+            if not (isinstance(cb, list) and len(cb) == len(ans) and all(_F(x[0]) == a[0] and _F(x[1]) == a[1] for x, a in zip(cb, ans))): fail('recorded compiled bounds differ from the re-derived structural composition')
+        elif not C.cards:
             # zero-dimensional compiled model: every compiled query view has empty scope
             if route not in ('exact_zero_dimensional', 'deterministic_zero_dimensional', 'deterministic_concentration'): fail('route %s on a zero-dimensional compiled model' % route); return fails, info
             if route == 'exact_zero_dimensional' and any(b != 0 for b in bias): fail('exact zero-dimensional route with nonzero bias'); return fails, info

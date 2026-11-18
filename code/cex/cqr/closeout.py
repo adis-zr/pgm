@@ -66,7 +66,7 @@ def main(RD, MN='CAMPAIGN_MANIFEST.json', QP=None, OUTP=None):
         if miss_inv or extra_inv: prereq.append('frozen source inventory is not the complete required set (%d missing, %d extra)' % (len(miss_inv), len(extra_inv)))
         if diff_inv: prereq.append('frozen source %s differs from the file on disk (%d differ)' % (diff_inv[0], len(diff_inv)))
         for f_ in PR.identity_failures(frozen, sorted({c['arm'] for c in cells}))[0]: prereq.append(f_)
-    frozen_cqr = {k: v for k, v in frozen.items() if k.startswith('cqr/') or k == 'newarm/core.py'}
+    frozen_cqr = {k: v for k, v in frozen.items() if R.is_cqr_scope_key(k)}
     # ---- frozen kernel identity (every natively loaded binary + build record; review CQR-09): manifest vs disk NOW, and the START binding of its content hash
     ki = M.get('kernel_identity')
     if not ki: prereq.append('manifest carries no frozen kernel_identity')
