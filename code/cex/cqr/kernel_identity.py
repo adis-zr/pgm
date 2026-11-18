@@ -167,10 +167,7 @@ def _tag_of_loaded(path, group, frozen=None, sha=None):
     b = os.path.basename(str(path))
     if 'libcex_kernel' in b or b.startswith('cex_'): return group + '_cex'
     if 'libstream_kernel' in b or b.startswith('stream_'): return group + '_stream'
-    # last resort: an exact digest match against a frozen binary of the group identifies the kind
-    for tag in (group + '_cex', group + '_stream'):
-        if sha and (frozen or {}).get(tag, {}).get('binary_sha256') == sha: return tag
-    return None
+    return None                                                   # an unrecognised loaded path is a refusal even when its digest matches (structured review CQR-S1-03: the recorded loader path must be the pinned binary or its hash-addressed cache copy)
 
 
 def receipt_failures(frozen, worker_output_json, arm, pac_arms=None):

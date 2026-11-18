@@ -12,7 +12,7 @@ for p in (HERE, NEWARM):
     if p not in sys.path: sys.path.insert(0, p)
 import task as TK, solve as SV
 import diag as DG
-WORKER_VERSION = 'cqr-worker-v2.0 (2026-11-17: diagnostics sidecar <output>.diag.json + journal created BEFORE parsing and finalized on every outcome (survives graceful deadlines and hard kills as a durable prefix); structural routes; cumulative-credit reference scheduling)'
+WORKER_VERSION = 'cqr-worker-v2.1 (2026-11-17, structured review: table-derived legacy rows; monotonic clock origin in the sidecar; v2.0: diagnostics sidecar <output>.diag.json + journal created BEFORE parsing and finalized on every outcome (survives graceful deadlines and hard kills as a durable prefix); structural routes; cumulative-credit reference scheduling)'
 
 
 def jsonable(x):
@@ -34,8 +34,8 @@ def legacy_rows(task, pub, eps):
     """rows per ORIGINAL variable from an all-singleton publication: intervals (lo, hi) and the feasible point, exact Fractions"""
     cards = task['model']['cards']; idx = {}
     for j, q in enumerate(task['queries']):
-        o = q.output or {}
-        if o.get('kind') == 'singleton': idx[(o['variable'], o['state'])] = j
+        sv = TK.singleton_indicator_of(q, cards)             # placement derived from the TABLE, never from the output metadata (structured review CQR-S1-01)
+        if sv is not None: idx[sv] = j
     iv = []; pt = []
     for v in range(len(cards)):
         row_i = []; row_p = []
@@ -55,7 +55,7 @@ def main():
     # every outcome; a hard kill leaves the last checkpoint + the durable journal prefix (freshness recorded inside). Never consulted by the certificate or the checker.
     D = None; dpath = (a.output[:-5] if a.output.endswith('.json') else a.output) + '.diag.json'
     if not a.no_diag:
-        try: D = DG.Diagnostics(dpath, dict(arm=a.arm, seed=a.seed, nonce=a.nonce, input=os.path.basename(a.input), deadline_abs=a.deadline, budget_s=a.budget, worker_version=WORKER_VERSION, solver_version=SV.SOLVER_VERSION, pid=os.getpid()), t, a.deadline); D.state['deadline']['budget_s'] = a.budget; D.phase('parse')
+        try: D = DG.Diagnostics(dpath, dict(arm=a.arm, seed=a.seed, nonce=a.nonce, input=os.path.basename(a.input), deadline_abs=a.deadline, budget_s=a.budget, worker_version=WORKER_VERSION, solver_version=SV.SOLVER_VERSION, pid=os.getpid(), monotonic_t0=t, clock='time.monotonic() of this host: elapsed_s + monotonic_t0 is comparable with a supervisor\'s monotonic kill time (CQR-S1-06)'), t, a.deadline); D.state['deadline']['budget_s'] = a.budget; D.phase('parse')
         except OSError as ex: out['diag_error'] = 'sidecar unavailable: %s' % str(ex)[:120]; D = None
     out['diag_sidecar'] = dpath if D is not None else None
     def finish(status, outcome, reason=None):

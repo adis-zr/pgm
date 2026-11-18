@@ -25,7 +25,7 @@ import compiler as CP, frontier as FR, reference as RF, numerics as NM, structur
 from task import Work, task_identity
 import task as TK
 
-SOLVER_VERSION = 'cqr-solve-v2.0 (2026-11-17: structural executors (forest / dag / support / stream adapters) dispatched by a bounded planner on the ORIGINAL task and on committed compiled models; cumulative-credit reference scheduling (deficit-based, overshoot carried); bounded diagnostics sidecar; representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation; zero-risk PAC = deterministic routes only)'
+SOLVER_VERSION = 'cqr-solve-v2.1 (2026-11-17, structured review CQR-S1-01/02/04/05/06/07: structural eligibility from the query TABLES; the structural flag bound in the certificate (structural_backend); the controller service checks the wall deadline at entry and after reference service and no reference step starts after expiry; the REDUCED route (R0 reduction + lift) between the original route and the compile; terminal diagnostics refreshed from maintained state; v2.0: structural executors (forest / dag / support / stream adapters) dispatched by a bounded planner on the ORIGINAL task and on committed compiled models; cumulative-credit reference scheduling (deficit-based, overshoot carried); bounded diagnostics sidecar; representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation; zero-risk PAC = deterministic routes only)'
 POLICY = dict(solver_version=SOLVER_VERSION, compiler=CP.POLICY, frontier=FR.FRONTIER_VERSION, frontier_order=FR.FRONTIER_ORDER_POLICY,
               quantum_units=4096, reference_parity='before EVERY publication test the reference is brought to >= the cumulative Work of the optional half (gamma = 1/2 at every publication; rounding <= one reference step of REF_STEP assignments)',
               reference_scheduling='CUMULATIVE CREDIT (eighth-round revision, 17 Nov 2026): the reference is served only against the accounted deficit D = work_opt - work_ref; every overshoot is carried forward as credit (an inherited lead permits optional progress without another compulsory batch); service is interruptible at the reference step boundary (REF_STEP assignments); the largest irreducible overshoot is ONE step = REF_STEP assignments x (factors + query reads) entries + REF_STEP evals, stated in reference.step_cost_bound; the periodic quantum of the loop is the deficit itself, never a compulsory max(Q, last_opt) batch',
@@ -59,12 +59,39 @@ class Stop(Exception):
     def __init__(self, kind, info=None): super().__init__(kind); self.kind = kind; self.info = info or {}
 
 
-def _simplex_feasible(boxes):
-    """boxes: list of (lo, hi) per state; returns a point in the boxes summing to 1, or None"""
+DYADIC_SNAP_BITS = 64          # the first (cheap) projection pass rounds every box INWARD to the dyadic grid 2^-64: small denominators, the point stays inside the original boxes
+
+
+def _snap_in(lo, hi, k=DYADIC_SNAP_BITS):
+    """the largest dyadic sub-box of [lo, hi] at resolution 2^-k (None when the box holds no grid point)"""
+    s = 1 << k; a = -((-lo.numerator * s) // lo.denominator); b = (hi.numerator * s) // hi.denominator          # ceil(lo s), floor(hi s)
+    return (F(a, s), F(b, s)) if a <= b else None
+
+
+def _simplex_feasible(boxes, service=None):
+    """boxes: list of (lo, hi) per state; returns a point in the boxes summing to 1, or None. Two passes (structured review CQR-S1-05: on 1qt9 one exact pass over an 81-state
+    variable with ~21,700-bit rational bounds ran 13.7 s uninterrupted): (1) every box snapped INWARD to the dyadic grid 2^-64 -- a point found there lies inside the original boxes and
+    has a 64-bit denominator; (2) only when the snapped boxes are infeasible (a box narrower than the grid), the exact rational pass, with the controller hook every element so a wall
+    deadline stops it at the element boundary (a single Fraction addition is the stated indivisible primitive)."""
     los = [max(F(0), lo) for lo, hi in boxes]; his = [min(F(1), hi) for lo, hi in boxes]
-    if any(l > h for l, h in zip(los, his)) or sum(los) > 1 or sum(his) < 1: return None
-    pt = list(los); rem = 1 - sum(los)
+    if any(l > h for l, h in zip(los, his)): return None
+    snapped = [_snap_in(l, h) for l, h in zip(los, his)]
+    if all(x is not None for x in snapped):
+        s = 1 << DYADIC_SNAP_BITS; L = [int(x[0] * s) for x in snapped]; H = [int(x[1] * s) for x in snapped]            # integer arithmetic at one common denominator
+        if sum(L) <= s <= sum(H):
+            pt = list(L); rem = s - sum(L)
+            for i in range(len(pt)):
+                add = min(rem, H[i] - L[i]); pt[i] += add; rem -= add
+            if rem == 0: return [F(x, s) for x in pt]
+    # exact pass (interruptible per element)
+    tot_lo = F(0); tot_hi = F(0)
+    for i, (l, h) in enumerate(zip(los, his)):
+        if service is not None and (i & 3) == 3: service('feasible_point')
+        tot_lo += l; tot_hi += h
+    if tot_lo > 1 or tot_hi < 1: return None
+    pt = list(los); rem = 1 - tot_lo
     for i in range(len(pt)):
+        if service is not None and (i & 3) == 3: service('feasible_point')
         add = min(rem, his[i] - los[i]); pt[i] += add; rem -= add
     return pt if rem == 0 else None
 
@@ -74,16 +101,19 @@ def _box(lo, hi, tau):
     return (max(lo, hi - tau), min(hi, lo + tau))
 
 
-def _feasible_point(task, bounds, groups):
+def _feasible_point(task, bounds, groups, service=None):
     """bounds: per original query (lo, hi) boxes or the string 'UNDEFINED' (a PROVED undefined ratio coordinate: its point is 'UNDEFINED'); groups: lists of query indices
-    forming simplex rows (singleton families; never contain undefined coordinates) -> point list or None"""
+    forming simplex rows (singleton families; never contain undefined coordinates) -> point list or None. `service` (optional) is the controller hook, called every 8 groups and
+    every 256 coordinates: on large-denominator bounds this projection is a long rational computation (structured review CQR-S1-05: the 1qt9 blind interval), so it must be interruptible."""
     pt = [None] * len(bounds)
-    for g in groups:
+    for gi, g in enumerate(groups):
+        if service is not None and (gi & 7) == 7: service('feasible_point')
         if any(bounds[j] == 'UNDEFINED' for j in g): return None
-        p = _simplex_feasible([bounds[j] for j in g])
+        p = _simplex_feasible([bounds[j] for j in g], service)
         if p is None: return None
         for j, x in zip(g, p): pt[j] = x
     for j, bx in enumerate(bounds):
+        if service is not None and (j & 255) == 255: service('feasible_point')
         if pt[j] is None:
             if bx == 'UNDEFINED': pt[j] = 'UNDEFINED'; continue
             lo, hi = bx
@@ -124,6 +154,15 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             # the diagnostics sidecar is finalized from ALREADY-MAINTAINED state (no fresh bounds, no proof completion -- eighth-round revision)
             raise typed_deadline(where)
     groups = _singleton_groups(task) if not normalizer else []
+    live = dict(fr=None, ratio=None, epochs=[], C=None)       # the objects the diagnostics refresh reads (set as they come into existence; cheap maintained counts only)
+    def _refresh_diag():
+        D.set('work', reference=work_ref.snapshot(), optional=work_opt.snapshot())
+        if sched['ref'] is not None: D.reference(sched['ref'])
+        if live['fr'] is not None: D.frontier(live['fr'])
+        D.streams(live['ratio'], live['epochs'])
+        if trace.get('scheduling'): D.set('scheduling', **trace['scheduling'])
+        if trace.get('structural'): D.set('work', structural=dict(trace['structural']['counters']))
+    D.register_refresh(_refresh_diag)
     # ---------------- 1. protected reference (its construction is charged to the reference half)
     REF_STEP = 256; sched_rec = dict(requests=0, steps=0, served_units=0, max_single_overshoot=0, credit_carried_max=0, step_cost_bound=None)
     ref = RF.Reference(model, queries, work_ref); sched['ref'] = ref; check('bind'); work_ref.entries += sum(len(f['values']) for f in model['factors']); sched_rec['step_cost_bound'] = ref.step_cost_bound(REF_STEP); D.reference(ref); D.phase('reference_built')
@@ -137,10 +176,10 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         if units <= 0 or ref.done: return 0
         w0 = work_ref.total(); sched_rec['requests'] += 1
         while work_ref.total() - w0 < units and not ref.done:
+            if late(): sched_rec['expired_requests'] = sched_rec.get('expired_requests', 0) + 1; break          # NO new reference step after expiry (CQR-S1-05); the typed stop is raised by the caller's check
             b0 = work_ref.total(); ref.step(REF_STEP); sched_rec['steps'] += 1
             over = (work_ref.total() - w0) - units
             if over > sched_rec['max_single_overshoot']: sched_rec['max_single_overshoot'] = over
-            if late(): break
         served = work_ref.total() - w0; sched_rec['served_units'] += served
         c = -deficit()
         if c > sched_rec['credit_carried_max']: sched_rec['credit_carried_max'] = c
@@ -154,8 +193,12 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     optional_cancelled = None
     def service(op):
         """called by the compiler at every consistent point (review CQR-06): serve the reference to parity whenever the optional half is a quantum ahead; stop optional work
-        when the reference has finished; cancel optional work on memory pressure (the reference keeps its state)"""
+        when the reference has finished; cancel optional work on memory pressure (the reference keeps its state). 'enter:<op>' / 'leave:<op>' mark operation entry / exit for the sidecar."""
+        if op.startswith('enter:'): D.enter(op[6:])
+        elif op.startswith('leave:'): D.leave(op[6:]); return
+        if late(): D.event('deadline_at_service', op=op); raise CP.CompileStop('deadline', op)             # wall deadline at controller ENTRY (CQR-S1-05): the optional lifecycle turns it into the typed stop
         if deficit() >= Q: parity()
+        if late(): D.event('deadline_after_service', op=op); raise CP.CompileStop('deadline', op)         # ... and AFTER reference service (a step may have crossed the deadline: in-flight work is kept and charged)
         r_ = rss(); D.service_tick(op, work_ref, work_opt, r_)
         if ref.done: raise CP.CompileStop('reference_done', op)
         if r_ > cap_bytes * 9 // 10: raise CP.CompileStop('cancelled', op)
@@ -169,7 +212,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     if zero_risk: disabled.append(dict(kind='ZERO_RISK', note='delta = 0: no statistical boundary is defined, so the ratio stream is not constructed and signed epochs certify only through the deterministic E = 0 residual test; deterministic compilation, frontier refinement, structural routes and the protected reference are unaffected'))
     structural = dict(version=ST.STRUCTURAL_VERSION, attempts=[], counters=dict(attempts=0, discovery_s=0.0, execution_s=0.0, native_calls=0, source_entries_read=0),
                       accounting='structural discovery / execution are wall-timed and counted in these counters; they charge NO Work unit to either half'); trace['structural'] = structural
-    def structural_try(representation, m, why, answers_fn, tau_fn, widen_fn):
+    def structural_try(representation, m, why, answers_fn, tau_fn, widen_fn, red=None):
         """ONE bounded attempt on ONE representation; returns a publication dict or None; every decision is recorded in trace['structural'] and the diagnostics planner section"""
         now = time.monotonic(); remaining = (deadline - now) if deadline is not None else float('inf')
         att = dict(representation=representation, t_start_s=now - t0, remaining_s=remaining, decision=None); structural['attempts'].append(att); structural['counters']['attempts'] += 1
@@ -193,14 +236,17 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         if not ok: return decide('not_admitted', estimate_s=est, which=which, remaining_s=remaining, rule='estimate <= %.2f x remaining' % ST.GATE_FRACTION, declines=disc['declines'][:4])
         alloc = ST.allocation(est, remaining, which); adl = time.monotonic() + alloc; adl = min(deadline, adl) if deadline is not None else adl
         att.update(which=which, estimate_s=est, allocation_s=alloc); D.planner(decision=dict(representation=representation, decision='admitted', which=which, estimate_s=est, allocation_s=alloc, remaining_s=remaining))
-        parity(); D.phase('structural_execute_' + representation); te = time.monotonic()
+        parity(); check('structural admission'); D.phase('structural_execute_' + representation); te = time.monotonic()
         try: res = ST.execute(m, disc, adl, which, epsilon=eps)
         except ST.StructuralStop as e:
             dt = time.monotonic() - te; structural['counters']['execution_s'] += dt; att['stop'] = dict(kind=e.kind, reason=e.reason, stats=e.stats); D.cost('structural', dt); check('structural execution')
             return decide('stopped', kind=e.kind, reason=e.reason, execution_s=dt)
         dt = time.monotonic() - te; structural['counters']['execution_s'] += dt; rec = res['record']; structural['counters']['native_calls'] += rec['counters']['native_calls']; structural['counters']['source_entries_read'] += rec['counters']['source_entries_read']
         D.set('work', structural=dict(structural['counters'])); D.cost('structural', dt); check('structural execution')
-        ans = answers_fn(res['rows']); boxes = [_box(lo, hi, tau_fn(j)) for j, (lo, hi) in enumerate(ans)]
+        rows = res['rows']
+        if red is not None:                                                  # REDUCED representation: lift the reduced rows to every original coordinate (R0's decoder), then answer the original queries
+            rows, _pts = ST.lift_rows(red, res['rows'], res['points']); rec['reduction'] = ST.reduction_record(red, m)
+        ans = answers_fn(rows); boxes = [_box(lo, hi, tau_fn(j)) for j, (lo, hi) in enumerate(ans)]
         if any(bx[0] > bx[1] for bx in boxes): return decide('infeasible', reason='an executed enclosure is wider than its tolerance box (2 tau)', which=which, execution_s=dt, max_width=str(max(hi - lo for lo, hi in ans)))
         pt = _feasible_point(task, boxes, groups)
         if pt is None: return decide('infeasible', reason='no feasible point inside the tolerance boxes (simplex rows)', which=which, execution_s=dt)
@@ -211,6 +257,12 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     if spec.get('structural'):
         m0, why0 = ST.model_from_task(task)
         pub0 = structural_try('original', m0, why0, lambda rows: ST.answers_original(task, rows), lambda j: eps - RES, lambda b: list(b))
+        if pub0 is None and m0 is not None and not late():
+            # the REDUCED representation (CQR-S1-07): R0's exact reduction + lift behind a checked adapter; one bounded attempt, only when the original representation was not published
+            now_ = time.monotonic(); rem_ = (deadline - now_) if deadline is not None else float('inf'); ra = min(ST.DISCOVERY_ALLOWANCE_S, ST.DISCOVERY_FRACTION * rem_); tr_ = time.monotonic()
+            m1, red1, why1 = ST.model_from_reduced(task, (None if deadline is None else min(deadline, tr_ + ra))); structural['counters']['reduction_s'] = structural['counters'].get('reduction_s', 0.0) + (time.monotonic() - tr_)
+            check('structural reduction')
+            pub0 = structural_try('reduced', m1, why1, lambda rows: ST.answers_original(task, rows), lambda j: eps - RES, lambda b: list(b), red=red1)
         if pub0 is not None:
             parity()                                                        # bracket: the reference is at parity with the (zero) optional Work before publication
             if ref.done:
@@ -280,6 +332,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             return dict(outcome='PUBLISHED', guarantee_type=pub['guarantee'], publication=pub, certificate=_cert(task, arm, mode, trace, C, compile_log, None, None, [], trace['events'], ref, work_ref, work_opt, pub, [], t0, enabled_eff=enabled_eff, optional_cancelled=optional_cancelled), stats=_stats(work_ref, work_opt, None, None, t0), bias=[str(b) for b in C.bias])
     trace['phase'] = 'adaptive'; open_cap = max(64, min(POLICY['open_cap'], (4 * 10 ** 7) // max(1, len(cards))))      # memory: prefix cells store <= n ints each
     ratio = FR.RatioStream(Kc, delta / 2, fr.U() if fr and fr.U() > 0 else F(1), random.Random(rng.getrandbits(64))) if (fr is not None and mode == 'PAC_EPS' and not zero_risk) else None
+    live['fr'] = fr; live['ratio'] = ratio; live['C'] = C
     trace['zero_risk'] = zero_risk
     if normalizer: spec = dict(spec, signed_stream=False, query_directed_refinement=False)      # recorded in the certificate (signed_stream / query_directed_refinement flags are task-effective)
     def known_scale():
@@ -312,7 +365,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
                 if (1 - eps) * u2 <= (1 + eps) * l2:
                     c = ((1 - eps) * u2 + (1 + eps) * l2) / 2; pub = dict(route='normalizer_pac_ratio_intersected_with_deterministic', bounds=[(l2, u2)], det_bounds=[(L, U)], stat_bounds=[(str(zi[0] / fr.scale_den * sc), str(zi[1] / fr.scale_den * sc))], point=[c], guarantee='PAC', scale=str(sc), ratio_t=ratio.t); return pub
         return None
-    epochs = []; cur_epoch = None; epoch_no = 0; stat_toggle = 0; events = trace['events']; det_bounds = None; pub = None
+    epochs = []; cur_epoch = None; epoch_no = 0; stat_toggle = 0; events = trace['events']; det_bounds = None; pub = None; live['epochs'] = epochs
     def tau(j): return eps - C.bias[j] - RES
     def widen(b):
         """PUBLISHED bounds for the ORIGINAL task: the compiled-model enclosure widened by the proved compiler bias beta_j (|mu_orig - mu_compiled| <= beta_j); clipped to [0,1]"""
@@ -388,7 +441,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             boxes.append(_box(lo, hi, tau(j)))
         det_ok = all(bx is not None for bx in boxes) and diagnostic != 'sampling_only'
         if det_ok:
-            pt = _feasible_point(task, boxes, groups)
+            pt = _feasible_point(task, boxes, groups, service)
             if pt is not None:
                 closed = fr is not None and not fr.open
                 exact = closed and all(bb == 0 for bb in C.bias) and all(x[0] == x[1] for x in b if x[0] != 'UNDEFINED')
@@ -416,7 +469,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
     # ------------------------------------------------ candidate construction (schema feasible; outer intervals)
     def make_candidate():
         if fr is None: return None
-        est = None
+        service('enter:make_candidate'); est = None
         if ratio is not None and ratio.stopped is None and ratio.H > 0:
             est = [min(F(1), max(F(0), (ratio.G[j] / ratio.Hj[j]) if ratio.Hj[j] > 0 else F(1, 2))) for j in range(Kc)]
         b = query_bounds_original()
@@ -429,11 +482,11 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             g_ = round(x / grid) * grid; return min(max(g_, lo), hi)
         if est is not None:
             boxes2 = [(snap(est[j], lo, hi),) * 2 for j, (lo, hi) in enumerate(boxes)]
-            pt = _feasible_point(task, [(x[0], x[1]) for x in boxes2], groups)
-            if pt is not None: return pt
-            pt = _feasible_point(task, [(min(max(est[j], lo), hi),) * 2 for j, (lo, hi) in enumerate(boxes)], groups)
-            if pt is not None: return pt
-        return _feasible_point(task, boxes, groups)
+            pt = _feasible_point(task, [(x[0], x[1]) for x in boxes2], groups, service)
+            if pt is not None: service('leave:make_candidate'); return pt
+            pt = _feasible_point(task, [(min(max(est[j], lo), hi),) * 2 for j, (lo, hi) in enumerate(boxes)], groups, service)
+            if pt is not None: service('leave:make_candidate'); return pt
+        pt = _feasible_point(task, boxes, groups, service); service('leave:make_candidate'); return pt
     def FR_weight(C_, x):
         w = F(1)
         for v in C_.views: w *= v.at(C_.cards, x)
@@ -456,7 +509,7 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
         nonlocal optional_cancelled, fr, cur_epoch
         optional_cancelled = reason; trace['optional_cancelled'] = reason; events.append(dict(op='optional_cancelled', reason=reason))
         if fr is not None: fr.open.clear()
-        fr = None
+        fr = None; live['fr'] = None
         if cur_epoch is not None and cur_epoch.retired is None: cur_epoch.retired = 'optional_cancelled'
         if ratio is not None and ratio.stopped is None: ratio.stopped = 'optional_cancelled'
     class _RefDone(Exception): pass
@@ -504,9 +557,11 @@ def solve(task, deadline, arm, seed, cap_bytes=3 * 1024 ** 3, diagnostic=None, f
             while not ref.done: check('reference-only'); ref_quantum(Q)      # reference alone (every optional charge kept)
         # ---- reference service against the ACCOUNTED DEFICIT only (cumulative credit; eighth-round revision): an inherited lead permits optional progress without a compulsory batch
         ref_serve(max(0, deficit()))
-        if D.due():
-            if fr is not None: D.frontier(fr)
-            D.streams(ratio, epochs); D.reference(ref); D.set('work', reference=work_ref.snapshot(), optional=work_opt.snapshot()); D.write('loop')
+        # per-SECTION refresh clocks (CQR-S1-06): a service checkpoint never postpones the stream / frontier / ledger refresh
+        if D.section_due('streams'): D.streams(ratio, epochs)
+        if D.section_due('frontier') and fr is not None: D.frontier(fr)
+        if D.section_due('work'): D.reference(ref); D.set('work', reference=work_ref.snapshot(), optional=work_opt.snapshot())
+        D.maybe_write('loop')
         if ref.done:
             z_ = _publish_completed_reference()
             if z_ is not None: return z_
@@ -638,7 +693,7 @@ def _cert(task, arm, mode, trace, C, log, fr, ratio, epochs, events, ref, wr, wo
     snap = C.snapshot_json() if C is not None else None; normalizer = bool((task.get('query_spec') or {}).get('normalizer_task'))
     cert = dict(certificate_version='cqr-certificate-v1', arm=arm, mode=mode, diagnostic=trace.get('diagnostic'), fault_injected=trace.get('fault_injected'), cap_bytes=trace.get('cap_bytes'), epsilon=str(task['epsilon']), delta=str(task['delta']), task_identity=task_identity(task), solver_version=SOLVER_VERSION, policy=POLICY,
                 arm_operators=sorted(ARMS[arm]['enabled']), enabled_operators=sorted(enabled_eff if enabled_eff is not None else CP.effective_operators(ARMS[arm]['enabled'], task)), normalizer_task=normalizer,
-                signed_stream=(ARMS[arm]['signed_stream'] and not normalizer), query_directed_refinement=(ARMS[arm]['query_directed_refinement'] and not normalizer), optional_cancelled=optional_cancelled,
+                signed_stream=(ARMS[arm]['signed_stream'] and not normalizer), query_directed_refinement=(ARMS[arm]['query_directed_refinement'] and not normalizer), structural_backend=bool(ARMS[arm].get('structural')), optional_cancelled=optional_cancelled,
                 compile=dict(log=log, certificates=C.certs if C is not None else None, final=snap, final_sha256=hashlib.sha256(json.dumps(snap, sort_keys=True, default=str).encode()).hexdigest() if snap is not None else None) if C is not None else None,
                 frontier=fr.record() if fr is not None else None, events=events, ratio_stream=ratio.record() if ratio is not None else None, epochs=[e.record() for e in (epochs or [])],
                 reference=dict(progress=ref.progress(), done=ref.done, assignments_total=ref.total, result=ref.result() if ref.done else None),

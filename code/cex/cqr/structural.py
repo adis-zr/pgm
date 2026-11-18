@@ -17,13 +17,14 @@ Two representations (enumerated, tested; nothing else is claimed):
             only by the CQR mechanisms). EXACT_RATIONAL mode never uses a structural route (the class is deterministic, not exact).
 Accounting: structural executions are charged in THEIR OWN counters (wall, executor stats, native kernel counters) -- never added to the Work ledger; the Work parity guarantee
 of the protected reference covers the Work-charged phases; a structural attempt is wall-allocated (controller policy in solve.py) and bracketed by reference parity."""
-import os, sys, time, hashlib, math
+import os, sys, time, hashlib, math, json
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path.dirname(HERE), 'newarm')
 if NEWARM not in sys.path: sys.path.insert(0, NEWARM)
-import core as NCORE, forest as NFOREST, dag as NDAG, support as NSUPPORT, stream as NSTREAM, stream_float as NSTREAMF, cex_executor as NCEX
+import core as NCORE, forest as NFOREST, dag as NDAG, support as NSUPPORT, stream as NSTREAM, stream_float as NSTREAMF, cex_executor as NCEX, reduction as NRED
+import task as TK
 
-STRUCTURAL_VERSION = 'cqr-structural-v1 (2026-11-17: typed adapters over cex/newarm forest / dag / support / stream; R0 rate table; original + compiled(scope<=1) representations)'
+STRUCTURAL_VERSION = 'cqr-structural-v2 (2026-11-17, structured review CQR-S1-01/03/04/07: eligibility and answers from the query TABLES (output metadata never consulted); compositional discovery (a timed-out optional search never erases a recognized candidate); the REDUCED representation = R0\'s exact reduction + lift behind a checked adapter; verification derives route / partition / native-use facts from the re-execution and binds kernel digests; v1: typed adapters over cex/newarm forest / dag / support / stream; R0 rate table; original + compiled(scope<=1) representations)'
 # R0's deterministic gate (cex/pac/engine.py POLICY['gate_units_per_second'] / ['gate_fraction']; medians observed in the frozen v1.4 campaign) -- copied verbatim and
 # asserted equal to the pac module's values by the qualification suite (no new thresholds, no case-tuned numbers)
 RATES = dict(support=3.1e8, stream=3.6e8, dag=5.5e5, forest=1e7); GATE_FRACTION = 0.85
@@ -31,7 +32,7 @@ RATES = dict(support=3.1e8, stream=3.6e8, dag=5.5e5, forest=1e7); GATE_FRACTION 
 # never more than the gate fraction of the remaining budget; forest (no forecast) gets a fixed fraction. An execution that outlives its allocation is a typed DEADLINE stop of the
 # structural attempt only: the CQR path (compile / frontier / streams / protected reference) continues with the rest of the budget.
 ALLOC_MULTIPLE = 8; ALLOC_FLOOR_S = 2.0; FOREST_FRACTION = 0.5
-ROUTES = ('structural_original', 'structural_compiled')
+ROUTES = ('structural_original', 'structural_reduced', 'structural_compiled')
 MIN_REMAINING_S = 0.5           # below this remaining budget no structural attempt starts (discovery alone would consume it)
 DISCOVERY_ALLOWANCE_S = 2.0; DISCOVERY_FRACTION = 0.10
 KINDS = ('forest', 'dag', 'support', 'stream')
@@ -57,12 +58,45 @@ def _kernel_provenance():
 
 
 # ---------------------------------------------------------------------------------------------------------------- representations
+def singleton_targets(task):
+    """per query the (variable, state) its TABLE encodes as a singleton indicator (task.singleton_indicator_of), or None: the AUTHORITATIVE semantics (CQR-S1-01)"""
+    cards = task['model']['cards']; return [TK.singleton_indicator_of(q, cards) for q in task['queries']]
+
+
 def model_from_task(task):
-    """ORIGINAL representation: every query an original singleton (output kind 'singleton'); normalizer tasks refused"""
+    """ORIGINAL representation: eligible iff EVERY query's table is exactly a singleton indicator over one in-range variable (derived from the table; the output metadata is never
+    consulted); normalizer tasks refused. Returns (model, None) or (None, reason)."""
     if (task.get('query_spec') or {}).get('normalizer_task'): return None, 'normalizer task'
     if not task['queries']: return None, 'no queries'
-    if any(q.kind != 'expectation' or (q.output or {}).get('kind') != 'singleton' for q in task['queries']): return None, 'a query is not an original singleton (ratio / conditional / joint / parity / table queries keep the CQR path)'
+    tg = singleton_targets(task)
+    if any(t is None for t in tg): return None, 'a query table is not a singleton indicator (ratio / conditional / joint / parity / general table queries keep the CQR path)'
     m = task['model']; return dict(cards=list(m['cards']), factors=[dict(scope=tuple(f['scope']), values=list(f['values'])) for f in m['factors']], evidence=dict(m.get('evidence', {}))), None
+
+
+def model_from_reduced(task, deadline):
+    """REDUCED representation (CQR-S1-07): R0's exact support propagation + weighted alias substitution (cex/newarm/reduction.py) applied to the ORIGINAL model (evidence restricts the
+    domains inside the reduction; positive scalar factors cancel in every normalized answer). Returns (reduced_model, reduction_result, None) or (None, None, reason). The decoder
+    lifts reduced rows back to every original coordinate (fixed variables -> indicator rows; proved-zero states -> exact zeros)."""
+    m0, why = model_from_task(task)
+    if m0 is None: return None, None, why
+    try: red = NRED.reduce(m0, deadline=deadline)
+    except NRED.Deadline: return None, None, 'reduction allowance exhausted'
+    except ValueError as e: return None, None, 'reduction refused the model: %s' % str(e)[:80]
+    if red.get('status') != 'REDUCED': return None, None, 'reduction reports %s (typed decline: zero evidence is proved only by the CQR mechanisms)' % red.get('status')
+    rm = red['model']
+    if not rm['cards']: return None, None, 'reduction leaves no free variable (every answer is fixed: the CQR path publishes it exactly)'
+    return dict(cards=list(rm['cards']), factors=[dict(scope=tuple(f['scope']), values=list(f['values'])) for f in rm['factors']], evidence={}), red, None
+
+
+def reduction_record(red, model_reduced):
+    """the part of a reduction the checker re-derives and compares: the decoder (canonical JSON) and a digest of the reduced model; the stats are producer observations"""
+    return dict(decoder=json.loads(json.dumps(red['decoder'], default=str)), reduced_model_sha256=hashlib.sha256(json.dumps(dict(cards=model_reduced['cards'], factors=[dict(scope=list(f['scope']), values=[str(v) for v in f['values']]) for f in model_reduced['factors']]), sort_keys=True).encode()).hexdigest(),
+                stats={k: red['stats'].get(k) for k in ('states_removed', 'aliases', 'scalar_factors_cancelled', 'remaining_variables', 'elapsed_s')}, rule=red.get('certificate', {}).get('positive_scalar_rule'))
+
+
+def lift_rows(red, rows, pts):
+    """R0's lift: reduced rows -> rows over EVERY original variable (exact indicator rows for fixed variables, exact zeros for proved-zero states)"""
+    li, lp = NRED.lift(red, rows, pts); return [[(F(a), F(b)) for a, b in row] for row in li], [[F(x) for x in row] for row in lp]
 
 
 def model_from_compiled(C):
@@ -78,16 +112,17 @@ def model_from_compiled(C):
 
 # ---------------------------------------------------------------------------------------------------------------- discovery (R0's candidate pricing, bounded)
 def discover(model, deadline, allowance_s, whole_model=True, epsilon=F(1, 200)):
-    """cheap, bounded discovery: the whole-model forest / dag candidates (as R0 tries them) and R0's per-component candidate selection (minimum scalar forecast among support /
-    dag / stream) after evidence restriction and component split; the WHOLE discovery is capped at `allowance_s` (typed decline when exhausted). Returns a plan dict or a decline."""
+    """cheap, bounded, COMPOSITIONAL discovery (CQR-S1-04): every candidate search is independent -- a search that declines, fails or exhausts the allowance records its own decline and
+    never erases a candidate another search already established. Candidates: whole-model forest (recognition), whole-model dag (pricing; no evidence), components (R0's evidence
+    restriction + split + per-component minimum-forecast plan; recorded as a candidate only when EVERY component received a plan inside the allowance). The whole discovery is capped at
+    `allowance_s`. Returns the record; `applicable` = at least one complete candidate exists."""
     t0 = time.monotonic(); cap = min(deadline, t0 + allowance_s) if deadline is not None else t0 + allowance_s
     def left(): return cap - time.monotonic()
-    rec = dict(version=STRUCTURAL_VERSION, allowance_s=allowance_s, epsilon=str(epsilon), candidates=[], declines=[], components=[], whole=None)
+    rec = dict(version=STRUCTURAL_VERSION, allowance_s=allowance_s, epsilon=str(epsilon), candidates=[], declines=[], components=[], whole=None, components_complete=False, applicable=False)
     cards = model['cards']; n = len(cards)
-    if n == 0: rec['declines'].append(dict(kind='*', reason='zero variables')); rec['applicable'] = False; rec['discovery_s'] = time.monotonic() - t0; return rec
+    if n == 0: rec['declines'].append(dict(kind='*', reason='zero variables')); rec['discovery_s'] = time.monotonic() - t0; return rec
     try:
         if whole_model:
-            # forest: recognition only (cheap); execution is the attempt itself
             try: NFOREST.recognize(model, deadline=cap); rec['candidates'].append(dict(kind='forest', scope='whole', forecast=None, estimate_s=None, note='no forecast: R0 tries forest first with the full deadline'))
             except NFOREST.UnsupportedError as e: rec['declines'].append(dict(kind='forest', reason=str(e)[:120]))
             except NFOREST.ZeroEvidence: rec['declines'].append(dict(kind='forest', reason='ZERO_EVIDENCE (typed decline: not a structural publication)'))
@@ -96,23 +131,26 @@ def discover(model, deadline, allowance_s, whole_model=True, epsilon=F(1, 200)):
                 try: dp = NDAG.plan(model, deadline=min(cap, time.monotonic() + 2), epsilon=epsilon); fc = NCORE._dag_forecast(dp['stats']); rec['candidates'].append(dict(kind='dag', scope='whole', forecast=fc, estimate_s=fc / RATES['dag'])); rec['whole_dag_plan'] = dp
                 except (ValueError, TimeoutError) as e: rec['declines'].append(dict(kind='dag', reason=str(e)[:120]))
             else: rec['declines'].append(dict(kind='dag', reason='evidence present (dag needs the component split first)'))
-        # components after evidence restriction (R0's exact split; a ZERO_EVIDENCE restriction is a typed decline)
+        # components: an INDEPENDENT search; its stop is recorded as ITS decline and leaves the whole-model candidates untouched
+        split = None
         try: split = NCORE.components(model, deadline=cap)
-        except ValueError as e: rec['declines'].append(dict(kind='components', reason=str(e)[:80] + ' (typed decline)')); rec['applicable'] = False; rec['discovery_s'] = time.monotonic() - t0; return rec
-        except TimeoutError: rec['declines'].append(dict(kind='components', reason='discovery allowance exhausted')); rec['applicable'] = False; rec['discovery_s'] = time.monotonic() - t0; return rec
-        total = 0.0
-        for old, cm in split:
-            if left() <= 0: rec['declines'].append(dict(kind='components', reason='discovery allowance exhausted after %d of %d components' % (len(rec['components']), len(split)))); rec['applicable'] = False; rec['discovery_s'] = time.monotonic() - t0; return rec
-            if not cm['factors']: rec['components'].append(dict(variables=old, kind='uniform', forecast=0, estimate_s=0.0, plan=None)); continue
-            try: p = NCORE._discover_component(cm, cap)
-            except (ValueError, TimeoutError) as e: rec['declines'].append(dict(kind='component', variables=len(old), reason=str(e)[:120])); rec['applicable'] = False; rec['discovery_s'] = time.monotonic() - t0; return rec
-            est = (p['forecast'] or 0) / RATES.get(p['kind'], 1e8); total += est
-            rec['components'].append(dict(variables=old, kind=p['kind'], forecast=p['forecast'], estimate_s=est, plan=p, discovery=p['discovery']))
-        rec['components_estimate_s'] = total; rec['n_components'] = len(split)
-        # whole-model dag vs components: R0's representation selection (minimum forecast)
+        except ValueError as e: rec['declines'].append(dict(kind='components', reason=str(e)[:80] + ' (typed decline)'))
+        except TimeoutError: rec['declines'].append(dict(kind='components', reason='discovery allowance exhausted in the component split'))
+        if split is not None:
+            total = 0.0; complete = True
+            for old, cm in split:
+                if left() <= 0: rec['declines'].append(dict(kind='components', reason='discovery allowance exhausted after %d of %d components' % (len(rec['components']), len(split)))); complete = False; break
+                if not cm['factors']: rec['components'].append(dict(variables=old, kind='uniform', forecast=0, estimate_s=0.0, plan=None)); continue
+                try: p = NCORE._discover_component(cm, cap)
+                except (ValueError, TimeoutError) as e: rec['declines'].append(dict(kind='component', variables=len(old), reason=str(e)[:120])); complete = False; break
+                est = (p['forecast'] or 0) / RATES.get(p['kind'], 1e8); total += est
+                rec['components'].append(dict(variables=old, kind=p['kind'], forecast=p['forecast'], estimate_s=est, plan=p, discovery=p['discovery']))
+            rec['n_components'] = len(split); rec['components_complete'] = complete
+            if complete: rec['components_estimate_s'] = total; rec['candidates'].append(dict(kind='components', scope='components', forecast=sum(c['forecast'] or 0 for c in rec['components']), estimate_s=total, n_components=len(split)))
+        # whole-model dag vs components: R0's representation selection (minimum forecast) when BOTH are complete
         wd = next((c for c in rec['candidates'] if c['kind'] == 'dag'), None)
-        if wd is not None and (wd['forecast'] or 0) <= sum(c['forecast'] or 0 for c in rec['components']): rec['whole'] = 'dag'
-        rec['applicable'] = True
+        if wd is not None and rec['components_complete'] and (wd['forecast'] or 0) <= sum(c['forecast'] or 0 for c in rec['components']): rec['whole'] = 'dag'
+        rec['applicable'] = bool(rec['candidates'])
     finally: rec['discovery_s'] = time.monotonic() - t0
     return rec
 
@@ -124,14 +162,27 @@ def allocation(est, remaining_s, which):
 
 
 def admitted(disc, remaining_s):
-    """R0's deterministic gate reused: estimate <= GATE_FRACTION x remaining (forest has no estimate: admitted whenever applicable, as R0 does); returns (ok, estimate_s, which)"""
+    """R0's deterministic gate reused over the candidates that actually exist: forest first (no estimate: admitted when recognised, as R0 does); then the whole-model dag when it is the
+    cheaper complete representation; then the complete component plan. Each is judged by estimate <= GATE_FRACTION x remaining. Returns (ok, estimate_s, which)."""
     if not disc.get('applicable'): return False, None, None
-    if any(c['kind'] == 'forest' for c in disc['candidates']): return True, None, 'forest'
-    if disc.get('whole') == 'dag': est = next(c['estimate_s'] for c in disc['candidates'] if c['kind'] == 'dag'); return est <= GATE_FRACTION * remaining_s, est, 'whole_dag'
-    est = disc.get('components_estimate_s', 0.0); return est <= GATE_FRACTION * remaining_s, est, 'components'
+    kinds = {c['kind']: c for c in disc['candidates']}
+    if 'forest' in kinds: return True, None, 'forest'
+    last = (False, None, None)
+    if disc.get('whole') == 'dag' or ('dag' in kinds and not disc.get('components_complete')):
+        est = kinds['dag']['estimate_s']
+        if est <= GATE_FRACTION * remaining_s: return True, est, 'whole_dag'
+        last = (False, est, 'whole_dag')
+    if disc.get('components_complete') and 'components' in kinds:
+        est = disc.get('components_estimate_s', 0.0)
+        if est <= GATE_FRACTION * remaining_s: return True, est, 'components'
+        last = (False, est, 'components')
+    if 'dag' in kinds and last[2] != 'whole_dag':
+        est = kinds['dag']['estimate_s']
+        if est <= GATE_FRACTION * remaining_s: return True, est, 'whole_dag'
+        last = (False, est, 'whole_dag')
+    return last
 
 
-# ---------------------------------------------------------------------------------------------------------------- execution
 class StructuralStop(Exception):
     """typed outcome of a structural attempt that produced no rows: kind in ('DEADLINE', 'MEMORY', 'REPRESENTATION', 'NUMERICAL', 'ZERO_EVIDENCE', 'UNSUPPORTED', 'FAULT')"""
     def __init__(self, kind, reason, stats=None): super().__init__('%s: %s' % (kind, reason)); self.kind = kind; self.reason = reason; self.stats = stats or {}
@@ -193,10 +244,11 @@ def execute(model, disc, deadline, which, epsilon=F(1, 200)):
 
 # ---------------------------------------------------------------------------------------------------------------- query composition (ORIGINAL task answers)
 def answers_original(task, rows):
-    """per original singleton query j: the executed row interval of (variable, state)"""
+    """per query j: the executed row interval of the (variable, state) its TABLE encodes (task.singleton_indicator_of; CQR-S1-01). Raises ValueError when a query is not a singleton indicator."""
     out = []
-    for q in task['queries']:
-        o = q.output; lo, hi = rows[o['variable']][o['state']]; out.append((lo, hi))
+    for q, tg in zip(task['queries'], singleton_targets(task)):
+        if tg is None: raise ValueError('query %s is not a singleton indicator: not answerable by singleton rows' % q.name)
+        v, st = tg; lo, hi = rows[v][st]; out.append((lo, hi))
     return out
 
 
@@ -219,39 +271,65 @@ def answers_compiled(C, rows):
 
 # ---------------------------------------------------------------------------------------------------------------- checker-side verification (bounded re-execution)
 def verify(model, rec, deadline):
-    """re-execute every recorded component (same kind; the order is re-derived by the same planning) / the recorded whole-model route on the BOUND model under the checker's deadline;
-    the rows must reproduce exactly. Returns (rows, None) or (None, failure message). The kernels' enclosures are TRUSTED at this boundary (as in the frozen pac gate)."""
+    """re-execute the recorded route on the BOUND model under the checker's deadline (bounded re-execution, as the frozen pac gate verifies R0's structural routes; the kernels'
+    enclosures are TRUSTED at this boundary). The rows must reproduce EXACTLY. Every structural FACT in the returned record is derived from the re-execution (route kind, component
+    partition and kinds, which native kernels ran), not from the producer's record; the producer's record must AGREE with those facts (partition, kinds, native-call count, kernel
+    digests of every kernel the re-execution loaded), and its observations (wall) must lie in their domains. Returns (rows, facts, None) or (None, None, failure message)."""
     try:
-        if rec.get('version') != STRUCTURAL_VERSION: return None, 'structural record version %s is not %s' % (str(rec.get('version'))[:40], STRUCTURAL_VERSION[:40])
+        if rec.get('version') != STRUCTURAL_VERSION: return None, None, 'structural record version %s is not %s' % (str(rec.get('version'))[:40], STRUCTURAL_VERSION[:40])
         epsilon = F(str(rec.get('epsilon', '1/200'))); cards = model['cards']; n = len(cards); want = [[(F(a), F(b)) for a, b in row] for row in rec['rows']]
-        if len(want) != n or any(len(row) != cards[v] for v, row in enumerate(want)): return None, 'recorded structural rows do not match the bound model shape'
+        if len(want) != n or any(len(row) != cards[v] for v, row in enumerate(want)): return None, None, 'recorded structural rows do not match the bound model shape'
+        rc = rec.get('components')
+        if not isinstance(rc, list): return None, None, 'malformed component list'
+        facts = dict(which=rec['which'], components=[], native_kinds=set(), native_calls=0)
         if rec['which'] == 'forest':
-            res = NFOREST.solve(model, deadline=deadline, epsilon=epsilon, independent_replay=True); got, _ = _rows_result(res)
+            res = NFOREST.solve(model, deadline=deadline, epsilon=epsilon, independent_replay=True); got, _ = _rows_result(res); facts['components'] = [dict(kind='forest', variables=list(range(n)))]
         elif rec['which'] == 'whole_dag':
-            if model.get('evidence'): return None, 'structural whole-model dag recorded on a model with evidence'
-            res = NDAG.execute_plan(NDAG.plan(model, deadline=deadline, epsilon=epsilon), deadline=deadline); got, _ = _rows_result(res)
+            if model.get('evidence'): return None, None, 'structural whole-model dag recorded on a model with evidence'
+            res = NDAG.execute_plan(NDAG.plan(model, deadline=deadline, epsilon=epsilon), deadline=deadline); got, _ = _rows_result(res); facts['components'] = [dict(kind='dag', variables=list(range(n)))]
         elif rec['which'] == 'components':
             ev = model.get('evidence', {}); got = [None] * n
             for v, a in ev.items(): got[v] = [(F(int(s == a)), F(int(s == a))) for s in range(cards[v])]
             split = NCORE.components(model, deadline=deadline); by = {tuple(old): cm for old, cm in split}
-            for c in rec['components']:
-                old = tuple(c['variables'])
-                if old not in by: return None, 'recorded component %s is not a component of the bound model' % list(old)[:4]
+            if len(rc) != len(split): return None, None, 'recorded component count %d differs from the re-derived partition (%d)' % (len(rc), len(split))
+            for c in rc:
+                old = tuple(c.get('variables') or ())
+                if old not in by: return None, None, 'recorded component %s is not a component of the bound model' % list(old)[:4]
                 cm = by[old]
-                if c['kind'] == 'uniform':
-                    if cm['factors']: return None, 'uniform component recorded on a component with factors'
+                if c.get('kind') == 'uniform':
+                    if cm['factors']: return None, None, 'uniform component recorded on a component with factors'
                     for v in old: got[v] = [(F(1, cards[v]), F(1, cards[v]))] * cards[v]
-                    continue
-                if c['kind'] not in ('support', 'dag', 'stream'): return None, 'unknown structural component kind %s' % c['kind']
+                    facts['components'].append(dict(kind='uniform', variables=list(old))); continue
+                if c.get('kind') not in ('support', 'dag', 'stream'): return None, None, 'unknown structural component kind %s' % c.get('kind')
+                if not cm['factors']: return None, None, 'component %s has no factors but was recorded as %s' % (list(old)[:4], c.get('kind'))
                 plan = NCORE._discover_component(cm, deadline, c['kind']); res = NCORE._execute_component(plan, deadline)
-                if res.get('status') == 'ZERO_EVIDENCE': return None, 'structural re-execution reports zero evidence'
+                if res.get('status') == 'ZERO_EVIDENCE': return None, None, 'structural re-execution reports zero evidence'
                 r_, _ = _rows_result(res)
                 for v, row in zip(old, r_): got[v] = row
-            if any(r is None for r in got): return None, 'structural re-execution leaves variables uncovered'
-        else: return None, 'unknown structural route %s' % str(rec.get('which'))[:30]
-        if got != want: return None, 'structural re-execution does not reproduce the recorded rows (%s)' % rec['which']
-        return got, None
-    except (TimeoutError, NFOREST.DeadlineExceeded, NDAG.Deadline): return None, 'UNVERIFIABLE: structural re-execution exceeded the checker allowance'
-    except NSUPPORT.ResourceStop as e: return None, ('UNVERIFIABLE: structural re-execution stopped (%s)' % e.reason) if e.reason in ('DEADLINE', 'MEMORY') else ('structural re-execution refused: %s' % e.reason)
-    except (ValueError, NFOREST.UnsupportedError, NDAG.Unsupported) as e: return None, 'structural re-execution refused: %s' % str(e)[:100]
-    except MemoryError: return None, 'UNVERIFIABLE: MemoryError during structural re-execution'
+                facts['components'].append(dict(kind=c['kind'], variables=list(old)))
+                if c['kind'] in ('support', 'stream'): facts['native_kinds'].add(c['kind']); facts['native_calls'] += 1
+            if any(r is None for r in got): return None, None, 'structural re-execution leaves variables uncovered'
+        else: return None, None, 'unknown structural route %s' % str(rec.get('which'))[:30]
+        if got != want: return None, None, 'structural re-execution does not reproduce the recorded rows (%s)' % rec['which']
+        # ---- the producer's record must agree with the FACTS (CQR-S1-03)
+        if rec['which'] in ('forest', 'whole_dag'):
+            if len(rc) != 1 or rc[0].get('kind') != facts['components'][0]['kind'] or sorted(rc[0].get('variables') or []) != list(range(n)): return None, None, 'recorded component attribution disagrees with the whole-model %s execution' % rec['which']
+        cnt = rec.get('counters') or {}
+        if cnt.get('native_calls') != facts['native_calls']: return None, None, 'recorded native_calls %s differs from the %d native component executions of the re-execution' % (cnt.get('native_calls'), facts['native_calls'])
+        prov = rec.get('kernel_provenance') or {}
+        if facts['native_kinds']:
+            cur = _kernel_provenance(); tag = {'support': 'newarm_cex', 'stream': 'newarm_stream'}
+            for k in sorted(facts['native_kinds']):
+                want_d = (cur.get(tag[k]) or {}).get('binary_sha256'); got_d = (prov.get(tag[k]) or {}).get('binary_sha256'); got_p = os.path.basename(str((prov.get(tag[k]) or {}).get('loaded_binary_path') or ''))
+                if not got_d: return None, None, 'structural record names no kernel digest for the %s kernel the re-execution used' % k
+                if got_d != want_d: return None, None, 'structural record kernel digest for %s (%s) differs from the kernel loaded by the verifier (%s)' % (k, str(got_d)[:12], str(want_d)[:12])
+                if got_p not in ('%s_%s.%s' % ({'support': 'cex', 'stream': 'stream'}[k], got_d, {'support': 'dylib', 'stream': 'so'}[k]),): return None, None, 'structural record loaded path %r for %s is not the hash-addressed cache file of its digest' % (got_p[:60], k)
+        elif prov and any((prov.get(t) or {}).get('binary_sha256') for t in prov): return None, None, 'structural record claims kernel provenance although the re-execution used no native kernel'
+        w_ = rec.get('wall_s')
+        if not isinstance(w_, (int, float)) or isinstance(w_, bool) or w_ != w_ or w_ < 0 or w_ == float('inf'): return None, None, 'structural record wall %r is outside its domain (finite, nonnegative)' % (w_,)
+        facts['native_kinds'] = sorted(facts['native_kinds']); facts['producer_observed_wall_s'] = w_
+        return got, facts, None
+    except (TimeoutError, NFOREST.DeadlineExceeded, NDAG.Deadline): return None, None, 'UNVERIFIABLE: structural re-execution exceeded the checker allowance'
+    except NSUPPORT.ResourceStop as e: return None, None, ('UNVERIFIABLE: structural re-execution stopped (%s)' % e.reason) if e.reason in ('DEADLINE', 'MEMORY') else ('structural re-execution refused: %s' % e.reason)
+    except (ValueError, NFOREST.UnsupportedError, NDAG.Unsupported) as e: return None, None, 'structural re-execution refused: %s' % str(e)[:100]
+    except MemoryError: return None, None, 'UNVERIFIABLE: MemoryError during structural re-execution'

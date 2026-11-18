@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.6 (2026-11-17: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
+CHECKER_VERSION = 'cqr-checker-v1.7 (2026-11-17, structured review CQR-S1-01..03: singleton correspondence derived from each query TABLE (output metadata must agree); the structural flag and route eligibility bound to the registered arm; structural attribution built from the FACTS of the re-execution with kernel digests verified against the verifier\'s own loaded kernels and producer observations labelled; the structural_reduced route (reduction re-derived, decoder + reduced model compared, rows lifted); v1.6: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -68,8 +68,8 @@ def _event_problem(ev):
 
 
 EXACT_ROUTES = ('exact_reference', 'exact_frontier_closure', 'exact_zero_dimensional', 'normalizer_exact_reference', 'normalizer_exact_frontier_closure', 'normalizer_exact_zero_dimensional')
-DET_ROUTES = ('deterministic_frontier', 'deterministic_frontier_closure', 'deterministic_zero_dimensional', 'deterministic_concentration', 'deterministic_signed_residual_E_zero', 'normalizer_deterministic_frontier', 'structural_original', 'structural_compiled')
-STRUCTURAL_ROUTES = ('structural_original', 'structural_compiled')
+DET_ROUTES = ('deterministic_frontier', 'deterministic_frontier_closure', 'deterministic_zero_dimensional', 'deterministic_concentration', 'deterministic_signed_residual_E_zero', 'normalizer_deterministic_frontier', 'structural_original', 'structural_reduced', 'structural_compiled')
+STRUCTURAL_ROUTES = ('structural_original', 'structural_reduced', 'structural_compiled')
 PAC_ROUTES = ('pac_ratio_intersected_with_deterministic', 'pac_signed_residual_validation', 'normalizer_pac_ratio_intersected_with_deterministic')
 
 
@@ -146,7 +146,10 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         eff = CP.effective_operators(spec['enabled'], task)
         if sorted(cert.get('arm_operators') or []) != sorted(spec['enabled']): fail('recorded arm operator set differs from the registered arm')
         if sorted(cert.get('enabled_operators') or []) != sorted(eff): fail('recorded task-effective operator set differs from the registered arm policy for this task')
+        if bool(cert.get('structural_backend')) != bool(spec.get('structural')): fail('recorded structural_backend flag %s differs from the registered arm %s (structural backend %s)' % (cert.get('structural_backend'), arm, bool(spec.get('structural'))))
+        if (cert.get('publication') or {}).get('route') in STRUCTURAL_ROUTES and not spec.get('structural'): fail('structural route %s published under arm %s whose registered structural backend is DISABLED' % ((cert.get('publication') or {}).get('route'), arm))
         if bool(cert.get('signed_stream')) != (spec['signed_stream'] and not normalizer) or bool(cert.get('query_directed_refinement')) != (spec['query_directed_refinement'] and not normalizer): fail('recorded stream flags differ from the registered arm policy for this task')
+    if (cert.get('publication') or {}).get('route') in STRUCTURAL_ROUTES and not (SV.ARMS.get(cert.get('arm')) or {}).get('structural'): fail('structural route under an arm (%s) without the structural backend' % cert.get('arm'))
     enabled_eff = set(cert.get('enabled_operators') or [])
     # ---------------- zero proofs
     if w.get('outcome') == 'PROVED_ZERO_EVIDENCE':
@@ -200,12 +203,12 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         info['bias'] = [str(b) for b in C.bias]; info['compile_outcome'] = dict(interrupted=lg.get('interrupted'), failed=lg.get('failed'))
     else:
         derived = {}; rec_certs = []
-        if route not in ('exact_reference', 'normalizer_exact_reference', 'structural_original'): fail('publication without a compile record on a non-reference route'); return fails, info
+        if route not in ('exact_reference', 'normalizer_exact_reference', 'structural_original', 'structural_reduced'): fail('publication without a compile record on a non-reference route'); return fails, info
         # honest absence: the protected reference finished before ANY optional work was spent (no compile transaction opened), or optional work was cancelled
         wo_tot = ((cert.get('work') or {}).get('optional') or {}).get('total')
-        if route == 'structural_original':
-            # the structural route on the original model publishes BEFORE any compile transaction: no optional Work may have been charged (structural executions charge their own counters)
-            if wo_tot != 0: fail('structural_original publication with %s optional Work units charged (the route runs before the compile; a compile record would be required)' % wo_tot)
+        if route in ('structural_original', 'structural_reduced'):
+            # the structural routes on the original / reduced model publish BEFORE any compile transaction: no optional Work may have been charged (structural executions charge their own counters)
+            if wo_tot != 0: fail('%s publication with %s optional Work units charged (the route runs before the compile; a compile record would be required)' % (route, wo_tot))
         elif not cert.get('optional_cancelled') and not (wo_tot == 0 and ((cert.get('reference') or {}).get('done') is True)): fail('compile record absent without a recorded optional cancellation or a reference-first completion with zero optional work')
     if fails: return fails, info
     if late(): fail('UNVERIFIABLE: allowance expired after the compiler replay'); return fails, info
@@ -229,24 +232,46 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         try:
             if F(str(rec.get('epsilon'))) != eps: fail('structural record epsilon %s differs from the task epsilon' % rec.get('epsilon')); return None
         except (ValueError, ZeroDivisionError, TypeError): fail('structural record epsilon is not a rational'); return None
-        if (rec.get('counters') or {}).get('native_calls') and not rec.get('kernel_provenance'): fail('structural record with native calls but no kernel provenance')
-        rows, msg = ST.verify(model, rec, deadline)
+        rows, facts, msg = ST.verify(model, rec, deadline)
         if msg: fail('structural re-execution: ' + msg); return None
-        info['structural'] = dict(route=route, which=rec.get('which'), components=[dict(kind=c.get('kind'), variables=len(c.get('variables') or [])) for c in rec['components']][:64], native_calls=(rec.get('counters') or {}).get('native_calls'), wall_s=rec.get('wall_s'), kernel_provenance=rec.get('kernel_provenance'), verified_by='bounded re-execution on the bound model; rows reproduced exactly')
+        # the AUTHORITATIVE attribution is built from the FACTS of the re-execution (route kind, partition, kinds, native kernels and their verified digests); the producer's timing is labelled an observation
+        info['structural'] = dict(route=route, which=facts['which'], components=[dict(kind=c['kind'], variables=len(c['variables'])) for c in facts['components']][:64], native_calls=facts['native_calls'], native_kinds=facts['native_kinds'],
+                                  kernel_digests_verified={k: (rec.get('kernel_provenance') or {}).get({'support': 'newarm_cex', 'stream': 'newarm_stream'}[k], {}).get('binary_sha256') for k in facts['native_kinds']},
+                                  producer_observed_wall_s=facts['producer_observed_wall_s'], verified_by='bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier\'s loaded kernels')
         return rows
     if route == 'exact_reference':
         tr = OR.enumerate_truth(task['model'], task['queries'], deadline=deadline, max_assignments=ORACLE_CAP)
         if tr is None: fail('UNVERIFIABLE_REFERENCE_SIZE: the exact reference publication exceeds the checker cap / allowance (not shown wrong)'); return fails, info
         proven = [('UNDEFINED' if a == 'UNDEFINED' else (a, a)) for a in tr['answers']]
-    elif route == 'structural_original':
-        if C is not None: fail('structural_original route with a compile record (the route runs before the compile)'); return fails, info
+    elif route in ('structural_original', 'structural_reduced'):
+        if C is not None: fail('%s route with a compile record (the route runs before the compile)' % route); return fails, info
+        # the singleton correspondence is derived INDEPENDENTLY from each query's TABLE (CQR-S1-01): a query that is not exactly a singleton indicator is not answerable by this route
+        targets = ST.singleton_targets(task)
+        if any(t is None for t in targets): fail('%s route on a task with a query that is not a singleton indicator (query %d: %s)' % (route, targets.index(None), task['queries'][targets.index(None)].name)); return fails, info
+        for j, q in enumerate(task['queries']):
+            o = q.output or {}
+            if o and (o.get('kind') != 'singleton' or (o.get('variable'), o.get('state')) != targets[j]): fail('query %d: output metadata %s disagrees with the table-derived singleton %s' % (j, o, targets[j]))
         m0, why0 = ST.model_from_task(task)
-        if m0 is None: fail('structural_original route on a task outside the adapter domain: %s' % why0); return fails, info
-        rows = _structural_rows(m0, 'original')
-        if fails: return fails, info
-        proven = ST.answers_original(task, rows)
+        if m0 is None: fail('%s route on a task outside the adapter domain: %s' % (route, why0)); return fails, info
+        if route == 'structural_reduced':
+            # RE-DERIVE the reduction on the bound model; the recorded decoder and reduced model must be the re-derived ones; then verify on the reduced model and LIFT
+            m1, red1, why1 = ST.model_from_reduced(task, deadline)
+            if m1 is None: fail('structural_reduced route but the re-derived reduction declines: %s' % why1); return fails, info
+            rr = (pub.get('structural') or {}).get('reduction')
+            if not isinstance(rr, dict): fail('structural_reduced publication without its reduction record'); return fails, info
+            mine = ST.reduction_record(red1, m1)
+            if json.loads(json.dumps(rr.get('decoder'), default=str)) != mine['decoder']: fail('recorded reduction decoder differs from the re-derived one'); return fails, info
+            if rr.get('reduced_model_sha256') != mine['reduced_model_sha256']: fail('recorded reduced model differs from the re-derived reduction'); return fails, info
+            rows_r = _structural_rows(m1, 'reduced')
+            if fails: return fails, info
+            rows, _ = ST.lift_rows(red1, rows_r, [[(a + b) / 2 for a, b in row] for row in rows_r]); info['structural']['reduction'] = dict(reduced_variables=len(m1['cards']), original_variables=len(m0['cards']), stats=rr.get('stats'), verified_by='reduction re-derived on the bound model (decoder and reduced model equal); lift re-applied')
+        else:
+            rows = _structural_rows(m0, 'original')
+            if fails: return fails, info
+        try: proven = ST.answers_original(task, rows)
+        except ValueError as ex: fail('structural answers: %s' % str(ex)[:120]); return fails, info
         RES = TK.output_reservation(task); tau0 = eps - RES
-        if [str(x) for x in (pub.get('tau') or [])] != [str(tau0)] * K: fail('structural_original tau differs from eps - reservation')
+        if [str(x) for x in (pub.get('tau') or [])] != [str(tau0)] * K: fail('%s tau differs from eps - reservation' % route)
     else:
         bias = C.bias
         def widen(x, j):

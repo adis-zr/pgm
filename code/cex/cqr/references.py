@@ -46,8 +46,8 @@ def reference_for_case(model_path, bits, cap):
     # per-variable rows for all-singleton tasks (the legacy audit of intervals / points / MAR rows); singleton map for partial schedules
     smap = {}
     for j, q in enumerate(task['queries']):
-        o = q.output or {}
-        if o.get('kind') == 'singleton': smap['%d,%d' % (o['variable'], o['state'])] = answers[j]
+        sv = TK.singleton_indicator_of(q, m['cards'])        # placement derived from the TABLE (CQR-S1-01)
+        if sv is not None: smap['%d,%d' % sv] = answers[j]
     out['singleton_map'] = smap
     if task['all_singletons']:
         cards = m['cards']

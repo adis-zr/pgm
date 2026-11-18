@@ -32,7 +32,7 @@ R = load_module('cqr_registry', os.path.join(HERE, 'registry.py'))
 PG = load_module('pac_gate', os.path.join(PAC, 'gate.py'))
 if HERE in sys.path: sys.path.remove(HERE)
 sys.path.insert(0, HERE)
-GATE_VERSION = 'cqr-gate-v1 (2026-11-16: independent CQR checker per cell under REPLAY_FACTOR x budget; published answers bound to the certified publication; frozen cqr scope identity; effective-file dependency closure incl. .query.json; baseline arms through the frozen pac gate v4.3 _check_cell; aggregate budget -> structured UNVERIFIABLE)'
+GATE_VERSION = 'cqr-gate-v1.1 (2026-11-17, structured review CQR-S1-03: loaded-kernel provenance (worker-recorded digests vs the frozen identity) validated for every arm with native tags incl. the CQR arms; attribution carried from the checker\'s VERIFIED facts; v1 2026-11-16: independent CQR checker per cell under REPLAY_FACTOR x budget; published answers bound to the certified publication; frozen cqr scope identity; effective-file dependency closure incl. .query.json; baseline arms through the frozen pac gate v4.3 _check_cell; aggregate budget -> structured UNVERIFIABLE)'
 REPLAY_FACTOR = 3.0
 LEDGER = 'CQR_LEDGER.jsonl'
 ZERO_HASH = hashlib.sha256(b'0').hexdigest()
@@ -321,11 +321,14 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
                 n0 = counters['checked']; bind_task_dependencies(c, fail)              # the EFFECTIVE dependency set incl. .query.json for every arm (the baseline enumerator knows only its own cohorts)
                 PG._check_cell(RD, cid, r, c, man, frozen_candidate, frozen_b0, models, failures, fail, EPS, replay_factor, counters)
                 counters['baseline_checked'] += counters['checked'] - n0
-                if man.get('kernel_identity') and r.get('worker_output') and os.path.exists(os.path.join(RD, r['worker_output'])):
-                    try: w_ = json.load(open(os.path.join(RD, r['worker_output'])))
-                    except (ValueError, OSError): w_ = None
-                    if w_ is not None:
-                        for m_ in KI.receipt_failures(man['kernel_identity'], w_, c['arm']): fail(cid, 'loaded kernel provenance: ' + m_)
+            # LOADED-KERNEL PROVENANCE for EVERY arm whose worker may dlopen a native kernel (structured review CQR-S1-03: the CQR arms load the newarm kernels through the structural backend;
+            # the recorded loaded artifact of the worker output -- not the disk at check time -- is compared with the frozen identity)
+            if man.get('kernel_identity') and r.get('worker_output') and os.path.exists(os.path.join(RD, r['worker_output'])) and KI.tags_needed_by(c['arm']):
+                try: w_ = json.load(open(os.path.join(RD, r['worker_output'])))
+                except (ValueError, OSError): w_ = None
+                if w_ is not None:
+                    for m_ in KI.receipt_failures(man['kernel_identity'], w_, c['arm']): fail(cid, 'loaded kernel provenance: ' + m_)
+                    if R.validator_of(c['arm']) == 'cqr_candidate': counters['cqr_provenance_checked'] = counters.get('cqr_provenance_checked', 0) + 1
         except (GateBudgetExhausted, PG.GateBudgetExhausted): exhausted_at = cid; fail(cid, 'UNVERIFIABLE -- aggregate verification budget exhausted while checking this cell')
         entry['verified_attribution'] = _attrib.get(cid)                     # the checker's authoritative attribution (R6), known only after the check
         paths = set(_cell_paths) | set(PG._cell_paths)

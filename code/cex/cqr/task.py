@@ -84,13 +84,69 @@ class Query:
         return True
 
 
+def _index(v, n, what):
+    if isinstance(v, bool) or not isinstance(v, int) or not (0 <= v < n): raise ValueError('%s index %r outside [0, %d) (negative or out-of-range indices are refused, never wrapped)' % (what, v, n))
+    return v
+
+
 def singleton_query(v, a, cards):
+    v = _index(v, len(cards), 'variable'); a = _index(a, cards[v], 'state')
     vals = [F(int(s == a)) for s in range(cards[v])]
     return Query('P(X%d=%d)' % (v, a), 'expectation', f=Table((v,), vals), output=dict(kind='singleton', variable=v, state=a))
 
 
+def singleton_indicator_of(q, cards):
+    """AUTHORITATIVE singleton semantics (structured review CQR-S1-01): (variable, state) iff the query is an expectation whose table has ONE in-range variable in scope and whose
+    values are EXACTLY the indicator of one state (a single 1, every other entry 0). Derived from the table alone; the output metadata is never consulted. None otherwise."""
+    if q.kind != 'expectation' or q.f is None or len(q.f.scope) != 1: return None
+    v = q.f.scope[0]
+    if isinstance(v, bool) or not isinstance(v, int) or not (0 <= v < len(cards)) or len(q.f.values) != cards[v]: return None
+    ones = [s for s, x in enumerate(q.f.values) if x == 1]
+    if len(ones) != 1 or any(x != 0 for s, x in enumerate(q.f.values) if s != ones[0]): return None
+    return (v, ones[0])
+
+
+def derived_output(q, cards):
+    """the placement metadata the constructors would have produced for this table, derived from the table alone: singleton / joint / parity indicators, conditional ratio pairs; None = a general table query (no placement)"""
+    if q.kind == 'expectation':
+        sv = singleton_indicator_of(q, cards)
+        if sv is not None: return dict(kind='singleton', variable=sv[0], state=sv[1])
+        sc = tuple(q.f.scope)
+        if len(sc) != len(set(sc)) or any(isinstance(v, bool) or not isinstance(v, int) or not (0 <= v < len(cards)) for v in sc) or len(q.f.values) != prod(cards[v] for v in sc): return None
+        ones = [i for i, x in enumerate(q.f.values) if x == 1]
+        if ones and all(x in (0, 1) for x in q.f.values):
+            if len(ones) == 1 and sc == tuple(sorted(sc)):
+                xs = list(product(*(range(cards[v]) for v in sc)))[ones[0]]; return dict(kind='joint', assign={str(v): xs[i] for i, v in enumerate(sc)})
+            if sc == tuple(sorted(sc)):
+                for bit in (0, 1):
+                    if [F(int(sum(xs) % 2 == bit)) for xs in product(*(range(cards[v]) for v in sc))] == list(q.f.values): return dict(kind='parity', variables=list(sc), bit=bit)
+        return None
+    sg = tuple(q.g.scope); sh = tuple(q.h.scope)
+    if sg != tuple(sorted(sg)) or sh != tuple(sorted(sh)) or not set(sg) <= set(sh): return None
+    gi = [i for i, x in enumerate(q.g.values) if x == 1]
+    if len(gi) != 1 or any(x not in (0, 1) for x in q.g.values) or any(x not in (0, 1) for x in q.h.values): return None
+    given = dict(zip(sg, list(product(*(range(cards[v]) for v in sg)))[gi[0]])); hi = [i for i, x in enumerate(q.h.values) if x == 1]
+    if len(hi) != 1: return None
+    xs = dict(zip(sh, list(product(*(range(cards[v]) for v in sh)))[hi[0]]))
+    if any(xs[v] != given[v] for v in given): return None
+    event = {v: xs[v] for v in sh if v not in given}
+    if not event: return None
+    return dict(kind='conditional', event={str(k): v for k, v in event.items()}, given={str(k): v for k, v in given.items()})
+
+
+def validate_output_metadata(q, cards):
+    """a table query's output metadata must be ABSENT or exactly the metadata derivable from its table (CQR-S1-01: metadata never redefines a query); raises ValueError (INVALID_TASK)"""
+    o = q.output or {}
+    if not o or o == {'kind': 'table'}: return          # absent or the explicit general-table marker: no placement claimed
+    d = derived_output(q, cards)
+    norm = lambda m: json.loads(json.dumps(m, sort_keys=True))
+    if d is None or norm(d) != norm(o): raise ValueError('query %s: output metadata %s is not derivable from its table (derived: %s): a placement label never redefines the query; drop the metadata or supply the matching table' % (q.name, json.dumps(o, sort_keys=True)[:120], json.dumps(d, sort_keys=True)[:120] if d else 'general table'))
+
+
 def joint_query(assign, cards):
     """indicator of a joint event {X_v = a for (v,a) in assign}"""
+    for v, a in assign.items(): _index(v, len(cards), 'variable'); _index(a, cards[v], 'state')
+    if not assign: raise ValueError('joint query with an empty assignment')
     sc = tuple(sorted(assign)); vals = []
     for xs in product(*(range(cards[v]) for v in sc)): vals.append(F(int(all(xs[i] == assign[v] for i, v in enumerate(sc)))))
     return Query('P(%s)' % ','.join('X%d=%d' % (v, assign[v]) for v in sc), 'expectation', f=Table(sc, vals), output=dict(kind='joint', assign={str(k): v for k, v in assign.items()}))
@@ -98,6 +154,9 @@ def joint_query(assign, cards):
 
 def parity_query(vars_, bit, cards):
     """indicator of (sum of binary-valued coordinates mod 2) == bit; for nonbinary variables the parity of the state index is used (bounded modular-sum query)"""
+    for v in vars_: _index(v, len(cards), 'variable')
+    if bit not in (0, 1) or isinstance(bit, bool): raise ValueError('parity bit must be 0 or 1')
+    if not vars_ or len(set(vars_)) != len(vars_): raise ValueError('parity query needs distinct variables')
     sc = tuple(sorted(vars_)); vals = []
     for xs in product(*(range(cards[v]) for v in sc)): vals.append(F(int(sum(xs) % 2 == bit)))
     return Query('P(parity(%s)=%d)' % (','.join('X%d' % v for v in sc), bit), 'expectation', f=Table(sc, vals), output=dict(kind='parity', variables=list(sc), bit=bit))
@@ -105,6 +164,9 @@ def parity_query(vars_, bit, cards):
 
 def conditional_query(event, given, cards):
     """P(event | given) as a ratio pair: h = 1[event & given], g = 1[given]"""
+    for v, a in list(event.items()) + list(given.items()): _index(v, len(cards), 'variable'); _index(a, cards[v], 'state')
+    if not event or not given: raise ValueError('conditional query needs a nonempty event and a nonempty condition')
+    if any(v in given and given[v] != a for v, a in event.items()): raise ValueError('conditional query: the event contradicts the condition')
     sg = tuple(sorted(given)); sh = tuple(sorted(set(event) | set(given)))
     gv = [F(int(all(xs[i] == given[v] for i, v in enumerate(sg)))) for xs in product(*(range(cards[v]) for v in sg))]
     hv = []
@@ -148,6 +210,16 @@ def output_reservation(task):
     return F(0)
 
 
+def _validate_table_query(q, cards):
+    """shape of an explicit table query: distinct in-range scope variables; table length = product of cardinalities (for both tables of a ratio)"""
+    for t in ((q.f,) if q.kind == 'expectation' else (q.h, q.g)):
+        if t is None: raise ValueError('query %s: missing table' % q.name)
+        sc = tuple(t.scope)
+        if len(sc) != len(set(sc)): raise ValueError('query %s: repeated variable in a table scope' % q.name)
+        for v in sc: _index(v, len(cards), 'variable')
+        if len(t.values) != prod(cards[v] for v in sc): raise ValueError('query %s: table length %d differs from the scope volume %d' % (q.name, len(t.values), prod(cards[v] for v in sc)))
+
+
 def all_singletons(cards):
     return [singleton_query(v, a, cards) for v in range(len(cards)) for a in range(cards[v])]
 
@@ -167,7 +239,8 @@ def load_task(model_path, mode=None):
             elif k == 'joint': qs.append(joint_query({int(a): int(b) for a, b in q['assign'].items()}, cards))
             elif k == 'parity': qs.append(parity_query([int(v) for v in q['variables']], int(q['bit']), cards))
             elif k == 'conditional': qs.append(conditional_query({int(a): int(b) for a, b in q['event'].items()}, {int(a): int(b) for a, b in q['given'].items()}, cards))
-            elif k == 'table': qs.append(Query.from_json(q['table']))
+            elif k == 'table':
+                tq = Query.from_json(q['table']); _validate_table_query(tq, cards); validate_output_metadata(tq, cards); qs.append(tq)
             else: raise ValueError('unsupported query kind %s' % k)
     else:
         qs = all_singletons(cards); binding = dict(binding, query_sha256=None)

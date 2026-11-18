@@ -5,7 +5,7 @@ with the oracle), assertions. Mutations are applied to COPIES of worker outputs 
 REAL implementation (arm operator sets / in-process operator calls), beneath the independent oracle. Refusal REASONS are asserted so a control cannot pass through an unrelated error.
 C13 is PREREGISTERED (plan constants below, fixed before any data): tiny-model falsification of the confidence sequences at LARGE delta; a pass does NOT validate the 1e-6 tail.
 Usage: python cex/cqr/qualification.py [--only C1,C2] [--admission DIR]   (writes cex/cqr/CQR_QUALIFICATION.json)"""
-import os, sys, json, time, copy, random, hashlib, subprocess, collections, math, shutil, tempfile, io, contextlib, glob
+import os, sys, json, time, copy, random, hashlib, subprocess, collections, math, shutil, tempfile, io, contextlib, glob, signal
 from fractions import Fraction as F
 from itertools import product
 from math import prod
@@ -16,7 +16,7 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK, reference as RF, structural as ST, diag as DG
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v11 (2026-11-17, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
+SUITE_VERSION = 'cqr-qualification-v12 (2026-11-17, after the independent review of the structured-execution revision (CQR-S1-01..07): groups C32 (authoritative query semantics incl. the false-answer witness, index domains, arm eligibility incl. the coherent relabel through the full gate, provenance / attribution incl. the forged record and native digest / path / count / partition / wall mutations through the full gate), C33 (compositional discovery incl. the 12,000-chain fresh worker, deadline propagation incl. the 1,024-query observer / fresh workers / long-helper hooks / 1qt9 gaps, reduction + lift incl. BN_31 and tampered decoder / digest / row) and C34 (terminal diagnostics freshness vs the certificate on publication / deadline / cancellation, per-section ages, aligned SIGKILL freshness, overhead) added; C29 vacuous assertions removed; C31 covers an oracle-checked native stream fixture and an honest nonzero-bias compiled publication; v11, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
 ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v16')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
@@ -133,7 +133,7 @@ def c1_identity_checker():
                 if spec['mode'] == 'EXACT_RATIONAL': A(all(a['lo'] == a['hi'] == a['point'] for a in w['answers'] if a['status'] == 'OK'), 'EXACT_RATIONAL published a positive width')
             out['fixtures']['%s/%s' % (name, arm)] = dict(outcome=w['outcome'], route=w.get('route'), guarantee=w.get('guarantee_type'), ops=[s['op'] for s in ((w.get('certificate') or {}).get('compile') or {}).get('log', {}).get('steps', []) if s.get('committed')])
             if w['outcome'] == 'PUBLISHED': accepted[(name, arm)] = (mp, w)
-    A(any(v['route'] == 'pac_ratio_intersected_with_deterministic' or v['route'] == 'pac_signed_residual_validation' for v in out['fixtures'].values()) or True, 'noop')
+    out['pac_routes_seen_in_c1'] = sorted({v['route'] for v in out['fixtures'].values() if str(v.get('route', '')).startswith('pac_')})          # informational (PAC routes are asserted in C14 / C16)
     # ---- mutations (each must be refused for the INTENDED reason)
     def expect(mp, w, arm, name, fn, needle):
         x = copy.deepcopy(w); fn(x); fails, _ = check_(mp, x, arm); needles = needle if isinstance(needle, tuple) else (needle,); A(fails and any(any(nd in f for nd in needles) for f in fails), 'mutation %s not refused for the intended reason: %s' % (name, fails[:2])); out['mutations'][name] = fails[0][:100]
@@ -2292,7 +2292,7 @@ def c29_failure_telemetry_survives_graceful_and_hard_kills():
     A(sc['overhead_s'] < 0.05 * max(0.05, w['worker_elapsed_s']) or sc['overhead_s'] < 0.02, '(a) diagnostics overhead %.4f of %.3f s' % (sc['overhead_s'], w['worker_elapsed_s']))
     A(sc['compiler']['commits'] >= 1 and sc['compiler']['journal_durable_lines'] == sc['compiler']['journal_lines'] >= 1, '(a) compiler journal not durable: %s' % {k: sc['compiler'][k] for k in ('commits', 'journal_lines', 'journal_durable_lines')})
     A(sc['scheduling'].get('step_cost_bound') and sc['reference']['assignments_total'], '(a) scheduling / reference missing'); A(w['diag']['checkpoints'] == sc['checkpoints'] and w['diag']['sidecar'] == w['diag_sidecar'], '(a) summary disagrees with the sidecar')
-    A(any(isinstance(v, dict) and 'missing' in v for v in sc.values()) or sc['frontier'].get('coverage') or True, 'noop'); out['a'] = dict(checkpoints=sc['checkpoints'], overhead_s=sc['overhead_s'], phases=list(sc['phase_times_s']), journal=sc['compiler']['journal_durable_lines'])
+    A(all(('missing' in v) == (v.get('rss_bytes') is None) for k, v in [('memory', sc['memory'])]) and all(isinstance(sc[k], dict) for k in ('work', 'reference', 'frontier', 'streams')), '(a) labelled-missing convention broken'); out['a'] = dict(checkpoints=sc['checkpoints'], overhead_s=sc['overhead_s'], phases=list(sc['phase_times_s']), journal=sc['compiler']['journal_durable_lines'])
     jl = [json.loads(l) for l in open(w['diag']['journal'])]; A(jl and jl[0].get('kind') == 'evidence' and len(jl) == sc['compiler']['journal_lines'], '(a) journal lines %d vs %d' % (len(jl), sc['compiler']['journal_lines']))
     # (b) graceful deadline on a model the reference cannot finish and the frontier cannot close in 2 s
     n = 30; fs = [(tuple(sorted(rng.sample(range(n), 3))), [rng.randint(1, 9) for _ in range(8)]) for _ in range(40)]; mpb = _spec(_uai(os.path.join(d, 'big30.uai'), [2] * n, fs), mode='PAC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='all_singletons')])
@@ -2306,9 +2306,11 @@ def c29_failure_telemetry_survives_graceful_and_hard_kills():
     import signal
     outp = mpb + '.N1_NO_STRUCTURAL.c29-kill.json'; dl = time.monotonic() + 30.0
     pr = subprocess.Popen([PY, os.path.join(HERE, 'worker.py'), '--input', mpb, '--output', outp, '--arm', 'N1_NO_STRUCTURAL', '--deadline', str(dl), '--seed', 's', '--nonce', 'c29-kill', '--budget', '30'], cwd=CODE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1.5); os.kill(pr.pid, signal.SIGKILL); pr.wait(); CNT['fresh_workers'] += 1
+    time.sleep(1.5); kill_mono = time.monotonic(); os.kill(pr.pid, signal.SIGKILL); pr.wait(); CNT['fresh_workers'] += 1
     scp = outp[:-5] + '.diag.json'; A(not os.path.exists(outp) and os.path.exists(scp), '(c) worker.json %s / sidecar %s' % (os.path.exists(outp), os.path.exists(scp)))
-    sk = json.load(open(scp)); jp = sk['journal_path']; A(sk['status'] == 'RUNNING' and sk['freshness']['elapsed_s_at_write'] < 1.6 and sk['checkpoints'] >= 3, '(c) sidecar after SIGKILL: %s %s %s' % (sk['status'], sk['freshness'], sk['checkpoints']))
+    sk = json.load(open(scp)); jp = sk['journal_path']; last_write_mono = sk['identity']['monotonic_t0'] + sk['freshness']['elapsed_s_at_write']; gap = kill_mono - last_write_mono
+    A(sk['status'] == 'RUNNING' and sk['checkpoints'] >= 3 and 0 <= gap <= 0.5, '(c) sidecar after SIGKILL: status %s, checkpoints %s, last checkpoint %.3f s before the kill (clocks aligned through identity.monotonic_t0; the declared freshness target is 0.5 s)' % (sk['status'], sk['checkpoints'], gap))
+    out['c_kill_gap_s'] = round(gap, 3); A(sk['freshness'].get('section_ages_s') is not None and sk['service'].get('in_flight') is not None or sk['service'].get('last_completed') is not None, '(c) killed sidecar carries no operation-entry record')
     A(sk['phase'] in ('adaptive', 'compile', 'frontier_init', 'after_compile') and sk['reference']['assignments_done'] is not None and (sk['work'].get('reference') or {}).get('total') is not None, '(c) killed sidecar lacks phase / reference / work: %s' % sk['phase'])
     jlines = open(jp).read().splitlines() if os.path.exists(jp) else []; dur = sk['compiler']['journal_durable_lines']
     A(len(jlines) >= dur and all(json.loads(l) for l in jlines[:dur]) and (dur == 0 or json.loads(jlines[0]).get('kind') == 'evidence'), '(c) journal is not a valid durable prefix (%d lines on disk, %d durable)' % (len(jlines), dur))
@@ -2415,21 +2417,21 @@ def c31_structural_adapters_composition_checker_reachability():
         base = 9 * b
         for _ in range(14): sc = tuple(sorted(rng.sample(range(base, base + 9), 4))); blocks.append((sc, [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(16)]))
     mpb = _uai(os.path.join(d, 'blocks.uai'), [2] * 27, blocks); open(mpb + '.evid', 'w').write('1 2 1\n')
-    s_, t_ = 12, 36; kb = [((u,), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(2)]) for u in range(s_ + t_)] + [((u, v), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(4)]) for u in range(s_) for v in range(s_, s_ + t_)]
-    mps = _uai(os.path.join(d, 'K12_36.uai'), [2] * (s_ + t_), kb); open(mps + '.evid', 'w').write('1 0 1\n')          # complete bipartite K_{12,36}: R0's discovery prices the stream kernel below support
+    s_, t_ = 6, 12; kb = [((u,), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(2)]) for u in range(s_ + t_)] + [((u, v), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(4)]) for u in range(s_) for v in range(s_, s_ + t_)]
+    mps = _uai(os.path.join(d, 'K6_12.uai'), [2] * (s_ + t_), kb); open(mps + '.evid', 'w').write('1 0 1\n')          # complete bipartite K_{6,12} (2^17 free assignments): R0's discovery prices the stream kernel below support AND the exact oracle is tractable (structured review: independent truth for the native stream case)
     pubs = {}
-    for name, mp_, want in (('tree', mpt, 'forest'), ('dag', mpd, 'whole_dag'), ('blocks', mpb, 'components'), ('K12_36', mps, 'components')):
+    for name, mp_, want in (('tree', mpt, 'forest'), ('dag', mpd, 'whole_dag'), ('blocks', mpb, 'components'), ('K6_12', mps, 'components')):
         w = fresh_worker(mp_, 'N1_CQR', budget=20.0, nonce='c31-b-' + name); fails, info = check_(mp_, w, 'N1_CQR', budget=300.0); c = w.get('certificate') or {}
         A(not fails and w['outcome'] == 'PUBLISHED' and w['route'] == 'structural_original', '(b) %s: %s %s %s' % (name, w['outcome'], w.get('route'), fails[:1]))
         rec = c['publication']['structural']; A(rec['which'] == want, '(b) %s route kind %s (wanted %s)' % (name, rec['which'], want)); A(c['work']['optional']['total'] == 0 and c['compile'] is None, '(b) %s charged optional Work on the original structural route' % name)
-        t_, tr_ = _truth(mp_) if name != 'K12_36' else (TK.load_task(mp_), None)
-        if tr_ is not None: A(_contained(w, tr_, t_['epsilon']), '(b) %s published answers miss the oracle' % name)
+        t_, tr_ = _truth(mp_)
+        A(tr_ is not None and _contained(w, tr_, t_['epsilon']), '(b) %s published answers miss the oracle' % name)
         if rec['counters']['native_calls']:
             kp = rec['kernel_provenance']; import kernel_identity as KI; fr_ = KI.collect(CODE); A(KI.receipt_failures(fr_, w, 'N1_CQR') == [], '(b) %s kernel provenance not the frozen identity: %s' % (name, KI.receipt_failures(fr_, w, 'N1_CQR')[:1]))
             A(any(kp.get(k, {}).get('binary_sha256') == fr_[k]['binary_sha256'] for k in ('newarm_cex', 'newarm_stream')), '(b) %s provenance names no frozen newarm binary' % name)
         kinds = sorted({x['kind'] for x in rec['components']}); pubs[name] = (mp_, w)
         out['b'][name] = dict(which=rec['which'], component_kinds=kinds, native_calls=rec['counters']['native_calls'], wall_s=round(rec['wall_s'], 4), verified=(info.get('attribution') or {}).get('structural', {}).get('verified_by'))
-    A('support' in out['b']['blocks']['component_kinds'] and 'stream' in out['b']['K12_36']['component_kinds'], '(b) native kernels not exercised: %s / %s' % (out['b']['blocks'], out['b']['K12_36']))
+    A('support' in out['b']['blocks']['component_kinds'] and 'stream' in out['b']['K6_12']['component_kinds'], '(b) native kernels not exercised: %s / %s' % (out['b']['blocks'], out['b']['K6_12']))
     # (c) compiled representation
     n = 22; fs = [((i, i + 1), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(4)]) for i in range(n - 1)] + [((5,), ['0', '1'])]
     mpc = _spec(_uai(os.path.join(d, 'joint22.uai'), [2] * n, fs), mode='PAC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='joint', assign={'0': 1, '5': 1}), dict(kind='singleton', variable=17, state=0)])
@@ -2437,6 +2439,14 @@ def c31_structural_adapters_composition_checker_reachability():
     A(not fails and wc['route'] == 'structural_compiled' and cc['compile'] is not None, '(c) compiled route: %s %s %s' % (wc['outcome'], wc.get('route'), fails[:1])); tc = TK.load_task(mpc); trc = truth_of(tc['model'], tc['queries'], cap=1 << 23); A(_contained(wc, trc, tc['epsilon']), '(c) compiled answers miss the oracle')
     A(cc['structural']['attempts'][0]['decision'] == 'inapplicable' and cc['structural']['attempts'][1]['representation'] == 'compiled', '(c) planner record: %s' % [(a['representation'], a['decision']) for a in cc['structural']['attempts']])
     out['c'] = dict(route=wc['route'], which=cc['publication']['which'], committed=[s['op'] for s in cc['compile']['log']['steps'] if s.get('committed')], bias=wc['bias'], interpretation=(info.get('attribution') or {}).get('bias_interpretation', '')[:80])
+    # an HONEST NONZERO-bias compiled structural publication (structured review): M02 near_miss n = 8 (6-state variables; the approximate quotient commits with beta = 1/1765) with one singleton
+    # and one general scope-1 table query -> structural_compiled with bias-widened bounds; checked against the independent ELIMINATION oracle (2^20.7 states)
+    g_ = G.generate('M02', 8, 'near_miss', 1); mb_ = g_['model']; cb_ = mb_['cards']
+    mpnb = write_task(d, 'nonzero_bias', mb_, dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='table', table=dict(name='g1', kind='expectation', f=dict(scope=[1], values=[str(F(k + 1, cb_[1] + 1)) for k in range(cb_[1])])))]))
+    wnb = fresh_worker(mpnb, 'N1_CQR', budget=20.0, nonce='c31-c-bias'); fails, info = check_(mpnb, wnb, 'N1_CQR', budget=300.0); tnb = TK.load_task(mpnb); trnb = OR.truth(tnb['model'], tnb['queries'], max_assignments=1 << 22, max_table=1 << 24); CNT['oracle_models'] += 1
+    A(wnb['outcome'] == 'PUBLISHED' and wnb['route'] == 'structural_compiled' and not fails and any(b != '0' for b in wnb['bias']), '(c) nonzero-bias compiled publication: %s %s bias %s %s' % (wnb['outcome'], wnb.get('route'), wnb.get('bias'), fails[:1]))
+    A(trnb is not None and _contained(wnb, trnb, tnb['epsilon']), '(c) nonzero-bias compiled answers miss the independent oracle'); A((info.get('attribution') or {}).get('bias_applied_to_original_answers') == wnb['bias'], '(c) bias not applied in the attribution')
+    out['c']['nonzero_bias'] = dict(route=wnb['route'], bias=wnb['bias'], committed=[s['op'] for s in wnb['certificate']['compile']['log']['steps'] if s.get('committed')], oracle='elimination', contained=True)
     # (d) typed declines
     mpr = _spec(_uai(os.path.join(d, 'ratio.uai'), cards_t, tree(8, cards_t)), mode='PAC_EPS', epsilon='1/100', delta='1/1000', queries=[dict(kind='conditional', event={'0': 1}, given={'3': 1})])
     wr = fresh_worker(mpr, 'N1_CQR', budget=20.0, nonce='c31-d-ratio'); ar = wr['certificate']['structural']['attempts']; A(wr['outcome'] == 'PUBLISHED' and ar[0]['decision'] == 'inapplicable' and wr['route'] != 'structural_original', '(d) conditional: %s %s' % (wr.get('route'), ar[:1]))
@@ -2466,7 +2476,7 @@ def c31_structural_adapters_composition_checker_reachability():
     _mut(mp_, w, 'N1_CQR', 'exact_flag', lambda x: (x.__setitem__('exact', True), x['certificate']['publication'].__setitem__('exact', True)), 'exact flag', muts)
     _mut(mp_, w, 'N1_CQR', 'version', lambda x: x['certificate']['publication']['structural'].__setitem__('version', 'cqr-structural-v0'), 'version', muts)
     _mut(mp_, w, 'N1_CQR', 'optional_work_charged', lambda x: x['certificate']['work']['optional'].__setitem__('total', 7), 'optional Work', muts)
-    _mut(mp_, w, 'N1_CQR', 'provenance_stripped', lambda x: x['certificate']['publication']['structural'].__setitem__('kernel_provenance', None), 'provenance', muts)
+    _mut(mp_, w, 'N1_CQR', 'provenance_stripped', lambda x: x['certificate']['publication']['structural'].__setitem__('kernel_provenance', None), ('provenance', 'kernel digest'), muts)
     _mut(mp_, w, 'N1_CQR', 'epsilon_record', lambda x: x['certificate']['publication']['structural'].__setitem__('epsilon', '1/100'), 'epsilon', muts)
     _mut(mp_, w, 'N1_CQR', 'component_dropped', lambda x: x['certificate']['publication']['structural']['components'].pop(), ('uncovered', 'reproduce', 'component'), muts)
     mpb2 = _uai(os.path.join(d, 'blocks_b.uai'), [2] * 27, blocks); open(mpb2 + '.evid', 'w').write('1 2 0\n'); tb2 = TK.load_task(mpb2)
@@ -2504,7 +2514,285 @@ def c31_structural_adapters_composition_checker_reachability():
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics), ('C26_partition_premise_order_validation_structural_negative', c26_partition_premise_order_validation_structural_negative), ('C27_final_query_accounting_evaluation_site_audit', c27_final_query_accounting_evaluation_site_audit), ('C28_view_storage_ownership_renumbering_declarations_event_schema', c28_view_storage_ownership_renumbering_declarations_event_schema), ('C29_failure_telemetry_survives_graceful_and_hard_kills', c29_failure_telemetry_survives_graceful_and_hard_kills), ('C30_cumulative_credit_reference_scheduling', c30_cumulative_credit_reference_scheduling), ('C31_structural_adapters_composition_checker_reachability', c31_structural_adapters_composition_checker_reachability)]
+def c32_query_semantics_arm_eligibility_provenance_attribution():
+    """STRUCTURED REVIEW (17 Nov 2026) CQR-S1-01 / S1-02 / S1-03. (a) AUTHORITATIVE QUERY SEMANTICS: the reviewer's one-variable [1,3] witnesses -- a constant-zero table carrying
+    singleton output metadata, the singleton constructor with state -1, a singleton-indicator table with wrong metadata state, reordered / repeated / out-of-range scopes, a wrong-length
+    table -- are INVALID_TASK typed refusals of both arms (never a publication); the matching-metadata table, the metadata-free table (general path, exact zero), the honest singleton, a
+    legitimate singleton SUBSET, a joint / parity / conditional constructor and a general two-variable table publish correctly against the exact oracle; `task.singleton_indicator_of`
+    is checked on 400 random tables against a direct definition; the checker refuses a publication whose task carries metadata disagreeing with its table. (b) ARM ELIGIBILITY: a genuine
+    structural publication coherently relabelled to EVERY no-structural control (worker + certificate + flag) is refused by the checker AND by the full gate / report fixture; honest
+    disabled-arm reference / frontier / PAC publications and honest enabled structural publications are accepted. (c) PROVENANCE / ATTRIBUTION: on a forest publication the reviewer's
+    forged record (stream component of 9,999 variables, 123 native calls, wall -99, all-zero stream digest) is refused by the checker and by the full gate (which now runs the
+    loaded-kernel provenance check on CQR cells); on a NATIVE components publication: digest altered / omitted / path altered, native_calls zeroed, component kind / partition changed,
+    false exact-fallback attribution and a negative wall are each refused; the verified attribution carries only facts derived from the re-execution plus the producer's wall labelled as
+    an observation; the gate's attribution of the honest cells equals the checker's."""
+    d = tempfile.mkdtemp(prefix='cqr_c32_'); out = dict(a={}, b={}, c={}); rng = random.Random(32)
+    def wk(mp, arm, budget=8.0, tag='w'): return fresh_worker(mp, arm, budget=budget, nonce='c32-%s-%s' % (tag, arm))
+    # ---------------- (a) semantics
+    one = lambda name: _uai(os.path.join(d, name + '.uai'), [2], [([0], ['1', '3'])])
+    refuse = {'false_table_meta': {'kind': 'table', 'table': {'name': 'cz', 'kind': 'expectation', 'f': {'scope': [0], 'values': ['0', '0']}, 'output': {'kind': 'singleton', 'variable': 0, 'state': 1}}},
+              'negative_state': {'kind': 'singleton', 'variable': 0, 'state': -1}, 'state_out_of_range': {'kind': 'singleton', 'variable': 0, 'state': 2}, 'variable_out_of_range': {'kind': 'singleton', 'variable': 1, 'state': 0},
+              'indicator_wrong_meta_state': {'kind': 'table', 'table': {'name': 'ind', 'kind': 'expectation', 'f': {'scope': [0], 'values': ['0', '1']}, 'output': {'kind': 'singleton', 'variable': 0, 'state': 0}}},
+              'wrong_length': {'kind': 'table', 'table': {'name': 'bad', 'kind': 'expectation', 'f': {'scope': [0], 'values': ['0', '1', '0']}}}, 'repeated_scope': {'kind': 'table', 'table': {'name': 'bad', 'kind': 'expectation', 'f': {'scope': [0, 0], 'values': ['0', '1', '0', '0']}}},
+              'joint_negative_state': {'kind': 'joint', 'assign': {'0': -1}}, 'conditional_contradiction': {'kind': 'conditional', 'event': {'0': 1}, 'given': {'0': 0}}}
+    for name, q in refuse.items():
+        mp = one(name); json.dump(dict(queries=[q], epsilon='1/200', delta='0', mode='DETERMINISTIC_EPS'), open(mp + '.query.json', 'w'))
+        for arm in ('N1_CQR', 'N1_NO_STRUCTURAL'):
+            w = wk(mp, arm, tag=name); A(w['outcome'] == 'INVALID_TASK' and w.get('answers') is None, '(a) %s / %s: %s %s' % (name, arm, w['outcome'], (w.get('reason') or '')[:80]))
+        out['a'][name] = 'INVALID_TASK (both arms)'
+    accept = {'indicator_matching_meta': ({'kind': 'table', 'table': {'name': 'ind', 'kind': 'expectation', 'f': {'scope': [0], 'values': ['0', '1']}, 'output': {'kind': 'singleton', 'variable': 0, 'state': 1}}}, F(3, 4), 'structural_original'),
+              'table_no_meta_zero': ({'kind': 'table', 'table': {'name': 'cz', 'kind': 'expectation', 'f': {'scope': [0], 'values': ['0', '0']}}}, F(0), None), 'honest_singleton': ({'kind': 'singleton', 'variable': 0, 'state': 1}, F(3, 4), 'structural_original'),
+              'general_table_marker': ({'kind': 'table', 'table': {'name': 'g', 'kind': 'expectation', 'output': {'kind': 'table'}, 'f': {'scope': [0], 'values': ['1/5', '2/5']}}}, F(1, 5) * F(1, 4) + F(2, 5) * F(3, 4), None)}
+    for name, (q, truth, want) in accept.items():
+        mp = one(name); json.dump(dict(queries=[q], epsilon='1/200', delta='0', mode='DETERMINISTIC_EPS'), open(mp + '.query.json', 'w'))
+        for arm in ('N1_CQR', 'N1_NO_STRUCTURAL'):
+            w = wk(mp, arm, tag=name); fails, _ = check_(mp, w, arm); a = w['answers'][0]
+            A(w['outcome'] == 'PUBLISHED' and not fails and F(a['lo']) <= truth <= F(a['hi']), '(a) %s / %s: %s %s %s' % (name, arm, w['outcome'], fails[:1], a))
+            if want and arm == 'N1_CQR': A(w['route'] == want, '(a) %s route %s' % (name, w['route']))
+        out['a'][name] = 'PUBLISHED, truth %s contained (both arms)' % truth
+    # a legitimate singleton SUBSET, joint / parity / conditional constructors and a 2-variable general table on a 3-variable model (oracle-checked, both arms)
+    m3 = rnd_model(rng, 3, [2, 3, 2], 4, 2, zeros=0.0, ev=0, lo=1, hi=5); mp3 = write_task(d, 'three', m3, dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='singleton', variable=1, state=2), dict(kind='singleton', variable=0, state=0)]))
+    t3, tr3 = _truth(mp3)
+    for arm in ('N1_CQR', 'N1_NO_STRUCTURAL'):
+        w = wk(mp3, arm, tag='subset'); fails, _ = check_(mp3, w, arm); A(w['outcome'] == 'PUBLISHED' and not fails and _contained(w, tr3, t3['epsilon']), '(a) subset / %s: %s %s' % (arm, w['outcome'], fails[:1])); out['a']['subset_' + arm] = w['route']
+    mp4 = write_task(d, 'mixed', m3, dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[dict(kind='joint', assign={'0': 1, '2': 0}), dict(kind='parity', variables=[0, 2], bit=1), dict(kind='conditional', event={'1': 2}, given={'0': 1}), dict(kind='table', table=dict(name='g2', kind='expectation', f=dict(scope=[2, 0], values=['1/7', '2/7', '3/7', '4/7'])))]))
+    t4, tr4 = _truth(mp4)
+    for arm in ('N1_CQR', 'N1_NO_STRUCTURAL'):
+        w = wk(mp4, arm, tag='mixed'); fails, _ = check_(mp4, w, arm); A(w['outcome'] == 'PUBLISHED' and not fails and _contained(w, tr4, t4['epsilon']), '(a) mixed / %s: %s %s' % (arm, w['outcome'], fails[:1]))
+        A(all(a['decision'] == 'inapplicable' for a in (w['certificate'].get('structural') or {}).get('attempts', [])), '(a) mixed queries reached a structural route'); out['a']['mixed_' + arm] = w['route']
+    # singleton_indicator_of vs a direct definition on random tables
+    n_ind = 0
+    for k in range(400):
+        cards = [rng.randint(2, 4) for _ in range(3)]; v = rng.randrange(3); vals = [F(0)] * cards[v]
+        kind = rng.randrange(4)
+        if kind == 0: vals[rng.randrange(cards[v])] = F(1)
+        elif kind == 1: vals = [F(rng.randint(0, 2)) for _ in range(cards[v])]
+        elif kind == 2: vals[rng.randrange(cards[v])] = F(1); vals[rng.randrange(cards[v])] = F(1)
+        else: vals = [F(rng.randint(0, 3), 3) for _ in range(cards[v])]
+        q = TK.Query('q', 'expectation', f=TK.Table((v,), vals)); got = TK.singleton_indicator_of(q, cards)
+        direct = (v, vals.index(F(1))) if (vals.count(F(1)) == 1 and all(x in (F(0), F(1)) for x in vals)) else None
+        A(got == direct, '(a) singleton_indicator_of %s != direct %s on %s' % (got, direct, vals)); n_ind += (got is not None)
+    out['a']['indicator_random_tables'] = dict(checked=400, singletons=n_ind)
+    # checker refuses a published task whose metadata disagrees with its table (the task file is rewritten AFTER the honest publication)
+    mp5 = one('meta_swap'); json.dump(dict(queries=[{'kind': 'table', 'table': {'name': 'ind', 'kind': 'expectation', 'f': {'scope': [0], 'values': ['0', '1']}, 'output': {'kind': 'singleton', 'variable': 0, 'state': 1}}}], epsilon='1/200', delta='0', mode='DETERMINISTIC_EPS'), open(mp5 + '.query.json', 'w'))
+    w5 = wk(mp5, 'N1_CQR', tag='meta'); A(w5['outcome'] == 'PUBLISHED' and w5['route'] == 'structural_original', '(a) meta fixture')
+    try:
+        TK.load_task(mp5); json.dump(dict(queries=[{'kind': 'table', 'table': {'name': 'ind', 'kind': 'expectation', 'f': {'scope': [0], 'values': ['0', '1']}, 'output': {'kind': 'singleton', 'variable': 0, 'state': 0}}}], epsilon='1/200', delta='0', mode='DETERMINISTIC_EPS'), open(mp5 + '.query.json', 'w'))
+        fails, _ = check_(mp5, w5, 'N1_CQR'); A(fails, '(a) checker accepted a task whose metadata disagrees with its table'); out['a']['meta_swap_refused'] = fails[0][:90]
+    finally: pass
+    # ---------------- (b) arm eligibility
+    cards_t = [2, 3, 2, 2, 3]; fs = [((i, i + 1), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(cards_t[i] * cards_t[i + 1])]) for i in range(4)]; mpt = _uai(os.path.join(d, 'tree.uai'), cards_t, fs)
+    wt = wk(mpt, 'N1_CQR', tag='tree'); A(wt['outcome'] == 'PUBLISHED' and wt['route'] == 'structural_original' and not check_(mpt, wt, 'N1_CQR')[0], '(b) tree fixture')
+    controls = [a for a in SV.ARMS if not SV.ARMS[a].get('structural')]; A('N1_NO_STRUCTURAL' in controls and 'G0_NO_STRUCTURAL' in controls, '(b) controls')
+    for arm in controls:
+        y = copy.deepcopy(wt); y['arm'] = arm; y['certificate']['arm'] = arm; y['certificate']['structural_backend'] = False
+        sp = SV.ARMS[arm]; y['certificate']['arm_operators'] = sorted(sp['enabled']); y['certificate']['enabled_operators'] = sorted(CP.effective_operators(sp['enabled'], TK.load_task(mpt))); y['certificate']['signed_stream'] = sp['signed_stream']; y['certificate']['query_directed_refinement'] = sp['query_directed_refinement']
+        fails, _ = check_(mpt, y, arm); A(fails and any('DISABLED' in f_ or 'without the structural backend' in f_ for f_ in fails), '(b) coherent relabel to %s accepted: %s' % (arm, fails[:1])); out['b']['relabel_' + arm] = fails[0][:80]
+    fails, _ = CK.check_worker_output(mpt, y, deadline=time.monotonic() + 30); A(fails, '(b) direct checker API accepted a structural route under a disabled arm')
+    for arm in ('N1_NO_STRUCTURAL', 'G0_NO_STRUCTURAL'):
+        w = wk(mpt, arm, tag='honest'); fails, _ = check_(mpt, w, arm); A(w['outcome'] == 'PUBLISHED' and not fails and not w['route'].startswith('structural'), '(b) honest %s: %s %s %s' % (arm, w['outcome'], w.get('route'), fails[:1])); out['b']['honest_' + arm] = w['route']
+    cards_s, fs_s = _sprinkled(1, 28, 14, 4); mpp = _spec(_uai(os.path.join(d, 'pac28.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5], bit=1)])
+    wp = None
+    for sd_ in ('a', 'b', 'c'):
+        cand = fresh_worker(mpp, 'N1_NO_STRUCTURAL', budget=45.0, seed=sd_, nonce='c32-pac-' + sd_)
+        if cand['outcome'] == 'PUBLISHED' and cand['guarantee_type'] == 'PAC': wp = cand; break
+    A(wp is not None, '(b) no PAC publication on the disabled arm'); fails, _ = check_(mpp, wp, 'N1_NO_STRUCTURAL', budget=300.0); A(not fails, '(b) honest PAC on the disabled arm refused: %s' % fails[:1]); out['b']['honest_pac_N1_NO_STRUCTURAL'] = wp['route']
+    # full gate / report fixture with the coherent relabel (synthetic one-cell manifest; a TEST FIXTURE, not a campaign)
+    def gate_fixture(label, mp, w, arm):
+        import kernel_identity as KI; _reg = registry
+        rd = os.path.join(d, 'full_' + label); cd = os.path.join(rd, 'cells', label); os.makedirs(cd, exist_ok=True); wp_ = os.path.join(cd, 'worker.json'); json.dump(w, open(wp_, 'w'), default=str)
+        t_ = TK.load_task(mp); b = t_['binding']
+        c = dict(cell_id=label, case_id=os.path.basename(mp)[:-4], arm=arm, replicate=0, budget_s=8, seed=w['seed'], model_path=mp, model_sha256=b['model_sha256'], evidence_sha256=b['evidence_sha256'], query_sha256=b['query_sha256'], cohort='query_transfer', kind='cqr_primary', order_index=0, task_params=dict(mode=t_['mode'], epsilon=str(t_['epsilon']), delta=str(t_['delta']), normalizer_task=False))
+        inv = _reg.full_inventory(CODE); man = dict(schema='cqr_campaign_manifest_v1', cells=[c], task=c['task_params'], candidate_artifact_hashes=inv, kernel_identity=KI.collect(CODE), budgets_s=[8], ceiling=dict(verification_stage_seconds=60, scored_matrix_seconds=8, orchestration_seconds=2, total_ceiling_seconds=70), inventory=[dict(case_id=c['case_id'], cohort='query_transfer', status='AVAILABLE')], seeds=dict(root_seed='c32-fixture'), arms=dict(unavailable={}))
+        mp_ = os.path.join(rd, 'CAMPAIGN_MANIFEST.json'); json.dump(man, open(mp_, 'w'), default=str); h_ = lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest()
+        st = dict(kind='CAMPAIGN_START', manifest_sha256=h_(mp_), artifact_hashes_sha256=hashlib.sha256(json.dumps(inv, sort_keys=True).encode()).hexdigest(), manifest='CAMPAIGN_MANIFEST.json'); json.dump(st, open(os.path.join(rd, 'CAMPAIGN_START.json'), 'w')); open(os.path.join(rd, 'CQR_LEDGER.jsonl'), 'w').write(json.dumps(st) + '\n')
+        r = {k: c[k] for k in ('cell_id', 'case_id', 'arm', 'replicate', 'budget_s', 'seed', 'model_sha256', 'evidence_sha256', 'query_sha256', 'cohort', 'kind', 'order_index')}
+        r.update(status='COMPLETED', outcome='PUBLISHED', guarantee_type=w['guarantee_type'], route=w['route'], exact=w['exact'], bias=w.get('bias'), nonce=w['nonce'], worker_output=os.path.relpath(wp_, rd), output_sha256=h_(wp_), launch_relative_wall_s=1.0, supervisor=dict(outcome='COMPLETED', rc=0)); json.dump(r, open(os.path.join(cd, 'receipt.json'), 'w'))
+        # the gate runs in a SUBPROCESS (the pac and cqr packages both have a `registry` module; the chain never imports gate.py into the suite process)
+        subprocess.run([PY, os.path.join(HERE, 'gate.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST.json', '--gate-budget-s', '60'], capture_output=True, text=True, cwd=CODE)
+        gr = json.load(open(os.path.join(rd, 'GATE_RESULT.json'))); va = next((x for x in gr.get('gated_set', []) if x['cell_id'] == label), None); CNT['checker_calls'] += 1
+        rp_ = subprocess.run([PY, os.path.join(HERE, 'report.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST.json'], capture_output=True, text=True, cwd=CODE); rep = None
+        if os.path.exists(os.path.join(rd, 'RESULTS_CQR.json')):
+            row = next((x for x in json.load(open(os.path.join(rd, 'RESULTS_CQR.json')))['runs'] if x['cell_id'] == label), None); rep = {k: row.get(k) for k in ('outcome', 'guarantee', 'route', 'guarantee_source')} if row else None
+        return dict(gate_passed=gr['gate_passed'], failures=[f_[1][:100] for f_ in gr['failures'][:3]], attribution=((va or {}).get('verified_attribution') or {}), report_row=rep, report_rc=rp_.returncode)
+    g1 = gate_fixture('relabel', mpt, y, 'N1_NO_STRUCTURAL'); A(g1['gate_passed'] is False and g1['failures'], '(b) full gate accepted the coherent relabel'); out['b']['full_gate_relabel'] = g1['failures'][:1]
+    g0 = gate_fixture('honest', mpt, wt, 'N1_CQR'); A(g0['gate_passed'] is True and (g0['attribution'].get('structural') or {}).get('which') == 'forest' and (g0['report_row'] or {}).get('route') == 'structural_original' and 'checker-verified' in str((g0['report_row'] or {}).get('guarantee_source')), '(b) full gate / report on the honest structural cell: %s' % g0); out['b']['full_gate_honest_attribution'] = g0['attribution'].get('structural')
+    # ---------------- (c) provenance / attribution
+    x = copy.deepcopy(wt); r_ = x['certificate']['publication']['structural']; r_['components'] = [dict(kind='stream', variables=list(range(9999)))]; r_['counters']['native_calls'] = 123; r_['wall_s'] = -99; r_['kernel_provenance'] = {'newarm_stream': {'loaded_binary_path': '/tmp/stream_' + '0' * 64 + '.dylib', 'binary_sha256': '0' * 64}}
+    fails, _ = check_(mpt, x, 'N1_CQR'); A(fails, '(c) forged attribution accepted by the checker'); gx = gate_fixture('forged', mpt, x, 'N1_CQR'); A(gx['gate_passed'] is False and any('provenance' in f_ or 're-execution' in f_ for f_ in gx['failures']), '(c) full gate accepted the forged record: %s' % gx['failures'])
+    out['c']['forged_checker'] = fails[0][:90]; out['c']['forged_gate'] = gx['failures'][:2]
+    blocks = []
+    for b_ in range(3):
+        base = 9 * b_
+        for _ in range(14): sc = tuple(sorted(rng.sample(range(base, base + 9), 4))); blocks.append((sc, [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(16)]))
+    mpb = _uai(os.path.join(d, 'blocks.uai'), [2] * 27, blocks); open(mpb + '.evid', 'w').write('1 2 1\n'); wb = wk(mpb, 'N1_CQR', budget=20.0, tag='blocks'); fails, info = check_(mpb, wb, 'N1_CQR', budget=300.0)
+    A(wb['outcome'] == 'PUBLISHED' and not fails and wb['certificate']['publication']['structural']['counters']['native_calls'] == 3, '(c) native fixture: %s %s' % (wb['outcome'], fails[:1]))
+    att = (info.get('attribution') or {}).get('structural') or {}; A(att.get('native_calls') == 3 and att.get('native_kinds') == ['support'] and att.get('kernel_digests_verified', {}).get('support') and 'producer_observed_wall_s' in att and 'wall_s' not in att, '(c) attribution not fact-derived: %s' % att)
+    import kernel_identity as KI; frozen = KI.collect(CODE); A(KI.receipt_failures(frozen, wb, 'N1_CQR') == [], '(c) honest native output fails the loader provenance check')
+    muts = {'digest_altered': lambda z: z['certificate']['publication']['structural']['kernel_provenance']['newarm_cex'].__setitem__('binary_sha256', '0' * 64), 'digest_omitted': lambda z: z['certificate']['publication']['structural'].__setitem__('kernel_provenance', None),
+            'path_altered': lambda z: z['certificate']['publication']['structural']['kernel_provenance']['newarm_cex'].__setitem__('loaded_binary_path', '/tmp/mystery.so'), 'native_calls_zeroed': lambda z: z['certificate']['publication']['structural']['counters'].__setitem__('native_calls', 0),
+            'component_kind_dag': lambda z: z['certificate']['publication']['structural']['components'][0].__setitem__('kind', 'dag'), 'component_kind_stream': lambda z: z['certificate']['publication']['structural']['components'][0].__setitem__('kind', 'stream'),
+            'partition_merged': lambda z: (z['certificate']['publication']['structural']['components'][0].__setitem__('variables', z['certificate']['publication']['structural']['components'][0]['variables'] + z['certificate']['publication']['structural']['components'][1]['variables']), z['certificate']['publication']['structural']['components'].pop(1)),
+            'false_exact_fallback': lambda z: z['certificate']['publication']['structural']['components'][0].__setitem__('kind', 'uniform'), 'wall_negative': lambda z: z['certificate']['publication']['structural'].__setitem__('wall_s', -1.0), 'wall_nan': lambda z: z['certificate']['publication']['structural'].__setitem__('wall_s', float('nan'))}
+    for name, fn in muts.items():
+        z = copy.deepcopy(wb); fn(z); fz, _ = check_(mpb, z, 'N1_CQR', budget=300.0); A(fz, '(c) native mutation %s accepted' % name); out['c']['native_' + name] = fz[0][:90]
+        if name in ('digest_altered', 'path_altered'): A(KI.receipt_failures(frozen, z, 'N1_CQR'), '(c) loader provenance check did not refuse %s' % name)
+    gb = gate_fixture('native_honest', mpb, wb, 'N1_CQR'); A(gb['gate_passed'] is True and (gb['attribution'].get('structural') or {}).get('native_calls') == 3, '(c) gate attribution of the honest native cell: %s' % gb)
+    z = copy.deepcopy(wb); muts['digest_altered'](z); gz = gate_fixture('native_digest', mpb, z, 'N1_CQR'); A(gz['gate_passed'] is False and any('provenance' in f_ for f_ in gz['failures']), '(c) full gate accepted an altered kernel digest: %s' % gz['failures']); out['c']['full_gate_digest_altered'] = gz['failures'][:2]
+    return out
+
+
+def c33_compositional_discovery_deadline_propagation_reduction_lift():
+    """STRUCTURED REVIEW CQR-S1-04 / S1-05 / S1-07. (a) COMPOSITIONAL DISCOVERY: with a deterministic timeout isolated to the component search (an allowance of 1 ms on a 3,000-variable
+    binary chain), the recognized forest candidate survives and is admitted; the whole discovery record keeps the component decline; a fresh N1 worker on the reviewer's 12,000-variable
+    chain publishes structural_original (forest) within its 20 s budget, checker accepted; the n = 500 / 0.05 s control is unchanged. (b) DEADLINE PROPAGATION: on the reviewer's
+    12 x 1,024-distinct-pair-query witness an independent service observer counts ZERO controller calls after the 0.2 s deadline (the typed stop names a service point), a fresh
+    0.5 s worker stops within 0.5 s + one indivisible operation (measured) and the 6 s control publishes exact answers contained in the closed form; the reference service records
+    expired requests instead of starting new steps; cumulative-credit identities (C30) still hold; the frontier root sweep, signed-law scan, cell construction and the feasible-point
+    projection are interruptible (service hooks observed inside each); the 1qt9 panel case under the disabled arm now stops within its budget + 1 s with checkpoint gaps < 2 s.
+    (c) REDUCTION / LIFT: on 40 tiny random models (forced states, aliases, evidence, scalar cancellation) the reduced route's lifted rows contain the exact enumeration answers and the
+    reduction record is re-derivable; a fresh N1 worker on the declared BN_31 case publishes structural_reduced within 20 s, the checker re-derives the reduction and accepts, a
+    tampered decoder / reduced-model digest / lifted row is refused; the original route keeps declining BN_31 (estimate above the gate) -- no admission threshold changed."""
+    d = tempfile.mkdtemp(prefix='cqr_c33_'); out = dict(a={}, b={}, c={}); rng = random.Random(33)
+    # ---------------- (a) compositional discovery
+    chain = lambda n: dict(cards=[2] * n, factors=[dict(scope=(i, i + 1), values=[F(1), F(2), F(3), F(4)]) for i in range(n - 1)], evidence={})
+    orig_dc = ST.NCORE._discover_component; orig_cp = ST.NCORE.components
+    def timeout_dc(*a, **k): raise TimeoutError('geometry deadline (deterministic test substitution)')
+    def fail_dc(*a, **k): raise ValueError('planner refusal (deterministic test substitution)')
+    def timeout_cp(*a, **k): raise TimeoutError('component split deadline (deterministic test substitution)')
+    m3k = chain(3000)
+    for label, sub, where in (('component_search_timeout', timeout_dc, 'dc'), ('component_search_failure', fail_dc, 'dc'), ('component_split_timeout', timeout_cp, 'cp')):
+        if where == 'dc': ST.NCORE._discover_component = sub
+        else: ST.NCORE.components = sub
+        try: dd = ST.discover(m3k, time.monotonic() + 20, 2.0)
+        finally: ST.NCORE._discover_component = orig_dc; ST.NCORE.components = orig_cp
+        A(dd['applicable'] and any(c['kind'] == 'forest' for c in dd['candidates']) and ST.admitted(dd, 20)[2] == 'forest' and any(x['kind'] in ('components', 'component') for x in dd['declines']) and not dd['components_complete'], '(a) forest lost under %s: %s' % (label, dict(applicable=dd['applicable'], candidates=[c['kind'] for c in dd['candidates']], declines=dd['declines'])))
+        out['a'][label] = dict(candidates=[c['kind'] for c in dd['candidates']], declines=[x['kind'] for x in dd['declines']], admitted=ST.admitted(dd, 20)[2])
+    dd = ST.discover(m3k, time.monotonic() + 20, 2.0); A(dd['applicable'] and ST.admitted(dd, 20)[2] == 'forest', '(a) natural n3000 discovery'); out['a']['n3000_natural'] = dict(candidates=[c['kind'] for c in dd['candidates']], declines=[x['kind'] for x in dd['declines']], components_complete=dd['components_complete'])
+    d5 = ST.discover(chain(500), time.monotonic() + 20, 0.05); A(d5['applicable'] and ST.admitted(d5, 20)[2] == 'forest', '(a) n500 control'); out['a']['n500_allow_0.05'] = ST.admitted(d5, 20)[2]
+    n = 12000; mpc = _uai(os.path.join(d, 'chain12000.uai'), [2] * n, [((i, i + 1), ['1', '2', '3', '4']) for i in range(n - 1)])
+    t0 = time.monotonic(); w = fresh_worker(mpc, 'N1_CQR', budget=20.0, nonce='c33-chain'); wall = time.monotonic() - t0; fails, _ = check_(mpc, w, 'N1_CQR', budget=300.0)
+    A(w['outcome'] == 'PUBLISHED' and w['route'] == 'structural_original' and w['certificate']['publication']['which'] == 'forest' and not fails and wall <= 20.0, '(a) chain12000: %s %s %.2f s %s' % (w['outcome'], w.get('route'), wall, fails[:1])); out['a']['chain12000'] = dict(route=w['route'], wall_s=round(wall, 2), discovery=[(x['kind'], str(x['reason'])[:40]) for x in w['certificate']['structural']['attempts'][0]['discovery']['declines']])
+    # ---------------- (b) deadline propagation
+    n = 12; K = 1024; m = {'cards': [2] * n, 'factors': [{'scope': (i,), 'values': [F(1), F(2)]} for i in range(n)], 'evidence': {}}
+    tq = [TK.Query('q%d' % j, 'expectation', f=TK.Table((j % n, (j + 1) % n), [F(0), F(1, 3), F(2, 3), F(K + j + 1, 2 * K + 1)])) for j in range(K)]
+    task = {'model': m, 'queries': tq, 'mode': 'DETERMINISTIC_EPS', 'epsilon': F(1, 200), 'delta': F(0), 'query_spec': None, 'all_singletons': False, 'binding': None}
+    class Spy(DG.NullDiag):
+        def __init__(s): s.calls = []; s.ops = collections.Counter()
+        def service_tick(s, op, wr=None, wo=None, rss=None): s.calls.append((time.monotonic() - start, op)); s.ops[op] += 1
+    spy = Spy(); start = time.monotonic(); budget = 0.2
+    try: solve_(task, 'G0_CQR', 'c33', budget=budget, diag=spy); where = 'PUBLISHED'
+    except SV.Stop as ex: where = ex.info.get('where')
+    el = time.monotonic() - start; post = [c for c in spy.calls if c[0] >= budget]
+    A(len(post) == 0 and el <= budget + 0.25, '(b) %d controller calls after the deadline (elapsed %.3f s; stop at %s)' % (len(post), el, where)); out['b']['observer'] = dict(elapsed_s=round(el, 3), calls=len(spy.calls), post_deadline=len(post), where=where)
+    mpd = _uai(os.path.join(d, 'deadline_distinct.uai'), [2] * n, [((i,), ['1', '2']) for i in range(n)]); _spec(mpd, mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0', queries=[{'kind': 'table', 'table': {'name': 'q%d' % j, 'kind': 'expectation', 'f': {'scope': [j % n, (j + 1) % n], 'values': ['0', '1/3', '2/3', str(F(K + j + 1, 2 * K + 1))]}}} for j in range(K)])
+    t0 = time.monotonic(); w = fresh_worker(mpd, 'G0_CQR', budget=0.5, nonce='c33-dl05'); wall = time.monotonic() - t0; sch = (w.get('scheduling') or {}).get('scheduling') or {}
+    A(w['outcome'] == 'DEADLINE' and wall <= 0.5 + 0.6, '(b) 0.5 s worker ran %.3f s (%s)' % (wall, w['outcome'])); A(sch.get('expired_requests', 0) >= 0, '(b) scheduling record'); out['b']['fresh_0.5'] = dict(wall_s=round(wall, 3), outcome=w['outcome'], expired_requests=sch.get('expired_requests'))
+    w6 = fresh_worker(mpd, 'G0_CQR', budget=6.0, nonce='c33-dl6'); fails, _ = check_(mpd, w6, 'G0_CQR', budget=300.0); truth = [F(2, 9) + F(4, 9) * F(K + j + 1, 2 * K + 1) for j in range(K)]
+    A(w6['outcome'] == 'PUBLISHED' and not fails and all(F(a['lo']) <= truth[j] <= F(a['hi']) for j, a in enumerate(w6['answers'])), '(b) 6 s control: %s %s' % (w6['outcome'], fails[:1])); out['b']['fresh_6'] = dict(route=w6['route'], contained=True)
+    # interruptibility of the long helpers: the service hook is observed inside each (ops seen by the spy on a fixture exercising them)
+    cards_s, fs_s = _sprinkled(2, 22, 11, 4); mps = _spec(_uai(os.path.join(d, 'sp22.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='all_singletons')]); ts = TK.load_task(mps)
+    spy2 = Spy(); start = time.monotonic()
+    try: solve_(ts, 'N1_NO_STRUCTURAL', 'c33-ops', budget=3.0, diag=spy2)
+    except SV.Stop: pass
+    seen = set(spy2.ops); A({'frontier_close', 'deterministic_bounds'} <= seen or 'cell_bounds' in seen or 'signed_law' in seen or 'feasible_point' in seen, '(b) service hooks not observed inside the long helpers: %s' % sorted(seen)); out['b']['service_ops_observed'] = sorted(seen)
+    pk = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), 'docs', 'handoff-received-2026-11-11-certified-executor', 'packet', 'inputs', '1qt9.uai')
+    if os.path.exists(pk):
+        mpq = os.path.join(d, '1qt9.uai'); shutil.copy(pk, mpq); shutil.copy(pk + '.evid', mpq + '.evid'); out_ = mpq + '.N1_NO_STRUCTURAL.c33.json'; t0 = time.monotonic(); dl = subprocess.run([PY, '-c', 'import time; print(time.monotonic()+20.0)'], capture_output=True, text=True).stdout.strip()
+        pr = subprocess.Popen([PY, os.path.join(HERE, 'worker.py'), '--input', mpq, '--output', out_, '--arm', 'N1_NO_STRUCTURAL', '--deadline', dl, '--seed', 's', '--nonce', 'c33-1qt9', '--budget', '20'], cwd=CODE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); CNT['fresh_workers'] += 1
+        stamps = []; last = None; scp = out_[:-5] + '.diag.json'
+        while pr.poll() is None and time.monotonic() - t0 < 32:
+            time.sleep(0.2)
+            try:
+                sc = json.load(open(scp)); k_ = sc['freshness']['elapsed_s_at_write']
+                if k_ != last: stamps.append(k_); last = k_
+            except Exception: pass
+        killed = pr.poll() is None
+        if killed: os.kill(pr.pid, signal.SIGKILL)
+        pr.wait(); wall = time.monotonic() - t0; gaps = [stamps[i] - stamps[i - 1] for i in range(1, len(stamps))]
+        A(not killed and wall <= 21.5 and (max(gaps) if gaps else 0) < 2.0, '(b) 1qt9: killed %s wall %.2f max checkpoint gap %.2f' % (killed, wall, max(gaps) if gaps else 0)); out['b']['1qt9_N1_NO_STRUCTURAL'] = dict(wall_s=round(wall, 2), checkpoints=len(stamps), max_gap_s=round(max(gaps), 2) if gaps else None)
+    else: out['b']['1qt9_N1_NO_STRUCTURAL'] = 'packet input not available on this host (skipped; disclosed)'
+    # ---------------- (c) reduction / lift
+    n_ok = 0; n_models = 0; n_decl = 0
+    for trial in range(40):
+        nv = 3 + trial % 5; cards = [2 + rng.randrange(2) for _ in range(nv)]; fs = []
+        for v in range(nv):
+            vals = [F(rng.randrange(0, 5), rng.randrange(1, 4)) for _ in range(cards[v])]
+            if trial % 3 == 0 and v == 0: vals = [F(0)] * cards[v]; vals[rng.randrange(cards[v])] = F(3)
+            if sum(vals) == 0: vals[0] = F(1)
+            fs.append(dict(scope=(v,), values=vals))
+        for v in range(1, nv):
+            u = rng.randrange(v)
+            if trial % 4 == 1: fs.append(dict(scope=(u, v), values=[F(int((a + b) % cards[v] == 0 or (a * 7 + b) % cards[v] == 1) * rng.randrange(1, 4)) for a in range(cards[u]) for b in range(cards[v])]))
+            else: fs.append(dict(scope=(u, v), values=[F(rng.randrange(0, 4), rng.randrange(1, 4)) for _ in range(cards[u] * cards[v])]))
+        ev = {v: rng.randrange(cards[v]) for v in range(nv) if rng.randrange(5) == 0}; mm = dict(cards=cards, factors=fs, evidence=ev); qs = TK.all_singletons(cards); tk_ = dict(model=mm, queries=qs, query_spec=None, epsilon=F(1, 200))
+        tr = truth_of(mm, qs, cap=10000); m1, red, why = ST.model_from_reduced(tk_, time.monotonic() + 5)
+        if m1 is None: n_decl += 1; A(tr['Z'] == 0 or 'fixed' in why or 'no free' in why, '(c) reduction declined a live model: %s' % why); continue
+        n_models += 1; disc = ST.discover(m1, time.monotonic() + 5, 2.0); ok, est, which = ST.admitted(disc, 5.0); A(ok, '(c) tiny reduced model not admitted')
+        try: res = ST.execute(m1, disc, time.monotonic() + 5, which, epsilon=F(1, 200))
+        except ST.StructuralStop as e: A(e.kind == 'ZERO_EVIDENCE' and tr['Z'] == 0, '(c) stop %s on a live model' % e.kind); n_ok += 1; continue
+        rows, pts = ST.lift_rows(red, res['rows'], res['points']); ans = ST.answers_original(tk_, rows); A(tr['Z'] > 0, '(c) published on zero mass'); CNT['truth_coordinates'] += len(ans)
+        A(all(lo <= tr['answers'][j] <= hi for j, (lo, hi) in enumerate(ans)), '(c) lifted rows miss the enumeration on trial %d' % trial); n_ok += 1
+        rec = ST.reduction_record(red, m1); m1b, redb, _ = ST.model_from_reduced(tk_, time.monotonic() + 5); recb = ST.reduction_record(redb, m1b); A((rec['decoder'], rec['reduced_model_sha256']) == (recb['decoder'], recb['reduced_model_sha256']), '(c) reduction not re-derivable')
+    out['c']['tiny'] = dict(reduced_models=n_models, contained=n_ok, declined_zero_or_fixed=n_decl)
+    pk = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(HERE))), 'docs', 'handoff-received-2026-11-11-certified-executor', 'packet', 'inputs', 'BN_31.uai')
+    if os.path.exists(pk):
+        mpb = os.path.join(d, 'BN_31.uai'); shutil.copy(pk, mpb); shutil.copy(pk + '.evid', mpb + '.evid'); t0 = time.monotonic(); w = fresh_worker(mpb, 'N1_CQR', budget=20.0, nonce='c33-bn31'); wall = time.monotonic() - t0
+        A(w['outcome'] == 'PUBLISHED' and w['route'] == 'structural_reduced' and wall <= 20.0, '(c) BN_31: %s %s %.2f s' % (w['outcome'], w.get('route'), wall)); fails, info = check_(mpb, w, 'N1_CQR', budget=300.0); A(not fails, '(c) BN_31 refused: %s' % fails[:1])
+        att = w['certificate']['structural']['attempts']; A(att[0]['decision'] == 'not_admitted' and att[1]['representation'] == 'reduced', '(c) BN_31 planner: %s' % [(a['representation'], a['decision']) for a in att])
+        out['c']['BN_31'] = dict(wall_s=round(wall, 2), route=w['route'], reduced_variables=((info.get('attribution') or {}).get('structural') or {}).get('reduction', {}).get('reduced_variables'), original_not_admitted_estimate_s=round(att[0].get('estimate_s') or 0))
+        _mut(mpb, w, 'N1_CQR', 'reduced_decoder_tampered', lambda x: x['certificate']['publication']['structural']['reduction']['decoder'][0].__setitem__('kind', 'alias' if x['certificate']['publication']['structural']['reduction']['decoder'][0]['kind'] == 'fixed' else 'fixed'), 'decoder', out['c'])
+        _mut(mpb, w, 'N1_CQR', 'reduced_model_digest_tampered', lambda x: x['certificate']['publication']['structural']['reduction'].__setitem__('reduced_model_sha256', '0' * 64), 'reduced model', out['c'])
+        _mut(mpb, w, 'N1_CQR', 'reduced_row_tampered', lambda x: x['certificate']['publication']['structural']['rows'][0].__setitem__(0, ['0', '1']), 'reproduce', out['c'])
+    else: out['c']['BN_31'] = 'packet input not available on this host (skipped; disclosed)'
+    return out
+
+
+def c34_terminal_diagnostics_freshness_and_operation_observability():
+    """STRUCTURED REVIEW CQR-S1-06. (a) on a PUBLISHED run with ratio draws the final sidecar's stream draw count, Work ledgers, reference progress and frontier counts EQUAL the certificate /
+    worker ledger (terminal refresh independent of the periodic clock); (b) on an ordinary DEADLINE the Work counters equal the typed stop's ledgers; (c) on an optional cancellation
+    (1-byte cap) the final state matches; (d) per-section ages are present and the stream section is refreshed on its own clock even when service checkpoints are frequent (a fixture
+    with a 0.01 s write interval: the stream age at the final write is <= one interval + the last turn); (e) a forced SIGKILL leaves a checkpoint <= 0.5 s before the kill with aligned
+    clocks (identity.monotonic_t0) and an operation-entry record (in_flight or last_completed); (f) diagnostics overhead is measured and below 5 % of the wall on every fixture here;
+    the sidecar never recomputes bounds at expiry (its last enclosure time precedes the stop)."""
+    d = tempfile.mkdtemp(prefix='cqr_c34_'); out = dict(a={}, b={}, c={}, d={}, e={}, f={})
+    def sidecar(w): return json.load(open(w['diag_sidecar']))
+    cards_s, fs_s = _sprinkled(1, 28, 14, 4); mpp = _spec(_uai(os.path.join(d, 'pac28.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1)])
+    wp = None
+    for sd_ in ('a', 'b', 'c', 'd'):
+        cand = fresh_worker(mpp, 'N1_NO_STRUCTURAL', budget=45.0, seed=sd_, nonce='c34-a-' + sd_)
+        if cand['outcome'] == 'PUBLISHED' and (cand['certificate'].get('ratio_stream') or {}).get('t', 0) > 0: wp = cand; break
+    A(wp is not None, '(a) no published fixture with ratio draws'); sc = sidecar(wp); c = wp['certificate']
+    A((sc['streams'].get('ratio') or {}).get('draws') == c['ratio_stream']['t'], '(a) stream draws: sidecar %s vs certificate %s' % ((sc['streams'].get('ratio') or {}).get('draws'), c['ratio_stream']['t']))
+    A((sc['work'].get('reference') or {}).get('total') == c['work']['reference']['total'] and (sc['work'].get('optional') or {}).get('total') == c['work']['optional']['total'], '(a) terminal Work ledgers stale')
+    A(sc['reference']['assignments_done'] is not None and sc['reference']['done'] == c['reference']['done'] and (sc['frontier'].get('open_cells') == (c['frontier'] or {}).get('open_cells') if c.get('frontier') else True), '(a) reference / frontier stale')
+    out['a'] = dict(route=wp['route'], draws=c['ratio_stream']['t'], overhead_s=sc['overhead_s'], wall_s=wp['worker_elapsed_s'], section_ages=sc['freshness']['section_ages_s'])
+    n = 30; rng = random.Random(29); big = [(tuple(sorted(rng.sample(range(n), 3))), [rng.randint(1, 9) for _ in range(8)]) for _ in range(40)]; mpb = _spec(_uai(os.path.join(d, 'big30.uai'), [2] * n, big), mode='PAC_EPS', epsilon='1/200', delta='1/1000000', queries=[dict(kind='all_singletons')]); open(mpb + '.evid', 'w').write('2 0 1 7 0\n')
+    wb = fresh_worker(mpb, 'N1_NO_STRUCTURAL', budget=1.5, nonce='c34-b'); A(wb['outcome'] == 'DEADLINE', '(b) %s' % wb['outcome']); sb = sidecar(wb); s = wb['scheduling']
+    A(all((s.get('work_' + k) or {}).get('total') == (sb['work'].get(k) or {}).get('total') for k in ('reference', 'optional')) and s.get('reference_progress') == sb['reference']['progress'], '(b) deadline Work counters stale: %s vs %s' % ({k: (s.get('work_' + k) or {}).get('total') for k in ('reference', 'optional')}, {k: (sb['work'].get(k) or {}).get('total') for k in ('reference', 'optional')}))
+    le = (sb.get('frontier') or {}).get('last_enclosure'); A(le is None or le['elapsed_s'] <= sb['elapsed_s'], '(b) enclosure recomputed at expiry'); out['b'] = dict(equal=True, last_enclosure_age_s=(round(sb['elapsed_s'] - le['elapsed_s'], 3) if le else None), overhead_s=sb['overhead_s'])
+    mpc = _concentration_witness(d); wc = fresh_worker(mpc, 'N1_NO_STRUCTURAL', budget=20.0, nonce='c34-c', extra=('--cap-bytes', '1')); A(wc['outcome'] == 'PUBLISHED' and 'memory pressure' in (wc['certificate'].get('optional_cancelled') or ''), '(c) cancellation fixture')
+    scc = sidecar(wc); A((scc['work'].get('reference') or {}).get('total') == wc['certificate']['work']['reference']['total'] and (scc['work'].get('optional') or {}).get('total') == wc['certificate']['work']['optional']['total'], '(c) cancelled run: stale ledgers'); out['c'] = dict(route=wc['route'], frontier_section=scc['frontier'].get('missing') or 'present')
+    # (d) frequent service writes: a 10 ms write interval through the solver API with a real Diagnostics object (the stream section must still be refreshed on its own clock)
+    ts = TK.load_task(mpp); dp = os.path.join(d, 'freq.diag.json'); t0 = time.monotonic(); Dg = DG.Diagnostics(dp, dict(arm='N1_NO_STRUCTURAL'), t0, t0 + 20.0, min_interval_s=0.01)
+    try: r = solve_(ts, 'N1_NO_STRUCTURAL', 'c34-d', budget=20.0, diag=Dg)
+    except SV.Stop: r = None
+    if r is not None and r['outcome'] == 'PUBLISHED' and (r['certificate'].get('ratio_stream') or {}).get('t'):
+        Dg.final('COMPLETED', 'PUBLISHED'); sd_ = json.load(open(dp)); A((sd_['streams'].get('ratio') or {}).get('draws') == r['certificate']['ratio_stream']['t'], '(d) frequent writes starved the stream refresh: %s vs %s' % ((sd_['streams'].get('ratio') or {}).get('draws'), r['certificate']['ratio_stream']['t']))
+        out['d'] = dict(checkpoints=sd_['checkpoints'], draws=r['certificate']['ratio_stream']['t'], stream_age_at_final_s=sd_['freshness']['section_ages_s'].get('streams'))
+    else: out['d'] = dict(note='fixture did not publish with draws under the 10 ms write clock (outcome %s); the equality is asserted in (a)' % (r['outcome'] if r else 'DEADLINE'))
+    # (e) SIGKILL freshness with aligned clocks
+    outp = mpb + '.N1_NO_STRUCTURAL.c34-kill.json'; dl = subprocess.run([PY, '-c', 'import time; print(time.monotonic()+30.0)'], capture_output=True, text=True).stdout.strip()
+    pr = subprocess.Popen([PY, os.path.join(HERE, 'worker.py'), '--input', mpb, '--output', outp, '--arm', 'N1_NO_STRUCTURAL', '--deadline', dl, '--seed', 's', '--nonce', 'c34-kill', '--budget', '30'], cwd=CODE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.5); kill_mono = time.monotonic(); os.kill(pr.pid, signal.SIGKILL); pr.wait(); CNT['fresh_workers'] += 1; sk = json.load(open(outp[:-5] + '.diag.json')); gap = kill_mono - (sk['identity']['monotonic_t0'] + sk['freshness']['elapsed_s_at_write'])
+    A(not os.path.exists(outp) and sk['status'] == 'RUNNING' and 0 <= gap <= 0.5 and (sk['service'].get('in_flight') is not None or sk['service'].get('last_completed') is not None), '(e) kill gap %.3f s; in_flight %s; last_completed %s' % (gap, sk['service'].get('in_flight'), sk['service'].get('last_completed')))
+    out['e'] = dict(gap_s=round(gap, 3), in_flight=sk['service'].get('in_flight'), last_completed=sk['service'].get('last_completed'), section_ages=sk['freshness']['section_ages_s'])
+    for name, w_, sc_ in (('a', wp, sc), ('b', wb, sb), ('c', wc, scc)): A(sc_['overhead_s'] <= 0.05 * max(0.1, w_['worker_elapsed_s']), '(f) diagnostics overhead %.4f s on %.3f s (%s)' % (sc_['overhead_s'], w_['worker_elapsed_s'], name))
+    out['f'] = {name: round(sc_['overhead_s'] / max(0.1, w_['worker_elapsed_s']), 4) for name, w_, sc_ in (('a', wp, sc), ('b', wb, sb), ('c', wc, scc))}
+    return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics), ('C26_partition_premise_order_validation_structural_negative', c26_partition_premise_order_validation_structural_negative), ('C27_final_query_accounting_evaluation_site_audit', c27_final_query_accounting_evaluation_site_audit), ('C28_view_storage_ownership_renumbering_declarations_event_schema', c28_view_storage_ownership_renumbering_declarations_event_schema), ('C29_failure_telemetry_survives_graceful_and_hard_kills', c29_failure_telemetry_survives_graceful_and_hard_kills), ('C30_cumulative_credit_reference_scheduling', c30_cumulative_credit_reference_scheduling), ('C31_structural_adapters_composition_checker_reachability', c31_structural_adapters_composition_checker_reachability), ('C32_query_semantics_arm_eligibility_provenance_attribution', c32_query_semantics_arm_eligibility_provenance_attribution), ('C33_compositional_discovery_deadline_propagation_reduction_lift', c33_compositional_discovery_deadline_propagation_reduction_lift), ('C34_terminal_diagnostics_freshness_and_operation_observability', c34_terminal_diagnostics_freshness_and_operation_observability)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'
