@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.8 (2026-11-18, structured-repair review CQR-S2-01: presentation labels validated by their DENOTATION (task.validate_output_metadata) for every query and route -- the structural branch no longer requires the literal singleton spelling; legacy-row placement table-derived; v1.7 2026-11-17, structured review CQR-S1-01..03: singleton correspondence derived from each query TABLE (output metadata must agree); the structural flag and route eligibility bound to the registered arm; structural attribution built from the FACTS of the re-execution with kernel digests verified against the verifier\'s own loaded kernels and producer observations labelled; the structural_reduced route (reduction re-derived, decoder + reduced model compared, rows lifted); v1.6: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
+CHECKER_VERSION = 'cqr-checker-v1.9 (2026-11-18, A1 review CQR-A1-01: frontier_closed_zero_mass proofs verified by journal + partition replay with zero-mass TRANSFER to the original model (exact zero-preserving operators / original-factor zero slice / bounded elimination; never a producer mass field); reference_enumeration proofs beyond the enumeration cap fall back to the same independent short routes before UNVERIFIABLE; v1.8 2026-11-18, structured-repair review CQR-S2-01: presentation labels validated by their DENOTATION (task.validate_output_metadata) for every query and route -- the structural branch no longer requires the literal singleton spelling; legacy-row placement table-derived; v1.7 2026-11-17, structured review CQR-S1-01..03: singleton correspondence derived from each query TABLE (output metadata must agree); the structural flag and route eligibility bound to the registered arm; structural attribution built from the FACTS of the re-execution with kernel digests verified against the verifier\'s own loaded kernels and producer observations labelled; the structural_reduced route (reduction re-derived, decoder + reduced model compared, rows lifted); v1.6: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -72,6 +72,36 @@ DET_ROUTES = ('deterministic_frontier', 'deterministic_frontier_closure', 'deter
 STRUCTURAL_ROUTES = ('structural_original', 'structural_reduced', 'structural_compiled')
 PAC_ROUTES = ('pac_ratio_intersected_with_deterministic', 'pac_signed_residual_validation', 'normalizer_pac_ratio_intersected_with_deterministic')
 
+
+
+# ---- zero-evidence proofs (CQR-A1-01): operators whose commit preserves zero mass EXACTLY (Z_original = positive scalars x Z_compiled): evidence restriction, dead-state removal, substitution of
+# one-state variables (zero constants raise ZeroEvidence at compile time, positive ones are recorded scalars), exact leaf marginalization, omission of a component whose mass is PROVED positive,
+# the exact quotient (proportional classes merged with their exact kappa). Every other operator (approximate quotient, concentration, influence deletion, symmetry, affine) is NOT assumed to
+# preserve zero mass: the transfer then needs an independent witness (a zero slice of an original factor under the evidence) or the bounded elimination oracle.
+ZERO_PRESERVING_EXACT_OPS = frozenset(('evidence', 'support_fixpoint', 'support', 'fixed_substitution', 'leaf_sumout', 'component_omission', 'exact_quotient_pass'))
+def _scalar_positive(sc):
+    """a recorded scalar is positive: a numeric value > 0, or the symbolic positive omitted-component mass (its positivity is what component_omission proves)"""
+    if not isinstance(sc, dict): return False
+    if sc.get('kind') == 'omitted_component_mass': return True
+    try: return F(str(sc.get('value'))) > 0
+    except (ValueError, ZeroDivisionError, TypeError): return False
+
+
+def zero_slice_witness(model, work, deadline=None):
+    """INDEPENDENT short proof of Z = 0 on the ORIGINAL model: an original factor every one of whose evidence-consistent entries is exactly 0 (then every evidence-consistent assignment
+    has a zero factor and Z = 0). Reads every entry of every factor at most once (charged to `work`); returns dict(factor, scope, evidence_consistent_entries) or None (no such factor)."""
+    from itertools import product
+    cards = model['cards']; ev = model.get('evidence', {})
+    for fi, f in enumerate(model['factors']):
+        if deadline is not None and time.monotonic() >= deadline: return None
+        sc = tuple(f['scope']); n_cons = 0; all_zero = True
+        for xs, wv in zip(product(*(range(cards[v]) for v in sc)), f['values']):
+            work.entries += 1
+            if any(v in ev and ev[v] != x for v, x in zip(sc, xs)): continue
+            n_cons += 1
+            if wv != 0: all_zero = False; break
+        if all_zero and n_cons > 0: return dict(factor=fi, scope=list(sc), evidence_consistent_entries=n_cons)
+    return None
 
 
 def _attribution(route, cls, exact_route, C, cert, info):
@@ -163,10 +193,56 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
             try: CP.compile_task(task, enabled=enabled_eff, work=work); fail('compiler zero proof does not re-derive (compile succeeded)')
             except CP.ZeroEvidence as z:
                 if z.proof.get('kind') != (zp.get('proof') or {}).get('kind'): fail('compiler zero proof kind differs (%s vs %s)' % (z.proof.get('kind'), (zp.get('proof') or {}).get('kind')))
-        elif zp.get('kind') in ('reference_enumeration', 'frontier_closed_zero_mass'):
+        elif zp.get('kind') == 'frontier_closed_zero_mass':
+            # CQR-A1-01 (review of 18 Nov 2026): the producer's proof is the RECORDED compile journal + partition events whose replay leaves NO open cell and ZERO resolved mass.
+            # It is verified ROUTE-FAITHFULLY: (1) the journal replays exactly (policy, commits, final snapshot digest, ledger) as for any compiled publication; (2) the recorded
+            # canonical partition events replay on the replayed compiled model to an empty frontier with resolved mass 0 and upper mass 0 (frontier.py prunes a child only when its
+            # independently recomputed envelope B is 0); (3) ZERO-MASS TRANSFER to the ORIGINAL model is established, never assumed: either every committed operator is in the
+            # declared exact zero-preserving set with a zero bias ledger (Z_original = positive scalars x Z_compiled), or an INDEPENDENT original-factor zero slice under the
+            # evidence is found (a factor all of whose evidence-consistent entries are 0), or the bounded independent elimination oracle gives Z = 0; a producer-claimed mass field is
+            # never trusted; an unfinished verification is UNVERIFIABLE (never an acceptance); Z > 0 from the independent oracle is a CONTRADICTION (hard refusal).
+            comp = cert.get('compile')
+            if not isinstance(comp, dict) or not isinstance(comp.get('certificates'), list): fail('frontier zero proof without a compile journal'); return fails, info
+            C, jf, _d = CP.replay_journal(task, comp['certificates'], work, deadline=deadline)
+            for m_ in jf: fail(('UNVERIFIABLE: ' if 'UNVERIFIABLE' in m_ else 'zero proof journal replay: ') + m_)
+            if C is None or jf: return fails, info
+            _opname = {'support': 'support_fixpoint'}; journal = comp['certificates']
+            bad_ops = sorted({c_.get('op') for c_ in journal if c_.get('kind') == 'commit' and _opname.get(c_.get('op'), c_.get('op')) not in enabled_eff and c_.get('op') != 'evidence'})
+            if bad_ops: fail('zero proof journal commits by operators outside the task-effective policy: %s' % bad_ops); return fails, info
+            snap_ = C.snapshot_json(); sha_ = hashlib.sha256(json.dumps(snap_, sort_keys=True, default=str).encode()).hexdigest()
+            if sha_ != comp.get('final_sha256'): fail('zero proof: compiled model does not replay from the journal (final_sha256 %s vs %s)' % (sha_[:12], str(comp.get('final_sha256'))[:12])); return fails, info
+            if [_F(b) for b in (cert.get('bias') or [])] != C.bias: fail('zero proof: recorded bias ledger differs from the replayed one'); return fails, info
+            rs_ = cert.get('ratio_stream')                                   # the producer allocates the ratio record at PAC risk BEFORE any draw: it must hold ZERO draws here, as must every epoch
+            if (isinstance(rs_, dict) and int(rs_.get('t') or 0) != 0) or any(int(e_.get('t') or 0) for e_ in (cert.get('epochs') or []) if isinstance(e_, dict)): fail('zero proof certificate carries stream draws (a closed zero frontier has none)'); return fails, info
+            nf0 = len(fails); fr, _st = _replay_frontier(task, C, cert, delta, work, deadline, fail)
+            if fr is None or len(fails) > nf0: return fails, info
+            if fr.open or fr.resolved_mass != 0 or fr.Zhi() != 0: fail('replayed frontier is not a closed zero frontier (open %d, resolved mass %s, Zhi %s)' % (len(fr.open), fr.resolved_mass, fr.Zhi())); return fails, info
+            if str(zp.get('resolved_mass')) != '0' or zp.get('open_cells') != 0: fail('zero proof record does not state resolved mass 0 with no open cell'); return fails, info
+            # ---- transfer to the ORIGINAL model
+            commits = [_opname.get(c_.get('op'), c_.get('op')) for c_ in journal if c_.get('kind') == 'commit']
+            exact_ops = all(op_ in ZERO_PRESERVING_EXACT_OPS for op_ in commits) and all(b == 0 for b in C.bias) and all(_scalar_positive(sc_) for sc_ in (C.scalars or []))
+            if exact_ops: info['zero_transfer'] = dict(method='exact zero-preserving journal (%s): Z_original = positive scalars x Z_compiled' % ','.join(commits) if commits else 'evidence restriction only: Z_original(evidence) = Z_compiled')
+            else:
+                zs = zero_slice_witness(task['model'], work, deadline)
+                if zs is not None: info['zero_transfer'] = dict(method='original-factor zero slice under the evidence', witness=zs)
+                else:
+                    tr = OR.eliminate_truth(task['model'], task['queries'][:1], deadline=deadline, max_table=ORACLE_CAP) if task['queries'] else None
+                    if tr is None: fail('UNVERIFIABLE: zero-mass transfer to the original model could not be established within the allowance (journal commits %s are not all exact zero-preserving; no zero slice; elimination exceeded the cap)' % commits); return fails, info
+                    if tr['Z'] != 0: fail('zero-evidence claim contradicted by the independent elimination oracle (Z = %s)' % tr['Z']); return fails, info
+                    info['zero_transfer'] = dict(method='independent bounded elimination (Z = 0)')
+            info['zero_proof'] = dict(kind='frontier_closed_zero_mass', journal_commits=commits, splits=fr.splits, closures=fr.closures, work=work.snapshot())
+        elif zp.get('kind') == 'reference_enumeration':
             tr = OR.enumerate_truth(task['model'], task['queries'], deadline=deadline, max_assignments=ORACLE_CAP)
-            if tr is None: fail('UNVERIFIABLE: zero proof by enumeration exceeds the checker cap / allowance')
+            if tr is None:
+                zs = zero_slice_witness(task['model'], work, deadline)             # the same independent short routes before declaring the claim unverifiable
+                if zs is not None: info['zero_transfer'] = dict(method='original-factor zero slice under the evidence', witness=zs)
+                else:
+                    tr = OR.eliminate_truth(task['model'], task['queries'][:1], deadline=deadline, max_table=ORACLE_CAP) if task['queries'] else None
+                    if tr is None: fail('UNVERIFIABLE: zero proof by enumeration exceeds the checker cap / allowance (no zero slice; elimination exceeded the cap)')
+                    elif tr['Z'] != 0: fail('zero-evidence claim contradicted by the independent elimination oracle (Z = %s)' % tr['Z'])
+                    else: info['zero_transfer'] = dict(method='independent bounded elimination (Z = 0)')
             elif tr['Z'] != 0: fail('zero-evidence claim contradicted by the independent enumerator (Z = %s)' % tr['Z'])
+            else: info['zero_transfer'] = dict(method='independent enumeration (Z = 0)')
         else: fail('unknown zero proof kind %s' % zp.get('kind'))
         if w.get('answers') is not None or w.get('intervals') is not None: fail('zero-evidence output carries published answers')
         return fails, info
