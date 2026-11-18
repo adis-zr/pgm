@@ -94,6 +94,8 @@ def main():
         for tag, build, arm in arms:
             order_i += 1; cell = launch(build, arm, r, tag, order_i); cell['comparator_kind'] = (comp or {}).get('kind') if tag == 'comparator' else None; verify(cell, r); activation(cell); cells.append(cell)
             if (cell.get('supervisor') or {}).get('survivors'): cell['hard_failure'] = (cell.get('hard_failure') or '') + '; supervisor reported live survivors'
+            if r.get('expected_outcome') and tag == 'candidate' and cell['status'] not in ('NOT_RUN',) and cell['outcome'] != r['expected_outcome']: cell['hard_failure'] = (cell.get('hard_failure') or '') + '; control expectation violated: expected %s, observed %s' % (r['expected_outcome'], cell['outcome'])
+            if r['id'] == 'FL_CTL_zero_mass' and tag == 'candidate' and cell['outcome'] == 'PUBLISHED' and not all(a.get('lo') == a.get('hi') == '0' for a in (cell.get('answers') or [])): cell['hard_failure'] = (cell.get('hard_failure') or '') + '; zero-mass control published a nonzero answer'
             if cell.get('hard_failure'): hard.append((cell['id'], cell['tag'], cell['hard_failure'])); stop = 'STOP: %s / %s: %s' % (cell['id'], cell['tag'], cell['hard_failure'])
             if stop: break
         if stop: break
@@ -104,7 +106,7 @@ def main():
                 if (r['id'], tag) not in done: cells.append(dict(id=r['id'], tag=tag, arm=(r['candidate_arm'] if tag == 'candidate' else r['comparator']['arm']), status='NOT_RUN', outcome='NOT_RUN', reason='stopped after a hard failure', wall_s=0.0, check=dict(status='NOT_RUN'), truth=dict(status='NA'), activation={}))
     # ---------------- mutation controls on the first honest candidate publication of the smoke set (checker must REFUSE each; copies only)
     muts = []
-    hon = next((c for c in cells if c['tag'] == 'candidate' and c['outcome'] == 'PUBLISHED' and (c.get('check') or {}).get('status') == 'ACCEPTED' and c['id'] in ('FL_SENT_ASIA', 'FL_C35_mixed_alias')), None)
+    hon = next((c for cid in ('FL_C35_mixed_alias', 'FL_SENT_ASIA') for c in cells if c['id'] == cid and c['tag'] == 'candidate' and c['outcome'] == 'PUBLISHED' and (c.get('check') or {}).get('status') == 'ACCEPTED'), None)
     if hon and left() > 12.0:
         r = next(x for x in rows_sel if x['id'] == hon['id']); w = json.load(open(os.path.join(RUN, hon['worker_json']))); md = os.path.join(RUN, 'mutations'); os.makedirs(md, exist_ok=True)
         def refuse(name, wm, model_path, needle):
