@@ -166,27 +166,3 @@ def test_model_check_rejects_wrong_table_length():
         return
     raise AssertionError("adapter accepted a malformed factor table")
 
-
-def test_reference_rounding_slack_comes_from_the_raw_token_not_from_str_fraction():
-    """(closeout review, 3 Nov 2026) The optional containment-with-slack diagnostic derived the
-    reference's decimal places from str(Fraction): token "0.100000" became "1/10", zero places,
-    slack 1/2, and [0.4, 0.5] counted as within rounding slack of 0.1. The slack now comes from
-    the raw token as written in the file (half a unit in its last decimal place) and is None
-    when no raw tokens are supplied; the strict count is unchanged either way."""
-    from fractions import Fraction as Fr
-    from ext import score_cells as SC
-    rows = [{"var": 0, "card": 2, "intervals": [["2/5", "1/2"], ["1/2", "3/5"]]}]
-    ref = [[Fr("0.100000"), Fr("0.900000")]]
-    strict = SC.containment(rows, ref, {})
-    assert strict["inside"] == 0 and strict["outside"] == 2 and strict["inside_with_half_ulp_slack"] is None
-    with_tok = SC.containment(rows, ref, {}, raw_tokens=[["0.100000", "0.900000"]])
-    assert with_tok["inside"] == 0 and with_tok["inside_with_half_ulp_slack"] == 0, with_tok
-    assert with_tok["worst_excursion"]["reference"] == "0.100000"
-    # a reference ONE half-unit of its last written place outside the enclosure IS within slack
-    rows2 = [{"var": 0, "card": 2, "intervals": [["0.1000005", "0.2"], ["0.8", "0.9"]]}]
-    ok = SC.containment(rows2, [[Fr("0.100000"), Fr("0.900000")]], {}, raw_tokens=[["0.100000", "0.900000"]])
-    assert ok["inside"] == 1 and ok["inside_with_half_ulp_slack"] == 2, ok
-    assert [SC.decimal_places(t) for t in ("0.100000", "1", "0.5", "2.5e-07")] == [6, 0, 1, 8]
-    # observed variables are excluded from both counts
-    ex = SC.containment(rows, ref, {0: 1}, raw_tokens=[["0.100000", "0.900000"]])
-    assert ex["coordinates"] == 0

@@ -1,4 +1,4 @@
-"""Controls for the external-sweep adapters (campaign spec section 2, last paragraph): native-CBI adapter + independent checker, BIF->UAI,
+"""Controls for the external-sweep adapters that remain in the working library (18 Nov 2026 cleanup: the BIF conversion and harness-identity controls went with bench/bif.py and bench/campaign.py; they stay in the git history): native-CBI adapter + independent checker,
 cell runner output validation. Source-order / state-order permutations, evidence indexing, zero factors, impossible evidence, disconnected
 models, reference-pointer tampering."""
 import os, sys, json, itertools, copy, tempfile, subprocess
@@ -6,7 +6,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); sys.path.ins
 from fractions import Fraction as Fr
 import pytest
 from ext import uai as U
-from bench import cbi_adapter as AD, bif as BIF
+from bench import cbi_adapter as AD
 from cbi import api
 
 
@@ -140,28 +140,6 @@ def test_reference_pointer_and_certificate_tampering_rejected(tmp_path):
     q = str(tmp_path / "other.uai"); card, facs, e = ADMISSIBLE; write_uai(q, card, [facs[0]] + [((0, 1), ["3", "1", "1", "3"])] + facs[2:], e)
     with pytest.raises(AssertionError):
         AD.check_adapter(q, q + ".evid", native, cert, res, expected_queries=_contract(q))
-
-
-def test_bif_conversion_roundtrip_and_verification_detects_axis_swap(tmp_path):
-    bif = tmp_path / "t.bif"; bif.write_text("""network t {}
-variable A { type discrete [ 2 ] { a0, a1 }; }
-variable B { type discrete [ 3 ] { b0, b1, b2 }; }
-variable C { type discrete [ 2 ] { c0, c1 }; }
-probability ( A ) { table 0.2, 0.8; }
-probability ( B | A ) { (a0) 0.1, 0.2, 0.7; (a1) 0.5, 0.25, 0.25; }
-probability ( C | B, A ) { (b0, a0) 0.9, 0.1; (b1, a0) 0.8, 0.2; (b2, a0) 0.7, 0.3; (b0, a1) 0.6, 0.4; (b1, a1) 0.5, 0.5; (b2, a1) 0.4, 0.6; }
-""")
-    text, rec = BIF.bif_to_uai(str(bif)); chk = BIF.verify_bif_uai(str(bif), text); assert chk["entries_checked"] == 2 + 6 + 12 and rec["row_sum_defects"] == []
-    m = U.read_model.__wrapped__(text) if hasattr(U.read_model, "__wrapped__") else None
-    p = tmp_path / "t.uai"; p.write_text(text); m = U.read_model(str(p)); f = m.factors[2]; assert f.scope == (1, 0, 2) and f.at({1: 2, 0: 1, 2: 0}) == Fr("0.4")
-    # swapping the two parent axes in the written table must be caught by the independent verifier
-    toks = text.split(); i = toks.index("12"); vals = toks[i + 1:i + 13]
-    # table order (B,A,C) -> reorder as (A,B,C): detectably different
-    sw = [vals[(b * 2 + a) * 2 + c] for a in range(2) for b in range(3) for c in range(2)]; toks[i + 1:i + 13] = sw
-    with pytest.raises(AssertionError):
-        BIF.verify_bif_uai(str(bif), " ".join(toks))
-    # exact decimals survive: 0.7 stays 0.7 (no binary float)
-    assert "0.7" in text and "0.69999" not in text
 
 
 def test_cell_runner_output_validation_rejects_bad_vectors(tmp_path):
@@ -325,61 +303,3 @@ def test_contract_binding_subset_and_mismatch(tmp_path):
     q = str(tmp_path / "f.uai"); write_uai(q, [2, 2], [((0,), ["0", "1"]), ((1,), ["1", "3"])], {}); m2 = U.read_model(q); n2, c2 = AD.adapt(m2, {}); r2 = api.solve(n2, "all", "1/100", {})
     out = AD.check_adapter(q, q + ".evid", n2, c2, r2, expected_queries=[0, 1]); assert out["contract_queries"] == 2 and out["contract_queries_native"] == 1
 
-
-def test_harness_identity_reuse_rules(tmp_path):
-    """Metadata-only control of bench/campaign.freeze / reconcile (no solver runs): legitimate reuse; changed model / evidence / config / query
-    scope / budget never inherit; a changed-then-unchanged code history never inherits across the changed transition; a same-code input
-    revision preserves the prior manifest."""
-    import shutil
-    from bench import campaign as C
-    S0 = "/Users/adis/Workspace/pgm/code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06"; S = str(tmp_path / "S"); os.makedirs(S)
-    for f in ("PANEL_SELECTION.json", "INVENTORY.json"):
-        shutil.copy(os.path.join(S0, f), S)
-    os.makedirs(os.path.join(S, "inputs")); 
-    for f in os.listdir(os.path.join(S0, "inputs")):
-        shutil.copy(os.path.join(S0, "inputs", f), os.path.join(S, "inputs", f))
-    C.freeze(S); man = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json")))
-    asia = next(c for c in man["cells"] if c["case"] == "ASIA" and c["arm"] == "EXACT" and c["stage"] == "breadth")
-    # a primary row for ASIA/EXACT under the current code
-    open(os.path.join(S, "CELLS_LEDGER.jsonl"), "w").write(json.dumps({**{k: asia[k] for k in ("cell_id", "stage", "case", "family", "arm", "budget_s", "anchor")}, "label": None, "status": "COMPLETE", "supervisor_wall_s": 1.0, "code_hash": man["code_hash"]}) + "\n")
-    # (1) legitimate reuse: same code, re-freeze -> own row
-    C.freeze(S); C.reconcile(S); rc = json.load(open(os.path.join(S, "RECONCILIATION.json")))
-    assert any(x["case"] == "ASIA" and x["arm"] == "EXACT" and x["relation"] == "own" for x in rc["cells"])
-    # (2) changed MODEL content (same names): metadata-only hash change in INVENTORY -> new task_id, predecessor NOT reusable
-    inv = json.load(open(os.path.join(S, "INVENTORY.json")))
-    for c in inv["cases"]:
-        if c["case"] == "ASIA":
-            c["canonical_model_sha256"] = "0" * 64; c["raw_model_sha256"] = C.sha_file(os.path.join(S, c["committed_model_path"]))
-    json.dump(inv, open(os.path.join(S, "INVENTORY.json"), "w"))
-    C.freeze(S); man2 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); a2 = next(c for c in man2["cells"] if c["case"] == "ASIA" and c["arm"] == "EXACT" and c["stage"] == "breadth")
-    assert a2["cell_id"] != asia["cell_id"] and a2["task_id"] != asia["task_id"] and not a2.get("predecessor_chain")
-    C.reconcile(S); rc = json.load(open(os.path.join(S, "RECONCILIATION.json"))); assert any(u["case"] == "ASIA" and u["arm"] == "EXACT" for u in rc["unsatisfied"])
-    assert len([f for f in os.listdir(S) if f.startswith("CAMPAIGN_MANIFEST_prior_")]) >= 2       # same-code input revision preserved the prior manifest
-    # (3) changed-then-unchanged code history: simulate a prior manifest whose code hash differs and whose transition declared EXACT changed
-    man3 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); man3["code_hash"] = "deadbeef" * 8; man3["frozen_utc"] = "2000-01-01T00:00:00Z"
-    for c in man3["cells"]:
-        c["cell_id"] = "old_" + c["task_id"][:12]
-    json.dump(man3, open(os.path.join(S, "CAMPAIGN_MANIFEST_prior_deadbeef_old.json"), "w"))
-    cur = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); cur["code_hash_history"] = [{"code_hash": "deadbeef" * 8, "frozen_utc": "2000-01-01T00:00:00Z", "transition_to": cur["code_hash"], "amendment": {"name": "changed", "arms_with_changed_numerical_semantics": ["EXACT"]}}]
-    json.dump(cur, open(os.path.join(S, "CAMPAIGN_MANIFEST.json"), "w"))
-    old_row = {**{k: a2[k] for k in ("stage", "case", "family", "arm", "budget_s", "anchor")}, "cell_id": "old_" + a2["task_id"][:12], "label": None, "status": "COMPLETE", "supervisor_wall_s": 1.0, "code_hash": "deadbeef" * 8}
-    open(os.path.join(S, "CELLS_LEDGER.jsonl"), "a").write(json.dumps(old_row) + "\n")
-    C.freeze(S); man4 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json"))); a4 = next(c for c in man4["cells"] if c["case"] == "ASIA" and c["arm"] == "EXACT" and c["stage"] == "breadth")
-    preds = {p["cell_id"]: p for p in a4.get("predecessors", [])}
-    assert "old_" + a2["task_id"][:12] in preds and preds["old_" + a2["task_id"][:12]]["reusable"] is False and "changed EXACT" in preds["old_" + a2["task_id"][:12]]["why"]
-    # the same old row for an arm whose semantics were declared unchanged (LBP) IS reusable
-    l4 = next(c for c in man4["cells"] if c["case"] == "ASIA" and c["arm"] == "LBP" and c["stage"] == "breadth")
-    assert all(p["reusable"] for p in l4.get("predecessors", []) if p["code_hash"] == "deadbeef" * 8)
-    # (4) changed EVIDENCE, changed CONFIGURATION, changed BUDGET / query scope each give a different task_id -> no predecessor
-    base_t = next(c for c in man4["cells"] if c["case"] == "CHILD" and c["arm"] == "LBP" and c["stage"] == "breadth")
-    inv = json.load(open(os.path.join(S, "INVENTORY.json")))
-    for c in inv["cases"]:
-        if c["case"] == "CHILD":
-            c["canonical_evidence_sha256"] = "1" * 64
-    json.dump(inv, open(os.path.join(S, "INVENTORY.json"), "w")); C.freeze(S); m5 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json")))
-    t5 = next(c for c in m5["cells"] if c["case"] == "CHILD" and c["arm"] == "LBP" and c["stage"] == "breadth"); assert t5["task_id"] != base_t["task_id"] and not t5.get("predecessor_chain")
-    C.freeze(S, cfg_override={"width": "1/50", "cbi_limits": {}, "pgmax_iters": 200, "pgmax_damping": 0.5}); m6 = json.load(open(os.path.join(S, "CAMPAIGN_MANIFEST.json")))
-    t6 = next(c for c in m6["cells"] if c["case"] == "ALARM" and c["arm"] == "LBP" and c["stage"] == "breadth"); t6b = next(c for c in m4["cells"] if c["case"] == "ALARM" and c["arm"] == "LBP" and c["stage"] == "breadth") if False else next(c for c in man4["cells"] if c["case"] == "ALARM" and c["arm"] == "LBP" and c["stage"] == "breadth")
-    assert t6["task_id"] != t6b["task_id"] and not t6.get("predecessor_chain")
-    d4 = next(c for c in man4["cells"] if c["case"] == "ASIA" and c["arm"] == "LBP" and c["stage"] == "depth"); b4 = next(c for c in man4["cells"] if c["case"] == "ASIA" and c["arm"] == "LBP" and c["stage"] == "breadth")
-    assert d4["task_id"] != b4["task_id"]                                                               # budget is part of the task
