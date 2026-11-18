@@ -3,20 +3,18 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 3.727,
+   "wall_s": 2.959,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_frontier_closure",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
-      "ops": [
-       "exact_quotient_pass"
-      ]
+      "ops": []
      },
      "clones_det/G0_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_reference",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
       "ops": []
      },
@@ -37,15 +35,13 @@
      },
      "concentration/N1_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_frontier_closure",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
-      "ops": [
-       "leaf_sumout"
-      ]
+      "ops": []
      },
      "concentration/G0_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_reference",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
       "ops": []
      },
@@ -114,17 +110,13 @@
      },
      "zero_evidence/N1_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_reference",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
-      "ops": [
-       "support_fixpoint",
-       "fixed_substitution",
-       "concentration"
-      ]
+      "ops": []
      },
      "zero_evidence/G0_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_reference",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
       "ops": []
      }
@@ -151,14 +143,15 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.252,
+   "wall_s": 0.269,
    "detail": {
     "routes": {
      "zero": 30,
      "EXACT_RATIONAL/exact_reference": 30,
-     "PAC_EPS/exact_reference": 23,
-     "DETERMINISTIC_EPS/exact_reference": 24,
-     "PAC_EPS/exact_frontier_closure": 1
+     "PAC_EPS/exact_reference": 22,
+     "DETERMINISTIC_EPS/exact_reference": 23,
+     "DETERMINISTIC_EPS/exact_frontier_closure": 1,
+     "PAC_EPS/exact_frontier_closure": 2
     },
     "zero_models": 30
    }
@@ -166,7 +159,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.082,
+   "wall_s": 0.079,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -225,7 +218,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.091,
+   "wall_s": 0.11,
    "detail": {
     "within_budget": {
      "cards": [
@@ -281,7 +274,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.134,
+   "wall_s": 0.137,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -308,7 +301,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.078,
+   "wall_s": 0.079,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -326,7 +319,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.602,
+   "wall_s": 1.604,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -344,15 +337,15 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 3.046,
+   "wall_s": 2.928,
    "detail": {
-    "draws": 74,
-    "carves": 74,
-    "record_before_resolve_checked": 74,
+    "draws": 72,
+    "carves": 72,
+    "record_before_resolve_checked": 72,
     "duplicate_refused": true,
     "failed_draw_stops_stream": true,
     "scale_invariant": {
-     "draws": 74
+     "draws": 72
     },
     "fresh_route": "deterministic_frontier",
     "deleted_draw_refused": "ratio stream statistics do not replay",
@@ -362,7 +355,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.072,
+   "wall_s": 0.116,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -385,22 +378,22 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.635,
+   "wall_s": 2.716,
    "detail": {
     "reference_shares": [
      0.586247909310537,
-     0.6588065025437109,
-     0.5590604172546295,
+     0.5028635829797443,
+     0.5013969879576717,
      0.5089961676537862,
-     0.5727370485370791,
-     0.5266214246052261
+     0.5014691595550137,
+     0.4997125433618281
     ],
     "no_shortcut": {
      "route": "exact_reference",
      "ops": [],
      "share": "11282/21"
     },
-    "deadline": "typed DEADLINE at loop",
+    "deadline": "typed DEADLINE at deterministic bounds",
     "worker_deadline": "DEADLINE",
     "memory_capped_worker": {
      "status": "NO_OUTPUT",
@@ -412,15 +405,16 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 115.408,
+   "wall_s": 69.312,
    "detail": {
-    "cells": 373,
+    "cells": 411,
     "arms": [
      "A0_POINT",
      "A1_CONDITIONAL",
      "B0_FROZEN_V14",
      "CBI_NATIVE",
      "G0_CQR",
+     "G0_NO_STRUCTURAL",
      "H1_HYBRID",
      "H4_NATIVE_C",
      "H4_NATIVE_PI",
@@ -436,6 +430,7 @@
      "N1_NO_QUERY_DIRECTED_REFINEMENT",
      "N1_NO_QUOTIENT",
      "N1_NO_SIGNED_STREAM",
+     "N1_NO_STRUCTURAL",
      "N1_NO_SYMMETRY_RELEVANCE",
      "P1_PAC_CONDITIONAL",
      "PGMAX_SUMPRODUCT_BP",
@@ -459,8 +454,10 @@
      "A1_CONDITIONAL|PUBLISHED": 3,
      "B0_FROZEN_V14|PUBLISHED": 3,
      "CBI_NATIVE|PUBLISHED": 1,
-     "G0_CQR|DEADLINE": 18,
-     "G0_CQR|PUBLISHED": 33,
+     "G0_CQR|DEADLINE": 10,
+     "G0_CQR|PUBLISHED": 41,
+     "G0_NO_STRUCTURAL|DEADLINE": 2,
+     "G0_NO_STRUCTURAL|PUBLISHED": 1,
      "H1_HYBRID|DEADLINE": 3,
      "H1_HYBRID|PUBLISHED": 4,
      "H4_NATIVE_C|PUBLISHED": 1,
@@ -470,32 +467,27 @@
      "LBP|PUBLISHED": 7,
      "LIBDAI_EXACT|PUBLISHED": 3,
      "MERLIN_CTE|PUBLISHED": 3,
-     "N1_CQR|DEADLINE": 13,
-     "N1_CQR|PUBLISHED": 38,
-     "N1_NO_AFFINE|DEADLINE": 3,
-     "N1_NO_AFFINE|PUBLISHED": 29,
-     "N1_NO_CONCENTRATION|DEADLINE": 2,
-     "N1_NO_CONCENTRATION|PUBLISHED": 30,
-     "N1_NO_INFLUENCE|DEADLINE": 2,
-     "N1_NO_INFLUENCE|PUBLISHED": 30,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 1,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 31,
-     "N1_NO_QUOTIENT|DEADLINE": 5,
-     "N1_NO_QUOTIENT|PUBLISHED": 27,
-     "N1_NO_SIGNED_STREAM|DEADLINE": 1,
-     "N1_NO_SIGNED_STREAM|PUBLISHED": 31,
-     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 3,
-     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 29,
+     "N1_CQR|DEADLINE": 10,
+     "N1_CQR|PUBLISHED": 41,
+     "N1_NO_AFFINE|PUBLISHED": 32,
+     "N1_NO_CONCENTRATION|PUBLISHED": 32,
+     "N1_NO_INFLUENCE|PUBLISHED": 32,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 32,
+     "N1_NO_QUOTIENT|PUBLISHED": 32,
+     "N1_NO_SIGNED_STREAM|PUBLISHED": 32,
+     "N1_NO_STRUCTURAL|DEADLINE": 4,
+     "N1_NO_STRUCTURAL|PUBLISHED": 31,
+     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 32,
      "P1_PAC_CONDITIONAL|PUBLISHED": 3,
      "PGMAX_SUMPRODUCT_BP|PUBLISHED": 3,
      "SF_NATIVE_SELECT|PUBLISHED": 2,
      "WMB|PUBLISHED": 3
     },
     "gate": {
-     "gated": 319,
-     "wall": 111.458
+     "gated": 379,
+     "wall": 65.221
     },
-    "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
+    "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 41, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 10, \"MEMORY\": 0",
     "missing_group_refused": true,
     "stale_identity_refused": true,
     "stale_suite_refused": true,
@@ -507,7 +499,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 353.473,
+   "wall_s": 361.548,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -537,7 +529,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 163.0
+      "wall_s": 165.5
      },
      {
       "delta": "1/16",
@@ -549,7 +541,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 190.5
+      "wall_s": 196.0
      }
     ]
    }
@@ -557,30 +549,30 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.392,
+   "wall_s": 4.487,
    "detail": {
     "routes": {
-     "concentration.uai/N1_CQR": {
+     "concentration.uai/N1_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "guarantee": "DETERMINISTIC",
       "exact": false
      },
-     "biased_closure.uai/N1_CQR": {
+     "biased_closure.uai/N1_NO_STRUCTURAL": {
       "route": "deterministic_frontier",
       "guarantee": "DETERMINISTIC",
       "exact": false
      },
-     "constant20.uai/N1_CQR": {
+     "constant20.uai/N1_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "guarantee": "DETERMINISTIC",
       "exact": false
      },
-     "unary.uai/G0_CQR": {
+     "unary.uai/G0_NO_STRUCTURAL": {
       "route": "exact_reference",
       "guarantee": "DETERMINISTIC",
       "exact": true
      },
-     "clones_exact.uai/N1_CQR": {
+     "clones_exact.uai/N1_NO_STRUCTURAL": {
       "route": "exact_frontier_closure",
       "guarantee": "DETERMINISTIC",
       "exact": true
@@ -655,7 +647,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 33.404,
+   "wall_s": 33.753,
    "detail": {
     "mode_override": [
      "INVALID_TASK",
@@ -676,7 +668,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 34.198,
+   "wall_s": 35.016,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -730,10 +722,10 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 12.457,
+   "wall_s": 13.233,
    "detail": {
-    "d32_N1_CQR": {
-     "wall_s": 0.07,
+    "d32_N1_NO_STRUCTURAL": {
+     "wall_s": 0.11,
      "work_reference": 7232,
      "work_optional": 10560,
      "compile_interrupted": {
@@ -741,10 +733,10 @@
       "kind": "reference_done"
      }
     },
-    "d32_G0_CQR": {
-     "wall_s": 0.07,
+    "d32_G0_NO_STRUCTURAL": {
+     "wall_s": 0.09,
      "work_reference": 7232,
-     "work_optional": 2314,
+     "work_optional": 7435,
      "compile_interrupted": null
     },
     "d32_compile_work_by_operator": {
@@ -764,7 +756,7 @@
     "nb4": {
      "route": "exact_reference",
      "work_reference": 7344128,
-     "work_optional": 7093381,
+     "work_optional": 7355876,
      "reference_done": true
     },
     "memory_cancellation": {
@@ -782,21 +774,21 @@
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 8.42846930027008e-08,
-     "work_reference": 4077736,
-     "work_optional": 3616152,
+     "reference_progress": 7.264316082000732e-08,
+     "work_reference": 3514536,
+     "work_optional": 3517833,
      "phase": "adaptive"
     },
     "parity_at_exits": {
      "e_zero": {
       "route": "deterministic_signed_residual_E_zero",
-      "work_reference": 25466,
+      "work_reference": 8570,
       "work_optional": 3585
      },
      "signed_pac": {
       "route": "pac_signed_residual_validation",
-      "work_reference": 17018,
-      "work_optional": 3499
+      "work_reference": 8570,
+      "work_optional": 3476
      }
     }
    }
@@ -804,7 +796,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.136,
+   "wall_s": 0.18,
    "detail": {
     "order_sequence": [
      "norm",
@@ -825,7 +817,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.364,
+   "wall_s": 0.423,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -848,7 +840,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 5.463,
+   "wall_s": 6.275,
    "detail": {
     "r1": {
      "support": {
@@ -991,7 +983,7 @@
         "commits": 1
        }
       ],
-      "worker_route": "exact_reference",
+      "worker_route": "deterministic_frontier",
       "failed": "leaf_sumout"
      },
      "exact_quotient_pass": {
@@ -1165,7 +1157,7 @@
   {
    "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
    "ok": true,
-   "wall_s": 10.739,
+   "wall_s": 11.217,
    "detail": {
     "f01": {
      "honest": {
@@ -1195,7 +1187,7 @@
     "f03": {
      "root5000": {
       "route": "exact_reference",
-      "wall_s": 4.82,
+      "wall_s": 4.8,
       "accepted": true
      },
      "forced_in_root": "exact_reference",
@@ -1255,7 +1247,7 @@
   {
    "name": "C22_precision_zero_mass_witness_service",
    "ok": true,
-   "wall_s": 22.504,
+   "wall_s": 23.363,
    "detail": {
     "f01": {
      "1e-12": {
@@ -1291,7 +1283,7 @@
      "legacy_point_moved_beyond_reservation": "legacy rows violate the publication contract: "
     },
     "f03": {
-     "N1_NO_QUOTIENT": {
+     "N1_NO_QUOTIENT_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "ops": [
        "leaf_sumout",
@@ -1326,7 +1318,7 @@
      },
      "final_witness_tampered": "the recorded final snapshot does not hash to final_sha256 (altered certificate)",
      "affine_witness_after_tampered": "journal replay: commit 17 (affine): the recorded transformed witness differs from the one the application deri",
-     "N1_CQR": {
+     "N1_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "ops": [
        "leaf_sumout",
@@ -1360,7 +1352,7 @@
        "1": 0
       }
      },
-     "N1_NO_AFFINE": {
+     "N1_NO_AFFINE_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "ops": [
        "leaf_sumout",
@@ -1473,7 +1465,7 @@
   {
    "name": "C23_exactly_once_accounting_quota_inheritance_tolerance_domain",
    "ok": true,
-   "wall_s": 29.97,
+   "wall_s": 30.055,
    "detail": {
     "f01": {
      "helpers_x_offsets_x_stops": "8 helpers x 3 offsets x 6 stop settings: ledger == completed operations",
@@ -1567,7 +1559,7 @@
   {
    "name": "C24_zero_risk_controller_cadence_completed_charges",
    "ok": true,
-   "wall_s": 42.954,
+   "wall_s": 44.403,
    "detail": {
     "f01": {
      "singleton_PAC_EPS_0": "deterministic_frontier",
@@ -1583,7 +1575,7 @@
      "signed_positive_risk": {
       "route": "pac_ratio_intersected_with_deterministic",
       "guarantee": "PAC",
-      "draws": 450
+      "draws": 469
      },
      "grid_zero_risk": "typed DEADLINE, frontier + reference intact",
      "pac_route_at_zero_risk": "delta differs from the authoritative task"
@@ -1660,29 +1652,29 @@
   {
    "name": "C25_ratio_prior_binding_influence_scan_tolerance_semantics",
    "ok": true,
-   "wall_s": 36.11,
+   "wall_s": 38.814,
    "detail": {
     "f01": {
      "ratio": {
       "route": "pac_ratio_intersected_with_deterministic",
-      "draws": 450,
+      "draws": 469,
       "seeds_tried": 1
      },
      "normalizer": {
       "route": "normalizer_pac_ratio_intersected_with_deterministic",
-      "draws": 47,
+      "draws": 45,
       "seeds_tried": 1
      },
      "ratio_prior_halved": "ratio prior U_star 13421772800000000000000 differs from the registered pre-sampl",
      "ratio_prior_doubled": "ratio prior U_star 53687091200000000000000 differs from the registered pre-sampl",
      "ratio_tightened": {
       "original": [
-       "547483988814959585142480152021260105123585042688731218669633/1654514272621997963987500000000000000000000000000000000000000",
-       "874692710113079844987519847978739894876414957311268781330367/1654514272621997963987500000000000000000000000000000000000000"
+       "149747089686783503340733583955258407194130937688171977135651/447703312563653258925221875000000000000000000000000000000000",
+       "237922233069629806705022666044741592805869062311828022864349/447703312563653258925221875000000000000000000000000000000000"
       ],
       "tightened": [
-       "277680655651018926447242306895677930272252800307190214585593/827257136310998981993750000000000000000000000000000000000000",
-       "433407693813000788617757693104322069727747199692809785414407/827257136310998981993750000000000000000000000000000000000000"
+       "1518566184355924843824535707581190277262463276877792463949741/4477033125636532589252218750000000000000000000000000000000000",
+       "2358127043208208256633026792418809722737536723122207536050259/4477033125636532589252218750000000000000000000000000000000000"
       ],
       "altered_prior_refusal": "ratio prior U_star 13421772800000000000000 differs from the ",
       "original_prior_refusal": "published bounds of query 0 do not contain the re-derived en"
@@ -1692,12 +1684,12 @@
      "normalizer_prior_doubled": "ratio prior U_star 4294967296 differs from the registered pre-sampling choice 21",
      "normalizer_tightened": {
       "original": [
-       "1073741824",
-       "935990574186042877355457028244973177439005561261766483339139/470000000000000000000000000000000000000000000000000"
+       "248589583824209548178144472879721504777583359561648764388541/225000000000000000000000000000000000000000000000000",
+       "460080020015790451821855527120278495222416640438351235611459/225000000000000000000000000000000000000000000000000"
       ],
       "tightened": [
-       "1285893136364935980414208260998967028034738712442472869521387/1175000000000000000000000000000000000000000000000000",
-       "2311141974035064019585791739001032971965261287557527130478613/1175000000000000000000000000000000000000000000000000"
+       "317652278218067319009679853110749705513275822665331043733999/281250000000000000000000000000000000000000000000000",
+       "568184726581932680990320146889250294486724177334668956266001/281250000000000000000000000000000000000000000000000"
       ],
       "altered_prior_refusal": "ratio prior U_star 1073741824 differs from the registered pr",
       "original_prior_refusal": "published Z bounds do not contain the re-derived enclosure ["
@@ -1711,8 +1703,8 @@
       "refusal": "epoch 1 E_star differs from the launch envelope"
      },
      "epoch_replay_E_star": {
-      "role": "EPOCH-REPLAY control on a pac_ratio_intersected_with_deterministic publication that carries signed epochs (not a signed-publication test)",
-      "route": "pac_ratio_intersected_with_deterministic",
+      "role": "EPOCH-REPLAY control on a deterministic_frontier publication that carries signed epochs (not a signed-publication test)",
+      "route": "deterministic_frontier",
       "epochs": 5,
       "refusal": "epoch 1 E_star differs from the launch envelope"
      }
@@ -1802,7 +1794,7 @@
   {
    "name": "C26_partition_premise_order_validation_structural_negative",
    "ok": true,
-   "wall_s": 25.903,
+   "wall_s": 27.503,
    "detail": {
     "constructor": {
      "duplicate": "frontier order refused: order repeats variable(s) [0] (not a permutati",
@@ -1899,8 +1891,8 @@
      },
      "pac_replay": {
       "route": "pac_ratio_intersected_with_deterministic",
-      "events": 1764,
-      "draws": 450,
+      "events": 1846,
+      "draws": 469,
       "refusals": {
        "duplicate": "frontier order refused: order repeats variable(s) [0] (not a",
        "short": "frontier order refused: order has 19 entries for 20 compiled",
@@ -2059,7 +2051,7 @@
   {
    "name": "C27_final_query_accounting_evaluation_site_audit",
    "ok": true,
-   "wall_s": 2.708,
+   "wall_s": 2.775,
    "detail": {
     "a": {
      "1000": {
@@ -2248,7 +2240,7 @@
   {
    "name": "C28_view_storage_ownership_renumbering_declarations_event_schema",
    "ok": true,
-   "wall_s": 0.786,
+   "wall_s": 0.859,
    "detail": {
     "a": {
      "list_refused": "View storage must be an immutable tuple owned by the view (g",
@@ -2570,79 +2562,375 @@
      "carve_state_str": "malformed frontier event refused: event carve: point states must be in"
     }
    }
+  },
+  {
+   "name": "C29_failure_telemetry_survives_graceful_and_hard_kills",
+   "ok": true,
+   "wall_s": 3.81,
+   "detail": {
+    "a": {
+     "checkpoints": 10,
+     "overhead_s": 0.003054,
+     "phases": [
+      "start",
+      "parse",
+      "solve",
+      "reference_built",
+      "compile",
+      "after_compile",
+      "frontier_init",
+      "adaptive"
+     ],
+     "journal": 2
+    },
+    "b": {
+     "phase": "adaptive",
+     "last_enclosure_age_s": 0.071,
+     "ref_progress": 6.29425048828125e-05,
+     "checkpoints": 16
+    },
+    "c": {
+     "phase": "adaptive",
+     "elapsed_at_write": 1.291553,
+     "checkpoints": 13,
+     "journal_lines": 1,
+     "durable": 1,
+     "ref_progress": 4.100799560546875e-05,
+     "open_cells": 111
+    },
+    "d": {
+     "no_diag_route": "deterministic_concentration"
+    },
+    "e": {
+     "finalized": true
+    }
+   }
+  },
+  {
+   "name": "C30_cumulative_credit_reference_scheduling",
+   "ok": true,
+   "wall_s": 30.442,
+   "detail": {
+    "a": {
+     "route": "exact_frontier_closure",
+     "requests": 260,
+     "steps": 260,
+     "served": 3927040,
+     "work_ref": 3927128,
+     "work_opt": 3914402,
+     "step_cost_bound": 15104,
+     "max_overshoot": 14896,
+     "credit_max": 14896,
+     "reference_done": false
+    },
+    "b": {
+     "concentration/N1_NO_STRUCTURAL": {
+      "route": "deterministic_concentration",
+      "work_ref": 8800,
+      "work_opt": 1867,
+      "done": false,
+      "bound": 8704
+     },
+     "concentration/G0_NO_STRUCTURAL": {
+      "route": "deterministic_frontier",
+      "work_ref": 1540704,
+      "work_opt": 1533439,
+      "done": false,
+      "bound": 8704
+     },
+     "biased_closure/N1_NO_STRUCTURAL": {
+      "route": "deterministic_frontier",
+      "work_ref": 5682,
+      "work_opt": 539,
+      "done": false,
+      "bound": 5632
+     },
+     "biased_closure/G0_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "work_ref": 11534386,
+      "work_opt": 11533652,
+      "done": true,
+      "bound": 5632
+     },
+     "d32/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "work_ref": 7232,
+      "work_opt": 10560,
+      "done": true,
+      "bound": 1536
+     },
+     "d32/G0_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "work_ref": 7232,
+      "work_opt": 7435,
+      "done": true,
+      "bound": 1536
+     },
+     "pac28/N1_NO_STRUCTURAL": {
+      "route": "deterministic_frontier",
+      "work_ref": 2068704,
+      "work_opt": 2067661,
+      "done": false,
+      "bound": 4096
+     },
+     "pac28/G0_NO_STRUCTURAL": {
+      "route": "pac_ratio_intersected_with_deterministic",
+      "work_ref": 21700832,
+      "work_opt": 21699255,
+      "done": false,
+      "bound": 4096
+     }
+    },
+    "c": {
+     "no_structural": "exact_reference",
+     "structural": "structural_original",
+     "structural_wall_s": 0.06465366715565324
+    },
+    "d": {
+     "where": "loop",
+     "steps": 76,
+     "max_step": 256,
+     "ref_progress": 0.0002899169921875,
+     "scheduling": 76
+    },
+    "e": {
+     "mean_served_per_request": 15104.0,
+     "Q": 4096
+    }
+   }
+  },
+  {
+   "name": "C31_structural_adapters_composition_checker_reachability",
+   "ok": true,
+   "wall_s": 105.508,
+   "detail": {
+    "a": {
+     "rates": {
+      "support": 310000000.0,
+      "stream": 360000000.0,
+      "dag": 550000.0,
+      "forest": 10000000.0
+     },
+     "gate_fraction": 0.85
+    },
+    "b": {
+     "tree": {
+      "which": "forest",
+      "component_kinds": [
+       "forest"
+      ],
+      "native_calls": 0,
+      "wall_s": 0.0026,
+      "verified": "bounded re-execution on the bound model; rows reproduced exactly"
+     },
+     "dag": {
+      "which": "whole_dag",
+      "component_kinds": [
+       "dag"
+      ],
+      "native_calls": 0,
+      "wall_s": 0.0015,
+      "verified": "bounded re-execution on the bound model; rows reproduced exactly"
+     },
+     "blocks": {
+      "which": "components",
+      "component_kinds": [
+       "support"
+      ],
+      "native_calls": 3,
+      "wall_s": 0.006,
+      "verified": "bounded re-execution on the bound model; rows reproduced exactly"
+     },
+     "K12_36": {
+      "which": "components",
+      "component_kinds": [
+       "stream"
+      ],
+      "native_calls": 1,
+      "wall_s": 0.0131,
+      "verified": "bounded re-execution on the bound model; rows reproduced exactly"
+     }
+    },
+    "c": {
+     "route": "structural_compiled",
+     "which": "forest",
+     "committed": [
+      "support_fixpoint",
+      "fixed_substitution",
+      "leaf_sumout"
+     ],
+     "bias": [
+      "0",
+      "0"
+     ],
+     "interpretation": "structural route on the COMPILED model: deterministic kernel enclosures of the c"
+    },
+    "d": {
+     "conditional": "inapplicable",
+     "normalizer": "inapplicable",
+     "exact": "inapplicable",
+     "tiny_budget": "declined",
+     "synthetic_rates": [
+      "not_admitted",
+      "DEADLINE (typed; the CQR path ran to the deadline on the dense blocks)"
+     ],
+     "zero": [
+      "stopped",
+      "ZERO_EVIDENCE",
+      "compiler"
+     ]
+    },
+    "e": {
+     "route_id": "publication without a compile record on a non-reference route",
+     "route_kind": "structural re-execution: structural re-execution refused: evidence-sliced arity exceeds two",
+     "rows": "structural re-execution: structural re-execution does not reproduce the recorded rows (components)",
+     "bounds": "point of query 0 is not within eps of every value in its published bounds",
+     "point": "point of query 0 outside its published bounds",
+     "guarantee": "publication guarantee PAC differs from the class DETERMINISTIC of route structural_original",
+     "exact_flag": "exact flag True disagrees with route structural_original",
+     "version": "structural re-execution: structural record version cqr-structural-v0 is not cqr-structural-v1 (2026-11-17: typ",
+     "optional_work_charged": "structural_original publication with 7 optional Work units charged (the route runs before the compile; a compi",
+     "provenance_stripped": "structural record with native calls but no kernel provenance",
+     "epsilon_record": "structural record epsilon 1/100 differs from the task epsilon",
+     "component_dropped": "structural re-execution: structural re-execution leaves variables uncovered",
+     "binding": "structural re-execution: structural re-execution does not reproduce the recorded rows (components)",
+     "compiled_bias_changed": "recorded bias ledger differs from the replayed one",
+     "compiled_tau_changed": "structural_compiled tau differs from eps - bias - reservation",
+     "compiled_bounds_record": "recorded compiled bounds differ from the re-derived structural composition",
+     "compiled_route_relabel": "structural_original route with a compile record (the route runs before the compile)"
+    },
+    "f": {
+     "tree/N1_NO_STRUCTURAL": [
+      "PUBLISHED",
+      "exact_reference"
+     ],
+     "tree/G0_NO_STRUCTURAL": [
+      "PUBLISHED",
+      "exact_reference"
+     ],
+     "blocks/N1_NO_STRUCTURAL": [
+      "DEADLINE",
+      null
+     ],
+     "joint14/N1_NO_STRUCTURAL": [
+      "PUBLISHED",
+      "exact_frontier_closure"
+     ],
+     "joint22/N1_NO_STRUCTURAL": [
+      "DEADLINE",
+      null
+     ],
+     "pac28/N1_CQR": "pac_ratio_intersected_with_deterministic"
+    },
+    "g": {
+     "G0": "structural_original",
+     "same_rows": true
+    },
+    "h": {
+     "counters": {
+      "attempts": 1,
+      "discovery_s": 0.0008192909881472588,
+      "execution_s": 0.006915540900081396,
+      "native_calls": 3,
+      "source_entries_read": 616
+     },
+     "work_reference": 672,
+     "work_optional": 0
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 150,
-  "solver_calls": 389,
+  "fresh_workers": 181,
+  "solver_calls": 394,
   "compiler_calls": 174,
-  "checker_calls": 241,
-  "oracle_models": 118,
-  "truth_coordinates": 2700,
-  "stream_draws": 960,
-  "assertions": 105177
+  "checker_calls": 271,
+  "oracle_models": 123,
+  "truth_coordinates": 2803,
+  "stream_draws": 977,
+  "assertions": 105369
  },
- "suite_version": "cqr-qualification-v10 (2026-11-17, after the ninth adversarial review: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
- "suite_sha256": "dbe85a4b3598027ecb31ec4843143284ddc8d15e1f21fc7b385b85197cf69447",
+ "suite_version": "cqr-qualification-v11 (2026-11-17, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
+ "suite_sha256": "69526a4f0a26fa5cf9dff6b219487e9820cd80ca226363638084cdc5e6b6398a",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
-  "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "965ae02ea84a666f5b1b61db9860056c2f4d5f8cab0a70e37622079698c47b3c",
-  "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "64d1946c8702781b5493975a8b11a437228cba1f0b77091ae3c81d8258ad9f9c",
+  "cqr/campaign.py": "2ed619e6e2d3c27c114a6f98ce43a95a93a7178119221eca790e20c6d6d8de4a",
+  "cqr/checker.py": "a78068e2426a57d6128b6ea450f8679b95e3d86634933982ae8aa16b76fcf6db",
+  "cqr/closeout.py": "f8c1a3ba2f47d83fb5ba3e9ff366b50e14a74bf3a39deecf55e4b0c9fd55d331",
+  "cqr/compiler.py": "97590e971d4099f12650b7f678367ebd5b80a732e3fe363ff574a8acc1be3480",
+  "cqr/diag.py": "5d2134cd691e15989e61ad61d4c57cb85fb4cde4788c437e4674879809d58837",
   "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
-  "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
+  "cqr/gate.py": "5bc3292fb532d73a7ed232ed4174028d675bcaacb52d9c1df226c6503202927b",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
+  "cqr/kernel_identity.py": "4b2b3ca617246a20cc554107c05e8959329b1a85800bb621ecf66ed136d56229",
   "cqr/numerics.py": "b3325a5bcd0e21cf060ace2e9008f2737e34023893fca1d0b68c5e3582ffd6ec",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
-  "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
+  "cqr/reference.py": "4cc5fdbfab68c243eec40bc728286cd0bf948bb8bb291a70b1a007e896313672",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "cb711db73427b3b9d0a0731e3a74a09be90773098c1fa4668f415be924f0c2a7",
+  "cqr/registry.py": "814f152e68d897666797314ddd8cd5a265c4dc860bb17ef7947ffd748dbae96e",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "d9b4afd8b62359adea9176c61ee19a9c8d7a3658c5285279f9fc90b224aa0eb2",
+  "cqr/solve.py": "8447a6427486cbf5baba1c0bf6c25faf82d22744b47e91fd0ecafb6e324bebd3",
+  "cqr/structural.py": "8eeccab45749b328538392b6af2a1b3e435f3224a4b473294a0f018d85822168",
   "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
   "cqr/views.py": "23dac816716cfcfe2299ad467e3b369a0ba8d605c9b94b01d7ccee17e9187f2d",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
-  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
+  "cqr/worker.py": "4aba2d6c01eefcede7e04ae5bc47c513dd9b2deabdc2a0e8ef899726a24f8d74",
+  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
+  "newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+  "newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+  "newarm/support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+  "newarm/stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+  "newarm/stream_float.py": "1319565b2e6048b1a66153c732e37f5f00e41ab5391600fe9b793fed7fcdcb72",
+  "newarm/cex_executor.py": "3480e9ba3b9109d436a350af5efb12cf5a3e7516ce42c4d8e7e9c9e1f92c9a4e",
+  "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+  "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v16",
- "passed": 28,
- "total": 28,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v17",
+ "passed": 31,
+ "total": 31,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
-  "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "965ae02ea84a666f5b1b61db9860056c2f4d5f8cab0a70e37622079698c47b3c",
-  "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "64d1946c8702781b5493975a8b11a437228cba1f0b77091ae3c81d8258ad9f9c",
+  "cqr/campaign.py": "2ed619e6e2d3c27c114a6f98ce43a95a93a7178119221eca790e20c6d6d8de4a",
+  "cqr/checker.py": "a78068e2426a57d6128b6ea450f8679b95e3d86634933982ae8aa16b76fcf6db",
+  "cqr/closeout.py": "f8c1a3ba2f47d83fb5ba3e9ff366b50e14a74bf3a39deecf55e4b0c9fd55d331",
+  "cqr/compiler.py": "97590e971d4099f12650b7f678367ebd5b80a732e3fe363ff574a8acc1be3480",
+  "cqr/diag.py": "5d2134cd691e15989e61ad61d4c57cb85fb4cde4788c437e4674879809d58837",
   "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
-  "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
+  "cqr/gate.py": "5bc3292fb532d73a7ed232ed4174028d675bcaacb52d9c1df226c6503202927b",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
+  "cqr/kernel_identity.py": "4b2b3ca617246a20cc554107c05e8959329b1a85800bb621ecf66ed136d56229",
   "cqr/numerics.py": "b3325a5bcd0e21cf060ace2e9008f2737e34023893fca1d0b68c5e3582ffd6ec",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
-  "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
+  "cqr/reference.py": "4cc5fdbfab68c243eec40bc728286cd0bf948bb8bb291a70b1a007e896313672",
   "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "cb711db73427b3b9d0a0731e3a74a09be90773098c1fa4668f415be924f0c2a7",
+  "cqr/registry.py": "814f152e68d897666797314ddd8cd5a265c4dc860bb17ef7947ffd748dbae96e",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "d9b4afd8b62359adea9176c61ee19a9c8d7a3658c5285279f9fc90b224aa0eb2",
+  "cqr/solve.py": "8447a6427486cbf5baba1c0bf6c25faf82d22744b47e91fd0ecafb6e324bebd3",
+  "cqr/structural.py": "8eeccab45749b328538392b6af2a1b3e435f3224a4b473294a0f018d85822168",
   "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
   "cqr/views.py": "23dac816716cfcfe2299ad467e3b369a0ba8d605c9b94b01d7ccee17e9187f2d",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
-  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
+  "cqr/worker.py": "4aba2d6c01eefcede7e04ae5bc47c513dd9b2deabdc2a0e8ef899726a24f8d74",
+  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
+  "newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+  "newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+  "newarm/support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+  "newarm/stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+  "newarm/stream_float.py": "1319565b2e6048b1a66153c732e37f5f00e41ab5391600fe9b793fed7fcdcb72",
+  "newarm/cex_executor.py": "3480e9ba3b9109d436a350af5efb12cf5a3e7516ce42c4d8e7e9c9e1f92c9a4e",
+  "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+  "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90"
  },
- "utc": "2026-11-17T20:37:38Z",
- "wall_s": 742.7,
+ "utc": "2026-11-18T03:24:02Z",
+ "wall_s": 854.0,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
