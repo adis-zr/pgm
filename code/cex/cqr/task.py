@@ -106,41 +106,47 @@ def singleton_indicator_of(q, cards):
     return (v, ones[0])
 
 
-def derived_output(q, cards):
-    """the placement metadata the constructors would have produced for this table, derived from the table alone: singleton / joint / parity indicators, conditional ratio pairs; None = a general table query (no placement)"""
-    if q.kind == 'expectation':
-        sv = singleton_indicator_of(q, cards)
-        if sv is not None: return dict(kind='singleton', variable=sv[0], state=sv[1])
-        sc = tuple(q.f.scope)
-        if len(sc) != len(set(sc)) or any(isinstance(v, bool) or not isinstance(v, int) or not (0 <= v < len(cards)) for v in sc) or len(q.f.values) != prod(cards[v] for v in sc): return None
-        ones = [i for i, x in enumerate(q.f.values) if x == 1]
-        if ones and all(x in (0, 1) for x in q.f.values):
-            if len(ones) == 1 and sc == tuple(sorted(sc)):
-                xs = list(product(*(range(cards[v]) for v in sc)))[ones[0]]; return dict(kind='joint', assign={str(v): xs[i] for i, v in enumerate(sc)})
-            if sc == tuple(sorted(sc)):
-                for bit in (0, 1):
-                    if [F(int(sum(xs) % 2 == bit)) for xs in product(*(range(cards[v]) for v in sc))] == list(q.f.values): return dict(kind='parity', variables=list(sc), bit=bit)
-        return None
-    sg = tuple(q.g.scope); sh = tuple(q.h.scope)
-    if sg != tuple(sorted(sg)) or sh != tuple(sorted(sh)) or not set(sg) <= set(sh): return None
-    gi = [i for i, x in enumerate(q.g.values) if x == 1]
-    if len(gi) != 1 or any(x not in (0, 1) for x in q.g.values) or any(x not in (0, 1) for x in q.h.values): return None
-    given = dict(zip(sg, list(product(*(range(cards[v]) for v in sg)))[gi[0]])); hi = [i for i, x in enumerate(q.h.values) if x == 1]
-    if len(hi) != 1: return None
-    xs = dict(zip(sh, list(product(*(range(cards[v]) for v in sh)))[hi[0]]))
-    if any(xs[v] != given[v] for v in given): return None
-    event = {v: xs[v] for v in sh if v not in given}
-    if not event: return None
-    return dict(kind='conditional', event={str(k): v for k, v in event.items()}, given={str(k): v for k, v in given.items()})
+def denoted_query(output, cards):
+    """the query a presentation label DENOTES, built by the constructor the label names (CQR-S2-01): singleton / joint / parity / conditional; raises ValueError for an unknown kind,
+    a malformed label or invalid indices (the constructors validate every index). The general-table marker {'kind': 'table'} denotes nothing (no placement claimed) -> None."""
+    o = output or {}
+    k = o.get('kind')
+    if k == 'table': return None
+    try:
+        if k == 'singleton': return singleton_query(int(o['variable']), int(o['state']), cards)
+        if k == 'joint': return joint_query({int(a): int(b) for a, b in dict(o['assign']).items()}, cards)
+        if k == 'parity': return parity_query([int(v) for v in list(o['variables'])], int(o['bit']), cards)
+        if k == 'conditional': return conditional_query({int(a): int(b) for a, b in dict(o['event']).items()}, {int(a): int(b) for a, b in dict(o['given']).items()}, cards)
+    except (KeyError, TypeError, AttributeError) as ex: raise ValueError('malformed %s output metadata %s (%s)' % (k, json.dumps(o, sort_keys=True), type(ex).__name__))
+    raise ValueError('unknown output metadata kind %r' % (k,))
+
+
+def same_table(a, b, cards):
+    """two tables denote the same function: identical variable SET and pointwise-equal values over every assignment of that scope (the row-major order of the scope is a spelling)"""
+    if set(a.scope) != set(b.scope) or len(a.scope) != len(b.scope): return False
+    for xs in product(*(range(cards[v]) for v in a.scope)):
+        x = dict(zip(a.scope, xs))
+        if a.at(cards, x) != b.at(cards, x): return False
+    return True
+
+
+def same_function(p, q, cards):
+    """two queries denote the same function: both expectations with the same table, or both ratios with the same h and the same g"""
+    if p.kind != q.kind: return False
+    if p.kind == 'expectation': return same_table(p.f, q.f, cards)
+    return same_table(p.h, q.h, cards) and same_table(p.g, q.g, cards)
 
 
 def validate_output_metadata(q, cards):
-    """a table query's output metadata must be ABSENT or exactly the metadata derivable from its table (CQR-S1-01: metadata never redefines a query); raises ValueError (INVALID_TASK)"""
+    """a query's output metadata must be ABSENT, the explicit general-table marker, or a presentation label whose DENOTATION (the constructor it names, applied to the indices it
+    carries) is the same function as the query's authoritative table(s) (CQR-S1-01: a label never redefines a query; CQR-S2-01: a label is validated by what it denotes, never by one
+    literal spelling -- a one-variable joint, a one-variable parity, a conditional whose event overlaps its condition and the singleton constructor are all valid presentations of the
+    indicator tables they build). Raises ValueError (INVALID_TASK) for an unknown kind, a malformed label, an invalid index or a denotation that differs from the table."""
     o = q.output or {}
-    if not o or o == {'kind': 'table'}: return          # absent or the explicit general-table marker: no placement claimed
-    d = derived_output(q, cards)
-    norm = lambda m: json.loads(json.dumps(m, sort_keys=True))
-    if d is None or norm(d) != norm(o): raise ValueError('query %s: output metadata %s is not derivable from its table (derived: %s): a placement label never redefines the query; drop the metadata or supply the matching table' % (q.name, json.dumps(o, sort_keys=True)[:120], json.dumps(d, sort_keys=True)[:120] if d else 'general table'))
+    if not o: return
+    den = denoted_query(o, cards)
+    if den is None: return                               # {'kind': 'table'}: no placement claimed
+    if not same_function(den, q, cards): raise ValueError('query %s: output metadata %s denotes %s (%s), which is not the function of its own table: a placement label never redefines the query; drop the metadata or supply the matching table' % (q.name, json.dumps(o, sort_keys=True), den.name, den.kind))
 
 
 def joint_query(assign, cards):

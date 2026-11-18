@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.7 (2026-11-17, structured review CQR-S1-01..03: singleton correspondence derived from each query TABLE (output metadata must agree); the structural flag and route eligibility bound to the registered arm; structural attribution built from the FACTS of the re-execution with kernel digests verified against the verifier\'s own loaded kernels and producer observations labelled; the structural_reduced route (reduction re-derived, decoder + reduced model compared, rows lifted); v1.6: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
+CHECKER_VERSION = 'cqr-checker-v1.8 (2026-11-18, structured-repair review CQR-S2-01: presentation labels validated by their DENOTATION (task.validate_output_metadata) for every query and route -- the structural branch no longer requires the literal singleton spelling; legacy-row placement table-derived; v1.7 2026-11-17, structured review CQR-S1-01..03: singleton correspondence derived from each query TABLE (output metadata must agree); the structural flag and route eligibility bound to the registered arm; structural attribution built from the FACTS of the re-execution with kernel digests verified against the verifier\'s own loaded kernels and producer observations labelled; the structural_reduced route (reduction re-derived, decoder + reduced model compared, rows lifted); v1.6: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -112,7 +112,7 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
     def late(): return deadline is not None and time.monotonic() >= deadline
     # ---------------- 1. binding and requested semantics
     try: task = TK.load_task(model_path)
-    except Exception as ex: return ['task not readable: %s' % str(ex)[:80]], info
+    except Exception as ex: return ['task not readable: %s' % str(ex)[:220]], info
     if manifest_task:
         for k in ('epsilon', 'delta'):
             if k in manifest_task:
@@ -124,6 +124,10 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
                 if mv != task[k]: fail('the frozen manifest task %s (%s) differs from the input file (%s)' % (k, manifest_task[k], task[k]))
         if manifest_task.get('mode') and manifest_task['mode'] != task['mode']: fail('the frozen manifest task mode %s differs from the input file mode %s' % (manifest_task['mode'], task['mode']))
         if 'normalizer_task' in manifest_task and bool(manifest_task['normalizer_task']) != bool((task.get('query_spec') or {}).get('normalizer_task')): fail('the frozen manifest normalizer flag differs from the input file')
+    # every presentation label (constructor-built or explicit) must denote the function of its own table (CQR-S1-01 / S2-01): validated by denotation, never by one literal spelling
+    for j, q in enumerate(task['queries']):
+        try: TK.validate_output_metadata(q, task['model']['cards'])
+        except ValueError as ex: fail('query %d: %s' % (j, str(ex)[:200]))
     if w.get('binding') != task['binding']: fail('worker binding differs from the files on disk')
     if w.get('task_identity') != TK.task_identity(task): fail('task identity differs from the re-derived identity')
     cert = w.get('certificate') or {}
@@ -248,9 +252,7 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         # the singleton correspondence is derived INDEPENDENTLY from each query's TABLE (CQR-S1-01): a query that is not exactly a singleton indicator is not answerable by this route
         targets = ST.singleton_targets(task)
         if any(t is None for t in targets): fail('%s route on a task with a query that is not a singleton indicator (query %d: %s)' % (route, targets.index(None), task['queries'][targets.index(None)].name)); return fails, info
-        for j, q in enumerate(task['queries']):
-            o = q.output or {}
-            if o and (o.get('kind') != 'singleton' or (o.get('variable'), o.get('state')) != targets[j]): fail('query %d: output metadata %s disagrees with the table-derived singleton %s' % (j, o, targets[j]))
+        # presentation labels were validated by their DENOTATION in section 1 (CQR-S2-01); the structural correspondence is `targets`, derived from the tables alone
         m0, why0 = ST.model_from_task(task)
         if m0 is None: fail('%s route on a task outside the adapter domain: %s' % (route, why0)); return fails, info
         if route == 'structural_reduced':
@@ -429,7 +431,7 @@ def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, e
             import core; core.verify_output(IV, PT, eps)
         except Exception as ex: fail('legacy rows violate the publication contract: %s' % str(ex)[:60]); return
         for j, q in enumerate(task['queries']):
-            o = q.output or {}; lo, hi = IV[o['variable']][o['state']]; p = PT[o['variable']][o['state']]
+            v_, s_ = TK.singleton_indicator_of(q, cards); lo, hi = IV[v_][s_]; p = PT[v_][s_]            # placement derived from the TABLE (CQR-S1-01), as the worker's legacy_rows does
             if not (lo <= _F(bounds[j][0]) and _F(bounds[j][1]) <= hi): fail('legacy row of query %d does not contain the certified bounds' % j)
             if not (lo <= proven[j][0] and proven[j][1] <= hi): fail('legacy row of query %d does not contain the re-derived enclosure' % j)
             if abs(p - _F(point[j])) > RES: fail('legacy point of query %d differs from the certified point beyond the rounding reservation %s' % (j, RES))

@@ -16,7 +16,7 @@ for p in (HERE, NEWARM):
 import registry, task as TK, oracle as OR, compiler as CP, frontier as FR, solve as SV, checker as CK, generators as G, numerics as NM, worker as WK, reference as RF, structural as ST, diag as DG
 from views import View
 PY = sys.executable
-SUITE_VERSION = 'cqr-qualification-v12 (2026-11-17, after the independent review of the structured-execution revision (CQR-S1-01..07): groups C32 (authoritative query semantics incl. the false-answer witness, index domains, arm eligibility incl. the coherent relabel through the full gate, provenance / attribution incl. the forged record and native digest / path / count / partition / wall mutations through the full gate), C33 (compositional discovery incl. the 12,000-chain fresh worker, deadline propagation incl. the 1,024-query observer / fresh workers / long-helper hooks / 1qt9 gaps, reduction + lift incl. BN_31 and tampered decoder / digest / row) and C34 (terminal diagnostics freshness vs the certificate on publication / deadline / cancellation, per-section ages, aligned SIGKILL freshness, overhead) added; C29 vacuous assertions removed; C31 covers an oracle-checked native stream fixture and an honest nonzero-bias compiled publication; v11, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
+SUITE_VERSION = 'cqr-qualification-v13 (2026-11-18, after the independent review of the structured repairs: group C35 (query presentation equivalence through the original and reduced structural routes: round trips, denotation-validated labels, aliases with full-gate acceptance, negatives refused before publication; CQR-S2-01) and the C32 (b) full-gate relabel fixture made coherent per disabled arm with same-arm positive controls (CQR-S2-O1); v12 2026-11-17, after the independent review of the structured-execution revision (CQR-S1-01..07): groups C32 (authoritative query semantics incl. the false-answer witness, index domains, arm eligibility incl. the coherent relabel through the full gate, provenance / attribution incl. the forged record and native digest / path / count / partition / wall mutations through the full gate), C33 (compositional discovery incl. the 12,000-chain fresh worker, deadline propagation incl. the 1,024-query observer / fresh workers / long-helper hooks / 1qt9 gaps, reduction + lift incl. BN_31 and tampered decoder / digest / row) and C34 (terminal diagnostics freshness vs the certificate on publication / deadline / cancellation, per-section ages, aligned SIGKILL freshness, overhead) added; C29 vacuous assertions removed; C31 covers an oracle-checked native stream fixture and an honest nonzero-bias compiled publication; v11, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)'
 ADMISSION_DIR = os.environ.get('CQR_ADMISSION_DIR') or os.path.join(CODE, 'runs', 'mdi_2026-10-28', 'CQR_2026-11-15', 'admission_v16')
 SOURCES_AT_START = registry.cqr_source_inventory(CODE)
 R = dict(groups=[], counts=dict(fresh_workers=0, solver_calls=0, compiler_calls=0, checker_calls=0, oracle_models=0, truth_coordinates=0, stream_draws=0, assertions=0), suite_version=SUITE_VERSION, suite_sha256=registry.suite_sha256(CODE), candidate_sources=SOURCES_AT_START, admission_dir=ADMISSION_DIR)
@@ -105,6 +105,27 @@ def fresh_worker(mp, arm, budget=8.0, seed='s', nonce='n', mode=None, extra=()):
 
 
 # ======================================================================================================================
+def gate_fixture(d, label, mp, w, arm, budget=8):
+    """FULL GATE / REPORT on a synthetic one-cell manifest whose planned arm is `arm` and whose cell worker output is `w` (a TEST FIXTURE, not a campaign; the gate runs in a
+    SUBPROCESS because the pac and cqr packages both have a `registry` module). Returns gate_passed, the first failures (160 chars), the verified attribution and the report row."""
+    import kernel_identity as KI; _reg = registry
+    rd = os.path.join(d, 'full_' + label); cd = os.path.join(rd, 'cells', label); os.makedirs(cd, exist_ok=True); wp_ = os.path.join(cd, 'worker.json'); json.dump(w, open(wp_, 'w'), default=str)
+    t_ = TK.load_task(mp); b = t_['binding']
+    c = dict(cell_id=label, case_id=os.path.basename(mp)[:-4], arm=arm, replicate=0, budget_s=budget, seed=w['seed'], model_path=mp, model_sha256=b['model_sha256'], evidence_sha256=b['evidence_sha256'], query_sha256=b['query_sha256'], cohort='query_transfer', kind='cqr_primary', order_index=0, task_params=dict(mode=t_['mode'], epsilon=str(t_['epsilon']), delta=str(t_['delta']), normalizer_task=False))
+    inv = _reg.full_inventory(CODE); man = dict(schema='cqr_campaign_manifest_v1', cells=[c], task=c['task_params'], candidate_artifact_hashes=inv, kernel_identity=KI.collect(CODE), budgets_s=[budget], ceiling=dict(verification_stage_seconds=60, scored_matrix_seconds=budget, orchestration_seconds=2, total_ceiling_seconds=70), inventory=[dict(case_id=c['case_id'], cohort='query_transfer', status='AVAILABLE')], seeds=dict(root_seed='c32-fixture'), arms=dict(unavailable={}))
+    mp_ = os.path.join(rd, 'CAMPAIGN_MANIFEST.json'); json.dump(man, open(mp_, 'w'), default=str); h_ = lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest()
+    st = dict(kind='CAMPAIGN_START', manifest_sha256=h_(mp_), artifact_hashes_sha256=hashlib.sha256(json.dumps(inv, sort_keys=True).encode()).hexdigest(), manifest='CAMPAIGN_MANIFEST.json'); json.dump(st, open(os.path.join(rd, 'CAMPAIGN_START.json'), 'w')); open(os.path.join(rd, 'CQR_LEDGER.jsonl'), 'w').write(json.dumps(st) + '\n')
+    r = {k: c[k] for k in ('cell_id', 'case_id', 'arm', 'replicate', 'budget_s', 'seed', 'model_sha256', 'evidence_sha256', 'query_sha256', 'cohort', 'kind', 'order_index')}
+    r.update(status='COMPLETED', outcome='PUBLISHED', guarantee_type=w['guarantee_type'], route=w['route'], exact=w['exact'], bias=w.get('bias'), nonce=w['nonce'], worker_output=os.path.relpath(wp_, rd), output_sha256=h_(wp_), launch_relative_wall_s=1.0, supervisor=dict(outcome='COMPLETED', rc=0)); json.dump(r, open(os.path.join(cd, 'receipt.json'), 'w'))
+    # the gate runs in a SUBPROCESS (the pac and cqr packages both have a `registry` module; the chain never imports gate.py into the suite process)
+    subprocess.run([PY, os.path.join(HERE, 'gate.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST.json', '--gate-budget-s', '60'], capture_output=True, text=True, cwd=CODE)
+    gr = json.load(open(os.path.join(rd, 'GATE_RESULT.json'))); va = next((x for x in gr.get('gated_set', []) if x['cell_id'] == label), None); CNT['checker_calls'] += 1
+    rp_ = subprocess.run([PY, os.path.join(HERE, 'report.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST.json'], capture_output=True, text=True, cwd=CODE); rep = None
+    if os.path.exists(os.path.join(rd, 'RESULTS_CQR.json')):
+        row = next((x for x in json.load(open(os.path.join(rd, 'RESULTS_CQR.json')))['runs'] if x['cell_id'] == label), None); rep = {k: row.get(k) for k in ('outcome', 'guarantee', 'route', 'guarantee_source')} if row else None
+    return dict(gate_passed=gr['gate_passed'], failures=[f_[1][:160] for f_ in gr['failures'][:3]], attribution=((va or {}).get('verified_attribution') or {}), report_row=rep, report_rc=rp_.returncode)
+
+
 def c1_identity_checker():
     """fresh workers on fixtures covering every publication route and all three modes -> checker accepts; 14 mutation classes refused for the INTENDED reason; a no-op control accepted"""
     d = tempfile.mkdtemp(prefix='cqr_c1_'); out = dict(fixtures={}, mutations={}); rng = random.Random(101)
@@ -2584,42 +2605,33 @@ def c32_query_semantics_arm_eligibility_provenance_attribution():
     cards_t = [2, 3, 2, 2, 3]; fs = [((i, i + 1), [str(F(rng.randint(1, 9), rng.randint(1, 9))) for _ in range(cards_t[i] * cards_t[i + 1])]) for i in range(4)]; mpt = _uai(os.path.join(d, 'tree.uai'), cards_t, fs)
     wt = wk(mpt, 'N1_CQR', tag='tree'); A(wt['outcome'] == 'PUBLISHED' and wt['route'] == 'structural_original' and not check_(mpt, wt, 'N1_CQR')[0], '(b) tree fixture')
     controls = [a for a in SV.ARMS if not SV.ARMS[a].get('structural')]; A('N1_NO_STRUCTURAL' in controls and 'G0_NO_STRUCTURAL' in controls, '(b) controls')
+    relabels = {}
     for arm in controls:
         y = copy.deepcopy(wt); y['arm'] = arm; y['certificate']['arm'] = arm; y['certificate']['structural_backend'] = False
         sp = SV.ARMS[arm]; y['certificate']['arm_operators'] = sorted(sp['enabled']); y['certificate']['enabled_operators'] = sorted(CP.effective_operators(sp['enabled'], TK.load_task(mpt))); y['certificate']['signed_stream'] = sp['signed_stream']; y['certificate']['query_directed_refinement'] = sp['query_directed_refinement']
-        fails, _ = check_(mpt, y, arm); A(fails and any('DISABLED' in f_ or 'without the structural backend' in f_ for f_ in fails), '(b) coherent relabel to %s accepted: %s' % (arm, fails[:1])); out['b']['relabel_' + arm] = fails[0][:80]
+        fails, _ = check_(mpt, y, arm); A(fails and any('DISABLED' in f_ or 'without the structural backend' in f_ for f_ in fails), '(b) coherent relabel to %s accepted: %s' % (arm, fails[:1])); out['b']['relabel_' + arm] = fails[0][:80]; relabels[arm] = y
     fails, _ = CK.check_worker_output(mpt, y, deadline=time.monotonic() + 30); A(fails, '(b) direct checker API accepted a structural route under a disabled arm')
+    honest = {}
     for arm in ('N1_NO_STRUCTURAL', 'G0_NO_STRUCTURAL'):
-        w = wk(mpt, arm, tag='honest'); fails, _ = check_(mpt, w, arm); A(w['outcome'] == 'PUBLISHED' and not fails and not w['route'].startswith('structural'), '(b) honest %s: %s %s %s' % (arm, w['outcome'], w.get('route'), fails[:1])); out['b']['honest_' + arm] = w['route']
+        w = wk(mpt, arm, tag='honest'); fails, _ = check_(mpt, w, arm); A(w['outcome'] == 'PUBLISHED' and not fails and not w['route'].startswith('structural'), '(b) honest %s: %s %s %s' % (arm, w['outcome'], w.get('route'), fails[:1])); out['b']['honest_' + arm] = w['route']; honest[arm] = w
     cards_s, fs_s = _sprinkled(1, 28, 14, 4); mpp = _spec(_uai(os.path.join(d, 'pac28.uai'), cards_s, fs_s), mode='PAC_EPS', epsilon='1/10', delta='1/10', queries=[dict(kind='singleton', variable=0, state=1), dict(kind='parity', variables=[2, 3, 4, 5], bit=1)])
     wp = None
     for sd_ in ('a', 'b', 'c'):
         cand = fresh_worker(mpp, 'N1_NO_STRUCTURAL', budget=45.0, seed=sd_, nonce='c32-pac-' + sd_)
         if cand['outcome'] == 'PUBLISHED' and cand['guarantee_type'] == 'PAC': wp = cand; break
     A(wp is not None, '(b) no PAC publication on the disabled arm'); fails, _ = check_(mpp, wp, 'N1_NO_STRUCTURAL', budget=300.0); A(not fails, '(b) honest PAC on the disabled arm refused: %s' % fails[:1]); out['b']['honest_pac_N1_NO_STRUCTURAL'] = wp['route']
-    # full gate / report fixture with the coherent relabel (synthetic one-cell manifest; a TEST FIXTURE, not a campaign)
-    def gate_fixture(label, mp, w, arm):
-        import kernel_identity as KI; _reg = registry
-        rd = os.path.join(d, 'full_' + label); cd = os.path.join(rd, 'cells', label); os.makedirs(cd, exist_ok=True); wp_ = os.path.join(cd, 'worker.json'); json.dump(w, open(wp_, 'w'), default=str)
-        t_ = TK.load_task(mp); b = t_['binding']
-        c = dict(cell_id=label, case_id=os.path.basename(mp)[:-4], arm=arm, replicate=0, budget_s=8, seed=w['seed'], model_path=mp, model_sha256=b['model_sha256'], evidence_sha256=b['evidence_sha256'], query_sha256=b['query_sha256'], cohort='query_transfer', kind='cqr_primary', order_index=0, task_params=dict(mode=t_['mode'], epsilon=str(t_['epsilon']), delta=str(t_['delta']), normalizer_task=False))
-        inv = _reg.full_inventory(CODE); man = dict(schema='cqr_campaign_manifest_v1', cells=[c], task=c['task_params'], candidate_artifact_hashes=inv, kernel_identity=KI.collect(CODE), budgets_s=[8], ceiling=dict(verification_stage_seconds=60, scored_matrix_seconds=8, orchestration_seconds=2, total_ceiling_seconds=70), inventory=[dict(case_id=c['case_id'], cohort='query_transfer', status='AVAILABLE')], seeds=dict(root_seed='c32-fixture'), arms=dict(unavailable={}))
-        mp_ = os.path.join(rd, 'CAMPAIGN_MANIFEST.json'); json.dump(man, open(mp_, 'w'), default=str); h_ = lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest()
-        st = dict(kind='CAMPAIGN_START', manifest_sha256=h_(mp_), artifact_hashes_sha256=hashlib.sha256(json.dumps(inv, sort_keys=True).encode()).hexdigest(), manifest='CAMPAIGN_MANIFEST.json'); json.dump(st, open(os.path.join(rd, 'CAMPAIGN_START.json'), 'w')); open(os.path.join(rd, 'CQR_LEDGER.jsonl'), 'w').write(json.dumps(st) + '\n')
-        r = {k: c[k] for k in ('cell_id', 'case_id', 'arm', 'replicate', 'budget_s', 'seed', 'model_sha256', 'evidence_sha256', 'query_sha256', 'cohort', 'kind', 'order_index')}
-        r.update(status='COMPLETED', outcome='PUBLISHED', guarantee_type=w['guarantee_type'], route=w['route'], exact=w['exact'], bias=w.get('bias'), nonce=w['nonce'], worker_output=os.path.relpath(wp_, rd), output_sha256=h_(wp_), launch_relative_wall_s=1.0, supervisor=dict(outcome='COMPLETED', rc=0)); json.dump(r, open(os.path.join(cd, 'receipt.json'), 'w'))
-        # the gate runs in a SUBPROCESS (the pac and cqr packages both have a `registry` module; the chain never imports gate.py into the suite process)
-        subprocess.run([PY, os.path.join(HERE, 'gate.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST.json', '--gate-budget-s', '60'], capture_output=True, text=True, cwd=CODE)
-        gr = json.load(open(os.path.join(rd, 'GATE_RESULT.json'))); va = next((x for x in gr.get('gated_set', []) if x['cell_id'] == label), None); CNT['checker_calls'] += 1
-        rp_ = subprocess.run([PY, os.path.join(HERE, 'report.py'), rd, '--manifest', 'CAMPAIGN_MANIFEST.json'], capture_output=True, text=True, cwd=CODE); rep = None
-        if os.path.exists(os.path.join(rd, 'RESULTS_CQR.json')):
-            row = next((x for x in json.load(open(os.path.join(rd, 'RESULTS_CQR.json')))['runs'] if x['cell_id'] == label), None); rep = {k: row.get(k) for k in ('outcome', 'guarantee', 'route', 'guarantee_source')} if row else None
-        return dict(gate_passed=gr['gate_passed'], failures=[f_[1][:100] for f_ in gr['failures'][:3]], attribution=((va or {}).get('verified_attribution') or {}), report_row=rep, report_rc=rp_.returncode)
-    g1 = gate_fixture('relabel', mpt, y, 'N1_NO_STRUCTURAL'); A(g1['gate_passed'] is False and g1['failures'], '(b) full gate accepted the coherent relabel'); out['b']['full_gate_relabel'] = g1['failures'][:1]
-    g0 = gate_fixture('honest', mpt, wt, 'N1_CQR'); A(g0['gate_passed'] is True and (g0['attribution'].get('structural') or {}).get('which') == 'forest' and (g0['report_row'] or {}).get('route') == 'structural_original' and 'checker-verified' in str((g0['report_row'] or {}).get('guarantee_source')), '(b) full gate / report on the honest structural cell: %s' % g0); out['b']['full_gate_honest_attribution'] = g0['attribution'].get('structural')
+    # FULL GATE per disabled arm on a GENUINELY coherent relabel (CQR-S2-O1: the manifest's planned arm EQUALS the relabelled worker / certificate arm, so the only possible refusal is the
+    # structural-disabled diagnostic; an arm mismatch would be a different, incoherent fixture and is asserted ABSENT); honest same-arm non-structural publications pass the same gate
+    for arm in controls:
+        g1 = gate_fixture(d, 'relabel_' + arm, mpt, relabels[arm], arm)
+        A(g1['gate_passed'] is False and any('DISABLED' in f_ or 'without the structural backend' in f_ for f_ in g1['failures']) and not any('differs from the planned arm' in f_ for f_ in g1['failures']), '(b) full gate on the coherent relabel to %s: %s' % (arm, g1['failures'][:2]))
+        out['b']['full_gate_relabel_' + arm] = g1['failures'][:1]
+    for arm, w_ in honest.items():
+        g2 = gate_fixture(d, 'honest_' + arm, mpt, w_, arm); A(g2['gate_passed'] is True and (g2['report_row'] or {}).get('route') == w_['route'] and 'checker-verified' in str((g2['report_row'] or {}).get('guarantee_source')), '(b) full gate refused the honest %s publication: %s' % (arm, g2['failures'][:2])); out['b']['full_gate_honest_' + arm] = w_['route']
+    g0 = gate_fixture(d, 'honest', mpt, wt, 'N1_CQR'); A(g0['gate_passed'] is True and (g0['attribution'].get('structural') or {}).get('which') == 'forest' and (g0['report_row'] or {}).get('route') == 'structural_original' and 'checker-verified' in str((g0['report_row'] or {}).get('guarantee_source')), '(b) full gate / report on the honest structural cell: %s' % g0); out['b']['full_gate_honest_attribution'] = g0['attribution'].get('structural')
     # ---------------- (c) provenance / attribution
     x = copy.deepcopy(wt); r_ = x['certificate']['publication']['structural']; r_['components'] = [dict(kind='stream', variables=list(range(9999)))]; r_['counters']['native_calls'] = 123; r_['wall_s'] = -99; r_['kernel_provenance'] = {'newarm_stream': {'loaded_binary_path': '/tmp/stream_' + '0' * 64 + '.dylib', 'binary_sha256': '0' * 64}}
-    fails, _ = check_(mpt, x, 'N1_CQR'); A(fails, '(c) forged attribution accepted by the checker'); gx = gate_fixture('forged', mpt, x, 'N1_CQR'); A(gx['gate_passed'] is False and any('provenance' in f_ or 're-execution' in f_ for f_ in gx['failures']), '(c) full gate accepted the forged record: %s' % gx['failures'])
+    fails, _ = check_(mpt, x, 'N1_CQR'); A(fails, '(c) forged attribution accepted by the checker'); gx = gate_fixture(d, 'forged', mpt, x, 'N1_CQR'); A(gx['gate_passed'] is False and any('provenance' in f_ or 're-execution' in f_ for f_ in gx['failures']), '(c) full gate accepted the forged record: %s' % gx['failures'])
     out['c']['forged_checker'] = fails[0][:90]; out['c']['forged_gate'] = gx['failures'][:2]
     blocks = []
     for b_ in range(3):
@@ -2637,8 +2649,8 @@ def c32_query_semantics_arm_eligibility_provenance_attribution():
     for name, fn in muts.items():
         z = copy.deepcopy(wb); fn(z); fz, _ = check_(mpb, z, 'N1_CQR', budget=300.0); A(fz, '(c) native mutation %s accepted' % name); out['c']['native_' + name] = fz[0][:90]
         if name in ('digest_altered', 'path_altered'): A(KI.receipt_failures(frozen, z, 'N1_CQR'), '(c) loader provenance check did not refuse %s' % name)
-    gb = gate_fixture('native_honest', mpb, wb, 'N1_CQR'); A(gb['gate_passed'] is True and (gb['attribution'].get('structural') or {}).get('native_calls') == 3, '(c) gate attribution of the honest native cell: %s' % gb)
-    z = copy.deepcopy(wb); muts['digest_altered'](z); gz = gate_fixture('native_digest', mpb, z, 'N1_CQR'); A(gz['gate_passed'] is False and any('provenance' in f_ for f_ in gz['failures']), '(c) full gate accepted an altered kernel digest: %s' % gz['failures']); out['c']['full_gate_digest_altered'] = gz['failures'][:2]
+    gb = gate_fixture(d, 'native_honest', mpb, wb, 'N1_CQR'); A(gb['gate_passed'] is True and (gb['attribution'].get('structural') or {}).get('native_calls') == 3, '(c) gate attribution of the honest native cell: %s' % gb)
+    z = copy.deepcopy(wb); muts['digest_altered'](z); gz = gate_fixture(d, 'native_digest', mpb, z, 'N1_CQR'); A(gz['gate_passed'] is False and any('provenance' in f_ for f_ in gz['failures']), '(c) full gate accepted an altered kernel digest: %s' % gz['failures']); out['c']['full_gate_digest_altered'] = gz['failures'][:2]
     return out
 
 
@@ -2792,7 +2804,143 @@ def c34_terminal_diagnostics_freshness_and_operation_observability():
     return out
 
 
-GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics), ('C26_partition_premise_order_validation_structural_negative', c26_partition_premise_order_validation_structural_negative), ('C27_final_query_accounting_evaluation_site_audit', c27_final_query_accounting_evaluation_site_audit), ('C28_view_storage_ownership_renumbering_declarations_event_schema', c28_view_storage_ownership_renumbering_declarations_event_schema), ('C29_failure_telemetry_survives_graceful_and_hard_kills', c29_failure_telemetry_survives_graceful_and_hard_kills), ('C30_cumulative_credit_reference_scheduling', c30_cumulative_credit_reference_scheduling), ('C31_structural_adapters_composition_checker_reachability', c31_structural_adapters_composition_checker_reachability), ('C32_query_semantics_arm_eligibility_provenance_attribution', c32_query_semantics_arm_eligibility_provenance_attribution), ('C33_compositional_discovery_deadline_propagation_reduction_lift', c33_compositional_discovery_deadline_propagation_reduction_lift), ('C34_terminal_diagnostics_freshness_and_operation_observability', c34_terminal_diagnostics_freshness_and_operation_observability)]
+def c35_query_presentation_equivalence_structural_routes():
+    """STRUCTURED-REPAIR REVIEW (18 Nov 2026) CQR-S2-01 (natural honest-worker false rejection) and CQR-S2-O1. A QUERY IS ITS TABLE; a presentation label (singleton / joint / parity /
+    conditional / the general-table marker) is validated by what it DENOTES, never by one literal spelling. (a) ROUND TRIPS: every constructor -> Query.to_json -> explicit-table re-parse
+    is accepted with the SAME task identity and the same function (one-variable joint and parity, two-variable joint and a reordered parity, the conditional tautology P(X0=1 | X0=1),
+    the overlapping conditional P(X0=1,X1=1 | X0=1), a plain conditional, a singleton); 300 random explicit tables carrying a singleton label are accepted iff the table IS that
+    indicator; 200 random constructor queries validate. (b) NEGATIVES REFUSED BEFORE PUBLICATION (both arms, typed INVALID_TASK): the S1-01 constant-zero table with singleton metadata,
+    joint / parity labels with the wrong state / bit, an out-of-range joint index, an unknown kind, a malformed label, a conditional label on an expectation, a singleton label on a general
+    table. (c) ALIASES THROUGH THE ORIGINAL STRUCTURAL ROUTE on the reviewer's [1,3] model: the one-variable joint, the one-variable parity, the explicit indicator with the general-table
+    marker, the metadata-free indicator, the indicator with an explicit joint label, the singleton constructor, the state-0 joint, a repeated / mixed family (joint + parity + both
+    singletons: ONE table-derived simplex family) and the 3x-repeated joint ALL publish structural_original on N1_CQR with exact-oracle containment, checker acceptance and FULL-GATE
+    acceptance (report row checker-verified); the same tasks publish exact_reference on N1_NO_STRUCTURAL and pass; the metadata-free zero control passes; boundary states on a 3-state
+    variable: parity bit 1 = the state-1 indicator (structural), parity bit 0 = a general table (structural attempt inapplicable, CQR path, accepted), the last-state joint; a two-variable
+    joint keeps the CQR path. (d) ALIASES THROUGH THE REDUCED ROUTE on a 40-variable dense fixture (37 variables forced by unary zeros, evidence on one, free path 0-1-2; the original
+    representation is NOT admitted -- support estimate above the gate -- and the reduced one is a forest): singleton / joint / parity / marker publish structural_reduced, pass the checker
+    and the FULL GATE, and are contained in a TEST-LOCAL independent truth (substitution of the constructed forced states + exact enumeration; never the candidate's reduction) and equal
+    to the disabled arm's exact closure. (e) after an honest alias publication the task file's label is swapped to a different denotation -> the checker refuses naming the denotation; swapped to an EQUIVALENT label -> only the
+    bytes-bound binding / identity refuse (a different file), never the semantics."""
+    d = tempfile.mkdtemp(prefix='cqr_c35_'); out = dict(a={}, b={}, c={}, d={}, e={}); rng = random.Random(35)
+    det = dict(mode='DETERMINISTIC_EPS', epsilon='1/200', delta='0')
+    def wk(mp, arm, tag, budget=8.0): return fresh_worker(mp, arm, budget=budget, nonce='c35-%s-%s' % (tag, arm))
+    # ---------------- (a) round trips and label properties
+    m2 = _uai(os.path.join(d, 'two.uai'), [2, 2], [((0,), ['1', '3']), ((1,), ['1', '3']), ((0, 1), ['1', '2', '3', '4'])])
+    ctors = {'joint_one': dict(kind='joint', assign={'0': 1}), 'parity_one': dict(kind='parity', variables=[0], bit=1), 'joint_two': dict(kind='joint', assign={'0': 1, '1': 0}), 'parity_two_reordered': dict(kind='parity', variables=[1, 0], bit=0),
+             'conditional_tautology': dict(kind='conditional', event={'0': 1}, given={'0': 1}), 'conditional_overlap': dict(kind='conditional', event={'0': 1, '1': 1}, given={'0': 1}), 'conditional_plain': dict(kind='conditional', event={'1': 1}, given={'0': 0}), 'singleton': dict(kind='singleton', variable=1, state=0)}
+    for label, q in ctors.items():
+        _spec(m2, queries=[q], **det); t = TK.load_task(m2); j = t['queries'][0].to_json(); id1 = TK.task_identity(t)
+        _spec(m2, queries=[dict(kind='table', table=j)], **det)
+        try: t2 = TK.load_task(m2)
+        except ValueError as ex: A(False, '(a) round trip of %s refused: %s' % (label, str(ex)[:120])); continue
+        A(TK.task_identity(t2) == id1 and TK.same_function(t['queries'][0], t2['queries'][0], t2['model']['cards']) and t2['queries'][0].output == t['queries'][0].output, '(a) round trip of %s changes the task' % label); out['a'][label] = 'round trip accepted, same identity'
+    n_acc = 0
+    for k in range(300):
+        cards = [rng.randint(2, 4) for _ in range(3)]; v = rng.randrange(3); s_ = rng.randrange(cards[v]); vals = [F(0)] * cards[v]
+        kind = rng.randrange(4)
+        if kind == 0: vals[s_] = F(1)
+        elif kind == 1: vals[rng.randrange(cards[v])] = F(1)
+        elif kind == 2: vals = [F(rng.randint(0, 2)) for _ in range(cards[v])]
+        else: vals = [F(rng.randint(0, 3), 3) for _ in range(cards[v])]
+        q = TK.Query('q', 'expectation', f=TK.Table((v,), vals), output=dict(kind='singleton', variable=v, state=s_)); want = TK.singleton_indicator_of(q, cards) == (v, s_)
+        try: TK.validate_output_metadata(q, cards); got = True
+        except ValueError: got = False
+        A(got == want, '(a) singleton label on %s accepted=%s, indicator=%s' % (vals, got, want)); n_acc += got
+    out['a']['random_singleton_labels'] = dict(checked=300, accepted=n_acc)
+    for k in range(200):
+        cards = [rng.randint(2, 3) for _ in range(4)]; kind = rng.randrange(4)
+        if kind == 0: q = TK.singleton_query(rng.randrange(4), 0, cards)
+        elif kind == 1: q = TK.joint_query({v: rng.randrange(cards[v]) for v in rng.sample(range(4), rng.randint(1, 3))}, cards)
+        elif kind == 2: q = TK.parity_query(rng.sample(range(4), rng.randint(1, 3)), rng.randrange(2), cards)
+        else:
+            gv = {v: rng.randrange(cards[v]) for v in rng.sample(range(4), rng.randint(1, 2))}; ev = {v: rng.randrange(cards[v]) for v in rng.sample(range(4), rng.randint(1, 2))}; ev.update({v: a for v, a in gv.items() if v in ev})
+            q = TK.conditional_query(ev, gv, cards)
+        TK.validate_output_metadata(q, cards); A(TK.same_function(TK.denoted_query(q.output, cards), q, cards), '(a) constructor %s does not denote itself' % q.name)
+    out['a']['random_constructors_validate'] = 200
+    # ---------------- (b) negatives refused before publication
+    one = lambda name, fs=(((0,), ['1', '3']),): _uai(os.path.join(d, name + '.uai'), [2], list(fs))
+    ind = lambda **o: dict(kind='table', table=dict(name='ind', kind='expectation', f=dict(scope=[0], values=['0', '1']), **o))
+    neg = {'false_meta_zero': dict(kind='table', table=dict(name='cz', kind='expectation', f=dict(scope=[0], values=['0', '0']), output=dict(kind='singleton', variable=0, state=1))), 'joint_label_wrong_state': ind(output=dict(kind='joint', assign={'0': 0})),
+           'parity_label_wrong_bit': ind(output=dict(kind='parity', variables=[0], bit=0)), 'joint_label_out_of_range': ind(output=dict(kind='joint', assign={'0': 2})), 'unknown_kind': ind(output=dict(kind='marginal', variable=0)), 'malformed_joint': ind(output=dict(kind='joint')),
+           'conditional_label_on_expectation': ind(output=dict(kind='conditional', event={'0': 1}, given={'0': 1})), 'singleton_label_on_general_table': dict(kind='table', table=dict(name='g', kind='expectation', f=dict(scope=[0], values=['1/5', '2/5']), output=dict(kind='singleton', variable=0, state=1)))}
+    for name, q in neg.items():
+        mp = one(name); _spec(mp, queries=[q], **det)
+        try: TK.load_task(mp); A(False, '(b) %s accepted by the parser' % name)
+        except ValueError as ex: out['b'][name] = str(ex)[:90]
+        for arm in ('N1_CQR', 'N1_NO_STRUCTURAL'):
+            w = wk(mp, arm, name); A(w['outcome'] == 'INVALID_TASK' and w.get('answers') is None, '(b) %s / %s: %s' % (name, arm, w['outcome']))
+    # ---------------- (c) aliases through the ORIGINAL structural route ([1,3]: P(X0=1) = 3/4)
+    aliases = {'joint_one': [dict(kind='joint', assign={'0': 1})], 'parity_one': [dict(kind='parity', variables=[0], bit=1)], 'indicator_table_marker': [ind(output=dict(kind='table'))], 'indicator_no_meta': [ind()], 'indicator_joint_label': [ind(output=dict(kind='joint', assign={'0': 1}))],
+               'singleton': [dict(kind='singleton', variable=0, state=1)], 'joint_state0': [dict(kind='joint', assign={'0': 0})], 'repeated_mixed_family': [dict(kind='joint', assign={'0': 1}), dict(kind='parity', variables=[0], bit=1), dict(kind='singleton', variable=0, state=1), dict(kind='singleton', variable=0, state=0)],
+               'joint_repeated_3x': [dict(kind='joint', assign={'0': 1})] * 3}
+    gate_these = ('joint_one', 'parity_one', 'indicator_table_marker', 'indicator_no_meta', 'singleton', 'repeated_mixed_family')
+    for name, qs in aliases.items():
+        mp = one(name); _spec(mp, queries=qs, **det); t = TK.load_task(mp); tr = truth_of(t['model'], t['queries'], cap=64)
+        A(SV._singleton_groups(t) == ([[3, 2]] if name == 'repeated_mixed_family' else []), '(c) simplex families of %s: %s' % (name, SV._singleton_groups(t)))
+        for arm in ('N1_CQR', 'N1_NO_STRUCTURAL'):
+            w = wk(mp, arm, name); fails, _ = check_(mp, w, arm); CNT['truth_coordinates'] += len(qs)
+            A(w['outcome'] == 'PUBLISHED' and not fails and all(F(a['lo']) <= tr['answers'][j] <= F(a['hi']) for j, a in enumerate(w['answers'])), '(c) %s / %s: %s %s %s' % (name, arm, w['outcome'], w.get('route'), fails[:1]))
+            A(w['route'] == ('structural_original' if arm == 'N1_CQR' else 'exact_reference'), '(c) %s / %s route %s' % (name, arm, w['route'])); out['c'][name + '/' + arm] = dict(route=w['route'], answers=[a['lo'] for a in w['answers']])
+            if arm == 'N1_CQR' and name in gate_these:
+                g = gate_fixture(d, 'alias_' + name, mp, w, arm); A(g['gate_passed'] is True and (g['report_row'] or {}).get('route') == 'structural_original' and 'checker-verified' in str((g['report_row'] or {}).get('guarantee_source')), '(c) full gate on %s: %s' % (name, g['failures'][:2])); out['c'][name + '/full_gate'] = 'PASSED, checker-verified'
+    mpz = one('zero_control'); _spec(mpz, queries=[dict(kind='table', table=dict(name='cz', kind='expectation', f=dict(scope=[0], values=['0', '0'])))], **det); wz = wk(mpz, 'N1_CQR', 'zero'); fails, _ = check_(mpz, wz, 'N1_CQR')
+    A(wz['outcome'] == 'PUBLISHED' and not fails and wz['answers'][0]['lo'] == wz['answers'][0]['hi'] == '0', '(c) zero control: %s %s' % (wz['outcome'], fails[:1])); gz = gate_fixture(d, 'zero_control', mpz, wz, 'N1_CQR'); A(gz['gate_passed'] is True, '(c) zero control full gate: %s' % gz['failures'][:1]); out['c']['zero_control'] = dict(route=wz['route'], full_gate='PASSED')
+    m3 = _uai(os.path.join(d, 'three_state.uai'), [3], [((0,), ['1', '2', '5'])])         # boundary states on a 3-state variable: truth [1/8, 1/4, 5/8]
+    for name, q, want_route in (('parity_bit1_is_state1', dict(kind='parity', variables=[0], bit=1), 'structural_original'), ('parity_bit0_general', dict(kind='parity', variables=[0], bit=0), None), ('joint_last_state', dict(kind='joint', assign={'0': 2}), 'structural_original')):
+        _spec(m3, queries=[q], **det); t = TK.load_task(m3); tr = truth_of(t['model'], t['queries'], cap=64)
+        for arm in ('N1_CQR', 'N1_NO_STRUCTURAL'):
+            w = wk(m3, arm, name); fails, _ = check_(m3, w, arm); CNT['truth_coordinates'] += 1
+            A(w['outcome'] == 'PUBLISHED' and not fails and F(w['answers'][0]['lo']) <= tr['answers'][0] <= F(w['answers'][0]['hi']), '(c) %s / %s: %s %s %s' % (name, arm, w['outcome'], w.get('route'), fails[:1]))
+            if arm == 'N1_CQR':
+                if want_route: A(w['route'] == want_route, '(c) %s route %s' % (name, w['route']))
+                else: A(not w['route'].startswith('structural') and all(a['decision'] == 'inapplicable' for a in (w['certificate'].get('structural') or {}).get('attempts', [])), '(c) %s reached a structural route: %s' % (name, w['route']))
+            out['c'][name + '/' + arm] = w['route']
+    _spec(m2, queries=[dict(kind='joint', assign={'0': 1, '1': 0})], **det); t = TK.load_task(m2); tr = truth_of(t['model'], t['queries'], cap=64)
+    for arm in ('N1_CQR', 'N1_NO_STRUCTURAL'):
+        w = wk(m2, arm, 'joint_two'); fails, _ = check_(m2, w, arm); CNT['truth_coordinates'] += 1
+        A(w['outcome'] == 'PUBLISHED' and not fails and not w['route'].startswith('structural') and F(w['answers'][0]['lo']) <= tr['answers'][0] <= F(w['answers'][0]['hi']), '(c) two-variable joint / %s: %s %s %s' % (arm, w['outcome'], w.get('route'), fails[:1])); out['c']['joint_two_variables/' + arm] = w['route']
+    # ---------------- (d) aliases through the REDUCED structural route (a small natural fixture; no admission threshold changed)
+    n = 40; frng = random.Random(3540); forced = {}; fs = []
+    for v in range(n):
+        if v in (0, 1, 2): fs.append(((v,), ['2', '3'] if v != 1 else ['1', '4']))
+        else: s_ = frng.randrange(2); vals = ['0', '0']; vals[s_] = str(frng.randint(1, 5)); fs.append(((v,), vals)); forced[v] = s_
+    for u in range(n):
+        for v in range(u + 1, n):
+            if (u, v) in ((0, 1), (1, 2)): fs.append(((u, v), [str(frng.randint(1, 5)) for _ in range(4)])); continue
+            if (u, v) == (0, 2): continue
+            if frng.random() < 0.5: fs.append(((u, v), [str(frng.randint(1, 5)) for _ in range(4)]))
+    def local_truth(t):
+        """TEST-LOCAL independent truth: substitute the CONSTRUCTED forced states (never the candidate's reduction), keep the factors over the free path 0-1-2, enumerate exactly"""
+        small = []
+        for sc, vals in fs:
+            keep = [v for v in sc if v in (0, 1, 2)]
+            if len(keep) == len(sc): small.append(dict(scope=tuple(sc), values=[F(x) for x in vals])); continue
+            idx = {}
+            for xs, x in zip(product(*([0, 1] for _ in sc)), vals):
+                if all(x_ == forced[v] for v, x_ in zip(sc, xs) if v not in (0, 1, 2)): idx[tuple(x_ for v, x_ in zip(sc, xs) if v in (0, 1, 2))] = F(x)
+            if not keep: A(idx[()] > 0, '(d) fixture has a zero scalar after substitution'); continue
+            small.append(dict(scope=tuple(keep), values=[idx[xs] for xs in product(*([0, 1] for _ in keep))]))
+        CNT['oracle_models'] += 1; return OR.enumerate_truth(dict(cards=[2, 2, 2], factors=small, evidence={}), t['queries'], max_assignments=64)
+    for name, q in (('singleton', dict(kind='singleton', variable=0, state=1)), ('joint_one', dict(kind='joint', assign={'0': 1})), ('parity_one', dict(kind='parity', variables=[0], bit=1)), ('indicator_table_marker', ind(output=dict(kind='table')))):
+        mp = _uai(os.path.join(d, 'dense40_%s.uai' % name), [2] * n, fs); open(mp + '.evid', 'w').write('1 %d %d\n' % (n - 1, forced[n - 1])); _spec(mp, queries=[q], **det); t = TK.load_task(mp); tr = local_truth(t)
+        wr = wk(mp, 'N1_CQR', 'dense_' + name, budget=8.0); fails, info = check_(mp, wr, 'N1_CQR', budget=120.0); att = [(a['representation'], a['decision']) for a in (wr['certificate'].get('structural') or {}).get('attempts', [])]; CNT['truth_coordinates'] += 1
+        A(wr['outcome'] == 'PUBLISHED' and wr['route'] == 'structural_reduced' and att == [('original', 'not_admitted'), ('reduced', 'published')] and not fails, '(d) %s: %s %s %s %s' % (name, wr['outcome'], wr.get('route'), att, fails[:1]))
+        A(F(wr['answers'][0]['lo']) <= tr['answers'][0] <= F(wr['answers'][0]['hi']), '(d) %s reduced enclosure %s misses the local truth %s' % (name, (wr['answers'][0]['lo'], wr['answers'][0]['hi']), tr['answers'][0]))
+        wn = wk(mp, 'N1_NO_STRUCTURAL', 'dense_' + name, budget=8.0); fails_n, _ = check_(mp, wn, 'N1_NO_STRUCTURAL', budget=120.0)
+        A(wn['outcome'] == 'PUBLISHED' and not fails_n and not wn['route'].startswith('structural') and F(wn['answers'][0]['lo']) <= tr['answers'][0] <= F(wn['answers'][0]['hi']), '(d) %s disabled arm: %s %s %s' % (name, wn['outcome'], wn.get('route'), fails_n[:1]))
+        g = gate_fixture(d, 'dense_' + name, mp, wr, 'N1_CQR'); A(g['gate_passed'] is True and (g['report_row'] or {}).get('route') == 'structural_reduced' and 'checker-verified' in str((g['report_row'] or {}).get('guarantee_source')), '(d) full gate on the reduced %s: %s' % (name, g['failures'][:2]))
+        out['d'][name] = dict(route=wr['route'], enclosure=(wr['answers'][0]['lo'], wr['answers'][0]['hi']), local_truth=str(tr['answers'][0]), disabled_arm=(wn['route'], wn['answers'][0]['lo']), reduced_variables=((info.get('attribution') or {}).get('structural') or {}).get('reduction', {}).get('reduced_variables'), full_gate='PASSED')
+    # ---------------- (e) a label swapped to a DIFFERENT denotation after an honest alias publication is refused by the checker
+    mp = one('meta_swap'); _spec(mp, queries=[ind(output=dict(kind='joint', assign={'0': 1}))], **det); w = wk(mp, 'N1_CQR', 'swap'); A(w['outcome'] == 'PUBLISHED' and w['route'] == 'structural_original', '(e) fixture')
+    for name, o in (('swapped_to_state0', dict(kind='joint', assign={'0': 0})), ('swapped_to_parity_bit0', dict(kind='parity', variables=[0], bit=0)), ('swapped_to_singleton_state0', dict(kind='singleton', variable=0, state=0))):
+        _spec(mp, queries=[ind(output=o)], **det); fails, _ = check_(mp, w, 'N1_CQR'); A(fails and any('output metadata' in f_ and 'denotes' in f_ for f_ in fails), '(e) %s accepted: %s' % (name, fails[:1])); out['e'][name] = fails[0][:160]
+    _spec(mp, queries=[ind(output=dict(kind='parity', variables=[0], bit=1))], **det); fails, _ = check_(mp, w, 'N1_CQR')
+    # an EQUIVALENT label is a different FILE: the bytes-bound binding / identity refuse it (the publication was made for other bytes) while the semantics accept it (no 'denotes' refusal)
+    A(fails and all(('binding' in f_ or 'identity' in f_) for f_ in fails) and not any('denotes' in f_ for f_ in fails), '(e) equivalent label: expected binding-only refusals, got %s' % fails[:2]); out['e']['equivalent_parity_label'] = 'binding / identity refusal only (bytes differ); no semantic refusal: %s' % fails[0][:60]
+    return out
+
+
+GROUPS = [('C1_identity_and_checker_end_to_end', c1_identity_checker), ('C2_independent_oracle_and_modes', c2_oracle_modes), ('C3_quotient_exact_and_mutations', c3_quotient), ('C4_approximate_quotient_budget', c4_approx_quotient), ('C5_affine_support_and_pullbacks', c5_affine), ('C6_influence_and_concentration_conditions', c6_influence_concentration), ('C7_frontier_typed_bounds_and_envelopes', c7_frontier), ('C8_signed_residual_stream_and_epochs', c8_signed_stream), ('C9_ratio_stream_history_and_record_before_resolve', c9_ratio_stream), ('C10_publication_feasibility_denominators_normalizer', c10_publication), ('C11_protected_reference_and_resource_refusal', c11_reference_resources), ('C12_registry_pipeline_dev_admission', c12_pipeline_admission), ('C13_tiny_model_delta_falsification', c13_delta_falsification), ('C14_publication_contract_every_route', c14_publication_contract_every_route), ('C15_semantics_and_guarantee_binding', c15_semantics_and_guarantee_binding), ('C16_fresh_process_pac_routes', c16_fresh_process_pac_routes), ('C17_protected_reference_scheduling', c17_protected_reference_scheduling), ('C18_task_local_state_and_policy', c18_task_local_state_and_policy), ('C19_provenance_and_intake', c19_provenance_and_intake), ('C20_atomic_compilation_replay_service_history_attribution', c20_atomic_compilation_replay_service_history_attribution), ('C21_checker_soundness_lifecycle_dependencies_closeout', c21_checker_soundness_lifecycle_dependencies_closeout), ('C22_precision_zero_mass_witness_service', c22_precision_zero_mass_witness_service), ('C23_exactly_once_accounting_quota_inheritance_tolerance_domain', c23_exactly_once_accounting_quota_inheritance_tolerance_domain), ('C24_zero_risk_controller_cadence_completed_charges', c24_zero_risk_controller_cadence_completed_charges), ('C25_ratio_prior_binding_influence_scan_tolerance_semantics', c25_ratio_prior_binding_influence_scan_tolerance_semantics), ('C26_partition_premise_order_validation_structural_negative', c26_partition_premise_order_validation_structural_negative), ('C27_final_query_accounting_evaluation_site_audit', c27_final_query_accounting_evaluation_site_audit), ('C28_view_storage_ownership_renumbering_declarations_event_schema', c28_view_storage_ownership_renumbering_declarations_event_schema), ('C29_failure_telemetry_survives_graceful_and_hard_kills', c29_failure_telemetry_survives_graceful_and_hard_kills), ('C30_cumulative_credit_reference_scheduling', c30_cumulative_credit_reference_scheduling), ('C31_structural_adapters_composition_checker_reachability', c31_structural_adapters_composition_checker_reachability), ('C32_query_semantics_arm_eligibility_provenance_attribution', c32_query_semantics_arm_eligibility_provenance_attribution), ('C33_compositional_discovery_deadline_propagation_reduction_lift', c33_compositional_discovery_deadline_propagation_reduction_lift), ('C34_terminal_diagnostics_freshness_and_operation_observability', c34_terminal_diagnostics_freshness_and_operation_observability), ('C35_query_presentation_equivalence_structural_routes', c35_query_presentation_equivalence_structural_routes)]
 
 if __name__ == '__main__':
     assert [g for g, _ in GROUPS] == list(registry.QUALIFICATION_GROUPS), 'suite groups differ from the registry schema'

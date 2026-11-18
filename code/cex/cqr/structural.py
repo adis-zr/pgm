@@ -195,7 +195,9 @@ def _rows_result(res):
 
 def execute(model, disc, deadline, which, epsilon=F(1, 200)):
     """run the admitted structural plan under the ABSOLUTE allocation deadline; returns dict(rows, points, record) over ALL variables of `model` (evidence variables as indicator
-    rows; factor-free variables as uniform rows) or raises StructuralStop (typed). Nothing here touches the Work ledger."""
+    rows; factor-free variables as uniform rows) or raises StructuralStop (typed). Nothing here touches the Work ledger. `counters.native_calls` counts NATIVE-CAPABLE component
+    executions (support / stream components): a kernel may fall back to its exact path inside such an execution, so the counter is NOT a count of successful native completions
+    (the verified attribution carries the same semantics; the kernel digests are checked separately)."""
     t0 = time.monotonic(); cards = model['cards']; n = len(cards); ev = model.get('evidence', {}); comps = []; counters = dict(source_entries_read=0, kernel_counters=[], native_calls=0)
     def done(rows, pts, kind, extra=None):
         rec = dict(version=STRUCTURAL_VERSION, which=which, epsilon=str(epsilon), components=comps, rows=[[(str(lo), str(hi)) for lo, hi in row] for row in rows], points=[[str(x) for x in row] for row in pts], wall_s=time.monotonic() - t0, counters=counters, kernel_provenance=(_kernel_provenance() if counters['native_calls'] else None), discovery=dict(candidates=disc['candidates'], declines=disc['declines'], discovery_s=disc['discovery_s'], components_estimate_s=disc.get('components_estimate_s')))

@@ -25,7 +25,7 @@ import compiler as CP, frontier as FR, reference as RF, numerics as NM, structur
 from task import Work, task_identity
 import task as TK
 
-SOLVER_VERSION = 'cqr-solve-v2.1 (2026-11-17, structured review CQR-S1-01/02/04/05/06/07: structural eligibility from the query TABLES; the structural flag bound in the certificate (structural_backend); the controller service checks the wall deadline at entry and after reference service and no reference step starts after expiry; the REDUCED route (R0 reduction + lift) between the original route and the compile; terminal diagnostics refreshed from maintained state; v2.0: structural executors (forest / dag / support / stream adapters) dispatched by a bounded planner on the ORIGINAL task and on committed compiled models; cumulative-credit reference scheduling (deficit-based, overshoot carried); bounded diagnostics sidecar; representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation; zero-risk PAC = deterministic routes only)'
+SOLVER_VERSION = 'cqr-solve-v2.2 (2026-11-18, structured-repair review CQR-S2-01: simplex families derived from the query tables, not from presentation labels; v2.1 2026-11-17, structured review CQR-S1-01/02/04/05/06/07: structural eligibility from the query TABLES; the structural flag bound in the certificate (structural_backend); the controller service checks the wall deadline at entry and after reference service and no reference step starts after expiry; the REDUCED route (R0 reduction + lift) between the original route and the compile; terminal diagnostics refreshed from maintained state; v2.0: structural executors (forest / dag / support / stream adapters) dispatched by a bounded planner on the ORIGINAL task and on committed compiled models; cumulative-credit reference scheduling (deficit-based, overshoot carried); bounded diagnostics sidecar; representation-derived accuracy reservation; zero evidence only from a proved zero mass; optional lifecycle on every publication preparation; zero-risk PAC = deterministic routes only)'
 POLICY = dict(solver_version=SOLVER_VERSION, compiler=CP.POLICY, frontier=FR.FRONTIER_VERSION, frontier_order=FR.FRONTIER_ORDER_POLICY,
               quantum_units=4096, reference_parity='before EVERY publication test the reference is brought to >= the cumulative Work of the optional half (gamma = 1/2 at every publication; rounding <= one reference step of REF_STEP assignments)',
               reference_scheduling='CUMULATIVE CREDIT (eighth-round revision, 17 Nov 2026): the reference is served only against the accounted deficit D = work_opt - work_ref; every overshoot is carried forward as credit (an inherited lead permits optional progress without another compulsory batch); service is interruptible at the reference step boundary (REF_STEP assignments); the largest irreducible overshoot is ONE step = REF_STEP assignments x (factors + query reads) entries + REF_STEP evals, stated in reference.step_cost_bound; the periodic quantum of the loop is the deficit itself, never a compulsory max(Q, last_opt) batch',
@@ -123,11 +123,12 @@ def _feasible_point(task, bounds, groups, service=None):
 
 
 def _singleton_groups(task):
-    """indices of queries that form one simplex row per original variable (all states of a variable present as singleton queries)"""
-    by = {}
+    """indices of queries that form one simplex row per original variable (all states of a variable present as singleton-INDICATOR tables; derived from the tables, never from the
+    presentation labels -- CQR-S2-01: a one-variable joint / parity / explicit indicator table is the same coordinate as the singleton constructor); producer and checker share this"""
+    by = {}; cards = task['model']['cards']
     for j, q in enumerate(task['queries']):
-        if q.kind == 'expectation' and (q.output or {}).get('kind') == 'singleton': by.setdefault(q.output['variable'], {})[q.output['state']] = j
-    cards = task['model']['cards']
+        sv = TK.singleton_indicator_of(q, cards)
+        if sv is not None: by.setdefault(sv[0], {})[sv[1]] = j
     return [[d[s] for s in range(cards[v])] for v, d in by.items() if len(d) == cards[v]]
 
 
