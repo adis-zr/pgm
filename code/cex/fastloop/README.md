@@ -1,23 +1,18 @@
-# CQR fast theory–implementation–measurement loop (harness)
+# CQR fast theory–implementation–measurement loop (harness v2)
 
-Infrastructure only (outside every candidate inventory scope). Protocol: `pgm-records/docs/handoff-received-2026-11-18-cqr-fast-iteration/`.
+Infrastructure only (`cex/fastloop` and `cex/cqr_amend` are in no candidate inventory scope). Protocol: `pgm-records/docs/handoff-received-2026-11-18-cqr-fast-iteration/`; repairs after the A1 review: `docs/review-received-2026-11-18-cqr-a1-fastloop/`.
 
 | step | command (from the CANDIDATE worktree's `code/`) | cap |
 |---|---|---|
-| pin the development manifest (once per manifest version) | `python cex/fastloop/manifest.py materialize --baseline <ACCEPTED_BUILD> --out <RECORDS>/fastloop/manifest_vN` | — |
-| prepare the independent truth cache (once) | `python cex/fastloop/truth_prep.py --manifest <MANIFEST> --baseline <ACCEPTED_BUILD>` | recorded |
-| calibrate on the accepted baseline (once; R0 anchor + size ladder; pins the change-specific pair) | `python cex/fastloop/calibrate.py --manifest <MANIFEST> --baseline <ACCEPTED_BUILD> --out <RECORDS>/fastloop/calibration_N` | 600 s |
+| pin the development manifest (once per version) | `python cex/fastloop/manifest.py materialize --baseline <ACCEPTED_BUILD> --out <RECORDS>/fastloop/manifest_vN` | — |
+| prepare the authenticated truth cache (once) | `python cex/fastloop/truth_prep.py --manifest <MANIFEST> --baseline <ACCEPTED_BUILD>` | recorded |
+| calibrate (once; R0 anchor + measured size ladder; pins the change-specific pair) | `python cex/fastloop/calibrate.py --manifest <MANIFEST> --baseline <ACCEPTED_BUILD> --out <RECORDS>/fastloop/calibration_N` | 600 s |
+| harness controls battery (after any harness change) | `python cex/fastloop/controls.py --out <RECORDS>/fastloop/controls_N --baseline <ACCEPTED_BUILD> --manifest <MANIFEST>` | — |
 | smoke subset (while editing) | `python cex/fastloop/run.py --manifest <MANIFEST> --candidate . --baseline <ACCEPTED_BUILD> --out <RUN_DIR> --mode smoke` | 60 s target |
-| full development run (every meaningful change) | `python cex/fastloop/run.py --manifest <MANIFEST> --candidate . --baseline <ACCEPTED_BUILD> --out <RUN_DIR> --mode full --hypothesis HYPOTHESIS.json --label "<change>"` | 300 s hard |
+| full development run (every meaningful change) | `python cex/fastloop/run.py --manifest <MANIFEST> --candidate . --baseline <ACCEPTED_BUILD> --out <RUN_DIR> --mode full --hypothesis HYPOTHESIS.json --label "<change>"` | 300 s hard, 12 s finalization reserve |
 
-Every run should itself be launched as ONE charged job: `python -m gbidi.supervise --ledger <RECORDS>/fastloop/CQR_LEDGER.jsonl --scope cqr_fastloop --job fastloop:<label> --timeout 330 --mem-gib 8 -- <command>`.
+Launch every run as ONE charged job: `python -m gbidi.supervise --ledger <RECORDS>/fastloop/CQR_LEDGER.jsonl --scope cqr_fastloop --job fastloop:<label> --timeout 330 --mem-gib 8 -- <command>`.
 
-`HYPOTHESIS.json`: `{"change", "premise", "expected_favorable", "expected_near_miss", "preserved": [...], "question"}` — written BEFORE the run.
+Invariants (v2): one absolute deadline for identity, inputs, workers, truth, verification, controls, cleanup and report; bounded subprocesses everywhere; the report is written after every cell and in `finally`; pinned task bytes validated and SNAPSHOTTED before any launch, the worker's consumed binding compared (drift = TASK_INTEGRITY stop); truth records authenticated (task digest, oracle dependency identity, content seal; CACHE_INTEGRITY is a harness failure, never a solver miss); each build verified by its OWN checker in its own process, source / loader-provenance / arm mismatch = refusal, a checker exception = CHECKER_FAULT; supervisor × worker × cleanup × expected-control reconciliation (FAULT, abnormal exit, NO_OUTPUT, hard kill are typed); PROVED_ZERO_EVIDENCE verified and compared with independent truth; REQUIRED negative controls pass only on normal checker completion for the intended class, missing ones make the run INCOMPLETE; three separate verdicts (execution / correctness / required coverage) with precise predicates from checker-verified facts (channel A) and labelled sidecar observations with ages (channel B). Nothing is PASS.
 
-Outputs in `<RUN_DIR>`: `ITERATION_REPORT.md` (first screen: hypothesis, identities, status, one row per case, regressions, failures, controls, limitations, next question), `ITERATION_REPORT.json`, `cells/<n>_<id>__<tag>__<arm>/` (worker.json, worker.diag.json, check.json, stdout / stderr), `mutations/`, `CQR_LEDGER.jsonl` (one supervised receipt per cell).
-
-Rules the harness enforces: one primary comparator per row (baseline N1 / same-build G0 / same-build matched ablation), deterministic balanced arm order, identical pinned bytes / seeds / budgets, each build verified by its OWN checker in its OWN process, independent truth from the baseline's oracle (cached by task digest; never a worker's output), structural publications counted as production success and NOT as mechanism coverage (activation read from the certificate), relaxed-tolerance rows labelled qualification-only, sidecar enclosures labelled diagnostic (compiled widths before bias), budget exhaustion / missing output / unverified publication → INCOMPLETE, a refused publication / deterministic truth miss / survivor → STOP with remaining rows NOT_RUN. Nothing is PASS.
-
-Harness controls: `--inject-missing-output <ID>` (child exits without writing → NO_OUTPUT → INCOMPLETE), `--inject-corrupt <ID>` (a shifted COPY of the publication is verified → REFUSED → STOP), `--total-cap <s>` (exhaustion → NOT_RUN rows → INCOMPLETE).
-
-Do not run timed development jobs on a host executing a frozen scored campaign.
+`cex/cqr_amend/amend_verification.py`: prepare / execute a SEPARATELY identified re-verification of a completed shard (producer identity from the frozen manifest, verifier identity from the build; producer-side source differences are refused; the original gate is retained). `execute` only after review.
