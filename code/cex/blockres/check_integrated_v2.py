@@ -34,6 +34,32 @@ for a in res['answers']:
     if a['guarantee'] == 'NOT_PUBLISHED': continue
     if not (F(a['lo']) <= tv[(a['var'], a['state'])] <= F(a['hi'])): miss.append((a['var'], a['state'], a['lo'], a['hi'], str(tv[(a['var'], a['state'])])))
 say(dict(control='R2b_within_budget_computes_and_contains', outcome=res['outcome'], published=sum(1 for a in res['answers'] if a['guarantee'] != 'NOT_PUBLISHED'), misses=len(miss), range_sum_bits=res['mechanism'].get('mb_max_range_sum_bits'), ok=(res['outcome'] != 'NUMERIC_RANGE_REFUSED' and not miss)))
+# R4: the overseer's SCALE-INVARIANCE reproducer: one factor 2^E [[1, 3], [3, 9]] on two binary variables, E = 2^24 (exact marginals 1/4, 3/4). For every assignment the
+#     implemented X must be within the declared relative error rho_X of the analysed X = z / (q_an U_cap) (U_cap evaluated in 60-digit decimal), and a forced-approximate run must publish intervals containing the truth.
+from decimal import Decimal, getcontext
+getcontext().prec = 80
+E24 = 1 << 18; p4 = write_uai('r4_scale_invariance', [2, 2], [((0, 1), [1 << E24, 3 << E24, 3 << E24, 9 << E24])])     # 2^18 (the overseer used 2^24; the decimal UAI encoding of 2^(2^24) takes minutes to parse; the mechanism is identical: the exponent is cancelled exactly)
+model, _ = BR.core.read_uai(p4); cards4 = model['cards']; fns, const, scale, mult, fl = BR.integerize(model); tr = []; od = []; st = dict(elim_work=0, eliminations=0, query_work=0)
+live = [f for f in BR.contract(fns, cards4, 0, time.monotonic() + 10, st, tr, od) if f.scope]; blocks = [IG.ft_from_int(f, cards4) for f in live]; mbp = IG.MBFloat(blocks, cards4, 4, time.monotonic() + 10)
+S4 = sorted({v for b in blocks for v in b.scope}); pos4 = {v: i for i, v in enumerate(S4)}; E_tot = sum(b.e for b in blocks) - mbp.E_U; wid = IG.numerical_widening(blocks, mbp, [], len(S4), 2, E_tot)
+rho_X = IG.fup(wid['rho_X']); rho_cap = IG.fup(wid['rho_cap']); logU_capf = IG.up(mbp.logU_f + IG.up(math.log2(1.0 + rho_cap)) + 2 ** -40)
+import itertools
+Sall = np.array(list(itertools.product(range(2), range(2))), dtype=np.int64); logq, q_an = mbp.logq_given(Sall, pos4); worst = Decimal(0); maxX = -1.0
+U_cap_dec = Decimal(2) ** mbp.E_U * (Decimal(logU_capf) * Decimal(2).ln()).exp()        # U_cap = 2^(logU_capf + E_U); the solver combines E_tot = E_z - E_U exactly
+for i, srow in enumerate(Sall.tolist()):
+    z_exact = 1
+    for f in live: z_exact *= int(np.asarray(f.arr, dtype=object)[tuple(srow[pos4[u]] for u in f.scope)])
+    logz = sum(math.log2(float(b.M[tuple(srow[pos4[u]] for u in b.scope)])) for b in blocks)
+    X_impl = 2.0 ** ((logz - float(logq[i]) - logU_capf) + float(E_tot)); maxX = max(maxX, X_impl)
+    X_an = Decimal(z_exact) / (Decimal(q_an[i].numerator) / Decimal(q_an[i].denominator) * U_cap_dec)
+    worst = max(worst, abs(Decimal(X_impl) - X_an) / X_an)
+say(dict(control='R4_scale_invariance_2p24_implemented_vs_analysed_X', E_tot=E_tot, worst_relative_error=float(worst), declared_rho_X=rho_X, ratio_error_over_allowance=float(worst) / rho_X, max_X_impl=maxX, cap_holds=(maxX <= 1 + 2 * rho_X), ok=(float(worst) <= rho_X and maxX <= 1 + 2 * rho_X)))
+t4 = T.load_task(p4); r4_ = oracle.truth(t4['model'], t4['queries']); tv4 = {(q.output['variable'], q.output['state']): a for q, a in zip(t4['queries'], r4_['answers'])}
+res = IG.solve(p4, 4.0, table_cap=0, enum_cap=1, force_approx=True, mb_cap=4, schedule='targeted'); miss = []
+for a in res['answers']:
+    if a['guarantee'] == 'NOT_PUBLISHED': continue
+    if not (F(a['lo']) <= tv4[(a['var'], a['state'])] <= F(a['hi'])): miss.append((a['var'], a['state'], a['lo'], a['hi'], str(tv4[(a['var'], a['state'])])))
+say(dict(control='R4b_scale_invariance_run_publications_contain_truth', outcome=res['outcome'], published=sum(1 for a in res['answers'] if a['guarantee'] != 'NOT_PUBLISHED'), misses=len(miss), eps_num_log2=res['mechanism'].get('eps_num_log2'), E_tot=res['mechanism'].get('E_tot'), ok=(not miss and res['outcome'] != 'NUMERIC_RANGE_REFUSED')))
 # R3: exact propagation on a chain: 40 random products and binary sums against exact integers (worst case: the bound must hold at every step)
 rng = random.Random(5); cards = [2, 2, 2]; bad = 0; steps = 0
 for trial in range(12):
@@ -58,7 +84,8 @@ for trial in range(30):
     if ex is None and np.isfinite(lo[0]): pass
 say(dict(control='C6_conservative_inversion_contains_exact_rational_set', tested=tested, violations=bad, ok=(bad == 0)))
 # C1-C2 containment of actual publications (same models as round 3; written by check.py earlier)
-for name, fn_, kw, budget in (('C1_complete_separator_14_cap256', 'c7_complete_sep.uai', dict(table_cap=1 << 6, enum_cap=1 << 4, mb_cap=256), 25.0), ('C2_product_interior_10_cap64', 'c4_product_interior.uai', dict(table_cap=1 << 2, enum_cap=1 << 4, mb_cap=64), 15.0)):
+FAST = os.environ.get('FAST') == '1'
+for name, fn_, kw, budget in (() if FAST else (('C1_complete_separator_14_cap256', 'c7_complete_sep.uai', dict(table_cap=1 << 6, enum_cap=1 << 4, mb_cap=256), 25.0), ('C2_product_interior_10_cap64', 'c4_product_interior.uai', dict(table_cap=1 << 2, enum_cap=1 << 4, mb_cap=64), 15.0))):
     p = os.path.join(TMP, fn_); t = T.load_task(p); r = oracle.truth(t['model'], t['queries'], max_assignments=1 << 20, max_table=1 << 20); tv = {(q.output['variable'], q.output['state']): a for q, a in zip(t['queries'], r['answers'])}
     for sched in ('baseline', 'targeted'):
         res = IG.solve(p, budget, force_approx=True, schedule=sched, **kw); n = 0; miss = []; worst = F(0)
@@ -70,7 +97,7 @@ for name, fn_, kw, budget in (('C1_complete_separator_14_cap256', 'c7_complete_s
         m = res['mechanism']; say(dict(control=name + '_' + sched, outcome=res['outcome'], published=n, K=res['K'], misses=len(miss), worst_abs_error=float(worst), draws=m.get('draws'), ms_per_draw=m.get('ms_per_draw'), X_mean=m.get('X_mean'), max_remaining_width=m.get('max_remaining_width'), ok=(n > 0 and not miss), detail=miss[:3]))
 # C3 injected cap violation
 p = os.path.join(TMP, 'c7_complete_sep.uai'); _orig = IG.MBFloat.__init__
-def _lowered(self, *a, **k): _orig(self, *a, **k); self.logU -= 40.0
+def _lowered(self, *a, **k): _orig(self, *a, **k); self.logU_f -= 40.0
 IG.MBFloat.__init__ = _lowered; res = IG.solve(p, 4.0, force_approx=True, table_cap=1 << 6, enum_cap=1 << 4, mb_cap=16); IG.MBFloat.__init__ = _orig
 say(dict(control='C3_injected_cap_violation_refused', outcome=res['outcome'], error=res.get('error', '')[:70], ok=(res['outcome'] == 'CERTIFICATE_DEFECT')))
 # C4 zero global mass

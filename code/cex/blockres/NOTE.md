@@ -181,3 +181,21 @@ What the proof now establishes: every published interval is a valid 1 - delta si
 analysed bias bounded by exact rational arithmetic and added explicitly; the float path refuses rather than computes whenever a positive value could be lost; set inversion
 is conservative. What the runs show: BN_12 complete in 6.7 s with mutual consistency across seeds, schedules and proposal caps; no independent exact BN_12 reference exists
 on record (disclosed in round 3). Not covered: weighted mini-buckets; ratio / conditional queries; a compiled (non-numpy) kernel.
+
+## 8. Round 5 (19 Nov 2026): the scale gap (`integrated.py` v2.1)
+
+Defect (overseer's reproducer: one factor 2^E [[1,3],[3,9]], E = 2^24; exact marginals 1/4, 3/4): `numerical_widening` assumed |log2 M| <= 1 and |e| <= 1000 and the
+implementation enforced neither. The log tables stored log2 M + e, so a scale exponent of 2^24 entered float logarithms whose ulp at that magnitude is 2^-29: the measured
+bias of the implemented X(f - mu) was 24.8x the declared allowance (the cap assertion still passed; no BN_12 publication is shown false).
+Repair. (i) Every power-of-two exponent is now an exact integer and is cancelled before any float logarithm: the proposal's row tables hold log2 M only (within a row all
+states share the same tables, so the row's exponent sum cancels in the normalization exactly); the blocks' log tables hold log2 M only, with E_z = sum_b e_b an exact
+integer; the scalar mini-bucket messages contribute a float part log2 M in [0, 1) and an exact integer E_U. The single combination E_tot = E_z - E_U is exact (refused if
+|E_tot| >= 2^50), and log2 X = (logz_f - logq - logU_f) + E_tot is formed once, with every float operand bounded by tracked range bits. (ii) The widening is derived from the
+ACTUAL magnitudes: |log2 M| <= R (the table's range bits, tracked), the row log-sums <= sum of the row tables' R, |log2 p_a| <= 901 by truncation, |log2 tot| <= log2 n; each
+log2 call contributes u(|value| + 1), each partial sum u times its magnitude bound, exp2 4u relative (libm within 2 ulps assumed), a row sum (n - 1) u; absolute log2 errors
+are accumulated as exact Fractions and converted by 2^d - 1 <= 1.45 d (1 + d) (refused if the total exceeds 1/4). Two budgets are kept apart: rho_cap (tables vs exact
+integers, float rows vs exact row products, scalar messages, implementation) widens the cap so that z_exact / (q_an U_cap) <= 1; rho_X (implemented vs analysed X) enters
+eps_num = 2 rho_X + rho_f + law + trunc. Control R4 (E = 2^18 in the committed suite; 2^24 takes minutes to parse from its decimal UAI encoding, which cost this round 204 s
+of budget in a timed-out control run): implemented X vs the analysed X = z / (q_an U_cap) in 80-digit decimal over all four assignments, worst relative error 1.96e-16 against
+the declared rho_X = 1.90e-12 (ratio 1.0e-4; before the repair the same control failed by 5e11); the run publishes the four marginals and contains the truth; BN_12 eps_num
+moves from 2^-32.0 to 2^-37.9 because the stated magnitudes replace the assumed ones.

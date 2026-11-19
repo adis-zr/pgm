@@ -19,7 +19,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2 (2026-11-19 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.1 (2026-11-19 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
@@ -100,7 +100,7 @@ def recover_query_table_float(block_ft, x, cards, trace_ft, trace_var, step_of, 
 # ---------------------------------------------------------------- mini-bucket proposal in float with a batch sampler
 class MBFloat:
     def __init__(self, blocks, cards, cap, deadline):
-        self.cards = cards; live = [FT(b.scope, b.M, b.e, b.rho) for b in blocks]; steps = []; logU = 0.0; rhoU = F(0); order = []; vars_ = sorted({v for f in live for v in f.scope}); self.max_range_sum = 0
+        self.cards = cards; live = [FT(b.scope, b.M, b.e, b.rho) for b in blocks]; steps = []; logU_f = 0.0; E_U = 0; n_scalar = 0; rhoU = F(0); order = []; vars_ = sorted({v for f in live for v in f.scope}); self.max_range_sum = 0
         while vars_:
             if tnow() >= deadline: raise Deadline('mb_float')
             best = None
@@ -108,7 +108,7 @@ class MBFloat:
                 nb = set().union(*(set(f.scope) for f in live if v in f.scope)) - {v}; size = prod(cards[u] for u in nb) if nb else 1
                 if best is None or size < best[0]: best = (size, v)
             v = best[1]; order.append(v); vars_.remove(v); bucket = [f for f in live if v in f.scope]; live = [f for f in live if v not in f.scope]
-            if not bucket: logU += log2(cards[v]); steps.append((v, None)); continue
+            if not bucket: logU_f += log2(cards[v]); n_scalar += 1; steps.append((v, None)); continue
             bucket.sort(key=lambda f: -len(f.scope)); groups = []
             for f in bucket:
                 for g in groups:
@@ -119,22 +119,43 @@ class MBFloat:
                 self.max_range_sum = max(self.max_range_sum, sum(f.R for f in members)); R = ft_eliminate(members, v, cards, 'sum' if gi == 0 else 'max')
                 if R.scope: live.append(R)
                 else:
-                    if float(R.M) == 0.0: logU = -inf
-                    else: logU += log2(float(R.M)) + R.e
+                    if float(R.M) == 0.0: logU_f = -inf
+                    else: logU_f += log2(float(R.M)); E_U += R.e; n_scalar += 1          # float part in [0, 1) per scalar; the exponent stays an exact integer
                     rhoU = (1 + rhoU) * (1 + R.rho) - 1
             steps.append((v, groups[0][1]))
-        self.steps = steps; self.order = order; self.logU = logU; self.rhoU = rhoU
+        self.steps = steps; self.order = order; self.rhoU = rhoU; self.logU_f = logU_f; self.E_U = E_U; self.logU = (logU_f + E_U) if logU_f > -inf else -inf; self.n_scalar = n_scalar
         self.max_table = max((f.M.size for _, q1 in steps if q1 for f in q1), default=0); self.max_q1 = max((len(q1) for _, q1 in steps if q1), default=0)
         self.prep = []
         for v, q1 in steps:
             if q1 is None: self.prep.append((v, None)); continue
             tabs = []
             for f in q1:
-                with np.errstate(divide='ignore'): LM = np.where(f.M > 0, np.log2(np.maximum(f.M, 1e-300)) + f.e, -inf).reshape(-1)
+                with np.errstate(divide='ignore'): LM = np.where(f.M > 0, np.log2(np.maximum(f.M, 1e-300)), -inf).reshape(-1)       # log2 M only: |LM| <= R_f; the exponent cancels in the row normalization
                 strides = {}; s_ = 1
                 for u in reversed(f.scope): strides[u] = s_; s_ *= cards[u]
                 tabs.append((LM, strides, f.scope))
             self.prep.append((v, tabs))
+        self.step_ranges = [[f.R for f in q1] if q1 else [] for _, q1 in steps]
+
+    def logq_given(self, S, pos):
+        """implemented log2 q(S) for given assignments S (B, n_sep): the SAME float operations as sample_batch, deterministic; also returns the analysed q as exact Fractions"""
+        B = S.shape[0]; logq = np.zeros(B); q_an = [F(1)] * B; cards = self.cards
+        for v, tabs in reversed(self.prep):
+            n = cards[v]; pv = pos[v]
+            if tabs is None: logq -= log2(n); q_an = [q / n for q in q_an]; continue
+            L = np.zeros((B, n))
+            for LM, strides, scope in tabs:
+                base = np.zeros(B, dtype=np.int64)
+                for u in scope:
+                    if u != v: base += S[:, pos[u]] * strides[u]
+                L += LM[base[:, None] + np.arange(n)[None, :] * strides[v]]
+            Lmax = L.max(axis=1); dead = ~np.isfinite(Lmax)
+            p = np.exp2(L - np.where(dead, 0.0, Lmax)[:, None]); p[p < ldexp(1.0, PROB_TRUNC_LOG2)] = 0.0; p[dead] = 1.0 / n
+            tot = p.sum(axis=1); a = S[:, pv]; pa = p[np.arange(B), a]
+            logq += np.log2(np.where(pa > 0, pa, 1.0)) - np.log2(tot); logq[pa == 0] = -inf
+            for i in range(B): q_an[i] = q_an[i] * (F(float(pa[i])) / sum(F(float(x)) for x in p[i].tolist()))
+        return logq, q_an
+
 
     def sample_batch(self, rng, B, pos):
         """B draws: S (B, n_sep) in separator order, log2 q (B,), zero_row (B,) = a row every completion of which has z = 0 (uniform draw, weight 0)"""
@@ -243,20 +264,37 @@ class ZCertificate:
         acc = (self.t + 2) * U * 2; c = self.A / self.Lam; r = (self.log_term + self.V * (1 + acc)) / self.Lam * (1 + acc); return (max(0.0, c - r), min(1.0, c + r))
 
 
-# ---------------------------------------------------------------- numerical widening (NOTE.md section 7): exact Fractions, rounded up once
-def numerical_widening(blocks, mbp, qrhos, n_sep, maxcard):
-    nb = len(blocks); rho_tab = prod((1 + b.rho) for b in blocks) - 1
-    LN2INV = F(145, 100)                                                                      # >= 1 / ln 2: converts an absolute log2 error into a relative error bound (for errors < 1/4)
-    LMERR = F(1002, 1 << 53)                                                                  # abs error of one log-table entry: log2 M (rel u, |log2 M| <= 1) plus the exact integer e added in float (|e| <= 1000)
-    q1 = max(1, mbp.max_q1)
-    d_step = (q1 * LMERR + (q1 + 2) * F(1001, 1 << 53)) * LN2INV + F(maxcard + 3, 1 << 53) + 2 * F(901, 1 << 53) * LN2INV     # one sampled step: row products, exp2, row sum, two logs
-    rho_q = (1 + d_step) ** n_sep - 1
-    rho_logz = (nb * LMERR + F(nb + 1, 1 << 53) * 2001) * LN2INV
-    rho_X = (1 + rho_tab) * (1 + rho_logz) * (1 + rho_q) * (1 + mbp.rhoU) * (1 + F(3 * 2001, 1 << 53) * LN2INV) - 1
+# ---------------------------------------------------------------- numerical widening (NOTE.md section 8): exact Fractions from the ACTUAL tracked magnitudes, rounded up once
+def numerical_widening(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
+    """Every float log2 value in the loop is log2 of a scaled mantissa (|value| <= the table's range bits R) or a sum of such; power-of-two exponents are exact integers
+    combined once as E_tot. Errors are accumulated as ABSOLUTE log2 errors (Fractions) and converted to relative errors by 2^d - 1 <= 1.45 d (1 + d) for d <= 1/4."""
+    u = UF; L2 = F(145, 100)
+    def logerr(mag): return u * (F(mag) + 1)                                                       # |fl(log2 x) - log2 x| <= u |log2 x| + u for a correctly rounded-to-nearest log2 within 1 ulp
+    # (a) tables vs exact integers
+    rho_tab = prod((1 + b.rho) for b in blocks) - 1
+    # (b) the proposal rows: float p_a vs the exact products of the float tables (enters the CAP), and the implemented log2 q vs the analysed law (enters eps_num)
+    d_cap = F(0); d_impl = F(0); mag_logq = F(0)
+    for Rs in mbp.step_ranges:
+        if not Rs: mag_logq += F(int(maxcard).bit_length()); continue
+        SR = sum(Rs); q1 = len(Rs)
+        dL = sum(logerr(R) for R in Rs) + u * (q1 + 1) * (SR + q1)                                  # row log-sum: per-lookup log errors + (q1 + 1) roundings on partial sums of magnitude <= SR + q1
+        rel_p = L2 * dL * (1 + dL) + 4 * u                                                           # exp2 of the row argument (libm exp2 assumed within 2 ulps), relative
+        rel_cond = 2 * rel_p + (maxcard - 1) * u                                                     # p_a / tot vs exact: both carry rel_p, the float sum adds (n-1) u
+        d_cap += rel_cond / F(69, 100)                                                               # relative -> log2 absolute (1 / ln 2 <= 1.45; also log2(1 + r) <= 1.45 r)
+        d_impl += logerr(901) + logerr(int(maxcard).bit_length() + 1) + u * (mag_logq + 910)         # implemented log2 p_a - log2 tot (|log2 p_a| <= 901 by truncation, |log2 tot| <= log2 n) + the running-sum rounding
+        mag_logq += 901 + int(maxcard).bit_length() + 1
+    # (c) z: sum over blocks of log2 M_b (|.| <= R_b), nb - 1 roundings on partial sums
+    SRb = sum(b.R for b in blocks); nb = len(blocks); d_z = sum(logerr(b.R) for b in blocks) + u * nb * (SRb + nb)
+    # (d) U: float part = sum of log2 of scalar mantissas in [1, 2) plus log2 of cardinalities, n_scalar roundings
+    d_U = u * mbp.n_scalar * (mbp.n_scalar + int(maxcard).bit_length() + 2) + logerr(1) * mbp.n_scalar
+    # (e) the final combination (logz - logq - logU_f) + E_tot: three subtractions / additions on magnitudes <= the listed bounds
+    max_mag = max(SRb + nb, mag_logq, mbp.n_scalar + 2, abs(E_tot)) ; d_fin = 4 * u * (SRb + nb + mag_logq + mbp.n_scalar + 2 + abs(E_tot))
+    d_total = d_z + d_impl + d_U + d_fin                                                              # implemented log2 X vs analysed log2 X (absolute, log2 units)
+    rho_X = L2 * d_total * (1 + d_total)                                                              # relative error of the implemented X vs the analysed X
+    rho_cap = (1 + rho_tab) * (1 + L2 * d_cap * (1 + d_cap)) * (1 + mbp.rhoU) * (1 + rho_X) - 1       # z_exact / (q_an U) <= 1 + rho_cap: tables, rows, scalar messages, implementation
     rho_f = max([2 * r for r in qrhos] + [F(0)]) + max([b.rho for b in blocks]) + 4 * UF
-    law = 4 * n_sep * F(maxcard + 2, 1 << 53)
-    trunc = n_sep * F(1, 1 << 900)
-    return dict(rho_X=rho_X, rho_f=rho_f, law=law, trunc=trunc, eps_num=2 * rho_X + rho_f + law + trunc)
+    law = 4 * n_sep * F(maxcard + 2, 1 << 53); trunc = n_sep * F(1, 1 << 900)
+    return dict(rho_X=rho_X, rho_cap=rho_cap, rho_f=rho_f, law=law, trunc=trunc, eps_num=2 * rho_X + rho_f + law + trunc, delta_log_total=d_total, max_log_mag=max_mag)
 
 
 # ---------------------------------------------------------------- the integrated solve
@@ -347,13 +385,17 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         ph['mb_construct'] = tnow() - t0
         out['mechanism'].update(mb_cap=mb_cap, mb_logU=mbp.logU, mb_max_table=mbp.max_table, mb_max_range_sum_bits=mbp.max_range_sum, block_max_range_bits=max(b.R for b in blocks), Kq=Kq, sep_queries=len(sep_q), interior_query_cols=len(qcols))
         if mbp.logU == -inf: return finish_('ZERO_EVIDENCE')
-        wid = numerical_widening(blocks, mbp, qrhos, len(S), max(cards)); eps_num = fup(wid['eps_num']); rho_X = fup(wid['rho_X'])
-        out['mechanism'].update(eps_num=eps_num, eps_num_log2=log2(eps_num), rho_X=rho_X, rho_f=fup(wid['rho_f']), mb_rhoU=fup(mbp.rhoU))
-        logU_cap = up(mbp.logU + up(log2(1.0 + rho_X)) + 2 ** -40); cap_tol = up(log2(1.0 + 2 * rho_X)) + 2 ** -40      # the implemented X may exceed the analysed X <= 1 only by its proved relative error
+        E_z = sum(b.e for b in blocks); E_tot = E_z - mbp.E_U                                     # EXACT integer: every power-of-two scale cancels here, never inside a float log
+        if abs(E_tot) >= 1 << 50: out['refusal'] = 'exponent sum %d too large for an exact float' % E_tot; return finish_('NUMERIC_RANGE_REFUSED')
+        wid = numerical_widening(blocks, mbp, qrhos, len(S), max(cards), E_tot); eps_num = fup(wid['eps_num']); rho_X = fup(wid['rho_X']); rho_cap = fup(wid['rho_cap'])
+        if wid['delta_log_total'] > F(1, 4): out['refusal'] = 'log-domain error budget %s too large' % float(wid['delta_log_total']); return finish_('NUMERIC_RANGE_REFUSED')
+        out['mechanism'].update(eps_num=eps_num, eps_num_log2=log2(eps_num), rho_X=rho_X, rho_cap=rho_cap, rho_f=fup(wid['rho_f']), mb_rhoU=fup(mbp.rhoU), E_tot=E_tot, delta_log_total=float(wid['delta_log_total']), max_log_magnitude=float(wid['max_log_mag']))
+        logU_capf = up(mbp.logU_f + up(log2(1.0 + rho_cap)) + 2 ** -40)                           # float part of the cap (small magnitude); the exponent part is E_tot, exact
+        cap_tol = up(log2(1.0 + 2 * rho_X)) + 2 ** -40                                             # the implemented X may exceed the analysed X <= 1 only by its proved relative error
         alpha = float(delta) / Kq; cert = Certificate(Kq, alpha, eps_num, float(eps), schedule); zcert = ZCertificate(float(delta))
         bLM = []; bstr = []; bscope = []; bMflat = []
         for b in blocks:
-            with np.errstate(divide='ignore'): bLM.append(np.where(b.M > 0, np.log2(np.maximum(b.M, 1e-300)) + b.e, -inf).reshape(-1))
+            with np.errstate(divide='ignore'): bLM.append(np.where(b.M > 0, np.log2(np.maximum(b.M, 1e-300)), -inf).reshape(-1))        # log2 M only
             strides = {}; s_ = 1
             for u in reversed(b.scope): strides[u] = s_; s_ *= cards[u]
             bstr.append(strides); bscope.append(b.scope); bMflat.append(b.M.reshape(-1))
@@ -377,7 +419,7 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             logz = np.zeros(B); gv = []
             for i in range(len(blocks)):
                 idx = flat_index(Sb, i); logz += bLM[i][idx]; gv.append(bMflat[i][idx])
-            zero = ~np.isfinite(logz) | zero_row; logX = np.where(zero, -2000.0, logz - logq - logU_cap); mx = float(logX[~zero].max()) if (~zero).any() else -inf
+            zero = ~np.isfinite(logz) | zero_row; logX = np.where(zero, -2000.0, (logz - logq - logU_capf) + float(E_tot)); mx = float(logX[~zero].max()) if (~zero).any() else -inf
             assert mx <= cap_tol, 'importance weight exceeds the mini-bucket cap beyond its proved error bound (certificate defect): log2 X = %r > %r' % (mx, cap_tol)
             X = np.where(zero, 0.0, np.minimum(1.0, np.exp2(logX))); maxlogX = max(maxlogX, mx)
             if (X > 0).any(): witness = True
@@ -419,7 +461,7 @@ def main():
     out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]
     os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True); json.dump(out, open(a.output, 'w'), indent=1, default=str)
     m = out['mechanism']; print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), phases={k: round(v, 3) for k, v in out['phases_s'].items()},
-                                   mech={k: (round(m[k], 4) if isinstance(m.get(k), float) else m.get(k)) for k in ('blocks', 'separator_vars', 'mb_cap', 'mb_logU', 'mb_max_range_sum_bits', 'eps_num_log2', 'draws', 'ms_per_draw', 'X_mean', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'max_log2_X_observed', 'published', 'remaining', 'max_remaining_width', 'median_remaining_width', 'lam_last_median', 'schedule', 'extrapolated_s_max_width', 'extrapolated_s_median_width', 'Z_EB_relative_width', 'interior_queries_recovered', 'interior_queries_failed')}), default=str))
+                                   mech={k: (round(m[k], 4) if isinstance(m.get(k), float) else m.get(k)) for k in ('blocks', 'separator_vars', 'mb_cap', 'mb_logU', 'mb_max_range_sum_bits', 'eps_num_log2', 'rho_X', 'E_tot', 'delta_log_total', 'draws', 'ms_per_draw', 'X_mean', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'max_log2_X_observed', 'published', 'remaining', 'max_remaining_width', 'median_remaining_width', 'lam_last_median', 'schedule', 'extrapolated_s_max_width', 'extrapolated_s_median_width', 'Z_EB_relative_width', 'interior_queries_recovered', 'interior_queries_failed')}), default=str))
 
 
 if __name__ == '__main__': main()
