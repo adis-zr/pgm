@@ -3,7 +3,7 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 2.961,
+   "wall_s": 2.935,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
@@ -144,7 +144,7 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.27,
+   "wall_s": 0.268,
    "detail": {
     "routes": {
      "zero": 30,
@@ -219,7 +219,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.113,
+   "wall_s": 0.107,
    "detail": {
     "within_budget": {
      "cards": [
@@ -275,7 +275,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.138,
+   "wall_s": 0.134,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -320,7 +320,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.599,
+   "wall_s": 1.593,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -338,7 +338,7 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 2.955,
+   "wall_s": 2.922,
    "detail": {
     "draws": 72,
     "carves": 72,
@@ -356,7 +356,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.092,
+   "wall_s": 0.09,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -379,7 +379,7 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.685,
+   "wall_s": 2.669,
    "detail": {
     "reference_shares": [
      0.586247909310537,
@@ -406,7 +406,7 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 72.419,
+   "wall_s": 71.41,
    "detail": {
     "cells": 411,
     "arms": [
@@ -486,7 +486,7 @@
     },
     "gate": {
      "gated": 382,
-     "wall": 67.832
+     "wall": 66.733
     },
     "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 42, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 9, \"MEMORY\": 0,",
     "missing_group_refused": true,
@@ -500,7 +500,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 367.458,
+   "wall_s": 362.752,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -530,7 +530,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 167.9
+      "wall_s": 165.1
      },
      {
       "delta": "1/16",
@@ -542,7 +542,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 199.5
+      "wall_s": 197.6
      }
     ]
    }
@@ -550,7 +550,7 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.474,
+   "wall_s": 4.523,
    "detail": {
     "routes": {
      "concentration.uai/N1_NO_STRUCTURAL": {
@@ -648,7 +648,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 34.343,
+   "wall_s": 33.279,
    "detail": {
     "mode_override": [
      "INVALID_TASK",
@@ -669,7 +669,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 36.74,
+   "wall_s": 34.237,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -723,10 +723,10 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 14.006,
+   "wall_s": 12.999,
    "detail": {
     "d32_N1_NO_STRUCTURAL": {
-     "wall_s": 0.11,
+     "wall_s": 0.09,
      "work_reference": 7232,
      "work_optional": 10560,
      "compile_interrupted": {
@@ -735,7 +735,7 @@
      }
     },
     "d32_G0_NO_STRUCTURAL": {
-     "wall_s": 0.11,
+     "wall_s": 0.1,
      "work_reference": 7232,
      "work_optional": 7435,
      "compile_interrupted": null
@@ -775,9 +775,9 @@
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 5.541369318962097e-08,
-     "work_reference": 2681000,
-     "work_optional": 2674082,
+     "reference_progress": 7.473863661289215e-08,
+     "work_reference": 3615912,
+     "work_optional": 3619262,
      "phase": "adaptive"
     },
     "parity_at_exits": {
@@ -797,7 +797,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.255,
+   "wall_s": 0.18,
    "detail": {
     "order_sequence": [
      "norm",
@@ -818,7 +818,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.491,
+   "wall_s": 0.41,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -841,7 +841,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 7.251,
+   "wall_s": 6.02,
    "detail": {
     "r1": {
      "support": {
@@ -1084,9 +1084,9 @@
       "route": "exact_reference"
      },
      "deadline_exit": {
-      "work_reference": 53248,
-      "work_optional": 54368,
-      "progress": 0.125
+      "work_reference": 68608,
+      "work_optional": 68704,
+      "progress": 0.21875
      },
      "support_quota": {
       "quota": 131296,
@@ -1158,7 +1158,7 @@
   {
    "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
    "ok": true,
-   "wall_s": 12.343,
+   "wall_s": 10.882,
    "detail": {
     "f01": {
      "honest": {
@@ -1188,7 +1188,7 @@
     "f03": {
      "root5000": {
       "route": "exact_reference",
-      "wall_s": 5.63,
+      "wall_s": 4.77,
       "accepted": true
      },
      "forced_in_root": "exact_reference",
@@ -1248,7 +1248,7 @@
   {
    "name": "C22_precision_zero_mass_witness_service",
    "ok": true,
-   "wall_s": 24.364,
+   "wall_s": 23.201,
    "detail": {
     "f01": {
      "1e-12": {
@@ -1466,7 +1466,7 @@
   {
    "name": "C23_exactly_once_accounting_quota_inheritance_tolerance_domain",
    "ok": true,
-   "wall_s": 31.474,
+   "wall_s": 29.761,
    "detail": {
     "f01": {
      "helpers_x_offsets_x_stops": "8 helpers x 3 offsets x 6 stop settings: ledger == completed operations",
@@ -1560,7 +1560,7 @@
   {
    "name": "C24_zero_risk_controller_cadence_completed_charges",
    "ok": true,
-   "wall_s": 46.425,
+   "wall_s": 44.461,
    "detail": {
     "f01": {
      "singleton_PAC_EPS_0": "deterministic_frontier",
@@ -1653,7 +1653,7 @@
   {
    "name": "C25_ratio_prior_binding_influence_scan_tolerance_semantics",
    "ok": true,
-   "wall_s": 41.022,
+   "wall_s": 38.498,
    "detail": {
     "f01": {
      "ratio": {
@@ -1795,7 +1795,7 @@
   {
    "name": "C26_partition_premise_order_validation_structural_negative",
    "ok": true,
-   "wall_s": 29.1,
+   "wall_s": 27.495,
    "detail": {
     "constructor": {
      "duplicate": "frontier order refused: order repeats variable(s) [0] (not a permutati",
@@ -2052,7 +2052,7 @@
   {
    "name": "C27_final_query_accounting_evaluation_site_audit",
    "ok": true,
-   "wall_s": 3.025,
+   "wall_s": 2.835,
    "detail": {
     "a": {
      "1000": {
@@ -2241,7 +2241,7 @@
   {
    "name": "C28_view_storage_ownership_renumbering_declarations_event_schema",
    "ok": true,
-   "wall_s": 0.962,
+   "wall_s": 0.877,
    "detail": {
     "a": {
      "list_refused": "View storage must be an immutable tuple owned by the view (g",
@@ -2567,11 +2567,11 @@
   {
    "name": "C29_failure_telemetry_survives_graceful_and_hard_kills",
    "ok": true,
-   "wall_s": 3.845,
+   "wall_s": 3.806,
    "detail": {
     "a": {
      "checkpoints": 10,
-     "overhead_s": 0.003479,
+     "overhead_s": 0.003275,
      "phases": [
       "start",
       "parse",
@@ -2586,18 +2586,18 @@
     },
     "b": {
      "phase": "adaptive",
-     "last_enclosure_age_s": 0.008,
-     "ref_progress": 6.008148193359375e-05,
+     "last_enclosure_age_s": 0.094,
+     "ref_progress": 6.29425048828125e-05,
      "checkpoints": 16
     },
     "c": {
      "phase": "adaptive",
-     "elapsed_at_write": 1.305313,
+     "elapsed_at_write": 1.291571,
      "checkpoints": 13,
      "journal_lines": 1,
      "durable": 1,
      "ref_progress": 4.100799560546875e-05,
-     "open_cells": 103
+     "open_cells": 109
     },
     "d": {
      "no_diag_route": "deterministic_concentration"
@@ -2605,13 +2605,13 @@
     "e": {
      "finalized": true
     },
-    "c_kill_gap_s": 0.143
+    "c_kill_gap_s": 0.169
    }
   },
   {
    "name": "C30_cumulative_credit_reference_scheduling",
    "ok": true,
-   "wall_s": 32.089,
+   "wall_s": 30.411,
    "detail": {
     "a": {
      "route": "exact_frontier_closure",
@@ -2686,14 +2686,14 @@
     "c": {
      "no_structural": "exact_reference",
      "structural": "structural_original",
-     "structural_wall_s": 0.06638008262962103
+     "structural_wall_s": 0.06352345878258348
     },
     "d": {
-     "where": "adaptive publication test",
-     "steps": 69,
+     "where": "loop",
+     "steps": 76,
      "max_step": 256,
-     "ref_progress": 0.000263214111328125,
-     "scheduling": 69
+     "ref_progress": 0.0002899169921875,
+     "scheduling": 76
     },
     "e": {
      "mean_served_per_request": 15104.0,
@@ -2704,7 +2704,7 @@
   {
    "name": "C31_structural_adapters_composition_checker_reachability",
    "ok": true,
-   "wall_s": 110.41,
+   "wall_s": 107.811,
    "detail": {
     "a": {
      "rates": {
@@ -2722,7 +2722,7 @@
        "forest"
       ],
       "native_calls": 0,
-      "wall_s": 0.0027,
+      "wall_s": 0.0026,
       "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
      },
      "dag": {
@@ -2740,7 +2740,7 @@
        "support"
       ],
       "native_calls": 3,
-      "wall_s": 0.0062,
+      "wall_s": 0.006,
       "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
      },
      "K6_12": {
@@ -2844,8 +2844,8 @@
     "h": {
      "counters": {
       "attempts": 1,
-      "discovery_s": 0.0008318750187754631,
-      "execution_s": 0.005568874999880791,
+      "discovery_s": 0.0008381656371057034,
+      "execution_s": 0.005534625146538019,
       "native_calls": 3,
       "source_entries_read": 616
      },
@@ -2857,7 +2857,7 @@
   {
    "name": "C32_query_semantics_arm_eligibility_provenance_attribution",
    "ok": true,
-   "wall_s": 30.582,
+   "wall_s": 29.012,
    "detail": {
     "a": {
      "false_table_meta": "INVALID_TASK (both arms)",
@@ -2921,7 +2921,7 @@
       "native_calls": 0,
       "native_kinds": [],
       "kernel_digests_verified": {},
-      "producer_observed_wall_s": 0.002085166983306408,
+      "producer_observed_wall_s": 0.0019650408066809177,
       "verified_by": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
      }
     },
@@ -2951,7 +2951,7 @@
   {
    "name": "C33_compositional_discovery_deadline_propagation_reduction_lift",
    "ok": true,
-   "wall_s": 46.589,
+   "wall_s": 21.024,
    "detail": {
     "a": {
      "component_search_timeout": {
@@ -2997,7 +2997,7 @@
      "n500_allow_0.05": "forest",
      "chain12000": {
       "route": "structural_original",
-      "wall_s": 8.8,
+      "wall_s": 8.42,
       "discovery": [
        [
         "dag",
@@ -3012,13 +3012,13 @@
     },
     "b": {
      "observer": {
-      "elapsed_s": 0.209,
-      "calls": 260,
+      "elapsed_s": 0.2,
+      "calls": 387,
       "post_deadline": 0,
       "where": "adaptive optional turn"
      },
      "fresh_0.5": {
-      "wall_s": 0.54,
+      "wall_s": 0.538,
       "outcome": "DEADLINE",
       "expired_requests": null
      },
@@ -3043,11 +3043,7 @@
       "support_fixpoint",
       "symmetry"
      ],
-     "1qt9_N1_NO_STRUCTURAL": {
-      "wall_s": 20.15,
-      "checkpoints": 64,
-      "max_gap_s": 1.54
-     }
+     "1qt9_N1_NO_STRUCTURAL": "packet input not available on this host (skipped; disclosed)"
     },
     "c": {
      "tiny": {
@@ -3055,87 +3051,79 @@
       "contained": 21,
       "declined_zero_or_fixed": 19
      },
-     "BN_31": {
-      "wall_s": 1.65,
-      "route": "structural_reduced",
-      "reduced_variables": 238,
-      "original_not_admitted_estimate_s": 551166
-     },
-     "reduced_decoder_tampered": "recorded reduction decoder differs from the re-derived one",
-     "reduced_model_digest_tampered": "recorded reduced model differs from the re-derived reduction",
-     "reduced_row_tampered": "structural re-execution: structural re-execution does not reproduce the recorded rows (components)"
+     "BN_31": "packet input not available on this host (skipped; disclosed)"
     }
    }
   },
   {
    "name": "C34_terminal_diagnostics_freshness_and_operation_observability",
    "ok": true,
-   "wall_s": 5.944,
+   "wall_s": 5.764,
    "detail": {
     "a": {
      "route": "deterministic_frontier",
      "draws": 69,
-     "overhead_s": 0.007409,
-     "wall_s": 1.2369202091358602,
+     "overhead_s": 0.006612,
+     "wall_s": 1.173964750021696,
      "section_ages": {
-      "compiler": 1.221749,
-      "frontier": 8e-06,
-      "identity": 1.232806,
-      "memory": 0.009296,
-      "reference": 3.2e-05,
-      "scheduling": 2e-06,
-      "service": 0.003005,
+      "compiler": 1.159327,
+      "frontier": 7e-06,
+      "identity": 1.170114,
+      "memory": 0.007737,
+      "reference": 3.1e-05,
+      "scheduling": 3e-06,
+      "service": 0.002696,
       "streams": 4e-06,
       "work": 1e-06
      }
     },
     "b": {
      "equal": true,
-     "last_enclosure_age_s": 0.027,
-     "overhead_s": 0.007952
+     "last_enclosure_age_s": 0.016,
+     "overhead_s": 0.006712
     },
     "c": {
      "route": "exact_reference",
      "frontier_section": "no frontier yet"
     },
     "d": {
-     "checkpoints": 109,
+     "checkpoints": 103,
      "draws": 58,
      "stream_age_at_final_s": 5e-06
     },
     "e": {
-     "gap_s": 0.16,
+     "gap_s": 0.176,
      "in_flight": {
       "op": "deterministic_bounds",
-      "entered_elapsed_s": 1.282242
+      "entered_elapsed_s": 1.244837
      },
      "last_completed": {
       "op": "deterministic_bounds",
-      "wall_s": 0.05377
+      "wall_s": 0.051412
      },
      "section_ages": {
-      "compiler": 1.275336,
-      "frontier": 0.026713,
-      "identity": 1.293455,
+      "compiler": 1.261769,
+      "frontier": 0.048647,
+      "identity": 1.279206,
       "memory": 1e-06,
-      "reference": 1.4e-05,
-      "scheduling": 8e-06,
+      "reference": 0.022453,
+      "scheduling": 0.022451,
       "service": 0.0,
-      "streams": 0.204133,
+      "streams": 0.163278,
       "work": 1e-06
      }
     },
     "f": {
-     "a": 0.006,
-     "b": 0.0055,
-     "c": 0.0078
+     "a": 0.0056,
+     "b": 0.0046,
+     "c": 0.0069
     }
    }
   },
   {
    "name": "C35_query_presentation_equivalence_structural_routes",
    "ok": true,
-   "wall_s": 7.324,
+   "wall_s": 6.762,
    "detail": {
     "a": {
      "joint_one": "round trip accepted, same identity",
@@ -3365,25 +3353,79 @@
      "equivalent_parity_label": "binding / identity refusal only (bytes differ); no semantic refusal: worker binding differs from the files on disk"
     }
    }
+  },
+  {
+   "name": "C36_zero_evidence_proofs_beyond_the_enumeration_cap",
+   "ok": true,
+   "wall_s": 1.174,
+   "detail": {
+    "a": {
+     "n3_zero_G0_CQR": {
+      "kind": "reference_enumeration",
+      "transfer": "independent enumeration (Z = 0)"
+     },
+     "n3_zero_G0_NO_STRUCTURAL": {
+      "kind": "reference_enumeration",
+      "transfer": "independent enumeration (Z = 0)"
+     },
+     "n3_positive_G0_CQR": "structural_original",
+     "n3_positive_G0_NO_STRUCTURAL": "exact_reference",
+     "n24_zero_G0_CQR": {
+      "kind": "frontier_closed_zero_mass",
+      "transfer": "evidence restriction only: Z_original(evidence) = Z_compiled"
+     },
+     "n24_zero_G0_NO_STRUCTURAL": {
+      "kind": "frontier_closed_zero_mass",
+      "transfer": "evidence restriction only: Z_original(evidence) = Z_compiled"
+     },
+     "n24_positive_G0_CQR": "structural_original",
+     "n24_positive_G0_NO_STRUCTURAL": "deterministic_frontier"
+    },
+    "b": {
+     "kind": "frontier_closed_zero_mass",
+     "splits": 1,
+     "transfer": "evidence restriction only: Z_original(evidence) = Z_compiled"
+    },
+    "c": {
+     "omitted_split_event": "replayed frontier totals differ from the recorded frontier",
+     "invented_surviving_child": "split children differ at cell 0",
+     "altered_final_sha256": "zero proof: compiled model does not replay from the journal (final_sha256 8fdcd455286b vs 000000000000)",
+     "resolved_mass_claimed_nonzero": "zero proof record does not state resolved mass 0 with no open cell",
+     "open_cells_claimed_nonzero": "zero proof record does not state resolved mass 0 with no open cell",
+     "stream_draw_inserted": "zero proof certificate carries stream draws (a closed zero frontier has none)",
+     "relabelled_as_compiler_proof": "compiler zero proof does not re-derive (compile succeeded)",
+     "altered_evidence_file": "worker binding differs from the files on disk",
+     "altered_model_file": "worker binding differs from the files on disk",
+     "transplanted_onto_positive_model": "zero proof: compiled model does not replay from the journal (final_sha256 875bf1f240ef vs "
+    },
+    "d": "UNVERIFIABLE: allowance expired during the frontier replay",
+    "e": {
+     "n1_kind": "compiler",
+     "archived_A1": "archive not present on this host (skipped; not a failure of the candidate)"
+    },
+    "f": {
+     "gate_passed": true
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 279,
+  "fresh_workers": 288,
   "solver_calls": 397,
   "compiler_calls": 174,
-  "checker_calls": 373,
+  "checker_calls": 390,
   "oracle_models": 184,
-  "truth_coordinates": 3172,
+  "truth_coordinates": 3176,
   "stream_draws": 977,
-  "assertions": 108088
+  "assertions": 108110
  },
- "suite_version": "cqr-qualification-v13 (2026-11-18, after the independent review of the structured repairs: group C35 (query presentation equivalence through the original and reduced structural routes: round trips, denotation-validated labels, aliases with full-gate acceptance, negatives refused before publication; CQR-S2-01) and the C32 (b) full-gate relabel fixture made coherent per disabled arm with same-arm positive controls (CQR-S2-O1); v12 2026-11-17, after the independent review of the structured-execution revision (CQR-S1-01..07): groups C32 (authoritative query semantics incl. the false-answer witness, index domains, arm eligibility incl. the coherent relabel through the full gate, provenance / attribution incl. the forged record and native digest / path / count / partition / wall mutations through the full gate), C33 (compositional discovery incl. the 12,000-chain fresh worker, deadline propagation incl. the 1,024-query observer / fresh workers / long-helper hooks / 1qt9 gaps, reduction + lift incl. BN_31 and tampered decoder / digest / row) and C34 (terminal diagnostics freshness vs the certificate on publication / deadline / cancellation, per-section ages, aligned SIGKILL freshness, overhead) added; C29 vacuous assertions removed; C31 covers an oracle-checked native stream fixture and an honest nonzero-bias compiled publication; v11, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
- "suite_sha256": "cbf3afafe5505dfd2abbcd6a0b238a6f03ae5057cea6c3c5ce61df0bf8004e1d",
+ "suite_version": "cqr-qualification-v14 (2026-11-18, A1 review CQR-A1-01: group C36 (frontier zero proofs at / beyond the enumeration cap: replay + transfer, multi-cell, mutations, bounded refusal, archived A1 cells, gate fixture); v13 2026-11-18, after the independent review of the structured repairs: group C35 (query presentation equivalence through the original and reduced structural routes: round trips, denotation-validated labels, aliases with full-gate acceptance, negatives refused before publication; CQR-S2-01) and the C32 (b) full-gate relabel fixture made coherent per disabled arm with same-arm positive controls (CQR-S2-O1); v12 2026-11-17, after the independent review of the structured-execution revision (CQR-S1-01..07): groups C32 (authoritative query semantics incl. the false-answer witness, index domains, arm eligibility incl. the coherent relabel through the full gate, provenance / attribution incl. the forged record and native digest / path / count / partition / wall mutations through the full gate), C33 (compositional discovery incl. the 12,000-chain fresh worker, deadline propagation incl. the 1,024-query observer / fresh workers / long-helper hooks / 1qt9 gaps, reduction + lift incl. BN_31 and tampered decoder / digest / row) and C34 (terminal diagnostics freshness vs the certificate on publication / deadline / cancellation, per-section ages, aligned SIGKILL freshness, overhead) added; C29 vacuous assertions removed; C31 covers an oracle-checked native stream fixture and an honest nonzero-bias compiled publication; v11, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
+ "suite_sha256": "73471ddb787f463f7b4d11e51bd0b6db8002da9cd5ba50c02d4c199079c87e87",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "2ed619e6e2d3c27c114a6f98ce43a95a93a7178119221eca790e20c6d6d8de4a",
-  "cqr/checker.py": "3514a98ca572b5e436dd355b413851eea251188570b0efe35ae3d2beac74fc09",
+  "cqr/checker.py": "8a107c76f0f2dd21a0bca5137ec5594c680a7b35f328ea22417814b65258b862",
   "cqr/closeout.py": "f8c1a3ba2f47d83fb5ba3e9ff366b50e14a74bf3a39deecf55e4b0c9fd55d331",
   "cqr/compiler.py": "97590e971d4099f12650b7f678367ebd5b80a732e3fe363ff574a8acc1be3480",
   "cqr/diag.py": "0e89d664f936f4eb8ec53b7190b8e41f5fd7ebf6d7477ac50113ad44ce172d38",
@@ -3395,7 +3437,7 @@
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "4cc5fdbfab68c243eec40bc728286cd0bf948bb8bb291a70b1a007e896313672",
   "cqr/references.py": "085d8fd49d78bc3dee009e8d581fdd11f0e4ea0b813e2ce10025234b0d68679c",
-  "cqr/registry.py": "5398dae41546af25e5b8e4d0499c32a90e2ecbbd23f545978a387c9de1205e81",
+  "cqr/registry.py": "f687e0a54832d61d2ed833b798809ac3febb5573910a9682e5114761c95bc4f3",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
@@ -3415,16 +3457,16 @@
   "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
   "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v19",
- "passed": 35,
- "total": 35,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v21",
+ "passed": 36,
+ "total": 36,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
   "cqr/campaign.py": "2ed619e6e2d3c27c114a6f98ce43a95a93a7178119221eca790e20c6d6d8de4a",
-  "cqr/checker.py": "3514a98ca572b5e436dd355b413851eea251188570b0efe35ae3d2beac74fc09",
+  "cqr/checker.py": "8a107c76f0f2dd21a0bca5137ec5594c680a7b35f328ea22417814b65258b862",
   "cqr/closeout.py": "f8c1a3ba2f47d83fb5ba3e9ff366b50e14a74bf3a39deecf55e4b0c9fd55d331",
   "cqr/compiler.py": "97590e971d4099f12650b7f678367ebd5b80a732e3fe363ff574a8acc1be3480",
   "cqr/diag.py": "0e89d664f936f4eb8ec53b7190b8e41f5fd7ebf6d7477ac50113ad44ce172d38",
@@ -3436,7 +3478,7 @@
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
   "cqr/reference.py": "4cc5fdbfab68c243eec40bc728286cd0bf948bb8bb291a70b1a007e896313672",
   "cqr/references.py": "085d8fd49d78bc3dee009e8d581fdd11f0e4ea0b813e2ce10025234b0d68679c",
-  "cqr/registry.py": "5398dae41546af25e5b8e4d0499c32a90e2ecbbd23f545978a387c9de1205e81",
+  "cqr/registry.py": "f687e0a54832d61d2ed833b798809ac3febb5573910a9682e5114761c95bc4f3",
   "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
@@ -3456,8 +3498,8 @@
   "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
   "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90"
  },
- "utc": "2026-11-18T16:37:27Z",
- "wall_s": 973.9,
+ "utc": "2026-11-19T00:18:03Z",
+ "wall_s": 920.5,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",
