@@ -1,19 +1,17 @@
-"""INTEGRATED block-contraction inference (round 3, 19 Nov 2026; overseer decision of the same date). One method, not four fixes:
-  * exact integer block contraction (reused from blockres.py) -> SCALED BINARY64 tables with rigorous relative-error accounting (Lemma F in NOTE.md section 6);
-  * mini-bucket proposal built from the SAME float tables (max mini-buckets = cap, sum mini-bucket = sampling law), sampled in the log domain; z(x) / q(x) <= U_cap;
-  * ONE shared stream: every draw updates every query; the certificate is the DIRECT identity test  E_q[ X (f_j - m) ] = (Z / U_cap)(mu_j - m)  with X = W / U_cap in [0, 1],
-    through a time-uniform predictable-plug-in EMPIRICAL-BERNSTEIN confidence sequence (Waudby-Smith & Ramdas 2020, Thm 2) per query at risk delta / K; the confidence set
-    for mu_j is {m in [0, 1] : 0 in CS_t(m)}, solved from the quadratic in m; no separate normalizer lower bound; the positive-mass witness is preserved (X > 0 observed
-    => z > 0 exactly, because every float carries a relative-error bound < 1);
-  * interior queries recovered by replaying each block's elimination in the float representation (larger byte cap than the exact-integer path allowed);
-  * stopping bounds evaluated in batches (vectorized over queries);
-  * a proposal-cap ladder judged by construction time + measured time to certification.
-Numerical bias of the float path (weights, responses, the realized sampling law vs the analysed law, truncation of probabilities below 2^-900) is bounded and added to
-the certificate as an explicit widening eps_num (recorded). Every published interval contains mu_j with probability >= 1 - delta simultaneously over all queries.
-"""
+"""INTEGRATED block-contraction inference, v2 (round 4, 19 Nov 2026). Repairs after the overseer's reproduction of two numerical defects in v1:
+  (1) relative-error bounds are EXACT RATIONALS (Fraction), never float expressions that absorb u = 2^-53 into 1.0; they become floats only by rounding UP at the point of use;
+  (2) every product of float tables is PRE-CHECKED: the sum of the operands' dynamic ranges (bits from the maximum down to the smallest nonzero entry) must stay within
+      1000 bits, so no positive product can underflow; a violation REFUSES the float path (typed NUMERIC_RANGE_REFUSED) before any information is lost. A float zero is
+      therefore always an exact zero (ZERO_EVIDENCE from U = 0 stays exact);
+  (3) the confidence-set inversion is conservative: accumulators are widened by their exact accumulation bound as a function of the ACTUAL draw count t (no fixed horizon),
+      the quadratic feasibility is evaluated with outward-rounded float arithmetic, and the excluded root intervals are shrunk by bisection on the upper-bounded function;
+  (4) the complete streaming loop (proposal draws, weights, query responses, certificate updates) is BATCH-VECTORIZED with the certificate's predictable quantities fixed per
+      batch (any predictable choice is valid), and two predictable lambda schedules are selectable: 'baseline' (1 / sqrt(t log t)) and 'targeted'
+      (lambda = 2 E[X] eps / (v + 2 E[X] eps), the overseer's accuracy-targeted heuristic; validity from predictability alone).
+Mathematics as in NOTE.md sections 5-6; the widening terms are now derived from the tracked exact bounds (section 7)."""
 import sys, os, json, time, argparse, random, resource, math
 from fractions import Fraction as F
-from math import prod, inf, log2, frexp, ldexp
+from math import prod, inf, log2, frexp, ldexp, nextafter
 sys.set_int_max_str_digits(0)
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -21,67 +19,71 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v1 (2026-11-19 round 3)'
-U = 2.0 ** -53                       # unit roundoff of binary64
-RANGE_BITS = 900                     # a nonzero float entry below 2^-RANGE_BITS of its table maximum => the float path is REFUSED (no subnormals, no silent zeros)
-MIN_BITS = 64                        # exact int -> float conversion keeps at least this many significant bits of every nonzero entry, else REFUSED
-PROB_TRUNC_LOG2 = -900               # conditional probabilities below 2^PROB_TRUNC_LOG2 (relative to the row maximum) are set to 0: missed mass <= U * n_vars * 2^-900
+VERSION = 'blockres-integrated-v2 (2026-11-19 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+UF = F(1, 1 << 53); U = 2.0 ** -53
+RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
+RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
+MIN_BITS = 64
+PROB_TRUNC_LOG2 = -900
 FLOAT_BYTE_CAP = 256 << 20
-EPS_NUM_LOG2 = -30                   # explicit widening of every certificate for ALL float effects (derived in NOTE.md section 6; the actual bound is recorded per run)
 
 
 class RangeRefused(Exception): pass
 
 
-# ---------------------------------------------------------------- scaled binary64 tables with relative-error bounds
+def up(x): return nextafter(x, inf)
+def dn(x): return nextafter(x, -inf)
+def fup(fr): return up(float(fr))
+
+
+# ---------------------------------------------------------------- scaled binary64 tables: entry in [M (1 - rho), M (1 + rho)] 2^e; rho EXACT; R = dynamic range in bits
 class FT:
-    """arr ~ M * 2^e with max(M) in [1, 2) (or all zero); every entry: exact in [M (1 - rho), M (1 + rho)] * 2^e; rho is an upper bound (rounded up)"""
-    __slots__ = ('scope', 'M', 'e', 'rho', 'interior', 'facs')
-    def __init__(self, scope, M, e, rho, interior=(), facs=frozenset()): self.scope = tuple(scope); self.M = M; self.e = e; self.rho = rho; self.interior = list(interior); self.facs = facs
+    __slots__ = ('scope', 'M', 'e', 'rho', 'R', 'interior', 'facs')
+    def __init__(self, scope, M, e, rho, interior=(), facs=frozenset()):
+        self.scope = tuple(scope); self.M = M; self.e = e; self.rho = F(rho); self.interior = list(interior); self.facs = facs
+        nz = M[M > 0]; self.R = (int(math.ceil(-log2(float(nz.min())))) + 1) if nz.size else 0
 
 
-def _rescale(P, e, rho):
-    """divide by the power of two below the max (exact), check the dynamic range, return FT pieces"""
+def _rescale(P, e):
     m = float(P.max()) if P.size else 0.0
-    if m == 0.0: return P, 0, rho
-    k = frexp(m)[1] - 1; P = P * ldexp(1.0, -k)                      # exact scaling
+    if m == 0.0: return P, 0
+    k = frexp(m)[1] - 1; P = P * ldexp(1.0, -k)
     nz = P[P > 0]
-    if nz.size and float(nz.min()) < ldexp(1.0, -RANGE_BITS): raise RangeRefused('dynamic range of a float table exceeds 2^%d' % RANGE_BITS)
-    return P, e + k, rho
+    if nz.size and float(nz.min()) < ldexp(1.0, -RANGE_BITS): raise RangeRefused('table dynamic range exceeds 2^%d' % RANGE_BITS)
+    return P, e + k
 
 
 def ft_from_int(fn, cards):
-    """exact integer table -> FT; refuses if any nonzero entry would keep < MIN_BITS significant bits"""
-    flat = np.asarray(fn.arr, dtype=object).reshape(-1).tolist(); nmax = max((int(v) for v in flat), default=0)
-    if nmax == 0: return FT(fn.scope, np.zeros(np.asarray(fn.arr).shape, dtype=float), 0, 0.0, fn.interior, fn.facs)
-    k = max(0, nmax.bit_length() - 1000)                                                              # shift so that every shifted entry is < 2^1000 (float(int) then rounds correctly)
+    flat = np.asarray(fn.arr, dtype=object).reshape(-1).tolist(); nmax = max((int(v) for v in flat), default=0); shape = np.asarray(fn.arr).shape
+    if nmax == 0: return FT(fn.scope, np.zeros(shape, dtype=float), 0, F(0), fn.interior, fn.facs)
+    k = max(0, nmax.bit_length() - 1000)
     if k:
-        for n in flat:                                                                                 # a dropped tail must be < 2^-MIN_BITS of the entry: n >> k keeps >= MIN_BITS bits
-            if n and n.bit_length() - k < MIN_BITS: raise RangeRefused('exact entry with %d significant bits after the shift (< %d)' % (n.bit_length() - k, MIN_BITS))
-    M = np.array([float(n >> k) for n in flat], dtype=float).reshape(np.asarray(fn.arr).shape)
-    rho = U + (2.0 ** (-(MIN_BITS - 1)) if k else 0.0)                                                # truncation of the dropped bits (if any) + one rounding (rounded up)
-    M, e, rho = _rescale(M, k, rho); return FT(fn.scope, M, e, rho, fn.interior, fn.facs)
+        for n in flat:
+            if n and n.bit_length() - k < MIN_BITS: raise RangeRefused('an exact entry would keep %d < %d significant bits' % (n.bit_length() - k, MIN_BITS))
+    M = np.array([float(n >> k) for n in flat], dtype=float).reshape(shape)
+    rho = UF + (F(1, 1 << (MIN_BITS - 1)) if k else F(0))
+    M, e = _rescale(M, k); return FT(fn.scope, M, e, rho, fn.interior, fn.facs)
 
 
 def ft_product(fts, cards):
-    union = tuple(sorted(set().union(*(set(f.scope) for f in fts)))); P = None; e = 0; r = 1.0
+    rb = sum(f.R for f in fts)
+    if rb > RANGE_BUDGET: raise RangeRefused('a product of %d tables could underflow (range bits %d > %d)' % (len(fts), rb, RANGE_BUDGET))
+    union = tuple(sorted(set().union(*(set(f.scope) for f in fts)))); P = None; e = 0; r = F(1)
     for f in fts:
-        a = f.M.reshape([cards[v] if v in f.scope else 1 for v in union]); P = a if P is None else P * a; e += f.e; r *= (1.0 + f.rho)
-    r *= (1.0 + U) ** max(0, len(fts) - 1); return union, P, e, r - 1.0
+        a = f.M.reshape([cards[v] if v in f.scope else 1 for v in union]); P = a if P is None else P * a; e += f.e; r *= (1 + f.rho)
+    r *= (1 + UF) ** max(0, len(fts) - 1); return union, P, e, r - 1
 
 
 def ft_eliminate(bucket, v, cards, agg='sum'):
     union, P, e, rho = ft_product(bucket, cards); ax = union.index(v); n = cards[v]
-    if agg == 'sum': R = P.sum(axis=ax); rho = (1.0 + rho) * (1.0 + U) ** max(0, n - 1) - 1.0        # any summation order of nonnegative terms
+    if agg == 'sum': R = P.sum(axis=ax); rho = (1 + rho) * (1 + UF) ** max(0, n - 1) - 1
     elif agg == 'max': R = P.max(axis=ax)
     else: R = P.min(axis=ax)
     scope = tuple(u for u in union if u != v); R = np.asarray(R, dtype=float).reshape([cards[u] for u in scope]) if scope else np.asarray(R, dtype=float).reshape(())
-    R, e, rho = _rescale(R, e, rho * (1.0 + 2 ** -40) + 2 ** -60)                                    # rho itself rounded up
-    return FT(scope, R, e, rho, [u for f in bucket for u in f.interior] + [v], frozenset().union(*(f.facs for f in bucket)))
+    R, e = _rescale(R, e); return FT(scope, R, e, rho, [u for f in bucket for u in f.interior] + [v], frozenset().union(*(f.facs for f in bucket)))
 
 
 def recover_query_table_float(block_ft, x, cards, trace_ft, trace_var, step_of, deadline, stats):
-    """g_bx over block.scope + (x,) in float: replay the block's elimination from the cached prefix at x's step with x retained; None if a table exceeds FLOAT_BYTE_CAP"""
     i = step_of[x]; live = [f for f in trace_ft[i] if f.facs <= block_ft.facs]
     for st in sorted(step_of[u] for u in block_ft.interior if step_of[u] > i):
         if tnow() >= deadline: raise Deadline('recover_float')
@@ -92,14 +94,13 @@ def recover_query_table_float(block_ft, x, cards, trace_ft, trace_var, step_of, 
         live.append(ft_eliminate(bucket, v, cards)); stats['query_work'] += sz * cards[v] * len(bucket)
     union, P, e, rho = ft_product(live, cards)
     assert set(union) == set(block_ft.scope) | {x}, (union, block_ft.scope, x)
-    P = np.moveaxis(P, union.index(x), -1); P, e, rho = _rescale(np.ascontiguousarray(P), e, rho); return FT(tuple(u for u in union if u != x) + (x,), P, e, rho)
+    P = np.moveaxis(P, union.index(x), -1); P, e = _rescale(np.ascontiguousarray(P), e); return FT(tuple(u for u in union if u != x) + (x,), P, e, rho)
 
 
-# ---------------------------------------------------------------- mini-bucket proposal in float (same partition rule as blockres.MBProposal; max mini-buckets = cap)
+# ---------------------------------------------------------------- mini-bucket proposal in float with a batch sampler
 class MBFloat:
     def __init__(self, blocks, cards, cap, deadline):
-        self.cards = cards; live = [FT(b.scope, b.M, b.e, b.rho) for b in blocks]; steps = []; logU = 0.0; rhoU = 0.0; order = []
-        vars_ = sorted({v for f in live for v in f.scope})
+        self.cards = cards; live = [FT(b.scope, b.M, b.e, b.rho) for b in blocks]; steps = []; logU = 0.0; rhoU = F(0); order = []; vars_ = sorted({v for f in live for v in f.scope}); self.max_range_sum = 0
         while vars_:
             if tnow() >= deadline: raise Deadline('mb_float')
             best = None
@@ -115,7 +116,7 @@ class MBFloat:
                     if prod(cards[x] for x in u) <= cap: g[0] = u; g[1].append(f); break
                 else: groups.append([set(f.scope), [f]])
             for gi, (u, members) in enumerate(groups):
-                R = ft_eliminate(members, v, cards, 'sum' if gi == 0 else 'max')
+                self.max_range_sum = max(self.max_range_sum, sum(f.R for f in members)); R = ft_eliminate(members, v, cards, 'sum' if gi == 0 else 'max')
                 if R.scope: live.append(R)
                 else:
                     if float(R.M) == 0.0: logU = -inf
@@ -123,103 +124,145 @@ class MBFloat:
                     rhoU = (1 + rhoU) * (1 + R.rho) - 1
             steps.append((v, groups[0][1]))
         self.steps = steps; self.order = order; self.logU = logU; self.rhoU = rhoU
-        self.logU_cap = (logU + log2(1.0 + rhoU) + 2 ** -40) if logU > -inf else -inf            # U_cap >= U_exact: an upper bound on every weight
-        self.max_table = max((f.M.size for _, q1 in steps if q1 for f in q1), default=0)
+        self.max_table = max((f.M.size for _, q1 in steps if q1 for f in q1), default=0); self.max_q1 = max((len(q1) for _, q1 in steps if q1), default=0)
+        self.prep = []
+        for v, q1 in steps:
+            if q1 is None: self.prep.append((v, None)); continue
+            tabs = []
+            for f in q1:
+                with np.errstate(divide='ignore'): LM = np.where(f.M > 0, np.log2(np.maximum(f.M, 1e-300)) + f.e, -inf).reshape(-1)
+                strides = {}; s_ = 1
+                for u in reversed(f.scope): strides[u] = s_; s_ *= cards[u]
+                tabs.append((LM, strides, f.scope))
+            self.prep.append((v, tabs))
 
-    def sample(self, rng, pos):
-        """returns (s tuple in separator order, log2 q(s)); log-domain conditionals; probabilities below 2^PROB_TRUNC_LOG2 of the row max are truncated to 0"""
-        x = {}; logq = 0.0; cards = self.cards; trunc = False
-        for v, q1 in reversed(self.steps):
-            n = cards[v]
-            if q1 is None: x[v] = rng.randrange(n); logq -= log2(n); continue
-            L = np.zeros(n)
-            for a in range(n):
-                x[v] = a; la = 0.0
-                for f in q1:
-                    m = float(f.M[tuple(x[u] for u in f.scope)])
-                    if m == 0.0: la = -inf; break
-                    la += log2(m) + f.e
-                L[a] = la
-            Lmax = L.max()
-            if Lmax == -inf: x[v] = rng.randrange(n); logq -= log2(n); continue             # every completion of this row has z = 0: the weight will be 0
-            p = np.exp2(L - Lmax); small = p < ldexp(1.0, PROB_TRUNC_LOG2);
-            if small.any(): p[small] = 0.0; trunc = True
-            tot = float(p.sum()); c = np.cumsum(p); r = rng.random() * tot; a = int(np.searchsorted(c, r, side='right')); a = min(a, n - 1)
-            while p[a] == 0.0: a -= 1
-            x[v] = a; logq += log2(float(p[a])) - log2(tot)
-        return tuple(x[v] for v in pos), logq, trunc
+    def sample_batch(self, rng, B, pos):
+        """B draws: S (B, n_sep) in separator order, log2 q (B,), zero_row (B,) = a row every completion of which has z = 0 (uniform draw, weight 0)"""
+        n_sep = len(pos); S = np.zeros((B, n_sep), dtype=np.int64); logq = np.zeros(B); zero_row = np.zeros(B, dtype=bool); cards = self.cards
+        for v, tabs in reversed(self.prep):
+            n = cards[v]; pv = pos[v]
+            if tabs is None: S[:, pv] = rng.integers(0, n, size=B); logq -= log2(n); continue
+            L = np.zeros((B, n))
+            for LM, strides, scope in tabs:
+                base = np.zeros(B, dtype=np.int64)
+                for u in scope:
+                    if u != v: base += S[:, pos[u]] * strides[u]
+                L += LM[base[:, None] + np.arange(n)[None, :] * strides[v]]
+            Lmax = L.max(axis=1); dead = ~np.isfinite(Lmax)
+            p = np.exp2(L - np.where(dead, 0.0, Lmax)[:, None]); p[p < ldexp(1.0, PROB_TRUNC_LOG2)] = 0.0; p[dead] = 1.0 / n
+            tot = p.sum(axis=1); c = np.cumsum(p, axis=1); r = rng.random(B) * tot; a = np.minimum((c <= r[:, None]).sum(axis=1), n - 1)
+            pa = p[np.arange(B), a]; bad = pa == 0.0
+            if bad.any(): a[bad] = p[bad].argmax(axis=1); pa = p[np.arange(B), a]
+            S[:, pv] = a; logq += np.log2(pa) - np.log2(tot); zero_row |= dead
+        return S, logq, zero_row
 
 
-# ---------------------------------------------------------------- the direct empirical-Bernstein marginal certificate (one stream, all queries)
+# ---------------------------------------------------------------- the certificate: batch updates, conservative inversion
 class Certificate:
-    """per query j: time-uniform PrPl-EB confidence sequence (Waudby-Smith & Ramdas 2020, Theorem 2) for the mean of Y_t(m) = X_t (f_jt - m) in [-1, 1]:
-         0 in CS_t(m)  <=>  |A_j - m B_j| <= 2 log(2/alpha) + 2 sum_i psi_E(lambda_i) (a_i - m b_i)^2 + Lambda_j eps_num
-       with A = sum lambda X f, B = sum lambda X, a_i = X_i f_i - SA_{i-1}/i, b_i = X_i - SB_{i-1}/i (plug-in running means), psi_E(l) = (-ln(1-l) - l)/4,
-       lambda_i predictable in [0, 1/2] from the running variance at the running estimate. The confidence set for mu_j is the convex hull of {m in [0,1]: inequality}."""
-    def __init__(self, K, alpha, eps_num):
-        self.K = K; self.alpha = alpha; self.log_term = 2.0 * math.log(2.0 / alpha); self.eps_num = eps_num; self.t = 0
-        z = lambda: np.zeros(K); self.SA = z(); self.SB = 0.0; self.SXX = 0.0; self.SXXf = z(); self.SXXff = z(); self.A = z(); self.B = z(); self.Lam = z(); self.P = z(); self.Q = z(); self.R = z()
-        self.lam_max = 0.9                     # any predictable lambda in [0,1) is valid; psi_E diverges at 1
-    def lam(self):
-        """predictable lambda_t per query from the running variance of Y at the running estimate m_hat (any predictable lambda in [0,1) is valid)"""
-        t = self.t
-        if t < 2: return np.full(self.K, 0.25)
-        mhat = np.where(self.SB > 0, np.clip(self.SA / max(self.SB, 1e-300), 0.0, 1.0), 0.5)
+    def __init__(self, K, alpha, eps_num, eps, schedule):
+        self.K = K; self.alpha = alpha; self.log_term = 2.0 * math.log(2.0 / alpha); self.eps_num = eps_num; self.eps = eps; self.schedule = schedule; self.t = 0; self.lam_max = 0.9
+        z = lambda: np.zeros(K); self.SA = z(); self.SB = 0.0; self.SXX = 0.0; self.SXXf = z(); self.SXXff = z(); self.A = z(); self.B = z(); self.Lam = z(); self.Psi = z(); self.P = z(); self.Q = z(); self.Qabs = z(); self.R = z()
+    def variance(self):
+        t = max(1, self.t); mhat = np.where(self.SB > 0, np.clip(self.SA / max(self.SB, 1e-300), 0.0, 1.0), 0.5)
         mean = (self.SA - mhat * self.SB) / t; var = (self.SXXff - 2 * mhat * self.SXXf + mhat * mhat * self.SXX) / t - mean * mean
-        var = np.maximum(var, 1e-12)
-        return np.minimum(self.lam_max, np.sqrt(self.log_term / (var * t * math.log(t + 1.0))))
-    def update(self, X, f):
-        """X scalar in [0,1], f vector in [0,1]"""
-        t1 = self.t + 1; lam = self.lam(); psi = (-np.log1p(-lam) - lam) / 4.0
-        a = X * f - self.SA / t1; b = X - self.SB / t1
-        self.A += lam * X * f; self.B += lam * X; self.Lam += lam; self.P += psi * a * a; self.Q += psi * a * b; self.R += psi * b * b
-        self.SA += X * f; self.SB += X; self.SXX += X * X; self.SXXf += X * X * f; self.SXXff += X * X * f * f; self.t = t1
+        return np.maximum(var, 1e-14), mhat
+    def lam(self):
+        if self.t < 2: return np.full(self.K, 0.25)
+        var, _ = self.variance()
+        if self.schedule == 'targeted':
+            EX = max(self.SB / self.t, 1e-300); g = 2 * EX * self.eps; return np.clip(g / (var + g), 1e-4, self.lam_max)
+        return np.clip(np.sqrt(self.log_term / (var * self.t * math.log(self.t + 1.0))), 1e-4, self.lam_max)
+    def update_batch(self, X, f):
+        B = X.shape[0]; lam = self.lam(); psi = (-np.log1p(-lam) - lam) / 4.0; t1 = self.t + 1
+        Xf = X[:, None] * f; a = Xf - (self.SA / t1)[None, :]; b = (X - self.SB / t1)[:, None]
+        self.A += lam * Xf.sum(axis=0); self.B += lam * X.sum(); self.Lam += B * lam; self.Psi += B * psi
+        self.P += psi * (a * a).sum(axis=0); ab = a * b; self.Q += psi * ab.sum(axis=0); self.Qabs += psi * np.abs(ab).sum(axis=0); self.R += psi * (b * b).sum(axis=0)
+        self.SA += Xf.sum(axis=0); self.SB += X.sum(); self.SXX += (X * X).sum(); self.SXXf += (X[:, None] * Xf).sum(axis=0); self.SXXff += (Xf * Xf).sum(axis=0); self.t += B
     def sets(self):
-        """confidence set per query = convex hull of {m in [0,1] : g+(m) >= 0 and g-(m) >= 0}, g+-(m) = 2R m^2 + (+-B - 4Q) m + (c + 2P -+ A); each {g >= 0} is [0,1] minus
-        an open root interval (R >= 0); the hull is computed from the roots with outward rounding. (nan, nan) marks an empty set (impossible at the truth; recorded)."""
-        c0 = self.log_term + self.Lam * self.eps_num; out_lo = np.zeros(self.K); out_hi = np.ones(self.K); wid = 1.0 + 2 ** -30
-        for j in range(self.K):
-            A, B, P, Q, R = self.A[j], self.B[j], self.P[j] * wid, self.Q[j], self.R[j] * wid; cj = c0[j] * wid
-            allowed = [(0.0, 1.0)]                                                   # list of closed intervals, intersected progressively
-            for sgn in (1.0, -1.0):
-                aq = 2 * R; bq = sgn * B - 4 * Q; cq = cj + 2 * P - sgn * A           # g(m) = aq m^2 + bq m + cq >= 0
-                if aq > 0:
-                    disc = bq * bq - 4 * aq * cq
-                    if disc <= 0: continue                                          # g >= 0 everywhere
-                    r = math.sqrt(disc) * (1 + 2 ** -40); r1 = (-bq - r) / (2 * aq); r2 = (-bq + r) / (2 * aq)       # excluded OPEN interval (r1, r2), widened inward (kept set grows)
-                    excl = (r1, r2)
-                elif bq != 0:
-                    root = -cq / bq; excl = (root, inf) if bq < 0 else (-inf, root)
+        """conservative [lo_j, hi_j] containing {m in [0,1] : 0 in CS_t(m)}; nan = empty (recorded, never published)"""
+        t = self.t; acc = up(up((t + 2) * U) * (1 + 2 ** -40)); eps = self.eps_num; K = self.K
+        A_up = self.A * (1 + acc); B_up = self.B * (1 + acc); P_up = self.P * (1 + acc); R_up = self.R * (1 + acc); Lam_up = self.Lam * (1 + acc); Psi_up = self.Psi * (1 + acc); Qerr = self.Qabs * acc * (1 + acc)
+        c_up = np.nextafter(np.nextafter(self.log_term * (1 + 2 ** -45) + np.nextafter(Lam_up * eps, inf) + np.nextafter(8 * eps * Psi_up, inf), inf), inf)
+        lo = np.zeros(K); hi = np.ones(K)
+        for j in range(K):
+            A, B = self.A[j], self.B[j]; Aerr = up(A_up[j] - A); Berr = up(B_up[j] - B); aq = up(2 * R_up[j]); kept = []
+            if B <= 0: continue
+            m0 = min(1.0, max(0.0, A / B))
+            for side in (-1.0, 1.0):                                  # side -1: m <= m0 where A - mB >= 0 ; side +1: m >= m0
+                bq = up(up(up(-4 * self.Q[j]) + up(4 * Qerr[j])) + up(-side * B + Berr)); cq = up(up(up(c_up[j] + 2 * P_up[j]) + side * A) + Aerr)
+                rlo, rhi = (0.0, m0) if side < 0 else (m0, 1.0)
+                if rhi < rlo: continue
+                ex = _excluded(aq, bq, cq, rlo, rhi)
+                if ex is None: kept.append((rlo, rhi))
                 else:
-                    if cq < 0: allowed = []; break
-                    continue
-                new = []
-                for lo, hi in allowed:
-                    if excl[1] <= lo or excl[0] >= hi: new.append((lo, hi)); continue
-                    if excl[0] > lo: new.append((lo, min(hi, excl[0])))
-                    if excl[1] < hi: new.append((max(lo, excl[1]), hi))
-                allowed = new
-            if not allowed: out_lo[j] = np.nan; out_hi[j] = np.nan; continue
-            out_lo[j] = max(0.0, min(lo for lo, _ in allowed) - 2 ** -45); out_hi[j] = min(1.0, max(hi for _, hi in allowed) + 2 ** -45)
-        return out_lo, out_hi
+                    if ex[0] > rlo: kept.append((rlo, ex[0]))
+                    if ex[1] < rhi: kept.append((ex[1], rhi))
+            if not kept: lo[j] = np.nan; hi[j] = np.nan; continue
+            lo[j] = max(0.0, dn(min(k[0] for k in kept))); hi[j] = min(1.0, up(max(k[1] for k in kept)))
+        return lo, hi
 
+
+def _h_up(aq, bq, cq, m):
+    """upper bound of aq m^2 + bq m + cq (aq >= 0, m >= 0), outward rounding at every operation"""
+    return up(up(up(up(aq * m) * m) + up(bq * m)) + cq)
+
+
+def _excluded(aq, bq, cq, lo, hi):
+    """open sub-interval of [lo, hi] where h_up < 0 (a SUBSET of the true excluded interval of the convex quadratic); None if nothing is excluded"""
+    if aq > 0:
+        disc = bq * bq - 4 * aq * cq
+        if disc <= 0: return None
+        r = math.sqrt(disc); r1 = (-bq - r) / (2 * aq); r2 = (-bq + r) / (2 * aq)
+    elif bq != 0:
+        root = -cq / bq; r1, r2 = (root, inf) if bq < 0 else (-inf, root)
+    else: return (lo, hi) if cq < 0 else None
+    a, b = max(lo, r1), min(hi, r2)
+    if b <= a: return None
+    mid = (a + b) / 2
+    if _h_up(aq, bq, cq, mid) >= 0: return None
+    def bisect(x_ok, x_bad):
+        for _ in range(64):
+            xm = (x_ok + x_bad) / 2
+            if _h_up(aq, bq, cq, xm) >= 0: x_ok = xm
+            else: x_bad = xm
+        return x_ok
+    left = bisect(lo, mid) if _h_up(aq, bq, cq, lo) >= 0 else lo
+    right = bisect(hi, mid) if _h_up(aq, bq, cq, hi) >= 0 else hi
+    return (left, right)
 
 
 class ZCertificate:
-    """PrPl-EB confidence sequence (same theorem) for E[X] = Z / U_cap directly: the WMB-IS-style finite-sample normalizer bound from the SAME draws (baseline comparison; not used for publication)"""
+    """PrPl-EB confidence sequence for E[X] = Z / U_cap from the same draws (WMB-IS-style baseline; batch form; reported, not used)"""
     def __init__(self, alpha): self.log_term = math.log(2.0 / alpha); self.t = 0; self.S = 0.0; self.S2 = 0.0; self.A = 0.0; self.Lam = 0.0; self.V = 0.0
-    def update(self, X):
-        t1 = self.t + 1; var = max(self.S2 / max(1, self.t) - (self.S / max(1, self.t)) ** 2, 1e-12) if self.t >= 2 else 0.25
-        lam = min(0.9, math.sqrt(2 * self.log_term / (var * t1 * math.log(t1 + 1.0)))); psi = (-math.log1p(-lam) - lam) / 4.0; mu_hat = (0.5 + self.S) / t1
-        self.A += lam * X; self.Lam += lam; self.V += psi * 4.0 * (X - mu_hat) ** 2; self.S += X; self.S2 += X * X; self.t = t1
+    def update_batch(self, X):
+        B = X.shape[0]; t = max(1, self.t); var = max(self.S2 / t - (self.S / t) ** 2, 1e-12) if self.t >= 2 else 0.25
+        lam = min(0.9, math.sqrt(2 * self.log_term / (var * (self.t + 1) * math.log(self.t + 2.0)))); psi = (-math.log1p(-lam) - lam) / 4.0; mu_hat = (0.5 + self.S) / (self.t + 1)
+        self.A += lam * X.sum(); self.Lam += B * lam; self.V += psi * 4.0 * ((X - mu_hat) ** 2).sum(); self.S += X.sum(); self.S2 += (X * X).sum(); self.t += B
     def interval(self):
         if self.Lam <= 0: return (0.0, 1.0)
-        c = self.A / self.Lam; r = (self.log_term + self.V) / self.Lam * (1 + 2 ** -30); return (max(0.0, c - r), min(1.0, c + r))
+        acc = (self.t + 2) * U * 2; c = self.A / self.Lam; r = (self.log_term + self.V * (1 + acc)) / self.Lam * (1 + acc); return (max(0.0, c - r), min(1.0, c + r))
+
+
+# ---------------------------------------------------------------- numerical widening (NOTE.md section 7): exact Fractions, rounded up once
+def numerical_widening(blocks, mbp, qrhos, n_sep, maxcard):
+    nb = len(blocks); rho_tab = prod((1 + b.rho) for b in blocks) - 1
+    LN2INV = F(145, 100)                                                                      # >= 1 / ln 2: converts an absolute log2 error into a relative error bound (for errors < 1/4)
+    LMERR = F(1002, 1 << 53)                                                                  # abs error of one log-table entry: log2 M (rel u, |log2 M| <= 1) plus the exact integer e added in float (|e| <= 1000)
+    q1 = max(1, mbp.max_q1)
+    d_step = (q1 * LMERR + (q1 + 2) * F(1001, 1 << 53)) * LN2INV + F(maxcard + 3, 1 << 53) + 2 * F(901, 1 << 53) * LN2INV     # one sampled step: row products, exp2, row sum, two logs
+    rho_q = (1 + d_step) ** n_sep - 1
+    rho_logz = (nb * LMERR + F(nb + 1, 1 << 53) * 2001) * LN2INV
+    rho_X = (1 + rho_tab) * (1 + rho_logz) * (1 + rho_q) * (1 + mbp.rhoU) * (1 + F(3 * 2001, 1 << 53) * LN2INV) - 1
+    rho_f = max([2 * r for r in qrhos] + [F(0)]) + max([b.rho for b in blocks]) + 4 * UF
+    law = 4 * n_sep * F(maxcard + 2, 1 << 53)
+    trunc = n_sep * F(1, 1 << 900)
+    return dict(rho_X=rho_X, rho_f=rho_f, law=law, trunc=trunc, eps_num=2 * rho_X + rho_f + law + trunc)
+
 
 # ---------------------------------------------------------------- the integrated solve
-def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F(1, 200), delta=F(1, 10 ** 6), mb_cap=4096, construct_share=0.5, batch_s=0.5, force_approx=False):
-    t_start = tnow(); deadline = t_start + budget; ph = {}; rng = random.Random(seed); stats = dict(elim_work=0, eliminations=0, query_work=0)
-    out = dict(version=VERSION, seed=seed, budget_s=budget, table_cap=table_cap, enum_cap=enum_cap, mb_cap=mb_cap, epsilon=str(eps), delta=str(delta), phases_s=ph, mechanism={}, outcome=None, answers=None)
+def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F(1, 200), delta=F(1, 10 ** 6), mb_cap=1 << 24, construct_share=0.5, batch=1024, check_s=0.5, force_approx=False, schedule='baseline'):
+    t_start = tnow(); deadline = t_start + budget; ph = {}; rng = np.random.default_rng(seed); stats = dict(elim_work=0, eliminations=0, query_work=0)
+    out = dict(version=VERSION, seed=seed, budget_s=budget, table_cap=table_cap, enum_cap=enum_cap, mb_cap=mb_cap, batch=batch, schedule=schedule, epsilon=str(eps), delta=str(delta), phases_s=ph, mechanism={}, outcome=None, answers=None)
     t0 = tnow(); model, binding = BR.core.read_uai(model_path); cards = model['cards']; n = len(cards); ev = model.get('evidence', {}); out['binding'] = binding; ph['read'] = tnow() - t0
     queries = [(x, v) for x in range(n) if x not in ev for v in range(cards[x])]; K = len(queries); qix = {q: j for j, q in enumerate(queries)}; out['K'] = K
     ans = {}; pending = {}; failed = []
@@ -229,7 +272,6 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         if witness: ans.update(pending)
         out['positive_mass_witness'] = witness; return BR.finish(out, t_start, queries, ans, failed)
     try:
-        # ---- exact integer construction (blockres)
         t0 = tnow(); fns, const, scale, mult, factorless = BR.integerize(model); ph['integerize'] = tnow() - t0
         if const == 0: return finish_('ZERO_EVIDENCE')
         for x in factorless:
@@ -239,9 +281,8 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         const_fns = [f for f in live if not f.scope]; live = [f for f in live if f.scope]
         for f in const_fns: const *= int(f.arr)
         if const == 0: return finish_('ZERO_EVIDENCE')
-        S = sorted({v for f in live for v in f.scope})
-        out['mechanism'].update(blocks=len(live), separator_vars=len(S), eliminated_vars=len(order), elim_work=stats['elim_work'], const_blocks=len(const_fns), factorless=len(factorless), N_S_log2=float(sum(log2(cards[v]) for v in S)))
-        for b in const_fns:                                               # constant blocks: exact ratios of exact replays (cheap; int path)
+        S = sorted({v for f in live for v in f.scope}); out['mechanism'].update(blocks=len(live), separator_vars=len(S), eliminated_vars=len(order), elim_work=stats['elim_work'], const_blocks=len(const_fns), factorless=len(factorless), N_S_log2=float(sum(log2(cards[v]) for v in S)))
+        for b in const_fns:
             gb = int(b.arr)
             if gb == 0: continue
             bl = BR.Block(0, b, cards)
@@ -250,7 +291,6 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
                 if r is None: failed.append(x); continue
                 for v in range(cards[x]): val = F(int(r[v]), gb); pending[qix[(x, v)]] = dict(lo=val, hi=val, point=val, guarantee='EXACT')
         if not live: return finish_('EXACT' if len(pending) == K else 'PARTIAL_EXACT', witness=True)
-        # ---- exact separator enumeration when affordable (identical to blockres)
         N_S = prod(cards[v] for v in S)
         if N_S <= enum_cap and not force_approx:
             blocks_i = [BR.Block(i, f, cards) for i, f in enumerate(live)]; fac_fns = {next(iter(f.facs)): f for f in fns}
@@ -271,110 +311,98 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         try:
             cache = {}
             def conv(f):
-                k = id(f)
-                if k not in cache: cache[k] = ft_from_int(f, cards)
-                return cache[k]
+                if id(f) not in cache: cache[id(f)] = ft_from_int(f, cards)
+                return cache[id(f)]
             blocks = [conv(f) for f in live]; trace_var = {}; trace_ft = []
             for st, (v, snap) in enumerate(trace): trace_var[st] = v; trace_ft.append([conv(f) for f in snap])
-        except RangeRefused as e:
-            out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
+        except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
         ph['float_convert'] = tnow() - t0
-        # ---- interior query tables (float replay; cheapest first)
         t0 = tnow(); qtabs = {i: [] for i in range(len(blocks))}; recovered = 0; skipped = []
         todo = sorted(((len([u for u in b.interior if step_of[u] > step_of[x]]), i, x) for i, b in enumerate(blocks) for x in b.interior))
         for _, i, x in todo:
             if tnow() >= cdead: skipped.append(x); continue
             try: r = recover_query_table_float(blocks[i], x, cards, trace_ft, trace_var, step_of, cdead, stats)
             except Deadline: skipped.append(x); continue
-            except RangeRefused as e: failed.append(x); continue
+            except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
             if r is None: failed.append(x); continue
             qtabs[i].append((x, r)); recovered += 1
         failed += skipped; ph['query_tables'] = tnow() - t0
         out['mechanism'].update(interior_queries_recovered=recovered, interior_queries_failed=len(failed) - len(skipped), interior_queries_skipped_window=len(skipped), query_work=stats['query_work'])
-        # per block: stacked query columns (x, v) -> (M_Q, e_Q, rho_Q) aligned with the block table
-        pos = {v: i for i, v in enumerate(S)}; qcols = []; qblock = []; qM = []; qe = []; qrho = []
+        pos = {v: i for i, v in enumerate(S)}; sep_q = [(x, v) for (x, v) in queries if x in pos]
+        blockQ = []; qcols = []
         for i, b in enumerate(blocks):
+            cols = []; mats = []; es = []; rhos = []
             for x, r in qtabs[i]:
-                for v in range(cards[x]): qcols.append((x, v)); qblock.append(i); qM.append(r.M[..., v]); qe.append(r.e); qrho.append(r.rho)
-        sep_q = [(x, v) for (x, v) in queries if x in pos]; qidx_sep = {(x, v): None for (x, v) in sep_q}
-        sq = sep_q + qcols; Kq = len(sq); qmap = {q: qix[q] for q in sq}
-        # ---- mini-bucket proposal (float)
+                for v in range(cards[x]): cols.append((x, v)); mats.append(r.M[..., v].reshape(-1)); es.append(r.e); rhos.append(r.rho)
+            if cols:
+                Q = np.stack([mats[c] * ldexp(1.0, es[c] - b.e) for c in range(len(cols))], axis=1)       # exact power-of-two alignment to the block exponent
+                nzq = Q[Q > 0]
+                if not np.all(np.isfinite(Q)) or (nzq.size and float(nzq.min()) < ldexp(1.0, -1000)): out['refusal'] = 'query-table alignment leaves the normal range'; return finish_('NUMERIC_RANGE_REFUSED')
+                blockQ.append((i, Q, rhos)); qcols += cols
+            else: blockQ.append((i, None, []))
+        sq = sep_q + qcols; Kq = len(sq); qmap = {q: qix[q] for q in sq}; qrhos = [r for _, _, rs in blockQ for r in rs]
         t0 = tnow()
         try: mbp = MBFloat(blocks, cards, mb_cap, deadline)
         except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
         ph['mb_construct'] = tnow() - t0
-        out['mechanism'].update(mb_cap=mb_cap, mb_logU=mbp.logU, mb_logU_cap=mbp.logU_cap, mb_rhoU=mbp.rhoU, mb_max_table=mbp.max_table, Kq=Kq, sep_queries=len(sep_q), interior_query_cols=len(qcols))
-        if mbp.logU == -inf: return finish_('ZERO_EVIDENCE')                  # Z <= U = 0 exactly (float zeros are exact zeros: no truncation inside tables)
-        # ---- numerical widening: weights (blocks + proposal), responses, law mismatch, truncation
-        rho_z = prod(1.0 + b.rho for b in blocks) * (1.0 + U) ** len(blocks) - 1.0
-        rho_q = len(S) * (2.0 ** -40)                                        # log-domain conditionals: |log2 error| per step <= ~2^-40 (1000 u on |L| <= 1000) -> relative
-        rho_W = (1.0 + rho_z) * (1.0 + rho_q) * (1.0 + mbp.rhoU) * (1.0 + 2 ** -40) - 1.0
-        rho_f = max([2.0 * r for r in qrho] + [0.0]) + max([b.rho for b in blocks]) + 4 * U
-        eps_num = rho_W + rho_f + len(S) * 2.0 ** -50 + len(S) * 2.0 ** PROB_TRUNC_LOG2 + 2.0 ** -40
-        out['mechanism'].update(rho_z=rho_z, rho_W=rho_W, rho_f=rho_f, eps_num=eps_num, eps_num_log2=log2(eps_num))
-        logU_cap = mbp.logU_cap + log2(1.0 + rho_W)                             # X = W_float / U_cap <= 1 for every draw (asserted)
-        alpha = float(delta) / Kq; cert = Certificate(Kq, alpha, eps_num); zcert = ZCertificate(float(delta))
-        # ---- the shared stream
-        witness = False; draws = 0; zero_draws = 0; trunc_draws = 0; pub = {}; trace_rows = []; t_draw = 0.0; t_cert = 0.0; next_chk = tnow() + batch_s; logz_sum_max = -inf; sumX = 0.0
-        bM = [b.M for b in blocks]; be = [b.e for b in blocks]; bidx = [tuple(pos[v] for v in b.scope) for b in blocks]
-        qM_arr = qM; qb = qblock; qe_arr = [int(x) for x in qe]; nq = len(qcols)
-        sep_var_pos = [pos[x] for (x, v) in sep_q]; sep_val = np.array([v for (x, v) in sep_q], dtype=int)
+        out['mechanism'].update(mb_cap=mb_cap, mb_logU=mbp.logU, mb_max_table=mbp.max_table, mb_max_range_sum_bits=mbp.max_range_sum, block_max_range_bits=max(b.R for b in blocks), Kq=Kq, sep_queries=len(sep_q), interior_query_cols=len(qcols))
+        if mbp.logU == -inf: return finish_('ZERO_EVIDENCE')
+        wid = numerical_widening(blocks, mbp, qrhos, len(S), max(cards)); eps_num = fup(wid['eps_num']); rho_X = fup(wid['rho_X'])
+        out['mechanism'].update(eps_num=eps_num, eps_num_log2=log2(eps_num), rho_X=rho_X, rho_f=fup(wid['rho_f']), mb_rhoU=fup(mbp.rhoU))
+        logU_cap = up(mbp.logU + up(log2(1.0 + rho_X)) + 2 ** -40); cap_tol = up(log2(1.0 + 2 * rho_X)) + 2 ** -40      # the implemented X may exceed the analysed X <= 1 only by its proved relative error
+        alpha = float(delta) / Kq; cert = Certificate(Kq, alpha, eps_num, float(eps), schedule); zcert = ZCertificate(float(delta))
+        bLM = []; bstr = []; bscope = []; bMflat = []
+        for b in blocks:
+            with np.errstate(divide='ignore'): bLM.append(np.where(b.M > 0, np.log2(np.maximum(b.M, 1e-300)) + b.e, -inf).reshape(-1))
+            strides = {}; s_ = 1
+            for u in reversed(b.scope): strides[u] = s_; s_ *= cards[u]
+            bstr.append(strides); bscope.append(b.scope); bMflat.append(b.M.reshape(-1))
+        sep_pos = np.array([pos[x] for (x, v) in sep_q], dtype=np.int64); sep_val = np.array([v for (x, v) in sep_q], dtype=np.int64)
+        witness = False; draws = 0; zero_draws = 0; pub = {}; trace_rows = []; t_loop = 0.0; t_cert = 0.0; next_chk = tnow() + check_s; sumX = 0.0; maxlogX = -inf
+        def flat_index(Sb, i):
+            idx = np.zeros(Sb.shape[0], dtype=np.int64)
+            for u in bscope[i]: idx += Sb[:, pos[u]] * bstr[i][u]
+            return idx
+        def check_publish():
+            nonlocal t_cert
+            t0 = tnow(); lo, hi = cert.sets(); width = hi - lo
+            for j in range(Kq):
+                if j in pub or not np.isfinite(width[j]): continue
+                if width[j] <= 2 * float(eps): pub[j] = (F(float(lo[j])), F(float(hi[j])), 'PAC_EB')
+            unpub = np.array([j for j in range(Kq) if j not in pub], dtype=int); w = width[unpub] if unpub.size else np.zeros(0); wf = w[np.isfinite(w)]
+            trace_rows.append(dict(t=round(tnow() - t_start, 2), draws=draws, zero_draws=zero_draws, X_mean=(sumX / max(1, draws)), published=len(pub), remaining=int(unpub.size), max_remaining_width=(float(wf.max()) if wf.size else 0.0), median_remaining_width=(float(np.median(wf)) if wf.size else 0.0), empty_sets=int((~np.isfinite(w)).sum())))
+            t_cert += tnow() - t0; return width
         while tnow() < deadline and len(pub) < Kq:
-            t0 = tnow(); s, logq, trunc = mbp.sample(rng, S)
-            # z(s) in the log domain; exact zero if any block entry is zero
-            logz = 0.0; gval = []
+            t0 = tnow(); Sb, logq, zero_row = mbp.sample_batch(rng, batch, pos); B = Sb.shape[0]
+            logz = np.zeros(B); gv = []
             for i in range(len(blocks)):
-                m = float(bM[i][tuple(s[p] for p in bidx[i])]); gval.append(m)
-                if m == 0.0: logz = -inf; break
-                logz += log2(m) + be[i]
-            draws += 1; trunc_draws += trunc
-            if logz == -inf: X = 0.0; f = np.zeros(Kq); zero_draws += 1
-            else:
-                witness = True; logX = logz - logq - logU_cap
-                assert logX <= 2 ** -30, 'importance weight exceeds the mini-bucket cap (certificate defect): log2 X = %r' % logX
-                X = min(1.0, 2.0 ** logX); sumX += X
-                f = np.zeros(Kq)
-                if sep_q: f[:len(sep_q)] = (np.array([s[p] for p in sep_var_pos]) == sep_val).astype(float)
-                for c in range(nq):
-                    i = qb[c]; idx = tuple(s[p] for p in bidx[i]); g = gval[i]
-                    f[len(sep_q) + c] = min(1.0, float(qM_arr[c][idx]) * ldexp(1.0, qe_arr[c] - be[i]) / g) if g > 0 else 0.0
-            cert.update(X, f); zcert.update(X); t_draw += tnow() - t0
-            if tnow() >= next_chk:
-                t0 = tnow(); lo, hi = cert.sets(); width = hi - lo
-                for j in range(Kq):
-                    if j in pub or not np.isfinite(width[j]): continue
-                    if width[j] <= 2 * float(eps): pub[j] = (F(float(lo[j])), F(float(hi[j])), 'PAC_EB')
-                w = width[np.isfinite(width)]
-                trace_rows.append(dict(t=round(tnow() - t_start, 2), draws=draws, zero_draws=zero_draws, X_mean=(sumX / max(1, draws)), median_width=(float(np.median(w)) if w.size else None), p90_width=(float(np.percentile(w, 90)) if w.size else None), min_width=(float(w.min()) if w.size else None), published=len(pub)))
-                t_cert += tnow() - t0; next_chk = tnow() + max(batch_s, 3 * (tnow() - t0))
-        t0 = tnow(); lo, hi = cert.sets(); width = hi - lo
-        for j in range(Kq):
-            if j in pub or not np.isfinite(width[j]): continue
-            if width[j] <= 2 * float(eps): pub[j] = (F(float(lo[j])), F(float(hi[j])), 'PAC_EB')
-        t_cert += tnow() - t0; w = width[np.isfinite(width)]
-        # extrapolation (diagnostic): EB width ~ 1/sqrt(t) -> draws needed for the median / p90 query, at the measured per-draw cost
-        per_draw = t_draw / max(1, draws); med = float(np.median(w)) if w.size else None; p90 = float(np.percentile(w, 90)) if w.size else None
-        # regime-aware extrapolation from the EB formula: needed radius on E[Y] is r = (Z/U_cap) eps (Z/U_cap estimated by X_mean, DIAGNOSTIC); draws needed =
-        # max( 2 ln(2/alpha) / (lambda_max r)  [log-dominated, 1/t],  2 ln(2/alpha) sigma^2 / r^2  [variance-dominated, 1/sqrt t] ) with sigma^2 the measured running variance of Y at m_hat
-        t_ = cert.t; mhat = np.where(cert.SB > 0, np.clip(cert.SA / max(cert.SB, 1e-300), 0, 1), 0.5); meanY = (cert.SA - mhat * cert.SB) / t_
-        varY = np.maximum((cert.SXXff - 2 * mhat * cert.SXXf + mhat * mhat * cert.SXX) / t_ - meanY * meanY, 0.0); sig2_med = float(np.median(varY)) if varY.size else None; sig2_p90 = float(np.percentile(varY, 90)) if varY.size else None
-        r_needed = (sumX / max(1, draws)) * float(eps); L = math.log(2.0 / alpha)
-        def need(sig2): return (max(2 * L / (cert.lam_max * r_needed), 2 * L * sig2 / (r_needed * r_needed)) if (r_needed > 0 and sig2 is not None) else None)
-        need_med = need(sig2_med); need_p90 = need(sig2_p90)
-        regime = ('no positive draw' if r_needed <= 0 else ('log-dominated' if (sig2_med is not None and 2 * L / (cert.lam_max * r_needed) >= 2 * L * sig2_med / (r_needed ** 2)) else 'variance-dominated'))
-        out['mechanism'].update(X2_mean=cert.SXX / max(1, draws), sigma2_Y_median=sig2_med, sigma2_Y_p90=sig2_p90, r_needed=r_needed, log_term=2 * L, regime=regime)
-        out['mechanism'].update(draws=draws, zero_draws=zero_draws, truncated_prob_draws=trunc_draws, X_mean=sumX / max(1, draws), log2_Zhat_over_Ucap_DIAGNOSTIC=(log2(sumX / draws) if sumX > 0 else None), ms_per_draw=1000 * per_draw, cert_evals=len(trace_rows) + 1, cert_s=t_cert,
-                                median_width=med, p90_width=p90, min_width=(float(w.min()) if w.size else None), published=len(pub), published_by=BR._count([g for _, _, g in pub.values()]),
-                                extrapolated_draws_median_query=need_med, extrapolated_s_median_query=(need_med * per_draw if need_med else None), extrapolated_draws_p90_query=need_p90, extrapolated_s_p90_query=(need_p90 * per_draw if need_p90 else None),
-                                X_underflow_note='X below 2^-1074 is stored as 0.0: bias <= 2^-1074 per draw, inside eps_num')
-        zi = zcert.interval(); out['mechanism'].update(Z_over_Ucap_EB_interval=zi, Z_EB_log2_width=(log2(zi[1] - zi[0]) if zi[1] > zi[0] else None), Z_EB_relative_width=((zi[1] - zi[0]) / zi[0] if zi[0] > 0 else None), Z_EB_log2_lower=(log2(zi[0]) + logU_cap if zi[0] > 0 else None), Z_EB_log2_upper=(log2(zi[1]) + logU_cap if zi[1] > 0 else None))
-        ph.update(stream=t_draw, certificate=t_cert); out['trace'] = trace_rows
+                idx = flat_index(Sb, i); logz += bLM[i][idx]; gv.append(bMflat[i][idx])
+            zero = ~np.isfinite(logz) | zero_row; logX = np.where(zero, -2000.0, logz - logq - logU_cap); mx = float(logX[~zero].max()) if (~zero).any() else -inf
+            assert mx <= cap_tol, 'importance weight exceeds the mini-bucket cap beyond its proved error bound (certificate defect): log2 X = %r > %r' % (mx, cap_tol)
+            X = np.where(zero, 0.0, np.minimum(1.0, np.exp2(logX))); maxlogX = max(maxlogX, mx)
+            if (X > 0).any(): witness = True
+            f = np.zeros((B, Kq))
+            if len(sep_q): f[:, :len(sep_q)] = (Sb[:, sep_pos] == sep_val[None, :]).astype(float)
+            col = len(sep_q)
+            for i, Q, rhos in blockQ:
+                if Q is None: continue
+                idx = flat_index(Sb, i); g = gv[i]; Kb = Q.shape[1]
+                with np.errstate(divide='ignore', invalid='ignore'): ratio = np.where(g[:, None] > 0, Q[idx] / np.where(g > 0, g, 1.0)[:, None], 0.0)
+                f[:, col:col + Kb] = np.clip(ratio, 0.0, 1.0); col += Kb
+            cert.update_batch(X, f); zcert.update_batch(X); draws += B; zero_draws += int(zero.sum()); sumX += float(X.sum()); t_loop += tnow() - t0
+            if tnow() >= next_chk: check_publish(); next_chk = tnow() + check_s
+        width = check_publish(); unpub = [j for j in range(Kq) if j not in pub]; wf = width[unpub]; wf = wf[np.isfinite(wf)]
+        zi = zcert.interval(); per_draw = t_loop / max(1, draws); total = t_loop + t_cert
+        out['mechanism'].update(draws=draws, zero_draws=zero_draws, X_mean=sumX / max(1, draws), log2_Zhat_over_Ucap_DIAGNOSTIC=(log2(sumX / draws) if sumX > 0 else None), max_log2_X_observed=maxlogX, ms_per_draw=1000 * per_draw, cert_evals=len(trace_rows), cert_s=t_cert,
+                                published=len(pub), remaining=len(unpub), max_remaining_width=(float(wf.max()) if wf.size else 0.0), median_remaining_width=(float(np.median(wf)) if wf.size else 0.0),
+                                Z_over_Ucap_EB_interval=zi, Z_EB_relative_width=((zi[1] - zi[0]) / zi[0] if zi[0] > 0 else None), lam_last_median=float(np.median(cert.lam())), schedule=schedule,
+                                extrapolated_s_max_width=((total * (float(wf.max()) / (2 * float(eps))) ** 2) if wf.size else 0.0), extrapolated_s_median_width=((total * (float(np.median(wf)) / (2 * float(eps))) ** 2) if wf.size else 0.0))
+        ph.update(stream=t_loop, certificate=t_cert); out['trace'] = trace_rows
         if witness:
             ans.update(pending)
             for j, q in enumerate(sq):
                 if j in pub: lo_, hi_, g = pub[j]; publish(qmap[q], lo_, hi_, (lo_ + hi_) / 2, g)
         else: out['withheld_without_witness'] = len(pub) + len(pending)
-        out['positive_mass_witness'] = witness
         return finish_('COMPLETE' if len(ans) == K else 'DEADLINE_PARTIAL', witness=witness)
     except Deadline as e:
         out['deadline_phase'] = str(e); return finish_('DEADLINE')
@@ -384,13 +412,14 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=20.0); ap.add_argument('--seed', type=int, default=1)
-    ap.add_argument('--table-cap', type=int, default=1 << 18); ap.add_argument('--enum-cap', type=int, default=1 << 16); ap.add_argument('--mb-cap', type=int, default=4096); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--force-approx', action='store_true')
+    ap.add_argument('--table-cap', type=int, default=1 << 18); ap.add_argument('--enum-cap', type=int, default=1 << 16); ap.add_argument('--mb-cap', type=int, default=1 << 24); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000')
+    ap.add_argument('--force-approx', action='store_true'); ap.add_argument('--batch', type=int, default=1024); ap.add_argument('--schedule', default='baseline', choices=['baseline', 'targeted'])
     a = ap.parse_args()
-    out = solve(a.input, a.budget, seed=a.seed, table_cap=a.table_cap, enum_cap=a.enum_cap, eps=F(a.epsilon), delta=F(a.delta), mb_cap=a.mb_cap, force_approx=a.force_approx)
+    out = solve(a.input, a.budget, seed=a.seed, table_cap=a.table_cap, enum_cap=a.enum_cap, eps=F(a.epsilon), delta=F(a.delta), mb_cap=a.mb_cap, force_approx=a.force_approx, batch=a.batch, schedule=a.schedule)
     out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]
     os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True); json.dump(out, open(a.output, 'w'), indent=1, default=str)
     m = out['mechanism']; print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), phases={k: round(v, 3) for k, v in out['phases_s'].items()},
-                                   mech={k: (round(m[k], 3) if isinstance(m.get(k), float) else m.get(k)) for k in ('blocks', 'separator_vars', 'N_S_log2', 'mb_cap', 'mb_logU', 'mb_max_table', 'interior_queries_recovered', 'interior_queries_failed', 'eps_num_log2', 'draws', 'zero_draws', 'ms_per_draw', 'X_mean', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'median_width', 'p90_width', 'min_width', 'published', 'X2_mean', 'sigma2_Y_median', 'r_needed', 'regime', 'extrapolated_draws_median_query', 'extrapolated_s_median_query', 'extrapolated_s_p90_query', 'Z_EB_relative_width')}), default=str))
+                                   mech={k: (round(m[k], 4) if isinstance(m.get(k), float) else m.get(k)) for k in ('blocks', 'separator_vars', 'mb_cap', 'mb_logU', 'mb_max_range_sum_bits', 'eps_num_log2', 'draws', 'ms_per_draw', 'X_mean', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'max_log2_X_observed', 'published', 'remaining', 'max_remaining_width', 'median_remaining_width', 'lam_last_median', 'schedule', 'extrapolated_s_max_width', 'extrapolated_s_median_width', 'Z_EB_relative_width', 'interior_queries_recovered', 'interior_queries_failed')}), default=str))
 
 
 if __name__ == '__main__': main()

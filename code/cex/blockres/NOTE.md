@@ -143,3 +143,41 @@ mini-bucket proposal); it is reported, not used for publication.
 
 Scope not covered: weighted (Hoelder) mini-buckets; shared backward recovery (the float replay per interior variable was fast enough on both tasks: 0.05-0.09 s, all 42 / 24
 interior variables recovered, none failed); ratio / conditional queries.
+
+## 7. Round 4 (19 Nov 2026): the numerical kernel repaired; conservative inversion; batch loop; lambda schedules (`integrated.py` v2)
+
+Two defects reproduced by the overseer in v1, and their repairs.
+(a) Rounding allowances vanished: v1 propagated relative-error bounds as binary64 expressions such as (1 + rho)(1 + u)^(n-1) - 1 with u = 2^-53, where 1 + u rounds to 1.
+    v2 keeps every rho as an exact Fraction; products use rho' = prod (1 + rho_i)(1 + u)^(k-1) - 1 and sums of n nonnegative terms rho' = (1 + rho)(1 + u)^(n-1) - 1 exactly, and
+    a bound becomes a float only by rounding UP at the point of use (`fup`). Control R1: the exact table [2^53, 1] summed in binary64 has absolute error 1 and the v2 bound
+    allows 2.0000000000000004 >= 1 (v1 allowed 1/128).
+(b) Underflow before the range check: v1 multiplied tables whose nonzero entries individually passed the 2^-900 range test, so a positive product could underflow to a float
+    zero that `_rescale` then treated as exact. v2 attaches to every table its dynamic range R (bits from the maximum to the smallest nonzero entry) and PRE-CHECKS every
+    product: sum of the operands' R must not exceed 1000, so the smallest positive product is >= 2^-1000 x the product of maxima, a normal float; otherwise the float path is
+    REFUSED (typed NUMERIC_RANGE_REFUSED) before any value is formed. Hence a float zero is an exact zero, and the two exact statements of section 6 (witness, U = 0 => Z = 0)
+    hold. Control R2: a strictly positive two-variable model whose products span 1802 bits is refused, never ZERO_EVIDENCE; R2b: the same model at 802 bits computes and
+    its publications contain the oracle truth. On BN_12 the largest product range is 29 bits, on ObjectDetection_24 under 60.
+Conservative inversion. The accumulators A, B, P, R, Lambda, Psi (nonnegative sums over t terms) are widened by the factor (1 + (t + 2) u)(1 + 2^-40) (any summation order of
+nonnegative terms; depends on the actual t, no fixed horizon); Q (signed) by (t + 2) u times the accumulated |terms|. The feasibility |A - m B| <= c + 2 (P - 2 m Q + m^2 R) is
+split at m0 = A / B into two convex quadratics h_side(m) = aq m^2 + bq m + cq with every coefficient rounded outward (toward keeping more); each quadratic's excluded set
+{h < 0} is bounded by evaluating an UPPER bound h_up (nextafter after every operation) and bisecting from verified-kept points, so the excluded interval found is a subset of
+the true one and the returned set is a superset of the analysed confidence set. Control C6: on 30 random accumulator states the returned set contains the set computed by
+exact rational arithmetic on a 4001-point grid.
+The widening eps_num is derived from the tracked exact bounds (`numerical_widening`): rho_X <= (1 + rho_tab)(1 + rho_logz)(1 + rho_q)(1 + rho_U)(1 + rho_exp) - 1 with the
+log-domain terms bounded by |log2 M| <= 1, |e| <= 1000, 1 / ln 2 <= 1.45, the proposal's n_sep steps each contributing q1 log-lookups, one exp2, one row sum of <= maxcard
+terms and two logs; rho_f from the query and block tables; the realized-vs-analysed law term 4 n_sep (maxcard + 2) u; truncation n_sep 2^-900; eps_num = 2 rho_X + rho_f +
+law + trunc (2^-32.0 on BN_12). The certificate center is shifted by Lambda eps_num and the variance term by 8 eps_num Psi. The runtime cap assertion tolerates exactly the
+proved relative error of the implemented X over the analysed X <= 1 (log2(1 + 2 rho_X)), nothing more; the largest observed log2 X on BN_12 was -0.0 (i.e. a weight at the
+cap) and on ObjectDetection_24 -2.06.
+Batch loop. Draws are generated in batches of 1,024; lambda_t and the plug-in mean mhat are computed from the pre-batch state and held fixed within the batch. Both are
+therefore predictable (they depend on draws 1..t_pre only) for every draw of the batch, which is all Theorem 2 requires; the plug-in mean is coarser than per-draw, which
+affects efficiency only. Per-draw cost: 0.006 ms on BN_12 (65x over v1's per-draw Python loop; 6,700x over the exact-integer path of round 2).
+Lambda schedules. 'baseline': lambda_t = min(0.9, sqrt(2 ln(2/alpha) / (v_t t ln(t + 1)))) (the general-purpose rate). 'targeted': lambda_t = 2 E[X] eps / (v_t + 2 E[X] eps)
+(the overseer's accuracy-targeted heuristic, from maximizing lambda E[X] eps - 2 psi_E(lambda) v), clipped to [1e-4, 0.9]; E[X] and v_t are pre-batch running estimates.
+Both are predictable; the guarantee is identical; only the speed differs. Measured on BN_12 (section RESULTS_INTEGRATED_V2.md): baseline 106 / 158 published at 20 s with
+maximum remaining width 0.0116; targeted 158 / 158 published at 6.7 s (three seeds). The baseline's lambda had decayed to 0.009 by t = 3 x 10^6 while the targeted one sat at
+0.21: the general-purpose schedule was indeed wasting samples at this accuracy target, as the overseer's 5x discrepancy between the two extrapolations suggested.
+What the proof now establishes: every published interval is a valid 1 - delta simultaneous confidence set under the analysed sampling law with the implemented-versus-
+analysed bias bounded by exact rational arithmetic and added explicitly; the float path refuses rather than computes whenever a positive value could be lost; set inversion
+is conservative. What the runs show: BN_12 complete in 6.7 s with mutual consistency across seeds, schedules and proposal caps; no independent exact BN_12 reference exists
+on record (disclosed in round 3). Not covered: weighted mini-buckets; ratio / conditional queries; a compiled (non-numpy) kernel.
