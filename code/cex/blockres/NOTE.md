@@ -86,3 +86,25 @@ Established: exactness of the partition and reconstruction; validity of every bo
 ablation as a certificate. The deterministic route's correctness does not depend on tightness. Not established: any claim that the bounds are tight enough to publish
 within a budget; that is the empirical question, answered negatively in RESULTS.md. Unsupported scope: ratio / conditional queries, non-singleton query tables,
 EXACT_RATIONAL mode with positive-width stopping; interior queries beyond the replay cap are NOT_PUBLISHED (fallback = the existing CQR solver, unchanged).
+
+## 5. Additions of the diagnostic round (19 Nov 2026, after the overseer's reading)
+
+Positive-mass witness (correctness repair). Every publication of a marginal presupposes Z > 0. The code now publishes (EXACT, DETERMINISTIC, PAC) only after one of
+these EXACT facts: a closed cell with positive mass, an open cell with L_C > 0, an evaluated separator assignment with z(s) > 0 (then Z >= z(s) > 0), or an exact
+enumeration / full elimination with Z > 0. Marginals of eliminated components and factorless variables are deferred until such a witness exists; without one they are
+withheld (`withheld_without_witness`). Control: two contradictory parity factors on 12 variables + an independent unary [1, 2] + a factorless variable (Z = 0): nothing
+is published; with an enumerable separator the outcome is ZERO_EVIDENCE. Note that a sampled Z estimate is never a witness; the ratio stream's lower confidence bound
+is used only as a PAC lower bound inside the PAC acceptance rule.
+
+Mini-bucket proposal (prior art: Liu, Fisher, Ihler 2015, weighted mini-bucket importance sampling; here the plain max variant on the separator model {g_b}).
+Elimination order x_1..x_m (min bucket size). Bucket B_i = current functions containing x_i, partitioned into mini-buckets Q_i1, Q_i2, ... of joint scope <= cap;
+lambda_i1 = sum_{x_i} prod_{Q_i1} g (summed), lambda_ik = max_{x_i} prod_{Q_ik} g (k >= 2); messages join later buckets; U = product of the scalar messages.
+Every function in a bucket is either an original g_b or a message, and every non-scalar message appears in exactly one later bucket, so
+    prod_i prod_{g in B_i} g(x) = z(x) * prod_{non-scalar lambda} lambda(x).
+Proposal (sampled in reverse order): q(x_i | x_>i) = prod_{Q_i1} g(x_i, x_>i) / lambda_i1(x_>i) (uniform if lambda_i1 = 0, in which case z(x) = 0 for every completion).
+Then z(x) / q(x) = prod_{scalar lambda_i1} lambda_i1 * prod_{i, k >= 2, non-scalar} [prod_{Q_ik} g(x) / lambda_ik(x)] * prod_{i, k >= 2, scalar} prod_{Q_ik} g(x)
+<= prod_{all scalar lambda} = U, since each bracket is <= 1 (lambda_ik is a max) and each scalar lambda_ik >= its summand. q(x) = 0 implies z(x) = 0. The same
+partition with min in place of max gives L_mb <= Z. The ratio stream uses the constant cap U (b_t = 1, V = t U^2 / 4); the signed stream uses the per-query cap
+U * max(|lo_j - c_j|, |hi_j - c_j|) with [lo_j, hi_j] the global range bound of f_j (interior: root conditional-response range; separator: [0, 1]). Acceptance is the
+unchanged rule |S_j| <= eps Z_lo with Z_lo = max(L_mb, sum of z over DISTINCT evaluated assignments, ratio lower confidence bound). The code asserts z(x)/q(x) <= U
+and |Y_j| <= cap_j on every draw; the injected-cap control (U >> 40) is refused on the first draw.

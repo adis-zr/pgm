@@ -158,5 +158,39 @@ for i in range(nS):
     facs.append(((a, y0), rnd_table(rng2, 6, zeros=0.15))); facs.append(((y0, y1), rnd_table(rng2, 4))); facs.append(((y1, b), rnd_table(rng2, 6, zeros=0.15)))
 run('ternary_ring_zeros_evidence_forced_approx', write_uai('c8', cards, facs, evidence={nS + 1: 0, 5: 2}), budget=20.0, enum_cap=1 << 8, table_cap=1 << 5, force_approx=True)
 
+# 9. OVERSEER FINDING (19 Nov 2026): global normalizer exactly ZERO (two contradictory parity factors over 12 binary variables), an independent unary factor [1, 2]
+#    and a factorless binary variable. The eliminated-component / factorless marginals (1/3, 2/3, 1/2, 1/2) are UNDEFINED globally and must NOT be published as EXACT.
+#    (a) small table cap + tiny budget: the parity factors stay in the separator; no draw ever has z > 0 -> no witness -> nothing published, typed outcome.
+#    (b) the separator enumerable: ZERO_EVIDENCE.
+par = [1 if bin(i).count('1') % 2 == 0 else 0 for i in range(1 << 12)]; npar = [1 - v for v in par]
+cards = [2] * 12 + [2, 2]; facs = [(tuple(range(12)), par), (tuple(range(12)), npar), ((12,), [1, 2])]
+p_zero = write_uai('c9_zero_global_mass', cards, facs)
+for mode in ('block', 'factorwise'):
+    for prop in ('cell', 'mb'):
+        res = BR.solve(p_zero, 1.0, bounds=mode, table_cap=64, enum_cap=16, force_approx=True, proposal=prop)
+        pubs = [r for r in res['answers'] if r['guarantee'] != 'NOT_PUBLISHED']
+        rows.append(dict(control='zero_global_mass_no_unwitnessed_publication', mode=mode, proposal=prop, outcome=res['outcome'], published=len(pubs), witness=res.get('positive_mass_witness'), withheld=res.get('withheld_without_witness'),
+                         ok=(len(pubs) == 0 and res['outcome'] in ('ZERO_EVIDENCE', 'DEADLINE_PARTIAL', 'DEADLINE')))); print(json.dumps(rows[-1], default=str)[:300])
+res = BR.solve(p_zero, 5.0, bounds='block', table_cap=64, enum_cap=1 << 14)
+rows.append(dict(control='zero_global_mass_enumerable_is_ZERO_EVIDENCE', outcome=res['outcome'], ok=(res['outcome'] == 'ZERO_EVIDENCE' and not [r for r in res['answers'] if r['guarantee'] != 'NOT_PUBLISHED']))); print(json.dumps(rows[-1], default=str)[:300])
+# 10. the mini-bucket proposal arm on the complete-separator control and the product-interior control: containment vs the oracle; the cap must hold on every draw
+for name, pth, tr, rr in (('mb_proposal_large_separator', p_ring, t_ring, r_ring), ('mb_proposal_zero_residual', p_sym, t_sym, r_sym)):
+    for cap in (16, 256):
+        res = BR.solve(pth, 10.0, bounds='block', enum_cap=1 << 4, table_cap=(1 << 6 if 'large' in name else 1 << 2), force_approx=True, proposal='mb', mb_cap=cap)
+        row = compare(name + '_cap%d' % cap, pth, res, rr, tr, 'block'); row['proposal'] = 'mb'
+        if row['published'] == 0: row['ok'] = not row['detail']; row['note'] = 'mini-bucket arm published nothing at this tiny cap (mechanism outcome, not a defect); correctness vacuous'
+        row['mb'] = None; row['mb'] = {k: res['mechanism'].get(k) for k in ('mb_U_log2', 'mb_L_log2', 'root_E_log2', 'cap_tightening_log2_E_minus_U', 'Zhat_log2_DIAGNOSTIC', 'ratio_draws', 'signed_draws')}; rows.append(row); print(json.dumps(row, default=str)[:400])
+# 11. mini-bucket cap violation injected: U halved (grossly) -> the first draw exceeding it must be refused
+def mb_underestimated_cap_control():
+    model, _ = BR.core.read_uai(p_ring); cards_ = model['cards']; fns, const, scale, mult, fl = BR.integerize(model); st = dict(elim_work=0, eliminations=0, query_work=0); tr = []; od = []
+    live = BR.contract(fns, cards_, 1 << 6, time.monotonic() + 10, st, tr, od); blocks = [BR.Block(i, f, cards_) for i, f in enumerate(live) if f.scope]; fac_fns = {next(iter(f.facs)): f for f in fns}
+    S = sorted({v for b in blocks for v in b.scope}); sep = BR.Separator(blocks, cards_, S, [], 'block', fac_fns, time.monotonic() + 30); mbp = BR.MBProposal(blocks, cards_, 16, time.monotonic() + 30)
+    rs = BR.MBRatioStream(0, F(1, 10 ** 6), mbp.U >> 40); caught = None; rng_ = random.Random(9)
+    try:
+        for _ in range(3000): rs.draw(sep, mbp, rng_)
+    except AssertionError as e: caught = str(e)
+    return dict(control='mb_underestimated_cap_refused', ok=(caught is not None), refusal=caught, draws_before_refusal=rs.t)
+rows.append(mb_underestimated_cap_control()); print(json.dumps(rows[-1], default=str)[:300])
+
 summary = dict(utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), version=BR.VERSION, all_ok=all(r['ok'] for r in rows), rows=rows)
 json.dump(summary, open(OUT, 'w'), indent=1, default=str); print('ALL_OK' if summary['all_ok'] else 'FAILURES', sum(1 for r in rows if not r['ok']), 'of', len(rows))

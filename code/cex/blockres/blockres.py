@@ -29,7 +29,7 @@ import core                                   # shared UAI reader (cex/newarm)
 import numerics as NM                         # outward enclosures of the normal-mixture boundary (cex/cqr)
 from frontier import draw_categorical, dyadic_weight, _root     # exact categorical draw, predictable dyadic weights, root sweep (cex/cqr)
 
-VERSION = 'blockres-v1 (2026-11-19 experiment)'
+VERSION = 'blockres-v1.1 (2026-11-19: positive-mass witness required by every publication; mini-bucket proposal arm as the prior-art baseline)'
 U53 = 2.0 ** -53
 
 
@@ -180,7 +180,7 @@ class Separator:
                     mx = f.arr.max(axis=axes) if axes else f.arr; mn = f.arr.min(axis=axes) if axes else f.arr
                     if not keepS: mx = np.array(mx, dtype=object).reshape(()); mn = np.array(mn, dtype=object).reshape(())
                     self.old[b.bid].append((keepS, mx, mn))
-        self.mass = 0; self.num = np.zeros(self.K, dtype=object); self.resolved_cells = 0; self.splits = 0; self.closures = 0; self.next_id = 0; self.cell_ops = 0
+        self.mass = 0; self.num = np.zeros(self.K, dtype=object); self.resolved_cells = 0; self.splits = 0; self.closures = 0; self.next_id = 0; self.cell_ops = 0; self.witness = False     # witness: some z(s) > 0 was EVALUATED (exact fact => Z > 0)
         self.open = {}; root = self._cell(()); self.open[root.id] = root; self.sumB = root.B; self.sumL = root.L; self.sumE = root.E
         self.det_lo = [F(0)] * self.K; self.det_hi = [F(1)] * self.K
 
@@ -236,8 +236,9 @@ class Separator:
     # ---- exact contributions at a full separator assignment
     def evaluate(self, s):
         """(z, g) with g the block values at s (exact ints)"""
-        g = [int(b.G[tuple(s[self.pos[v]] for v in b.scope)]) for b in self.blocks]
-        return (prod(g) if g else 1), g
+        g = [int(b.G[tuple(s[self.pos[v]] for v in b.scope)]) for b in self.blocks]; z = (prod(g) if g else 1)
+        if z: self.witness = True
+        return z, g
 
     def add_contrib(self, s, z, g, coef, acc):
         """acc[j] += coef * (integrated numerator_j at s) / z ... i.e. acc += coef * z * f_j(s): separator indicators get coef*z; interior columns get coef * (z / g_b) * Q_b[s_b]"""
@@ -269,6 +270,7 @@ class Separator:
         self.splits += 1
 
     def Zlo(self): return F(self.mass + self.sumL)
+    def positive_mass(self): return self.mass > 0 or self.sumL > 0 or self.witness        # a DETERMINISTIC witness that the global normalizer is positive (never a sampled estimate)
     def Zhi(self): return F(self.mass + self.sumB)
 
     def query_range(self, c, j):
@@ -419,20 +421,113 @@ class SignedStream:
         B = NM.boundary_upper(self.rho, self.V, self.alpha); return [((self.G[j] - B) / self.H, (self.G[j] + B) / self.H) for j in range(self.K)]
 
 
+
+# ---------------------------------------------------------------- mini-bucket proposal on the separator model (weighted-mini-bucket importance sampling, Liu / Fisher / Ihler 2015; prior art)
+class MBProposal:
+    """Mini-bucket elimination of the separator functions {g_b} in a min-size order with mini-buckets of joint scope <= cap: in every bucket ONE mini-bucket is summed
+    (it defines the conditional q(x_i | x_>i) = prod_{Q_i1} g / lambda_i1) and the others are maxed (they define the bound). Sampling runs in reverse order with exact
+    integer categorical draws. For every full assignment: z(x) / q(x) <= U = product of the scalar messages (NOTE.md section 5); q(x) = 0 implies z(x) = 0.
+    A 'min' pass with the same partition gives a deterministic lower bound L_mb <= Z (possibly 0)."""
+    def __init__(self, blocks, cards, cap, deadline):
+        self.cards = cards; funcs = [(b.scope, b.G) for b in blocks]
+        self.steps, self.U, self.order = self._elim(funcs, cap, deadline, 'max'); self.L = self._elim(funcs, cap, deadline, 'min')[1]
+        self.max_table = max((int(np.asarray(l[1]).size) for _, _, l in self.steps if l is not None), default=0)
+    def _elim(self, funcs, cap, deadline, agg):
+        live = list(funcs); steps = []; const = 1; order = []; vars_ = sorted({v for sc, _ in live for v in sc}); cards = self.cards
+        while vars_:
+            if tnow() >= deadline: raise Deadline('mb_proposal')
+            best = None
+            for v in vars_:
+                nb = set().union(*(set(sc) for sc, _ in live if v in sc)) - {v}; size = prod(cards[u] for u in nb) if nb else 1
+                if best is None or size < best[0]: best = (size, v)
+            v = best[1]; order.append(v); vars_.remove(v); bucket = [f for f in live if v in f[0]]; live = [f for f in live if v not in f[0]]
+            if not bucket: const *= cards[v]; steps.append((v, None, None)); continue
+            bucket.sort(key=lambda f: -len(f[0])); groups = []
+            for sc, arr in bucket:
+                for g in groups:
+                    u = g[0] | set(sc)
+                    if prod(cards[x] for x in u) <= cap: g[0] = u; g[1].append((sc, arr)); break
+                else: groups.append([set(sc), [(sc, arr)]])
+            lam1 = None
+            for gi, (u, members) in enumerate(groups):
+                union = tuple(sorted(u)); P = None
+                for sc, arr in members:
+                    a = np.asarray(arr, dtype=object).reshape([cards[x] if x in sc else 1 for x in union]); P = a if P is None else P * a
+                ax = union.index(v); R = P.sum(axis=ax) if gi == 0 else (P.max(axis=ax) if agg == 'max' else P.min(axis=ax)); nsc = tuple(x for x in union if x != v)
+                if nsc: live.append((nsc, R))
+                else: const *= int(R)
+                if gi == 0: lam1 = (nsc, R)
+            steps.append((v, groups[0][1], lam1))
+        return steps, const, order
+    def sample(self, rng):
+        """returns (x dict, q_num, q_den): q(x) = q_num / q_den exactly; a zero conditional mass draws uniformly (the weight is then 0: z(x) = 0)"""
+        x = {}; qn = 1; qd = 1; cards = self.cards
+        for v, q1, lam1 in reversed(self.steps):
+            if q1 is None: x[v] = rng.randrange(cards[v]); qd *= cards[v]; continue
+            p = []
+            for a in range(cards[v]):
+                x[v] = a; w = 1
+                for sc, arr in q1:
+                    w *= int(arr[tuple(x[u] for u in sc)])
+                    if not w: break
+                p.append(w)
+            tot = sum(p)
+            if tot == 0: x[v] = rng.randrange(cards[v]); qd *= cards[v]; continue
+            a = draw_categorical(rng, [F(w) for w in p]) if len(p) > 1 else 0; x[v] = a; qn *= p[a]; qd *= tot
+        return x, qn, qd
+
+
+class MBRatioStream:
+    """fixed proposal q: W = z(x) / q(x) <= U; T = W (mean Z), Y_j = W f_j (mean N_j); b = 1 (the cap is constant); V += U^2 / 4"""
+    def __init__(self, K, alpha, U): self.K = K; self.alpha = alpha; self.U = F(U); self.rho = self.U * self.U / 4; self.H = F(0); self.Hb = F(0); self.G = np.array([F(0)] * K, dtype=object); self.V = F(0); self.t = 0
+    def draw(self, sep, mbp, rng):
+        x, qn, qd = mbp.sample(rng); s = tuple(x[v] for v in sep.order); z, g = sep.evaluate(s); W = F(z * qd, qn)
+        assert W <= self.U, 'importance weight exceeds the mini-bucket cap (certificate defect)'
+        self.t += 1; self.H += W; self.Hb += 1
+        if z: sep.add_contrib(s, z, g, F(qd, qn), self.G)
+        self.V += self.U * self.U / 4; return W, s, z, g, F(qd, qn)
+    def intervals(self):
+        if self.H <= 0: return None
+        B = NM.boundary_upper(self.rho, self.V, self.alpha); return [(max(F(0), (self.G[j] - B) / self.H), min(F(1), (self.G[j] + B) / self.H)) for j in range(self.K)]
+    def Z_interval(self):
+        if self.Hb <= 0: return None
+        B = NM.boundary_upper(self.rho, self.V, self.alpha); return max(F(0), (self.H - B) / self.Hb), (self.H + B) / self.Hb
+
+
+class MBSignedStream:
+    """fixed candidate c, fixed proposal: Y_j = z(x)(f_j(x) - c_j) / q(x), |Y_j| <= cap_j = U h_j with h_j the global range bound of |f_j - c_j|; per-query statistics"""
+    def __init__(self, cand, caps, alpha, epoch): self.cand = np.array(list(cand), dtype=object); self.caps = [F(c) for c in caps]; self.K = len(caps); self.alpha = alpha; self.epoch = epoch; self.H = F(0); self.G = np.array([F(0)] * self.K, dtype=object); self.V = [F(0)] * self.K; self.t = 0
+    def draw(self, sep, mbp, rng):
+        x, qn, qd = mbp.sample(rng); s = tuple(x[v] for v in sep.order); z, g = sep.evaluate(s); R = np.array([F(0)] * self.K, dtype=object)
+        if z: sep.add_contrib(s, z, g, F(qd, qn), R)
+        R = R - self.cand * F(z * qd, qn); self.t += 1; self.H += 1
+        for j in range(self.K):
+            assert abs(R[j]) <= self.caps[j], 'signed contribution exceeds its cap (certificate defect)'
+            self.V[j] += self.caps[j] * self.caps[j]
+        self.G += R; return s, z
+    def intervals(self):
+        if self.H <= 0: return None
+        out = []
+        for j in range(self.K):
+            if self.caps[j] == 0: out.append((self.G[j] / self.H, self.G[j] / self.H)); continue       # cap 0: the residual is identically zero (deterministic)
+            B = NM.boundary_upper(self.caps[j] * self.caps[j], self.V[j], self.alpha); out.append(((self.G[j] - B) / self.H, (self.G[j] + B) / self.H))
+        return out
+
 # ---------------------------------------------------------------- controller
-def solve(model_path, budget, bounds='block', seed=1, table_cap=1 << 16, enum_cap=1 << 16, force_approx=False, eps=F(1, 200), delta=F(1, 10 ** 6), construct_share=0.45, cell_max=512, close_n=8, ladder=True, mb_cap=0):
+def solve(model_path, budget, bounds='block', seed=1, table_cap=1 << 16, enum_cap=1 << 16, force_approx=False, eps=F(1, 200), delta=F(1, 10 ** 6), construct_share=0.45, cell_max=512, close_n=8, ladder=True, mb_cap=0, proposal='cell'):
     t_start = tnow(); deadline = t_start + budget; ph = {}; rng = random.Random(seed); stats = dict(elim_work=0, eliminations=0, query_work=0)
-    out = dict(version=VERSION, bounds=bounds, mb_cap=mb_cap, seed=seed, budget_s=budget, table_cap=table_cap, enum_cap=enum_cap, epsilon=str(eps), delta=str(delta), phases_s=ph, mechanism={}, outcome=None, answers=None)
+    out = dict(version=VERSION, bounds=bounds, mb_cap=mb_cap, proposal=proposal, seed=seed, budget_s=budget, table_cap=table_cap, enum_cap=enum_cap, epsilon=str(eps), delta=str(delta), phases_s=ph, mechanism={}, outcome=None, answers=None)
     t0 = tnow(); model, binding = core.read_uai(model_path); cards = model['cards']; n = len(cards); ev = model.get('evidence', {}); out['binding'] = binding; ph['read'] = tnow() - t0
     queries = [(x, v) for x in range(n) if x not in ev for v in range(cards[x])]; K = len(queries); qix = {q: j for j, q in enumerate(queries)}; out['K'] = K
-    ans = {}
+    ans = {}; pending = {}                                             # pending: exact answers of eliminated / factorless variables, published only with a positive-mass witness (overseer finding 19 Nov 2026)
     def publish(j, lo, hi, point, g): ans[j] = dict(lo=lo, hi=hi, point=point, guarantee=g)
+    def defer(j, r): pending[j] = dict(lo=r, hi=r, point=r, guarantee='EXACT')
     failed = []
     try:
         t0 = tnow(); fns, const, scale, mult, factorless = integerize(model); ph['integerize'] = tnow() - t0
         if const == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, ans, failed)
         for x in factorless:
-            for v in range(cards[x]): publish(qix[(x, v)], F(1, cards[x]), F(1, cards[x]), F(1, cards[x]), 'EXACT')
+            for v in range(cards[x]): defer(qix[(x, v)], F(1, cards[x]))
         # ---- construction: bounded-width partial VE with a two-level ladder
         cdead = min(deadline, t_start + construct_share * budget); t0 = tnow(); trace = []; order = []
         live = contract(fns, cards, table_cap, cdead, stats, trace, order); cap_used = table_cap
@@ -466,9 +561,9 @@ def solve(model_path, budget, bounds='block', seed=1, table_cap=1 << 16, enum_ca
         for b in cblocks:                                    # constant blocks: exact ratios
             gb = int(b.G)
             if b.Q is None or gb == 0: continue
-            for ci, (x, v) in enumerate(b.qcols): r = F(int(b.Q[ci]), gb); publish(qix[(x, v)], r, r, r, 'EXACT')
-        if not blocks:
-            out['outcome'] = 'EXACT' if len(ans) == K else 'PARTIAL_EXACT'; out['Z'] = str(F(const * mult, scale)); return finish(out, t_start, queries, ans, failed)
+            for ci, (x, v) in enumerate(b.qcols): defer(qix[(x, v)], F(int(b.Q[ci]), gb))
+        if not blocks:                                                   # everything eliminated: Z = const * mult > 0 is an exact witness
+            ans.update(pending); out['outcome'] = 'EXACT' if len(ans) == K else 'PARTIAL_EXACT'; out['Z'] = str(F(const * mult, scale)); return finish(out, t_start, queries, ans, failed)
         # ---- separator order: most blocks touched first, then largest cardinality
         Sset = set(S); sorder = sorted(S, key=lambda v: (-sum(1 for b in blocks if v in b.scope), -cards[v], v))
         inter = {x for b in blocks for x in b.interior if x not in set(failed)}
@@ -483,9 +578,11 @@ def solve(model_path, budget, bounds='block', seed=1, table_cap=1 << 16, enum_ca
         # ---- exact separator enumeration when affordable
         if root.N <= enum_cap and not force_approx:
             t0 = tnow(); sep.close(root.id); ph['enumerate'] = tnow() - t0; Z = sep.mass
-            if Z == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, ans, failed)
+            if Z == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, {}, failed)
+            ans.update(pending)
             for j, q in enumerate(sq): r = F(int(sep.num[j]), Z); publish(qmap[q], r, r, r, 'EXACT')
             out['Z'] = str(F(Z * const * mult, scale)); out['outcome'] = 'EXACT' if len(ans) == K else 'PARTIAL_EXACT'; return finish(out, t_start, queries, ans, failed)
+        if proposal == 'mb': return _solve_mb(out, t_start, deadline, sep, root, sq, qmap, queries, ans, pending, failed, publish, eps, delta, rng, mb_cap or 4096, ph, K)
         # ---- approximate separator inference
         Kq = len(sq); alpha_r = delta / 2 / (Kq + 1); ratio = RatioStream(Kq, alpha_r, root.E); signed = None; epoch = 0; epoch_draws = 0; epoch_len = 64
         pub = {}; det_t = tnow(); det_every = 1.0; it = 0; t_sig = t_det = t_rat = t_split = 0.0; ratio_draws = signed_draws = epochs = 0; residual_det = 0; trace_u = []
@@ -544,8 +641,12 @@ def solve(model_path, budget, bounds='block', seed=1, table_cap=1 << 16, enum_ca
                 t0 = tnow(); refine(); t_split += tnow() - t0
         iv = ratio.intervals()
         if iv is not None: try_publish(iv, 'PAC')
-        for j, q in enumerate(sq):
-            if j in pub: lo, hi, g = pub[j]; publish(qmap[q], lo, hi, (lo + hi) / 2, g)
+        out['positive_mass_witness'] = sep.positive_mass()
+        if sep.positive_mass():
+            ans.update(pending)
+            for j, q in enumerate(sq):
+                if j in pub: lo, hi, g = pub[j]; publish(qmap[q], lo, hi, (lo + hi) / 2, g)
+        else: out['withheld_without_witness'] = len(pub) + len(pending)
         ph.update(refine_split=t_split, ratio_stream=t_rat, signed_stream=t_sig, deterministic=t_det)
         ws = sorted(float(sep.det_hi[j] - sep.det_lo[j]) for j in range(Kq))
         out['mechanism'].update(open_cells=len(sep.open), splits=sep.splits, closures=sep.closures, ratio_draws=ratio_draws, signed_draws=signed_draws, epochs=epochs, residual_det=residual_det, cell_ops=sep.cell_ops,
@@ -556,12 +657,83 @@ def solve(model_path, budget, bounds='block', seed=1, table_cap=1 << 16, enum_ca
         return finish(out, t_start, queries, ans, failed)
     except Deadline as e:
         try:
-            for j, q in enumerate(sq):                                   # certified publications made before the interrupt stand (sq / qmap / pub exist only in the approximate stage)
-                if j in pub: lo, hi, g = pub[j]; publish(qmap[q], lo, hi, (lo + hi) / 2, g)
+            if sep.positive_mass():                                      # certified publications made before the interrupt stand, given the witness (sq / qmap / pub exist only in the approximate stage)
+                ans.update(pending)
+                for j, q in enumerate(sq):
+                    if j in pub: lo, hi, g = pub[j]; publish(qmap[q], lo, hi, (lo + hi) / 2, g)
+            out['positive_mass_witness'] = sep.positive_mass()
         except NameError: pass
         out['outcome'] = 'DEADLINE'; out['deadline_phase'] = str(e); return finish(out, t_start, queries, ans, failed)
     except AssertionError as e:
         out['outcome'] = 'CERTIFICATE_DEFECT'; out['error'] = str(e); return finish(out, t_start, queries, ans, failed)
+
+
+def _solve_mb(out, t_start, deadline, sep, root, sq, qmap, queries, ans, pending, failed, publish, eps, delta, rng, cap, ph, K):
+    """mini-bucket proposal arm: no refinement; the proposal and its cap come from the same approximation; acceptance = the existing signed-residual rule"""
+    Kq = len(sq); t0 = tnow()
+    try:
+        mbp = MBProposal(sep.blocks, sep.cards, cap, deadline)
+    except Deadline as e:
+        ph['mb_construct'] = tnow() - t0; out['outcome'] = 'DEADLINE'; out['deadline_phase'] = 'mb_proposal'; return finish(out, t_start, queries, ans, failed)
+    ph['mb_construct'] = tnow() - t0
+    out['mechanism'].update(mb_cap=cap, mb_U_log2=lg(mbp.U), mb_L_log2=lg(mbp.L), mb_max_table=mbp.max_table, mb_steps=len(mbp.steps), root_E_log2=lg(root.E), cap_tightening_log2_E_minus_U=((lg(root.E) - lg(mbp.U)) if root.E > 0 and mbp.U > 0 else None))
+    if mbp.U == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, {}, failed)          # Z <= U = 0 exactly
+    alpha_r = delta / 2 / (Kq + 1); ratio = MBRatioStream(Kq, alpha_r, mbp.U); signed = None; epoch = 0; epoch_draws = 0; epoch_len = 64; pub = {}; trace = []; t_rat = t_sig = 0.0; chk_t = tnow(); epochs = 0
+    # global range bounds of f_j: interior rho range at the root, separator [0, 1]
+    rng_lo = [sep.query_range(root, j)[0] for j in range(Kq)]; rng_hi = [sep.query_range(root, j)[1] for j in range(Kq)]
+    seen = {}                                                            # distinct evaluated separator assignments -> z(s): Z >= sum (an EXACT lower bound; never double-counted)
+    seen_sum = [0]
+    def note(s, z):
+        if z and s not in seen: seen[s] = z; seen_sum[0] += z
+    def Z_lo_now():
+        zi = ratio.Z_interval(); return max(F(mbp.L), F(seen_sum[0]), zi[0] if zi else F(0))
+    def try_publish(iv, g):
+        for j in range(Kq):
+            if j in pub: continue
+            if iv[j][1] - iv[j][0] <= 2 * eps: pub[j] = (iv[j][0], iv[j][1], g)
+    try:
+        while tnow() < deadline and len(pub) < Kq:
+            t0 = tnow(); W, s_, z_, g_, _ = ratio.draw(sep, mbp, rng); note(s_, z_); t_rat += tnow() - t0
+            t0 = tnow()
+            if signed is None and ratio.t >= 16 and len(pub) < Kq and ratio.H > 0:
+                iv = ratio.intervals(); epoch += 1; epochs += 1
+                cand = [min(F(1), max(F(0), (iv[j][0] + iv[j][1]) / 2)) for j in range(Kq)]
+                caps = [mbp.U * max(abs(rng_lo[j] - cand[j]), abs(rng_hi[j] - cand[j])) for j in range(Kq)]
+                signed = MBSignedStream(cand, caps, delta / (2 * epoch * (epoch + 1)) / Kq, epoch); epoch_draws = 0
+            if signed is not None:
+                s_, z_ = signed.draw(sep, mbp, rng); note(s_, z_); epoch_draws += 1
+                if epoch_draws % 16 == 0:
+                    iv = signed.intervals(); Z_lo = Z_lo_now()
+                    if Z_lo > 0:
+                        for j in range(Kq):
+                            if j in pub: continue
+                            lo, hi = iv[j]
+                            if -eps * Z_lo <= lo and hi <= eps * Z_lo: pub[j] = (signed.cand[j] - eps, signed.cand[j] + eps, 'PAC_SIGNED')
+                    if epoch_draws >= epoch_len * (2 ** (epoch - 1)): signed = None
+            t_sig += tnow() - t0
+            if tnow() - chk_t >= 1.0:
+                chk_t = tnow(); iv = ratio.intervals()
+                if iv is not None: try_publish(iv, 'PAC')
+                zi = ratio.Z_interval(); Z_lo = Z_lo_now(); siv = signed.intervals() if signed is not None else None
+                # residual shrinkage: median over queries of (signed half-width) / (eps Z_lo); publication needs <= 1 (and the center inside)
+                shr = None
+                if siv is not None and Z_lo > 0: shr = float(sorted((hi - lo) / 2 / (eps * Z_lo) for lo, hi in siv)[Kq // 2])
+                trace.append(dict(t=round(tnow() - t_start, 2), ratio_draws=ratio.t, signed_draws=(signed.t if signed else None), epoch=epoch, Zhat_log2=(lg(ratio.H / ratio.Hb) if ratio.H > 0 else None), U_log2=lg(mbp.U), ratio_Z_width_log2=(lg(zi[1] - zi[0]) if zi else None),
+                                  Zlo_log2=lg(Z_lo), Zlo_source=('distinct_sum' if F(seen_sum[0]) >= max(F(mbp.L), (zi[0] if zi else F(0))) else ('mb_min' if F(mbp.L) >= (zi[0] if zi else F(0)) else 'ratio_pac')), distinct_assignments=len(seen), median_ratio_width=(sorted(float(hi - lo) for lo, hi in iv)[Kq // 2] if iv else None), median_signed_halfwidth_over_eps_Zlo=shr, published=len(pub)))
+    except Deadline: pass
+    iv = ratio.intervals()
+    if iv is not None: try_publish(iv, 'PAC')
+    out['positive_mass_witness'] = sep.positive_mass()
+    if sep.positive_mass():
+        ans.update(pending)
+        for j, q in enumerate(sq):
+            if j in pub: lo, hi, g = pub[j]; publish(qmap[q], lo, hi, (lo + hi) / 2, g)
+    else: out['withheld_without_witness'] = len(pub) + len(pending)
+    ph.update(ratio_stream=t_rat, signed_stream=t_sig); zi = ratio.Z_interval()
+    out['trace'] = trace; out['mechanism'].update(distinct_assignments=len(seen), distinct_sum_log2=lg(F(seen_sum[0])), ratio_draws=ratio.t, signed_draws=(signed.t if signed else None), epochs=epochs, Zhat_log2_DIAGNOSTIC=(lg(ratio.H / ratio.Hb) if ratio.H > 0 else None), Zlo_log2=lg(Z_lo_now()), Zhi_log2=(lg(zi[1]) if zi else None),
+                            ratio_Z_width_log2=(lg(zi[1] - zi[0]) if zi else None), median_ratio_width=(sorted(float(hi - lo) for lo, hi in iv)[Kq // 2] if iv else None), published=len(pub), published_by=_count([g for _, _, g in pub.values()]))
+    out['outcome'] = 'COMPLETE' if len(ans) == K else 'DEADLINE_PARTIAL'
+    return finish(out, t_start, queries, ans, failed)
 
 
 def lg(x):
@@ -594,13 +766,13 @@ def finish(out, t_start, queries=None, ans=None, failed=None):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=20.0)
     ap.add_argument('--bounds', default='block', choices=['block', 'factorwise']); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--table-cap', type=int, default=1 << 16)
-    ap.add_argument('--enum-cap', type=int, default=1 << 16); ap.add_argument('--force-approx', action='store_true'); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--no-ladder', action='store_true'); ap.add_argument('--mb-cap', type=int, default=0, help='mini-bucket integrated cell bounds with this table cap (0 = off); deterministic route only')
+    ap.add_argument('--enum-cap', type=int, default=1 << 16); ap.add_argument('--force-approx', action='store_true'); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--no-ladder', action='store_true'); ap.add_argument('--mb-cap', type=int, default=0, help='mini-bucket table cap: integrated cell bounds (proposal cell; 0 = off) or the proposal construction (proposal mb; default 4096)'); ap.add_argument('--proposal', default='cell', choices=['cell', 'mb'], help='cell = uniform inside prefix cells (BLOCKRES v1); mb = mini-bucket-derived proposal with its own cap (prior art baseline)')
     a = ap.parse_args()
-    out = solve(a.input, a.budget, bounds=a.bounds, seed=a.seed, table_cap=a.table_cap, enum_cap=a.enum_cap, force_approx=a.force_approx, eps=F(a.epsilon), delta=F(a.delta), ladder=not a.no_ladder, mb_cap=a.mb_cap)
+    out = solve(a.input, a.budget, bounds=a.bounds, seed=a.seed, table_cap=a.table_cap, enum_cap=a.enum_cap, force_approx=a.force_approx, eps=F(a.epsilon), delta=F(a.delta), ladder=not a.no_ladder, mb_cap=a.mb_cap, proposal=a.proposal)
     out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]
     os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True); json.dump(out, open(a.output, 'w'), indent=1, default=str)
     m = out['mechanism']; print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), phases={k: round(v, 3) for k, v in out['phases_s'].items()},
-                                   mech={k: m.get(k) for k in ('blocks', 'separator_vars', 'eliminated_vars', 'table_cap_used', 'N_S_log2', 'root_E_log2', 'root_B_log2', 'root_B_other_log2', 'Zhat_log2_DIAGNOSTIC', 'Zlo_log2', 'Zhi_log2', 'published_by', 'median_det_width', 'median_ratio_width', 'ratio_draws', 'signed_draws', 'splits')}), default=str))
+                                   mech={k: m.get(k) for k in ('blocks', 'separator_vars', 'eliminated_vars', 'table_cap_used', 'N_S_log2', 'root_E_log2', 'mb_U_log2', 'mb_L_log2', 'cap_tightening_log2_E_minus_U', 'root_B_log2', 'root_B_other_log2', 'Zhat_log2_DIAGNOSTIC', 'Zlo_log2', 'Zhi_log2', 'ratio_Z_width_log2', 'published_by', 'median_det_width', 'median_ratio_width', 'ratio_draws', 'signed_draws', 'splits')}), default=str))
 
 
 if __name__ == '__main__': main()
