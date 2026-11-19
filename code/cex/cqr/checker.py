@@ -24,7 +24,7 @@ import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR,
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.9 (2026-11-18, A1 review CQR-A1-01: frontier_closed_zero_mass proofs verified by journal + partition replay with zero-mass TRANSFER to the original model (exact zero-preserving operators / original-factor zero slice / bounded elimination; never a producer mass field); reference_enumeration proofs beyond the enumeration cap fall back to the same independent short routes before UNVERIFIABLE; v1.8 2026-11-18, structured-repair review CQR-S2-01: presentation labels validated by their DENOTATION (task.validate_output_metadata) for every query and route -- the structural branch no longer requires the literal singleton spelling; legacy-row placement table-derived; v1.7 2026-11-17, structured review CQR-S1-01..03: singleton correspondence derived from each query TABLE (output metadata must agree); the structural flag and route eligibility bound to the registered arm; structural attribution built from the FACTS of the re-execution with kernel digests verified against the verifier\'s own loaded kernels and producer observations labelled; the structural_reduced route (reduction re-derived, decoder + reduced model compared, rows lifted); v1.6: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
+CHECKER_VERSION = 'cqr-checker-v1.10 (2026-11-19, repair-2 review Z-O1 / Z-O2: zero-record fields (bias / stream counters / epochs / claimed mass) validated by type before any conversion (malformed = typed refusal, never an exception); interior deadline checks inside the zero-slice scan, inside every replayed frontier event (close / cell bounds through the Frontier service hook) and after the independent zero routes (a late zero verification is UNVERIFIABLE, never an acceptance); v1.9 2026-11-18, A1 review CQR-A1-01: frontier_closed_zero_mass proofs verified by journal + partition replay with zero-mass TRANSFER to the original model (exact zero-preserving operators / original-factor zero slice / bounded elimination; never a producer mass field); reference_enumeration proofs beyond the enumeration cap fall back to the same independent short routes before UNVERIFIABLE; v1.8 2026-11-18, structured-repair review CQR-S2-01: presentation labels validated by their DENOTATION (task.validate_output_metadata) for every query and route -- the structural branch no longer requires the literal singleton spelling; legacy-row placement table-derived; v1.7 2026-11-17, structured review CQR-S1-01..03: singleton correspondence derived from each query TABLE (output metadata must agree); the structural flag and route eligibility bound to the registered arm; structural attribution built from the FACTS of the re-execution with kernel digests verified against the verifier\'s own loaded kernels and producer observations labelled; the structural_reduced route (reduction re-derived, decoder + reduced model compared, rows lifted); v1.6: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -97,10 +97,32 @@ def zero_slice_witness(model, work, deadline=None):
         sc = tuple(f['scope']); n_cons = 0; all_zero = True
         for xs, wv in zip(product(*(range(cards[v]) for v in sc)), f['values']):
             work.entries += 1
+            if deadline is not None and (work.entries & 4095) == 0 and time.monotonic() >= deadline: return None       # interior deadline check (repair-2 review Z-O2): a large factor scan observes the allowance
             if any(v in ev and ev[v] != x for v, x in zip(sc, xs)): continue
             n_cons += 1
             if wv != 0: all_zero = False; break
         if all_zero and n_cons > 0: return dict(factor=fi, scope=list(sc), evidence_consistent_entries=n_cons)
+    return None
+
+
+class _ReplayDeadline(Exception): pass
+
+
+def _zero_record_problem(cert, zp):
+    """TYPED validation of the zero-record fields the frontier zero branch converts (repair-2 review Z-O1): returns None or the reason. bias: list of rationals (parsable, finite,
+    nonzero denominator); ratio_stream: absent or an object whose `t` is a nonnegative int; epochs: absent or a list of objects whose `t` is a nonnegative int; zero_evidence_proof:
+    resolved_mass a rational string and open_cells a nonnegative int. Nothing is converted before this validation, so a malformed record is a refusal, never an exception."""
+    def _rat(v):
+        try: F(str(v)); return True
+        except (ValueError, ZeroDivisionError, TypeError): return False
+    def _nn_int(v): return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+    b = cert.get('bias')
+    if b is not None and (not isinstance(b, list) or any(not _rat(x) for x in b)): return 'bias ledger is not a list of rationals'
+    rs = cert.get('ratio_stream')
+    if rs is not None and (not isinstance(rs, dict) or not _nn_int(rs.get('t', 0))): return 'ratio_stream record is not an object with an integer draw count'
+    ep = cert.get('epochs')
+    if ep is not None and (not isinstance(ep, list) or any(not isinstance(e, dict) or not _nn_int(e.get('t', 0)) for e in ep)): return 'epochs record is not a list of objects with integer draw counts'
+    if not isinstance(zp, dict) or not _rat(zp.get('resolved_mass')) or not _nn_int(zp.get('open_cells')): return 'zero_evidence_proof lacks a rational resolved_mass / integer open_cells'
     return None
 
 
@@ -211,6 +233,8 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
             if bad_ops: fail('zero proof journal commits by operators outside the task-effective policy: %s' % bad_ops); return fails, info
             snap_ = C.snapshot_json(); sha_ = hashlib.sha256(json.dumps(snap_, sort_keys=True, default=str).encode()).hexdigest()
             if sha_ != comp.get('final_sha256'): fail('zero proof: compiled model does not replay from the journal (final_sha256 %s vs %s)' % (sha_[:12], str(comp.get('final_sha256'))[:12])); return fails, info
+            zb = _zero_record_problem(cert, zp)                              # the TYPED data boundary of the zero record (repair-2 review Z-O1): bias / stream counters / epochs / claimed mass validated BEFORE any conversion
+            if zb: fail('zero proof record malformed: %s' % zb); return fails, info
             if [_F(b) for b in (cert.get('bias') or [])] != C.bias: fail('zero proof: recorded bias ledger differs from the replayed one'); return fails, info
             rs_ = cert.get('ratio_stream')                                   # the producer allocates the ratio record at PAC risk BEFORE any draw: it must hold ZERO draws here, as must every epoch
             if (isinstance(rs_, dict) and int(rs_.get('t') or 0) != 0) or any(int(e_.get('t') or 0) for e_ in (cert.get('epochs') or []) if isinstance(e_, dict)): fail('zero proof certificate carries stream draws (a closed zero frontier has none)'); return fails, info
@@ -245,6 +269,7 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
             else: info['zero_transfer'] = dict(method='independent enumeration (Z = 0)')
         else: fail('unknown zero proof kind %s' % zp.get('kind'))
         if w.get('answers') is not None or w.get('intervals') is not None: fail('zero-evidence output carries published answers')
+        if not fails and late(): fail('UNVERIFIABLE: the zero proof verification finished after the allowance (a late verification is never an acceptance)')
         return fails, info
     if w.get('outcome') != 'PUBLISHED': return fails, info
     pub = cert.get('publication') or {}; route = pub.get('route'); K = len(task['queries'])
@@ -529,6 +554,10 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
     if list(fr_rec['order']) != FR.canonical_order(n): fail('frontier order %s differs from the registered producer policy (%s): a certificate does not choose the split structure' % (str(list(fr_rec['order']))[:48], FR.FRONTIER_ORDER_POLICY)); return None, None
     try: fr = FR.Frontier(C.cards, C.views, cq, work, order=FR.canonical_order(n))
     except FR.FrontierStructureError as fx: fail('frontier construction refused: %s' % str(fx)[:100]); return None, None
+    if deadline is not None:
+        def _svc(op):                                                      # the producer's controller hook, here a pure deadline observer (repair-2 review Z-O2): a long closure / bound scan inside ONE replayed event stops at the allowance
+            if time.monotonic() >= deadline: raise _ReplayDeadline(op)
+        fr.service = _svc
     ratio_rec = cert.get('ratio_stream'); epochs = cert.get('epochs') or []
     H = F(0); Hj = [F(0)] * K; G = [F(0)] * K; V = F(0); t_r = 0
     # the ratio prior U_star is the producer's REGISTERED pre-sampling choice: the initial compiled frontier's positive U (fallback 1 when U = 0), fixed BEFORE any recorded event or
@@ -548,6 +577,7 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
         if pb: fail('malformed frontier event refused: %s' % pb); return None, None            # the typed boundary of the direct API (ninth review): no field access before validation
         op = ev.get('op')
         try:
+          try:
             if op == 'split':
                 kids = fr.split(ev['cell'])
                 if kids != ev.get('children'): fail('split children differ at cell %s' % ev['cell']); return None, None
@@ -600,6 +630,7 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
                 st['V'] += b * b * E * E
             elif op in ('ratio_stream_stopped', 'prune_zero', 'optional_cancelled', 'optional_operator_failed'): pass      # informational: the compile replay / rollback is verified separately
             else: fail('unknown event %s' % op); return None, None
+          except _ReplayDeadline as dx: fail('UNVERIFIABLE: allowance expired inside the replay of event %s (%s)' % (op, dx)); return None, None
         except FR.FrontierStructureError as fx: fail('frontier structure violated during the replay: %s' % str(fx)[:100]); return None, None
         except AssertionError as ax: fail('frontier replay assertion: %s' % str(ax)[:80]); return None, None
         except (KeyError, TypeError, ValueError, IndexError) as ex: fail('frontier event %s is malformed or refers to a cell that is not open (%s)' % (op, type(ex).__name__)); return None, None

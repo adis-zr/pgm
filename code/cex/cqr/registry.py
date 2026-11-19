@@ -19,7 +19,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 _m = sys.modules.get('solve')
 _solve = _m if (_m is not None and os.path.dirname(os.path.abspath(getattr(_m, '__file__', ''))) == HERE) else _load('cqr_solve', os.path.join(HERE, 'solve.py'))
 
-REGISTRY_VERSION = 'cqr-registry-v2.4 (2026-11-18, A1 review CQR-A1-01: group C36; v2.3 2026-11-18, structured-repair review CQR-S2-01: group C35; v2.2 2026-11-17, structured review repairs; groups C32-C34; v2.1: the candidate identity scope includes the cex/newarm structural executor modules the CQR worker may run; arms N1_NO_STRUCTURAL / G0_NO_STRUCTURAL; qualification groups C29-C31)'
+REGISTRY_VERSION = 'cqr-registry-v2.5 (2026-11-19, repair-2 review CQR-AF2-01..07: verifier-side versions only (checker v1.10, gate v1.2, report v1.1, suite v15); no group change; v2.4 2026-11-18, A1 review CQR-A1-01: group C36; v2.3 2026-11-18, structured-repair review CQR-S2-01: group C35; v2.2 2026-11-17, structured review repairs; groups C32-C34; v2.1: the candidate identity scope includes the cex/newarm structural executor modules the CQR worker may run; arms N1_NO_STRUCTURAL / G0_NO_STRUCTURAL; qualification groups C29-C31)'
 CQR_SCOPE_NEWARM = ('core.py', 'forest.py', 'dag.py', 'support.py', 'stream.py', 'stream_float.py', 'cex_executor.py', 'planning.py', 'geometry.py')      # the shared reader + the structural executors (cqr/structural.py adapters)
 def is_cqr_scope_key(key): return key.startswith('cqr/') or key in tuple('newarm/' + f for f in CQR_SCOPE_NEWARM)
 CQR_ARMS = {a: dict(kind=('primary' if a in ('N1_CQR', 'G0_CQR') else 'ablation'), representation='uai_table+query_spec', guarantee='EXACT|DETERMINISTIC|PAC', validator='cqr_candidate', identity_scope='cqr_candidate',

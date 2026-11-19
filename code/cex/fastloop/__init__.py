@@ -2,4 +2,4 @@
 candidate build and ONE relevant comparator per row, verifies every publication with the build's OWN checker (source-isolated) and against INDEPENDENT truth (cached by task digest),
 and writes ITERATION_REPORT.md / .json. Harness infrastructure OUTSIDE the candidate identity (cex/fastloop is in no registry scope). It never changes a solver, never relaxes a check,
 and never runs on the host of a frozen scored campaign without an explicitly recorded window."""
-FASTLOOP_VERSION = 'cqr-fastloop-v1 (2026-11-18)'
+FASTLOOP_VERSION = 'cqr-fastloop-v3 (2026-11-19; repair-2 review CQR-AF2-03..07: fresh private snapshots verified incl. absences, consumed binding at the worker / checker / oracle boundaries, PINNED build identities enforced at every boundary and before final success, typed worker record schema, normal process completion required for worker / checker / oracle, one absolute deadline through identity / git / every hard wait, trusted truth index, tri-state calibration measurements; v2 2026-11-18 A1 review CQR-FL-01..07; v1 2026-11-18)'
