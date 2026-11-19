@@ -108,3 +108,38 @@ partition with min in place of max gives L_mb <= Z. The ratio stream uses the co
 U * max(|lo_j - c_j|, |hi_j - c_j|) with [lo_j, hi_j] the global range bound of f_j (interior: root conditional-response range; separator: [0, 1]). Acceptance is the
 unchanged rule |S_j| <= eps Z_lo with Z_lo = max(L_mb, sum of z over DISTINCT evaluated assignments, ratio lower confidence bound). The code asserts z(x)/q(x) <= U
 and |Y_j| <= cap_j on every draw; the injected-cap control (U >> 40) is refused on the first draw.
+
+## 6. The integrated method (round 3, 19 Nov 2026): `integrated.py`
+
+Representation (Lemma F). Every table is stored as M * 2^e with M binary64, max M in [1, 2), plus a scalar rho with: exact entry in [M (1 - rho), M (1 + rho)] 2^e for every
+entry, and M = 0 iff the exact entry is 0. (i) Exact integer -> float: shift by k so that the maximum is < 2^1000; if k > 0 every nonzero entry must keep >= 64 bits
+(else the float path is REFUSED, typed NUMERIC_RANGE_REFUSED); float(int) is correctly rounded; rho = u + 2^-63 (u = 2^-53). (ii) Product of k tables: rho' = prod (1 + rho_i)
+(1 + u)^(k-1) - 1. (iii) Sum of n nonnegative terms in any order: rho' = (1 + rho)(1 + u)^(n-1) - 1. (iv) max / min: rho unchanged (the extremum of the floats is the float
+of an entry; the bound holds entrywise). (v) Rescaling by a power of two is exact; a nonzero entry below 2^-900 of its table maximum REFUSES the path (no subnormals; zeros
+stay exact). Controls: all entries of all block tables and an eliminated message verified inside their bounds by exact rational arithmetic (CONTROLS_INT_FINAL.json).
+
+Proposal and cap. The mini-bucket pass of section 5 is run on the float block tables: the summed mini-bucket of each bucket defines q(x_i | x_>i), the maxed ones the bound;
+U_cap = (product of the scalar messages) * (1 + rho_U)(1 + rho_W) >= U_exact (1 + rho_W). Sampling is in the log domain: log2 p_a = sum over the summed mini-bucket of
+(log2 M + e); probabilities below 2^-900 of the row maximum are truncated to 0 (missed mass <= U * |S| * 2^-900, inside eps_num); the draw is numpy cumsum + searchsorted on
+the float probabilities, and log2 q(x) is accumulated from the same floats. The weight used in the certificate is X = 2^(log2 z - log2 q - log2 U_cap), clipped to 1, where
+log2 z is the sum over blocks of (log2 M_b[s_b] + e_b). The code asserts log2 X <= 2^-30 on every draw (the injected 40-bit cap reduction is refused on the first draw).
+Exactness statements that survive the float path: X > 0 observed implies z(s) > 0 (every rho < 1), so Z > 0 (the positive-mass witness); U_cap = 0 implies Z = 0 (float
+zeros are exact zeros, nothing is truncated inside tables).
+
+The direct marginal certificate. For query j with conditional response f_j in [0, 1] (separator indicator, or the interior ratio M_Q 2^(e_Q) / M_G 2^(e_G) clipped to [0,1])
+and a candidate m, Y_t(m) = X_t (f_jt - m) in [-1, 1] with E_q[Y(m)] = (Z / U_cap)(mu_j - m) exactly for the ANALYSED law (q = the float conditionals as exact dyadic
+rationals, X = z / (q U_cap) exact). The implemented quantities differ from the analysed ones by a relative bias bounded by eps_num = rho_W + rho_f + |S| 2^-50 (realized
+draw law vs analysed law) + |S| 2^-900 (truncation) + 2^-40, recorded per run (2^-34.7 on BN_12) and added to the certificate as a shift allowance Lambda eps_num on the center.
+Confidence sequence: predictable-plug-in empirical Bernstein (Waudby-Smith & Ramdas 2020, Theorem 2; for bounded variables in [0, 1], here applied to (Y + 1)/2):
+    0 in CS_t(m)  <=>  | sum_i lambda_i Y_i(m) | <= 2 ln(2/alpha) + 2 sum_i psi_E(lambda_i) (Y_i(m) - mhat_{i-1}(m))^2 + Lambda eps_num,
+psi_E(l) = (-ln(1 - l) - l) / 4, mhat_{i-1}(m) = sum_{j<i} Y_j(m) / i, lambda_i in [0, 0.9] predictable (from the running variance at the running estimate; any predictable
+choice in [0, 1) is valid for every fixed m, so no union over m is needed: the confidence set C_t = {m in [0, 1] : 0 in CS_t(m)} is valid because the sequence Y_t(mu_j) has
+mean exactly 0 and the CS for THAT fixed sequence fails with probability <= alpha, time-uniformly). Because Y_i(m) is affine in m, both sides are quadratics in m with
+m-free coefficients (A - m B and c + 2(P - 2 m Q + m^2 R)), so C_t is [0, 1] minus at most two open root intervals; the code publishes its convex hull (a superset) when the
+hull is at most 2 eps wide, at risk alpha = delta / K per query; the K sets hold simultaneously with probability >= 1 - delta (union bound). All sums are widened by
+(1 + 2^-30) >= (1 + u)^(t + 10) for t < 2^20 draws, the square root by (1 + 2^-40), and the hull by 2^-45 outward. No separate normalizer lower bound enters.
+Normalizer baseline. The same draws feed a PrPl-EB confidence sequence for E[X] = Z / U_cap (the WMB-IS-style finite-sample bound on Z with the unweighted max
+mini-bucket proposal); it is reported, not used for publication.
+
+Scope not covered: weighted (Hoelder) mini-buckets; shared backward recovery (the float replay per interior variable was fast enough on both tasks: 0.05-0.09 s, all 42 / 24
+interior variables recovered, none failed); ratio / conditional queries.
