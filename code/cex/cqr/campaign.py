@@ -30,7 +30,7 @@ PC = load_module('pac_campaign', os.path.join(PAC, 'campaign.py'))          # th
 if HERE in sys.path: sys.path.remove(HERE)
 sys.path.insert(0, HERE)                                                   # pac campaign re-inserted PAC at the front; the CQR directory stays first for later bare imports
 import kernel_identity as KI                                               # frozen identity of EVERY natively loaded artifact (binaries + build records; CQR-09)
-CAMPAIGN_VERSION = 'cqr-campaign-v2 (2026-11-16; kernel identity frozen, balanced arm blocks, no second-matrix contingency)'
+CAMPAIGN_VERSION = 'cqr-campaign-v2.1 (2026-11-17; kernel identity frozen for the CQR arms too (structural backend), diagnostics sidecar path in every CQR receipt, dev-manifest ledger scope override)'
 MANIFEST_SCHEMA = 'cqr_campaign_manifest_v1'
 KINDS = ('cqr_primary', 'cqr_ablation', 'legacy_primary', 'comparator', 'legacy_native', 'cqr_normalizer')
 BUDGETS = [20.0, 120.0]
@@ -38,7 +38,7 @@ REPLAY_FACTOR = 3.0
 TASK = dict(epsilon='1/200', delta='1/1000000', delta_allocation='delta/2 ratio stream; delta/(2 e (e+1)) validation epoch e (CQR); per coordinate family_delta/K (baseline PAC arms)', deterministic_delta='0', note='campaign default; a row whose frozen query spec declares its own mode / epsilon / delta carries them in task_params (the gate verifies the certificate against the row declaration)')
 LEDGER = 'CQR_LEDGER.jsonl'
 PAC_CANDIDATE_ARMS = tuple(PR.CANDIDATE_ARMS)
-KERNEL_RECORDS = {'newarm': (os.path.join(NEWARM, 'cex_build.json'), os.path.join(NEWARM, 'libcex_kernel.dylib'), PAC_CANDIDATE_ARMS), 'b0_frozen_v14': (os.path.join(CEX, 'b0_frozen_v14', 'cex_build.json'), os.path.join(CEX, 'b0_frozen_v14', 'libcex_kernel.dylib'), ('B0_FROZEN_V14',))}
+KERNEL_RECORDS = {'newarm': (os.path.join(NEWARM, 'cex_build.json'), os.path.join(NEWARM, 'libcex_kernel.dylib'), PAC_CANDIDATE_ARMS + tuple(sorted(R.CQR_ARMS))), 'b0_frozen_v14': (os.path.join(CEX, 'b0_frozen_v14', 'cex_build.json'), os.path.join(CEX, 'b0_frozen_v14', 'libcex_kernel.dylib'), ('B0_FROZEN_V14',))}
 
 
 def sha(p):
@@ -211,7 +211,7 @@ def manifest(RD, rows, dev=False, dev_restrictions=None, budgets=None, plan=None
                seeds=dict(root_seed=root_seed, generation='sha256(root | model_sha | evidence_sha | query_sha | arm | budget | replicate) for the CQR arms and the baseline PAC arms; B0 / comparators / natives unseeded'),
                ordering_rule=ORDERING_RULE,
                cells=cells, counts=dict(cells=n, by_arm={a: sum(1 for c in cells if c['arm'] == a) for a in planned_arms}, by_cohort={k: sum(1 for c in cells if c['cohort'] == k) for k in sorted({c['cohort'] for c in cells})}, by_kind={k: sum(1 for c in cells if c['kind'] == k) for k in sorted({c['kind'] for c in cells})}, rows=len(rows), rows_available=len(avail), rows_unavailable=len(rows) - len(avail)),
-               ceiling=ceiling, candidate_artifact_hashes=artifact, cqr_scope_keys=sorted(k for k in artifact if k.startswith('cqr/') or k == 'newarm/core.py'), kernel_binaries=kernel_rec, kernel_identity=kernel_identity, kernel_identity_version=KI.VERSION,
+               ceiling=ceiling, candidate_artifact_hashes=artifact, cqr_scope_keys=sorted(k for k in artifact if R.is_cqr_scope_key(k)), kernel_binaries=kernel_rec, kernel_identity=kernel_identity, kernel_identity_version=KI.VERSION,
                kernel_identity_rule='every tag needed by a planned arm must match binary_sha256 AND record_sha256 (build-record file bytes) AND the record inner binary_sha256 at launch, resume, before and after every native cell; rebuilds under this identity are prohibited', replay_factor=REPLAY_FACTOR)
     man['manifest_sha256_without_self'] = hashlib.sha256(json.dumps(man, sort_keys=True, default=str).encode()).hexdigest()
     man['unavailable_artifacts_not_needed_by_planned_arms'] = unavailable_artifacts
@@ -221,7 +221,7 @@ def manifest(RD, rows, dev=False, dev_restrictions=None, budgets=None, plan=None
     return p
 
 
-def cqr_scope(artifact): return {k: v for k, v in (artifact or {}).items() if k.startswith('cqr/') or k == 'newarm/core.py'}
+def cqr_scope(artifact): return {k: v for k, v in (artifact or {}).items() if R.is_cqr_scope_key(k)}
 
 
 def classify_cqr(w, srec, wall, budget):
@@ -235,10 +235,11 @@ def classify_cqr(w, srec, wall, budget):
     return status, outcome, gt
 
 
-def run(RD, manifest_name='CAMPAIGN_MANIFEST.json', only=None, max_cells=None):
+def run(RD, manifest_name='CAMPAIGN_MANIFEST.json', only=None, max_cells=None, scope=None):
     RD = os.path.abspath(RD)
     man = json.load(open(os.path.join(RD, manifest_name))); L = os.path.join(RD, LEDGER); cells_dir = os.path.join(RD, 'cells'); os.makedirs(cells_dir, exist_ok=True); done = 0
     if man.get('schema') != MANIFEST_SCHEMA: raise SystemExit('START REFUSED: manifest schema %s is not %s' % (man.get('schema'), MANIFEST_SCHEMA))
+    if scope is not None and not man.get('dev'): raise SystemExit('START REFUSED: a ledger scope override is only allowed on a DEV manifest (scored cells charge cqr_scored_<kind>)')
     mh = sha(os.path.join(RD, manifest_name)); sp = os.path.join(RD, 'CAMPAIGN_START.json'); ah = hashlib.sha256(json.dumps(man.get('candidate_artifact_hashes') or {}, sort_keys=True).encode()).hexdigest()
     cur = R.full_inventory(CODE)
     if os.path.exists(sp):
@@ -291,7 +292,7 @@ def run(RD, manifest_name='CAMPAIGN_MANIFEST.json', only=None, max_cells=None):
         elif arm == 'SF_NATIVE_SELECT': r_ = __import__('fractions').Fraction(c['sf_r']); e_ = __import__('fractions').Fraction(c['sf_eps']); cmd = [PY, os.path.join(CODE, 'sf', 'invoke.py'), 'select', c['model_path'], str(r_.numerator), str(r_.denominator), str(e_.numerator), str(e_.denominator), out, str(budget)]
         else: cmd = [PY, os.path.join(PC.HERE, 'comparator_cell.py'), arm, c['model_path'], c['evidence_path'], os.path.join(attempt, 'cmp'), str(budget), nonce, str(launch)]
         job = 'cell:%s:%s:%d:r%d' % (c['case_id'], arm, int(budget), c['replicate'])
-        sup = [PY, '-m', 'gbidi.supervise', '--ledger', L, '--scope', 'cqr_scored_' + c['kind'], '--job', job, '--timeout', str(budget + 1.0), '--mem-gib', '3', '--interval', '0.05', '--stdout', os.path.join(attempt, 'stdout.txt'), '--stderr', os.path.join(attempt, 'stderr.txt'), '--', 'caffeinate', '-s', *cmd]
+        sup = [PY, '-m', 'gbidi.supervise', '--ledger', L, '--scope', (scope or 'cqr_scored_' + c['kind']), '--job', job, '--timeout', str(budget + 1.0), '--mem-gib', '3', '--interval', '0.05', '--stdout', os.path.join(attempt, 'stdout.txt'), '--stderr', os.path.join(attempt, 'stderr.txt'), '--', 'caffeinate', '-s', *cmd]
         env = dict(os.environ, OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1', VECLIB_MAXIMUM_THREADS='1')
         p = subprocess.run(sup, capture_output=True, text=True, cwd=CODE, env=env); wall = time.monotonic() - launch
         try: srec = json.loads(p.stderr.strip().splitlines()[-1])
@@ -335,7 +336,9 @@ def run(RD, manifest_name='CAMPAIGN_MANIFEST.json', only=None, max_cells=None):
                 json.dump(dict(c, nonce=nonce, attempt_dir=attempt, launch_relative_wall_s=wall, status='REBUILT_UNDER_FROZEN_IDENTITY', outcome='NOT_COMPLETED', guarantee_type='NONE', supervisor=srec, kernel_identity_failures=post_fail, phase='after_cell', worker_status_discarded=status, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())), open(rp, 'w'), indent=1, default=str)
                 raise SystemExit('CAMPAIGN HALTED: kernel identity changed during cell %s (%s)' % (c['cell_id'], '; '.join(post_fail)))
         rec = dict(c, nonce=nonce, attempt_dir=attempt, launch_relative_wall_s=wall, status=status, outcome=outcome, guarantee_type=gt, supervisor=srec, output_sha256=(sha(out) if os.path.exists(out) else None), worker_output=os.path.relpath(out, RD) if os.path.exists(out) else None, cmd=cmd, within_budget=wall <= budget, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
-        if validator == 'cqr_candidate': rec['route'] = w.get('route'); rec['bias'] = w.get('bias'); rec['worker_reason'] = (w.get('reason') or None)
+        if validator == 'cqr_candidate':
+            rec['route'] = w.get('route'); rec['bias'] = w.get('bias'); rec['worker_reason'] = (w.get('reason') or None)
+            dp_ = out[:-5] + '.diag.json'; rec['diag_sidecar'] = os.path.relpath(dp_, RD) if os.path.exists(dp_) else None; rec['diag_summary'] = w.get('diag')       # the sidecar survives a hard kill even when worker.json does not exist
         if validator == 'comparator_mar': rec['comparator'] = {k: w.get(k) for k in ('adapter_status', 'execution_capacity', 'capacity_note', 'output_sha256', 'output_file')}
         json.dump(rec, open(rp, 'w'), indent=1, default=str); done += 1
         print(json.dumps(dict(i=c['order_index'], case=c['case_id'], arm=arm, b=budget, r=c['replicate'], status=status, outcome=outcome, gt=gt, route=rec.get('route'), wall=round(wall, 2))), flush=True)
@@ -345,4 +348,5 @@ def run(RD, manifest_name='CAMPAIGN_MANIFEST.json', only=None, max_cells=None):
 if __name__ == '__main__':
     if len(sys.argv) < 3 or sys.argv[1] != 'run': raise SystemExit(__doc__)
     only = sys.argv[sys.argv.index('--only') + 1] if '--only' in sys.argv else None; mx = int(sys.argv[sys.argv.index('--max-cells') + 1]) if '--max-cells' in sys.argv else None
-    run(sys.argv[2], 'CAMPAIGN_MANIFEST_dev.json' if '--dev' in sys.argv else 'CAMPAIGN_MANIFEST.json', only, mx)
+    scope = sys.argv[sys.argv.index('--scope') + 1] if '--scope' in sys.argv else None
+    run(sys.argv[2], 'CAMPAIGN_MANIFEST_dev.json' if '--dev' in sys.argv else 'CAMPAIGN_MANIFEST.json', only, mx, scope)

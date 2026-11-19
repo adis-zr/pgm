@@ -32,7 +32,7 @@ R = load_module('cqr_registry', os.path.join(HERE, 'registry.py'))
 PG = load_module('pac_gate', os.path.join(PAC, 'gate.py'))
 if HERE in sys.path: sys.path.remove(HERE)
 sys.path.insert(0, HERE)
-GATE_VERSION = 'cqr-gate-v1 (2026-11-16: independent CQR checker per cell under REPLAY_FACTOR x budget; published answers bound to the certified publication; frozen cqr scope identity; effective-file dependency closure incl. .query.json; baseline arms through the frozen pac gate v4.3 _check_cell; aggregate budget -> structured UNVERIFIABLE)'
+GATE_VERSION = 'cqr-gate-v1.2 (2026-11-19, repair-2 review CQR-AF2-01: the global preflight extracted into global_preflight() for reuse by the successor verification path -- no semantic change; v1.1 2026-11-17, structured review CQR-S1-03: loaded-kernel provenance (worker-recorded digests vs the frozen identity) validated for every arm with native tags incl. the CQR arms; attribution carried from the checker\'s VERIFIED facts; v1 2026-11-16: independent CQR checker per cell under REPLAY_FACTOR x budget; published answers bound to the certified publication; frozen cqr scope identity; effective-file dependency closure incl. .query.json; baseline arms through the frozen pac gate v4.3 _check_cell; aggregate budget -> structured UNVERIFIABLE)'
 REPLAY_FACTOR = 3.0
 LEDGER = 'CQR_LEDGER.jsonl'
 ZERO_HASH = hashlib.sha256(b'0').hexdigest()
@@ -68,7 +68,7 @@ def _late(deadline):
     return _agg['deadline'] is not None and time.monotonic() > _agg['deadline']
 
 
-def cqr_scope(ch): return {k: v for k, v in (ch or {}).items() if k.startswith('cqr/') or k == 'newarm/core.py'}
+def cqr_scope(ch): return {k: v for k, v in (ch or {}).items() if R.is_cqr_scope_key(k)}
 
 
 def effective_paths(model_path):
@@ -237,21 +237,18 @@ def _check_cqr_cell(RD, cid, r, c, man, frozen_cqr, failures, fail, replay_facto
     if wp and os.path.exists(wp): _ev(wp)
 
 
-def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_factor=REPLAY_FACTOR, gate_budget_s=None):
-    RD = os.path.abspath(RD); failures = []; t_gate = time.monotonic(); _evidence.clear(); PG._evidence.clear(); exhausted_at = None
-    _agg['deadline'] = (t_gate + float(gate_budget_s)) if gate_budget_s else None; PG._agg['deadline'] = _agg['deadline']
-    if replay_factor is None or not (replay_factor > 0) or replay_factor != replay_factor: return _write(RD, out_path, dict(gate_version=GATE_VERSION, failures=[('*', 'invalid replay factor %r' % (replay_factor,))], gate_passed=False))
-    def fail(cid, msg): failures.append((cid, msg))
-    mp = os.path.join(RD, manifest_name)
-    if not os.path.exists(mp): fail('*', 'manifest %s missing' % manifest_name); return _write(RD, out_path, dict(gate_version=GATE_VERSION, failures=failures, gate_passed=False))
-    man = json.load(open(mp)); mh = sha(mp)
-    if man.get('schema') != 'cqr_campaign_manifest_v1': fail('*', 'manifest schema %s is not cqr_campaign_manifest_v1' % man.get('schema'))
+def global_preflight(RD, manifest_name, man, mh, fail, inventory_on_disk, kernel_on_disk):
+    """the frozen gate's GLOBAL PREFLIGHT (extracted verbatim from main for the successor verification path, repair-2 review CQR-AF2-01; main calls it with the code on disk):
+    frozen kernel identity vs `kernel_on_disk` for every tag a planned arm loads; CAMPAIGN_START binds the manifest and the frozen inventory content hash; the ledger's first row is a
+    CAMPAIGN_START binding the same hashes; no MANIFEST_AMENDMENT_* file; the frozen inventory is the COMPLETE required set and equals `inventory_on_disk`; registry identity failures
+    (frozen and on disk); planned ids unique, arms / cohorts registered; receipts on disk unique per cell, exactly the planned set (missing = NOT_RUN failure, unknown = failure).
+    Returns dict(ch, ah, frozen_cqr, frozen_candidate, frozen_b0, cells, receipts, unavailable_artifacts, differ) -- `differ` = frozen keys whose on-disk hash differs (main fails on any)."""
     ch = man.get('candidate_artifact_hashes') or {}; ah = hashlib.sha256(json.dumps(ch, sort_keys=True).encode()).hexdigest() if ch else None
     planned_arms = sorted({c['arm'] for c in (man.get('cells') or [])})
     if not man.get('kernel_identity'): fail('*', 'manifest carries no frozen kernel_identity (every natively loaded binary + build record; review CQR-09)')
     else:
         # the identity ON DISK at gate time must equal the frozen one for every tag a planned arm loads (launch/resume compare it too; closeout compares it again)
-        for m_ in KI.failures_vs_frozen(man['kernel_identity'], KI.collect(CODE), planned_arms): fail('*', 'kernel identity at gate: ' + m_)
+        for m_ in KI.failures_vs_frozen(man['kernel_identity'], kernel_on_disk, planned_arms): fail('*', 'kernel identity at gate: ' + m_)
     sp = os.path.join(RD, 'CAMPAIGN_START.json')
     if not os.path.exists(sp): fail('*', 'CAMPAIGN_START.json missing (no pre-execution binding of the manifest)')
     else:
@@ -273,13 +270,12 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
     else: fail('*', '%s missing' % LEDGER)
     if glob.glob(os.path.join(RD, 'MANIFEST_AMENDMENT_*')): fail('*', 'artifact amendment files present: the frozen identity is immutable (no amendment mechanism)')
     # ---- frozen source identity: the COMPLETE inventory (baseline scopes + cqr scope), equal to the files on disk
-    want = R.full_inventory(CODE)
+    want = inventory_on_disk
     if not isinstance(ch, dict) or not ch or any('/' not in k for k in ch): fail('*', 'manifest candidate_artifact_hashes must be a per-directory map'); ch = {}
     missing_keys = sorted(k for k in want if k not in ch); extra_keys = sorted(k for k in ch if k not in want)
     if missing_keys: fail('*', 'frozen source inventory INCOMPLETE: %d required sources missing (e.g. %s)' % (len(missing_keys), missing_keys[0]))
     if extra_keys: fail('*', 'frozen source inventory lists %d sources that are not in the required scopes (e.g. %s)' % (len(extra_keys), extra_keys[0]))
     differ = sorted(k for k in want if k in ch and ch[k] != want[k])
-    if differ: fail('*', 'frozen source %s differs from the file on disk (%d differ)' % (differ[0], len(differ)))
     planned_arms_ = sorted({c_['arm'] for c_ in man.get('cells') or []})
     id_fail, unavailable_artifacts = PR.identity_failures(ch, planned_arms_) if isinstance(ch, dict) and ch else ([], [])
     for f_ in id_fail: fail('*', f_)
@@ -306,6 +302,21 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
         if cid not in receipts: fail(cid, 'planned cell without receipt (NOT_RUN)')
     for cid in receipts:
         if cid not in cells: fail(cid, 'receipt for a cell not in the frozen manifest')
+    return dict(ch=ch, ah=ah, frozen_cqr=frozen_cqr, frozen_candidate=frozen_candidate, frozen_b0=frozen_b0, cells=cells, receipts=receipts, unavailable_artifacts=unavailable_artifacts, differ=differ)
+
+
+def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_factor=REPLAY_FACTOR, gate_budget_s=None):
+    RD = os.path.abspath(RD); failures = []; t_gate = time.monotonic(); _evidence.clear(); PG._evidence.clear(); exhausted_at = None
+    _agg['deadline'] = (t_gate + float(gate_budget_s)) if gate_budget_s else None; PG._agg['deadline'] = _agg['deadline']
+    if replay_factor is None or not (replay_factor > 0) or replay_factor != replay_factor: return _write(RD, out_path, dict(gate_version=GATE_VERSION, failures=[('*', 'invalid replay factor %r' % (replay_factor,))], gate_passed=False))
+    def fail(cid, msg): failures.append((cid, msg))
+    mp = os.path.join(RD, manifest_name)
+    if not os.path.exists(mp): fail('*', 'manifest %s missing' % manifest_name); return _write(RD, out_path, dict(gate_version=GATE_VERSION, failures=failures, gate_passed=False))
+    man = json.load(open(mp)); mh = sha(mp)
+    if man.get('schema') != 'cqr_campaign_manifest_v1': fail('*', 'manifest schema %s is not cqr_campaign_manifest_v1' % man.get('schema'))
+    pf = global_preflight(RD, manifest_name, man, mh, fail, R.full_inventory(CODE), KI.collect(CODE))
+    if pf['differ']: fail('*', 'frozen source %s differs from the file on disk (%d differ)' % (pf['differ'][0], len(pf['differ'])))
+    ch = pf['ch']; ah = pf['ah']; frozen_cqr = pf['frozen_cqr']; frozen_candidate = pf['frozen_candidate']; frozen_b0 = pf['frozen_b0']; cells = pf['cells']; receipts = pf['receipts']; unavailable_artifacts = pf['unavailable_artifacts']
     task = man.get('task') or {}; EPS = F(str(task.get('epsilon', '1/200'))); models = {}; gated_set = []
     counters = dict(checked=0, gated=0, pac_verified=0, cqr_checked=0, cqr_verified=0, zero_checked=0, zero_verified=0, unverifiable=0, baseline_checked=0)
     _attrib.clear()
@@ -321,11 +332,14 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', out_path=None, replay_facto
                 n0 = counters['checked']; bind_task_dependencies(c, fail)              # the EFFECTIVE dependency set incl. .query.json for every arm (the baseline enumerator knows only its own cohorts)
                 PG._check_cell(RD, cid, r, c, man, frozen_candidate, frozen_b0, models, failures, fail, EPS, replay_factor, counters)
                 counters['baseline_checked'] += counters['checked'] - n0
-                if man.get('kernel_identity') and r.get('worker_output') and os.path.exists(os.path.join(RD, r['worker_output'])):
-                    try: w_ = json.load(open(os.path.join(RD, r['worker_output'])))
-                    except (ValueError, OSError): w_ = None
-                    if w_ is not None:
-                        for m_ in KI.receipt_failures(man['kernel_identity'], w_, c['arm']): fail(cid, 'loaded kernel provenance: ' + m_)
+            # LOADED-KERNEL PROVENANCE for EVERY arm whose worker may dlopen a native kernel (structured review CQR-S1-03: the CQR arms load the newarm kernels through the structural backend;
+            # the recorded loaded artifact of the worker output -- not the disk at check time -- is compared with the frozen identity)
+            if man.get('kernel_identity') and r.get('worker_output') and os.path.exists(os.path.join(RD, r['worker_output'])) and KI.tags_needed_by(c['arm']):
+                try: w_ = json.load(open(os.path.join(RD, r['worker_output'])))
+                except (ValueError, OSError): w_ = None
+                if w_ is not None:
+                    for m_ in KI.receipt_failures(man['kernel_identity'], w_, c['arm']): fail(cid, 'loaded kernel provenance: ' + m_)
+                    if R.validator_of(c['arm']) == 'cqr_candidate': counters['cqr_provenance_checked'] = counters.get('cqr_provenance_checked', 0) + 1
         except (GateBudgetExhausted, PG.GateBudgetExhausted): exhausted_at = cid; fail(cid, 'UNVERIFIABLE -- aggregate verification budget exhausted while checking this cell')
         entry['verified_attribution'] = _attrib.get(cid)                     # the checker's authoritative attribution (R6), known only after the check
         paths = set(_cell_paths) | set(PG._cell_paths)

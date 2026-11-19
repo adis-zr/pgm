@@ -3,20 +3,18 @@
   {
    "name": "C1_identity_and_checker_end_to_end",
    "ok": true,
-   "wall_s": 3.727,
+   "wall_s": 2.997,
    "detail": {
     "fixtures": {
      "clones_det/N1_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_frontier_closure",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
-      "ops": [
-       "exact_quotient_pass"
-      ]
+      "ops": []
      },
      "clones_det/G0_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_reference",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
       "ops": []
      },
@@ -37,15 +35,13 @@
      },
      "concentration/N1_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_frontier_closure",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
-      "ops": [
-       "leaf_sumout"
-      ]
+      "ops": []
      },
      "concentration/G0_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_reference",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
       "ops": []
      },
@@ -114,17 +110,13 @@
      },
      "zero_evidence/N1_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_reference",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
-      "ops": [
-       "support_fixpoint",
-       "fixed_substitution",
-       "concentration"
-      ]
+      "ops": []
      },
      "zero_evidence/G0_CQR": {
       "outcome": "PUBLISHED",
-      "route": "exact_reference",
+      "route": "structural_original",
       "guarantee": "DETERMINISTIC",
       "ops": []
      }
@@ -144,6 +136,7 @@
      "normalizer_point_out": "Z point outside [(1-eps) U, (1+eps) L] of the PUBLISHED bounds (relative error not certified)",
      "false_zero_claim": "zero-evidence claim contradicted by the independent enumerator (Z = 35226954574555584)"
     },
+    "pac_routes_seen_in_c1": [],
     "noop_control": "accepted",
     "mutation_count": 13
    }
@@ -151,14 +144,15 @@
   {
    "name": "C2_independent_oracle_and_modes",
    "ok": true,
-   "wall_s": 0.252,
+   "wall_s": 0.279,
    "detail": {
     "routes": {
      "zero": 30,
      "EXACT_RATIONAL/exact_reference": 30,
-     "PAC_EPS/exact_reference": 23,
-     "DETERMINISTIC_EPS/exact_reference": 24,
-     "PAC_EPS/exact_frontier_closure": 1
+     "PAC_EPS/exact_reference": 22,
+     "DETERMINISTIC_EPS/exact_reference": 23,
+     "DETERMINISTIC_EPS/exact_frontier_closure": 1,
+     "PAC_EPS/exact_frontier_closure": 2
     },
     "zero_models": 30
    }
@@ -166,7 +160,7 @@
   {
    "name": "C3_quotient_exact_and_mutations",
    "ok": true,
-   "wall_s": 0.082,
+   "wall_s": 0.083,
    "detail": {
     "clones_n4": {
      "cards": 6,
@@ -225,7 +219,7 @@
   {
    "name": "C4_approximate_quotient_budget",
    "ok": true,
-   "wall_s": 0.091,
+   "wall_s": 0.113,
    "detail": {
     "within_budget": {
      "cards": [
@@ -281,7 +275,7 @@
   {
    "name": "C6_influence_and_concentration_conditions",
    "ok": true,
-   "wall_s": 0.134,
+   "wall_s": 0.137,
    "detail": {
     "m07": {
      "alpha": "1838389040009/40926032399343",
@@ -308,7 +302,7 @@
   {
    "name": "C7_frontier_typed_bounds_and_envelopes",
    "ok": true,
-   "wall_s": 0.078,
+   "wall_s": 0.08,
    "detail": {
     "children_checked": 416,
     "pointwise_vs_conditional_mean": {
@@ -326,7 +320,7 @@
   {
    "name": "C8_signed_residual_stream_and_epochs",
    "ok": true,
-   "wall_s": 1.602,
+   "wall_s": 1.649,
    "detail": {
     "omitted_cells": 5,
     "omitted_envelope_fraction_of_U": 0.9994082451180222,
@@ -344,15 +338,15 @@
   {
    "name": "C9_ratio_stream_history_and_record_before_resolve",
    "ok": true,
-   "wall_s": 3.046,
+   "wall_s": 2.979,
    "detail": {
-    "draws": 74,
-    "carves": 74,
-    "record_before_resolve_checked": 74,
+    "draws": 72,
+    "carves": 72,
+    "record_before_resolve_checked": 72,
     "duplicate_refused": true,
     "failed_draw_stops_stream": true,
     "scale_invariant": {
-     "draws": 74
+     "draws": 72
     },
     "fresh_route": "deterministic_frontier",
     "deleted_draw_refused": "ratio stream statistics do not replay",
@@ -362,7 +356,7 @@
   {
    "name": "C10_publication_feasibility_denominators_normalizer",
    "ok": true,
-   "wall_s": 0.072,
+   "wall_s": 0.1,
    "detail": {
     "undefined_typed": true,
     "normalizer": {
@@ -385,22 +379,22 @@
   {
    "name": "C11_protected_reference_and_resource_refusal",
    "ok": true,
-   "wall_s": 2.635,
+   "wall_s": 2.696,
    "detail": {
     "reference_shares": [
      0.586247909310537,
-     0.6588065025437109,
-     0.5590604172546295,
+     0.5028635829797443,
+     0.5013969879576717,
      0.5089961676537862,
-     0.5727370485370791,
-     0.5266214246052261
+     0.5014691595550137,
+     0.4997125433618281
     ],
     "no_shortcut": {
      "route": "exact_reference",
      "ops": [],
      "share": "11282/21"
     },
-    "deadline": "typed DEADLINE at loop",
+    "deadline": "typed DEADLINE at deterministic bounds",
     "worker_deadline": "DEADLINE",
     "memory_capped_worker": {
      "status": "NO_OUTPUT",
@@ -412,15 +406,16 @@
   {
    "name": "C12_registry_pipeline_dev_admission",
    "ok": true,
-   "wall_s": 115.408,
+   "wall_s": 75.282,
    "detail": {
-    "cells": 373,
+    "cells": 411,
     "arms": [
      "A0_POINT",
      "A1_CONDITIONAL",
      "B0_FROZEN_V14",
      "CBI_NATIVE",
      "G0_CQR",
+     "G0_NO_STRUCTURAL",
      "H1_HYBRID",
      "H4_NATIVE_C",
      "H4_NATIVE_PI",
@@ -436,6 +431,7 @@
      "N1_NO_QUERY_DIRECTED_REFINEMENT",
      "N1_NO_QUOTIENT",
      "N1_NO_SIGNED_STREAM",
+     "N1_NO_STRUCTURAL",
      "N1_NO_SYMMETRY_RELEVANCE",
      "P1_PAC_CONDITIONAL",
      "PGMAX_SUMPRODUCT_BP",
@@ -459,8 +455,10 @@
      "A1_CONDITIONAL|PUBLISHED": 3,
      "B0_FROZEN_V14|PUBLISHED": 3,
      "CBI_NATIVE|PUBLISHED": 1,
-     "G0_CQR|DEADLINE": 18,
-     "G0_CQR|PUBLISHED": 33,
+     "G0_CQR|DEADLINE": 9,
+     "G0_CQR|PUBLISHED": 42,
+     "G0_NO_STRUCTURAL|DEADLINE": 2,
+     "G0_NO_STRUCTURAL|PUBLISHED": 1,
      "H1_HYBRID|DEADLINE": 3,
      "H1_HYBRID|PUBLISHED": 4,
      "H4_NATIVE_C|PUBLISHED": 1,
@@ -470,32 +468,27 @@
      "LBP|PUBLISHED": 7,
      "LIBDAI_EXACT|PUBLISHED": 3,
      "MERLIN_CTE|PUBLISHED": 3,
-     "N1_CQR|DEADLINE": 13,
-     "N1_CQR|PUBLISHED": 38,
-     "N1_NO_AFFINE|DEADLINE": 3,
-     "N1_NO_AFFINE|PUBLISHED": 29,
-     "N1_NO_CONCENTRATION|DEADLINE": 2,
-     "N1_NO_CONCENTRATION|PUBLISHED": 30,
-     "N1_NO_INFLUENCE|DEADLINE": 2,
-     "N1_NO_INFLUENCE|PUBLISHED": 30,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|DEADLINE": 1,
-     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 31,
-     "N1_NO_QUOTIENT|DEADLINE": 5,
-     "N1_NO_QUOTIENT|PUBLISHED": 27,
-     "N1_NO_SIGNED_STREAM|DEADLINE": 1,
-     "N1_NO_SIGNED_STREAM|PUBLISHED": 31,
-     "N1_NO_SYMMETRY_RELEVANCE|DEADLINE": 3,
-     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 29,
+     "N1_CQR|DEADLINE": 9,
+     "N1_CQR|PUBLISHED": 42,
+     "N1_NO_AFFINE|PUBLISHED": 32,
+     "N1_NO_CONCENTRATION|PUBLISHED": 32,
+     "N1_NO_INFLUENCE|PUBLISHED": 32,
+     "N1_NO_QUERY_DIRECTED_REFINEMENT|PUBLISHED": 32,
+     "N1_NO_QUOTIENT|PUBLISHED": 32,
+     "N1_NO_SIGNED_STREAM|PUBLISHED": 32,
+     "N1_NO_STRUCTURAL|DEADLINE": 3,
+     "N1_NO_STRUCTURAL|PUBLISHED": 32,
+     "N1_NO_SYMMETRY_RELEVANCE|PUBLISHED": 32,
      "P1_PAC_CONDITIONAL|PUBLISHED": 3,
      "PGMAX_SUMPRODUCT_BP|PUBLISHED": 3,
      "SF_NATIVE_SELECT|PUBLISHED": 2,
      "WMB|PUBLISHED": 3
     },
     "gate": {
-     "gated": 319,
-     "wall": 111.458
+     "gated": 382,
+     "wall": 67.773
     },
-    "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 33, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 18, \"MEMORY\": 0",
+    "closeout": "closeout: DEVELOPMENT ADMISSION QUALIFIED  {\"G0_CQR\": {\"PUBLISHED-DETERMINISTIC\": 42, \"PUBLISHED-PAC\": 0, \"PROVED_ZERO_EVIDENCE\": 0, \"DEADLINE\": 9, \"MEMORY\": 0,",
     "missing_group_refused": true,
     "stale_identity_refused": true,
     "stale_suite_refused": true,
@@ -507,7 +500,7 @@
   {
    "name": "C13_tiny_model_delta_falsification",
    "ok": true,
-   "wall_s": 353.473,
+   "wall_s": 373.255,
    "detail": {
     "plan": {
      "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
@@ -537,7 +530,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 163.0
+      "wall_s": 170.5
      },
      {
       "delta": "1/16",
@@ -549,7 +542,7 @@
       "routes": {
        "pac_ratio_intersected_with_deterministic": 120
       },
-      "wall_s": 190.5
+      "wall_s": 202.7
      }
     ]
    }
@@ -557,30 +550,30 @@
   {
    "name": "C14_publication_contract_every_route",
    "ok": true,
-   "wall_s": 4.392,
+   "wall_s": 4.581,
    "detail": {
     "routes": {
-     "concentration.uai/N1_CQR": {
+     "concentration.uai/N1_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "guarantee": "DETERMINISTIC",
       "exact": false
      },
-     "biased_closure.uai/N1_CQR": {
+     "biased_closure.uai/N1_NO_STRUCTURAL": {
       "route": "deterministic_frontier",
       "guarantee": "DETERMINISTIC",
       "exact": false
      },
-     "constant20.uai/N1_CQR": {
+     "constant20.uai/N1_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "guarantee": "DETERMINISTIC",
       "exact": false
      },
-     "unary.uai/G0_CQR": {
+     "unary.uai/G0_NO_STRUCTURAL": {
       "route": "exact_reference",
       "guarantee": "DETERMINISTIC",
       "exact": true
      },
-     "clones_exact.uai/N1_CQR": {
+     "clones_exact.uai/N1_NO_STRUCTURAL": {
       "route": "exact_frontier_closure",
       "guarantee": "DETERMINISTIC",
       "exact": true
@@ -655,7 +648,7 @@
   {
    "name": "C15_semantics_and_guarantee_binding",
    "ok": true,
-   "wall_s": 33.404,
+   "wall_s": 35.131,
    "detail": {
     "mode_override": [
      "INVALID_TASK",
@@ -676,7 +669,7 @@
   {
    "name": "C16_fresh_process_pac_routes",
    "ok": true,
-   "wall_s": 34.198,
+   "wall_s": 34.28,
    "detail": {
     "ratio": {
      "route": "pac_ratio_intersected_with_deterministic",
@@ -730,10 +723,10 @@
   {
    "name": "C17_protected_reference_scheduling",
    "ok": true,
-   "wall_s": 12.457,
+   "wall_s": 13.193,
    "detail": {
-    "d32_N1_CQR": {
-     "wall_s": 0.07,
+    "d32_N1_NO_STRUCTURAL": {
+     "wall_s": 0.09,
      "work_reference": 7232,
      "work_optional": 10560,
      "compile_interrupted": {
@@ -741,10 +734,10 @@
       "kind": "reference_done"
      }
     },
-    "d32_G0_CQR": {
-     "wall_s": 0.07,
+    "d32_G0_NO_STRUCTURAL": {
+     "wall_s": 0.09,
      "work_reference": 7232,
-     "work_optional": 2314,
+     "work_optional": 7435,
      "compile_interrupted": null
     },
     "d32_compile_work_by_operator": {
@@ -764,7 +757,7 @@
     "nb4": {
      "route": "exact_reference",
      "work_reference": 7344128,
-     "work_optional": 7093381,
+     "work_optional": 7355876,
      "reference_done": true
     },
     "memory_cancellation": {
@@ -782,21 +775,21 @@
      "reference_done": true
     },
     "deadline_instrumentation": {
-     "reference_progress": 8.42846930027008e-08,
-     "work_reference": 4077736,
-     "work_optional": 3616152,
+     "reference_progress": 7.450580596923828e-08,
+     "work_reference": 3604648,
+     "work_optional": 3598221,
      "phase": "adaptive"
     },
     "parity_at_exits": {
      "e_zero": {
       "route": "deterministic_signed_residual_E_zero",
-      "work_reference": 25466,
+      "work_reference": 8570,
       "work_optional": 3585
      },
      "signed_pac": {
       "route": "pac_signed_residual_validation",
-      "work_reference": 17018,
-      "work_optional": 3499
+      "work_reference": 8570,
+      "work_optional": 3476
      }
     }
    }
@@ -804,7 +797,7 @@
   {
    "name": "C18_task_local_state_and_policy",
    "ok": true,
-   "wall_s": 0.136,
+   "wall_s": 0.186,
    "detail": {
     "order_sequence": [
      "norm",
@@ -825,7 +818,7 @@
   {
    "name": "C19_provenance_and_intake",
    "ok": true,
-   "wall_s": 0.364,
+   "wall_s": 0.414,
    "detail": {
     "controls": 17,
     "summary": "17/17 passed",
@@ -848,7 +841,7 @@
   {
    "name": "C20_atomic_compilation_replay_service_history_attribution",
    "ok": true,
-   "wall_s": 5.463,
+   "wall_s": 6.132,
    "detail": {
     "r1": {
      "support": {
@@ -991,7 +984,7 @@
         "commits": 1
        }
       ],
-      "worker_route": "exact_reference",
+      "worker_route": "deterministic_frontier",
       "failed": "leaf_sumout"
      },
      "exact_quotient_pass": {
@@ -1091,9 +1084,9 @@
       "route": "exact_reference"
      },
      "deadline_exit": {
-      "work_reference": 59648,
-      "work_optional": 60512,
-      "progress": 0.1640625
+      "work_reference": 63488,
+      "work_optional": 65632,
+      "progress": 0.1875
      },
      "support_quota": {
       "quota": 131296,
@@ -1165,7 +1158,7 @@
   {
    "name": "C21_checker_soundness_lifecycle_dependencies_closeout",
    "ok": true,
-   "wall_s": 10.739,
+   "wall_s": 11.455,
    "detail": {
     "f01": {
      "honest": {
@@ -1195,7 +1188,7 @@
     "f03": {
      "root5000": {
       "route": "exact_reference",
-      "wall_s": 4.82,
+      "wall_s": 4.88,
       "accepted": true
      },
      "forced_in_root": "exact_reference",
@@ -1255,7 +1248,7 @@
   {
    "name": "C22_precision_zero_mass_witness_service",
    "ok": true,
-   "wall_s": 22.504,
+   "wall_s": 23.565,
    "detail": {
     "f01": {
      "1e-12": {
@@ -1291,7 +1284,7 @@
      "legacy_point_moved_beyond_reservation": "legacy rows violate the publication contract: "
     },
     "f03": {
-     "N1_NO_QUOTIENT": {
+     "N1_NO_QUOTIENT_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "ops": [
        "leaf_sumout",
@@ -1326,7 +1319,7 @@
      },
      "final_witness_tampered": "the recorded final snapshot does not hash to final_sha256 (altered certificate)",
      "affine_witness_after_tampered": "journal replay: commit 17 (affine): the recorded transformed witness differs from the one the application deri",
-     "N1_CQR": {
+     "N1_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "ops": [
        "leaf_sumout",
@@ -1360,7 +1353,7 @@
        "1": 0
       }
      },
-     "N1_NO_AFFINE": {
+     "N1_NO_AFFINE_NO_STRUCTURAL": {
       "route": "deterministic_concentration",
       "ops": [
        "leaf_sumout",
@@ -1473,7 +1466,7 @@
   {
    "name": "C23_exactly_once_accounting_quota_inheritance_tolerance_domain",
    "ok": true,
-   "wall_s": 29.97,
+   "wall_s": 30.352,
    "detail": {
     "f01": {
      "helpers_x_offsets_x_stops": "8 helpers x 3 offsets x 6 stop settings: ledger == completed operations",
@@ -1567,7 +1560,7 @@
   {
    "name": "C24_zero_risk_controller_cadence_completed_charges",
    "ok": true,
-   "wall_s": 42.954,
+   "wall_s": 46.269,
    "detail": {
     "f01": {
      "singleton_PAC_EPS_0": "deterministic_frontier",
@@ -1583,7 +1576,7 @@
      "signed_positive_risk": {
       "route": "pac_ratio_intersected_with_deterministic",
       "guarantee": "PAC",
-      "draws": 450
+      "draws": 469
      },
      "grid_zero_risk": "typed DEADLINE, frontier + reference intact",
      "pac_route_at_zero_risk": "delta differs from the authoritative task"
@@ -1660,29 +1653,29 @@
   {
    "name": "C25_ratio_prior_binding_influence_scan_tolerance_semantics",
    "ok": true,
-   "wall_s": 36.11,
+   "wall_s": 39.977,
    "detail": {
     "f01": {
      "ratio": {
       "route": "pac_ratio_intersected_with_deterministic",
-      "draws": 450,
+      "draws": 469,
       "seeds_tried": 1
      },
      "normalizer": {
       "route": "normalizer_pac_ratio_intersected_with_deterministic",
-      "draws": 47,
+      "draws": 45,
       "seeds_tried": 1
      },
      "ratio_prior_halved": "ratio prior U_star 13421772800000000000000 differs from the registered pre-sampl",
      "ratio_prior_doubled": "ratio prior U_star 53687091200000000000000 differs from the registered pre-sampl",
      "ratio_tightened": {
       "original": [
-       "547483988814959585142480152021260105123585042688731218669633/1654514272621997963987500000000000000000000000000000000000000",
-       "874692710113079844987519847978739894876414957311268781330367/1654514272621997963987500000000000000000000000000000000000000"
+       "149747089686783503340733583955258407194130937688171977135651/447703312563653258925221875000000000000000000000000000000000",
+       "237922233069629806705022666044741592805869062311828022864349/447703312563653258925221875000000000000000000000000000000000"
       ],
       "tightened": [
-       "277680655651018926447242306895677930272252800307190214585593/827257136310998981993750000000000000000000000000000000000000",
-       "433407693813000788617757693104322069727747199692809785414407/827257136310998981993750000000000000000000000000000000000000"
+       "1518566184355924843824535707581190277262463276877792463949741/4477033125636532589252218750000000000000000000000000000000000",
+       "2358127043208208256633026792418809722737536723122207536050259/4477033125636532589252218750000000000000000000000000000000000"
       ],
       "altered_prior_refusal": "ratio prior U_star 13421772800000000000000 differs from the ",
       "original_prior_refusal": "published bounds of query 0 do not contain the re-derived en"
@@ -1692,12 +1685,12 @@
      "normalizer_prior_doubled": "ratio prior U_star 4294967296 differs from the registered pre-sampling choice 21",
      "normalizer_tightened": {
       "original": [
-       "1073741824",
-       "935990574186042877355457028244973177439005561261766483339139/470000000000000000000000000000000000000000000000000"
+       "248589583824209548178144472879721504777583359561648764388541/225000000000000000000000000000000000000000000000000",
+       "460080020015790451821855527120278495222416640438351235611459/225000000000000000000000000000000000000000000000000"
       ],
       "tightened": [
-       "1285893136364935980414208260998967028034738712442472869521387/1175000000000000000000000000000000000000000000000000",
-       "2311141974035064019585791739001032971965261287557527130478613/1175000000000000000000000000000000000000000000000000"
+       "317652278218067319009679853110749705513275822665331043733999/281250000000000000000000000000000000000000000000000",
+       "568184726581932680990320146889250294486724177334668956266001/281250000000000000000000000000000000000000000000000"
       ],
       "altered_prior_refusal": "ratio prior U_star 1073741824 differs from the registered pr",
       "original_prior_refusal": "published Z bounds do not contain the re-derived enclosure ["
@@ -1711,8 +1704,8 @@
       "refusal": "epoch 1 E_star differs from the launch envelope"
      },
      "epoch_replay_E_star": {
-      "role": "EPOCH-REPLAY control on a pac_ratio_intersected_with_deterministic publication that carries signed epochs (not a signed-publication test)",
-      "route": "pac_ratio_intersected_with_deterministic",
+      "role": "EPOCH-REPLAY control on a deterministic_frontier publication that carries signed epochs (not a signed-publication test)",
+      "route": "deterministic_frontier",
       "epochs": 5,
       "refusal": "epoch 1 E_star differs from the launch envelope"
      }
@@ -1802,7 +1795,7 @@
   {
    "name": "C26_partition_premise_order_validation_structural_negative",
    "ok": true,
-   "wall_s": 25.903,
+   "wall_s": 29.179,
    "detail": {
     "constructor": {
      "duplicate": "frontier order refused: order repeats variable(s) [0] (not a permutati",
@@ -1899,8 +1892,8 @@
      },
      "pac_replay": {
       "route": "pac_ratio_intersected_with_deterministic",
-      "events": 1764,
-      "draws": 450,
+      "events": 1846,
+      "draws": 469,
       "refusals": {
        "duplicate": "frontier order refused: order repeats variable(s) [0] (not a",
        "short": "frontier order refused: order has 19 entries for 20 compiled",
@@ -2059,7 +2052,7 @@
   {
    "name": "C27_final_query_accounting_evaluation_site_audit",
    "ok": true,
-   "wall_s": 2.708,
+   "wall_s": 2.966,
    "detail": {
     "a": {
      "1000": {
@@ -2248,7 +2241,7 @@
   {
    "name": "C28_view_storage_ownership_renumbering_declarations_event_schema",
    "ok": true,
-   "wall_s": 0.786,
+   "wall_s": 0.931,
    "detail": {
     "a": {
      "list_refused": "View storage must be an immutable tuple owned by the view (g",
@@ -2570,79 +2563,962 @@
      "carve_state_str": "malformed frontier event refused: event carve: point states must be in"
     }
    }
+  },
+  {
+   "name": "C29_failure_telemetry_survives_graceful_and_hard_kills",
+   "ok": true,
+   "wall_s": 3.841,
+   "detail": {
+    "a": {
+     "checkpoints": 10,
+     "overhead_s": 0.003768,
+     "phases": [
+      "start",
+      "parse",
+      "solve",
+      "reference_built",
+      "compile",
+      "after_compile",
+      "frontier_init",
+      "adaptive"
+     ],
+     "journal": 2
+    },
+    "b": {
+     "phase": "adaptive",
+     "last_enclosure_age_s": 0.029,
+     "ref_progress": 6.008148193359375e-05,
+     "checkpoints": 16
+    },
+    "c": {
+     "phase": "adaptive",
+     "elapsed_at_write": 1.300196,
+     "checkpoints": 13,
+     "journal_lines": 1,
+     "durable": 1,
+     "ref_progress": 4.100799560546875e-05,
+     "open_cells": 103
+    },
+    "d": {
+     "no_diag_route": "deterministic_concentration"
+    },
+    "e": {
+     "finalized": true
+    },
+    "c_kill_gap_s": 0.153
+   }
+  },
+  {
+   "name": "C30_cumulative_credit_reference_scheduling",
+   "ok": true,
+   "wall_s": 30.455,
+   "detail": {
+    "a": {
+     "route": "exact_frontier_closure",
+     "requests": 260,
+     "steps": 260,
+     "served": 3927040,
+     "work_ref": 3927128,
+     "work_opt": 3914402,
+     "step_cost_bound": 15104,
+     "max_overshoot": 14896,
+     "credit_max": 14896,
+     "reference_done": false
+    },
+    "b": {
+     "concentration/N1_NO_STRUCTURAL": {
+      "route": "deterministic_concentration",
+      "work_ref": 8800,
+      "work_opt": 1867,
+      "done": false,
+      "bound": 8704
+     },
+     "concentration/G0_NO_STRUCTURAL": {
+      "route": "deterministic_frontier",
+      "work_ref": 1540704,
+      "work_opt": 1533439,
+      "done": false,
+      "bound": 8704
+     },
+     "biased_closure/N1_NO_STRUCTURAL": {
+      "route": "deterministic_frontier",
+      "work_ref": 5682,
+      "work_opt": 539,
+      "done": false,
+      "bound": 5632
+     },
+     "biased_closure/G0_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "work_ref": 11534386,
+      "work_opt": 11533652,
+      "done": true,
+      "bound": 5632
+     },
+     "d32/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "work_ref": 7232,
+      "work_opt": 10560,
+      "done": true,
+      "bound": 1536
+     },
+     "d32/G0_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "work_ref": 7232,
+      "work_opt": 7435,
+      "done": true,
+      "bound": 1536
+     },
+     "pac28/N1_NO_STRUCTURAL": {
+      "route": "deterministic_frontier",
+      "work_ref": 2068704,
+      "work_opt": 2067661,
+      "done": false,
+      "bound": 4096
+     },
+     "pac28/G0_NO_STRUCTURAL": {
+      "route": "pac_ratio_intersected_with_deterministic",
+      "work_ref": 21700832,
+      "work_opt": 21699255,
+      "done": false,
+      "bound": 4096
+     }
+    },
+    "c": {
+     "no_structural": "exact_reference",
+     "structural": "structural_original",
+     "structural_wall_s": 0.0639144591987133
+    },
+    "d": {
+     "where": "loop",
+     "steps": 75,
+     "max_step": 256,
+     "ref_progress": 0.000286102294921875,
+     "scheduling": 75
+    },
+    "e": {
+     "mean_served_per_request": 15104.0,
+     "Q": 4096
+    }
+   }
+  },
+  {
+   "name": "C31_structural_adapters_composition_checker_reachability",
+   "ok": true,
+   "wall_s": 108.082,
+   "detail": {
+    "a": {
+     "rates": {
+      "support": 310000000.0,
+      "stream": 360000000.0,
+      "dag": 550000.0,
+      "forest": 10000000.0
+     },
+     "gate_fraction": 0.85
+    },
+    "b": {
+     "tree": {
+      "which": "forest",
+      "component_kinds": [
+       "forest"
+      ],
+      "native_calls": 0,
+      "wall_s": 0.0026,
+      "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
+     },
+     "dag": {
+      "which": "whole_dag",
+      "component_kinds": [
+       "dag"
+      ],
+      "native_calls": 0,
+      "wall_s": 0.0015,
+      "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
+     },
+     "blocks": {
+      "which": "components",
+      "component_kinds": [
+       "support"
+      ],
+      "native_calls": 3,
+      "wall_s": 0.0058,
+      "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
+     },
+     "K6_12": {
+      "which": "components",
+      "component_kinds": [
+       "stream"
+      ],
+      "native_calls": 1,
+      "wall_s": 0.003,
+      "verified": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
+     }
+    },
+    "c": {
+     "route": "structural_compiled",
+     "which": "forest",
+     "committed": [
+      "support_fixpoint",
+      "fixed_substitution",
+      "leaf_sumout"
+     ],
+     "bias": [
+      "0",
+      "0"
+     ],
+     "interpretation": "structural route on the COMPILED model: deterministic kernel enclosures of the c",
+     "nonzero_bias": {
+      "route": "structural_compiled",
+      "bias": [
+       "1/1765",
+       "1/1765"
+      ],
+      "committed": [
+       "exact_quotient_pass",
+       "approx_quotient"
+      ],
+      "oracle": "elimination",
+      "contained": true
+     }
+    },
+    "d": {
+     "conditional": "inapplicable",
+     "normalizer": "inapplicable",
+     "exact": "inapplicable",
+     "tiny_budget": "declined",
+     "synthetic_rates": [
+      "not_admitted",
+      "DEADLINE (typed; the CQR path ran to the deadline on the dense blocks)"
+     ],
+     "zero": [
+      "stopped",
+      "ZERO_EVIDENCE",
+      "compiler"
+     ]
+    },
+    "e": {
+     "route_id": "publication without a compile record on a non-reference route",
+     "route_kind": "structural re-execution: structural re-execution refused: evidence-sliced arity exceeds two",
+     "rows": "structural re-execution: structural re-execution does not reproduce the recorded rows (components)",
+     "bounds": "point of query 0 is not within eps of every value in its published bounds",
+     "point": "point of query 0 outside its published bounds",
+     "guarantee": "publication guarantee PAC differs from the class DETERMINISTIC of route structural_original",
+     "exact_flag": "exact flag True disagrees with route structural_original",
+     "version": "structural re-execution: structural record version cqr-structural-v0 is not cqr-structural-v2 (2026-11-17, str",
+     "optional_work_charged": "structural_original publication with 7 optional Work units charged (the route runs before the compile; a compi",
+     "provenance_stripped": "structural re-execution: structural record names no kernel digest for the support kernel the re-execution used",
+     "epsilon_record": "structural record epsilon 1/100 differs from the task epsilon",
+     "component_dropped": "structural re-execution: recorded component count 2 differs from the re-derived partition (3)",
+     "binding": "structural re-execution: structural re-execution does not reproduce the recorded rows (components)",
+     "compiled_bias_changed": "recorded bias ledger differs from the replayed one",
+     "compiled_tau_changed": "structural_compiled tau differs from eps - bias - reservation",
+     "compiled_bounds_record": "recorded compiled bounds differ from the re-derived structural composition",
+     "compiled_route_relabel": "structural_original route with a compile record (the route runs before the compile)"
+    },
+    "f": {
+     "tree/N1_NO_STRUCTURAL": [
+      "PUBLISHED",
+      "exact_reference"
+     ],
+     "tree/G0_NO_STRUCTURAL": [
+      "PUBLISHED",
+      "exact_reference"
+     ],
+     "blocks/N1_NO_STRUCTURAL": [
+      "DEADLINE",
+      null
+     ],
+     "joint14/N1_NO_STRUCTURAL": [
+      "PUBLISHED",
+      "exact_frontier_closure"
+     ],
+     "joint22/N1_NO_STRUCTURAL": [
+      "DEADLINE",
+      null
+     ],
+     "pac28/N1_CQR": "pac_ratio_intersected_with_deterministic"
+    },
+    "g": {
+     "G0": "structural_original",
+     "same_rows": true
+    },
+    "h": {
+     "counters": {
+      "attempts": 1,
+      "discovery_s": 0.0008135829120874405,
+      "execution_s": 0.005546582862734795,
+      "native_calls": 3,
+      "source_entries_read": 616
+     },
+     "work_reference": 672,
+     "work_optional": 0
+    }
+   }
+  },
+  {
+   "name": "C32_query_semantics_arm_eligibility_provenance_attribution",
+   "ok": true,
+   "wall_s": 29.289,
+   "detail": {
+    "a": {
+     "false_table_meta": "INVALID_TASK (both arms)",
+     "negative_state": "INVALID_TASK (both arms)",
+     "state_out_of_range": "INVALID_TASK (both arms)",
+     "variable_out_of_range": "INVALID_TASK (both arms)",
+     "indicator_wrong_meta_state": "INVALID_TASK (both arms)",
+     "wrong_length": "INVALID_TASK (both arms)",
+     "repeated_scope": "INVALID_TASK (both arms)",
+     "joint_negative_state": "INVALID_TASK (both arms)",
+     "conditional_contradiction": "INVALID_TASK (both arms)",
+     "indicator_matching_meta": "PUBLISHED, truth 3/4 contained (both arms)",
+     "table_no_meta_zero": "PUBLISHED, truth 0 contained (both arms)",
+     "honest_singleton": "PUBLISHED, truth 3/4 contained (both arms)",
+     "general_table_marker": "PUBLISHED, truth 7/20 contained (both arms)",
+     "subset_N1_CQR": "structural_original",
+     "subset_N1_NO_STRUCTURAL": "exact_reference",
+     "mixed_N1_CQR": "exact_reference",
+     "mixed_N1_NO_STRUCTURAL": "exact_reference",
+     "indicator_random_tables": {
+      "checked": 400,
+      "singletons": 153
+     },
+     "meta_swap_refused": "task not readable: query ind: output metadata {\"kind\": \"singleton\", \"state\": 0, \"variable\""
+    },
+    "b": {
+     "relabel_N1_NO_STRUCTURAL": "structural route structural_original published under arm N1_NO_STRUCTURAL whose ",
+     "relabel_G0_NO_STRUCTURAL": "structural route structural_original published under arm G0_NO_STRUCTURAL whose ",
+     "relabel_N1_NO_QUOTIENT_NO_STRUCTURAL": "structural route structural_original published under arm N1_NO_QUOTIENT_NO_STRUC",
+     "relabel_N1_NO_AFFINE_NO_STRUCTURAL": "structural route structural_original published under arm N1_NO_AFFINE_NO_STRUCTU",
+     "relabel_N1_NO_INFLUENCE_NO_STRUCTURAL": "structural route structural_original published under arm N1_NO_INFLUENCE_NO_STRU",
+     "honest_N1_NO_STRUCTURAL": "exact_reference",
+     "honest_G0_NO_STRUCTURAL": "exact_reference",
+     "honest_pac_N1_NO_STRUCTURAL": "pac_ratio_intersected_with_deterministic",
+     "full_gate_relabel_N1_NO_STRUCTURAL": [
+      "checker: structural route structural_original published under arm N1_NO_STRUCTURAL whose registered structural backend is DISABLED"
+     ],
+     "full_gate_relabel_G0_NO_STRUCTURAL": [
+      "checker: structural route structural_original published under arm G0_NO_STRUCTURAL whose registered structural backend is DISABLED"
+     ],
+     "full_gate_relabel_N1_NO_QUOTIENT_NO_STRUCTURAL": [
+      "checker: structural route structural_original published under arm N1_NO_QUOTIENT_NO_STRUCTURAL whose registered structural backend is DISABLED"
+     ],
+     "full_gate_relabel_N1_NO_AFFINE_NO_STRUCTURAL": [
+      "checker: structural route structural_original published under arm N1_NO_AFFINE_NO_STRUCTURAL whose registered structural backend is DISABLED"
+     ],
+     "full_gate_relabel_N1_NO_INFLUENCE_NO_STRUCTURAL": [
+      "checker: structural route structural_original published under arm N1_NO_INFLUENCE_NO_STRUCTURAL whose registered structural backend is DISABLED"
+     ],
+     "full_gate_honest_N1_NO_STRUCTURAL": "exact_reference",
+     "full_gate_honest_G0_NO_STRUCTURAL": "exact_reference",
+     "full_gate_honest_attribution": {
+      "route": "structural_original",
+      "which": "forest",
+      "components": [
+       {
+        "kind": "forest",
+        "variables": 5
+       }
+      ],
+      "native_calls": 0,
+      "native_kinds": [],
+      "kernel_digests_verified": {},
+      "producer_observed_wall_s": 0.0019291662611067295,
+      "verified_by": "bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier's loaded kernels"
+     }
+    },
+    "c": {
+     "forged_checker": "structural re-execution: recorded component attribution disagrees with the whole-model for",
+     "forged_gate": [
+      "checker: structural re-execution: recorded component attribution disagrees with the whole-model forest execution",
+      "loaded kernel provenance: N1_CQR: the worker loaded newarm_stream with sha256 000000000000, frozen 5b1862487a9b (at /certificate/publication/structural/kernel_p"
+     ],
+     "native_digest_altered": "structural re-execution: structural record kernel digest for support (000000000000) differ",
+     "native_digest_omitted": "structural re-execution: structural record names no kernel digest for the support kernel t",
+     "native_path_altered": "structural re-execution: structural record loaded path 'mystery.so' for support is not the",
+     "native_native_calls_zeroed": "structural re-execution: recorded native_calls 0 differs from the 3 native component execu",
+     "native_component_kind_dag": "structural re-execution: structural re-execution refused: requested DAG route unavailable",
+     "native_component_kind_stream": "structural re-execution: structural re-execution refused: REPRESENTATION",
+     "native_partition_merged": "structural re-execution: recorded component count 2 differs from the re-derived partition ",
+     "native_false_exact_fallback": "structural re-execution: uniform component recorded on a component with factors",
+     "native_wall_negative": "structural re-execution: structural record wall -1.0 is outside its domain (finite, nonneg",
+     "native_wall_nan": "structural re-execution: structural record wall nan is outside its domain (finite, nonnega",
+     "full_gate_digest_altered": [
+      "checker: structural re-execution: structural record kernel digest for support (000000000000) differs from the kernel loaded by the verifier (720a0771f0c7)",
+      "loaded kernel provenance: N1_CQR: the worker loaded newarm_cex with sha256 000000000000, frozen 720a0771f0c7 (at /certificate/publication/structural/kernel_prov"
+     ]
+    }
+   }
+  },
+  {
+   "name": "C33_compositional_discovery_deadline_propagation_reduction_lift",
+   "ok": true,
+   "wall_s": 21.383,
+   "detail": {
+    "a": {
+     "component_search_timeout": {
+      "candidates": [
+       "forest"
+      ],
+      "declines": [
+       "dag",
+       "component"
+      ],
+      "admitted": "forest"
+     },
+     "component_search_failure": {
+      "candidates": [
+       "forest"
+      ],
+      "declines": [
+       "dag",
+       "component"
+      ],
+      "admitted": "forest"
+     },
+     "component_split_timeout": {
+      "candidates": [
+       "forest"
+      ],
+      "declines": [
+       "dag",
+       "components"
+      ],
+      "admitted": "forest"
+     },
+     "n3000_natural": {
+      "candidates": [
+       "forest",
+       "components"
+      ],
+      "declines": [
+       "dag"
+      ],
+      "components_complete": true
+     },
+     "n500_allow_0.05": "forest",
+     "chain12000": {
+      "route": "structural_original",
+      "wall_s": 8.65,
+      "discovery": [
+       [
+        "dag",
+        "source DAG requires one nonempty factor "
+       ],
+       [
+        "component",
+        "geometry deadline"
+       ]
+      ]
+     }
+    },
+    "b": {
+     "observer": {
+      "elapsed_s": 0.2,
+      "calls": 385,
+      "post_deadline": 0,
+      "where": "adaptive optional turn"
+     },
+     "fresh_0.5": {
+      "wall_s": 0.537,
+      "outcome": "DEADLINE",
+      "expired_requests": null
+     },
+     "fresh_6": {
+      "route": "exact_reference",
+      "contained": true
+     },
+     "service_ops_observed": [
+      "affine",
+      "approx_quotient",
+      "concentration",
+      "deterministic_bounds",
+      "enter:deterministic_bounds",
+      "enter:make_candidate",
+      "exact_quotient_pass",
+      "feasible_point",
+      "frontier_close",
+      "frontier_init",
+      "influence_deletion",
+      "leaf_sumout",
+      "signed_law",
+      "support_fixpoint",
+      "symmetry"
+     ],
+     "1qt9_N1_NO_STRUCTURAL": "packet input not available on this host (skipped; disclosed)"
+    },
+    "c": {
+     "tiny": {
+      "reduced_models": 21,
+      "contained": 21,
+      "declined_zero_or_fixed": 19
+     },
+     "BN_31": "packet input not available on this host (skipped; disclosed)"
+    }
+   }
+  },
+  {
+   "name": "C34_terminal_diagnostics_freshness_and_operation_observability",
+   "ok": true,
+   "wall_s": 5.977,
+   "detail": {
+    "a": {
+     "route": "deterministic_frontier",
+     "draws": 69,
+     "overhead_s": 0.006089,
+     "wall_s": 1.2728919158689678,
+     "section_ages": {
+      "compiler": 1.258192,
+      "frontier": 8e-06,
+      "identity": 1.269177,
+      "memory": 0.00781,
+      "reference": 3.2e-05,
+      "scheduling": 2e-06,
+      "service": 0.002612,
+      "streams": 4e-06,
+      "work": 1e-06
+     }
+    },
+    "b": {
+     "equal": true,
+     "last_enclosure_age_s": 0.006,
+     "overhead_s": 0.007805
+    },
+    "c": {
+     "route": "exact_reference",
+     "frontier_section": "no frontier yet"
+    },
+    "d": {
+     "checkpoints": 109,
+     "draws": 58,
+     "stream_age_at_final_s": 4e-06
+    },
+    "e": {
+     "gap_s": 0.147,
+     "in_flight": {
+      "op": "deterministic_bounds",
+      "entered_elapsed_s": 1.25575
+     },
+     "last_completed": {
+      "op": "deterministic_bounds",
+      "wall_s": 0.051681
+     },
+     "section_ages": {
+      "compiler": 1.271666,
+      "frontier": 0.050335,
+      "identity": 1.295995,
+      "memory": 1e-06,
+      "reference": 0.030409,
+      "scheduling": 0.030401,
+      "service": 0.0,
+      "streams": 0.22473,
+      "work": 2e-06
+     }
+    },
+    "f": {
+     "a": 0.0048,
+     "b": 0.0054,
+     "c": 0.0069
+    }
+   }
+  },
+  {
+   "name": "C35_query_presentation_equivalence_structural_routes",
+   "ok": true,
+   "wall_s": 7.266,
+   "detail": {
+    "a": {
+     "joint_one": "round trip accepted, same identity",
+     "parity_one": "round trip accepted, same identity",
+     "joint_two": "round trip accepted, same identity",
+     "parity_two_reordered": "round trip accepted, same identity",
+     "conditional_tautology": "round trip accepted, same identity",
+     "conditional_overlap": "round trip accepted, same identity",
+     "conditional_plain": "round trip accepted, same identity",
+     "singleton": "round trip accepted, same identity",
+     "random_singleton_labels": {
+      "checked": 300,
+      "accepted": 122
+     },
+     "random_constructors_validate": 200
+    },
+    "b": {
+     "false_meta_zero": "query cz: output metadata {\"kind\": \"singleton\", \"state\": 1, \"variable\": 0} denotes P(X0=1)",
+     "joint_label_wrong_state": "query ind: output metadata {\"assign\": {\"0\": 0}, \"kind\": \"joint\"} denotes P(X0=0) (expectat",
+     "parity_label_wrong_bit": "query ind: output metadata {\"bit\": 0, \"kind\": \"parity\", \"variables\": [0]} denotes P(parity",
+     "joint_label_out_of_range": "state index 2 outside [0, 2) (negative or out-of-range indices are refused, never wrapped)",
+     "unknown_kind": "unknown output metadata kind 'marginal'",
+     "malformed_joint": "malformed joint output metadata {\"kind\": \"joint\"} (KeyError)",
+     "conditional_label_on_expectation": "query ind: output metadata {\"event\": {\"0\": 1}, \"given\": {\"0\": 1}, \"kind\": \"conditional\"} d",
+     "singleton_label_on_general_table": "query g: output metadata {\"kind\": \"singleton\", \"state\": 1, \"variable\": 0} denotes P(X0=1) "
+    },
+    "c": {
+     "joint_one/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "joint_one/full_gate": "PASSED, checker-verified",
+     "joint_one/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "parity_one/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "parity_one/full_gate": "PASSED, checker-verified",
+     "parity_one/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "indicator_table_marker/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "indicator_table_marker/full_gate": "PASSED, checker-verified",
+     "indicator_table_marker/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "indicator_no_meta/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "indicator_no_meta/full_gate": "PASSED, checker-verified",
+     "indicator_no_meta/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "indicator_joint_label/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "indicator_joint_label/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "singleton/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "singleton/full_gate": "PASSED, checker-verified",
+     "singleton/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "3/4"
+      ]
+     },
+     "joint_state0/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "1/4"
+      ]
+     },
+     "joint_state0/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "1/4"
+      ]
+     },
+     "repeated_mixed_family/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "3/4",
+       "3/4",
+       "3/4",
+       "1/4"
+      ]
+     },
+     "repeated_mixed_family/full_gate": "PASSED, checker-verified",
+     "repeated_mixed_family/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "3/4",
+       "3/4",
+       "3/4",
+       "1/4"
+      ]
+     },
+     "joint_repeated_3x/N1_CQR": {
+      "route": "structural_original",
+      "answers": [
+       "3/4",
+       "3/4",
+       "3/4"
+      ]
+     },
+     "joint_repeated_3x/N1_NO_STRUCTURAL": {
+      "route": "exact_reference",
+      "answers": [
+       "3/4",
+       "3/4",
+       "3/4"
+      ]
+     },
+     "zero_control": {
+      "route": "exact_reference",
+      "full_gate": "PASSED"
+     },
+     "parity_bit1_is_state1/N1_CQR": "structural_original",
+     "parity_bit1_is_state1/N1_NO_STRUCTURAL": "exact_reference",
+     "parity_bit0_general/N1_CQR": "exact_reference",
+     "parity_bit0_general/N1_NO_STRUCTURAL": "exact_reference",
+     "joint_last_state/N1_CQR": "structural_original",
+     "joint_last_state/N1_NO_STRUCTURAL": "exact_reference",
+     "joint_two_variables/N1_CQR": "exact_reference",
+     "joint_two_variables/N1_NO_STRUCTURAL": "exact_reference"
+    },
+    "d": {
+     "singleton": {
+      "route": "structural_reduced",
+      "enclosure": [
+       "847/4096",
+       "53/256"
+      ],
+      "local_truth": "19568/94533",
+      "disabled_arm": [
+       "exact_frontier_closure",
+       "19568/94533"
+      ],
+      "reduced_variables": 3,
+      "full_gate": "PASSED"
+     },
+     "joint_one": {
+      "route": "structural_reduced",
+      "enclosure": [
+       "847/4096",
+       "53/256"
+      ],
+      "local_truth": "19568/94533",
+      "disabled_arm": [
+       "exact_frontier_closure",
+       "19568/94533"
+      ],
+      "reduced_variables": 3,
+      "full_gate": "PASSED"
+     },
+     "parity_one": {
+      "route": "structural_reduced",
+      "enclosure": [
+       "847/4096",
+       "53/256"
+      ],
+      "local_truth": "19568/94533",
+      "disabled_arm": [
+       "exact_frontier_closure",
+       "19568/94533"
+      ],
+      "reduced_variables": 3,
+      "full_gate": "PASSED"
+     },
+     "indicator_table_marker": {
+      "route": "structural_reduced",
+      "enclosure": [
+       "847/4096",
+       "53/256"
+      ],
+      "local_truth": "19568/94533",
+      "disabled_arm": [
+       "exact_frontier_closure",
+       "19568/94533"
+      ],
+      "reduced_variables": 3,
+      "full_gate": "PASSED"
+     }
+    },
+    "e": {
+     "swapped_to_state0": "task not readable: query ind: output metadata {\"assign\": {\"0\": 0}, \"kind\": \"joint\"} denotes P(X0=0) (expectation), which is not the function of its own table: a",
+     "swapped_to_parity_bit0": "task not readable: query ind: output metadata {\"bit\": 0, \"kind\": \"parity\", \"variables\": [0]} denotes P(parity(X0)=0) (expectation), which is not the function of",
+     "swapped_to_singleton_state0": "task not readable: query ind: output metadata {\"kind\": \"singleton\", \"state\": 0, \"variable\": 0} denotes P(X0=0) (expectation), which is not the function of its o",
+     "equivalent_parity_label": "binding / identity refusal only (bytes differ); no semantic refusal: worker binding differs from the files on disk"
+    }
+   }
+  },
+  {
+   "name": "C36_zero_evidence_proofs_beyond_the_enumeration_cap",
+   "ok": true,
+   "wall_s": 1.517,
+   "detail": {
+    "a": {
+     "n3_zero_G0_CQR": {
+      "kind": "reference_enumeration",
+      "transfer": "independent enumeration (Z = 0)"
+     },
+     "n3_zero_G0_NO_STRUCTURAL": {
+      "kind": "reference_enumeration",
+      "transfer": "independent enumeration (Z = 0)"
+     },
+     "n3_positive_G0_CQR": "structural_original",
+     "n3_positive_G0_NO_STRUCTURAL": "exact_reference",
+     "n24_zero_G0_CQR": {
+      "kind": "frontier_closed_zero_mass",
+      "transfer": "evidence restriction only: Z_original(evidence) = Z_compiled"
+     },
+     "n24_zero_G0_NO_STRUCTURAL": {
+      "kind": "frontier_closed_zero_mass",
+      "transfer": "evidence restriction only: Z_original(evidence) = Z_compiled"
+     },
+     "n24_positive_G0_CQR": "structural_original",
+     "n24_positive_G0_NO_STRUCTURAL": "deterministic_frontier"
+    },
+    "b": {
+     "kind": "frontier_closed_zero_mass",
+     "splits": 3,
+     "transfer": "evidence restriction only: Z_original(evidence) = Z_compiled",
+     "positive_near_control": "structural_original",
+     "fallbacks": {
+      "zero_slice": "original-factor zero slice under the evidence",
+      "elimination": "independent bounded elimination (Z = 0)",
+      "cap_exhausted": "UNVERIFIABLE: zero-mass transfer to the original model could not be established within the",
+      "contradiction_INJECTED_oracle": "zero-evidence claim contradicted by the independent elimination oracle (Z = 1)"
+     }
+    },
+    "c": {
+     "omitted_split_event": "replayed frontier totals differ from the recorded frontier",
+     "invented_surviving_child": "split children differ at cell 0",
+     "altered_final_sha256": "zero proof: compiled model does not replay from the journal (final_sha256 8fdcd455286b vs 000000000000)",
+     "resolved_mass_claimed_nonzero": "zero proof record does not state resolved mass 0 with no open cell",
+     "open_cells_claimed_nonzero": "zero proof record does not state resolved mass 0 with no open cell",
+     "stream_draw_inserted": "zero proof certificate carries stream draws (a closed zero frontier has none)",
+     "relabelled_as_compiler_proof": "compiler zero proof does not re-derive (compile succeeded)",
+     "altered_evidence_file": "worker binding differs from the files on disk",
+     "altered_model_file": "worker binding differs from the files on disk",
+     "transplanted_onto_positive_model_BINDING_REFUSAL": "zero proof: compiled model does not replay from the journal (final_sha256 875bf1f240ef vs ",
+     "epoch_t_nonnumeric": "zero proof record malformed: epochs record is not a list of objects with integer draw counts",
+     "epochs_not_a_list": "zero proof record malformed: epochs record is not a list of objects with integer draw counts",
+     "bias_not_rational": "zero proof record malformed: bias ledger is not a list of rationals",
+     "ratio_t_nonnumeric": "zero proof record malformed: ratio_stream record is not an object with an integer draw count",
+     "resolved_mass_not_rational": "zero proof record malformed: zero_evidence_proof lacks a rational resolved_mass / integer open_cells"
+    },
+    "d": {
+     "expired": "UNVERIFIABLE: allowance expired during the frontier replay",
+     "below_cap_expired": "UNVERIFIABLE: the zero proof verification finished after the allowance (a late verificatio",
+     "large_close_interior_deadline": {
+      "first": "UNVERIFIABLE: allowance expired inside the replay of event close (frontier_close)",
+      "elapsed_s": 0.05
+     }
+    },
+    "e": {
+     "n1_kind": "compiler",
+     "archived_A1": "archive not present on this host (skipped; not a failure of the candidate)"
+    },
+    "f": {
+     "gate_passed": true
+    }
+   }
   }
  ],
  "counts": {
-  "fresh_workers": 150,
-  "solver_calls": 389,
+  "fresh_workers": 290,
+  "solver_calls": 397,
   "compiler_calls": 174,
-  "checker_calls": 241,
-  "oracle_models": 118,
-  "truth_coordinates": 2700,
-  "stream_draws": 960,
-  "assertions": 105177
+  "checker_calls": 400,
+  "oracle_models": 184,
+  "truth_coordinates": 3177,
+  "stream_draws": 977,
+  "assertions": 108130
  },
- "suite_version": "cqr-qualification-v10 (2026-11-17, after the ninth adversarial review: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
- "suite_sha256": "dbe85a4b3598027ecb31ec4843143284ddc8d15e1f21fc7b385b85197cf69447",
+ "suite_version": "cqr-qualification-v15 (2026-11-19, repair-2 review: C36 carries a GENUINE multi-cell zero (splits > 1 asserted), the non-whitelisted transfer fallbacks exercised directly (zero slice / elimination / exhausted cap / injected contradiction), malformed zero-record fields as typed refusals, interior deadlines (below-cap expired, large closure); the transplanted-proof case labelled a binding refusal; v14 2026-11-18, A1 review CQR-A1-01: group C36 (frontier zero proofs at / beyond the enumeration cap: replay + transfer, multi-cell, mutations, bounded refusal, archived A1 cells, gate fixture); v13 2026-11-18, after the independent review of the structured repairs: group C35 (query presentation equivalence through the original and reduced structural routes: round trips, denotation-validated labels, aliases with full-gate acceptance, negatives refused before publication; CQR-S2-01) and the C32 (b) full-gate relabel fixture made coherent per disabled arm with same-arm positive controls (CQR-S2-O1); v12 2026-11-17, after the independent review of the structured-execution revision (CQR-S1-01..07): groups C32 (authoritative query semantics incl. the false-answer witness, index domains, arm eligibility incl. the coherent relabel through the full gate, provenance / attribution incl. the forged record and native digest / path / count / partition / wall mutations through the full gate), C33 (compositional discovery incl. the 12,000-chain fresh worker, deadline propagation incl. the 1,024-query observer / fresh workers / long-helper hooks / 1qt9 gaps, reduction + lift incl. BN_31 and tampered decoder / digest / row) and C34 (terminal diagnostics freshness vs the certificate on publication / deadline / cancellation, per-section ages, aligned SIGKILL freshness, overhead) added; C29 vacuous assertions removed; C31 covers an oracle-checked native stream fixture and an honest nonzero-bias compiled publication; v11, structured-execution revision: groups C29 (failure telemetry: sidecar + journal survive graceful deadlines and SIGKILL, bounded overhead, missing values labelled), C30 (cumulative-credit reference service: deficit-only requests, carried overshoot, independent counters, at-least-half Work at every publication) and C31 (structural adapters: original / compiled representations, R0 rate table identity, typed declines, checker re-execution + every mutation class, reachability of refinement / PAC with structural disabled, same-backend controls) added; the mechanism-focused groups run on the no-structural control arms; v10: group C28 added -- immutable borrowed view storage, renumbering a verified no-read, every evaluation-site declaration checked behaviourally with storage-level counters, stops inside builders, the malformed-event typed boundary; C25 signed negative on a genuine signed route with separate diagnostics; C27 distinct queries genuinely distinct with asserted cardinality; after the eighth review: groups C26 (partition premise: validated canonical split order, structural split / carve invariants, the false-normalizer negative through checker + gate + closeout) and C27 (final-query accounting under the operator ticker, evaluation-site audit) added; C25 requires genuine PAC routes and executes the tightened-publication negatives; after the seventh review: group C25 added -- ratio prior bound to the root frontier, influence applicability scan metered, tolerance semantics through the gate, reference ratio reads, INVALID_TASK rows reportable)",
+ "suite_sha256": "86ac808a3533063be0a107bc6c0c9029de3adab9531b5096d85ea65b22a4b62a",
  "candidate_sources": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
-  "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "965ae02ea84a666f5b1b61db9860056c2f4d5f8cab0a70e37622079698c47b3c",
-  "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "64d1946c8702781b5493975a8b11a437228cba1f0b77091ae3c81d8258ad9f9c",
-  "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
-  "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
+  "cqr/campaign.py": "2ed619e6e2d3c27c114a6f98ce43a95a93a7178119221eca790e20c6d6d8de4a",
+  "cqr/checker.py": "d61dbc8aa1d03f3b5ef73a74a111eea0f8926ea8a6fff319a2f26fceb35cbd67",
+  "cqr/closeout.py": "f8c1a3ba2f47d83fb5ba3e9ff366b50e14a74bf3a39deecf55e4b0c9fd55d331",
+  "cqr/compiler.py": "97590e971d4099f12650b7f678367ebd5b80a732e3fe363ff574a8acc1be3480",
+  "cqr/diag.py": "0e89d664f936f4eb8ec53b7190b8e41f5fd7ebf6d7477ac50113ad44ce172d38",
+  "cqr/frontier.py": "081b480e22d4f5a42dfa1f6224c9c6b2a7e93588c4ff9983038f34d59b4cb2b2",
+  "cqr/gate.py": "07cd98135554aa3805ffef083f9d4bdb7dd121c05b9a06929f7ecadcf64405a9",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
+  "cqr/kernel_identity.py": "bdb73e42ea07502bf6772724b212add7d3ce27697aae6968e6c07b0673701301",
   "cqr/numerics.py": "b3325a5bcd0e21cf060ace2e9008f2737e34023893fca1d0b68c5e3582ffd6ec",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
-  "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
-  "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "cb711db73427b3b9d0a0731e3a74a09be90773098c1fa4668f415be924f0c2a7",
-  "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
+  "cqr/reference.py": "4cc5fdbfab68c243eec40bc728286cd0bf948bb8bb291a70b1a007e896313672",
+  "cqr/references.py": "085d8fd49d78bc3dee009e8d581fdd11f0e4ea0b813e2ce10025234b0d68679c",
+  "cqr/registry.py": "b2898647dfaae55e0901df1cdf4d92cfd402798f9af313fc86ed9b1b08f0eee3",
+  "cqr/report.py": "7bacd8def077065428725bef7e8d7925f5c45fbb30fd87380f533552bb380b43",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "d9b4afd8b62359adea9176c61ee19a9c8d7a3658c5285279f9fc90b224aa0eb2",
-  "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
+  "cqr/solve.py": "046b8a702c402bb2148461d0f30bc5e5c132e62caf6561fc2802891c15826572",
+  "cqr/structural.py": "cec8260adb25229dfaf22ba38da9d4c93e75e28cb0c4f41608ce90a22a5c32df",
+  "cqr/task.py": "e4fac3099a0a1fdea4084e46d4220bbfd1d45e89a0a071106a592d9769c96f8f",
   "cqr/views.py": "23dac816716cfcfe2299ad467e3b369a0ba8d605c9b94b01d7ccee17e9187f2d",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
-  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
+  "cqr/worker.py": "9054f1f342cfd49525d4058cb07052aae702df90288a2c64f33b31723d82fe51",
+  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
+  "newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+  "newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+  "newarm/support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+  "newarm/stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+  "newarm/stream_float.py": "1319565b2e6048b1a66153c732e37f5f00e41ab5391600fe9b793fed7fcdcb72",
+  "newarm/cex_executor.py": "3480e9ba3b9109d436a350af5efb12cf5a3e7516ce42c4d8e7e9c9e1f92c9a4e",
+  "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+  "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90"
  },
- "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v16",
- "passed": 28,
- "total": 28,
+ "admission_dir": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/admission_v22",
+ "passed": 36,
+ "total": 36,
  "all_pass": true,
  "sources_changed_during_run": [],
  "candidate_sources_at_start": {
   "cqr/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "cqr/acquire.py": "01369d60340cae930332c522926fd9d15568bac078d4286eab950b456818a70f",
-  "cqr/campaign.py": "87e58ceaaf933acc487f0fed800c205088c15cd3244d2771af2124941a7b8ead",
-  "cqr/checker.py": "965ae02ea84a666f5b1b61db9860056c2f4d5f8cab0a70e37622079698c47b3c",
-  "cqr/closeout.py": "6b54cd866313fd74abaf7a8fcf4db2ce26d5a91666783233a0e5fb31dc2dd5aa",
-  "cqr/compiler.py": "64d1946c8702781b5493975a8b11a437228cba1f0b77091ae3c81d8258ad9f9c",
-  "cqr/frontier.py": "6763c92824f05b621109e090aec9efe4ae33455fe3d7a61e052d169152ffa3fa",
-  "cqr/gate.py": "093d642e6267d9eff6b466b30bd8a5b79b44464656aef9f151b846f9d66e20c8",
+  "cqr/campaign.py": "2ed619e6e2d3c27c114a6f98ce43a95a93a7178119221eca790e20c6d6d8de4a",
+  "cqr/checker.py": "d61dbc8aa1d03f3b5ef73a74a111eea0f8926ea8a6fff319a2f26fceb35cbd67",
+  "cqr/closeout.py": "f8c1a3ba2f47d83fb5ba3e9ff366b50e14a74bf3a39deecf55e4b0c9fd55d331",
+  "cqr/compiler.py": "97590e971d4099f12650b7f678367ebd5b80a732e3fe363ff574a8acc1be3480",
+  "cqr/diag.py": "0e89d664f936f4eb8ec53b7190b8e41f5fd7ebf6d7477ac50113ad44ce172d38",
+  "cqr/frontier.py": "081b480e22d4f5a42dfa1f6224c9c6b2a7e93588c4ff9983038f34d59b4cb2b2",
+  "cqr/gate.py": "07cd98135554aa3805ffef083f9d4bdb7dd121c05b9a06929f7ecadcf64405a9",
   "cqr/generators.py": "22c6e270807fc2a3237b154ba8c6af9724a8517999b6b2e78e818f0c55b7c6e6",
-  "cqr/kernel_identity.py": "52fede856ebc18ceb28b0a5fb9d4750d019dbe472b6903155d7ca6a8596ac601",
+  "cqr/kernel_identity.py": "bdb73e42ea07502bf6772724b212add7d3ce27697aae6968e6c07b0673701301",
   "cqr/numerics.py": "b3325a5bcd0e21cf060ace2e9008f2737e34023893fca1d0b68c5e3582ffd6ec",
   "cqr/oracle.py": "dd6e23f36de95559d4137482eda273bb9f8aabbe522eacd21bc26cf959ab2b7e",
-  "cqr/reference.py": "686b113713e39cba9130443edaf6ef09a25d3199c88d54e1e2b695e7cbde017b",
-  "cqr/references.py": "cfc9f59abe6e5d2c4cfe14a0c49a80534af0c82b22a134db23b348b57f75893f",
-  "cqr/registry.py": "cb711db73427b3b9d0a0731e3a74a09be90773098c1fa4668f415be924f0c2a7",
-  "cqr/report.py": "f7427245ef6209839dcbda7cfa0dd2eab6c840289c3be40b011ad68e79397589",
+  "cqr/reference.py": "4cc5fdbfab68c243eec40bc728286cd0bf948bb8bb291a70b1a007e896313672",
+  "cqr/references.py": "085d8fd49d78bc3dee009e8d581fdd11f0e4ea0b813e2ce10025234b0d68679c",
+  "cqr/registry.py": "b2898647dfaae55e0901df1cdf4d92cfd402798f9af313fc86ed9b1b08f0eee3",
+  "cqr/report.py": "7bacd8def077065428725bef7e8d7925f5c45fbb30fd87380f533552bb380b43",
   "cqr/resolve_design.py": "5d76629fe7a7f061ddbf0852b34176bbc780a58c9327f214dca2dc1ac7375d90",
   "cqr/schedule.py": "cd9a5fcf44e3b00f37d06adbc37a532fa01e2639db94a53b4f80d8082e0aafa3",
-  "cqr/solve.py": "d9b4afd8b62359adea9176c61ee19a9c8d7a3658c5285279f9fc90b224aa0eb2",
-  "cqr/task.py": "48c405d83740ea8935bb03104b92f4199748f68f8964d58709cedc8e02b13299",
+  "cqr/solve.py": "046b8a702c402bb2148461d0f30bc5e5c132e62caf6561fc2802891c15826572",
+  "cqr/structural.py": "cec8260adb25229dfaf22ba38da9d4c93e75e28cb0c4f41608ce90a22a5c32df",
+  "cqr/task.py": "e4fac3099a0a1fdea4084e46d4220bbfd1d45e89a0a071106a592d9769c96f8f",
   "cqr/views.py": "23dac816716cfcfe2299ad467e3b369a0ba8d605c9b94b01d7ccee17e9187f2d",
   "cqr/wcnf.py": "fcd786e3eb406001d48c137825872631e2ab58b6c83ef4f8141533d34477aa4a",
-  "cqr/worker.py": "d38d88e07b9191bb95e224cf5d84bb9d5b4706728a274cb78ff01dc652cf7522",
-  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe"
+  "cqr/worker.py": "9054f1f342cfd49525d4058cb07052aae702df90288a2c64f33b31723d82fe51",
+  "newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
+  "newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+  "newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+  "newarm/support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+  "newarm/stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+  "newarm/stream_float.py": "1319565b2e6048b1a66153c732e37f5f00e41ab5391600fe9b793fed7fcdcb72",
+  "newarm/cex_executor.py": "3480e9ba3b9109d436a350af5efb12cf5a3e7516ce42c4d8e7e9c9e1f92c9a4e",
+  "newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+  "newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90"
  },
- "utc": "2026-11-17T20:37:38Z",
- "wall_s": 742.7,
+ "utc": "2026-11-19T05:24:23Z",
+ "wall_s": 946.1,
  "c13_plan": {
   "model": "3 binary variables, chain factors [1,2,3,1] and [2,1,1,3]",
   "epsilon": "1/10",

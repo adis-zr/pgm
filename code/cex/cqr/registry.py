@@ -19,9 +19,11 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 _m = sys.modules.get('solve')
 _solve = _m if (_m is not None and os.path.dirname(os.path.abspath(getattr(_m, '__file__', ''))) == HERE) else _load('cqr_solve', os.path.join(HERE, 'solve.py'))
 
-REGISTRY_VERSION = 'cqr-registry-v1 (2026-11-16)'
+REGISTRY_VERSION = 'cqr-registry-v2.5 (2026-11-19, repair-2 review CQR-AF2-01..07: verifier-side versions only (checker v1.10, gate v1.2, report v1.1, suite v15); no group change; v2.4 2026-11-18, A1 review CQR-A1-01: group C36; v2.3 2026-11-18, structured-repair review CQR-S2-01: group C35; v2.2 2026-11-17, structured review repairs; groups C32-C34; v2.1: the candidate identity scope includes the cex/newarm structural executor modules the CQR worker may run; arms N1_NO_STRUCTURAL / G0_NO_STRUCTURAL; qualification groups C29-C31)'
+CQR_SCOPE_NEWARM = ('core.py', 'forest.py', 'dag.py', 'support.py', 'stream.py', 'stream_float.py', 'cex_executor.py', 'planning.py', 'geometry.py')      # the shared reader + the structural executors (cqr/structural.py adapters)
+def is_cqr_scope_key(key): return key.startswith('cqr/') or key in tuple('newarm/' + f for f in CQR_SCOPE_NEWARM)
 CQR_ARMS = {a: dict(kind=('primary' if a in ('N1_CQR', 'G0_CQR') else 'ablation'), representation='uai_table+query_spec', guarantee='EXACT|DETERMINISTIC|PAC', validator='cqr_candidate', identity_scope='cqr_candidate',
-                    feature_flags=dict(enabled_operators=sorted(s['enabled']), signed_stream=s['signed_stream'], query_directed_refinement=s['query_directed_refinement']), role=('candidate' if a == 'N1_CQR' else ('general_reference_core' if a == 'G0_CQR' else 'feature_ablation')))
+                    feature_flags=dict(enabled_operators=sorted(s['enabled']), signed_stream=s['signed_stream'], query_directed_refinement=s['query_directed_refinement'], structural=bool(s.get('structural', False))), role=('candidate' if a == 'N1_CQR' else ('general_reference_core' if a == 'G0_CQR' else ('qualification_mechanism_control' if a.endswith('_NO_STRUCTURAL') and a not in ('N1_NO_STRUCTURAL',) else 'feature_ablation'))), structural_backend=bool(s.get('structural', False)))
             for a, s in _solve.ARMS.items()}
 ARMS = dict(PR.ARMS); ARMS.update(CQR_ARMS)
 R0_ARM = 'H1_HYBRID'          # the repaired pre-new-mechanism baseline on its native (all-singleton) contract
@@ -39,7 +41,7 @@ COHORTS.update({
 COHORT_ORDER = tuple(sorted(COHORTS, key=lambda k: COHORTS[k]['order']))
 UNAVAILABLE_ARMS = dict(PR.UNAVAILABLE_ARMS)
 UNAVAILABLE_ARMS.update({'DIS': 'see runs/.../baselines/BASELINE_AVAILABILITY.json (author archive linked; build / adapter qualification status recorded there)', 'OSSTAR': 'see runs/.../baselines/BASELINE_AVAILABILITY.json (no author implementation located => UNAVAILABLE_NO_IMPLEMENTATION; no independent reimplementation)'})
-QUALIFICATION_GROUPS = ('C1_identity_and_checker_end_to_end', 'C2_independent_oracle_and_modes', 'C3_quotient_exact_and_mutations', 'C4_approximate_quotient_budget', 'C5_affine_support_and_pullbacks', 'C6_influence_and_concentration_conditions', 'C7_frontier_typed_bounds_and_envelopes', 'C8_signed_residual_stream_and_epochs', 'C9_ratio_stream_history_and_record_before_resolve', 'C10_publication_feasibility_denominators_normalizer', 'C11_protected_reference_and_resource_refusal', 'C12_registry_pipeline_dev_admission', 'C13_tiny_model_delta_falsification', 'C14_publication_contract_every_route', 'C15_semantics_and_guarantee_binding', 'C16_fresh_process_pac_routes', 'C17_protected_reference_scheduling', 'C18_task_local_state_and_policy', 'C19_provenance_and_intake', 'C20_atomic_compilation_replay_service_history_attribution', 'C21_checker_soundness_lifecycle_dependencies_closeout', 'C22_precision_zero_mass_witness_service', 'C23_exactly_once_accounting_quota_inheritance_tolerance_domain', 'C24_zero_risk_controller_cadence_completed_charges', 'C25_ratio_prior_binding_influence_scan_tolerance_semantics', 'C26_partition_premise_order_validation_structural_negative', 'C27_final_query_accounting_evaluation_site_audit', 'C28_view_storage_ownership_renumbering_declarations_event_schema')
+QUALIFICATION_GROUPS = ('C1_identity_and_checker_end_to_end', 'C2_independent_oracle_and_modes', 'C3_quotient_exact_and_mutations', 'C4_approximate_quotient_budget', 'C5_affine_support_and_pullbacks', 'C6_influence_and_concentration_conditions', 'C7_frontier_typed_bounds_and_envelopes', 'C8_signed_residual_stream_and_epochs', 'C9_ratio_stream_history_and_record_before_resolve', 'C10_publication_feasibility_denominators_normalizer', 'C11_protected_reference_and_resource_refusal', 'C12_registry_pipeline_dev_admission', 'C13_tiny_model_delta_falsification', 'C14_publication_contract_every_route', 'C15_semantics_and_guarantee_binding', 'C16_fresh_process_pac_routes', 'C17_protected_reference_scheduling', 'C18_task_local_state_and_policy', 'C19_provenance_and_intake', 'C20_atomic_compilation_replay_service_history_attribution', 'C21_checker_soundness_lifecycle_dependencies_closeout', 'C22_precision_zero_mass_witness_service', 'C23_exactly_once_accounting_quota_inheritance_tolerance_domain', 'C24_zero_risk_controller_cadence_completed_charges', 'C25_ratio_prior_binding_influence_scan_tolerance_semantics', 'C26_partition_premise_order_validation_structural_negative', 'C27_final_query_accounting_evaluation_site_audit', 'C28_view_storage_ownership_renumbering_declarations_event_schema', 'C29_failure_telemetry_survives_graceful_and_hard_kills', 'C30_cumulative_credit_reference_scheduling', 'C31_structural_adapters_composition_checker_reachability', 'C32_query_semantics_arm_eligibility_provenance_attribution', 'C33_compositional_discovery_deadline_propagation_reduction_lift', 'C34_terminal_diagnostics_freshness_and_operation_observability', 'C35_query_presentation_equivalence_structural_routes', 'C36_zero_evidence_proofs_beyond_the_enumeration_cap')
 SOURCE_SCOPES = dict(PR.SOURCE_SCOPES); SOURCE_SCOPES['cqr_candidate'] = ('cex/cqr',)
 
 
@@ -52,7 +54,7 @@ def cqr_source_inventory(code_dir=CODE):
     out = {}
     for f in sorted(os.listdir(os.path.join(code_dir, 'cex', 'cqr'))):
         if f.endswith('.py') and f not in TEST_SIDE_FILES: out['cqr/' + f] = hashlib.sha256(open(os.path.join(code_dir, 'cex', 'cqr', f), 'rb').read()).hexdigest()
-    out['newarm/core.py'] = hashlib.sha256(open(os.path.join(code_dir, 'cex', 'newarm', 'core.py'), 'rb').read()).hexdigest()
+    for f in CQR_SCOPE_NEWARM: out['newarm/' + f] = hashlib.sha256(open(os.path.join(code_dir, 'cex', 'newarm', f), 'rb').read()).hexdigest()
     return out
 
 
@@ -64,7 +66,7 @@ def full_inventory(code_dir=CODE):
 def validator_of(arm): return ARMS[arm]['validator'] if arm in ARMS else None
 def is_cqr_arm(arm): return arm in CQR_ARMS
 def scope_of_key(key):
-    if key.startswith('cqr/') or key == 'newarm/core.py' and False: return 'cqr_candidate'
+    if is_cqr_scope_key(key): return 'cqr_candidate'
     return PR.scope_of_key(key)
 
 

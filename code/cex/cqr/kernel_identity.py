@@ -102,11 +102,12 @@ def pac_candidate_arms():
 
 
 def tags_needed_by(arm, pac_arms=None):
-    """which artifact tags an arm's worker loads; CQR arms (N1_CQR, G0_CQR, N1_NO_*) -> ()"""
+    """which artifact tags an arm's worker loads; CQR arms (N1_*, G0_*) -> the newarm kernels (structural backend; 17 Nov 2026)"""
     if arm == B0_ARM: return GROUPS['b0_frozen_v14']
     if arm.startswith(H4_PREFIX): return GROUPS['h4']
     if arm in COMPARATOR_EXECUTABLES: return tuple(t for g in COMPARATOR_EXECUTABLES[arm] for t in GROUPS[g])
     if arm in (pac_arms if pac_arms is not None else pac_candidate_arms()): return GROUPS['newarm']
+    if arm.startswith('N1_') or arm.startswith('G0_'): return GROUPS['newarm']   # the CQR arms' structural backend (cqr/structural.py) loads the newarm kernels (support / stream routes); the no-structural controls share the identity scope
     return ()
 
 
@@ -166,10 +167,7 @@ def _tag_of_loaded(path, group, frozen=None, sha=None):
     b = os.path.basename(str(path))
     if 'libcex_kernel' in b or b.startswith('cex_'): return group + '_cex'
     if 'libstream_kernel' in b or b.startswith('stream_'): return group + '_stream'
-    # last resort: an exact digest match against a frozen binary of the group identifies the kind
-    for tag in (group + '_cex', group + '_stream'):
-        if sha and (frozen or {}).get(tag, {}).get('binary_sha256') == sha: return tag
-    return None
+    return None                                                   # an unrecognised loaded path is a refusal even when its digest matches (structured review CQR-S1-03: the recorded loader path must be the pinned binary or its hash-addressed cache copy)
 
 
 def receipt_failures(frozen, worker_output_json, arm, pac_arms=None):

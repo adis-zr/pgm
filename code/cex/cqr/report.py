@@ -34,7 +34,7 @@ R = load_module('cqr_registry', os.path.join(HERE, 'registry.py'))
 CG = load_module('cqr_gate', os.path.join(HERE, 'gate.py'))
 if HERE in sys.path: sys.path.remove(HERE)
 sys.path.insert(0, HERE)
-REPORT_VERSION = 'cqr-report-v1 (2026-11-16: counts and rows only; per-query reference audit; separate tables per comparison; mechanism attribution; gate binding re-hashed)'
+REPORT_VERSION = 'cqr-report-v1.1 (2026-11-19, repair-2 review CQR-AF2-02: explicit --gate / --out-dir for the successor verification path, gate file identity recorded in gate_binding; v1 2026-11-16: counts and rows only; per-query reference audit; separate tables per comparison; mechanism attribution; gate binding re-hashed)'
 LEDGER = 'CQR_LEDGER.jsonl'
 LEGACY_COHORTS = tuple(k for k, v in PR.COHORTS.items() if v['representation'] == 'uai_table')
 NEW_TASK_COHORTS = ('constructed', 'new_uai2022', 'new_wmc2024', 'query_transfer', 'bounded_query_osstar')
@@ -56,11 +56,13 @@ def _frac(x):
     except Exception: return None
 
 
-def load(RD, manifest_name):
+def load(RD, manifest_name, gate_path=None):
+    """`gate_path` (repair-2 review CQR-AF2-02): an EXPLICIT gate result file to bind instead of RD/GATE_RESULT.json (the successor verification path passes its own result; the default
+    behaviour is unchanged). The receipts / outputs / evidence closure are always reconciled against the run directory RD."""
     man = json.load(open(os.path.join(RD, manifest_name))); rec = {}; shas = {}
     for rp in glob.glob(os.path.join(RD, 'cells', '*', 'receipt.json')):
         r = json.load(open(rp)); rec[r['cell_id']] = r; shas[r['cell_id']] = sha(rp)
-    gp = os.path.join(RD, 'GATE_RESULT.json'); gb = None; VATT.clear()
+    gp = gate_path or os.path.join(RD, 'GATE_RESULT.json'); gb = None; VATT.clear()
     if os.path.exists(gp):
         G = json.load(open(gp)); gs = G.get('gated_set'); mism = []; VATT.update({e.get('cell_id'): e.get('verified_attribution') for e in (gs or []) if isinstance(e, dict) and e.get('verified_attribution')})
         if isinstance(gs, list):
@@ -81,7 +83,7 @@ def load(RD, manifest_name):
                 if e.get('verified') is False and r.get('status') == 'COMPLETED': mism.append('gated entry %s was not verified by the gate' % cid)
             for cid in rec:
                 if cid not in seen: mism.append('receipt %s is not in the gated set' % cid)
-            gb = dict(gate_version=G.get('gate_version'), gated_set_sha256=G.get('gated_set_sha256'), manifest_sha256=G.get('manifest_sha256'), gate_passed=G.get('gate_passed'), failures=len(G.get('failures') or []), counters=G.get('counters'), mismatch=mism)
+            gb = dict(gate_version=G.get('gate_version'), gated_set_sha256=G.get('gated_set_sha256'), manifest_sha256=G.get('manifest_sha256'), gate_passed=G.get('gate_passed'), failures=len(G.get('failures') or []), counters=G.get('counters'), mismatch=mism, gate_file=(os.path.relpath(gp, RD) if gate_path else 'GATE_RESULT.json'), gate_file_sha256=sha(gp))
         else: gb = dict(gate_version=G.get('gate_version'), mismatch=['GATE_RESULT carries no gated set'])
     return man, rec, gb
 
@@ -163,8 +165,10 @@ def read_mar(path):
     return rows
 
 
-def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', write=True):
-    RD = os.path.abspath(RD); man, rec, gb = load(RD, manifest_name); cells = man['cells']; L = []; P = L.append
+def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', write=True, gate_path=None, out_dir=None):
+    """`gate_path` / `out_dir` (repair-2 review CQR-AF2-02): the successor verification path binds its OWN gate result and writes RESULTS_CQR.* into its own directory; the original run
+    directory is read, never written. Defaults: RD/GATE_RESULT.json and RD (unchanged behaviour)."""
+    RD = os.path.abspath(RD); out_dir = os.path.abspath(out_dir) if out_dir else RD; man, rec, gb = load(RD, manifest_name, gate_path); cells = man['cells']; L = []; P = L.append
     out = dict(report_version=REPORT_VERSION, manifest=manifest_name, manifest_sha256=sha(os.path.join(RD, manifest_name)), gate_binding=gb, gated_set_sha256=(gb or {}).get('gated_set_sha256'), registry_version=R.REGISTRY_VERSION)
     unrun = [c for c in cells if c['cell_id'] not in rec]; inv = man['inventory']; inv_by_case = {r.get('case_id'): r for r in inv}
     P('# CQR CAMPAIGN -- RESULTS (%s UTC; %s; %s)' % (time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), REPORT_VERSION, 'DEV manifest' if man.get('dev') else 'scored manifest')); P('')
@@ -374,11 +378,12 @@ def main(RD, manifest_name='CAMPAIGN_MANIFEST.json', write=True):
     out['summary_sha256'] = hashlib.sha256(json.dumps(out['summary'], sort_keys=True, default=str).encode()).hexdigest()
     P('Summary digest `%s` (cells %d, receipts %d, unrun %d, CONFIRMED_INACCURATE %d).' % (out['summary_sha256'], len(cells), len(rec), len(unrun), len(out['summary']['confirmed_inaccurate'])))
     if write:
-        json.dump(out, open(os.path.join(RD, 'RESULTS_CQR.json'), 'w'), indent=1, default=str); open(os.path.join(RD, 'RESULTS_CQR.md'), 'w').write('\n'.join(L) + '\n')
+        json.dump(out, open(os.path.join(out_dir, 'RESULTS_CQR.json'), 'w'), indent=1, default=str); open(os.path.join(out_dir, 'RESULTS_CQR.md'), 'w').write('\n'.join(L) + '\n')
         print('written', len(L), 'lines;', len(rows), 'runs;', len(unrun), 'unrun; audit', dict(collections.Counter(a['accurate'] for a in audit)))
     out['_markdown'] = L
     return out
 
 
 if __name__ == '__main__':
-    mn = sys.argv[sys.argv.index('--manifest') + 1] if '--manifest' in sys.argv else 'CAMPAIGN_MANIFEST.json'; main(sys.argv[1], mn)
+    mn = sys.argv[sys.argv.index('--manifest') + 1] if '--manifest' in sys.argv else 'CAMPAIGN_MANIFEST.json'; gp_ = sys.argv[sys.argv.index('--gate') + 1] if '--gate' in sys.argv else None; od_ = sys.argv[sys.argv.index('--out-dir') + 1] if '--out-dir' in sys.argv else None
+    main(sys.argv[1], mn, gate_path=gp_, out_dir=od_)

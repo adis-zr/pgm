@@ -104,9 +104,11 @@ class Frontier:
         states = tuple(assign[self.order[i]] for i in range(d))
         free_n = self.n - len(states); N = 1
         for i in range(len(states), self.n): N *= self.cards[self.order[i]]
+        svc = self.service
         if parent is None:
             pm = 1; pn = 1
-            for v in self.views:
+            for k_, v in enumerate(self.views):
+                if svc is not None and (k_ & 255) == 255: svc('cell_bounds')               # controller service (incl. the wall deadline) inside the root cell's full scan (CQR-S1-05)
                 lo, hi = v.extrema_i(self.cards, assign, self.work); pm *= hi; pn *= lo
             qlo = []; qhi = []
             for q in self.queries:
@@ -114,7 +116,8 @@ class Frontier:
                 else: hl, hh = q['h'].extrema(self.cards, assign, self.work); gl, gh = q['g'].extrema(self.cards, assign, self.work); qlo.append((hl, gl)); qhi.append((hh, gh))
         else:
             pm = parent.pm; pn = parent.pn; passign = parent.assign
-            for i in self.touch[var]:
+            for k_, i in enumerate(self.touch[var]):
+                if svc is not None and (k_ & 255) == 255: svc('cell_bounds')
                 v = self.views[i]; plo, phi = v.extrema_i(self.cards, passign, self.work); clo, chi = v.extrema_i(self.cards, assign, self.work)
                 pm = (pm // phi) * chi if phi else 0                      # phi == 0 => the parent cap is 0 (the child is pruned below)
                 if pn: pn = (pn // plo) * clo                             # parent minima all positive: exact division
@@ -163,6 +166,7 @@ class Frontier:
         """exact closure by enumeration of the cell's completions (charged per evaluation); returns the exact (b, n_j, d_j)"""
         c = self.open[cid]; free = self.order[c.depth:]; b = 0; K = len(self.queries); nj = [0] * K; dj = [0] * K
         x = dict(c.assign); views = self.views; cards = self.cards; qs = self.queries; qd = self.qden; ent = 0; pend = 0; svc = self.service; ROOM = 1024
+        if svc is not None and c.N > 4096: svc('enter:frontier_close')
         # the enumeration is charged per unit (one view lookup / one query lookup = an entry; one assignment = an evaluation) and SERVICED as soon as ROOM units are pending
         # (fourth review, CQR-R3-04: the service interval is bounded in charged units, every unit kind counted); nothing is mutated before the scan completes, so a stop inside
         # it leaves the frontier unchanged (the entries pending at the stop are charged first)
@@ -206,6 +210,7 @@ class Frontier:
     # ---- deterministic query bounds (§5): roots of F^- / F^+ ; keeps the intersection with every previous interval
     def deterministic_bounds(self, deadline=None):
         import time as _t
+        if self.service is not None: self.service('enter:deterministic_bounds')
         cells = list(self.open.values()); Zlo = self.Zlo(); self.work.ratops += len(cells) * max(1, len(self.queries)) * max(1, len(cells).bit_length())
         out = []
         rn = self.resolved_num; rd = self.resolved_den; rm = self.resolved_mass
@@ -221,10 +226,11 @@ class Frontier:
             Dlo = A + sum(it[0] for it in items)
             if Dlo <= 0:
                 out.append((self.det_lo[j], self.det_hi[j])); continue
-            lo = _root(a, A, items, lower=True); hi = _root(a, A, items, lower=False)
+            lo = _root(a, A, items, lower=True, deadline=deadline); hi = _root(a, A, items, lower=False, deadline=deadline)
             lo = max(lo, self.det_lo[j], F(0)); hi = min(hi, self.det_hi[j], F(1))
             if lo > hi: raise AssertionError('deterministic interval inconsistency (defect)')
             self.det_lo[j] = lo; self.det_hi[j] = hi; out.append((lo, hi))
+        if self.service is not None: self.service('leave:deterministic_bounds')
         return out
 
     # ---- sampling laws
@@ -235,8 +241,10 @@ class Frontier:
     def signed_law(self, cand, key=None):
         """a_C = E_C h_C with h_C = max_j range of (f_j - c_j) [expectation] or (h_j - c_j g_j) [ratio] over the POINTWISE ranges; h_C depends only on the cell's ranges and the
         candidate: cached per cell under `key` (the epoch id; the candidate is fixed within an epoch) -- the result is identical to the uncached computation"""
-        cells = []; E = F(0); K = len(self.queries); self.work.ratops += len(self.open) * (1 if key is not None else max(1, K))
+        cells = []; E = F(0); K = len(self.queries); self.work.ratops += len(self.open) * (1 if key is not None else max(1, K)); n_ = 0
         for c in self.open.values():
+            n_ += 1
+            if self.service is not None and (n_ & 1023) == 1023: self.service('signed_law')          # controller service (incl. the wall deadline) inside the long scan (CQR-S1-05)
             if c.E == 0: continue
             if key is not None and c.hkey == key: h = c.hval
             else:
@@ -282,20 +290,23 @@ class Frontier:
                     open_summary=dict(count=len(self.open), max_depth=max((c.depth for c in self.open.values()), default=0)), order=self.order, order_policy=FRONTIER_ORDER_POLICY)
 
 
-def _root(a, A, items, lower):
+def _root(a, A, items, lower, deadline=None):
     """root of F^-(theta) (lower=True) or F^+(theta) on [0,1]: F(theta) = a - theta A + sum_C m_C(theta) (r_C - theta) with r_C = l_C (lower) / u_C (upper) and
     m_C = L_C if r_C >= theta else B_C (lower) / m_C = B_C if r_C >= theta else L_C (upper). Piecewise linear, strictly decreasing when the total lower mass is positive.
     O(|F| log |F|): sort the breakpoints r_C once and sweep with running intercept / slope sums (manuscript §5)."""
     # cells sorted by breakpoint ascending; left of its breakpoint a cell uses its 'high-side' mass (L for lower, B for upper), right of it the other
+    import time as _t
     rows = sorted(((it[2] if lower else it[3]), it[0], it[1]) for it in items)      # (r, L, B)
     # initial state theta <= min r: every cell uses mass_hi = (L if lower else B)
     inter = a; slope = A
-    for r, L, B in rows:
+    for k_, (r, L, B) in enumerate(rows):
+        if deadline is not None and (k_ & 1023) == 1023 and _t.monotonic() >= deadline: raise TimeoutError('root sweep: deadline')      # interior wall check (structured review CQR-S1-05)
         m = L if lower else B; inter += m * r; slope += m
     def val(theta, inter, slope): return inter - theta * slope
     prev = F(0)
     if val(prev, inter, slope) <= 0: return F(0)
     for i, (r, L, B) in enumerate(rows):
+        if deadline is not None and (i & 1023) == 1023 and _t.monotonic() >= deadline: raise TimeoutError('root sweep: deadline')
         # piece [prev, r] (clipped to [0,1]) uses the current sums
         hi = min(r, F(1))
         if hi > prev and slope > 0:

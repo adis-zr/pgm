@@ -20,11 +20,11 @@ from math import prod
 HERE = os.path.dirname(os.path.abspath(__file__)); NEWARM = os.path.join(os.path.dirname(HERE), 'newarm')
 for p in (HERE, NEWARM):
     if p not in sys.path: sys.path.insert(0, p)
-import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR, solve as SV
+import task as TK, compiler as CP, frontier as FR, numerics as NM, oracle as OR, solve as SV, structural as ST
 from views import View
 from task import Work
 
-CHECKER_VERSION = 'cqr-checker-v1.5 (2026-11-17: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
+CHECKER_VERSION = 'cqr-checker-v1.10 (2026-11-19, repair-2 review Z-O1 / Z-O2: zero-record fields (bias / stream counters / epochs / claimed mass) validated by type before any conversion (malformed = typed refusal, never an exception); interior deadline checks inside the zero-slice scan, inside every replayed frontier event (close / cell bounds through the Frontier service hook) and after the independent zero routes (a late zero verification is UNVERIFIABLE, never an acceptance); v1.9 2026-11-18, A1 review CQR-A1-01: frontier_closed_zero_mass proofs verified by journal + partition replay with zero-mass TRANSFER to the original model (exact zero-preserving operators / original-factor zero slice / bounded elimination; never a producer mass field); reference_enumeration proofs beyond the enumeration cap fall back to the same independent short routes before UNVERIFIABLE; v1.8 2026-11-18, structured-repair review CQR-S2-01: presentation labels validated by their DENOTATION (task.validate_output_metadata) for every query and route -- the structural branch no longer requires the literal singleton spelling; legacy-row placement table-derived; v1.7 2026-11-17, structured review CQR-S1-01..03: singleton correspondence derived from each query TABLE (output metadata must agree); the structural flag and route eligibility bound to the registered arm; structural attribution built from the FACTS of the re-execution with kernel digests verified against the verifier\'s own loaded kernels and producer observations labelled; the structural_reduced route (reduction re-derived, decoder + reduced model compared, rows lifted); v1.6: structural routes (structural_original / structural_compiled) verified by bounded re-execution of the recorded executor route on the bound model (rows must reproduce exactly; kernel enclosures trusted at this boundary, kernel provenance bound to the frozen identity by the gate), composed per query and bias-widened on the compiled representation; every mutation class refused; v1.5: every recorded frontier / stream event is validated against its schema (object with a known op; required fields present; rational operands parsable and finite) before replay -- malformed events are typed refusals of the direct API, never tracebacks; the certificate frontier order is validated as a permutation and bound to the registered canonical producer policy; ratio prior bound to the replayed root frontier; tolerances compared as exact rationals)'
 ORACLE_CAP = 1 << 22
 
 
@@ -68,9 +68,62 @@ def _event_problem(ev):
 
 
 EXACT_ROUTES = ('exact_reference', 'exact_frontier_closure', 'exact_zero_dimensional', 'normalizer_exact_reference', 'normalizer_exact_frontier_closure', 'normalizer_exact_zero_dimensional')
-DET_ROUTES = ('deterministic_frontier', 'deterministic_frontier_closure', 'deterministic_zero_dimensional', 'deterministic_concentration', 'deterministic_signed_residual_E_zero', 'normalizer_deterministic_frontier')
+DET_ROUTES = ('deterministic_frontier', 'deterministic_frontier_closure', 'deterministic_zero_dimensional', 'deterministic_concentration', 'deterministic_signed_residual_E_zero', 'normalizer_deterministic_frontier', 'structural_original', 'structural_reduced', 'structural_compiled')
+STRUCTURAL_ROUTES = ('structural_original', 'structural_reduced', 'structural_compiled')
 PAC_ROUTES = ('pac_ratio_intersected_with_deterministic', 'pac_signed_residual_validation', 'normalizer_pac_ratio_intersected_with_deterministic')
 
+
+
+# ---- zero-evidence proofs (CQR-A1-01): operators whose commit preserves zero mass EXACTLY (Z_original = positive scalars x Z_compiled): evidence restriction, dead-state removal, substitution of
+# one-state variables (zero constants raise ZeroEvidence at compile time, positive ones are recorded scalars), exact leaf marginalization, omission of a component whose mass is PROVED positive,
+# the exact quotient (proportional classes merged with their exact kappa). Every other operator (approximate quotient, concentration, influence deletion, symmetry, affine) is NOT assumed to
+# preserve zero mass: the transfer then needs an independent witness (a zero slice of an original factor under the evidence) or the bounded elimination oracle.
+ZERO_PRESERVING_EXACT_OPS = frozenset(('evidence', 'support_fixpoint', 'support', 'fixed_substitution', 'leaf_sumout', 'component_omission', 'exact_quotient_pass'))
+def _scalar_positive(sc):
+    """a recorded scalar is positive: a numeric value > 0, or the symbolic positive omitted-component mass (its positivity is what component_omission proves)"""
+    if not isinstance(sc, dict): return False
+    if sc.get('kind') == 'omitted_component_mass': return True
+    try: return F(str(sc.get('value'))) > 0
+    except (ValueError, ZeroDivisionError, TypeError): return False
+
+
+def zero_slice_witness(model, work, deadline=None):
+    """INDEPENDENT short proof of Z = 0 on the ORIGINAL model: an original factor every one of whose evidence-consistent entries is exactly 0 (then every evidence-consistent assignment
+    has a zero factor and Z = 0). Reads every entry of every factor at most once (charged to `work`); returns dict(factor, scope, evidence_consistent_entries) or None (no such factor)."""
+    from itertools import product
+    cards = model['cards']; ev = model.get('evidence', {})
+    for fi, f in enumerate(model['factors']):
+        if deadline is not None and time.monotonic() >= deadline: return None
+        sc = tuple(f['scope']); n_cons = 0; all_zero = True
+        for xs, wv in zip(product(*(range(cards[v]) for v in sc)), f['values']):
+            work.entries += 1
+            if deadline is not None and (work.entries & 4095) == 0 and time.monotonic() >= deadline: return None       # interior deadline check (repair-2 review Z-O2): a large factor scan observes the allowance
+            if any(v in ev and ev[v] != x for v, x in zip(sc, xs)): continue
+            n_cons += 1
+            if wv != 0: all_zero = False; break
+        if all_zero and n_cons > 0: return dict(factor=fi, scope=list(sc), evidence_consistent_entries=n_cons)
+    return None
+
+
+class _ReplayDeadline(Exception): pass
+
+
+def _zero_record_problem(cert, zp):
+    """TYPED validation of the zero-record fields the frontier zero branch converts (repair-2 review Z-O1): returns None or the reason. bias: list of rationals (parsable, finite,
+    nonzero denominator); ratio_stream: absent or an object whose `t` is a nonnegative int; epochs: absent or a list of objects whose `t` is a nonnegative int; zero_evidence_proof:
+    resolved_mass a rational string and open_cells a nonnegative int. Nothing is converted before this validation, so a malformed record is a refusal, never an exception."""
+    def _rat(v):
+        try: F(str(v)); return True
+        except (ValueError, ZeroDivisionError, TypeError): return False
+    def _nn_int(v): return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+    b = cert.get('bias')
+    if b is not None and (not isinstance(b, list) or any(not _rat(x) for x in b)): return 'bias ledger is not a list of rationals'
+    rs = cert.get('ratio_stream')
+    if rs is not None and (not isinstance(rs, dict) or not _nn_int(rs.get('t', 0))): return 'ratio_stream record is not an object with an integer draw count'
+    ep = cert.get('epochs')
+    if ep is not None and (not isinstance(ep, list) or any(not isinstance(e, dict) or not _nn_int(e.get('t', 0)) for e in ep)): return 'epochs record is not a list of objects with integer draw counts'
+    if not isinstance(zp, dict) or not _rat(zp.get('resolved_mass')) or not _nn_int(zp.get('open_cells')): return 'zero_evidence_proof lacks a rational resolved_mass / integer open_cells'
+    return None
 
 
 def _attribution(route, cls, exact_route, C, cert, info):
@@ -79,9 +132,11 @@ def _attribution(route, cls, exact_route, C, cert, info):
     of unused optional work, never an error applied to the published exact answers); on a compiled route the bias widens the published original intervals"""
     bias = [str(b) for b in C.bias] if C is not None else None
     if route in ('exact_reference', 'normalizer_exact_reference'): interp = 'exact reference: zero error on the original answers; the compiled ledger (if any) is a superseded-surrogate diagnostic'
+    elif route == 'structural_original': interp = 'structural route on the ORIGINAL model: deterministic kernel enclosures (trusted at the bounded re-execution boundary), no compiler bias'
+    elif route == 'structural_compiled': interp = 'structural route on the COMPILED model: deterministic kernel enclosures of the compiled singleton rows, composed per query and widened by the compiler bias ledger'
     elif exact_route: interp = 'exact closure: zero bias (the route requires every ledger entry to be zero)'
     else: interp = 'compiled route: the ledger widens every published original interval'
-    return dict(route=route, guarantee=cls, exact=exact_route, commits=info.get('commits') or [], declines=info.get('declines') or [], compiled_bias=bias,
+    return dict(route=route, guarantee=cls, exact=exact_route, commits=info.get('commits') or [], declines=info.get('declines') or [], compiled_bias=bias, structural=info.get('structural'),
                 bias_applied_to_original_answers=(bias if (bias is not None and not exact_route and route not in ('exact_reference', 'normalizer_exact_reference')) else (['0'] * len(bias) if bias is not None else None)),
                 bias_interpretation=interp, optional_cancelled=(cert or {}).get('optional_cancelled'), compile_outcome=info.get('compile_outcome'))
 
@@ -109,7 +164,7 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
     def late(): return deadline is not None and time.monotonic() >= deadline
     # ---------------- 1. binding and requested semantics
     try: task = TK.load_task(model_path)
-    except Exception as ex: return ['task not readable: %s' % str(ex)[:80]], info
+    except Exception as ex: return ['task not readable: %s' % str(ex)[:220]], info
     if manifest_task:
         for k in ('epsilon', 'delta'):
             if k in manifest_task:
@@ -121,6 +176,10 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
                 if mv != task[k]: fail('the frozen manifest task %s (%s) differs from the input file (%s)' % (k, manifest_task[k], task[k]))
         if manifest_task.get('mode') and manifest_task['mode'] != task['mode']: fail('the frozen manifest task mode %s differs from the input file mode %s' % (manifest_task['mode'], task['mode']))
         if 'normalizer_task' in manifest_task and bool(manifest_task['normalizer_task']) != bool((task.get('query_spec') or {}).get('normalizer_task')): fail('the frozen manifest normalizer flag differs from the input file')
+    # every presentation label (constructor-built or explicit) must denote the function of its own table (CQR-S1-01 / S2-01): validated by denotation, never by one literal spelling
+    for j, q in enumerate(task['queries']):
+        try: TK.validate_output_metadata(q, task['model']['cards'])
+        except ValueError as ex: fail('query %d: %s' % (j, str(ex)[:200]))
     if w.get('binding') != task['binding']: fail('worker binding differs from the files on disk')
     if w.get('task_identity') != TK.task_identity(task): fail('task identity differs from the re-derived identity')
     cert = w.get('certificate') or {}
@@ -143,7 +202,10 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         eff = CP.effective_operators(spec['enabled'], task)
         if sorted(cert.get('arm_operators') or []) != sorted(spec['enabled']): fail('recorded arm operator set differs from the registered arm')
         if sorted(cert.get('enabled_operators') or []) != sorted(eff): fail('recorded task-effective operator set differs from the registered arm policy for this task')
+        if bool(cert.get('structural_backend')) != bool(spec.get('structural')): fail('recorded structural_backend flag %s differs from the registered arm %s (structural backend %s)' % (cert.get('structural_backend'), arm, bool(spec.get('structural'))))
+        if (cert.get('publication') or {}).get('route') in STRUCTURAL_ROUTES and not spec.get('structural'): fail('structural route %s published under arm %s whose registered structural backend is DISABLED' % ((cert.get('publication') or {}).get('route'), arm))
         if bool(cert.get('signed_stream')) != (spec['signed_stream'] and not normalizer) or bool(cert.get('query_directed_refinement')) != (spec['query_directed_refinement'] and not normalizer): fail('recorded stream flags differ from the registered arm policy for this task')
+    if (cert.get('publication') or {}).get('route') in STRUCTURAL_ROUTES and not (SV.ARMS.get(cert.get('arm')) or {}).get('structural'): fail('structural route under an arm (%s) without the structural backend' % cert.get('arm'))
     enabled_eff = set(cert.get('enabled_operators') or [])
     # ---------------- zero proofs
     if w.get('outcome') == 'PROVED_ZERO_EVIDENCE':
@@ -153,12 +215,61 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
             try: CP.compile_task(task, enabled=enabled_eff, work=work); fail('compiler zero proof does not re-derive (compile succeeded)')
             except CP.ZeroEvidence as z:
                 if z.proof.get('kind') != (zp.get('proof') or {}).get('kind'): fail('compiler zero proof kind differs (%s vs %s)' % (z.proof.get('kind'), (zp.get('proof') or {}).get('kind')))
-        elif zp.get('kind') in ('reference_enumeration', 'frontier_closed_zero_mass'):
+        elif zp.get('kind') == 'frontier_closed_zero_mass':
+            # CQR-A1-01 (review of 18 Nov 2026): the producer's proof is the RECORDED compile journal + partition events whose replay leaves NO open cell and ZERO resolved mass.
+            # It is verified ROUTE-FAITHFULLY: (1) the journal replays exactly (policy, commits, final snapshot digest, ledger) as for any compiled publication; (2) the recorded
+            # canonical partition events replay on the replayed compiled model to an empty frontier with resolved mass 0 and upper mass 0 (frontier.py prunes a child only when its
+            # independently recomputed envelope B is 0); (3) ZERO-MASS TRANSFER to the ORIGINAL model is established, never assumed: either every committed operator is in the
+            # declared exact zero-preserving set with a zero bias ledger (Z_original = positive scalars x Z_compiled), or an INDEPENDENT original-factor zero slice under the
+            # evidence is found (a factor all of whose evidence-consistent entries are 0), or the bounded independent elimination oracle gives Z = 0; a producer-claimed mass field is
+            # never trusted; an unfinished verification is UNVERIFIABLE (never an acceptance); Z > 0 from the independent oracle is a CONTRADICTION (hard refusal).
+            comp = cert.get('compile')
+            if not isinstance(comp, dict) or not isinstance(comp.get('certificates'), list): fail('frontier zero proof without a compile journal'); return fails, info
+            C, jf, _d = CP.replay_journal(task, comp['certificates'], work, deadline=deadline)
+            for m_ in jf: fail(('UNVERIFIABLE: ' if 'UNVERIFIABLE' in m_ else 'zero proof journal replay: ') + m_)
+            if C is None or jf: return fails, info
+            _opname = {'support': 'support_fixpoint'}; journal = comp['certificates']
+            bad_ops = sorted({c_.get('op') for c_ in journal if c_.get('kind') == 'commit' and _opname.get(c_.get('op'), c_.get('op')) not in enabled_eff and c_.get('op') != 'evidence'})
+            if bad_ops: fail('zero proof journal commits by operators outside the task-effective policy: %s' % bad_ops); return fails, info
+            snap_ = C.snapshot_json(); sha_ = hashlib.sha256(json.dumps(snap_, sort_keys=True, default=str).encode()).hexdigest()
+            if sha_ != comp.get('final_sha256'): fail('zero proof: compiled model does not replay from the journal (final_sha256 %s vs %s)' % (sha_[:12], str(comp.get('final_sha256'))[:12])); return fails, info
+            zb = _zero_record_problem(cert, zp)                              # the TYPED data boundary of the zero record (repair-2 review Z-O1): bias / stream counters / epochs / claimed mass validated BEFORE any conversion
+            if zb: fail('zero proof record malformed: %s' % zb); return fails, info
+            if [_F(b) for b in (cert.get('bias') or [])] != C.bias: fail('zero proof: recorded bias ledger differs from the replayed one'); return fails, info
+            rs_ = cert.get('ratio_stream')                                   # the producer allocates the ratio record at PAC risk BEFORE any draw: it must hold ZERO draws here, as must every epoch
+            if (isinstance(rs_, dict) and int(rs_.get('t') or 0) != 0) or any(int(e_.get('t') or 0) for e_ in (cert.get('epochs') or []) if isinstance(e_, dict)): fail('zero proof certificate carries stream draws (a closed zero frontier has none)'); return fails, info
+            nf0 = len(fails); fr, _st = _replay_frontier(task, C, cert, delta, work, deadline, fail)
+            if fr is None or len(fails) > nf0: return fails, info
+            if fr.open or fr.resolved_mass != 0 or fr.Zhi() != 0: fail('replayed frontier is not a closed zero frontier (open %d, resolved mass %s, Zhi %s)' % (len(fr.open), fr.resolved_mass, fr.Zhi())); return fails, info
+            if str(zp.get('resolved_mass')) != '0' or zp.get('open_cells') != 0: fail('zero proof record does not state resolved mass 0 with no open cell'); return fails, info
+            # ---- transfer to the ORIGINAL model
+            commits = [_opname.get(c_.get('op'), c_.get('op')) for c_ in journal if c_.get('kind') == 'commit']
+            exact_ops = all(op_ in ZERO_PRESERVING_EXACT_OPS for op_ in commits) and all(b == 0 for b in C.bias) and all(_scalar_positive(sc_) for sc_ in (C.scalars or []))
+            if exact_ops: info['zero_transfer'] = dict(method='exact zero-preserving journal (%s): Z_original = positive scalars x Z_compiled' % ','.join(commits) if commits else 'evidence restriction only: Z_original(evidence) = Z_compiled')
+            else:
+                zs = zero_slice_witness(task['model'], work, deadline)
+                if zs is not None: info['zero_transfer'] = dict(method='original-factor zero slice under the evidence', witness=zs)
+                else:
+                    tr = OR.eliminate_truth(task['model'], task['queries'][:1], deadline=deadline, max_table=ORACLE_CAP) if task['queries'] else None
+                    if tr is None: fail('UNVERIFIABLE: zero-mass transfer to the original model could not be established within the allowance (journal commits %s are not all exact zero-preserving; no zero slice; elimination exceeded the cap)' % commits); return fails, info
+                    if tr['Z'] != 0: fail('zero-evidence claim contradicted by the independent elimination oracle (Z = %s)' % tr['Z']); return fails, info
+                    info['zero_transfer'] = dict(method='independent bounded elimination (Z = 0)')
+            info['zero_proof'] = dict(kind='frontier_closed_zero_mass', journal_commits=commits, splits=fr.splits, closures=fr.closures, work=work.snapshot())
+        elif zp.get('kind') == 'reference_enumeration':
             tr = OR.enumerate_truth(task['model'], task['queries'], deadline=deadline, max_assignments=ORACLE_CAP)
-            if tr is None: fail('UNVERIFIABLE: zero proof by enumeration exceeds the checker cap / allowance')
+            if tr is None:
+                zs = zero_slice_witness(task['model'], work, deadline)             # the same independent short routes before declaring the claim unverifiable
+                if zs is not None: info['zero_transfer'] = dict(method='original-factor zero slice under the evidence', witness=zs)
+                else:
+                    tr = OR.eliminate_truth(task['model'], task['queries'][:1], deadline=deadline, max_table=ORACLE_CAP) if task['queries'] else None
+                    if tr is None: fail('UNVERIFIABLE: zero proof by enumeration exceeds the checker cap / allowance (no zero slice; elimination exceeded the cap)')
+                    elif tr['Z'] != 0: fail('zero-evidence claim contradicted by the independent elimination oracle (Z = %s)' % tr['Z'])
+                    else: info['zero_transfer'] = dict(method='independent bounded elimination (Z = 0)')
             elif tr['Z'] != 0: fail('zero-evidence claim contradicted by the independent enumerator (Z = %s)' % tr['Z'])
+            else: info['zero_transfer'] = dict(method='independent enumeration (Z = 0)')
         else: fail('unknown zero proof kind %s' % zp.get('kind'))
         if w.get('answers') is not None or w.get('intervals') is not None: fail('zero-evidence output carries published answers')
+        if not fails and late(): fail('UNVERIFIABLE: the zero proof verification finished after the allowance (a late verification is never an acceptance)')
         return fails, info
     if w.get('outcome') != 'PUBLISHED': return fails, info
     pub = cert.get('publication') or {}; route = pub.get('route'); K = len(task['queries'])
@@ -197,10 +308,13 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         info['bias'] = [str(b) for b in C.bias]; info['compile_outcome'] = dict(interrupted=lg.get('interrupted'), failed=lg.get('failed'))
     else:
         derived = {}; rec_certs = []
-        if route not in ('exact_reference', 'normalizer_exact_reference'): fail('publication without a compile record on a non-reference route'); return fails, info
+        if route not in ('exact_reference', 'normalizer_exact_reference', 'structural_original', 'structural_reduced'): fail('publication without a compile record on a non-reference route'); return fails, info
         # honest absence: the protected reference finished before ANY optional work was spent (no compile transaction opened), or optional work was cancelled
         wo_tot = ((cert.get('work') or {}).get('optional') or {}).get('total')
-        if not cert.get('optional_cancelled') and not (wo_tot == 0 and ((cert.get('reference') or {}).get('done') is True)): fail('compile record absent without a recorded optional cancellation or a reference-first completion with zero optional work')
+        if route in ('structural_original', 'structural_reduced'):
+            # the structural routes on the original / reduced model publish BEFORE any compile transaction: no optional Work may have been charged (structural executions charge their own counters)
+            if wo_tot != 0: fail('%s publication with %s optional Work units charged (the route runs before the compile; a compile record would be required)' % (route, wo_tot))
+        elif not cert.get('optional_cancelled') and not (wo_tot == 0 and ((cert.get('reference') or {}).get('done') is True)): fail('compile record absent without a recorded optional cancellation or a reference-first completion with zero optional work')
     if fails: return fails, info
     if late(): fail('UNVERIFIABLE: allowance expired after the compiler replay'); return fails, info
     # ---------------- 3. the PROVEN enclosure of the ORIGINAL answers, per route (compiled units widened by the proved bias)
@@ -211,16 +325,73 @@ def check_worker_output(model_path, w, manifest_task=None, arm=None, deadline=No
         info.update(route=route, work=work.snapshot(), exact=exact_route, guarantee=cls, mode=mode); info['attribution'] = _attribution(route, cls, exact_route, C, cert, info); return fails, info
     cq = C.queries if C is not None else None
     proven = None
+    def _structural_rows(model, representation):
+        """the structural publication record is validated (shape / representation / route consistency / version) and RE-EXECUTED on the bound model under the checker deadline; the rows must
+        reproduce exactly (bounded re-execution, as the frozen pac gate verifies R0's structural routes; the kernels' enclosures are TRUSTED at this boundary). Mutations of the route id,
+        the representation, the executed route kind, any row, or the model binding are refused here; mutated bounds / points / bias fail the common validator below."""
+        rec = pub.get('structural')
+        if not isinstance(rec, dict): fail('structural route without its execution record'); return None
+        if pub.get('representation') != representation: fail('structural route %s with representation %s' % (route, pub.get('representation'))); return None
+        if rec.get('which') != pub.get('which') or rec.get('which') not in ('forest', 'whole_dag', 'components'): fail('structural record route kind %s disagrees with the publication (%s)' % (rec.get('which'), pub.get('which'))); return None
+        if not isinstance(rec.get('rows'), list) or not isinstance(rec.get('components'), list): fail('malformed structural record'); return None
+        try:
+            if F(str(rec.get('epsilon'))) != eps: fail('structural record epsilon %s differs from the task epsilon' % rec.get('epsilon')); return None
+        except (ValueError, ZeroDivisionError, TypeError): fail('structural record epsilon is not a rational'); return None
+        rows, facts, msg = ST.verify(model, rec, deadline)
+        if msg: fail('structural re-execution: ' + msg); return None
+        # the AUTHORITATIVE attribution is built from the FACTS of the re-execution (route kind, partition, kinds, native kernels and their verified digests); the producer's timing is labelled an observation
+        info['structural'] = dict(route=route, which=facts['which'], components=[dict(kind=c['kind'], variables=len(c['variables'])) for c in facts['components']][:64], native_calls=facts['native_calls'], native_kinds=facts['native_kinds'],
+                                  kernel_digests_verified={k: (rec.get('kernel_provenance') or {}).get({'support': 'newarm_cex', 'stream': 'newarm_stream'}[k], {}).get('binary_sha256') for k in facts['native_kinds']},
+                                  producer_observed_wall_s=facts['producer_observed_wall_s'], verified_by='bounded re-execution on the bound model (same executors; kernel enclosures TRUSTED at this boundary); rows reproduced exactly; partition / kinds / native use derived from the re-execution; recorded digests equal the verifier\'s loaded kernels')
+        return rows
     if route == 'exact_reference':
         tr = OR.enumerate_truth(task['model'], task['queries'], deadline=deadline, max_assignments=ORACLE_CAP)
         if tr is None: fail('UNVERIFIABLE_REFERENCE_SIZE: the exact reference publication exceeds the checker cap / allowance (not shown wrong)'); return fails, info
         proven = [('UNDEFINED' if a == 'UNDEFINED' else (a, a)) for a in tr['answers']]
+    elif route in ('structural_original', 'structural_reduced'):
+        if C is not None: fail('%s route with a compile record (the route runs before the compile)' % route); return fails, info
+        # the singleton correspondence is derived INDEPENDENTLY from each query's TABLE (CQR-S1-01): a query that is not exactly a singleton indicator is not answerable by this route
+        targets = ST.singleton_targets(task)
+        if any(t is None for t in targets): fail('%s route on a task with a query that is not a singleton indicator (query %d: %s)' % (route, targets.index(None), task['queries'][targets.index(None)].name)); return fails, info
+        # presentation labels were validated by their DENOTATION in section 1 (CQR-S2-01); the structural correspondence is `targets`, derived from the tables alone
+        m0, why0 = ST.model_from_task(task)
+        if m0 is None: fail('%s route on a task outside the adapter domain: %s' % (route, why0)); return fails, info
+        if route == 'structural_reduced':
+            # RE-DERIVE the reduction on the bound model; the recorded decoder and reduced model must be the re-derived ones; then verify on the reduced model and LIFT
+            m1, red1, why1 = ST.model_from_reduced(task, deadline)
+            if m1 is None: fail('structural_reduced route but the re-derived reduction declines: %s' % why1); return fails, info
+            rr = (pub.get('structural') or {}).get('reduction')
+            if not isinstance(rr, dict): fail('structural_reduced publication without its reduction record'); return fails, info
+            mine = ST.reduction_record(red1, m1)
+            if json.loads(json.dumps(rr.get('decoder'), default=str)) != mine['decoder']: fail('recorded reduction decoder differs from the re-derived one'); return fails, info
+            if rr.get('reduced_model_sha256') != mine['reduced_model_sha256']: fail('recorded reduced model differs from the re-derived reduction'); return fails, info
+            rows_r = _structural_rows(m1, 'reduced')
+            if fails: return fails, info
+            rows, _ = ST.lift_rows(red1, rows_r, [[(a + b) / 2 for a, b in row] for row in rows_r]); info['structural']['reduction'] = dict(reduced_variables=len(m1['cards']), original_variables=len(m0['cards']), stats=rr.get('stats'), verified_by='reduction re-derived on the bound model (decoder and reduced model equal); lift re-applied')
+        else:
+            rows = _structural_rows(m0, 'original')
+            if fails: return fails, info
+        try: proven = ST.answers_original(task, rows)
+        except ValueError as ex: fail('structural answers: %s' % str(ex)[:120]); return fails, info
+        RES = TK.output_reservation(task); tau0 = eps - RES
+        if [str(x) for x in (pub.get('tau') or [])] != [str(tau0)] * K: fail('%s tau differs from eps - reservation' % route)
     else:
         bias = C.bias
         def widen(x, j):
             if bias[j] < 0: fail('negative bias %s on query %d cannot widen an enclosure' % (bias[j], j)); return (F(1), F(0))       # a reversed interval: refused by the validator as a failed proof
             return (max(F(0), x[0] - bias[j]), min(F(1), x[1] + bias[j]))
-        if not C.cards:
+        if route == 'structural_compiled':
+            if not C.cards: fail('structural_compiled route on a zero-dimensional compiled model'); return fails, info
+            m1, why1 = ST.model_from_compiled(C)
+            if m1 is None: fail('structural_compiled route on a compiled model outside the adapter domain: %s' % why1); return fails, info
+            rows = _structural_rows(m1, 'compiled')
+            if fails: return fails, info
+            ans = ST.answers_compiled(C, rows); proven = [widen(a, j) for j, a in enumerate(ans)]
+            RES = TK.output_reservation(task); tau_c = [eps - bias[j] - RES for j in range(len(cq))]
+            if [str(x) for x in (pub.get('tau') or [])] != [str(t) for t in tau_c]: fail('structural_compiled tau differs from eps - bias - reservation')
+            cb = pub.get('compiled_bounds')
+            if not (isinstance(cb, list) and len(cb) == len(ans) and all(_F(x[0]) == a[0] and _F(x[1]) == a[1] for x, a in zip(cb, ans))): fail('recorded compiled bounds differ from the re-derived structural composition')
+        elif not C.cards:
             # zero-dimensional compiled model: every compiled query view has empty scope
             if route not in ('exact_zero_dimensional', 'deterministic_zero_dimensional', 'deterministic_concentration'): fail('route %s on a zero-dimensional compiled model' % route); return fails, info
             if route == 'exact_zero_dimensional' and any(b != 0 for b in bias): fail('exact zero-dimensional route with nonzero bias'); return fails, info
@@ -361,7 +532,7 @@ def _validate_publication(task, w, pub, route, cls, exact_route, proven, mode, e
             import core; core.verify_output(IV, PT, eps)
         except Exception as ex: fail('legacy rows violate the publication contract: %s' % str(ex)[:60]); return
         for j, q in enumerate(task['queries']):
-            o = q.output or {}; lo, hi = IV[o['variable']][o['state']]; p = PT[o['variable']][o['state']]
+            v_, s_ = TK.singleton_indicator_of(q, cards); lo, hi = IV[v_][s_]; p = PT[v_][s_]            # placement derived from the TABLE (CQR-S1-01), as the worker's legacy_rows does
             if not (lo <= _F(bounds[j][0]) and _F(bounds[j][1]) <= hi): fail('legacy row of query %d does not contain the certified bounds' % j)
             if not (lo <= proven[j][0] and proven[j][1] <= hi): fail('legacy row of query %d does not contain the re-derived enclosure' % j)
             if abs(p - _F(point[j])) > RES: fail('legacy point of query %d differs from the certified point beyond the rounding reservation %s' % (j, RES))
@@ -383,6 +554,10 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
     if list(fr_rec['order']) != FR.canonical_order(n): fail('frontier order %s differs from the registered producer policy (%s): a certificate does not choose the split structure' % (str(list(fr_rec['order']))[:48], FR.FRONTIER_ORDER_POLICY)); return None, None
     try: fr = FR.Frontier(C.cards, C.views, cq, work, order=FR.canonical_order(n))
     except FR.FrontierStructureError as fx: fail('frontier construction refused: %s' % str(fx)[:100]); return None, None
+    if deadline is not None:
+        def _svc(op):                                                      # the producer's controller hook, here a pure deadline observer (repair-2 review Z-O2): a long closure / bound scan inside ONE replayed event stops at the allowance
+            if time.monotonic() >= deadline: raise _ReplayDeadline(op)
+        fr.service = _svc
     ratio_rec = cert.get('ratio_stream'); epochs = cert.get('epochs') or []
     H = F(0); Hj = [F(0)] * K; G = [F(0)] * K; V = F(0); t_r = 0
     # the ratio prior U_star is the producer's REGISTERED pre-sampling choice: the initial compiled frontier's positive U (fallback 1 when U = 0), fixed BEFORE any recorded event or
@@ -402,6 +577,7 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
         if pb: fail('malformed frontier event refused: %s' % pb); return None, None            # the typed boundary of the direct API (ninth review): no field access before validation
         op = ev.get('op')
         try:
+          try:
             if op == 'split':
                 kids = fr.split(ev['cell'])
                 if kids != ev.get('children'): fail('split children differ at cell %s' % ev['cell']); return None, None
@@ -454,6 +630,7 @@ def _replay_frontier(task, C, cert, delta, work, deadline, fail):
                 st['V'] += b * b * E * E
             elif op in ('ratio_stream_stopped', 'prune_zero', 'optional_cancelled', 'optional_operator_failed'): pass      # informational: the compile replay / rollback is verified separately
             else: fail('unknown event %s' % op); return None, None
+          except _ReplayDeadline as dx: fail('UNVERIFIABLE: allowance expired inside the replay of event %s (%s)' % (op, dx)); return None, None
         except FR.FrontierStructureError as fx: fail('frontier structure violated during the replay: %s' % str(fx)[:100]); return None, None
         except AssertionError as ax: fail('frontier replay assertion: %s' % str(ax)[:80]); return None, None
         except (KeyError, TypeError, ValueError, IndexError) as ex: fail('frontier event %s is malformed or refers to a cell that is not open (%s)' % (op, type(ex).__name__)); return None, None
