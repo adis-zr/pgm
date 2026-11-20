@@ -348,3 +348,42 @@ round. Its exact route was eligible (no splits) but skipped by the peak estimate
 mastermind_03_08_04-0015 (cap 2^22 by the ladder, 121 splits) drew only zero-weight samples (9,216 of 9,216): the proposal's support misses the model's: proposal overlap, not
 memory. or_chain_53 (cap 2^24, 47 splits) has 97.5 % zero weights and ESS 4.6 of 167,936 draws: proposal concentration, as or_chain_132.
 
+## 14. Round 12 (20 Nov 2026): the shared path under the range lemma; live-workspace accounting; active-row / unique-boundary evaluation (`integrated.py` v2.8)
+
+Authorization: the round-11 adversarial review (records round12/BLOCKRES_R11_ADVERSARIAL_REVIEW.md): "one bounded repair pass covering the numerical defect, live-workspace accounting
+and bounded deadline checks, then test active-row/unique-boundary recovery on mastermind-0003 and the two other shared targets".
+Defect (reviewer's reproducer, confirmed on v2.7.1 under receipt r12_repro_underflow_v271): `SharedBlock.responses` multiplied batched tables and rescaled AFTERWARDS, so a positive
+product that rounds to zero in binary64 (four factors normalised to (2^-600, 1) / (1, 2^-600): product 2^-1200 on both states) became an exact zero response; the certificate then
+published [0, 1.4e-4] for a marginal equal to 1/2. Counting operations in rho_f does not cover this: the relative-error lemma for a float product requires the RANGE condition
+first (sum of the operands' range bits <= 1000, so the smallest positive product >= 2^-1000 x the maximum, far above the subnormal range).
+Repair (the same discipline as the FT kernel, per sample): every live batched array carries per-sample range bits R (its smallest nonzero entry >= 2^-R of its row maximum; rows
+rescaled to a maximum in [1, 2) by exact powers of two; non-finite rows refused); before EVERY product (forward bucket, root, backward bucket x derivative) the per-sample sum
+of the operands' R must be <= RANGE_BUDGET or the batch raises RangeRefused; the final ratio N_v(a | s) / r(s) is formed with an exact ldexp of the integer exponent difference
+and a response above 1 + 2 rho_f + 2^-40 is a certificate defect (assert). A data-independent PREFLIGHT at construction refuses a block whose restricted ORIGINAL factors of one
+elimination step already exceed the budget (the reviewer's case: 2,404 bits), typing the block's queries NUMERIC_RANGE_REFUSED before any draw; a refusal raised in the stream
+abandons that batch only: the certificate holds the completed batches, whose publications stand, and the outcome is the typed refusal (control P1). Nothing is clipped or
+skipped silently. Lemma (unchanged): for mantissas with range bits R_i and sum R_i <= 1000, every positive product is >= 2^-1000 >= 2^-1021 (normal), so each rounding is a
+relative (1 + u) factor and comb / pow1pu apply; a float zero is then an exact zero. Controls: U1 (adversary -> NUMERIC_RANGE_REFUSED, 0 false publications), U2 (same structure at
+2^200: computes on the shared path, 8/8 contained), U3 (shared responses vs an INDEPENDENT exact-rational enumeration over the original integer factors on all 32 boundary rows x 27
+columns: worst 5.5e-17 against rho_f 7.5e-15; zero-mass rows have root exactly 0).
+Memory (reviewer's measurement confirmed: 30 / 131 MiB measured against a 3.2 / 3.4 MiB formula): the formula B x 3 x largest union ignored the restricted factor copies, the stored
+forward products and messages, and the derivatives alive across the trace. v2.8 (a) no longer stores the forward product P (rebuilt from the prefix products in the backward pass),
+computes derivatives only for messages (never for original factors) and drops each derivative when consumed; (b) simulates the trace at construction (scopes only) and bounds the
+simultaneously live floats per sample: all restricted factors + all messages + the derivatives crossing each backward step + that step's workspace ((2k + 5) x |union| + |v|),
+exposed as `bytes_per_sample`; (c) ONE per-batch budget (BATCH_BUDGET = 384 MiB, also the term used in the memory plan's PAC peak) covers the response matrix and the
+certificate's temporaries (7 x K_q floats per draw) plus the shared workspace: the batch halves (down to 1) until it fits, a typed MEMORY_POLICY_REFUSED if even one draw does not,
+and shared blocks are evaluated in MICROBATCHES of `chunk` rows sized to the remainder; (d) the executor cross-check runs under a JOINT budget (host_reserved_bytes = the
+process's peak RSS at entry). Controls: tracemalloc peak of responses() <= B x bytes_per_sample on the reviewer's 15 / 40-step chains (13.7 / 51.4 MiB measured against 20.1 / 57.8
+MiB planned) and on a random block. The 2.5 GiB usable ceiling, the dense budget and the headroom are module constants so a control can inject them: M2 injects a usable limit
+between the planned peaks of caps 2^12 and 2^10 on a 16-variable model and checks that the ladder actually descends (8 caps tried, 2^10 chosen, 5 splits), the run reaches the
+sampler and publishes contained intervals, and the CHOSEN proposal passes an exhaustive support / cap validation over all 65,536 separator assignments.
+Deadline: `responses(S, deadline)` polls before every forward and backward step (control D1: raises within 0.13 s where the full evaluation takes 0.83 s); a Deadline inside a shared
+block abandons that batch and keeps the completed ones.
+Active rows / unique boundaries (the reviewer's two exact shortcuts): shared responses are evaluated only for rows with X > 0 (every certificate term involving the response is
+X f or X^2 f, so the zero response on a zero-weight row changes nothing; the row still enters the certificate with the batch's predictable lambda and plug-in mean, and the draw
+count is unchanged); among the active rows each DISTINCT boundary assignment of the block is evaluated once and scattered back to the sample order (the response is the same
+Rao-Blackwellized conditional expectation). Control A1: identical response matrix on the active rows and bit-identical certificate state against the full evaluation on the same
+300 draws (180 active, 2 distinct boundary rows, 2 microbatches). The maintained suite check_integrated_v2.py is adapted to the lazy sampler lifecycle (10/10 FAST).
+Corrections to round 11 prose (recorded in round11/RESULTS_ROUND11.md): all 9,216 zero weights on mastermind-0015 show that no positive-weight draw was OBSERVED in that run, not
+that the proposal's support misses the target's; the BN_12 forced-shared ablation was compared with the dense run (158 / 158 overlapping intervals), not with an exact reference.
+

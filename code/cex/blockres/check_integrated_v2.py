@@ -44,6 +44,7 @@ live = [f for f in BR.contract(fns, cards4, 0, time.monotonic() + 10, st, tr, od
 S4 = sorted({v for b in blocks for v in b.scope}); pos4 = {v: i for i, v in enumerate(S4)}; E_tot = sum(b.e for b in blocks) - mbp.E_U; wid = IG.numerical_widening(blocks, mbp, [], len(S4), 2, E_tot)
 rho_X = IG.fup(wid['rho_X']); rho_cap = IG.fup(wid['rho_cap']); logU_capf = IG.up(mbp.logU_f + IG.up(math.log2(1.0 + rho_cap)) + 2 ** -40)
 import itertools
+mbp.prepare_sampler(release_forward=False)                                   # round 12: the sampler tables are built lazily since v2.6
 Sall = np.array(list(itertools.product(range(2), range(2))), dtype=np.int64); logq, q_an = mbp.logq_given(Sall, pos4); worst = Decimal(0); maxX = -1.0
 U_cap_dec = Decimal(2) ** mbp.E_U * (Decimal(logU_capf) * Decimal(2).ln()).exp()        # U_cap = 2^(logU_capf + E_U); the solver combines E_tot = E_z - E_U exactly
 for i, srow in enumerate(Sall.tolist()):
