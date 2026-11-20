@@ -283,3 +283,17 @@ NOT re-run this round (no WMB construction in the sweep).
 more than 20 groups makes the candidate INELIGIBLE (typed) and the max proposal is used (the overseer's K_22 unit-factor reproducer). The float weight's rounding is included in d_M.
 (D) The maintained end-to-end weighted control now asserts that WMB was SELECTED (certified diff -0.388 bits on the mixed-cardinality 2^300-rescaled model) and every publication contains
 the oracle truth, at the LABELLED relaxed tolerance eps = 1/20 for fast coverage; the sweep contract stays eps = 1/200. W4 reports requested vs selected proposals.
+
+## 12. Round 10 (20 Nov 2026): compact conservative error bounds; byte-budgeted query recovery (`integrated.py` v2.5)
+
+Correction of the round-9 diagnosis (reviewer's measurements, confirmed by a phase probe on or_chain_53: contraction 0.19 s / 95 MiB, float conversion 0.22 s, recovery of 637
+per-variable tables = 817 MiB of floats): the memory kills were in interior-query RECOVERY and STACKING, and the exact-route stalls in the EXACT-FRACTION rounding allowances.
+Compact bounds. Every rounding allowance is now a small Fraction: (1 + u)^k - 1 <= k u + (k u)^2 (from (1 + u)^k <= e^(ku) <= 1 + x + x^2 for x = k u <= 1, refused beyond), and
+prod (1 + rho_i) - 1 <= S + S^2 with S = sum rho_i <= 1 (same inequality; refused beyond), rounded up onto the 2^-200 grid. Both replace exact powers whose numerators had
+k x 53 bits (k up to the union-table size 2^20) and exact products over hundreds of factors. The bounds are weaker by at most a factor (1 + S) and remain upper bounds, so
+every certificate statement of sections 6-11 is unchanged; the recorded widenings grow by less than a part in 10^-10 on the development cases.
+Recovery. Per block, ONE (|g_b|, K_b) float array is preallocated and the replay's columns are written into it directly (the per-variable table is released immediately; no
+np.stack copy). A global byte budget (640 MiB) bounds the retained tables; interior variables whose columns would exceed it are typed RESOURCE (NOT_PUBLISHED), so a large
+model degrades to a partial answer instead of a memory kill. Sharing of the backward computation across a block's interior variables (one differential per block instead of a
+replay per variable) is NOT done in this round; the forward prefix is shared as before.
+Deadline. The backward differential checks the deadline per factor as well as per step.

@@ -20,13 +20,14 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2.4 (2026-11-20 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.5 (2026-11-20 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
 MIN_BITS = 64
 PROB_TRUNC_LOG2 = -900
 FLOAT_BYTE_CAP = 256 << 20
+RECOVERY_BYTE_BUDGET = 512 << 20          # total bytes of RETAINED recovered query tables (stacked per block); beyond it the remaining interior queries are typed RESOURCE (NOT_PUBLISHED), never a memory kill
 
 
 class RangeRefused(Exception): pass
@@ -35,6 +36,23 @@ class RangeRefused(Exception): pass
 def rup(x, bits=200):
     """round a nonnegative Fraction UP onto the 2^-bits grid: keeps every tracked bound an upper bound while bounding its size (the WMB power-sum bounds square per level otherwise)"""
     x = F(x); q = 1 << bits; return F(-((-x * q).numerator // (-x * q).denominator), q) if x > 0 else F(0)
+
+
+# ---------------------------------------------------------------- compact conservative error bounds (round 10): never an exact power or a long exact product
+def pow1pu(k):
+    """upper bound of (1 + u)^k - 1 for k >= 0: (1 + u)^k <= e^(k u) <= 1 + k u + (k u)^2 for k u <= 1 (refused beyond); a small Fraction regardless of k"""
+    x = F(max(0, int(k))) * UF
+    if x > 1: raise RangeRefused('rounding count %d too large for the compact bound' % k)
+    return x + x * x
+
+
+def comb(*rhos):
+    """upper bound of prod (1 + rho_i) - 1: with S = sum rho_i <= 1, prod (1 + rho_i) <= e^S <= 1 + S + S^2 (refused beyond); rounded up onto the 2^-200 grid"""
+    S = F(0)
+    for r in rhos: S += F(r)
+    if S < 0: raise RangeRefused('negative error bound')
+    if S > 1: raise RangeRefused('accumulated relative error %s too large' % float(S))
+    return rup(S + S * S)
 
 
 def up(x): return nextafter(x, inf)
@@ -74,15 +92,15 @@ def ft_from_int(fn, cards):
 def ft_product(fts, cards):
     rb = sum(f.R for f in fts)
     if rb > RANGE_BUDGET: raise RangeRefused('a product of %d tables could underflow (range bits %d > %d)' % (len(fts), rb, RANGE_BUDGET))
-    union = tuple(sorted(set().union(*(set(f.scope) for f in fts)))); P = None; e = 0; r = F(1)
+    union = tuple(sorted(set().union(*(set(f.scope) for f in fts)))); P = None; e = 0
     for f in fts:
-        a = f.M.reshape([cards[v] if v in f.scope else 1 for v in union]); P = a if P is None else P * a; e += f.e; r *= (1 + f.rho)
-    r *= (1 + UF) ** max(0, len(fts) - 1); return union, P, e, r - 1
+        a = f.M.reshape([cards[v] if v in f.scope else 1 for v in union]); P = a if P is None else P * a; e += f.e
+    return union, P, e, comb(*[f.rho for f in fts], pow1pu(len(fts) - 1))
 
 
 def ft_eliminate(bucket, v, cards, agg='sum'):
     union, P, e, rho = ft_product(bucket, cards); ax = union.index(v); n = cards[v]
-    if agg == 'sum': R = P.sum(axis=ax); rho = (1 + rho) * (1 + UF) ** max(0, n - 1) - 1
+    if agg == 'sum': R = P.sum(axis=ax); rho = comb(rho, pow1pu(n - 1))
     elif agg == 'max': R = P.max(axis=ax)
     else: R = P.min(axis=ax)
     scope = tuple(u for u in union if u != v); R = np.asarray(R, dtype=float).reshape([cards[u] for u in scope]) if scope else np.asarray(R, dtype=float).reshape(())
@@ -274,7 +292,7 @@ class WMBFloat:
                 n = cards[v]; Rsum = sum(f.R for f in g); q = len(g); mag = F(Rsum) / w[r] + int(n).bit_length() + 2
                 d_M = sum(UF * (f.R + 1) for f in g) + UF * (q + 1) * (Rsum + q) + UF * (Rsum + 2) + 2 * UF * (mag + 1) + log_from_rel(4 * UF + (n - 1) * UF) * w[r] + UF * (int(n).bit_length() + 2) * w[r] + UF * (mag + 1) + UF * (Rsum + mag + 2)
                 rho_float = rup(rel_from_log(d_M)); self.rho_steps.append(rho_float)
-                rhoM = rup((1 + grho[r]) * (1 + rho_float) - 1)                                   # envelope relative to the exact power sum of EXACT inputs: pass-through times the float error
+                rhoM = comb(grho[r], rho_float)                                                  # envelope relative to the exact power sum of EXACT inputs: pass-through times the float error
                 Mfl = np.where(np.isfinite(logM), np.exp2(logM - np.floor(np.where(np.isfinite(logM), logM, 0.0))), 0.0); Efl = np.where(np.isfinite(logM), np.floor(np.where(np.isfinite(logM), logM, 0.0)), 0.0)
                 if np.isfinite(logM).any():
                     Emax = int(Efl[np.isfinite(logM)].max()); sh = np.where(np.isfinite(logM), Efl - Emax, 0.0)
@@ -288,7 +306,7 @@ class WMBFloat:
             self.steps.append((v, step_tabs)); self.max_q = max(self.max_q, m)
         self.opt_s = tnow() - t0
         self.logU_f = sum(log2(float(r.M)) for r in self.scalars if float(r.M) > 0) if all(float(r.M) > 0 for r in self.scalars) else -inf; self.E_U = sum(r.e for r in self.scalars); self.n_scalar = len(self.scalars)
-        self.logU = (self.logU_f + self.E_U) if self.logU_f > -inf else -inf; self.rhoU = rup(prod((1 + r.rho) for r in self.scalars) * (1 + UF) ** len(self.scalars) - 1)   # pass-through envelope of U vs the exact weighted bound
+        self.logU = (self.logU_f + self.E_U) if self.logU_f > -inf else -inf; self.rhoU = comb(*[r.rho for r in self.scalars], pow1pu(len(self.scalars)))   # pass-through envelope of U vs the exact weighted bound
         self.splits = sum(len(g) - 1 for g in self.groups_per_step); self.max_range_sum = ref.max_range_sum; self.max_table = ref.max_table; self.max_q1 = ref.max_q1
         # precompute per-step log tables of the group members for the sampler
         self.prep = []
@@ -333,11 +351,11 @@ def f_sig(f): return (f.scope, getattr(f, 'tag', None))
 
 def ft_product_log(fts, cards):
     """log2 of the product of FTs over the union scope (no underflow possible): returns (union, log2 P (with -inf at zeros), exponent sum, rho of the product of mantissas)"""
-    union = tuple(sorted(set().union(*(set(f.scope) for f in fts)))); L = None; e = 0; r = F(1)
+    union = tuple(sorted(set().union(*(set(f.scope) for f in fts)))); L = None; e = 0
     for f in fts:
         with np.errstate(divide='ignore'): lm = np.where(f.M > 0, np.log2(np.maximum(f.M, 1e-300)), -inf).reshape([cards[v] if v in f.scope else 1 for v in union])
-        L = lm if L is None else L + lm; e += f.e; r *= (1 + f.rho)
-    return union, np.broadcast_to(L, [cards[v] for v in union]).copy(), e, r * (1 + UF) ** max(0, len(fts) - 1) - 1
+        L = lm if L is None else L + lm; e += f.e
+    return union, np.broadcast_to(L, [cards[v] for v in union]).copy(), e, comb(*[f.rho for f in fts], pow1pu(len(fts) - 1))
 
 # ---------------------------------------------------------------- the certificate: batch updates, conservative inversion
 class Certificate:
@@ -433,7 +451,7 @@ def numerical_widening(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
     u = UF; L2 = F(145, 100)
     def logerr(mag): return u * (F(mag) + 1)                                                       # |fl(log2 x) - log2 x| <= u |log2 x| + u for a correctly rounded-to-nearest log2 within 1 ulp
     # (a) tables vs exact integers
-    rho_tab = prod((1 + b.rho) for b in blocks) - 1
+    rho_tab = comb(*[b.rho for b in blocks])
     # (b) the proposal rows: float p_a vs the exact products of the float tables (enters the CAP), and the implemented log2 q vs the analysed law (enters eps_num)
     d_cap = F(0); d_impl = F(0); mag_logq = F(0)
     for Rs in mbp.step_ranges:
@@ -464,12 +482,12 @@ def numerical_widening(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
 def ft_scalar_product(fts):
     """product of FT scalars with an EXACT power-of-two rescale after every multiplication (mantissa kept in [1, 2): no binary64 overflow for any number of factors), exponents as exact
     integers, one rounding (1 + u) per multiplication in the exact rho; empty product = 1; an exact zero factor gives the exact zero"""
-    M = 1.0; e = 0; r = F(1); n = 0
+    M = 1.0; e = 0; rhos = []; n = 0
     for f in fts:
         m = float(f.M)
         if m == 0.0: return FT((), np.array(0.0), 0, F(0))
-        M *= m; n += 1; e += f.e; r *= (1 + f.rho); k = frexp(M)[1] - 1; M = M * ldexp(1.0, -k); e += k
-    return FT((), np.array(M), e, r * (1 + UF) ** max(0, n - 1) - 1)
+        M *= m; n += 1; e += f.e; rhos.append(f.rho); k = frexp(M)[1] - 1; M = M * ldexp(1.0, -k); e += k
+    return FT((), np.array(M), e, comb(*rhos, pow1pu(n - 1)))
 
 
 def backward_derivatives(mbp, cards, deadline):
@@ -501,9 +519,10 @@ def backward_derivatives(mbp, cards, deadline):
             if pre[i] is not None: P = P * pre[i]
             if suf[i] is not None: P = P * suf[i]
             P = np.broadcast_to(P, full)                                   # a single-factor bucket: the derivative is DR tiled along the eliminated variable (prod over an empty set = 1)
-            e = DR.e + sum(g.e for j, g in enumerate(bucket) if j != i); rho = (1 + DR.rho) * prod((1 + g.rho) for j, g in enumerate(bucket) if j != i) * (1 + UF) ** k - 1
+            if tnow() >= deadline: raise Deadline('backward')
+            e = DR.e + sum(g.e for j, g in enumerate(bucket) if j != i); rho = comb(DR.rho, *[g.rho for j, g in enumerate(bucket) if j != i], pow1pu(k))
             axes = tuple(ai for ai, u in enumerate(union) if u not in f.scope); nsum = prod(cards[union[ai]] for ai in axes) if axes else 1
-            Df = P.sum(axis=axes) if axes else P; rho = (1 + rho) * (1 + UF) ** max(0, nsum - 1) - 1
+            Df = P.sum(axis=axes) if axes else P; rho = comb(rho, pow1pu(nsum - 1))
             Df = np.asarray(Df, dtype=float).reshape([cards[u] for u in f.scope]) if f.scope else np.asarray(Df, dtype=float).reshape(())
             Df, e = _rescale(np.ascontiguousarray(Df), e); D[id(f)] = FT(f.scope, Df, e, rho)
     return D
@@ -558,7 +577,7 @@ def numerical_widening_wmb(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
     the stored tables (rel_rows); the implemented X vs the analysed X (rho_X). All conversions are domain-checked; a violation refuses the candidate."""
     u = UF
     def logerr(mag): return u * (F(mag) + 1)
-    rho_tab = prod((1 + b.rho) for b in blocks) - 1
+    rho_tab = comb(*[b.rho for b in blocks])
     d_cap_rows = F(0); d_impl = F(0); mag_logq = F(0); wi = 1 / W_MIN
     for Rs in mbp.step_ranges:
         if not Rs: mag_logq += F(int(maxcard).bit_length()); continue
@@ -568,12 +587,12 @@ def numerical_widening_wmb(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
         rel_mix = rel_cond + mbp.max_q * u + (maxcard - 1) * u + 4 * u
         d_cap_rows += log_from_rel(rel_mix)
         d_impl += logerr(901) + logerr(int(maxcard).bit_length() + 1) + u * (mag_logq + 910); mag_logq += 901 + int(maxcard).bit_length() + 1
-    rho_msgs = rup(prod((1 + r) for r in mbp.rho_steps) - 1) if mbp.rho_steps else F(0)
+    rho_msgs = comb(*mbp.rho_steps) if mbp.rho_steps else F(0)
     SRb = sum(b.R for b in blocks); nb = len(blocks); d_z = sum(logerr(b.R) for b in blocks) + u * nb * (SRb + nb)
     d_U = u * mbp.n_scalar * (mbp.n_scalar + int(maxcard).bit_length() + 2) + logerr(1) * mbp.n_scalar
     max_mag = max(SRb + nb, mag_logq, mbp.n_scalar + 2, abs(E_tot)); d_fin = 4 * u * (SRb + nb + mag_logq + mbp.n_scalar + 2 + abs(E_tot))
     d_total = d_z + d_impl + d_U + d_fin; rho_X = rel_from_log(d_total)
-    rho_cap = rup((1 + rho_tab) * (1 + rel_from_log(d_cap_rows)) * (1 + rho_msgs) * (1 + rho_X) - 1)
+    rho_cap = comb(rho_tab, rel_from_log(d_cap_rows), rho_msgs, rho_X)
     if rho_cap > F(1, 2): raise RangeRefused('wmb: certified cap widening %s exceeds the admitted domain' % float(rho_cap))
     rho_f = max([2 * r for r in qrhos] + [F(0)]) + max([b.rho for b in blocks]) + 4 * UF
     law = 4 * n_sep * F(maxcard + 2, 1 << 53); trunc = n_sep * F(1, 1 << 900)
@@ -643,29 +662,43 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             for st, (v, snap) in enumerate(trace): trace_var[st] = v; trace_ft.append([conv(f) for f in snap])
         except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
         ph['float_convert'] = tnow() - t0
-        t0 = tnow(); qtabs = {i: [] for i in range(len(blocks))}; recovered = 0; skipped = []
+        # ---- interior query recovery under a BYTE BUDGET: each block's stacked table Q (|g_b|, K_b) is preallocated once and filled column by column directly from the replay
+        #      (no per-variable table retained, no second copy from np.stack); variables whose columns would exceed the budget are typed RESOURCE and left NOT_PUBLISHED
+        t0 = tnow(); recovered = 0; skipped = []; resource_skipped = []; bytes_used = 0
         todo = sorted(((len([u for u in b.interior if step_of[u] > step_of[x]]), i, x) for i, b in enumerate(blocks) for x in b.interior))
+        # pass 1: ADMIT interior variables in order under the byte budget (the retained column bytes are known before any computation)
+        admitted = []
         for _, i, x in todo:
+            need = blocks[i].M.size * cards[x] * 8
+            if bytes_used + need > RECOVERY_BYTE_BUDGET: resource_skipped.append(x); continue
+            admitted.append((i, x)); bytes_used += need
+        # pass 2: allocate EXACTLY the admitted columns per block (a column write touches every row page, so an over-sized allocation would be realized in RSS)
+        ncols = {}
+        for i, x in admitted: ncols[i] = ncols.get(i, 0) + cards[x]
+        Qb = {i: np.zeros((blocks[i].M.size, n_), dtype=float) for i, n_ in ncols.items()}; colsb = {i: [] for i in range(len(blocks))}; rhosb = {i: [] for i in range(len(blocks))}
+        # pass 3: recover and write columns directly; the per-variable table is released at once
+        for i, x in admitted:
             if tnow() >= cdead: skipped.append(x); continue
-            try: r = recover_query_table_float(blocks[i], x, cards, trace_ft, trace_var, step_of, cdead, stats)
+            b = blocks[i]
+            try: r = recover_query_table_float(b, x, cards, trace_ft, trace_var, step_of, cdead, stats)
             except Deadline: skipped.append(x); continue
             except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
             if r is None: failed.append(x); continue
-            qtabs[i].append((x, r)); recovered += 1
-        failed += skipped; ph['query_tables'] = tnow() - t0
-        out['mechanism'].update(interior_queries_recovered=recovered, interior_queries_failed=len(failed) - len(skipped), interior_queries_skipped_window=len(skipped), query_work=stats['query_work'])
+            c0 = len(colsb[i]); scale_ = ldexp(1.0, r.e - b.e)
+            for v in range(cards[x]):
+                col = r.M[..., v].reshape(-1) * scale_; pos_ = col[col > 0]
+                if not np.all(np.isfinite(col)) or (pos_.size and float(pos_.min()) < ldexp(1.0, -1000)): out['refusal'] = 'query-table alignment leaves the normal range'; return finish_('NUMERIC_RANGE_REFUSED')
+                Qb[i][:, c0 + v] = col; colsb[i].append((x, v)); rhosb[i].append(r.rho)
+            del r; recovered += 1
+        failed += skipped; failed += resource_skipped; ph['query_tables'] = tnow() - t0
+        out['mechanism'].update(interior_queries_recovered=recovered, interior_queries_failed=len(failed) - len(skipped) - len(resource_skipped), interior_queries_skipped_window=len(skipped), interior_queries_resource_skipped=len(resource_skipped), recovery_bytes_retained=bytes_used, recovery_byte_budget=RECOVERY_BYTE_BUDGET, query_work=stats['query_work'])
         pos = {v: i for i, v in enumerate(S)}; sep_q = [(x, v) for (x, v) in queries if x in pos]
         blockQ = []; qcols = []
         for i, b in enumerate(blocks):
-            cols = []; mats = []; es = []; rhos = []
-            for x, r in qtabs[i]:
-                for v in range(cards[x]): cols.append((x, v)); mats.append(r.M[..., v].reshape(-1)); es.append(r.e); rhos.append(r.rho)
-            if cols:
-                Q = np.stack([mats[c] * ldexp(1.0, es[c] - b.e) for c in range(len(cols))], axis=1)       # exact power-of-two alignment to the block exponent
-                nzq = Q[Q > 0]
-                if not np.all(np.isfinite(Q)) or (nzq.size and float(nzq.min()) < ldexp(1.0, -1000)): out['refusal'] = 'query-table alignment leaves the normal range'; return finish_('NUMERIC_RANGE_REFUSED')
-                blockQ.append((i, Q, rhos)); qcols += cols
-            else: blockQ.append((i, None, []))
+            if colsb[i]:
+                Q = Qb[i] if Qb[i].shape[1] == len(colsb[i]) else np.ascontiguousarray(Qb[i][:, :len(colsb[i])]); Qb.pop(i, None)
+                blockQ.append((i, Q, rhosb[i])); qcols += colsb[i]
+            else: blockQ.append((i, None, [])); Qb.pop(i, None)
         sq = sep_q + qcols; Kq = len(sq); qmap = {q: qix[q] for q in sq}; qrhos = [r for _, _, rs in blockQ for r in rs]
         t0 = tnow()
         try: mbp = MBFloat(blocks, cards, mb_cap, deadline)
@@ -687,7 +720,7 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
                 for x in S:
                     bi = min((i for i, b in enumerate(blocks) if x in b.scope), key=lambda i: blocks[i].M.size); b = blocks[bi]
                     union, P, e, rho = ft_product([b, Dblk[bi]], cards); axes = tuple(ai for ai, u in enumerate(union) if u != x); nsum = prod(cards[union[ai]] for ai in axes) if axes else 1
-                    Nx = P.sum(axis=axes) if axes else P; rho = (1 + rho) * (1 + UF) ** max(0, nsum - 1) - 1; Nx, e = _rescale(np.asarray(Nx, dtype=float).reshape([cards[x]]), e); Nft = FT((x,), Nx, e, rho)
+                    Nx = P.sum(axis=axes) if axes else P; rho = comb(rho, pow1pu(nsum - 1)); Nx, e = _rescale(np.asarray(Nx, dtype=float).reshape([cards[x]]), e); Nft = FT((x,), Nx, e, rho)
                     for v in range(cards[x]):
                         lo, hi = interval_ratio(Nft, v, Zft)
                         if hi - lo <= 2 * eps: pub_exact[qix[(x, v)]] = (lo, hi)
