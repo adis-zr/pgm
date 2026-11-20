@@ -199,3 +199,29 @@ eps_num = 2 rho_X + rho_f + law + trunc. Control R4 (E = 2^18 in the committed s
 of budget in a timed-out control run): implemented X vs the analysed X = z / (q_an U_cap) in 80-digit decimal over all four assignments, worst relative error 1.96e-16 against
 the declared rho_X = 1.90e-12 (ratio 1.0e-4; before the repair the same control failed by 5e11); the run publishes the four marginals and contains the truth; BN_12 eps_num
 moves from 2^-32.0 to 2^-37.9 because the stated magnitudes replace the assumed ones.
+
+## 9. Round 7 (19 Nov 2026): the exact route for unsplit constructions (`integrated.py` v2.2)
+
+Split census. The mini-bucket pass now records every bucket that was split (`mb_splits`, `mb_split_steps`); exactness is decided from this record, never inferred from the
+sampled weights. Census at proposal cap 2^24: BN_12 9 splits, BN_15 22, Promedus_14 23, ObjectDetection_24 6, CSP_13 0, MILDEW 0, 1npl refused before the pass.
+The exact route (taken when splits = 0, `--route auto`). An unsplit pass is exact bucket elimination on the separator model, so Z = product of the scalar messages
+(an FT scalar with exact rho). The marginals come from one shared backward pass, the arithmetic-circuit differential (Darwiche 2003; the same operation as the
+all-singleton reverse pass of cex_kernel.cpp): D(final scalars) = 1 and, at each forward step (v, bucket, R), for every f in the bucket
+    D_f(x_f) = sum over (union of the bucket's scopes) minus scope(f) of  D_R(union minus v) x prod_{g in bucket, g != f} g,
+formed zero-safely with prefix / suffix products (no division), range-pre-checked and rho-exact like every other FT operation. For the input block table g_b this gives
+D_b(s_b) = dZ / dg_b(s_b) = the product of all other blocks summed over the rest of the separator. Separator variable x: N(x = v) = sum_{s_b : s_b[x] = v} g_b D_b for any
+block containing x. Interior variable x of block b: N(x = v) = sum over the block's variables except x of [prod of the block's ORIGINAL (evidence-restricted) factors] x D_b,
+computed by a fresh greedy variable elimination that retains x (`ve_retain`); this replaces the per-variable replay with x retained, whose intermediate tables (scope x card(x)
+x card(v)) exceeded the memory cap on MILDEW's two large-cardinality variables, because D_b lets the boundary variables be summed out early. Publication: the exact rational
+enclosure [N (1 - rho_N) / (Z (1 + rho_Z)), N (1 + rho_N) / (Z (1 - rho_Z))] from the float values and exact rho bounds, intersected with [0, 1], labelled
+DETERMINISTIC_EXACT_ROUTE (delta = 0); a zero numerator is an exact zero (float zeros are exact under the pre-check). Z.M > 0 with rho_Z < 1 is the positive-mass witness.
+Independent cross-check. The existing certified executor (cex/newarm/cex_executor.py, binary64 kernel with reciprocal-envelope labels) is run on the discovered separator
+model (the exact rational block tables, renumbered) with the discovered elimination order; its separator-variable intervals must overlap ours, else the route returns
+INVESTIGATE and publishes nothing (control E6: every block derivative scaled by 1.5 is caught: 28 / 28 separator coordinates disjoint). Controls E1-E4: 217 deterministic
+publications on four small models (complete ternary separator with hard zeros and evidence, mixed cardinalities, unary factors, a factorless variable) all contain the oracle
+truth, widths <= 1.6e-12; E5: a split construction stays on the PAC route.
+Measured: MILDEW COMPLETE 616 / 616 in 9.5 s (exact route 5.3 s of it, almost all in the 30 interior retained eliminations), max width 2.4e-13, rho_Z 1.4e-14, executor
+cross-check CERTIFIED with 130 / 130 separator coordinates overlapping; the round-6 PAC route had left 186 coordinates unrecovered. CSP_13: the exact route is REFUSED
+('table dynamic range exceeds 2^900' inside the backward pass: a derivative table spans more than 900 bits), so the method falls back to the PAC route and completes 258 / 258
+in 6.1 s as before -- deterministic CSP_13 needs either an exact-integer backward pass or a split-mantissa representation for the derivative tables (not done). BN_12 and
+BN_15 are split constructions and keep the PAC route unchanged (6.7 s / 7.4 s).

@@ -19,7 +19,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2.1 (2026-11-19 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.2 (2026-11-19 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
@@ -100,7 +100,8 @@ def recover_query_table_float(block_ft, x, cards, trace_ft, trace_var, step_of, 
 # ---------------------------------------------------------------- mini-bucket proposal in float with a batch sampler
 class MBFloat:
     def __init__(self, blocks, cards, cap, deadline):
-        self.cards = cards; live = [FT(b.scope, b.M, b.e, b.rho) for b in blocks]; steps = []; logU_f = 0.0; E_U = 0; n_scalar = 0; rhoU = F(0); order = []; vars_ = sorted({v for f in live for v in f.scope}); self.max_range_sum = 0
+        self.cards = cards; live = [FT(b.scope, b.M, b.e, b.rho) for b in blocks]; self.inputs = list(live); steps = []; logU_f = 0.0; E_U = 0; n_scalar = 0; rhoU = F(0); order = []; vars_ = sorted({v for f in live for v in f.scope}); self.max_range_sum = 0
+        self.splits = 0; self.split_steps = []; self.fwd = []; self.scalars = []          # fwd: (v, bucket, message) for every step (meaningful as an exact elimination only when splits == 0)
         while vars_:
             if tnow() >= deadline: raise Deadline('mb_float')
             best = None
@@ -108,20 +109,23 @@ class MBFloat:
                 nb = set().union(*(set(f.scope) for f in live if v in f.scope)) - {v}; size = prod(cards[u] for u in nb) if nb else 1
                 if best is None or size < best[0]: best = (size, v)
             v = best[1]; order.append(v); vars_.remove(v); bucket = [f for f in live if v in f.scope]; live = [f for f in live if v not in f.scope]
-            if not bucket: logU_f += log2(cards[v]); n_scalar += 1; steps.append((v, None)); continue
+            if not bucket: logU_f += log2(cards[v]); n_scalar += 1; steps.append((v, None)); self.scalars.append(FT((), np.array(float(cards[v])), 0, F(0))); continue
             bucket.sort(key=lambda f: -len(f.scope)); groups = []
             for f in bucket:
                 for g in groups:
                     u = g[0] | set(f.scope)
                     if prod(cards[x] for x in u) <= cap: g[0] = u; g[1].append(f); break
                 else: groups.append([set(f.scope), [f]])
+            if len(groups) > 1: self.splits += len(groups) - 1; self.split_steps.append((v, [len(g[1]) for g in groups]))
             for gi, (u, members) in enumerate(groups):
                 self.max_range_sum = max(self.max_range_sum, sum(f.R for f in members)); R = ft_eliminate(members, v, cards, 'sum' if gi == 0 else 'max')
+                if gi == 0: self.fwd.append((v, list(members), R))
                 if R.scope: live.append(R)
                 else:
                     if float(R.M) == 0.0: logU_f = -inf
                     else: logU_f += log2(float(R.M)); E_U += R.e; n_scalar += 1          # float part in [0, 1) per scalar; the exponent stays an exact integer
                     rhoU = (1 + rhoU) * (1 + R.rho) - 1
+                    self.scalars.append(R)
             steps.append((v, groups[0][1]))
         self.steps = steps; self.order = order; self.rhoU = rhoU; self.logU_f = logU_f; self.E_U = E_U; self.logU = (logU_f + E_U) if logU_f > -inf else -inf; self.n_scalar = n_scalar
         self.max_table = max((f.M.size for _, q1 in steps if q1 for f in q1), default=0); self.max_q1 = max((len(q1) for _, q1 in steps if q1), default=0)
@@ -297,10 +301,91 @@ def numerical_widening(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
     return dict(rho_X=rho_X, rho_cap=rho_cap, rho_f=rho_f, law=law, trunc=trunc, eps_num=2 * rho_X + rho_f + law + trunc, delta_log_total=d_total, max_log_mag=max_mag)
 
 
+
+# ---------------------------------------------------------------- EXACT ROUTE for unsplit constructions (round 7): shared backward pass = the arithmetic-circuit differential
+def ft_scalar_product(fts):
+    M = 1.0; e = 0; r = F(1)
+    for f in fts: M *= float(f.M); e += f.e; r *= (1 + f.rho)
+    if M == 0.0: return FT((), np.array(0.0), 0, F(0))
+    k = frexp(M)[1] - 1; return FT((), np.array(M * ldexp(1.0, -k)), e + k, r * (1 + UF) ** max(0, len(fts) - 1) - 1)
+
+
+def backward_derivatives(mbp, cards, deadline):
+    """D[id(f)] = dZ/df over f.scope for every input block table of an UNSPLIT mini-bucket pass: D(final scalars) = 1; at step (v, bucket, R): D_f = sum_{union minus scope f} D_R x prod_{g in bucket, g != f} g
+    (zero-safe: prefix / suffix products, no division). Every product is range-pre-checked and every rho exact (the same lemma as the forward pass)."""
+    D = {id(sc): FT((), np.array(1.0), 0, F(0)) for sc in mbp.scalars}
+    for v, bucket, R in reversed(mbp.fwd):
+        if tnow() >= deadline: raise Deadline('backward')
+        DR = D.get(id(R))
+        if DR is None: raise RangeRefused('backward: a message without a consumer derivative (internal)')
+        union = tuple(sorted(set().union(*(set(f.scope) for f in bucket)))); k = len(bucket)
+        if sum(f.R for f in bucket) + DR.R > RANGE_BUDGET: raise RangeRefused('backward product of %d tables could underflow (range bits %d > %d)' % (k + 1, sum(f.R for f in bucket) + DR.R, RANGE_BUDGET))
+        A = [f.M.reshape([cards[u] if u in f.scope else 1 for u in union]) for f in bucket]; DRa = DR.M.reshape([cards[u] if u in DR.scope else 1 for u in union])
+        pre = [None] * k; suf = [None] * k; acc = None
+        for i in range(k): pre[i] = acc; acc = A[i] if acc is None else acc * A[i]
+        acc = None
+        for i in range(k - 1, -1, -1): suf[i] = acc; acc = A[i] if acc is None else acc * A[i]
+        full = [cards[u] for u in union]
+        for i, f in enumerate(bucket):
+            P = DRa
+            if pre[i] is not None: P = P * pre[i]
+            if suf[i] is not None: P = P * suf[i]
+            P = np.broadcast_to(P, full)                                   # a single-factor bucket: the derivative is DR tiled along the eliminated variable (prod over an empty set = 1)
+            e = DR.e + sum(g.e for j, g in enumerate(bucket) if j != i); rho = (1 + DR.rho) * prod((1 + g.rho) for j, g in enumerate(bucket) if j != i) * (1 + UF) ** k - 1
+            axes = tuple(ai for ai, u in enumerate(union) if u not in f.scope); nsum = prod(cards[union[ai]] for ai in axes) if axes else 1
+            Df = P.sum(axis=axes) if axes else P; rho = (1 + rho) * (1 + UF) ** max(0, nsum - 1) - 1
+            Df = np.asarray(Df, dtype=float).reshape([cards[u] for u in f.scope]) if f.scope else np.asarray(Df, dtype=float).reshape(())
+            Df, e = _rescale(np.ascontiguousarray(Df), e); D[id(f)] = FT(f.scope, Df, e, rho)
+    return D
+
+
+def ve_retain(fts, cards, keep, deadline, byte_cap):
+    """float variable elimination of every variable except `keep` (greedy min-size), range-pre-checked, rho-exact; returns FT over (keep,) or None if a table would exceed byte_cap"""
+    live = list(fts); vars_ = sorted({u for f in live for u in f.scope} - {keep})
+    while vars_:
+        if tnow() >= deadline: raise Deadline('ve_retain')
+        best = None
+        for v in vars_:
+            nb = set().union(*(set(f.scope) for f in live if v in f.scope)) - {v}; size = prod(cards[u] for u in nb) if nb else 1
+            if best is None or size < best[0]: best = (size, v)
+        size, v = best
+        if size * cards[v] * 8 > byte_cap: return None
+        bucket = [f for f in live if v in f.scope]; live = [f for f in live if v not in f.scope]
+        if bucket: live.append(ft_eliminate(bucket, v, cards, 'sum'))
+        vars_.remove(v)
+    union, P, e, rho = ft_product(live, cards)
+    if set(union) != {keep}: raise RangeRefused('ve_retain: unexpected scope %s' % (union,))
+    P, e = _rescale(np.asarray(P, dtype=float).reshape([cards[keep]]), e); return FT((keep,), P, e, rho)
+
+
+def interval_ratio(N, v, Z):
+    """exact rational enclosure of N[v] 2^eN / Z 2^eZ from the float values and exact rho bounds; (lo, hi) within [0, 1]"""
+    n = F(float(N.M.reshape(-1)[v])) * F(2) ** N.e; z = F(float(Z.M)) * F(2) ** Z.e
+    if n == 0: return F(0), F(0)
+    lo = n * (1 - N.rho) / (z * (1 + Z.rho)); hi = n * (1 + N.rho) / (z * (1 - Z.rho)); return max(F(0), lo), min(F(1), hi)
+
+
+def executor_crosscheck(blocks_int, S, order, deadline, cap_bytes):
+    """the existing certified executor (cex/newarm/cex_executor.py) on the discovered SEPARATOR model (exact rational block tables, renumbered) and the discovered elimination order;
+    returns dict(status, rows (per separator variable: list of (lo, hi) Fractions) or None, stats subset)"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm'))
+    import cex_executor as NCEX
+    ren = {v: i for i, v in enumerate(S)}; cards_s = [BLOCK_CARDS[v] for v in S]
+    model = dict(cards=cards_s, evidence={}, factors=[dict(scope=tuple(ren[v] for v in f.scope), values=[F(int(x)) for x in np.asarray(f.arr, dtype=object).reshape(-1).tolist()]) for f in blocks_int])
+    t0 = tnow()
+    try: r = NCEX.execute(model, [ren[v] for v in order], deadline=deadline, cap_bytes=cap_bytes)
+    except NCEX.Stop as e: return dict(status='STOP:' + str(e.args[0]), reason=str(e.args[1])[:200], wall_s=tnow() - t0)
+    except Exception as e: return dict(status='ERROR', reason=repr(e)[:200], wall_s=tnow() - t0)
+    return dict(status=r['status'], rows=r.get('intervals'), wall_s=tnow() - t0, max_width=(r.get('stats') or {}).get('max_width_float'), kernel_s=(r.get('stats') or {}).get('kernel_s'))
+
+
+BLOCK_CARDS = None
+
 # ---------------------------------------------------------------- the integrated solve
-def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F(1, 200), delta=F(1, 10 ** 6), mb_cap=1 << 24, construct_share=0.5, batch=1024, check_s=0.5, force_approx=False, schedule='baseline'):
+def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F(1, 200), delta=F(1, 10 ** 6), mb_cap=1 << 24, construct_share=0.5, batch=1024, check_s=0.5, force_approx=False, schedule='baseline', route='auto', construct_only=False, crosscheck=True):
+    global BLOCK_CARDS
     t_start = tnow(); deadline = t_start + budget; ph = {}; rng = np.random.default_rng(seed); stats = dict(elim_work=0, eliminations=0, query_work=0)
-    out = dict(version=VERSION, seed=seed, budget_s=budget, table_cap=table_cap, enum_cap=enum_cap, mb_cap=mb_cap, batch=batch, schedule=schedule, epsilon=str(eps), delta=str(delta), phases_s=ph, mechanism={}, outcome=None, answers=None)
+    out = dict(version=VERSION, seed=seed, budget_s=budget, table_cap=table_cap, enum_cap=enum_cap, mb_cap=mb_cap, batch=batch, schedule=schedule, route_requested=route, epsilon=str(eps), delta=str(delta), phases_s=ph, mechanism={}, outcome=None, answers=None)
     t0 = tnow(); model, binding = BR.core.read_uai(model_path); cards = model['cards']; n = len(cards); ev = model.get('evidence', {}); out['binding'] = binding; ph['read'] = tnow() - t0
     queries = [(x, v) for x in range(n) if x not in ev for v in range(cards[x])]; K = len(queries); qix = {q: j for j, q in enumerate(queries)}; out['K'] = K
     ans = {}; pending = {}; failed = []
@@ -383,8 +468,59 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         try: mbp = MBFloat(blocks, cards, mb_cap, deadline)
         except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
         ph['mb_construct'] = tnow() - t0
-        out['mechanism'].update(mb_cap=mb_cap, mb_logU=mbp.logU, mb_max_table=mbp.max_table, mb_max_range_sum_bits=mbp.max_range_sum, block_max_range_bits=max(b.R for b in blocks), Kq=Kq, sep_queries=len(sep_q), interior_query_cols=len(qcols))
+        out['mechanism'].update(mb_cap=mb_cap, mb_logU=mbp.logU, mb_max_table=mbp.max_table, mb_max_range_sum_bits=mbp.max_range_sum, block_max_range_bits=max(b.R for b in blocks), Kq=Kq, sep_queries=len(sep_q), interior_query_cols=len(qcols),
+                                mb_splits=mbp.splits, mb_split_steps=mbp.split_steps[:12], mb_unsplit=(mbp.splits == 0))
         if mbp.logU == -inf: return finish_('ZERO_EVIDENCE')
+        if construct_only: out['outcome'] = 'CONSTRUCT_ONLY'; return BR.finish(out, t_start, queries, {}, failed)
+        # ---- EXACT ROUTE: an unsplit mini-bucket pass is exact bucket elimination on the separator model; recover every marginal from one shared backward pass
+        if mbp.splits == 0 and route in ('auto', 'exact'):
+            t0 = tnow(); exact_note = None
+            try:
+                Zft = ft_scalar_product(mbp.scalars)
+                if float(Zft.M) == 0.0: return finish_('ZERO_EVIDENCE')
+                D = backward_derivatives(mbp, cards, deadline); Dblk = [D[id(fi)] for fi in mbp.inputs]
+                pub_exact = {}; blockfac = {i: [conv(f) for f in fns if f.facs <= live[i].facs] for i in range(len(blocks))}
+                # separator variables: N(x = v) = sum_{s_b : s_b[x] = v} g_b(s_b) D_b(s_b) for the smallest block containing x
+                for x in S:
+                    bi = min((i for i, b in enumerate(blocks) if x in b.scope), key=lambda i: blocks[i].M.size); b = blocks[bi]
+                    union, P, e, rho = ft_product([b, Dblk[bi]], cards); axes = tuple(ai for ai, u in enumerate(union) if u != x); nsum = prod(cards[union[ai]] for ai in axes) if axes else 1
+                    Nx = P.sum(axis=axes) if axes else P; rho = (1 + rho) * (1 + UF) ** max(0, nsum - 1) - 1; Nx, e = _rescale(np.asarray(Nx, dtype=float).reshape([cards[x]]), e); Nft = FT((x,), Nx, e, rho)
+                    for v in range(cards[x]):
+                        lo, hi = interval_ratio(Nft, v, Zft)
+                        if hi - lo <= 2 * eps: pub_exact[qix[(x, v)]] = (lo, hi)
+                # interior variables: block model = the block's original factors + D_b; eliminate everything but x
+                unrec = []
+                for i, b in enumerate(blocks):
+                    for x in b.interior:
+                        if tnow() >= deadline: raise Deadline('exact_interior')
+                        Nft = ve_retain(blockfac[i] + [Dblk[i]], cards, x, deadline, FLOAT_BYTE_CAP)
+                        if Nft is None: unrec.append(x); continue
+                        for v in range(cards[x]):
+                            lo, hi = interval_ratio(Nft, v, Zft)
+                            if hi - lo <= 2 * eps: pub_exact[qix[(x, v)]] = (lo, hi)
+                ph['exact_route'] = tnow() - t0
+                xc = None
+                if crosscheck:
+                    BLOCK_CARDS = cards; t0 = tnow(); xc = executor_crosscheck(live, S, mbp.order, deadline, 3 * 1024 ** 3); ph['executor_crosscheck'] = tnow() - t0; dis = 0; cmp_ = 0
+                    if xc.get('rows'):
+                        for si, x in enumerate(S):
+                            for v in range(cards[x]):
+                                j = qix[(x, v)]
+                                if j in pub_exact and xc['rows'][si] is not None:
+                                    cmp_ += 1; lo, hi = pub_exact[j]; xlo, xhi = xc['rows'][si][v]
+                                    if hi < xlo or xhi < lo: dis += 1
+                    xc = dict(xc, compared=cmp_, disjoint=dis); xc.pop('rows', None)
+                    if dis: out['mechanism']['exact_route'] = dict(status='INVESTIGATE: executor disagrees on %d separator coordinates' % dis, crosscheck=xc); exact_note = 'INVESTIGATE'
+                if exact_note is None:
+                    out['mechanism'].update(route='exact', exact_route=dict(status='OK', published=len(pub_exact), unrecovered_interior=len(unrec), Z_log2=lg(F(float(Zft.M)) * F(2) ** Zft.e), rho_Z=fup(Zft.rho), crosscheck=xc))
+                    ans.update(pending)
+                    for j, (lo, hi) in pub_exact.items(): publish(j, lo, hi, (lo + hi) / 2, 'DETERMINISTIC_EXACT_ROUTE')
+                    failed += unrec; out['positive_mass_witness'] = True
+                    return finish_('COMPLETE' if len(ans) == K else 'DEADLINE_PARTIAL', witness=True)
+            except RangeRefused as e: out['mechanism']['exact_route'] = dict(status='REFUSED: ' + str(e)); ph['exact_route'] = tnow() - t0
+            if route == 'exact': return finish_('EXACT_ROUTE_UNAVAILABLE')
+            # otherwise fall through to the PAC route (sampling retained where exact completion is unavailable)
+        out['mechanism']['route'] = 'pac'
         E_z = sum(b.e for b in blocks); E_tot = E_z - mbp.E_U                                     # EXACT integer: every power-of-two scale cancels here, never inside a float log
         if abs(E_tot) >= 1 << 50: out['refusal'] = 'exponent sum %d too large for an exact float' % E_tot; return finish_('NUMERIC_RANGE_REFUSED')
         wid = numerical_widening(blocks, mbp, qrhos, len(S), max(cards), E_tot); eps_num = fup(wid['eps_num']); rho_X = fup(wid['rho_X']); rho_cap = fup(wid['rho_cap'])
@@ -455,13 +591,13 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=20.0); ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--table-cap', type=int, default=1 << 18); ap.add_argument('--enum-cap', type=int, default=1 << 16); ap.add_argument('--mb-cap', type=int, default=1 << 24); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000')
-    ap.add_argument('--force-approx', action='store_true'); ap.add_argument('--batch', type=int, default=1024); ap.add_argument('--schedule', default='baseline', choices=['baseline', 'targeted'])
+    ap.add_argument('--force-approx', action='store_true'); ap.add_argument('--batch', type=int, default=1024); ap.add_argument('--schedule', default='baseline', choices=['baseline', 'targeted']); ap.add_argument('--route', default='auto', choices=['auto', 'pac', 'exact']); ap.add_argument('--construct-only', action='store_true'); ap.add_argument('--no-crosscheck', action='store_true')
     a = ap.parse_args()
-    out = solve(a.input, a.budget, seed=a.seed, table_cap=a.table_cap, enum_cap=a.enum_cap, eps=F(a.epsilon), delta=F(a.delta), mb_cap=a.mb_cap, force_approx=a.force_approx, batch=a.batch, schedule=a.schedule)
+    out = solve(a.input, a.budget, seed=a.seed, table_cap=a.table_cap, enum_cap=a.enum_cap, eps=F(a.epsilon), delta=F(a.delta), mb_cap=a.mb_cap, force_approx=a.force_approx, batch=a.batch, schedule=a.schedule, route=a.route, construct_only=a.construct_only, crosscheck=not a.no_crosscheck)
     out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]
     os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True); json.dump(out, open(a.output, 'w'), indent=1, default=str)
     m = out['mechanism']; print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), phases={k: round(v, 3) for k, v in out['phases_s'].items()},
-                                   mech={k: (round(m[k], 4) if isinstance(m.get(k), float) else m.get(k)) for k in ('blocks', 'separator_vars', 'mb_cap', 'mb_logU', 'mb_max_range_sum_bits', 'eps_num_log2', 'rho_X', 'E_tot', 'delta_log_total', 'draws', 'ms_per_draw', 'X_mean', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'max_log2_X_observed', 'published', 'remaining', 'max_remaining_width', 'median_remaining_width', 'lam_last_median', 'schedule', 'extrapolated_s_max_width', 'extrapolated_s_median_width', 'Z_EB_relative_width', 'interior_queries_recovered', 'interior_queries_failed')}), default=str))
+                                   mech={k: (round(m[k], 4) if isinstance(m.get(k), float) else m.get(k)) for k in ('blocks', 'separator_vars', 'mb_cap', 'mb_logU', 'mb_splits', 'mb_unsplit', 'route', 'exact_route', 'mb_max_range_sum_bits', 'eps_num_log2', 'rho_X', 'E_tot', 'delta_log_total', 'draws', 'ms_per_draw', 'X_mean', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'max_log2_X_observed', 'published', 'remaining', 'max_remaining_width', 'median_remaining_width', 'lam_last_median', 'schedule', 'extrapolated_s_max_width', 'extrapolated_s_median_width', 'Z_EB_relative_width', 'interior_queries_recovered', 'interior_queries_failed')}), default=str))
 
 
 if __name__ == '__main__': main()
