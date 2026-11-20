@@ -20,7 +20,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2.6 (2026-11-20 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.7 (2026-11-20 round 11 post-freeze RESOURCE patch: forward mantissas released as their log tables are built; backward derivatives and consumed messages freed per step; exact-route peak estimate in the memory policy (typed skip); v2.6 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
@@ -185,10 +185,16 @@ class MBFloat:
         self.step_ranges = [[f.R for f in q1] if q1 else [] for _, q1 in steps]
 
     def prepare_sampler(self, release_forward=True):
-        """build the per-step log2 tables of the summed mini-bucket members for the batch sampler; with release_forward the forward message mantissas (not needed by the PAC
-        stream: z uses the block tables, the proposal uses the logs) are dropped so that the proposal is held ONCE in memory"""
+        """build the per-step log2 tables of the summed mini-bucket members for the batch sampler, INTERLEAVED with the release of forward message mantissas: a message that is only a
+        max-group member is released at once (never sampled); a summed member's mantissa is released right after its log table is built, so the forward tables and the log tables
+        never coexist in full (peak ~ max(forward, logs) + one table)"""
         if self.prep is not None: return
-        self.prep = []; cards = self.cards
+        self.prep = []; cards = self.cards; inputs = {id(f) for f in self.inputs}
+        if release_forward:
+            summed = {id(f) for _, q1 in self.steps if q1 for f in q1}
+            for v, bucket, R in self.fwd:
+                for f in bucket:
+                    if id(f) not in inputs and id(f) not in summed and f.scope: f.M = None          # max-group members: not needed by any later computation
         for v, q1 in self.steps:
             if q1 is None: self.prep.append((v, None)); continue
             tabs = []
@@ -197,12 +203,9 @@ class MBFloat:
                 strides = {}; s_ = 1
                 for u in reversed(f.scope): strides[u] = s_; s_ *= cards[u]
                 tabs.append((LM, strides, f.scope))
+                if release_forward and id(f) not in inputs and f.scope: f.M = None                   # released right after its log table exists
             self.prep.append((v, tabs))
-        if release_forward:
-            inputs = {id(f) for f in self.inputs}
-            for v, bucket, R in self.fwd:
-                if id(R) not in inputs and R.scope: R.M = None               # message mantissas released; the exact route (which needs them) runs BEFORE this
-            self.fwd = []
+        if release_forward: self.fwd = []
 
     def logq_given(self, S, pos):
         """implemented log2 q(S) for given assignments S (B, n_sep): the SAME float operations as sample_batch, deterministic; also returns the analysed q as exact Fractions"""
@@ -633,7 +636,7 @@ def backward_derivatives(mbp, cards, deadline):
     for i in range(m): pre[i] = acc; acc = roots[i] if acc is None else ft_scalar_product([acc, roots[i]])
     acc = None
     for i in range(m - 1, -1, -1): suf[i] = acc; acc = roots[i] if acc is None else ft_scalar_product([acc, roots[i]])
-    D = {}
+    D = {}; inputs_ids = {id(f) for f in mbp.inputs}
     for i, r in enumerate(roots):                                  # dZ / dr_i = prod_{j != i} r_j: the differential of the FINAL product of roots (disconnected components)
         parts = [x for x in (pre[i], suf[i]) if x is not None]; D[id(r)] = ft_scalar_product(parts) if parts else FT((), np.array(1.0), 0, F(0))
     for v, bucket, R in reversed(mbp.fwd):
@@ -659,6 +662,8 @@ def backward_derivatives(mbp, cards, deadline):
             Df = P.sum(axis=axes) if axes else P; rho = comb(rho, pow1pu(nsum - 1))
             Df = np.asarray(Df, dtype=float).reshape([cards[u] for u in f.scope]) if f.scope else np.asarray(Df, dtype=float).reshape(())
             Df, e = _rescale(np.ascontiguousarray(Df), e); D[id(f)] = FT(f.scope, Df, e, rho)
+        del A, pre, suf, DRa
+        if id(R) not in inputs_ids: D.pop(id(R), None); R.M = None             # the message R and its derivative have no further consumer (its producing step is this one)
     return D
 
 
@@ -891,8 +896,13 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         if construct_only: out['outcome'] = 'CONSTRUCT_ONLY'; return BR.finish(out, t_start, queries, {}, failed)
         blockfac = {i: [conv(f) for f in fns if f.facs <= live[i].facs] for i in range(len(blocks))}
         iorder = {i: [trace_var[st] for st in sorted(step_of[u] for u in live[i].interior)] for i in range(len(blocks))}
-        # ---- EXACT ROUTE first (unsplit): needs the forward messages, not the sampler tables or PAC query tables
-        if mbp.splits == 0 and route in ('auto', 'exact'):
+        fwd_actual = sum(R.M.nbytes for _, _, R in mbp.fwd if R.M is not None); exact_peak = base_bytes + 2 * fwd_actual + 3 * plan['peak_step_bytes']
+        out['mechanism']['memory_policy'].update(exact_route_peak_estimate=exact_peak, exact_route_fits=(exact_peak <= USABLE))
+        # ---- EXACT ROUTE first (unsplit): needs the forward messages, not the sampler tables or PAC query tables; only when its estimated peak fits the policy
+        if mbp.splits == 0 and route in ('auto', 'exact') and exact_peak > USABLE:
+            out['mechanism']['exact_route'] = dict(status='MEMORY_POLICY_SKIPPED: estimated peak %d MiB > usable %d MiB' % (exact_peak >> 20, USABLE >> 20))
+            if route == 'exact': return finish_('EXACT_ROUTE_MEMORY_POLICY_SKIPPED')
+        if mbp.splits == 0 and route in ('auto', 'exact') and exact_peak <= USABLE:
             t0 = tnow(); exact_note = None
             try:
                 Zft = ft_scalar_product(mbp.scalars); unresolved = 0
