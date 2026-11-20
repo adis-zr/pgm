@@ -293,7 +293,7 @@ prod (1 + rho_i) - 1 <= S + S^2 with S = sum rho_i <= 1 (same inequality; refuse
 k x 53 bits (k up to the union-table size 2^20) and exact products over hundreds of factors. The bounds are weaker by at most a factor (1 + S) and remain upper bounds, so
 every certificate statement of sections 6-11 is unchanged; the recorded widenings grow by less than a part in 10^-10 on the development cases.
 Recovery. Per block, ONE (|g_b|, K_b) float array is preallocated and the replay's columns are written into it directly (the per-variable table is released immediately; no
-np.stack copy). A global byte budget (640 MiB) bounds the retained tables; interior variables whose columns would exceed it are typed RESOURCE (NOT_PUBLISHED), so a large
+np.stack copy). A global byte budget bounds the retained tables (CORRECTION, round 11: the submitted v2.5 constant `RECOVERY_BYTE_BUDGET` is 512 MiB; the exposed-case records of round 10 were produced with 640 MiB and the final code has 512 MiB; the stored responses of every successful exposed case fit under both, so the difference does not explain any result); interior variables whose columns would exceed it are typed RESOURCE (NOT_PUBLISHED), so a large
 model degrades to a partial answer instead of a memory kill. Sharing of the backward computation across a block's interior variables (one differential per block instead of a
 replay per variable) is NOT done in this round; the forward prefix is shared as before.
 Deadline. The backward differential checks the deadline per factor as well as per step.
@@ -326,3 +326,25 @@ N_v(a | s) for every interior v; the response f = N_v(a | s) / r(s) is exactly t
 identical to the dense ratio on all 2,112 supported assignment-columns of a 6-variable ternary-interior model; on unsupported rows the weight is exactly zero so the response is
 irrelevant). Its arithmetic allowance rho_f = comb(factor rhos, pow1pu(ops))^2 (numerator and denominator) with ops the data-independent operation count of the block's
 elimination, carried into eps_num like the dense rho_f. Memory per batch: B x the block's largest union table (bounded by the batch policy); no |g_b| x K_b array is ever formed.
+
+### 13a. Post-freeze resource patches v2.7 / v2.7.1 (20 Nov 2026) and what the frozen panel showed
+
+The frozen v2.6 panel (pgm 6bbda68) still memory-killed mastermind_03_08_04-0003 and or_chain_53 at 3.0 GiB. Phase probes (records round11/probe_phases_*.txt) located the peak
+in `prepare_sampler`: the forward message mantissas (1,024 / 1,319 MiB) and the sampler log tables (1,042 / 1,321 MiB) coexisted (peaks 2,675 / 3,165 MiB), whereas the v2.6
+memory plan had assumed the forward tables were released first. v2.7 (pgm 4770856) interleaves the release: a max-group member's mantissa is freed as soon as its log table
+exists, a summed member's right after its log table is built; the backward pass frees derivatives per step; the memory policy also estimates the exact-route peak
+(base + 2 x forward + 3 x step workspace) and skips the exact route with a typed MEMORY_POLICY_SKIPPED when it does not fit. v2.7 wrongly also freed the forward MESSAGE
+mantissas in the backward pass, which the PAC fallback still needs when the exact route is refused after its backward pass (CSP_13 crashed: TypeError in prepare_sampler).
+v2.7.1 (pgm 7ee66d1) keeps them, and makes a deadline inside a shared-response batch abandon only that batch: the completed batches, the certificate state and the intervals
+published at the last check are retained and reported (v2.6 / v2.7 raised Deadline out of the loop and reported draws = None). Both patches change resource timing and
+reporting only: no bound, estimator, publication test or proposal law changed; controls 9/9 + 13/13 + 15/15 pass on v2.6, v2.7 and v2.7.1. Panel cells rerun on the patches are
+labelled post-freeze in the records (round11/panel_v27, round11/panel_v271); the frozen result stands in round11/panel.
+Measured on the three former memory kills (v2.7.1): all three now run to the deadline under 2.6 GiB with every requested coordinate in the certificate (Kq = K); none completes.
+mastermind_03_08_04-0003 is unsplit at cap 2^24 (exact proposal, X = 1 on every draw) and published 3,082 / 4,504 PAC coordinates from 6,144 draws; its deficit is the shared
+response cost: 15 shared blocks (8 with 114 interior variables and union tables of 2,048 entries) cost 2.0 s per 1,024-draw batch = ~500 draws/s against ~140,000 draws/s on
+the dense path. The sampled boundary assignments repeat heavily (0.2-3 % distinct per batch on this case, 0.6-1.1 % on or_chain_53, 25-84 % on mastermind-0015; diagnostic
+`shared_unique_boundary_fraction`), so evaluating each distinct boundary assignment once per batch would cut this cost by one to two orders of magnitude; NOT implemented this
+round. Its exact route was eligible (no splits) but skipped by the peak estimate (3,045 MiB > 2,560); a chunked backward pass would make it a deterministic candidate.
+mastermind_03_08_04-0015 (cap 2^22 by the ladder, 121 splits) drew only zero-weight samples (9,216 of 9,216): the proposal's support misses the model's: proposal overlap, not
+memory. or_chain_53 (cap 2^24, 47 splits) has 97.5 % zero weights and ESS 4.6 of 167,936 draws: proposal concentration, as or_chain_132.
+
