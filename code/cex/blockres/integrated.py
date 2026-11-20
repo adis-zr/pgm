@@ -20,7 +20,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2.3 (2026-11-19 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.4 (2026-11-20 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
@@ -193,8 +193,22 @@ class MBFloat:
 
 
 # ---------------------------------------------------------------- WEIGHTED mini-bucket proposal (Liu / Fisher / Ihler 2015; Lou / Dechter / Ihler 2019), round 8
-W_MIN = 0.05                        # bounded positive weights: every power 1 / w is <= 20 (a controlled numerical domain); the (1, 0, ...) limit is the old max construction (separate arm)
-WMB_GRID = [(0.5, 0.5), (0.3, 0.7), (0.7, 0.3), (0.15, 0.85), (0.85, 0.15)]          # the FIXED weight-optimization policy for split buckets: 2 groups -> this grid; m groups -> equal weights then one coordinate pass over the grid pairs
+W_MIN = F(1, 20)                    # admitted weight domain: every weight is an EXACT Fraction >= 1/20 (so 1 / w <= 20); weights of a bucket sum to 1 EXACTLY; buckets with more than 20 groups are REJECTED (typed) -> max proposal
+WMB_GRID = [(F(1, 2), F(1, 2)), (F(3, 10), F(7, 10)), (F(7, 10), F(3, 10)), (F(3, 20), F(17, 20)), (F(17, 20), F(3, 20))]      # the FIXED weight policy for 2-group buckets; m groups -> equal weights 1/m
+
+
+def rel_from_log(d):
+    """2^d - 1 <= 1.45 d (1 + d) for 0 <= d <= 1/4 (domain CHECKED, never assumed)"""
+    d = F(d)
+    if d < 0 or d > F(1, 4): raise RangeRefused('log-error %s outside the proved conversion domain [0, 1/4]' % float(d))
+    return F(145, 100) * d * (1 + d)
+
+
+def log_from_rel(r):
+    """log2(1 + r) <= 1.45 r for 0 <= r <= 1 (domain CHECKED)"""
+    r = F(r)
+    if r < 0 or r > 1: raise RangeRefused('relative error %s outside the proved conversion domain [0, 1]' % float(r))
+    return F(145, 100) * r
 
 
 def _powsum_log(L, w):
@@ -233,36 +247,35 @@ class WMBFloat:
                     g.append(by_sig[sg].pop())
                 groups.append(g)
             if any(by_sig.values()): raise RangeRefused('wmb: unassigned members at step %d' % step_i)
-            m = len(groups); w = [1.0 / m] * m
-            # per-group log tables of the product (log domain; exponents cancel inside a group's power sum only up to the group's exponent sum, kept exactly)
+            m = len(groups)
+            if m > 1 and F(1, m) < W_MIN: raise RangeRefused('wmb: %d groups in one bucket exceed the admitted weight domain (w >= %s)' % (m, W_MIN))
+            w = [F(1, m)] * m
             glog = []; gE = []; grho = []; gunion = []
             for g in groups:
                 union, P, e, rho = ft_product_log(g, cards); glog.append(P); gE.append(e); grho.append(rho); gunion.append(union)
-            # weight optimization (fixed policy): minimize the bucket's total log2 bound sum_r log2 M_r (summed over y) over the grid, bounded by opt_s
-            if m > 1 and tnow() - t0 < opt_s:
+            if m > 1 and tnow() - t0 < opt_s:                       # FIXED policy: equal weights, and for two groups the best of the grid by the bucket's total raw log2 bound
                 best = None
-                cands = [tuple(w)] + ([wg for wg in WMB_GRID] if m == 2 else [])
-                for wc in cands:
+                for wc in ([tuple(w)] + (WMB_GRID if m == 2 else [])):
+                    assert sum(wc) == 1 and all(x >= W_MIN for x in wc)
                     tot = 0.0
                     for r in range(m):
-                        ax = gunion[r].index(v); Lr = np.moveaxis(glog[r], ax, -1); logM, _, dead = _powsum_log(Lr, wc[r]); tot += float(np.where(np.isfinite(logM), logM, 0.0).sum())
+                        ax = gunion[r].index(v); Lr = np.moveaxis(glog[r], ax, -1); logM, _, dead = _powsum_log(Lr, float(wc[r])); tot += float(np.where(np.isfinite(logM), logM, 0.0).sum())
                     if best is None or tot < best[0]: best = (tot, wc)
                 w = list(best[1])
             self.weights.append(w); self.groups_per_step.append(groups)
             # messages
             step_tabs = []
             for r, g in enumerate(groups):
-                ax = gunion[r].index(v); Lr = np.moveaxis(glog[r], ax, -1); logM, _, dead = _powsum_log(Lr, w[r]); nsc = tuple(u for u in gunion[r] if u != v)
-                # rho of M_r from the log-domain error (NOTE section 10): abs log2 error d_M = d_L (1 + 1/w) + u (|L|/w + 3) + 1.45 (4u + (n-1)u) w + u(log2 n + 1) w ; relative 1.45 d_M (1 + d_M)
-                n = cards[v]; Rsum = sum(f.R for f in g); d_L = F(grho[r]) * F(145, 100) + UF * (len(g) + 1) * (Rsum + len(g))
-                # log2 M = Lmax + w log2 sum_x 2^((L_x - Lmax) / w): the log-sum-exp is 1-Lipschitz in every argument, so an absolute input error d_L / w becomes <= d_L / w in the log-sum and
-                # <= d_L after the multiplication by w (NO amplification across levels); the float operations add: (L - Lmax) and / w on magnitudes <= Rsum / w, exp2 (4u rel), the sum ((n - 1) u rel),
-                # log2 (u (|log S| + 1)), the product by w, and the final addition of Lmax
-                wr = F(w[r]); mag = F(Rsum) / wr + int(n).bit_length() + 2; L2 = F(145, 100)
-                d_M = d_L + UF * (Rsum + 2) + UF * mag + wr * (L2 * (4 * UF + (n - 1) * UF) + UF * (mag + 1)) + UF * (mag + 2) + UF * (Rsum + mag + 2)
-                rhoM = rup(F(145, 100) * d_M * (1 + d_M)); self.rho_steps.append(rhoM)
+                wf = float(w[r]); ax = gunion[r].index(v); Lr = np.moveaxis(glog[r], ax, -1); logM, _, dead = _powsum_log(Lr, wf); nsc = tuple(u for u in gunion[r] if u != v)
+                # NOTE section 11. The weighted power sum is positively homogeneous: the inputs' multiplicative envelope (1 +- grho) passes through EXACTLY (no conversion). The FLOAT
+                # operations add an absolute log2 error d_M: member log2 lookups u(R + 1) each, the row log-sum u(q + 1)(SR + q), the subtraction of Lmax u(SR + 2), the division by the
+                # float weight u (mag + 1) with mag = SR / w + log2 n + 2 (w itself rounded: + u mag), exp2 (4u rel) and the row sum ((n - 1) u rel) converted to log, the log2 of the sum
+                # u (log2 n + 2), the multiplication by w (u (mag + 1)) and the final addition of Lmax (u (SR + mag + 2)). rho_float = rel_from_log(d_M) (domain checked).
+                n = cards[v]; Rsum = sum(f.R for f in g); q = len(g); mag = F(Rsum) / w[r] + int(n).bit_length() + 2
+                d_M = sum(UF * (f.R + 1) for f in g) + UF * (q + 1) * (Rsum + q) + UF * (Rsum + 2) + 2 * UF * (mag + 1) + log_from_rel(4 * UF + (n - 1) * UF) * w[r] + UF * (int(n).bit_length() + 2) * w[r] + UF * (mag + 1) + UF * (Rsum + mag + 2)
+                rho_float = rup(rel_from_log(d_M)); self.rho_steps.append(rho_float)
+                rhoM = rup((1 + grho[r]) * (1 + rho_float) - 1)                                   # envelope relative to the exact power sum of EXACT inputs: pass-through times the float error
                 Mfl = np.where(np.isfinite(logM), np.exp2(logM - np.floor(np.where(np.isfinite(logM), logM, 0.0))), 0.0); Efl = np.where(np.isfinite(logM), np.floor(np.where(np.isfinite(logM), logM, 0.0)), 0.0)
-                # store as FT with a COMMON exponent per table: shift mantissas by (E - Emax) exactly (powers of two), refuse if the range would leave the normal domain
                 if np.isfinite(logM).any():
                     Emax = int(Efl[np.isfinite(logM)].max()); sh = np.where(np.isfinite(logM), Efl - Emax, 0.0)
                     if sh.min() < -900: raise RangeRefused('wmb: message dynamic range exceeds 2^900')
@@ -275,7 +288,7 @@ class WMBFloat:
             self.steps.append((v, step_tabs)); self.max_q = max(self.max_q, m)
         self.opt_s = tnow() - t0
         self.logU_f = sum(log2(float(r.M)) for r in self.scalars if float(r.M) > 0) if all(float(r.M) > 0 for r in self.scalars) else -inf; self.E_U = sum(r.e for r in self.scalars); self.n_scalar = len(self.scalars)
-        self.logU = (self.logU_f + self.E_U) if self.logU_f > -inf else -inf; self.rhoU = prod((1 + r.rho) for r in self.scalars) * (1 + UF) ** len(self.scalars) - 1
+        self.logU = (self.logU_f + self.E_U) if self.logU_f > -inf else -inf; self.rhoU = rup(prod((1 + r.rho) for r in self.scalars) * (1 + UF) ** len(self.scalars) - 1)   # pass-through envelope of U vs the exact weighted bound
         self.splits = sum(len(g) - 1 for g in self.groups_per_step); self.max_range_sum = ref.max_range_sum; self.max_table = ref.max_table; self.max_q1 = ref.max_q1
         # precompute per-step log tables of the group members for the sampler
         self.prep = []
@@ -283,7 +296,7 @@ class WMBFloat:
             if tabs is None: self.prep.append((v, None)); continue
             comps = []
             for g, union, ax, wr in tabs:
-                mem = []
+                wr = float(wr); mem = []
                 for f in g:
                     with np.errstate(divide='ignore'): LM = np.where(f.M > 0, np.log2(np.maximum(f.M, 1e-300)), -inf).reshape(-1)
                     strides = {}; s_ = 1
@@ -449,10 +462,14 @@ def numerical_widening(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
 
 # ---------------------------------------------------------------- EXACT ROUTE for unsplit constructions (round 7): shared backward pass = the arithmetic-circuit differential
 def ft_scalar_product(fts):
-    M = 1.0; e = 0; r = F(1)
-    for f in fts: M *= float(f.M); e += f.e; r *= (1 + f.rho)
-    if M == 0.0: return FT((), np.array(0.0), 0, F(0))
-    k = frexp(M)[1] - 1; return FT((), np.array(M * ldexp(1.0, -k)), e + k, r * (1 + UF) ** max(0, len(fts) - 1) - 1)
+    """product of FT scalars with an EXACT power-of-two rescale after every multiplication (mantissa kept in [1, 2): no binary64 overflow for any number of factors), exponents as exact
+    integers, one rounding (1 + u) per multiplication in the exact rho; empty product = 1; an exact zero factor gives the exact zero"""
+    M = 1.0; e = 0; r = F(1); n = 0
+    for f in fts:
+        m = float(f.M)
+        if m == 0.0: return FT((), np.array(0.0), 0, F(0))
+        M *= m; n += 1; e += f.e; r *= (1 + f.rho); k = frexp(M)[1] - 1; M = M * ldexp(1.0, -k); e += k
+    return FT((), np.array(M), e, r * (1 + UF) ** max(0, n - 1) - 1)
 
 
 def backward_derivatives(mbp, cards, deadline):
@@ -536,32 +553,32 @@ BLOCK_CARDS = None
 
 
 def numerical_widening_wmb(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
-    """WMB sampler (NOTE section 10): per step, each of m mixture components computes a row log-sum L (as the MB sampler), divides by w_r (<= 1/W_MIN), exp2, normalizes, and the components are
-    mixed with weights w_r; the analysed law is the float mixture row normalized by its float sum. The cap: the exact identity prod_r F_r / M_r <= q_i holds for the EXACT power sums of the
-    stored tables; each stored message M_r carries rho_M (tracked), and the implemented components p_r vs the exact p_r carry the same log-domain error as the MB rows times (1 / w_r)."""
-    u = UF; L2 = F(145, 100); WI = F(1) / F(W_MIN)
+    """WMB cap chain (NOTE section 11): z_exact <= prod_b g_b (1 + rho_b) [tables]; Hoelder / AM-GM hold for the EXACT power sums of the STORED tables at every level; each stored message is
+    within (1 +- rho_float) of the exact power sum of its stored inputs, so prod over messages (1 + rho_float) enters once; the sampler's float rows vs the exact normalized power rows of
+    the stored tables (rel_rows); the implemented X vs the analysed X (rho_X). All conversions are domain-checked; a violation refuses the candidate."""
+    u = UF
     def logerr(mag): return u * (F(mag) + 1)
     rho_tab = prod((1 + b.rho) for b in blocks) - 1
-    d_cap = F(0); d_impl = F(0); mag_logq = F(0)
+    d_cap_rows = F(0); d_impl = F(0); mag_logq = F(0); wi = 1 / W_MIN
     for Rs in mbp.step_ranges:
         if not Rs: mag_logq += F(int(maxcard).bit_length()); continue
         SR = sum(Rs); q1 = len(Rs)
-        dL = sum(logerr(R) for R in Rs) + u * (q1 + 1) * (SR + q1)
-        dA = dL * WI + u * (F(SR) * WI + 2)                                                # the row argument L / w (magnitude <= SR / W_MIN)
-        rel_p = L2 * dA * (1 + dA) + 4 * u; rel_cond = 2 * rel_p + (maxcard - 1) * u
-        rel_mix = rel_cond + mbp.max_q * u + (maxcard - 1) * u + 4 * u                       # weighting by w_r, summing m components, the row normalization
-        d_cap += rel_mix / F(69, 100)
-        d_impl += logerr(901) + logerr(int(maxcard).bit_length() + 1) + u * (mag_logq + 910)
-        mag_logq += 901 + int(maxcard).bit_length() + 1
-    rho_msgs = prod((1 + r) for r in mbp.rho_steps) - 1 if mbp.rho_steps else F(0)        # every stored message's power-sum error enters the telescoping cap once
+        dL = sum(logerr(R) for R in Rs) + u * (q1 + 1) * (SR + q1); dA = dL * wi + u * (F(SR) * wi + 2)
+        rel_p = rel_from_log(dA) + 4 * u; rel_cond = 2 * rel_p + (maxcard - 1) * u
+        rel_mix = rel_cond + mbp.max_q * u + (maxcard - 1) * u + 4 * u
+        d_cap_rows += log_from_rel(rel_mix)
+        d_impl += logerr(901) + logerr(int(maxcard).bit_length() + 1) + u * (mag_logq + 910); mag_logq += 901 + int(maxcard).bit_length() + 1
+    rho_msgs = rup(prod((1 + r) for r in mbp.rho_steps) - 1) if mbp.rho_steps else F(0)
     SRb = sum(b.R for b in blocks); nb = len(blocks); d_z = sum(logerr(b.R) for b in blocks) + u * nb * (SRb + nb)
     d_U = u * mbp.n_scalar * (mbp.n_scalar + int(maxcard).bit_length() + 2) + logerr(1) * mbp.n_scalar
     max_mag = max(SRb + nb, mag_logq, mbp.n_scalar + 2, abs(E_tot)); d_fin = 4 * u * (SRb + nb + mag_logq + mbp.n_scalar + 2 + abs(E_tot))
-    d_total = d_z + d_impl + d_U + d_fin; rho_X = L2 * d_total * (1 + d_total)
-    rho_cap = (1 + rho_tab) * (1 + L2 * d_cap * (1 + d_cap)) * (1 + rho_msgs) * (1 + mbp.rhoU) * (1 + rho_X) - 1
+    d_total = d_z + d_impl + d_U + d_fin; rho_X = rel_from_log(d_total)
+    rho_cap = rup((1 + rho_tab) * (1 + rel_from_log(d_cap_rows)) * (1 + rho_msgs) * (1 + rho_X) - 1)
+    if rho_cap > F(1, 2): raise RangeRefused('wmb: certified cap widening %s exceeds the admitted domain' % float(rho_cap))
     rho_f = max([2 * r for r in qrhos] + [F(0)]) + max([b.rho for b in blocks]) + 4 * UF
     law = 4 * n_sep * F(maxcard + 2, 1 << 53); trunc = n_sep * F(1, 1 << 900)
-    return dict(rho_X=rho_X, rho_cap=rho_cap, rho_f=rho_f, law=law, trunc=trunc, eps_num=2 * rho_X + rho_f + law + trunc, delta_log_total=d_total, max_log_mag=max_mag)
+    return dict(rho_X=rho_X, rho_cap=rho_cap, rho_f=rho_f, law=law, trunc=trunc, eps_num=2 * rho_X + rho_f + law + trunc, delta_log_total=d_total, max_log_mag=max_mag, rho_msgs=rho_msgs, d_cap_rows=d_cap_rows)
+
 
 # ---------------------------------------------------------------- the integrated solve
 def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F(1, 200), delta=F(1, 10 ** 6), mb_cap=1 << 24, construct_share=0.5, batch=1024, check_s=0.5, force_approx=False, schedule='baseline', route='auto', construct_only=False, crosscheck=True, proposal='mb', opt_s=3.0):
@@ -718,18 +735,26 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             out['mechanism']['exact_route_fallback'] = 'PAC route after the exact route did not publish (%s)' % (exact_note or 'refused')
             # otherwise fall through to the PAC route (sampling retained where exact completion is unavailable)
         out['mechanism']['route'] = 'pac'
-        if proposal == 'wmb':                                             # candidate: weighted mini-buckets on the SAME partition and order (frozen before any draw)
-            t0 = tnow()
-            try: wmbp = WMBFloat(mbp, blocks, cards, deadline, opt_s=opt_s)
-            except RangeRefused as e: out['refusal'] = str(e); out['mechanism']['wmb'] = dict(status='REFUSED: ' + str(e)); return finish_('NUMERIC_RANGE_REFUSED')
-            ph['wmb_construct'] = tnow() - t0
-            if wmbp.logU == -inf: return finish_('ZERO_EVIDENCE')
-            # selection by CONSTRUCTION information only (the certified bound): the proposal with the smaller log U is frozen before any draw; a cap always belongs to its own proposal
-            use_wmb = wmbp.logU < mbp.logU
-            out['mechanism'].update(wmb=dict(status='OK', opt_s=wmbp.opt_s, weights=[w for w in wmbp.weights if len(w) > 1][:12], logU_mb=mbp.logU, logU_wmb=wmbp.logU, bound_tightening_log2=(mbp.logU - wmbp.logU) if (mbp.logU > -inf and wmbp.logU > -inf) else None, rhoU=fup(wmbp.rhoU), selected=('wmb' if use_wmb else 'mb (weighted bound not smaller)')))
-            if use_wmb: mbp = wmbp                                      # the stream below uses mbp.sample_batch / logU_f / E_U / rhoU / step_ranges / max_q1 of the FROZEN selected proposal
         E_z = sum(b.e for b in blocks); E_tot = E_z - mbp.E_U                                     # EXACT integer: every power-of-two scale cancels here, never inside a float log
         if abs(E_tot) >= 1 << 50: out['refusal'] = 'exponent sum %d too large for an exact float' % E_tot; return finish_('NUMERIC_RANGE_REFUSED')
+        if proposal == 'wmb':                                             # candidate: weighted mini-buckets on the SAME partition and order; selection by CERTIFIED caps, frozen before any draw
+            t0 = tnow(); wrec = dict(requested='wmb')
+            try:
+                wmbp = WMBFloat(mbp, blocks, cards, deadline, opt_s=opt_s); wrec.update(construct_s=tnow() - t0, opt_s=wmbp.opt_s, weights=[[str(x) for x in w] for w in wmbp.weights if len(w) > 1][:12], splits=wmbp.splits)
+                if wmbp.logU == -inf: return finish_('ZERO_EVIDENCE')
+                E_w = sum(b.e for b in blocks) - wmbp.E_U
+                wid_m = numerical_widening(blocks, mbp, qrhos, len(S), max(cards), E_tot); wid_w = numerical_widening(blocks, wmbp, qrhos, len(S), max(cards), E_w)
+                if wid_w['delta_log_total'] > F(1, 4): raise RangeRefused('wmb: log-domain error budget %s too large' % float(wid_w['delta_log_total']))
+                # certified cap in log2 = float part + log2(1 + rho_cap) + exact integer exponent; compare as (exact integer difference) + (bounded float difference)
+                cap_m = mbp.logU_f + math.log2(1.0 + fup(wid_m['rho_cap'])); cap_w = wmbp.logU_f + math.log2(1.0 + fup(wid_w['rho_cap'])); dE = wmbp.E_U - mbp.E_U
+                if abs(dE) >= 1 << 50: raise RangeRefused('wmb: exponent difference too large to compare')
+                diff = (cap_w - cap_m) + float(dE)                       # certified log2 U_wmb - certified log2 U_mb
+                wrec.update(raw_logU_mb=mbp.logU, raw_logU_wmb=wmbp.logU, raw_diff_log2=(wmbp.logU - mbp.logU), rho_cap_mb=fup(wid_m['rho_cap']), rho_cap_wmb=fup(wid_w['rho_cap']), certified_diff_log2=diff, rho_msgs_wmb=fup(wid_w['rho_msgs']))
+                use_wmb = diff < 0
+                wrec.update(selected=('wmb' if use_wmb else 'mb'), reason=('certified weighted cap smaller' if use_wmb else 'certified weighted cap not smaller'))
+                if use_wmb: mbp = wmbp
+            except RangeRefused as e: wrec.update(selected='mb', status='WMB INELIGIBLE: ' + str(e)); ph['wmb_construct'] = tnow() - t0
+            out['mechanism']['wmb'] = wrec; ph.setdefault('wmb_construct', tnow() - t0); E_tot = E_z - mbp.E_U      # the cap and its exponent travel with the SELECTED proposal
         wid = numerical_widening(blocks, mbp, qrhos, len(S), max(cards), E_tot); eps_num = fup(wid['eps_num']); rho_X = fup(wid['rho_X']); rho_cap = fup(wid['rho_cap'])
         if wid['delta_log_total'] > F(1, 4): out['refusal'] = 'log-domain error budget %s too large' % float(wid['delta_log_total']); return finish_('NUMERIC_RANGE_REFUSED')
         out['mechanism'].update(eps_num=eps_num, eps_num_log2=log2(eps_num), rho_X=rho_X, rho_cap=rho_cap, rho_f=fup(wid['rho_f']), mb_rhoU=fup(mbp.rhoU), E_tot=E_tot, delta_log_total=float(wid['delta_log_total']), max_log_magnitude=float(wid['max_log_mag']))

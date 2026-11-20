@@ -256,3 +256,30 @@ Measured: with bounded weights (w >= 0.05) the weighted bound was LARGER than th
 on the control models the tightening was 0.26-0.39 bits. The Promedus_14 weighted construction was MEMORY-KILLED at 3.0 GiB (the group-product log tables at cap 2^24 are
 built densely); its baseline is reproduced (ESS 1.84, largest share 66.5 %, 83.2 % zero weights, 1.49 M draws). The round cap (300 s) was reached before the three-seed matched
 comparison; the single-seed matched pair on ObjectDetection_24 is the only proposal measurement of this round.
+
+## 11. Round 9 (20 Nov 2026): proof-to-code note for the changed numerical operations (`integrated.py` v2.4)
+
+(A) Scalar products. `ft_scalar_product` now rescales after EVERY multiplication: M <- M m_i exactly in binary64 up to one rounding, then M <- M 2^-k with k = floor(log2 M) (exact), e <- e + k.
+The mantissa stays in [1, 2) for any number of factors (the overseer's 1,800 x 1.5 reproducer overflowed before), the exponent is an exact integer, and the bound is the same
+prod (1 + rho_i)(1 + u)^(n-1) - 1 in exact rationals. The empty product is the exact 1; an exact-zero factor gives the exact zero (and the root-derivative pass refuses a zero root before
+any normalized publication: Z = 0 is ZERO_EVIDENCE). Control: (3/2)^1800 vs the exact rational, inside the allowance; 40 disconnected components with 2^40-scaled normalizers through
+the exact route: all 80 marginals contained.
+(B) Certified cap comparison. A proposal's certified log2 cap is  logU_f + log2(1 + rho_cap) + E  with logU_f the float part (sum of log2 of the scalar roots' mantissas), E the exact
+integer exponent sum and rho_cap the full widening actually used by that proposal's sampler and certificate (tables, rows, stored-message envelopes, implementation). Two proposals are
+compared as (E_wmb - E_mb) [exact integer, refused above 2^50] plus the difference of the two bounded float parts; the smaller certified cap is frozen before any draw; its widening
+travels with it (the stream reads rho_cap from the SELECTED proposal's widening). Control D2: with a 4 % envelope injected into every weighted message the raw weighted cap is still
+0.388 bits smaller but the certified one is larger, and the max proposal is selected.
+(B) Conversions, audited. Relative <-> log2 conversions are the two inequalities 2^d - 1 <= 1.45 d (1 + d) for 0 <= d <= 1/4 and log2(1 + r) <= 1.45 r for 0 <= r <= 1; both are now
+functions that CHECK their domain and refuse the candidate otherwise (`rel_from_log`, `log_from_rel`); no bound is converted back and forth more than once per level. The weighted
+power sum (sum_x F^(1/w))^w is positively homogeneous of degree 1 in its inputs, so a common multiplicative envelope (1 +- grho) on all inputs passes through UNCHANGED in exact
+arithmetic: the stored message's envelope is (1 + grho)(1 + rho_float) - 1 with rho_float the FLOAT error of the log-domain evaluation alone (member log2 lookups, the row log-sum,
+subtraction of the row maximum, division by the float weight, exp2 within 2 ulps, the row sum, log2 of the sum, multiplication by w, addition of the maximum: every term bounded at its
+actual magnitude, with 1 / w <= 20 from the admitted domain), converted ONCE by rel_from_log; the pass-through replaces v2.3's repeated conversions that inflated rhoU to 3e24 on
+ObjectDetection_24. Hoelder and the weighted AM-GM hold for the EXACT power sums of the STORED tables at every level, so the certified cap chain is
+(1 + rho_tab)(1 + rel(rows))(prod_messages (1 + rho_float))(1 + rho_X) - 1, refused above 1/2. The round-8 statement that the 11.5-bit loss on ObjectDetection_24 was due to the weight
+floor compared RAW bounds; with v2.4's widening the weighted candidate's certified cap on the small controls is within 10^-11 of its raw cap, and the ObjectDetection_24 comparison is
+NOT re-run this round (no WMB construction in the sweep).
+(C) Weights. Every weight is an exact Fraction >= 1/20, a bucket's weights sum to 1 exactly (asserted), the sampler receives float(w) and the error analysis uses the exact w; a bucket with
+more than 20 groups makes the candidate INELIGIBLE (typed) and the max proposal is used (the overseer's K_22 unit-factor reproducer). The float weight's rounding is included in d_M.
+(D) The maintained end-to-end weighted control now asserts that WMB was SELECTED (certified diff -0.388 bits on the mixed-cardinality 2^300-rescaled model) and every publication contains
+the oracle truth, at the LABELLED relaxed tolerance eps = 1/20 for fast coverage; the sweep contract stays eps = 1/200. W4 reports requested vs selected proposals.
