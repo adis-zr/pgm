@@ -345,7 +345,7 @@ response cost: 15 shared blocks (8 with 114 interior variables and union tables 
 the dense path. The sampled boundary assignments repeat heavily (0.2-3 % distinct per batch on this case, 0.6-1.1 % on or_chain_53, 25-84 % on mastermind-0015; diagnostic
 `shared_unique_boundary_fraction`), so evaluating each distinct boundary assignment once per batch would cut this cost by one to two orders of magnitude; NOT implemented this
 round. Its exact route was eligible (no splits) but skipped by the peak estimate (3,045 MiB > 2,560); a chunked backward pass would make it a deterministic candidate.
-mastermind_03_08_04-0015 (cap 2^22 by the ladder, 121 splits) drew only zero-weight samples (9,216 of 9,216): the proposal's support misses the model's: proposal overlap, not
+mastermind_03_08_04-0015 (cap 2^22 by the ladder, 121 splits) drew only zero-weight samples (9,216 of 9,216): no positive-weight draw was OBSERVED in that run (poor overlap; NOT a demonstrated support hole; corrected after the round-11 review), not
 memory. or_chain_53 (cap 2^24, 47 splits) has 97.5 % zero weights and ESS 4.6 of 167,936 draws: proposal concentration, as or_chain_132.
 
 ## 14. Round 12 (20 Nov 2026): the shared path under the range lemma; live-workspace accounting; active-row / unique-boundary evaluation (`integrated.py` v2.8)
