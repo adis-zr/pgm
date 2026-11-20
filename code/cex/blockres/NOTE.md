@@ -225,3 +225,34 @@ cross-check CERTIFIED with 130 / 130 separator coordinates overlapping; the roun
 ('table dynamic range exceeds 2^900' inside the backward pass: a derivative table spans more than 900 bits), so the method falls back to the PAC route and completes 258 / 258
 in 6.1 s as before -- deterministic CSP_13 needs either an exact-integer backward pass or a split-mantissa representation for the derivative tables (not done). BN_12 and
 BN_15 are split constructions and keep the PAC route unchanged (6.7 s / 7.4 s).
+
+## 10. Round 8 (19-20 Nov 2026): three repairs of the exact route; the weighted mini-bucket proposal (`integrated.py` v2.3)
+
+A1 Root derivatives. The forward pass returns scalar roots r_1..r_m (one per connected component of the separator model plus free-variable multiplicities), Z = prod r_i,
+and dZ/dr_i = prod_{j != i} r_j. v2.2 initialized every root derivative to 1 (correct only for m = 1), which scaled every component's numerators by the OTHER components'
+normalizers (the overseer's reproducer: unary [1, 3] and [2, 5] gave centers 1/28, 3/28, 2/28, 5/28 for truths 1/4, 3/4, 2/7, 5/7). v2.3 forms the root derivatives as
+zero-safe prefix / suffix products of FT scalars (exact rho, range-checked, the final product included in the accounting); a zero root is refused before any normalized
+publication (Z = 0 is ZERO_EVIDENCE). Controls (cross-check DISABLED, so correctness does not rest on the second implementation): two components; three ternary-clique
+components with pendant interior variables and unequal normalizers; a zero-mass component; constant factors with a factorless variable. All contained / typed.
+A2 A requested cross-check must succeed. v2.2 accepted an executor ERROR with zero compared coordinates as success. v2.3 requires status CERTIFIED, a row for EVERY published
+separator coordinate (required = compared, missing = 0) and no disjoint interval; otherwise the route returns CROSSCHECK_FAILED (typed) and publishes nothing; in auto mode
+the qualified PAC route runs instead. `NCEX.Stop` is read through `.kind` / `.reason`. Control: a broken executor loader -> 0 deterministic publications, PAC fallback in auto.
+The cross-check shares the contracted blocks and covers separator coordinates only; the oracle controls remain the correctness evidence for interior answers.
+A3 Compaction. Every deterministic enclosure is widened outward onto the dyadic grid Q = 2^52 in exact integer arithmetic (L = floor(Q lo) / Q, H = ceil(Q hi) / Q,
+intersected with [0, 1]) and the publication width rechecked (none of MILDEW's 616 exceeded 2 eps). The guarantee label of the run is derived from the row labels
+(DETERMINISTIC / EXACT / PAC). Serialization is timed separately; the SUPERVISOR receipt is the scored end-to-end measurement. MILDEW: result 127,813 bytes (was 57.4 MB),
+solver 2.22 s, serialization 0.0025 s, supervisor receipt 2.37 s end to end (was 23.30 s), max width 2.40e-13, cross-check 130 / 130, 616 / 616 DETERMINISTIC.
+Weighted mini-buckets (Liu, Fisher & Ihler 2015). On the SAME partition and order as the reference max pass (replayed by tagged scope signatures), each split bucket's
+groups r get weights w_r in [0.05, 1] summing to 1 (fixed policy: equal weights, then for two groups the best of a 5-point grid by the bucket's total log2 bound; the (1, 0, ..)
+limit is the old construction and is a separate arm); messages M_r = (sum_x F_r^(1/w_r))^(w_r) computed in the log domain (log-sum-exp is 1-Lipschitz, so the input error is NOT
+amplified across levels; the float operations are bounded at magnitude <= Rsum / w_min and tracked as exact Fractions, rounded up onto a 2^-200 grid to keep them finite);
+proposal row q_i = sum_r w_r p_r with p_r = F_r^(1/w_r) / sum_a F_a^(1/w_r), the FULL mixture row normalized and sampled by one CDF (the analysed law = the float row as
+exact dyadics). Cap: Hoelder sum_x prod_r F_r <= prod_r M_r and weighted AM-GM prod_r (F_r / M_r) = prod_r p_r^(w_r) <= q_i, telescoping to z / q <= U_wmb. Selection by
+CONSTRUCTION information only: the proposal with the smaller certified log U is frozen before any draw (a cap belongs to its proposal). Controls: exhaustive normalization,
+support of every positive assignment, and z_exact / (q_an U_cap) <= 1 on every assignment (80-digit decimal) for four tiny models incl. conflicting hard zeros, a 2^300 common
+rescale and mixed cardinalities; end-to-end containment; injected understated cap refused.
+Measured: with bounded weights (w >= 0.05) the weighted bound was LARGER than the max bound on ObjectDetection_24 (log2 U 3925.6 vs 3914.1: the grid's best weights were
+(0.15, 0.85) at every split bucket), so the max proposal was selected and the ObjectDetection_24 result is unchanged (118 vs 114 / 1,260 published with the two seeds' noise);
+on the control models the tightening was 0.26-0.39 bits. The Promedus_14 weighted construction was MEMORY-KILLED at 3.0 GiB (the group-product log tables at cap 2^24 are
+built densely); its baseline is reproduced (ESS 1.84, largest share 66.5 %, 83.2 % zero weights, 1.49 M draws). The round cap (300 s) was reached before the three-seed matched
+comparison; the single-seed matched pair on ObjectDetection_24 is the only proposal measurement of this round.
