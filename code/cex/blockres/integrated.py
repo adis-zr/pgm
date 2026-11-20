@@ -20,7 +20,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2.7 (2026-11-20 round 11 post-freeze RESOURCE patch: forward mantissas released as their log tables are built; backward derivatives and consumed messages freed per step; exact-route peak estimate in the memory policy (typed skip); v2.6 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.7.1 (2026-11-20: a deadline inside a shared-response batch abandons only that batch and reports the retained draws / certificate state; the backward pass keeps message mantissas (v2.7 freed them and broke the PAC fallback after a refused exact route: CSP_13 crash); v2.7 round 11 post-freeze RESOURCE patch: forward mantissas released as their log tables are built; backward derivatives and consumed messages freed per step; exact-route peak estimate in the memory policy (typed skip); v2.6 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
@@ -663,7 +663,7 @@ def backward_derivatives(mbp, cards, deadline):
             Df = np.asarray(Df, dtype=float).reshape([cards[u] for u in f.scope]) if f.scope else np.asarray(Df, dtype=float).reshape(())
             Df, e = _rescale(np.ascontiguousarray(Df), e); D[id(f)] = FT(f.scope, Df, e, rho)
         del A, pre, suf, DRa
-        if id(R) not in inputs_ids: D.pop(id(R), None); R.M = None             # the message R and its derivative have no further consumer (its producing step is this one)
+        if id(R) not in inputs_ids: D.pop(id(R), None)                        # the derivative of R has no further consumer; R's mantissa is KEPT (the PAC fallback after a refused exact route still needs the forward messages)
     return D
 
 
@@ -1028,6 +1028,8 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             bstr.append(strides); bscope.append(b.scope); bMflat.append(b.M.reshape(-1))
         sep_pos = np.array([pos[x] for (x, v) in sep_q], dtype=np.int64); sep_val = np.array([v for (x, v) in sep_q], dtype=np.int64)
         witness = False; draws = 0; zero_draws = 0; pub = {}; trace_rows = []; t_loop = 0.0; t_cert = 0.0; next_chk = tnow() + check_s; sumX = 0.0; maxlogX = -inf; sumX2 = 0.0; maxX = 0.0
+        last_width = np.full(Kq, inf); abandoned = 0; uniq_frac = {}
+        class BatchCut(Exception): pass
         def flat_index(Sb, i):
             idx = np.zeros(Sb.shape[0], dtype=np.int64)
             for u in bscope[i]: idx += Sb[:, pos[u]] * bstr[i][u]
@@ -1043,6 +1045,7 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             trace_rows.append(dict(t=round(tnow() - t_start, 2), draws=draws, zero_draws=zero_draws, X_mean=(sumX / max(1, draws)), published=len(pub), remaining=int(unpub.size), max_remaining_width=(float(wf.max()) if wf.size else 0.0), median_remaining_width=(float(np.median(wf)) if wf.size else 0.0), empty_sets=int((~np.isfinite(w)).sum())))
             t_cert += tnow() - t0; return width
         while tnow() < deadline and len(pub) < Kq:
+          try:
             t0 = tnow(); Sb, logq, zero_row = mbp.sample_batch(rng, batch_used, pos); B = Sb.shape[0]
             logz = np.zeros(B); gv = []
             for i in range(len(blocks)):
@@ -1061,19 +1064,21 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
                     with np.errstate(divide='ignore', invalid='ignore'): ratio = np.where(g[:, None] > 0, Q[idx] / np.where(g > 0, g, 1.0)[:, None], 0.0)
                     f[:, col:col + Kb] = np.clip(ratio, 0.0, 1.0); col += Kb
                 else:
-                    if tnow() >= deadline: raise Deadline('shared_responses')
+                    if tnow() >= deadline: raise BatchCut()
+                    if i not in uniq_frac: uniq_frac[i] = round(np.unique(Sb[:, [pos[u] for u in sb.bvars]], axis=0).shape[0] / B, 4)   # diagnostic: distinct boundary assignments per batch (dedupe potential)
                     Kb = len(sb.cols); fb, _, _ = sb.responses(Sb); f[:, col:col + Kb] = fb; col += Kb
             cert.update_batch(X, f); zcert.update_batch(X); draws += B; zero_draws += int(zero.sum()); sumX += float(X.sum()); sumX2 += float((X * X).sum()); maxX = max(maxX, float(X.max())); t_loop += tnow() - t0
-            if tnow() >= next_chk: check_publish(); next_chk = tnow() + check_s
-        width = check_publish(); unpub = [j for j in range(Kq) if j not in pub]
+            if tnow() >= next_chk: last_width = check_publish(); next_chk = tnow() + check_s
+          except BatchCut: abandoned += 1; out['deadline_phase'] = 'shared_responses: the batch in flight at the deadline was abandoned; %d completed batches retained' % (draws // max(1, batch_used)); break
+        width = check_publish() if not abandoned else last_width; unpub = [j for j in range(Kq) if j not in pub]
         assert all(valid_publication(l_, h_, eps) for l_, h_, _ in pub.values()), 'a PAC publication failed the exact acceptance test (certificate defect)'; wf = width[unpub]; wf = wf[np.isfinite(wf)]
         zi = zcert.interval(); per_draw = t_loop / max(1, draws); total = t_loop + t_cert
         ess = (sumX * sumX / sumX2) if sumX2 > 0 else 0.0
         var_resid, _ = cert.variance()
         out['mechanism'].update(sum_X=sumX, sum_X2=sumX2, max_X=maxX, zero_weight_fraction=zero_draws / max(1, draws), ESS=ess, ESS_per_s=ess / max(1e-9, t_loop), largest_share=(maxX / sumX if sumX > 0 else None), draws_per_s=draws / max(1e-9, t_loop),
                                 response_residual_variance_median=float(np.median(var_resid)), response_residual_variance_p90=float(np.percentile(var_resid, 90)), proposal_used=proposal)
-        out['mechanism'].update(draws=draws, zero_draws=zero_draws, X_mean=sumX / max(1, draws), log2_Zhat_over_Ucap_DIAGNOSTIC=(log2(sumX / draws) if sumX > 0 else None), max_log2_X_observed=maxlogX, ms_per_draw=1000 * per_draw, cert_evals=len(trace_rows), cert_s=t_cert,
-                                published=len(pub), remaining=len(unpub), max_remaining_width=(float(wf.max()) if wf.size else 0.0), median_remaining_width=(float(np.median(wf)) if wf.size else 0.0),
+        out['mechanism'].update(abandoned_batches=abandoned, shared_unique_boundary_fraction=uniq_frac, draws=draws, zero_draws=zero_draws, X_mean=sumX / max(1, draws), log2_Zhat_over_Ucap_DIAGNOSTIC=(log2(sumX / draws) if sumX > 0 else None), max_log2_X_observed=maxlogX, ms_per_draw=1000 * per_draw, cert_evals=len(trace_rows), cert_s=t_cert,
+                                published=len(pub), remaining=len(unpub), max_remaining_width=(float(wf.max()) if wf.size else (None if unpub else 0.0)), median_remaining_width=(float(np.median(wf)) if wf.size else (None if unpub else 0.0)),
                                 Z_over_Ucap_EB_interval=zi, Z_EB_relative_width=((zi[1] - zi[0]) / zi[0] if zi[0] > 0 else None), lam_last_median=float(np.median(cert.lam())), schedule=schedule,
                                 extrapolated_s_max_width=((total * (float(wf.max()) / (2 * float(eps))) ** 2) if wf.size else 0.0), extrapolated_s_median_width=((total * (float(np.median(wf)) / (2 * float(eps))) ** 2) if wf.size else 0.0))
         ph.update(stream=t_loop, certificate=t_cert); out['trace'] = trace_rows
