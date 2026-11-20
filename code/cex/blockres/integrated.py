@@ -20,7 +20,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2.5 (2026-11-20 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.6 (2026-11-20 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
@@ -122,6 +122,31 @@ def recover_query_table_float(block_ft, x, cards, trace_ft, trace_var, step_of, 
 
 
 # ---------------------------------------------------------------- mini-bucket proposal in float with a batch sampler
+def mb_plan(scopes, cards, cap):
+    """DRY RUN of the mini-bucket partition on scopes only (no tables): returns dict(forward_bytes, log_bytes, max_table, splits, steps, peak_step_bytes) for the memory policy"""
+    live = [tuple(sc) for sc in scopes]; vars_ = sorted({v for sc in live for v in sc}); fwd = 0; logs = 0; mx = 0; splits = 0; steps = 0; peak = 0
+    while vars_:
+        best = None
+        for v in vars_:
+            nb = set().union(*(set(sc) for sc in live if v in sc)) - {v}; size = prod(cards[u] for u in nb) if nb else 1
+            if best is None or size < best[0]: best = (size, v)
+        v = best[1]; vars_.remove(v); bucket = [sc for sc in live if v in sc]; live = [sc for sc in live if v not in sc]; steps += 1
+        if not bucket: continue
+        bucket.sort(key=lambda sc: -len(sc)); groups = []
+        for sc in bucket:
+            for g in groups:
+                u = g[0] | set(sc)
+                if prod(cards[x] for x in u) <= cap: g[0] = u; g[1].append(sc); break
+            else: groups.append([set(sc), [sc]])
+        splits += len(groups) - 1
+        for gi, (u, members) in enumerate(groups):
+            usz = prod(cards[x] for x in u); msz = usz // cards[v]; peak = max(peak, usz * 8 * 2); mx = max(mx, msz)
+            nsc = tuple(x for x in sorted(u) if x != v)
+            if nsc: live.append(nsc); fwd += msz * 8
+            if gi == 0: logs += sum(prod(cards[x] for x in sc) * 8 for sc in members)
+    return dict(forward_bytes=fwd, log_bytes=logs, max_table=mx, splits=splits, steps=steps, peak_step_bytes=peak)
+
+
 class MBFloat:
     def __init__(self, blocks, cards, cap, deadline):
         self.cards = cards; live = [FT(b.scope, b.M, b.e, b.rho) for b in blocks]
@@ -151,22 +176,33 @@ class MBFloat:
                 else:
                     if float(R.M) == 0.0: logU_f = -inf
                     else: logU_f += log2(float(R.M)); E_U += R.e; n_scalar += 1          # float part in [0, 1) per scalar; the exponent stays an exact integer
-                    rhoU = (1 + rhoU) * (1 + R.rho) - 1
                     self.scalars.append(R)
             steps.append((v, groups[0][1]))
+        rhoU = comb(*[r.rho for r in self.scalars], pow1pu(len(self.scalars)))                      # ONE bounded-size combination of the scalar-root allowances (F2)
         self.steps = steps; self.order = order; self.rhoU = rhoU; self.logU_f = logU_f; self.E_U = E_U; self.logU = (logU_f + E_U) if logU_f > -inf else -inf; self.n_scalar = n_scalar
         self.max_table = max((f.M.size for _, q1 in steps if q1 for f in q1), default=0); self.max_q1 = max((len(q1) for _, q1 in steps if q1), default=0)
-        self.prep = []
-        for v, q1 in steps:
+        self.prep = None                                     # sampler log tables are built LAZILY (prepare_sampler), only when the PAC route is taken
+        self.step_ranges = [[f.R for f in q1] if q1 else [] for _, q1 in steps]
+
+    def prepare_sampler(self, release_forward=True):
+        """build the per-step log2 tables of the summed mini-bucket members for the batch sampler; with release_forward the forward message mantissas (not needed by the PAC
+        stream: z uses the block tables, the proposal uses the logs) are dropped so that the proposal is held ONCE in memory"""
+        if self.prep is not None: return
+        self.prep = []; cards = self.cards
+        for v, q1 in self.steps:
             if q1 is None: self.prep.append((v, None)); continue
             tabs = []
             for f in q1:
-                with np.errstate(divide='ignore'): LM = np.where(f.M > 0, np.log2(np.maximum(f.M, 1e-300)), -inf).reshape(-1)       # log2 M only: |LM| <= R_f; the exponent cancels in the row normalization
+                with np.errstate(divide='ignore'): LM = np.where(f.M > 0, np.log2(np.maximum(f.M, 1e-300)), -inf).reshape(-1)
                 strides = {}; s_ = 1
                 for u in reversed(f.scope): strides[u] = s_; s_ *= cards[u]
                 tabs.append((LM, strides, f.scope))
             self.prep.append((v, tabs))
-        self.step_ranges = [[f.R for f in q1] if q1 else [] for _, q1 in steps]
+        if release_forward:
+            inputs = {id(f) for f in self.inputs}
+            for v, bucket, R in self.fwd:
+                if id(R) not in inputs and R.scope: R.M = None               # message mantissas released; the exact route (which needs them) runs BEFORE this
+            self.fwd = []
 
     def logq_given(self, S, pos):
         """implemented log2 q(S) for given assignments S (B, n_sep): the SAME float operations as sample_batch, deterministic; also returns the analysed q as exact Fractions"""
@@ -357,6 +393,104 @@ def ft_product_log(fts, cards):
         L = lm if L is None else L + lm; e += f.e
     return union, np.broadcast_to(L, [cards[v] for v in union]).copy(), e, comb(*[f.rho for f in fts], pow1pu(len(fts) - 1))
 
+
+# ---------------------------------------------------------------- SHARED all-query recovery (round 11): per block, one batched forward / backward pass with the sampled boundary clamped
+class SharedBlock:
+    """block b: original (evidence-restricted) factors as FTs over (boundary vars in b.scope) U (interior vars); interior elimination order = the block's recorded order.
+    responses(S_batch) -> (f (B, K_b) conditional responses P(x = a | boundary = s_b) for every interior query column, root mantissa / exponent (B,), rho_f (exact bound)).
+    Every operation is a batched float product / sum with per-sample power-of-two rescaling; the error bound counts the operations on the longest path (data-independent)."""
+    def __init__(self, blk, fac_fts, interior_order, cards, pos):
+        self.cards = cards; self.pos = pos; self.bvars = tuple(blk.scope); self.order = [v for v in interior_order]; self.facs = []
+        bset = set(self.bvars)
+        for f in fac_fts:
+            bv = tuple(u for u in f.scope if u in bset); iv = tuple(u for u in f.scope if u not in bset)
+            M = f.M.reshape([cards[u] for u in f.scope]); perm = [f.scope.index(u) for u in bv] + [f.scope.index(u) for u in iv]
+            M2 = np.ascontiguousarray(np.transpose(M, perm)).reshape(prod(cards[u] for u in bv) if bv else 1, prod(cards[u] for u in iv) if iv else 1)
+            self.facs.append(dict(bv=bv, iv=iv, M2=M2, e=f.e, rho=f.rho))
+        self.cols = [(x, a) for x in self.order for a in range(cards[x])]
+        # operation count bound (data-independent): forward products + sums, backward products + sums, final ratio
+        nmul = 0; nsum = 0; live = [set(f['iv']) for f in self.facs]
+        for v in self.order:
+            bucket = [sc for sc in live if v in sc]; live = [sc for sc in live if v not in sc]
+            if not bucket: continue
+            u = set().union(*bucket); nmul += 2 * (len(bucket) + 1); nsum += cards[v] + prod(cards[x] for x in u); live.append(u - {v})
+        self.rho_f = comb(*[f['rho'] for f in self.facs], pow1pu(nmul + nsum + 4))
+        self.rho_f = comb(self.rho_f, self.rho_f)                        # numerator and denominator each carry the bound
+        mu = 1; live = [set(f['iv']) for f in self.facs]
+        for v in self.order:
+            bucket = [sc for sc in live if v in sc]; live = [sc for sc in live if v not in sc]
+            if not bucket: continue
+            u = set().union(*bucket); mu = max(mu, prod(cards[x] for x in u)); live.append(u - {v})
+        self.max_union = mu
+    def _restricted(self, f, Sb):
+        if f['bv']: idx = np.zeros(Sb.shape[0], dtype=np.int64)
+        else:
+            dims = tuple(self.cards[u] for u in f['iv'])
+            return np.broadcast_to(f['M2'][0].reshape(dims), (Sb.shape[0],) + dims) if f['iv'] else np.broadcast_to(f['M2'][0, 0], (Sb.shape[0],))
+        s_ = 1
+        for u in reversed(f['bv']): idx += Sb[:, self.pos[u]] * s_; s_ *= self.cards[u]
+        R = f['M2'][idx]; return R.reshape((Sb.shape[0],) + tuple(self.cards[u] for u in f['iv'])) if f['iv'] else R.reshape(Sb.shape[0])
+    @staticmethod
+    def _rescale(A, E):
+        """per-sample power-of-two rescaling: A (B, ...) -> mantissas with row max in [1, 2) (zero rows stay zero), E (B,) += exponents (exact)"""
+        flat = A.reshape(A.shape[0], -1); m = flat.max(axis=1); nz = m > 0; k = np.zeros(A.shape[0]); k[nz] = np.floor(np.log2(m[nz])); sc = np.exp2(-k)
+        return (flat * sc[:, None]).reshape(A.shape), E + k
+    def responses(self, Sb):
+        B = Sb.shape[0]; cards = self.cards; live = []
+        for f in self.facs:
+            A = np.array(self._restricted(f, Sb), dtype=float); E = np.full(B, float(f['e'])); A, E = self._rescale(A, E); live.append([f['iv'], A, E])
+        steps = []
+        for v in self.order:
+            bucket = [t for t in live if v in t[0]]; live = [t for t in live if v not in t[0]]
+            if not bucket: continue
+            union = tuple(sorted(set().union(*(set(t[0]) for t in bucket)))); P = None; E = np.zeros(B)
+            for sc, A, Ea in bucket:
+                P = (A.reshape((B,) + tuple(cards[u] if u in sc else 1 for u in union)) if P is None else P * A.reshape((B,) + tuple(cards[u] if u in sc else 1 for u in union))); E = E + Ea
+            P = np.broadcast_to(P, (B,) + tuple(cards[u] for u in union)); ax = 1 + union.index(v); Msg = P.sum(axis=ax); Msg, Em = self._rescale(Msg, E.copy()); nsc = tuple(u for u in union if u != v)
+            steps.append((v, bucket, union, P, E, Msg, Em)); live.append([nsc, Msg, Em])
+        # root (per sample): product of the remaining scalars
+        root = np.ones(B); Er = np.zeros(B)
+        for sc, A, Ea in live: root = root * A.reshape(B); Er = Er + Ea
+        root, Er = self._rescale(root.reshape(B, 1), Er); root = root.reshape(B)
+        # backward: D for every message, from the root (derivative 1 per sample times the OTHER remaining scalars: zero-safe prefix / suffix)
+        D = {}; k = len(live)
+        if k:
+            pre = [None] * k; suf = [None] * k; acc = None
+            for i in range(k): pre[i] = acc; acc = live[i][1].reshape(B) if acc is None else acc * live[i][1].reshape(B)
+            acc = None
+            for i in range(k - 1, -1, -1): suf[i] = acc; acc = live[i][1].reshape(B) if acc is None else acc * live[i][1].reshape(B)
+            for i in range(k):
+                d = np.ones(B)
+                if pre[i] is not None: d = d * pre[i]
+                if suf[i] is not None: d = d * suf[i]
+                D[id(live[i][1])] = (d, np.zeros(B))
+        f = np.zeros((B, len(self.cols))); ci = {c: j for j, c in enumerate(self.cols)}
+        for v, bucket, union, P, E, Msg, Em in reversed(steps):
+            DR, Ed = D.get(id(Msg), (None, None))
+            if DR is None: DR = np.ones(B); Ed = np.zeros(B)
+            DRb = DR.reshape((B,) + tuple(1 for _ in union)) if DR.ndim == 1 else DR.reshape((B,) + tuple(cards[u] if u in (tuple(u for u in union if u != v)) else 1 for u in union))
+            full = P * DRb                                                 # (B, *union): bucket product x consumer derivative
+            # numerator of the eliminated variable v: sum over everything but v
+            axes = tuple(1 + i for i, u in enumerate(union) if u != v); Nv = full.sum(axis=axes) if axes else full; Nv = Nv.reshape(B, cards[v])
+            # responses: N_v(a) / root with per-sample exponents: exponent of full = E + Ed ; root exponent Er
+            ex = E + Ed - Er; val = (Nv / np.where(root > 0, root, 1.0)[:, None]) * np.exp2(ex)[:, None]
+            val = np.where(root[:, None] > 0, val, 0.0)
+            for a in range(cards[v]): f[:, ci[(v, a)]] = np.clip(val[:, a], 0.0, 1.0)
+            # derivatives of the bucket members (zero-safe prefix / suffix over the members, times DR)
+            k = len(bucket); As = [t[1].reshape((B,) + tuple(cards[u] if u in t[0] else 1 for u in union)) for t in bucket]
+            pre = [None] * k; suf = [None] * k; acc = None
+            for i in range(k): pre[i] = acc; acc = As[i] if acc is None else acc * As[i]
+            acc = None
+            for i in range(k - 1, -1, -1): suf[i] = acc; acc = As[i] if acc is None else acc * As[i]
+            for i, (sc, A, Ea) in enumerate(bucket):
+                if id(A) in D or not sc: continue
+                Pm = DRb
+                if pre[i] is not None: Pm = Pm * pre[i]
+                if suf[i] is not None: Pm = Pm * suf[i]
+                Pm = np.broadcast_to(Pm, (B,) + tuple(cards[u] for u in union)); axes = tuple(1 + i_ for i_, u in enumerate(union) if u not in sc)
+                Dm = Pm.sum(axis=axes) if axes else Pm; Dm = Dm.reshape((B,) + tuple(cards[u] for u in sc)); Dm, Edm = self._rescale(Dm, (E - Ea) + Ed); D[id(A)] = (Dm, Edm)
+        return f, root, Er
+
 # ---------------------------------------------------------------- the certificate: batch updates, conservative inversion
 class Certificate:
     def __init__(self, K, alpha, eps_num, eps, schedule):
@@ -528,6 +662,61 @@ def backward_derivatives(mbp, cards, deadline):
     return D
 
 
+
+def block_numerators_exact(fac_fts, order, Db, cards, deadline):
+    """EXACT ROUTE shared recovery for one block: forward FT elimination of the block's interior variables in `order` (boundary variables retained), then one backward pass seeded
+    by the outward message D_b over the block's boundary scope. At the step eliminating v: N_v(a) = sum over (union minus v) of [prod bucket] x D_R  (zero-safe; no division).
+    Returns {v: FT over (v,)} numerators; every bound through comb / pow1pu."""
+    live = list(fac_fts); steps = []
+    for v in order:
+        if tnow() >= deadline: raise Deadline('block_forward')
+        bucket = [f for f in live if v in f.scope]
+        if not bucket: continue
+        live = [f for f in live if v not in f.scope]; R = ft_eliminate(bucket, v, cards, 'sum'); steps.append((v, bucket, R)); live.append(R)
+    # remaining functions are over boundary variables only; their product is g_b. Root derivatives: D_r = sum_{b.scope minus scope r} Db x prod_{others}
+    D = {}; k = len(live); bsc = Db.scope
+    if k:
+        As = [f.M.reshape([cards[u] if u in f.scope else 1 for u in bsc]) for f in live]; Dm = Db.M.reshape([cards[u] for u in bsc])
+        pre = [None] * k; suf = [None] * k; acc = None
+        for i in range(k): pre[i] = acc; acc = As[i] if acc is None else acc * As[i]
+        acc = None
+        for i in range(k - 1, -1, -1): suf[i] = acc; acc = As[i] if acc is None else acc * As[i]
+        for i, f in enumerate(live):
+            if tnow() >= deadline: raise Deadline('block_root_derivatives')
+            P = Dm
+            if pre[i] is not None: P = P * pre[i]
+            if suf[i] is not None: P = P * suf[i]
+            P = np.broadcast_to(P, [cards[u] for u in bsc]); axes = tuple(ai for ai, u in enumerate(bsc) if u not in f.scope); nsum = prod(cards[bsc[ai]] for ai in axes) if axes else 1
+            Df = P.sum(axis=axes) if axes else P; e = Db.e + sum(g.e for j, g in enumerate(live) if j != i); rho = comb(Db.rho, *[g.rho for j, g in enumerate(live) if j != i], pow1pu(k), pow1pu(nsum - 1))
+            Df = np.asarray(Df, dtype=float).reshape([cards[u] for u in f.scope]) if f.scope else np.asarray(Df, dtype=float).reshape(()); Df, e = _rescale(np.ascontiguousarray(Df), e); D[id(f)] = FT(f.scope, Df, e, rho)
+    out = {}
+    for v, bucket, R in reversed(steps):
+        if tnow() >= deadline: raise Deadline('block_backward')
+        DR = D.get(id(R))
+        if DR is None: raise RangeRefused('block backward: message without a consumer derivative (internal)')
+        union = tuple(sorted(set().union(*(set(f.scope) for f in bucket)))); k = len(bucket)
+        if sum(f.R for f in bucket) + DR.R > RANGE_BUDGET: raise RangeRefused('block backward product could underflow (range bits %d > %d)' % (sum(f.R for f in bucket) + DR.R, RANGE_BUDGET))
+        As = [f.M.reshape([cards[u] if u in f.scope else 1 for u in union]) for f in bucket]; DRa = DR.M.reshape([cards[u] if u in DR.scope else 1 for u in union]); full = [cards[u] for u in union]
+        P = DRa
+        for A in As: P = P * A
+        P = np.broadcast_to(P, full); ax = tuple(ai for ai, u in enumerate(union) if u != v); nsum = prod(cards[union[ai]] for ai in ax) if ax else 1
+        Nv = P.sum(axis=ax) if ax else P; e = DR.e + sum(f.e for f in bucket); rho = comb(DR.rho, *[f.rho for f in bucket], pow1pu(k), pow1pu(nsum - 1))
+        Nv, e = _rescale(np.ascontiguousarray(np.asarray(Nv, dtype=float).reshape([cards[v]])), e); out[v] = FT((v,), Nv, e, rho)
+        pre = [None] * k; suf = [None] * k; acc = None
+        for i in range(k): pre[i] = acc; acc = As[i] if acc is None else acc * As[i]
+        acc = None
+        for i in range(k - 1, -1, -1): suf[i] = acc; acc = As[i] if acc is None else acc * As[i]
+        for i, f in enumerate(bucket):
+            if id(f) in D or not f.scope: continue
+            if tnow() >= deadline: raise Deadline('block_backward')
+            Pm = DRa
+            if pre[i] is not None: Pm = Pm * pre[i]
+            if suf[i] is not None: Pm = Pm * suf[i]
+            Pm = np.broadcast_to(Pm, full); axes = tuple(ai for ai, u in enumerate(union) if u not in f.scope); nsum2 = prod(cards[union[ai]] for ai in axes) if axes else 1
+            Dm = Pm.sum(axis=axes) if axes else Pm; e2 = DR.e + sum(g.e for j, g in enumerate(bucket) if j != i); rho2 = comb(DR.rho, *[g.rho for j, g in enumerate(bucket) if j != i], pow1pu(k), pow1pu(nsum2 - 1))
+            Dm = np.asarray(Dm, dtype=float).reshape([cards[u] for u in f.scope]); Dm, e2 = _rescale(np.ascontiguousarray(Dm), e2); D[id(f)] = FT(f.scope, Dm, e2, rho2)
+    return out
+
 def ve_retain(fts, cards, keep, deadline, byte_cap):
     """float variable elimination of every variable except `keep` (greedy min-size), range-pre-checked, rho-exact; returns FT over (keep,) or None if a table would exceed byte_cap"""
     live = list(fts); vars_ = sorted({u for f in live for u in f.scope} - {keep})
@@ -548,10 +737,29 @@ def ve_retain(fts, cards, keep, deadline, byte_cap):
 
 
 def interval_ratio(N, v, Z):
-    """exact rational enclosure of N[v] 2^eN / Z 2^eZ from the float values and exact rho bounds; (lo, hi) within [0, 1]"""
+    """exact rational enclosure of N[v] 2^eN / (Z 2^eZ) from the float values and exact rho bounds, or None when it cannot be established:
+    the denominator's LOWER endpoint z (1 - rho_Z) must be strictly positive (a positive-mass witness does not make the numerical enclosure's lower endpoint positive);
+    a zero numerator is the exact zero only because float zeros are exact zeros; the result always satisfies 0 <= lo <= hi <= 1"""
+    if Z.rho >= 1: return None                                                  # denominator enclosure reaches zero: UNRESOLVED (never ZERO_EVIDENCE, never a division)
     n = F(float(N.M.reshape(-1)[v])) * F(2) ** N.e; z = F(float(Z.M)) * F(2) ** Z.e
+    if z <= 0: return None
+    zlo = z * (1 - Z.rho); zhi = z * (1 + Z.rho)
+    if zlo <= 0: return None
     if n == 0: return F(0), F(0)
-    lo = n * (1 - N.rho) / (z * (1 + Z.rho)); hi = n * (1 + N.rho) / (z * (1 - Z.rho)); return max(F(0), lo), min(F(1), hi)
+    if N.rho >= 1: return F(0), F(1)                                            # numerator enclosure reaches zero from above: unresolved but valid
+    lo = max(F(0), n * (1 - N.rho) / zhi); hi = min(F(1), n * (1 + N.rho) / zlo)
+    if not (F(0) <= lo <= hi <= F(1)): return None
+    return lo, hi
+
+
+def valid_publication(lo, hi, eps):
+    """exact acceptance test applied at EVERY publication boundary: 0 <= lo <= hi <= 1 and width <= 2 eps"""
+    return isinstance(lo, F) and isinstance(hi, F) and F(0) <= lo <= hi <= F(1) and hi - lo <= 2 * eps
+
+
+def compact_outward(lo, hi, Q=1 << 52):
+    """outward dyadic compaction: L = floor(Q lo) / Q <= lo, H = ceil(Q hi) / Q >= hi, clipped to [0, 1]"""
+    L = max(F(0), F(math.floor(lo * Q), Q)); H = min(F(1), F(-((-hi * Q).numerator // (-hi * Q).denominator), Q)); return L, H
 
 
 def executor_crosscheck(blocks_int, S, order, deadline, cap_bytes):
@@ -651,7 +859,7 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             if Z == 0: return finish_('ZERO_EVIDENCE')
             for j, q in enumerate(sq): r = F(int(sep.num[j]), Z); publish(qmap[q], r, r, r, 'EXACT')
             out['Z'] = str(F(Z * const * mult, scale)); return finish_('EXACT' if len(ans) + len(pending) == K else 'PARTIAL_EXACT', witness=True)
-        # ---- float representation
+        # ---- float representation of the blocks and the elimination trace (needed by both routes)
         t0 = tnow()
         try:
             cache = {}
@@ -661,79 +869,58 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             blocks = [conv(f) for f in live]; trace_var = {}; trace_ft = []
             for st, (v, snap) in enumerate(trace): trace_var[st] = v; trace_ft.append([conv(f) for f in snap])
         except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
-        ph['float_convert'] = tnow() - t0
-        # ---- interior query recovery under a BYTE BUDGET: each block's stacked table Q (|g_b|, K_b) is preallocated once and filled column by column directly from the replay
-        #      (no per-variable table retained, no second copy from np.stack); variables whose columns would exceed the budget are typed RESOURCE and left NOT_PUBLISHED
-        t0 = tnow(); recovered = 0; skipped = []; resource_skipped = []; bytes_used = 0
-        todo = sorted(((len([u for u in b.interior if step_of[u] > step_of[x]]), i, x) for i, b in enumerate(blocks) for x in b.interior))
-        # pass 1: ADMIT interior variables in order under the byte budget (the retained column bytes are known before any computation)
-        admitted = []
-        for _, i, x in todo:
-            need = blocks[i].M.size * cards[x] * 8
-            if bytes_used + need > RECOVERY_BYTE_BUDGET: resource_skipped.append(x); continue
-            admitted.append((i, x)); bytes_used += need
-        # pass 2: allocate EXACTLY the admitted columns per block (a column write touches every row page, so an over-sized allocation would be realized in RSS)
-        ncols = {}
-        for i, x in admitted: ncols[i] = ncols.get(i, 0) + cards[x]
-        Qb = {i: np.zeros((blocks[i].M.size, n_), dtype=float) for i, n_ in ncols.items()}; colsb = {i: [] for i in range(len(blocks))}; rhosb = {i: [] for i in range(len(blocks))}
-        # pass 3: recover and write columns directly; the per-variable table is released at once
-        for i, x in admitted:
-            if tnow() >= cdead: skipped.append(x); continue
-            b = blocks[i]
-            try: r = recover_query_table_float(b, x, cards, trace_ft, trace_var, step_of, cdead, stats)
-            except Deadline: skipped.append(x); continue
-            except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
-            if r is None: failed.append(x); continue
-            c0 = len(colsb[i]); scale_ = ldexp(1.0, r.e - b.e)
-            for v in range(cards[x]):
-                col = r.M[..., v].reshape(-1) * scale_; pos_ = col[col > 0]
-                if not np.all(np.isfinite(col)) or (pos_.size and float(pos_.min()) < ldexp(1.0, -1000)): out['refusal'] = 'query-table alignment leaves the normal range'; return finish_('NUMERIC_RANGE_REFUSED')
-                Qb[i][:, c0 + v] = col; colsb[i].append((x, v)); rhosb[i].append(r.rho)
-            del r; recovered += 1
-        failed += skipped; failed += resource_skipped; ph['query_tables'] = tnow() - t0
-        out['mechanism'].update(interior_queries_recovered=recovered, interior_queries_failed=len(failed) - len(skipped) - len(resource_skipped), interior_queries_skipped_window=len(skipped), interior_queries_resource_skipped=len(resource_skipped), recovery_bytes_retained=bytes_used, recovery_byte_budget=RECOVERY_BYTE_BUDGET, query_work=stats['query_work'])
-        pos = {v: i for i, v in enumerate(S)}; sep_q = [(x, v) for (x, v) in queries if x in pos]
-        blockQ = []; qcols = []
-        for i, b in enumerate(blocks):
-            if colsb[i]:
-                Q = Qb[i] if Qb[i].shape[1] == len(colsb[i]) else np.ascontiguousarray(Qb[i][:, :len(colsb[i])]); Qb.pop(i, None)
-                blockQ.append((i, Q, rhosb[i])); qcols += colsb[i]
-            else: blockQ.append((i, None, [])); Qb.pop(i, None)
-        sq = sep_q + qcols; Kq = len(sq); qmap = {q: qix[q] for q in sq}; qrhos = [r for _, _, rs in blockQ for r in rs]
+        ph['float_convert'] = tnow() - t0; pos = {v: i for i, v in enumerate(S)}; sep_q = [(x, v) for (x, v) in queries if x in pos]
+        base_bytes = sum(f.M.nbytes for f in cache.values()) + sum(f.arr.size * 48 for f in fns) + (160 << 20)          # live FTs + integer factors + process overhead / numpy headroom (measured 105-242 MiB on the panel)
+        # ---- MEMORY POLICY (one process-wide plan before any large array): usable ceiling 2.5 GiB of the 3 GiB contract
+        USABLE = 2560 << 20; plan = None; cap_used = None
+        for cap_try in [mb_cap] + [c for c in (1 << 22, 1 << 20, 1 << 18, 1 << 16, 1 << 14, 1 << 12, 1 << 10) if c < mb_cap]:      # the requested cap first (2^24 maximum), then the fixed ladder downwards
+            pl = mb_plan([b.scope for b in blocks], cards, cap_try)
+            # planned peak during construction = base + forward messages + one step's product workspace (x2 for the max copy); during PAC = base + forward (released) -> logs + recovery + batch temporaries
+            construct_peak = base_bytes + pl['forward_bytes'] + pl['peak_step_bytes']; pac_peak = base_bytes + pl['log_bytes'] + min(RECOVERY_BYTE_BUDGET, 1 << 62) + (64 << 20)
+            if construct_peak <= USABLE and pac_peak <= USABLE: plan = pl; cap_used = cap_try; break
+        if plan is None: out['refusal'] = 'no mini-bucket cap in the ladder fits the memory policy'; return finish_('MEMORY_POLICY_REFUSED')
+        out['mechanism'].update(memory_policy=dict(usable_bytes=USABLE, base_bytes=base_bytes, cap_requested=mb_cap, cap_used=cap_used, planned_forward_bytes=plan['forward_bytes'], planned_log_bytes=plan['log_bytes'], planned_peak_step_bytes=plan['peak_step_bytes'], planned_splits=plan['splits']))
+        # ---- mini-bucket construction (forward only; no sampler tables, no PAC query tables yet)
         t0 = tnow()
-        try: mbp = MBFloat(blocks, cards, mb_cap, deadline)
+        try: mbp = MBFloat(blocks, cards, cap_used, deadline)
         except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
         ph['mb_construct'] = tnow() - t0
-        out['mechanism'].update(mb_cap=mb_cap, mb_logU=mbp.logU, mb_max_table=mbp.max_table, mb_max_range_sum_bits=mbp.max_range_sum, block_max_range_bits=max(b.R for b in blocks), Kq=Kq, sep_queries=len(sep_q), interior_query_cols=len(qcols),
-                                mb_splits=mbp.splits, mb_split_steps=mbp.split_steps[:12], mb_unsplit=(mbp.splits == 0))
+        out['mechanism'].update(mb_cap=cap_used, mb_logU=mbp.logU, mb_max_table=mbp.max_table, mb_max_range_sum_bits=mbp.max_range_sum, block_max_range_bits=max(b.R for b in blocks), sep_queries=len(sep_q),
+                                mb_splits=mbp.splits, mb_split_steps=mbp.split_steps[:12], mb_unsplit=(mbp.splits == 0), mb_forward_bytes_actual=sum(R.M.nbytes for _, _, R in mbp.fwd))
         if mbp.logU == -inf: return finish_('ZERO_EVIDENCE')
         if construct_only: out['outcome'] = 'CONSTRUCT_ONLY'; return BR.finish(out, t_start, queries, {}, failed)
-        # ---- EXACT ROUTE: an unsplit mini-bucket pass is exact bucket elimination on the separator model; recover every marginal from one shared backward pass
+        blockfac = {i: [conv(f) for f in fns if f.facs <= live[i].facs] for i in range(len(blocks))}
+        iorder = {i: [trace_var[st] for st in sorted(step_of[u] for u in live[i].interior)] for i in range(len(blocks))}
+        # ---- EXACT ROUTE first (unsplit): needs the forward messages, not the sampler tables or PAC query tables
         if mbp.splits == 0 and route in ('auto', 'exact'):
             t0 = tnow(); exact_note = None
             try:
-                Zft = ft_scalar_product(mbp.scalars)
+                Zft = ft_scalar_product(mbp.scalars); unresolved = 0
                 if float(Zft.M) == 0.0: return finish_('ZERO_EVIDENCE')
-                D = backward_derivatives(mbp, cards, deadline); Dblk = [D[id(fi)] for fi in mbp.inputs]
-                pub_exact = {}; blockfac = {i: [conv(f) for f in fns if f.facs <= live[i].facs] for i in range(len(blocks))}
-                # separator variables: N(x = v) = sum_{s_b : s_b[x] = v} g_b(s_b) D_b(s_b) for the smallest block containing x
+                if Zft.rho >= 1: raise RangeRefused('normalizer enclosure reaches zero (rho_Z = %s): deterministic ratios unresolved' % float(Zft.rho))
+                D = backward_derivatives(mbp, cards, deadline); Dblk = [D[id(fi)] for fi in mbp.inputs]; pub_exact = {}
                 for x in S:
+                    if tnow() >= deadline: raise Deadline('exact_separator')
                     bi = min((i for i, b in enumerate(blocks) if x in b.scope), key=lambda i: blocks[i].M.size); b = blocks[bi]
                     union, P, e, rho = ft_product([b, Dblk[bi]], cards); axes = tuple(ai for ai, u in enumerate(union) if u != x); nsum = prod(cards[union[ai]] for ai in axes) if axes else 1
                     Nx = P.sum(axis=axes) if axes else P; rho = comb(rho, pow1pu(nsum - 1)); Nx, e = _rescale(np.asarray(Nx, dtype=float).reshape([cards[x]]), e); Nft = FT((x,), Nx, e, rho)
                     for v in range(cards[x]):
-                        lo, hi = interval_ratio(Nft, v, Zft)
-                        if hi - lo <= 2 * eps: pub_exact[qix[(x, v)]] = (lo, hi)
-                # interior variables: block model = the block's original factors + D_b; eliminate everything but x
+                        r_ = interval_ratio(Nft, v, Zft)
+                        if r_ is not None and valid_publication(r_[0], r_[1], eps): pub_exact[qix[(x, v)]] = r_
+                        else: unresolved += 1
+                # interior variables: ONE shared forward / backward pass per block seeded by D_b (replaces the per-variable retained elimination)
                 unrec = []
                 for i, b in enumerate(blocks):
-                    for x in b.interior:
-                        if tnow() >= deadline: raise Deadline('exact_interior')
-                        Nft = ve_retain(blockfac[i] + [Dblk[i]], cards, x, deadline, FLOAT_BYTE_CAP)
+                    if not live[i].interior: continue
+                    try: Ns = block_numerators_exact(blockfac[i], iorder[i], Dblk[i], cards, deadline)
+                    except RangeRefused as e: unrec += list(live[i].interior); out['mechanism'].setdefault('exact_block_refusals', []).append(str(e)[:120]); continue
+                    for x in live[i].interior:
+                        Nft = Ns.get(x)
                         if Nft is None: unrec.append(x); continue
                         for v in range(cards[x]):
-                            lo, hi = interval_ratio(Nft, v, Zft)
-                            if hi - lo <= 2 * eps: pub_exact[qix[(x, v)]] = (lo, hi)
+                            r_ = interval_ratio(Nft, v, Zft)
+                            if r_ is not None and valid_publication(r_[0], r_[1], eps): pub_exact[qix[(x, v)]] = r_
+                            else: unresolved += 1
                 ph['exact_route'] = tnow() - t0
                 xc = None
                 if crosscheck:
@@ -748,17 +935,15 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
                             cmp_ += 1; lo, hi = pub_exact[j]; xlo, xhi = rows_[si][v]
                             if hi < xlo or xhi < lo: dis += 1
                     xc = dict(xc, required=need, compared=cmp_, missing=missing, disjoint=dis); xc.pop('rows', None)
-                    # a REQUESTED cross-check must succeed (CERTIFIED), cover every published separator coordinate, and agree; anything else is a typed failure of the route
                     if xc['status'] != 'CERTIFIED' or missing or cmp_ != need: exact_note = 'CROSSCHECK_FAILED'; out['mechanism']['exact_route'] = dict(status='CROSSCHECK_FAILED: %s (required %d, compared %d, missing %d)' % (xc['status'], need, cmp_, missing), crosscheck=xc)
                     elif dis: exact_note = 'INVESTIGATE'; out['mechanism']['exact_route'] = dict(status='INVESTIGATE: executor disagrees on %d separator coordinates' % dis, crosscheck=xc)
                 if exact_note is None:
-                    # A3: compact every outward enclosure onto the dyadic grid Q = 2^52 with exact integer arithmetic (L = floor(Q lo) / Q <= lo, H = ceil(Q hi) / Q >= hi), recheck the width
-                    Q = 1 << 52; compact = {}; too_wide = 0
+                    compact = {}; too_wide = 0
                     for j, (lo, hi) in pub_exact.items():
-                        L = F(math.floor(lo * Q), Q); H = F(-((-hi * Q).numerator // (-hi * Q).denominator), Q) if hi < 1 else F(1); L = max(F(0), L); H = min(F(1), H)
-                        if H - L <= 2 * eps: compact[j] = (L, H)
+                        L, H = compact_outward(lo, hi)
+                        if L <= lo and H >= hi and valid_publication(L, H, eps): compact[j] = (L, H)
                         else: too_wide += 1
-                    out['mechanism'].update(route='exact', exact_route=dict(status='OK', published=len(compact), too_wide_after_compaction=too_wide, unrecovered_interior=len(unrec), Z_log2=lg(F(float(Zft.M)) * F(2) ** Zft.e), rho_Z=fup(Zft.rho), crosscheck=xc, compaction='dyadic grid 2^-52, outward'))
+                    out['mechanism'].update(route='exact', response_representation='shared_block_backward', exact_route=dict(status='OK', published=len(compact), too_wide_after_compaction=too_wide, unresolved_ratios=unresolved, unrecovered_interior=len(unrec), Z_log2=lg(F(float(Zft.M)) * F(2) ** Zft.e), rho_Z=fup(Zft.rho), crosscheck=xc, compaction='dyadic grid 2^-52, outward'))
                     ans.update(pending)
                     for j, (L, H) in compact.items(): publish(j, L, H, (L + H) / 2, 'DETERMINISTIC')
                     failed += unrec; out['positive_mass_witness'] = True
@@ -766,11 +951,45 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             except RangeRefused as e: out['mechanism']['exact_route'] = dict(status='REFUSED: ' + str(e)); ph['exact_route'] = tnow() - t0
             if route == 'exact': return finish_('EXACT_ROUTE_UNAVAILABLE' if exact_note is None else 'EXACT_ROUTE_' + exact_note)
             out['mechanism']['exact_route_fallback'] = 'PAC route after the exact route did not publish (%s)' % (exact_note or 'refused')
-            # otherwise fall through to the PAC route (sampling retained where exact completion is unavailable)
         out['mechanism']['route'] = 'pac'
-        E_z = sum(b.e for b in blocks); E_tot = E_z - mbp.E_U                                     # EXACT integer: every power-of-two scale cancels here, never inside a float log
+        E_z = sum(b.e for b in blocks); E_tot = E_z - mbp.E_U
         if abs(E_tot) >= 1 << 50: out['refusal'] = 'exponent sum %d too large for an exact float' % E_tot; return finish_('NUMERIC_RANGE_REFUSED')
-        if proposal == 'wmb':                                             # candidate: weighted mini-buckets on the SAME partition and order; selection by CERTIFIED caps, frozen before any draw
+        # ---- PAC preparation (only now): recovery representation per block by the memory policy, then the sampler tables (forward messages released)
+        t0 = tnow(); recovered = 0; skipped = []; bytes_used = 0; blockQ = []; qcols = []; qrhos = []; shared_blocks = 0; dense_blocks = 0
+        order_blocks = sorted(range(len(blocks)), key=lambda i: blocks[i].M.size * sum(cards[x] for x in live[i].interior))         # cheapest dense tables first
+        for i in order_blocks:
+            b = blocks[i]; interior = list(live[i].interior)
+            if not interior: blockQ.append((i, None, [], None)); continue
+            need = b.M.size * sum(cards[x] for x in interior) * 8
+            if bytes_used + need <= RECOVERY_BYTE_BUDGET:                                      # DENSE precomputed responses (fast lookups) when they fit the budget
+                Q = np.zeros((b.M.size, sum(cards[x] for x in interior)), dtype=float); cols = []; rhos = []; c0 = 0; okb = True
+                for x in sorted(interior, key=lambda x: len([u for u in interior if step_of[u] > step_of[x]])):
+                    if tnow() >= cdead: okb = False; break
+                    try: r = recover_query_table_float(b, x, cards, trace_ft, trace_var, step_of, cdead, stats)
+                    except Deadline: okb = False; break
+                    except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
+                    if r is None: okb = False; break
+                    scale_ = ldexp(1.0, r.e - b.e)
+                    for v in range(cards[x]):
+                        col = r.M[..., v].reshape(-1) * scale_; pos_ = col[col > 0]
+                        if not np.all(np.isfinite(col)) or (pos_.size and float(pos_.min()) < ldexp(1.0, -1000)): out['refusal'] = 'query-table alignment leaves the normal range'; return finish_('NUMERIC_RANGE_REFUSED')
+                        Q[:, c0] = col; cols.append((x, v)); rhos.append(r.rho); c0 += 1
+                    del r; recovered += 1
+                if okb: blockQ.append((i, Q, rhos, None)); qcols += cols; qrhos += rhos; bytes_used += need; dense_blocks += 1; continue
+                del Q                                                                           # dense did not complete (deadline / range): fall back to the shared path for this block
+            if tnow() >= cdead: skipped += interior; continue
+            sb = SharedBlock(live[i], blockfac[i], iorder[i], cards, pos); blockQ.append((i, None, [sb.rho_f] * len(sb.cols), sb)); qcols += sb.cols; qrhos += [sb.rho_f] * len(sb.cols); shared_blocks += 1; recovered += len(interior)
+        failed += skipped; ph['query_tables'] = tnow() - t0
+        out['mechanism'].update(interior_queries_recovered=recovered, interior_queries_failed=0, interior_queries_skipped_window=len(skipped), interior_queries_resource_skipped=0, recovery_bytes_retained=bytes_used, recovery_byte_budget=RECOVERY_BYTE_BUDGET, query_work=stats['query_work'],
+                                response_representation=('dense' if shared_blocks == 0 else ('shared' if dense_blocks == 0 else 'mixed')), dense_blocks=dense_blocks, shared_blocks=shared_blocks)
+        sq = sep_q + qcols; Kq = len(sq); qmap = {q: qix[q] for q in sq}
+        out['mechanism'].update(Kq=Kq, interior_query_cols=len(qcols))
+        # batch size under the memory policy: the shared path's per-batch workspace is B x largest union table; the certificate batch is B x Kq
+        max_union = max([sb.max_union for _, _, _, sb in blockQ if sb is not None] + [1]); batch_used = batch
+        while batch_used > 32 and (batch_used * max_union * 8 * 3 + batch_used * Kq * 8 * 4) > (384 << 20): batch_used //= 2
+        out['mechanism'].update(batch_requested=batch, batch_used=batch_used, shared_max_union=max_union)
+        t0 = tnow(); mbp.prepare_sampler(release_forward=True); ph['sampler_prep'] = tnow() - t0
+        if proposal == 'wmb':                                             # QUARANTINED candidate (controls only; the frozen panel runs proposal=mb): weighted mini-buckets on the SAME partition and order, selection by CERTIFIED caps
             t0 = tnow(); wrec = dict(requested='wmb')
             try:
                 wmbp = WMBFloat(mbp, blocks, cards, deadline, opt_s=opt_s); wrec.update(construct_s=tnow() - t0, opt_s=wmbp.opt_s, weights=[[str(x) for x in w] for w in wmbp.weights if len(w) > 1][:12], splits=wmbp.splits)
@@ -778,25 +997,22 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
                 E_w = sum(b.e for b in blocks) - wmbp.E_U
                 wid_m = numerical_widening(blocks, mbp, qrhos, len(S), max(cards), E_tot); wid_w = numerical_widening(blocks, wmbp, qrhos, len(S), max(cards), E_w)
                 if wid_w['delta_log_total'] > F(1, 4): raise RangeRefused('wmb: log-domain error budget %s too large' % float(wid_w['delta_log_total']))
-                # certified cap in log2 = float part + log2(1 + rho_cap) + exact integer exponent; compare as (exact integer difference) + (bounded float difference)
                 cap_m = mbp.logU_f + math.log2(1.0 + fup(wid_m['rho_cap'])); cap_w = wmbp.logU_f + math.log2(1.0 + fup(wid_w['rho_cap'])); dE = wmbp.E_U - mbp.E_U
                 if abs(dE) >= 1 << 50: raise RangeRefused('wmb: exponent difference too large to compare')
-                diff = (cap_w - cap_m) + float(dE)                       # certified log2 U_wmb - certified log2 U_mb
+                diff = (cap_w - cap_m) + float(dE)
                 wrec.update(raw_logU_mb=mbp.logU, raw_logU_wmb=wmbp.logU, raw_diff_log2=(wmbp.logU - mbp.logU), rho_cap_mb=fup(wid_m['rho_cap']), rho_cap_wmb=fup(wid_w['rho_cap']), certified_diff_log2=diff, rho_msgs_wmb=fup(wid_w['rho_msgs']))
-                use_wmb = diff < 0
-                wrec.update(selected=('wmb' if use_wmb else 'mb'), reason=('certified weighted cap smaller' if use_wmb else 'certified weighted cap not smaller'))
-                if use_wmb: mbp = wmbp
-            except RangeRefused as e: wrec.update(selected='mb', status='WMB INELIGIBLE: ' + str(e)); ph['wmb_construct'] = tnow() - t0
-            out['mechanism']['wmb'] = wrec; ph.setdefault('wmb_construct', tnow() - t0); E_tot = E_z - mbp.E_U      # the cap and its exponent travel with the SELECTED proposal
+                use_wmb = diff < 0; wrec.update(selected=('wmb' if use_wmb else 'mb'), reason=('certified weighted cap smaller' if use_wmb else 'certified weighted cap not smaller'))
+                if use_wmb: mbp = wmbp; E_tot = E_z - mbp.E_U
+            except RangeRefused as e: wrec.update(selected='mb', status='WMB INELIGIBLE: ' + str(e))
+            out['mechanism']['wmb'] = wrec; ph['wmb_construct'] = tnow() - t0
         wid = numerical_widening(blocks, mbp, qrhos, len(S), max(cards), E_tot); eps_num = fup(wid['eps_num']); rho_X = fup(wid['rho_X']); rho_cap = fup(wid['rho_cap'])
         if wid['delta_log_total'] > F(1, 4): out['refusal'] = 'log-domain error budget %s too large' % float(wid['delta_log_total']); return finish_('NUMERIC_RANGE_REFUSED')
         out['mechanism'].update(eps_num=eps_num, eps_num_log2=log2(eps_num), rho_X=rho_X, rho_cap=rho_cap, rho_f=fup(wid['rho_f']), mb_rhoU=fup(mbp.rhoU), E_tot=E_tot, delta_log_total=float(wid['delta_log_total']), max_log_magnitude=float(wid['max_log_mag']))
-        logU_capf = up(mbp.logU_f + up(log2(1.0 + rho_cap)) + 2 ** -40)                           # float part of the cap (small magnitude); the exponent part is E_tot, exact
-        cap_tol = up(log2(1.0 + 2 * rho_X)) + 2 ** -40                                             # the implemented X may exceed the analysed X <= 1 only by its proved relative error
+        logU_capf = up(mbp.logU_f + up(log2(1.0 + rho_cap)) + 2 ** -40); cap_tol = up(log2(1.0 + 2 * rho_X)) + 2 ** -40
         alpha = float(delta) / Kq; cert = Certificate(Kq, alpha, eps_num, float(eps), schedule); zcert = ZCertificate(float(delta))
         bLM = []; bstr = []; bscope = []; bMflat = []
         for b in blocks:
-            with np.errstate(divide='ignore'): bLM.append(np.where(b.M > 0, np.log2(np.maximum(b.M, 1e-300)), -inf).reshape(-1))        # log2 M only
+            with np.errstate(divide='ignore'): bLM.append(np.where(b.M > 0, np.log2(np.maximum(b.M, 1e-300)), -inf).reshape(-1))
             strides = {}; s_ = 1
             for u in reversed(b.scope): strides[u] = s_; s_ *= cards[u]
             bstr.append(strides); bscope.append(b.scope); bMflat.append(b.M.reshape(-1))
@@ -811,12 +1027,13 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             t0 = tnow(); lo, hi = cert.sets(); width = hi - lo
             for j in range(Kq):
                 if j in pub or not np.isfinite(width[j]): continue
-                if width[j] <= 2 * float(eps): pub[j] = (F(float(lo[j])), F(float(hi[j])), 'PAC_EB')
+                L_, H_ = F(float(lo[j])), F(float(hi[j]))
+                if valid_publication(L_, H_, eps): pub[j] = (L_, H_, 'PAC_EB')
             unpub = np.array([j for j in range(Kq) if j not in pub], dtype=int); w = width[unpub] if unpub.size else np.zeros(0); wf = w[np.isfinite(w)]
             trace_rows.append(dict(t=round(tnow() - t_start, 2), draws=draws, zero_draws=zero_draws, X_mean=(sumX / max(1, draws)), published=len(pub), remaining=int(unpub.size), max_remaining_width=(float(wf.max()) if wf.size else 0.0), median_remaining_width=(float(np.median(wf)) if wf.size else 0.0), empty_sets=int((~np.isfinite(w)).sum())))
             t_cert += tnow() - t0; return width
         while tnow() < deadline and len(pub) < Kq:
-            t0 = tnow(); Sb, logq, zero_row = mbp.sample_batch(rng, batch, pos); B = Sb.shape[0]
+            t0 = tnow(); Sb, logq, zero_row = mbp.sample_batch(rng, batch_used, pos); B = Sb.shape[0]
             logz = np.zeros(B); gv = []
             for i in range(len(blocks)):
                 idx = flat_index(Sb, i); logz += bLM[i][idx]; gv.append(bMflat[i][idx])
@@ -827,14 +1044,19 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             f = np.zeros((B, Kq))
             if len(sep_q): f[:, :len(sep_q)] = (Sb[:, sep_pos] == sep_val[None, :]).astype(float)
             col = len(sep_q)
-            for i, Q, rhos in blockQ:
-                if Q is None: continue
-                idx = flat_index(Sb, i); g = gv[i]; Kb = Q.shape[1]
-                with np.errstate(divide='ignore', invalid='ignore'): ratio = np.where(g[:, None] > 0, Q[idx] / np.where(g > 0, g, 1.0)[:, None], 0.0)
-                f[:, col:col + Kb] = np.clip(ratio, 0.0, 1.0); col += Kb
+            for i, Q, rhos, sb in blockQ:
+                if Q is None and sb is None: continue
+                if Q is not None:
+                    idx = flat_index(Sb, i); g = gv[i]; Kb = Q.shape[1]
+                    with np.errstate(divide='ignore', invalid='ignore'): ratio = np.where(g[:, None] > 0, Q[idx] / np.where(g > 0, g, 1.0)[:, None], 0.0)
+                    f[:, col:col + Kb] = np.clip(ratio, 0.0, 1.0); col += Kb
+                else:
+                    if tnow() >= deadline: raise Deadline('shared_responses')
+                    Kb = len(sb.cols); fb, _, _ = sb.responses(Sb); f[:, col:col + Kb] = fb; col += Kb
             cert.update_batch(X, f); zcert.update_batch(X); draws += B; zero_draws += int(zero.sum()); sumX += float(X.sum()); sumX2 += float((X * X).sum()); maxX = max(maxX, float(X.max())); t_loop += tnow() - t0
             if tnow() >= next_chk: check_publish(); next_chk = tnow() + check_s
-        width = check_publish(); unpub = [j for j in range(Kq) if j not in pub]; wf = width[unpub]; wf = wf[np.isfinite(wf)]
+        width = check_publish(); unpub = [j for j in range(Kq) if j not in pub]
+        assert all(valid_publication(l_, h_, eps) for l_, h_, _ in pub.values()), 'a PAC publication failed the exact acceptance test (certificate defect)'; wf = width[unpub]; wf = wf[np.isfinite(wf)]
         zi = zcert.interval(); per_draw = t_loop / max(1, draws); total = t_loop + t_cert
         ess = (sumX * sumX / sumX2) if sumX2 > 0 else 0.0
         var_resid, _ = cert.variance()

@@ -297,3 +297,32 @@ np.stack copy). A global byte budget (640 MiB) bounds the retained tables; inter
 model degrades to a partial answer instead of a memory kill. Sharing of the backward computation across a block's interior variables (one differential per block instead of a
 replay per variable) is NOT done in this round; the forward prefix is shared as before.
 Deadline. The backward differential checks the deadline per factor as well as per step.
+
+## 13. Round 11 (20 Nov 2026): publication guard, compact root allowance, exact-first ordering, memory policy, shared recovery (`integrated.py` v2.6)
+
+F1 Guarded deterministic ratios. `interval_ratio` returns None unless the denominator enclosure's LOWER endpoint z (1 - rho_Z) is strictly positive (rho_Z >= 1 is UNRESOLVED, never
+ZERO_EVIDENCE and never a division); a zero numerator is the exact zero only because float zeros are exact zeros; a numerator envelope reaching zero from above gives the valid
+unresolved [0, 1]. Every publication passes `valid_publication`: exact 0 <= lo <= hi <= 1 and width <= 2 eps, applied before AND after the outward dyadic compaction, and asserted
+once more over every PAC publication. The reviewer's valid-envelope adversary (root rho 3/4 -> comb 21/16) now yields a typed refusal of the exact route with nothing published
+(control F1_wide_envelope_above_1_after_comb); the half and 1/100 envelopes publish only the ratios that stay within 2 eps, all contained. Zero numerators publish the exact 0;
+zero global mass is ZERO_EVIDENCE; a compaction that would widen a borderline interval past 2 eps is rejected.
+F2 The scalar-root allowance is ONE comb(rho_1..rho_m, pow1pu(m)) (denominator <= 201 bits for 40 / 200 / 400 roots, measured 200-201), replacing the per-root exact product.
+Ordering. Float conversion -> memory plan -> mini-bucket FORWARD construction only -> split census -> exact route (forward messages + one backward pass) -> only if that does not
+publish: PAC preparation (recovery representation, sampler log tables with the forward message mantissas released, widening, certificate). The exact route no longer pays for
+PAC query matrices or sampler tables; the same overall deadline governs both routes (no second budget).
+Memory policy. One dry-run planner (`mb_plan`, scopes only) estimates, per cap of the fixed ladder (requested 2^24, then 2^22 .. 2^10), the forward message bytes, the largest
+single-step product workspace (x2) and the sampler log bytes; the plan must fit base (live float tables + integer factors + 160 MiB process headroom) + forward + step peak and
+base + logs + recovery budget + 64 MiB batch temporaries within a usable ceiling of 2.5 GiB of the 3 GiB contract; the first fitting cap is frozen before any table is built; none
+fitting is a typed MEMORY_POLICY_REFUSED. Dense precomputed responses are retained only while the 512 MiB recovery budget allows (cheapest blocks first); every other block takes
+the SHARED path. The batch size halves (minimum 32) until B x (3 x largest shared union table + 4 x K_q) fits 384 MiB; lambda and the plug-in mean are predictable per batch as
+before. A smaller cap changes the proposal law and its certified cap together (both frozen before sampling) and can worsen statistical efficiency; it is a resource choice.
+Shared recovery, exact route (`block_numerators_exact`). Per block: forward FT elimination of the interior variables in the recorded order with the boundary retained; root
+derivatives D_r = sum_{boundary minus scope r} D_b x prod_{others} (zero-safe prefix / suffix); then at each step (v, bucket, R) in reverse, N_v(a) = sum over (union minus v) of
+[prod bucket] x D_R  (one pass per block instead of one retained elimination per variable) and member derivatives by prefix / suffix products; rho through comb / pow1pu; the
+deadline is polled per step and per member. Identity: this is the arithmetic-circuit differential of the block's elimination with the outward message as the root seed.
+Shared recovery, PAC route (`SharedBlock.responses`). For a batch of sampled separator assignments, the block's original factors are restricted to the sampled boundary values
+(a gather), the interior elimination is run in batched float arithmetic with per-sample power-of-two rescaling, the per-sample root r(s) = g_b(s_b) and the reverse pass give
+N_v(a | s) for every interior v; the response f = N_v(a | s) / r(s) is exactly the conditional expectation P(x_v = a | separator = s) used by the dense representation (control:
+identical to the dense ratio on all 2,112 supported assignment-columns of a 6-variable ternary-interior model; on unsupported rows the weight is exactly zero so the response is
+irrelevant). Its arithmetic allowance rho_f = comb(factor rhos, pow1pu(ops))^2 (numerator and denominator) with ops the data-independent operation count of the block's
+elimination, carried into eps_num like the dense rho_f. Memory per batch: B x the block's largest union table (bounded by the batch policy); no |g_b| x K_b array is ever formed.
