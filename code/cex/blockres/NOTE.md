@@ -520,3 +520,16 @@ a square-root-law estimate of the TOTAL active stream-plus-check duration (about
 Engine freeze. v2.9.4 is the baseline engine for the proposal / partition research the reviews call for; blockmap_10_03-0009 stays an exposed regression target (264 / 10,008, no
 completion), not a prerequisite.
 
+### 19a. Closeout of the implementation pass (21 Nov 2026): v2.9.4 at pgm 03f7d76 is the frozen research baseline
+
+Accepted by the round-17 adversarial review (83/83 controls rerun independently; 752 publications of the independent exact-enumeration audit contained; archive identities and the
+eight completions verified). KNOWN LIMITATION, recorded and not repaired: the response-cache charge (`cache_entry_bytes`) covers the per-ENTRY retained objects (row array + payload,
+key tuple + ints, dictionary share) but not the outer map of per-block maps nor the empty per-block maps themselves; with 1,500 small block caches the reviewer measured 681,180 B
+retained against 524,020 B charged. The counter is therefore a per-entry account, NOT a strict whole-cache memory bound; it does not affect response correctness or any recorded run
+(blockmap: 30 entries), and the supervisor enforces the process contract. No standalone round for it.
+Fixed by this closeout: (baseline) this commit's integrated.py (sha256 in CODE_IDENTITY_round_blockres_r17.json), its guarantees, and the working structural routes (the incumbent's
+integer / structural executors remain the fast paths on cases such as Promedus_36); (evidence) Round 9 is a closed negative evaluation, Round 14 supplies ONE fresh-instance transfer
+result (ObjectDetection_43, development-represented family), and the exposed repairs of rounds 10-17 are not generalization evidence; (next objective) diagnose the lost dependencies
+in the four poor-overlap cases (or_chain_186, or_chain_209, linkage_13, mastermind_03_08_05-0003), justify one construction, then one bounded implementation experiment; no winning
+proposal intervention is established; (blockmap) an exposed regression target in the ledger, not a prerequisite.
+
