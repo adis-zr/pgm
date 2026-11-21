@@ -564,3 +564,25 @@ S12 the nine frozen suites rerun with the closure ON show 0 containment misses (
 the control model). Development probe (receipt r18_probe_mastermind05_closure, not a scored cell): mastermind_03_08_05-0003 EXACT 7,294 / 7,294 in 1.77 s end to end, 55 MiB, closure
 0.095 s (2,806 deletions, 2,925 fixed, 563 relations, 278 representatives, 257 factors, 556 effective coordinates), 0 separator variables, no draws.
 
+### 20a. Round 18 measured (v2.10.1, pgm ced5776; 21 Nov 2026)
+
+v2.10.1: the closure allowance runs from the closure's own start (v2.10 anchored it at worker start, so MILDEW's 0.64 s read consumed it and the closure was refused at entry); the
+deadline is polled at entry and per factor while the support rows are materialised. Scored cells of the first pass (v2.10) are kept as round18/*_v210_superseded.
+PRIMARY PREDICTION PASSED: mastermind_03_08_05-0003 EXACT 7,294 / 7,294 on seeds 1, 2, 3, byte-identical answers (fingerprint 0baff9a7ef6b80c2), supervisor 1.64 / 1.68 / 1.67 s,
+process-tree peak 56 MiB, signature exactly as predicted (2,806 deleted states, 2,925 fixed non-observed variables, 563 bijection relations, 278 representatives, 257 factors, 556
+effective coordinates, 6 rounds, 0.096 s), 0 separator variables, no draws, positive witness from the fully contracted exact route, Z reported; every original variable's two
+points sum to 1; all 7,294 points equal the overseer's prototype. Comparator (same build, --no-support-closure = the v2.9.4 path): 0 / 7,294 in 19.5 s at 2.4 GiB (131k draws, no
+positive weight). Incumbent N1_CQR (round-14 receipt, same digests): DEADLINE, 0.
+Other targets (closure ON vs OFF): or_chain_186 2 / 2,138 (one variable fixed by propagation; PAC 0; ESS 4.5) vs 0; linkage_13 426 / 2,158 (the closure fixes the 177
+singleton-domain variables already present in the input and 5 aliases, so 426 EXACT coordinates publish where v2.9.4 published 275 exact-component ones; PAC 0 of 1,971; ESS 13.4
+vs 1.5) vs 275; or_chain_209 0 / 1,698 (nothing to close; ESS 11.7) vs 0. No completion gain, as predicted; the EXACT rows are fixed-state recovery, not statistical progress.
+PRESERVATION PASSED: BN_12 6.64, BN_15 7.35, CSP_13 6.11 s PAC; MILDEW 2.52, Alchemy_11 1.28, DBN_14 10.34 s deterministic (cross-checks CERTIFIED); ObjectDetection_43 6.00 s PAC;
+mastermind_03_08_04-0003 now EXACT 4,504 / 4,504 in 0.90 s through the closure (1,452 fixed, 634 relations, 310 representatives) instead of the 13.1 s exact route + cross-check;
+every new interval overlaps its round-17 counterpart (0 disjoint). Measured cost of the declared allowance: MILDEW's closure (100-state tables) exceeds 0.5 s in the substitution
+step and is refused after 0.63 s charged (the engine then runs the original route and completes); the allowance was NOT changed, per the brief. The closure is IDENTITY on CSP_13
+and DBN_14 (0.02 / 0.01 s) and APPLIED-with-no-change-of-route on BN_12 / BN_15 / Alchemy_11 / ObjectDetection_43 (0.015-0.22 s).
+Evidence limits: one exposed target; the construction's correctness rests on the proof in the R18 packet, the 312-case exhaustive oracle (run against the production module) and
+the 12 integration controls, not on an independent exact oracle for the large model; the comparator is the v2.9.4 code path inside the v2.10.1 build, not the 03f7d76 binary
+(the frozen-build references are the round-14 cells and the overseer's Linux baseline); the exact-route + executor cross-check path is now exercised on the panel by MILDEW,
+Alchemy_11 and DBN_14 only. Budget: 659.3 s charged against a self-declared 600 s (the v2.10 -> v2.10.1 rerun added ~185 s); disclosed, not hidden.
+
