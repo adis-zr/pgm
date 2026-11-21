@@ -30,12 +30,13 @@ class ZeroEvidence(ValueError): pass        # exact: no positive assignment exis
 def tnow(): return time.monotonic()
 
 
-def rows_from_model(model):
-    """evidence-restricted domains and the POSITIVE rows of every factor occurrence as {assignment tuple (original states): exact Fraction}"""
+def rows_from_model(model, deadline=inf):
+    """evidence-restricted domains and the POSITIVE rows of every factor occurrence as {assignment tuple (original states): exact Fraction}; the deadline is polled per factor"""
     cards = model['cards']; ev = model.get('evidence', {})
     domains = {v: ({ev[v]} if v in ev else set(range(c))) for v, c in enumerate(cards)}
     fs = []
     for f in model['factors']:
+        if tnow() >= deadline: raise ClosureRefused('deadline while materialising the support rows')
         sc = tuple(f['scope']); vals = f['values']
         if len(sc) != len(set(sc)): raise ValueError('malformed scope %r' % (sc,))
         rows = {}
@@ -132,7 +133,9 @@ def quotient(domains, fs, detect_bijections=True, deadline=inf):
 def compile_closure(model, deadline, byte_ceiling, max_rounds=50):
     """the full construction: returns dict(reduced_model, decoders {orig var: (rep or None, {rep state: orig state} or {None: fixed})}, rep_states {rep: sorted states}, rid {rep: reduced index},
     scalar (exact positive Fraction), identity (bool: nothing changed), stats). Raises ZeroEvidence (exact) or ClosureRefused (deadline / bytes; the caller keeps the original model)."""
-    t0 = tnow(); domains, fs = rows_from_model(model); cards = model['cards']; ev = model.get('evidence', {})
+    t0 = tnow()
+    if t0 >= deadline: raise ClosureRefused('no allowance left at entry')
+    domains, fs = rows_from_model(model, deadline); cards = model['cards']; ev = model.get('evidence', {})
     start_key = (len(domains), sum(map(len, domains.values())), len(fs)); est = _bytes_estimate(domains, fs)
     if est > byte_ceiling: raise ClosureRefused('support rows alone estimate %d B > ceiling %d B' % (est, byte_ceiling))
     decoders = {v: (v, {a: a for a in domains[v]}) for v in domains}; scalar = F(1); trace = []; deleted = 0; relations = 0; cycle_removed = 0; checks = 0
