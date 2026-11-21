@@ -474,3 +474,23 @@ Diagnosis corrections (round 14 records): linkage_13's 275 publications are EXAC
 admitted set was finished): a recovery-SCHEDULING failure, not concentration. Hence FOUR poor-overlap fresh cases (two or_chains, linkage, mastermind_03_08_05-0003), one
 scheduling case, one favourable-overlap completion (ObjectDetection_43: ESS 99.2 % of draws, one split, no zero weights), one integer-route completion (Promedus_36).
 
+## 18. Round 16 (21 Nov 2026): shared-block responses reused across batches (`integrated.py` v2.9.3)
+
+Authorization: the round-15 adversarial review (records round16/BLOCKRES_R15_ADVERSARIAL_REVIEW.md, sha256 83f384d4...): "implement byte-budgeted response reuse across batches,
+verify identical certificate state on a fixed draw sequence, and run one exposed blockmap test under the unchanged contract"; fold in the observer and phase-label corrections.
+Finding (reviewer's replay of the recorded blockmap prefix): all 949 positive-weight draws of the 15,872 carried the SAME full separator assignment, so every shared block
+re-evaluated the same boundary in every batch; the within-batch `np.unique` forgot it between batches.
+Mechanism (`evaluate_shared`): per shared block an entry map keyed by the block's FULL boundary assignment holds the response row f_b(s) already computed in an earlier batch; a
+hit substitutes that row, a miss runs the unchanged certified computation (microbatched, deadline polled on the miss) and stores the new rows while the retained bytes stay under
+RESPONSE_CACHE_BUDGET (64 MiB, counted in the memory plan's PAC peak; no eviction; keyed by object identity of the immutable block within this model / evidence / construction).
+Correctness: f_b(s) is a deterministic function of (block, s) with the block-constant envelope rho_f; reusing the stored value IS the same certified response, so no importance
+weight, proposal law, predictable lambda, risk allocation or certificate update changes; every draw (zero-weight and repeated alike) still enters the certificate. Failures are never
+cached: a refusal or deadline raised inside the computation propagates before any row is stored (the stored rows of a chunked miss are written only after every chunk succeeded).
+Controls (check_round16.py): C1 a fixed 12-batch draw sequence replayed with and without the cache gives bit-identical response matrices for every batch and bit-identical
+Certificate state (110 hits, 10 misses = 10 entries); C2 budget 0 disables it identically; C3 a refusal on the second chunk of a miss stores nothing; C4 an expired deadline on a
+miss evaluates nothing; C5 end-to-end shared solve complete and contained with 3,969 hits / 7 misses; R1 the corrected transient observer (the array being rescaled included) equals
+the plan exactly (1,704 B). The round-12 P1 control now injects at the shared-evaluation call and its M2 control zeroes the cache budget with the other PAC-peak terms.
+Corrections (round 15 records): the T5 / R1 observers undercounted by the array being rescaled (1,704 B = plan, not 1,576); blockmap phases 4.3 s contraction + conversion (not 6 s);
+0.063 is the last-checked width at 18.97 s; "eligibility versus partial publication is a reporting-policy choice" is withdrawn: it is an execution decision (doubling the
+coordinates raised the log risk term 3.1 % while draws fell 5.8x: the penalty is response work coupled to every certificate update, not simultaneous validity).
+

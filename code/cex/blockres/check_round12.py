@@ -89,14 +89,14 @@ say(dict(control='M1_live_workspace_bound_random_block', B=64, bound_MiB=round(6
 p4 = write_uai('m2_ladder', [2] * 16, [((i, j), rnd(4)) for i in range(16) for j in range(i + 1, 16) if (i * 7 + j) % 3 != 0]); t4, _, tv4 = truth(p4)
 model4, _ = BR.core.read_uai(p4); cards4 = model4['cards']; fns4, c4, sc4, m4, fl4 = BR.integerize(model4); tr4 = []; od4 = []; st4 = dict(elim_work=0, eliminations=0, query_work=0)
 live4 = [f for f in BR.contract(fns4, cards4, 0, time.monotonic() + 10, st4, tr4, od4) if f.scope]; blocks4 = [IG.ft_from_int(f, cards4) for f in live4]
-saved = (IG.USABLE_BYTES, IG.RECOVERY_BYTE_BUDGET, IG.BATCH_BUDGET, IG.PROCESS_HEADROOM_BYTES); IG.RECOVERY_BYTE_BUDGET = 0; IG.BATCH_BUDGET = 256 << 10; IG.PROCESS_HEADROOM_BYTES = 0
+saved = (IG.USABLE_BYTES, IG.RECOVERY_BYTE_BUDGET, IG.BATCH_BUDGET, IG.PROCESS_HEADROOM_BYTES, IG.RESPONSE_CACHE_BUDGET); IG.RECOVERY_BYTE_BUDGET = 0; IG.BATCH_BUDGET = 256 << 10; IG.PROCESS_HEADROOM_BYTES = 0; IG.RESPONSE_CACHE_BUDGET = 0   # (round 16: the response cache is a PAC-peak term too)
 base4 = sum(b.M.nbytes for b in blocks4) + sum(f.arr.size * 48 for f in fns4)
 plans = {cap: IG.mb_plan([b.scope for b in blocks4], cards4, cap) for cap in (1 << 12, 1 << 10)}
 need = {cap: max(base4 + pl['forward_bytes'] + pl['peak_step_bytes'], base4 + pl['log_bytes'] + IG.BATCH_BUDGET) for cap, pl in plans.items()}
 assert need[1 << 10] < need[1 << 12], need
 IG.USABLE_BYTES = (need[1 << 12] + need[1 << 10]) // 2                                                              # between the two: every cap >= 2^12 (same unsplit plan) must fail, 2^10 (5 splits) must fit
 try: r4 = IG.solve(p4, 8.0, force_approx=True, table_cap=0, enum_cap=0, mb_cap=1 << 24, route='pac', schedule='targeted')
-finally: IG.USABLE_BYTES, IG.RECOVERY_BYTE_BUDGET, IG.BATCH_BUDGET, IG.PROCESS_HEADROOM_BYTES = saved
+finally: IG.USABLE_BYTES, IG.RECOVERY_BYTE_BUDGET, IG.BATCH_BUDGET, IG.PROCESS_HEADROOM_BYTES, IG.RESPONSE_CACHE_BUDGET = saved
 mp = r4['mechanism'].get('memory_policy') or {}; n4, miss4 = contained(r4, tv4)
 mbp4 = IG.MBFloat(blocks4, cards4, mp.get('cap_used') or 1, time.monotonic() + 20); mbp4.prepare_sampler(release_forward=False); S4 = sorted({v for b in blocks4 for v in b.scope}); pos4 = {v: i for i, v in enumerate(S4)}
 E_tot4 = sum(b.e for b in blocks4) - mbp4.E_U; wid4 = IG.numerical_widening(blocks4, mbp4, [], len(S4), max(cards4), E_tot4); rho_X4 = IG.fup(wid4['rho_X']); rho_cap4 = IG.fup(wid4['rho_cap']); logU_capf4 = IG.up(mbp4.logU_f + IG.up(math.log2(1.0 + rho_cap4)) + 2 ** -40)
@@ -127,16 +127,16 @@ c1 = IG.Certificate(len(sb.cols), 1e-6, 2 ** -30, 1 / 200, 'targeted'); c2 = IG.
 same_cert = all(np.array_equal(getattr(c1, k), getattr(c2, k)) if isinstance(getattr(c1, k), np.ndarray) else getattr(c1, k) == getattr(c2, k) for k in ('SA', 'SB', 'SXX', 'SXXf', 'SXXff', 'A', 'B', 'Lam', 'Psi', 'P', 'Q', 'Qabs', 'R', 't'))
 say(dict(control='A1_active_unique_chunked_equals_full_evaluation_and_certificate', draws=300, active=int(act.size), unique_active=int(uniq.shape[0]), chunks=int(math.ceil(uniq.shape[0] / chunk)), max_response_difference_active=diff_active, certificate_state_identical=same_cert, ok=(diff_active == 0.0 and same_cert)))
 # ---- P1: a valid completed prefix is preserved under a mid-stream refusal: run the U3 model shared with a tiny budget to completion, then force a RangeRefused on the 3rd batch
-t3, _, tv3 = truth(p3); orig = IG.SharedBlock.responses; calls = [0]
-def flaky(self, Sb, deadline=math.inf):
+t3, _, tv3 = truth(p3); orig = IG.evaluate_shared; calls = [0]
+def flaky(*a, **k):                                                     # (round 16) injected at the shared-evaluation call (one per shared block per batch; 5 shared blocks): the 12th call is inside the 3rd batch
     calls[0] += 1
     if calls[0] == 12: raise IG.RangeRefused('injected range refusal')
-    return orig(self, Sb, deadline)
-IG.SharedBlock.responses = flaky
+    return orig(*a, **k)
+IG.evaluate_shared = flaky
 try: r5 = shared_solve(p3, 10.0, force_approx=True, table_cap=1 << 3, enum_cap=1 << 4, mb_cap=1 << 10, route='pac', schedule='targeted', check_s=0.05)
-finally: IG.SharedBlock.responses = orig
+finally: IG.evaluate_shared = orig
 n5, miss5 = contained(r5, tv3)
-say(dict(control='P1_mid_stream_refusal_preserves_valid_completed_prefix', outcome=r5['outcome'], refusal=str(r5.get('refusal'))[:80], published=n5, K=r5['K'], misses=len(miss5), draws=r5['mechanism'].get('draws'), abandoned=r5['mechanism'].get('abandoned_batches'), ok=(r5['outcome'] == 'NUMERIC_RANGE_REFUSED' and not miss5)))
+say(dict(control='P1_mid_stream_refusal_preserves_valid_completed_prefix', outcome=r5['outcome'], refusal=str(r5.get('refusal'))[:80], published=n5, K=r5['K'], misses=len(miss5), draws=r5['mechanism'].get('draws'), abandoned=r5['mechanism'].get('abandoned_batches'), ok=(r5['outcome'] == 'NUMERIC_RANGE_REFUSED' and not miss5 and (r5['mechanism'].get('draws') or 0) > 0)))
 # ---- P2: the same model, no injection: shared path complete and contained; shared_rows accounting consistent (unique <= active <= draws)
 r6 = shared_solve(p3, 12.0, force_approx=True, table_cap=1 << 3, enum_cap=1 << 4, mb_cap=1 << 10, route='pac', schedule='targeted'); n6, miss6 = contained(r6, tv3); sr = r6['mechanism'].get('shared_rows') or {}
 say(dict(control='P2_shared_complete_contained_with_active_unique_accounting', outcome=r6['outcome'], published=n6, K=r6['K'], misses=len(miss6), shared_rows=sr, chunk=r6['mechanism'].get('shared_chunk'), bytes_per_sample_max=r6['mechanism'].get('shared_bytes_per_sample_max'), ok=(not miss6 and n6 == r6['K'] and sr.get('unique', 1) <= sr.get('active', 0) <= sr.get('draws', 0))))

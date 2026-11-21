@@ -48,7 +48,7 @@ orig = IG._rescale; peaks = []
 def observe(P, e):
     fr = sys._getframe(1); res = orig(P, e)
     if fr.f_code.co_name == 'backward_derivatives':
-        loc = fr.f_locals; arrays = [r.M for _, _, r in mb.fwd if r.M is not None] + [d.M for mid, d in loc['D'].items() if mid in mids] + list(loc['outs'].values()) + [res[0]]; backing = {}
+        loc = fr.f_locals; arrays = [r.M for _, _, r in mb.fwd if r.M is not None] + [d.M for mid, d in loc['D'].items() if mid in mids] + list(loc['outs'].values()) + [P, res[0]]       # P = the raw array being rescaled (popped from outs, still alive in the caller); backing = {}
         for a in arrays:
             while isinstance(a.base, np.ndarray): a = a.base
             backing[id(a)] = a
