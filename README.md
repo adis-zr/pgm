@@ -15,6 +15,7 @@ the cleanup, e.g. `5ae02ff`) and their closeouts are in `pgm-records`.
 | `cex/pac` | the repaired PAC empirical candidate (v4.3): supplies the frozen comparator R0 (`H1_HYBRID`) and the baseline arms (P1, A0, A1), the comparator cell runner and the baseline gate / registry / qualification the CQR chain reuses |
 | `cex/newarm` | the exact executor and reduction core (`core.py` shared UAI reader, `reduction.py`, `support.py`, `dag.py`, `forest.py`, `stream*.py`, `planning.py`, `geometry.py`; C++ kernels `libcex_kernel` / `libstream_kernel`) |
 | `cex/b0_frozen_v14`, `cex/newarm_dev`, `cex/baseline` | frozen snapshots of the executor kept for identity (the B0 anchor arm; the PAC qualification's isolated replay copies); read-only |
+| `cex/blockres` | the block-contraction engine of the Nov 19-21 rounds: `integrated.py` (frozen research baseline v2.9.4, pgm 03f7d76), `blockres.py` (exact-integer contraction + bookkeeping it imports), `run_paired.py` (paired candidate / incumbent cells under the supervisor), `report.py`, the control suites `check_*.py`, `NOTE.md` (the mathematics, sections 1-19a) |
 | `cex/gate_controls.py`, `cex/locked_plan.py` | negative controls and the locked-plan check run by the frozen executors' own qualification |
 | `gbidi/supervise.py` | the charging supervisor every scored cell and finalize stage runs under (sampled process-tree RSS kill, deadlines, receipts, survivor diagnostics) |
 | `bench/cells.py`, `bench/pgmax_mar.py`, `bench/cbi_adapter.py`, `bench/libdai/libdai_mar.cpp` | comparator cell runners and glue (libDAI exact / LBP, Merlin WMB / IJGP, PGMax); the host-built `libdai_mar` binary and the external executables are not included |
@@ -37,3 +38,17 @@ admission_v16 qualified) plus this cleanup, which changes none of the 159 hashed
 ARCHITECTURAL REVISION) and is never resumed on later code. The structured-execution revision (diagnostics sidecar, cumulative-credit reference service,
 structural executors as typed adapters; suite v11 PASS 31/31, admission_v17 qualified) is on branch `cqr-structured-exec-2026-11-17`, STOPPED FOR REVIEW and
 not merged. See the research ledger in `pgm-records/docs/LEDGER_ADDITIONS_mdi_capacity_2026-11-02.md` (entry E-MDI-45 and its continuations).
+
+## Cleanup (21 Nov 2026)
+
+Dead code removed from the working tree after the block-contraction implementation pass closed (all of it remains in git history at `03f7d76` and earlier): `cex/fastloop` and
+`cex/cqr_amend` (the Nov 17-18 A1 fast-loop repair runner and amendment verification; imported by nothing; their records and reproduction commands are in `pgm-records`), the
+round 1-8 block-contraction solver arms inside `cex/blockres/blockres.py` (deterministic refinement, ratio / signed streams, the v1 mini-bucket arm, the CLI) together with their
+superseded controls and runners (`check.py`, `check_integrated.py`, `check_integrated_containment.py`, `run_cells.py`, `run_panel.sh`). `blockres.py` keeps exactly the definition
+closure `integrated.py` and the nine live control suites use, byte-identical in every kept definition. `integrated.py` is byte-identical to the frozen baseline. Not removed, by
+design: the identity-hashed scopes of the HELD CQR campaign (`cex/pac`, `cex/newarm`, `cex/b0_frozen_v14`, `gbidi`, `cbi`, `sf`, `h4a`, the comparator glue, the pinned binaries),
+`cex/cqr` (the incumbent arm of every paired run), the PAC qualification's replay snapshots (`cex/baseline`, `cex/newarm_dev`), and the git-ignored PGMax comparator environment
+`code/.venv-pgmax` (2.5 GB; its 194-package freeze is recorded in `pgm-records` as `VENV_PGMAX_FREEZE_2026-11-21.txt`). Regression evidence: 62 pytest tests, all 83 block-contraction
+controls, and the 9-cell nonregression panel (deterministic cells interval-identical to round 17; PAC cells identical in outcome and count, differing only in the wall-clock-driven
+draw count as they do between any two runs).
+

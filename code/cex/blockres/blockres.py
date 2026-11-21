@@ -1,22 +1,9 @@
-"""BLOCK CONTRACTION FOR RESIDUAL INFERENCE -- experimental backend (19 Nov 2026; overseer brief of the same date). See NOTE.md for the mathematics.
-
-Construction = ONE bounded-width partial variable elimination over the evidence-restricted, integerized model: a variable is eliminated only while the
-resulting table has <= table_cap entries (a small declared ladder: cap, then 4 cap if the first level was cheap; every intermediate product also bounded in BYTES). Surviving functions g_b are exact
-INTEGER tables over the separator S (union of surviving scopes); Y_b = variables eliminated into block b (a partition of the original factors into blocks is
-induced: every original factor is absorbed into exactly one surviving function). z(s) = prod_b g_b(s_b) exactly.
-Queries: all original singleton marginals. Separator x: f(s) = 1{s_x = v}. Interior x of block b: g_bx(s_b, v) = sum_{y_b minus x} w_b, recovered by replaying
-the block's own elimination from the cached prefix with x retained; integrated numerator at s = g_bx(s_b, v) prod_{a != b} g_a(s_a) (an integer).
-Inference on S: prefix cells over a fixed separator order. Per open cell C (N_C completions) the typed bounds
-   mass      L_C = N_C prod_b min_C g_b  <=  sum_{s in C} z(s)  <=  B_C = N_C prod_b max_C g_b                       (exact integers)
-   query     rho_lo <= g_bx(s_b, v) / g_b(s_b) <= rho_hi over the SUPPORT inside C (interior); 1{..} or [0, 1] (separator)   (outward floats -> rationals)
-   residual  |g_bx(s_b, v) - c g_b(s_b)| <= H_bj(C), joint max over the cell slice (in-block cancellation exposed)        (outward floats -> rationals)
-drive (i) deterministic refinement (roots of F^-/F^+, cqr/frontier._root), (ii) a full-support ratio stream over SEPARATOR assignments (cell ~ B_C, s uniform
-in C, importance weight z(s) N_C U / B_C <= U), (iii) a fixed-candidate signed-residual stream (cell ~ a_C = N_C max_j cap_j, |R_j| <= E; cells with a_C = 0
-omitted lawfully; the Z lower bound is the deterministic one or the ratio stream's own interval).
-ABLATION (--bounds factorwise): identical partition, evaluator (exact integers), controller, laws and risk allocation; only the open-cell bounds are the OLD
-factorwise ones: max_C g_b -> N_{Y_b} prod_{phi in b} max_C phi (interiors free), interior query ranges [0, 1], residual cap max^old * max(c, 1 - c).
-"""
-import sys, os, json, time, argparse, random, resource, math
+"""Exact-integer block contraction (bounded-width partial variable elimination over the evidence-restricted, integerized model) and its bookkeeping, as used by
+integrated.py (the frozen engine) and the control suites: Fn / integerize / contract / recover_query_table (exact integer tables, elimination trace, per-variable replay),
+Block / Separator (the exact prefix-cell enumeration route for small separators: cell bounds, mass, closing), mb_bounds (mini-bucket bounds on a cell), finish (result rows).
+The round 1-8 block-contraction SOLVER arms that used to live here (deterministic refinement, ratio / signed streams, the v1 mini-bucket arm, the CLI) were removed in the
+21 Nov 2026 cleanup; they remain in git history (commit 03f7d76 and earlier) and their results in pgm-records rounds 1-8. See NOTE.md for the mathematics."""
+import sys, os, time, resource, math
 from fractions import Fraction as F
 from math import prod, lcm, inf
 from itertools import product as iproduct
@@ -25,11 +12,8 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE))
 for p in (os.path.join(CODE, 'cex', 'newarm'), os.path.join(CODE, 'cex', 'cqr')):
     if p not in sys.path: sys.path.insert(0, p)
-import core                                   # shared UAI reader (cex/newarm)
-import numerics as NM                         # outward enclosures of the normal-mixture boundary (cex/cqr)
-from frontier import draw_categorical, dyadic_weight, _root     # exact categorical draw, predictable dyadic weights, root sweep (cex/cqr)
+import core                                   # shared UAI reader (cex/newarm): re-exported as blockres.core for integrated.py and the control suites
 
-VERSION = 'blockres-v1.1 (2026-11-19: positive-mass witness required by every publication; mini-bucket proposal arm as the prior-art baseline)'
 U53 = 2.0 ** -53
 
 
@@ -262,82 +246,12 @@ class Separator:
         self.open.pop(cid); self.sumB -= c.B; self.sumL -= c.L; self.sumE -= c.E; self.mass += mass; self.num += num
         self.closures += 1; self.resolved_cells += 1
 
-    def split(self, cid):
-        c = self.open[cid]; var = self.order[len(c.states)]
-        children = [self._cell(c.states + (a,), c, var) for a in range(self.cards[var])]        # a Deadline here leaves the parent open: the partition stays valid
-        self.open.pop(cid); self.sumB -= c.B; self.sumL -= c.L; self.sumE -= c.E
-        for ch in children: self.open[ch.id] = ch; self.sumB += ch.B; self.sumL += ch.L; self.sumE += ch.E
-        self.splits += 1
 
-    def Zlo(self): return F(self.mass + self.sumL)
-    def positive_mass(self): return self.mass > 0 or self.sumL > 0 or self.witness        # a DETERMINISTIC witness that the global normalizer is positive (never a sampled estimate)
-    def Zhi(self): return F(self.mass + self.sumB)
 
-    def query_range(self, c, j):
-        x, v = self.queries[j]
-        if j in self.block_of:
-            bid, ci = self.block_of[j]; return c.rlo[bid][ci], c.rhi[bid][ci]
-        p = self.pos[x]
-        if p < len(c.states): return (F(1), F(1)) if c.states[p] == v else (F(0), F(0))
-        return F(0), F(1)
 
-    def deterministic(self, js, deadline):
-        """intersect the kept deterministic intervals with the roots of F^- / F^+ for the queries js"""
-        cells = list(self.open.values()); A = F(self.mass); LB = [(F(c.L), F(c.B)) for c in cells]
-        for j in js:
-            if tnow() >= deadline: raise Deadline('det')
-            items = [LB[i] + self.query_range(c, j) for i, c in enumerate(cells)]
-            a = F(int(self.num[j])); lo = _root(a, A, items, True); hi = _root(a, A, items, False)
-            if lo > self.det_lo[j]: self.det_lo[j] = lo
-            if hi < self.det_hi[j]: self.det_hi[j] = hi
 
-    def epoch_tables(self, cand, key):
-        """per block and epoch: Rcap_b(s_b) = max over the block's query columns of an OUTWARD float bound on |q_col(s_b) - c_col g_b(s_b)| (units 2^k_b); one pass per epoch"""
-        for b in self.blocks:
-            qi = self.qidx[b.bid]
-            if b.Q is None or qi is None: self.rcap[b.bid] = None; self.rkey[b.bid] = key; continue
-            if self.rkey.get(b.bid) == key: continue
-            Kb = len(b.qcols); qu = b.QU.reshape(-1, Kb); ql = b.QL.reshape(-1, Kb); gu = b.GU.reshape(-1); gl = b.GL.reshape(-1)
-            cf = np.array([float(cand[j]) for j in qi.tolist()]); clo = np.maximum(0.0, cf * (1 - 4 * U53)); chi = cf * (1 + 4 * U53)
-            r = np.maximum(np.maximum(qu - clo[None, :] * gl[:, None], chi[None, :] * gu[:, None] - ql), 0.0) + 4 * U53 * (qu + gu[:, None])
-            self.rcap[b.bid] = r.max(axis=1).reshape(b.G.shape); self.rkey[b.bid] = key; self.rtiny[b.bid] = 1e-9 * (float(qu.max()) + float(gu.max()))
 
-    def residual_caps(self, c, cand, key):
-        """a_C = N_C * max_j cap_j with cap_j >= max_{s in C} |z(s) (f_j(s) - c_j)|; cached per (cell, epoch). Exact zeros are decided exactly (typed), never by a tiny float."""
-        if c.hkey == key: return c.hval
-        self.epoch_tables(cand, key)                       # no-op when this epoch's tables exist
-        best = F(0); pm = prod(c.mx)
-        for x in self.order:                               # separator queries: z(s) |1{..} - c|
-            for j in self.sep_cols[x]:
-                if j is None: continue
-                lo, hi = self.query_range(c, j); d = max(abs(lo - cand[j]), abs(hi - cand[j])); t = pm * d
-                if t > best: best = t
-        for b in self.blocks:
-            qi = self.qidx[b.bid]
-            if b.Q is None or qi is None or c.mx[b.bid] == 0: continue
-            others = F(pm, c.mx[b.bid]); sl = self._slice(b.scope, c.states)
-            if self.bounds == 'block':
-                rc = np.asarray(self.rcap[b.bid][sl]); h = float(rc.max()); self.cell_ops += rc.size
-                if h <= self.rtiny[b.bid]:                  # negligible float cap: decide EXACTLY whether the residual vanishes identically on the slice
-                    G = np.asarray(b.G[sl], dtype=object).reshape(-1); Q = np.asarray(b.Q[sl], dtype=object).reshape(-1, len(b.qcols)); ex = F(0)
-                    for ci, j in enumerate(qi.tolist()):
-                        cj = cand[j]; d = cj.denominator; nmr = cj.numerator
-                        e = max(abs(int(q) * d - nmr * int(g)) for q, g in zip(Q[:, ci].tolist(), G.tolist())); ex = max(ex, F(e, d))
-                    t = ex * others; self.cell_ops += G.size * len(b.qcols)
-                else: t = F(h) * (1 << b.k) * others
-            else:
-                t = c.mx[b.bid] * max(max(cand[j], 1 - cand[j]) for j in qi.tolist()) * others
-            if t > best: best = t
-        c.hkey = key; c.hval = c.N * best; return c.hval
 
-    def residual_cap_query(self, c, j, cj):
-        """inspection helper (controls): the cap of query j alone on cell c for candidate value cj (same arithmetic as residual_caps)"""
-        cand = [F(0)] * self.K; cand[j] = cj; x, v = self.queries[j]
-        if j not in self.block_of:
-            lo, hi = self.query_range(c, j); return c.N * prod(c.mx) * max(abs(lo - cj), abs(hi - cj))
-        bid, ci = self.block_of[j]; b = self.blocks[bid]; sl = self._slice(b.scope, c.states); G = np.asarray(b.G[sl], dtype=object).reshape(-1); Qc = np.asarray(b.Q[sl], dtype=object).reshape(-1, len(b.qcols))[:, ci]
-        ex = max(abs(int(q) * cj.denominator - cj.numerator * int(g)) for q, g in zip(Qc.tolist(), G.tolist())); others = F(prod(c.mx), c.mx[bid]) if c.mx[bid] else F(0)
-        return c.N * F(ex, cj.denominator) * others
 
 
 
@@ -374,366 +288,18 @@ def mb_bounds(blocks, cards, pos, states, order, cap, deadline, upper=True):
     for sc, arr in fns: const *= int(arr)
     return const
 
-# ---------------------------------------------------------------- streams over SEPARATOR assignments
-class RatioStream:
-    """cell ~ B_C, s uniform in C: W = z(s) N_C U / B_C <= U. T = A + W (mean Z), Y_j = a_j + W f_j (mean N_j); Y_j - mu_j T has range width U -> V += b^2 U^2 / 4.
-    alpha is the per-interval risk (K query intervals + 1 Z interval share the stream's risk by a union bound)."""
-    def __init__(self, K, alpha, U_star):
-        self.K = K; self.alpha = alpha; self.U_star = F(U_star); self.rho = self.U_star * self.U_star / 4; self.H = F(0); self.Hb = F(0); self.G = np.array([F(0)] * K, dtype=object); self.V = F(0); self.t = 0
-    def draw(self, sep, rng):
-        cells = [c for c in sep.open.values() if c.E > 0]; U = sep.sumE
-        if U == 0 or not cells: return None
-        c = cells[draw_categorical(rng, [F(c.E) for c in cells])]; s = c.states + tuple(rng.randrange(sep.cards[v]) for v in sep.order[len(c.states):])
-        b = dyadic_weight((self.U_star / U) ** 2); z, g = sep.evaluate(s); W = F(z * c.N * U, c.E)
-        assert W <= U, 'importance weight exceeds the cap (certificate defect)'
-        self.t += 1; self.H += b * (sep.mass + W); self.Hb += b; self.G += b * sep.num
-        if z: sep.add_contrib(s, z, g, F(b * c.N * U, c.E), self.G)
-        self.V += b * b * U * U / 4; return W
-    def intervals(self):
-        if self.H <= 0: return None
-        B = NM.boundary_upper(self.rho, self.V, self.alpha)
-        return [(max(F(0), (self.G[j] - B) / self.H), min(F(1), (self.G[j] + B) / self.H)) for j in range(self.K)]
-    def Z_interval(self):
-        if self.Hb <= 0: return None
-        B = NM.boundary_upper(self.rho, self.V, self.alpha); return max(F(0), (self.H - B) / self.Hb), (self.H + B) / self.Hb
-
-
-class SignedStream:
-    """fixed candidate c: cell ~ a_C, s uniform in C: R_j = z(s)(f_j(s) - c_j) N_C E / a_C, |R_j| <= E. Y_j = d_j + R_j has mean S_j = N_j - c_j Z; V += b^2 E^2"""
-    def __init__(self, cand, K, alpha, E_star, epoch):
-        self.cand = np.array(list(cand), dtype=object); self.K = K; self.alpha = alpha; self.E_star = F(E_star); self.rho = self.E_star * self.E_star; self.epoch = epoch; self.H = F(0); self.G = np.array([F(0)] * K, dtype=object); self.V = F(0); self.t = 0
-    def draw(self, sep, rng):
-        key = ('epoch', self.epoch); cells = []; E = F(0); sep.epoch_tables(self.cand, key)
-        for c in sep.open.values():
-            if tnow() >= sep.deadline: raise Deadline('signed_law')
-            a = sep.residual_caps(c, self.cand, key)
-            if a > 0: cells.append((c, a)); E += a
-        if E == 0: return 'E_ZERO'
-        c, a = cells[draw_categorical(rng, [a for _, a in cells])]; s = c.states + tuple(rng.randrange(sep.cards[v]) for v in sep.order[len(c.states):])
-        b = dyadic_weight((self.E_star / E) ** 2); z, g = sep.evaluate(s); self.t += 1; self.H += b
-        R = np.array([F(0)] * self.K, dtype=object)
-        if z: sep.add_contrib(s, z, g, F(c.N * E, a), R)
-        R = R - self.cand * F(z * c.N * E, a)
-        assert all(abs(r) <= E for r in R.tolist()), 'signed contribution exceeds E (certificate defect)'
-        self.G += b * (sep.num - self.cand * sep.mass + R); self.V += b * b * E * E; return E
-    def intervals(self):
-        if self.H <= 0: return None
-        B = NM.boundary_upper(self.rho, self.V, self.alpha); return [((self.G[j] - B) / self.H, (self.G[j] + B) / self.H) for j in range(self.K)]
 
 
 
-# ---------------------------------------------------------------- mini-bucket proposal on the separator model (weighted-mini-bucket importance sampling, Liu / Fisher / Ihler 2015; prior art)
-class MBProposal:
-    """Mini-bucket elimination of the separator functions {g_b} in a min-size order with mini-buckets of joint scope <= cap: in every bucket ONE mini-bucket is summed
-    (it defines the conditional q(x_i | x_>i) = prod_{Q_i1} g / lambda_i1) and the others are maxed (they define the bound). Sampling runs in reverse order with exact
-    integer categorical draws. For every full assignment: z(x) / q(x) <= U = product of the scalar messages (NOTE.md section 5); q(x) = 0 implies z(x) = 0.
-    A 'min' pass with the same partition gives a deterministic lower bound L_mb <= Z (possibly 0)."""
-    def __init__(self, blocks, cards, cap, deadline):
-        self.cards = cards; funcs = [(b.scope, b.G) for b in blocks]
-        self.steps, self.U, self.order = self._elim(funcs, cap, deadline, 'max'); self.L = self._elim(funcs, cap, deadline, 'min')[1]
-        self.max_table = max((int(np.asarray(l[1]).size) for _, _, l in self.steps if l is not None), default=0)
-    def _elim(self, funcs, cap, deadline, agg):
-        live = list(funcs); steps = []; const = 1; order = []; vars_ = sorted({v for sc, _ in live for v in sc}); cards = self.cards
-        while vars_:
-            if tnow() >= deadline: raise Deadline('mb_proposal')
-            best = None
-            for v in vars_:
-                nb = set().union(*(set(sc) for sc, _ in live if v in sc)) - {v}; size = prod(cards[u] for u in nb) if nb else 1
-                if best is None or size < best[0]: best = (size, v)
-            v = best[1]; order.append(v); vars_.remove(v); bucket = [f for f in live if v in f[0]]; live = [f for f in live if v not in f[0]]
-            if not bucket: const *= cards[v]; steps.append((v, None, None)); continue
-            bucket.sort(key=lambda f: -len(f[0])); groups = []
-            for sc, arr in bucket:
-                for g in groups:
-                    u = g[0] | set(sc)
-                    if prod(cards[x] for x in u) <= cap: g[0] = u; g[1].append((sc, arr)); break
-                else: groups.append([set(sc), [(sc, arr)]])
-            lam1 = None
-            for gi, (u, members) in enumerate(groups):
-                union = tuple(sorted(u)); P = None
-                for sc, arr in members:
-                    a = np.asarray(arr, dtype=object).reshape([cards[x] if x in sc else 1 for x in union]); P = a if P is None else P * a
-                ax = union.index(v); R = P.sum(axis=ax) if gi == 0 else (P.max(axis=ax) if agg == 'max' else P.min(axis=ax)); nsc = tuple(x for x in union if x != v)
-                if nsc: live.append((nsc, R))
-                else: const *= int(R)
-                if gi == 0: lam1 = (nsc, R)
-            steps.append((v, groups[0][1], lam1))
-        return steps, const, order
-    def sample(self, rng):
-        """returns (x dict, q_num, q_den): q(x) = q_num / q_den exactly; a zero conditional mass draws uniformly (the weight is then 0: z(x) = 0)"""
-        x = {}; qn = 1; qd = 1; cards = self.cards
-        for v, q1, lam1 in reversed(self.steps):
-            if q1 is None: x[v] = rng.randrange(cards[v]); qd *= cards[v]; continue
-            p = []
-            for a in range(cards[v]):
-                x[v] = a; w = 1
-                for sc, arr in q1:
-                    w *= int(arr[tuple(x[u] for u in sc)])
-                    if not w: break
-                p.append(w)
-            tot = sum(p)
-            if tot == 0: x[v] = rng.randrange(cards[v]); qd *= cards[v]; continue
-            a = draw_categorical(rng, [F(w) for w in p]) if len(p) > 1 else 0; x[v] = a; qn *= p[a]; qd *= tot
-        return x, qn, qd
 
 
-class MBRatioStream:
-    """fixed proposal q: W = z(x) / q(x) <= U; T = W (mean Z), Y_j = W f_j (mean N_j); b = 1 (the cap is constant); V += U^2 / 4"""
-    def __init__(self, K, alpha, U): self.K = K; self.alpha = alpha; self.U = F(U); self.rho = self.U * self.U / 4; self.H = F(0); self.Hb = F(0); self.G = np.array([F(0)] * K, dtype=object); self.V = F(0); self.t = 0
-    def draw(self, sep, mbp, rng):
-        x, qn, qd = mbp.sample(rng); s = tuple(x[v] for v in sep.order); z, g = sep.evaluate(s); W = F(z * qd, qn)
-        assert W <= self.U, 'importance weight exceeds the mini-bucket cap (certificate defect)'
-        self.t += 1; self.H += W; self.Hb += 1
-        if z: sep.add_contrib(s, z, g, F(qd, qn), self.G)
-        self.V += self.U * self.U / 4; return W, s, z, g, F(qd, qn)
-    def intervals(self):
-        if self.H <= 0: return None
-        B = NM.boundary_upper(self.rho, self.V, self.alpha); return [(max(F(0), (self.G[j] - B) / self.H), min(F(1), (self.G[j] + B) / self.H)) for j in range(self.K)]
-    def Z_interval(self):
-        if self.Hb <= 0: return None
-        B = NM.boundary_upper(self.rho, self.V, self.alpha); return max(F(0), (self.H - B) / self.Hb), (self.H + B) / self.Hb
 
 
-class MBSignedStream:
-    """fixed candidate c, fixed proposal: Y_j = z(x)(f_j(x) - c_j) / q(x), |Y_j| <= cap_j = U h_j with h_j the global range bound of |f_j - c_j|; per-query statistics"""
-    def __init__(self, cand, caps, alpha, epoch): self.cand = np.array(list(cand), dtype=object); self.caps = [F(c) for c in caps]; self.K = len(caps); self.alpha = alpha; self.epoch = epoch; self.H = F(0); self.G = np.array([F(0)] * self.K, dtype=object); self.V = [F(0)] * self.K; self.t = 0
-    def draw(self, sep, mbp, rng):
-        x, qn, qd = mbp.sample(rng); s = tuple(x[v] for v in sep.order); z, g = sep.evaluate(s); R = np.array([F(0)] * self.K, dtype=object)
-        if z: sep.add_contrib(s, z, g, F(qd, qn), R)
-        R = R - self.cand * F(z * qd, qn); self.t += 1; self.H += 1
-        for j in range(self.K):
-            assert abs(R[j]) <= self.caps[j], 'signed contribution exceeds its cap (certificate defect)'
-            self.V[j] += self.caps[j] * self.caps[j]
-        self.G += R; return s, z
-    def intervals(self):
-        if self.H <= 0: return None
-        out = []
-        for j in range(self.K):
-            if self.caps[j] == 0: out.append((self.G[j] / self.H, self.G[j] / self.H)); continue       # cap 0: the residual is identically zero (deterministic)
-            B = NM.boundary_upper(self.caps[j] * self.caps[j], self.V[j], self.alpha); out.append(((self.G[j] - B) / self.H, (self.G[j] + B) / self.H))
-        return out
-
-# ---------------------------------------------------------------- controller
-def solve(model_path, budget, bounds='block', seed=1, table_cap=1 << 16, enum_cap=1 << 16, force_approx=False, eps=F(1, 200), delta=F(1, 10 ** 6), construct_share=0.45, cell_max=512, close_n=8, ladder=True, mb_cap=0, proposal='cell'):
-    t_start = tnow(); deadline = t_start + budget; ph = {}; rng = random.Random(seed); stats = dict(elim_work=0, eliminations=0, query_work=0)
-    out = dict(version=VERSION, bounds=bounds, mb_cap=mb_cap, proposal=proposal, seed=seed, budget_s=budget, table_cap=table_cap, enum_cap=enum_cap, epsilon=str(eps), delta=str(delta), phases_s=ph, mechanism={}, outcome=None, answers=None)
-    t0 = tnow(); model, binding = core.read_uai(model_path); cards = model['cards']; n = len(cards); ev = model.get('evidence', {}); out['binding'] = binding; ph['read'] = tnow() - t0
-    queries = [(x, v) for x in range(n) if x not in ev for v in range(cards[x])]; K = len(queries); qix = {q: j for j, q in enumerate(queries)}; out['K'] = K
-    ans = {}; pending = {}                                             # pending: exact answers of eliminated / factorless variables, published only with a positive-mass witness (overseer finding 19 Nov 2026)
-    def publish(j, lo, hi, point, g): ans[j] = dict(lo=lo, hi=hi, point=point, guarantee=g)
-    def defer(j, r): pending[j] = dict(lo=r, hi=r, point=r, guarantee='EXACT')
-    failed = []
-    try:
-        t0 = tnow(); fns, const, scale, mult, factorless = integerize(model); ph['integerize'] = tnow() - t0
-        if const == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, ans, failed)
-        for x in factorless:
-            for v in range(cards[x]): defer(qix[(x, v)], F(1, cards[x]))
-        # ---- construction: bounded-width partial VE with a two-level ladder
-        cdead = min(deadline, t_start + construct_share * budget); t0 = tnow(); trace = []; order = []
-        live = contract(fns, cards, table_cap, cdead, stats, trace, order); cap_used = table_cap
-        if ladder and any(f.scope for f in live) and tnow() - t0 < (cdead - t0) / 3:
-            try: live = contract(live, cards, table_cap * 4, cdead, stats, trace, order); cap_used = table_cap * 4
-            except Deadline: pass                            # the first level's result stands (its functions are unchanged objects inside `trace`)
-        ph['contract'] = tnow() - t0; step_of = {v: i for i, (v, _) in enumerate(trace)}
-        if ph['contract'] >= cdead - t0 - 1e-9 and cap_used == table_cap: pass
-        const_fns = [f for f in live if not f.scope]; live = [f for f in live if f.scope]
-        for f in const_fns: const *= int(f.arr)
-        if const == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, ans, failed)
-        S = sorted({v for f in live for v in f.scope})
-        out['mechanism'].update(blocks=len(live), separator_vars=len(S), eliminated_vars=len(order), table_cap_used=cap_used, elim_work=stats['elim_work'], eliminations=stats['eliminations'], const_blocks=len(const_fns), factorless=len(factorless),
-                                block_scopes=sorted([len(f.scope) for f in live], reverse=True)[:12], block_table_sizes=sorted([int(f.arr.size) for f in live], reverse=True)[:12], block_interiors=sorted([len(f.interior) for f in live], reverse=True)[:12])
-        blocks = [Block(i, f, cards) for i, f in enumerate(live)]; cblocks = [Block(len(blocks) + i, f, cards) for i, f in enumerate(const_fns)]
-        # ---- interior query tables
-        t0 = tnow(); recovered = 0; fac_fns = {next(iter(f.facs)): f for f in fns}; rdead = (cdead if not force_approx else deadline)
-        # cheapest first: the replay cost of x is the work of the block's steps AFTER x's step; later-eliminated variables are cheaper
-        todo = sorted(((len([u for u in b.interior if step_of[u] > step_of[x]]), b.bid, x) for b in blocks + cblocks for x in b.interior))
-        tabs = {b.bid: [] for b in blocks + cblocks}; skipped = []
-        for _, bid, x in todo:
-            b = (blocks + cblocks)[bid]
-            if tnow() >= rdead: skipped.append(x); continue
-            try: r = recover_query_table(b, x, cards, cap_used * cards[x], trace, step_of, rdead, stats)
-            except Deadline: skipped.append(x); continue
-            if r is None: failed.append(x); continue
-            tabs[bid].append((x, r)); recovered += 1
-        failed += skipped
-        for b in blocks + cblocks: b.set_queries(tabs[b.bid], cards)
-        ph['query_tables'] = tnow() - t0; out['mechanism'].update(interior_queries_recovered=recovered, interior_queries_failed=len(failed), interior_queries_skipped_window=len(skipped), query_work=stats['query_work'], query_table_cells=int(sum(b.Q.size for b in blocks + cblocks if b.Q is not None)))
-        for b in cblocks:                                    # constant blocks: exact ratios
-            gb = int(b.G)
-            if b.Q is None or gb == 0: continue
-            for ci, (x, v) in enumerate(b.qcols): defer(qix[(x, v)], F(int(b.Q[ci]), gb))
-        if not blocks:                                                   # everything eliminated: Z = const * mult > 0 is an exact witness
-            ans.update(pending); out['outcome'] = 'EXACT' if len(ans) == K else 'PARTIAL_EXACT'; out['Z'] = str(F(const * mult, scale)); return finish(out, t_start, queries, ans, failed)
-        # ---- separator order: most blocks touched first, then largest cardinality
-        Sset = set(S); sorder = sorted(S, key=lambda v: (-sum(1 for b in blocks if v in b.scope), -cards[v], v))
-        inter = {x for b in blocks for x in b.interior if x not in set(failed)}
-        sq = [(x, v) for (x, v) in queries if x in Sset or x in inter]; qmap = {q: qix[q] for q in sq}
-        t0 = tnow(); sep = Separator(blocks, cards, sorder, sq, bounds, fac_fns, deadline, mb_cap=mb_cap); ph['frontier_init'] = tnow() - t0
-        root = next(iter(sep.open.values()))
-        out['mechanism'].update(N_S_log2=lg(root.N), root_B_log2=lg(root.B), root_L_log2=lg(root.L), root_E_log2=lg(root.E), mb_cap=mb_cap)
-        try:
-            other = Separator(blocks, cards, sorder, [], 'factorwise' if bounds == 'block' else 'block', fac_fns, deadline); ro = next(iter(other.open.values()))
-            out['mechanism']['root_B_other_log2'] = lg(ro.B); out['mechanism']['other_bounds'] = other.bounds
-        except Exception as e: out['mechanism']['root_B_other_error'] = repr(e)
-        # ---- exact separator enumeration when affordable
-        if root.N <= enum_cap and not force_approx:
-            t0 = tnow(); sep.close(root.id); ph['enumerate'] = tnow() - t0; Z = sep.mass
-            if Z == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, {}, failed)
-            ans.update(pending)
-            for j, q in enumerate(sq): r = F(int(sep.num[j]), Z); publish(qmap[q], r, r, r, 'EXACT')
-            out['Z'] = str(F(Z * const * mult, scale)); out['outcome'] = 'EXACT' if len(ans) == K else 'PARTIAL_EXACT'; return finish(out, t_start, queries, ans, failed)
-        if proposal == 'mb': return _solve_mb(out, t_start, deadline, sep, root, sq, qmap, queries, ans, pending, failed, publish, eps, delta, rng, mb_cap or 4096, ph, K)
-        # ---- approximate separator inference
-        Kq = len(sq); alpha_r = delta / 2 / (Kq + 1); ratio = RatioStream(Kq, alpha_r, root.E); signed = None; epoch = 0; epoch_draws = 0; epoch_len = 64
-        pub = {}; det_t = tnow(); det_every = 1.0; it = 0; t_sig = t_det = t_rat = t_split = 0.0; ratio_draws = signed_draws = epochs = 0; residual_det = 0; trace_u = []
-        def try_publish(iv, g):
-            for j in range(Kq):
-                if j in pub: continue
-                lo = max(iv[j][0], sep.det_lo[j]); hi = min(iv[j][1], sep.det_hi[j])
-                if hi - lo <= 2 * eps: pub[j] = (lo, hi, g)
-        def refine():
-            cid = max(sep.open, key=lambda i: sep.open[i].B); c = sep.open[cid]
-            if c.N <= close_n: sep.close(cid)
-            else: sep.split(cid)
-        t0 = tnow()
-        while len(sep.open) < 16 and tnow() < deadline and sep.open: refine()
-        t_split += tnow() - t0
-        while tnow() < deadline and len(pub) < Kq:
-            it += 1
-            if tnow() - det_t >= det_every:
-                t0 = tnow(); det_t = t0
-                unpub = [j for j in range(Kq) if j not in pub]
-                if len(sep.open) * len(unpub) <= 400000: sep.deterministic(unpub, deadline); try_publish([(sep.det_lo[j], sep.det_hi[j]) for j in range(Kq)], 'DETERMINISTIC')
-                iv = ratio.intervals()
-                if iv is not None: try_publish(iv, 'PAC')
-                zi = ratio.Z_interval(); trace_u.append(dict(t=round(tnow() - t_start, 2), open_cells=len(sep.open), Zlo_log2=lg(sep.Zlo()), Zhi_log2=lg(sep.Zhi()), U_log2=lg(sep.sumE), Zhat_log2=(lg(ratio.H / ratio.Hb) if ratio.Hb > 0 and ratio.H > 0 else None), ratio_Z_width_log2=(lg(zi[1] - zi[0]) if zi else None), ratio_draws=ratio_draws, signed_draws=signed_draws, published=len(pub)))
-                t_det += tnow() - t0; det_every = max(1.0, 3 * (tnow() - t0))
-            t0 = tnow(); W = ratio.draw(sep, rng); ratio_draws += 1; t_rat += tnow() - t0
-            if W is None:
-                if sep.sumE == 0 and sep.mass == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, ans, failed)
-                break
-            t0 = tnow()
-            if signed is None and ratio.t >= 16 and len(pub) < Kq and ratio.H > 0:
-                iv = ratio.intervals(); epoch += 1; epochs += 1
-                cand = [min(F(1), max(F(0), (max(iv[j][0], sep.det_lo[j]) + min(iv[j][1], sep.det_hi[j])) / 2)) for j in range(Kq)]
-                alpha_e = delta / (2 * epoch * (epoch + 1)) / Kq; key = ('epoch', epoch); sep.epoch_tables(cand, key); Etot = sum((sep.residual_caps(c, cand, key) for c in sep.open.values()), F(0))
-                if Etot == 0:                                 # the residual is PROVABLY zero on every open cell: S_j = resolved residual exactly (deterministic residual test)
-                    Z_lo = sep.Zlo()
-                    for j in range(Kq):
-                        if j in pub: continue
-                        Sj = F(int(sep.num[j])) - cand[j] * sep.mass
-                        if Z_lo > 0 and abs(Sj) <= eps * Z_lo: pub[j] = (cand[j] - eps, cand[j] + eps, 'DETERMINISTIC_RESIDUAL'); residual_det += 1
-                    signed = None
-                else: signed = SignedStream(cand, Kq, alpha_e, Etot, epoch); epoch_draws = 0
-            if signed is not None:
-                r = signed.draw(sep, rng); signed_draws += 1; epoch_draws += 1
-                if r == 'E_ZERO': signed = None
-                elif epoch_draws % 16 == 0:
-                    iv = signed.intervals(); zi = ratio.Z_interval(); Z_lo = max(sep.Zlo(), zi[0] if zi else F(0))
-                    if Z_lo > 0:
-                        for j in range(Kq):
-                            if j in pub: continue
-                            lo, hi = iv[j]
-                            if -eps * Z_lo <= lo and hi <= eps * Z_lo: pub[j] = (signed.cand[j] - eps, signed.cand[j] + eps, 'PAC_SIGNED')
-                    if epoch_draws >= epoch_len * (2 ** (epoch - 1)): signed = None
-            t_sig += tnow() - t0
-            if it % 4 == 0 and len(sep.open) < cell_max and sep.open:
-                t0 = tnow(); refine(); t_split += tnow() - t0
-        iv = ratio.intervals()
-        if iv is not None: try_publish(iv, 'PAC')
-        out['positive_mass_witness'] = sep.positive_mass()
-        if sep.positive_mass():
-            ans.update(pending)
-            for j, q in enumerate(sq):
-                if j in pub: lo, hi, g = pub[j]; publish(qmap[q], lo, hi, (lo + hi) / 2, g)
-        else: out['withheld_without_witness'] = len(pub) + len(pending)
-        ph.update(refine_split=t_split, ratio_stream=t_rat, signed_stream=t_sig, deterministic=t_det)
-        ws = sorted(float(sep.det_hi[j] - sep.det_lo[j]) for j in range(Kq))
-        out['mechanism'].update(open_cells=len(sep.open), splits=sep.splits, closures=sep.closures, ratio_draws=ratio_draws, signed_draws=signed_draws, epochs=epochs, residual_det=residual_det, cell_ops=sep.cell_ops,
-                                U_final_log2=lg(sep.sumE), sumB_final_log2=lg(sep.sumB), Zlo_log2=lg(sep.Zlo()), Zhi_log2=lg(sep.Zhi()), resolved_mass_frac_of_Zhi=(float(F(sep.mass) / sep.Zhi()) if sep.Zhi() > 0 else None),
-                                ratio_V_log2=lg(ratio.V), Zhat_log2_DIAGNOSTIC=(lg(ratio.H / ratio.Hb) if ratio.Hb > 0 and ratio.H > 0 else None), median_ratio_width=(sorted(float(hi - lo) for lo, hi in iv)[Kq // 2] if iv else None), median_det_width=ws[Kq // 2], min_det_width=ws[0],
-                                published=len(pub), published_by=_count([g for _, _, g in pub.values()]))
-        out['trace'] = trace_u; out['outcome'] = 'COMPLETE' if len(ans) == K else 'DEADLINE_PARTIAL'
-        return finish(out, t_start, queries, ans, failed)
-    except Deadline as e:
-        try:
-            if sep.positive_mass():                                      # certified publications made before the interrupt stand, given the witness (sq / qmap / pub exist only in the approximate stage)
-                ans.update(pending)
-                for j, q in enumerate(sq):
-                    if j in pub: lo, hi, g = pub[j]; publish(qmap[q], lo, hi, (lo + hi) / 2, g)
-            out['positive_mass_witness'] = sep.positive_mass()
-        except NameError: pass
-        out['outcome'] = 'DEADLINE'; out['deadline_phase'] = str(e); return finish(out, t_start, queries, ans, failed)
-    except AssertionError as e:
-        out['outcome'] = 'CERTIFICATE_DEFECT'; out['error'] = str(e); return finish(out, t_start, queries, ans, failed)
 
 
-def _solve_mb(out, t_start, deadline, sep, root, sq, qmap, queries, ans, pending, failed, publish, eps, delta, rng, cap, ph, K):
-    """mini-bucket proposal arm: no refinement; the proposal and its cap come from the same approximation; acceptance = the existing signed-residual rule"""
-    Kq = len(sq); t0 = tnow()
-    try:
-        mbp = MBProposal(sep.blocks, sep.cards, cap, deadline)
-    except Deadline as e:
-        ph['mb_construct'] = tnow() - t0; out['outcome'] = 'DEADLINE'; out['deadline_phase'] = 'mb_proposal'; return finish(out, t_start, queries, ans, failed)
-    ph['mb_construct'] = tnow() - t0
-    out['mechanism'].update(mb_cap=cap, mb_U_log2=lg(mbp.U), mb_L_log2=lg(mbp.L), mb_max_table=mbp.max_table, mb_steps=len(mbp.steps), root_E_log2=lg(root.E), cap_tightening_log2_E_minus_U=((lg(root.E) - lg(mbp.U)) if root.E > 0 and mbp.U > 0 else None))
-    if mbp.U == 0: out['outcome'] = 'ZERO_EVIDENCE'; return finish(out, t_start, queries, {}, failed)          # Z <= U = 0 exactly
-    alpha_r = delta / 2 / (Kq + 1); ratio = MBRatioStream(Kq, alpha_r, mbp.U); signed = None; epoch = 0; epoch_draws = 0; epoch_len = 64; pub = {}; trace = []; t_rat = t_sig = 0.0; chk_t = tnow(); epochs = 0
-    # global range bounds of f_j: interior rho range at the root, separator [0, 1]
-    rng_lo = [sep.query_range(root, j)[0] for j in range(Kq)]; rng_hi = [sep.query_range(root, j)[1] for j in range(Kq)]
-    seen = {}                                                            # distinct evaluated separator assignments -> z(s): Z >= sum (an EXACT lower bound; never double-counted)
-    seen_sum = [0]
-    def note(s, z):
-        if z and s not in seen: seen[s] = z; seen_sum[0] += z
-    def Z_lo_now():
-        zi = ratio.Z_interval(); return max(F(mbp.L), F(seen_sum[0]), zi[0] if zi else F(0))
-    def try_publish(iv, g):
-        for j in range(Kq):
-            if j in pub: continue
-            if iv[j][1] - iv[j][0] <= 2 * eps: pub[j] = (iv[j][0], iv[j][1], g)
-    try:
-        while tnow() < deadline and len(pub) < Kq:
-            t0 = tnow(); W, s_, z_, g_, _ = ratio.draw(sep, mbp, rng); note(s_, z_); t_rat += tnow() - t0
-            t0 = tnow()
-            if signed is None and ratio.t >= 16 and len(pub) < Kq and ratio.H > 0:
-                iv = ratio.intervals(); epoch += 1; epochs += 1
-                cand = [min(F(1), max(F(0), (iv[j][0] + iv[j][1]) / 2)) for j in range(Kq)]
-                caps = [mbp.U * max(abs(rng_lo[j] - cand[j]), abs(rng_hi[j] - cand[j])) for j in range(Kq)]
-                signed = MBSignedStream(cand, caps, delta / (2 * epoch * (epoch + 1)) / Kq, epoch); epoch_draws = 0
-            if signed is not None:
-                s_, z_ = signed.draw(sep, mbp, rng); note(s_, z_); epoch_draws += 1
-                if epoch_draws % 16 == 0:
-                    iv = signed.intervals(); Z_lo = Z_lo_now()
-                    if Z_lo > 0:
-                        for j in range(Kq):
-                            if j in pub: continue
-                            lo, hi = iv[j]
-                            if -eps * Z_lo <= lo and hi <= eps * Z_lo: pub[j] = (signed.cand[j] - eps, signed.cand[j] + eps, 'PAC_SIGNED')
-                    if epoch_draws >= epoch_len * (2 ** (epoch - 1)): signed = None
-            t_sig += tnow() - t0
-            if tnow() - chk_t >= 1.0:
-                chk_t = tnow(); iv = ratio.intervals()
-                if iv is not None: try_publish(iv, 'PAC')
-                zi = ratio.Z_interval(); Z_lo = Z_lo_now(); siv = signed.intervals() if signed is not None else None
-                # residual shrinkage: median over queries of (signed half-width) / (eps Z_lo); publication needs <= 1 (and the center inside)
-                shr = None
-                if siv is not None and Z_lo > 0: shr = float(sorted((hi - lo) / 2 / (eps * Z_lo) for lo, hi in siv)[Kq // 2])
-                trace.append(dict(t=round(tnow() - t_start, 2), ratio_draws=ratio.t, signed_draws=(signed.t if signed else None), epoch=epoch, Zhat_log2=(lg(ratio.H / ratio.Hb) if ratio.H > 0 else None), U_log2=lg(mbp.U), ratio_Z_width_log2=(lg(zi[1] - zi[0]) if zi else None),
-                                  Zlo_log2=lg(Z_lo), Zlo_source=('distinct_sum' if F(seen_sum[0]) >= max(F(mbp.L), (zi[0] if zi else F(0))) else ('mb_min' if F(mbp.L) >= (zi[0] if zi else F(0)) else 'ratio_pac')), distinct_assignments=len(seen), median_ratio_width=(sorted(float(hi - lo) for lo, hi in iv)[Kq // 2] if iv else None), median_signed_halfwidth_over_eps_Zlo=shr, published=len(pub)))
-    except Deadline: pass
-    iv = ratio.intervals()
-    if iv is not None: try_publish(iv, 'PAC')
-    out['positive_mass_witness'] = sep.positive_mass()
-    if sep.positive_mass():
-        ans.update(pending)
-        for j, q in enumerate(sq):
-            if j in pub: lo, hi, g = pub[j]; publish(qmap[q], lo, hi, (lo + hi) / 2, g)
-    else: out['withheld_without_witness'] = len(pub) + len(pending)
-    ph.update(ratio_stream=t_rat, signed_stream=t_sig); zi = ratio.Z_interval()
-    out['trace'] = trace; out['mechanism'].update(distinct_assignments=len(seen), distinct_sum_log2=lg(F(seen_sum[0])), ratio_draws=ratio.t, signed_draws=(signed.t if signed else None), epochs=epochs, Zhat_log2_DIAGNOSTIC=(lg(ratio.H / ratio.Hb) if ratio.H > 0 else None), Zlo_log2=lg(Z_lo_now()), Zhi_log2=(lg(zi[1]) if zi else None),
-                            ratio_Z_width_log2=(lg(zi[1] - zi[0]) if zi else None), median_ratio_width=(sorted(float(hi - lo) for lo, hi in iv)[Kq // 2] if iv else None), published=len(pub), published_by=_count([g for _, _, g in pub.values()]))
-    out['outcome'] = 'COMPLETE' if len(ans) == K else 'DEADLINE_PARTIAL'
-    return finish(out, t_start, queries, ans, failed)
+
+
+
 
 
 def lg(x):
@@ -742,10 +308,6 @@ def lg(x):
     return (math.log2(x.numerator) - math.log2(x.denominator)) if x > 0 else None
 
 
-def _count(xs):
-    d = {}
-    for x in xs: d[x] = d.get(x, 0) + 1
-    return d
 
 
 def finish(out, t_start, queries=None, ans=None, failed=None):
@@ -763,16 +325,5 @@ def finish(out, t_start, queries=None, ans=None, failed=None):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=20.0)
-    ap.add_argument('--bounds', default='block', choices=['block', 'factorwise']); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--table-cap', type=int, default=1 << 16)
-    ap.add_argument('--enum-cap', type=int, default=1 << 16); ap.add_argument('--force-approx', action='store_true'); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--no-ladder', action='store_true'); ap.add_argument('--mb-cap', type=int, default=0, help='mini-bucket table cap: integrated cell bounds (proposal cell; 0 = off) or the proposal construction (proposal mb; default 4096)'); ap.add_argument('--proposal', default='cell', choices=['cell', 'mb'], help='cell = uniform inside prefix cells (BLOCKRES v1); mb = mini-bucket-derived proposal with its own cap (prior art baseline)')
-    a = ap.parse_args()
-    out = solve(a.input, a.budget, bounds=a.bounds, seed=a.seed, table_cap=a.table_cap, enum_cap=a.enum_cap, force_approx=a.force_approx, eps=F(a.epsilon), delta=F(a.delta), ladder=not a.no_ladder, mb_cap=a.mb_cap, proposal=a.proposal)
-    out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]
-    os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True); json.dump(out, open(a.output, 'w'), indent=1, default=str)
-    m = out['mechanism']; print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), phases={k: round(v, 3) for k, v in out['phases_s'].items()},
-                                   mech={k: m.get(k) for k in ('blocks', 'separator_vars', 'eliminated_vars', 'table_cap_used', 'N_S_log2', 'root_E_log2', 'mb_U_log2', 'mb_L_log2', 'cap_tightening_log2_E_minus_U', 'root_B_log2', 'root_B_other_log2', 'Zhat_log2_DIAGNOSTIC', 'Zlo_log2', 'Zhi_log2', 'ratio_Z_width_log2', 'published_by', 'median_det_width', 'median_ratio_width', 'ratio_draws', 'signed_draws', 'splits')}), default=str))
 
 
-if __name__ == '__main__': main()
