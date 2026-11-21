@@ -105,26 +105,39 @@ say(dict(control='S3_exponent_conversion_checked_not_clamped', raised=raised, ok
 #      derivative outputs being created (member sizes) and the rescale copy; on the reviewer's star, a long chain (consumers far from creators) and c7_complete_sep; with release=True the
 #      largest simultaneous payload must be <= reverse_live_bytes at EVERY step; and the v2.9 coexistence (mantissa + derivative of the same message) must not occur
 def liveness(blocks_, cards_, cap):
+    """OBSERVED array liveness (round 15): (a) at entry to the tiled helper: forward mantissas not released + message derivatives in D, plus the outputs about to be allocated and the rescale
+    copy (calculated); (b) INSIDE the rescaling loop, right after every production _rescale returns: the distinct backing arrays of forward mantissas, message derivatives, the raw
+    outputs still retained and the rescaled result (deduplicated by their ultimate NumPy base). Both peaks must be <= the plan; no mantissa / derivative coexistence."""
     plan_ = IG.mb_plan([b.scope for b in blocks_], cards_, cap); mb_ = IG.MBFloat(blocks_, cards_, cap, math.inf); assert mb_.splits == 0
-    orig_t = IG.tiled_member_derivatives; rows_ = []; coexist = [0]
+    orig_t = IG.tiled_member_derivatives; orig_r = IG._rescale; rows_ = []; peaks_ = []; coexist = [0]; mids = {id(r) for _, _, r in mb_.fwd}
     def observe(DRa, As, union, cards__, scopes, want, tile_budget, deadline, phase='backward_tile'):
-        fr = sys._getframe(1); D_ = fr.f_locals['D']; mids = {id(r) for _, _, r in mb_.fwd}
+        fr = sys._getframe(1); D_ = fr.f_locals['D']
         fwd_ = sum(r.M.nbytes for _, _, r in mb_.fwd if r.M is not None); der_ = sum(d.M.nbytes for mid, d in D_.items() if mid in mids)
         coexist[0] += sum(1 for _, _, r in mb_.fwd if r.M is not None and id(r) in D_ and r.scope)
         outs_ = sum(8 * int(np.prod([cards__[u] for u in sc])) for sc in scopes); rows_.append((fwd_, der_, outs_, fwd_ + der_ + outs_ + max([8 * int(np.prod([cards__[u] for u in sc])) for sc in scopes] + [0])))
         return orig_t(DRa, As, union, cards__, scopes, want, tile_budget, deadline, phase)
-    IG.tiled_member_derivatives = observe
+    def observe_rescale(P, e):
+        fr = sys._getframe(1); res = orig_r(P, e)
+        if fr.f_code.co_name == 'backward_derivatives':
+            loc = fr.f_locals; arrays = [r.M for _, _, r in mb_.fwd if r.M is not None] + [d.M for mid, d in loc['D'].items() if mid in mids] + list(loc['outs'].values()) + [res[0]]
+            backing = {}
+            for a in arrays:
+                while isinstance(a.base, np.ndarray): a = a.base
+                backing[id(a)] = a
+            peaks_.append(sum(a.nbytes for a in backing.values()))
+        return res
+    IG.tiled_member_derivatives = observe; IG._rescale = observe_rescale
     try: IG.backward_derivatives(mb_, cards_, math.inf, release=True)
-    finally: IG.tiled_member_derivatives = orig_t
+    finally: IG.tiled_member_derivatives = orig_t; IG._rescale = orig_r
     worst_ = max(rows_, key=lambda r: r[3]) if rows_ else (0, 0, 0, 0)
-    return plan_['reverse_live_bytes'], worst_, coexist[0], len(rows_)
+    return plan_['reverse_live_bytes'], worst_, coexist[0], len(rows_), (max(peaks_) if peaks_ else 0), len(peaks_)
 star_cards = [2] * 12 + [8]; star_blocks = [IG.FT((i, 12), np.ones((2, 8)), 0, F(0)) for i in range(12)]
 chain_n = 14; chain_cards = [2] * chain_n; chain_blocks = [IG.FT((i, i + 1), nrng.random((2, 2)) + 0.1, 0, F(0)) for i in range(chain_n - 1)] + [IG.FT((0, chain_n - 1), nrng.random((2, 2)) + 0.1, 0, F(0))]
 c7 = os.path.join(TMP, 'c7_complete_sep.uai'); model7, _ = BR.core.read_uai(c7); cards7 = model7['cards']; fns7, _, _, _, _ = BR.integerize(model7); tr7 = []; od7 = []; st7 = dict(elim_work=0, eliminations=0, query_work=0)
 live7 = [f for f in BR.contract(fns7, cards7, 1 << 6, time.monotonic() + 10, st7, tr7, od7) if f.scope]; blocks7 = [IG.ft_from_int(f, cards7) for f in live7]
 allok = True
 for nm, bl, cd, cap in (('reviewer_star', star_blocks, star_cards, 1 << 14), ('ring_chain_14', chain_blocks, chain_cards, 1 << 14), ('c7_complete_sep', blocks7, cards7, 1 << 14)):
-    planned, worst, coexist, nsteps = liveness(bl, cd, cap); ok_ = (worst[3] <= planned and coexist == 0); allok &= ok_
-    say(dict(control='T5_reverse_liveness_within_plan_' + nm, steps=nsteps, planned_bytes=planned, worst_simultaneous=dict(forward=worst[0], derivatives=worst[1], outputs=worst[2], total_with_rescale=worst[3]), mantissa_derivative_coexistence=coexist, ok=ok_))
+    planned, worst, coexist, nsteps, rpeak, nres = liveness(bl, cd, cap); ok_ = (worst[3] <= planned and rpeak <= planned and coexist == 0); allok &= ok_
+    say(dict(control='T5_reverse_liveness_within_plan_' + nm, steps=nsteps, planned_bytes=planned, at_entry=dict(forward=worst[0], derivatives=worst[1], outputs_calc=worst[2], total=worst[3]), observed_peak_during_rescaling=rpeak, rescale_observations=nres, mantissa_derivative_coexistence=coexist, ok=ok_))
 summary = dict(utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), version=IG.VERSION, all_ok=all(r['ok'] for r in rows), rows=rows); json.dump(summary, open(OUT, 'w'), indent=1, default=str)
 print('ALL_OK' if summary['all_ok'] else 'FAILURES', sum(1 for r in rows if not r['ok']), 'of', len(rows), '(with T5)')

@@ -452,3 +452,25 @@ leading alphabetic token; seeded family order, round-robin at most two per famil
 sub-families as separate families was superseded before any run and is recorded in the manifest. Both arms (incumbent N1_CQR bank arm, identical supervision), alternating order.
 Declared cap 900 s (the round-9 / round-11 sweep caps; none was named in the review).
 
+## 17. Round 15 (21 Nov 2026): the reverse transient closed; window-expired blocks keep their queries (`integrated.py` v2.9.2)
+
+Authorization: the round-14 adversarial review (records round15/BLOCKRES_R14_ADVERSARIAL_REVIEW.md, sha256 28e198b1...): finish the output-lifetime correction without changing a
+bound, estimator, proposal or certificate; correct the failure diagnosis; one bounded recovery-scheduling experiment on blockmap_10_03-0009; no broad sweep.
+Transient (reviewer's Finding 1, confirmed on v2.9.1 under receipt r15_repro_transient_v291: observed 2,216 B against a 1,704 B plan on the 13-variable star; 484 vs 332 MiB on
+DBN_14 in the review): inside a reverse step the raw member outputs returned by the tiled helper were all retained while the rescaled derivatives accumulated in D. v2.9.2 CONSUMES
+each raw output as soon as its rescaled copy exists (pop before rescale, delete after), so raw outputs still waiting plus rescaled derivatives already made never exceed the sum of
+the member sizes plus the one copy in flight, which is exactly the plan's transient term. The T5 liveness control now OBSERVES the rescaling loop: it instruments the production
+`_rescale`, deduplicates every live array by its ultimate NumPy base (forward mantissas, message derivatives, raw outputs still held, the rescaled result) after every call, and
+requires the peak to be within the plan (star 1,576 / 1,704 B; ring 472 / 504; c7_complete_sep 164,248 / 229,784), in addition to the entry-time check and zero mantissa /
+derivative coexistence. Round-15 control R1 is the reviewer's reproducer verbatim. No bound, estimator, proposal or publication test changed.
+Recovery window. The dense precomputation of interior responses is OPTIONAL (a speed path when it fits the 512 MiB budget) and runs inside the construction window (construct_share
+x budget); v2.5-v2.9.1 SKIPPED every interior block reached after the window closed, so its queries never entered the certificate (blockmap_10_03-0009: 2,495 variables, 4,990
+coordinates, round 14). v2.9.2 gives such a block its shared representation instead (construction is a scopes-only simulation, microseconds per block): every requested query is
+eligible for certification; the dense budget and window are unchanged; `blocks_window_to_shared` records the count. Control W1 slows the dense replay so the window closes after
+the first block: 5 blocks go shared, Kq = K, complete and contained; W2 (window open) stays dense and agrees. This is the completion of the round-11 requirement "all requested
+queries eligible for certification"; whether the shared path then finishes within the contract is a measurement (round15/RESULTS_ROUND15.md).
+Diagnosis corrections (round 14 records): linkage_13's 275 publications are EXACT (fully eliminated components; its PAC stream published 0 of 1,883; ESS 1.46); blockmap published
+4,754 PAC + 264 EXACT and 4,990 coordinates were excluded by the window (not 5,254; ESS 5,799, every admitted coordinate certified; the stream stopped at 16.9 s because the
+admitted set was finished): a recovery-SCHEDULING failure, not concentration. Hence FOUR poor-overlap fresh cases (two or_chains, linkage, mastermind_03_08_05-0003), one
+scheduling case, one favourable-overlap completion (ObjectDetection_43: ESS 99.2 % of draws, one split, no zero weights), one integer-route completion (Promedus_36).
+
