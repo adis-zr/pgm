@@ -4,7 +4,7 @@ usage: run_paired.py SUBDIR MANIFEST.json [--seed S] [--arms both|cand|inc] ; th
 import sys, os, json, time, subprocess, secrets, hashlib, argparse
 RD = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19'; CODE = '/Users/adis/Workspace/pgm/code'; PY = os.path.join(CODE, '.venv/bin/python')
 FROZEN = dict(route='auto', proposal='mb', schedule='targeted', table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, batch=1024, check_s=0.5, construct_share=0.5, crosscheck=True, budget_s=19.5, outer_timeout_s=20.0, mem_gib=3, epsilon='1/200', delta='1/1000000')
-ap = argparse.ArgumentParser(); ap.add_argument('sub'); ap.add_argument('manifest'); ap.add_argument('--seed', default='1'); ap.add_argument('--arms', default='both'); ap.add_argument('--only', default=None)
+ap = argparse.ArgumentParser(); ap.add_argument('sub'); ap.add_argument('manifest'); ap.add_argument('--seed', default='1'); ap.add_argument('--arms', default='both'); ap.add_argument('--cand-extra', default='', help='extra arguments appended to the candidate command (e.g. --no-support-closure for the frozen comparator path)'); ap.add_argument('--only', default=None)
 a = ap.parse_args(); man = json.load(open(a.manifest)); env = dict(os.environ, OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1', VECLIB_MAXIMUM_THREADS='1')
 def sup(job, cmd, attempt):
     return [PY, '-m', 'gbidi.supervise', '--ledger', os.path.join(RD, 'BLOCKRES_LEDGER.jsonl'), '--scope', 'blockres_sweep', '--job', job, '--timeout', str(FROZEN['outer_timeout_s']), '--mem-gib', str(FROZEN['mem_gib']), '--interval', '0.05',
@@ -20,7 +20,7 @@ for i, t in enumerate(man['tasks']):
         attempt = os.path.join(RD, a.sub, '%02d__%s__%s__s%s' % (i, t['name'], arm, a.seed)); os.makedirs(attempt, exist_ok=True); out = os.path.join(attempt, 'result.json'); nonce = secrets.token_hex(8)
         if arm == 'cand':
             cmd = [PY, os.path.join(CODE, 'cex/blockres/integrated.py'), '--input', t['model'], '--output', out, '--budget', str(FROZEN['budget_s']), '--mb-cap', str(FROZEN['mb_cap']), '--table-cap', str(FROZEN['table_cap']), '--enum-cap', str(FROZEN['enum_cap']),
-                   '--schedule', FROZEN['schedule'], '--route', FROZEN['route'], '--proposal', FROZEN['proposal'], '--batch', str(FROZEN['batch']), '--seed', a.seed, '--epsilon', FROZEN['epsilon'], '--delta', FROZEN['delta']]
+                   '--schedule', FROZEN['schedule'], '--route', FROZEN['route'], '--proposal', FROZEN['proposal'], '--batch', str(FROZEN['batch']), '--seed', a.seed, '--epsilon', FROZEN['epsilon'], '--delta', FROZEN['delta'] + a.cand_extra.split()
         else:
             seed_hex = hashlib.sha256(('blockres_sweep|%s|%s|N1_CQR|%s' % (t['name'], t['model'], a.seed)).encode()).hexdigest()
             launch = time.monotonic(); cmd = [PY, os.path.join(CODE, 'cex/cqr/worker.py'), '--input', t['model'], '--output', out, '--arm', 'N1_CQR', '--deadline', str(launch + FROZEN['budget_s']), '--seed', seed_hex, '--nonce', nonce, '--budget', str(FROZEN['budget_s'])]

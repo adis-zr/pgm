@@ -533,3 +533,34 @@ result (ObjectDetection_43, development-represented family), and the exposed rep
 in the four poor-overlap cases (or_chain_186, or_chain_209, linkage_13, mastermind_03_08_05-0003), justify one construction, then one bounded implementation experiment; no winning
 proposal intervention is established; (blockmap) an exposed regression target in the ledger, not a prerequisite.
 
+## 20. Round 18 (21 Nov 2026): exact support closure before the partition (`integrated.py` v2.10, `support_closure.py`)
+
+Authorization: the overseer's R18 theoretic pass (records round18/R18_SUPPORT_CLOSURE/: diagnosis, proof, prototype, 312-case checker, brief). Decision: implement ONE general constructor
+in front of the engine: exact support propagation, batched factor-implied bijection quotienting, weight-preserving substitution, to a fixed point; run the unchanged engine on the
+reduced model; decode every original requested coordinate. Preserve v2.9.4 as the comparator (`--no-support-closure`).
+Construction (`support_closure.py`; the `gac` / `quotient` primitives keep the prototype's signatures so its independent exhaustive checker runs against the production module: 312/312).
+Support propagation: a state of v is deleted only when some incident factor has no positive row with that state whose other states are in their current domains. Every globally
+positive assignment supplies a supporting row in every factor, so by induction over deletions every positive assignment survives; an empty support is exact ZERO_EVIDENCE; a
+nonempty closure proves nothing about positivity (Mackworth 1977). Bijection quotient: a pair (u, v) of a factor's scope is an alias only when the factor's complete positive pair
+projection is the graph of a bijection between the FULL current domains (n distinct keys inside a domain of size n). All recognised bijections are composed into components with
+one representative and explicit permutations; where two composed maps disagree on a representative state that state is deleted (no positive completion). Substitution rewrites every
+factor OCCURRENCE through the maps (diagonalising scope variables that share a representative, dropping rows inconsistent with the maps), keeps rational weights, multiplies a factor
+that became constant over its full reduced domain into an exact positive scalar c, never merges duplicate occurrences, and checks every reduced entry (zeros included) against the
+source table through the maps. Decoder: every original variable is a fixed value, or a state of one representative under an explicit permutation, so original positive
+assignments correspond one-to-one with reduced ones and w(D(y)) = c w'(y): Z = c Z' and N_j = c sum_y w'(y) f_j(D(y)); an original singleton coordinate decodes to EXACT 1 / 0
+(fixed), EXACT 0 (outside the representative's image) or its representative's row (same enclosure, same guarantee: deterministic query recovery, no new statistical event).
+Placement and bounds: after read_uai and before integerization, contraction and the memory plan. A declared optional allowance of SUPPORT_CLOSURE_SHARE_S = 0.5 s inside the worker
+budget and a SUPPORT_CLOSURE_BYTE_CEILING = 128 MiB live-byte estimate (rows, domains, maps, decoder, rewritten tables; count-based, conservative); a deadline or ceiling raises a
+typed ClosureRefused and the engine continues on the ORIGINAL model with the time charged (mechanism.support_closure.status = SKIPPED: ...). The denominator stays the original K;
+`effective_K` records the reduced one. Nothing decoded is published without the positive-mass witness; a fully contracted reduced model reports Z = c x (constant blocks x factorless
+multiplicity / scale). The PAC route on a reduced model is the same route on the same kind of model (the closure changes the model, not the sampler); its publications decode as
+above. First integration: the transformed-versus-original choice is made before any sampling (no stream combination).
+Controls (check_round18.py, closure ON; the nine frozen-path suites set SUPPORT_CLOSURE_DEFAULT = False and still pass 83/83): S1 weighted 3-state bijection; S2 inconsistent cycle ->
+ZERO_EVIDENCE, nothing published (oracle agrees); S3 partly consistent permutation cycle (2 representative states removed, 6 EXACT-0 rows, all contained); S4 evidence propagation fixes
+two variables with proven-zero states; S5 two aliases in one ternary factor + a duplicated weighted occurrence (weights multiplied); S6 exact scalar 14/15 and Z = 98/5 equal to the
+oracle's; S7 factorless multiplicity (uniform 1/4) and Z; S8 zero global mass with a fixed variable publishes nothing; S9 an injected 1 us allowance -> typed SKIP, original PAC route,
+contained; S10 all-original expansion (K 21 from effective 7, each coordinate once, alias rows identical); S11 a reduced model that still needs PAC: contained, comparator agrees;
+S12 the nine frozen suites rerun with the closure ON show 0 containment misses (8 path-expectation failures, as expected: dense / shared paths vanish when the closure contracts
+the control model). Development probe (receipt r18_probe_mastermind05_closure, not a scored cell): mastermind_03_08_05-0003 EXACT 7,294 / 7,294 in 1.77 s end to end, 55 MiB, closure
+0.095 s (2,806 deletions, 2,925 fixed, 563 relations, 278 representatives, 257 factors, 556 effective coordinates), 0 separator variables, no draws.
+
