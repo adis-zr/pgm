@@ -71,10 +71,10 @@ say(dict(control='T3_pac_fallback_rebuilds_after_released_exact_route_crosscheck
 # ---- T4: memory plan vs measured: on c7_complete_sep at a cap that gives large unions, the tracemalloc peak of (forward kept) backward pass with release <= planned forward + tile budget + block tables + headroom
 model, _ = BR.core.read_uai(p); cards = model['cards']; fns, c, sc, mlt, fl = BR.integerize(model); tr = []; od = []; st = dict(elim_work=0, eliminations=0, query_work=0)
 live = [f for f in BR.contract(fns, cards, 1 << 6, time.monotonic() + 10, st, tr, od) if f.scope]; blocks = [IG.ft_from_int(f, cards) for f in live]; plan = IG.mb_plan([b.scope for b in blocks], cards, 1 << 14)
-mbp = IG.MBFloat(blocks, cards, 1 << 14, time.monotonic() + 20); fwd_actual = sum(R.M.nbytes for _, _, R in mbp.fwd if R.scope)       # the plan counts the scoped messages (the scalar roots are 8 bytes each)
+mbp = IG.MBFloat(blocks, cards, 1 << 14, time.monotonic() + 20); fwd_actual = sum(R.M.nbytes for _, _, R in mbp.fwd)                   # every message incl. the 8-byte scalar roots (as the plan counts them since v2.9.1)
 tracemalloc.start(); D = IG.backward_derivatives(mbp, cards, time.monotonic() + 20, release=True, tile_budget=64 << 10); _, peak = tracemalloc.get_traced_memory(); tracemalloc.stop()
 released = sum(1 for _, _, R in mbp.fwd if R.M is None); bound = plan['reverse_live_bytes'] + (64 << 10) + sum(b.M.nbytes for b in blocks) + (1 << 20)
-say(dict(control='T4_reverse_pass_peak_within_plan', planned_forward_KiB=round(plan['forward_bytes'] / 1024, 1), actual_forward_KiB=round(fwd_actual / 1024, 1), reverse_live_KiB=round(plan['reverse_live_bytes'] / 1024, 1), measured_peak_KiB=round(peak / 1024, 1), bound_KiB=round(bound / 1024, 1), messages_released=released, of=len(mbp.fwd), ok=(peak <= bound and plan['forward_bytes'] == fwd_actual and released == sum(1 for _, _, R in mbp.fwd if R not in mbp.inputs))))
+say(dict(control='T4_reverse_pass_peak_within_plan', planned_forward_KiB=round(plan['forward_bytes'] / 1024, 1), actual_forward_KiB=round(fwd_actual / 1024, 1), reverse_live_KiB=round(plan['reverse_live_bytes'] / 1024, 1), measured_peak_KiB=round(peak / 1024, 1), bound_KiB=round(bound / 1024, 1), messages_released=released, of=len(mbp.fwd), ok=(peak <= bound and plan['forward_bytes'] == fwd_actual and released == sum(1 for _, _, R in mbp.fwd if R not in mbp.inputs and R.scope))))   # v2.9.1 releases at the CONSUMER step: every scoped message is a bucket member once; the scalar roots are consumed by the root product, not a bucket
 # ---- S1: shared path fixed overhead at B = 1: the reviewer's one-variable block and the 40-step chain; traced peak <= fixed + B x payload
 block = BR.Fn((1,), np.array([2, 2], dtype=object), [0], [0]); factor = IG.FT((0, 1), np.ones((2, 2)), 0, F(0)); sb = IG.SharedBlock(block, [factor], [0], [2, 2], {1: 0}); S = np.zeros((1, 1), dtype=np.int64)
 tracemalloc.start(); sb.responses(S); _, pk1 = tracemalloc.get_traced_memory(); tracemalloc.stop()
@@ -101,5 +101,30 @@ except IG.RangeRefused as e: raised = str(e)[:60]
 except AssertionError as e: raised = 'ASSERT: ' + str(e)[:60]
 finally: IG.SharedBlock._rescale = staticmethod(orig_resc)
 say(dict(control='S3_exponent_conversion_checked_not_clamped', raised=raised, ok=(raised is not None)))
+# ---- (round 14) T5: per-step LIVENESS of the reverse pass vs the plan's simulation, counting what is actually alive: message mantissas not released, message derivatives in D, the
+#      derivative outputs being created (member sizes) and the rescale copy; on the reviewer's star, a long chain (consumers far from creators) and c7_complete_sep; with release=True the
+#      largest simultaneous payload must be <= reverse_live_bytes at EVERY step; and the v2.9 coexistence (mantissa + derivative of the same message) must not occur
+def liveness(blocks_, cards_, cap):
+    plan_ = IG.mb_plan([b.scope for b in blocks_], cards_, cap); mb_ = IG.MBFloat(blocks_, cards_, cap, math.inf); assert mb_.splits == 0
+    orig_t = IG.tiled_member_derivatives; rows_ = []; coexist = [0]
+    def observe(DRa, As, union, cards__, scopes, want, tile_budget, deadline, phase='backward_tile'):
+        fr = sys._getframe(1); D_ = fr.f_locals['D']; mids = {id(r) for _, _, r in mb_.fwd}
+        fwd_ = sum(r.M.nbytes for _, _, r in mb_.fwd if r.M is not None); der_ = sum(d.M.nbytes for mid, d in D_.items() if mid in mids)
+        coexist[0] += sum(1 for _, _, r in mb_.fwd if r.M is not None and id(r) in D_ and r.scope)
+        outs_ = sum(8 * int(np.prod([cards__[u] for u in sc])) for sc in scopes); rows_.append((fwd_, der_, outs_, fwd_ + der_ + outs_ + max([8 * int(np.prod([cards__[u] for u in sc])) for sc in scopes] + [0])))
+        return orig_t(DRa, As, union, cards__, scopes, want, tile_budget, deadline, phase)
+    IG.tiled_member_derivatives = observe
+    try: IG.backward_derivatives(mb_, cards_, math.inf, release=True)
+    finally: IG.tiled_member_derivatives = orig_t
+    worst_ = max(rows_, key=lambda r: r[3]) if rows_ else (0, 0, 0, 0)
+    return plan_['reverse_live_bytes'], worst_, coexist[0], len(rows_)
+star_cards = [2] * 12 + [8]; star_blocks = [IG.FT((i, 12), np.ones((2, 8)), 0, F(0)) for i in range(12)]
+chain_n = 14; chain_cards = [2] * chain_n; chain_blocks = [IG.FT((i, i + 1), nrng.random((2, 2)) + 0.1, 0, F(0)) for i in range(chain_n - 1)] + [IG.FT((0, chain_n - 1), nrng.random((2, 2)) + 0.1, 0, F(0))]
+c7 = os.path.join(TMP, 'c7_complete_sep.uai'); model7, _ = BR.core.read_uai(c7); cards7 = model7['cards']; fns7, _, _, _, _ = BR.integerize(model7); tr7 = []; od7 = []; st7 = dict(elim_work=0, eliminations=0, query_work=0)
+live7 = [f for f in BR.contract(fns7, cards7, 1 << 6, time.monotonic() + 10, st7, tr7, od7) if f.scope]; blocks7 = [IG.ft_from_int(f, cards7) for f in live7]
+allok = True
+for nm, bl, cd, cap in (('reviewer_star', star_blocks, star_cards, 1 << 14), ('ring_chain_14', chain_blocks, chain_cards, 1 << 14), ('c7_complete_sep', blocks7, cards7, 1 << 14)):
+    planned, worst, coexist, nsteps = liveness(bl, cd, cap); ok_ = (worst[3] <= planned and coexist == 0); allok &= ok_
+    say(dict(control='T5_reverse_liveness_within_plan_' + nm, steps=nsteps, planned_bytes=planned, worst_simultaneous=dict(forward=worst[0], derivatives=worst[1], outputs=worst[2], total_with_rescale=worst[3]), mantissa_derivative_coexistence=coexist, ok=ok_))
 summary = dict(utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), version=IG.VERSION, all_ok=all(r['ok'] for r in rows), rows=rows); json.dump(summary, open(OUT, 'w'), indent=1, default=str)
-print('ALL_OK' if summary['all_ok'] else 'FAILURES', sum(1 for r in rows if not r['ok']), 'of', len(rows))
+print('ALL_OK' if summary['all_ok'] else 'FAILURES', sum(1 for r in rows if not r['ok']), 'of', len(rows), '(with T5)')

@@ -405,10 +405,9 @@ variables appear in union order and its leading / trailing split follows the uni
 value is identical in exact arithmetic and the rounding bound pow1pu(nsum - 1) (nsum - 1 additions of nonnegative terms, each a relative (1 + u)) holds for any summation order;
 the range pre-check is unchanged (the operands are the same tables). Control T1: 548 random (member, tile) cases incl. tiles that split a member's scope, 1 to 48 tiles, worst
 relative difference 6.4e-16 against the untiled computation.
-Lifetimes. With release=True the reverse pass frees a message's mantissa right after ITS OWN step is processed: its only consumer step was processed earlier in the reverse walk,
-and its derivative was popped. The live set at reverse step s is then {forward tables created before s whose consumer is already processed} + {derivatives of messages created
-before s and consumed after s}: every message created before s is in exactly one class and a derivative has its message's size, so the live bytes equal the prefix sum of message
-sizes up to s, maximal at the start = ALL forward tables, decreasing afterwards. The memory plan therefore estimates the exact route as base + forward + TILE_BUDGET + block tables
+Lifetimes (as written in round 13; CORRECTED in section 16): v2.9 freed a message's mantissa at ITS OWN reverse step, so between its consumer's step and its own step the
+mantissa and the derivative coexisted; the round-13 claim that the live bytes equal the forward total was false for that policy (reviewer: 320 MiB of message payload against a
+168 MiB plan on DBN_14). The rest of this paragraph is superseded by section 16. The memory plan therefore estimates the exact route as base + forward + TILE_BUDGET + block tables
 + 64 MiB (`reverse_live_bytes` = forward bytes; mastermind-0003: 1,592 MiB, observed process peak 1,958 MiB including the cross-check's native kernel, 1,680 MiB before it = the
 construction peak). The forward tables are gone after a released reverse pass: if the exact route is then refused or fails its cross-check, the (deterministic) construction is
 REBUILT for the PAC fallback (`mb_rebuilt_for_pac`, control T3: cross-check INVESTIGATE on a corrupted derivative -> rebuild -> PAC COMPLETE, contained). Control T2: the released /
@@ -426,4 +425,30 @@ difference is converted with a checked domain (|e| < 2^30, typed refusal) and as
 exponent); the only floor is at -2200, where ldexp of any mantissa below 2^80 is exactly 0, and the absolute error of an underflowed final ratio (<= 2^-1021) is added to rho_f.
 Forecast correction (round 12 records): the "170-270 s" figure was elapsed x (width / target)^2, a square-root-law heuristic; the recorded targeted-schedule trajectory fits
 a + b / (n + c) and projects about 85-119 s; neither is a measured completion time, and 170-270 s against a 20 s contract is 8.5-13.5x, not 17-27x.
+
+## 16. Round 14 (21 Nov 2026): the reverse lifetime invariant, proved and simulated; a fresh generalization panel (`integrated.py` v2.9.1)
+
+Authorization: the round-13 adversarial review (records round14/BLOCKRES_R13_ADVERSARIAL_REVIEW.md, sha256 c2b62c5e...): "make the narrow lifetime-accounting correction and retain
+the existing completion under the same budget; freeze that build; run a small, explicitly budgeted fresh generalization panel".
+Defect (confirmed on v2.9 under receipt r14_repro_lifetime_v29 with the reviewer's star: plan 688 B, simultaneous message payload 640 + 640 = 1,280 B): a message's mantissa was
+released at its own reverse step, but its derivative is created at its CONSUMER's reverse step, which comes earlier in the reverse walk; both arrays coexisted in between.
+Repair (v2.9.1): the mantissa is released right after the consumer step has used it, which is its only reader in the reverse walk (the step producing the message uses D_R and the
+bucket members' mantissas, never R's own). Invariant: at reverse step s (steps > s processed), a message m created at c(m) and consumed at k(m) > c(m) has only its derivative alive
+when c(m) <= s < k(m), only its mantissa alive when k(m) <= s, and neither when c(m) > s; so the persistent payload at s is the prefix sum of message sizes up to s, maximal at the
+start = the forward total. The plan now SIMULATES this per step (`mb_plan.reverse_live_bytes`) and adds the TRANSIENT of the step being processed: the members' derivative outputs
+(the tiled helper allocates them in full before its tile loop; their mantissas are still alive at that moment) and the rescale copy of the largest member; the scalar roots'
+8-byte mantissas and derivatives are counted (the roots are not released). The exact-route estimate is base + reverse_live + TILE_BUDGET (tile scratch) + block tables (the input
+derivatives) + 64 MiB headroom; mastermind-0003 stays admitted (persistent 1,024 MiB + transients). Controls (check_round13.py T5, round 14): the production reverse pass is
+instrumented per step for mantissas not released, message derivatives in D, the outputs being created and the rescale copy, on the reviewer's star, a 14-variable ring and
+c7_complete_sep: the largest simultaneous payload equals the plan exactly (1,704 / 504 / 229,784 B) and no message ever has mantissa and derivative alive together; T4 passes with the
+plan's own numbers. This is an array-payload invariant (NumPy object / list / dict overhead is charged to the headroom, as for the shared path); the supervisor enforces the contract.
+The reviewer's DBN_14 measurement (320 MiB) is addressed by construction: with release at the consumer step the two 160 MiB sets cannot coexist. The six preservation cases and
+mastermind-0003 are rerun on the frozen v2.9.1 (round14/preservation).
+Fresh panel. Pools: uai14 prob (142 names), uai2022 final MAR (88), uai2022 tuning MAR (120), MC2024 WMC conversions (26); 230 distinct models by sha256. Exposure census
+(round14/selection/EXPOSURE_CENSUS.json): a ripgrep of every name over code/runs and docs (33 s, complete, excluding the pool directories themselves) classifies a name as EXPOSED
+if it occurs in any file that is not a pool enumeration (inventories, selection candidate lists, hash manifests, archive scans, package-exclusion lists, download / conversion
+logs): 83 exposed (every instance ever planned, run, inspected or named in a note or review), 155 fresh in 7 families. Selection (seed 20261121, before any run): family = the
+leading alphabetic token; seeded family order, round-robin at most two per family, 8 instances, model-sha256 dedup, seeded run order; a first draft that treated blockmap
+sub-families as separate families was superseded before any run and is recorded in the manifest. Both arms (incumbent N1_CQR bank arm, identical supervision), alternating order.
+Declared cap 900 s (the round-9 / round-11 sweep caps; none was named in the review).
 

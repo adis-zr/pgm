@@ -20,7 +20,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2.9 (2026-11-20 round 13: exact route executes under the contract for unsplit constructions: tiled reverse step (TILE_BUDGET), forward tables released after use with a deterministic rebuild for the PAC fallback, trace-simulated reverse live bytes in the memory plan; shared path: explicit fixed workspace term, deadline polled at entry and per factor gather, checked exponent conversion (no clamp); v2.8 round 12 repair: shared recovery under the FT range lemma (per-sample range bits, product pre-checks, finite checks, static preflight, typed refusal preserving the completed prefix); trace-simulated live-bytes bound and microbatch policy; deadline polled inside the shared forward / backward; active-row + unique-boundary evaluation; executor cross-check under a joint host budget; v2.7.1: a deadline inside a shared-response batch abandons only that batch and reports the retained draws / certificate state; the backward pass keeps message mantissas (v2.7 freed them and broke the PAC fallback after a refused exact route: CSP_13 crash); v2.7 round 11 post-freeze RESOURCE patch: forward mantissas released as their log tables are built; backward derivatives and consumed messages freed per step; exact-route peak estimate in the memory policy (typed skip); v2.6 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.9.1 (2026-11-21 round 14: reverse pass releases a message mantissa at its CONSUMER step (proved lifetime invariant; v2.9 released at its own step, so mantissa and derivative coexisted), memory plan simulates the implemented lifetimes incl. transient member outputs; v2.9 round 13: exact route executes under the contract for unsplit constructions: tiled reverse step (TILE_BUDGET), forward tables released after use with a deterministic rebuild for the PAC fallback, trace-simulated reverse live bytes in the memory plan; shared path: explicit fixed workspace term, deadline polled at entry and per factor gather, checked exponent conversion (no clamp); v2.8 round 12 repair: shared recovery under the FT range lemma (per-sample range bits, product pre-checks, finite checks, static preflight, typed refusal preserving the completed prefix); trace-simulated live-bytes bound and microbatch policy; deadline polled inside the shared forward / backward; active-row + unique-boundary evaluation; executor cross-check under a joint host budget; v2.7.1: a deadline inside a shared-response batch abandons only that batch and reports the retained draws / certificate state; the backward pass keeps message mantissas (v2.7 freed them and broke the PAC fallback after a refused exact route: CSP_13 crash); v2.7 round 11 post-freeze RESOURCE patch: forward mantissas released as their log tables are built; backward derivatives and consumed messages freed per step; exact-route peak estimate in the memory policy (typed skip); v2.6 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
@@ -130,7 +130,7 @@ def recover_query_table_float(block_ft, x, cards, trace_ft, trace_var, step_of, 
 def mb_plan(scopes, cards, cap):
     """DRY RUN of the mini-bucket partition on scopes only (no tables): returns dict(forward_bytes, log_bytes, max_table, splits, steps, peak_step_bytes) for the memory policy"""
     live = [(tuple(sc), None) for sc in scopes]; vars_ = sorted({v for sc, _ in live for v in sc}); fwd = 0; logs = 0; mx = 0; splits = 0; steps = 0; peak = 0
-    created = {}; consumed = {}; rec = []                                  # message lifetimes (message id = creation step) for the reverse-pass live-bytes simulation
+    created = {}; consumed = {}; rec = []; scalar_steps = set()            # message lifetimes (message id = creation step) for the reverse-pass live-bytes simulation
     while vars_:
         best = None
         for v in vars_:
@@ -149,14 +149,19 @@ def mb_plan(scopes, cards, cap):
             usz = prod(cards[x] for x in u); msz = usz // cards[v]; peak = max(peak, usz * 8 * 2); mx = max(mx, msz); si = len(rec)
             for sc, mid in members:
                 if mid is not None: consumed[mid] = si
-            nsc = tuple(x for x in sorted(u) if x != v); created[si] = msz if nsc else 0; rec.append((si, len(members), usz))
-            if nsc: live.append((nsc, si)); fwd += msz * 8
+            nsc = tuple(x for x in sorted(u) if x != v); created[si] = msz if nsc else 1; rec.append((si, len(members), usz, [mid for _, mid in members if mid is not None], [prod(cards[x] for x in sc) for sc, _ in members])); scalar_steps.add(si) if not nsc else None   # a scalar message is a 0-d array: one entry
+            fwd += created[si] * 8
+            if nsc: live.append((nsc, si))
             if gi == 0: logs += sum(prod(cards[x] for x in sc) * 8 for sc, _ in members)
-    # reverse pass with release after use: at reverse step s the live set = forward tables whose own step is still to come (their consumer is already processed) + the derivatives
-    # of messages created before s and consumed after s; every message created before s falls in exactly one of the two classes and a derivative has its message's size, so the live
-    # bytes at s are the prefix sum of message sizes up to s, maximal at the START of the reverse walk = all forward tables (then monotonically decreasing). Hence reverse_live = fwd.
-    rev_live = fwd
-    return dict(forward_bytes=fwd, log_bytes=logs, max_table=mx, splits=splits, steps=steps, peak_step_bytes=peak, reverse_live_bytes=rev_live, max_k=max([k for _, k, _ in rec] + [1]))
+    # reverse pass, IMPLEMENTED lifetimes (round 14): a message's mantissa is released right after its CONSUMER's reverse step has used it; its derivative is created at that same step and
+    # popped at its own reverse step. So at reverse step s (steps > s processed): message m with c(m) <= s < k(m) has only D alive, m with k(m) <= s has only M alive, m with c(m) > s has
+    # neither -> the persistent payload is the prefix sum of message sizes up to s (maximal at the start = all forward tables). TRANSIENT at step s: the members' derivative outputs
+    # (member sizes; their mantissas are still alive) + the rescale copy of the largest member + the derivative of R itself (DR, alive, created at its consumer). Simulated per step.
+    # a SCALAR message (0-d root) is never released and its derivative (8 bytes, from the root product) is alive from the start until its own step: both are counted.
+    rev_live = 0; pref = sum(created.values()) + len(scalar_steps)
+    for si, k, usz, mids, msizes in reversed(rec):
+        rev_live = max(rev_live, (pref + sum(msizes) + max(msizes + [0])) * 8); pref -= 1 if si in scalar_steps else created[si]                      # a scalar's derivative is popped at its step; its mantissa stays
+    return dict(forward_bytes=fwd, log_bytes=logs, max_table=mx, splits=splits, steps=steps, peak_step_bytes=peak, reverse_live_bytes=rev_live, max_k=max([k for _, k, _, _, _ in rec] + [1]))
 
 
 def memory_plan(scopes, cards, mb_cap, base_bytes):
@@ -720,8 +725,8 @@ def tiled_member_derivatives(DRa, As, union, cards, scopes, want, tile_budget, d
 def backward_derivatives(mbp, cards, deadline, release=False, tile_budget=None):
     """D[id(f)] = dZ/df over f.scope for every input block table of an UNSPLIT mini-bucket pass: D(final scalars) = 1; at step (v, bucket, R): D_f = sum_{union minus scope f} D_R x prod_{g in bucket, g != f} g
     (zero-safe: prefix / suffix products, no division). Every product is range-pre-checked and every rho exact (the same lemma as the forward pass). Round 13: the step's products are
-    TILED (tiled_member_derivatives, workspace <= tile_budget) and, with release=True, a consumed message's mantissa is freed right after its own step is processed (its consumer step
-    has already been processed in the reverse walk); the forward tables are then gone and a PAC fallback must rebuild the construction."""
+    TILED (tiled_member_derivatives, workspace <= tile_budget) and, with release=True, a message's mantissa is freed right after its CONSUMER step has used it (round 14; its only reader
+    in the reverse walk), so a message's mantissa and its derivative never coexist beyond that step; the forward tables are then gone and a PAC fallback must rebuild the construction."""
     roots = mbp.scalars; m = len(roots)
     if any(float(r.M) == 0.0 for r in roots): raise RangeRefused('backward: a zero scalar root (Z = 0 must be reported as ZERO_EVIDENCE before any normalized publication)')
     pre = [None] * m; suf = [None] * m; acc = None
@@ -745,9 +750,10 @@ def backward_derivatives(mbp, cards, deadline, release=False, tile_budget=None):
             Df = np.asarray(outs[i], dtype=float).reshape([cards[u] for u in f.scope]) if f.scope else np.asarray(outs[i], dtype=float).reshape(())
             Df, e = _rescale(np.ascontiguousarray(Df), e); D[id(f)] = FT(f.scope, Df, e, rho)
         del A, DRa, outs
-        if id(R) not in inputs_ids:
-            D.pop(id(R), None)                                             # the derivative of R has no further consumer
-            if release: R.M = None                                         # R's consumer step was processed earlier in the reverse walk: its mantissa has no further reader (the PAC fallback rebuilds the construction)
+        if release:
+            for f in bucket:
+                if id(f) not in inputs_ids and f.scope: f.M = None         # the member's only reader in the reverse walk was this step (its consumer); its derivative now carries it
+        if id(R) not in inputs_ids: D.pop(id(R), None)                     # the derivative of R has no further consumer
     return D
 
 
@@ -976,7 +982,7 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         if construct_only: out['outcome'] = 'CONSTRUCT_ONLY'; return BR.finish(out, t_start, queries, {}, failed)
         blockfac = {i: [conv(f) for f in fns if f.facs <= live[i].facs] for i in range(len(blocks))}
         iorder = {i: [trace_var[st] for st in sorted(step_of[u] for u in live[i].interior)] for i in range(len(blocks))}
-        fwd_actual = sum(R.M.nbytes for _, _, R in mbp.fwd if R.M is not None); exact_peak = base_bytes + plan['reverse_live_bytes'] + TILE_BUDGET + sum(b.M.nbytes for b in blocks) + (64 << 20)   # reverse pass with release after use + one tiled step + block derivatives + headroom
+        fwd_actual = sum(R.M.nbytes for _, _, R in mbp.fwd if R.M is not None); exact_peak = base_bytes + plan['reverse_live_bytes'] + TILE_BUDGET + sum(b.M.nbytes for b in blocks) + (64 << 20)   # simulated reverse live payload (persistent + transient) + one tiled step's scratch + block derivatives + headroom
         out['mechanism']['memory_policy'].update(exact_route_peak_estimate=exact_peak, exact_route_fits=(exact_peak <= USABLE))
         # ---- EXACT ROUTE first (unsplit): needs the forward messages, not the sampler tables or PAC query tables; only when its estimated peak fits the policy
         if mbp.splits == 0 and route in ('auto', 'exact') and exact_peak > USABLE:
