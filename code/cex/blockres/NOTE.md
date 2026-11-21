@@ -387,3 +387,43 @@ Rao-Blackwellized conditional expectation). Control A1: identical response matri
 Corrections to round 11 prose (recorded in round11/RESULTS_ROUND11.md): all 9,216 zero weights on mastermind-0015 show that no positive-weight draw was OBSERVED in that run, not
 that the proposal's support misses the target's; the BN_12 forced-shared ablation was compared with the dense run (158 / 158 overlapping intervals), not with an exact reference.
 
+## 15. Round 13 (20-21 Nov 2026): the exact route executes under the contract for unsplit constructions (`integrated.py` v2.9)
+
+Authorization: the round-12 adversarial review (records round12/BLOCKRES_R12_ADVERSARIAL_REVIEW.md, sha256 2a96e5c8...): close round 12 as a negative performance result, make the
+two resource corrections narrowly, correct the forecast prose, and take "one bounded architectural attempt" at executing the discovered unsplit exact computation within the
+contract on mastermind-0003 (tile large contractions, manage trace lifetimes / recomputation, keep the PAC fallback and the cross-check; do not hard-code the case, disable the
+cross-check or raise the usable limit).
+Measured cause of the skip (round13/probe_*): the v2.8 estimate base + 2 x forward + 3 x step peak = 3,045 MiB came from (a) keeping every forward table through the reverse walk
+and (b) an UNTILED step workspace: the largest step of mastermind-0003 has k = 11 members over a 2^24-entry union, so its (2k + 3) union-sized prefix / suffix / product arrays need
+3,200 MiB alone (the next four steps 1,664 MiB each); an unguarded run of the old reverse pass was MEMORY_KILLED at 3.3 GiB inside the first large step (receipt
+r13_probe_exact_route_phases_mastermind_0003). The forward live set is small (64 MiB peak) and the cross-check alone fits (8.2 s, +280 MiB; receipt r13_probe_crosscheck_...).
+Tiling (`tiled_member_derivatives`). At a reverse step the derivative of member i is sum over (union minus scope_i) of D_R x prod_{j != i} A_j. The union axes are split into LEADING
+axes (enumerated one index at a time) and TRAILING axes (processed whole), with the trailing block chosen so that (2k + 3) trailing-sized arrays fit TILE_BUDGET (256 MiB): for every
+leading index the prefix / suffix products and the k member products are formed on the trailing tile and reduced over the trailing axes outside scope_i; the result is ACCUMULATED
+into the output at the leading indices that belong to scope_i (summed over the leading axes that do not). Because scopes are sorted tuples (as every FT scope), a member's
+variables appear in union order and its leading / trailing split follows the union's. Identity: the same multiset of nonnegative products is summed in a different order, so the
+value is identical in exact arithmetic and the rounding bound pow1pu(nsum - 1) (nsum - 1 additions of nonnegative terms, each a relative (1 + u)) holds for any summation order;
+the range pre-check is unchanged (the operands are the same tables). Control T1: 548 random (member, tile) cases incl. tiles that split a member's scope, 1 to 48 tiles, worst
+relative difference 6.4e-16 against the untiled computation.
+Lifetimes. With release=True the reverse pass frees a message's mantissa right after ITS OWN step is processed: its only consumer step was processed earlier in the reverse walk,
+and its derivative was popped. The live set at reverse step s is then {forward tables created before s whose consumer is already processed} + {derivatives of messages created
+before s and consumed after s}: every message created before s is in exactly one class and a derivative has its message's size, so the live bytes equal the prefix sum of message
+sizes up to s, maximal at the start = ALL forward tables, decreasing afterwards. The memory plan therefore estimates the exact route as base + forward + TILE_BUDGET + block tables
++ 64 MiB (`reverse_live_bytes` = forward bytes; mastermind-0003: 1,592 MiB, observed process peak 1,958 MiB including the cross-check's native kernel, 1,680 MiB before it = the
+construction peak). The forward tables are gone after a released reverse pass: if the exact route is then refused or fails its cross-check, the (deterministic) construction is
+REBUILT for the PAC fallback (`mb_rebuilt_for_pac`, control T3: cross-check INVESTIGATE on a corrupted derivative -> rebuild -> PAC COMPLETE, contained). Control T2: the released /
+tiled exact route publishes intervals IDENTICAL to the unreleased / untiled computation on three models (all contained); T4: the traced peak of the released reverse pass is within
+the plan.
+Result on mastermind-0003 (receipt r13_probe_solve_exact_mastermind_0003_v29, frozen settings, 19.5 s budget, 3 GiB): COMPLETE 4,504 / 4,504 DETERMINISTIC in 12.99 s (contract
+0.72, float convert 1.04, construction 0.80, reverse pass 1.92, block numerators 0.65, executor cross-check 7.69 s CERTIFIED on all 272 separator coordinates), peak RSS 1,958
+MiB, widths median 5.6e-12 / max 9.4e-10. This is the first full 20-second completion on a formerly failing exposed case; it is exposed development evidence (the instance was
+seen in rounds 9-12), not transfer evidence. The cross-check is 59 % of the wall time.
+Shared-path corrections (reviewer's findings 1-2 and the exponent point): `fixed_workspace_bytes` = 16 KiB + 1 KiB x (factors + 6 steps + columns) accounts for the allocation
+overhead that does not scale with B (array objects, views, dicts, lists); the batch and microbatch policy uses fixed + B x payload (control S1: traced peaks 7.2 KiB / 503 KiB /
+53.9 MiB against 25.9 KiB / 859 KiB / 61.0 MiB planned at B = 1 / 1 / 128); this is array-payload accounting plus an explicit overhead term, backed by the process headroom and
+enforced end to end only by the supervisor. The deadline is polled at entry and before every factor gather (control S2: an expired deadline permits zero gathers). The exponent
+difference is converted with a checked domain (|e| < 2^30, typed refusal) and asserted <= 1023 (by the range lemma N_v / r >= 2^-1001, so a true ratio <= 1 never needs a larger
+exponent); the only floor is at -2200, where ldexp of any mantissa below 2^80 is exactly 0, and the absolute error of an underflowed final ratio (<= 2^-1021) is added to rho_f.
+Forecast correction (round 12 records): the "170-270 s" figure was elapsed x (width / target)^2, a square-root-law heuristic; the recorded targeted-schedule trajectory fits
+a + b / (n + c) and projects about 85-119 s; neither is a measured completion time, and 170-270 s against a 20 s contract is 8.5-13.5x, not 17-27x.
+

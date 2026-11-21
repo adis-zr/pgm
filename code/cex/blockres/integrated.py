@@ -9,7 +9,7 @@
       batch (any predictable choice is valid), and two predictable lambda schedules are selectable: 'baseline' (1 / sqrt(t log t)) and 'targeted'
       (lambda = 2 E[X] eps / (v + 2 E[X] eps), the overseer's accuracy-targeted heuristic; validity from predictability alone).
 Mathematics as in NOTE.md sections 5-6; the widening terms are now derived from the tracked exact bounds (section 7)."""
-import sys, os, json, time, argparse, random, resource, math
+import sys, os, json, time, argparse, random, resource, math, itertools
 T_PROCESS_START = time.monotonic()
 from fractions import Fraction as F
 from math import prod, inf, log2, frexp, ldexp, nextafter
@@ -20,7 +20,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import blockres as BR
 from blockres import tnow, Deadline, lg
 
-VERSION = 'blockres-integrated-v2.8 (2026-11-20 round 12 repair: shared recovery under the FT range lemma (per-sample range bits, product pre-checks, finite checks, static preflight, typed refusal preserving the completed prefix); trace-simulated live-bytes bound and microbatch policy; deadline polled inside the shared forward / backward; active-row + unique-boundary evaluation; executor cross-check under a joint host budget; v2.7.1: a deadline inside a shared-response batch abandons only that batch and reports the retained draws / certificate state; the backward pass keeps message mantissas (v2.7 freed them and broke the PAC fallback after a refused exact route: CSP_13 crash); v2.7 round 11 post-freeze RESOURCE patch: forward mantissas released as their log tables are built; backward derivatives and consumed messages freed per step; exact-route peak estimate in the memory policy (typed skip); v2.6 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
+VERSION = 'blockres-integrated-v2.9 (2026-11-20 round 13: exact route executes under the contract for unsplit constructions: tiled reverse step (TILE_BUDGET), forward tables released after use with a deterministic rebuild for the PAC fallback, trace-simulated reverse live bytes in the memory plan; shared path: explicit fixed workspace term, deadline polled at entry and per factor gather, checked exponent conversion (no clamp); v2.8 round 12 repair: shared recovery under the FT range lemma (per-sample range bits, product pre-checks, finite checks, static preflight, typed refusal preserving the completed prefix); trace-simulated live-bytes bound and microbatch policy; deadline polled inside the shared forward / backward; active-row + unique-boundary evaluation; executor cross-check under a joint host budget; v2.7.1: a deadline inside a shared-response batch abandons only that batch and reports the retained draws / certificate state; the backward pass keeps message mantissas (v2.7 freed them and broke the PAC fallback after a refused exact route: CSP_13 crash); v2.7 round 11 post-freeze RESOURCE patch: forward mantissas released as their log tables are built; backward derivatives and consumed messages freed per step; exact-route peak estimate in the memory policy (typed skip); v2.6 round 11: guarded deterministic ratios + validated publication (F1); compact root allowance (F2); exact route before any PAC preparation; process-wide memory policy (dry-run planner, cap ladder, usable 2.5 GiB, lazy sampler tables, forward messages released); shared block recovery for both routes (exact: one backward per block seeded by D_b; PAC: batched clamped-boundary responses when dense tables do not fit); batch size under the policy; v2.5 round 10: compact conservative error bounds everywhere (no exact powers / long exact products); byte-budgeted interior-query recovery with in-place stacking (typed RESOURCE skips); interior deadline check in the backward pass; v2.4 round 9: incremental scalar products; WMB weights as exact Fractions summing to 1 within the admitted domain (> 20 groups rejected); pass-through envelope + float-only message error with domain-checked conversions; proposal selection by CERTIFIED caps; v2.3 round 8: root derivatives = products of the other scalar roots (disconnected components); a requested executor cross-check must succeed and cover every published separator coordinate; dyadic 2^-52 outward compaction of deterministic enclosures; coherent guarantee labels; v2.2 round 7: split census; EXACT ROUTE for unsplit constructions = shared backward differential + per-block retained VE, deterministic intervals, existing certified executor as independent cross-check of the separator marginals; v2.1 round 5: power-of-two exponents cancelled exactly before any float log; widening from the actual tracked log magnitudes; v2 round 4: exact-rational error bounds, product underflow pre-check, conservative inversion, batch loop, lambda schedules)'
 UF = F(1, 1 << 53); U = 2.0 ** -53
 RANGE_BUDGET = 1000                  # bits: sum of operand ranges allowed in ONE product (its smallest nonzero entry stays >= 2^-1000 of its max: normal, nonzero)
 RANGE_BITS = 900                     # a table whose smallest nonzero entry is below 2^-900 of its maximum is refused outright
@@ -30,6 +30,7 @@ FLOAT_BYTE_CAP = 256 << 20
 PROCESS_HEADROOM_BYTES = 160 << 20      # process overhead / numpy headroom reserved in the memory plan (measured 105-242 MiB on the panel)
 CAP_LADDER = (1 << 22, 1 << 20, 1 << 18, 1 << 16, 1 << 14, 1 << 12, 1 << 10)
 USABLE_BYTES = 2560 << 20               # usable ceiling of the 3 GiB contract for the process-wide memory plan (module-level so a control can inject a smaller limit)
+TILE_BUDGET = 256 << 20                 # workspace budget of ONE tiled reverse step of the exact route ((2k + 3) tile-sized arrays)
 BATCH_BUDGET = 384 << 20                # ONE budget for everything allocated per batch in the stream: the response matrix + certificate temporaries + the shared-block workspace (chunked)
 RECOVERY_BYTE_BUDGET = 512 << 20          # total bytes of RETAINED recovered query tables (stacked per block); beyond it the remaining interior queries are typed RESOURCE (NOT_PUBLISHED), never a memory kill
 
@@ -128,27 +129,34 @@ def recover_query_table_float(block_ft, x, cards, trace_ft, trace_var, step_of, 
 # ---------------------------------------------------------------- mini-bucket proposal in float with a batch sampler
 def mb_plan(scopes, cards, cap):
     """DRY RUN of the mini-bucket partition on scopes only (no tables): returns dict(forward_bytes, log_bytes, max_table, splits, steps, peak_step_bytes) for the memory policy"""
-    live = [tuple(sc) for sc in scopes]; vars_ = sorted({v for sc in live for v in sc}); fwd = 0; logs = 0; mx = 0; splits = 0; steps = 0; peak = 0
+    live = [(tuple(sc), None) for sc in scopes]; vars_ = sorted({v for sc, _ in live for v in sc}); fwd = 0; logs = 0; mx = 0; splits = 0; steps = 0; peak = 0
+    created = {}; consumed = {}; rec = []                                  # message lifetimes (message id = creation step) for the reverse-pass live-bytes simulation
     while vars_:
         best = None
         for v in vars_:
-            nb = set().union(*(set(sc) for sc in live if v in sc)) - {v}; size = prod(cards[u] for u in nb) if nb else 1
+            nb = set().union(*(set(sc) for sc, _ in live if v in sc)) - {v}; size = prod(cards[u] for u in nb) if nb else 1
             if best is None or size < best[0]: best = (size, v)
-        v = best[1]; vars_.remove(v); bucket = [sc for sc in live if v in sc]; live = [sc for sc in live if v not in sc]; steps += 1
+        v = best[1]; vars_.remove(v); bucket = [t for t in live if v in t[0]]; live = [t for t in live if v not in t[0]]; steps += 1
         if not bucket: continue
-        bucket.sort(key=lambda sc: -len(sc)); groups = []
-        for sc in bucket:
+        bucket.sort(key=lambda t: -len(t[0])); groups = []
+        for sc, mid in bucket:
             for g in groups:
                 u = g[0] | set(sc)
-                if prod(cards[x] for x in u) <= cap: g[0] = u; g[1].append(sc); break
-            else: groups.append([set(sc), [sc]])
+                if prod(cards[x] for x in u) <= cap: g[0] = u; g[1].append((sc, mid)); break
+            else: groups.append([set(sc), [(sc, mid)]])
         splits += len(groups) - 1
         for gi, (u, members) in enumerate(groups):
-            usz = prod(cards[x] for x in u); msz = usz // cards[v]; peak = max(peak, usz * 8 * 2); mx = max(mx, msz)
-            nsc = tuple(x for x in sorted(u) if x != v)
-            if nsc: live.append(nsc); fwd += msz * 8
-            if gi == 0: logs += sum(prod(cards[x] for x in sc) * 8 for sc in members)
-    return dict(forward_bytes=fwd, log_bytes=logs, max_table=mx, splits=splits, steps=steps, peak_step_bytes=peak)
+            usz = prod(cards[x] for x in u); msz = usz // cards[v]; peak = max(peak, usz * 8 * 2); mx = max(mx, msz); si = len(rec)
+            for sc, mid in members:
+                if mid is not None: consumed[mid] = si
+            nsc = tuple(x for x in sorted(u) if x != v); created[si] = msz if nsc else 0; rec.append((si, len(members), usz))
+            if nsc: live.append((nsc, si)); fwd += msz * 8
+            if gi == 0: logs += sum(prod(cards[x] for x in sc) * 8 for sc, _ in members)
+    # reverse pass with release after use: at reverse step s the live set = forward tables whose own step is still to come (their consumer is already processed) + the derivatives
+    # of messages created before s and consumed after s; every message created before s falls in exactly one of the two classes and a derivative has its message's size, so the live
+    # bytes at s are the prefix sum of message sizes up to s, maximal at the START of the reverse walk = all forward tables (then monotonically decreasing). Hence reverse_live = fwd.
+    rev_live = fwd
+    return dict(forward_bytes=fwd, log_bytes=logs, max_table=mx, splits=splits, steps=steps, peak_step_bytes=peak, reverse_live_bytes=rev_live, max_k=max([k for _, k, _ in rec] + [1]))
 
 
 def memory_plan(scopes, cards, mb_cap, base_bytes):
@@ -449,7 +457,7 @@ class SharedBlock:
             steps.append(dict(si=si, k=k, usz=usz, v=v))
             fwd_peak = max(fwd_peak, nfac_floats + sum(m['size'] for m in msgs) + 2 * usz)                                  # all restricted factors + all messages so far + P and its rescale copy
         self.rho_f = comb(*[f['rho'] for f in self.facs], pow1pu(nmul + nsum + 4))
-        self.rho_f = comb(self.rho_f, self.rho_f)                        # numerator and denominator each carry the bound
+        self.rho_f = comb(self.rho_f, self.rho_f, F(1, 1 << 1000))        # numerator and denominator each carry the bound; + the absolute 2^-1021 of a subnormal / underflowed final ratio
         self.tol = 2.0 * fup(self.rho_f) + 2.0 ** -40                    # a response above 1 + tol is a defect (the true conditional probability is <= 1)
         self.max_union = mu
         bwd_peak = 0; msg_total = sum(m['size'] for m in msgs)
@@ -457,7 +465,8 @@ class SharedBlock:
             si = st['si']; crossing = sum(m['size'] for m in msgs if m['created'] <= si and (m['consumed'] is None or m['consumed'] > si))    # derivatives alive at this backward step
             ws = (2 * st['k'] + 5) * st['usz'] + cards[st['v']]                                                                               # prefix / suffix (k each), P, full, Pm, Dm + rescale copy, Nv
             bwd_peak = max(bwd_peak, nfac_floats + msg_total + crossing + ws)
-        self.bytes_per_sample = 8 * (max(fwd_peak, bwd_peak) + len(self.cols) + 6 * len(self.facs) + 16)                                   # + the response row, index / exponent / range arrays
+        self.bytes_per_sample = 8 * (max(fwd_peak, bwd_peak) + len(self.cols) + 6 * len(self.facs) + 16)                                   # ARRAY PAYLOAD per sample (+ the response row, index / exponent / range arrays)
+        self.fixed_workspace_bytes = (16 << 10) + (1 << 10) * (len(self.facs) + 6 * len(steps) + len(self.cols))                        # allocation overhead that does not scale with B: array objects, views, dicts / lists (reviewer: 7.9 KiB at one variable, 35 KiB over the payload on a 40-step chain)
     def _restricted(self, f, Sb):
         if f['bv']: idx = np.zeros(Sb.shape[0], dtype=np.int64)
         else:
@@ -481,8 +490,10 @@ class SharedBlock:
         for r in Rs[1:]: tot = tot + r
         if tot.size and int(tot.max()) > RANGE_BUDGET: raise RangeRefused('shared block %s: a product of %d batched tables could underflow (range bits %d > %d on %d of %d samples)' % (where, len(Rs), int(tot.max()), RANGE_BUDGET, int((tot > RANGE_BUDGET).sum()), tot.size))
     def responses(self, Sb, deadline=inf):
+        if tnow() >= deadline: raise Deadline('shared_entry')
         B = Sb.shape[0]; cards = self.cards; live = []; msg_ids = set()
         for f in self.facs:
+            if tnow() >= deadline: raise Deadline('shared_gather')
             A = np.array(self._restricted(f, Sb), dtype=float); E = np.full(B, float(f['e'])); A, E, R = self._rescale(A, E); live.append([f['iv'], A, E, R])
         steps = []
         for v in self.order:
@@ -531,8 +542,11 @@ class SharedBlock:
             for i in range(k - 1, -1, -1): suf[i] = acc; acc = As[i] if acc is None else acc * As[i]
             full = np.broadcast_to(P * DRb, (B,) + tuple(cards[u] for u in union)); del P
             axes = tuple(1 + i for i, u in enumerate(union) if u != v); Nv = full.sum(axis=axes) if axes else full; Nv = Nv.reshape(B, cards[v]); del full
-            ex = np.clip(np.rint(E + Ed - Er), -1100, 1100).astype(np.int64)                     # exact integer exponents (E, Ed, Er hold integers)
-            val = np.ldexp(Nv / rsafe[:, None], ex[:, None]); val = np.where(rootpos[:, None], val, 0.0)
+            ex = E + Ed - Er                                                                       # exact integer exponents (E, Ed, Er hold integers far below 2^53)
+            if not np.all(np.abs(ex) < 2.0 ** 30): raise RangeRefused('shared block: exponent difference outside the admitted domain')
+            ex = ex.astype(np.int64)
+            assert int(ex.max(initial=-1)) <= 1023, 'shared conditional response exponent %d > 1023: N_v / r >= 2^-1001 by the range lemma, so a true ratio <= 1 cannot need it (certificate defect)' % int(ex.max())
+            val = np.ldexp(Nv / rsafe[:, None], np.maximum(ex, -2200)[:, None]); val = np.where(rootpos[:, None], val, 0.0)   # ex < -2200 gives exactly 0 for any mantissa < 2^80: the floor is value-preserving; an underflow in the ratio is an ABSOLUTE error <= 2^-1021, inside rho_f
             assert np.all(np.isfinite(val)) and float(val.max(initial=0.0)) <= 1.0 + self.tol, 'shared conditional response exceeds 1 beyond its error bound (certificate defect): max %r' % float(val.max())
             for a in range(cards[v]): f[:, ci[(v, a)]] = np.clip(val[:, a], 0.0, 1.0)
             for i, (sc, A, Ea, Ra) in enumerate(bucket):
@@ -678,9 +692,36 @@ def ft_scalar_product(fts):
     return FT((), np.array(M), e, comb(*rhos, pow1pu(n - 1)))
 
 
-def backward_derivatives(mbp, cards, deadline):
+def tiled_member_derivatives(DRa, As, union, cards, scopes, want, tile_budget, deadline, phase='backward_tile'):
+    """{i: sum_{union minus scope_i} DRa x prod_{j != i} A_j} for i in want, over TILES of the leading union axes so that (2k + 3) tile-sized arrays fit tile_budget bytes.
+    DRa / As are broadcast-shaped over `union` (size 1 along absent axes); scopes[i] are sorted tuples (as every FT scope), so a member's variables appear in union order and the
+    leading / trailing split of its scope follows the union's. The sum over the leading axes outside scope_i is ACCUMULATED across tiles; the rounding bound pow1pu(nsum - 1) holds
+    for any summation order of nonnegative terms."""
+    full = [cards[u] for u in union]; n = len(union); k = len(As); tile_entries = max(1, tile_budget // ((2 * k + 3) * 8)); m = 0; rest = prod(full)
+    while m < n and rest > tile_entries: rest //= full[m]; m += 1
+    outs = {i: np.zeros([cards[u] for u in scopes[i]]) for i in want}
+    for lead in itertools.product(*(range(c) for c in full[:m])):
+        if tnow() >= deadline: raise Deadline(phase)
+        def sl(A): return A[tuple(lead[a] if A.shape[a] > 1 else 0 for a in range(m))]
+        DRt = sl(DRa); At = [sl(A) for A in As]; pre = [None] * k; suf = [None] * k; acc = None
+        for i in range(k): pre[i] = acc; acc = At[i] if acc is None else acc * At[i]
+        acc = None
+        for i in range(k - 1, -1, -1): suf[i] = acc; acc = At[i] if acc is None else acc * At[i]
+        for i in want:
+            P = DRt
+            if pre[i] is not None: P = P * pre[i]
+            if suf[i] is not None: P = P * suf[i]
+            P = np.broadcast_to(P, full[m:]); axes = tuple(a - m for a in range(m, n) if union[a] not in scopes[i]); part = P.sum(axis=axes) if axes else P
+            oidx = tuple(lead[a] for a in range(m) if union[a] in scopes[i]); outs[i][oidx] += np.asarray(part).reshape([cards[u] for u in union[m:] if u in scopes[i]])
+        del DRt, At, pre, suf
+    return outs
+
+
+def backward_derivatives(mbp, cards, deadline, release=False, tile_budget=None):
     """D[id(f)] = dZ/df over f.scope for every input block table of an UNSPLIT mini-bucket pass: D(final scalars) = 1; at step (v, bucket, R): D_f = sum_{union minus scope f} D_R x prod_{g in bucket, g != f} g
-    (zero-safe: prefix / suffix products, no division). Every product is range-pre-checked and every rho exact (the same lemma as the forward pass)."""
+    (zero-safe: prefix / suffix products, no division). Every product is range-pre-checked and every rho exact (the same lemma as the forward pass). Round 13: the step's products are
+    TILED (tiled_member_derivatives, workspace <= tile_budget) and, with release=True, a consumed message's mantissa is freed right after its own step is processed (its consumer step
+    has already been processed in the reverse walk); the forward tables are then gone and a PAC fallback must rebuild the construction."""
     roots = mbp.scalars; m = len(roots)
     if any(float(r.M) == 0.0 for r in roots): raise RangeRefused('backward: a zero scalar root (Z = 0 must be reported as ZERO_EVIDENCE before any normalized publication)')
     pre = [None] * m; suf = [None] * m; acc = None
@@ -697,24 +738,16 @@ def backward_derivatives(mbp, cards, deadline):
         union = tuple(sorted(set().union(*(set(f.scope) for f in bucket)))); k = len(bucket)
         if sum(f.R for f in bucket) + DR.R > RANGE_BUDGET: raise RangeRefused('backward product of %d tables could underflow (range bits %d > %d)' % (k + 1, sum(f.R for f in bucket) + DR.R, RANGE_BUDGET))
         A = [f.M.reshape([cards[u] if u in f.scope else 1 for u in union]) for f in bucket]; DRa = DR.M.reshape([cards[u] if u in DR.scope else 1 for u in union])
-        pre = [None] * k; suf = [None] * k; acc = None
-        for i in range(k): pre[i] = acc; acc = A[i] if acc is None else acc * A[i]
-        acc = None
-        for i in range(k - 1, -1, -1): suf[i] = acc; acc = A[i] if acc is None else acc * A[i]
-        full = [cards[u] for u in union]
+        outs = tiled_member_derivatives(DRa, A, union, cards, [f.scope for f in bucket], list(range(k)), tile_budget or TILE_BUDGET, deadline)
         for i, f in enumerate(bucket):
-            P = DRa
-            if pre[i] is not None: P = P * pre[i]
-            if suf[i] is not None: P = P * suf[i]
-            P = np.broadcast_to(P, full)                                   # a single-factor bucket: the derivative is DR tiled along the eliminated variable (prod over an empty set = 1)
-            if tnow() >= deadline: raise Deadline('backward')
             e = DR.e + sum(g.e for j, g in enumerate(bucket) if j != i); rho = comb(DR.rho, *[g.rho for j, g in enumerate(bucket) if j != i], pow1pu(k))
-            axes = tuple(ai for ai, u in enumerate(union) if u not in f.scope); nsum = prod(cards[union[ai]] for ai in axes) if axes else 1
-            Df = P.sum(axis=axes) if axes else P; rho = comb(rho, pow1pu(nsum - 1))
-            Df = np.asarray(Df, dtype=float).reshape([cards[u] for u in f.scope]) if f.scope else np.asarray(Df, dtype=float).reshape(())
+            axes = tuple(ai for ai, u in enumerate(union) if u not in f.scope); nsum = prod(cards[union[ai]] for ai in axes) if axes else 1; rho = comb(rho, pow1pu(nsum - 1))
+            Df = np.asarray(outs[i], dtype=float).reshape([cards[u] for u in f.scope]) if f.scope else np.asarray(outs[i], dtype=float).reshape(())
             Df, e = _rescale(np.ascontiguousarray(Df), e); D[id(f)] = FT(f.scope, Df, e, rho)
-        del A, pre, suf, DRa
-        if id(R) not in inputs_ids: D.pop(id(R), None)                        # the derivative of R has no further consumer; R's mantissa is KEPT (the PAC fallback after a refused exact route still needs the forward messages)
+        del A, DRa, outs
+        if id(R) not in inputs_ids:
+            D.pop(id(R), None)                                             # the derivative of R has no further consumer
+            if release: R.M = None                                         # R's consumer step was processed earlier in the reverse walk: its mantissa has no further reader (the PAC fallback rebuilds the construction)
     return D
 
 
@@ -943,7 +976,7 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         if construct_only: out['outcome'] = 'CONSTRUCT_ONLY'; return BR.finish(out, t_start, queries, {}, failed)
         blockfac = {i: [conv(f) for f in fns if f.facs <= live[i].facs] for i in range(len(blocks))}
         iorder = {i: [trace_var[st] for st in sorted(step_of[u] for u in live[i].interior)] for i in range(len(blocks))}
-        fwd_actual = sum(R.M.nbytes for _, _, R in mbp.fwd if R.M is not None); exact_peak = base_bytes + 2 * fwd_actual + 3 * plan['peak_step_bytes']
+        fwd_actual = sum(R.M.nbytes for _, _, R in mbp.fwd if R.M is not None); exact_peak = base_bytes + plan['reverse_live_bytes'] + TILE_BUDGET + sum(b.M.nbytes for b in blocks) + (64 << 20)   # reverse pass with release after use + one tiled step + block derivatives + headroom
         out['mechanism']['memory_policy'].update(exact_route_peak_estimate=exact_peak, exact_route_fits=(exact_peak <= USABLE))
         # ---- EXACT ROUTE first (unsplit): needs the forward messages, not the sampler tables or PAC query tables; only when its estimated peak fits the policy
         if mbp.splits == 0 and route in ('auto', 'exact') and exact_peak > USABLE:
@@ -955,7 +988,7 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
                 Zft = ft_scalar_product(mbp.scalars); unresolved = 0
                 if float(Zft.M) == 0.0: return finish_('ZERO_EVIDENCE')
                 if Zft.rho >= 1: raise RangeRefused('normalizer enclosure reaches zero (rho_Z = %s): deterministic ratios unresolved' % float(Zft.rho))
-                D = backward_derivatives(mbp, cards, deadline); Dblk = [D[id(fi)] for fi in mbp.inputs]; pub_exact = {}
+                D = backward_derivatives(mbp, cards, deadline, release=True); Dblk = [D[id(fi)] for fi in mbp.inputs]; pub_exact = {}; ph['exact_backward'] = tnow() - t0
                 for x in S:
                     if tnow() >= deadline: raise Deadline('exact_separator')
                     bi = min((i for i, b in enumerate(blocks) if x in b.scope), key=lambda i: blocks[i].M.size); b = blocks[bi]
@@ -1008,6 +1041,11 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
             except RangeRefused as e: out['mechanism']['exact_route'] = dict(status='REFUSED: ' + str(e)); ph['exact_route'] = tnow() - t0
             if route == 'exact': return finish_('EXACT_ROUTE_UNAVAILABLE' if exact_note is None else 'EXACT_ROUTE_' + exact_note)
             out['mechanism']['exact_route_fallback'] = 'PAC route after the exact route did not publish (%s)' % (exact_note or 'refused')
+            if any(R.M is None for _, _, R in mbp.fwd):                   # the exact route released the forward tables: rebuild the (deterministic) construction for the PAC route
+                t0 = tnow()
+                try: mbp = MBFloat(blocks, cards, cap_used, deadline)
+                except RangeRefused as e: out['refusal'] = str(e); return finish_('NUMERIC_RANGE_REFUSED')
+                ph['mb_rebuild_for_pac'] = tnow() - t0; out['mechanism']['mb_rebuilt_for_pac'] = True
         out['mechanism']['route'] = 'pac'
         E_z = sum(b.e for b in blocks); E_tot = E_z - mbp.E_U
         if abs(E_tot) >= 1 << 50: out['refusal'] = 'exponent sum %d too large for an exact float' % E_tot; return finish_('NUMERIC_RANGE_REFUSED')
@@ -1045,13 +1083,13 @@ def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F
         sq = sep_q + qcols; Kq = len(sq); qmap = {q: qix[q] for q in sq}
         out['mechanism'].update(Kq=Kq, interior_query_cols=len(qcols))
         # batch size under the memory policy: the shared path's per-batch workspace is B x largest union table; the certificate batch is B x Kq
-        max_union = max([sb.max_union for _, _, _, sb in blockQ if sb is not None] + [1]); max_bps = max([sb.bytes_per_sample for _, _, _, sb in blockQ if sb is not None] + [0])
+        max_union = max([sb.max_union for _, _, _, sb in blockQ if sb is not None] + [1]); max_bps = max([sb.bytes_per_sample for _, _, _, sb in blockQ if sb is not None] + [0]); fixed_ws = max([sb.fixed_workspace_bytes for _, _, _, sb in blockQ if sb is not None] + [0])
         cert_per_draw = Kq * 8 * 7                                                                  # the response row + the certificate's per-batch temporaries (Xf, a, b, a*a, ab, |ab|)
         batch_used = batch
-        while batch_used > 1 and batch_used * cert_per_draw + min(batch_used, 1) * max_bps > BATCH_BUDGET: batch_used //= 2
-        if batch_used * cert_per_draw + max_bps > BATCH_BUDGET: out['refusal'] = 'even one draw per batch exceeds the batch budget (certificate %d B + shared workspace %d B per draw > %d B)' % (cert_per_draw, max_bps, BATCH_BUDGET); return finish_('MEMORY_POLICY_REFUSED')
-        chunk = max(1, min(batch_used, (BATCH_BUDGET - batch_used * cert_per_draw) // max(1, max_bps)))          # shared blocks are evaluated in microbatches of `chunk` distinct active boundary rows
-        out['mechanism'].update(batch_requested=batch, batch_used=batch_used, shared_max_union=max_union, shared_bytes_per_sample_max=max_bps, shared_chunk=chunk, batch_budget_bytes=BATCH_BUDGET)
+        while batch_used > 1 and batch_used * cert_per_draw + fixed_ws + min(batch_used, 1) * max_bps > BATCH_BUDGET: batch_used //= 2
+        if batch_used * cert_per_draw + fixed_ws + max_bps > BATCH_BUDGET: out['refusal'] = 'even one draw per batch exceeds the batch budget (certificate %d B + shared workspace %d + %d B per draw > %d B)' % (cert_per_draw, fixed_ws, max_bps, BATCH_BUDGET); return finish_('MEMORY_POLICY_REFUSED')
+        chunk = max(1, min(batch_used, (BATCH_BUDGET - batch_used * cert_per_draw - fixed_ws) // max(1, max_bps)))   # shared blocks are evaluated in microbatches of `chunk` distinct active boundary rows
+        out['mechanism'].update(batch_requested=batch, batch_used=batch_used, shared_max_union=max_union, shared_bytes_per_sample_max=max_bps, shared_fixed_workspace_bytes=fixed_ws, shared_chunk=chunk, batch_budget_bytes=BATCH_BUDGET)
         t0 = tnow(); mbp.prepare_sampler(release_forward=True); ph['sampler_prep'] = tnow() - t0
         if proposal == 'wmb':                                             # QUARANTINED candidate (controls only; the frozen panel runs proposal=mb): weighted mini-buckets on the SAME partition and order, selection by CERTIFIED caps
             t0 = tnow(); wrec = dict(requested='wmb')

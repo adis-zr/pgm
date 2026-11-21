@@ -45,8 +45,8 @@ p = os.path.join(TMP, 'c7_complete_sep.uai'); res = IG.solve(p, 3.0, force_appro
 say(dict(control='E5_split_construction_stays_pac', splits=res['mechanism'].get('mb_splits'), route=res['mechanism'].get('route'), ok=(res['mechanism'].get('mb_splits', 0) > 0 and res['mechanism'].get('route') == 'pac')))
 # E6: injected derivative corruption -> the executor cross-check must flag INVESTIGATE and nothing may be published on the exact route
 _orig = IG.backward_derivatives
-def _corrupt(mbp, cards, deadline):
-    D = _orig(mbp, cards, deadline)
+def _corrupt(mbp, cards, deadline, **kw):
+    D = _orig(mbp, cards, deadline, **kw)
     for fi in mbp.inputs: D[id(fi)] = IG.FT(D[id(fi)].scope, D[id(fi)].M * 1.5, D[id(fi)].e, D[id(fi)].rho)       # every block derivative scaled by 1.5: all numerators wrong by 1.5x
     return D
 IG.backward_derivatives = _corrupt
