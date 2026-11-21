@@ -494,3 +494,29 @@ Corrections (round 15 records): the T5 / R1 observers undercounted by the array 
 0.063 is the last-checked width at 18.97 s; "eligibility versus partial publication is a reporting-policy choice" is withdrawn: it is an execution decision (doubling the
 coordinates raised the log risk term 3.1 % while draws fell 5.8x: the penalty is response work coupled to every certificate update, not simultaneous validity).
 
+## 19. Round 17 (21 Nov 2026): cache resource corrections; the control crash; the engine frozen as the baseline (`integrated.py` v2.9.4)
+
+Authorization: the round-16 adversarial review (records round17/BLOCKRES_R16_ADVERSARIAL_REVIEW.md, sha256 7d71bc4c...): three local corrections, then freeze the engine and move the
+main effort to proposal / partition quality on or_chain_186, or_chain_209, linkage_13 and mastermind_03_08_05-0003.
+(1) Cache charge. v2.9.3 charged K_b x 8 + 8 x |boundary| + 128 bytes per entry, which omitted the ndarray object, the tuple and its int objects and the dictionary's capacity: under an
+injected 512 KiB budget the reviewer measured 754,792 B of retained containers and arrays (851,396 B of object graph) against a 524,248 B charge. v2.9.4 charges the RETAINED objects
+per entry (`cache_entry_bytes`): sys.getsizeof(row) + row payload + sys.getsizeof(key) + the key's int objects + 96 B of dictionary share (CPython grows a dict by doubling into a new
+table while the old one is alive: 2 x the (index + entry) slot x 2 tables) + the empty dict for the first entry. Control K1 (the reviewer's 4,096-boundary block, 512 KiB budget):
+1,658 entries admitted, charged 523,992 B, the reviewer's lower bound (maps + keys + rows, ints excluded) 365,840 B and the full identity-deduplicated object graph 438,824 B, both
+under the budget; responses exact. This is a per-entry object account, not a whole-process bound; the supervisor enforces the contract.
+(2) Optional reservation. v2.9.3 added the 64 MiB cache constant to every candidate PAC peak in cap admission, so an optional optimisation could lower the proposal cap or refuse an
+admissible route (reviewer: an unsplit four-cycle admitted at 2^24 without the reservation was refused at every cap with it). v2.9.4 reserves NOTHING for the cache in the plan; after
+the mandatory plan is admitted, the per-solve allowance is min(constant, USABLE - planned PAC peak) when the solve has shared blocks and 0 otherwise (`response_cache_budget_bytes`).
+Controls K3a (the reviewer's planner regression: same cap with and without the constant) and K3b (a shared solve reports an allowance within the remaining capacity and stays under it;
+a dense solve reports 0).
+(3) Deadline. `evaluate_shared` polls at entry, so an all-hit call with an expired deadline raises like a miss (K2, warmed cache); the miss-path poll is kept (C4 now tests it with a
+clock that expires after entry).
+(4) The shipped round-15 control: the observer correction of round 16 placed `backing = {}` after a comment marker, so `check_round15.py` raised NameError on the frozen v2.9.3 and the
+round-16 statement "79 controls pass on the frozen build" was FALSE: 76 passed and the round-15 suite crashed (receipt r16_r15_controls_1 NONZERO_EXIT; the grep that summarised the
+suites matched nothing for it and I did not notice). Restored; the round-16 records are corrected. On v2.9.4 every suite has a result file: 83 controls (round-17 4, round-16 6,
+round-15 3, round-13/14 12, round-12 11, round-11 15, exact-route 9, weighted 13, numerical 10).
+Round-16 reporting corrections: round 14 had median width 0.0100028 at 82,944 draws (just above 0.01) and published at the next check (92,160); `extrapolated_s_median_width` 14.6 s is
+a square-root-law estimate of the TOTAL active stream-plus-check duration (about 5.4 s beyond the spent duration), excluding start-up, not "14.6 s more".
+Engine freeze. v2.9.4 is the baseline engine for the proposal / partition research the reviews call for; blockmap_10_03-0009 stays an exposed regression target (264 / 10,008, no
+completion), not a prerequisite.
+

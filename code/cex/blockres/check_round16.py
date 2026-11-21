@@ -73,10 +73,13 @@ say(dict(control='C3_refusal_on_miss_caches_nothing', raised=raised, chunks_need
 # C4: expired deadline on a miss raises before any evaluation
 calls = [0]
 def counted(self, S_, deadline=math.inf): calls[0] += 1; return orig(self, S_, deadline)
-IG.SharedBlock.responses = counted; raised = None
-try: IG.evaluate_shared(sbs[1], seq[2][0], np.nonzero(seq[2][1] > 0)[0], 7, -math.inf, dict(entries={}, bytes=0, budget=1 << 20))
+IG.SharedBlock.responses = counted; raised = None; t_entry = IG.tnow
+def late_clock():                                                       # (round 17) the deadline is live at ENTRY and expires before the miss check: the miss path must still refuse before any evaluation
+    late_clock.n += 1; return t_entry() + (0.0 if late_clock.n <= 1 else 10.0)
+late_clock.n = 0; IG.tnow = late_clock
+try: IG.evaluate_shared(sbs[1], seq[2][0], np.nonzero(seq[2][1] > 0)[0], 7, t_entry() + 1.0, dict(entries={}, bytes=0, budget=1 << 20))
 except IG.Deadline as e: raised = str(e)
-finally: IG.SharedBlock.responses = orig
+finally: IG.SharedBlock.responses = orig; IG.tnow = t_entry
 say(dict(control='C4_expired_deadline_on_miss_no_evaluation', raised=raised, evaluations=calls[0], ok=(raised == 'shared_cache_miss' and calls[0] == 0)))
 # C5: end-to-end on the shared path (tiny dense budget), complete and contained, hits > 0, bytes within budget
 t, _, tv = truth(p); saved = IG.RECOVERY_BYTE_BUDGET; IG.RECOVERY_BYTE_BUDGET = 0
