@@ -20,7 +20,7 @@ for i, t in enumerate(man['tasks']):
         attempt = os.path.join(RD, a.sub, '%02d__%s__%s__s%s' % (i, t['name'], arm, a.seed)); os.makedirs(attempt, exist_ok=True); out = os.path.join(attempt, 'result.json'); nonce = secrets.token_hex(8)
         if arm == 'cand':
             cmd = [PY, os.path.join(CODE, 'cex/blockres/integrated.py'), '--input', t['model'], '--output', out, '--budget', str(FROZEN['budget_s']), '--mb-cap', str(FROZEN['mb_cap']), '--table-cap', str(FROZEN['table_cap']), '--enum-cap', str(FROZEN['enum_cap']),
-                   '--schedule', FROZEN['schedule'], '--route', FROZEN['route'], '--proposal', FROZEN['proposal'], '--batch', str(FROZEN['batch']), '--seed', a.seed, '--epsilon', FROZEN['epsilon'], '--delta', FROZEN['delta'] + a.cand_extra.split()
+                   '--schedule', FROZEN['schedule'], '--route', FROZEN['route'], '--proposal', FROZEN['proposal'], '--batch', str(FROZEN['batch']), '--seed', a.seed, '--epsilon', FROZEN['epsilon'], '--delta', FROZEN['delta']] + a.cand_extra.split()
         else:
             seed_hex = hashlib.sha256(('blockres_sweep|%s|%s|N1_CQR|%s' % (t['name'], t['model'], a.seed)).encode()).hexdigest()
             launch = time.monotonic(); cmd = [PY, os.path.join(CODE, 'cex/cqr/worker.py'), '--input', t['model'], '--output', out, '--arm', 'N1_CQR', '--deadline', str(launch + FROZEN['budget_s']), '--seed', seed_hex, '--nonce', nonce, '--budget', str(FROZEN['budget_s'])]
