@@ -615,3 +615,22 @@ dispatch with closure on) publishes nothing, a valid nonbinary model falls back;
 recognition, projected resource refusal and a deadline inside evaluation fall back contained with no signed rows; renumbering + factor permutation give equivalent answers and a
 permuted axis layout refuses; both switches, force_approx and construct_only reach their mechanisms. The ten frozen-path suites: 95/95 with the operator off.
 
+### 21a. Round 19 measured (v2.11, pgm a73938a; 21 Nov 2026)
+
+BOTH PREDICTIONS PASSED. or_chain_186.fg: 2,138 / 2,138 original coordinates on seeds 1, 2, 3, byte-identical (fingerprint 920e0225...), DETERMINISTIC (2,136 dyadic enclosures of
+width 2^-40 + 2 EXACT points), supervisor 0.78 / 0.73 / 0.72 s, process-tree peak 56-57 MiB, 128 subsets, 474 roots / 595 gates / 7 findings, recognition 5 ms, evaluation 0.49 s
+(normalizer + roots 0.30, prefixes 0.18), output 0.03 s, common denominator 9,590 bits, cancellation 32 bits, no draws. or_chain_209.fg: 1,698 / 1,698 on seeds 1, 2, 3, byte-identical
+(16df67f4...), DETERMINISTIC, supervisor 2.91 / 2.90 / 2.86 s, peak 85 MiB, 1,024 subsets, 348 / 501 / 10, evaluation 2.68 s (1.58 + 1.08), denominator 6,583 bits, cancellation 38
+bits. Every cell's Z and every dyadic endpoint equal the packet's exact reference (tools/compare_candidate.py, six cells). The accepted R18 comparator on the same digests: 2 / 2,138
+and 0 / 1,698 at 19.5 s and 1.9-2.1 GiB (poor-overlap PAC); the incumbent: DEADLINE.
+Preservation: all nine retained within contract with 0 disjoint intervals against the accepted R18 receipts (BN_12 6.76 s, BN_15 7.49, CSP_13 6.25 PAC; MILDEW 2.66, Alchemy_11 1.41,
+DBN_14 10.64 deterministic; mastermind-0003 1.04 s and mastermind-05 1.66 s EXACT through the closure; ObjectDetection_43 6.19 PAC). The operator is NOT_APPLICABLE on all nine
+(nonbinary variables, factor count != variables, or evidence value 0) at 0-5 ms recognition cost each; the closure and the existing routes behave exactly as in round 18.
+linkage_13 (coverage): 426 / 2,158, unchanged from R18 (operator NOT_APPLICABLE: nonbinary; closure APPLIED; PAC ESS 13.4). No improvement predicted, none observed.
+Budget: 180.4 s of the declared 1,200 s (33 receipts: controls 100.3 s incl. the ten frozen suites once each and four runs of the new suite, probes 5.4 s, OR cells 10.9 s,
+preservation 44.1 s, linkage 19.7 s). No repair of the engine was needed after freezing; the four reruns of the new suite were fixture corrections (a fixture helper misuse, a
+deadline injection that never fired on a 4-subset model, a route expectation on a model the closure fully contracts, a construct-only fixture the closure also contracted).
+Evidence limits: two exposed targets (seen since round 14); the large models are not independently enumerated; the certificate rests on the checked exact identities (integrality
+asserted, bounds on every numerator asserted), the ported exhaustive oracle on six tiny models, the twelve integration controls and equality with the packet's independent reference
+(itself cross-checked against 80 / 120-digit decimal normalizers). No held-out transfer claim; no linkage gain; only the independent-root noisy-OR chain family is recognised.
+
