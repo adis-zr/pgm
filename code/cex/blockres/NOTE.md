@@ -655,4 +655,8 @@ injected USABLE just above the RSS grants a budget <= 4 KiB and refuses, USABLE 
 exact-zero fixture and the nonunit-scalar fixture unchanged; B6 an expired deadline at dyadic_rows builds no row, and a clock that expires right after execute() inside a real solve
 returns DEADLINE with 0 published and no fallback phases. Reviewer's reproducer on v2.11.1 (receipt r19b_repro_bounds_v2111b): RESOURCE_REFUSED at the old budget; DEADLINE_REFUSED
 at 1 ms; NOTAPPLICABLE (structural) for 1,000 findings. The round-19 suite (12), the production oracle (6) and the ten frozen suites (95) pass on v2.11.1.
+Measured on frozen v2.11.1 (pgm 25b8376; records round19b/): or_chain_186 2,138 / 2,138 and or_chain_209 1,698 / 1,698 DETERMINISTIC on three supervised repeats each, 0.73-0.79 s and
+2.89-2.91 s, 58 / 86 MiB tree peak; Z and every 2^-40 endpoint identical to round 19 and to the packet reference (tools/compare_candidate.py); the revised estimates are 12.9 MiB
+(exponential phase) and 64.7 MiB against the 256 MiB allowance with 49 / 48 MiB RSS at admission. The nine accepted completions retained (0 disjoint vs round 19; PAC cells differ only
+in their sampled points, deterministic cells byte-identical). 159.4 s charged of the declared 300 s (33 receipts). No engine change after the freeze.
 
