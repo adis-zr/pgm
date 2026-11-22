@@ -10,6 +10,7 @@ for p in (HERE, os.path.join(CODE, 'cex', 'cqr'), os.path.join(CODE, 'cex', 'new
     if p not in sys.path: sys.path.insert(0, p)
 import numpy as np
 import integrated as IG, blockres as BR, oracle, task as T
+IG.EVIDENCE_EXPANSION_DEFAULT = False       # (round 19) this suite exercises its own mechanism; the evidence-expansion operator has its own suite, check_round19.py
 IG.SUPPORT_CLOSURE_DEFAULT = False          # (round 18) this suite exercises the FROZEN comparator path (v2.9.4 behaviour); the closure has its own suite, check_round18.py
 OUT = sys.argv[1]; TMP = os.path.join(os.path.dirname(OUT), 'ctl_models'); os.makedirs(TMP, exist_ok=True); EPS = F(1, 200); rows = []
 def write_uai(name, cards, factors, evidence=None):

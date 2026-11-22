@@ -13,6 +13,7 @@ for p in (HERE, os.path.join(CODE, 'cex', 'cqr'), os.path.join(CODE, 'cex', 'new
     if p not in sys.path: sys.path.insert(0, p)
 import numpy as np
 import integrated as IG, blockres as BR, support_closure as SC, oracle, task as T
+IG.EVIDENCE_EXPANSION_DEFAULT = False       # (round 19) this suite exercises its own mechanism; the evidence-expansion operator has its own suite, check_round19.py
 assert IG.SUPPORT_CLOSURE_DEFAULT is True
 OUT = sys.argv[1]; TMP = os.path.join(os.path.dirname(OUT), 'ctl_models'); os.makedirs(TMP, exist_ok=True); rows = []; rng = random.Random(1801)
 def say(r): r['ok'] = bool(r['ok']); rows.append(r); print(json.dumps(r, default=str)[:420])

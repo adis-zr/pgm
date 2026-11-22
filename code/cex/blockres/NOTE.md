@@ -586,3 +586,32 @@ the 12 integration controls, not on an independent exact oracle for the large mo
 (the frozen-build references are the round-14 cells and the overseer's Linux baseline); the exact-route + executor cross-check path is now exercised on the panel by MILDEW,
 Alchemy_11 and DBN_14 only. Budget: 659.3 s charged against a self-declared 600 s (the v2.10 -> v2.10.1 rerun added ~185 s); disclosed, not hidden.
 
+## 21. Round 19 (21 Nov 2026): signed evidence expansion as an exact algebraic operator (`integrated.py` v2.11, `signed_evidence.py`)
+
+Authorization: SPEC.md of the R19 packet (records round19/PACKET/, packet sha256 489a24fe...): implement the independent-root noisy-OR chain family through a small algebraic-operator
+interface (recognize / estimate / execute), recognised on the ORIGINAL model before closure and executed right after it, finalised directly on the original queries; bounded campaign of
+sixteen scored cells under a declared 1,200 s; v2.10.1 (ced5776) is the comparator.
+Family (exact rational identities, child-first scopes): binary; one normalised child factor per variable -- root prior (1 - p, p); ternary noisy-OR gate (c, root, prev) with failure
+entries [1, t_prev, t_root, t_root t_prev] and success complements, prev an accumulator => t_prev = 0; terminal (y, parent) [a, b, 1 - a, 1 - b], 0 < a <= 1, 0 <= b <= a, parent an
+accumulator => b = 0, parent a root => b / a its inhibition. All and only terminals observed, positive. Every accumulator has one consumer and lies in one chain; roots may be shared
+and recur. Anything else -> NotApplicable (a refusal of this OPTIONAL route). Axis layouts other than child-first are refused, never transposed.
+Operator (Heckerman 1989): Z = sum_S (-1)^|S| Q(S), Q(S) = prod_{j in S} lambda_j prod_i [(1 - p_i) + p_i prod_{j in S} theta_ji]; root i state 1 by replacing its affine factor with
+p_i prod theta_ji; accumulator Y of chain j state 0 by N(Y = 0, E) = sum_{S not containing j} (-1)^|S| [E(a_Y prod_{l in S} q_l) - Q(S u {j})], the prefix walk changing only the
+affected cause's cumulative inhibition (division-free zero handling). Common denominator = prod over roots of lcm(prior denominators) x every inhibition denominator touching the root,
+x all leak denominators; every term is an integer over it (CHECKED, never truncated). Signed sums live only inside this executor; nothing signed reaches support_closure, MBFloat,
+WMBFloat or the PAC kernels. Output: lo = floor(2^40 N / Z) / 2^40, hi = ceil(...) / 2^40, point the midpoint, DETERMINISTIC (EXACT when lo = hi); each original coordinate once; the
+two points of a binary variable sum to 1; no PAC risk spent. Znum = 0 -> ZERO_EVIDENCE with no normalised row; a negative / non-integral / out-of-range quantity -> InvariantFailure
+-> CERTIFICATE_DEFECT (never hidden behind the fallback).
+Integration (`integrated.solve`): read once -> recognise on the original model (EVIDENCE_RECOGNITION_S = 0.1 s, charged) and retain the immutable plan -> support closure as before
+(its exact-zero behaviour kept) -> execute the plan under the remaining global deadline and a workspace budget min(EVIDENCE_WORKSPACE_BUDGET = 256 MiB, USABLE - current RSS), refusing
+BEFORE materialisation when the projected retained state (2^m subsets x roots Fractions + ints) exceeds it -> its own finalizer `finish_expansion_` (original queries, no closure
+decoder, no scalar; a real code path, not a label) -> otherwise release and continue the existing route with the remaining budget. Enabled for routes auto / exact; skipped for
+explicit PAC, force_approx and construct_only. `--no-evidence-expansion` = the accepted R18 comparator path; with `--no-support-closure` as well = the v2.9.4 path. The ten
+existing suites set EVIDENCE_EXPANSION_DEFAULT = False (they exercise their own mechanisms).
+Verification: the packet's three portable checks pass (41 files verified; reference tiny checks; independent structure + 80/120-digit Z on both OR inputs); the packet's exhaustive
+oracle PORTED to call the production module (check_round19_oracle.py: 3 constructed + 3 supplied fixtures, Z and every coordinate exact); check_round19.py T1-T7 (12 controls): the three
+supplied fixtures end to end; a recognised model with nonidentity closure and scalar 16/25 returns the original Z once; recognised exact zero (executor branch with closure off and
+dispatch with closure on) publishes nothing, a valid nonbinary model falls back; near-match gate, shared accumulator and negative evidence refuse and fall back contained; interrupted
+recognition, projected resource refusal and a deadline inside evaluation fall back contained with no signed rows; renumbering + factor permutation give equivalent answers and a
+permuted axis layout refuses; both switches, force_approx and construct_only reach their mechanisms. The ten frozen-path suites: 95/95 with the operator off.
+
