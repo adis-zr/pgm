@@ -634,3 +634,25 @@ Evidence limits: two exposed targets (seen since round 14); the large models are
 asserted, bounds on every numerator asserted), the ported exhaustive oracle on six tiny models, the twelve integration controls and equality with the packet's independent reference
 (itself cross-checked against 80 / 120-digit decimal normalizers). No held-out transfer claim; no linkage gain; only the independent-root noisy-OR chain family is recognised.
 
+### 21b. Round 19b (21 Nov 2026): bounded execution of the signed route (`integrated.py` v2.11.1)
+
+Authorization: the R19 review's CLAUDE_FOLLOWUP.md (review zip sha256 5c779360...; records round19b/REVIEW_PACKET/): one narrow production-boundary repair, 300 s declared. Three
+reproduced defects of v2.11 (receipt r19b_repro_bounds_v211: a 2-root / 1-finding / 3,000-gate model admitted at 7,848 B while allocating 1.46 MB; returned masses after 31 ms against a
+1 ms deadline; a 1,000-root / 1,000-terminal model RECOGNIZED after 363 ms against the 0.1 s allowance; and `ru_maxrss` subtracted from USABLE_BYTES as bytes though Linux reports KiB).
+Repair: (1) `estimate(plan, n_queries)` models the SIMULTANEOUS live state with CPython object sizes (integer limbs + containers) in two phases and admits by their max + 64 KiB: the
+exponential phase = the plan's m x n coefficient matrix + per-subset theta Fractions / leak Fraction / root-factor ints / two term ints + the signed accumulators (root, B, gate) at
+global-denominator + m + 1 bits + the prefix temporaries; the output phase = plan + accumulators + the numerator mapping + one row (~1,100 B) per original coordinate -- the O(g B) and
+O(K) terms the old formula lacked. The exponential state is released before the masses are returned and the rows are built. (2) deadline polls inside the chain walk (per 256 gates),
+per row of the coefficient matrix, per 1,024 roots in the root loop, per 256 gates in the prefix walk, before each chain's terminal correction, at execute() entry and end, per 512 rows
+and at the end of `dyadic_rows`; a structural guard refuses more than MAX_FINDINGS = 40 findings before any allocation (2^m subsets cannot fit any admissible workspace). (3) headroom
+in BYTES on the running platform: `rss_bytes_now()` = psutil current RSS, else `rusage_to_bytes(ru_maxrss, platform)` (bytes on darwin, KiB x 1024 elsewhere); the allowance stays
+min(256 MiB, USABLE - rss). (4) a Deadline/Resource refusal at or beyond the global deadline returns the established DEADLINE outcome with nothing published instead of starting
+fallback work. Polling is cooperative (a single big-integer primitive is not interruptible); the supervisor remains the hard limit.
+Controls (check_round19b.py, real work, not injected exceptions): B1 the 3,000-gate model: estimate 10.1 MB (exponential phase 4.7 MB, output phase 10.0 MB) covers the traced peak
+4.0 MB of execute + rows; half the estimate is refused before materialisation (traced peak 2.7 KB); B2 a 1 ms deadline expires inside the real prefix walk at gate 255 after 1.7 ms,
+no masses; B3 the 1,000 x 1,000 model is refused structurally in 4 ms; B4 unit conversion (1,024 KiB -> 1,048,576 B on Linux; identity on darwin), current RSS <= converted peak, an
+injected USABLE just above the RSS grants a budget <= 4 KiB and refuses, USABLE below the RSS grants 0 and refuses, the existing route completes both; B5 the supplied fixtures, the
+exact-zero fixture and the nonunit-scalar fixture unchanged; B6 an expired deadline at dyadic_rows builds no row, and a clock that expires right after execute() inside a real solve
+returns DEADLINE with 0 published and no fallback phases. Reviewer's reproducer on v2.11.1 (receipt r19b_repro_bounds_v2111b): RESOURCE_REFUSED at the old budget; DEADLINE_REFUSED
+at 1 ms; NOTAPPLICABLE (structural) for 1,000 findings. The round-19 suite (12), the production oracle (6) and the ten frozen suites (95) pass on v2.11.1.
+

@@ -22,6 +22,9 @@ from math import prod, lcm, inf
 from collections import Counter
 
 
+MAX_FINDINGS = 40                          # structural guard: beyond this the subset count alone exceeds any admissible workspace; the byte estimate is the actual admission test
+
+
 class NotApplicable(Exception): pass          # the model is outside the recognised family (typed refusal of this optional route)
 class RecognitionRefused(Exception): pass     # recognition allowance / deadline exhausted
 class ResourceRefused(Exception): pass        # projected workspace exceeds the budget (refused BEFORE materialisation)
@@ -79,6 +82,7 @@ def recognize(model, queries, binding, deadline):
             if theta != 0: raise NotApplicable('terminal %d on an accumulator has nonzero inhibition' % y)
             cur = parent; back = []; seen = set(); base_theta = None
             while cur in gates:
+                if (len(back) & 255) == 255 and tnow() >= deadline: raise RecognitionRefused('recognition allowance exhausted inside a chain walk (%d gates so far)' % len(seen_gates))
                 if cur in seen or cur in seen_gates: raise NotApplicable('shared or cyclic accumulator %d' % cur)
                 seen.add(cur); seen_gates.add(cur); gate_of[cur] = j; root, prev, th, tp = gates[cur]; back.append((cur, root, th)); Dr[rid[root]] *= th.denominator; cur = prev; base_theta = tp
             if cur not in priors: raise NotApplicable('chain base %d is not a root' % cur)
@@ -86,19 +90,37 @@ def recognize(model, queries, binding, deadline):
             for _, root, th in reversed(back): coeff[root] = coeff.get(root, F(1)) * th
         chains.append(chain); coeffs.append(coeff)
     if seen_gates != set(gates): raise NotApplicable('%d accumulators belong to no observed chain' % (len(gates) - len(seen_gates)))
+    if len(findings) > MAX_FINDINGS: raise NotApplicable('%d positive findings: 2^m subsets is an obvious exponential non-candidate (limit %d)' % (len(findings), MAX_FINDINGS))
     P = Plan(); P.n = n; P.roots = roots; P.rid = rid; P.priors = priors; P.findings = findings; P.leaks = leaks; P.chains = chains; P.gates = gates; P.gate_of = gate_of; P.ev = dict(ev); P.binding = dict(binding)
-    P.coeff = [[coeffs[j].get(r, F(1)) for r in roots] for j in range(len(findings))]
+    P.coeff = []
+    for j in range(len(findings)):                                                             # dense m x n coefficient matrix: polled per row (it is the largest recognition allocation)
+        if tnow() >= deadline: raise RecognitionRefused('recognition allowance exhausted while building the coefficient matrix (row %d of %d)' % (j, len(findings)))
+        P.coeff.append([coeffs[j].get(r, F(1)) for r in roots])
     P.root_den = [lcm(a.denominator, b.denominator) * d for (a, b), d in zip((priors[r] for r in roots), Dr)]; P.global_den = prod(x.denominator for x in leaks) * prod(P.root_den)
     P.recognition_s = tnow() - t0
     return P
 
 
-def estimate(plan):
-    """subset count, work and a conservative RETAINED-byte forecast of the exponential state (per subset: one Fraction per root + one int per root + three scalars; ints of root_den size)"""
-    m = len(plan.findings); n = len(plan.roots); g = len(plan.gates); subsets = 1 << m
-    root_bits = max(1, max(d.bit_length() for d in plan.root_den)); frac_bytes = 2 * (28 + (root_bits + 7) // 8) + 56; int_bytes = 28 + (root_bits + 7) // 8 + 8
-    retained = subsets * (n * (frac_bytes + int_bytes) + 3 * (28 + (plan.global_den.bit_length() + 7) // 8) + 160)
-    return dict(subsets=subsets, findings=m, roots=n, gates=g, work_touches=(m * n + g) * subsets, common_denominator_bits=plan.global_den.bit_length(), max_root_denominator_bits=root_bits, retained_bytes_estimate=retained)
+def _int_bytes(bits): return 28 + 4 * ((max(bits, 1) + 29) // 30)                    # CPython int: header + 30-bit digits
+def _frac_bytes(bits): return 56 + 2 * _int_bytes(bits)                               # Fraction object + numerator + denominator
+LIST_HDR = 56; DICT_SLOT = 104; TUPLE2 = 72; ROW_BYTES = 1100                              # list header; dict entry incl. growth; (state, int) tuple; one published row: dict + 3 Fractions + their 3 strings in the result
+
+
+def estimate(plan, n_queries=None):
+    """conservative forecast of the SIMULTANEOUS live state of execute() + the original-row output (round 19b; CPython object sizes incl. integer limbs and containers):
+    phase A (exponential): the plan's coefficient matrix + per-subset theta Fractions, leak Fraction, root-factor ints, two term ints, zero count + the accumulators (root, B, gate: signed,
+    global-denominator bits + m + 1) + the prefix temporaries (a copy of the root factors, the running product, the partial map); phase B (output): plan + accumulators + the returned
+    numerator mapping + one row per original coordinate. Returned: the max of the two phases (+ 64 KiB fixed), so admission covers few-findings / many-gates / many-queries cases."""
+    m = len(plan.findings); n = len(plan.roots); g = len(plan.gates); subsets = 1 << m; K = n_queries if n_queries is not None else 2 * (plan.n - len(plan.ev))
+    root_bits = max(1, max(d.bit_length() for d in plan.root_den)); gbits = plan.global_den.bit_length(); acc_bits = gbits + m + 1; leak_bits = max(1, sum(x.denominator.bit_length() for x in plan.leaks))
+    plan_bytes = m * (LIST_HDR + 8 * n + n * _frac_bytes(root_bits)) + n * (TUPLE2 + 2 * _int_bytes(root_bits)) + 2 * n * _int_bytes(root_bits)
+    per_subset = (LIST_HDR + 8 * n + n * _frac_bytes(root_bits)) + _frac_bytes(leak_bits) + (LIST_HDR + 8 * n + n * _int_bytes(root_bits)) + 2 * _int_bytes(gbits) + 28 + 5 * 8
+    accumulators = (n + m) * _int_bytes(acc_bits) + g * (_int_bytes(acc_bits) + DICT_SLOT)
+    prefix_tmp = (LIST_HDR + 8 * n + n * _int_bytes(root_bits)) + _int_bytes(gbits) + max(1, max((len(c) for c in plan.chains), default=1)) * (DICT_SLOT + _frac_bytes(root_bits))
+    phase_a = plan_bytes + subsets * per_subset + accumulators + prefix_tmp
+    out_map = (n + g) * (TUPLE2 + _int_bytes(acc_bits) + DICT_SLOT)
+    phase_b = plan_bytes + accumulators + out_map + K * ROW_BYTES
+    return dict(subsets=subsets, findings=m, roots=n, gates=g, queries=K, work_touches=(m * n + g) * subsets, common_denominator_bits=gbits, max_root_denominator_bits=root_bits, phase_exponential_bytes=phase_a, phase_output_bytes=phase_b, retained_bytes_estimate=max(phase_a, phase_b) + (64 << 10))
 
 
 class ExactOriginalMasses:
@@ -106,8 +128,9 @@ class ExactOriginalMasses:
     def __init__(self, Znum, D, num, stats): self.Znum = Znum; self.D = D; self.num = num; self.stats = stats     # num: {original var: (state, integer numerator of that state)}
 
 
-def execute(plan, deadline, workspace_budget):
-    t0 = tnow(); est = estimate(plan)
+def execute(plan, deadline, workspace_budget, n_queries=None):
+    t0 = tnow(); est = estimate(plan, n_queries)
+    if t0 >= deadline: raise DeadlineRefused('deadline already passed at entry')
     if est['retained_bytes_estimate'] > workspace_budget: raise ResourceRefused('projected retained state %d B > workspace budget %d B (2^%d subsets x %d roots)' % (est['retained_bytes_estimate'], workspace_budget, est['findings'], est['roots']))
     roots = plan.roots; rid = plan.rid; m = len(plan.findings); subsets = 1 << m; root_den = plan.root_den; leak_den = prod(x.denominator for x in plan.leaks); global_den = plan.global_den
     p0int = [int(plan.priors[r][0] * den) for r, den in zip(roots, root_den)]; p1int = [int(plan.priors[r][1] * den) for r, den in zip(roots, root_den)]
@@ -131,6 +154,7 @@ def execute(plan, deadline, workspace_budget):
         if lnf.denominator != 1: raise InvariantFailure('leak product not integral over the leak denominator')
         ln = int(lnf); term = P * ln; sgn = -1 if mask.bit_count() % 2 else 1; Znum += sgn * term
         for r, (tr, br, th) in enumerate(zip(tt, p1int, ts)):
+            if (r & 1023) == 1023 and tnow() >= deadline: raise DeadlineRefused('deadline inside the root loop (subset %d, root %d)' % (mask, r))
             if zeros == 0: other = P // tr
             elif zeros == 1 and tr == 0: other = pnz
             else: continue
@@ -148,7 +172,8 @@ def execute(plan, deadline, workspace_budget):
             if mask & (1 << j): continue
             if (mask & 63) == 0 and tnow() >= deadline: raise DeadlineRefused('deadline inside the prefix sums (chain %d)' % j)
             sgn = -1 if mask.bit_count() % 2 else 1; ln = int(leak_sets[mask] * leak_den); tt = list(factors[mask]); nz = zero_counts[mask]; P = term_products[mask]; partial = {}
-            for g, root, th in chain:
+            for gi, (g, root, th) in enumerate(chain):
+                if (gi & 255) == 255 and tnow() >= deadline: raise DeadlineRefused('deadline inside the prefix walk (chain %d, gate %d of %d)' % (j, gi, len(chain)))
                 r = rid[root]; partial[r] = partial.get(r, F(1)) * th; f = p1int[r] * theta_sets[mask][r] * partial[r]
                 if f.denominator != 1: raise InvariantFailure('prefix factor not integral over the common denominator')
                 new = p0int[r] + int(f); old = tt[r]
@@ -158,22 +183,40 @@ def execute(plan, deadline, workspace_budget):
                 else: nz += 1
                 tt[r] = new
                 if g is not None: gate_zero[g] += sgn * ln * (0 if nz else P)
+        if tnow() >= deadline: raise DeadlineRefused('deadline before the chain-%d terminal correction' % j)
         for g, root, th in chain:
             if g is not None: gate_zero[g] -= B[j]
     if any(not (0 <= x <= Znum) for x in root_num) or any(not (0 <= x <= Znum) for x in gate_zero.values()): raise InvariantFailure('a numerator is outside [0, Znum]')
     num = {r: (1, v) for r, v in zip(roots, root_num)}; num.update({g: (0, v) for g, v in gate_zero.items()})
     if len(num) != plan.n - len(plan.ev): raise InvariantFailure('recovered %d variables, expected %d' % (len(num), plan.n - len(plan.ev)))
     stats = dict(est, normalizer_numerator_bits=Znum.bit_length(), cancellation_bits=(max(x.bit_length() for x in terms) - Znum.bit_length()), normalizer_and_root_queries_s=normalizer_s, prefix_queries_s=tnow() - t0 - normalizer_s)
-    del theta_sets, leak_sets, term_products, terms, zero_counts, factors
+    del theta_sets, leak_sets, term_products, terms, zero_counts, factors                   # the exponential state is released BEFORE the masses are returned and the rows are built
+    if tnow() >= deadline: raise DeadlineRefused('deadline at the end of evaluation (no masses returned)')
     return ExactOriginalMasses(Znum, global_den, num, stats)
 
 
-def dyadic_rows(masses, queries, grid_log2=40):
-    """outward dyadic enclosures of every requested ORIGINAL coordinate from the exact masses: lo = floor(2^g N / Z) / 2^g, hi = ceil(...) / 2^g, point = midpoint; DETERMINISTIC (EXACT when lo == hi)"""
+def dyadic_rows(masses, queries, grid_log2=40, deadline=inf):
+    """outward dyadic enclosures of every requested ORIGINAL coordinate from the exact masses: lo = floor(2^g N / Z) / 2^g, hi = ceil(...) / 2^g, point = midpoint; DETERMINISTIC (EXACT when lo == hi);
+    polled every 512 rows and guarded at the end (cooperative: a single big-integer division is not interruptible; the supervisor is the hard limit)"""
     Q = 1 << grid_log2; Z = masses.Znum; rows = {}
     for j, (x, s) in enumerate(queries):
+        if (j & 511) == 511 and tnow() >= deadline: raise DeadlineRefused('deadline while building the original rows (%d of %d)' % (j, len(queries)))
         st, nn = masses.num[x]
         if s != st: nn = Z - nn
         lo = (nn * Q) // Z; hi = -((-nn * Q) // Z)
         rows[j] = dict(lo=F(lo, Q), hi=F(hi, Q), point=F(lo + hi, 2 * Q), guarantee=('EXACT' if lo == hi else 'DETERMINISTIC'))
+    if tnow() >= deadline: raise DeadlineRefused('deadline after building the original rows (nothing published)')
     return rows
+
+
+def rusage_to_bytes(raw, platform):
+    """ru_maxrss is BYTES on macOS and KiB on Linux (and other platforms): convert conservatively to bytes"""
+    return raw if platform == 'darwin' else raw * 1024
+
+
+def rss_bytes_now():
+    """current resident set in bytes (psutil when available), else the converted peak ru_maxrss (conservative: the peak is >= the current value)"""
+    try:
+        import psutil; return int(psutil.Process().memory_info().rss)
+    except Exception:
+        import resource, sys; return rusage_to_bytes(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss, sys.platform)
