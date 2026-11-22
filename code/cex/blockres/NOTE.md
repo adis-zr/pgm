@@ -660,3 +660,17 @@ Measured on frozen v2.11.1 (pgm 25b8376; records round19b/): or_chain_186 2,138 
 (exponential phase) and 64.7 MiB against the 256 MiB allowance with 49 / 48 MiB RSS at admission. The nine accepted completions retained (0 disjoint vs round 19; PAC cells differ only
 in their sampled points, deterministic cells byte-identical). 159.4 s charged of the declared 300 s (33 receipts). No engine change after the freeze.
 
+### 21c. Round 19b closeout (21 Nov 2026): final deadline guards in the signed route (`integrated.py` v2.11.2)
+
+Authorization: the R19b review (closeout zip sha256 8e8771a7...; records round19b/CLOSEOUT_PACKET/) accepted the six OR cells, the nine preservation cells and the resource repair, and
+supplied one tested patch for the last unguarded stretch: after `dyadic_rows`' final check, `finish_expansion_` still validated every row, converted Z and ran `BR.finish` before
+returning COMPLETE without reading the clock again, and `recognize` recorded its elapsed time without comparing it to the allowance (the reviewer's real-work probe on the 3,000-gate
+model returned all 6,004 rows after 196 ms against a 190 ms budget). Applied verbatim (`git apply`, clean on dcc3b48): a poll every 256 rows while validating the original answers, a
+final guard after the answer finalization before success is returned, and a final guard at the end of recognition; all three use the existing typed refusals, so the dispatcher returns
+the established DEADLINE outcome with nothing published and no fallback work. No change to arithmetic, output values, the memory policy or the fallback algorithms.
+Verification (receipts r19b_closeout_*): the reviewer's `check_finalization.py` on dcc3b48 reproduces the finding (COMPLETE 12 / 12 after the clock expires behind the row builder and
+behind BR.finish; recognition RECOGNIZED at an expired final read); on v2.11.2 all_guards_hold = true (DEADLINE, 0 published, no fallback phases, RECOGNITION_REFUSED) and the ordinary
+solve's Z and all 12 answer rows are identical to the reviewer's before-record and to the local run on dcc3b48. check_round19b (6) and check_round19 (12) pass; the production oracle
+(6) passes. Per the closeout instruction no scored cell or full-suite rerun; the ten frozen-path suites run with the operator off and do not reach the patched lines. The bounded-execution
+engineering pass is CLOSED; the eleven accepted completions stand.
+

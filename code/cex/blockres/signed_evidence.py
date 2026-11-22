@@ -97,7 +97,9 @@ def recognize(model, queries, binding, deadline):
         if tnow() >= deadline: raise RecognitionRefused('recognition allowance exhausted while building the coefficient matrix (row %d of %d)' % (j, len(findings)))
         P.coeff.append([coeffs[j].get(r, F(1)) for r in roots])
     P.root_den = [lcm(a.denominator, b.denominator) * d for (a, b), d in zip((priors[r] for r in roots), Dr)]; P.global_den = prod(x.denominator for x in leaks) * prod(P.root_den)
-    P.recognition_s = tnow() - t0
+    t_final = tnow()
+    if t_final >= deadline: raise RecognitionRefused('recognition allowance exhausted at finalization')
+    P.recognition_s = t_final - t0
     return P
 
 
