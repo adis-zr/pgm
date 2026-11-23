@@ -674,3 +674,45 @@ solve's Z and all 12 answer rows are identical to the reviewer's before-record a
 (6) passes. Per the closeout instruction no scored cell or full-suite rerun; the ten frozen-path suites run with the operator off and do not reach the patched lines. The bounded-execution
 engineering pass is CLOSED; the eleven accepted completions stand.
 
+### 22. Round 20 (23 Nov 2026): certified layered contraction (`layered_contraction.py`, `integrated.py` v2.12)
+
+Authorization: CLAUDE_IMPLEMENTATION_BRIEF.md of the R20 theory packet (zip sha256 7e63816d...; records round20/R20_PACKET/). The theory pass diagnosed linkage_13 as an allele /
+selector model whose nonconstant factors split into 7 components (773 / 65 / 40 / 3 / 2 / 1 / 1 active variables), the main one a sequence of 19 locus stages joined by MATCHING binary
+channels [9/10, 1/10; 1/10, 9/10], at most 20 selector bits per interface, eight soft penetrance factors coupling the last two loci; a checked elimination order (local allele elimination
+per stage, then the selectors stage by stage, the final two loci folded into one terminal block so the last selectors are eliminated inside it) has maximum product 2^21 and output 2^20.
+Backend decision by the brief's bounded probe (receipt r20_probe_native_executor_order, records round20/probe/): the EXISTING certified native executor (cex/newarm/cex_executor.py, unchanged)
+runs the packet's 885-variable order + the 177 one-state variables on linkage_13 in 8.14 s / 574 MiB tree peak (kernel 8.02 s, 132.6 M forward + 132.6 M reverse rows, 532 MB logical
+peak, max label 1.2e8 -> width 2.7e-8), CERTIFIED, so the "planned-exact adapter" is the smallest sufficient integration; the research NumPy transfer prototype was not ported.
+Constructor (`layered_contraction.recognize`): exact rational predicates on the evidence-restricted model (constant / channel [a, b; b, a] with a, b > 0, a != b, a + b = 1 for ANY rational
+a, b / endpoint fragment / residual = nonconstant non-Boolean multivariable non-channel / local core); the channel graph must be disjoint paths; the affine chain alignment of the packet's
+DISCOVERY_PROOF (layer(c, i) = o_c + s_c i; local-core equalities; offsets eliminated along a spanning forest; the homogeneous sign system solved by an exact rational RREF with the standard
+nullspace basis -- no sympy; separable unit basis required; <= MAX_FREE_SIGN_BITS = 8 free main-component sign directions -> <= 256 candidates) run as TWO proposals -- (A) every non-channel
+factor forms local cores, (B) the residuals are excluded from the cores and must occupy one extreme adjacent layer pair, reflected if at the low end and folded into one terminal stage --
+each candidate VALIDATED against the tables independently of its derivation (every nonconstant factor wholly inside one stage or an exact channel between adjacent stages; every boundary a
+matching); the best admitted candidate (interface bits, local product, local volume, signs) gives the order (per component, per stage greedy local elimination, then the interface variables
+by stage); a primal-graph simulation of THAT order certifies max product / output and the summed volumes. No model name, hash, variable id, locus count or table constant is a rule; hashes
+are provenance only. Linkage_13: recognised in 0.27-0.28 s (allowance LAYERED_RECOGNITION_S 1.0 s): 390 channels, 8 residuals, 31 chains, proposal A refuses ("a chain sign is forced to
+zero"), proposal B: 260 equalities, sign rank 22 / nullity 9, 5 free bits, 32 examined, 16 admissible, selected 20 bits / 2^21 / 2^20, 885 active + 177 one-state = the 1,062-variable order;
+reversed ids, a seeded random relabel and channels changed to 4/5 / 1/5 give the same bounds (structure controls, not transfer evidence). Limits (explicit): residuals outside an extreme
+adjacent pair refuse; translation is normalised per core-connected group (the bounded search is not complete over all valid alignments); the brief's six-sector reduction is NOT implemented.
+Admission (`forecast`): bytes = 1.25 x 8 x (summed output entries + source entries + 2 x max output + 2 x max product) + 64 MiB + 1,200 B per coordinate, against min(LAYERED_BYTE_CAP 1,536 MiB,
+USABLE_BYTES - current RSS) -- calibrated on the probe (messages retained until their consumer: 1.004 x the summed output); time = 2 x summed product entries / ROWS_PER_S_CONSERVATIVE
+(20 M rows/s = the probe's 33.1 M rows/s with a 40 % margin) against the remaining deadline; both are refusals BEFORE the executor allocates; the kernel's own hard-charged cap and deadline poll
+remain the hard bounds. Execution (`layered_contraction.execute`): the executor's primitives exactly as cex_executor.execute (build / load / lower / kernel / enclose), plus the kernel's
+normalizer triple (value, binary exponent, label K_Z) read into the Z ENCLOSURE [Zhat (1 - K_Z u), Zhat / (1 - K_Z u)] x the scalars lower() cancels / prod card of the observed variables
+(the kernel gives each observed variable an empty bucket of mass card[v], exact, label 0: it cancels in every N / Z). Z is never an exact point (out['Z_enclosure'], out['Z_log2']); the
+cancelled-scalar count is cross-checked against the recogniser's. Rows: the executor's exact enclosures compacted outward on the 2^-52 grid (DETERMINISTIC; EXACT for point enclosures),
+one-state and factorless variables published EXACTLY 1 / uniform after checking the executor's enclosure contains that value; every row passes valid_publication with the point inside.
+Dispatch (`integrated.py`): recognition on the ORIGINAL evidence-restricted model before closure and only when the signed route recognised nothing; execution right after closure on the
+original model object (the closure returns a new reduced model; the plan is bound to the original by the executor's semantic hash); typed refusals (NotApplicable / RecognitionRefused /
+ResourceRefused / the executor's typed stops) fall back to the existing route; a refusal at the global deadline returns DEADLINE with nothing published; ZeroEvidence -> ZERO_EVIDENCE;
+an acceptance-test failure -> CERTIFICATE_DEFECT. --no-layered-contraction / layered_contraction=False = the v2.11.2 comparator path; the twelve existing suites switch it off.
+Controls (check_round20.py, 6, real work, receipt r20_new_controls_4; three harness reruns kept: a summary key, a deadline test that the time forecast refused before the kernel (fixed by an
+optimistic injected rate so the kernel's poll is what stops it), and the observed-variable factor in Z): L1 the packet's 16 tiny fixtures end to end (every coordinate and Z contained, closure
+APPLIED on each, one decoder); L2 twelve generated chain models (channels 7/10 and 2/3, hard zeros, weighted nonbinary locals, births / deaths, terminal coupling -> proposal B, low-end anchor ->
+reflection, evidence on a local / a selector / both, one-state + factorless -> EXACT rows, renaming + factor reversal + axis permutation -> same bounds, every pair overlapping); L3 typed refusals
+with the existing route completing (no channel, branching, cycle, residual spanning nonadjacent layers); L4 bounds on real work on a 17-bit / 8-layer model (27.8 M rows, 1.9 s kernel): the
+forecast covers the kernel's hard-charged peak (215 MB >= 112 MB) and rows, a real deadline inside the kernel -> DEADLINE with nothing published and no fallback phases, an injected byte cap and an
+injected rate refuse BEFORE the executor and the existing route completes, a clock expiring after the executor -> DEADLINE; L5 the switch (in process and --no-layered-contraction) reproduces the
+v2.11.2 path; L6 the exposed target's structure and its three representation variants. check_round19 (12), check_round19b (6), the oracle (6) and the ten frozen-path suites (103) pass.
+

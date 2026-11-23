@@ -11,6 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.pat
 for p in (HERE, os.path.join(CODE, 'cex', 'cqr'), os.path.join(CODE, 'cex', 'newarm')):
     if p not in sys.path: sys.path.insert(0, p)
 import integrated as IG, signed_evidence as SE, core
+IG.LAYERED_CONTRACTION_DEFAULT = False      # (round 20) this suite exercises the signed route and its fallbacks on the v2.11.2 path; the layered constructor has its own suite, check_round20.py
 assert IG.EVIDENCE_EXPANSION_DEFAULT is True and IG.SUPPORT_CLOSURE_DEFAULT is True
 OUT = sys.argv[1]; TMP = os.path.join(os.path.dirname(OUT), 'ctl_models'); os.makedirs(TMP, exist_ok=True); rows = []; rng = random.Random(1901)
 def say(r): r['ok'] = bool(r['ok']); rows.append(r); print(json.dumps(r, default=str)[:420])
