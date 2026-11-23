@@ -803,4 +803,13 @@ evidence model excludes the observed variable; C11 the switch (in process, CLI) 
 checks, its reference-runner check and its 24-model oracle pass on this host (the oracle needs an interpreter whose time.monotonic is CLOCK_UPTIME_RAW: Python 3.9 reports 'deadline expired at
 entry' against the unchanged kernel; the venv's 3.12 passes -- a packet-portability note, not an engine defect). check_round20b (6), check_round20 (6), check_round19 (12), check_round19b (6),
 the oracle (6), check_exact_route (13), check_round18 (12), check_round17 (4), check_round16 (6), check_round15 (3) pass on v2.13; the remaining five frozen-path suites were NOT rerun (budget).
+Measured on frozen v2.13 (pgm 2509243; records round22/): PRIMARY PASSED -- G4 COMPLETE 2,448 / 2,448 DETERMINISTIC (136 EXACT) on three supervised repeats, byte-identical rows and Z
+(fingerprint a35b96e7...), 0.56-0.75 s / 60-62 MiB, max width 7.8e-11, Z relative width 1.8e-13, all 108 round-21 exact rows enclosed, every row overlapping the packet's research result;
+the same-build --no-ancestral-response comparator reproduces the accepted 108 / 2,448 partial (20.15 s, 1,426 MiB). PRESERVATION: G3 retained (1,776 / 1,776 via the ancestral route in 0.51 s,
+0 disjoint vs round 21); **linkage_20 LOST** (586 / 2,205 DEADLINE_PARTIAL vs 2,205 / 2,205 in round 21): the ancestral constructor recognised the model (1,121 of 1,160 variables retained, 967
+residual factors, no path cut) and was correctly REFUSED by its physical forecast (max product 2.0e14 entries), but the construction + certificate cost 0.544 s before that refusal, and the
+layered route -- admitted in round 21 with a 0.5 s margin (forecast 18.1 s vs 18.6 s remaining) -- was then refused on time (18.1 s vs 17.9 s remaining); the engine fell back to the PAC route.
+A dispatch-ordering / admission-margin regression, not a numerical defect; no code change after the freeze (the brief forbids lowering the time-admission constant or widening scope after
+outcomes). The twelve-case exposed-panel preservation pass was NOT run: the first control-suite launch was timeout-killed at 304 s (oversized brute-force fixtures) and consumed the budget
+(395.2 s of 400 charged). STOPPED FOR REVIEW with the lost completion and the unrun preservation pass as the open items.
 
