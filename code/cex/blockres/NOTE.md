@@ -724,3 +724,29 @@ the layered constructor NOT_APPLICABLE on the nine in 0-3 ms and SKIPPED on the 
 No engine change after the freeze. Twelve of twelve exposed panel cases now complete; this is an engineering milestone on exposed targets, not transfer evidence (TRANSFER_PROTOCOL.md is
 a separately frozen experiment).
 
+### 22b. Round 20b (23 Nov 2026): admission closeout of the layered constructor (`layered_contraction.py`, `integrated.py` v2.12.1)
+
+Authorization: the R20 review's CLAUDE_CLOSEOUT_AND_TRANSFER.md (review zip sha256 b0a21558...; records round20b/REVIEW_PACKET/). The review accepted the twelve-of-twelve exposed result
+and reproduced two admission defects (no incorrect probability or normalizer found; 826 independent exact enclosures): (1) the volume certificate used the RECOGNITION graph (nonconstant
+factors, active variables, the active order) while cex_executor.lower drops a factor only when its evidence-restricted scope is EMPTY, so scoped constant tables remain physical sources --
+a 28-variable / 1,516-entry constant-clique model (every row 1/2, Z = 2^27) forecast 12 rows / 64 MiB, was admitted, and lost the incumbent's 0.26 s EXACT completion to a 19.9 s DEADLINE
+at 1,051 MiB; (2) the exact RREF, the matrix construction and the local-cost / order loops polled only after whole operations -- a 161-variable Boolean clique refused 2.09 s after a 0.2 s
+allowance, a 221-variable one was still running at 6 s. Repair, forecast-only: the PHYSICAL volume certificate walks every retained evidence-restricted source scope (scoped constants and
+one-state axes included) in the FULL native bucket order (one-state / factorless variables first, then the active order; each observed variable an empty bucket of mass card[v], one entry);
+its volumes bound the kernel's dense forward rows and retained messages (they equal the reviewer's exact lowered-scope simulation on the 12-variable probe: 4,096 / 2,048 / 8,190 / 4,095;
+on linkage 133,980,384 product entries vs 133,816,021 kernel forward rows and 66,863,593 output entries vs 66,819,670 live messages). The recognition-graph volumes remain as a diagnostic
+(plan.volume_recognition). Recognition bounds: cooperative polls per pivot column and per 64 rows of the exact RREF, per 64 rows of the sign-system construction, per 16 candidate scans of
+the local-cost and order loops, inside the component / core unions, equalities, chain walk, physical-graph construction and certificate, and a final guard before the plan is returned;
+storage admission by cell count (MAX_EXACT_CELLS = 2^19) before the offset forms (Cn x Cn) and the sign system (|eq| x Cn) are allocated; a candidate whose cheapest available local step
+exceeds LOCAL_PRODUCT_CUTOFF = 2^36 entries is abandoned at once (the Boolean cliques now refuse in 12 / 80 / 168 ms against 50 / 200 / 500 ms allowances). Unchanged: arithmetic, the
+executor and kernel, query recovery, dispatch, the recognition predicates, the sign-search policy and -- verified -- the selected linkage order (the executor's semantic plan hash of model +
+order equals the frozen round-20 certificate's). integrated.py changes only the VERSION string and records the diagnostic volumes.
+Controls (check_round20b.py, 6, real work, receipt r20b_new_controls_1): A1 the physical certificate equals the reviewer's lowered-scope simulation; the 28-variable fixture is refused BEFORE
+the executor (forecast 10.1 GiB / 53.7 s) and the incumbent publishes 56 / 56 EXACT with Z = 2^27 in 0.07 s; the 24-variable fixture at 1.8 s likewise (48 / 48 EXACT); A2 the Boolean
+cliques (70 / 161 / 221 variables) refuse within the allowance; A3 a 1000 x 600 sign system refuses before allocation (14 KB traced), a real 725-chain model refuses by the dimension guard in
+12 ms; A4 the reviewer's 80-model exact enumeration on this host (62 enclosed / 10 zero / 8 refused, 806 coordinates) + extreme scales 2^+-4000 + RANGE on a 2^-2000 internal range; A5 the
+linkage order identical to round 20, the physical certificate covers the stored kernel counters, the forecast (764 MiB / 13.4 s) admits; A6 the diagnostic volumes equal round 20. The round-20
+suite (6), round-19 (12), round-19b (6) and the oracle (6) pass; the ten frozen-path suites switch every constructor off and do not reach the changed module (not rerun; the engine files they
+exercise are unchanged). The reviewer's 28-variable fixture under the normal contract on this build: operator off EXACT 56 / 56 in 0.13 s supervised; operator ON EXACT 56 / 56 in 0.13 s
+supervised (typed RESOURCE_REFUSED before the executor, incumbent completes).
+

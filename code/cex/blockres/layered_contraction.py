@@ -22,6 +22,10 @@ channels form a matching. The best admitted candidate (lexicographic: interface 
 greedy local elimination of the non-interface variables, then the interface (selector) variables in stage order. A primal-graph simulation of THAT order certifies the
 maximum product / output volumes and the summed volumes that forecast kernel work and retained bytes; admission compares them with the caps and the live headroom.
 
+Round 20b (R20 review): admission volumes are computed on the PHYSICAL graph the executor lowers (every retained evidence-restricted source scope incl. scoped constants, the full bucket
+order incl. one-state / factorless / observed buckets), not on the recognition graph; the exact linear algebra and the cost / order loops poll the deadline inside their work and the dense
+exact structures are admitted by cell count before allocation; a candidate whose cheapest local step exceeds LOCAL_PRODUCT_CUTOFF is abandoned at once.
+
 Interface: recognize(model, deadline) -> Plan | NotApplicable | RecognitionRefused ; execute(plan, model, deadline, cap_bytes, host_reserved_bytes) -> Result
 (intervals, points, Z enclosure as exact rationals, stats) | ExecutorRefused (typed stop) | ZeroEvidence. Rows are published by the caller (integrated.py) as outward
 dyadic compactions labelled DETERMINISTIC (EXACT when the enclosure is a point: exact zeros, one-state variables, factorless uniform rows). Z is reported as an ENCLOSURE
@@ -36,6 +40,8 @@ import cex_executor as CX
 import ctypes as C
 
 MAX_FREE_SIGN_BITS = 8          # bounded sign search (the brief's limit); the exposed target has 5
+MAX_EXACT_CELLS = 1 << 19       # storage admission (round 20b) for the dense exact structures of the alignment (the offset forms Cn x Cn and the sign system |eq| x Cn): refused by type BEFORE allocation; the exposed target has 31 x 31 and 260 x 31
+LOCAL_PRODUCT_CUTOFF = 1 << 36  # a candidate whose cheapest available local elimination step already exceeds this volume cannot be executed under any admissible budget: abandoned at once (early refusal, round 20b)
 U = F(1, 1 << 53)
 
 
@@ -51,7 +57,7 @@ def tnow(): return time.monotonic()
 
 
 class Plan:
-    __slots__ = ('order', 'active', 'n', 'ev', 'cards', 'singletons', 'factorless', 'cancelled_scalar', 'cancelled_count', 'structure', 'volume', 'recognition_s', 'binding')
+    __slots__ = ('order', 'active', 'n', 'ev', 'cards', 'singletons', 'factorless', 'cancelled_scalar', 'cancelled_count', 'structure', 'volume', 'volume_recognition', 'recognition_s', 'binding')
 
 
 def _restrict(model, deadline=math.inf):
@@ -84,21 +90,33 @@ def _is_channel(act, data, cards):
     return a > 0 and b > 0 and a != b and a == d and b == c and a + b == 1
 
 
-def _rref_nullspace(rows, ncols):
+def _rref_nullspace(rows, ncols, poll=lambda where: None):
     """exact rational RREF of an integer matrix (list of rows) and its STANDARD nullspace basis (one vector per free column: 1 at the free column, minus the pivot-row
-    coefficient at each pivot column); the same canonical basis sympy's Matrix.nullspace() returns, so the separability admission is representation-independent"""
-    M = [[F(x) for x in r] for r in rows]; piv = []; r = 0
+    coefficient at each pivot column); the same canonical basis sympy's Matrix.nullspace() returns, so the separability admission is representation-independent.
+    Round 20b: the dense Fraction matrix is ADMITTED by its cell count before it is allocated (typed NotApplicable), and the deadline is polled per pivot column and per 64 rows
+    of each elimination (cooperative: one exact row operation is not interruptible)"""
+    cells = len(rows) * ncols
+    if cells > MAX_EXACT_CELLS: raise NotApplicable('exact sign system %d x %d = %d cells exceeds the storage admission (%d)' % (len(rows), ncols, cells, MAX_EXACT_CELLS))
+    poll('before the exact sign system is materialised')
+    M = []
+    for k, r_ in enumerate(rows):
+        if (k & 63) == 63: poll('inside the exact matrix construction (row %d of %d)' % (k, len(rows)))
+        M.append([F(x) for x in r_])
+    piv = []; r = 0
     for c in range(ncols):
+        poll('inside the exact RREF (column %d of %d)' % (c, ncols))
         p = next((i for i in range(r, len(M)) if M[i][c] != 0), None)
         if p is None: continue
         M[r], M[p] = M[p], M[r]; inv = 1 / M[r][c]; M[r] = [x * inv for x in M[r]]
         for i in range(len(M)):
+            if (i & 63) == 63: poll('inside the exact RREF (column %d, row %d)' % (c, i))
             if i != r and M[i][c] != 0:
                 f = M[i][c]; M[i] = [x - f * y for x, y in zip(M[i], M[r])]
         piv.append(c); r += 1
         if r == len(M): break
     free = [c for c in range(ncols) if c not in piv]; basis = []
-    for fcol in free:
+    for k, fcol in enumerate(free):
+        if (k & 63) == 63: poll('inside the nullspace basis construction')
         v = [F(0)] * ncols; v[fcol] = F(1)
         for i, pc in enumerate(piv): v[pc] = -M[i][fcol]
         basis.append(v)
@@ -129,6 +147,7 @@ def recognize(model, deadline=math.inf, binding=None):
         return x
     def join(par, a, b): par[find(par, a)] = find(par, b)
     for i, (act, data) in enumerate(tabs):
+        if (i & 255) == 255: poll('inside the component union')
         if i in const or not act: continue
         for v in act[1:]: join(par_all, act[0], v)
     poll('after component union')
@@ -142,7 +161,8 @@ def recognize(model, deadline=math.inf, binding=None):
     for i in chan:
         a, b = tabs[i][0]; vadj[a].add(b); vadj[b].add(a); transvars.update((a, b))
     seen = set(); chains = []; pos = {}
-    for v in sorted(transvars):
+    for k, v in enumerate(sorted(transvars)):
+        if (k & 255) == 255: poll('inside the chain walk')
         if v in seen: continue
         comp = {v}; stack = [v]; seen.add(v)
         while stack:
@@ -165,12 +185,15 @@ def recognize(model, deadline=math.inf, binding=None):
         Every returned plan has passed the exact locality / adjacency / matching validation, which does not depend on how the proposal was formed."""
         par_loc = list(range(n))
         for i, (act, data) in enumerate(tabs):
+            if (i & 255) == 255: poll('inside the local-core union (%s)' % label)
             if i in const or not act or i in chan or i in excluded: continue
             for v in act[1:]: join(par_loc, act[0], v)
         members = defaultdict(list)
         for v in activevars: members[find(par_loc, v)].append(v)
         eq = []; gadj = [set() for _ in chains]
-        for vs in members.values():
+        if Cn * Cn > MAX_EXACT_CELLS: raise NotApplicable('%d chains: the offset forms (%d cells) exceed the storage admission (%d) (%s)' % (Cn, Cn * Cn, MAX_EXACT_CELLS, label))
+        for k, vs in enumerate(members.values()):
+            if (k & 255) == 255: poll('inside the core equalities (%s)' % label)
             sel = sorted(v for v in vs if v in pos)
             for v in sel[1:]:
                 left, right = pos[sel[0]], pos[v]; eq.append((left, right)); gadj[left[0]].add(right[0]); gadj[right[0]].add(left[0])
@@ -185,14 +208,16 @@ def recognize(model, deadline=math.inf, binding=None):
                 for d, j, k in links[q]:
                     if forms[d] is None: forms[d] = forms[q][:]; forms[d][q] += j; forms[d][d] -= k; stack.append(d)
         poll('after the spanning forest (%s)' % label)
+        if len(eq) * Cn > MAX_EXACT_CELLS: raise NotApplicable('sign system %d x %d exceeds the storage admission (%d) (%s)' % (len(eq), Cn, MAX_EXACT_CELLS, label))
         Brows = []
-        for (c, j), (d, k) in eq:
-            row = [forms[c][z] - forms[d][z] for z in range(Cn)]; row[c] += j; row[d] -= k; Brows.append(row)
-        sign_basis, srank = _rref_nullspace(Brows, Cn) if Brows else ([[F(int(z == c)) for z in range(Cn)] for c in range(Cn)], 0)
+        for k, ((c, j), (d, kk_)) in enumerate(eq):
+            if (k & 63) == 63: poll('inside the sign-system construction (%s, row %d of %d)' % (label, k, len(eq)))
+            row = [forms[c][z] - forms[d][z] for z in range(Cn)]; row[c] += j; row[d] -= kk_; Brows.append(row)
+        sign_basis, srank = _rref_nullspace(Brows, Cn, poll) if Brows else ([[F(int(z == c)) for z in range(Cn)] for c in range(Cn)], 0)
         poll('after the exact nullspace (%s)' % label)
         basis = []
-        for sb in sign_basis:
-            bb = []
+        for k, sb in enumerate(sign_basis):
+            poll('inside the basis expansion (%s, direction %d)' % (label, k)); bb = []
             for c in range(Cn): bb.extend([sum(forms[c][z] * sb[z] for z in range(Cn)), sb[c]])
             basis.append(bb)
         owners = {}; sign_dirs = []
@@ -216,7 +241,7 @@ def recognize(model, deadline=math.inf, binding=None):
             groups.append(cs)
         resid_by_comp = defaultdict(list)
         for i in excluded: resid_by_comp[comp_of[tabs[i][0][0]]].append(i)
-        candidates = []; best = None; examined = 0
+        candidates = []; best = None; examined = 0; refused_hopeless = []
         for signs in iproduct((-1, 1), repeat=len(free)):
             examined += 1; poll('inside the sign search (%s, candidate %d)' % (label, examined))
             coef = {bi: 1 for bi in sign_dirs}; coef.update(dict(zip(free, signs)))
@@ -254,21 +279,26 @@ def recognize(model, deadline=math.inf, binding=None):
                 a, b = sorted(act, key=lambda v: stage[v]); matches[r, stage[a]].append((a, b)); interfaces[r, stage[a]].add(a); interfaces[r, stage[b]].add(b)
             if not ok: continue
             if any(len({a for a, b in ee}) != len(ee) or len({b for a, b in ee}) != len(ee) for ee in matches.values()): continue
-            width = max(map(len, interfaces.values()), default=0); maxprod = 1; work = 0
+            width = max(map(len, interfaces.values()), default=0); maxprod = 1; work = 0; hopeless = None
             for key, scopes in locals_.items():
                 live = [set(sc) for sc in scopes]; keep = interfaces[key]; elim = set().union(*live) - keep
                 while elim:
                     pick = None
-                    for v in elim:
+                    for ci, v in enumerate(elim):
+                        if (ci & 15) == 15: poll('inside the local cost estimate (%s)' % label)                    # cooperative: per 16 candidate scans of the live scopes
                         un = set().union(*(s_ for s_ in live if v in s_)); vol = math.prod(cards[w] for w in un); kk = (vol, vol // cards[v], len(un), v)
                         if pick is None or kk < pick[0]: pick = (kk, v, un)
-                    kk, v, un = pick; maxprod = max(maxprod, kk[0]); work += kk[0]; live = [s_ for s_ in live if v not in s_]; live.append(un - {v}); elim.remove(v)
+                    kk, v, un = pick
+                    if kk[0] > LOCAL_PRODUCT_CUTOFF: hopeless = kk[0]; break                                        # the cheapest available step cannot be executed under any admissible budget: abandon this candidate now
+                    maxprod = max(maxprod, kk[0]); work += kk[0]; live = [s_ for s_ in live if v not in s_]; live.append(un - {v}); elim.remove(v)
+                if hopeless is not None: break
                 poll('inside the local cost estimate (%s)' % label)
+            if hopeless is not None: refused_hopeless.append(hopeless); continue
             info = dict(proposal=label, free_signs=signs, max_interface_bits=width, max_local_product_entries=maxprod, local_elimination_volume_sum=work, folded_components=len(fold)); candidates.append(info)
             key = (width, maxprod, work, signs)
             if best is None or key < best[0]: best = (key, layer, stage, interfaces, locals_, matches, info)
-        diag = dict(proposal=label, excluded_factors=len(excluded), local_equalities=len(eq), sign_rank=srank, sign_nullity=len(sign_basis), offset_groups=ngroups, free_main_sign_bits=len(free), sign_assignments_examined=examined, admissible_candidates=len(candidates))
-        if best is None: raise NotApplicable('bounded alignment found no admissible plan (%s: %d sign assignments examined)' % (label, examined))
+        diag = dict(proposal=label, excluded_factors=len(excluded), local_equalities=len(eq), sign_rank=srank, sign_nullity=len(sign_basis), offset_groups=ngroups, free_main_sign_bits=len(free), sign_assignments_examined=examined, admissible_candidates=len(candidates), candidates_abandoned_above_cutoff=len(refused_hopeless))
+        if best is None: raise NotApplicable('bounded alignment found no admissible plan (%s: %d sign assignments examined%s)' % (label, examined, ('; %d abandoned: cheapest local step %d entries > cutoff %d' % (len(refused_hopeless), min(refused_hopeless), LOCAL_PRODUCT_CUTOFF)) if refused_hopeless else ''))
         return best + (diag,)
 
     # ---- two proposals: (A) every non-channel factor forms local cores (no residual class); (B) the non-Boolean multivariable factors are residuals confined to a folded terminal pair
@@ -289,7 +319,8 @@ def recognize(model, deadline=math.inf, binding=None):
             live = [set(sc) for sc in scopes]; todo = set().union(*live) - interfaces[rr, lev]
             while todo:
                 pick = None
-                for v in todo:
+                for ci, v in enumerate(todo):
+                    if (ci & 15) == 15: poll('inside the order construction')
                     un = set().union(*(s for s in live if v in s)); vol = math.prod(cards[w] for w in un); kk = (vol, vol // cards[v], len(un), v)
                     if pick is None or kk < pick[0]: pick = (kk, v, un)
                 kk, v, un = pick; done.append(v); todo.remove(v); live = [s for s in live if v not in s] + [un - {v}]
@@ -298,20 +329,39 @@ def recognize(model, deadline=math.inf, binding=None):
     singletons = [v for v in range(n) if v not in ev and cards[v] == 1]; factorless = [v for v in range(n) if v not in ev and cards[v] > 1 and v not in touched]
     full_order = singletons + factorless + order
     if sorted(full_order) != [v for v in range(n) if v not in ev] or len(set(order)) != len(order): raise NotApplicable('order does not cover the unobserved variables exactly (constructor defect, refused)')
-    # ---- volume certificate of THAT order on the exact primal graph (independent of how the order was found)
+    # ---- volume certificate of the recognition graph (nonconstant factors, active variables, the active order): DIAGNOSTIC only since round 20b (it is the graph the alignment reasoned about)
     adj = {v: set() for v in activevars}
     for i, (act, _) in enumerate(tabs):
         if i in const: continue
         for v in act: adj[v] |= set(act) - {v}
     maxp = 0; maxo = 0; sump = 0; sumo = 0
     for k, v in enumerate(order):
-        if (k & 63) == 63: poll('inside the volume certificate')
+        if (k & 63) == 63: poll('inside the recognition-graph volume certificate')
         nb = adj[v]; pv = cards[v] * math.prod(cards[x] for x in nb); maxp = max(maxp, pv); maxo = max(maxo, pv // cards[v]); sump += pv; sumo += pv // cards[v]
         for x in nb: adj[x] = (adj[x] | nb) - {x, v}
         del adj[v]
+    vol_rec = dict(max_product_entries=maxp, max_output_entries=maxo, sum_product_entries=sump, sum_output_entries=sumo, active_variables=len(order))
+    # ---- PHYSICAL volume certificate (round 20b; the R20 review's finding 1): the graph the executor ACTUALLY lowers -- EVERY retained evidence-restricted source scope (scoped constants and
+    # one-state axes included: cex_executor.lower drops a factor only when its restricted scope is empty) walked in the FULL native bucket order (one-state and factorless variables first,
+    # then the active order; each observed variable is an empty bucket of mass card[v]). The kernel's bucket of v is the union of the live relations containing v = {v} + its current
+    # neighbourhood in this elimination graph, so these volumes bound the dense forward rows and the retained message entries (measured 1.0003 x and 1.0003 x on the round-20 probe).
+    adj = {v: set() for v in range(n) if v not in ev}
+    for k, (sc, _) in enumerate(facs):
+        if (k & 255) == 255: poll('inside the physical graph construction')
+        s_ = set(sc)
+        for v in sc: adj[v] |= s_ - {v}
+    maxp = 0; maxo = 0; sump = 0; sumo = 0
+    for k, v in enumerate(full_order):
+        if (k & 63) == 63: poll('inside the physical volume certificate')
+        nb = adj[v]; pv = cards[v] * math.prod(cards[x] for x in nb); maxp = max(maxp, pv); maxo = max(maxo, pv // cards[v]); sump += pv; sumo += pv // cards[v]
+        for x in nb: adj[x] = (adj[x] | nb) - {x, v}
+        del adj[v]
+    sump += len(ev); sumo += len(ev)                                                                  # the observed variables' empty buckets (one entry each)
+    poll('before the plan is returned')                                                               # final recognition guard (completion hygiene; the interior polls above are the repair)
     P = Plan(); P.order = full_order; P.active = len(order); P.n = n; P.ev = dict(ev); P.cards = list(cards); P.singletons = singletons; P.factorless = factorless; P.cancelled_scalar = scalar; P.cancelled_count = cancelled
     P.structure = dict(channels=len(chan), residuals=len(resid), constants=len(const), local_factors=len(local), chains=Cn, chain_lengths=dict(Counter(len(c) for c in chains)), components=len(wg), main_component_variables=len(wg[main]), stages_main=len({stage[v] for v in wg[main]}), proposals=[r[-1] for r in results], proposal_refusals=refusals, selected=info)
-    P.volume = dict(max_product_entries=maxp, max_output_entries=maxo, sum_product_entries=sump, sum_output_entries=sumo, source_entries=sum(len(d) for _, d in facs), active_variables=len(order))
+    P.volume = dict(max_product_entries=maxp, max_output_entries=maxo, sum_product_entries=sump, sum_output_entries=sumo, source_entries=sum(len(d) for _, d in facs), retained_sources=len(facs), scoped_constants=len(const), one_state_variables=len(singletons), factorless_variables=len(factorless), observed_variables=len(ev), active_variables=len(order), bucket_order_length=len(full_order) + len(ev), graph='physical: every retained evidence-restricted source scope, full native bucket order')
+    P.volume_recognition = vol_rec
     P.recognition_s = tnow() - t0; P.binding = binding
     return P
 
@@ -321,9 +371,10 @@ MEMORY_SLACK = 1.25
 
 
 def forecast(plan, remaining_s):
-    """conservative forecast of the native executor's live state and work for THIS order: every message is retained until the reverse releases it at its consumer (one double per
-    output entry; the probe measured 1.004 x), plus the converted sources, the reverse contexts of the live frontier (<= 2 x the largest output), the kernel's join / index rows
-    (<= 2 x the largest product), the enclosure's Fraction rows; x MEMORY_SLACK + 64 MiB process headroom. Work: forward + reverse rows = 2 x the summed product volume."""
+    """conservative forecast of the native executor's live state and work for THIS order on the PHYSICAL graph it lowers (plan.volume, round 20b): every message is retained until the
+    reverse releases it at its consumer (one double per output entry; the probe measured 1.004 x), plus the converted sources (dense entries: an upper bound on the sparse representation),
+    the reverse contexts of the live frontier (<= 2 x the largest output), the kernel's join / index rows (<= 2 x the largest product), the enclosure's Fraction rows; x MEMORY_SLACK +
+    64 MiB process headroom. Work: forward + reverse rows = 2 x the summed product volume (+ the observed variables' empty buckets)."""
     v = plan.volume; payload = 8 * (v['sum_output_entries'] + v['source_entries'] + 2 * v['max_output_entries'] + 2 * v['max_product_entries'])
     byts = int(payload * MEMORY_SLACK) + (64 << 20) + 1200 * sum(plan.cards)
     rows = 2 * v['sum_product_entries']; secs = rows / ROWS_PER_S_CONSERVATIVE
