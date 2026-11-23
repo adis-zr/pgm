@@ -861,3 +861,22 @@ traced; the eight-cycle fill guard refuses before the set union; the 24-model ex
 89afe28a... as the reviewer recorded), construction 0.08 s, 18.5 MB charged, admitted. ONE G4 confirmation: 2,448 / 2,448 in 0.82 s / 60 MiB, rows and Z identical to round 22b, plan hash equal.
 2.24 s charged of the 30 s ceiling (5 receipts incl. one failed launch). Default-engine acceptance of this build is authorized by the review once these pass; the engineering pass is CLOSED.
 
+### 25. Round 23 (23 Nov 2026): frozen ancestral-response coverage trial on the accepted v2.13.2 (no engine change; pgm 257fadc adds r23_gen.py / run_r23.py)
+
+Protocol (CLAUDE_R23_FROZEN_COVERAGE_TRIAL_2026-11-23.md) FROZEN before any scored outcome (records round23/TRIAL_MANIFEST.json, PROTOCOL_FROZEN.md): NEW = default, BASE = + --no-ancestral-response,
+same frozen source / binary / runner (identities verified; flag difference shown on a tiny existing control); 16 inputs: 6 unexposed UAI-2014 linkage instances by ascending SHA-256 of a tagged
+string after an exposure audit (17 pool, 7 excluded with record support, 10 eligible: linkage_18 / 15 / 19 / 21 / 25 / 27), 6 generated (A1, A2 wider terminal evidence; B1, B2 interior observations;
+C1, C2 shared-selector multiplexer circuits) and 4 boundary cases (D1 nonuniform endpoint prior, D2 branching selectors, D3 likelihood + evidence on children, D4 softened multiplexer) from per-case
+SHA-256 seeds with exact enumeration truth; 800 s ceiling. RESULT (32 primary + 4 confirmation cells, 317.3 s): H1 natural incremental completion -- NOT demonstrated: linkage_18 and 19 complete in
+BOTH arms via the layered route (AR deferred), linkage_15 / 21 / 25 / 27 complete in NEITHER (AR refused: the 128 MiB construction budget on 15 / 25, the physical forecast on 21 / 27 (max product
+1e14 / 2.4e9); the layered route refused by sign bits / forced-zero sign / forecast; the PAC fallback published 68-421 rows); no lost completion (linkage_21: 68 vs 70 PAC rows, 0 disjoint -- a
+sampling difference, both incomplete). H2 structural synthetic transfer -- MET: three new completions spanning TWO families, A1 and A2 (wider terminal evidence; 1,680 / 1,680 and 2,880 / 2,880 in 0.33 /
+0.72 s vs BASE 0 / K at the deadline) and B1 (interior coupling + evidence; 1,510 / 1,510 in 0.39 s vs 0), A1 and B1 CONFIRMED on reversed-order repeats with byte-identical NEW rows; B2 (two couplings,
+a likelihood and evidence, cardinality 3) refused on the construction budget and both arms published 120 / 2,717. H3 -- C1 completes in both arms (AR 0.32 s vs the existing exact route 0.99 s: a
+material speedup under the frozen definition, not a completion), C2 both EXACT via the existing route (AR refused on the construction budget at 0.33 s). H4 -- no lost completion; every AR refusal is
+typed (RESOURCE_REFUSED) at 0.05-0.78 s; no construction-allowance overrun. Boundary: D1 and D3 -> AR 'nothing to erase', both arms EXACT; D2 (branching selectors) -> AR APPLIED with partial recognition
+(3 alleles erased), both arms correct vs enumeration; D4 -> the layered route in both arms. Every published row passes the interval / point / epsilon checks; interval sums contain one (partial
+variables with [0, 1] fill-in); 0 cross-arm disjoint pairs; all natural rows inside the UAI reference rounding cells; all boundary rows and Z contain the exact truth. Where AR transfers:
+pedigree-shaped models whose informative factors sit at a terminal or interior anchor (the erasable prefix dominates); where it is blocked: natural pedigrees retain nearly everything (1,000+
+variables, hundreds of residual factors) so the physical core is as hard as the original and the 128 MiB construction estimate is exceeded by the source-clique accounting on 1,000-variable graphs.
+
