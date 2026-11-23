@@ -749,4 +749,9 @@ linkage order identical to round 20, the physical certificate covers the stored 
 suite (6), round-19 (12), round-19b (6) and the oracle (6) pass; the ten frozen-path suites switch every constructor off and do not reach the changed module (not rerun; the engine files they
 exercise are unchanged). The reviewer's 28-variable fixture under the normal contract on this build: operator off EXACT 56 / 56 in 0.13 s supervised; operator ON EXACT 56 / 56 in 0.13 s
 supervised (typed RESOURCE_REFUSED before the executor, incumbent completes).
+Measured on frozen v2.12.1 (pgm a646e84; records round20b/): ONE integrated linkage_13 confirmation (receipt sweep:round20b/linkage_confirmation): COMPLETE 2,158 / 2,158 DETERMINISTIC in
+9.02 s / 585 MiB; rows and Z enclosure BYTE-IDENTICAL to the three frozen round-20 repeats (fingerprint 025f3dd4...), the executor's semantic plan hash and physical schedule hash equal the
+round-20 certificate's, kernel forward rows identical (133,816,021); the physical forecast 764 MiB / 13.4 s admitted (round 20's recognition-graph forecast was 763 MiB / 13.4 s: the omitted
+scoped constants add 0.1 % here and 2^22 x on the constant cliques). 19.2 s charged of the declared 120 s (7 receipts). The round-20 scored cells stand untouched. The bounded-admission
+engineering pass is CLOSED; the next experiment is the separately frozen twelve-case transfer protocol.
 
