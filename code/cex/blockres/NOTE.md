@@ -855,4 +855,9 @@ source clique (k(k-1) entries + temporary sets) and each fill (temporary + repla
 inside every fill; the set expressions and order are unchanged, so the constructed model, order, decoder, scalar, query map and physical certificate are identical. The graph-accounting
 estimate rises as intended (G4: 8.2 MB -> 18.5 MB charged, still admitted under the 128 MiB policy). Reporting qualifications carried forward: round 22b used 196.2 s supervised plus 90.4 s of
 separately recorded UNSUPERVISED memory probes, its 80 s control reserve was exceeded, and the legacy-suite evidence is waived forward, not newly passed.
+Measured on frozen v2.13.2 (pgm 1da6da3; records round22c/): the wide one-state scoped-constant fixture refuses at the vertex-dictionary charge before the clique (61 KB traced under a
+100,000 B cap; before: admitted at 89,904 B charged, 1.89 MB allocated); an expired clock after the restriction refuses before graph creation; the clique charge refuses a 500,000 B cap at 111 KB
+traced; the eight-cycle fill guard refuses before the set union; the 24-model exact oracle passes (504 coordinates, 508 auxiliaries); all 15 G4 witness fields identical to round 22b (witness sha256
+89afe28a... as the reviewer recorded), construction 0.08 s, 18.5 MB charged, admitted. ONE G4 confirmation: 2,448 / 2,448 in 0.82 s / 60 MiB, rows and Z identical to round 22b, plan hash equal.
+2.24 s charged of the 30 s ceiling (5 receipts incl. one failed launch). Default-engine acceptance of this build is authorized by the review once these pass; the engineering pass is CLOSED.
 
