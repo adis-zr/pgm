@@ -837,4 +837,11 @@ the reviewer's 17 dispatch control-flow checks and the original-binding control 
 establishes zero evidence first, the constructor's own ZeroMass refusal is tested directly); check_round11 (15), check_round12 (11), check_round13 (12) pass. check_integrated_v2 (~53 s) and
 check_wmb (~40 s) exceed the 20 s per-child cap by construction and were NOT run (they switch every constructor off; the modules they exercise are byte-identical to the accepted build).
 Control charges overran the 80 s reserve (see the round record): a 24 s timeout kill of check_integrated_v2 and three harness reruns.
+Measured on frozen v2.13.1 (pgm 9d42679; records round22b/): ALL GATES PASSED. linkage_20 RESTORED: 2,205 / 2,205 DETERMINISTIC on two supervised confirmations (12.46 / 12.31 s, 714 MiB)
+through the layered plan with the ancestral constructor DEFERRED (no construction phase), rows and Z identical to round 21, semantic plan and physical schedule hashes equal, admission margin
+back to 0.5 s. G4 2,448 / 2,448 in 0.63 s byte-identical to the frozen round-22 result (the layered route refuses first in 0.09 s, the ancestral plan hash unchanged). G3 1,776 / 1,776 via the
+layered route in 0.74 s, identical to its round-21 rows (0 disjoint vs the round-22 ancestral rows too). The twelve-case exposed panel: all twelve complete within contract, 0 disjoint vs the
+accepted round-20 references, the eight deterministic / exact / signed cells byte-identical, linkage_13 identical via the layered route (AR DEFERRED), the four PAC cells under their established
+semantics. 196.2 s charged of the 400 s ceiling (29 receipts; the 80 s control reserve was overrun to 113.1 s, disclosed). The bounded-execution engineering pass of the ancestral route is
+CLOSED; v2.13.1 is proposed as the default engine; the exposed panel is thirteen of thirteen (twelve + G4) complete.
 
