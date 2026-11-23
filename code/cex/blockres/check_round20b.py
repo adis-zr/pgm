@@ -13,6 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.pat
 for p in (HERE, os.path.join(CODE, 'cex', 'newarm')):
     if p not in sys.path: sys.path.insert(0, p)
 import integrated as IG, layered_contraction as LC, core, cex_executor as CX
+IG.ANCESTRAL_RESPONSE_DEFAULT = False       # (round 22) this suite exercises the layered route; the ancestral-response constructor (which runs first) has its own suite, check_round22.py
 assert IG.LAYERED_CONTRACTION_DEFAULT is True
 OUT = sys.argv[1]; TMP = os.path.join(os.path.dirname(OUT), 'ctl_models'); os.makedirs(TMP, exist_ok=True); rows = []
 RD = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19'; PK = os.path.join(RD, 'round20b/REVIEW_PACKET/r20_independent')

@@ -11,6 +11,7 @@ import numpy as np
 import integrated as IG, blockres as BR
 IG.EVIDENCE_EXPANSION_DEFAULT = False       # (round 19) this suite exercises its own mechanism; the evidence-expansion operator has its own suite, check_round19.py
 IG.LAYERED_CONTRACTION_DEFAULT = False      # (round 20) this suite exercises its own mechanism; the layered-contraction constructor has its own suite, check_round20.py
+IG.ANCESTRAL_RESPONSE_DEFAULT = False       # (round 22) this suite exercises its own mechanism; the ancestral-response constructor has its own suite, check_round22.py
 IG.SUPPORT_CLOSURE_DEFAULT = False          # (round 18) this suite exercises the FROZEN comparator path (v2.9.4 behaviour); the closure has its own suite, check_round18.py
 OUT = sys.argv[1]; rows = []
 def say(r): r['ok'] = bool(r['ok']); rows.append(r); print(json.dumps(r, default=str)[:420])

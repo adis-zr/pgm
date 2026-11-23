@@ -15,6 +15,7 @@ import numpy as np
 import integrated as IG, blockres as BR, oracle, task as T
 IG.EVIDENCE_EXPANSION_DEFAULT = False       # (round 19) this suite exercises its own mechanism; the evidence-expansion operator has its own suite, check_round19.py
 IG.LAYERED_CONTRACTION_DEFAULT = False      # (round 20) this suite exercises its own mechanism; the layered-contraction constructor has its own suite, check_round20.py
+IG.ANCESTRAL_RESPONSE_DEFAULT = False       # (round 22) this suite exercises its own mechanism; the ancestral-response constructor has its own suite, check_round22.py
 IG.SUPPORT_CLOSURE_DEFAULT = False          # (round 18) this suite exercises the FROZEN comparator path (v2.9.4 behaviour); the closure has its own suite, check_round18.py
 OUT = sys.argv[1]; TMP = os.path.join(os.path.dirname(OUT), 'ctl_models'); rows = []; rng = random.Random(23); ONLY_W5 = os.environ.get('ONLY_W5') == '1'; ONLY_D2 = os.environ.get('ONLY_D2') == '1'
 if ONLY_D2: ONLY_W5 = True

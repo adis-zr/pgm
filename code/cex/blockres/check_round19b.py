@@ -12,6 +12,7 @@ for p in (HERE, os.path.join(CODE, 'cex', 'cqr'), os.path.join(CODE, 'cex', 'new
     if p not in sys.path: sys.path.insert(0, p)
 import integrated as IG, signed_evidence as SE, core
 IG.LAYERED_CONTRACTION_DEFAULT = False      # (round 20) this suite exercises the signed route and its fallbacks on the v2.11.2 path; the layered constructor has its own suite, check_round20.py
+IG.ANCESTRAL_RESPONSE_DEFAULT = False       # (round 22) this suite exercises its own mechanism; the ancestral-response constructor has its own suite, check_round22.py
 assert IG.EVIDENCE_EXPANSION_DEFAULT is True
 OUT = sys.argv[1]; TMP = os.path.join(os.path.dirname(OUT), 'ctl_models'); rows = []
 def say(r): r['ok'] = bool(r['ok']); rows.append(r); print(json.dumps(r, default=str)[:420])

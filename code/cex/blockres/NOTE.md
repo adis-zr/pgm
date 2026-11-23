@@ -774,3 +774,33 @@ Natural-distribution transfer: ONE new natural completion (linkage_20) of four; 
 synthetic'. Coverage limits made explicit by the refusals: the bounded affine alignment (<= 8 free sign bits; per-group translation; the 'forced zero sign' condition) misses three of four fresh
 linkage pedigrees whose structure the constructor targets -- a concrete, measured gap for the next theory pass, not a numerical defect.
 
+### 24. Round 22 (23 Nov 2026): normalized ancestral responses (`ancestral_response.py`, `integrated.py` v2.13)
+
+Authorization: CLAUDE_IMPLEMENTATION_BRIEF.md of the R22 theory packet (zip sha256 76c7f889...; records round22/R22_PACKET/). Construction (THEOREMS.md): exact multiplexer / founder /
+uniform-rooted selector-path roles on the ORIGINAL model by entrywise table identities; alleles of residual factors or evidence + their full ancestor closure retained; every other allele erased
+with its founder mass as an exact scalar (implicit weight 1 per state when no unary; unary products exact; a unary on a multiplexer child is residual); on each recognised path the prefix
+before the earliest needed node erased and replaced by a uniform prior at the boundary (a path with no needed node keeps its last node); the removed coordinates recovered by sparse affine
+Walsh responses (g_child = (g_p0 + g_p1)/2 + chi_sel (g_p0 - g_p1)/2; retained alleles as indicators; erased-prefix characters transported by the XOR-of-edge-paths rule, rho_e = 2 theta_e - 1;
+removed selectors (1 - rho E chi_b)/2) evaluated from Boolean query auxiliaries (parity Y = xor(A); mixed Y = 1[X_r = a and xor(A) = 1]) appended to the retained core and solved ONCE by the
+UNCHANGED native executor through the layered route's adapter (deterministic weighted-min-product order on the full augmented physical graph, exact volume certificate incl. factors per bucket,
+the layered forecast formula + decode state admitted against min(1,536 MiB, USABLE - RSS) and the remaining deadline BEFORE layered recognition is attempted; the signed route keeps precedence);
+exact signed affine interval decode, [0, 1] intersection, outward 2^-52 compaction, points in the epsilon-safe J intervals when their product meets the simplex (else midpoints); Z = executor
+enclosure x cancelled scalars (the appended erasure scalar included once). Bounded: a 1.0 s construction allowance polled inside the role scan, founder products, topological order, ancestry
+closure, path walks, response merges, transport, query construction, order scoring and certificate; storage guards (2^20 predicate checks, 2^18 live terms, 2^18 query entries, 8,192-bit
+integers, 128 MiB named containers) charged before growth; typed refusals (NotApplicable / RecognitionRefused / ResourceRefused / ZeroMass) fall back; a refusal at the global deadline returns
+DEADLINE. --no-ancestral-response = the v2.12.1 comparator path; the fourteen existing suites switch it off. G4 (round-21 bytes, development run): the constructor reproduces the packet's
+automatic signature exactly (72 retained / 530 + 334 erased / 196 founder masses / 168 auxiliaries; 240 native variables; 777,999 summed product entries, max 186,624, output 274,559; the
+decoder, transport and query sets identical to auto_normalized_G4.json; scalar identical) in 0.08 s; end to end COMPLETE 2,448 / 2,448 DETERMINISTIC (136 EXACT), max width 7.8e-11, Z relative
+width 2.2e-13, all 108 round-21 exact rows enclosed, every row overlapping the packet's research result, in 0.45 s / 57 MiB in process.
+Controls (check_round22.py, 11, real work, receipt r22_new_controls_3; the first run (r22_new_controls_1) was TIMEOUT-KILLED at 304 s because three brute-force fixtures had 24 binary variables --
+a harness defect, retained; the second crashed on a summary key): C1 the packet's 24 oracle models through the production route (444 coordinates + 24 Z contained, retained sets as asserted);
+C2 implicit root multiplicity / duplicated founder unaries (scalar 18 vs 6 with an opaque root factor); C3 child likelihood and evidence retain their variables; C4 a duplicated multiplexer
+refuses by type, a duplicated channel retains its path, the existing route completes both; C5 negative rho (theta 1/5) and multi-position terms, the T = 3 model overlapping the accepted arm on
+every coordinate; C6 zero founder mass -> typed refusal -> ZERO_EVIDENCE by the existing route, a zero residual -> executor ZERO_EVIDENCE, 0 rows; C7 relabeling (ids, axes, order): same counts,
+every pair overlapping; C8 query-entry / live-term / byte caps refuse on G4 before any allocation, an injected integrated cap refuses before the executor; C9 a 1 ms allowance refuses inside the
+role scan in 1.2 ms, a clock expiring after the executor -> DEADLINE with 0 published and no fallback phases, an expired decode deadline refuses; C10 all 2,448 G4 coordinates once in order, an
+evidence model excludes the observed variable; C11 the switch (in process, CLI) reproduces the v2.12.1 path and --no-layered-contraction leaves the ancestral route on. The packet's six exact
+checks, its reference-runner check and its 24-model oracle pass on this host (the oracle needs an interpreter whose time.monotonic is CLOCK_UPTIME_RAW: Python 3.9 reports 'deadline expired at
+entry' against the unchanged kernel; the venv's 3.12 passes -- a packet-portability note, not an engine defect). check_round20b (6), check_round20 (6), check_round19 (12), check_round19b (6),
+the oracle (6), check_exact_route (13), check_round18 (12), check_round17 (4), check_round16 (6), check_round15 (3) pass on v2.13; the remaining five frozen-path suites were NOT rerun (budget).
+
