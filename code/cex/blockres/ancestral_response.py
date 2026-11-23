@@ -19,7 +19,7 @@ the simplex (else interval midpoints). Scalars: erased founder masses c_v multip
 factors stay in the core once; a zero founder mass is a typed zero-mass refusal before any division.
 Bounded (round 22b repair): ONE construction allowance anchored at its own start, polled inside the role scan, the unary products, the topological order, the ancestry closure, the
 component discovery / path traversal / prefix witness, the sparse merges (per 1,024 terms), the transport (per 1,024 terms), the query-table generation (per 1,024 entries), the physical
-graph fills, the order scoring (per 64 candidates and per 64 eliminations), the certificate, and before the plan is returned; the restriction helper's typed refusal is translated to this
+graph source cliques and each fill (charged before allocation, including temporary sets), the order scoring (per 64 candidates and per 64 eliminations), the certificate, and before the plan is returned; the restriction helper's typed refusal is translated to this
 module's RecognitionRefused. Storage: the path witness is COMPACT (one edge list per path, (path, position, cut) per removed node; edge parities by index ranges), charged with the selector
 graph before the walk; merges, transported polynomials and the physical adjacency are charged BEFORE they are built; transport products and coefficients are bit-checked; guards on predicate
 checks (2^20), live sparse terms (2^18, admitted before each merge), appended query entries (2^18), exact integer bits (8,192) and a named-container estimate (128 MiB); typed refusals (NotApplicable /
@@ -39,6 +39,7 @@ MAX_QUERY_ENTRIES = 1 << 18         # total appended query-table entries
 MAX_INT_BITS = 8192                 # bits of any newly constructed exact integer (scalars, coefficients)
 CONSTRUCTION_BYTES = 128 << 20      # named-container estimate of the construction (an estimate of named allocations, not a proven RSS bound)
 TERM_BYTES = 320; ENTRY_BYTES = 48; ROW_BYTES = 1200; U = F(1, 1 << 53)
+GRAPH_ENTRY_BYTES = 128             # includes conservative CPython set capacity slack; headers charged separately
 def _term_cost(k): return TERM_BYTES + 8 * k        # one sparse term: dict slot + (root, state, subset) key tuple + a k-element subset tuple + the Fraction and its limbs (round 22b: the subset length is charged, wide Walsh keys were under-covered at a flat 200 B)
 
 
@@ -281,11 +282,33 @@ def recognize(model, deadline=math.inf, binding=None, construction_s=1.0, byte_l
     # ---- 9. deterministic weighted-min-product order on the PHYSICAL augmented graph + exact volume certificate
     try: pf, pscalar, pcancel = LC._restrict(aug, dl)
     except LC.RecognitionRefused as e: raise RecognitionRefused('construction allowance exhausted inside the physical restriction (%s)' % str(e)[:80])
-    B.charge(sum(len(sc) * 72 for sc, _ in pf) + len(aug['cards']) * 120, 'physical adjacency (scope entries + variables)'); adj = {v: set() for v in range(len(aug['cards'])) if v not in aug['evidence']}
-    for k_, (sc, _) in enumerate(pf):
-        if (k_ & 255) == 255: poll('inside the physical graph construction')
-        s_ = set(sc)
-        for v in sc: adj[v] |= s_ - {v}
+    def physical_graph(label):
+        # A k-axis source creates k(k-1) directed adjacency entries, even when
+        # every axis has cardinality one. Admit that clique before materialising it.
+        poll('before the physical graph construction (%s)' % label)
+        B.charge(len(aug['cards']) * 384, 'physical adjacency vertices + dictionary (%s)' % label)
+        graph_ = {v: set() for v in range(len(aug['cards'])) if v not in aug['evidence']}
+        for k_, (sc, _) in enumerate(pf):
+            if (k_ & 63) == 0: poll('inside the physical graph construction (%s)' % label)
+            degree = len(sc)
+            B.charge(GRAPH_ENTRY_BYTES * degree * (degree - 1) + 2 * (256 + GRAPH_ENTRY_BYTES * degree), 'physical source clique + temporary sets (%s)' % label)
+            s_ = set(sc)
+            for j_, v in enumerate(sc):
+                if (j_ & 63) == 0: poll('inside the physical source clique (%s)' % label)
+                graph_[v] |= s_ - {v}
+        poll('after the physical graph construction (%s)' % label)
+        return graph_
+    def fill_graph(graph_, v, label):
+        # Keep the original set expression/order. Its union and difference can
+        # coexist with the old neighbor set; charge both before constructing them.
+        nb_ = graph_[v]
+        for j_, w in enumerate(nb_):
+            if (j_ & 63) == 0: poll('inside the physical fill (%s)' % label)
+            upper = len(graph_[w]) + len(nb_)
+            B.charge(2 * (256 + GRAPH_ENTRY_BYTES * upper), 'physical fill temporary + replacement (%s)' % label)
+            graph_[w] = (graph_[w] | nb_) - {w, v}
+        del graph_[v]
+    adj = physical_graph('order')
     import random as _r
     rng = _r.Random(0); ties = {v: rng.random() for v in adj}; porder = []; acards = aug['cards']
     while adj:
@@ -295,21 +318,15 @@ def recognize(model, deadline=math.inf, binding=None, construction_s=1.0, byte_l
             out = math.prod(acards[w] for w in ns); key = (out * acards[v], out, len(ns), ties[v])
             if best is None or key < best[0]: best = (key, v)
         v = best[1]; nb = adj[v]
-        for w in nb: adj[w] = (adj[w] | nb) - {w, v}
-        del adj[v]; porder.append(v)
+        fill_graph(adj, v, 'order'); porder.append(v)
         if (len(porder) & 63) == 63: poll('inside the order scoring (eliminations)')
-    adj = {v: set() for v in range(len(acards)) if v not in aug['evidence']}
-    for k_, (sc, _) in enumerate(pf):
-        if (k_ & 255) == 255: poll('inside the physical graph construction (certificate)')
-        s_ = set(sc)
-        for v in sc: adj[v] |= s_ - {v}
+    adj = physical_graph('certificate')
     if sorted(porder) != sorted(adj): raise NotApplicable('physical order does not cover the unobserved variables (constructor defect, refused)')
     mp = mo = sp = so = 0; live = [set(sc) for sc, _ in pf]; fpb_max = 0; fpb_sum = 0; work = 0
     for k, v in enumerate(porder):
         if (k & 63) == 63: poll('inside the physical certificate')
         nb = adj[v]; p = acards[v] * math.prod(acards[w] for w in nb); mp = max(mp, p); mo = max(mo, p // acards[v]); sp += p; so += p // acards[v]
-        for w in nb: adj[w] = (adj[w] | nb) - {w, v}
-        del adj[v]
+        fill_graph(adj, v, 'certificate')
         bucket = [sc for sc in live if v in sc]; nf = len(bucket); fpb_max = max(fpb_max, nf); fpb_sum += nf; work += (nf + 1) * p          # relations (sources + messages) joined in this bucket: equal row counts can have different arithmetic cost
         live = [sc for sc in live if v not in sc] + [set().union(*bucket) - {v}] if bucket else live
     sp += len(aug['evidence']); so += len(aug['evidence'])

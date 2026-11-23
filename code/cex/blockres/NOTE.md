@@ -845,3 +845,14 @@ accepted round-20 references, the eight deterministic / exact / signed cells byt
 semantics. 196.2 s charged of the 400 s ceiling (29 receipts; the 80 s control reserve was overrun to 113.1 s, disclosed). The bounded-execution engineering pass of the ancestral route is
 CLOSED; v2.13.1 is proposed as the default engine; the exposed panel is thirteen of thirteen (twelve + G4) complete.
 
+### 24c. Round 22c (23 Nov 2026): final physical-graph admission (`ancestral_response.py`, `integrated.py` v2.13.2)
+
+Authorization: the R22b review's CLAUDE_FINAL_PATCH.md (zip sha256 1d6be75e...; records round22c/REVIEW_PACKET/). The review accepted the round-22b inference results, the restored dispatch and
+the twelve-case preservation, waived the two long frozen suites (unchanged code paths; accepted evidence carried forward), and found one remaining gap of the bounded-construction repair: the
+physical adjacency was charged linearly in scope length, but a k-axis source creates k(k-1) directed adjacency entries and elimination creates fill -- a 23-entry model with a constant factor
+over 200 one-state variables charged 89,904 B against a 100,000 B cap while allocating 1.89 MB. The reviewer's `physical_graph_admission.patch` is applied UNCHANGED: the vertex dictionary, each
+source clique (k(k-1) entries + temporary sets) and each fill (temporary + replacement) are charged BEFORE they are materialised, with polls before / inside / after the graph construction and
+inside every fill; the set expressions and order are unchanged, so the constructed model, order, decoder, scalar, query map and physical certificate are identical. The graph-accounting
+estimate rises as intended (G4: 8.2 MB -> 18.5 MB charged, still admitted under the 128 MiB policy). Reporting qualifications carried forward: round 22b used 196.2 s supervised plus 90.4 s of
+separately recorded UNSUPERVISED memory probes, its 80 s control reserve was exceeded, and the legacy-suite evidence is waived forward, not newly passed.
+
