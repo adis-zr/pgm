@@ -715,4 +715,12 @@ with the existing route completing (no channel, branching, cycle, residual spann
 forecast covers the kernel's hard-charged peak (215 MB >= 112 MB) and rows, a real deadline inside the kernel -> DEADLINE with nothing published and no fallback phases, an injected byte cap and an
 injected rate refuse BEFORE the executor and the existing route completes, a clock expiring after the executor -> DEADLINE; L5 the switch (in process and --no-layered-contraction) reproduces the
 v2.11.2 path; L6 the exposed target's structure and its three representation variants. check_round19 (12), check_round19b (6), the oracle (6) and the ten frozen-path suites (103) pass.
+Measured on frozen v2.12 (pgm 769f9cd; records round20/): linkage_13 COMPLETE 2,158 / 2,158 DETERMINISTIC on three separately supervised repeats (8.74-9.08 s end to end incl.
+recognition 0.27-0.28 s, closure 0.07 s, executor 8.2-8.4 s of which kernel 8.1-8.3 s; 584 MiB tree peak; 179 EXACT + 1,979 DETERMINISTIC rows, max width 2.7e-8; Z enclosure relative
+width 8.6e-13, log2 Z -252.5959, containing the research prototype's Zhat; all 426 previously published EXACT rows enclosed; all 249 independently exact small-component coordinates
+enclosed; every row overlaps the research candidate interval), byte-identical across repeats. The same-build --no-layered-contraction comparator reproduces the accepted partial result
+(426 / 2,158 DEADLINE_PARTIAL, 19.7 s, 1,082 MiB, the 426 EXACT rows identical to R19). All eleven accepted completions retained (0 disjoint intervals; deterministic cells byte-identical;
+the layered constructor NOT_APPLICABLE on the nine in 0-3 ms and SKIPPED on the two or_chains, which the signed route still takes). 298.1 s charged of the declared 400 s (42 receipts).
+No engine change after the freeze. Twelve of twelve exposed panel cases now complete; this is an engineering milestone on exposed targets, not transfer evidence (TRANSFER_PROTOCOL.md is
+a separately frozen experiment).
 
