@@ -755,3 +755,22 @@ round-20 certificate's, kernel forward rows identical (133,816,021); the physica
 scoped constants add 0.1 % here and 2^22 x on the constant cliques). 19.2 s charged of the declared 120 s (7 receipts). The round-20 scored cells stand untouched. The bounded-admission
 engineering pass is CLOSED; the next experiment is the separately frozen twelve-case transfer protocol.
 
+### 23. Round 21 (23 Nov 2026): held-out transfer trial of the layered constructor (no code change; pgm 9da484c adds transfer_gen.py / run_transfer.py only)
+
+Protocol (TRANSFER_PROTOCOL.md of the R20 packet + the R20 review's clarifications) FROZEN before any outcome (records round21/TRANSFER_PROTOCOL_FROZEN.md, TRANSFER_MANIFEST.json, commit
+eac2ecdf7): same build (engine identical to a646e84), arms new = default / base = --no-layered-contraction (proven = v2.11.2 on three deterministic fixtures and by the round-20 comparator),
+12 inputs: 4 natural UAI-2014 linkage instances by a seeded rule over the exposure census (linkage_20 / 23 / 24 / 26; exclusions recorded; headers only inspected), 4 generated eligible /
+plausible pedigree-style models (G1 easy .. G4 near-budget) and 4 generated boundary cases from transfer_gen.py seed 20261123 (declared parameter sets), 600 s ceiling, gates >= 2 new
+completions among the 8 eligible / plausible, no lost completion, no invalid publication. Result (24 cells, 227.9 s; 240.2 s charged incl. setup): NEW completions 2 of 8 -- linkage_20
+(natural: 2,205 / 2,205 DETERMINISTIC in 12.9 s / 711 MiB, 19 interface bits, max product 1.26e7, kernel 11.6 s, forecast 1,199 MiB / 18.1 s admitted against 18.6 s remaining; base 586 / 2,205
+DEADLINE_PARTIAL) and G3 (generated: 1,776 / 1,776 in 0.74 s / 82 MiB; base 1,598 / 1,776); NO lost completion (12 / 12); the constructor refused linkage_23 (15 free main-component sign bits
+> the bounded search of 8), linkage_24, linkage_26 and G4 ('a chain sign is forced to zero by the core equalities' in both proposals) in 0.09-0.42 s, after which the new arm reproduced the base
+arm's partial exactly; G1 / G2 complete in both arms (G2: 0.25 s vs 8.1 s); boundary: B1 (branching) and B4 (no channel) refused in <= 1 ms, B2 (interior residual) refused in 6 ms, all three
+completed EXACT by the existing route in both arms; B3 (broken bulk symmetry) COMPLETED by the layered route in 0.19 s (proposal A admits a soft interior local factor) vs the base exact route
+1.54 s / 327 MiB. Every published row in all 8 natural cells is consistent with the rounded UAI 2014 .MAR reference (0 outside); 0 disjoint pairs across arms on every task. Gate wording: the
+preregistered 'per-variable points sum to 1' is STRICTER than the engine's established convention (interval midpoints whose per-variable interval sums contain 1): under the literal wording two
+BASE cells (G3, B3: v2.11.2's PAC / exact midpoints) and 7 of the 9 accepted round-19b preservation cells are flagged, under the established semantics none; the new arm passes both readings.
+Natural-distribution transfer: ONE new natural completion (linkage_20) of four; the gate's 'two' is met only when the generated G3 is counted, so the primary gate passes as 'one natural + one
+synthetic'. Coverage limits made explicit by the refusals: the bounded affine alignment (<= 8 free sign bits; per-group translation; the 'forced zero sign' condition) misses three of four fresh
+linkage pedigrees whose structure the constructor targets -- a concrete, measured gap for the next theory pass, not a numerical defect.
+
