@@ -17,9 +17,12 @@ and the observed-bucket correction); (7) decodes every original coordinate by ex
 E[1[X_r = a] chi_A] = P(X_r = a) - 2 P(Y = 1)), intersects with [0, 1], compacts outward on the 2^-52 grid, and chooses points inside the epsilon-safe J intervals when their product meets
 the simplex (else interval midpoints). Scalars: erased founder masses c_v multiplied once (appended as one empty-scope factor the executor cancels and the adapter restores); original scalar
 factors stay in the core once; a zero founder mass is a typed zero-mass refusal before any division.
-Bounded: ONE construction allowance anchored at its own start (polled inside the role scan, the unary products, the topological order, the ancestry closure, the path walks, the sparse
-merges, the transport, the source construction, the order scoring and the physical certificate, and before the plan is returned); storage guards on predicate checks (2^20), live sparse
-terms (2^18), appended query entries (2^18), exact integer bits (8,192) and a named-container byte estimate (128 MiB) charged BEFORE growth; typed refusals (NotApplicable /
+Bounded (round 22b repair): ONE construction allowance anchored at its own start, polled inside the role scan, the unary products, the topological order, the ancestry closure, the
+component discovery / path traversal / prefix witness, the sparse merges (per 1,024 terms), the transport (per 1,024 terms), the query-table generation (per 1,024 entries), the physical
+graph fills, the order scoring (per 64 candidates and per 64 eliminations), the certificate, and before the plan is returned; the restriction helper's typed refusal is translated to this
+module's RecognitionRefused. Storage: the path witness is COMPACT (one edge list per path, (path, position, cut) per removed node; edge parities by index ranges), charged with the selector
+graph before the walk; merges, transported polynomials and the physical adjacency are charged BEFORE they are built; transport products and coefficients are bit-checked; guards on predicate
+checks (2^20), live sparse terms (2^18, admitted before each merge), appended query entries (2^18), exact integer bits (8,192) and a named-container estimate (128 MiB); typed refusals (NotApplicable /
 RecognitionRefused / ResourceRefused / ZeroMass) fall back; the decode polls per variable and guards before the result is returned. Cooperative: one exact Fraction operation is not
 interruptible; the supervisor is the hard bound. No model name, hash, variable id pattern, locus count, supplied partition, order or decoder is an admission rule."""
 import os, sys, time, math, json
@@ -35,7 +38,8 @@ MAX_LIVE_TERMS = 1 << 18            # simultaneously live sparse response terms
 MAX_QUERY_ENTRIES = 1 << 18         # total appended query-table entries
 MAX_INT_BITS = 8192                 # bits of any newly constructed exact integer (scalars, coefficients)
 CONSTRUCTION_BYTES = 128 << 20      # named-container estimate of the construction (an estimate of named allocations, not a proven RSS bound)
-TERM_BYTES = 200; ENTRY_BYTES = 48; ROW_BYTES = 1200; U = F(1, 1 << 53)
+TERM_BYTES = 320; ENTRY_BYTES = 48; ROW_BYTES = 1200; U = F(1, 1 << 53)
+def _term_cost(k): return TERM_BYTES + 8 * k        # one sparse term: dict slot + (root, state, subset) key tuple + a k-element subset tuple + the Fraction and its limbs (round 22b: the subset length is charged, wide Walsh keys were under-covered at a flat 200 B)
 
 
 class NotApplicable(Exception): pass        # outside the recognised family / nothing to erase (typed refusal of this OPTIONAL route, never of the task)
@@ -86,7 +90,8 @@ def recognize(model, deadline=math.inf, binding=None, construction_s=1.0, byte_l
     t0 = tnow(); dl = min(deadline, t0 + construction_s); cards = model['cards']; n = len(cards); ev = model.get('evidence', {}); facs = model['factors']; B = Budget(byte_limit)
     def poll(where):
         if tnow() >= dl: raise RecognitionRefused('construction allowance exhausted %s' % where)
-    # ---- 1. roles by exact table identities
+    # ---- 1. roles by exact table identities (the per-variable / per-factor role tables are charged BEFORE the scan: unary, defs, opaque, mux_fid, kids, indeg, graph, chan)
+    B.charge(n * 200 + len(facs) * 160, 'role tables (per variable and per factor)')
     counter = [0]; unary = {}; defs = defaultdict(list); opaque = []; mux_fid = {}
     for fi, f in enumerate(facs):
         if (fi & 63) == 63: poll('inside the role scan (factor %d)' % fi)
@@ -158,11 +163,14 @@ def recognize(model, deadline=math.inf, binding=None, construction_s=1.0, byte_l
                 if p not in retainedA: retainedA.add(p); todo.append(p)
     needS = (seeds & selectors) | {defs[v][2] for v in retainedA if v in defs}
     # ---- 5. selector paths: uniform-rooted simple paths; cut before the earliest needed node (proxy = last node)
-    removedS = set(); seen = set(); paths = []; transport = {}; noise_paths = {}; edge_rho = {}
+    removedS = set(); seen = set(); paths = []; transport = {}; path_edges = {}; node_pos = {}; edge_rho = {}; rho_at = {}; cut_of = {}; walked = 0
+    B.charge(len(selectors) * 120 + len(chan) * 80, 'selector graph + path witness index (one entry per selector / channel)')      # the compact witness: per path ONE edge list; per removed node (path id, position); edge parities by index range
     for start in sorted(selectors):
         if start in seen: continue
         poll('inside the path walk'); comp = set(); stack = [start]
         while stack:
+            walked += 1
+            if (walked & 255) == 0: poll('inside the component discovery')
             v = stack.pop()
             if v in comp: continue
             comp.add(v); stack.extend(w for w, fi in graph[v] if w not in comp)
@@ -171,14 +179,17 @@ def recognize(model, deadline=math.inf, binding=None, construction_s=1.0, byte_l
         if not (len(roots) == 1 and len(ends) == 2 and all(len(graph[v]) <= 2 for v in comp) and sum(len(uniform[v]) for v in comp) == 1): paths.append(dict(status='retained', variables=len(comp))); continue
         seq = []; prev = None; v = roots[0]; eids = []
         while v is not None:
+            if (len(seq) & 255) == 255: poll('inside the path traversal')
             seq.append(v); nxt = [(w, fi) for w, fi in graph[v] if w != prev]; prev = v
             if nxt: eids.append(nxt[0][1]); v = nxt[0][0]
             else: v = None
         if set(seq) != comp or len(eids) != len(seq) - 1: raise NotApplicable('invalid path witness')
         use = [i for i, v in enumerate(seq) if v in needS]; cut = min(use) if use else len(seq) - 1
-        removedS.update(seq[:cut]); b = seq[cut]; rho = F(1); path = []
-        for i in range(cut - 1, -1, -1):                                                            # from the boundary back to the root: node seq[i], edge eids[i] between seq[i] and seq[i+1]
-            fi = eids[i]; r = chan[fi][2]; rho *= r; path.append(fi); edge_rho[fi] = r; noise_paths[seq[i]] = tuple(path); transport[seq[i]] = (b, rho)
+        removedS.update(seq[:cut]); b = seq[cut]; rho = F(1); pid = len(path_edges); path_edges[pid] = eids[:cut]            # edge i joins seq[i] and seq[i + 1]; node seq[i] (i < cut) reaches the boundary through edges i .. cut - 1
+        for i in range(cut - 1, -1, -1):
+            if (i & 255) == 255: poll('inside the prefix witness')
+            fi = eids[i]; r = chan[fi][2]; rho *= r; _bits_ok(rho, 'transport product'); edge_rho[fi] = r; node_pos[seq[i]] = (pid, i, cut); transport[seq[i]] = (b, rho); rho_at[pid, i] = rho
+        cut_of[pid] = cut
         paths.append(dict(status='uniform_rooted', length=len(seq), cut=cut, needed=len(use)))
     removedA = alleles - retainedA
     if not removedA and not removedS: raise NotApplicable('nothing to erase (every allele / selector is needed)')
@@ -208,35 +219,49 @@ def recognize(model, deadline=math.inf, binding=None, construction_s=1.0, byte_l
     coeff = {}; live = 0
     for v in order:
         poll('inside the response recursion')
-        if v in retainedA: coeff[v] = [{(v, a, ()): F(1)} for a in range(cards[v])]
-        elif v in founders: coeff[v] = [({(-1, -1, ()): x} if x else {}) for x in priors[v]]
+        if v in retainedA: B.charge(cards[v] * _term_cost(0), 'retained indicator terms'); live += cards[v]; coeff[v] = [{(v, a, ()): F(1)} for a in range(cards[v])]
+        elif v in founders: B.charge(cards[v] * _term_cost(0), 'founder prior terms'); live += cards[v]; coeff[v] = [({(-1, -1, ()): x} if x else {}) for x in priors[v]]
         else:
-            pa, pb, s, fi = defs[v]; q = []
+            pa, pb, s, fi = defs[v]; q = []; merged = 0
             for fa, fb in zip(coeff[pa], coeff[pb]):
-                d = defaultdict(F)
+                bound = 2 * (len(fa) + len(fb)); kmax = max((len(k_[2]) for k_ in fa), default=0); kmax = max(kmax, max((len(k_[2]) for k_ in fb), default=0)) + 1     # the merge creates at most two terms per input term, subsets at most one longer: ADMIT the temporary + stored result before building
+                if live + bound > max_live_terms: raise ResourceRefused('live sparse response terms would reach %d > %d' % (live + bound, max_live_terms))
+                B.charge(2 * bound * _term_cost(kmax), 'response merge temporary + stored terms (keys incl.)'); d = defaultdict(F)
                 for sign, poly in ((1, fa), (-1, fb)):
                     for (r, t, Uset), c in poly.items():
+                        merged += 1
+                        if (merged & 1023) == 0: poll('inside the sparse merge')
                         d[r, t, Uset] += c / 2; d[r, t, tuple(sorted(set(Uset) ^ {s}))] += sign * c / 2
                 qq = {k: c for k, c in d.items() if c}; q.append(qq); live += len(qq)
-                if live > max_live_terms: raise ResourceRefused('live sparse response terms %d > %d' % (live, max_live_terms))
-            coeff[v] = q; B.charge(sum(len(p) for p in q) * TERM_BYTES, 'response terms')
-    decoder = {}; needed = set(); maxnorm = F(0)
+            coeff[v] = q
+    decoder = {}; needed = set(); maxnorm = F(0); moved = 0
     for v in sorted(removedA):
-        poll('inside the transport'); pp = []
+        poll('inside the transport'); pp = []; nterms = sum(len(poly) for poly in coeff[v]); kmax = max((len(k_[2]) for poly in coeff[v] for k_ in poly), default=0)
+        B.charge(nterms * _term_cost(kmax) + nterms * 160, 'decoder terms (transported polynomials, keys incl.) + the transport temporaries (boundary / parity maps per term)')                 # the transported polynomial has at most as many terms as its source: admitted before it is built
         for poly in coeff[v]:
             out = defaultdict(F)
             for (r, a, Uset), c in poly.items():
-                bset = set(); edges = set()
-                for s in Uset:
-                    if s in transport: bset.symmetric_difference_update([transport[s][0]]); edges.symmetric_difference_update(noise_paths[s])
-                    else: bset.symmetric_difference_update([s])
+                moved += 1
+                if (moved & 1023) == 0: poll('inside the transport')
+                bset = set(); parity = defaultdict(int)                                                  # edge parity by (path id, index) ranges: node at position i covers edges i .. cut - 1 of its path
+                for s_ in Uset:
+                    if s_ in transport:
+                        bset.symmetric_difference_update([transport[s_][0]]); pid, i, cut = node_pos[s_]; parity[pid, i] += 1; parity[pid, cut] -= 1
+                    else: bset.symmetric_difference_update([s_])
                 scale = F(1)
-                for e in edges: scale *= edge_rho[e]
-                out[r, a, tuple(sorted(bset))] += c * scale
+                for pid in {k[0] for k in parity}:                                                        # prefix-sum of the +-1 markers along the path gives each edge's traversal count
+                    cnt = 0; marks = sorted(k[1] for k in parity if k[0] == pid)
+                    for j in range(len(marks)):
+                        cnt += parity[pid, marks[j]]; nxt = marks[j + 1] if j + 1 < len(marks) else marks[j]
+                        if cnt % 2:
+                            if nxt == cut_of[pid] and (pid, marks[j]) in rho_at: scale *= rho_at[pid, marks[j]]            # the run reaches the boundary: its product is the node's precomputed transport rho (exact, no recomputation)
+                            else:
+                                for e in path_edges[pid][marks[j]:nxt]: scale *= edge_rho[e]
+                _bits_ok(scale, 'transport product'); out[r, a, tuple(sorted(bset))] += c * scale
             qq = {k: c for k, c in out.items() if c}
             for k, c in qq.items(): _bits_ok(c, 'response coefficient')
             needed.update(k for k in qq if not (k[0] < 0 and not k[2])); maxnorm = max(maxnorm, sum(abs(c) for k, c in qq.items() if k[0] >= 0 or k[2])); pp.append(qq)
-        decoder[v] = pp; B.charge(sum(len(p) for p in pp) * TERM_BYTES, 'decoder terms')
+        decoder[v] = pp
     # ---- 8. Boolean query auxiliaries (parity / mixed), appended as normalized deterministic sources
     aug = dict(cards=list(red['cards']), factors=list(red['factors']), evidence=dict(red['evidence'])); qvar = {}; entries = 0
     for key in sorted(needed, key=lambda k: (k[0], k[1], k[2])):
@@ -249,12 +274,16 @@ def recognize(model, deadline=math.inf, binding=None, construction_s=1.0, byte_l
         if entries > max_query_entries: raise ResourceRefused('appended query entries %d > %d' % (entries, max_query_entries))
         B.charge(ne * ENTRY_BYTES, 'query table'); y = len(aug['cards']); aug['cards'].append(2); vals = []
         off = 1 if r >= 0 else 0
-        for xs in iproduct(*(range(aug['cards'][x]) for x in sc + (y,))):
+        for ei, xs in enumerate(iproduct(*(range(aug['cards'][x]) for x in sc + (y,)))):
+            if (ei & 1023) == 1023: poll('inside the query table generation')
             odd = sum(xs[off:-1]) % 2; pred = odd and (r < 0 or xs[0] == a); vals.append(F(int(xs[-1] == int(bool(pred)))))
         aug['factors'].append(dict(scope=sc + (y,), values=vals)); qvar[key] = y
     # ---- 9. deterministic weighted-min-product order on the PHYSICAL augmented graph + exact volume certificate
-    pf, pscalar, pcancel = LC._restrict(aug, dl); adj = {v: set() for v in range(len(aug['cards'])) if v not in aug['evidence']}
-    for sc, _ in pf:
+    try: pf, pscalar, pcancel = LC._restrict(aug, dl)
+    except LC.RecognitionRefused as e: raise RecognitionRefused('construction allowance exhausted inside the physical restriction (%s)' % str(e)[:80])
+    B.charge(sum(len(sc) * 72 for sc, _ in pf) + len(aug['cards']) * 120, 'physical adjacency (scope entries + variables)'); adj = {v: set() for v in range(len(aug['cards'])) if v not in aug['evidence']}
+    for k_, (sc, _) in enumerate(pf):
+        if (k_ & 255) == 255: poll('inside the physical graph construction')
         s_ = set(sc)
         for v in sc: adj[v] |= s_ - {v}
     import random as _r
@@ -268,8 +297,10 @@ def recognize(model, deadline=math.inf, binding=None, construction_s=1.0, byte_l
         v = best[1]; nb = adj[v]
         for w in nb: adj[w] = (adj[w] | nb) - {w, v}
         del adj[v]; porder.append(v)
+        if (len(porder) & 63) == 63: poll('inside the order scoring (eliminations)')
     adj = {v: set() for v in range(len(acards)) if v not in aug['evidence']}
-    for sc, _ in pf:
+    for k_, (sc, _) in enumerate(pf):
+        if (k_ & 255) == 255: poll('inside the physical graph construction (certificate)')
         s_ = set(sc)
         for v in sc: adj[v] |= s_ - {v}
     if sorted(porder) != sorted(adj): raise NotApplicable('physical order does not cover the unobserved variables (constructor defect, refused)')
@@ -333,7 +364,8 @@ def decode(plan, R, eps, deadline=math.inf):
         rs = []
         for poly in pp:
             lo = hi = p = F(0)
-            for key, c in poly.items():
+            for ti, (key, c) in enumerate(poly.items()):
+                if (ti & 255) == 255: poll('inside the allele decode (terms)')
                 l, h, pt = atom(key); a_, b_ = _scale(l, h, c); lo += a_; hi += b_; p += c * pt
             lo = max(F(0), lo); hi = min(F(1), hi); rs.append((lo, hi, min(hi, max(lo, p))))
         answers[v] = rs

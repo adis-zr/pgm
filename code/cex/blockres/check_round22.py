@@ -25,8 +25,12 @@ def write_uai(name, m):
     for f in m['factors']: lines.append('%d %s' % (len(f['scope']), ' '.join(map(str, f['scope']))))
     for f in m['factors']: lines.append(str(len(f['values']))); lines.append(' '.join(str(v) for v in f['values']))
     open(p, 'w').write('\n'.join(lines) + '\n'); ev = m.get('evidence', {}); open(p + '.evid', 'w').write(('%d ' % len(ev)) + ' '.join('%d %d' % kv for kv in ev.items()) + '\n'); return p
+MAX_ENUM = 1 << 16
 def brute(m):
+    """exact enumeration of the ORIGINAL model; the loop visits every assignment (observed states included) so the bound is on ALL variables (round 22b harness guard)"""
     cards = m['cards']; ev = m.get('evidence', {}); z = F(0); num = {}
+    total = math.prod(cards)
+    if total > MAX_ENUM: raise AssertionError('brute-force fixture has %d assignments > %d (harness guard)' % (total, MAX_ENUM))
     for xs in itertools.product(*(range(c) for c in cards)):
         if any(xs[v] != a for v, a in ev.items()): continue
         w = F(1)
@@ -40,7 +44,9 @@ def brute(m):
         for v in range(len(cards)):
             if v not in ev: num[(v, xs[v])] = num.get((v, xs[v]), F(0)) + w
     return z, ({k: v / z for k, v in num.items()} if z else None)
-def solve(p, budget=10.0, **kw): return IG.solve(p, budget, table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, route='auto', schedule='targeted', **kw)
+def solve(p, budget=10.0, **kw):
+    """AR-targeted controls disable the layered route explicitly (round 22b: the established layered route has precedence, so tiny recognisable models would otherwise take it); the dispatch controls (C11, check_round22b) use the default"""
+    kw.setdefault('layered_contraction', False); return IG.solve(p, budget, table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, route='auto', schedule='targeted', **kw)
 def ar(r): return r['mechanism'].get('ancestral_response') or {}
 def check(res, m, need_route='ancestral_response', eps=F(1, 200)):
     z, tv = brute(m); miss = 0; K = res['K']; sums = {}
@@ -113,10 +119,13 @@ k_on = {(a['var'], a['state']): a for a in r5on['answers']}; k_off = {(a['var'],
 ov5 = r5on['published'] == r5on['K'] and r5off['published'] == r5off['K'] and all(not (F(k_on[k]['hi']) < F(v['lo']) or F(v['hi']) < F(k_on[k]['lo'])) for k, v in k_off.items())
 pl5b = AR.recognize(m5b, time.monotonic() + 2); multi = sum(1 for pp in pl5b.decoder.values() for poly in pp for key in poly if len(key[2]) >= 2)
 say(dict(control='C5_negative_rho_and_repeated_chain_positions', T2=dict(negative_rho_transports=neg, removed_selectors=len(pl5.removed_selectors), **d5), T3_vs_accepted_arm=dict(overlap_every_coordinate=ov5, on=(r5on['outcome'], r5on['mechanism'].get('route'), r5on['published']), off=(r5off['outcome'], r5off['mechanism'].get('route'), r5off['published']), removed_selectors=len(pl5b.removed_selectors), negative_rho=sum(1 for s, (b, rho) in pl5b.selector_transport.items() if rho < 0), multi_selector_terms=multi), ok=ok5 and neg > 0 and ov5))
-# ---- C6 zero mass
+# ---- C6 zero mass: under default dispatch the closure establishes exact zero evidence BEFORE the ancestral route is reached (0 rows); the constructor's own typed ZeroMass refusal is tested directly
 m6a = c2_model(False, False); m6a['factors'][0] = dict(scope=(1,), values=[F(0), F(0), F(0)]); p6a = write_uai('r22_zero_founder', m6a); r6a = solve(p6a)
+try: AR.recognize(m6a, time.monotonic() + 2); zm = 'RETURNED'
+except AR.ZeroMass as e: zm = 'ZeroMass: ' + str(e)[:50]
 m6b = mini(7); m6b['factors'].append(dict(scope=(0, 1), values=[F(0)] * (m6b['cards'][0] * m6b['cards'][1]))); p6b = write_uai('r22_zero_resid', m6b); r6b = solve(p6b)
-say(dict(control='C6_zero_global_mass', zero_founder=dict(status=str(ar(r6a).get('status'))[:70], outcome=r6a['outcome'], published=r6a['published']), zero_residual=dict(status=str(ar(r6b).get('status'))[:70], outcome=r6b['outcome'], published=r6b['published']), ok=str(ar(r6a).get('status')).startswith('ZERO_MASS_REFUSED') and r6a['outcome'] == 'ZERO_EVIDENCE' and r6a['published'] == 0 and r6b['outcome'] == 'ZERO_EVIDENCE' and r6b['published'] == 0))
+r6c = solve(p6b, support_closure=False)                                                                       # closure off: the executor's own ZERO_EVIDENCE (or the fallback's) must still publish nothing
+say(dict(control='C6_zero_global_mass', zero_founder=dict(dispatch_outcome=r6a['outcome'], published=r6a['published'], constructor_direct=zm), zero_residual=dict(dispatch_outcome=r6b['outcome'], published=r6b['published'], closure_off=dict(outcome=r6c['outcome'], published=r6c['published'], ar_status=str(ar(r6c).get('status'))[:40])), ok=(r6a['outcome'] == 'ZERO_EVIDENCE' and r6a['published'] == 0 and zm.startswith('ZeroMass') and r6b['outcome'] == 'ZERO_EVIDENCE' and r6b['published'] == 0 and r6c['outcome'] == 'ZERO_EVIDENCE' and r6c['published'] == 0)))
 # ---- C7 relabeling
 m7 = mini(13, T=2, cards=[2]); rng = random.Random(77); n = len(m7['cards']); pi = list(range(n)); rng.shuffle(pi); cards2 = [0] * n
 for v in range(n): cards2[pi[v]] = m7['cards'][v]
@@ -166,9 +175,9 @@ r10 = solve(G4, 19.5); keys = [(a['var'], a['state']) for a in r10['answers']]; 
 m10 = mini(19, T=2); ev_var = [v for v in range(len(m10['cards'])) if m10['cards'][v] == 2 and all(v not in f['scope'] or len(f['scope']) != 4 or f['scope'][0] != v for f in m10['factors'])][-1]; m10['evidence'] = {ev_var: 1}; p10 = write_uai('r22_allorig_ev', m10); r10b = solve(p10); ok10b, d10b = check(r10b, m10, need_route=None)
 say(dict(control='C10_all_original_expansion', G4=dict(published=r10['published'], K=r10['K'], keys_once_in_order=(keys == exp), outcome=r10['outcome'], exact_rows=ar(r10).get('exact_rows'), policies=ar(r10).get('point_policies')), evidence_model=dict(evidence=m10['evidence'], **d10b, excluded_observed=all(a['var'] != ev_var for a in r10b['answers'])), ok=(keys == exp and r10['published'] == 2448 and ok10b and all(a['var'] != ev_var for a in r10b['answers']))))
 # ---- C11 operator-off dispatch
-m11 = mini(23, T=2); p11 = write_uai('r22_switch', m11); r_on = solve(p11); r_off = solve(p11, ancestral_response=False); ok_off, d_off = check(r_off, m11, need_route=None)
-outp = os.path.join(TMP, 'r22_cli_off.json'); cp = subprocess.run([sys.executable, os.path.join(HERE, 'integrated.py'), '--input', p11, '--output', outp, '--budget', '10', '--no-ancestral-response', '--schedule', 'targeted'], capture_output=True, text=True); r_cli = json.load(open(outp)); ok_cli, d_cli = check(r_cli, m11, need_route=None)
+m11 = mini(23, T=2); p11 = write_uai('r22_switch', m11); r_on = solve(p11); r_off = solve(p11, ancestral_response=False); ok_off, d_off = check(r_off, m11, need_route=None); r_def = solve(p11, layered_contraction=True); ok_def, d_def = check(r_def, m11, need_route=None)
+outp = os.path.join(TMP, 'r22_cli_off.json'); cp = subprocess.run([sys.executable, os.path.join(HERE, 'integrated.py'), '--input', p11, '--output', outp, '--budget', '10', '--no-ancestral-response', '--no-layered-contraction', '--schedule', 'targeted'], capture_output=True, text=True); r_cli = json.load(open(outp)); ok_cli, d_cli = check(r_cli, m11, need_route=None)
 r_nl = solve(p11, layered_contraction=False)
-say(dict(control='C11_operator_off_dispatch', on=dict(route=r_on['mechanism'].get('route'), status=str(ar(r_on).get('status'))[:20]), off_inprocess=dict(ar_status=ar(r_off).get('status'), layered=str(r_off['mechanism']['layered_contraction'].get('status'))[:30], **d_off), off_cli=dict(rc=cp.returncode, ar_status=ar(r_cli).get('status'), **d_cli), no_layered_keeps_ancestral=dict(status=str(ar(r_nl).get('status'))[:20], route=r_nl['mechanism'].get('route')), ok=r_on['mechanism'].get('route') == 'ancestral_response' and ar(r_off).get('status') == 'DISABLED' and ar(r_cli).get('status') == 'DISABLED' and ok_off and ok_cli and cp.returncode == 0 and r_nl['mechanism'].get('route') == 'ancestral_response'))
+say(dict(control='C11_operator_off_dispatch', on_lc_off=dict(route=r_on['mechanism'].get('route'), status=str(ar(r_on).get('status'))[:20]), default_dispatch=dict(dispatch_route=r_def['mechanism'].get('route'), ar_status=str(ar(r_def).get('status'))[:40], **d_def), off_inprocess=dict(ar_status=ar(r_off).get('status'), layered=str(r_off['mechanism']['layered_contraction'].get('status'))[:30], **d_off), off_cli=dict(rc=cp.returncode, ar_status=ar(r_cli).get('status'), **d_cli), ok=r_on['mechanism'].get('route') == 'ancestral_response' and ar(r_off).get('status') == 'DISABLED' and ar(r_cli).get('status') == 'DISABLED' and ok_off and ok_cli and ok_def and cp.returncode == 0 and r_def['mechanism'].get('route') == 'layered_contraction' and str(ar(r_def).get('status')).startswith('DEFERRED')))
 summary = dict(utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), version=IG.VERSION, all_ok=all(r['ok'] for r in rows), rows=rows); json.dump(summary, open(OUT, 'w'), indent=1, default=str)
 print('ALL_OK' if summary['all_ok'] else 'FAILURES', sum(1 for r in rows if not r['ok']), 'of', len(rows))

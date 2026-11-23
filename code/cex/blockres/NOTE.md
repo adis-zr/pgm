@@ -813,3 +813,28 @@ A dispatch-ordering / admission-margin regression, not a numerical defect; no co
 outcomes). The twelve-case exposed-panel preservation pass was NOT run: the first control-suite launch was timeout-killed at 304 s (oversized brute-force fixtures) and consumed the budget
 (395.2 s of 400 charged). STOPPED FOR REVIEW with the lost completion and the unrun preservation pass as the open items.
 
+### 24b. Round 22b (23 Nov 2026): closeout of the ancestral route (`integrated.py` v2.13.1, `ancestral_response.py`)
+
+Authorization: the R22 review's CLAUDE_CLOSEOUT_BRIEF.md (zip sha256 0fc98a57...; records round22b/REVIEW_PACKET/). The review accepted the G4 construction and result (24 more oracle models,
+504 coordinates) and withheld acceptance of v2.13 as the default for three items. (1) Incumbent precedence (the reviewer's patch, applied verbatim): the layered route recognises, admits and
+executes BEFORE the ancestral constructor is attempted; the ancestral route runs only after a nonterminal layered refusal (structural, bounded recognition, forecast or executor), binds to
+model_orig (the closure may have rewritten model), decodes to original coordinates with its own scalar once; a global deadline before or after its construction returns DEADLINE with no
+rows and no fallback; LC.RecognitionRefused is handled at the route boundary; the signed route keeps first precedence; the flags stay independent. Round 22's linkage_20 loss was the ancestral
+construction cost (0.544 s) consuming the layered route's 0.49 s admission margin -- with precedence restored the ancestral route performs no work before a terminal layered result.
+(2) Bounded execution of the constructor: the restriction helper's typed refusal is translated to this module's RecognitionRefused; the selector-path witness is COMPACT (one edge list per
+path, (path, position, cut) per removed node, edge parities by index ranges, the per-node transport rho reused for single-node runs) and charged with the role tables and the selector graph
+BEFORE the walk (the 400-selector fixture under a 1,000 B cap now refuses at the first charge with a 3.8 KB traced peak, vs 1.54 MB before); sparse merges are admitted (live terms) and charged
+(subset-length-aware term cost, temporaries + stored) before they are built; transported polynomials and the physical adjacency are charged before construction; transport products and
+coefficients are bit-checked; polls inside component discovery, path traversal, prefix witness, sparse merges (per 1,024 terms), transport, query-table generation, physical graph fills, order
+scoring (per 64 candidates / eliminations) and per-term decoding (a clock expiring 100 us after the path-walk entry is observed in the traversal after 0.25 ms; one expiring inside a merge is
+observed there). Charged bytes cover the traced construction peak on the 400-path fixture (2.05x), a 374-term response tree (1.25x) and G4 (2.06x) -- an estimate of named allocations, not an
+RSS proof. The G4 construction is UNCHANGED (decoder, transport, queries, scalar and the 777,999-entry certificate identical to round 22). (3) Harness: brute-force fixtures assert <= 2^16
+assignments before enumeration; every control child runs under a 20 s supervisor cap; AR-targeted controls disable the layered route explicitly, dispatch controls use the default.
+Controls: check_round22b.py (6, real work: D1 the reviewer's three probes as production regressions; D2 sparse-response stress + charge coverage; D3 default dispatch on G4 -- layered refuses
+(forced-zero chain sign), ancestral applies, rows / Z byte-identical to round 22, plan hash equal; D4 a real nonidentity-closure model through the production kernel binds to the original
+model (closure scalar 1/2 not reapplied; 8 / 8 rows; Z encloses 2); D5 a real layered success (G3) bypasses the ancestral constructor (DEFERRED, no construction phase); D6 the harness guard);
+the reviewer's 17 dispatch control-flow checks and the original-binding control ported to the production module; check_round22 (11, AR-targeted; C6 adapted: under default dispatch the closure
+establishes zero evidence first, the constructor's own ZeroMass refusal is tested directly); check_round11 (15), check_round12 (11), check_round13 (12) pass. check_integrated_v2 (~53 s) and
+check_wmb (~40 s) exceed the 20 s per-child cap by construction and were NOT run (they switch every constructor off; the modules they exercise are byte-identical to the accepted build).
+Control charges overran the 80 s reserve (see the round record): a 24 s timeout kill of check_integrated_v2 and three harness reruns.
+
