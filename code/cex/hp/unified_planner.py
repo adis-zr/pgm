@@ -23,9 +23,10 @@ T_PROCESS_START = time.monotonic()
 HERE = os.path.dirname(os.path.abspath(__file__)); CODE = os.path.dirname(os.path.dirname(HERE))
 if HERE not in sys.path: sys.path.insert(0, HERE)
 import coarse_envelope as CE
+import cost_model as CM
 from coarse_envelope import F, tnow, bits, Refused, Defect, Clock, Budget, checked_mul, fl
 
-VERSION = 'unified-representation-planner-v0.2 (2026-11-24 closeout after the independent review: R1 refinement accounting (old candidates retained with their charges; a new charge is its own live delta, asserted >= 0; ledger identity live = canonical + sum of retained charges), R2 one guarded order + volume pass (vertices / cliques / new fills charged before allocation, polled; optimistic estimates reuse the identity order or the card-1 shortcut, guarded), R3 a zero approximate lower mass with a positive upper mass is a typed no-witness state, never a defect, R4 the diagnostic tail is bounded and the hard deadline is enforced at the API success boundary, R5 an incumbent is cut early only for an alternative that is actually usable in the post-allowance state; v0.1 pilot 1; v0.3 24 Nov second closeout: C1 temporary charges released on construction / estimation refusal and estimator refusals isolated to the optional action, C2 one authoritative final timestamp with late rows suppressed regardless of the outcome label (API and CLI), C3 alternatives must pass the shared admission predicate before they can shorten the incumbent; v0.3.1 24 Nov third closeout: the reviewer-supplied patch C2_FINAL_SAMPLE_AFTER_DIAGNOSTICS applied verbatim -- the per-row width / radius diagnostics are computed BEFORE the authoritative final sample and cleared when publication is suppressed)'
+VERSION = 'unified-representation-planner-v0.2 (2026-11-24 closeout after the independent review: R1 refinement accounting (old candidates retained with their charges; a new charge is its own live delta, asserted >= 0; ledger identity live = canonical + sum of retained charges), R2 one guarded order + volume pass (vertices / cliques / new fills charged before allocation, polled; optimistic estimates reuse the identity order or the card-1 shortcut, guarded), R3 a zero approximate lower mass with a positive upper mass is a typed no-witness state, never a defect, R4 the diagnostic tail is bounded and the hard deadline is enforced at the API success boundary, R5 an incumbent is cut early only for an alternative that is actually usable in the post-allowance state; v0.1 pilot 1; v0.3 24 Nov second closeout: C1 temporary charges released on construction / estimation refusal and estimator refusals isolated to the optional action, C2 one authoritative final timestamp with late rows suppressed regardless of the outcome label (API and CLI), C3 alternatives must pass the shared admission predicate before they can shorten the incumbent; v0.3.1 24 Nov third closeout: the reviewer-supplied patch C2_FINAL_SAMPLE_AFTER_DIAGNOSTICS applied verbatim -- the per-row width / radius diagnostics are computed BEFORE the authoritative final sample and cleared when publication is suppressed; v0.4 UNIFIED_SCHEDULING_REVISION_1: switches --sched P0|P1 (P1 = in the no-affordable-incumbent branch a constructor may run for W/4 without a D <= q requirement; unknown-quality solves keep D <= min(2D, W/4); allowance anchored to a fresh W sample, capped by the work cutoff, global clock rechecked before dispatch) and --rates R0|R1 (R1 = cost_model.py: nonnegative affine blocks over fixed physical work counts from PHASE_RATES_R1.json); per-action measurements (construction / native host / native kernel / recovery / final) with their features recorded in every result)'
 EPS_DEFAULT = F(1, 200); ADMISSION_STOP_S = 3.5; MAX_EXACT_DISCOVERY = 1; MAX_FAST_DISCOVERY = 1; MAX_REFINEMENTS = 2; MAX_NATIVE_ATTEMPTS = 8
 KERNEL_ROWS_PER_S = 20e6; MEMORY_SLACK = 1.25; PROCESS_HEADROOM = 64 << 20; FINALIZE_RESERVE_S = 0.05
 RATES_PATH = os.path.join(HERE, 'PHASE_RATES.json')
@@ -137,11 +138,12 @@ def rows_identity(M, SL):
 
 # ------------------------------------------------------------------ the planner
 class Planner:
-    def __init__(self, model, budget_s, eps=EPS_DEFAULT, admission_stop_s=ADMISSION_STOP_S, t_start=None, policy='unified'):
+    def __init__(self, model, budget_s, eps=EPS_DEFAULT, admission_stop_s=ADMISSION_STOP_S, t_start=None, policy='unified', sched='P0', rates='R0'):
         self.t_start = T_PROCESS_START if t_start is None else t_start; self.hard = self.t_start + budget_s; self.adm = self.t_start + min(budget_s, admission_stop_s); self.eps = eps; self.policy = policy
         self.model = model; self.cards_in = list(model['cards']); self.ev_in = dict(model.get('evidence', {})); self.inventory = [(v, a) for v in range(len(self.cards_in)) if v not in self.ev_in for a in range(self.cards_in[v])]
-        self.out = dict(version=VERSION, policy=policy, budget_s=budget_s, admission_stop_s=admission_stop_s, epsilon=str(eps), rates=dict(frozen=RATES.get('frozen'), sha256=RATES.get('sha256')), phases_s={}, actions=[], candidates=[], decisions=[], mechanism=dict(native_attempts=0, positive_mass_witness=None), outcome=None, answers=None)
-        self.stats = {}; self.clock = Clock(self.adm, self.stats); self.hclock = Clock(self.hard, self.stats); self.budget = Budget(CE.CONSTRUCTOR_BYTES); self.retained = {}; self.M = None; self.cands = []; self.n_exact_disc = 0; self.n_fast_disc = 0; self.n_refine = 0; self.native = 0; self.K_rows = len(self.inventory); self.complete = False; self.failed_global = set()
+        self.sched = sched; self.rates = rates; self.cm = CM.R1() if rates == 'R1' else None; self.measurements = []; self.mf = None
+        self.out = dict(version=VERSION, policy=policy, sched=sched, rates_model=rates, budget_s=budget_s, admission_stop_s=admission_stop_s, epsilon=str(eps), rates=(dict(frozen=RATES.get('frozen'), sha256=RATES.get('sha256')) if rates == 'R0' else dict(frozen=True, sha256=self.cm.sha256, file=os.path.basename(self.cm.path))), phases_s={}, actions=[], candidates=[], decisions=[], measurements=self.measurements, mechanism=dict(native_attempts=0, positive_mass_witness=None), outcome=None, answers=None)
+        self.stats = {}; self.clock = Clock(self.adm, self.stats); self.hclock = Clock(self.hard, self.stats); self.budget = Budget(CE.CONSTRUCTOR_BYTES); self.retained = {}; self.M = None; self.cands = []; self.n_exact_disc = 0; self.n_fast_disc = 0; self.n_refine = 0; self.native = 0; self.K_rows = len(self.inventory); self.complete = False; self.failed_global = set(); self.t_mark = self.t_start
 
     # ---- bookkeeping
     def log_action(self, **kw): kw.setdefault('t_s', round(tnow() - self.t_start, 4)); self.out['actions'].append(kw); return kw
@@ -228,14 +230,38 @@ class Planner:
         pub = sum(1 for r in rows.values() if r); self.complete = all(r is not None for r in rows.values()); return rows, pub
 
     # ---- estimates
-    def T_solve(self, c, side=0): return est_solve(c.vol, self.K_rows)
+    def ell_of(self, c):
+        """conservative rational-size limbs for a candidate's solve: the canonical model's limbs combined with its certificate's (parent + certificate sizes)"""
+        B = self.mf['B_bits'] if self.mf else 1
+        return CM.ell_bits(max(B, c.max_bits or 1))
+    def solve_features(self, c, side=0, h=None, vol=None, ell=None):
+        v = vol or c.vol; hh = len(c.stages) if h is None else h
+        U = sum(self.M.cards[x] * c.cards[x] for x in range(len(self.M.cards))) if (side == 1 and c.cards is not None) else 0
+        return dict(E_phys=v['source_entries'], S_phys=v['states'], V=2 * v['sum_product'], K=self.K_rows, J=len(self.inventory), h=hh, U=U, ell=(ell if ell is not None else self.ell_of(c)))
+    def T_solve(self, c, side=0):
+        if self.cm is None: return est_solve(c.vol, self.K_rows)
+        return self.cm.solve_cost(self.solve_features(c, side))
 
     def optimistic_after_exact(self):
         """one-state-per-retained-variable idealization: every bucket product is 1, so the volume needs no graph (n products of 1, n outputs of 1); no allocation"""
-        M = self.M; n = len(M.cards); vol = dict(sum_product=n, max_product=1, sum_output=n, max_output=1, source_entries=len(M.factors) + n, states=n, n=n); return est_solve(vol, self.K_rows)[0]
+        M = self.M; n = len(M.cards); vol = dict(sum_product=n, max_product=1, sum_output=n, max_output=1, source_entries=len(M.factors) + n, states=n, n=n)
+        if self.cm is None: return est_solve(vol, self.K_rows)[0]
+        return self.cm.solve_cost(dict(E_phys=vol['source_entries'], S_phys=n, V=2 * n, K=self.K_rows, J=len(self.inventory), h=1, U=0, ell=self.mf['ell']))[0]   # prospective: the parent's ell (explicit assumption), one decoder stage
     def optimistic_after_fast(self, parent):
         """<= two coarse states per retained variable on the parent's scopes, along the parent's ALREADY ADMITTED order (bounded structural work reused; guarded by the planner's clock and budget)"""
-        M1 = parent.M1; vol = physical_volume([min(2, c) for c in M1.cards], [sc for sc, _ in M1.factors], parent.order, self.clock, self.budget); return est_solve(vol, self.K_rows)[0]
+        M1 = parent.M1; vol = physical_volume([min(2, c) for c in M1.cards], [sc for sc, _ in M1.factors], parent.order, self.clock, self.budget)
+        if self.cm is None: return est_solve(vol, self.K_rows)[0]
+        return self.cm.solve_cost(dict(E_phys=vol['source_entries'], S_phys=vol['states'], V=2 * vol['sum_product'], K=self.K_rows, J=len(self.inventory), h=len(parent.stages) + 1, U=0, ell=self.ell_of(parent)))[0]   # prospective: the parent's ell, h = parent stages + 1
+    def D_exact(self):
+        if self.cm is None: return est_exact_discovery(self.M)
+        f = self.mf; T, parts = self.cm.construction_cost('exact_construction', f); return T, parts, dict(A_ell=f['A'] * f['ell'], G=f['G'])
+    def D_fast(self, parent):
+        if self.cm is None: return est_fast_discovery(parent.M1)
+        f = CM.model_features(parent.M1, self.clock) if parent.kind != 'identity' else self.mf; f = dict(f, ell=max(f['ell'], self.ell_of(parent))); T, parts = self.cm.construction_cost('fast_construction', f); return T, parts, dict(A_ell=f['A'] * f['ell'], Ddist=f['Ddist'], G=f['G'])
+    def D_refine(self, c):
+        if self.cm is None:
+            D, parts, cnt = est_fast_discovery(c.M1); return parts['checks'] / 2 + parts['order'], dict(check=parts['checks'] / 2, order=parts['order']), cnt
+        f = CM.model_features(c.M1, self.clock) if c.parent.kind != 'identity' else self.mf; f = dict(f, ell=max(f['ell'], self.ell_of(c))); T, parts = self.cm.construction_cost('refine_construction', f); return T, parts, dict(A_ell=f['A'] * f['ell'], Ddist=f['Ddist'], G=f['G'])
 
     # ---- the policy loop
     def run(self):
@@ -244,11 +270,12 @@ class Planner:
             self.hclock.poll('at the planner entry'); self.clock.poll('at the planner entry (admission)')
             self.M = M = CE.canonicalize(self.model, self.clock, self.budget); out['phases_s']['canonicalize'] = tnow() - t0; self.canonical_charge = self.budget.live
             mech['canonical'] = dict(variables=len(M.cards), factors=len(M.factors), entries=sum(len(v) for _, v in M.factors), removed_fixed=len(M.fixed_rows), scalar_bits=bits(M.scalar))
+            t2 = tnow(); self.mf = CM.model_features(M, self.clock); out['phases_s']['features'] = tnow() - t2; mech['features'] = dict(self.mf); self.t_mark = tnow()
             if M.zero_mass: mech['positive_mass_witness'] = False; out['Z_enclosure'] = dict(lo='0', hi='0', positive=False); return self.fin('ZERO_EVIDENCE', {}, note='a canonical scalar is exactly zero')
             if not M.cards: mech['positive_mass_witness'] = True; out['Z_enclosure'] = dict(lo=str(M.scalar), hi=str(M.scalar), positive=True); return self.finish_ok({}, 'no retained variables: exact scalar normalizer')
             # step 1: identity priced by the bounded physical-order pass (no discovery)
             t1 = tnow(); ident = self.make_identity(self.clock); self.cands.append(ident); out['phases_s']['price_identity'] = tnow() - t1
-            Tid, parts = self.T_solve(ident); self.log_action(action='price', cand='identity', estimate_s=Tid, parts={k: round(v, 5) for k, v in parts.items()}, volume=ident.vol, forecast_bytes=ident.fbytes, actual_s=tnow() - t1, status='PRICED')
+            Tid, parts = self.T_solve(ident); self.log_action(action='price', cand='identity', estimate_s=Tid, parts={k: round(v, 5) for k, v in parts.items()}, volume=ident.vol, forecast_bytes=ident.fbytes, actual_s=tnow() - t1, status='PRICED'); self.t_mark = tnow()
             while True:
                 self.clock.poll('between actions'); decision = self.decide()
                 out['decisions'].append(decision['record'])
@@ -286,11 +313,11 @@ class Planner:
                 if e.kind == 'DEADLINE' and tnow() >= self.adm: raise
                 unavailable.append(dict(action=name, kind=e.kind, reason=str(e.reason)[:120], t_s=round(tnow() - self.t_start, 4))); return None
         if self.n_exact_disc < MAX_EXACT_DISCOVERY and not any(c.kind == 'exact' for c in self.cands) and 'exact_discovery' not in self.failed_global:
-            r = guarded('discover_exact', lambda: (est_exact_discovery(M), self.optimistic_after_exact()))
+            r = guarded('discover_exact', lambda: (self.D_exact(), self.optimistic_after_exact()))
             if r is not None: (D, parts, cnt), S = r; acts.append(dict(name='discover_exact', cand=None, D=D, S=S, parts=parts, counts=cnt, admitted=True))
         parent = next((c for c in self.cands if c.kind == 'exact' and not c.alias_of), None) or next((c for c in self.cands if c.kind == 'identity'), None)
         if self.n_fast_disc < MAX_FAST_DISCOVERY and not any(c.kind == 'approx' for c in self.cands) and parent is not None and 'fast_discovery' not in self.failed_global:
-            r = guarded('discover_fast', lambda: (est_fast_discovery(parent.M1), self.optimistic_after_fast(parent)))
+            r = guarded('discover_fast', lambda: (self.D_fast(parent), self.optimistic_after_fast(parent)))
             if r is not None: (D, parts, cnt), S = r; acts.append(dict(name='discover_fast', cand=parent, D=D, S=S, parts=parts, counts=cnt, admitted=True))
         for c in self.cands:
             if c.kind != 'approx' or c.alias_of: continue
@@ -298,11 +325,16 @@ class Planner:
             if not c.promising and c.SL is None and 'lower' not in c.failed: D, parts = self.T_solve(c); acts.append(dict(name='solve_lower_unknown', cand=c, D=D, S=0.0, parts=parts, admitted=adm))
             if not c.promising and c.SL is not None and c.SU is None and 'upper' not in c.failed and not c.exact: D, parts = self.T_solve(c, 1); acts.append(dict(name='solve_upper_unknown', cand=c, D=D, S=0.0, parts=parts, admitted=adm))
             if c.refinements < MAX_REFINEMENTS and self.n_refine < MAX_REFINEMENTS and c.SL is not None and 'refine' not in c.failed and not any(x.kind == 'approx' and x.refinements == c.refinements + 1 for x in self.cands):
-                r = guarded('refine', lambda: est_fast_discovery(c.M1))
-                if r is not None: D, parts, cnt = r; D = parts['checks'] / 2 + parts['order']; acts.append(dict(name='refine', cand=c, D=D, S=self.T_solve(c)[0], parts=dict(check=parts['checks'] / 2, order=parts['order']), admitted=True))
+                r = guarded('refine', lambda: self.D_refine(c))
+                if r is not None: D, parts, cnt = r; acts.append(dict(name='refine', cand=c, D=D, S=self.T_solve(c)[0], parts=parts, admitted=True))
         return acts
 
     def decide(self):
+        t_p = tnow()
+        try: return self._decide()
+        finally: self.t_mark = tnow(); self.out['phases_s']['pricing'] = self.out['phases_s'].get('pricing', 0.0) + (self.t_mark - t_p)
+
+    def _decide(self):
         W = self.W(); ready = self.ready_exact_or_promising(); rec = dict(W_s=round(W, 4), t_s=round(tnow() - self.t_start, 4))
         scored = []
         for c, side in ready:
@@ -325,15 +357,18 @@ class Planner:
             dl = min(self.adm, tnow() + 2 * Tb) if alternatives else self.adm
             rec.update(chosen='solve_' + b['side'], chosen_cand=b['cand'].name, action_deadline_s=round(dl - self.t_start, 4), W_after_allowance_s=round(W_after, 4), competing_alternative=alternatives[:4], why='execute b (step 6: %s)' % ('reserved 2 T_b, a usable alternative remains' if alternatives else 'no usable alternative after the allowance: remaining work deadline'))
             return dict(kind='solve', cand=b['cand'], side=b['side'], deadline=dl, record=rec)
-        # step 5: no affordable exact / promising candidate
-        explor = []
+        # step 5: no affordable exact / promising candidate. P0: every optional action needs D <= q = min(2D, W/4). P1 (revision 1): W is RE-SAMPLED after pricing; a CONSTRUCTOR
+        # (discover_exact / discover_fast / refine) gets q = W/4 with NO D <= q requirement (forecasts rank, they do not veto); an unknown-quality native solve keeps P0's rule; the allowance
+        # deadline is anchored to the sampling time and capped by the work cutoff; the global clock is rechecked before dispatch. Admission / bits / addressability / caps are never bypassed.
+        explor = []; t_sample = tnow(); W1 = self.adm - t_sample if self.sched == 'P1' else W; rec['W_resampled_s'] = round(W1, 4)
         for a in opts:
-            q = min(2 * a['D'], W / 4); a['q'] = q; a['eligible'] = a.get('admitted', True) and a['D'] <= q
+            if self.sched == 'P1' and a['name'] in ('discover_exact', 'discover_fast', 'refine'): q = W1 / 4; a['q'] = q; a['eligible'] = a.get('admitted', True) and W1 > 0; a['forecast_bypassed'] = bool(a['eligible'] and a['D'] > q)
+            else: q = min(2 * a['D'], W1 / 4); a['q'] = q; a['eligible'] = a.get('admitted', True) and a['D'] <= q; a['forecast_bypassed'] = False
             if a['eligible']: explor.append(a)
-        rec['optional'] = [dict(name=a['name'], cand=(a['cand'].name if a['cand'] is not None else None), D_s=round(a['D'], 4), S_s=round(a['S'], 4), q_s=round(a['q'], 4), eligible=a['eligible']) for a in opts]
+        rec['optional'] = [dict(name=a['name'], cand=(a['cand'].name if a['cand'] is not None else None), D_s=round(a['D'], 4), S_s=round(a['S'], 4), q_s=round(a['q'], 4), eligible=a['eligible'], admitted=a.get('admitted', True), forecast_bypassed=a.get('forecast_bypassed', False)) for a in opts]
         if explor:
-            a = min(explor, key=lambda x: (x['D'] + x['S'], x['name'])); rec.update(chosen=a['name'], chosen_cand=(a['cand'].name if a['cand'] is not None else None), allowance_s=round(a['q'], 4), why='exploration with no affordable incumbent (step 5)')
-            return dict(kind='optional', act=a, deadline=min(self.adm, tnow() + a['q']), record=rec)
+            a = min(explor, key=lambda x: (x['D'] + x['S'], x['name'])); self.clock.poll('before dispatching the exploration action'); rec.update(chosen=a['name'], chosen_cand=(a['cand'].name if a['cand'] is not None else None), allowance_s=round(a['q'], 4), forecast_bypassed=a.get('forecast_bypassed', False), why='exploration with no affordable incumbent (step 5, %s%s)' % (self.sched, '; the time forecast D > W/4 is bypassed for this constructor' if a.get('forecast_bypassed') else ''))
+            return dict(kind='optional', act=a, deadline=min(self.adm, t_sample + a['q']), record=rec)
         untried = [s for s in scored if s['admitted']]
         if untried:
             b = min(untried, key=lambda s: (s['T'], s['order'])); rec.update(chosen='solve_' + b['side'], chosen_cand=b['cand'].name, action_deadline_s=round(self.adm - self.t_start, 4), why='bounded attempt of the cheapest admitted exact / promising solve on the remaining work deadline although its time prediction (%.3f s) exceeds W (%.3f s) (step 5)' % (b['T'], W))
@@ -343,12 +378,16 @@ class Planner:
         return dict(kind='finalize', outcome=('PARTIAL' if pub else 'REFUSED'), why=why, record=rec)
 
     def perform(self, d):
+        try: return self._perform(d)
+        finally: self.t_mark = tnow()
+
+    def _perform(self, d):
         """run the decided action; returns published rows when the task is complete, else None"""
         rec = d['record']; t0 = tnow(); dl = d['deadline']; aclock = Clock(dl, self.stats)
         if d['kind'] == 'solve':
             c, side = d['cand'], d['side']; T = rec['T_b_s'] if 'T_b_s' in rec else None; label = '%s:%s' % (c.name, side)
             try:
-                S = self.solve(c, 0 if side == 'lower' else 1, dl, label)
+                S = self.solve(c, 0 if side == 'lower' else 1, dl, label); t_native = tnow() - t0
                 if side == 'lower': c.SL = S
                 else: c.SU = S
                 if S.zero:
@@ -358,22 +397,23 @@ class Planner:
                 if side == 'upper' and c.SL is not None and c.SL.zero:                 # R3: a valid envelope state (Z_L = 0 < Z <= Z_U): no positive-mass witness from this candidate, nothing to normalize, nothing certified; typed, never a defect
                     c.status[side] = 'UPPER_SOLVED_NO_LOWER_WITNESS'; self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, kernel_s=S.stats.get('kernel_s'), status='UPPER_SOLVED_NO_LOWER_WITNESS', note='zero lower mass + positive upper mass: no normalized row, no witness; incumbent answers retained'); return None
                 self.out['mechanism']['positive_mass_witness'] = True; CE.set_Z(self.out, S.Z_lo if side == 'lower' else c.SL.Z_lo, (S.Z_hi * c.R if (c.R is not None and side == 'lower') else (S.Z_hi if side == 'upper' else None)))
-                rows, pub = self.recover(c, aclock); c.status[side] = 'SOLVED'
+                t_r = tnow(); rows, pub = self.recover(c, aclock); c.status[side] = 'SOLVED'; t_rec = tnow() - t_r; ks = S.stats.get('kernel_s') or 0.0
+                fs = self.solve_features(c, 0 if side == 'lower' else 1); self.measurements.append(dict(kind='native', cand=c.name, side=side, features=fs, native_total_s=t_native, kernel_s=ks, host_s=max(0.0, t_native - ks), recovery_s=t_rec, completed=True, host_negative_raw=(t_native - ks < 0)))
                 self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, kernel_s=S.stats.get('kernel_s'), lowering_s=S.stats.get('lowering_s'), enclosure_s=S.stats.get('enclosure_s'), build_s=S.stats.get('build_s'), published_after=pub, K=self.K_rows, max_width=float(max(hi - lo for lo, hi in self.retained.values())), forecast_miss=(T is not None and tnow() - t0 > T), status='COMPLETE' if self.complete else 'PARTIAL', semantic_plan_sha256=(S.certificate or {}).get('semantic_plan_sha256'), kernel_peak_logical_bytes=(S.stats.get('counters') or {}).get('peak_logical_bytes'))
                 if self.complete: rec['why'] = 'complete after %s of %s' % (side, c.name); return rows
                 return None
             except Refused as e:
                 if e.kind == 'ZERO_MASS': raise
-                if e.kind == 'DEADLINE' and tnow() >= self.adm: c.status[side] = 'KILLED_GLOBAL_DEADLINE'; self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, status='KILLED_GLOBAL_DEADLINE', reason=str(e.reason)[:160], forecast_miss=True); raise
-                c.failed.add(side); c.status[side] = 'REFUSED_' + e.kind; self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, status='REFUSED_' + e.kind, reason=str(e.reason)[:160], forecast_miss=(e.kind == 'DEADLINE')); return None
+                if e.kind == 'DEADLINE' and tnow() >= self.adm: c.status[side] = 'KILLED_GLOBAL_DEADLINE'; self.measurements.append(dict(kind='native', cand=c.name, side=side, features=self.solve_features(c, 0 if side == 'lower' else 1), native_total_s=tnow() - t0, completed=False, censored='GLOBAL_DEADLINE')); self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, status='KILLED_GLOBAL_DEADLINE', reason=str(e.reason)[:160], forecast_miss=True); raise
+                c.failed.add(side); c.status[side] = 'REFUSED_' + e.kind; self.measurements.append(dict(kind='native', cand=c.name, side=side, features=self.solve_features(c, 0 if side == 'lower' else 1), native_total_s=tnow() - t0, completed=False, censored=e.kind)); self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, status='REFUSED_' + e.kind, reason=str(e.reason)[:160], forecast_miss=(e.kind == 'DEADLINE')); return None
         a = d['act']; name = a['name']
         try:
             if name == 'discover_exact':
-                self.n_exact_disc += 1; c = self.discover_exact(aclock); self.cands.append(c); self.log_action(action=name, estimate_s=a['D'], optimistic_after_s=a['S'], allowance_s=rec.get('allowance_s'), actual_s=tnow() - t0, status='READY' if not c.alias_of else 'ALIAS_OF_IDENTITY', result=c.facts()); self.out['candidates'].append(c.facts())
+                self.n_exact_disc += 1; c = self.discover_exact(aclock); self.cands.append(c); self.measurements.append(dict(kind='exact_construction', features=dict(self.mf), seconds=tnow() - t0, completed=True, alias=bool(c.alias_of))); self.log_action(action=name, estimate_s=a['D'], optimistic_after_s=a['S'], allowance_s=rec.get('allowance_s'), actual_s=tnow() - t0, status='READY' if not c.alias_of else 'ALIAS_OF_IDENTITY', result=c.facts()); self.out['candidates'].append(c.facts())
             elif name == 'discover_fast':
-                self.n_fast_disc += 1; c = self.discover_fast(a['cand'], aclock); self.cands.append(c); self.log_action(action=name, parent=a['cand'].name, estimate_s=a['D'], optimistic_after_s=a['S'], allowance_s=rec.get('allowance_s'), actual_s=tnow() - t0, status='READY', gauge=c.gauge, result=c.facts()); self.out['candidates'].append(c.facts())
+                self.n_fast_disc += 1; c = self.discover_fast(a['cand'], aclock); self.cands.append(c); pf = CM.model_features(a['cand'].M1, aclock) if a['cand'].kind != 'identity' else dict(self.mf); self.measurements.append(dict(kind='fast_construction', parent=a['cand'].name, features=dict(pf, ell=max(pf['ell'], self.ell_of(a['cand']))), seconds=tnow() - t0, completed=True)); self.log_action(action=name, parent=a['cand'].name, estimate_s=a['D'], optimistic_after_s=a['S'], allowance_s=rec.get('allowance_s'), actual_s=tnow() - t0, status='READY', gauge=c.gauge, result=c.facts()); self.out['candidates'].append(c.facts())
             elif name == 'refine':
-                self.n_refine += 1; c = self.refine_cand(a['cand'], aclock); self.cands.append(c); self.log_action(action=name, parent=a['cand'].name, estimate_s=a['D'], optimistic_after_s=a['S'], allowance_s=rec.get('allowance_s'), actual_s=tnow() - t0, status='READY', split=c.split, result=c.facts()); self.out['candidates'].append(c.facts())
+                self.n_refine += 1; c = self.refine_cand(a['cand'], aclock); self.cands.append(c); pf = CM.model_features(a['cand'].M1, aclock) if a['cand'].parent.kind != 'identity' else dict(self.mf); self.measurements.append(dict(kind='refine_construction', parent=a['cand'].name, features=dict(pf, ell=max(pf['ell'], self.ell_of(a['cand']))), seconds=tnow() - t0, completed=True)); self.log_action(action=name, parent=a['cand'].name, estimate_s=a['D'], optimistic_after_s=a['S'], allowance_s=rec.get('allowance_s'), actual_s=tnow() - t0, status='READY', split=c.split, result=c.facts()); self.out['candidates'].append(c.facts())
             elif name in ('solve_lower_unknown', 'solve_upper_unknown'):
                 return self.perform(dict(kind='solve', cand=a['cand'], side=name.split('_')[1], deadline=dl, record=dict(rec, T_b_s=a['D'])))
             return None
@@ -383,6 +423,7 @@ class Planner:
             kind = e.kind if not (e.kind == 'DEADLINE') else 'ALLOWANCE_EXPIRED'
             if name in ('discover_exact', 'discover_fast'): self.failed_global = set(self.failed_global) | {name.replace('discover_', '') + '_discovery'}
             if name == 'refine': a['cand'].failed.add('refine')
+            if name in ('discover_exact', 'discover_fast', 'refine'): self.measurements.append(dict(kind={'discover_exact': 'exact_construction', 'discover_fast': 'fast_construction', 'refine': 'refine_construction'}[name], features=dict(self.mf), seconds=tnow() - t0, completed=False, censored=kind))
             self.log_action(action=name, cand=(a['cand'].name if a['cand'] is not None else None), estimate_s=a['D'], allowance_s=rec.get('allowance_s'), actual_s=tnow() - t0, status='REFUSED_' + kind, reason=str(e.reason)[:160], forecast_miss=(kind == 'ALLOWANCE_EXPIRED')); return None
 
     # ---- finalization (inventory fixed before canonicalization; HARD clock polled during assembly and before the commit)
@@ -391,7 +432,7 @@ class Planner:
     def fin(self, oc, rows_canon, note=None):
         """final assembly of every ORIGINAL row. ONE authoritative final timestamp `t_end` decides `wall_s`, `in_process_total_s` and `hard_deadline_respected`; if it lies beyond the hard deadline
         every newly assembled row (fixed / factorless rows included) is suppressed and the outcome is DEADLINE, whatever label the caller passed (C2). Assembly itself is polled per 256 rows."""
-        out = self.out; mech = out['mechanism']; out['outcome'] = oc
+        out = self.out; mech = out['mechanism']; out['outcome'] = oc; t_fin = self.t_mark                 # the assembly start = the planner loop's last mark (fin keeps exactly ONE direct clock read: t_end)
         if note: mech['note'] = note
         rows = []; pub = 0; gs = set(); fixed = self.M.fixed_rows if self.M is not None else {}; pos = mech.get('positive_mass_witness')
         try:
@@ -413,6 +454,7 @@ class Planner:
         ws = [F(r['hi']) - F(r['lo']) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_width'] = float(max(ws)) if ws else None
         rad = [max(F(r['point']) - F(r['lo']), F(r['hi']) - F(r['point'])) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_point_radius'] = float(max(rad)) if rad else None
         t_end = tnow()                                                                       # the ONE authoritative final sample
+        out['phases_s']['final_assembly'] = t_end - t_fin; out['final_J'] = len(self.inventory); acc = sum(x.get('actual_s') or 0 for x in out['actions'] if x.get('action') != 'price') + sum(v for k, v in out['phases_s'].items() if k in ('canonicalize', 'features', 'price_identity', 'pricing', 'final_assembly')); out['unassigned_residual_s'] = (t_end - self.t_start) - acc
         out['wall_s'] = t_end - self.t_start; out['in_process_total_s'] = t_end - T_PROCESS_START; out['hard_deadline_respected'] = t_end <= self.hard
         if not out['hard_deadline_respected'] or not rows:
             if pub or not rows: mech.setdefault('late_assembly', 'hard deadline expired before the final sample' if not out['hard_deadline_respected'] else mech.get('late_assembly'))
@@ -425,20 +467,25 @@ class Planner:
         if out['outcome'] == 'REFUSED' and pub > 0: out['outcome'] = 'PARTIAL'
         return out
 
-def plan_and_solve(model, budget_s, policy='unified', eps=EPS_DEFAULT, admission_stop_s=ADMISSION_STOP_S, t_start=None):
-    return Planner(model, budget_s, eps=eps, admission_stop_s=admission_stop_s, t_start=t_start, policy=policy).run()
+def plan_and_solve(model, budget_s, policy='unified', eps=EPS_DEFAULT, admission_stop_s=ADMISSION_STOP_S, t_start=None, sched='P0', rates='R0'):
+    return Planner(model, budget_s, eps=eps, admission_stop_s=admission_stop_s, t_start=t_start, policy=policy, sched=sched, rates=rates).run()
+
+
+def write_result(out, path, budget_s, t_process_start=None):
+    """serialize to a temporary file, enforce the hard deadline before the commit (a late commit publishes nothing, whatever the outcome label), record the output time"""
+    t_process_start = T_PROCESS_START if t_process_start is None else t_process_start; t_w = tnow(); tmp = path + '.tmp'; os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True); json.dump(out, open(tmp, 'w'), indent=1, default=str)
+    if tnow() > t_process_start + budget_s and (out.get('published') or 0) > 0:
+        out['mechanism']['late_commit'] = dict(outcome_before=out['outcome'], published_before=out.get('published')); out['outcome'] = 'DEADLINE'; out['answers'] = [dict(var=r['var'], state=r['state'], guarantee='NOT_PUBLISHED') for r in (out.get('answers') or [])]; out['published'] = 0; out['guarantee'] = 'PARTIAL'; out['max_width'] = None; out['max_point_radius'] = None; json.dump(out, open(tmp, 'w'), indent=1, default=str)
+    out['hard_deadline_respected_at_commit'] = tnow() <= t_process_start + budget_s; out['phases_s']['output'] = tnow() - t_w; os.replace(tmp, path); return out
 
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=3.85, help='HARD worker deadline from process start'); ap.add_argument('--admission-stop', type=float, default=ADMISSION_STOP_S)
-    ap.add_argument('--policy', default='unified', choices=['unified', 'identity']); ap.add_argument('--epsilon', default='1/200'); a = ap.parse_args()
+    ap.add_argument('--policy', default='unified', choices=['unified', 'identity']); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--sched', default='P0', choices=['P0', 'P1']); ap.add_argument('--rates', default='R0', choices=['R0', 'R1']); a = ap.parse_args()
     sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); import core as CORE
     t0 = tnow(); model, binding = CORE.read_uai(a.input); tread = tnow() - t0
-    out = plan_and_solve(model, a.budget, policy=a.policy, eps=F(a.epsilon), admission_stop_s=a.admission_stop); out['phases_s']['read'] = tread; out['binding'] = binding; out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]; out['process_start_to_read_s'] = t0 - T_PROCESS_START
-    tmp = a.output + '.tmp'; os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True); json.dump(out, open(tmp, 'w'), indent=1, default=str)
-    if tnow() > T_PROCESS_START + a.budget and (out.get('published') or 0) > 0:                                  # C2: a late commit publishes nothing, whatever the outcome label
-        out['mechanism']['late_commit'] = dict(outcome_before=out['outcome'], published_before=out.get('published')); out['outcome'] = 'DEADLINE'; out['answers'] = [dict(var=r['var'], state=r['state'], guarantee='NOT_PUBLISHED') for r in (out.get('answers') or [])]; out['published'] = 0; out['guarantee'] = 'PARTIAL'; out['max_width'] = None; json.dump(out, open(tmp, 'w'), indent=1, default=str)
-    out['hard_deadline_respected_at_commit'] = tnow() <= T_PROCESS_START + a.budget; os.replace(tmp, a.output)
+    out = plan_and_solve(model, a.budget, policy=a.policy, eps=F(a.epsilon), admission_stop_s=a.admission_stop, sched=a.sched, rates=a.rates); out['phases_s']['read'] = tread; out['binding'] = binding; out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]; out['process_start_to_read_s'] = t0 - T_PROCESS_START
+    write_result(out, a.output, a.budget)
     print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), native=out['mechanism'].get('native_attempts'), actions=[(x.get('action'), x.get('cand'), x.get('status')) for x in out['actions']], refusal=out['mechanism'].get('refusal'), defect=out['mechanism'].get('defect')), default=str))
 
 
