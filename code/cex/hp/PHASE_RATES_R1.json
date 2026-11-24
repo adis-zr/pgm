@@ -1,0 +1,149 @@
+{
+ "model": "R1 nonnegative affine per block over fixed physical work counts (cost_model.py)",
+ "status": "FITTED",
+ "frozen": true,
+ "fitted_utc": "2026-11-24T21:01:46Z",
+ "tag": "UNIFIED-SCHEDULING-CALIBRATION-1",
+ "blocks": {
+  "exact_construction": {
+   "intercept": 6.176109809014371e-05,
+   "coefficients": [
+    2.8040397306936803e-06,
+    2.703074243908332e-06
+   ],
+   "regressors": [
+    "A_ell",
+    "G"
+   ],
+   "n": 32,
+   "rank_deficient": false,
+   "dropped_all_zero": []
+  },
+  "fast_construction": {
+   "intercept": 0.0004206632488362587,
+   "coefficients": [
+    3.7912702781725736e-06,
+    1.1120133018990671e-08,
+    2.667844251622217e-06
+   ],
+   "regressors": [
+    "A_ell",
+    "Ddist",
+    "G"
+   ],
+   "n": 40,
+   "rank_deficient": false,
+   "dropped_all_zero": []
+  },
+  "refine_construction": {
+   "intercept": 0.0,
+   "coefficients": [
+    2.334212786645888e-08,
+    3.463388515150077e-08,
+    1.3537666051402058e-05
+   ],
+   "regressors": [
+    "A_ell",
+    "Ddist",
+    "G"
+   ],
+   "n": 17,
+   "rank_deficient": false,
+   "dropped_all_zero": []
+  },
+  "native_host": {
+   "intercept": 0.0,
+   "coefficients": [
+    2.547932743304834e-06,
+    3.9960347309311265e-05
+   ],
+   "regressors": [
+    "Ephys_ell",
+    "S_phys"
+   ],
+   "n": 94,
+   "rank_deficient": false,
+   "dropped_all_zero": []
+  },
+  "native_kernel": {
+   "intercept": 0.0,
+   "coefficients": [
+    2.0178892788916727e-08
+   ],
+   "regressors": [
+    "V"
+   ],
+   "n": 94,
+   "rank_deficient": false,
+   "dropped_all_zero": []
+  },
+  "recovery": {
+   "intercept": 0.00345963408498383,
+   "coefficients": [
+    2.600089765700994e-06,
+    5.7820625580803775e-06,
+    1.104274452129606e-06
+   ],
+   "regressors": [
+    "K_ell",
+    "K_h_ell",
+    "U_ell"
+   ],
+   "n": 94,
+   "rank_deficient": false,
+   "dropped_all_zero": []
+  },
+  "final": {
+   "intercept": 0.0010754731720551056,
+   "coefficients": [
+    2.7740200274511255e-05
+   ],
+   "regressors": [
+    "J"
+   ],
+   "n": 32,
+   "rank_deficient": false,
+   "dropped_all_zero": []
+  }
+ },
+ "incomplete": [],
+ "coverage": {
+  "identity_card16_grid": true,
+  "identity_card32_cycle": true,
+  "recovery_h0": true,
+  "recovery_h1": true,
+  "recovery_h2": true,
+  "recovery_upper": true
+ },
+ "source_identity": {
+  "pgm_commit": "7da1190d153a11adb9fddc7248fe98c13f464305",
+  "unified_planner_py": "04fedc11eb1afcb66ea2268a842f4e2b1b6c8fd93a920b4df88b3aa95c390b07",
+  "cost_model_py": "1ee31b6ce46db4111966af846f48241b8634be243b9d1d2c48f25c4e5810b0da",
+  "calibrate_revision_py": "009fd8062edcb932fb216fd9ed80ab855b9f36fdcc097fb510323258eb2356af",
+  "cex_executor_py": "3480e9ba3b9109d436a350af5efb12cf5a3e7516ce42c4d8e7e9c9e1f92c9a4e",
+  "kernel": {
+   "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+   "binary_sha256": "720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b",
+   "flags": [
+    "-std=c++17",
+    "-O2",
+    "-ffp-model=strict",
+    "-ffp-contract=off",
+    "-fno-fast-math",
+    "-fno-unsafe-math-optimizations",
+    "-fno-reciprocal-math",
+    "-fno-associative-math",
+    "-fPIC",
+    "-shared"
+   ],
+   "compiler": "clang++",
+   "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+   "build_wall_s": 2.1358938752673566,
+   "platform": "darwin",
+   "built_utc": "2026-11-13T21:40:16Z",
+   "plan_format": 2
+  },
+  "host": "MacBook (darwin arm64), python 3.12.15, scipy 1.18.1"
+ },
+ "sha256": "9a859d1380302f8e1e5543ecfe1d7f5c5e675013016399d385ccbce31c0fd55d"
+}
