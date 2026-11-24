@@ -3,7 +3,7 @@
                                       {exact, perturbed, generic} in that lexicographic loop order, + 2 calibrate_unified.dev_model models (6001, 6, 2, cycle, exact), (6002, 6, 4, grid, generic); hashes in GENERATED_MANIFEST.json
   measure MODEL.uai OUT.json      -- ONE process: 1.85 s hard worker cutoff, 1.75 s action-work cutoff, each native call min(0.60 s, remaining work); fixed order: canonicalize / price identity; identity
                                       solve + recovery; exact quotient (+ solve if nonaliased); FAST on identity (+ lower; + upper if nonexact with a positive lower witness); one refinement of it (not solved);
-                                      FAST on a nontrivial exact parent (+ lower; + upper likewise). Identical native actions are not repeated. Completed phases are kept before a later deadline.
+                                      FAST on a nontrivial exact parent (+ lower; + upper likewise). Identical native model / order / query executions are NOT re-dispatched (semantic key over cards, evidence, order, every scope + exact value stream): the earlier result is reused and only the recovery is timed (recorded as recovery_only). Completed phases are kept before a later deadline.
   fit MEASURE_DIR RATES_OUT.json RECORD_OUT.json -- one unweighted NNLS fit per block over the COMPLETED measurements (censored ones retained, excluded); minimum-coverage checks; writes the frozen R1 file."""
 import sys, os, json, time, hashlib, argparse, math
 from fractions import Fraction as F
@@ -32,8 +32,23 @@ def measure(model_path, out_path):
     t0 = UP.tnow(); model, binding = CORE.read_uai(model_path); tread = UP.tnow() - t0
     P = UP.Planner(model, HARD_S, admission_stop_s=WORK_S, t_start=t_start, policy='unified', sched='P0', rates='R0'); out = P.out; out['binding'] = binding; out['input'] = os.path.abspath(model_path); out['phases_s']['read'] = tread; out['calibration_driver'] = dict(hard_s=HARD_S, work_s=WORK_S, native_cap_s=NATIVE_CAP_S, order=['identity', 'exact', 'fast(identity)', 'refine', 'fast(exact)'])
     def native_deadline(): return min(adm, UP.tnow() + NATIVE_CAP_S)
+    seen = {}; out['dedup'] = dict(skipped=[], dispatched=0)
+    def native_key(c, side):
+        import hashlib
+        cm = P.exec_model(c, 0 if side == 'lower' else 1); h = hashlib.sha256(json.dumps([list(cm['cards']), sorted(cm['evidence'].items()), list(c.order), [[list(f['scope']), [str(x) for x in f['values']]] for f in cm['factors']]]).encode()).hexdigest(); return h
     def solve(c, side):
         if UP.tnow() >= adm: return None
+        k = native_key(c, side)
+        if k in seen:                                                                        # identical native model / order / query already executed in this fixture: reuse its result for recovery, do not re-dispatch the native call
+            prev = seen[k]; out['dedup']['skipped'].append(dict(cand=c.name, side=side, same_as=prev.name, key=k[:16]))
+            if side == 'lower': c.SL = prev.SL if prev.SL is not None else prev.SU
+            else: c.SU = prev.SU if prev.SU is not None else prev.SL
+            if (c.SL if side == 'lower' else c.SU) is None: return None
+            P.out['mechanism']['positive_mass_witness'] = True; t_r = UP.tnow()
+            try: rows, pub = P.recover(c, UP.Clock(adm, P.stats)); c.status[side] = 'SOLVED_REUSED_NATIVE'; P.measurements.append(dict(kind='recovery_only', cand=c.name, side=side, features=P.solve_features(c, 0 if side == 'lower' else 1), recovery_s=UP.tnow() - t_r, completed=True, reused_native_of=prev.name))
+            except UP.Refused as e: P.measurements.append(dict(kind='recovery_only', cand=c.name, side=side, features=P.solve_features(c, 0 if side == 'lower' else 1), recovery_s=UP.tnow() - t_r, completed=False, censored=e.kind, reused_native_of=prev.name))
+            return None
+        seen[k] = c; out['dedup']['dispatched'] += 1
         return P.perform(dict(kind='solve', cand=c, side=side, deadline=native_deadline(), record=dict(T_b_s=None)))
     def construct(name, cand):
         if UP.tnow() >= adm: return None
@@ -42,7 +57,7 @@ def measure(model_path, out_path):
     try:
         P.hclock.poll('entry'); t1 = UP.tnow(); P.M = M = CE.canonicalize(model, P.clock, P.budget); out['phases_s']['canonicalize'] = UP.tnow() - t1; P.canonical_charge = P.budget.live
         if M.zero_mass or not M.cards: out['calibration_note'] = 'degenerate model (zero mass or no retained variables): no measurements'; return finish(P, out, out_path, hard)
-        t2 = UP.tnow(); P.mf = UP.CM.model_features(M, P.clock); out['phases_s']['features'] = UP.tnow() - t2; out['mechanism']['features'] = dict(P.mf)
+        t2 = UP.tnow(); P.mf = UP.CM.model_features(M, P.clock, P.budget); out['phases_s']['features'] = UP.tnow() - t2; out['mechanism']['features'] = dict(P.mf)
         t3 = UP.tnow(); ident = P.make_identity(P.clock); P.cands.append(ident); out['phases_s']['price_identity'] = UP.tnow() - t3
         solve(ident, 'lower')
         ex = construct('discover_exact', None)
@@ -81,8 +96,11 @@ def collect(measure_dir):
         for m in d.get('measurements', []):
             if not m.get('completed'): censored.append(dict(file=f, kind=m['kind'], censored=m.get('censored'), seconds=m.get('seconds', m.get('native_total_s')))); continue
             if m['kind'] == 'native':
-                fs = m['features']; rows['native_host'].append((fs, m['host_s'], f)); rows['native_kernel'].append((fs, m['kernel_s'], f)); rows['recovery'].append((fs, m['recovery_s'], f))
+                fs = m['features']; rows['native_host'].append((fs, m['host_s'], f)); rows['native_kernel'].append((fs, m['kernel_s'], f))
+                if m.get('recovery_completed', True) and m.get('recovery_s') is not None: rows['recovery'].append((fs, m['recovery_s'], f))
+                elif m.get('recovery_s') is not None: censored.append(dict(file=f, kind='recovery', censored=m.get('recovery_censored'), seconds=m['recovery_s']))
                 if m.get('host_negative_raw'): censored.append(dict(file=f, kind='native_host', censored='NEGATIVE_RAW_INSTRUMENTATION', seconds=m['host_s']))
+            elif m['kind'] == 'recovery_only': rows['recovery'].append((m['features'], m['recovery_s'], f))
             elif m['kind'] in ('exact_construction', 'fast_construction', 'refine_construction', 'final'): rows[m['kind']].append((m['features'], m['seconds'], f))
         per_file.append(dict(file=f, outcome=d.get('outcome'), wall_s=d.get('wall_s'), n_measurements=len(d.get('measurements', []))))
     return rows, censored, per_file

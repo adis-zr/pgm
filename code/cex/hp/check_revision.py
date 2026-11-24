@@ -88,6 +88,62 @@ def main(out_path, rates_path):
         finally: UP.tnow = CE.tnow = orig_now; UP.resource.getrusage = real_res
         d2 = UP.plan_and_solve(mG, 3.5, policy='unified', t_start=time.monotonic(), sched=sched, rates=rates); ZG, NG = brute(mG); ok, pub, mw, det = H.contained(d2, mG, ZG, NG)
         rec('S8_invariants_%s_%s' % (sched, rates), d['outcome'] == 'DEADLINE' and d['published'] == 0 and d2['mechanism']['constructor_live_ledger_identity'] and all(c['charged_bytes'] >= 0 for c in d2['candidates']) and ok and d2['outcome'] == 'COMPLETE' and d2['rates_model'] == rates and d2['sched'] == sched, late=d['outcome'], ledger=d2['mechanism']['constructor_live_ledger_identity'], outcome=d2['outcome'], detail=det)
+    # ---- 10. USR1 closeout (independent review 24 Nov): guarded feature pass; native measurement preserved on a recovery refusal; completion status from the final validated snapshot; output timing persisted; calibration dedup
+    import tracemalloc
+    n = 150; clique = mk([2] * n, [((i, j), [1, 2, 3, 4]) for i in range(n) for j in range(i + 1, n)]); Mq = CE.canonicalize(clique, CE.Clock(time.monotonic() + 10, {}), CE.Budget(128 << 20))
+    clk = CE.Clock(time.monotonic() - 1, {}); tracemalloc.start()
+    try: CM.model_features(Mq, clk, CE.Budget(128 << 20)); k_ = None
+    except CE.Refused as e: k_ = e.kind
+    _, pk = tracemalloc.get_traced_memory(); tracemalloc.stop(); rec('S10_feature_pass_expired_entry_refuses', k_ == 'DEADLINE' and clk.polls == 1 and pk < 4096, refusal=k_, polls=clk.polls, traced=pk)
+    class LateClock(CE.Clock):
+        def __init__(self, n_ok): super().__init__(math.inf, {}); self.n_ok = n_ok
+        def poll(self, where):
+            self.polls += 1
+            if self.polls > self.n_ok: raise CE.Refused('DEADLINE', 'injected after %d polls (%s)' % (self.n_ok, where))
+    lc = LateClock(3)
+    try: CM.model_features(Mq, lc, CE.Budget(128 << 20)); k2 = None
+    except CE.Refused as e: k2 = e.kind; where = str(e.reason)
+    rec('S10_feature_pass_polls_across_many_small_factors', k2 == 'DEADLINE' and 'scope pass' in where, refusal=k2, where=where[:80], n_factors=len(Mq.factors))
+    class RecClock(CE.Clock):
+        def __init__(self): super().__init__(math.inf, {}); self.wheres = []
+        def poll(self, where): self.polls += 1; self.wheres.append(where)
+    Mu = CE.canonicalize(mk([3] * 200, [((v,), [1, 2, 3]) for v in range(200)] + [((v, v + 1), [1] * 9) for v in range(199)]), CE.Clock(time.monotonic() + 10, {}), CE.Budget(128 << 20)); rc_ = RecClock(); CM.model_features(Mu, rc_, CE.Budget(128 << 20))
+    rec('S10_feature_pass_polls_unary_scan', any('unary' in w for w in rc_.wheres) and any('scope pass' in w for w in rc_.wheres) and rc_.wheres[0].startswith('at the feature-pass entry') and rc_.wheres[-1].startswith('at the feature-pass exit'), polls=rc_.polls, unary_polls=sum(1 for w in rc_.wheres if 'unary' in w), scope_polls=sum(1 for w in rc_.wheres if 'scope pass' in w), retained_vars=len(Mu.cards))
+    bq = CE.Budget(100)
+    try: CM.model_features(Mq, CE.Clock(time.monotonic() + 10, {}), bq); k4 = None
+    except CE.Refused as e: k4 = e.kind
+    rec('S10_feature_pass_exhausted_headroom_refuses_and_releases', k4 == 'MEMORY' and bq.live == 0, refusal=k4, live_after=bq.live)
+    bq2 = CE.Budget(128 << 20); CM.model_features(Mq, CE.Clock(time.monotonic() + 10, {}), bq2); rec('S10_feature_pass_scratch_charged_then_released', bq2.peak > 0 and bq2.live == 0, peak=bq2.peak, live=bq2.live)
+    probe_b = CE.Budget(128 << 20); CE.canonicalize(mB, CE.Clock(time.monotonic() + 10, {}), probe_b); P = planner(mB, 'P1', 'R1'); P.budget = CE.Budget(probe_b.live); d = P.run()                       # zero constructor headroom after canonicalization: the feature pass must refuse BEFORE allocating
+    rec('S10_feature_pass_in_planner_zero_headroom_refuses', d['outcome'] == 'REFUSED' and (d['mechanism'].get('refusal') or {}).get('kind') == 'MEMORY' and 'feature-pass' in (d['mechanism'].get('refusal') or {}).get('reason', '') and P.budget.live == probe_b.live and P.budget.cumulative == probe_b.live, outcome=d['outcome'], refusal=d['mechanism'].get('refusal'), live=P.budget.live, cap=P.budget.cap, cumulative=P.budget.cumulative)
+    # native measurement preserved when recovery is refused; the action is labelled SOLVED_RECOVERY_<kind>, not a censored native call
+    P, ident = setup(mG, 'P1', 'R1'); orig_rec = UP.CE.rows_from_witness
+    def refuse_recovery(*a, **k): raise CE.Refused('DEADLINE', 'injected recovery expiry')
+    c = P.discover_fast(ident, P.clock); P.cands.append(c); UP.CE.rows_from_witness = refuse_recovery
+    try: P.perform(dict(kind='solve', cand=c, side='lower', deadline=P.adm, record=dict(T_b_s=0.1)))
+    finally: UP.CE.rows_from_witness = orig_rec
+    nat = [m for m in P.measurements if m['kind'] == 'native']; a = P.out['actions'][-1]
+    rec('S10_native_measurement_preserved_on_recovery_refusal', len(nat) == 1 and nat[0]['completed'] and nat[0].get('recovery_completed') is False and nat[0].get('recovery_censored') == 'DEADLINE' and a['status'] == 'SOLVED_RECOVERY_DEADLINE' and a.get('phase', '').startswith('recovery') and c.SL is not None, native=dict(completed=nat[0]['completed'], native_total_s=round(nat[0]['native_total_s'], 4), recovery=nat[0].get('recovery_completed'), censored=nat[0].get('recovery_censored')) if nat else None, status=a['status'])
+    # completion status from the final validated snapshot: an action publication allowance expires AFTER the intervals were retained; final assembly then delivers every row before the hard deadline -> COMPLETE (termination recorded separately)
+    P = planner(mB, 'P1', 'R1'); orig_pub = CE.publish; calls = [0]
+    def late_pub(M, acc, eps, clock):
+        calls[0] += 1
+        if calls[0] == 1: P.adm = time.monotonic() - 1; P.clock.deadline = P.adm; raise CE.Refused('DEADLINE', 'injected: the WORK cutoff expires during publication (the hard deadline is far away)')   # the C scenario: intervals already retained, work cutoff gone, hard deadline not
+        return orig_pub(M, acc, eps, clock)
+    CE.publish = late_pub
+    try: d = P.run()
+    finally: CE.publish = orig_pub
+    ZB2, NB2 = brute(mB); okc, pubc, mwc, detc = H.contained(d, mB, ZB2, NB2)
+    rec('S10_status_from_final_validated_snapshot', okc and d['outcome'] == 'COMPLETE' and d['published'] == d['K'] and d['hard_deadline_respected'] and d['mechanism'].get('termination') in ('DEADLINE', 'DEADLINE_PARTIAL') and any(x['status'].startswith('SOLVED_RECOVERY_') for x in d['actions']), outcome=d['outcome'], termination=d['mechanism'].get('termination'), published=d['published'], K=d['K'], actions=acts(d), detail=detc)
+    # output timing persisted on disk
+    small = dict(outcome='COMPLETE', published=1, K=1, answers=[dict(var=0, state=0, lo='1', hi='1', point='1', guarantee='EXACT')], phases_s={}, mechanism={}); pth = os.path.join(os.path.dirname(os.path.abspath(out_path)), 'WRITE_RESULT_CTRL.json'); UP.write_result(small, pth, 3.5, t_process_start=time.monotonic()); disk = json.load(open(pth)); side = json.load(open(pth + '.timing.json'))
+    rec('S10_output_timing_persisted', 'output_s' in side and 'hard_deadline_respected_at_commit' in side and side['outcome'] == 'COMPLETE' and side['published'] == 1 and 'output' not in disk['phases_s'], sidecar=side)
+    # calibration dedup: identical native model / order / query is dispatched once per fixture; recovery still measured
+    import calibrate_revision as CR; mpath = os.path.join(os.path.dirname(os.path.abspath(out_path)), 'dedup_fixture.uai'); import hp_gen as G2; G2.write(mpath, clones(random.Random(5), 6, 4, cyc(6), 'exact')); mo = os.path.join(os.path.dirname(os.path.abspath(out_path)), 'dedup_measure.json')
+    import subprocess as sp; sp.run([sys.executable, os.path.join(HERE, 'calibrate_revision.py'), 'measure', mpath, mo], capture_output=True, timeout=20); dm = json.load(open(mo)); keys = {}
+    for m_ in dm['measurements']:
+        if m_['kind'] == 'native': keys.setdefault(m_['cand'], 0)
+    rec('S10_calibration_dedup_no_repeated_native_dispatch', dm['dedup']['dispatched'] == len([m_ for m_ in dm['measurements'] if m_['kind'] == 'native']) and len(dm['dedup']['skipped']) >= 1 and any(m_['kind'] == 'recovery_only' for m_ in dm['measurements']), dispatched=dm['dedup']['dispatched'], skipped=[(x['cand'], x['same_as']) for x in dm['dedup']['skipped']], recovery_only=sum(1 for m_ in dm['measurements'] if m_['kind'] == 'recovery_only'))
     # ---- 9. the real frozen coefficient file loads and evaluates (smoke; only when present)
     if rates_path and os.path.exists(rates_path):
         try: cmr = CM.R1(rates_path); T, parts = cmr.solve_cost(f); rec('S9_frozen_rates_load_and_evaluate', math.isfinite(T) and T > 0 and cmr.d.get('status') == 'FITTED', sha256=cmr.sha256[:16], estimate=T)

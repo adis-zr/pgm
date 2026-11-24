@@ -17,23 +17,36 @@ FINALIZE_RESERVE_S = 0.05
 def bits_of(q): return q.numerator.bit_length() + q.denominator.bit_length()
 
 
-def model_features(M, clock=None):
-    """E, A, G, Ddist, ell for a canonical model (coarse_envelope.Canon); ell from an admitted scan of factors + unaries (polled)"""
-    n = len(M.cards); E = sum(len(v) for _, v in M.factors) + sum(M.cards); A = sum(len(sc) * len(v) for sc, v in M.factors) + sum(M.cards); G = n * n + sum(len(sc) * (len(sc) - 1) for sc, _ in M.factors)
-    per_v = [0] * n
-    for sc, v in M.factors:
-        for x in sc: per_v[x] += len(v) // M.cards[x]
-    Dd = sum(M.cards[v] ** 2 * per_v[v] for v in range(n)); B = 1
-    for i, (sc, vals) in enumerate(M.factors):
-        for j, x in enumerate(vals):
-            b = bits_of(x)
-            if b > B: B = b
-            if clock is not None and (j & 1023) == 1023: clock.poll('in the rational-size scan')
-    for ps in M.psi:
-        for x in ps:
-            b = bits_of(x)
-            if b > B: B = b
-    return dict(E=E, A=A, G=G, Ddist=Dd, ell=max(1, math.ceil(B / 64)), B_bits=B, n=n)
+def model_features(M, clock=None, budget=None):
+    """E, A, G, Ddist, ell for a canonical model (coarse_envelope.Canon). GUARDED: polled at entry, every 64 factors in the scope / count passes, every 1,024 entries across the whole value
+    scan (the counter does not reset per factor), every 64 unary rows; the per-variable scratch list is admitted (charged) before allocation and released on every exit."""
+    class _NoClock:
+        polls = 0
+        def poll(self, where): pass
+    clock = clock or _NoClock(); clock.poll('at the feature-pass entry'); n = len(M.cards); charged = 0
+    try:
+        if budget is not None: charged = budget.charge(56 + 8 * n + 28 * n, 'feature-pass per-variable scratch (%d ints)' % n)
+        E = 0; A = 0; G = n * n; per_v = [0] * n
+        for i, (sc, v) in enumerate(M.factors):
+            k = len(sc); m_f = len(v); E += m_f; A += k * m_f; G += k * (k - 1)
+            for x in sc: per_v[x] += m_f // M.cards[x]
+            if (i & 63) == 63: clock.poll('in the feature scope pass')
+        E += sum(M.cards); A += sum(M.cards); Dd = sum(M.cards[v] ** 2 * per_v[v] for v in range(n)); B = 1; seen = 0
+        for sc, vals in M.factors:
+            for x in vals:
+                b = x.numerator.bit_length() + x.denominator.bit_length()
+                if b > B: B = b
+                seen += 1
+                if (seen & 1023) == 1023: clock.poll('in the rational-size scan')
+        for j, ps in enumerate(M.psi):
+            for x in ps:
+                b = x.numerator.bit_length() + x.denominator.bit_length()
+                if b > B: B = b
+            if (j & 63) == 63: clock.poll('in the unary rational-size scan')
+        clock.poll('at the feature-pass exit')
+        return dict(E=E, A=A, G=G, Ddist=Dd, ell=max(1, math.ceil(B / 64)), B_bits=B, n=n)
+    finally:
+        if budget is not None and charged: budget.release(charged)
 
 
 def ell_bits(B): return max(1, math.ceil(B / 64))
