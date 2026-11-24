@@ -1,0 +1,80 @@
+{
+ "frozen": true,
+ "calibrated_utc": "2026-11-24T07:10:15Z",
+ "rule": "max observed per-unit time over the 8 dev controls x 1.5; kernel rate 20e6 rows/s unless slower observed; build_load_s = max observed",
+ "controls": [
+  {
+   "seed": 11,
+   "n": 6,
+   "card": 2,
+   "topology": "cycle",
+   "family": "exact"
+  },
+  {
+   "seed": 12,
+   "n": 6,
+   "card": 4,
+   "topology": "cycle",
+   "family": "perturbed"
+  },
+  {
+   "seed": 13,
+   "n": 6,
+   "card": 6,
+   "topology": "cycle",
+   "family": "generic"
+  },
+  {
+   "seed": 14,
+   "n": 6,
+   "card": 4,
+   "topology": "grid",
+   "family": "exact"
+  },
+  {
+   "seed": 15,
+   "n": 6,
+   "card": 6,
+   "topology": "grid",
+   "family": "perturbed"
+  },
+  {
+   "seed": 16,
+   "n": 6,
+   "card": 2,
+   "topology": "grid",
+   "family": "generic"
+  },
+  {
+   "seed": 17,
+   "n": 8,
+   "card": 6,
+   "topology": "cycle",
+   "family": "exact"
+  },
+  {
+   "seed": 18,
+   "n": 6,
+   "card": 6,
+   "topology": "grid",
+   "family": "generic"
+  }
+ ],
+ "safety": 1.5,
+ "canon_per_entry": 2.203121160467466e-06,
+ "exact_profile_per_axis_entry": 3.6132842069491744e-06,
+ "check_per_entry": 7.927068509161472e-06,
+ "fast_profile_per_axis_entry": 1.920561771839857e-06,
+ "distance_per_unit": 3.443929017521441e-07,
+ "order_per_unit": 1.1106894817203283e-06,
+ "lowering_per_entry": 1.4050378619382778e-05,
+ "kernel_per_row": 6.019713749226771e-07,
+ "kernel_rate_note": "max observed 4.01e-07 s/row vs frozen 1/20e6 = 5e-08; the slower wins",
+ "enclosure_per_state": 3.4911325201392174e-05,
+ "build_load_s": 0.000881291925907135,
+ "recovery_per_row": 3.177556209266186e-07,
+ "publish_per_row": 3.2708398066461086e-05,
+ "finalize_reserve_s": 0.05,
+ "setup_s": 0.0,
+ "sha256": "f1e035b2153b2220dfc3745425c21002ebf31d2b8fc02ef10b155bd6e5fb6d1d"
+}
