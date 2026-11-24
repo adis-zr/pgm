@@ -215,6 +215,43 @@ def main(out_path):
     P = UP.Planner(mk([2, 2], [((0, 1), [1, 2, 3, 4])]), 10, admission_stop_s=10, t_start=time.monotonic()); P.M = CE.canonicalize(P.model, P.clock, P.budget); P.canonical_charge = P.budget.live; ident = P.make_identity(P.clock); P.cands.append(ident); P.W = lambda: 1.0; P.T_solve = lambda *a: (0.1, {}); P.optional_actions = lambda: [dict(name='discover_fast', cand=ident, D=0.9, S=0.01, parts={})]; f1 = P.decide()
     P.optional_actions = lambda: [dict(name='discover_fast', cand=ident, D=0.1, S=0.01, parts={})]; f2 = P.decide()
     rec('R5_reserve_only_for_usable_alternative', f1['kind'] == 'solve' and f1['record']['competing_alternative'] == [] and abs(f1['deadline'] - P.adm) < 1e-6 and f2['kind'] == 'solve' and f2['record']['competing_alternative'] == ['discover_fast'] and f2['deadline'] < P.adm, unusable=f1['record']['why'], usable=f2['record']['why'])
+    # ---- C1 / C2 / C3 (24 Nov second review): temporary charges released on construction / estimation refusal and identity still runs; one authoritative final timestamp suppresses late rows; inadmissible alternatives never shorten the incumbent
+    mC1 = clones(random.Random(123), 4, 4, cyc(4), 'generic'); ZC1, NC1 = brute(mC1); old_cap = CE.CONSTRUCTOR_BYTES; CE.CONSTRUCTOR_BYTES = 28960; UP.est_solve = lambda vol, K: (1e9, {}) if vol['states'] >= 16 else orig_est(vol, K)
+    try: d = run(mC1); dI = run(mC1, 'identity')
+    finally: CE.CONSTRUCTOR_BYTES = old_cap; UP.est_solve = orig_est
+    ok, pub, mw, det = contained(d, mC1, ZC1, NC1); m_ = d['mechanism']; refs = [a for a in acts(d) if a[2].startswith('REFUSED_')]
+    rec('C1_construction_refusal_releases_temporaries_identity_completes', ok and d['outcome'] == 'COMPLETE' and pub == 16 and 'identity' in m_['representations_solved'] and m_['constructor_live_ledger_identity'] and dI['outcome'] == 'COMPLETE', outcome=d['outcome'], published=pub, refusals=refs, estimation_refusals=m_.get('estimation_refusals'), ledger_identity=m_['constructor_live_ledger_identity'], live_end=m_['constructor_live_at_end_bytes'], detail=det, note="the reviewer's 28,960 B cap fixture: discoveries refuse MEMORY, their temporaries are released, an estimator refusal is isolated, identity completes 16 / 16 (v0.2 returned REFUSED 0 / 16)")
+    outs = []
+    for extra in (2000, 8000, 16000, 26560):                                   # caps that refuse at different depths of the exact-profile construction: live must return to its pre-call value every time
+        P = UP.Planner(mC1, 10, admission_stop_s=10, t_start=time.monotonic()); P.M = CE.canonicalize(mC1, P.clock, P.budget); P.canonical_charge = P.budget.live; l0 = P.budget.live; P.budget.cap = P.budget.live + extra
+        try: P.discover_exact(P.clock); k_ = None
+        except CE.Refused as e: k_ = e.kind
+        outs.append(dict(extra_cap=extra, refusal=k_, live_before=l0, live_after=P.budget.live, cumulative=P.budget.cumulative, charged_before_refusal=P.budget.cumulative - l0))
+    rec('C1_refused_discovery_leaves_live_unchanged', all(o['refusal'] == 'MEMORY' and o['live_after'] == o['live_before'] for o in outs) and any(o['charged_before_refusal'] > 0 for o in outs), probes=outs)
+    n = 150; scopes = [(i, j) for i in range(n) for j in range(i + 1, n)]; bg = CE.Budget(300000)
+    try: UP.order_and_volume([2] * n, scopes, CE.Clock(time.monotonic() + 5, {}), bg); k2 = None
+    except CE.Refused as e: k2 = e.kind
+    rec('C1_graph_pass_releases_charge_on_refusal', k2 == 'MEMORY' and bg.live == 0 and bg.cumulative > 0, refusal=k2, live_after=bg.live, cumulative=bg.cumulative)
+    mF = mk([2, 2, 2], [((0, 1), [1, 2, 3, 4])]); off = [0.0]; CE.tnow = lambda: time.monotonic() + off[0]; UP.tnow = CE.tnow; orig_pub = CE.publish
+    def expire_pub(*a, **k): off[0] = 10.0; return orig_pub(*a, **k)
+    CE.publish = expire_pub
+    try: d = UP.plan_and_solve(mF, 3.5, policy='identity', t_start=time.monotonic())
+    finally: CE.tnow = orig_now; UP.tnow = orig_now; CE.publish = orig_pub
+    rec('C2_factorless_rows_not_published_after_expiry', d['outcome'] == 'DEADLINE' and d['published'] == 0 and d['hard_deadline_respected'] is False and all(r['guarantee'] == 'NOT_PUBLISHED' for r in d['answers']), outcome=d['outcome'], published=d['published'], suppressed=d['mechanism'].get('suppressed_late_rows'), late=d['mechanism'].get('late_assembly'))
+    real_now2 = UP.tnow; off = [0.0]; calls = [0]
+    def crossing_now():
+        if inspect.currentframe().f_back.f_code.co_name == 'fin':
+            calls[0] += 1
+            if calls[0] == 1: off[0] = 10.0                              # the FIRST (and only) direct clock read of fin is the authoritative final sample
+        return time.monotonic() + off[0]
+    UP.tnow = CE.tnow = crossing_now
+    try: d = UP.plan_and_solve(mk([2, 2], [((0, 1), [1, 2, 3, 4])]), 3.5, policy='identity', t_start=time.monotonic())
+    finally: UP.tnow = CE.tnow = orig_now
+    rec('C2_single_authoritative_final_sample', d['outcome'] == 'DEADLINE' and d['published'] == 0 and d['hard_deadline_respected'] is False and calls[0] == 1 and abs((d['in_process_total_s'] - d['wall_s']) - (d['in_process_total_s'] - d['wall_s'])) < 1e-9, direct_clock_reads_in_fin=calls[0], outcome=d['outcome'], wall_s=round(d['wall_s'], 3), respected=d['hard_deadline_respected'], note='wall_s, in_process_total_s and hard_deadline_respected come from ONE sample; a crossing at that sample suppresses every row')
+    d = UP.plan_and_solve(mk([2], [((0,), [1, 3])]), 0.5, policy='identity', t_start=time.monotonic() - 1); rec('C2_empty_query_success_boundary', d['outcome'] == 'DEADLINE' and d['published'] == 0, outcome=d['outcome'], note='a collapsed (no retained variable) task entered after its hard deadline publishes nothing')
+    P = UP.Planner(mC1, 10, admission_stop_s=10, t_start=time.monotonic()); P.M = CE.canonicalize(mC1, P.clock, P.budget); P.canonical_charge = P.budget.live; ident = P.make_identity(P.clock); P.cands.append(ident); c = P.discover_fast(ident, P.clock); c.name = 'approx(memory_inadmissible)'; c.fbytes = CE.USABLE_BYTES + 1; P.cands.append(c); P.n_exact_disc = UP.MAX_EXACT_DISCOVERY; P.n_fast_disc = UP.MAX_FAST_DISCOVERY; P.W = lambda: 1.0; P.T_solve = lambda *a: (0.1, {}); f1 = P.decide()
+    c.fbytes = 1000; f2 = P.decide()
+    rec('C3_inadmissible_alternative_does_not_cut_incumbent', f1['kind'] == 'solve' and f1['cand'].name == 'identity' and f1['record']['competing_alternative'] == [] and abs(f1['deadline'] - P.adm) < 1e-6 and f2['kind'] == 'solve' and f2['record']['competing_alternative'] == ['solve_lower_unknown'] and f2['deadline'] < P.adm, inadmissible=f1['record'].get('why'), admitted=f2['record'].get('why'), optional_f1=f1['record'].get('optional'))
     # ---- L. mismatched model / decoder / coordinate sets rejected; permutations preserve semantics
     M_, c1, s1, C1, M1, clock, bud = H.internals(mB)
     try: CE.check_candidate(M1, [[0, 0]] * (len(M1.cards) - 1), CE.unit_scales(M1), clock, bud); rec('L_mismatched_decoder_rejected', False)

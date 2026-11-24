@@ -25,7 +25,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import coarse_envelope as CE
 from coarse_envelope import F, tnow, bits, Refused, Defect, Clock, Budget, checked_mul, fl
 
-VERSION = 'unified-representation-planner-v0.2 (2026-11-24 closeout after the independent review: R1 refinement accounting (old candidates retained with their charges; a new charge is its own live delta, asserted >= 0; ledger identity live = canonical + sum of retained charges), R2 one guarded order + volume pass (vertices / cliques / new fills charged before allocation, polled; optimistic estimates reuse the identity order or the card-1 shortcut, guarded), R3 a zero approximate lower mass with a positive upper mass is a typed no-witness state, never a defect, R4 the diagnostic tail is bounded and the hard deadline is enforced at the API success boundary, R5 an incumbent is cut early only for an alternative that is actually usable in the post-allowance state; v0.1 pilot 1)'
+VERSION = 'unified-representation-planner-v0.2 (2026-11-24 closeout after the independent review: R1 refinement accounting (old candidates retained with their charges; a new charge is its own live delta, asserted >= 0; ledger identity live = canonical + sum of retained charges), R2 one guarded order + volume pass (vertices / cliques / new fills charged before allocation, polled; optimistic estimates reuse the identity order or the card-1 shortcut, guarded), R3 a zero approximate lower mass with a positive upper mass is a typed no-witness state, never a defect, R4 the diagnostic tail is bounded and the hard deadline is enforced at the API success boundary, R5 an incumbent is cut early only for an alternative that is actually usable in the post-allowance state; v0.1 pilot 1; v0.3 24 Nov second closeout: C1 temporary charges released on construction / estimation refusal and estimator refusals isolated to the optional action, C2 one authoritative final timestamp with late rows suppressed regardless of the outcome label (API and CLI), C3 alternatives must pass the shared admission predicate before they can shorten the incumbent)'
 EPS_DEFAULT = F(1, 200); ADMISSION_STOP_S = 3.5; MAX_EXACT_DISCOVERY = 1; MAX_FAST_DISCOVERY = 1; MAX_REFINEMENTS = 2; MAX_NATIVE_ATTEMPTS = 8
 KERNEL_ROWS_PER_S = 20e6; MEMORY_SLACK = 1.25; PROCESS_HEADROOM = 64 << 20; FINALIZE_RESERVE_S = 0.05
 RATES_PATH = os.path.join(HERE, 'PHASE_RATES.json')
@@ -41,9 +41,21 @@ def order_and_volume(cards, scopes, clock, budget, order=None):
     """ONE guarded pass: the deterministic greedy min-product order (identical rule to coarse_envelope.elimination_order: ties -> smallest id; verified by control) OR a supplied order, with
     the physical bucket volumes of that order. Admitted BEFORE allocation: vertex sets, each source clique (k(k-1) directed entries), each fill (only the NEW directed entries); polled at
     entry, per 64 cliques, per 64 candidates and per elimination; the graph charge is released when the graph dies. Returns (order, volume)."""
-    clock.poll('at the order / volume pass entry'); B = budget or Budget(1 << 62); n = len(cards); charged = B.charge(n * (216 + 8) + 56, 'primal graph vertex sets'); adj = [set() for _ in range(n)]
+    clock.poll('at the order / volume pass entry'); B = budget or Budget(1 << 62); n = len(cards); charged = 0
+    try:
+        return _order_and_volume(cards, scopes, clock, B, order, lambda nb: _charge(B, nb))
+    finally: B.release(_CH.pop(id(B), 0))
+
+
+_CH = {}
+def _charge(B, nbytes_what):
+    nbytes, what = nbytes_what; c = B.charge(nbytes, what); _CH[id(B)] = _CH.get(id(B), 0) + c; return c
+
+
+def _order_and_volume(cards, scopes, clock, B, order, charge):
+    n = len(cards); charge((n * (216 + 8) + 56, 'primal graph vertex sets')); adj = [set() for _ in range(n)]
     for i, sc in enumerate(scopes):
-        k = len(sc); charged += B.charge(k * (k - 1) * CE.GRAPH_ENTRY_BYTES, 'source clique %d (%d directed entries)' % (i, k * (k - 1)))
+        k = len(sc); charge((k * (k - 1) * CE.GRAPH_ENTRY_BYTES, 'source clique %d (%d directed entries)' % (i, k * (k - 1))))
         for v in sc: adj[v].update(set(sc) - {v})
         if (i & 63) == 63: clock.poll('in the source cliques')
     alive = set(range(n)); out_order = []; sp = 0; mp = 0; so = 0; mo = 0; step = 0
@@ -62,10 +74,9 @@ def order_and_volume(cards, scopes, clock, budget, order=None):
         for j, w in enumerate(nb):
             new_entries += len(nb - {w} - adj[w])
             if (j & 63) == 63: clock.poll('in the fill count')
-        charged += B.charge(new_entries * CE.GRAPH_ENTRY_BYTES, 'fill of eliminating %d (%d new directed entries among %d neighbours)' % (v, new_entries, m))
+        charge((new_entries * CE.GRAPH_ENTRY_BYTES, 'fill of eliminating %d (%d new directed entries among %d neighbours)' % (v, new_entries, m)))
         for w in nb: adj[w] |= nb - {w}; adj[w].discard(v)
         alive.discard(v); adj[v] = set(); out_order.append(v); step += 1; clock.poll('in the order construction')
-    B.release(charged)
     return out_order, dict(sum_product=sp, max_product=mp, sum_output=so, max_output=mo, source_entries=sum(math.prod(cards[v] for v in sc) for sc in scopes) + sum(cards), states=sum(cards), n=n)
 
 
@@ -142,38 +153,50 @@ class Planner:
         c = Cand('identity'); M = self.M; c.M1 = M; c.cards = list(M.cards); c.scopes = [sc for sc, _ in M.factors]; c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.constructions = 0; c.stages = []; c.owns = []; c.shares = dict(M1='canonical'); c.max_bits = max([bits(x) for ps in M.psi for x in ps] + [bits(x) for _, vals in M.factors for x in vals] + [0]); return c
 
     def discover_exact(self, clock):
-        M = self.M; t0 = tnow(); live0 = self.budget.live
-        classes1 = CE.exact_profile_classes(M, clock, self.budget); scales1 = CE.exact_scales(M, classes1, clock); Cz1 = CE.check_candidate(M, classes1, scales1, clock, self.budget)
-        if not Cz1.exact: raise Defect('the exact profile quotient fails the entrywise identity (L != U)')
-        c = Cand('exact'); c.Cz = Cz1; c.stages = [(classes1, Cz1)]; c.M1 = CE.stage_model(M, Cz1); c.cards = list(Cz1.ccards); c.scopes = [sc for sc, _ in c.M1.factors]; c.constructions = 1; c.charged = self.budget.live - live0; c.owns = ['Cz', 'M1', 'classes']; c.max_bits = cz_bits(Cz1)
-        if c.charged < 0: raise Defect('negative construction charge for the exact quotient')
-        if all(k == card for k, card in zip(Cz1.ccards, M.cards)): c.alias_of = 'identity'; c.name = 'exact_quotient(=identity)'
-        else: c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol)
-        c.disc_s = tnow() - t0; return c
+        live0_ = self.budget.live
+        try:
+            M = self.M; t0 = tnow(); live0 = self.budget.live
+            classes1 = CE.exact_profile_classes(M, clock, self.budget); scales1 = CE.exact_scales(M, classes1, clock); Cz1 = CE.check_candidate(M, classes1, scales1, clock, self.budget)
+            if not Cz1.exact: raise Defect('the exact profile quotient fails the entrywise identity (L != U)')
+            c = Cand('exact'); c.Cz = Cz1; c.stages = [(classes1, Cz1)]; c.M1 = CE.stage_model(M, Cz1); c.cards = list(Cz1.ccards); c.scopes = [sc for sc, _ in c.M1.factors]; c.constructions = 1; c.charged = self.budget.live - live0; c.owns = ['Cz', 'M1', 'classes']; c.max_bits = cz_bits(Cz1)
+            if c.charged < 0: raise Defect('negative construction charge for the exact quotient')
+            if all(k == card for k, card in zip(Cz1.ccards, M.cards)): c.alias_of = 'identity'; c.name = 'exact_quotient(=identity)'
+            else: c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol)
+            c.disc_s = tnow() - t0; return c
+        except Refused:
+            self.budget.release(max(0, self.budget.live - live0_)); raise                           # C1: temporaries of an abandoned construction are released (cumulative stays charged); retained candidates keep their charges
 
     def discover_fast(self, parent, clock):
-        M1 = parent.M1; t0 = tnow(); live0 = self.budget.live
-        try: prof, why = CE.slice_profiles(M1, clock, self.budget)
-        except (ValueError, OverflowError, ZeroDivisionError) as e: prof, why = None, 'profile proposer refused: %s' % str(e)[:80]
-        if prof is None: raise Refused('PROPOSER', why)
-        self.budget.charge(sum(c * c * 8 for c in M1.cards), 'pairwise distances')
-        classes2 = [CE.canonical_classes(CE.farthest_split(prof[v], list(range(M1.cards[v])), clock), M1.cards[v]) if M1.cards[v] > 1 else [0] for v in range(len(M1.cards))]
-        unit = CE.unit_scales(M1); Cu = CE.check_candidate(M1, classes2, unit, clock, self.budget)
-        try: cen = CE.centering_scales(M1, classes2, clock); Cc = CE.check_candidate(M1, classes2, cen, clock, self.budget); cen_note = None
-        except (ValueError, OverflowError, ZeroDivisionError) as e: cen = None; Cc = None; cen_note = 'centering refused: %s' % str(e)[:80]
-        pick = 'unit' if (Cc is None or Cc.R is None or (Cu.R is not None and Cu.R <= Cc.R)) else 'centering'
-        c = Cand('approx', parent); c.Cz = Cu if pick == 'unit' else Cc; c.scales = unit if pick == 'unit' else cen; c.classes = classes2; c.prof = prof; c.M1 = M1; c.stages = list(parent.stages) + [(classes2, c.Cz)]; c.cards = list(c.Cz.ccards); c.scopes = [sc for sc, _ in M1.factors]
-        c.constructions = parent.constructions + 1; c.gauge = dict(unit_R=fl(Cu.R), centering_R=(fl(Cc.R) if Cc is not None else None), selected=pick, centering_refused=cen_note); c.charged = self.budget.live - live0; c.name = 'approx(%s)' % parent.name; c.owns = ['Cz', 'Cz_unit_or_centering_alternative', 'classes', 'scales', 'prof', 'pairwise_distances']; c.shares = dict(M1=parent.name); c.max_bits = cz_bits(c.Cz)
-        if c.charged < 0: raise Defect('negative construction charge for the approximate quotient')
-        self.set_quality(c); c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.disc_s = tnow() - t0; return c
+        live0_ = self.budget.live
+        try:
+            M1 = parent.M1; t0 = tnow(); live0 = self.budget.live
+            try: prof, why = CE.slice_profiles(M1, clock, self.budget)
+            except (ValueError, OverflowError, ZeroDivisionError) as e: prof, why = None, 'profile proposer refused: %s' % str(e)[:80]
+            if prof is None: raise Refused('PROPOSER', why)
+            self.budget.charge(sum(c * c * 8 for c in M1.cards), 'pairwise distances')
+            classes2 = [CE.canonical_classes(CE.farthest_split(prof[v], list(range(M1.cards[v])), clock), M1.cards[v]) if M1.cards[v] > 1 else [0] for v in range(len(M1.cards))]
+            unit = CE.unit_scales(M1); Cu = CE.check_candidate(M1, classes2, unit, clock, self.budget)
+            try: cen = CE.centering_scales(M1, classes2, clock); Cc = CE.check_candidate(M1, classes2, cen, clock, self.budget); cen_note = None
+            except (ValueError, OverflowError, ZeroDivisionError) as e: cen = None; Cc = None; cen_note = 'centering refused: %s' % str(e)[:80]
+            pick = 'unit' if (Cc is None or Cc.R is None or (Cu.R is not None and Cu.R <= Cc.R)) else 'centering'
+            c = Cand('approx', parent); c.Cz = Cu if pick == 'unit' else Cc; c.scales = unit if pick == 'unit' else cen; c.classes = classes2; c.prof = prof; c.M1 = M1; c.stages = list(parent.stages) + [(classes2, c.Cz)]; c.cards = list(c.Cz.ccards); c.scopes = [sc for sc, _ in M1.factors]
+            c.constructions = parent.constructions + 1; c.gauge = dict(unit_R=fl(Cu.R), centering_R=(fl(Cc.R) if Cc is not None else None), selected=pick, centering_refused=cen_note); c.charged = self.budget.live - live0; c.name = 'approx(%s)' % parent.name; c.owns = ['Cz', 'Cz_unit_or_centering_alternative', 'classes', 'scales', 'prof', 'pairwise_distances']; c.shares = dict(M1=parent.name); c.max_bits = cz_bits(c.Cz)
+            if c.charged < 0: raise Defect('negative construction charge for the approximate quotient')
+            self.set_quality(c); c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.disc_s = tnow() - t0; return c
+        except Refused:
+            self.budget.release(max(0, self.budget.live - live0_)); raise                           # C1: temporaries of an abandoned construction are released (cumulative stays charged); retained candidates keep their charges
 
     def refine_cand(self, cand, clock):
-        t0 = tnow(); live0 = self.budget.live; new, info = CE.refine(cand.M1, cand.Cz, cand.prof, clock)
-        if new is None: raise Refused('NO_SPLIT', str(info))
-        Cz = CE.check_candidate(cand.M1, new, cand.scales, clock, self.budget); c = Cand('approx', cand.parent); c.Cz = Cz; c.scales = cand.scales; c.classes = new; c.prof = cand.prof; c.M1 = cand.M1; c.stages = list(cand.parent.stages) + [(new, Cz)]; c.cards = list(Cz.ccards); c.scopes = cand.scopes
-        c.constructions = cand.constructions + 1; c.refinements = cand.refinements + 1; c.split = info; c.charged = self.budget.live - live0; c.name = 'refine%d(%s)' % (c.refinements, cand.parent.name); c.gauge = cand.gauge; c.owns = ['Cz', 'classes']; c.shares = dict(M1=cand.parent.name, prof=cand.name, scales=cand.name); c.max_bits = cz_bits(Cz)   # R1: the refined-from candidate stays in self.cands with ITS charge (its certificate and solves remain reachable); nothing is released here
-        if c.charged < 0: raise Defect('negative construction charge for a refinement')
-        self.set_quality(c); c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.disc_s = tnow() - t0; return c
+        live0_ = self.budget.live
+        try:
+            t0 = tnow(); live0 = self.budget.live; new, info = CE.refine(cand.M1, cand.Cz, cand.prof, clock)
+            if new is None: raise Refused('NO_SPLIT', str(info))
+            Cz = CE.check_candidate(cand.M1, new, cand.scales, clock, self.budget); c = Cand('approx', cand.parent); c.Cz = Cz; c.scales = cand.scales; c.classes = new; c.prof = cand.prof; c.M1 = cand.M1; c.stages = list(cand.parent.stages) + [(new, Cz)]; c.cards = list(Cz.ccards); c.scopes = cand.scopes
+            c.constructions = cand.constructions + 1; c.refinements = cand.refinements + 1; c.split = info; c.charged = self.budget.live - live0; c.name = 'refine%d(%s)' % (c.refinements, cand.parent.name); c.gauge = cand.gauge; c.owns = ['Cz', 'classes']; c.shares = dict(M1=cand.parent.name, prof=cand.name, scales=cand.name); c.max_bits = cz_bits(Cz)   # R1: the refined-from candidate stays in self.cands with ITS charge (its certificate and solves remain reachable); nothing is released here
+            if c.charged < 0: raise Defect('negative construction charge for a refinement')
+            self.set_quality(c); c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.disc_s = tnow() - t0; return c
+        except Refused:
+            self.budget.release(max(0, self.budget.live - live0_)); raise                           # C1: temporaries of an abandoned construction are released (cumulative stays charged); retained candidates keep their charges
 
     def set_quality(self, c):
         c.exact = c.Cz.exact; c.R = c.Cz.R; c.mixed = c.Cz.mixed
@@ -185,6 +208,10 @@ class Planner:
     def exec_model(self, c, side):
         if c.kind == 'identity': return identity_model(self.M)
         return CE.coarse_model(c.M1, c.Cz, side)
+
+    def admitted(self, c):
+        """the shared resource / addressability admission of a candidate's native solve (used by solve(), the ready scoring and the alternative test)"""
+        return self.native < MAX_NATIVE_ATTEMPTS and c.fbytes is not None and c.fbytes <= self.headroom() and (c.vol or {}).get('max_product', 2 ** 63) <= 2 ** 62
 
     def solve(self, c, side, deadline, label):
         if self.native >= MAX_NATIVE_ATTEMPTS: raise Refused('ATTEMPTS', 'native attempt cap %d reached' % MAX_NATIVE_ATTEMPTS)
@@ -250,48 +277,58 @@ class Planner:
         return out
 
     def optional_actions(self):
-        """(name, cand, D, S, admitted) for optional constructions and unknown-quality solves"""
-        acts = []; M = self.M
+        """optional constructions and unknown-quality solves with D (remaining cost), S (optimistic additional cost) and `admitted`. An estimator's own resource refusal (MEMORY / BITS / FORECAST)
+        makes THAT action unavailable (recorded); it never invalidates the request (C1). A genuinely expired global clock still propagates."""
+        acts = []; M = self.M; unavailable = self.out['mechanism'].setdefault('estimation_refusals', [])
+        def guarded(name, fn):
+            try: return fn()
+            except Refused as e:
+                if e.kind == 'DEADLINE' and tnow() >= self.adm: raise
+                unavailable.append(dict(action=name, kind=e.kind, reason=str(e.reason)[:120], t_s=round(tnow() - self.t_start, 4))); return None
         if self.n_exact_disc < MAX_EXACT_DISCOVERY and not any(c.kind == 'exact' for c in self.cands) and 'exact_discovery' not in self.failed_global:
-            D, parts, cnt = est_exact_discovery(M); acts.append(dict(name='discover_exact', cand=None, D=D, S=self.optimistic_after_exact(), parts=parts, counts=cnt))
+            r = guarded('discover_exact', lambda: (est_exact_discovery(M), self.optimistic_after_exact()))
+            if r is not None: (D, parts, cnt), S = r; acts.append(dict(name='discover_exact', cand=None, D=D, S=S, parts=parts, counts=cnt, admitted=True))
         parent = next((c for c in self.cands if c.kind == 'exact' and not c.alias_of), None) or next((c for c in self.cands if c.kind == 'identity'), None)
         if self.n_fast_disc < MAX_FAST_DISCOVERY and not any(c.kind == 'approx' for c in self.cands) and parent is not None and 'fast_discovery' not in self.failed_global:
-            D, parts, cnt = est_fast_discovery(parent.M1); acts.append(dict(name='discover_fast', cand=parent, D=D, S=self.optimistic_after_fast(parent), parts=parts, counts=cnt))
+            r = guarded('discover_fast', lambda: (est_fast_discovery(parent.M1), self.optimistic_after_fast(parent)))
+            if r is not None: (D, parts, cnt), S = r; acts.append(dict(name='discover_fast', cand=parent, D=D, S=S, parts=parts, counts=cnt, admitted=True))
         for c in self.cands:
             if c.kind != 'approx' or c.alias_of: continue
-            if not c.promising and c.SL is None and 'lower' not in c.failed: D, parts = self.T_solve(c); acts.append(dict(name='solve_lower_unknown', cand=c, D=D, S=0.0, parts=parts))
-            if not c.promising and c.SL is not None and c.SU is None and 'upper' not in c.failed and not c.exact: D, parts = self.T_solve(c, 1); acts.append(dict(name='solve_upper_unknown', cand=c, D=D, S=0.0, parts=parts))
+            adm = self.admitted(c)
+            if not c.promising and c.SL is None and 'lower' not in c.failed: D, parts = self.T_solve(c); acts.append(dict(name='solve_lower_unknown', cand=c, D=D, S=0.0, parts=parts, admitted=adm))
+            if not c.promising and c.SL is not None and c.SU is None and 'upper' not in c.failed and not c.exact: D, parts = self.T_solve(c, 1); acts.append(dict(name='solve_upper_unknown', cand=c, D=D, S=0.0, parts=parts, admitted=adm))
             if c.refinements < MAX_REFINEMENTS and self.n_refine < MAX_REFINEMENTS and c.SL is not None and 'refine' not in c.failed and not any(x.kind == 'approx' and x.refinements == c.refinements + 1 for x in self.cands):
-                D, parts, cnt = est_fast_discovery(c.M1); D = parts['checks'] / 2 + parts['order']; acts.append(dict(name='refine', cand=c, D=D, S=self.T_solve(c)[0], parts=dict(check=parts['checks'] / 2, order=parts['order'])))
+                r = guarded('refine', lambda: est_fast_discovery(c.M1))
+                if r is not None: D, parts, cnt = r; D = parts['checks'] / 2 + parts['order']; acts.append(dict(name='refine', cand=c, D=D, S=self.T_solve(c)[0], parts=dict(check=parts['checks'] / 2, order=parts['order']), admitted=True))
         return acts
 
     def decide(self):
         W = self.W(); ready = self.ready_exact_or_promising(); rec = dict(W_s=round(W, 4), t_s=round(tnow() - self.t_start, 4))
         scored = []
         for c, side in ready:
-            T, parts = self.T_solve(c, 0 if side == 'lower' else 1); adm_mem = c.fbytes is not None and c.fbytes <= self.headroom(); addr = c.vol['max_product'] <= 2 ** 62
-            scored.append(dict(cand=c, side=side, T=T, parts=parts, admitted=adm_mem and addr, order=(c.constructions, {'identity': 0, 'exact': 1, 'approx': 2}[c.kind], self.cands.index(c))))
+            T, parts = self.T_solve(c, 0 if side == 'lower' else 1)
+            scored.append(dict(cand=c, side=side, T=T, parts=parts, admitted=self.admitted(c), order=(c.constructions, {'identity': 0, 'exact': 1, 'approx': 2}[c.kind], self.cands.index(c))))
         rec['ready'] = [dict(cand=s['cand'].name, side=s['side'], T_s=round(s['T'], 4), admitted=s['admitted'], fits_W=s['T'] <= W) for s in scored]
         fit = [s for s in scored if s['admitted'] and s['T'] <= W]; opts = self.optional_actions() if self.policy == 'unified' else []
         if fit:
             b = min(fit, key=lambda s: (s['T'], s['order'])); Tb = b['T']; reserve = min(W, 2 * Tb); rec.update(b=b['cand'].name, b_side=b['side'], T_b_s=round(Tb, 4), reserved_s=round(reserve, 4))
             elig = []
             for a in opts:
-                q = min(2 * a['D'], Tb / 4, max(0.0, W - reserve)); a['q'] = q; a['eligible'] = (a['D'] + a['S'] < Tb) and (q >= a['D'])
+                q = min(2 * a['D'], Tb / 4, max(0.0, W - reserve)); a['q'] = q; a['eligible'] = a.get('admitted', True) and (a['D'] + a['S'] < Tb) and (q >= a['D'])
                 if a['eligible']: elig.append(a)
-            rec['optional'] = [dict(name=a['name'], cand=(a['cand'].name if a['cand'] is not None else None), D_s=round(a['D'], 4), S_s=round(a['S'], 4), q_s=round(a['q'], 4), eligible=a['eligible']) for a in opts]
+            rec['optional'] = [dict(name=a['name'], cand=(a['cand'].name if a['cand'] is not None else None), D_s=round(a['D'], 4), S_s=round(a['S'], 4), q_s=round(a['q'], 4), eligible=a['eligible'], admitted=a.get('admitted', True)) for a in opts]
             if elig:
                 a = min(elig, key=lambda x: (x['D'] + x['S'], x['name'])); rec.update(chosen=a['name'], chosen_cand=(a['cand'].name if a['cand'] is not None else None), allowance_s=round(a['q'], 4), why='optional action under the reserved incumbent (step 4)')
                 return dict(kind='optional', act=a, deadline=min(self.adm, tnow() + a['q']), record=rec)
             W_after = max(0.0, W - reserve)                                            # R5: an alternative counts only if it is actually usable AFTER b's allowance: another admitted ready solve (step 5's bounded attempt accepts any admitted untried exact / promising solve) or an optional action eligible under the post-allowance exploration rule D_a <= W_after / 4
-            alt_ready = [s['cand'].name + ':' + s['side'] for s in scored if s is not b and s['admitted']]; alt_opt = [a['name'] for a in opts if a['D'] <= W_after / 4]; alternatives = alt_ready + alt_opt
+            alt_ready = [s['cand'].name + ':' + s['side'] for s in scored if s is not b and s['admitted']]; alt_opt = [a['name'] for a in opts if a.get('admitted', True) and a['D'] <= W_after / 4]; alternatives = alt_ready + alt_opt   # C3: only RESOURCE-ADMITTED alternatives (the same predicate solve() applies) can justify shortening the incumbent
             dl = min(self.adm, tnow() + 2 * Tb) if alternatives else self.adm
             rec.update(chosen='solve_' + b['side'], chosen_cand=b['cand'].name, action_deadline_s=round(dl - self.t_start, 4), W_after_allowance_s=round(W_after, 4), competing_alternative=alternatives[:4], why='execute b (step 6: %s)' % ('reserved 2 T_b, a usable alternative remains' if alternatives else 'no usable alternative after the allowance: remaining work deadline'))
             return dict(kind='solve', cand=b['cand'], side=b['side'], deadline=dl, record=rec)
         # step 5: no affordable exact / promising candidate
         explor = []
         for a in opts:
-            q = min(2 * a['D'], W / 4); a['q'] = q; a['eligible'] = a['D'] <= q
+            q = min(2 * a['D'], W / 4); a['q'] = q; a['eligible'] = a.get('admitted', True) and a['D'] <= q
             if a['eligible']: explor.append(a)
         rec['optional'] = [dict(name=a['name'], cand=(a['cand'].name if a['cand'] is not None else None), D_s=round(a['D'], 4), S_s=round(a['S'], 4), q_s=round(a['q'], 4), eligible=a['eligible']) for a in opts]
         if explor:
@@ -352,11 +389,13 @@ class Planner:
     def finish_ok(self, rows, note): self.clock.poll('before success'); self.hclock.poll('before success (hard)'); return self.fin('COMPLETE', rows, note=note)
 
     def fin(self, oc, rows_canon, note=None):
+        """final assembly of every ORIGINAL row. ONE authoritative final timestamp `t_end` decides `wall_s`, `in_process_total_s` and `hard_deadline_respected`; if it lies beyond the hard deadline
+        every newly assembled row (fixed / factorless rows included) is suppressed and the outcome is DEADLINE, whatever label the caller passed (C2). Assembly itself is polled per 256 rows."""
         out = self.out; mech = out['mechanism']; out['outcome'] = oc
         if note: mech['note'] = note
         rows = []; pub = 0; gs = set(); fixed = self.M.fixed_rows if self.M is not None else {}; pos = mech.get('positive_mass_witness')
         try:
-            if oc != 'DEADLINE': self.hclock.poll('at the final assembly entry')
+            self.hclock.poll('at the final assembly entry')
             for j, (v, a) in enumerate(self.inventory):
                 if (j & 255) == 255: self.hclock.poll('in the final assembly')
                 if (v, a) in fixed:
@@ -366,21 +405,23 @@ class Planner:
                 r = rows_canon.get((v, a)) if rows_canon else None
                 if r is None: rows.append(dict(var=v, state=a, guarantee='NOT_PUBLISHED')); gs.add('NOT_PUBLISHED')
                 else: rows.append(dict(var=v, state=a, lo=str(r['lo']), hi=str(r['hi']), point=str(r['point']), guarantee=r['guarantee'])); pub += 1; gs.add(r['guarantee'])
-            if oc in ('COMPLETE', 'PARTIAL', 'DEADLINE_PARTIAL') and pub: self.hclock.poll('before committing the published rows')
-        except Refused as e:
-            mech['late_assembly'] = str(e.reason)[:120]; rows = [dict(var=v, state=a, guarantee='NOT_PUBLISHED') for v, a in self.inventory]; pub = 0; gs = {'NOT_PUBLISHED'}; out['outcome'] = oc = 'DEADLINE'
+        except Refused as e: mech['late_assembly'] = str(e.reason)[:120]; rows = []; pub = 0; gs = set()
+        out['candidates'] = [c.facts() for c in self.cands]; mech.update(constructor_budget_peak_bytes=self.budget.peak, constructor_budget_cumulative_bytes=self.budget.cumulative, constructor_live_at_end_bytes=self.budget.live, constructor_live_ledger_identity=(self.budget.live == getattr(self, 'canonical_charge', 0) + sum(c.charged for c in self.cands)), polls=self.clock.polls + self.hclock.polls, native_attempts=self.native, exact_discoveries=self.n_exact_disc, fast_discoveries=self.n_fast_disc, refinements=self.n_refine,
+                    rational_bit_peak=max([c.max_bits for c in self.cands] + [bits(self.M.scalar) if self.M else 0]), representations_solved=[c.name for c in self.cands if c.SL is not None])
+        out['peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        t_end = tnow()                                                                       # the ONE authoritative final sample
+        out['wall_s'] = t_end - self.t_start; out['in_process_total_s'] = t_end - T_PROCESS_START; out['hard_deadline_respected'] = t_end <= self.hard
+        if not out['hard_deadline_respected'] or not rows:
+            if pub or not rows: mech.setdefault('late_assembly', 'hard deadline expired before the final sample' if not out['hard_deadline_respected'] else mech.get('late_assembly'))
+            if not out['hard_deadline_respected'] and pub: mech['suppressed_late_rows'] = pub
+            rows = [dict(var=v, state=a, guarantee='NOT_PUBLISHED') for v, a in self.inventory]; pub = 0; gs = {'NOT_PUBLISHED'}
+            if not out['hard_deadline_respected']: out['outcome'] = oc = 'DEADLINE'
         out['answers'] = rows; out['published'] = pub; out['K'] = len(rows); out['guarantee'] = 'EXACT' if gs <= {'EXACT'} else ('DETERMINISTIC' if gs <= {'EXACT', 'DETERMINISTIC'} else 'PARTIAL')
         if out['outcome'] == 'COMPLETE' and pub < len(rows): out['outcome'] = 'PARTIAL'
         if out['outcome'] == 'REFUSED' and pub > 0: out['outcome'] = 'PARTIAL'
         ws = [F(r['hi']) - F(r['lo']) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_width'] = float(max(ws)) if ws else None
         rad = [max(F(r['point']) - F(r['lo']), F(r['hi']) - F(r['point'])) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_point_radius'] = float(max(rad)) if rad else None
-        out['candidates'] = [c.facts() for c in self.cands]; mech.update(constructor_budget_peak_bytes=self.budget.peak, constructor_budget_cumulative_bytes=self.budget.cumulative, constructor_live_at_end_bytes=self.budget.live, constructor_live_ledger_identity=(self.budget.live == getattr(self, 'canonical_charge', 0) + sum(c.charged for c in self.cands)), polls=self.clock.polls + self.hclock.polls, native_attempts=self.native, exact_discoveries=self.n_exact_disc, fast_discoveries=self.n_fast_disc, refinements=self.n_refine,
-                    rational_bit_peak=max([c.max_bits for c in self.cands] + [bits(self.M.scalar) if self.M else 0]), representations_solved=[c.name for c in self.cands if c.SL is not None])   # O(#candidates): max_bits was recorded at each construction
-        out['peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; out['wall_s'] = tnow() - self.t_start; out['in_process_total_s'] = tnow() - T_PROCESS_START; out['hard_deadline_respected'] = out['wall_s'] <= self.hard - self.t_start
-        if pub and not out['hard_deadline_respected'] and oc != 'DEADLINE':              # R4: the hard deadline is enforced at the API success boundary too (after the bounded diagnostic tail): nothing is published late
-            mech['late_assembly'] = 'hard deadline expired in the final diagnostics'; out['answers'] = [dict(var=r['var'], state=r['state'], guarantee='NOT_PUBLISHED') for r in rows]; out['published'] = 0; out['guarantee'] = 'PARTIAL'; out['max_width'] = None; out['max_point_radius'] = None; out['outcome'] = 'DEADLINE'
         return out
-
 
 def plan_and_solve(model, budget_s, policy='unified', eps=EPS_DEFAULT, admission_stop_s=ADMISSION_STOP_S, t_start=None):
     return Planner(model, budget_s, eps=eps, admission_stop_s=admission_stop_s, t_start=t_start, policy=policy).run()
@@ -393,7 +434,7 @@ def main():
     t0 = tnow(); model, binding = CORE.read_uai(a.input); tread = tnow() - t0
     out = plan_and_solve(model, a.budget, policy=a.policy, eps=F(a.epsilon), admission_stop_s=a.admission_stop); out['phases_s']['read'] = tread; out['binding'] = binding; out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]; out['process_start_to_read_s'] = t0 - T_PROCESS_START
     tmp = a.output + '.tmp'; os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True); json.dump(out, open(tmp, 'w'), indent=1, default=str)
-    if tnow() > T_PROCESS_START + a.budget and out['outcome'] not in ('DEADLINE', 'ZERO_EVIDENCE', 'CERTIFICATE_DEFECT'):
+    if tnow() > T_PROCESS_START + a.budget and (out.get('published') or 0) > 0:                                  # C2: a late commit publishes nothing, whatever the outcome label
         out['mechanism']['late_commit'] = dict(outcome_before=out['outcome'], published_before=out.get('published')); out['outcome'] = 'DEADLINE'; out['answers'] = [dict(var=r['var'], state=r['state'], guarantee='NOT_PUBLISHED') for r in (out.get('answers') or [])]; out['published'] = 0; out['guarantee'] = 'PARTIAL'; out['max_width'] = None; json.dump(out, open(tmp, 'w'), indent=1, default=str)
     out['hard_deadline_respected_at_commit'] = tnow() <= T_PROCESS_START + a.budget; os.replace(tmp, a.output)
     print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), native=out['mechanism'].get('native_attempts'), actions=[(x.get('action'), x.get('cand'), x.get('status')) for x in out['actions']], refusal=out['mechanism'].get('refusal'), defect=out['mechanism'].get('defect')), default=str))
