@@ -253,6 +253,17 @@ def main(out_path):
     P = UP.Planner(mC1, 10, admission_stop_s=10, t_start=time.monotonic()); P.M = CE.canonicalize(mC1, P.clock, P.budget); P.canonical_charge = P.budget.live; ident = P.make_identity(P.clock); P.cands.append(ident); c = P.discover_fast(ident, P.clock); c.name = 'approx(memory_inadmissible)'; c.fbytes = CE.USABLE_BYTES + 1; P.cands.append(c); P.n_exact_disc = UP.MAX_EXACT_DISCOVERY; P.n_fast_disc = UP.MAX_FAST_DISCOVERY; P.W = lambda: 1.0; P.T_solve = lambda *a: (0.1, {}); f1 = P.decide()
     c.fbytes = 1000; f2 = P.decide()
     rec('C3_inadmissible_alternative_does_not_cut_incumbent', f1['kind'] == 'solve' and f1['cand'].name == 'identity' and f1['record']['competing_alternative'] == [] and abs(f1['deadline'] - P.adm) < 1e-6 and f2['kind'] == 'solve' and f2['record']['competing_alternative'] == ['solve_lower_unknown'] and f2['deadline'] < P.adm, inadmissible=f1['record'].get('why'), admitted=f2['record'].get('why'), optional_f1=f1['record'].get('optional'))
+    # ---- C2b (third review): expiry DURING the per-row width / radius diagnostics of fin (the last work before the final sample) suppresses every row, incl. factorless ones
+    for cards in ([2, 2], [2, 2, 2]):
+        mX = mk(cards, [((0, 1), [1, 2, 3, 4])]); real_F = UP.F; off = [0.0]; CE.tnow = lambda: time.monotonic() + off[0]; UP.tnow = CE.tnow; fired = [0]
+        def late_F(*a, **kw):
+            fr = inspect.currentframe().f_back; fin = fr if fr.f_code.co_name == 'fin' else (fr.f_back if fr.f_code.co_name == '<listcomp>' and fr.f_back.f_code.co_name == 'fin' else None)
+            if fin is not None: fired[0] += 1; off[0] = 10.0
+            return real_F(*a, **kw)
+        UP.F = late_F
+        try: d = UP.plan_and_solve(mX, 3.5, policy='identity', t_start=time.monotonic())
+        finally: UP.F = real_F; CE.tnow = orig_now; UP.tnow = orig_now
+        rec('C2b_expiry_during_final_diagnostics_%dvars' % len(cards), fired[0] > 0 and d['outcome'] == 'DEADLINE' and d['published'] == 0 and d['hard_deadline_respected'] is False and d['max_width'] is None and d['max_point_radius'] is None and all(r['guarantee'] == 'NOT_PUBLISHED' for r in d['answers']), outcome=d['outcome'], published=d['published'], K=d['K'], diagnostics_cleared=(d['max_width'] is None and d['max_point_radius'] is None), fired=fired[0])
     # ---- L. mismatched model / decoder / coordinate sets rejected; permutations preserve semantics
     M_, c1, s1, C1, M1, clock, bud = H.internals(mB)
     try: CE.check_candidate(M1, [[0, 0]] * (len(M1.cards) - 1), CE.unit_scales(M1), clock, bud); rec('L_mismatched_decoder_rejected', False)

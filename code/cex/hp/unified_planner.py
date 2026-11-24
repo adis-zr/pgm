@@ -25,7 +25,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import coarse_envelope as CE
 from coarse_envelope import F, tnow, bits, Refused, Defect, Clock, Budget, checked_mul, fl
 
-VERSION = 'unified-representation-planner-v0.2 (2026-11-24 closeout after the independent review: R1 refinement accounting (old candidates retained with their charges; a new charge is its own live delta, asserted >= 0; ledger identity live = canonical + sum of retained charges), R2 one guarded order + volume pass (vertices / cliques / new fills charged before allocation, polled; optimistic estimates reuse the identity order or the card-1 shortcut, guarded), R3 a zero approximate lower mass with a positive upper mass is a typed no-witness state, never a defect, R4 the diagnostic tail is bounded and the hard deadline is enforced at the API success boundary, R5 an incumbent is cut early only for an alternative that is actually usable in the post-allowance state; v0.1 pilot 1; v0.3 24 Nov second closeout: C1 temporary charges released on construction / estimation refusal and estimator refusals isolated to the optional action, C2 one authoritative final timestamp with late rows suppressed regardless of the outcome label (API and CLI), C3 alternatives must pass the shared admission predicate before they can shorten the incumbent)'
+VERSION = 'unified-representation-planner-v0.2 (2026-11-24 closeout after the independent review: R1 refinement accounting (old candidates retained with their charges; a new charge is its own live delta, asserted >= 0; ledger identity live = canonical + sum of retained charges), R2 one guarded order + volume pass (vertices / cliques / new fills charged before allocation, polled; optimistic estimates reuse the identity order or the card-1 shortcut, guarded), R3 a zero approximate lower mass with a positive upper mass is a typed no-witness state, never a defect, R4 the diagnostic tail is bounded and the hard deadline is enforced at the API success boundary, R5 an incumbent is cut early only for an alternative that is actually usable in the post-allowance state; v0.1 pilot 1; v0.3 24 Nov second closeout: C1 temporary charges released on construction / estimation refusal and estimator refusals isolated to the optional action, C2 one authoritative final timestamp with late rows suppressed regardless of the outcome label (API and CLI), C3 alternatives must pass the shared admission predicate before they can shorten the incumbent; v0.3.1 24 Nov third closeout: the reviewer-supplied patch C2_FINAL_SAMPLE_AFTER_DIAGNOSTICS applied verbatim -- the per-row width / radius diagnostics are computed BEFORE the authoritative final sample and cleared when publication is suppressed)'
 EPS_DEFAULT = F(1, 200); ADMISSION_STOP_S = 3.5; MAX_EXACT_DISCOVERY = 1; MAX_FAST_DISCOVERY = 1; MAX_REFINEMENTS = 2; MAX_NATIVE_ATTEMPTS = 8
 KERNEL_ROWS_PER_S = 20e6; MEMORY_SLACK = 1.25; PROCESS_HEADROOM = 64 << 20; FINALIZE_RESERVE_S = 0.05
 RATES_PATH = os.path.join(HERE, 'PHASE_RATES.json')
@@ -409,18 +409,20 @@ class Planner:
         out['candidates'] = [c.facts() for c in self.cands]; mech.update(constructor_budget_peak_bytes=self.budget.peak, constructor_budget_cumulative_bytes=self.budget.cumulative, constructor_live_at_end_bytes=self.budget.live, constructor_live_ledger_identity=(self.budget.live == getattr(self, 'canonical_charge', 0) + sum(c.charged for c in self.cands)), polls=self.clock.polls + self.hclock.polls, native_attempts=self.native, exact_discoveries=self.n_exact_disc, fast_discoveries=self.n_fast_disc, refinements=self.n_refine,
                     rational_bit_peak=max([c.max_bits for c in self.cands] + [bits(self.M.scalar) if self.M else 0]), representations_solved=[c.name for c in self.cands if c.SL is not None])
         out['peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # Finish per-row diagnostics before the authoritative deadline sample.
+        ws = [F(r['hi']) - F(r['lo']) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_width'] = float(max(ws)) if ws else None
+        rad = [max(F(r['point']) - F(r['lo']), F(r['hi']) - F(r['point'])) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_point_radius'] = float(max(rad)) if rad else None
         t_end = tnow()                                                                       # the ONE authoritative final sample
         out['wall_s'] = t_end - self.t_start; out['in_process_total_s'] = t_end - T_PROCESS_START; out['hard_deadline_respected'] = t_end <= self.hard
         if not out['hard_deadline_respected'] or not rows:
             if pub or not rows: mech.setdefault('late_assembly', 'hard deadline expired before the final sample' if not out['hard_deadline_respected'] else mech.get('late_assembly'))
             if not out['hard_deadline_respected'] and pub: mech['suppressed_late_rows'] = pub
             rows = [dict(var=v, state=a, guarantee='NOT_PUBLISHED') for v, a in self.inventory]; pub = 0; gs = {'NOT_PUBLISHED'}
+            out['max_width'] = None; out['max_point_radius'] = None
             if not out['hard_deadline_respected']: out['outcome'] = oc = 'DEADLINE'
         out['answers'] = rows; out['published'] = pub; out['K'] = len(rows); out['guarantee'] = 'EXACT' if gs <= {'EXACT'} else ('DETERMINISTIC' if gs <= {'EXACT', 'DETERMINISTIC'} else 'PARTIAL')
         if out['outcome'] == 'COMPLETE' and pub < len(rows): out['outcome'] = 'PARTIAL'
         if out['outcome'] == 'REFUSED' and pub > 0: out['outcome'] = 'PARTIAL'
-        ws = [F(r['hi']) - F(r['lo']) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_width'] = float(max(ws)) if ws else None
-        rad = [max(F(r['point']) - F(r['lo']), F(r['hi']) - F(r['point'])) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_point_radius'] = float(max(rad)) if rad else None
         return out
 
 def plan_and_solve(model, budget_s, policy='unified', eps=EPS_DEFAULT, admission_stop_s=ADMISSION_STOP_S, t_start=None):
