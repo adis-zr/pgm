@@ -76,10 +76,11 @@ def main(out_path):
     mD = clones(rng, 4, 4, cyc(4), 'generic'); ZD, ND = brute(mD); d = run(mD); ok, pub, mw, det = contained(d, mD, ZD, ND)
     cands = d['candidates']; unknown = [c for c in cands if c['kind'] == 'approx' and c['prospective']['quality'] == 'unknown']
     rec('D_unknown_quality_not_impossible', ok and d['outcome'] == 'COMPLETE' and all(c['prospective']['quality'] != 'impossible' for c in cands), unknown_candidates=[(c['name'], c['prospective']) for c in unknown][:2], actions=acts(d), detail=det, note='identity wins on this tiny generic model; approx quality is recorded as unknown, never impossible')
-    # force the exploration branch: make identity unaffordable by injecting a huge identity estimate, so the planner must explore / probe
-    UP.est_solve = big_identity
+    # force the exploration branch: make identity unaffordable by injecting a huge identity estimate, so the planner must explore / probe; the DISCOVERY estimates are injected too (0.4 s each ->
+    # allowance 0.8 s) so that the control is a deterministic controller test and not a race between a millisecond allowance and the host's load (it failed once under the supervisor for that reason)
+    orig_ed, orig_fd = UP.est_exact_discovery, UP.est_fast_discovery; UP.est_solve = big_identity; UP.est_exact_discovery = lambda M: (0.4, dict(profiles=0.4), {}); UP.est_fast_discovery = lambda M1: (0.4, dict(profiles=0.2, distances=0.1, checks=0.08, order=0.02), {})
     try: d = run(mD, budget=3.5)
-    finally: UP.est_solve = orig_est
+    finally: UP.est_solve = orig_est; UP.est_exact_discovery = orig_ed; UP.est_fast_discovery = orig_fd
     ok, pub, mw, det = contained(d, mD, ZD, ND); probe = [a for a in acts(d) if a[0] in ('solve_lower', 'solve_upper') and a[1] and a[1].startswith('approx')]
     mQ = clones(rng, 3, 4, cyc(3), 'generic'); mQ['factors'][3]['values'] = [F(1), F(1), F(1), F(1, 10 ** 6)]           # variable 0 state 3 has tiny unary weight -> tiny posterior
     ZQ, NQ = brute(mQ); P = UP.Planner(mQ, 3.5, t_start=time.monotonic()); P.M = CE.canonicalize(mQ, P.clock, P.budget); P.canonical_charge = P.budget.live; ident = P.make_identity(P.clock); P.cands.append(ident)
