@@ -25,7 +25,7 @@ if HERE not in sys.path: sys.path.insert(0, HERE)
 import coarse_envelope as CE
 from coarse_envelope import F, tnow, bits, Refused, Defect, Clock, Budget, checked_mul, fl
 
-VERSION = 'unified-representation-planner-v0.1 (2026-11-24; adapters over coarse_envelope v0.2, executor unchanged)'
+VERSION = 'unified-representation-planner-v0.2 (2026-11-24 closeout after the independent review: R1 refinement accounting (old candidates retained with their charges; a new charge is its own live delta, asserted >= 0; ledger identity live = canonical + sum of retained charges), R2 one guarded order + volume pass (vertices / cliques / new fills charged before allocation, polled; optimistic estimates reuse the identity order or the card-1 shortcut, guarded), R3 a zero approximate lower mass with a positive upper mass is a typed no-witness state, never a defect, R4 the diagnostic tail is bounded and the hard deadline is enforced at the API success boundary, R5 an incumbent is cut early only for an alternative that is actually usable in the post-allowance state; v0.1 pilot 1)'
 EPS_DEFAULT = F(1, 200); ADMISSION_STOP_S = 3.5; MAX_EXACT_DISCOVERY = 1; MAX_FAST_DISCOVERY = 1; MAX_REFINEMENTS = 2; MAX_NATIVE_ATTEMPTS = 8
 KERNEL_ROWS_PER_S = 20e6; MEMORY_SLACK = 1.25; PROCESS_HEADROOM = 64 << 20; FINALIZE_RESERVE_S = 0.05
 RATES_PATH = os.path.join(HERE, 'PHASE_RATES.json')
@@ -37,21 +37,41 @@ RATES = load_rates()
 
 
 # ------------------------------------------------------------------ physical volumes and the cost record
-def physical_volume(cards, scopes, order):
-    """per-step product / output volumes of the primal-graph bucket elimination along `order` on the PHYSICAL scopes (pair / higher factors; unaries are sources with no neighbours)"""
-    n = len(cards); adj = [set() for _ in range(n)]
-    for sc in scopes:
+def order_and_volume(cards, scopes, clock, budget, order=None):
+    """ONE guarded pass: the deterministic greedy min-product order (identical rule to coarse_envelope.elimination_order: ties -> smallest id; verified by control) OR a supplied order, with
+    the physical bucket volumes of that order. Admitted BEFORE allocation: vertex sets, each source clique (k(k-1) directed entries), each fill (only the NEW directed entries); polled at
+    entry, per 64 cliques, per 64 candidates and per elimination; the graph charge is released when the graph dies. Returns (order, volume)."""
+    clock.poll('at the order / volume pass entry'); B = budget or Budget(1 << 62); n = len(cards); charged = B.charge(n * (216 + 8) + 56, 'primal graph vertex sets'); adj = [set() for _ in range(n)]
+    for i, sc in enumerate(scopes):
+        k = len(sc); charged += B.charge(k * (k - 1) * CE.GRAPH_ENTRY_BYTES, 'source clique %d (%d directed entries)' % (i, k * (k - 1)))
         for v in sc: adj[v].update(set(sc) - {v})
-    sp = 0; mp = 0; so = 0; mo = 0
-    for v in order:
-        nb = adj[v]; out = math.prod(cards[w] for w in nb); prod = cards[v] * out; sp += prod; mp = max(mp, prod); so += out; mo = max(mo, out)
+        if (i & 63) == 63: clock.poll('in the source cliques')
+    alive = set(range(n)); out_order = []; sp = 0; mp = 0; so = 0; mo = 0; step = 0
+    while alive:
+        if order is None:
+            best = None
+            for j, v in enumerate(sorted(alive)):
+                p_ = cards[v] * math.prod(cards[w] for w in adj[v])
+                if best is None or p_ < best[0]: best = (p_, v)
+                if (j & 63) == 63: clock.poll('in the candidate scan')
+            v = best[1]
+        else:
+            v = order[step]
+            if v not in alive: raise Defect('supplied order repeats or skips a variable')
+        nb = adj[v]; out = math.prod(cards[w] for w in nb); prod = cards[v] * out; sp += prod; mp = max(mp, prod); so += out; mo = max(mo, out); m = len(nb); new_entries = 0
+        for j, w in enumerate(nb):
+            new_entries += len(nb - {w} - adj[w])
+            if (j & 63) == 63: clock.poll('in the fill count')
+        charged += B.charge(new_entries * CE.GRAPH_ENTRY_BYTES, 'fill of eliminating %d (%d new directed entries among %d neighbours)' % (v, new_entries, m))
         for w in nb: adj[w] |= nb - {w}; adj[w].discard(v)
-        adj[v] = set()
-    return dict(sum_product=sp, max_product=mp, sum_output=so, max_output=mo, source_entries=sum(math.prod(cards[v] for v in sc) for sc in scopes) + sum(cards), states=sum(cards), n=n)
+        alive.discard(v); adj[v] = set(); out_order.append(v); step += 1; clock.poll('in the order construction')
+    B.release(charged)
+    return out_order, dict(sum_product=sp, max_product=mp, sum_output=so, max_output=mo, source_entries=sum(math.prod(cards[v] for v in sc) for sc in scopes) + sum(cards), states=sum(cards), n=n)
 
 
-def order_and_volume(cards, scopes, clock, budget):
-    order, vols = CE.elimination_order(cards, scopes, clock, budget); return order, physical_volume(cards, scopes, order)
+def physical_volume(cards, scopes, order, clock=None, budget=None):
+    """guarded volume of a SUPPLIED order (delegates to the single guarded pass)"""
+    return order_and_volume(cards, scopes, clock or Clock(math.inf, {}), budget, order=order)[1]
 
 
 def forecast_bytes(vol):
@@ -86,10 +106,14 @@ def est_fast_discovery(M1):
 class Cand:
     def __init__(self, kind, parent=None):
         self.kind = kind; self.parent = parent; self.stages = []; self.M1 = None; self.Cz = None; self.cards = None; self.scopes = None; self.order = None; self.vol = None; self.exact = kind != 'approx'; self.R = (F(1) if kind != 'approx' else None); self.mixed = False
-        self.SL = None; self.SU = None; self.status = dict(lower=None, upper=None); self.constructions = 0; self.fbytes = None; self.failed = set(); self.charged = 0; self.alias_of = None; self.name = kind; self.refinements = 0; self.promising = kind != 'approx'; self.bound_width = (F(0) if kind != 'approx' else None)
+        self.SL = None; self.SU = None; self.status = dict(lower=None, upper=None); self.constructions = 0; self.fbytes = None; self.failed = set(); self.charged = 0; self.alias_of = None; self.name = kind; self.refinements = 0; self.promising = kind != 'approx'; self.bound_width = (F(0) if kind != 'approx' else None); self.max_bits = 0; self.owns = []; self.shares = {}
     def facts(self):
         return dict(kind=self.kind, name=self.name, exact=self.exact, local_R=fl(self.R), mixed_cells=self.mixed, cards=(list(self.cards) if self.cards else None), states=(sum(self.cards) if self.cards else None), constructions=self.constructions, alias_of=self.alias_of,
-                    prospective=dict(model_bound_promising=self.promising, worst_width_bound=(fl(self.bound_width) if self.bound_width is not None else None), quality=('exact' if self.exact else ('promising' if self.promising else 'unknown'))), volume=self.vol, forecast_bytes=self.fbytes, order=self.order, status=dict(self.status), failed=sorted(self.failed))
+                    prospective=dict(model_bound_promising=self.promising, worst_width_bound=(fl(self.bound_width) if self.bound_width is not None else None), quality=('exact' if self.exact else ('promising' if self.promising else 'unknown'))), volume=self.vol, forecast_bytes=self.fbytes, order=self.order, status=dict(self.status), failed=sorted(self.failed), charged_bytes=self.charged, owns=list(self.owns), shares=dict(self.shares), max_bits=self.max_bits)
+
+
+def cz_bits(Cz):
+    return max([bits(x) for L in Cz.L for x in L if x is not None] + [bits(x) for A in Cz.A for x in A] + [0])
 
 
 def identity_model(M):
@@ -115,13 +139,14 @@ class Planner:
 
     # ---- candidate construction (each a schedulable action with its own Clock = min(allowance, admission))
     def make_identity(self, clock):
-        c = Cand('identity'); M = self.M; c.M1 = M; c.cards = list(M.cards); c.scopes = [sc for sc, _ in M.factors]; c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.constructions = 0; c.stages = []; return c
+        c = Cand('identity'); M = self.M; c.M1 = M; c.cards = list(M.cards); c.scopes = [sc for sc, _ in M.factors]; c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.constructions = 0; c.stages = []; c.owns = []; c.shares = dict(M1='canonical'); c.max_bits = max([bits(x) for ps in M.psi for x in ps] + [bits(x) for _, vals in M.factors for x in vals] + [0]); return c
 
     def discover_exact(self, clock):
         M = self.M; t0 = tnow(); live0 = self.budget.live
         classes1 = CE.exact_profile_classes(M, clock, self.budget); scales1 = CE.exact_scales(M, classes1, clock); Cz1 = CE.check_candidate(M, classes1, scales1, clock, self.budget)
         if not Cz1.exact: raise Defect('the exact profile quotient fails the entrywise identity (L != U)')
-        c = Cand('exact'); c.Cz = Cz1; c.stages = [(classes1, Cz1)]; c.M1 = CE.stage_model(M, Cz1); c.cards = list(Cz1.ccards); c.scopes = [sc for sc, _ in c.M1.factors]; c.constructions = 1; c.charged = self.budget.live - live0
+        c = Cand('exact'); c.Cz = Cz1; c.stages = [(classes1, Cz1)]; c.M1 = CE.stage_model(M, Cz1); c.cards = list(Cz1.ccards); c.scopes = [sc for sc, _ in c.M1.factors]; c.constructions = 1; c.charged = self.budget.live - live0; c.owns = ['Cz', 'M1', 'classes']; c.max_bits = cz_bits(Cz1)
+        if c.charged < 0: raise Defect('negative construction charge for the exact quotient')
         if all(k == card for k, card in zip(Cz1.ccards, M.cards)): c.alias_of = 'identity'; c.name = 'exact_quotient(=identity)'
         else: c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol)
         c.disc_s = tnow() - t0; return c
@@ -138,14 +163,16 @@ class Planner:
         except (ValueError, OverflowError, ZeroDivisionError) as e: cen = None; Cc = None; cen_note = 'centering refused: %s' % str(e)[:80]
         pick = 'unit' if (Cc is None or Cc.R is None or (Cu.R is not None and Cu.R <= Cc.R)) else 'centering'
         c = Cand('approx', parent); c.Cz = Cu if pick == 'unit' else Cc; c.scales = unit if pick == 'unit' else cen; c.classes = classes2; c.prof = prof; c.M1 = M1; c.stages = list(parent.stages) + [(classes2, c.Cz)]; c.cards = list(c.Cz.ccards); c.scopes = [sc for sc, _ in M1.factors]
-        c.constructions = parent.constructions + 1; c.gauge = dict(unit_R=fl(Cu.R), centering_R=(fl(Cc.R) if Cc is not None else None), selected=pick, centering_refused=cen_note); c.charged = self.budget.live - live0; c.name = 'approx(%s)' % parent.name
+        c.constructions = parent.constructions + 1; c.gauge = dict(unit_R=fl(Cu.R), centering_R=(fl(Cc.R) if Cc is not None else None), selected=pick, centering_refused=cen_note); c.charged = self.budget.live - live0; c.name = 'approx(%s)' % parent.name; c.owns = ['Cz', 'Cz_unit_or_centering_alternative', 'classes', 'scales', 'prof', 'pairwise_distances']; c.shares = dict(M1=parent.name); c.max_bits = cz_bits(c.Cz)
+        if c.charged < 0: raise Defect('negative construction charge for the approximate quotient')
         self.set_quality(c); c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.disc_s = tnow() - t0; return c
 
     def refine_cand(self, cand, clock):
         t0 = tnow(); live0 = self.budget.live; new, info = CE.refine(cand.M1, cand.Cz, cand.prof, clock)
         if new is None: raise Refused('NO_SPLIT', str(info))
         Cz = CE.check_candidate(cand.M1, new, cand.scales, clock, self.budget); c = Cand('approx', cand.parent); c.Cz = Cz; c.scales = cand.scales; c.classes = new; c.prof = cand.prof; c.M1 = cand.M1; c.stages = list(cand.parent.stages) + [(new, Cz)]; c.cards = list(Cz.ccards); c.scopes = cand.scopes
-        self.budget.release(cand.charged); cand.released = True; c.constructions = cand.constructions + 1; c.refinements = cand.refinements + 1; c.split = info; c.charged = self.budget.live - live0; c.name = 'refine%d(%s)' % (c.refinements, cand.parent.name); c.gauge = cand.gauge
+        c.constructions = cand.constructions + 1; c.refinements = cand.refinements + 1; c.split = info; c.charged = self.budget.live - live0; c.name = 'refine%d(%s)' % (c.refinements, cand.parent.name); c.gauge = cand.gauge; c.owns = ['Cz', 'classes']; c.shares = dict(M1=cand.parent.name, prof=cand.name, scales=cand.name); c.max_bits = cz_bits(Cz)   # R1: the refined-from candidate stays in self.cands with ITS charge (its certificate and solves remain reachable); nothing is released here
+        if c.charged < 0: raise Defect('negative construction charge for a refinement')
         self.set_quality(c); c.order, c.vol = order_and_volume(c.cards, c.scopes, clock, self.budget); c.fbytes = forecast_bytes(c.vol); c.disc_s = tnow() - t0; return c
 
     def set_quality(self, c):
@@ -177,16 +204,18 @@ class Planner:
     def T_solve(self, c, side=0): return est_solve(c.vol, self.K_rows)
 
     def optimistic_after_exact(self):
-        M = self.M; vol = physical_volume([1] * len(M.cards), [sc for sc, _ in M.factors], list(range(len(M.cards)))); return est_solve(vol, self.K_rows)[0]
+        """one-state-per-retained-variable idealization: every bucket product is 1, so the volume needs no graph (n products of 1, n outputs of 1); no allocation"""
+        M = self.M; n = len(M.cards); vol = dict(sum_product=n, max_product=1, sum_output=n, max_output=1, source_entries=len(M.factors) + n, states=n, n=n); return est_solve(vol, self.K_rows)[0]
     def optimistic_after_fast(self, parent):
-        M1 = parent.M1; vol = physical_volume([min(2, c) for c in M1.cards], [sc for sc, _ in M1.factors], list(range(len(M1.cards)))); return est_solve(vol, self.K_rows)[0]
+        """<= two coarse states per retained variable on the parent's scopes, along the parent's ALREADY ADMITTED order (bounded structural work reused; guarded by the planner's clock and budget)"""
+        M1 = parent.M1; vol = physical_volume([min(2, c) for c in M1.cards], [sc for sc, _ in M1.factors], parent.order, self.clock, self.budget); return est_solve(vol, self.K_rows)[0]
 
     # ---- the policy loop
     def run(self):
         out = self.out; mech = out['mechanism']; t0 = tnow()
         try:
             self.hclock.poll('at the planner entry'); self.clock.poll('at the planner entry (admission)')
-            self.M = M = CE.canonicalize(self.model, self.clock, self.budget); out['phases_s']['canonicalize'] = tnow() - t0
+            self.M = M = CE.canonicalize(self.model, self.clock, self.budget); out['phases_s']['canonicalize'] = tnow() - t0; self.canonical_charge = self.budget.live
             mech['canonical'] = dict(variables=len(M.cards), factors=len(M.factors), entries=sum(len(v) for _, v in M.factors), removed_fixed=len(M.fixed_rows), scalar_bits=bits(M.scalar))
             if M.zero_mass: mech['positive_mass_witness'] = False; out['Z_enclosure'] = dict(lo='0', hi='0', positive=False); return self.fin('ZERO_EVIDENCE', {}, note='a canonical scalar is exactly zero')
             if not M.cards: mech['positive_mass_witness'] = True; out['Z_enclosure'] = dict(lo=str(M.scalar), hi=str(M.scalar), positive=True); return self.finish_ok({}, 'no retained variables: exact scalar normalizer')
@@ -254,9 +283,10 @@ class Planner:
             if elig:
                 a = min(elig, key=lambda x: (x['D'] + x['S'], x['name'])); rec.update(chosen=a['name'], chosen_cand=(a['cand'].name if a['cand'] is not None else None), allowance_s=round(a['q'], 4), why='optional action under the reserved incumbent (step 4)')
                 return dict(kind='optional', act=a, deadline=min(self.adm, tnow() + a['q']), record=rec)
-            alternatives = [s for s in scored if s is not b and s['admitted']] + [a for a in opts if a['D'] <= W]
+            W_after = max(0.0, W - reserve)                                            # R5: an alternative counts only if it is actually usable AFTER b's allowance: another admitted ready solve (step 5's bounded attempt accepts any admitted untried exact / promising solve) or an optional action eligible under the post-allowance exploration rule D_a <= W_after / 4
+            alt_ready = [s['cand'].name + ':' + s['side'] for s in scored if s is not b and s['admitted']]; alt_opt = [a['name'] for a in opts if a['D'] <= W_after / 4]; alternatives = alt_ready + alt_opt
             dl = min(self.adm, tnow() + 2 * Tb) if alternatives else self.adm
-            rec.update(chosen='solve_' + b['side'], chosen_cand=b['cand'].name, action_deadline_s=round(dl - self.t_start, 4), competing_alternative=([s['cand'].name + ':' + s['side'] for s in scored if s is not b and s['admitted']] + [a['name'] for a in opts if a['D'] <= W])[:4], why='execute b (step 6: %s)' % ('reserved 2 T_b, alternatives remain' if alternatives else 'no alternative: remaining work deadline'))
+            rec.update(chosen='solve_' + b['side'], chosen_cand=b['cand'].name, action_deadline_s=round(dl - self.t_start, 4), W_after_allowance_s=round(W_after, 4), competing_alternative=alternatives[:4], why='execute b (step 6: %s)' % ('reserved 2 T_b, a usable alternative remains' if alternatives else 'no usable alternative after the allowance: remaining work deadline'))
             return dict(kind='solve', cand=b['cand'], side=b['side'], deadline=dl, record=rec)
         # step 5: no affordable exact / promising candidate
         explor = []
@@ -287,8 +317,9 @@ class Planner:
                 if S.zero:
                     c.status[side] = 'ZERO_MASS'
                     if c.exact or side == 'upper': self.out['mechanism']['positive_mass_witness'] = False; self.out['Z_enclosure'] = dict(lo='0', hi='0', positive=False); raise Refused('ZERO_MASS', 'checked zero %s mass certifies zero original mass' % ('upper' if side == 'upper' else 'exact'))
-                    self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, status='LOWER_ZERO_MASS (a valid envelope state; no witness from this candidate)'); return None
-                if side == 'upper' and c.SL is not None and c.SL.zero: raise Defect('upper mass positive while lower mass zero is fine; but lower solve recorded zero')
+                    c.status[side] = 'LOWER_ZERO_MASS'; self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, status='LOWER_ZERO_MASS (a valid envelope state; no witness from this candidate)'); return None
+                if side == 'upper' and c.SL is not None and c.SL.zero:                 # R3: a valid envelope state (Z_L = 0 < Z <= Z_U): no positive-mass witness from this candidate, nothing to normalize, nothing certified; typed, never a defect
+                    c.status[side] = 'UPPER_SOLVED_NO_LOWER_WITNESS'; self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, kernel_s=S.stats.get('kernel_s'), status='UPPER_SOLVED_NO_LOWER_WITNESS', note='zero lower mass + positive upper mass: no normalized row, no witness; incumbent answers retained'); return None
                 self.out['mechanism']['positive_mass_witness'] = True; CE.set_Z(self.out, S.Z_lo if side == 'lower' else c.SL.Z_lo, (S.Z_hi * c.R if (c.R is not None and side == 'lower') else (S.Z_hi if side == 'upper' else None)))
                 rows, pub = self.recover(c, aclock); c.status[side] = 'SOLVED'
                 self.log_action(action='solve_' + side, cand=c.name, estimate_s=T, actual_s=tnow() - t0, kernel_s=S.stats.get('kernel_s'), lowering_s=S.stats.get('lowering_s'), enclosure_s=S.stats.get('enclosure_s'), build_s=S.stats.get('build_s'), published_after=pub, K=self.K_rows, max_width=float(max(hi - lo for lo, hi in self.retained.values())), forecast_miss=(T is not None and tnow() - t0 > T), status='COMPLETE' if self.complete else 'PARTIAL', semantic_plan_sha256=(S.certificate or {}).get('semantic_plan_sha256'), kernel_peak_logical_bytes=(S.stats.get('counters') or {}).get('peak_logical_bytes'))
@@ -343,9 +374,12 @@ class Planner:
         if out['outcome'] == 'REFUSED' and pub > 0: out['outcome'] = 'PARTIAL'
         ws = [F(r['hi']) - F(r['lo']) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_width'] = float(max(ws)) if ws else None
         rad = [max(F(r['point']) - F(r['lo']), F(r['hi']) - F(r['point'])) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_point_radius'] = float(max(rad)) if rad else None
-        out['candidates'] = [c.facts() for c in self.cands]; mech.update(constructor_budget_peak_bytes=self.budget.peak, constructor_budget_cumulative_bytes=self.budget.cumulative, constructor_live_at_end_bytes=self.budget.live, polls=self.clock.polls + self.hclock.polls, native_attempts=self.native, exact_discoveries=self.n_exact_disc, fast_discoveries=self.n_fast_disc, refinements=self.n_refine,
-                    rational_bit_peak=max([c.Cz and max([bits(x) for L in c.Cz.L for x in L if x is not None] + [bits(x) for A in c.Cz.A for x in A]) or 0 for c in self.cands] + [bits(self.M.scalar) if self.M else 0]), representations_solved=[c.name for c in self.cands if c.SL is not None])
-        out['peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; out['wall_s'] = tnow() - self.t_start; out['in_process_total_s'] = tnow() - T_PROCESS_START; out['hard_deadline_respected'] = out['wall_s'] <= self.hard - self.t_start; return out
+        out['candidates'] = [c.facts() for c in self.cands]; mech.update(constructor_budget_peak_bytes=self.budget.peak, constructor_budget_cumulative_bytes=self.budget.cumulative, constructor_live_at_end_bytes=self.budget.live, constructor_live_ledger_identity=(self.budget.live == getattr(self, 'canonical_charge', 0) + sum(c.charged for c in self.cands)), polls=self.clock.polls + self.hclock.polls, native_attempts=self.native, exact_discoveries=self.n_exact_disc, fast_discoveries=self.n_fast_disc, refinements=self.n_refine,
+                    rational_bit_peak=max([c.max_bits for c in self.cands] + [bits(self.M.scalar) if self.M else 0]), representations_solved=[c.name for c in self.cands if c.SL is not None])   # O(#candidates): max_bits was recorded at each construction
+        out['peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; out['wall_s'] = tnow() - self.t_start; out['in_process_total_s'] = tnow() - T_PROCESS_START; out['hard_deadline_respected'] = out['wall_s'] <= self.hard - self.t_start
+        if pub and not out['hard_deadline_respected'] and oc != 'DEADLINE':              # R4: the hard deadline is enforced at the API success boundary too (after the bounded diagnostic tail): nothing is published late
+            mech['late_assembly'] = 'hard deadline expired in the final diagnostics'; out['answers'] = [dict(var=r['var'], state=r['state'], guarantee='NOT_PUBLISHED') for r in rows]; out['published'] = 0; out['guarantee'] = 'PARTIAL'; out['max_width'] = None; out['max_point_radius'] = None; out['outcome'] = 'DEADLINE'
+        return out
 
 
 def plan_and_solve(model, budget_s, policy='unified', eps=EPS_DEFAULT, admission_stop_s=ADMISSION_STOP_S, t_start=None):
