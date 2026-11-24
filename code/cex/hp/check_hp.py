@@ -9,7 +9,7 @@ from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm'))
 import coarse_envelope as CE, hp_gen as G
 PY = sys.executable; RES = dict(checks=[], all_ok=True, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
-ENUM_CAP = 1 << 16
+ENUM_CAP = 1 << 16; EPS = F(1, 200)
 
 def rec(name, ok, **kw):
     RES['checks'].append(dict(name=name, ok=bool(ok), **kw)); RES['all_ok'] &= bool(ok); print(('PASS ' if ok else 'FAIL ') + name, json.dumps(kw, default=str)[:200], flush=True)
@@ -44,6 +44,7 @@ def contained(d, model, Z, N):
         if Z == 0: return False, pub, None, 'published with zero mass'
         p = N[r['var']][r['state']] / Z; lo, hi, pt = F(r['lo']), F(r['hi']), F(r['point'])
         if not (lo <= p <= hi and lo <= pt <= hi and 0 <= lo and hi <= 1): return False, pub, None, 'row (%d,%d): %s not in [%s, %s]' % (r['var'], r['state'], p, lo, hi)
+        if abs(pt - p) > EPS or max(pt - lo, hi - pt) > EPS: return False, pub, None, 'row (%d,%d): point %s is not epsilon-safe (truth %s, radius %s)' % (r['var'], r['state'], float(pt), float(p), float(max(pt - lo, hi - pt)))
         if r['guarantee'] == 'EXACT' and lo != hi: return False, pub, None, 'EXACT row with lo != hi'
         pub += 1; mw = max(mw, hi - lo)
     if d.get('Z_enclosure') and d['Z_enclosure'].get('lo') not in (None, '0') and Z > 0:
@@ -271,6 +272,61 @@ def main(out_path):
     rec('J_gradient_box_linear_max_equals_corners', Mx == corners); rec('J_descent_step_sufficient_condition_checked', True, certified_descent=bool(bound < 0), bound=str(bound), beta=str(beta))
     # ---- K. one actual local LP fit inside the allowance on a tiny model (FIT operationally available on this host)
     d = run_cli(os.path.join(tmp, 'generic_cycle6_c4.uai'), 'FIT'); fit = d['mechanism']['proposals'].get('fit', {}); rec('K_lp_fit_within_allowance', fit.get('attempted') and not fit.get('refused') and (fit.get('elapsed_s') or 9) <= CE.FIT_ALLOWANCE_S, fit={k: fit.get(k) for k in ('attempted', 'refused', 'worker_setup_s', 'proposal_s', 'elapsed_s', 'kept_per_factor', 'local_R_fast', 'local_R_fit')}, factors=[(f.get('status'), f.get('seconds')) for f in fit.get('factors', [])])
+    # ---- L. closeout (24 Nov 2026 review): epsilon-safe points; total refusal; hard-deadline guards; numeric-proposal containment; construction admission
+    pr = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fixtures_closeout', 'point_error_repro.uai')
+    if os.path.exists(pr):
+        mpr, _ = __import__('core').read_uai(pr); Zp, Np = brute(mpr); d = run_cli(pr, 'FAST'); ok, pub, mw, det = contained(d, mpr, Zp, Np)
+        worst = max((abs(F(r['point']) - Np[r['var']][r['state']] / Zp) for r in d['answers'] if r['guarantee'] != 'NOT_PUBLISHED'), default=F(0))
+        rec('L_point_error_repro_epsilon_safe', ok and d['outcome'] == 'COMPLETE' and pub == 12 and worst <= EPS, outcome=d['outcome'], published=pub, max_point_error=float(worst), detail=det)
+    else: rec('L_point_error_repro_epsilon_safe', False, detail='fixture missing: ' + pr)
+    import builtins, inspect
+    d = CE.compile_and_solve({'cards': [2], 'factors': [], 'evidence': {}}, 0.01, t_start=CE.tnow() - 1); rec('L_already_expired_factorless_refused', d['outcome'] == 'DEADLINE' and d['published'] == 0 and d['K'] == 2, outcome=d['outcome'], published=d['published'], refusal=d['mechanism'].get('refusal'))
+    t = time.monotonic(); d = CE.compile_and_solve({'cards': [2000], 'factors': [], 'evidence': {}}, 0.001, t_start=t); rec('L_fresh_1ms_factorless_2000', (d['outcome'] == 'DEADLINE' and d['published'] == 0) or (d['outcome'] == 'COMPLETE' and d['wall_s'] <= 0.001), outcome=d['outcome'], published=d['published'], wall_s=d['wall_s'], polls=d['mechanism']['polls'], note='diagnostic timing fixture; the deterministic clock checks below establish the invariant')
+    old_now = CE.tnow; tick = [0.0]; CE.tnow = lambda: tick[0]
+    def late_str(value):
+        if inspect.currentframe().f_back.f_code.co_name == 'fin': tick[0] = 2.0
+        return builtins.str(value)
+    CE.str = late_str
+    try: d = CE.compile_and_solve({'cards': [2], 'factors': [], 'evidence': {}}, 1.0, t_start=0.0)
+    finally: CE.tnow = old_now; del CE.str
+    rec('L_clock_crossing_in_final_assembly_refused', d['outcome'] == 'DEADLINE' and d['published'] == 0 and d['wall_s'] >= 1.0, outcome=d['outcome'], published=d['published'], wall_s=d['wall_s'], late=d['mechanism'].get('late_assembly'))
+    # deterministic crossing inside a solved path (pair factor): clock jumps after the executor returns, before publication -> no late success
+    tick = [0.0]; CE.tnow = lambda: tick[0]
+    orig_publish = CE.publish
+    def late_publish(*a, **k):
+        tick[0] = 5.0; return orig_publish(*a, **k)
+    CE.publish = late_publish
+    try: d = CE.compile_and_solve(mk([2, 2], [((0, 1), [1, 2, 3, 4]), ((0,), [1, 1])]), 1.0, t_start=0.0)
+    finally: CE.tnow = old_now; CE.publish = orig_publish
+    rec('L_clock_crossing_before_publication_refused', d['outcome'] == 'DEADLINE' and d['published'] == 0, outcome=d['outcome'], published=d['published'], wall_s=d['wall_s'])
+    old = CE.CONSTRUCTOR_BYTES; CE.CONSTRUCTOR_BYTES = 1
+    try: d = CE.compile_and_solve({'cards': [2], 'factors': [], 'evidence': {}}, 1.0, t_start=time.monotonic()); rec('L_early_constructor_refusal_typed', d['outcome'] == 'REFUSED' and d['mechanism'].get('refusal', {}).get('kind') == 'MEMORY' and d['published'] == 0 and d['K'] == 2, outcome=d['outcome'], refusal=d['mechanism'].get('refusal'))
+    finally: CE.CONSTRUCTOR_BYTES = old
+    d = CE.compile_and_solve(mk([2, 2], [((0, 1), [1, 1, 1, 1])]), 0.01, t_start=time.monotonic() - 1); rec('L_early_deadline_refusal_typed', d['outcome'] == 'DEADLINE' and d['published'] == 0 and d['K'] == 4, outcome=d['outcome'], refusal=d['mechanism'].get('refusal'))
+    d = CE.compile_and_solve(mk([2, 2], [((0, 1), [F(1, 2 ** 1500), F(1), F(2), F(3)])]), 1.0, t_start=time.monotonic()); rec('L_numeric_proposal_contained', d['outcome'] in ('REFUSED', 'PARTIAL', 'COMPLETE') and 'defect' not in d['mechanism'], outcome=d['outcome'], refusal=d['mechanism'].get('refusal'), published=d['published'])
+    # a 2^-1500 entry with the exact quotient route: the executor's RANGE refusal is typed; a wide-but-admissible table (2^-500) must still complete with epsilon-safe points
+    mwide = mk([2, 2], [((0, 1), [F(1, 2 ** 500), F(1), F(2), F(3)]), ((0,), [F(1), F(2)])]); Zw, Nw = brute(mwide); d = CE.compile_and_solve(mwide, 2.0, t_start=time.monotonic()); ok, pub, mw, det = contained(d, mwide, Zw, Nw); rec('L_wide_table_admissible_sound', ok, outcome=d['outcome'], published=pub, detail=det, refusal=d['mechanism'].get('refusal'))
+    import tracemalloc
+    Mp = CE.Canon(); Mp.cards = [8] * 4; Mp.psi = [[F(1)] * 8 for _ in range(4)]; Mp.factors = [(tuple(range(4)), [F(i + 1, 17) for i in range(4096)])]
+    b = CE.Budget(600000); clock = CE.Clock(time.monotonic() + 5, {}); tracemalloc.start()
+    try: CE.exact_profile_classes(Mp, clock, b); refused = None
+    except CE.Refused as e: refused = e.kind
+    _, peak_small = tracemalloc.get_traced_memory(); tracemalloc.stop()
+    b2 = CE.Budget(128 << 20); tracemalloc.start(); cls = CE.exact_profile_classes(Mp, clock, b2); _, peak_big = tracemalloc.get_traced_memory(); tracemalloc.stop()
+    rec('L_exact_profile_admission', refused == 'MEMORY' and peak_small < 600000 and b2.peak >= peak_big, refused_under_600000B=refused, traced_before_refusal_bytes=peak_small, charged_peak_128MiB=b2.peak, traced_peak_128MiB=peak_big, coverage_ratio=round(b2.peak / max(1, peak_big), 2), classes=len(cls))
+    n = 150; scopes = [(i, j) for i in range(n) for j in range(i + 1, n)]; clock = CE.Clock(time.monotonic() - 1, {}); tracemalloc.start()
+    try: CE.elimination_order([1] * n, scopes, clock, CE.Budget(CE.CONSTRUCTOR_BYTES)); st = None
+    except CE.Refused as e: st = e.kind
+    _, peak_g = tracemalloc.get_traced_memory(); tracemalloc.stop(); rec('L_expired_graph_refuses_before_materialization', st == 'DEADLINE' and clock.polls == 1 and peak_g < 65536, status=st, polls=clock.polls, traced_bytes=peak_g)
+    clock = CE.Clock(time.monotonic() + 5, {}); bg = CE.Budget(CE.CONSTRUCTOR_BYTES); tracemalloc.start(); CE.elimination_order([1] * n, scopes, clock, bg); _, peak_g2 = tracemalloc.get_traced_memory(); tracemalloc.stop()
+    rec('L_graph_charge_covers_traced', bg.peak >= peak_g2, charged_peak=bg.peak, traced_peak=peak_g2, ratio=round(bg.peak / max(1, peak_g2), 2))
+    Ms = CE.Canon(); Ms.cards = [16] * 3; Ms.psi = [[F(1)] * 16 for _ in range(3)]; Ms.factors = [((0, 1), [F(rng.randrange(1, 9), 3) for _ in range(256)]), ((1, 2), [F(rng.randrange(1, 9), 3) for _ in range(256)]), ((2, 0), [F(rng.randrange(1, 9), 3) for _ in range(256)])]
+    bp = CE.Budget(CE.CONSTRUCTOR_BYTES); tracemalloc.start(); prof, _ = CE.slice_profiles(Ms, CE.Clock(time.monotonic() + 5, {}), bp); _, peak_p = tracemalloc.get_traced_memory(); tracemalloc.stop(); rec('L_approximate_profiles_precharged', prof is not None and bp.peak >= peak_p, charged=bp.peak, traced=peak_p)
+    try: CE.slice_profiles(Ms, CE.Clock(time.monotonic() - 1, {}), CE.Budget(CE.CONSTRUCTOR_BYTES)); rec('L_approximate_profiles_expired_refuse', False)
+    except CE.Refused as e: rec('L_approximate_profiles_expired_refuse', e.kind == 'DEADLINE')
+    # J-box policy: old feasible points unchanged; midpoint fallback when the J box misses the simplex
+    box = [(F(0), F(1, 100), 'DETERMINISTIC'), (F(99, 100), F(1), 'DETERMINISTIC')]; pts, how = CE.epsilon_safe_points(box, EPS); rec('L_J_box_normalization', how == 'J_normalized' and sum(pts) == 1 and all(max(p_ - b[0], b[1] - p_) <= EPS for p_, b in zip(pts, box)), pts=[str(x) for x in pts], how=how)
+    box = [(F(0), F(1, 100), 'DETERMINISTIC'), (F(0), F(1, 100), 'DETERMINISTIC'), (F(99, 100), F(1), 'DETERMINISTIC')]; pts, how = CE.epsilon_safe_points(box, EPS); rec('L_J_box_midpoint_fallback', how == 'midpoints' and all(max(p_ - b[0], b[1] - p_) <= EPS for p_, b in zip(pts, box)) and sum(b[0] for b in box) <= 1 <= sum(b[1] for b in box), pts=[str(x) for x in pts], how=how)
     RES['wall_s'] = time.monotonic() - t_all; RES['n'] = len(RES['checks']); RES['n_ok'] = sum(1 for c in RES['checks'] if c['ok']); json.dump(RES, open(out_path, 'w'), indent=1, default=str)
     print(json.dumps(dict(all_ok=RES['all_ok'], n=RES['n'], n_ok=RES['n_ok'], wall_s=round(RES['wall_s'], 2)))); return 0 if RES['all_ok'] else 1
 

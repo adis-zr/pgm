@@ -23,7 +23,7 @@ for p in (os.path.join(CODE, 'cex', 'newarm'),):
 import cex_executor as CX
 import ctypes as C
 
-VERSION = 'hp-coarse-envelope-v0.1 (2026-11-23)'
+VERSION = 'hp-coarse-envelope-v0.2 (2026-11-24 closeout: epsilon-safe points (J-box normalization / midpoints, endpoint radius <= eps verified); total typed refusal with the query inventory fixed before canonicalization; hard-deadline guards at entry, in canonicalization, factorless and final assembly, before success and before the output commit; bounded log of rationals + typed numeric-proposal refusals; exact profiles, approximate profiles, primal graph (vertices / source cliques / fills) and the LP payload charged before construction with polls inside; checked division / growth in the checker, decoder and query recovery; v0.1 2026-11-23 pilot 1)'
 U = F(1, 2 ** 53)
 BIT_CAP = 4096                       # newly constructed rational numerators / denominators (pilot policy)
 CONSTRUCTOR_BYTES = 128 << 20        # admitted constructor workspace (named-container estimate)
@@ -34,6 +34,7 @@ FIT_ALLOWANCE_S = 1.0                # FIT's local proposal incl. worker setup +
 ADMISSION_STOP_S = 3.5               # internal: no new work admitted after this (4.0 s supervisor ceiling)
 RATIONALIZE_DEN = 1 << 16
 FRAC_BYTES = 128                     # Fraction object estimate (+32 B per 64-bit limb)
+GRAPH_ENTRY_BYTES = 128              # one directed adjacency entry of the primal graph (set slot + int), as in the accepted ancestral constructor's physical-graph admission
 
 
 class Refused(Exception):
@@ -51,6 +52,19 @@ def checked_add(a, b):
     m = max(a.denominator.bit_length(), b.denominator.bit_length()); n = max(a.numerator.bit_length(), b.numerator.bit_length())
     if n + m + 2 > BIT_CAP or a.denominator.bit_length() + b.denominator.bit_length() > BIT_CAP: raise Refused('BITS', 'rational sum would exceed %d bits' % BIT_CAP)
     return a + b
+def checked_div(a, b):
+    if b <= 0: raise Defect('division by a nonpositive value')
+    if a.numerator.bit_length() + b.denominator.bit_length() > BIT_CAP or a.denominator.bit_length() + b.numerator.bit_length() > BIT_CAP: raise Refused('BITS', 'rational quotient would exceed %d bits' % BIT_CAP)
+    return a / b
+def csum(xs):
+    t = F(0)
+    for x in xs: t = checked_add(t, x)
+    return t
+def flog(q):
+    """bounded natural log of a positive rational WITHOUT converting the value to a float (math.log on the big integers; no underflow / overflow for admitted bit sizes)"""
+    if q <= 0: raise ValueError('log of a nonpositive value')
+    return math.log(q.numerator) - math.log(q.denominator)
+class ProposalRefused(Exception): pass    # a numeric proposal (profiles / centering / rationalization) could not be formed: typed, the admitted prior candidate is retained
 def strides(cs):
     st = [1] * len(cs)
     for i in range(len(cs) - 2, -1, -1): st[i] = st[i + 1] * cs[i + 1]
@@ -85,7 +99,7 @@ class Canon:
 def canonicalize(model, clock, budget):
     """model = dict(cards, factors=[dict(scope, values)], evidence) with exact Fractions; returns Canon. Repeated occurrences -> equality diagonal; unaries absorbed; evidence /
     card-1 variables restricted out; factorless variables collapse to scalar + EXACT rows. Nothing here uses floats."""
-    cards = list(model['cards']); n = len(cards); ev = dict(model.get('evidence', {})); psi = [[F(1)] * c for c in cards]; scalar = F(1); facs = []
+    clock.poll('at the canonicalization entry'); cards = list(model['cards']); n = len(cards); ev = dict(model.get('evidence', {})); psi = [[F(1)] * c for c in cards]; scalar = F(1); facs = []
     budget.charge(sum(56 + 8 * c + c * FRAC_BYTES for c in cards), 'unary weights')
     for f in model['factors']:
         sc = list(f['scope']); vals = f['values']
@@ -126,7 +140,9 @@ def canonicalize(model, clock, budget):
         elif len(nsc) == 1:
             for a in range(cards[nsc[0]]): psi[nsc[0]][a] = checked_mul(psi[nsc[0]][a], new[a])
         else: out.append((nsc, new))
-    for v, a in fixed.items(): scalar = checked_mul(scalar, psi[v][a])
+    for j, (v, a) in enumerate(fixed.items()):
+        scalar = checked_mul(scalar, psi[v][a])
+        if (j & 255) == 255: clock.poll('in the fixed-variable scalars')
     C_ = Canon(); incident = {v: 0 for v in range(n)}
     for sc, _ in out:
         for v in sc: incident[v] += 1
@@ -135,10 +151,13 @@ def canonicalize(model, clock, budget):
         if v in fixed:
             if v not in ev: C_.fixed_rows[(v, 0)] = (F(1), 'EXACT')         # card-1 unobserved: exactly 1 (when Z > 0)
             continue
-        if incident[v] == 0:                                               # factorless: collapse to unary mass + exact rows
-            tot = sum(psi[v]); scalar = checked_mul(scalar, tot)
-            for a in range(cards[v]): C_.fixed_rows[(v, a)] = ((psi[v][a] / tot) if tot > 0 else None, 'EXACT')
+        if incident[v] == 0:                                               # factorless: collapse to unary mass + exact rows (polled: a large factorless domain is real work)
+            tot = csum(psi[v]); scalar = checked_mul(scalar, tot)
+            for a in range(cards[v]):
+                C_.fixed_rows[(v, a)] = (checked_div(psi[v][a], tot) if tot > 0 else None, 'EXACT')
+                if (a & 255) == 255: clock.poll('in the factorless rows')
             continue
+        if (v & 255) == 255: clock.poll('in the variable retention scan')
         ren[v] = len(C_.cards); C_.cards.append(cards[v]); C_.psi.append(psi[v]); C_.orig_of.append(v)
     C_.factors = [(tuple(ren[v] for v in sc), vals) for sc, vals in out]; C_.scalar = scalar; C_.zero_mass = (scalar == 0); C_.ev = ev; C_.n_orig = n; C_.cards_orig = cards
     return C_
@@ -167,7 +186,7 @@ def check_candidate(M, classes, scales, clock, budget):
     A = [[F(0)] * k for k in Cz.ccards]
     for v in range(n):
         for a in range(M.cards[v]): A[v][classes[v][a]] = checked_add(A[v][classes[v][a]], u[v][a])
-    d = [[(u[v][a] / A[v][classes[v][a]]) if A[v][classes[v][a]] > 0 else F(1, classes[v].count(classes[v][a])) for a in range(M.cards[v])] for v in range(n)]
+    d = [[checked_div(u[v][a], A[v][classes[v][a]]) if A[v][classes[v][a]] > 0 else F(1, classes[v].count(classes[v][a])) for a in range(M.cards[v])] for v in range(n)]
     Cz.u = u; Cz.A = A; Cz.d = d; Cz.L = []; Cz.U = []; Cz.Rf = []; Cz.mixed = False; Cz.gaps = []; Cz.zero_factor = False; Cz.exact = True; Cz.all_positive = True
     for fi, (sc, vals) in enumerate(M.factors):
         ccs = [Cz.ccards[v] for v in sc]; vol = math.prod(ccs); budget.charge(2 * (56 + (8 + FRAC_BYTES) * vol) + 64 * vol, 'L / U tables + cell bookkeeping of factor %d' % fi)
@@ -175,8 +194,7 @@ def check_candidate(M, classes, scales, clock, budget):
         for idx, x in enumerate(itertools.product(*(range(M.cards[v]) for v in sc))):
             h = vals[idx]
             if h > 0:
-                for ax, a in enumerate(x): h = h / lams[ax][a]                # exact; division cannot exceed the cap more than the product check below
-                if bits(h) > BIT_CAP: raise Refused('BITS', 'residual exceeds %d bits' % BIT_CAP)
+                for ax, a in enumerate(x): h = checked_div(h, lams[ax][a])    # exact residual; growth admitted before the division
             else: Cz.all_positive = False
             c = sum(cst[ax] * classes[v][a] for ax, (v, a) in enumerate(zip(sc, x)))
             if L[c] is None or h < L[c]: L[c] = h
@@ -208,21 +226,30 @@ def coarse_model(M, Cz, side):
 
 
 # ------------------------------------------------------------------ order + executor adapter (the EXISTING certified executor's primitives, unchanged)
-def elimination_order(cards, scopes, clock):
-    """deterministic greedy min-product order on the primal graph (ties: smallest id); returns (order, per-step bucket volumes)"""
-    n = len(cards); adj = [set() for _ in range(n)]
-    for sc in scopes:
+def elimination_order(cards, scopes, clock, budget=None):
+    """deterministic greedy min-product order on the primal graph (ties: smallest id); returns (order, per-step bucket volumes). The graph is admitted BEFORE it is built: vertex sets, each
+    source clique (k(k-1) directed entries) and each elimination fill (m(m-1) entries) are charged before allocation, with the deadline polled at entry, per 64 source cliques, per 64
+    candidates of every scan and per elimination; the charge is released when the graph dies."""
+    clock.poll('at the order construction entry'); B = budget or Budget(1 << 62); n = len(cards); charged = B.charge(n * (216 + 8) + 56, 'primal graph vertex sets'); adj = [set() for _ in range(n)]
+    for i, sc in enumerate(scopes):
+        k = len(sc); charged += B.charge(k * (k - 1) * GRAPH_ENTRY_BYTES, 'source clique %d (%d directed entries)' % (i, k * (k - 1)))
         for v in sc: adj[v].update(set(sc) - {v})
+        if (i & 63) == 63: clock.poll('in the source cliques')
     alive = set(range(n)); order = []; vols = []
     while alive:
         best = None
-        for v in sorted(alive):
+        for j, v in enumerate(sorted(alive)):
             p = cards[v] * math.prod(cards[w] for w in adj[v])
             if best is None or p < best[0]: best = (p, v)
-        p, v = best; order.append(v); vols.append(p); nb = adj[v]
+            if (j & 63) == 63: clock.poll('in the candidate scan')
+        p, v = best; order.append(v); vols.append(p); nb = adj[v]; m = len(nb); new_entries = 0
+        for j, w in enumerate(nb):                                               # exact count of the NEW directed entries the fill creates (existing adjacency is not re-charged)
+            new_entries += len(nb - {w} - adj[w])
+            if (j & 63) == 63: clock.poll('in the fill count')
+        charged += B.charge(new_entries * GRAPH_ENTRY_BYTES, 'fill of eliminating %d (%d new directed entries among %d neighbours)' % (v, new_entries, m))
         for w in nb: adj[w] |= nb - {w}; adj[w].discard(v)
         alive.discard(v); adj[v] = set(); clock.poll('in the order construction')
-    return order, vols
+    B.release(charged); return order, vols
 
 
 class Solve:
@@ -278,34 +305,42 @@ def run_executor(cmodel, order, scalar, deadline, stats_out, label):
 
 
 # ------------------------------------------------------------------ proposers (UNTRUSTED: floats, heuristics)
-def slice_profiles(M, Cz_scope_vars=None):
-    """per variable, per state: concatenated incident log-slice profiles (each slice centered by its own mean log); None when a factor has a zero entry (typed skip)"""
-    n = len(M.cards); prof = [[[] for _ in range(M.cards[v])] for v in range(n)]
+def slice_profiles(M, clock=None, budget=None):
+    """per variable, per state: concatenated incident log-slice profiles (each slice centered by its own mean log); charged BEFORE construction per factor (log table, one transient slice,
+    the per-axis profile floats appended), polled per axis; (None, reason) when a factor has a zero entry (typed skip). Logs are bounded (flog), never a float of the value."""
+    clock = clock or Clock(math.inf, {}); budget = budget or Budget(1 << 62); n = len(M.cards); prof = [[[] for _ in range(M.cards[v])] for v in range(n)]
     for fi, (sc, vals) in enumerate(M.factors):
+        clock.poll('before the slice profiles of factor %d' % fi)
         if any(x <= 0 for x in vals): return None, 'factor %d has a zero entry: the positive-log proposer is unavailable' % fi
-        logs = [math.log(x) for x in vals]; cs = [M.cards[v] for v in sc]; st = strides(cs)
+        vol = len(vals); cs = [M.cards[v] for v in sc]; st = strides(cs)
+        budget.charge(vol * 32 + len(sc) * vol * 32 + vol * 32 + sum(cs) * 64, 'log table + per-axis slice profiles of factor %d' % fi)
+        logs = [flog(x) for x in vals]
         for ax, v in enumerate(sc):
             others = [i for i in range(len(sc)) if i != ax]; ocs = [cs[i] for i in others]
             for a in range(cs[ax]):
                 sl = [logs[a * st[ax] + sum(st[i] * b for i, b in zip(others, o))] for o in itertools.product(*(range(c) for c in ocs))]
                 m = sum(sl) / len(sl); prof[v][a].extend(x - m for x in sl)
+            clock.poll('after an axis of the slice profiles')
     return prof, None
 
 
-def farthest_split(prof_states, states):
-    """states (list of state ids, canonical order) -> two nonempty lists by the farthest-pair-seed rule; one list when the diameter is 0"""
-    best = None
+def farthest_split(prof_states, states, clock=None):
+    """states (list of state ids, canonical order) -> two nonempty lists by the farthest-pair-seed rule; one list when the diameter is 0; polled per 64 pairs"""
+    clock = clock or Clock(math.inf, {}); best = None; k = 0
     for i in range(len(states)):
         for j in range(i + 1, len(states)):
             dd = max((abs(x - y) for x, y in zip(prof_states[states[i]], prof_states[states[j]])), default=0.0)
             if best is None or dd > best[0]: best = (dd, i, j)
+            k += 1
+            if (k & 63) == 63: clock.poll('in the farthest-pair scan')
     if best is None or best[0] == 0.0: return [list(states)]
     _, i, j = best; s0, s1 = states[i], states[j]; g0 = []; g1 = []
-    for s in states:
-        if s == s0: g0.append(s); continue
-        if s == s1: g1.append(s); continue
-        d0 = max(abs(x - y) for x, y in zip(prof_states[s], prof_states[s0])); d1 = max(abs(x - y) for x, y in zip(prof_states[s], prof_states[s1]))
-        (g0 if d0 <= d1 else g1).append(s)                                    # ties -> the seed earlier in canonical order (s0 < s1 by construction)
+    for t, s_ in enumerate(states):
+        if s_ == s0: g0.append(s_); continue
+        if s_ == s1: g1.append(s_); continue
+        d0 = max(abs(x - y) for x, y in zip(prof_states[s_], prof_states[s0])); d1 = max(abs(x - y) for x, y in zip(prof_states[s_], prof_states[s1]))
+        (g0 if d0 <= d1 else g1).append(s_)                                   # ties -> the seed earlier in canonical order (s0 < s1 by construction)
+        if (t & 63) == 63: clock.poll('in the seed assignment')
     return [sorted(g0), sorted(g1)]
 
 
@@ -334,7 +369,7 @@ def centering_scales(M, classes, clock):
     """slice centering: log scale of state a = its slice mean minus the slice mean at the representative of its proposed class (a source scan, no inference)"""
     out = {}
     for fi, (sc, vals) in enumerate(M.factors):
-        logs = [math.log(x) for x in vals]; cs = [M.cards[v] for v in sc]; st = strides(cs)
+        logs = [flog(x) for x in vals]; cs = [M.cards[v] for v in sc]; st = strides(cs)
         for ax, v in enumerate(sc):
             others = [i for i in range(len(sc)) if i != ax]; ocs = [cs[i] for i in others]; means = []
             for a in range(cs[ax]):
@@ -347,7 +382,8 @@ def centering_scales(M, classes, clock):
 
 
 class LPWorker:
-    """ONE supervised, killable child per cell (lp_worker.py: numpy + scipy); the parent enforces the allowance and the global deadline; status never certifies anything"""
+    """ONE supervised, killable child per cell (lp_worker.py: numpy + scipy); the parent enforces the allowance and the global deadline on BOTH the pipe write and the reply wait; status never
+    certifies anything"""
     def __init__(self):
         self.p = subprocess.Popen([sys.executable, os.path.join(HERE, 'lp_worker.py')], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         self.q = queue.Queue(); threading.Thread(target=self._reader, daemon=True).start()
@@ -355,8 +391,14 @@ class LPWorker:
         for line in self.p.stdout: self.q.put(line)
         self.q.put(None)
     def ask(self, task, timeout):
-        self.p.stdin.write(json.dumps(task) + '\n'); self.p.stdin.flush()
-        try: line = self.q.get(timeout=max(0.0, timeout))
+        t_end = tnow() + max(0.0, timeout); payload = json.dumps(task) + '\n'; done = threading.Event()
+        def w():
+            try: self.p.stdin.write(payload); self.p.stdin.flush()
+            except Exception: pass
+            done.set()
+        threading.Thread(target=w, daemon=True).start()
+        if not done.wait(max(0.0, t_end - tnow())): return None
+        try: line = self.q.get(timeout=max(0.0, t_end - tnow()))
         except queue.Empty: return None
         return json.loads(line) if line else None
     def kill(self):
@@ -364,7 +406,7 @@ class LPWorker:
         except Exception: pass
 
 
-def lp_fit_scales(M, classes, base_scales, clock, allowance_deadline, rec):
+def lp_fit_scales(M, classes, base_scales, clock, allowance_deadline, rec, budget=None):
     """FIT proposal: per positive factor the centered Chebyshev LP (two sparse inequalities per entry, one pinned theta per incidence / class, one center per cell), solved in the
     worker; rationalized; per-factor the smaller EXACT local range (fitted vs FAST) is retained. Returns scales (or None) and fills rec (attempted / refused / per-factor)."""
     t0 = tnow(); w = None; out = dict(base_scales); rec.update(attempted=True, factors=[], worker_setup_s=None)
@@ -374,7 +416,7 @@ def lp_fit_scales(M, classes, base_scales, clock, allowance_deadline, rec):
         for fi, (sc, vals) in enumerate(M.factors):
             clock.poll('before an LP factor'); left = min(allowance_deadline, clock.deadline) - tnow()
             if left <= 0: rec['refused'] = 'allowance exhausted before factor %d' % fi; return None
-            cs = [M.cards[v] for v in sc]; params = {}; reps = []
+            cs = [M.cards[v] for v in sc]; params = {}; reps = []; (budget or Budget(1 << 62)).charge(len(vals) * (64 + 24 * len(sc) + 32) + 2048, 'LP payload of factor %d (entries + axis lists + JSON text)' % fi)
             for ax, v in enumerate(sc):
                 r = {}
                 for a in range(cs[ax]): r.setdefault(classes[v][a], a)
@@ -384,7 +426,7 @@ def lp_fit_scales(M, classes, base_scales, clock, allowance_deadline, rec):
             cells = {}; entries = []
             for idx, x in enumerate(itertools.product(*(range(c) for c in cs))):
                 c = tuple(classes[v][a] for v, a in zip(sc, x)); ci = cells.setdefault(c, len(cells))
-                entries.append([math.log(vals[idx]), [params.get((ax, a), -1) for ax, a in enumerate(x)], ci])
+                entries.append([flog(vals[idx]), [params.get((ax, a), -1) for ax, a in enumerate(x)], ci])
             fr = dict(factor=fi, rows=2 * len(entries), columns=len(params) + len(cells) + 1)
             rec['factors'].append(fr); clock.poll('before the LP solve')
             ans = w.ask(dict(kind='lp', n_params=len(params), n_cells=len(cells), entries=entries, time_limit=max(0.01, left)), left)
@@ -410,7 +452,7 @@ def per_factor_select(M, classes, cand_scales, base_scales, clock, budget):
             Rf = F(1); cs = [M.cards[v] for v in sc]; cst = strides([max(classes[v]) + 1 for v in sc]); cell = {}
             for idx, x in enumerate(itertools.product(*(range(c) for c in cs))):
                 h = vals[idx]
-                for ax, a in enumerate(x): h = h / scl[(fi, ax)][a]
+                for ax, a in enumerate(x): h = checked_div(h, scl[(fi, ax)][a])
                 c = sum(cst[ax] * classes[v][a] for ax, (v, a) in enumerate(zip(sc, x))); lo, hi = cell.get(c, (h, h)); cell[c] = (min(lo, h), max(hi, h))
                 if (idx & 255) == 255: clock.poll('in the per-factor range comparison')
             for lo, hi in cell.values():
@@ -438,7 +480,7 @@ def refine(M, Cz, prof, clock):
         if len(members) > 1: cand.append((len(members), v, members))
     if not cand: return None, 'the maximum-gap cell is all singletons'
     cand.sort(key=lambda t: (-t[0], t[1])); _, v, members = cand[0]
-    groups = farthest_split(prof[v], members) if prof is not None else [list(members)]
+    groups = farthest_split(prof[v], members, clock) if prof is not None else [list(members)]
     if len(groups) == 1: groups = [members[:len(members) // 2], members[len(members) // 2:]]
     other = [[a for a in range(M.cards[v]) if Cz.classes[v][a] == k] for k in range(Cz.ccards[v]) if k != cell[ax_of(sc, v)]]
     new = list(Cz.classes); new[v] = canonical_classes(other + groups, M.cards[v]); return new, dict(factor=fi, cell=cell, variable=v, split=[len(groups[0]), len(groups[1])], gap=float(g))
@@ -452,7 +494,7 @@ def compose_decoder(stages, v_canon, a):
     """stages = list of (classes, Cz) from fine to coarse; returns (class in the coarsest stage, product decoder d(a | c_coarsest))"""
     d = F(1); c = a
     for classes, Cz in stages:
-        k = classes[v_canon][c]; d = d * Cz.d[v_canon][c]; c = k
+        k = classes[v_canon][c]; d = checked_mul(d, Cz.d[v_canon][c]); c = k
     return c, d
 
 
@@ -460,7 +502,7 @@ def one_solve_interval(mu_lo, mu_hi, R):
     """[mu/(mu+R(1-mu)), R mu/(R mu + 1 - mu)] on a normalized feature with lower-model expectation in [mu_lo, mu_hi] (both endpoints increasing in mu)"""
     mu_lo = max(F(0), min(F(1), mu_lo)); mu_hi = max(F(0), min(F(1), mu_hi))
     if mu_lo > mu_hi: raise Defect('empty expectation enclosure')
-    lo = F(0) if mu_lo == 0 else mu_lo / (mu_lo + R * (1 - mu_lo)); hi = F(1) if mu_hi == 1 else (R * mu_hi) / (R * mu_hi + 1 - mu_hi)
+    lo = F(0) if mu_lo == 0 else checked_div(mu_lo, checked_add(mu_lo, checked_mul(R, 1 - mu_lo))); hi = F(1) if mu_hi == 1 else checked_div(checked_mul(R, mu_hi), checked_add(checked_mul(R, mu_hi), 1 - mu_hi))
     return lo, hi
 
 
@@ -474,18 +516,18 @@ def rows_from_witness(M, stages, SL, SU, R, clock):
             c, d = compose_decoder(stages, v, a); lo, hi = F(0), F(1)
             if d == 0: out[(v, a)] = (F(0), F(0)); continue                       # zero-mass state: exact 0 (u = 0)
             if R is not None:
-                plo, phi = SL.p[v][c]; mu_lo = d * plo; mu_hi = min(F(1), d * phi)
+                plo, phi = SL.p[v][c]; mu_lo = checked_mul(d, plo); mu_hi = min(F(1), checked_mul(d, phi))
                 lo, hi = one_solve_interval(mu_lo, mu_hi, R)
             if SU is not None and not SU.zero:
-                ev_lo = d * SL.N_lo[v][c]; ev_hi = d * SU.N_hi[v][c]
-                comp_U = sum((SU.N_hi[v][k] for k in range(kc) if k != c), F(0)) + SU.N_hi[v][c] * (1 - d)
-                comp_L = sum((SL.N_lo[v][k] for k in range(kc) if k != c), F(0)) + SL.N_lo[v][c] * (1 - d)
-                l2 = (F(1) if comp_U == 0 else F(0)) if ev_lo + comp_U == 0 else ev_lo / (ev_lo + comp_U)
-                h2 = (F(0) if ev_hi == 0 else F(1)) if ev_hi + comp_L == 0 else ev_hi / (ev_hi + comp_L)
+                ev_lo = checked_mul(d, SL.N_lo[v][c]); ev_hi = checked_mul(d, SU.N_hi[v][c])
+                comp_U = checked_add(csum(SU.N_hi[v][k] for k in range(kc) if k != c), checked_mul(SU.N_hi[v][c], 1 - d))
+                comp_L = checked_add(csum(SL.N_lo[v][k] for k in range(kc) if k != c), checked_mul(SL.N_lo[v][c], 1 - d))
+                l2 = (F(1) if comp_U == 0 else F(0)) if ev_lo + comp_U == 0 else checked_div(ev_lo, checked_add(ev_lo, comp_U))
+                h2 = (F(0) if ev_hi == 0 else F(1)) if ev_hi + comp_L == 0 else checked_div(ev_hi, checked_add(ev_hi, comp_L))
                 lo, hi = max(lo, l2), min(hi, h2)
             if lo > hi: raise Defect('empty interval at canonical (%d, %d)' % (v, a))
             out[(v, a)] = (lo, hi)
-        if (v & 63) == 63: clock.poll('in the row recovery')
+        clock.poll('in the row recovery')
     return out
 
 
@@ -493,9 +535,33 @@ def compact_outward(lo, hi, Q=1 << 52):
     L = max(F(0), F(math.floor(lo * Q), Q)); H = min(F(1), F(-((-hi * Q).numerator // (-hi * Q).denominator), Q)); return L, H
 
 
+def epsilon_safe_points(box, eps):
+    """the accepted ancestral decoder's point policy: J_a = [max(L, H - eps), min(H, L + eps)] (nonempty since H - L <= 2 eps); the former greedy simplex candidate (lower endpoints filled
+    to sum 1) is clamped into J and normalized WITHIN J when the J box meets the simplex (so an old point already feasible in J is returned unchanged); otherwise the midpoints of the certified
+    intervals (their sum need not be 1: the interval sums contain 1). Never changes the enclosing intervals."""
+    J = [(max(L, H - eps), min(H, L + eps)) for L, H, _ in box]
+    pts = [L for L, H, _ in box]; left = 1 - sum(pts)
+    for i, (L, H, _) in enumerate(box):
+        take = min(left, H - pts[i]); pts[i] += take; left -= take
+    pts = [min(max(p_, jl), jh) for p_, (jl, jh) in zip(pts, J)]
+    if sum(jl for jl, _ in J) <= 1 <= sum(jh for _, jh in J):
+        s_ = sum(pts)
+        if s_ < 1:
+            left = 1 - s_
+            for i, (jl, jh) in enumerate(J):
+                take = min(left, jh - pts[i]); pts[i] += take; left -= take
+        elif s_ > 1:
+            left = s_ - 1
+            for i, (jl, jh) in enumerate(J):
+                take = min(left, pts[i] - jl); pts[i] -= take; left -= take
+        if sum(pts) != 1: raise Defect('J-box normalization failed')
+        return pts, 'J_normalized'
+    return [(L + H) / 2 for L, H, _ in box], 'midpoints'
+
+
 def publish(M, acc, eps, clock):
-    """per ORIGINAL retained variable: outward 2^-52 compaction, the accepted point-selection semantics (cex_executor.enclose: lower endpoints then greedy fill to sum 1 inside the
-    box), acceptance 0 <= lo <= pt <= hi <= 1 and width <= 2 eps; rows failing acceptance stay NOT_PUBLISHED (the whole variable, since points need the row)"""
+    """per ORIGINAL retained variable: outward 2^-52 compaction; epsilon-safe points (epsilon_safe_points); acceptance 0 <= lo <= pt <= hi <= 1, width <= 2 eps AND endpoint radius
+    max(pt - lo, hi - pt) <= eps on every row; rows failing acceptance stay NOT_PUBLISHED (the whole variable, since the points need the row)"""
     rows = {}
     for v in range(len(M.cards)):
         c = M.cards[v]; box = []
@@ -508,11 +574,10 @@ def publish(M, acc, eps, clock):
                 box.append((L, H, 'DETERMINISTIC'))
         s_lo = sum(b[0] for b in box); s_hi = sum(b[1] for b in box)
         if s_lo > 1 or s_hi < 1: raise Defect('row box of canonical variable %d excludes the simplex' % v)
-        pts = [b[0] for b in box]; left = 1 - sum(pts)
-        for a in range(c):
-            take = min(left, box[a][1] - pts[a]); pts[a] += take; left -= take
-        if left != 0: raise Defect('simplex point allocation failed')
-        ok = all(b[1] - b[0] <= 2 * eps and b[0] <= p <= b[1] for b, p in zip(box, pts))
+        ok = all(b[1] - b[0] <= 2 * eps for b in box); pts = None
+        if ok:
+            pts, _ = epsilon_safe_points(box, eps)
+            ok = all(b[0] <= p_ <= b[1] and max(p_ - b[0], b[1] - p_) <= eps for b, p_ in zip(box, pts))
         for a in range(c): rows[(M.orig_of[v], a)] = dict(lo=box[a][0], hi=box[a][1], point=pts[a], guarantee=box[a][2]) if ok else None
         clock.poll('in the publication')
     return rows
@@ -520,37 +585,49 @@ def publish(M, acc, eps, clock):
 
 # ------------------------------------------------------------------ the compiler run
 def compile_and_solve(model, budget_s, policy='FAST', eps=F(1, 200), fit_allowance_s=FIT_ALLOWANCE_S, admission_stop_s=ADMISSION_STOP_S, t_start=None, allow_approx=True):
-    """policy FAST | FIT; returns the result dict (outcome, guarantee, published, K, answers, Z_enclosure, mechanism, phases_s, wall_s)"""
+    """policy FAST | FIT; returns the result dict (outcome, guarantee, published, K, answers, Z_enclosure, mechanism, phases_s, wall_s).
+    Clocks: `hard` = t_start + budget_s is the HARD deadline (nothing is assembled or published after it; an expired hard deadline during final assembly returns DEADLINE with no rows);
+    `adm` = t_start + admission_stop_s stops admitting new construction / solves. A validated partial (retained intersections) is published only when its assembly finishes before `hard`.
+    The original query inventory (cards, evidence) is fixed from the input BEFORE canonicalization, so every refusal path returns a typed result with every row NOT_PUBLISHED."""
     t_start = T_PROCESS_START if t_start is None else t_start; hard = t_start + budget_s; adm = t_start + min(budget_s, admission_stop_s)
     out = dict(version=VERSION, policy=policy, budget_s=budget_s, admission_stop_s=admission_stop_s, epsilon=str(eps), phases_s={}, mechanism=dict(witnesses=[], executor_calls=0, proposals={}, refinements=[], t_start_monotonic=t_start), outcome=None, answers=None)
-    ph = out['phases_s']; stats = {}; clock = Clock(adm, stats); budget = Budget(CONSTRUCTOR_BYTES); mech = out['mechanism']; retained = {}; witnesses = 0; Zenc = None
+    ph = out['phases_s']; stats = {}; clock = Clock(adm, stats); hclock = Clock(hard, stats); budget = Budget(CONSTRUCTOR_BYTES); mech = out['mechanism']; retained = {}; witnesses = 0; Zenc = None; M = None
+    cards_in = list(model['cards']); ev_in = dict(model.get('evidence', {})); inventory = [(v, a) for v in range(len(cards_in)) if v not in ev_in for a in range(cards_in[v])]
     def fin(oc, rows_canon, guarantee=None, note=None):
+        """final assembly of every ORIGINAL row (polled against the HARD deadline: an expiry here returns DEADLINE with nothing published); the inventory does not depend on M"""
         out['outcome'] = oc
         if note: mech['note'] = note
-        rows = []; pub = 0; gs = set()
-        for v in range(M.n_orig):
-            if v in M.ev: continue
-            for a in range(M.cards_orig[v]):
-                if (v, a) in M.fixed_rows:
-                    val, g = M.fixed_rows[(v, a)]
-                    if val is None or not mech.get('positive_mass_witness'): rows.append(dict(var=v, state=a, guarantee='NOT_PUBLISHED')); gs.add('NOT_PUBLISHED'); continue
+        rows = []; pub = 0; gs = set(); fixed = M.fixed_rows if M is not None else {}; pos = mech.get('positive_mass_witness')
+        try:
+            if oc not in ('DEADLINE',): hclock.poll('at the final assembly entry')
+            for j, (v, a) in enumerate(inventory):
+                if (j & 255) == 255: hclock.poll('in the final assembly')
+                if (v, a) in fixed:
+                    val, g = fixed[(v, a)]
+                    if val is None or not pos: rows.append(dict(var=v, state=a, guarantee='NOT_PUBLISHED')); gs.add('NOT_PUBLISHED'); continue
                     rows.append(dict(var=v, state=a, lo=str(val), hi=str(val), point=str(val), guarantee=g)); pub += 1; gs.add(g); continue
                 r = rows_canon.get((v, a)) if rows_canon else None
                 if r is None: rows.append(dict(var=v, state=a, guarantee='NOT_PUBLISHED')); gs.add('NOT_PUBLISHED')
                 else: rows.append(dict(var=v, state=a, lo=str(r['lo']), hi=str(r['hi']), point=str(r['point']), guarantee=r['guarantee'])); pub += 1; gs.add(r['guarantee'])
+            if oc in ('COMPLETE', 'PARTIAL', 'DEADLINE_PARTIAL') and pub: hclock.poll('before committing the published rows')
+        except Refused as e:                                                   # the hard deadline expired during assembly: nothing is published
+            mech['late_assembly'] = str(e.reason)[:120]; rows = [dict(var=v, state=a, guarantee='NOT_PUBLISHED') for v, a in inventory]; pub = 0; gs = {'NOT_PUBLISHED'}; out['outcome'] = oc = 'DEADLINE'
         out['answers'] = rows; out['published'] = pub; out['K'] = len(rows)
         out['guarantee'] = guarantee or ('EXACT' if gs <= {'EXACT'} else ('DETERMINISTIC' if gs <= {'EXACT', 'DETERMINISTIC'} else 'PARTIAL'))
         if out['outcome'] == 'COMPLETE' and pub < len(rows): out['outcome'] = 'DEADLINE_PARTIAL' if any(w.get('status') == 'DEADLINE' for w in mech['witnesses']) or clock.remaining() <= 0 else 'PARTIAL'
         if out['outcome'] == 'REFUSED' and pub > 0: out['outcome'] = 'PARTIAL'
         ws = [float(F(r['hi']) - F(r['lo'])) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_width'] = max(ws) if ws else None
-        mech.update(constructor_budget_peak_bytes=budget.peak, constructor_budget_cumulative_bytes=budget.cumulative, polls=clock.polls, witnesses_used=witnesses); mech.pop('t_start_monotonic', None)
-        out['peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; out['wall_s'] = tnow() - t_start; out['in_process_total_s'] = tnow() - T_PROCESS_START; return out
+        mech.update(constructor_budget_peak_bytes=budget.peak, constructor_budget_cumulative_bytes=budget.cumulative, polls=clock.polls + hclock.polls, witnesses_used=witnesses); mech.pop('t_start_monotonic', None)
+        out['peak_rss_bytes'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss; out['wall_s'] = tnow() - t_start; out['in_process_total_s'] = tnow() - T_PROCESS_START; out['hard_deadline_respected'] = out['wall_s'] <= budget_s; return out
+    def finish_ok(rows, note):
+        clock.poll('before success'); hclock.poll('before success (hard)'); return fin('COMPLETE', rows, note=note)
     t0 = tnow()
     try:
+        hclock.poll('at the compiler entry'); clock.poll('at the compiler entry (admission)')
         M = canonicalize(model, clock, budget); ph['canonicalize'] = tnow() - t0; mech.update(canonical=dict(variables=len(M.cards), factors=len(M.factors), entries=sum(len(v) for _, v in M.factors), removed_fixed=len([k for k in M.fixed_rows]), scalar_bits=bits(M.scalar)))
-        if M.zero_mass: mech['positive_mass_witness'] = False; out['Z_enclosure'] = dict(lo='0', hi='0'); return fin('ZERO_EVIDENCE', {}, note='a canonical scalar is exactly zero: original mass is zero')
+        if M.zero_mass: mech['positive_mass_witness'] = False; out['Z_enclosure'] = dict(lo='0', hi='0', positive=False); return fin('ZERO_EVIDENCE', {}, note='a canonical scalar is exactly zero: original mass is zero')
         if not M.cards:                                                        # everything collapsed: Z = scalar exactly
-            mech['positive_mass_witness'] = True; out['Z_enclosure'] = dict(lo=str(M.scalar), hi=str(M.scalar)); return fin('COMPLETE', {}, note='no retained variables: exact scalar normalizer')
+            mech['positive_mass_witness'] = True; out['Z_enclosure'] = dict(lo=str(M.scalar), hi=str(M.scalar), positive=True); return finish_ok({}, 'no retained variables: exact scalar normalizer')
         # ---- stage 1: exact projective quotient (joint refinement of complete proportional slice profiles over all incident factors)
         t0 = tnow(); classes1 = exact_profile_classes(M, clock, budget); scales1 = exact_scales(M, classes1, clock)
         Cz1 = check_candidate(M, classes1, scales1, clock, budget); ph['exact_quotient'] = tnow() - t0
@@ -559,50 +636,58 @@ def compile_and_solve(model, budget_s, policy='FAST', eps=F(1, 200), fit_allowan
         reduced = any(k < c for k, c in zip(Cz1.ccards, M.cards)); mech['exact_quotient'] = dict(coarse_cards=Cz1.ccards, reduced=reduced, states=sum(Cz1.ccards), original_states=sum(M.cards))
         M1 = stage_model(M, Cz1)                                               # the quotient as a canonical model (unaries A, tables L = U, same scalar)
         stages = [(classes1, Cz1)]
-        order1, vols1 = elimination_order(M1.cards, [sc for sc, _ in M1.factors], clock); mech['exact_quotient'].update(order_volume_sum=sum(vols1), order_volume_max=max(vols1))
+        order1, vols1 = elimination_order(M1.cards, [sc for sc, _ in M1.factors], clock, budget); mech['exact_quotient'].update(order_volume_sum=sum(vols1), order_volume_max=max(vols1))
         # scheduling rule (frozen): run the exact quotient when it reduced a domain or left only unary / scalar factors AND its forecast is admitted; else try the approximate construction first
         exact_first = (reduced or not M1.factors) and admitted(vols1, clock)
         if exact_first:
             witnesses += 1; t0 = tnow(); SL = run_executor(coarse_model(M, Cz1, 0), order1, M.scalar, adm, stats, 'exact_quotient'); mech['executor_calls'] += 1; ph['exact_solve'] = tnow() - t0
-            w = dict(kind='exact_quotient', status='ZERO_EVIDENCE' if SL.zero else 'SOLVED', kernel_s=SL.stats.get('kernel_s'), order_volume_sum=sum(vols1), executor_calls=1); mech['witnesses'].append(w)
-            if SL.zero: mech['positive_mass_witness'] = False; out['Z_enclosure'] = dict(lo='0', hi='0'); return fin('ZERO_EVIDENCE', {}, note='the exact quotient has zero mass (upper mass zero certifies original zero mass)')
-            mech['positive_mass_witness'] = True; Zenc = (SL.Z_lo, SL.Z_hi); out['Z_enclosure'] = dict(lo=str(SL.Z_lo), hi=str(SL.Z_hi))
+            w = dict(kind='exact_quotient', status='ZERO_EVIDENCE' if SL.zero else 'SOLVED', kernel_s=SL.stats.get('kernel_s'), order_volume_sum=sum(vols1), executor_calls=1, coarse_states=sum(Cz1.ccards), max_bits=max([bits(x) for L in Cz1.L for x in L if x is not None] + [bits(x) for A in Cz1.A for x in A])); mech['witnesses'].append(w)
+            if SL.zero: mech['positive_mass_witness'] = False; out['Z_enclosure'] = dict(lo='0', hi='0', positive=False); return fin('ZERO_EVIDENCE', {}, note='the exact quotient has zero mass (upper mass zero certifies original zero mass)')
+            mech['positive_mass_witness'] = True; Zenc = (SL.Z_lo, SL.Z_hi); set_Z(out, SL.Z_lo, SL.Z_hi)
             acc = rows_from_witness(M, stages, SL, None, F(1), clock); retained = intersect(retained, acc); rows = publish(M, retained, eps, clock)
             w['published'] = sum(1 for r in rows.values() if r); w['max_width'] = float(max(hi - lo for lo, hi in retained.values())); w['validated_at_s'] = tnow() - t_start
-            if all(r is not None for r in rows.values()): clock.poll('before success'); return fin('COMPLETE', rows, note='exact projective quotient')
+            if all(r is not None for r in rows.values()): return finish_ok(rows, 'exact projective quotient')
             if witnesses >= MAX_WITNESSES or not allow_approx: return fin('PARTIAL', rows, note='exact quotient published a partial answer; witness cap')
-        # ---- stage 2: approximate grouping on the exact quotient (positive tables only)
-        t0 = tnow(); prof, why = slice_profiles(M1); ph['profiles'] = tnow() - t0
+        # ---- stage 2: approximate grouping on the exact quotient (positive tables only); numeric proposal failures are typed and never escape
+        t0 = tnow()
+        try: prof, why = slice_profiles(M1, clock, budget)
+        except (ValueError, OverflowError, ZeroDivisionError) as e: prof, why = None, 'profile proposer refused: %s' % str(e)[:80]
+        ph['profiles'] = tnow() - t0
         if prof is None:
             mech['proposals']['approximate'] = dict(status='SKIPPED', reason=why)
-            return fin('REFUSED', publish(M, retained, eps, clock) if retained else {}, note='no approximate proposer for zero-containing tables; exact quotient did not complete' if retained else 'no approximate proposer for zero-containing tables')
-        budget.charge(sum(8 * len(p) for ps in prof for p in ps) + 56 * sum(M1.cards), 'profiles'); budget.charge(sum(c * c * 8 for c in M1.cards), 'pairwise distances')
-        classes2 = [canonical_classes(farthest_split(prof[v], list(range(M1.cards[v]))), M1.cards[v]) if M1.cards[v] > 1 else [0] for v in range(len(M1.cards))]
+            return fin('REFUSED', publish(M, retained, eps, clock) if retained else {}, note=('no approximate proposer (%s); exact quotient did not complete' % why) if retained else 'no approximate proposer (%s)' % why)
+        budget.charge(sum(c * c * 8 for c in M1.cards), 'pairwise distances')
+        classes2 = [canonical_classes(farthest_split(prof[v], list(range(M1.cards[v])), clock), M1.cards[v]) if M1.cards[v] > 1 else [0] for v in range(len(M1.cards))]
         mech['proposals']['partition'] = dict(coarse_cards=[max(c) + 1 for c in classes2])
-        # gauge: unit vs cheap centering by the exact local R (ties -> unit; both infinite -> unit)
-        t0 = tnow(); unit = unit_scales(M1); cen = centering_scales(M1, classes2, clock)
-        Cu = check_candidate(M1, classes2, unit, clock, budget); Cc = check_candidate(M1, classes2, cen, clock, budget); ph['gauge_fast'] = tnow() - t0
-        pick = 'unit' if (Cc.R is None or (Cu.R is not None and Cu.R <= Cc.R)) else 'centering'
-        mech['proposals']['fast_gauge'] = dict(unit_R=fl(Cu.R), centering_R=fl(Cc.R), selected=pick, mixed_cells=Cu.mixed)
+        # gauge: unit vs cheap centering by the exact local R (ties -> unit; both infinite -> unit; a refused centering proposal -> unit, typed)
+        t0 = tnow(); unit = unit_scales(M1); Cu = check_candidate(M1, classes2, unit, clock, budget)
+        try: cen = centering_scales(M1, classes2, clock); Cc = check_candidate(M1, classes2, cen, clock, budget); cen_note = None
+        except (ValueError, OverflowError, ZeroDivisionError) as e: cen = None; Cc = None; cen_note = 'centering proposal refused: %s' % str(e)[:80]
+        ph['gauge_fast'] = tnow() - t0
+        pick = 'unit' if (Cc is None or Cc.R is None or (Cu.R is not None and Cu.R <= Cc.R)) else 'centering'
+        mech['proposals']['fast_gauge'] = dict(unit_R=fl(Cu.R), centering_R=(fl(Cc.R) if Cc is not None else None), selected=pick, mixed_cells=Cu.mixed, centering_refused=cen_note)
         scales2 = unit if pick == 'unit' else cen; Cz2 = Cu if pick == 'unit' else Cc
         # FAST baseline witness
         res = witness(M, M1, stages, classes2, scales2, Cz2, 'fast_baseline', clock, budget, stats, adm, retained, eps, mech, out)
         witnesses += 1; retained, rows, done, Zenc = res
         if done:
             if policy == 'FIT': mech['proposals']['fit'] = dict(attempted=False, status='BYPASSED: the FAST baseline completed')
-            clock.poll('before success'); return fin('COMPLETE', rows, note='approximate coarse envelope (FAST baseline)')
+            return finish_ok(rows, 'approximate coarse envelope (FAST baseline)')
         fit_rec = dict(attempted=False)
         mech['proposals']['fit'] = fit_rec; refinements_left = 2 if policy == 'FAST' else 1
         if policy == 'FIT' and witnesses < MAX_WITNESSES and retained is not None:
             if clock.remaining() <= 0: fit_rec['refused'] = 'no time left after the baseline'
             else:
-                t0 = tnow(); fitted = lp_fit_scales(M1, classes2, scales2, clock, tnow() + fit_allowance_s, fit_rec); ph['fit_proposal'] = tnow() - t0
+                t0 = tnow()
+                try: fitted = lp_fit_scales(M1, classes2, scales2, clock, tnow() + fit_allowance_s, fit_rec, budget)
+                except (ValueError, OverflowError, ZeroDivisionError) as e: fitted = None; fit_rec['refused'] = 'fit proposal refused: %s' % str(e)[:80]
+                ph['fit_proposal'] = tnow() - t0
                 if fitted is not None:
                     sel, kept = per_factor_select(M1, classes2, fitted, scales2, clock, budget); fit_rec['kept_per_factor'] = kept
                     if 'fit' in kept:
                         Cf = check_candidate(M1, classes2, sel, clock, budget); fit_rec['local_R_fast'] = fl(Cz2.R); fit_rec['local_R_fit'] = fl(Cf.R)
                         res = witness(M, M1, stages, classes2, sel, Cf, 'fit_gauge', clock, budget, stats, adm, retained, eps, mech, out); witnesses += 1; retained, rows, done, Zenc = res
-                        if done: clock.poll('before success'); return fin('COMPLETE', rows, note='approximate coarse envelope (FIT gauge)')
+                        if done: return finish_ok(rows, 'approximate coarse envelope (FIT gauge)')
                         scales2, Cz2 = sel, Cf
                     else: fit_rec['status'] = 'NO_FACTOR_IMPROVED_LOCAL_RANGE'
         # refinement witnesses on the retained gauge (FAST: up to two; FIT: at most one)
@@ -611,21 +696,28 @@ def compile_and_solve(model, budget_s, policy='FAST', eps=F(1, 200), fit_allowan
             if new is None: mech['refinements'].append(dict(stopped=info)); break
             mech['refinements'].append(info); Cz2 = check_candidate(M1, new, scales2, clock, budget); classes2 = new
             res = witness(M, M1, stages, classes2, scales2, Cz2, 'refinement_%d' % len(mech['refinements']), clock, budget, stats, adm, retained, eps, mech, out); witnesses += 1; retained, rows, done, Zenc = res
-            if done: clock.poll('before success'); return fin('COMPLETE', rows, note='approximate coarse envelope after refinement')
+            if done: return finish_ok(rows, 'approximate coarse envelope after refinement')
         rows = publish(M, retained, eps, clock) if retained else {}
         return fin('PARTIAL' if any(rows.values()) else 'REFUSED', rows, note='witness cap or no affordable split')
     except Refused as e:
         mech['refusal'] = dict(kind=e.kind, reason=str(e.reason)[:300]); mech.setdefault('positive_mass_witness', None)
         rows = {}
-        if retained and e.kind != 'DEADLINE' or (retained and tnow() < hard - 0.25):
-            try: rows = publish(M, retained, eps, Clock(hard - 0.1, stats))
-            except Exception: rows = {}
+        if retained and M is not None and tnow() < hard:                       # a validated partial is published only before the HARD deadline (fin polls it again during assembly)
+            try: rows = publish(M, retained, eps, hclock)
+            except Refused: rows = {}
+            except Defect as d: mech['defect'] = str(d)[:300]; rows = {}
         return fin('DEADLINE' if e.kind == 'DEADLINE' and not any(rows.values()) else ('DEADLINE_PARTIAL' if e.kind == 'DEADLINE' else ('PARTIAL' if any(rows.values()) else 'REFUSED')), rows)
     except Defect as e:
         mech['defect'] = str(e)[:300]; mech.setdefault('positive_mass_witness', None); return fin('CERTIFICATE_DEFECT', {})
+    except (ValueError, OverflowError, ZeroDivisionError) as e:                 # an untrusted numeric path or an invalid input reached the boundary: typed, never a crash
+        mech['refusal'] = dict(kind='INVALID_OR_NUMERIC', reason=str(e)[:300]); mech.setdefault('positive_mass_witness', None); return fin('REFUSED', {})
 
 
-def fl(q): return None if q is None else (float(q) if bits(q) < 2000 else 'huge')
+def fl(q):
+    if q is None: return None
+    if bits(q) >= 2000: return 'huge'
+    try: return float(q)
+    except OverflowError: return 'huge'
 
 
 def admitted(vols, clock):
@@ -645,7 +737,7 @@ def intersect(old, new):
 def witness(M, M1, stages, classes, scales, Cz, name, clock, budget, stats, adm, retained, eps, mech, out):
     """one partition / gauge witness: lower solve (one-solve bound when R is finite), then the upper solve if still needed and admitted; retained intervals intersected. Returns
     (retained, rows, complete, Zenc). Zero lower mass -> no publication from this witness (typed), zero upper mass -> ZERO_EVIDENCE certified."""
-    stg = stages + [(classes, Cz)]; order, vols = elimination_order(Cz.ccards, [sc for sc, _ in M1.factors], clock)
+    stg = stages + [(classes, Cz)]; order, vols = elimination_order(Cz.ccards, [sc for sc, _ in M1.factors], clock, budget)
     w = dict(kind=name, coarse_cards=list(Cz.ccards), coarse_states=sum(Cz.ccards), local_R=fl(Cz.R), mixed_cells=Cz.mixed, exact=Cz.exact, order_volume_sum=sum(vols), order_volume_max=max(vols), executor_calls=0, status=None,
              proposal_record=dict(classes=[list(c) for c in classes], scales={'%d:%d' % k: [str(x) for x in v] for k, v in scales.items()}, order=list(order), bucket_volumes=list(vols), max_bits=max([bits(x) for L in Cz.L for x in L if x is not None] + [bits(x) for Ucell in Cz.U for x in Ucell if x is not None] + [bits(x) for A in Cz.A for x in A]))); mech['witnesses'].append(w)
     if Cz.zero_factor:
@@ -744,23 +836,28 @@ def set_Z(out, lo, hi):
 
 
 def exact_profile_classes(M, clock, budget):
-    """states share an exact class iff every incident complete slice is positively proportional (zero slices: a separate signature); hashes = exact tuples"""
-    n = len(M.cards); sig = [[[] for _ in range(M.cards[v])] for v in range(n)]
+    """states share an exact class iff every incident complete slice is positively proportional (zero slices: a separate signature); hashes = exact tuples. The signatures of EVERY axis
+    of every factor are retained simultaneously until the classes are formed: charged BEFORE construction per factor (normalized entries x/s of up to 2 x the source bits, the raw slice
+    coexisting with its normalized tuple, tuple slots, per-state lists, index lists), polled inside; the charge is released when the signatures die."""
+    n = len(M.cards); sig = [[[] for _ in range(M.cards[v])] for v in range(n)]; charged = 0
     for fi, (sc, vals) in enumerate(M.factors):
-        cs = [M.cards[v] for v in sc]; st = strides(cs); budget.charge(sum(len(vals) * (8 + FRAC_BYTES) // max(1, 1) for _ in [0]), 'profile signature of factor %d' % fi)
+        clock.poll('before the profile signatures of factor %d' % fi); cs = [M.cards[v] for v in sc]; st = strides(cs); vol = len(vals); mb = max(bits(x) for x in vals) if vals else 1
+        per_entry = 2 * (FRAC_BYTES + 32 * ((2 * mb + 63) // 64)) + 16
+        charged += budget.charge(len(sc) * (vol * per_entry + sum(cs) * 120 + vol * 8 + 64), 'exact profile signatures of factor %d (%d axes x %d entries retained simultaneously)' % (fi, len(sc), vol))
         for ax, v in enumerate(sc):
             others = [i for i in range(len(sc)) if i != ax]; ocs = [cs[i] for i in others]; idxs = [sum(st[i] * b for i, b in zip(others, o)) for o in itertools.product(*(range(c) for c in ocs))]
             for a in range(cs[ax]):
-                sl = [vals[a * st[ax] + j] for j in idxs]; s = next((x for x in sl if x > 0), None)
-                sig[v][a].append(('Z',) if s is None else tuple(x / s for x in sl))
-                clock.poll('in the profile signatures')
-        budget.release(0)
+                sl = [vals[a * st[ax] + j] for j in idxs]; s_ = next((x for x in sl if x > 0), None)
+                sig[v][a].append(('Z',) if s_ is None else tuple(checked_div(x, s_) for x in sl))
+                if (a & 15) == 15: clock.poll('in the profile signatures')
+            clock.poll('after an axis of the profile signatures')
     classes = []
     for v in range(n):
         key = {}; cl = []
         for a in range(M.cards[v]):
             k = tuple(sig[v][a]); cl.append(key.setdefault(k, len(key)))
         classes.append(cl)
+    budget.release(charged)
     return classes
 
 
@@ -779,7 +876,7 @@ def exact_scales(M, classes, clock):
             lam = []
             for a in range(cs[ax]):
                 r = reps[classes[v][a]]
-                lam.append(F(1) if first[a] is None or first[r] is None else first[a] / first[r])
+                lam.append(F(1) if first[a] is None or first[r] is None else checked_div(first[a], first[r]))
             out[(fi, ax)] = lam
         clock.poll('in the exact scales')
     return out
@@ -798,6 +895,9 @@ def main():
     t0 = tnow(); model, binding = CORE.read_uai(a.input); tread = tnow() - t0
     out = compile_and_solve(model, a.budget, policy=a.policy, eps=F(a.epsilon), fit_allowance_s=a.fit_allowance, admission_stop_s=a.admission_stop); out['phases_s']['read'] = tread; out['binding'] = binding; out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]
     out['process_start_to_read_s'] = t0 - T_PROCESS_START
+    if tnow() > T_PROCESS_START + a.budget and out['outcome'] not in ('DEADLINE', 'ZERO_EVIDENCE', 'CERTIFICATE_DEFECT'):   # the hard deadline expired before the output commit: nothing is published
+        out['mechanism']['late_commit'] = dict(outcome_before=out['outcome'], published_before=out.get('published')); out['outcome'] = 'DEADLINE'; out['answers'] = [dict(var=r['var'], state=r['state'], guarantee='NOT_PUBLISHED') for r in (out.get('answers') or [])]; out['published'] = 0; out['guarantee'] = 'PARTIAL'; out['max_width'] = None
+    out['hard_deadline_respected_at_commit'] = tnow() <= T_PROCESS_START + a.budget
     t_ser = tnow(); os.makedirs(os.path.dirname(os.path.abspath(a.output)), exist_ok=True); json.dump(out, open(a.output, 'w'), indent=1, default=str)
     json.dump(dict(solver_wall_s=out['wall_s'], serialize_s=tnow() - t_ser, in_process_total_s=tnow() - T_PROCESS_START, note='the SUPERVISOR receipt is the scored end-to-end measurement'), open(a.output + '.timing.json', 'w'), indent=1)
     m = out['mechanism']; print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), calls=m.get('executor_calls'), witnesses=[(w.get('kind'), w.get('status')) for w in m.get('witnesses', [])], refusal=m.get('refusal'), defect=m.get('defect')), default=str))
