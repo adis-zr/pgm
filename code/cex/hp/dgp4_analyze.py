@@ -189,11 +189,15 @@ def analyze():
         elif any((c.get('bounding_term_RMAX') or 0) >= 1.0 for c in anch): fc = 'coarse bounding overhead erases gain'
         else: fc = 'envelope still loose'
     else:
-        # cap supported: on the oracle panel the envelope mass is no longer dominant; the residual gap to the certificate is the fixed decoder (law term ~ 0 where the certificate gate fails: the ideal law gives the same radius)
-        anch = [t for t in exposed_anchor + fresh_strong if t in O]; law_rx = [(O[t]['contrasts'].get('law_term_RMAX') or 0) for t in anch]; tz = [((O[t].get('reference') or {}).get('log2_T_over_Z0') or 0) for t in anch]
-        fc = 'poor fixed-decoder overlap' if (cert['status'] != 'supported' or not e_candidates) else None
-        if fc is None: fc = 'none (deployable progress candidate)'
-    fc = dict(oracle_identified=fc, large_n='unresolved / censored (no certified denominator at n 32-64: B is checked and absolute; whether the remaining gap is envelope slack B / T or the fixed-decoder optimum T / Z_0 cannot be separated there)' if not e_candidates else None, large_n_evidence=large_n)
+        # cap supported: per model, the residual gap of the RMAX V4096 cap to the fixed-decoder optimum T decides the class -- 'envelope still loose' where >= 1 bit of sum U / T remains at the production width (the width dose shows it shrinking with V), 'poor fixed-decoder overlap' where B = T (the cap is already optimal within the decoder family and the certificate gain is below 2x)
+        per = {}
+        for t in exposed_anchor + fresh_strong:
+            if t not in O: continue
+            rx = (O[t].get('constructions') or {}).get('RMAX_V4096') or {}; m = rx.get('log2_sumU_over_T'); gate = (O[t].get('contrasts') or {}).get('certificate_gate')
+            per[t] = 'envelope still loose (%.2f bits of sum U / T remain at V 4096)' % m if (m is not None and m >= 1.0) else ('poor fixed-decoder overlap (B = T within %.2f bits; certificate gain %s)' % (m or 0, 'passes' if gate else 'below 2x'))
+        fc = ('mixed: ' + '; '.join('%s -> %s' % (k.replace('dg_', ''), v.split(' (')[0]) for k, v in per.items())) if per else 'unresolved / censored'
+        fc_detail = per
+    fc = dict(oracle_identified=fc, oracle_per_model=(locals().get('fc_detail') or None), large_n='unresolved / censored (no certified denominator at n 32-64: B is checked and absolute; whether the remaining gap is envelope slack B / T or the fixed-decoder optimum T / Z_0 cannot be separated there)' if not e_candidates else None, large_n_evidence=large_n)
     diag['verdicts'] = dict(validity='see VALIDATION.json + controls (the analyzer records: identity_ok on every cell, ledger identity on every planner result, no late publication)', preservation=dict(status=('PRESERVED' if pres_ok else 'REGRESSION'), NEW_losses_vs_FULL3={sub: vi.get(sub, {}).get('NEW', {}).get('regressions_vs_FULL3') for sub in ('preservation_18', 'preservation_13')}, main_losses_vs_REPAIRED=mi.get('REPAIRED_not_NEW'), main_losses_vs_BASE=mi.get('BASE_not_NEW')), cap_mechanism=cap['status'], certificate_mechanism=cert['status'], deployable_progress=dict(status=('CANDIDATE (confirmation pending)' if e_candidates else 'NONE'), new_dense_completions=mi.get('new_dense_completion_candidates'), material_radius_gains=[x['task'] for x in mat], fresh_transfer=[t for t in e_candidates if is_fresh(t)]), cost_overhead=dict(flags=flags, n_mutual=len(cost), median_ratio=(statistics.median(x['ratio_NEW_over_REPAIRED'] for x in cost) if cost else None)), failure_class=fc)
     res['verdicts'] = diag['verdicts']; res['gates'] = diag['gates']; json.dump(diag, open(os.path.join(RD, 'DIAGNOSTICS.json'), 'w'), indent=1, default=str)
     # charges
