@@ -14,7 +14,7 @@ def verify(tasks):
 
 def freeze(root):
     import run_dgp2 as R, unified_pac_planner as UPP, dense_gen as DG, dgp2_oracle as OR
-    head = git(root, 'rev-parse', 'HEAD'); tree = git(root, 'rev-parse', 'HEAD^{tree}'); dirty = git(root, 'status', '--porcelain', '--', 'code/cex', 'code/gbidi'); assert not dirty, dirty
+    head = git(root, 'rev-parse', 'HEAD'); tree = git(root, 'rev-parse', 'HEAD^{tree}'); dirty = git(root, 'status', '--porcelain', '--untracked-files=no', '--', 'code/cex', 'code/gbidi'); assert not dirty, dirty
     files = {f: sha(os.path.join(root, 'code', f)) for f in R.IDENTITY_FILES + ['cex/hp/run_dgp2.py', 'cex/hp/dgp2_oracle.py', 'cex/hp/dgp2_analyze.py', 'cex/hp/dgp2_manifests.py', 'cex/hp/validate_round.py', 'cex/hp/dense_gen.py', 'cex/hp/check_dgp.py', 'cex/hp/hp_gen.py', 'gbidi/supervise.py']}
     kb = json.load(open(os.path.join(root, 'code/cex/newarm/cex_build.json'))); py = subprocess.check_output([os.path.join(root, 'code/.venv/bin/python') if os.path.exists(os.path.join(root, 'code/.venv/bin/python')) else sys.executable, '-c', 'import sys,numpy,scipy; print(sys.version.split()[0], numpy.__version__, scipy.__version__)']).decode().split()
     main1 = json.load(open(os.path.join(DGP1, 'MAIN_MANIFEST.json'))); pres18 = json.load(open(os.path.join(DGP1, 'PRESERVATION_18_MANIFEST.json')))['tasks']; pres13 = json.load(open(os.path.join(DGP1, 'PRESERVATION_13_MANIFEST.json')))['tasks']
