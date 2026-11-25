@@ -48,6 +48,14 @@ def main():
             d = json.load(open(res)); inp = d.get('input')
             if inp and os.path.abspath(inp) != os.path.abspath(c['model']): bad_bind.append(key + ('result input differs',))
     chk('cells_input_binding', not bad_bind, bad=bad_bind[:10]); chk('cells_identity_ok', not bad_ident, bad=bad_ident[:10]); chk('cells_have_receipts', not no_receipt, missing=no_receipt[:10]); chk('cells_counted', True, per_sub=per_sub, n_cells=len(cells))
+    # DGP4 R2: the constructor live-ledger identity must hold in EVERY planner result (incl. refusals / partials / deadline cells); BASE cells (accepted engine) carry no planner ledger
+    bad_ledger = []; n_planner = 0
+    for p in cells:
+        c = json.load(open(p))['cell']; res = os.path.join(os.path.dirname(p), 'result.json')
+        if c['arm'] == 'BASE' or not os.path.exists(res): continue
+        d = json.load(open(res)); m = d.get('mechanism') or {}; n_planner += 1
+        if m.get('constructor_live_ledger_identity') is not True: bad_ledger.append((os.path.relpath(p, rd), d.get('outcome'), m.get('constructor_live_at_end_bytes')))
+    chk('planner_results_ledger_identity_true_everywhere', not bad_ledger, planner_results=n_planner, bad=bad_ledger[:10])
     # charges reconcile
     tot = round(sum(r['wall_s'] for rs in receipts.values() for r in rs), 3); ch = json.load(open(os.path.join(rd, 'CHARGES.json'))) if os.path.exists(os.path.join(rd, 'CHARGES.json')) else {}
     # CHARGES.json is written by the analyzer; the analysis / packaging / validation receipts that necessarily follow it (scope *_analysis) are reconciled separately against the ledger's end_utc
@@ -62,13 +70,13 @@ def main():
         for sub, cnt in (rs.get('completions_by_sub') or {}).items():
             if sub in per_sub: chk('results_counts_match_cells:' + sub, cnt.get('cells') == per_sub[sub]['cells'] and cnt.get('complete') == per_sub[sub]['complete'], results=cnt, cells=per_sub[sub])
     # DGP3+: the EXECUTED harness / analyzer snapshot (git bundle of the branch + hashes of the executed files) and a replay command must be in the packet (DGP2 review, packaging finding)
-    if fr.get('experiment', '').startswith('DGP3'):
+    if fr.get('experiment', '').startswith(('DGP3', 'DGP4')):
         hs = os.path.join(rd, 'harness'); bundle = glob.glob(os.path.join(hs, '*.bundle')); ex = os.path.join(hs, 'EXECUTED_HARNESS_SHA256.json')
         chk('executed_harness_snapshot_present', bool(bundle) and os.path.exists(ex), bundle=[os.path.basename(b) for b in bundle])
         if os.path.exists(ex):
             exh = json.load(open(ex)); bad = [f for f, h in exh.get('files', {}).items() if not os.path.exists(os.path.join(hs, 'files', os.path.basename(f))) or sha(os.path.join(hs, 'files', os.path.basename(f))) != h]
             chk('executed_harness_files_match_hashes', not bad, bad=bad)
-        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and 'run_dgp3.py' in open(rp).read() and 'harness/files' in open(rp).read())
+        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and ('run_dgp3.py' in open(rp).read() or 'run_dgp4.py' in open(rp).read()) and 'harness/files' in open(rp).read())
     # unsupported claims: forbidden phrases in REPORT / THEORY_RETURN
     for f in ('REPORT.md', 'THEORY_RETURN.md', 'START_HERE.md'):
         p = os.path.join(rd, f)

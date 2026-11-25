@@ -13,7 +13,7 @@
                              (identity parent) or the exact decoder values (exact parent); widening extended operation by operation (lifted_widening).
 Risk: each stream receives delta_s = delta / 2^s (s = creation index) and divides it over its frozen response inventory (alpha = delta_s / K_s) through the accepted Certificate; the accepted
 ZCertificate stays diagnostic. Deterministic rows consume no risk."""
-import sys, os, math
+import sys, os, math, json
 from fractions import Fraction as F
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); BR_DIR = os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'blockres')
@@ -209,7 +209,7 @@ class Stream:
     def _close(self, reason):
         self.stage = 'CLOSED'; self.closed_reason = reason; self.mech['closed'] = reason; B_ = self.opts.get('budget_obj')
         if B_ is not None:
-            for attr in ('fine_bytes', 'grouped_bytes'):                                       # constructor-account charges (sampler log tables live under the memory plan, not this account)
+            for attr in ('fine_bytes', 'grouped_bytes', 'rmax_bytes'):                         # constructor-account charges (sampler log tables live under the memory plan, not this account)
                 n = getattr(self, attr, 0)
                 if n: B_.release(n); setattr(self, attr, 0)
         return 'CLOSED'
@@ -480,8 +480,10 @@ class Stream:
         except AssertionError as e:
             self.abandoned += 1; self.pending = None; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a batch (rows withheld): %s' % str(e)[:120])
     def proposal_fingerprint(self):
-        """sha256 over the sampler's log tables, the cap, the risk, the response inventory and (lifted) the decoder counts: the frozen law of this stream"""
+        """sha256 over the sampler's log tables, the cap, the risk, the response inventory and (lifted) the decoder counts; DGP4: + the RMAX profile / plan hash / bound kind when present: the frozen law of this stream"""
         import hashlib; h = hashlib.sha256()
+        rm = (getattr(self, 'mech', {}) or {}).get('rmax')
+        if rm: h.update(json.dumps(dict(bound_kind=rm.get('bound_kind'), profile=rm.get('profile'), plan_sha256=rm.get('plan_sha256'), stages_done=rm.get('stages_done')), sort_keys=True).encode())
         for v, tabs in (self.mbp.prep or []):
             h.update(str(v).encode())
             if tabs:
@@ -572,19 +574,20 @@ class LiftedStream(Stream):
     def __init__(self, sid, M_fine, M_par, par_stages, classes, Cz, seed, eps, delta_s, opts, label=None, scale_to_original=None, envelope='G1'):
         model = canon_to_model(M_par); queries = [(v, a) for v in range(len(M_fine.cards)) for a in range(M_fine.cards[v])]
         super().__init__(sid, 'lifted', model, queries, seed, eps, delta_s, opts, label=label or 'lifted', scale_to_original=(M_par.scalar if scale_to_original is None else scale_to_original)); self.M_fine = M_fine; self.M_par = M_par; self.par_stages = par_stages; self.classes = classes; self.Cz = Cz; self.n_par = len(M_par.cards); self.envelope = envelope; self.grouped = None; self.mech['envelope'] = envelope
-        self.mech.update(parent_exact_stages=len(par_stages), coarse_cards=list(Cz.ccards), parent_cards=list(M_par.cards))
+        self.mech.update(parent_exact_stages=len(par_stages), coarse_cards=list(Cz.ccards), parent_cards=list(M_par.cards)); self.rmax = None; self.rmax_bytes = 0; self.rmax_midpoint = None; self.bound_kind = ('target_over_actual_decoder' if envelope == 'RMAX' else 'target_over_upper_times_ideal_decoder'); self.mech['bound_kind'] = self.bound_kind
     def stage_features(self, st):
         return dict(n=self.n_par, entries=sum(len(x['values']) for x in self.model['factors']), K=self.K, coarse_states=sum(self.Cz.ccards), kind='lifted')
     def prepare(self, deadline, cdead=None, until=None):
-        until = deadline if until is None else min(until, deadline); t0 = tnow()
+        until = deadline if until is None else min(until, deadline); t0 = tnow(); eff = until if self.envelope == 'RMAX' else deadline     # DGP4: the RMAX route's stages run against the EFFECTIVE preparation deadline min(hard, allowance)
+        if self.envelope == 'RMAX' and self.rmax_midpoint is None: self.rmax_midpoint = tnow() + 0.5 * max(0.0, eff - tnow()); self.mech['rmax_allowance'] = dict(entry_offset_s=0.0, effective_allowance_s=eff - tnow(), midpoint_s=0.5 * max(0.0, eff - tnow()))   # ONE midpoint, set once at entry
         try:
             while self.stage not in ('READY', 'COMPLETE', 'CLOSED'):
                 if tnow() >= until: return 'YIELD'
                 t0 = tnow(); st = self.stage
-                if st == 'INIT': self._l_decoder(deadline)
-                elif st == 'INTEGERIZED': self._l_coarse_proposal(deadline)
-                elif st == 'CONTRACTED': self._l_fine_tables(deadline)
-                elif st == 'CONSTANTS': self._l_sampler(deadline)
+                if st == 'INIT': self._l_decoder(eff)
+                elif st == 'INTEGERIZED': self._l_coarse_proposal(eff)
+                elif st == 'CONTRACTED': self._l_fine_tables(eff)
+                elif st == 'CONSTANTS': self._l_sampler(eff)
                 dt = tnow() - t0; self.t_prep += dt; self.measurements.append(dict(kind='lifted_stage', stage=st, seconds=dt, completed=True, features=self.stage_features(st)))
             return self.stage
         except Deadline as e: self.measurements.append(dict(kind='lifted_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='DEADLINE', features=self.stage_features(self.stage))); return self._close('DEADLINE in lifted stage %s (%s)' % (self.stage, e))
@@ -598,15 +601,17 @@ class LiftedStream(Stream):
         """the accepted max mini-bucket proposal on the checked UPPER coarse model (no block contraction: every coarse variable is sampled); DGP3: envelope G2 / G3 replaces the per-factor U tables by the
         grouped joint maxima (grouped_envelope; lemma G), charged and polled; G1 = the DGP2 per-factor envelope"""
         o = self.opts
-        if self.envelope != 'G1':
-            import grouped_envelope as GE; t0 = tnow(); clk = CE.Clock(deadline, {}); B_ = o.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES)
-            groups, gscopes = GE.plan_groups(self.M_par, self.Cz, self.envelope); tables, self.grouped_bytes = GE.grouped_upper_tables(self.M_par, self.classes, self.Cz, groups, gscopes, clk, B_)
-            self.grouped = dict(groups=groups, scopes=gscopes, tables=tables); cm = GE.grouped_coarse_model(self.M_par, self.Cz, tables); self.ph['grouped_envelope'] = tnow() - t0
-            self.mech['grouped_envelope'] = dict(level=self.envelope, groups=len(groups), grouped_pairs=sum(1 for g in groups if len(g) >= 2), max_joint_scope=max(len(S) for S in gscopes), cells=sum(len(U) for _, U in tables), seconds=self.ph['grouped_envelope'], charged_bytes=self.grouped_bytes); self.retained_bytes += self.grouped_bytes
-        else: cm = CE.coarse_model(self.M_par, self.Cz, 1)
-        fns_C, const_C, scale_C, mult_C, factorless_C = BR.integerize(cm)
-        if const_C == 0 or factorless_C: raise StreamRefused('SUPPORT', 'upper coarse model has a zero nullary factor or a factorless coarse variable')
-        self.scale_C = scale_C; self.blocks_C = [IG.ft_from_int(f, cm['cards']) for f in fns_C]; self.ccards = list(cm['cards']); self.S = list(range(len(self.ccards))); self.pos = {v: v for v in self.S}
+        if self.envelope == 'RMAX': self.blocks_C, self.ccards = self._rmax_upper_model(deadline); self.scale_C = 1; self.S = list(range(len(self.ccards))); self.pos = {v: v for v in self.S}
+        else:
+            if self.envelope != 'G1':
+                import grouped_envelope as GE; t0 = tnow(); clk = CE.Clock(deadline, {}); B_ = o.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES)
+                groups, gscopes = GE.plan_groups(self.M_par, self.Cz, self.envelope); tables, self.grouped_bytes = GE.grouped_upper_tables(self.M_par, self.classes, self.Cz, groups, gscopes, clk, B_)
+                self.grouped = dict(groups=groups, scopes=gscopes, tables=tables); cm = GE.grouped_coarse_model(self.M_par, self.Cz, tables); self.ph['grouped_envelope'] = tnow() - t0
+                self.mech['grouped_envelope'] = dict(level=self.envelope, groups=len(groups), grouped_pairs=sum(1 for g in groups if len(g) >= 2), max_joint_scope=max(len(S) for S in gscopes), cells=sum(len(U) for _, U in tables), seconds=self.ph['grouped_envelope'], charged_bytes=self.grouped_bytes); self.retained_bytes += self.grouped_bytes
+            else: cm = CE.coarse_model(self.M_par, self.Cz, 1)
+            fns_C, const_C, scale_C, mult_C, factorless_C = BR.integerize(cm)
+            if const_C == 0 or factorless_C: raise StreamRefused('SUPPORT', 'upper coarse model has a zero nullary factor or a factorless coarse variable')
+            self.scale_C = scale_C; self.blocks_C = [IG.ft_from_int(f, cm['cards']) for f in fns_C]; self.ccards = list(cm['cards']); self.S = list(range(len(self.ccards))); self.pos = {v: v for v in self.S}
         base_bytes = sum(f.M.nbytes for f in self.blocks_C) + o.get('other_retained_bytes', 0) + IG.PROCESS_HEADROOM_BYTES
         cap_used, plan, tried = IG.memory_plan([b.scope for b in self.blocks_C], self.ccards, o['mb_cap'], base_bytes); self.mech['memory_policy'] = dict(cap_requested=o['mb_cap'], cap_used=cap_used, ladder_tried=tried, base_bytes=base_bytes)
         if plan is None: raise StreamRefused('MEMORY_POLICY', 'no mini-bucket cap in the ladder fits the memory policy (coarse proposal)')
@@ -614,6 +619,37 @@ class LiftedStream(Stream):
         self.mech.update(mb_cap=cap_used, mb_logU=self.mbp.logU, mb_splits=self.mbp.splits, coarse_variables=len(self.S))
         if self.mbp.logU == -inf: self.Z = F(0); self.witness = False; self.stage = 'COMPLETE'; self.mech['terminal'] = 'ZERO_MASS_PROVED_BY_UPPER_MODEL'; return   # an exact checked upper zero proves zero target mass
         self.retained_bytes += plan['forward_bytes']; self.stage = 'CONTRACTED'
+    def _rmax_upper_model(self, deadline):
+        """DGP4: residual MAX compilation on H = W_0 / r (the ACTUAL dyadic rows, frozen in _l_decoder), ONE midpoint for MAX stages, closure, independent checks, upward packing, then the bridge BR.Fn -> IG.ft_from_int
+        with each table's packed exponent added to FT.e (carried into MBFloat.E_U); nullary constants folded into the smallest coarse table; unit unaries for coarse variables no table mentions. Returns (blocks_C, ccards).
+        Every byte is owned by the compile object until it transfers to self.rmax_bytes exactly once (released by _close); on ANY failure the compile object releases everything it owns."""
+        import residual_max_envelope as RM, grouped_envelope as GE
+        o = self.opts; B_ = o.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES); clk = CE.Clock(deadline, {}); prof = dict(o.get('rmax_profile') or RM.PROFILE_PRODUCTION); t0 = tnow(); comp = RM.RMAXCompile(self.M_par, self.classes, self.Cz, self.rows, prof, B_, clk)
+        try:
+            comp.build_sources(); groups, _ = GE.plan_groups(self.M_par, self.Cz, 'G2'); comp.build_seeds(groups); comp.set_order(); self.ph['rmax_sources_seeds'] = tnow() - t0
+            if tnow() >= deadline: raise Deadline('RMAX after sources / seeds')
+            t1 = tnow(); comp.run_stages(self.rmax_midpoint if self.rmax_midpoint is not None else deadline); self.ph['rmax_stages'] = tnow() - t1
+            t2 = tnow(); comp.closure(); comp.pack(); self.ph['rmax_closure_pack'] = tnow() - t2; pk = RM.check_packing(comp.closed, comp.packed)
+            if not pk['ok']: raise CE.Defect('RMAX packing check failed: %s' % pk)
+            if not comp.record()['checker']['all_ok']: raise CE.Defect('RMAX stage checker rejected a stage')
+            if tnow() >= deadline: raise Deadline('RMAX after closure / packing')
+            # bridge: one Fn per packed table (axes -> coarse variables, sorted), ints >= 0, then FT with the packed exponent added; coarse variables without a table get a unit unary
+            ccards = list(self.Cz.ccards); blocks = []; touched = set(); E_pack = 0
+            for P in comp.packed:
+                scope = tuple(a >> 1 for a in P['axes']); assert tuple(sorted(scope)) == scope and len(set(scope)) == len(scope)
+                if (max(int(x).bit_length() for x in P['ints'].reshape(-1)) if P['ints'].size else 0) > 4096: raise StreamRefused('BITS', 'a packed RMAX mantissa exceeds the bit cap')
+                if abs(P['E']) >= 1 << 40: raise StreamRefused('NUMERIC_RANGE', 'a packed RMAX exponent %d is out of the admitted range' % P['E'])
+                fn = BR.Fn(scope, np.asarray(P['ints'], dtype=object), [P['tid']], []); ft = IG.ft_from_int(fn, ccards); ft.e += int(P['E']); E_pack += int(P['E']); blocks.append(ft); touched |= set(scope)
+            for v in range(len(ccards)):
+                if v not in touched: blocks.append(IG.ft_from_int(BR.Fn((v,), np.ones(ccards[v], dtype=object), [], []), ccards))
+            if not blocks: raise StreamRefused('SUPPORT', 'RMAX produced no coarse table (no coarse variable)')
+            self.rmax = comp; self.rmax_bytes = comp.transfer(); self.retained_bytes += self.rmax_bytes; rec = comp.record(); rec.update(seconds_total=tnow() - t0, packed_exponent_sum=E_pack, phases={k: v for k, v in self.ph.items() if k.startswith('rmax')}); self.mech['rmax'] = rec
+            return blocks, ccards
+        except BaseException as e:
+            comp.release_all(); self.mech['rmax_refusal'] = dict(kind=(getattr(e, 'kind', None) or type(e).__name__), reason=str(getattr(e, 'reason', e))[:160], stages_done=comp.stages_done, owned_released=True)
+            if isinstance(e, RM.RefusedRMAX): raise StreamRefused(e.kind, e.reason)
+            if isinstance(e, CE.Defect): self.defect = 'RMAX construction defect (optional route closed, nothing published from it): %s' % str(e)[:160]; self.mech['construction_defect'] = self.defect; raise StreamRefused('DEFECT', str(e)[:160])   # an OPTIONAL construction's internal defect closes THIS stream typed; the request continues on the incumbent (brief section 4)
+            raise
     def _l_fine_tables(self, deadline):
         """float tables of the FINE (parent) target: W_int(z) = scale_F x W'(z); response matrices D_v (parent state -> original coordinate response)"""
         fns_F, const_F, scale_F, mult_F, factorless_F = BR.integerize(self.model)
@@ -650,8 +686,9 @@ class LiftedStream(Stream):
         self.E_tot = self.E_fine - mbp.E_U
         if abs(self.E_tot) >= 1 << 50: raise StreamRefused('NUMERIC_RANGE', 'exponent sum too large for an exact float')
         # the constant scale_F / scale_C x K_hi in the LOG domain (F1 / compact kappa): three log2 terms (two integers, one compact significand) each within 1 ulp; their magnitudes enter the widening as part (k)
-        K = self.rows.K; t_num = math.log2(self.scale_F); t_den = math.log2(self.scale_C); t_K = math.log2(K.hi_m) + K.hi_e
-        const_log2 = (t_num - t_den) + t_K; const_mag = int(abs(t_num) + abs(t_den) + abs(t_K)) + 4; self.mech['const_log2'] = const_log2; self.mech['kappa_compact'] = K.record(); self.mech['kappa_log2_hi'] = t_K
+        K = self.rows.K; t_num = math.log2(self.scale_F)
+        if self.bound_kind == 'target_over_actual_decoder': t_den = 0.0; t_K = 0.0; const_log2 = t_num; const_mag = int(abs(t_num)) + 4; self.mech['const_log2'] = const_log2; self.mech['kappa_applied'] = False          # DGP4: W_0 <= U r directly; C_int = scale_F B; no scale_C divisor (packed integers carry their exponents in E_U), no kappa
+        else: t_den = math.log2(self.scale_C); t_K = math.log2(K.hi_m) + K.hi_e; const_log2 = (t_num - t_den) + t_K; const_mag = int(abs(t_num) + abs(t_den) + abs(t_K)) + 4; self.mech['const_log2'] = const_log2; self.mech['kappa_compact'] = K.record(); self.mech['kappa_log2_hi'] = t_K
         wid = lifted_widening(self.blocks_C, mbp, self.fine, len(self.S), max(self.ccards), self.n_par, const_mag, self.resp_rel, abs_E_tot=abs(self.E_tot))    # 5 u |E_tot| and the constant terms are INSIDE d_total before rho_X / rho_cap / eps_num are derived (F1)
         if wid['delta_log_total'] > F(1, 4): raise StreamRefused('NUMERIC_RANGE', 'log-domain error budget %s too large' % float(wid['delta_log_total']))
         self.eps_num = IG.fup(wid['eps_num']); rho_X = IG.fup(wid['rho_X']); rho_cap = IG.fup(wid['rho_cap']); const_slack = IG.fup(wid['parts']['d_k'])            # the consumed constant carries its own proved log error (part k) outward
@@ -681,14 +718,16 @@ class LiftedStream(Stream):
                     z[rows, v] = mem[k]; logr[rows] += np.log2(cnt[k].astype(float)) - LD.Q_BITS
             if tnow() >= hard: raise Deadline('lifted batch at the hard work cutoff')
             logz = np.zeros(B)
-            if getattr(self, 'mutant_surrogate', False):                                                    # CONTROLS ONLY (never set in production): the weight of the UPPER surrogate G_U(c) d(z|c) instead of the fine target W(z)
+            if getattr(self, 'mutant_surrogate', False):                                                    # CONTROLS ONLY (never set in production): the weight of the UPPER surrogate instead of the fine target W(z): G_U(c) d(z|c) (G1-G3) or U(c) r(z|c) (RMAX)
                 for i in range(len(self.blocks_C)):
                     b = self.blocks_C[i]; idx = np.zeros(B, dtype=np.int64); st = {}; s_ = 1
                     for u in reversed(b.scope): st[u] = s_; s_ *= self.ccards[u]
                     for u in b.scope: idx += Sb[:, u] * st[u]
                     with np.errstate(divide='ignore'): logz += np.log2(b.M.reshape(-1)[idx]) + b.e
-                for v in range(self.n_par): logz += np.log2(np.array([float(self.Cz.d[v][a]) for a in z[:, v]]))
-                logz += float(IG.lg(F(self.scale_F, self.scale_C))) - self.E_fine
+                if self.bound_kind == 'target_over_actual_decoder': logz += logr + float(IG.lg(F(self.scale_F))) - self.E_fine          # U(c) r(z|c) in W_int units (no scale_C, no d)
+                else:
+                    for v in range(self.n_par): logz += np.log2(np.array([float(self.Cz.d[v][a]) for a in z[:, v]]))
+                    logz += float(IG.lg(F(self.scale_F, self.scale_C))) - self.E_fine
             else:
                 for i in range(len(self.fine)): logz += self.fLM[i][self._flat_fine(z, i)]
             zero = ~np.isfinite(logz) | zero_row; logX = np.where(zero, -2000.0, (logz - logq - logr - self.logU_capf) + float(self.E_tot)); mx = float(logX[~zero].max()) if (~zero).any() else -inf
@@ -702,7 +741,8 @@ class LiftedStream(Stream):
         except IG.RangeRefused as e: self.abandoned += 1; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('NUMERIC_RANGE_REFUSED in a lifted batch: %s' % str(e)[:120])
         except AssertionError as e: self.abandoned += 1; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a lifted batch (rows withheld): %s' % str(e)[:120])
     def upper_weight_fn(self):
-        """exact G_U(c) of THIS stream's upper model (grouped when envelope != G1); oracle / controls"""
+        """exact upper weight of THIS stream's upper model at the coarse state c -- G1 / G2 / G3: G_U(c) (bounds W_0 / d, times the scalar); RMAX: the PACKED U(c) (bounds W_0 / r, no scalar); oracle / controls"""
+        if self.envelope == 'RMAX' and self.rmax is not None: return self.rmax.packed_upper_weight
         if self.grouped is not None:
             import grouped_envelope as GE; return GE.grouped_upper_weight(self.M_par, self.Cz, self.grouped['tables'])
         return lambda c: LD.upper_weight(self.M_par, self.Cz, c)

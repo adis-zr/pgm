@@ -1,4 +1,4 @@
-"""Qualification controls of DENSE_GENERIC_PAC_INTEGRATION_1 (brief section 7), DGP2 (D19-D26) and DGP3 (D27-D31: RF1-RF4, lemma G). usage: check_dgp.py OUT.json [--only D1,D2,..]. Every control asserts actual branch execution."""
+"""Qualification controls of DENSE_GENERIC_PAC_INTEGRATION_1 (brief section 7), DGP2 (D19-D26), DGP3 (D27-D31: RF1-RF4, lemma G) and DGP4 (D32-D41: R1-R3, residual MAX compiler, checker, whole proposal, lifetime). usage: check_dgp.py OUT.json [--only D1,D2,..]. Every control asserts actual branch execution."""
 import sys, os, json, time, math, argparse, traceback
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm')); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'blockres'))
@@ -741,6 +741,366 @@ def D31_RF4_paired_arithmetic_power():
 
 
 CONTROLS += [D27_RF1_no_work_after_authoritative_sample, D28_RF2_sampler_stage_deadline_and_byte_identity, D29_RF3_cap_units_equality, D30_lemma_G_grouped_envelope, D31_RF4_paired_arithmetic_power]
+
+
+# ---------------------------------------------------------------- DGP4 controls (brief CLAUDE_DGP4_RESIDUAL_MAX_SPEC.md section 5): three repairs; residual MAX compiler; checker; whole proposal; lifetime
+import grouped_envelope as GE, residual_max_envelope as RM
+RMAX_PROD = dict(V=4096, fanin=16, mantissa_bits=128)
+def _four_cycle():
+    def tab(agree): return [F(9) if ((a & 1) == (b & 1)) == agree else F(1) for a in range(4) for b in range(4)]
+    return dict(cards=[4, 4, 4, 4], factors=[dict(scope=(0, 1), values=tab(True)), dict(scope=(1, 2), values=tab(True)), dict(scope=(2, 3), values=tab(True)), dict(scope=(0, 3), values=tab(False))], evidence={})
+def _stage(model, classes=None, scales=None):
+    clk = CE.Clock(PA.tnow() + 120, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B)
+    if classes is None: classes, Cz = fast_stage(M, clk, B)
+    else: Cz = CE.check_candidate(M, classes, scales or CE.unit_scales(M), clk, B, ratio_product='compact')
+    rows = LD.build_rows(M, classes, Cz, clk, B); return M, classes, Cz, rows, clk, B
+def _compile(M, classes, Cz, rows, clk, B, V=4096, groups=None, arith='compact', midpoint=None):
+    comp = RM.RMAXCompile(M, classes, Cz, rows, dict(V=V, fanin=16, mantissa_bits=128), B, clk, arith=arith); comp.build_sources(); comp.build_seeds(groups if groups is not None else GE.plan_groups(M, Cz, 'G2')[0]); comp.set_order(); comp.run_stages(midpoint if midpoint is not None else PA.tnow() + 120); comp.closure()
+    if arith == 'compact': comp.pack()
+    return comp
+def _U_fn(comp): return (comp.packed_upper_weight if comp.A.mode == 'compact' else comp.U_at)
+
+
+def D32_R1_transpose_semantics_and_permutation_invariance():
+    """R1: the brief's fixture (scope (1, 0), entries 1..16; manual classes [0,0,1,1]: the old envelope bounded 14 by 8; FAST classes: 13 by 4 with a real-stream cap defect) now holds exhaustively and the real G2 stream completes
+    batches; factor-axis / table permutation invariance: a factor given as scope (1, 0) with the transposed table equals the same factor given as scope (0, 1) in every grouped table (asymmetric values, unequal cardinalities,
+    singleton fallback groups), and the RMAX envelope is identical under the permutation"""
+    model = dict(cards=[4, 4], factors=[dict(scope=(1, 0), values=[F(k + 1) for k in range(16)])], evidence={}); res = {}
+    for label, classes in (('manual_0011', [[0, 0, 1, 1], [0, 0, 1, 1]]), ('fast', None)):
+        M, cl, Cz, rows, clk, B = _stage(model, classes); groups, gsc = GE.plan_groups(M, Cz, 'G2'); tabs, chg = GE.grouped_upper_tables(M, cl, Cz, groups, gsc, clk, B); ufn = GE.grouped_upper_weight(M, Cz, tabs); viol = 0
+        for z in itertools.product(range(4), range(4)):
+            W = LD.parent_weight(M, z); c = (cl[0][z[0]], cl[1][z[1]])
+            if W > ufn(c) * Cz.d[0][z[0]] * Cz.d[1][z[1]]: viol += 1
+        res[label] = dict(classes=cl, violations=viol); B.release(chg)
+    M, cl, Cz, rows, clk, B = _stage(model); S = PA.LiftedStream(2, M, M, [], cl, Cz, 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B), envelope='G2'); r = S.prepare(PA.tnow() + 30); outs = [S.batch(PA.tnow() + 30) for _ in range(4)]
+    res['real_stream'] = dict(prepare=r, batches=outs, defect=S.mech.get('certificate_defect'), max_log2_X=S.maxlogX)
+    # permutation invariance on a 3-variable model with unequal cardinalities [2, 3, 4]: factor (2, 0) with transposed values vs (0, 2); plus a (1, 2) factor and a singleton fallback (0, 1, 2) ternary that cannot be grouped
+    rng = random.Random(7); cards = [2, 3, 4]; vals02 = [F(rng.randint(1, 9)) for _ in range(8)]; vals12 = [F(rng.randint(1, 9)) for _ in range(12)]; vals012 = [F(rng.randint(1, 9)) for _ in range(24)]
+    arr = np.array(vals02, dtype=object).reshape(2, 4); vals20 = list(np.transpose(arr, (1, 0)).reshape(-1))
+    mA = dict(cards=cards, factors=[dict(scope=(0, 2), values=vals02), dict(scope=(1, 2), values=vals12), dict(scope=(0, 1, 2), values=vals012)], evidence={}); mB = dict(cards=cards, factors=[dict(scope=(2, 0), values=vals20), dict(scope=(1, 2), values=vals12), dict(scope=(0, 1, 2), values=vals012)], evidence={})
+    classes = [[0, 1], [0, 0, 1], [0, 1, 1, 0]]; env = {}
+    for lab, m in (('A', mA), ('B', mB)):
+        M, cl, Cz, rows, clk, B = _stage(m, classes); groups, gsc = GE.plan_groups(M, Cz, 'G2'); tabs, chg = GE.grouped_upper_tables(M, cl, Cz, groups, gsc, clk, B); ufn = GE.grouped_upper_weight(M, Cz, tabs)
+        comp = _compile(M, cl, Cz, rows, clk, B, V=4096); U = comp.packed_upper_weight; cs = list(itertools.product(range(2), range(2), range(2)))
+        env[lab] = dict(G=[str(ufn(c)) for c in cs], U=[str(U(c)) for c in cs], groups=[list(g) for g in groups], singleton_fallback=any(len(g) == 1 for g in groups), rmax_valid=RM.enumerate_check_rmax(M, cl, Cz, rows, U)['ok']); comp.release_all(); B.release(chg)
+    inv = env['A']['G'] == env['B']['G'] and env['A']['U'] == env['B']['U'] and env['A']['singleton_fallback'] and env['A']['rmax_valid'] and env['B']['rmax_valid']
+    ok = res['manual_0011']['violations'] == 0 and res['fast']['violations'] == 0 and r == 'READY' and all(o == 'COMMITTED' for o in outs) and res['real_stream']['defect'] is None and inv
+    rec('D32_R1_transpose_semantics_and_permutation_invariance', ok, permutation_invariant=inv, groups_A=env['A']['groups'], groups_B=env['B']['groups'], **res)
+
+
+def D33_R2_construction_charge_ownership():
+    """R2: (a) MEMORY after the first admitted grouped table leaves 0 orphaned bytes (before: 2,800); (b) an injected DEADLINE in the third table leaves 0 (before: 8,400); (c) a real lifted stream whose grouped construction is
+    refused by an injected clock leaves the planner's constructor account at rows-only (before: + the admitted tables); (d) the archived preservation input grid4x4_c32_generic replays under the p4 contract with the ledger
+    identity TRUE and the original stream completing (before: identity False, 8,400 B discrepancy); (e) RMAX: refusals at sources / seeds / a middle stage / closure release every owned byte; (f) build_rows releases on failure"""
+    res = {}
+    model = dict(cards=[4] * 6, factors=[dict(scope=sc, values=[F(1 + ((i * 7 + j * 3 + sc[0]) % 5)) for i in range(4) for j in range(4)]) for sc in ((0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (0, 5))], evidence={}); classes = [[0, 0, 1, 1]] * 6
+    M, cl, Cz, rows, clk, B = _stage(model, classes); groups, gsc = GE.plan_groups(M, Cz, 'G2'); live0 = B.live; first = 2 * (56 + (8 + CE.FRAC_BYTES) * 8) + 64 * 8
+    Bm = CE.Budget(live0 + first + 1); Bm.live = live0; err = None
+    try: GE.grouped_upper_tables(M, cl, Cz, groups, gsc, clk, Bm)
+    except CE.Refused as e: err = e.kind
+    res['memory_after_first'] = dict(refusal=err, orphaned=Bm.live - live0)
+    class Clk(CE.Clock):
+        def __init__(self): super().__init__(PA.tnow() + 30, {}); self.n = 0
+        def poll(self, where):
+            if where.startswith('before grouped table'):
+                self.n += 1
+                if self.n == 3: raise CE.Refused('DEADLINE', 'injected ' + where)
+    Bd = CE.Budget(CE.CONSTRUCTOR_BYTES); Bd.live = live0; err = None
+    try: GE.grouped_upper_tables(M, cl, Cz, groups, gsc, Clk(), Bd)
+    except CE.Refused as e: err = e.kind
+    res['deadline_third'] = dict(refusal=err, orphaned=Bd.live - live0)
+    P = UPlanner(model, dict(model_sha256='ctrl'), 10.0, admission_stop_s=9.0, t_start=PA.tnow(), seed=1, pac=True, lifted=True, envelope='G2'); P.M = CE.canonicalize(model, P.hclock, P.budget); P.canonical_charge = P.budget.live
+    S = PA.LiftedStream(2, P.M, P.M, [], classes, CE.check_candidate(P.M, classes, CE.unit_scales(P.M), P.hclock, P.budget, ratio_product='compact'), 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=P.budget), envelope='G2'); lb = P.budget.live
+    real_clock = CE.Clock
+    class Clk2(CE.Clock):
+        def __init__(self, deadline, stats): super().__init__(deadline, stats); self.n = 0
+        def poll(self, where):
+            if where.startswith('before grouped table'):
+                self.n += 1
+                if self.n == 2: raise CE.Refused('DEADLINE', 'injected ' + where)
+            return super().poll(where)
+    CE.Clock = Clk2
+    try: r = S.prepare(PA.tnow() + 30)
+    finally: CE.Clock = real_clock
+    res['stream_refused'] = dict(result=r, closed=(S.closed_reason or '')[:80], orphaned=P.budget.live - lb - S.rows.bytes)
+    # (d) archived replay (real clock, p4 contract)
+    man = json.load(open('/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANIFEST.json')); t = next(x for x in man['tasks'] if x['name'] == 'grid4x4_c32_generic'); mdl, bnd = CORE.read_uai(t['model'])
+    P2 = UPlanner(mdl, bnd, 3.85, admission_stop_s=3.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, envelope='G2'); o = P2.run(); res['archived_grid4x4_c32'] = dict(outcome=o['outcome'], published=o['published'], K=o['K'], ledger_identity=o['mechanism'].get('constructor_live_ledger_identity'), lifted=[(S_.stage, (S_.closed_reason or '')[:60]) for S_ in P2.streams if S_.kind == 'lifted'])
+    # (e) RMAX ownership on the four-cycle under injected failures at every phase
+    rel = {}
+    for where in ('sources', 'seeds', 'middle_stage', 'closure', 'checker'):
+        M4, cl4, Cz4, rows4, clk4, B4 = _stage(_four_cycle(), [[0, 0, 1, 1]] * 4); l0 = B4.live; comp = RM.RMAXCompile(M4, cl4, Cz4, rows4, RMAX_PROD, B4, clk4); kind = None
+        try:
+            if where == 'sources':
+                B4.cap = l0 + 100
+                try: comp.build_sources()
+                finally: B4.cap = CE.CONSTRUCTOR_BYTES
+            else:
+                comp.build_sources()
+                if where == 'seeds':
+                    B4.cap = B4.live + 100
+                    try: comp.build_seeds([(0, 1), (2, 3)])
+                    finally: B4.cap = CE.CONSTRUCTOR_BYTES
+                else:
+                    comp.build_seeds([(0, 1), (2, 3)]); comp.set_order()
+                    if where == 'middle_stage':
+                        comp.stage(comp.residual_order[0]); B4.cap = B4.live + 100
+                        try: comp.stage(comp.residual_order[1])
+                        finally: B4.cap = CE.CONSTRUCTOR_BYTES
+                    elif where == 'closure':
+                        comp.run_stages(PA.tnow() + 30); comp.clock = CE.Clock(PA.tnow() - 1, {}); comp.closure()
+                    elif where == 'checker':
+                        real = RM.check_stage; RM.check_stage = lambda *a_, **k_: dict(ok=False, why='injected', cells=0)
+                        try: comp.stage(comp.residual_order[0])
+                        finally: RM.check_stage = real
+        except (CE.Refused, CE.Defect, RM.RefusedRMAX) as e: kind = getattr(e, 'kind', type(e).__name__)
+        comp.release_all(); rel[where] = dict(refusal=kind, orphaned=B4.live - l0, owned_after_release=comp.owned[0])
+    res['rmax_release'] = rel
+    # (f) build_rows releases on failure (a class without decoder mass -> Defect)
+    Mz, clz, Czz, rz, clkz, Bz = _stage(_four_cycle(), [[0, 0, 1, 1]] * 4); l0 = Bz.live; Czz.d[0][0] = F(0); Czz.d[0][2] = F(0); kind = None
+    try: LD.build_rows(Mz, clz, Czz, clkz, Bz)
+    except (CE.Defect, CE.Refused) as e: kind = type(e).__name__
+    res['build_rows_release'] = dict(refusal=kind, orphaned=Bz.live - l0)
+    ok = res['memory_after_first'] == dict(refusal='MEMORY', orphaned=0) and res['deadline_third'] == dict(refusal='DEADLINE', orphaned=0) and res['stream_refused']['orphaned'] == 0 and res['archived_grid4x4_c32']['ledger_identity'] is True and res['archived_grid4x4_c32']['outcome'] == 'COMPLETE' and all(v['orphaned'] == 0 and v['refusal'] is not None for v in rel.values()) and res['build_rows_release']['orphaned'] == 0
+    rec('D33_R2_construction_charge_ownership', ok, **res)
+
+
+def D34_R3_parent_final_timestamp():
+    """R3: injected expiry INSIDE the parent finalizer's actual action-history aggregation (TimedAction records advance the clock past the deadline on every .get) and AT the final sample, on multi-query / factorless / scalar
+    cases: the repaired finalizer publishes 0 with outcome DEADLINE (before: COMPLETE 2/2 with the reported wall at 3.01 s under a 3 s contract); source order: no action / phase sum after the authoritative sample"""
+    res = {}
+    def planner(model):
+        P = UPlanner(model, {}, 3.0, admission_stop_s=2.5, t_start=PA.tnow()); P.M = CE.canonicalize(model, P.hclock, P.budget); P.canonical_charge = P.budget.live; P.t_mark = P.t_start; P.out['mechanism']['positive_mass_witness'] = True; return P
+    cases = dict(multi_query=dict(cards=[2, 3], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(1), F(2), F(1), F(1)])], evidence={}), factorless=dict(cards=[3, 2], factors=[dict(scope=(0,), values=[F(1), F(2), F(1)]), dict(scope=(1,), values=[F(1), F(3)])], evidence={}), scalar=dict(cards=[2], factors=[dict(scope=(0,), values=[F(1), F(1)])], evidence={}))
+    old = (UP.tnow, UPP.tnow, CE.tnow)
+    for name, model in cases.items():
+        P = planner(model); state = {'now': P.t_start + 0.01, 'gets': 0}
+        class TimedAction(dict):
+            def get(self, k, d=None):
+                state['gets'] += 1; state['now'] = P.hard + 0.01; return super().get(k, d)
+        P.out['actions'] = [TimedAction(action='price', actual_s=0.001), TimedAction(action='discover_fast', actual_s=0.002)]; rows = {(v, a_): dict(lo=F(1, 4), hi=F(1, 4), point=F(1, 4), guarantee='DETERMINISTIC') for v in range(len(model['cards'])) for a_ in range(model['cards'][v])}
+        UP.tnow = UPP.tnow = CE.tnow = lambda: state['now']
+        try: r = UP.Planner.fin(P, 'COMPLETE', rows)
+        finally: UP.tnow, UPP.tnow, CE.tnow = old
+        P2 = planner(model); st2 = {'now': P2.t_start + 0.01, 'fin_reads': 0}
+        def clock():
+            f = sys._getframe(1)
+            if f.f_code.co_name == 'fin': st2['fin_reads'] += 1; st2['now'] = P2.hard + 0.01
+            return st2['now']
+        UP.tnow = UPP.tnow = CE.tnow = clock
+        try: r2 = UP.Planner.fin(P2, 'COMPLETE', rows)
+        finally: UP.tnow, UPP.tnow, CE.tnow = old
+        res[name] = dict(aggregation=dict(outcome=r['outcome'], published=r['published'], gets=state['gets'], respected=r['hard_deadline_respected']), at_sample=dict(outcome=r2['outcome'], published=r2['published'], fin_reads=st2['fin_reads']))
+    src = open(os.path.join(HERE, 'unified_planner.py')).read(); fin_src = src[src.index('    def fin(self, oc, rows_canon, note=None):'):src.index('def plan_and_solve')]; after = fin_src[fin_src.index('t_end = tnow()'):]
+    order_ok = ("for x in out['actions']" not in after) and ("out['phases_s'].items()" not in after) and ('for ' not in after.split('\n')[1])
+    ok = all(v['aggregation']['outcome'] == 'DEADLINE' and v['aggregation']['published'] == 0 and v['aggregation']['gets'] > 0 and v['at_sample']['outcome'] == 'DEADLINE' and v['at_sample']['published'] == 0 and v['at_sample']['fin_reads'] == 1 for v in res.values()) and order_ok
+    rec('D34_R3_parent_final_timestamp', ok, source_order_ok=order_ok, **res)
+
+
+def D35_rmax_exact_limit_and_prefix_validity():
+    """lemma 5 / lemma 3 on tiny graphs: with no splits (V large) and EXACT diagnostic arithmetic the complete residual elimination equals the raw rational t(c) on EVERY class (three models: the four-cycle, a random card-4
+    triangle with hard zeros, a 5-variable path with unequal class sizes); the production (compact) values dominate t everywhere; along ONE trajectory the exact closure after k committed stages is nonincreasing in k and every
+    prefix closure bounds every fine state (W_0 <= U r); a V = 64 split execution remains a valid bound"""
+    res = {}; rng = random.Random(11)
+    tri = dict(cards=[4, 4, 4], factors=[dict(scope=(0, 1), values=[F(rng.randint(0, 6)) for _ in range(16)]), dict(scope=(1, 2), values=[F(rng.randint(1, 6)) for _ in range(16)]), dict(scope=(0, 2), values=[F(rng.randint(1, 6)) for _ in range(16)]), dict(scope=(1,), values=[F(1), F(2), F(1), F(3)])], evidence={})
+    path5 = dict(cards=[4, 3, 4, 2, 4], factors=[dict(scope=(0, 1), values=[F(rng.randint(1, 9)) for _ in range(12)]), dict(scope=(1, 2), values=[F(rng.randint(1, 9)) for _ in range(12)]), dict(scope=(2, 3), values=[F(rng.randint(1, 9)) for _ in range(8)]), dict(scope=(3, 4), values=[F(rng.randint(1, 9)) for _ in range(8)])], evidence={})
+    for name, model, classes in (('four_cycle', _four_cycle(), [[0, 0, 1, 1]] * 4), ('triangle_zeros', tri, [[0, 1, 1, 0], [0, 0, 1, 1], [0, 1, 0, 1]]), ('path5_unequal', path5, [[0, 0, 0, 1], [0, 1, 1], [0, 1, 1, 1], [0, 0], [0, 1, 0, 1]])):
+        M, cl, Cz, rows, clk, B = _stage(model, classes); t, T = RM.exact_t(M, cl, Cz, rows)
+        ce = _compile(M, cl, Cz, rows, clk, B, V=1 << 20, arith='exact'); Ue = {c: ce.U_at(c) for c in itertools.product(*[range(k) for k in Cz.ccards])}; exact_eq = all(Ue[c] == t[c] for c in t) and all(Ue[c] == 0 for c in Ue if c not in t); ce.release_all()
+        cp = _compile(M, cl, Cz, rows, clk, B, V=1 << 20); Up = cp.packed_upper_weight; dom = all(Up(c) >= t[c] for c in t); valid = RM.enumerate_check_rmax(M, cl, Cz, rows, Up)['ok']; cp.release_all()
+        # one trajectory: closure after k stages (exact), k = 0..n
+        traj = []; comp = RM.RMAXCompile(M, cl, Cz, rows, dict(V=1 << 20, fanin=16, mantissa_bits=128), B, clk, arith='exact'); comp.build_sources(); comp.build_seeds(GE.plan_groups(M, Cz, 'G2')[0]); comp.set_order()
+        for k in range(len(comp.residual_order) + 1):
+            comp.closure(); tot = sum(comp.U_at(c) for c in itertools.product(*[range(kk) for kk in Cz.ccards])); traj.append(tot); ok_k = RM.enumerate_check_rmax(M, cl, Cz, rows, comp.U_at)['ok']
+            if not ok_k: traj.append('INVALID'); break
+            if k < len(comp.residual_order): comp.stage(comp.residual_order[k])
+        comp.release_all(); nonincr = all(isinstance(x, F) for x in traj) and all(traj[i + 1] <= traj[i] for i in range(len(traj) - 1))
+        c64 = _compile(M, cl, Cz, rows, clk, B, V=64); v64 = RM.enumerate_check_rmax(M, cl, Cz, rows, c64.packed_upper_weight)['ok']; splits64 = c64.max_splits; c64.release_all()
+        res[name] = dict(exact_equals_t=exact_eq, T=str(T), compact_dominates_t=dom, compact_valid=valid, trajectory_log2=[float(math.log2(x)) if isinstance(x, F) and x > 0 else str(x) for x in traj], nonincreasing=nonincr, V64_valid=v64, V64_splits=splits64, zero_classes=sum(1 for c in Ue if c not in t))
+    ok = all(v['exact_equals_t'] and v['compact_dominates_t'] and v['compact_valid'] and v['nonincreasing'] and v['V64_valid'] for v in res.values())
+    rec('D35_rmax_exact_limit_and_prefix_validity', ok, **res)
+
+
+def D36_compatibility_witness_four_cycle():
+    """the brief's witness: pinned seeds {01, 12} / {23, 03}; prefix-zero closure 16 * 9^4 on every class; exact t(c) = 16 * 9^3; a no-split run with V >= 256 attains t exactly (9x tighter); the trace shows a message
+    consumed by a later elimination; the V = 64 split run remains a valid bound (and is looser)"""
+    M, cl, Cz, rows, clk, B = _stage(_four_cycle(), [[0, 0, 1, 1]] * 4); t, T = RM.exact_t(M, cl, Cz, rows); cs = list(itertools.product(*[range(2)] * 4)); res = dict(t=sorted(set(str(x) for x in t.values())), expected=str(16 * 9 ** 3))
+    for V in (64, 256, 4096):
+        comp = RM.RMAXCompile(M, cl, Cz, rows, dict(V=V, fanin=16, mantissa_bits=128), B, clk); comp.build_sources(); comp.build_seeds([(0, 1), (2, 3)]); comp.closure(); U0 = {c: comp.U_at(c) for c in cs}
+        comp.set_order(); comp.run_stages(PA.tnow() + 60); comp.closure(); comp.pack(); U = {c: comp.packed_upper_weight(c) for c in cs}; rec_ = comp.record()
+        consumed_later = any(g['consumed_messages'] > 0 for p in rec_['plan'] for g in p['groups']); valid = RM.enumerate_check_rmax(M, cl, Cz, rows, comp.packed_upper_weight)['ok']
+        res['V%d' % V] = dict(prefix0=sorted(set(str(x) for x in U0.values())), U=sorted(set(str(x) for x in U.values())), ratio=str(min(U0.values()) / max(U.values())), splits=rec_['max_splits'], message_consumed_later=consumed_later, valid=valid, checker_ok=rec_['checker']['all_ok']); comp.release_all()
+    ok = res['t'] == [str(16 * 9 ** 3)] and res['V256']['U'] == [str(16 * 9 ** 3)] and res['V4096']['U'] == [str(16 * 9 ** 3)] and res['V256']['prefix0'] == [str(16 * 9 ** 4)] and res['V256']['ratio'] == '9' and res['V256']['message_consumed_later'] and res['V256']['splits'] == 0 and res['V64']['valid'] and res['V64']['splits'] >= 1 and all(res['V%d' % V]['checker_ok'] for V in (64, 256, 4096))
+    rec('D36_compatibility_witness_four_cycle', ok, **res)
+
+
+def D37_axes_domains_support_and_scalars():
+    """axes / domains: unequal class sizes with padding (card 4 split 1 / 3 and 3 / 1), hard zeros (a zero source entry stays zero through MAX; a class whose every fine state has zero target mass gets U = 0), empty support refusal
+    (a positive unary with zero decoder probability -> typed SUPPORT refusal, nothing leaked), identity classes (every class a singleton: U == W_0 / r exactly, trivially); parent / scalars: an exact-quotient parent with scalars
+    7 and 252 recovers original-coordinate responses from the RMAX stream (Z units preserved; no duplicate factor), and the identity parent with a nonunit canonical scalar keeps the scalar out of U"""
+    res = {}
+    # unequal class sizes + hard zeros
+    rng = random.Random(3); vals = [F(rng.randint(1, 9)) for _ in range(16)]; vals[5] = F(0); vals[9] = F(0)
+    m = dict(cards=[4, 4], factors=[dict(scope=(0, 1), values=vals), dict(scope=(0,), values=[F(1), F(0), F(2), F(3)])], evidence={}); classes = [[0, 0, 0, 1], [0, 1, 1, 1]]
+    M, cl, Cz, rows, clk, B = _stage(m, classes); t, T = RM.exact_t(M, cl, Cz, rows); comp = _compile(M, cl, Cz, rows, clk, B); U = comp.packed_upper_weight; cs = list(itertools.product(range(2), range(2)))
+    res['unequal_zeros'] = dict(pads=comp.pads, U_vs_t=[(str(U(c)), str(t.get(c, F(0)))) for c in cs], valid=RM.enumerate_check_rmax(M, cl, Cz, rows, U)['ok'], zero_classes_zero_U=all(U(c) == 0 for c in cs if c not in t)); comp.release_all()
+    # empty support: force a decoder row with zero probability on a positive-unary state
+    M2, cl2, Cz2, rows2, clk2, B2 = _stage(m, classes); l0 = B2.live; rows2.counts[(0, 0)] = [rows2.Q, 0, 0]; kind = None
+    comp2 = RM.RMAXCompile(M2, cl2, Cz2, rows2, RMAX_PROD, B2, clk2)
+    try: comp2.build_sources()
+    except RM.RefusedRMAX as e: kind = e.kind
+    comp2.release_all(); res['empty_support'] = dict(refusal=kind, orphaned=B2.live - l0)
+    # identity classes
+    M3, cl3, Cz3, rows3, clk3, B3 = _stage(_four_cycle(), [[0, 1, 2, 3]] * 4); t3, T3 = RM.exact_t(M3, cl3, Cz3, rows3); c3 = _compile(M3, cl3, Cz3, rows3, clk3, B3); ident_ok = all(c3.packed_upper_weight(c) == t3[c] for c in t3); c3.release_all(); res['identity_classes'] = dict(U_equals_t=ident_ok, n_classes=len(t3))
+    # scalars 7 and 252 via a nullary factor on the identity parent: the canonical scalar is outside U (U bounds W_0 / r WITHOUT the scalar); the stream's scale_to_original carries it
+    for sc_ in (7, 252):
+        mm = dict(cards=[4, 4, 4], factors=[dict(scope=(0, 1), values=[F(1 + (i * 3 + j) % 5) for i in range(4) for j in range(4)]), dict(scope=(1, 2), values=[F(1 + (i + 2 * j) % 4) for i in range(4) for j in range(4)]), dict(scope=(), values=[F(sc_)])], evidence={})
+        Ms, cls, Czs, rowss, clks, Bs = _stage(mm, [[0, 0, 1, 1]] * 3); comps = _compile(Ms, cls, Czs, rowss, clks, Bs); ts, Ts = RM.exact_t(Ms, cls, Czs, rowss); Us = comps.packed_upper_weight
+        S = PA.LiftedStream(2, Ms, Ms, [], cls, Czs, 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=Bs, rmax_profile=RMAX_PROD), envelope='RMAX'); r = S.prepare(PA.tnow() + 30)
+        res['scalar_%d' % sc_] = dict(canonical_scalar=str(Ms.scalar), stream_scale_to_original=str(S.scale_to_original), U_excludes_scalar=all(Us(c) >= ts[c] for c in ts) and all(Us(c) < F(sc_) * ts[c] for c in ts if ts[c] > 0) if sc_ > 1 else True, prepare=r, Z_original_units=(str(S.Z_original()) if S.Z is not None else 'sampled'), factors_in_model=len(S.model['factors'])); comps.release_all(); S._close('ctrl')
+    # exact-quotient parent: card-8 model with duplicated states -> exact quotient (card 4) -> RMAX on the parent; the stream's rows decode to ORIGINAL coordinates and contain the enumerated original marginals after batches
+    base = _four_cycle(); base['factors'].append(dict(scope=(0,), values=[F(1), F(2), F(1), F(3)])); big = duplicate_states(base, seed=5); clk = CE.Clock(PA.tnow() + 120, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); Mb = CE.canonicalize(big, clk, B)      # card 8, n 4: 4,096 fine states
+    classes1 = CE.exact_profile_classes(Mb, clk, B); Cz1 = CE.check_candidate(Mb, classes1, CE.exact_scales(Mb, classes1, clk), clk, B, ratio_product='compact'); M1 = CE.stage_model(Mb, Cz1); prof, why = CE.slice_profiles(M1, clk, B)
+    classes2 = [CE.canonical_classes(CE.farthest_split(prof[v], list(range(M1.cards[v])), clk), M1.cards[v]) for v in range(len(M1.cards))]; Cz2_ = CE.check_candidate(M1, classes2, CE.unit_scales(M1), clk, B, ratio_product='compact')
+    S = PA.LiftedStream(2, Mb, M1, [(classes1, Cz1)], classes2, Cz2_, 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B, rmax_profile=RMAX_PROD), envelope='RMAX', scale_to_original=M1.scalar); r = S.prepare(PA.tnow() + 60)
+    import dgp2_oracle as OR; enum = OR.enumerate_original(Mb, PA.tnow() + 60); mu = enum['mu']
+    for _ in range(40):
+        if S.stage != 'READY': break
+        S.batch(PA.tnow() + 60)
+    S.check(); rows_q = S.pac_rows(); viol = sum(1 for j, (L, H) in rows_q.items() if not (L <= mu[(int(Mb.orig_of[S.queries[j][0]]), S.queries[j][1])] <= H)) if rows_q else None
+    res['exact_quotient_parent'] = dict(prepare=r, parent_cards=list(M1.cards), fine_cards=list(Mb.cards)[:6], draws=S.draws, certified_rows=len(rows_q), containment_violations=viol, witness=S.witness, rmax_stages=(S.mech.get('rmax') or {}).get('stages_done'), scale_to_original=str(S.scale_to_original), defect=S.mech.get('certificate_defect')); S._close('ctrl')
+    ok = res['unequal_zeros']['valid'] and res['unequal_zeros']['zero_classes_zero_U'] and res['empty_support'] == dict(refusal='SUPPORT', orphaned=0) and res['identity_classes']['U_equals_t'] and all(res['scalar_%d' % k]['prepare'] == 'READY' and res['scalar_%d' % k]['U_excludes_scalar'] and res['scalar_%d' % k]['canonical_scalar'] == str(k) for k in (7, 252)) and res['exact_quotient_parent']['prepare'] == 'READY' and res['exact_quotient_parent']['containment_violations'] == 0 and res['exact_quotient_parent']['defect'] is None
+    rec('D37_axes_domains_support_and_scalars', ok, **res)
+
+
+def D38_numeric_upper_direction_and_packing():
+    """upward direction: (a) from_fraction_up >= q on random rationals incl. huge / tiny exponents; (b) mul_exact + norm_up >= exact product; (c) packing: every packed entry >= the closed compact entry, positive-below-quantum
+    entries become one unit (a table with a 2^-400 entry next to a 2^300 one), zeros stay zero, the inflation is reported and nonzero there; (d) extreme exponents: a model with factors ~2^900 and ~2^-900 compiles and the
+    stream bridges with the packed exponent in E_U (no float of a huge rational), or refuses typed; (e) a BITS refusal on a source whose rational exceeds the bit cap is typed"""
+    rng = random.Random(5); res = {}
+    qs = [F(rng.getrandbits(200) + 1, rng.getrandbits(180) + 1) for _ in range(200)] + [F(1, 2 ** 900), F(2 ** 900), F(3, 7)]; up_ok = all(RM.to_fraction(RM.from_fraction_up(q)) >= q and RM.to_fraction(RM.from_fraction_up(q)) <= q * (1 + F(1, 1 << 126)) for q in qs)
+    pairs = [(RM.from_fraction_up(F(rng.getrandbits(300) + 1)), RM.from_fraction_up(F(1, rng.getrandbits(300) + 1))) for _ in range(100)]; mul_ok = all(RM.to_fraction(RM.norm_up(*RM.mul_exact(a, b))) >= RM.to_fraction(a) * RM.to_fraction(b) for a, b in pairs)
+    res['conversion_up'] = up_ok; res['mul_up'] = mul_ok
+    # packing with a tiny entry
+    m = dict(cards=[2, 2], factors=[dict(scope=(0, 1), values=[F(2) ** 300, F(1, 2 ** 400), F(1), F(0)])], evidence={}); M, cl, Cz, rows, clk, B = _stage(m, [[0, 1], [0, 1]]); comp = _compile(M, cl, Cz, rows, clk, B); P = comp.packed[0]
+    tiny_one = any(int(x) == 1 for x in P['ints'].reshape(-1)); zero_kept = any(int(x) == 0 for x in P['ints'].reshape(-1)); pk = RM.check_packing(comp.closed, comp.packed); infl = comp.packing['max_ratio_log2']; valid = RM.enumerate_check_rmax(M, cl, Cz, rows, comp.packed_upper_weight)['ok']; comp.release_all()
+    res['packing'] = dict(tiny_became_one=tiny_one, zero_kept=zero_kept, check=pk['ok'], max_inflation_log2=infl, valid=valid)
+    # extreme exponents through the stream
+    mx = dict(cards=[4, 4, 4], factors=[dict(scope=(0, 1), values=[F(2) ** 900 * F(1 + (i + j) % 3) for i in range(4) for j in range(4)]), dict(scope=(1, 2), values=[F(1, 2 ** 900) * F(1 + (i * j) % 3) for i in range(4) for j in range(4)])], evidence={}); Mx, clx, Czx, rowsx, clkx, Bx = _stage(mx, [[0, 0, 1, 1]] * 3)
+    S = PA.LiftedStream(2, Mx, Mx, [], clx, Czx, 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=Bx, rmax_profile=RMAX_PROD), envelope='RMAX'); r = S.prepare(PA.tnow() + 30); outs = [S.batch(PA.tnow() + 30) for _ in range(3)] if r == 'READY' else []
+    res['extreme_exponents'] = dict(prepare=r, closed=(S.closed_reason or '')[:100], E_U=getattr(S.mbp, 'E_U', None) if hasattr(S, 'mbp') else None, packed_exponent_sum=(S.mech.get('rmax') or {}).get('packed_exponent_sum'), batches=outs, defect=S.mech.get('certificate_defect')); S._close('ctrl')
+    # BITS: a source rational beyond the bit cap
+    mb = dict(cards=[2, 2], factors=[dict(scope=(0, 1), values=[F(3) ** 3000, F(1), F(1), F(1)])], evidence={}); kind = None
+    try:
+        Mb_, clb, Czb, rowsb, clkb, Bb = _stage(mb, [[0, 1], [0, 1]]); cb = RM.RMAXCompile(Mb_, clb, Czb, rowsb, RMAX_PROD, Bb, clkb); cb.build_sources(); cb.release_all()
+    except (CE.Refused, RM.RefusedRMAX) as e: kind = getattr(e, 'kind', None)
+    res['bits_refusal'] = kind
+    ok = up_ok and mul_ok and tiny_one and zero_kept and pk['ok'] and infl > 0 and valid and (r == 'READY' and all(o == 'COMMITTED' for o in outs) and res['extreme_exponents']['defect'] is None or r == 'CLOSED') and kind in ('BITS', None)
+    rec('D38_numeric_upper_direction_and_packing', ok, **res)
+
+
+def D39_independent_checker_mutants():
+    """the stage checker rejects: an omitted input factor (the output lacks its axes), a duplicated input, wrong output axes, an underbounded message (one entry lowered), an invalid class mask (a nonzero at a padded position),
+    and a downward packing (one packed entry decremented); it ACCEPTS a valid looser bound (one entry doubled)"""
+    M, cl, Cz, rows, clk, B = _stage(_four_cycle(), [[0, 0, 1, 1]] * 4); comp = RM.RMAXCompile(M, cl, Cz, rows, RMAX_PROD, B, clk); comp.build_sources(); comp.build_seeds([(0, 1), (2, 3)]); comp.set_order()
+    v = comp.residual_order[0]; sv = 2 * v + 1; bucket = [T for T in comp.active if sv in T.axes]; u = tuple(sorted(set(a for T in bucket for a in T.axes))); P = RM._norm(RM.product_exact(bucket, u, comp.ccards, comp.pads)); R, raxes = RM.max_over(P, u, [sv]); good = RM.Table(raxes, R.copy(), 999, ('ctrl',))
+    res = dict(valid=RM.check_stage(bucket, good, sv, comp.ccards, comp.pads, rows.members, clk)['ok'])
+    res['omitted_input'] = not RM.check_stage(bucket[:-1], good, sv, comp.ccards, comp.pads, rows.members, clk)['ok']
+    res['duplicated_input'] = not RM.check_stage(bucket + [bucket[0]], good, sv, comp.ccards, comp.pads, rows.members, clk)['ok']
+    R2w, raxes2 = RM.max_over(R, raxes, [raxes[0]]); wrong = RM.Table(raxes2, R2w, 998, ('ctrl',))                          # the output with ONE further axis maxed away: valid values, WRONG axes -> must be rejected
+    res['wrong_axes'] = not RM.check_stage(bucket, wrong, sv, comp.ccards, comp.pads, rows.members, clk)['ok']
+    low = good.arr.copy(); idx = next(i for i in itertools.product(*[range(k) for k in low.shape]) if low[i][1]); e, m_ = low[idx]; low[idx] = (e, m_ - 1); res['underbounded'] = not RM.check_stage(bucket, RM.Table(raxes, low, 997, ('ctrl',)), sv, comp.ccards, comp.pads, rows.members, clk)['ok']
+    loose = good.arr.copy(); loose[idx] = (e + 1, m_); res['looser_accepted'] = RM.check_stage(bucket, RM.Table(raxes, loose, 996, ('ctrl',)), sv, comp.ccards, comp.pads, rows.members, clk)['ok']
+    # invalid class mask: on a model with unequal classes, set a padded position nonzero in an input
+    m = dict(cards=[4, 4], factors=[dict(scope=(0, 1), values=[F(1 + (i * j) % 5) for i in range(4) for j in range(4)])], evidence={}); M2, cl2, Cz2, rows2, clk2, B2 = _stage(m, [[0, 0, 0, 1], [0, 1, 1, 1]]); c2 = RM.RMAXCompile(M2, cl2, Cz2, rows2, RMAX_PROD, B2, clk2); c2.build_sources()
+    T = c2.active[0]; mask = RM.valid_mask(T.axes, c2.ccards, c2.pads, rows2.members); bad = next(i for i in itertools.product(*[range(k) for k in T.arr.shape]) if not mask[i]); T.arr[bad] = (0, RM.HALF)
+    u2 = T.axes; P2 = RM._norm(RM.product_exact([T], u2, c2.ccards, c2.pads)); R2, ra2 = RM.max_over(P2, u2, [1]); res['invalid_mask'] = not RM.check_stage([T], RM.Table(ra2, R2, 995, ('ctrl',)), 1, c2.ccards, c2.pads, rows2.members, clk2)['ok']; c2.release_all()
+    comp.closure(); comp.pack(); P0 = comp.packed[0]; i0 = next(i for i in itertools.product(*[range(k) for k in P0['ints'].shape]) if int(P0['ints'][i]) > 1); P0['ints'][i0] = int(P0['ints'][i0]) - 1; res['downward_packing'] = not RM.check_packing(comp.closed, comp.packed)['ok']; comp.release_all()
+    ok = res['valid'] and res['omitted_input'] and res['duplicated_input'] and res['wrong_axes'] and res['underbounded'] and res['looser_accepted'] and res['invalid_mask'] and res['downward_packing']
+    rec('D39_independent_checker_mutants', ok, **res)
+
+
+def D40_whole_proposal_rmax_vs_reference():
+    """whole proposal on a dev card-4 model (identity parent, FAST classes, production profile): the analyzed law q_C r is normalized (sum over every fine state = 1 within the sampler's exact replay), W_0 <= B q_C r on EVERY fine
+    state (B in W_0 units from logU_capf + E_U - log2 scale_F), the production float log2 X on 2 batches equals the exact analyzed value on the SAME assignments within cap_tol; the surrogate mutant (U r as the weight)
+    certifies rows that EXCLUDE the original marginal while the production estimator's rows contain it"""
+    import dgp2_oracle as OR
+    model, binding = load_mid('dg_n16_c4_clique_two') if False else load('dg_n8_c4_clique_two'); M, cl, Cz, rows, clk, B = _stage(model); enum = OR.enumerate_original(M, PA.tnow() + 60); Z = enum['Z']; n = len(M.cards)
+    S = PA.LiftedStream(2, M, M, [], cl, Cz, 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B, rmax_profile=RMAX_PROD), envelope='RMAX'); r = S.prepare(PA.tnow() + 90); assert r == 'READY', (r, S.closed_reason)
+    cstates = list(itertools.product(*[range(k) for k in Cz.ccards])); Sb = np.array(cstates, dtype=np.int64); lq, qC = S.mbp.logq_given(Sb, S.pos); qC = dict(zip(cstates, qC)); C_int = F(2) ** int(math.floor(S.logU_capf)) * F(2.0 ** (S.logU_capf - math.floor(S.logU_capf))) * F(2) ** S.mbp.E_U; B_W0 = C_int / F(S.scale_F)
+    tot_q = F(0); Xmax = F(0); viol = 0
+    for z, w in zip(enum['states'], enum['W']):
+        c = tuple(cl[v][z[v]] for v in range(n)); r_ = F(1)
+        for v in range(n): r_ *= F(rows.counts[(v, c[v])][rows.members[v][c[v]].index(z[v])], rows.Q)
+        q = qC[c] * r_; tot_q += q
+        if w > 0:
+            if q == 0: viol += 1; continue
+            X = (w / M.scalar) / (B_W0 * q); Xmax = max(Xmax, X)
+    # same-assignment arithmetic comparison on 2 batches
+    dev = 0.0; nb = 0
+    for _ in range(2):
+        Sb2, logq_s, zero_row = S.mbp.sample_batch(S.rng, S.batch_used, S.pos); Bn = Sb2.shape[0]; z = np.zeros((Bn, n), dtype=np.int64); logr = np.zeros(Bn)
+        for v in range(n):
+            u = S.rng.integers(0, LD.Q, size=Bn, dtype=np.int64); cv = Sb2[:, v]
+            for c in np.unique(cv):
+                rws = np.nonzero(cv == c)[0]; cum = np.asarray(S.rows.cum[(v, int(c))], dtype=np.int64); k = np.searchsorted(cum, u[rws], side='right'); mem = np.asarray(S.rows.members[v][int(c)], dtype=np.int64); cnt = np.asarray(S.rows.counts[(v, int(c))], dtype=np.int64); z[rws, v] = mem[k]; logr[rws] += np.log2(cnt[k].astype(float)) - LD.Q_BITS
+        logz = np.zeros(Bn)
+        for i in range(len(S.fine)): logz += S.fLM[i][S._flat_fine(z, i)]
+        impl = (logz - logq_s - logr - S.logU_capf) + float(S.E_tot); lq2, q_an = S.mbp.logq_given(Sb2, S.pos)
+        for k in range(Bn):
+            if not np.isfinite(impl[k]) or q_an[k] == 0: continue
+            W = LD.parent_weight(M, tuple(int(x) for x in z[k])) / M.scalar; r_ = F(1)
+            for v in range(n): r_ *= F(rows.counts[(v, int(Sb2[k, v]))][rows.members[v][int(Sb2[k, v])].index(int(z[k, v]))], rows.Q)
+            exact = float(IG.lg(W)) - float(IG.lg(q_an[k] * r_)) - float(IG.lg(B_W0)); dev = max(dev, abs(exact - float(impl[k]))); nb += 1
+    # surrogate mutant vs production containment
+    mu = enum['mu']; res_m = {}
+    for mutant in (False, True):
+        S2 = PA.LiftedStream(2, M, M, [], cl, Cz, 4, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B, rmax_profile=RMAX_PROD), envelope='RMAX'); S2.mutant_surrogate = mutant; assert S2.prepare(PA.tnow() + 60) == 'READY'
+        for _ in range(60): S2.batch(PA.tnow() + 60)
+        S2.check(); rq = S2.pac_rows(); excl = sum(1 for j, (L, H) in rq.items() if not (L <= mu[(int(M.orig_of[S2.queries[j][0]]), S2.queries[j][1])] <= H)); res_m['mutant' if mutant else 'production'] = dict(rows=len(rq), excluding_truth=excl, draws=S2.draws); S2._close('ctrl')
+    rm = S.mech['rmax']; S._close('ctrl')
+    ok = abs(tot_q - 1) < F(1, 10 ** 9) and Xmax <= 1 and viol == 0 and dev <= S.cap_tol and nb > 500 and res_m['production']['excluding_truth'] == 0 and res_m['mutant']['excluding_truth'] > 0 and rm['stages_done'] > 0 and rm['checker']['all_ok']
+    rec('D40_whole_proposal_rmax_vs_reference', ok, total_q=float(tot_q), max_X_analyzed=float(Xmax), support_violations=viol, same_assignment_dev=dev, cap_tol=S.cap_tol, compared=nb, log2_B_W0_over_Z0=float(IG.lg(B_W0 / (Z / M.scalar))), rmax=dict(stages=rm['stages_done'], splits=rm['max_splits'], consumed=rm['consumed_messages'], packing_log2=rm['packing']['max_ratio_log2'], seconds=rm['seconds_total']), **res_m)
+
+
+def D41_lifetime_cutoffs_and_incumbent():
+    """lifetime: in a full planner run with RMAX, injected refusals at (a) the RMAX adapter (packing check), (b) the sampler stage (deadline), (c) the midpoint (zero MAX allowance) leave the request COMPLETE / usable through the
+    primary stream, the constructor ledger identity TRUE, every lifted charge released, and no row published after expiry; (d) a forced RMAX request with a tight preparation allowance refuses typed (not the hard deadline)"""
+    model, binding = load_mid('dg_n16_c4_clique_two'); res = {}
+    def run(label, patch):
+        P = UPlanner(model, binding, 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, envelope='RMAX'); undo = patch(P) if patch else None
+        try: o = P.run()
+        finally:
+            if undo: undo()
+        L = [S for S in P.streams if S.kind == 'lifted']; m = o['mechanism']
+        res[label] = dict(outcome=o['outcome'], published=o['published'], K=o['K'], ledger_identity=m.get('constructor_live_ledger_identity'), lifted=[(S.stage, (S.closed_reason or '')[:80], S.rmax_bytes, (S.mech.get('rmax_refusal') or {}).get('kind'), (S.mech.get('rmax') or {}).get('stages_done')) for S in L], hard_respected=o['hard_deadline_respected'], late=m.get('late_assembly'), request_defect=m.get('defect'))
+    def patch_pack(P):
+        real = RM.check_packing; RM.check_packing = lambda *a_, **k_: dict(ok=False, why='injected')
+        return lambda: setattr(RM, 'check_packing', real)
+    def patch_sampler(P):
+        real = PA.prepare_sampler_polled
+        def fail(mbp, deadline, *a_, **k_):
+            if getattr(mbp, '_is_lifted_probe', False) or True:
+                import inspect; f = inspect.currentframe().f_back
+                if f.f_code.co_name == '_l_sampler': raise PA.Deadline('injected in the lifted sampler stage')
+            return real(mbp, deadline, *a_, **k_)
+        PA.prepare_sampler_polled = fail; return lambda: setattr(PA, 'prepare_sampler_polled', real)
+    def patch_midpoint(P):
+        real = PA.LiftedStream.prepare
+        def prep(self, deadline, cdead=None, until=None):
+            self.rmax_midpoint = PA.tnow() - 1.0; return real(self, deadline, cdead, until)
+        PA.LiftedStream.prepare = prep; return lambda: setattr(PA.LiftedStream, 'prepare', real)
+    run('baseline', None); run('adapter_packing_refused', patch_pack); run('sampler_stage_deadline', patch_sampler); run('midpoint_zero_allowance', patch_midpoint)
+    # (d) forced RMAX with a tight allowance: the stream closes typed with its charge released; the hard deadline is NOT substituted
+    P = UPlanner(model, binding, 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, force_stream='lifted', envelope='RMAX'); P.M = CE.canonicalize(model, P.hclock, P.budget); P.canonical_charge = P.budget.live; P.mf = CM.model_features(P.M, P.clock, P.budget)
+    ident = P.make_identity(P.clock); P.cands.append(ident); c = P.discover_fast_lift_only(ident, Clock(PA.tnow() + 5, {})); P.lift_cands.append(c); S = P.make_lifted(c); l0 = P.budget.live; r = S.prepare(P.adm, until=PA.tnow() + 0.05)
+    res['forced_tight_allowance'] = dict(result=r, stage=S.stage, closed=(S.closed_reason or '')[:100], released=(P.budget.live - l0 - (S.rows.bytes if getattr(S, 'rows', None) else 0) <= 0) or S.stage == 'READY', allowance=S.mech.get('rmax_allowance'))
+    ok = (all(res[k]['ledger_identity'] is True and res[k]['hard_respected'] for k in ('baseline', 'adapter_packing_refused', 'sampler_stage_deadline', 'midpoint_zero_allowance')) and res['baseline']['outcome'] == 'COMPLETE' and res['adapter_packing_refused']['outcome'] == 'COMPLETE' and res['sampler_stage_deadline']['outcome'] == 'COMPLETE'
+          and all(l[0] == 'CLOSED' and l[2] == 0 and l[3] == 'Defect' for l in res['adapter_packing_refused']['lifted']) and all(l[0] == 'CLOSED' and l[2] == 0 for l in res['sampler_stage_deadline']['lifted']) and res['midpoint_zero_allowance']['outcome'] == 'COMPLETE' and all(l[4] == 0 for l in res['midpoint_zero_allowance']['lifted']) and res['forced_tight_allowance']['result'] in ('CLOSED', 'YIELD', 'READY'))
+    rec('D41_lifetime_cutoffs_and_incumbent', ok, **res)
+
+
+CONTROLS += [D32_R1_transpose_semantics_and_permutation_invariance, D33_R2_construction_charge_ownership, D34_R3_parent_final_timestamp, D35_rmax_exact_limit_and_prefix_validity, D36_compatibility_witness_four_cycle, D37_axes_domains_support_and_scalars, D38_numeric_upper_direction_and_packing, D39_independent_checker_mutants, D40_whole_proposal_rmax_vs_reference, D41_lifetime_cutoffs_and_incumbent]
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('--only', default=None); a = ap.parse_args(); t0 = time.time()
