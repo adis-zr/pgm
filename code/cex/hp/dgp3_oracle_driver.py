@@ -16,7 +16,9 @@ def main():
             rem = ALLOC - charged(ledger, 'dgp3_oracle')
             if rem < 20: print('oracle allowance exhausted; stopping the continuation pass at', t['name']); break
             cap = min(a.cap_s, rem); extra = ['--cap-s', str(cap), '--continue']; job = 'dgp3:oracle:%s:continuation' % t['name']; out2 = out
-        else: cap = a.cap_s; extra = ['--cap-s', str(cap)]; job = 'dgp3:oracle:%s' % t['name']; out2 = out
+        else:
+            if os.path.exists(out) and not (json.load(open(out)).get('censored')): print('initial: complete output exists for', t['name'], '-- not rerun'); continue        # idempotent restart of the initial pass (FREEZE_AMENDMENT_harness1)
+            cap = a.cap_s; extra = ['--cap-s', str(cap)]; job = 'dgp3:oracle:%s' % t['name']; out2 = out
         cmd = [PY, os.path.join(root, 'code/cex/hp/dgp3_oracle.py'), t['model'], out2] + extra
         sup = [PY, '-m', 'gbidi.supervise', '--ledger', ledger, '--scope', 'dgp3_oracle', '--job', job, '--timeout', str(cap + 15), '--mem-gib', '3', '--interval', '0.05', '--cwd', os.path.join(root, 'code'), '--stdout', os.path.join(out_dir, t['name'] + ('.continuation' if a.phase == 'continuation' else '') + '.stdout.txt'), '--stderr', os.path.join(out_dir, t['name'] + ('.continuation' if a.phase == 'continuation' else '') + '.stderr.txt'), '--', '/usr/bin/caffeinate', '-s'] + cmd
         subprocess.run(sup, cwd=SUP_CODE, env=env); r = json.load(open(out2)) if os.path.exists(out2) else {}

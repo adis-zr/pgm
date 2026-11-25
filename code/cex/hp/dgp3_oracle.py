@@ -182,7 +182,8 @@ def main():
                 rvals = cache['rvals']; Hc = cache['Hc']; tc = cache['tc']; Tc = {}
                 for c, w in zip(cmap, W): Tc[c] = Tc.get(c, F(0)) + w
                 pC = {c: Tc[c] / Z for c in Tc}; alpha = float(DELTA / 4) / K; eps_num = Sref.eps_num; laws = {}
-                for name, qc in (('cap_optimal_same_decoder', {c: tc[c] / sum(tc.values()) for c in tc}), ('M2_optimal_same_decoder', {c: pC[c] * sqrt_up(Hc[c]) / sum(pC[cc] * sqrt_up(Hc[cc]) for cc in Hc) for c in Hc})):
+                tsum = sum(tc.values()); wts = {c: pC[c] * sqrt_up(Hc[c]) for c in Hc}; wsum = sum(wts.values())                     # normalizers ONCE (the frozen version recomputed them inside the comprehension: quadratic in the class count, stalled on the 4,096-class identity maps; FREEZE_AMENDMENT_harness1)
+                for name, qc in (('cap_optimal_same_decoder', {c: tc[c] / tsum for c in tc}), ('M2_optimal_same_decoder', {c: wts[c] / wsum for c in Hc})):
                     if tnow() >= deadline: raise Deadline('counterfactual ' + name)
                     qlog = np.array([lg(qc.get(c, F(0)) * r_) if (qc.get(c, F(0)) > 0 and r_ > 0) else -np.inf for c, r_ in zip(cmap, rvals)])
                     # R* and M2 of the law from the per-class quantities (exact; lemma R): R* = max_c t_c / (Z q_C(c)), M2 = sum_c p_C^2 H_c / q_C
@@ -194,7 +195,7 @@ def main():
             elif tnow() < deadline:
                 t0 = tnow(); bd, rB, tcB, TcB = block_decoder(M, classes, Cz, enum, deadline); out['phases']['block_decoder'] = tnow() - t0; out['block_decoder'] = bd
                 if tnow() < deadline and sum(tcB.values()) > 0:
-                    qcB = {c: tcB[c] / sum(tcB.values()) for c in tcB}; qlog = np.array([lg(qcB.get(c, F(0)) * r_) if (qcB.get(c, F(0)) > 0 and r_ > 0) else -np.inf for c, r_ in zip(cmap, rB)]); RstarB = max(tcB[c] / (Z * qcB[c]) for c in tcB if qcB[c] > 0)
+                    tsumB = sum(tcB.values()); qcB = {c: tcB[c] / tsumB for c in tcB}; qlog = np.array([lg(qcB.get(c, F(0)) * r_) if (qcB.get(c, F(0)) > 0 and r_ > 0) else -np.inf for c, r_ in zip(cmap, rB)]); RstarB = max(tcB[c] / (Z * qcB[c]) for c in tcB if qcB[c] > 0)
                     eps_b = (out['lifted']['levels'].get('G1') or {}).get('eps_num') or 1e-11; bd['cap_optimal_law'] = dict(log2_R_star=lg(RstarB), replay=replay_fine_law(states, W, Z, G, mu, qlog, lg(RstarB), K, float(DELTA / 4) / K, eps_b, seeds, a.replay_draws, deadline, 'block_decoder_cap_optimal'))
             level('forced', PROFILE, 'levels', 'G3', False)
             if small:

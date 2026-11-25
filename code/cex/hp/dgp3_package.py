@@ -17,8 +17,8 @@ for f in HARNESS:
     live = os.path.join(PGM, 'code', f)
     if not os.path.exists(live): continue
     import shutil; shutil.copyfile(live, os.path.join(hs, 'files', os.path.basename(f))); exec_src[f] = sha(live)
-frozen_files = fr['code']['files']; diff_vs_frozen = {f: dict(frozen=frozen_files.get(f), executed=h) for f, h in exec_src.items() if frozen_files.get(f) not in (None, h)}
-json.dump(dict(note='the harness / analyzer / oracle files AS EXECUTED for this round (copies in harness/files, sha256 here); the frozen hashes are in FREEZE.json; any difference is listed in diff_vs_frozen with its FREEZE_AMENDMENT; the bundle carries every commit of the branch (git clone <bundle> -b dgp2-repair-diagnosis-2026-11-25)', pgm_head_at_packaging=head_pgm, frozen_commit=commit, bundle=os.path.basename(bundle), bundle_sha256=sha(bundle), files=exec_src, diff_vs_frozen=diff_vs_frozen, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())), open(hs + '/EXECUTED_HARNESS_SHA256.json', 'w'), indent=1)
+frozen_files = fr['code']['files']; diff_vs_frozen = {f: dict(frozen=frozen_files.get(f), executed=h) for f, h in exec_src.items() if frozen_files.get(f) not in (None, h)}; not_in_freeze = [f for f in exec_src if f not in frozen_files]
+json.dump(dict(note='the harness / analyzer / oracle files AS EXECUTED for this round (copies in harness/files, sha256 here); the frozen hashes are in FREEZE.json; any difference is listed in diff_vs_frozen with its FREEZE_AMENDMENT; the bundle carries every commit of the branch (git clone <bundle> -b dgp2-repair-diagnosis-2026-11-25)', pgm_head_at_packaging=head_pgm, frozen_commit=commit, bundle=os.path.basename(bundle), bundle_sha256=sha(bundle), files=exec_src, diff_vs_frozen=diff_vs_frozen, not_in_freeze=dict(files=not_in_freeze, note='analysis / packaging writers added after the freeze (no evaluation cell depends on them); their executed hashes are above'), utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())), open(hs + '/EXECUTED_HARNESS_SHA256.json', 'w'), indent=1)
 members = []
 for root, _, fs in os.walk(RD):
     for f in fs:
