@@ -160,6 +160,37 @@ def _rows_from_layered(st, R, lc_plan, deadline, eps):
     return rows
 
 
+def prepare_sampler_polled(mbp, deadline, plan_log_bytes=None, release_forward=True):
+    """DGP3 RF2: the accepted MBFloat.prepare_sampler loop, re-expressed with a deadline poll per elimination step and the log-table bytes ADMITTED before each allocation against the accepted memory plan
+    (`plan['log_bytes']`, the amount the cap ladder admitted under the 2.5 GiB usable policy; a step that would exceed the plan by more than 1 MiB refuses MEMORY_POLICY before allocating); produces
+    BYTE-IDENTICAL tables (control D29). Returns the log-table bytes built. Raises Deadline / StreamRefused."""
+    if mbp.prep is not None: return 0
+    if tnow() >= deadline: raise Deadline('sampler preparation (entry)')
+    prep = []; cards = mbp.cards; inputs = {id(f) for f in mbp.inputs}; charged = 0
+    if release_forward:
+        summed = {id(f) for _, q1 in mbp.steps if q1 for f in q1}
+        for v, bucket, R in mbp.fwd:
+            for f in bucket:
+                if id(f) not in inputs and id(f) not in summed and f.scope: f.M = None
+    for v, q1 in mbp.steps:
+        if tnow() >= deadline: raise Deadline('sampler preparation (step %d)' % len(prep))
+        if q1 is None: prep.append((v, None)); continue
+        need = sum(f.M.size * 8 for f in q1)
+        if plan_log_bytes is not None and charged + need > plan_log_bytes + (1 << 20): raise StreamRefused('MEMORY_POLICY', 'sampler log tables would exceed the admitted plan (%d + %d > %d bytes) at step %d' % (charged, need, plan_log_bytes, len(prep)))
+        charged += need; tabs = []
+        for f in q1:
+            with np.errstate(divide='ignore'): LM = np.where(f.M > 0, np.log2(np.maximum(f.M, 1e-300)), -inf).reshape(-1)
+            strides = {}; s_ = 1
+            for u in reversed(f.scope): strides[u] = s_; s_ *= cards[u]
+            tabs.append((LM, strides, f.scope))
+            if release_forward and id(f) not in inputs and f.scope: f.M = None
+        prep.append((v, tabs))
+    if release_forward: mbp.fwd = []
+    mbp.prep = prep
+    if tnow() >= deadline: raise Deadline('sampler preparation (exit)')
+    return charged
+
+
 # ---------------------------------------------------------------- ONE statistical stream on a model (original effective model or an exact-quotient parent): integrated.solve lines 1142-1419 as stages + batches
 STAGES = ('INIT', 'INTEGERIZED', 'CONTRACTED', 'CONSTANTS', 'PLANNED', 'EXACT_ROUTE_DONE', 'RECOVERY', 'READY', 'COMPLETE', 'CLOSED')
 
@@ -175,7 +206,13 @@ class Stream:
         self.pub = {}; self.trace = []; self.draws = 0; self.zero_draws = 0; self.sumX = 0.0; self.sumX2 = 0.0; self.maxX = 0.0; self.maxlogX = -inf; self.t_sample = 0.0; self.t_cert = 0.0; self.t_prep = 0.0; self.batches = 0; self.abandoned = 0
         self.pending = None; self.checkpoints = 0; self.last_width = None; self.retained_bytes = 0; self.stream_refusal = None; self.range_refused = []; self.cdead = None; self.measurements = []; self.endpoints = {}
     # ---- helpers
-    def _close(self, reason): self.stage = 'CLOSED'; self.closed_reason = reason; self.mech['closed'] = reason; return 'CLOSED'
+    def _close(self, reason):
+        self.stage = 'CLOSED'; self.closed_reason = reason; self.mech['closed'] = reason; B_ = self.opts.get('budget_obj')
+        if B_ is not None:
+            for attr in ('fine_bytes', 'grouped_bytes'):                                       # constructor-account charges (sampler log tables live under the memory plan, not this account)
+                n = getattr(self, attr, 0)
+                if n: B_.release(n); setattr(self, attr, 0)
+        return 'CLOSED'
     def ready(self): return self.stage == 'READY'
     def live(self): return self.stage not in ('COMPLETE', 'CLOSED')
     # ---- preparation stages (each atomic; a Deadline inside a stage closes the stream: never restarted)
@@ -381,12 +418,13 @@ class Stream:
         while batch_used > 1 and batch_used * cert_per_draw + fixed_ws + min(batch_used, 1) * max_bps > IG.BATCH_BUDGET: batch_used //= 2
         if batch_used * cert_per_draw + fixed_ws + max_bps > IG.BATCH_BUDGET: raise StreamRefused('MEMORY_POLICY', 'even one draw per batch exceeds the batch budget')
         self.batch_used = batch_used; self.chunk = max(1, min(batch_used, (IG.BATCH_BUDGET - batch_used * cert_per_draw - fixed_ws) // max(1, max_bps)))
-        t0 = tnow(); mbp.prepare_sampler(release_forward=True); self.ph['sampler_prep'] = tnow() - t0
+        t0 = tnow(); self.sampler_bytes = prepare_sampler_polled(mbp, deadline, self.plan['log_bytes']); self.ph['sampler_prep'] = tnow() - t0        # RF2: polled per step, admitted against the accepted memory plan before allocation
         wid = IG.numerical_widening(blocks, mbp, self.qrhos, len(self.S), max(cards), self.E_tot); self.eps_num = IG.fup(wid['eps_num']); rho_X = IG.fup(wid['rho_X']); rho_cap = IG.fup(wid['rho_cap'])
         if wid['delta_log_total'] > F(1, 4): raise StreamRefused('NUMERIC_RANGE', 'log-domain error budget %s too large' % float(wid['delta_log_total']))
         self.mech.update(eps_num=self.eps_num, rho_X=rho_X, rho_cap=rho_cap, E_tot=self.E_tot, batch_used=batch_used, shared_chunk=self.chunk, widening=dict(law=IG.fup(wid['law']), trunc_log2=float(IG.lg(wid['trunc'])) if wid['trunc'] > 0 else None))
         self.logU_capf = IG.up(mbp.logU_f + IG.up(log2(1.0 + rho_cap)) + 2 ** -40); self.cap_tol = IG.up(log2(1.0 + 2 * rho_X)) + 2 ** -40
         self.alpha = float(self.delta_s) / Kq; self.cert = IG.Certificate(Kq, self.alpha, self.eps_num, float(self.eps), o['schedule']); self.zcert = IG.ZCertificate(float(self.delta_s)); self.mech['alpha_per_coordinate'] = self.alpha
+        self.mech['cap_units'] = dict(cap_Wint_log2=self.logU_capf + mbp.E_U, E_U=mbp.E_U, E_tot=self.E_tot, unit='W_int = the exact integer product of the live block tables at the separator state; X = W_int(s) / (2^cap_Wint_log2 q(s))')
         self.bLM = []; self.bstr = []; self.bscope = []; self.bMflat = []
         for b in blocks:
             with np.errstate(divide='ignore'): self.bLM.append(np.where(b.M > 0, np.log2(np.maximum(b.M, 1e-300)), -inf).reshape(-1))
@@ -395,7 +433,9 @@ class Stream:
             self.bstr.append(strides); self.bscope.append(b.scope); self.bMflat.append(b.M.reshape(-1))
         self.sep_pos = np.array([self.pos[x] for (x, v) in self.sep_q], dtype=np.int64); self.sep_val = np.array([v for (x, v) in self.sep_q], dtype=np.int64)
         pac_peak = self.base_bytes + self.plan['log_bytes'] + min(IG.RECOVERY_BYTE_BUDGET, 1 << 62) + IG.BATCH_BUDGET; cache_allow = (max(0, min(IG.RESPONSE_CACHE_BUDGET, IG.USABLE_BYTES - pac_peak)) if self.shared_blocks else 0)
-        self.rcache = dict(entries={}, bytes=0, budget=cache_allow); self.retained_bytes = self.base_bytes + self.plan['log_bytes'] + self.bytes_used + batch_used * cert_per_draw + fixed_ws; self.stage = 'READY'; self.fingerprint = self.proposal_fingerprint()
+        self.rcache = dict(entries={}, bytes=0, budget=cache_allow); self.retained_bytes = self.base_bytes + self.plan['log_bytes'] + self.bytes_used + batch_used * cert_per_draw + fixed_ws
+        if tnow() >= deadline: raise Deadline('sampler stage (before READY)')                       # RF2: READY only after a post-stage poll
+        self.stage = 'READY'; self.fingerprint = self.proposal_fingerprint()
     def _flat_index(self, Sb, i):
         idx = np.zeros(Sb.shape[0], dtype=np.int64)
         for u in self.bscope[i]: idx += Sb[:, self.pos[u]] * self.bstr[i][u]
@@ -529,9 +569,9 @@ def canon_to_model(M):
 class LiftedStream(Stream):
     """z lives on the parent canonical model M_par (identity = the base canonical model, or an EXACT quotient parent with stages par_stages); the approximate stage (classes, Cz) over M_par supplies
     c(z), d(z|c) and the upper tables; the response of original coordinate (v, a) is the exact decoder value d_par(a | z_v) (identity: the indicator). Inventory = every (v, a) of the retained fine variables."""
-    def __init__(self, sid, M_fine, M_par, par_stages, classes, Cz, seed, eps, delta_s, opts, label=None, scale_to_original=None):
+    def __init__(self, sid, M_fine, M_par, par_stages, classes, Cz, seed, eps, delta_s, opts, label=None, scale_to_original=None, envelope='G1'):
         model = canon_to_model(M_par); queries = [(v, a) for v in range(len(M_fine.cards)) for a in range(M_fine.cards[v])]
-        super().__init__(sid, 'lifted', model, queries, seed, eps, delta_s, opts, label=label or 'lifted', scale_to_original=(M_par.scalar if scale_to_original is None else scale_to_original)); self.M_fine = M_fine; self.M_par = M_par; self.par_stages = par_stages; self.classes = classes; self.Cz = Cz; self.n_par = len(M_par.cards)
+        super().__init__(sid, 'lifted', model, queries, seed, eps, delta_s, opts, label=label or 'lifted', scale_to_original=(M_par.scalar if scale_to_original is None else scale_to_original)); self.M_fine = M_fine; self.M_par = M_par; self.par_stages = par_stages; self.classes = classes; self.Cz = Cz; self.n_par = len(M_par.cards); self.envelope = envelope; self.grouped = None; self.mech['envelope'] = envelope
         self.mech.update(parent_exact_stages=len(par_stages), coarse_cards=list(Cz.ccards), parent_cards=list(M_par.cards))
     def stage_features(self, st):
         return dict(n=self.n_par, entries=sum(len(x['values']) for x in self.model['factors']), K=self.K, coarse_states=sum(self.Cz.ccards), kind='lifted')
@@ -555,8 +595,16 @@ class LiftedStream(Stream):
         clk = CE.Clock(deadline, {}); B = self.opts.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES); self.rows = LD.build_rows(self.M_par, self.classes, self.Cz, clk, B); self.retained_bytes += self.rows.bytes
         self.mech.update(kappa_compact=self.rows.K.record(), kappa_float=self.rows.kappa_float, kappa_log2=self.rows.K.log2_hi(), kappa_v_max_log2=max(float(IG.lg(kv)) for kv in self.rows.kappa_v) if self.rows.kappa_v else None); self.stage = 'INTEGERIZED'
     def _l_coarse_proposal(self, deadline):
-        """the accepted max mini-bucket proposal on the checked UPPER coarse model (no block contraction: every coarse variable is sampled)"""
-        o = self.opts; cm = CE.coarse_model(self.M_par, self.Cz, 1); fns_C, const_C, scale_C, mult_C, factorless_C = BR.integerize(cm)
+        """the accepted max mini-bucket proposal on the checked UPPER coarse model (no block contraction: every coarse variable is sampled); DGP3: envelope G2 / G3 replaces the per-factor U tables by the
+        grouped joint maxima (grouped_envelope; lemma G), charged and polled; G1 = the DGP2 per-factor envelope"""
+        o = self.opts
+        if self.envelope != 'G1':
+            import grouped_envelope as GE; t0 = tnow(); clk = CE.Clock(deadline, {}); B_ = o.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES)
+            groups, gscopes = GE.plan_groups(self.M_par, self.Cz, self.envelope); tables, self.grouped_bytes = GE.grouped_upper_tables(self.M_par, self.classes, self.Cz, groups, gscopes, clk, B_)
+            self.grouped = dict(groups=groups, scopes=gscopes, tables=tables); cm = GE.grouped_coarse_model(self.M_par, self.Cz, tables); self.ph['grouped_envelope'] = tnow() - t0
+            self.mech['grouped_envelope'] = dict(level=self.envelope, groups=len(groups), grouped_pairs=sum(1 for g in groups if len(g) >= 2), max_joint_scope=max(len(S) for S in gscopes), cells=sum(len(U) for _, U in tables), seconds=self.ph['grouped_envelope'], charged_bytes=self.grouped_bytes); self.retained_bytes += self.grouped_bytes
+        else: cm = CE.coarse_model(self.M_par, self.Cz, 1)
+        fns_C, const_C, scale_C, mult_C, factorless_C = BR.integerize(cm)
         if const_C == 0 or factorless_C: raise StreamRefused('SUPPORT', 'upper coarse model has a zero nullary factor or a factorless coarse variable')
         self.scale_C = scale_C; self.blocks_C = [IG.ft_from_int(f, cm['cards']) for f in fns_C]; self.ccards = list(cm['cards']); self.S = list(range(len(self.ccards))); self.pos = {v: v for v in self.S}
         base_bytes = sum(f.M.nbytes for f in self.blocks_C) + o.get('other_retained_bytes', 0) + IG.PROCESS_HEADROOM_BYTES
@@ -570,9 +618,14 @@ class LiftedStream(Stream):
         """float tables of the FINE (parent) target: W_int(z) = scale_F x W'(z); response matrices D_v (parent state -> original coordinate response)"""
         fns_F, const_F, scale_F, mult_F, factorless_F = BR.integerize(self.model)
         if const_F == 0: self.Z = F(0); self.witness = False; self.stage = 'COMPLETE'; self.mech['terminal'] = 'ZERO_EVIDENCE'; return
-        self.scale_F = scale_F; self.fine = [IG.ft_from_int(f, self.cards) for f in fns_F]; self.E_fine = sum(b.e for b in self.fine)
-        self.fLM = []; self.fstr = []; self.fscope = []
-        for b in self.fine:
+        self.scale_F = scale_F; B_ = self.opts.get('budget_obj'); self.fine = []
+        for i, f in enumerate(fns_F):                                                           # RF2: polled per factor, float tables admitted before conversion
+            if (i & 15) == 15 and tnow() >= deadline: raise Deadline('fine tables (factor %d)' % i)
+            if B_ is not None: self.fine_bytes = getattr(self, 'fine_bytes', 0) + B_.charge(np.asarray(f.arr).size * 16 + 128, 'fine float + log table (factor %d)' % i)
+            self.fine.append(IG.ft_from_int(f, self.cards))
+        self.E_fine = sum(b.e for b in self.fine); self.fLM = []; self.fstr = []; self.fscope = []
+        for i, b in enumerate(self.fine):
+            if (i & 15) == 15 and tnow() >= deadline: raise Deadline('fine log tables (factor %d)' % i)
             with np.errstate(divide='ignore'): self.fLM.append(np.where(b.M > 0, np.log2(np.maximum(b.M, 1e-300)), -inf).reshape(-1))
             strides = {}; s_ = 1
             for u in reversed(b.scope): strides[u] = s_; s_ *= self.cards[u]
@@ -586,12 +639,14 @@ class LiftedStream(Stream):
                     c, d = CE.compose_decoder(self.par_stages, v, a); Dm[c, a] = float(d); resp_rel = 2 * IG.UF
             self.Dm.append(Dm); self.col0.append(col); col += card_f
         self.Kq = col; self.resp_rel = resp_rel; self.sq = list(self.queries); self.qmap = {q: self.qix[q] for q in self.sq}
-        self.retained_bytes += sum(b.M.nbytes for b in self.fine) + sum(d.nbytes for d in self.Dm); self.stage = 'CONSTANTS'
+        self.retained_bytes += sum(b.M.nbytes for b in self.fine) + sum(d.nbytes for d in self.Dm)
+        if tnow() >= deadline: raise Deadline('fine tables (before CONSTANTS)')
+        self.stage = 'CONSTANTS'
     def _l_sampler(self, deadline):
         o = self.opts; mbp = self.mbp; Kq = self.Kq
         cert_per_draw = Kq * 8 * 7 + 8 * self.n_par * 3; batch_used = o['batch']
         while batch_used > 1 and batch_used * cert_per_draw > IG.BATCH_BUDGET: batch_used //= 2
-        self.batch_used = batch_used; t0 = tnow(); mbp.prepare_sampler(release_forward=True); self.ph['sampler_prep'] = tnow() - t0
+        self.batch_used = batch_used; t0 = tnow(); self.sampler_bytes = prepare_sampler_polled(mbp, deadline, self.plan['log_bytes']); self.ph['sampler_prep'] = tnow() - t0      # RF2
         self.E_tot = self.E_fine - mbp.E_U
         if abs(self.E_tot) >= 1 << 50: raise StreamRefused('NUMERIC_RANGE', 'exponent sum too large for an exact float')
         # the constant scale_F / scale_C x K_hi in the LOG domain (F1 / compact kappa): three log2 terms (two integers, one compact significand) each within 1 ulp; their magnitudes enter the widening as part (k)
@@ -601,10 +656,13 @@ class LiftedStream(Stream):
         if wid['delta_log_total'] > F(1, 4): raise StreamRefused('NUMERIC_RANGE', 'log-domain error budget %s too large' % float(wid['delta_log_total']))
         self.eps_num = IG.fup(wid['eps_num']); rho_X = IG.fup(wid['rho_X']); rho_cap = IG.fup(wid['rho_cap']); const_slack = IG.fup(wid['parts']['d_k'])            # the consumed constant carries its own proved log error (part k) outward
         self.logU_capf = IG.up(IG.up(IG.up(mbp.logU_f + IG.up(log2(1.0 + rho_cap))) + IG.up(const_log2 + const_slack)) + 2 ** -40); self.cap_tol = IG.up(log2(1.0 + 2 * rho_X)) + 2 ** -40
-        self.mech.update(eps_num=self.eps_num, rho_X=rho_X, rho_cap=rho_cap, E_tot=self.E_tot, batch_used=batch_used, widening={k: (float(v) if isinstance(v, F) else v) for k, v in wid.items() if k != 'parts'}, widening_parts={k: float(v) for k, v in wid['parts'].items()}, scale_ratio_log2=(t_num - t_den), cap_log2_total=self.logU_capf + self.E_tot,
-                         cap_units=dict(cap_total_log2=self.logU_capf + self.E_tot, unit='W_int = scale_F x W_par (parent canonical target without its scalar)', to_original_log2_divide_by=float(IG.lg(F(self.scale_F))) if self.scale_F > 0 else None, note='B / Z and Z_U / Z need an independent denominator; not computed in production'))
+        cap_Wint_log2 = self.logU_capf + mbp.E_U                                              # RF3: the batch computes X = 2^(logz + E_fine - logq - logr - logU_capf - E_U) = W_int / (2^(logU_capf + E_U) q): the cap in W_int units is 2^(logU_capf + E_U)
+        self.mech.update(eps_num=self.eps_num, rho_X=rho_X, rho_cap=rho_cap, E_tot=self.E_tot, E_U=mbp.E_U, E_fine=self.E_fine, batch_used=batch_used, widening={k: (float(v) if isinstance(v, F) else v) for k, v in wid.items() if k != 'parts'}, widening_parts={k: float(v) for k, v in wid['parts'].items()}, scale_ratio_log2=(t_num - t_den), cap_log2_total=cap_Wint_log2,
+                         cap_units=dict(cap_Wint_log2=cap_Wint_log2, unit='W_int = scale_F x W_par (parent canonical target without its scalar); X = W_int(z) / (2^cap_Wint_log2 q(z))', cap_original_units_log2=(cap_Wint_log2 - float(IG.lg(F(self.scale_F)))) if self.scale_F > 0 else None, legacy_logU_capf_plus_E_tot=self.logU_capf + self.E_tot, note='DGP2 records reported logU_capf + E_tot (a unit error of E_fine - 2 E_U bits); B / Z and Z_U / Z need an independent denominator; not computed in production'))
         self.alpha = float(self.delta_s) / Kq; self.cert = IG.Certificate(Kq, self.alpha, self.eps_num, float(self.eps), o['schedule']); self.zcert = IG.ZCertificate(float(self.delta_s)); self.mech['alpha_per_coordinate'] = self.alpha
-        self.retained_bytes += self.plan['log_bytes'] + batch_used * cert_per_draw; self.stage = 'READY'; self.fingerprint = self.proposal_fingerprint()
+        self.retained_bytes += self.plan['log_bytes'] + batch_used * cert_per_draw
+        if tnow() >= deadline: raise Deadline('lifted sampler stage (before READY)')               # RF2
+        self.stage = 'READY'; self.fingerprint = self.proposal_fingerprint()
     def _flat_fine(self, z, i):
         idx = np.zeros(z.shape[0], dtype=np.int64)
         for u in self.fscope[i]: idx += z[:, u] * self.fstr[i][u]
@@ -643,6 +701,11 @@ class LiftedStream(Stream):
         except (IG.Deadline, Deadline) as e: self.abandoned += 1; self.t_sample += tnow() - t0; return self._close('lifted batch abandoned at a hard cut (%s); %d committed batches retained' % (e, self.batches))
         except IG.RangeRefused as e: self.abandoned += 1; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('NUMERIC_RANGE_REFUSED in a lifted batch: %s' % str(e)[:120])
         except AssertionError as e: self.abandoned += 1; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a lifted batch (rows withheld): %s' % str(e)[:120])
+    def upper_weight_fn(self):
+        """exact G_U(c) of THIS stream's upper model (grouped when envelope != G1); oracle / controls"""
+        if self.grouped is not None:
+            import grouped_envelope as GE; return GE.grouped_upper_weight(self.M_par, self.Cz, self.grouped['tables'])
+        return lambda c: LD.upper_weight(self.M_par, self.Cz, c)
     def weight_oracle(self, z_tuple):
         """controls only: the exact analyzed X(z) = W_int(z) / (cap_total_exact q_an(c) r(z|c)) numerator pieces -- exact W'(z), G_U'(c), d(z|c), r(z|c) as Fractions"""
         c = tuple(self.classes[v][z_tuple[v]] for v in range(self.n_par)); W = LD.parent_weight(self.M_par, z_tuple) / self.M_par.scalar; G = LD.upper_weight(self.M_par, self.Cz, c) / self.M_par.scalar

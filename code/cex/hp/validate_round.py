@@ -1,4 +1,4 @@
-"""DGP2 one-shot packet consistency validator (protocol rule 9 / brief section 9): derives summary counts from the raw cells, enforces unique cell identities and parent / superseding links, reconciles charges to the ledger
+"""DGP2 / DGP3 one-shot packet consistency validator (protocol rule 9 / brief section 9): derives summary counts from the raw cells, enforces unique cell identities and parent / superseding links, reconciles charges to the ledger
 and the ceiling, verifies input / code bindings (manifests vs result files vs FREEZE.json), checks the accepted engine's byte identity, and lists missing required packet files. BOOKKEEPING ONLY: it does not prove
 statistical coverage. usage: validate_round.py [--records RD] -> RD/VALIDATION.json (exit 1 on any failure)"""
 import sys, os, json, glob, hashlib, subprocess
@@ -7,7 +7,8 @@ def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
 def main():
     rd = sys.argv[sys.argv.index('--records') + 1] if '--records' in sys.argv else RD; checks = []; 
     def chk(name, ok, **kw): checks.append(dict(check=name, ok=bool(ok), **kw))
-    req = ['START_HERE.md', 'PROTOCOL.md', 'FREEZE.json', 'REPORT.md', 'THEORY_RETURN.md', 'PROOF_TO_CODE.md', 'MODEL_MANIFEST.json', 'RUN_MANIFEST.json', 'RESULTS.json', 'DIAGNOSTICS.json', 'CHARGES.json', 'IDENTITY.json', 'DGP2_LEDGER.jsonl', 'BUDGET_DECLARATION.json']
+    ledgers = sorted(glob.glob(os.path.join(rd, '*_LEDGER.jsonl'))); chk('one_round_ledger', len(ledgers) == 1, ledgers=[os.path.basename(x) for x in ledgers]); ledger = ledgers[0] if ledgers else os.path.join(rd, 'DGP2_LEDGER.jsonl')
+    req = ['START_HERE.md', 'PROTOCOL.md', 'FREEZE.json', 'REPORT.md', 'THEORY_RETURN.md', 'PROOF_TO_CODE.md', 'MODEL_MANIFEST.json', 'RUN_MANIFEST.json', 'RESULTS.json', 'DIAGNOSTICS.json', 'CHARGES.json', 'IDENTITY.json', os.path.basename(ledger), 'BUDGET_DECLARATION.json']
     for f in req: chk('required_file:' + f, os.path.exists(os.path.join(rd, f)))
     for d in ('runs', 'controls', 'oracle'): chk('required_dir:' + d, os.path.isdir(os.path.join(rd, d)))
     fr = json.load(open(os.path.join(rd, 'FREEZE.json'))); root = '/Users/adis/Workspace/pgm-eval-' + fr['code']['commit'][:7]
@@ -19,7 +20,7 @@ def main():
     else: chk('eval_checkout_present', False, root=root)
     # cells: unique identities, manifest / result binding, identity_ok, receipt present
     cells = sorted(glob.glob(os.path.join(rd, 'runs', '*', '*', 'cell.json'))); ids = set(); bad_bind = []; bad_ident = []; no_receipt = []; per_sub = {}
-    rows = [json.loads(l) for l in open(os.path.join(rd, 'DGP2_LEDGER.jsonl'))]; receipts = {}
+    rows = [json.loads(l) for l in open(ledger)]; receipts = {}
     for r in rows:
         if r.get('kind') == 'RECEIPT': receipts.setdefault(r['job'], []).append(r)
     for p in cells:
@@ -46,6 +47,14 @@ def main():
     if rs:
         for sub, cnt in (rs.get('completions_by_sub') or {}).items():
             if sub in per_sub: chk('results_counts_match_cells:' + sub, cnt.get('cells') == per_sub[sub]['cells'] and cnt.get('complete') == per_sub[sub]['complete'], results=cnt, cells=per_sub[sub])
+    # DGP3+: the EXECUTED harness / analyzer snapshot (git bundle of the branch + hashes of the executed files) and a replay command must be in the packet (DGP2 review, packaging finding)
+    if fr.get('experiment', '').startswith('DGP3'):
+        hs = os.path.join(rd, 'harness'); bundle = glob.glob(os.path.join(hs, '*.bundle')); ex = os.path.join(hs, 'EXECUTED_HARNESS_SHA256.json')
+        chk('executed_harness_snapshot_present', bool(bundle) and os.path.exists(ex), bundle=[os.path.basename(b) for b in bundle])
+        if os.path.exists(ex):
+            exh = json.load(open(ex)); bad = [f for f, h in exh.get('files', {}).items() if not os.path.exists(os.path.join(hs, 'files', os.path.basename(f))) or sha(os.path.join(hs, 'files', os.path.basename(f))) != h]
+            chk('executed_harness_files_match_hashes', not bad, bad=bad)
+        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and 'run_dgp3.py' in open(rp).read() and 'harness/files' in open(rp).read())
     # unsupported claims: forbidden phrases in REPORT / THEORY_RETURN
     for f in ('REPORT.md', 'THEORY_RETURN.md', 'START_HERE.md'):
         p = os.path.join(rd, f)

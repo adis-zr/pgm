@@ -13,7 +13,7 @@ exponential family. No evidence; the request is every singleton coordinate (K = 
 exact-profile reduction found by the unchanged coarse_envelope.exact_profile_classes (an incidental reduction is disclosed, never grounds to replace the input).
 Development panel: n in {8, 12} x card in {2, 4} x the three topologies x scale in {1/2, 2} (24) + boundary cases (near-product scale 1/8: n 8 c2 er50, n 8 c4 clique; strong frustrated
 scale 4: n 8 c2 clique, n 8 c2 reg6); exact-enumeration oracle eligibility card^n <= 2^16 recorded.
-usage: dense_gen.py eval|dev|devmid|oracle_eval|oracle_dev|eval2 OUTDIR  (DGP2 tags: DGP2-ORACLE-EVAL-1 / DGP2-ORACLE-DEV-1 / DENSE-GENERIC-PAC-EVAL-2; the table / unary recipe is UNCHANGED)"""
+usage: dense_gen.py eval|dev|devmid|oracle_eval|oracle_dev|eval2|eval3 OUTDIR  (DGP2 tags: DGP2-ORACLE-EVAL-1 / DGP2-ORACLE-DEV-1 / DENSE-GENERIC-PAC-EVAL-2; DGP3: DENSE-GENERIC-PAC-EVAL-3; the table / unary recipe is UNCHANGED)"""
 import sys, os, json, hashlib, random, math, argparse, time
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -109,12 +109,13 @@ def exact_reduction(model):
     return dict(variables_reduced=len(red), detail=red[:16], retained_variables=len(M.cards), zero_mass=M.zero_mass)
 
 
-TAG_ORACLE_EVAL = 'DGP2-ORACLE-EVAL-1'; TAG_ORACLE_DEV = 'DGP2-ORACLE-DEV-1'; TAG_EVAL2 = 'DENSE-GENERIC-PAC-EVAL-2'
+TAG_ORACLE_EVAL = 'DGP2-ORACLE-EVAL-1'; TAG_ORACLE_DEV = 'DGP2-ORACLE-DEV-1'; TAG_EVAL2 = 'DENSE-GENERIC-PAC-EVAL-2'; TAG_EVAL3 = 'DENSE-GENERIC-PAC-EVAL-3'
 
 
 def panel(kind):
     if kind == 'oracle_eval': return TAG_ORACLE_EVAL, [(n, c, t, s) for (n, c) in ((8, 2), (12, 2), (6, 4), (8, 4)) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]           # DGP2 brief section 4: 16 oracle inputs, each <= 2^16 fine states
     if kind == 'oracle_dev': return TAG_ORACLE_DEV, [(n, c, t, s) for (n, c) in ((6, 2), (8, 2), (5, 4), (6, 4)) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]
+    if kind == 'eval3': return TAG_EVAL3, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP3 PROTOCOL section 3: 8 fresh production inputs (new tag -> new seed domain; recipe unchanged)
     if kind == 'eval2': return TAG_EVAL2, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP2 brief section 5: 8 fresh production inputs
     if kind == 'devmid': return TAG_DEV, [(n, c, t, F(2)) for n in (16, 20, 24) for c in (2, 4) for t in TOPOS] + [(20, 2, 'er50', F(1, 2)), (24, 2, 'clique', F(1, 2))]      # development: beyond the deterministic reach (PAC exercised), same recipe, dev seed domain
     if kind == 'eval': return TAG_EVAL, [(n, c, t, s) for n in (32, 64) for c in (2, 4) for t in TOPOS for s in (F(1, 2), F(2))]
@@ -135,4 +136,4 @@ def generate(kind, outdir):
 
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser(); ap.add_argument('kind', choices=['eval', 'dev', 'devmid', 'oracle_eval', 'oracle_dev', 'eval2']); ap.add_argument('outdir'); a = ap.parse_args(); generate(a.kind, a.outdir)
+    ap = argparse.ArgumentParser(); ap.add_argument('kind', choices=['eval', 'dev', 'devmid', 'oracle_eval', 'oracle_dev', 'eval2', 'eval3']); ap.add_argument('outdir'); a = ap.parse_args(); generate(a.kind, a.outdir)

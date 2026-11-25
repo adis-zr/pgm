@@ -110,10 +110,10 @@ def lifted_stream(M, seed, deadline, budget):
     S = PA.LiftedStream(2, M, M, [], classes, Cz, seed, EPS, DELTA / 4, dict(PROFILE, budget_obj=budget)); r = S.prepare(deadline); return S, r, classes, Cz
 
 
-def lifted_quantities(S, classes, Cz, enum, M, deadline):
+def lifted_quantities(S, classes, Cz, enum, M, deadline, cache=None):
     n = len(M.cards); cards = list(M.cards); Z = enum['Z']; identity_map = all(len(set(cl)) == len(cl) for cl in classes); states = enum['states']; Wl = enum['W']
     cstates = list(itertools.product(*[range(k) for k in Cz.ccards])); Sb = np.array(cstates, dtype=np.int64); lq, q_C = S.mbp.logq_given(Sb, S.pos); qC = dict(zip(cstates, q_C))
-    G_U = {c: LD.upper_weight(M, Cz, c) for c in cstates}; Z_U = sum(G_U.values())
+    ufn = S.upper_weight_fn() if hasattr(S, 'upper_weight_fn') else (lambda c: LD.upper_weight(M, Cz, c)); G_U = {c: ufn(c) for c in cstates}; Z_U = sum(G_U.values())      # DGP3: the stream's OWN upper model (grouped when envelope != G1)
     B_int = F(2) ** int(math.floor(S.mbp.logU_f)) * F(2.0 ** (S.mbp.logU_f - math.floor(S.mbp.logU_f))) * F(2) ** S.mbp.E_U * (1 + F(S.mech['rho_cap'])); B_viol = sum(1 for c in cstates if qC[c] > 0 and F(S.scale_C) * G_U[c] > B_int * qC[c])
     K_hi = S.rows.K.hi(); K_lo = S.rows.K.lo(); kappa_exact = LD.exact_kappa(S.rows)
     C_int = F(2) ** int(math.floor(S.logU_capf)) * F(2.0 ** (S.logU_capf - math.floor(S.logU_capf))) * F(2) ** S.mbp.E_U; Zint = F(S.scale_F) * Z / M.scalar
@@ -121,17 +121,21 @@ def lifted_quantities(S, classes, Cz, enum, M, deadline):
     cmap = [tuple(classes[v][z[v]] for v in range(n)) for z in states]; Tc = {}
     for c, w in zip(cmap, Wl): Tc[c] = Tc.get(c, F(0)) + w
     rprob = [[{a: LD.r_prob(S.rows, v, c, a) for a in S.rows.members[v][c]} for c in range(Cz.ccards[v])] for v in range(n)]
-    Hc = {}; tc = {}; Rstar = F(0); M2 = F(0); Ctight = F(0); Xmax = F(0); support_fail = False; omitted = F(0); rvals = []
+    cached = cache is not None and 'rvals' in cache; Hc = dict(cache['Hc']) if cached else {}; tc = dict(cache['tc']) if cached else {}; Rstar = F(0); M2 = F(0); Ctight = F(0); Xmax = F(0); support_fail = False; omitted = F(0); rvals = cache['rvals'] if cached else []
     for i, (z, w, c) in enumerate(zip(states, Wl, cmap)):
         if (i & 4095) == 4095 and tnow() >= deadline: raise Deadline('lifted moments')
-        r_ = F(1)
-        for v in range(n): r_ *= rprob[v][c[v]][z[v]]
-        rvals.append(r_); q = qC[c] * r_
-        if Tc[c] > 0 and r_ > 0 and w > 0: pzc = w / Tc[c]; Hc[c] = Hc.get(c, F(0)) + pzc * pzc / r_; tc[c] = max(tc.get(c, F(0)), w / r_)
+        if cached: r_ = rvals[i]
+        else:
+            r_ = F(1)
+            for v in range(n): r_ *= rprob[v][c[v]][z[v]]
+            rvals.append(r_)
+            if Tc[c] > 0 and r_ > 0 and w > 0: pzc = w / Tc[c]; Hc[c] = Hc.get(c, F(0)) + pzc * pzc / r_; tc[c] = max(tc.get(c, F(0)), w / r_)
+        q = qC[c] * r_
         if q == 0:
             if w > 0: support_fail = True; omitted += w
             continue
         p = w / Z; Rstar = max(Rstar, p / q); M2 += p * p / q; Ctight = max(Ctight, F(S.scale_F) * (w / M.scalar) / q); Xmax = max(Xmax, F(S.scale_F) * (w / M.scalar) / (C_int * q))
+    if cache is not None and not cached: cache.update(rvals=rvals, Hc=Hc, tc=tc)                   # DGP3: r-only quantities shared across envelope levels (the decoder r is the same stream-independent object)
     pC = {c: Tc[c] / Z for c in Tc}; M2_lift = sum(pC[c] ** 2 * Hc[c] / qC[c] for c in Hc if qC[c] > 0); M2_coarse = sum(pC[c] ** 2 / qC[c] for c in Tc if qC[c] > 0)
     M2_min = sum(pC[c] * sqrt_up(Hc[c]) for c in Hc) ** 2; M2_min_lo = sum(pC[c] * sqrt_dn(Hc[c]) for c in Hc) ** 2; Rstar_min = sum(tc.values()) / Z
     wsum = sum(pC[c] * sqrt_up(Hc[c]) for c in Hc); q_m2 = {c: pC[c] * sqrt_up(Hc[c]) / wsum for c in Hc}; M2_at_qm2 = sum(pC[c] ** 2 * Hc[c] / q_m2[c] for c in Hc if q_m2[c] > 0)

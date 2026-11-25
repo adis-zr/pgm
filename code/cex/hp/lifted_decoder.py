@@ -162,10 +162,10 @@ def upper_weight(M_par, Cz, c):
     return w
 
 
-def enumerate_check(M_par, classes, Cz, R, cap=1 << 16):
-    """independent enumeration (controls only): support, normalization, pointwise W <= G_U d, d / r <= kappa; returns a dict of maxima"""
+def enumerate_check(M_par, classes, Cz, R, cap=1 << 16, upper_fn=None):
+    """independent enumeration (controls only): support, normalization, pointwise W <= G_U d (G_U = the per-factor upper weight, or `upper_fn(c)` for a grouped envelope), d / r <= kappa; returns a dict of maxima"""
     import itertools
-    n = len(M_par.cards)
+    n = len(M_par.cards); upper_fn = upper_fn or (lambda c: upper_weight(M_par, Cz, c))
     if math.prod(M_par.cards) > cap: raise CE.Refused('ENUM', 'enumeration cap')
     for v in range(n):
         for c, states in R.members[v].items():
@@ -173,7 +173,7 @@ def enumerate_check(M_par, classes, Cz, R, cap=1 << 16):
             for a in states: assert (r_prob(R, v, c, a) > 0) == (Cz.d[v][a] > 0)
     worst_ratio = F(0); worst_env = F(0); zero_W = 0
     for z in itertools.product(*[range(k) for k in M_par.cards]):
-        c = tuple(classes[v][z[v]] for v in range(n)); W = parent_weight(M_par, z); G = upper_weight(M_par, Cz, c)
+        c = tuple(classes[v][z[v]] for v in range(n)); W = parent_weight(M_par, z); G = upper_fn(c)
         d = F(1); r = F(1)
         for v in range(n): d *= Cz.d[v][z[v]]; r *= r_prob(R, v, c[v], z[v])
         if W > G * d: raise CE.Defect('upper envelope violated at %s: W %s > G_U d %s' % (z, W, G * d))

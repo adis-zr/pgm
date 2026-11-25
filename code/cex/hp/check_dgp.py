@@ -1,4 +1,4 @@
-"""Qualification controls of DENSE_GENERIC_PAC_INTEGRATION_1 (brief section 7). usage: check_dgp.py OUT.json [--only D1,D2,..]. Every control asserts actual branch execution."""
+"""Qualification controls of DENSE_GENERIC_PAC_INTEGRATION_1 (brief section 7), DGP2 (D19-D26) and DGP3 (D27-D31: RF1-RF4, lemma G). usage: check_dgp.py OUT.json [--only D1,D2,..]. Every control asserts actual branch execution."""
 import sys, os, json, time, math, argparse, traceback
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm')); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'blockres'))
@@ -13,6 +13,8 @@ def rec(name, ok, **kw): R.append(dict(control=name, ok=bool(ok), **kw)); print(
 def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))
 MID = DEV.replace('/inputs', '/inputs_mid')
 def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))
+ORACLE_DEV = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs'
+def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))
 
 def run_stream(model, binding, seed, budget_s, delta_s, opts, n_batches=None, exact_route=True):
     st = PA.RequestState(model, binding, EPS, DELTA); t0 = PA.tnow(); deadline = t0 + budget_s
@@ -567,6 +569,178 @@ def D26_forced_stream_mode():
 
 CONTROLS += [D19_F1_widening_consumed_bounds, D20_F2_normalizer_ownership, D21_F3_finalization_expiry_tails, D22_F4_confidence_endpoints, D23_F5_optional_stage_bounded, D24_compact_kappa_and_scoped_lift_check, D25_fixed_r_limits_attaining_laws, D26_forced_stream_mode]
 
+
+
+# ---------------------------------------------------------------- DGP3 controls (PROTOCOL.md section 8: RF1 .. RF4; lemma G)
+import copy, importlib
+def D27_RF1_no_work_after_authoritative_sample():
+    """RF1 (DGP2 review finding 1): the reviewer's injection -- every answer row advances the injected clock past the hard deadline when its guarantee is READ -- must find NO row read after the parent's authoritative
+    sample (classified == 0; before the repair: 2 reads, COMPLETE 2/2 with the clock at hard + 0.01); a second injection advances the clock past the deadline exactly AT the sample and must yield DEADLINE with 0
+    published; the source order is checked (no traversal of res['answers'] after super().fin in UPlanner.fin; the guarantee set comes from the parent's _fin_gs)"""
+    simple = dict(cards=[2], factors=[dict(scope=(0,), values=[F(1), F(1)])], evidence={}); res = {}
+    def mk():
+        P = UPlanner(simple, {}, 3.0, admission_stop_s=2.5, t_start=PA.tnow()); P.M = CE.canonicalize(simple, P.hclock, P.budget); P.canonical_charge = P.budget.live; P.t_mark = P.t_start; P.out['mechanism']['positive_mass_witness'] = True; return P
+    P = mk(); state = {'now': P.t_start + 0.01, 'classified': 0}
+    class TimedRow(dict):
+        def __getitem__(self, key):
+            if key == 'guarantee': state['classified'] += 1; state['now'] = P.hard + 0.01
+            return super().__getitem__(key)
+    real_fin = UP.Planner.fin; old = (UP.tnow, UPP.tnow)
+    def inject_rows(self, *a, **kw):
+        r = real_fin(self, *a, **kw); r['answers'] = [TimedRow(x) for x in r['answers']]; return r
+    UP.Planner.fin = inject_rows; UP.tnow = UPP.tnow = lambda: state['now']
+    try: r = P.fin('COMPLETE', {}); res['row_injection'] = dict(outcome=r['outcome'], published=r['published'], K=r['K'], classified_after_sample=state['classified'], hard_deadline_respected=r['hard_deadline_respected'], injected_wall=state['now'] - P.t_start)
+    finally: UP.Planner.fin = real_fin; UP.tnow, UPP.tnow = old
+    P2 = mk(); state2 = {'now': P2.t_start + 0.01, 'calls': 0}
+    def clock2():
+        state2['calls'] += 1
+        return state2['now']
+    real_fin2 = UP.Planner.fin
+    def expire_at_sample(self, *a, **kw):
+        state2['now'] = P2.hard + 0.01; return real_fin2(self, *a, **kw)                        # the clock is past the deadline when the parent samples it
+    UP.Planner.fin = expire_at_sample; UP.tnow = UPP.tnow = clock2
+    try: r2 = P2.fin('COMPLETE', {}); res['expiry_at_sample'] = dict(outcome=r2['outcome'], published=r2['published'], hard_deadline_respected=r2['hard_deadline_respected'], suppressed=r2['mechanism'].get('suppressed_on_expiry'))
+    finally: UP.Planner.fin = real_fin2; UP.tnow, UPP.tnow = old
+    src = open(os.path.join(HERE, 'unified_pac_planner.py')).read(); fin_src = src[src.index('    def fin(self, oc, rows, note=None):'):src.index('    def cost_breakdown(self):')]; after = fin_src[fin_src.index('res = super().fin('):]
+    order_ok = ("for r in res['answers']" not in after) and ('self._fin_gs' in after) and (fin_src.index('ledger_identity = (') < fin_src.index('res = super().fin('))
+    ok = res['row_injection']['classified_after_sample'] == 0 and res['row_injection']['outcome'] == 'COMPLETE' and res['expiry_at_sample']['outcome'] == 'DEADLINE' and res['expiry_at_sample']['published'] == 0 and res['expiry_at_sample']['hard_deadline_respected'] is False and order_ok
+    rec('D27_RF1_no_work_after_authoritative_sample', ok, source_order_ok=order_ok, **res)
+
+
+def D28_RF2_sampler_stage_deadline_and_byte_identity():
+    """RF2 (finding 2): (i) the polled sampler preparation produces BYTE-IDENTICAL log tables, strides and scopes to the accepted MBFloat.prepare_sampler on a deep copy of the same planned proposal (original and lifted
+    streams); (ii) an injected clock that advances 0.5 s per read inside the lifted sampler stage against a 0.1 s optional allowance closes the stream typed at a step poll (never READY), and the planner's account is
+    debited by the elapsed injected time (kept, not refunded); (iii) the admission guard: a plan understated below the first step's log-table bytes refuses MEMORY_POLICY before any allocation"""
+    model, binding = load_mid('dg_n16_c4_clique_two'); res = {}; clk = CE.Clock(PA.tnow() + 60, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B)
+    cmp_ = {}
+    real = PA.prepare_sampler_polled
+    def wrapped(mbp, deadline, plan_log_bytes=None, release_forward=True):
+        m2 = copy.deepcopy(mbp); n = real(mbp, deadline, plan_log_bytes, release_forward); IG.MBFloat.prepare_sampler(m2, release_forward)
+        same = len(m2.prep) == len(mbp.prep) and all((v1 == v2) and ((t1 is None) == (t2 is None)) and (t1 is None or (len(t1) == len(t2) and all(a[0].tobytes() == b[0].tobytes() and a[0].dtype == b[0].dtype and a[1] == b[1] and tuple(a[2]) == tuple(b[2]) for a, b in zip(t1, t2)))) for (v1, t1), (v2, t2) in zip(mbp.prep, m2.prep))
+        cmp_[id(mbp)] = dict(identical=bool(same), steps=len(mbp.prep), tables=sum(len(t) for _, t in mbp.prep if t), bytes=n, fwd_released=(mbp.fwd == m2.fwd == [])); return n
+    PA.prepare_sampler_polled = wrapped
+    try:
+        st = PA.RequestState(model, binding, EPS, DELTA); PA.structural_routes(st, PA.tnow() + 30, flags=dict(evidence_expansion=False, layered_contraction=False, ancestral_response=False)); S0 = PA.Stream(1, 'original', st.model, st.queries, 1, EPS, DELTA / 2, dict(PAC_OPTS)); r0 = S0.prepare(PA.tnow() + 30, cdead=PA.tnow() + 30)
+        prof, why = CE.slice_profiles(M, clk, B); classes = [CE.canonical_classes(CE.farthest_split(prof[v], list(range(M.cards[v])), clk), M.cards[v]) for v in range(len(M.cards))]; Cz = CE.check_candidate(M, classes, CE.unit_scales(M), clk, B, ratio_product='compact')
+        S1 = PA.LiftedStream(2, M, M, [], classes, Cz, 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B)); r1 = S1.prepare(PA.tnow() + 30)
+    finally: PA.prepare_sampler_polled = real
+    res['byte_identity'] = dict(original=(r0, cmp_.get(id(S0.mbp))), lifted=(r1, cmp_.get(id(S1.mbp))))
+    # (ii) injected clock inside the real lifted sampler stage: the clock is frozen at t_start + 0.01 through the mini-bucket build and advances 0.03 s per read once the polled preparation is ENTERED
+    def advance_to(S, target):
+        disp = {'INIT': S._l_decoder, 'INTEGERIZED': S._l_coarse_proposal, 'CONTRACTED': S._l_fine_tables}
+        while S.stage != target and S.stage in disp: disp[S.stage](PA.tnow() + 30)
+    S3 = PA.LiftedStream(4, M, M, [], classes, Cz, 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B)); advance_to(S3, 'CONSTANTS'); assert S3.stage == 'CONSTANTS'
+    P = UPlanner(model, binding, 10.0, admission_stop_s=9.0, t_start=PA.tnow()); P.E = 0.1; P.E_used = 0.0; P.primary = object()
+    state = {'now': P.t_start + 0.01, 'reads': 0, 'step': 0.0, 'entered': 0}
+    def clock():
+        state['reads'] += 1; state['now'] += state['step']; return state['now']
+    real_pl = PA.prepare_sampler_polled
+    def entering(*a, **kw):
+        state['entered'] += 1; state['step'] = 0.03; return real_pl(*a, **kw)
+    old = (PA.tnow, UP.tnow, UPP.tnow, IG.tnow); PA.tnow = UP.tnow = UPP.tnow = IG.tnow = clock; PA.prepare_sampler_polled = entering
+    try: P._prepare(S3, P.t_start + 0.1, charge=True)
+    finally: PA.tnow, UP.tnow, UPP.tnow, IG.tnow = old; PA.prepare_sampler_polled = real_pl
+    res['injected_stage_expiry'] = dict(stage_before='CONSTANTS', stage=S3.stage, closed=S3.closed_reason, E=P.E, E_used=P.E_used, clock_reads=state['reads'], entered_polled_preparation=state['entered'], injected_wall=state['now'] - P.t_start, sampler_prep_none=(S3.mbp.prep is None) if hasattr(S3, 'mbp') else None)
+    # (iii) admission guard
+    S4 = PA.LiftedStream(5, M, M, [], classes, Cz, 1, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B)); advance_to(S4, 'CONSTANTS')
+    refusal = None
+    try:
+        # understate the admitted plan: wrap the polled preparation so the stage's plan argument is replaced by a value below the first step's log-table bytes
+        orig_pl = PA.prepare_sampler_polled
+        def understated(mbp, deadline, plan_log_bytes=None, release_forward=True): return orig_pl(mbp, deadline, -(1 << 21), release_forward)
+        PA.prepare_sampler_polled = understated
+        try: r4 = S4.prepare(PA.tnow() + 30)
+        finally: PA.prepare_sampler_polled = orig_pl
+        refusal = (r4, S4.stage, S4.closed_reason, S4.mbp.prep is None)
+    except Exception as e: refusal = ('EXC', repr(e)[:160])
+    res['admission_guard'] = refusal
+    ok = (r0 == 'READY' and r1 == 'READY' and all(cmp_[k]['identical'] for k in cmp_) and len(cmp_) == 2 and res['injected_stage_expiry']['stage'] == 'CLOSED' and 'DEADLINE' in (S3.closed_reason or '') and 'CONSTANTS' in (S3.closed_reason or '') and 'sampler preparation' in (S3.closed_reason or '') and state['entered'] == 1 and P.E_used >= 0.09 and
+          refusal[0] == 'CLOSED' and 'MEMORY_POLICY' in (refusal[2] or '') and refusal[3] is True)
+    rec('D28_RF2_sampler_stage_deadline_and_byte_identity', ok, **res)
+
+
+def D29_RF3_cap_units_equality():
+    """RF3 (finding 3): for a READY original stream and a READY lifted stream the ADVERTISED cap (mech.cap_units.cap_Wint_log2) equals the batch formula's constant logU_capf + E_U; the advertised original-units cap
+    equals cap_Wint_log2 - log2 scale_F (lifted) and bounds max_z W_par(z) / q(z) over EVERY fine state (exact enumeration: the analyzed X <= 1 is the same statement); the legacy value logU_capf + E_tot differs from
+    the advertised one by exactly E_fine - 2 E_U bits (the DGP2 unit error, now recorded and not consumed); a sampled lifted batch's implemented log2 X equals log2 W_int - log2 q - cap_Wint_log2 within the consumed cap_tol"""
+    model, binding = load_odev('dg_n6_c4_clique_two'); clk = CE.Clock(PA.tnow() + 60, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B)
+    import dgp2_oracle as OR
+    st = PA.RequestState(model, binding, EPS, DELTA); PA.structural_routes(st, PA.tnow() + 30, flags=dict(evidence_expansion=False, layered_contraction=False, ancestral_response=False)); S0 = PA.Stream(1, 'original', st.model, st.queries, 1, EPS, DELTA / 2, dict(OR.PROFILE)); r0 = S0.prepare(PA.tnow() + 30, cdead=PA.tnow() + 30)
+    o_eq = (r0 == 'READY') and S0.mech['cap_units']['cap_Wint_log2'] == S0.logU_capf + S0.mbp.E_U
+    prof, why = CE.slice_profiles(M, clk, B); classes = [CE.canonical_classes(CE.farthest_split(prof[v], list(range(M.cards[v])), clk), M.cards[v]) for v in range(len(M.cards))]; Cz = CE.check_candidate(M, classes, CE.unit_scales(M), clk, B, ratio_product='compact')
+    S = PA.LiftedStream(2, M, M, [], classes, Cz, 1, EPS, DELTA / 4, dict(OR.PROFILE, budget_obj=B)); r1 = S.prepare(PA.tnow() + 30); cu = S.mech['cap_units']
+    l_eq = (r1 == 'READY') and cu['cap_Wint_log2'] == S.logU_capf + S.mbp.E_U and abs(cu['cap_original_units_log2'] - (cu['cap_Wint_log2'] - math.log2(S.scale_F))) < 1e-9 and abs((cu['cap_Wint_log2'] - cu['legacy_logU_capf_plus_E_tot']) - (2 * S.mbp.E_U - S.E_fine)) < 1e-9
+    n = len(M.cards); cap_int = F(2) ** int(math.floor(S.logU_capf)) * F(2.0 ** (S.logU_capf - math.floor(S.logU_capf))) * F(2) ** S.mbp.E_U; Xmax = F(0); worst_orig_ratio = F(0)
+    cstates = sorted(set(tuple(classes[v][z[v]] for v in range(n)) for z in itertools.product(*[range(k) for k in M.cards]))); Sb = np.array(cstates, dtype=np.int64); lq, qC = S.mbp.logq_given(Sb, S.pos); qC = dict(zip(cstates, qC))
+    for z in itertools.product(*[range(k) for k in M.cards]):
+        c = tuple(classes[v][z[v]] for v in range(n)); W = LD.parent_weight(M, z) / M.scalar; r_ = F(1)
+        for v in range(n): r_ *= LD.r_prob(S.rows, v, c[v], z[v])
+        q = qC[c] * r_
+        if q > 0 and W > 0: Xmax = max(Xmax, F(S.scale_F) * W / (cap_int * q)); worst_orig_ratio = max(worst_orig_ratio, W / q)
+    orig_units_ok = Xmax <= 1 and float(IG.lg(worst_orig_ratio)) <= cu['cap_original_units_log2'] + 1e-9
+    # a sampled batch: implemented log2 X vs log2 W_int - log2 q - cap_Wint_log2 on the same assignments
+    Sb2, logq_s, zero_row = S.mbp.sample_batch(S.rng, 256, S.pos); z = np.zeros((Sb2.shape[0], n), dtype=np.int64); logr = np.zeros(Sb2.shape[0])
+    for v in range(n):
+        for k in range(Sb2.shape[0]):
+            c = int(Sb2[k, v]); mem = S.rows.members[v][c]; z[k, v] = mem[0]; logr[k] = logr[k] + math.log2(LD.r_prob(S.rows, v, c, mem[0]))                   # a deterministic fine choice per coarse state (first member)
+    logz = np.zeros(Sb2.shape[0])
+    for i in range(len(S.fine)): logz += S.fLM[i][S._flat_fine(z, i)]
+    impl = (logz - logq_s - logr - S.logU_capf) + float(S.E_tot); dev = 0.0
+    lq2, q_an = S.mbp.logq_given(Sb2, S.pos)
+    for k in range(Sb2.shape[0]):
+        if not np.isfinite(impl[k]) or q_an[k] == 0: continue
+        W = LD.parent_weight(M, tuple(int(x) for x in z[k])) / M.scalar; r_ = F(1)
+        for v in range(n): r_ *= LD.r_prob(S.rows, v, int(Sb2[k, v]), int(z[k, v]))
+        exact = float(IG.lg(F(S.scale_F) * W)) - float(IG.lg(q_an[k] * r_)) - cu['cap_Wint_log2']; dev = max(dev, abs(exact - float(impl[k])))
+    batch_ok = dev <= S.cap_tol
+    rec('D29_RF3_cap_units_equality', o_eq and l_eq and orig_units_ok and batch_ok, original_equality=o_eq, lifted_equality=l_eq, cap_Wint_log2=cu['cap_Wint_log2'], cap_original_units_log2=cu['cap_original_units_log2'], legacy=cu['legacy_logU_capf_plus_E_tot'], unit_error_bits=cu['cap_Wint_log2'] - cu['legacy_logU_capf_plus_E_tot'], max_X_analyzed=float(Xmax), log2_worst_orig_ratio=float(IG.lg(worst_orig_ratio)), batch_dev=dev, cap_tol=S.cap_tol)
+
+
+def D30_lemma_G_grouped_envelope():
+    """lemma G: on a dev card-4 model, for envelope levels G2 and G3 the grouped upper model is a VALID envelope (independent enumeration W <= G_U^G d over every fine state, via enumerate_check with the stream's own
+    upper function), every grouped table is dominated by the product of its factors' per-factor tables (check_dominance), Z_U^G <= Z_U^G1, the realized coarse law's cap has B_cap_violations == 0 (dgp2_oracle), the
+    stream is READY with its grouped metadata recorded and charged; a one-cell UNDERSTATED mutation of a grouped table is caught by the enumeration checker (Defect); the work-cap fallback keeps a factor whose grouping
+    would exceed the joint scope ungrouped (its per-factor U verbatim)"""
+    import grouped_envelope as GE, dgp2_oracle as OR
+    model, binding = load_odev('dg_n6_c4_clique_two'); clk = CE.Clock(PA.tnow() + 90, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B); n = len(M.cards)
+    prof, why = CE.slice_profiles(M, clk, B); classes = [CE.canonical_classes(CE.farthest_split(prof[v], list(range(M.cards[v])), clk), M.cards[v]) for v in range(n)]; Cz = CE.check_candidate(M, classes, CE.unit_scales(M), clk, B, ratio_product='compact')
+    enum = OR.enumerate_original(M, PA.tnow() + 60); res = {}; ZU = {}
+    for level in ('G1', 'G2', 'G3'):
+        S = PA.LiftedStream(2, M, M, [], classes, Cz, 1, EPS, DELTA / 4, dict(OR.PROFILE, budget_obj=B), envelope=level); r = S.prepare(PA.tnow() + 60); ufn = S.upper_weight_fn()
+        cstates = list(itertools.product(*[range(k) for k in Cz.ccards])); ZU[level] = sum(ufn(c) for c in cstates); chk = LD.enumerate_check(M, classes, Cz, S.rows, upper_fn=ufn); dom = GE.check_dominance(M, Cz, S.grouped['tables'], S.grouped['groups']) if S.grouped else None
+        q2, _ = OR.lifted_quantities(S, classes, Cz, enum, M, PA.tnow() + 60); ge = S.mech.get('grouped_envelope') or {}
+        res[level] = dict(ready=(r == 'READY'), envelope_valid=True, dominance=dom, log2_ZU_over_Z=q2['log2_ZU_over_Z'], log2_C_over_Z=q2['log2_C_over_Z'], log2_C_tight_over_Z=q2['log2_C_tight_over_Z'], log2_M2=q2['log2_M2'], B_viol=q2['B_cap_violations'], max_X=q2['max_X_analyzed'], groups=ge.get('groups'), grouped_pairs=ge.get('grouped_pairs'), charged=ge.get('charged_bytes'), released_on_close=None)
+        if level == 'G2':
+            live0 = B.live; fb, gb = S.fine_bytes, S.grouped_bytes; S._close('control'); res[level]['released_on_close'] = (live0 - B.live == fb + gb and gb > 0)
+            # understated mutation: zero one grouped cell (its fine states have positive weight) -> the checker must raise Defect
+            S2 = PA.LiftedStream(3, M, M, [], classes, Cz, 1, EPS, DELTA / 4, dict(OR.PROFILE, budget_obj=B), envelope='G2'); S2.prepare(PA.tnow() + 60); gi = next(i for i, g in enumerate(S2.grouped['groups']) if len(g) >= 2); Sc, U = S2.grouped['tables'][gi]
+            k = max(range(len(U)), key=lambda i: U[i]); U[k] = F(0); caught = False
+            try: LD.enumerate_check(M, classes, Cz, S2.rows, upper_fn=S2.upper_weight_fn())
+            except CE.Defect: caught = True
+            res['understated_mutation_caught'] = caught; S2._close('control')
+    # work-cap fallback: a ternary factor sharing one variable with a pair factor would need joint scope 4 -> stays ungrouped
+    tiny = dict(cards=[2, 2, 2, 2], factors=[dict(scope=(0, 1, 2), values=[F(k + 1) for k in range(8)]), dict(scope=(2, 3), values=[F(1), F(2), F(3), F(1)]), dict(scope=(0,), values=[F(1), F(2)]), dict(scope=(1,), values=[F(1), F(1)]), dict(scope=(2,), values=[F(1), F(1)]), dict(scope=(3,), values=[F(1), F(3)])], evidence={})
+    Mt = CE.canonicalize(tiny, clk, B); ct = [[0, 0]] * 4; Czt = CE.check_candidate(Mt, ct, CE.unit_scales(Mt), clk, B, ratio_product='compact'); groups, gsc = GE.plan_groups(Mt, Czt, 'G2'); tabs, chg = GE.grouped_upper_tables(Mt, ct, Czt, groups, gsc, clk, B)
+    ternary = next(i for i, (sc, _) in enumerate(Mt.factors) if len(sc) == 3); fallback = all(len(g) == 1 for g in groups if ternary in g) and all(max(len(S_) for S_ in gsc) <= GE.MAX_SCOPE for _ in [0]) and any(tabs[gi][1] == list(Czt.U[ternary]) for gi, g in enumerate(groups) if g == (ternary,))
+    res['work_cap_fallback'] = dict(groups=[list(g) for g in groups], scopes=[list(x) for x in gsc], ternary_ungrouped=fallback); B.release(chg)
+    ok = all(res[l]['ready'] and res[l]['B_viol'] == 0 and res[l]['max_X'] <= 1 for l in ('G1', 'G2', 'G3')) and res['G2']['dominance'] is True and res['G3']['dominance'] is True and ZU['G2'] <= ZU['G1'] and ZU['G3'] <= ZU['G1'] and res['G2']['grouped_pairs'] >= 1 and res['G2']['released_on_close'] and res['understated_mutation_caught'] and fallback
+    rec('D30_lemma_G_grouped_envelope', ok, ZU_log2={k: float(IG.lg(v)) for k, v in ZU.items()}, **res)
+
+
+def D31_RF4_paired_arithmetic_power():
+    """RF4: the paired arithmetic diagnostic (dgp3_oracle.paired_arithmetic: exact W_int, exact analyzed q and exact cap evaluated on the SAME production assignments as the implemented float log2 X) reports a maximum
+    deviation within the consumed bound on a dev model; a 2^-30 perturbation of ONE implemented block log-table entry is detected (max deviation > bound), so the diagnostic has power against pointwise arithmetic error"""
+    import dgp3_oracle as O3, dgp2_oracle as OR
+    model, binding = load_odev('dg_n6_c4_clique_two'); clk = CE.Clock(PA.tnow() + 60, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B); enum = OR.enumerate_original(M, PA.tnow() + 60)
+    st = PA.RequestState(model, binding, EPS, DELTA); PA.structural_routes(st, PA.tnow() + 30, flags=dict(evidence_expansion=False, layered_contraction=False, ancestral_response=False, support_closure=True)); S, r = OR.original_stream(st, 1, PA.tnow() + 30)
+    a = O3.paired_arithmetic(S, enum, M, 2, PA.tnow() + 60)
+    i = next(i for i in range(len(S.bLM)) if np.isfinite(S.bLM[i]).any()); j = int(np.flatnonzero(np.isfinite(S.bLM[i]))[0]); S.bLM[i][j] += 2.0 ** -30; S.rng = np.random.default_rng(np.random.SeedSequence([1, 1]))
+    b = O3.paired_arithmetic(S, enum, M, 8, PA.tnow() + 60)
+    ok = r == 'READY' and a['within_bound'] is True and a['draws'] >= 2048 and (b['max_abs_log2_dev'] > a['bound_log2_from_rho_X'] or b['within_bound'] is False)
+    rec('D31_RF4_paired_arithmetic_power', ok, clean={k: a[k] for k in ('draws', 'max_abs_log2_dev', 'p99_abs_log2_dev', 'consumed_rho_X', 'bound_log2_from_rho_X', 'within_bound')}, perturbed={k: b[k] for k in ('draws', 'max_abs_log2_dev', 'within_bound')})
+
+
+CONTROLS += [D27_RF1_no_work_after_authoritative_sample, D28_RF2_sampler_stage_deadline_and_byte_identity, D29_RF3_cap_units_equality, D30_lemma_G_grouped_envelope, D31_RF4_paired_arithmetic_power]
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('--only', default=None); a = ap.parse_args(); t0 = time.time()
