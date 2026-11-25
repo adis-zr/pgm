@@ -13,10 +13,20 @@ def load(p):
     except Exception: return None
 def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
 
+_SHA_NAME = None
+def sha_name_map():
+    """model_sha256 -> the MODEL_MANIFEST task name (unique per input; the EVAL-4 fresh inputs reuse the exposed names and carry the __eval4 suffix in the manifest -- FREEZE_AMENDMENT_harness2)"""
+    global _SHA_NAME
+    if _SHA_NAME is None:
+        man = load(os.path.join(RD, 'MODEL_MANIFEST.json')); _SHA_NAME = {}
+        for p in ('preservation_13', 'preservation_18', 'oracle_24', 'main_52'):
+            for t in man['panels'][p]: _SHA_NAME[t['model_sha256']] = t['name']
+    return _SHA_NAME
+
 def cells_of(sub):
     out = []
     for p in sorted(glob.glob(os.path.join(RD, 'runs', sub, '*', 'cell.json'))):
-        c = load(p)['cell']; c['_dir'] = os.path.dirname(p); c['_result'] = load(os.path.join(c['_dir'], 'result.json')); out.append(c)
+        c = load(p)['cell']; c['_dir'] = os.path.dirname(p); c['_result'] = load(os.path.join(c['_dir'], 'result.json')); c['task_recorded'] = c['task']; c['task'] = sha_name_map().get(c.get('model_sha256'), c['task']); out.append(c)
     return out
 
 def radii_full_inventory(c):
@@ -32,7 +42,14 @@ def radii_full_inventory(c):
             key = (e['var'], e['state']); w = float(F(e['hi']) - F(e['lo'])) / 2
             if key not in rad or w < rad[key]: rad[key] = w
     keys = [(a['var'], a['state']) for a in rows] if rows else list(rad)
-    full = [min(0.5, rad.get(k, 0.5)) for k in keys]; return full, dict(K=K, informative=sum(1 for k in keys if k in rad), deterministic_rows=sum(1 for a in rows if a.get('guarantee') in ('EXACT', 'DETERMINISTIC')), pac_rows=sum(1 for a in rows if a.get('guarantee') == 'PAC_EB'))
+    base_cert = None
+    if c['arm'] == 'BASE':                                                                              # the accepted engine records its certificate state as aggregates only (max / median remaining width over the unresolved coordinates); the same Certificate.sets() the planner's enclosures come from
+        m = d.get('mechanism') or {}
+        if m.get('route') == 'pac' and m.get('max_remaining_width') is not None and m.get('max_remaining_width') < 1.0:
+            base_cert = dict(max_remaining_width=m['max_remaining_width'], median_remaining_width=m.get('median_remaining_width'), note='BASE enclosures are not per coordinate: every unpublished coordinate is assigned the recorded MAX remaining half-width (conservative for BASE)')
+            for k in keys:
+                if k not in rad: rad[k] = m['max_remaining_width'] / 2
+    full = [min(0.5, rad.get(k, 0.5)) for k in keys]; return full, dict(K=K, informative=sum(1 for k in keys if k in rad), deterministic_rows=sum(1 for a in rows if a.get('guarantee') in ('EXACT', 'DETERMINISTIC')), pac_rows=sum(1 for a in rows if a.get('guarantee') == 'PAC_EB'), base_certificate=base_cert)
 
 def stream_rows(c):
     d = c['_result']; out = []
@@ -56,7 +73,7 @@ def optional_status(streams):
 def cell_row(c):
     rad, inv = radii_full_inventory(c); d = c['_result'] or {}; m = d.get('mechanism') or {}; streams = stream_rows(c); cost = d.get('cost_breakdown') if c['arm'] != 'BASE' else None
     L = next((s for s in streams if s['kind'] == 'lifted'), None); P = next((s for s in streams if s['kind'] in ('original', 'exact_parent')), None)
-    row = dict(task=c['task'], arm=c['arm'], seed=c.get('seed'), seed_index=c.get('seed_index', 0), confirm=c['confirm'], contract=c['contract'], complete=bool(c.get('complete')), outcome=c.get('outcome'), published=c.get('published'), K=c.get('K'), receipt_wall_s=c.get('receipt_wall_s'), receipt_outcome=c.get('receipt_outcome'), peak_MiB=c.get('peak_MiB'), termination=c.get('termination'), route=c.get('route'), identity_ok=c.get('identity_ok'), code_commit=c.get('code_commit'), hard_deadline_respected=c.get('hard_deadline_respected'),
+    row = dict(task=c['task'], task_recorded=c.get('task_recorded'), model_sha256=c.get('model_sha256'), arm=c['arm'], seed=c.get('seed'), seed_index=c.get('seed_index', 0), confirm=c['confirm'], contract=c['contract'], complete=bool(c.get('complete')), outcome=c.get('outcome'), published=c.get('published'), K=c.get('K'), receipt_wall_s=c.get('receipt_wall_s'), receipt_outcome=c.get('receipt_outcome'), peak_MiB=c.get('peak_MiB'), termination=c.get('termination'), route=c.get('route'), identity_ok=c.get('identity_ok'), code_commit=c.get('code_commit'), hard_deadline_respected=c.get('hard_deadline_respected'),
                worst_radius=(max(rad) if rad else None), median_radius=(float(np.median(rad)) if rad else None), covered_at_eps=(sum(1 for x in rad if x <= EPS) if rad else None), inventory=inv, streams=streams, optional_route=optional_status(streams), ledger_identity=m.get('constructor_live_ledger_identity'), live_bytes=m.get('live_memory_named_bytes'), cost=cost, time_to_first_batch=((cost or {}).get('time_to_first_committed_batch_s')), E=m.get('exploration_account_s'), E_used=m.get('exploration_used_s'), refusal=m.get('refusal') or d.get('refusal'), defect=m.get('defect'), envelope=d.get('envelope'), decisions=[x.get('chosen') for x in d.get('decisions', [])][:16], dir=os.path.relpath(c['_dir'], RD),
                constructor_fraction=((sum((cost or {}).get(k, 0) or 0 for k in ('canonicalize', 'features', 'pricing', 'structural_routes', 'quotient_construction', 'pac_preparation', 'lifted_preparation') if isinstance((cost or {}).get(k), (int, float))) / d['wall_s']) if cost and d.get('wall_s') else None), primary_draws=(P or {}).get('draws'), lifted_draws=(L or {}).get('draws'), draws_per_remaining_s=((((P or {}).get('draws') or 0) + ((L or {}).get('draws') or 0)) / max(1e-9, (d.get('wall_s') or 0) - ((cost or {}).get('time_to_first_committed_batch_s') or 0))) if d.get('wall_s') and cost and cost.get('time_to_first_committed_batch_s') is not None else None)
     return row
