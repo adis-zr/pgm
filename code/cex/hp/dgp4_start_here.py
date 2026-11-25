@@ -21,7 +21,7 @@ cm = g['cap_mechanism']; P('| Cap mechanism (RMAX V4096 vs repaired G2, >= 2x ce
 ce = g['certificate_mechanism']; P('| Certificate mechanism (on cap-qualifying cases: >= 2x worst radius in >= 2 of 3 seeds, or new all-coordinate completion) | %s: qualifying %d, passing %d (%s) |' % (ce['status'].upper(), len(ce['qualifying']), len(ce['passing']), ', '.join(ce['passing']) or 'none'))
 P('| Deployable inference progress | %s: main 52: BASE %d, REPAIRED %d, NEW %d complete (dense %s); NEW not REPAIRED %s; new dense completions %s; material (>= 2x) worst-radius gains on mutual failures %s; fresh EVAL-4 complete %s; fresh transfer %s |' % (vd['deployable_progress']['status'], mi['n_complete']['BASE'], mi['n_complete']['REPAIRED'], mi['n_complete']['NEW'], mi['dense_complete'], mi['NEW_not_REPAIRED'] or 'none', vd['deployable_progress']['new_dense_completions'] or 'none', vd['deployable_progress']['material_radius_gains'] or 'none', {a: len(v) for a, v in mi['fresh_complete'].items()}, vd['deployable_progress']['fresh_transfer'] or 'none'))
 P('| Cost / overhead | %d mutual completions; NEW / REPAIRED receipt ratio median %s; flags (>= 0.1 s and >= 1.25x slower) %s |' % (vd['cost_overhead']['n_mutual'], f2(vd['cost_overhead']['median_ratio']), vd['cost_overhead']['flags'] or 'none'))
-P('| Identified failure class | %s |' % vd.get('failure_class'))
+P('| Identified failure class | %s |' % (vd.get('failure_class') or {}).get('oracle_identified') if isinstance(vd.get('failure_class'), dict) else vd.get('failure_class'))
 P('| Confirmations | %s |' % conf_line)
 P('| Charges | %.1f s of 9,000 (%d receipts, %d completed; by scope in CHARGES.json) |' % (C['total_s'], C['n_receipts'], C['completed'])); P('')
 P('## Mechanism execution counts'); P('')

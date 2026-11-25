@@ -65,7 +65,7 @@ def optional_status(streams):
     if not L: return dict(status='NOT_OFFERED', reason=None)
     s = L[0]; rm = s.get('rmax') or {}
     if s['stage'] in ('READY', 'COMPLETE') or s['draws']: st = 'SAMPLED' if s['draws'] else 'READY'
-    elif rm.get('stages_done'): st = 'PREFIX_CHECKED_THEN_CLOSED'
+    elif rm.get('stages_done'): st = 'PREFIX_CHECKED_THEN_CLOSED_' + ('RANGE_AFTER_PACKING' if 'underflow' in (s.get('closed') or '') else ('MEMORY_POLICY' if 'MEMORY_POLICY' in (s.get('closed') or '') else 'OTHER'))
     elif s.get('rmax_refusal') or (s.get('closed') or '').startswith(('REFUSED', 'MEMORY', 'SUPPORT', 'DEFECT')): st = 'REFUSED'
     else: st = 'CLOSED'
     return dict(status=st, reason=(s.get('closed') or (s.get('rmax_refusal') or {}).get('kind')), published_from_route=s.get('valid_endpoints'), stages_done=rm.get('stages_done'), stages_total=rm.get('stages_total'), draws=s['draws'])
@@ -176,6 +176,10 @@ def analyze():
     flags = [x['task'] for x in cost if x['flag_slower']]
     # failure class (one): derived from the oracle contrasts on the anchors and the production route statuses
     fc = None
+    # large-n production evidence (no certified denominator): the implemented mean weight of the sampled RMAX route = Z_0 / B in expectation -> log2(B / Z_0) >= -log2 mean X; the split into B / T and T / Z_0 is NOT computable there
+    prod_new = [x for x in opt if x['arm'] == 'NEW' and x['sub'] == 'main']; sampled = [x for x in prod_new if x['status'] == 'SAMPLED' and ((x.get('lifted') or {}).get('log2_X_mean') is not None)]
+    lx = [x['lifted']['log2_X_mean'] for x in sampled]; closed = [x for x in prod_new if x['status'].startswith('PREFIX_CHECKED_THEN_CLOSED') or x['status'] in ('REFUSED', 'CLOSED')]
+    large_n = dict(sampled_cells=len(sampled), log2_mean_X_range=([round(min(lx), 1), round(max(lx), 1)] if lx else None), closed_cells=len(closed), closed_by_status={k: sum(1 for x in closed if x['status'] == k) for k in sorted({x['status'] for x in closed})}, closed_reasons=sorted({(x.get('reason') or '')[:80] for x in closed}), packing_inflation_on_closed_log2=sorted(round((((x.get('lifted') or {}).get('rmax') or {}).get('packing') or {}).get('max_ratio_log2') or 0, 1) for x in closed), note='log2(B / Z_0) >= -log2 E[X] on these cells; B / T vs T / Z_0 not separable without T (unresolved at n 32-64)')
     if cap['status'] != 'supported':
         anch = [O[t]['contrasts'] for t in exposed_anchor + fresh_strong if O.get(t, {}).get('contrasts')]
         if not anch: fc = 'unresolved / censored'
@@ -184,10 +188,12 @@ def analyze():
         elif any((c.get('packing_RMAX') or 0) >= 1.0 for c in anch): fc = 'packing erases gain'
         elif any((c.get('bounding_term_RMAX') or 0) >= 1.0 for c in anch): fc = 'coarse bounding overhead erases gain'
         else: fc = 'envelope still loose'
-    elif cert['status'] != 'supported': fc = 'poor fixed-decoder overlap'
-    elif not e_candidates:
-        prod_new = [x for x in opt if x['arm'] == 'NEW' and x['sub'] == 'main']; refused = [x for x in prod_new if x['status'] in ('REFUSED', 'CLOSED', 'PREFIX_CHECKED_THEN_CLOSED')]
-        fc = 'retained-memory / scheduling limitation' if refused and len(refused) >= len(prod_new) / 4 else 'construction cost consumes benefit'
+    else:
+        # cap supported: on the oracle panel the envelope mass is no longer dominant; the residual gap to the certificate is the fixed decoder (law term ~ 0 where the certificate gate fails: the ideal law gives the same radius)
+        anch = [t for t in exposed_anchor + fresh_strong if t in O]; law_rx = [(O[t]['contrasts'].get('law_term_RMAX') or 0) for t in anch]; tz = [((O[t].get('reference') or {}).get('log2_T_over_Z0') or 0) for t in anch]
+        fc = 'poor fixed-decoder overlap' if (cert['status'] != 'supported' or not e_candidates) else None
+        if fc is None: fc = 'none (deployable progress candidate)'
+    fc = dict(oracle_identified=fc, large_n='unresolved / censored (no certified denominator at n 32-64: B is checked and absolute; whether the remaining gap is envelope slack B / T or the fixed-decoder optimum T / Z_0 cannot be separated there)' if not e_candidates else None, large_n_evidence=large_n)
     diag['verdicts'] = dict(validity='see VALIDATION.json + controls (the analyzer records: identity_ok on every cell, ledger identity on every planner result, no late publication)', preservation=dict(status=('PRESERVED' if pres_ok else 'REGRESSION'), NEW_losses_vs_FULL3={sub: vi.get(sub, {}).get('NEW', {}).get('regressions_vs_FULL3') for sub in ('preservation_18', 'preservation_13')}, main_losses_vs_REPAIRED=mi.get('REPAIRED_not_NEW'), main_losses_vs_BASE=mi.get('BASE_not_NEW')), cap_mechanism=cap['status'], certificate_mechanism=cert['status'], deployable_progress=dict(status=('CANDIDATE (confirmation pending)' if e_candidates else 'NONE'), new_dense_completions=mi.get('new_dense_completion_candidates'), material_radius_gains=[x['task'] for x in mat], fresh_transfer=[t for t in e_candidates if is_fresh(t)]), cost_overhead=dict(flags=flags, n_mutual=len(cost), median_ratio=(statistics.median(x['ratio_NEW_over_REPAIRED'] for x in cost) if cost else None)), failure_class=fc)
     res['verdicts'] = diag['verdicts']; res['gates'] = diag['gates']; json.dump(diag, open(os.path.join(RD, 'DIAGNOSTICS.json'), 'w'), indent=1, default=str)
     # charges
