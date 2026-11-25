@@ -36,7 +36,7 @@ class UPlanner(UP.Planner):
     def __init__(self, model, binding, budget_s, eps=UP.EPS_DEFAULT, delta=F(1, 10 ** 6), admission_stop_s=19.0, t_start=None, seed=1, pac=True, lifted=False, sched='P1', rates='R1'):
         super().__init__(model, budget_s, eps=eps, admission_stop_s=admission_stop_s, t_start=t_start, policy='unified', sched=sched, rates=rates)
         self.delta = delta; self.seed = seed; self.pac = pac; self.lifted = lifted; self.budget_s = budget_s; self.binding = binding
-        self.req = PA.RequestState(model, binding, eps, delta); self.streams = []; self.primary = None; self.E = None; self.E_used = 0.0; self.first_decided = False; self.conflicts = []; self.checkpoints = []; self.pac_rows_orig = {}
+        self.req = PA.RequestState(model, binding, eps, delta); self.streams = []; self.primary = None; self.E = None; self.E_used = 0.0; self.first_decided = False; self.conflicts = []; self.checkpoints = []; self.pac_rows_orig = {}; self.lift_cands = []; self.lift_discovery_tried = False; self.fast_bits_refused = False
         self.out.update(version=VERSION, delta=str(delta), seed=seed, pac=pac, lifted=lifted, streams=[], risk_ledger=[], checkpoints=self.checkpoints, conflicts=self.conflicts); self.out['mechanism']['structural'] = self.req.mech
         self.cdead = self.t_start + min(budget_s, CONSTRUCT_SHARE * budget_s)
     # ---- risk
@@ -75,6 +75,28 @@ class UPlanner(UP.Planner):
             for j, r in ans_o.items(): x, a = st.queries_orig[j]; outr[(x, a)] = (r['lo'], r['hi'])
             return outr
         return self.new_stream('original', model=model, queries=queries, decode=decode, label='pac(original%s)' % ('/closure-reduced' if st.closure is not None else ''))
+    def discover_fast_lift_only(self, parent, clock):
+        """an approximate stage for LIFTING ONLY when the deterministic FAST discovery refused BITS on the diagnostic ratio product R = prod_f max U / L (the one-solve bound's constant, unused by the lifted
+        proposal): the SAME proposer (slice profiles, farthest split, unit scales) and the SAME independent checker, run with the bit cap raised for the R product alone; afterwards every quantity the lifted
+        proposal uses (A, d, U, L, u) is re-checked against the normal cap and R is discarded (None) when it exceeds it. The candidate is kept OUT of self.cands (never a deterministic solve)."""
+        live0 = self.budget.live; M1 = parent.M1
+        try:
+            prof, why = CE.slice_profiles(M1, clock, self.budget)
+            if prof is None: raise Refused('PROPOSER', why)
+            self.budget.charge(sum(c * c * 8 for c in M1.cards), 'pairwise distances (lift-only discovery)')
+            classes2 = [CE.canonical_classes(CE.farthest_split(prof[v], list(range(M1.cards[v])), clock), M1.cards[v]) if M1.cards[v] > 1 else [0] for v in range(len(M1.cards))]
+            cap0 = CE.BIT_CAP; CE.BIT_CAP = 1 << 24
+            try: Cz = CE.check_candidate(M1, classes2, CE.unit_scales(M1), clock, self.budget)
+            finally: CE.BIT_CAP = cap0
+            worst = max([UP.bits(x) for row in Cz.A for x in row] + [UP.bits(x) for row in Cz.d for x in row] + [UP.bits(x) for row in Cz.u for x in row] + [UP.bits(x) for tab in Cz.U for x in tab] + [UP.bits(x) for tab in Cz.L for x in tab] + [0])
+            if worst > cap0: raise Refused('BITS', 'lift-only discovery: a checker quantity needs %d > %d bits' % (worst, cap0))
+            R_bits = UP.bits(Cz.R) if Cz.R is not None else None
+            if Cz.R is not None and R_bits > cap0: Cz.R = None
+            c = UP.Cand('approx', parent); c.Cz = Cz; c.classes = classes2; c.scales = CE.unit_scales(M1); c.prof = prof; c.M1 = M1; c.stages = list(parent.stages) + [(classes2, Cz)]; c.cards = list(Cz.ccards); c.scopes = [sc for sc, _ in M1.factors]; c.constructions = parent.constructions + 1
+            c.charged = self.budget.live - live0; c.name = 'approx_lift_only(%s)' % parent.name; c.owns = ['Cz', 'classes', 'prof', 'pairwise_distances']; c.shares = dict(M1=parent.name); c.max_bits = UP.cz_bits(Cz); c.lift_only = True; c.R_bits_discarded = R_bits; c.exact = Cz.exact; c.promising = False; c.R = None; c.mixed = Cz.mixed
+            if c.charged < 0: raise Defect('negative construction charge (lift-only discovery)')
+            return c
+        except Refused: self.budget.release(max(0, self.budget.live - live0)); raise
     def make_lifted(self, approx):
         par = approx.parent; M_par = self.M if par.kind == 'identity' else par.M1; par_stages = [] if par.kind == 'identity' else par.stages; classes, Cz = approx.stages[-1]; M = self.M
         def decode(rows_q, S):
@@ -127,8 +149,11 @@ class UPlanner(UP.Planner):
             for a in opts:
                 if a.get('admitted', True) and a['D'] <= E_rem: alt.append(dict(kind='optional', act=a, D=a['D'] + a['S'], name=a['name']))
             if self.lifted and len(self.streams) < MAX_STREAMS and not any(S.kind == 'lifted' for S in self.streams):
-                ap = [c for c in self.cands if c.kind == 'approx' and not c.alias_of and c.Cz is not None and not c.Cz.exact and not c.Cz.zero_factor]
+                ap = [c for c in self.cands + self.lift_cands if c.kind == 'approx' and not c.alias_of and c.Cz is not None and not c.Cz.exact and not c.Cz.zero_factor]
                 if ap: a0 = ap[-1]; alt.append(dict(kind='create_lifted', approx=a0, D=0.0, name='create_lifted(%s)' % a0.name))
+                elif 'fast_discovery' in self.failed_global and self.fast_bits_refused and not self.lift_cands and not self.lift_discovery_tried:
+                    parent = next((c for c in self.cands if c.kind == 'exact' and not c.alias_of), None) or next((c for c in self.cands if c.kind == 'identity'), None)
+                    if parent is not None: alt.append(dict(kind='discover_fast_lift', parent=parent, D=0.0, name='discover_fast_lift(%s)' % parent.name))
             for S in readyS:
                 if S is not self.primary and S.batches == 0: alt.append(dict(kind='probe', stream=S, D=0.0, name='probe(%s)' % S.label))
         if alt:
@@ -156,6 +181,7 @@ class UPlanner(UP.Planner):
         if k == 'optional':
             try: r = super()._perform(d)
             finally: self.E_used += tnow() - t0
+            if d['act']['name'] == 'discover_fast' and self.out['actions'] and self.out['actions'][-1].get('action') == 'discover_fast' and self.out['actions'][-1].get('status') == 'REFUSED_BITS': self.fast_bits_refused = True
             return r
         if k == 'create_primary':
             try: self.primary = self.make_primary()
@@ -166,8 +192,13 @@ class UPlanner(UP.Planner):
             try: S = self.make_lifted(d['approx'])
             except Refused as e: self.lifted = False; self.log_action(action='create_lifted', status='REFUSED_' + e.kind, reason=str(e.reason)[:160]); self.E_used += tnow() - t0; return None
             r = self._prepare(S, d['deadline'], charge=True)
-            if r is None and S.ready() and tnow() < d['deadline']: return self._probe(S, d['deadline'])
+            if r is None and S.ready() and tnow() < d['deadline']: return self._probe(S, min(d['deadline'], tnow() + min(SLICE_S, max(0.0, self.W()) / SLICE_FRAC)))        # the one probe is ONE slice inside the account
             return r
+        if k == 'discover_fast_lift':
+            self.lift_discovery_tried = True; aclock = Clock(d['deadline'], self.stats)
+            try: c = self.discover_fast_lift_only(d['parent'], aclock); self.lift_cands.append(c); self.log_action(action='discover_fast_lift', parent=d['parent'].name, actual_s=tnow() - t0, status='READY_LIFT_ONLY', cards=c.cards, R_bits_discarded=c.R_bits_discarded, charged_bytes=c.charged)
+            except Refused as e: self.log_action(action='discover_fast_lift', parent=d['parent'].name, actual_s=tnow() - t0, status='REFUSED_' + e.kind, reason=str(e.reason)[:160])
+            self.E_used += tnow() - t0; return None
         if k == 'probe': return self._probe(d['stream'], d['deadline'])
         if k == 'advance': return self._advance(d['stream'], d['deadline'])
         raise Defect('unknown decision kind %s' % k)
@@ -318,10 +349,10 @@ class UPlanner(UP.Planner):
             if S.pending is not None: S.mech['pending_batch_at_end'] = dict(draws_generated=int(S.pending['Sb'].shape[0]), blocks_done=S.pending['bi'])
         for S in self.streams:
             if hasattr(S, 'fingerprint'): S.mech['proposal_fingerprint_at_ready'] = S.fingerprint; S.mech['proposal_fingerprint_at_end'] = S.proposal_fingerprint(); S.mech['proposal_immutable'] = (S.fingerprint == S.mech['proposal_fingerprint_at_end'])
-        out['streams'] = [S.diagnostics() for S in self.streams]; mech.update(exploration_account_s=self.E, exploration_used_s=self.E_used, streams_created=len(self.streams), live_memory_named_bytes=dict(constructor_live=self.budget.live, streams_retained=sum(S.retained_bytes for S in self.streams)))
+        out['streams'] = [S.diagnostics() for S in self.streams]; mech.update(exploration_account_s=self.E, exploration_used_s=self.E_used, streams_created=len(self.streams), live_memory_named_bytes=dict(constructor_live=self.budget.live, streams_retained=sum(S.retained_bytes for S in self.streams)), lift_only_candidates=[dict(name=c.name, cards=c.cards, charged_bytes=c.charged, R_bits_discarded=c.R_bits_discarded, exact=c.exact, mixed=c.mixed) for c in self.lift_cands])
         try: enc = self.all_enclosures() if not isinstance(self.M, _EmptyCanon) else {}
         except Exception as e: enc = {}; mech['enclosure_report_error'] = repr(e)[:120]
-        res = super().fin(oc, rows, note=note)
+        res = super().fin(oc, rows, note=note); mech['constructor_live_ledger_identity'] = (self.budget.live == getattr(self, 'canonical_charge', 0) + sum(c.charged for c in self.cands) + sum(c.charged for c in self.lift_cands) + sum(getattr(S, 'rows', None).bytes if getattr(S, 'rows', None) is not None else 0 for S in self.streams))
         gs = {r['guarantee'] for r in res['answers']}; res['guarantee'] = 'EXACT' if gs <= {'EXACT'} else ('DETERMINISTIC' if gs <= {'EXACT', 'DETERMINISTIC'} else ('PAC' if gs <= {'EXACT', 'DETERMINISTIC', 'PAC_EB'} else 'PARTIAL'))
         pub = res['published']
         if pub == len(res['answers']) and pub > 0 and res['hard_deadline_respected'] and res['guarantee'] in ('EXACT', 'DETERMINISTIC', 'PAC') and mech.get('positive_mass_witness'): res['outcome'] = 'COMPLETE'

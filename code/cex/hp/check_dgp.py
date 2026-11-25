@@ -91,7 +91,7 @@ import itertools, random
 from unified_pac_planner import UPlanner, PAC_OPTS, SLICE_S
 import unified_pac_planner as UPP
 import unified_planner as UP
-from unified_planner import Refused, Defect, CM
+from unified_planner import Refused, Defect, CM, Clock
 
 def enum_marginals(M):
     """exact original-coordinate marginals of a canonical model by enumeration (<= 2^16 states)"""
@@ -359,6 +359,28 @@ def D14_edge_cases_typed():
     rec('D14_edge_cases_typed', ok, **res)
 
 CONTROLS += [D5_lifted_enumeration_identity_parent, D6_lifted_enumeration_exact_then_approx, D7_zero_lower_positive_upper_witness, D8_surrogate_mutant_fails_oracle, D9_numerical_bound_operation_by_operation, D10_three_streams_risk_and_conflicts, D11_expiry_and_memory_injections, D12_structural_routes_reach_accepted_completions, D13_functional_completion_after_partial_action, D14_edge_cases_typed]
+
+
+
+
+
+def D15_lift_only_discovery_recheck():
+    """when the deterministic FAST discovery refuses BITS on the diagnostic ratio product R, the lift-only discovery builds the SAME classes with the SAME checker, discards R (None) and re-checks every quantity the lifted proposal uses (A, d, u, U, L) under the normal bit cap; the candidate never enters the deterministic candidate list; its charge is in the ledger identity; a model whose decoder itself exceeds the cap is refused BITS (nothing lifted)"""
+    model, binding = load_mid('dg_n24_c4_clique_two'); P = UPlanner(model, binding, 4.0, admission_stop_s=3.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True); out = P.run()
+    acts = out['actions']; fast = [a for a in acts if a.get('action') == 'discover_fast']; lift = [a for a in acts if a.get('action') == 'discover_fast_lift']; lo = out['mechanism'].get('lift_only_candidates') or []
+    ok_a = bool(fast) and fast[0].get('status') == 'REFUSED_BITS' and bool(lift) and lift[0].get('status') == 'READY_LIFT_ONLY' and len(lo) == 1 and lo[0]['R_bits_discarded'] is not None and lo[0]['R_bits_discarded'] > CE.BIT_CAP and not any(c['name'].startswith('approx_lift_only') for c in out['candidates']) and out['mechanism']['constructor_live_ledger_identity'] and any(S.kind == 'lifted' for S in P.streams)
+    c = P.lift_cands[0]; worst = max([UP.bits(x) for row in c.Cz.A for x in row] + [UP.bits(x) for row in c.Cz.d for x in row] + [UP.bits(x) for tab in c.Cz.U for x in tab] + [UP.bits(x) for tab in c.Cz.L for x in tab]); recheck_ok = worst <= CE.BIT_CAP and c.Cz.R is None and c.R is None
+    # the lifted stream built on it reproduces the checker's classes and decoder (fingerprint of the stage), and its cap / kappa are finite
+    S = next(S for S in P.streams if S.kind == 'lifted'); same_stage = S.classes is c.classes and S.Cz is c.Cz; cap_ok = S.mech.get('cap_log2_total') is not None and S.mech.get('kappa_log2') is not None and S.stage in ('READY', 'CLOSED')
+    # a decoder beyond the cap: variable 0's two states have IDENTICAL pair slices (they merge) and unary masses of ~2,378 / ~2,322 bits (each < 4,096), so the decoder d = u / A needs ~4,757 bits -> refused BITS, nothing lifted, charge released
+    big = dict(cards=[2, 2, 2], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(1), F(2)]), dict(scope=(1, 2), values=[F(1), F(2), F(3), F(4)]), dict(scope=(0,), values=[F(3) ** 1500, F(5) ** 1000]), dict(scope=(1,), values=[F(1), F(1)]), dict(scope=(2,), values=[F(1), F(1)])], evidence={})
+    P2 = UPlanner(big, dict(model_sha256='ctrl'), 3.0, admission_stop_s=2.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True); P2.M = CE.canonicalize(big, P2.hclock, P2.budget); P2.canonical_charge = P2.budget.live; P2.mf = CM.model_features(P2.M, P2.clock, P2.budget); ident = P2.make_identity(P2.clock); P2.cands.append(ident); refused = None; live0 = P2.budget.live
+    try: P2.discover_fast_lift_only(ident, Clock(PA.tnow() + 5, {}))
+    except Refused as e: refused = e.kind
+    released = P2.budget.live == live0
+    rec('D15_lift_only_discovery_recheck', ok_a and recheck_ok and same_stage and cap_ok and refused == 'BITS' and released, fast_status=(fast[0].get('status') if fast else None), lift=(lift[0] if lift else None), lift_only=lo, worst_bits_rechecked=worst, stream=(S.label, S.stage, S.draws, S.mech.get('cap_log2_total'), S.mech.get('kappa_log2')), big_decoder_refusal=refused, charge_released=released, outcome=out['outcome'])
+
+CONTROLS.append(D15_lift_only_discovery_recheck)
 
 
 if __name__ == '__main__':
