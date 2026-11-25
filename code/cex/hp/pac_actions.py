@@ -204,6 +204,9 @@ class Stream:
         except StreamRefused as e:
             self.measurements.append(dict(kind='pac_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored=e.kind, features=self.stage_features(self.stage)))
             return self._close('%s in stage %s: %s' % (e.kind, self.stage, str(e.reason)[:160]))
+        except (ValueError, OverflowError, ZeroDivisionError) as e:
+            self.measurements.append(dict(kind='pac_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='NUMERIC', features=self.stage_features(self.stage)))
+            return self._close('NUMERIC in stage %s: %s' % (self.stage, repr(e)[:160]))
     def stage_features(self, st):
         f = dict(n=len(self.cards), entries=sum(len(x['values']) for x in self.model['factors']), K=self.K)
         if hasattr(self, 'plan') and self.plan: f.update(log_bytes=self.plan['log_bytes'], forward_bytes=self.plan['forward_bytes'], steps=self.plan.get('steps'))
@@ -433,6 +436,8 @@ class Stream:
             self.abandoned += 1; self.pending = None; self.t_sample += tnow() - t0; return self._close('batch abandoned at a hard cut inside the shared responses (%s); %d committed batches retained' % (e, self.batches))
         except IG.RangeRefused as e:
             self.abandoned += 1; self.pending = None; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('NUMERIC_RANGE_REFUSED in a batch: %s; %d committed batches retained' % (str(e)[:120], self.batches))
+        except AssertionError as e:
+            self.abandoned += 1; self.pending = None; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a batch (rows withheld): %s' % str(e)[:120])
     def proposal_fingerprint(self):
         """sha256 over the sampler's log tables, the cap, the risk, the response inventory and (lifted) the decoder counts: the frozen law of this stream"""
         import hashlib; h = hashlib.sha256()
@@ -467,9 +472,13 @@ class Stream:
         w = self.last_width[unpub]; wf = w[np.isfinite(w)]; return float(wf.max()) if wf.size else 2.0
     def all_published(self): return hasattr(self, 'Kq') and len(self.pub) == self.Kq
     def pac_rows(self):
-        """{parent query index: (lo, hi)} of the certified coordinates (nothing without the witness)"""
-        if not self.witness: return {}
+        """{parent query index: (lo, hi)} of the certified coordinates (nothing without the witness; nothing from a stream with a recorded certificate defect)"""
+        if not self.witness or getattr(self, 'defect', None): return {}
         return {self.qmap[self.sq[j]]: (L, H) for j, (L, H) in self.pub.items()}
+    def exact_rows(self):
+        """{parent query index: (lo, hi)} of the EXACT rows recovered deterministically during preparation (factorless variables, constant blocks' interiors): published only with the positive-mass witness, as in the accepted engine (ans.update(pending) under witness); zero risk"""
+        if not self.witness: return {}
+        return {j: (r['lo'], r['hi']) for j, r in self.pending_rows.items()}
     def diagnostics(self):
         d = dict(kind=self.kind, sid=self.sid, label=self.label, stage=self.stage, closed=self.closed_reason, delta_s=str(self.delta_s), K=self.K, draws=self.draws, zero_draws=self.zero_draws, batches=self.batches, abandoned=self.abandoned, checkpoints=self.checkpoints, witness=self.witness, t_prep=self.t_prep, t_sample=self.t_sample, t_cert=self.t_cert, published=len(self.pub), retained_bytes=self.retained_bytes, phases=dict(self.ph), measurements=self.measurements)
         if self.draws: d.update(X_mean=self.sumX / self.draws, zero_weight_fraction=self.zero_draws / self.draws, ESS_DIAGNOSTIC=(self.sumX ** 2 / self.sumX2 if self.sumX2 > 0 else 0.0), largest_share=(self.maxX / self.sumX if self.sumX > 0 else None), max_log2_X_observed=self.maxlogX, log2_Zhat_over_Ucap_DIAGNOSTIC=(log2(self.sumX / self.draws) if self.sumX > 0 else None), max_remaining_width=self.max_unresolved_width(), Z_over_Ucap_EB_DIAGNOSTIC=(self.zcert.interval() if hasattr(self, 'zcert') else None), trace=self.trace)
@@ -529,6 +538,7 @@ class LiftedStream(Stream):
         except Deadline as e: self.measurements.append(dict(kind='lifted_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='DEADLINE', features=self.stage_features(self.stage))); return self._close('DEADLINE in lifted stage %s (%s)' % (self.stage, e))
         except (IG.RangeRefused, CE.Refused) as e: self.measurements.append(dict(kind='lifted_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='RANGE', features=self.stage_features(self.stage))); return self._close('REFUSED in lifted stage %s: %s' % (self.stage, str(e)[:160]))
         except StreamRefused as e: self.measurements.append(dict(kind='lifted_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored=e.kind, features=self.stage_features(self.stage))); return self._close('%s in lifted stage %s: %s' % (e.kind, self.stage, str(e.reason)[:160]))
+        except (ValueError, OverflowError, ZeroDivisionError) as e: self.measurements.append(dict(kind='lifted_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='NUMERIC', features=self.stage_features(self.stage))); return self._close('NUMERIC in lifted stage %s: %s' % (self.stage, repr(e)[:160]))
     def _l_decoder(self, deadline):
         clk = CE.Clock(deadline, {}); B = self.opts.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES); self.rows = LD.build_rows(self.M_par, self.classes, self.Cz, clk, B); self.retained_bytes += self.rows.bytes
         self.mech.update(kappa=str(self.rows.kappa) if self.rows.kappa.denominator.bit_length() < 200 else None, kappa_float=self.rows.kappa_float, kappa_log2=float(IG.lg(self.rows.kappa)) if self.rows.kappa > 0 else None); self.stage = 'INTEGERIZED'
@@ -572,11 +582,12 @@ class LiftedStream(Stream):
         self.batch_used = batch_used; t0 = tnow(); mbp.prepare_sampler(release_forward=True); self.ph['sampler_prep'] = tnow() - t0
         self.E_tot = self.E_fine - mbp.E_U
         if abs(self.E_tot) >= 1 << 50: raise StreamRefused('NUMERIC_RANGE', 'exponent sum too large for an exact float')
-        ratio = F(self.scale_F, self.scale_C) * self.rows.kappa; const_f = LD.float_up(ratio); const_log2 = math.log2(const_f); mag = int(abs(const_log2)) + 2
+        ratio = F(self.scale_F, self.scale_C) * self.rows.kappa; terms = [math.log2(ratio.numerator), math.log2(ratio.denominator)]            # math.log2 on arbitrary ints: within 1 ulp of the exact value each
+        const_log2 = terms[0] - terms[1]; slack = 2.0 ** -40 + 8 * IG.U * (abs(terms[0]) + abs(terms[1]) + 2); const_log2_up = IG.up(const_log2 + slack); mag = int(abs(const_log2)) + 2; self.mech['const_log2'] = const_log2
         wid = lifted_widening(self.blocks_C, mbp, self.fine, len(self.S), max(self.ccards), self.n_par, mag, self.resp_rel); wid['delta_log_total'] += 5 * IG.UF * abs(self.E_tot)
         if wid['delta_log_total'] > F(1, 4): raise StreamRefused('NUMERIC_RANGE', 'log-domain error budget %s too large' % float(wid['delta_log_total']))
         self.eps_num = IG.fup(wid['eps_num']); rho_X = IG.fup(wid['rho_X']); rho_cap = IG.fup(wid['rho_cap'])
-        self.logU_capf = IG.up(IG.up(IG.up(mbp.logU_f + IG.up(log2(1.0 + rho_cap))) + IG.up(const_log2)) + 2 ** -40); self.cap_tol = IG.up(log2(1.0 + 2 * rho_X)) + 2 ** -40
+        self.logU_capf = IG.up(IG.up(IG.up(mbp.logU_f + IG.up(log2(1.0 + rho_cap))) + const_log2_up) + 2 ** -40); self.cap_tol = IG.up(log2(1.0 + 2 * rho_X)) + 2 ** -40
         self.mech.update(eps_num=self.eps_num, rho_X=rho_X, rho_cap=rho_cap, E_tot=self.E_tot, batch_used=batch_used, widening={k: (float(v) if isinstance(v, F) else v) for k, v in wid.items() if k != 'parts'}, widening_parts={k: float(v) for k, v in wid['parts'].items()}, scale_ratio_log2=float(IG.lg(F(self.scale_F, self.scale_C))), cap_log2_total=self.logU_capf + self.E_tot)
         self.alpha = float(self.delta_s) / Kq; self.cert = IG.Certificate(Kq, self.alpha, self.eps_num, float(self.eps), o['schedule']); self.zcert = IG.ZCertificate(float(self.delta_s)); self.mech['alpha_per_coordinate'] = self.alpha
         self.retained_bytes += self.plan['log_bytes'] + batch_used * cert_per_draw; self.stage = 'READY'; self.fingerprint = self.proposal_fingerprint()
@@ -617,6 +628,7 @@ class LiftedStream(Stream):
             self.batches += 1; dt = tnow() - t0; self.t_sample += dt; self.measurements.append(dict(kind='lifted_batch', seconds=dt, completed=True, features=dict(B=B, n_coarse=len(self.S), n_fine=self.n_par, fine_factors=len(self.fine), Kq=self.Kq))); return 'COMMITTED'
         except (IG.Deadline, Deadline) as e: self.abandoned += 1; self.t_sample += tnow() - t0; return self._close('lifted batch abandoned at a hard cut (%s); %d committed batches retained' % (e, self.batches))
         except IG.RangeRefused as e: self.abandoned += 1; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('NUMERIC_RANGE_REFUSED in a lifted batch: %s' % str(e)[:120])
+        except AssertionError as e: self.abandoned += 1; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a lifted batch (rows withheld): %s' % str(e)[:120])
     def weight_oracle(self, z_tuple):
         """controls only: the exact analyzed X(z) = W_int(z) / (cap_total_exact q_an(c) r(z|c)) numerator pieces -- exact W'(z), G_U'(c), d(z|c), r(z|c) as Fractions"""
         c = tuple(self.classes[v][z_tuple[v]] for v in range(self.n_par)); W = LD.parent_weight(self.M_par, z_tuple) / self.M_par.scalar; G = LD.upper_weight(self.M_par, self.Cz, c) / self.M_par.scalar

@@ -383,6 +383,62 @@ def D15_lift_only_discovery_recheck():
 CONTROLS.append(D15_lift_only_discovery_recheck)
 
 
+
+
+
+def D16_exact_rows_from_constant_blocks_published():
+    """a model whose contraction fully eliminates one component (a constant block with interior queries): the stream recovers those rows EXACTLY during preparation; they are published WITH the witness and the final snapshot is complete; BASE on the same input publishes the same exact rows"""
+    model, binding = load_mid('dg_n16_c4_clique_two'); n = len(model['cards']); small = dict(cards=model['cards'] + [3, 3, 3], factors=list(model['factors']) + [dict(scope=(n, n + 1), values=[F(k + 1, 2) for k in range(9)]), dict(scope=(n + 1, n + 2), values=[F(2 * k + 1, 3) for k in range(9)]), dict(scope=(n,), values=[F(1), F(2), F(1)])], evidence={})
+    import tempfile, hp_gen as G; d = tempfile.mkdtemp(); p = os.path.join(d, 'cb.uai'); G.write(p, small)
+    out_b = IG.solve(p, 6.0, seed=1, route='auto', schedule='targeted', table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, batch=1024); rb = {(r['var'], r['state']): (r['lo'], r['hi'], r['guarantee']) for r in out_b['answers'] if r['guarantee'] != 'NOT_PUBLISHED'}
+    P = UPlanner(small, dict(model_sha256='ctrl'), 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=False); out = P.run(); rp = {(r['var'], r['state']): (r['lo'], r['hi'], r['guarantee']) for r in out['answers'] if r['guarantee'] != 'NOT_PUBLISHED'}
+    S = P.streams[0] if P.streams else None; ex = S.exact_rows() if S else {}; exact_coords = {(x, a) for (x, a) in rp if x >= n}
+    ok = S is not None and len(ex) == 9 and out['outcome'] == 'COMPLETE' and out['published'] == out['K'] == 73 and all(rp[q][2] == 'EXACT' and rb.get(q, (None,))[0] == rp[q][0] for q in exact_coords) and len(exact_coords) == 9 and S.mech.get('const_blocks', 0) >= 1
+    rec('D16_exact_rows_from_constant_blocks_published', ok, outcome=out['outcome'], published=(out['published'], out['K']), exact_rows_in_stream=len(ex), const_blocks=S.mech.get('const_blocks') if S else None, base_outcome=out_b['outcome'], base_published=out_b['published'], exact_match_base=all(rb.get(q, (None,))[0] == rp[q][0] for q in exact_coords), sample=sorted(exact_coords)[:3])
+
+def D17_lifted_constant_log_domain_huge_scale():
+    """a model with huge rational denominators (integerization scale ~ 2^2000): the lifted stream's cap constant is computed in the log domain (no float of the rational), the stream becomes READY and its weights obey the cap on every enumerated state (no certificate defect); X_an <= 1 by enumeration"""
+    import random; rng = random.Random(7); n = 5; card = 3
+    def val(): return F(rng.randrange(1, 2 ** 40), 2 ** rng.randrange(380, 420))
+    model = dict(cards=[card] * n, factors=[dict(scope=(i, j), values=[val() for _ in range(card * card)]) for i in range(n) for j in range(i + 1, n)] + [dict(scope=(v,), values=[val() for _ in range(card)]) for v in range(n)], evidence={})
+    clk = CE.Clock(time.monotonic() + 60, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B); classes, Cz = fast_stage(M, clk, B)
+    S = PA.LiftedStream(1, M, M, [], classes, Cz, 3, EPS, DELTA / 2, dict(PAC_OPTS)); r = S.prepare(time.monotonic() + 60); ready = r == 'READY'
+    big_scale = ready and S.scale_F.bit_length() > 1000 and S.scale_F.bit_length() < 1 << 20
+    worst = F(0)
+    if ready:
+        Z, mu = enum_marginals(M); coarse_states = list(itertools.product(*[range(k) for k in Cz.ccards])); Sb = np.array(coarse_states, dtype=np.int64); logq, q_an = S.mbp.logq_given(Sb, S.pos)
+        for ci, c in enumerate(coarse_states):
+            qc = q_an[ci]
+            if qc == 0: continue
+            for z in itertools.product(*[S.rows.members[v][c[v]] for v in range(n)]):
+                W = LD.parent_weight(M, z) / M.scalar; r_ = F(1)
+                for v in range(n): r_ *= LD.r_prob(S.rows, v, c[v], z[v])
+                Xan = F(S.scale_F) * W / (qc * r_) / (F(2.0 ** (S.logU_capf - int(S.logU_capf))) * F(2) ** (int(S.logU_capf) + S.mbp.E_U)); worst = max(worst, Xan)
+        for _ in range(20): assert S.batch(time.monotonic() + 60) == 'COMMITTED'
+        S.check(); rows = S.pac_rows(); viol = sum(1 for j, (L, H) in rows.items() if not (L <= mu[S.queries[j]] <= H))
+    rec('D17_lifted_constant_log_domain_huge_scale', ready and big_scale and worst <= 1 and S.witness and not getattr(S, 'defect', None) and (viol == 0), ready=ready, closed=S.closed_reason, scale_F_bits=(S.scale_F.bit_length() if ready else None), const_log2=S.mech.get('const_log2'), max_X_analyzed=float(worst), draws=S.draws, published=len(S.pub) if ready else None)
+
+def D18_optional_stream_exception_leaves_request_usable():
+    """an exception injected inside the optional lifted stream's preparation (and separately a certificate-defect assertion inside its batch) closes THAT stream typed and recorded; the primary stream and the request continue to completion; the defective stream's rows are withheld"""
+    model, binding = load_mid('dg_n16_c4_clique_two'); res = {}
+    P = UPlanner(model, binding, 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True); orig = PA.LiftedStream._l_sampler
+    def boom(self, deadline): raise OverflowError('injected: integer division result too large for a float')
+    PA.LiftedStream._l_sampler = boom
+    try: out = P.run()
+    finally: PA.LiftedStream._l_sampler = orig
+    lifted = [S for S in P.streams if S.kind == 'lifted']; res['prep_exception'] = dict(outcome=out['outcome'], published=(out['published'], out['K']), lifted_closed=(lifted[0].closed_reason if lifted else None), refusal=out['mechanism'].get('refusal'))
+    P2 = UPlanner(model, binding, 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True); orig_s = PA.LiftedStream._l_sampler
+    def understated(self, deadline): orig_s(self, deadline); self.logU_capf -= 60.0                      # an UNDERSTATED cap: the production assertion inside the real batch fires (certificate defect)
+    PA.LiftedStream._l_sampler = understated
+    try: out2 = P2.run()
+    finally: PA.LiftedStream._l_sampler = orig_s
+    lifted2 = [S for S in P2.streams if S.kind == 'lifted']; res['batch_defect'] = dict(outcome=out2['outcome'], published=(out2['published'], out2['K']), lifted_closed=(lifted2[0].closed_reason if lifted2 else None), lifted_rows_withheld=(lifted2[0].pac_rows() == {} if lifted2 else None), recorded=out2['mechanism'].get('stream_certificate_defects'))
+    ok = res['prep_exception']['outcome'] == 'COMPLETE' and 'NUMERIC' in str(res['prep_exception']['lifted_closed']) and res['prep_exception']['refusal'] is None and res['batch_defect']['outcome'] == 'COMPLETE' and 'CERTIFICATE_DEFECT' in str(res['batch_defect']['lifted_closed']) and res['batch_defect']['lifted_rows_withheld'] and bool(res['batch_defect']['recorded'])
+    rec('D18_optional_stream_exception_leaves_request_usable', ok, **res)
+
+CONTROLS += [D16_exact_rows_from_constant_blocks_published, D17_lifted_constant_log_domain_huge_scale, D18_optional_stream_exception_leaves_request_usable]
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('--only', default=None); a = ap.parse_args(); t0 = time.time()
     for c in CONTROLS:

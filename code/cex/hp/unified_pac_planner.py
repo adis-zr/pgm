@@ -27,7 +27,7 @@ import unified_planner as UP
 from unified_planner import tnow, Clock, Budget, Refused, Defect, CE, CM, T_PROCESS_START
 import pac_actions as PA
 import integrated as IG
-VERSION = 'unified-pac-planner v0.5 (2026-11-24, DENSE_GENERIC_PAC_INTEGRATION_1: accepted structural routes + deterministic representations + up to three statistical streams under one cumulative exploration account; lifted upper-envelope proposal optional)'
+VERSION = 'unified-pac-planner v0.5.1 (2026-11-25 post-freeze repair: streams publish their deterministically recovered EXACT rows (constant blocks, factorless) with the witness; the lifted cap constant in the log domain (no float of a huge rational); numeric exceptions and certificate defects inside a stream close THAT stream typed and recorded, never the request; a fully published stream is not advanced) over v0.5 (2026-11-24, DENSE_GENERIC_PAC_INTEGRATION_1: accepted structural routes + deterministic representations + up to three statistical streams under one cumulative exploration account; lifted upper-envelope proposal optional)'
 SLICE_S = 0.5; SLICE_FRAC = 16; MAX_STREAMS = 3; EXPLORATION_FRAC = 4; CONSTRUCT_SHARE = 0.5; FINAL_RESERVE_S = CM.FINALIZE_RESERVE_S
 PAC_OPTS = dict(table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, batch=1024, schedule='targeted', crosscheck=True, exact_route=True)        # the accepted baseline settings (run_paired.FROZEN)
 
@@ -161,9 +161,10 @@ class UPlanner(UP.Planner):
             if a['kind'] == 'optional': return dict(kind='optional', act=a['act'], deadline=min(self.adm, tnow() + q), record=rec)
             return dict(a, deadline=min(self.adm, tnow() + q), record=rec)
         # step 6: the incumbent with the best usable forecast; all unknown -> the primary ready stream; a deterministic bounded attempt only when no stream is live
-        if readyS:
-            usable = [(fc[S.sid], S.sid, S) for S in readyS if fc.get(S.sid) is not None and fc[S.sid] <= W]          # step 6: a USABLE forecast fits the remaining work time; a known forecast beyond W is not usable
-            S = min(usable)[2] if usable else (self.primary if (self.primary in readyS) else readyS[0])
+        advS = [S for S in readyS if not S.all_published()]
+        if advS:
+            usable = [(fc[S.sid], S.sid, S) for S in advS if fc.get(S.sid) is not None and fc[S.sid] <= W]          # step 6: a USABLE forecast fits the remaining work time; a known forecast beyond W is not usable
+            S = min(usable)[2] if usable else (self.primary if (self.primary in advS) else advS[0])
             slice_s = min(SLICE_S, W / SLICE_FRAC); rec.update(chosen='advance_stream', stream=S.label, slice_s=round(slice_s, 4), forecast_s=(round(fc[S.sid], 3) if fc.get(S.sid) is not None else None), why=('best usable statistical forecast' if usable else 'no usable statistical forecast: the primary ready stream continues (the incumbent keeps the remaining work allowance)'))
             return dict(kind='advance', stream=S, deadline=min(self.adm, tnow() + slice_s), record=rec)
         pend = [S for S in live if not S.ready()]
@@ -173,7 +174,7 @@ class UPlanner(UP.Planner):
             b2 = min(untried, key=lambda s: (s['T'], s['order'])); rec.update(chosen='solve_' + b2['side'], chosen_cand=b2['cand'].name, why='no live stream: bounded attempt of the cheapest admitted deterministic solve on the remaining work allowance (step 6)')
             return dict(kind='solve', cand=b2['cand'], side=b2['side'], deadline=self.adm, record=rec)
         rows = self.snapshot(); pub = sum(1 for r in rows.values() if r is not None)
-        rec.update(chosen='finalize', why='no admitted action remains'); return dict(kind='finalize', outcome=('PARTIAL' if pub else 'REFUSED'), why=rec['why'], record=rec)
+        rec.update(chosen='finalize', why='no admitted action remains' + (' (every live stream has published its whole inventory)' if readyS else '')); return dict(kind='finalize', outcome=('PARTIAL' if pub else 'REFUSED'), why=rec['why'], record=rec)
     # ---- execution
     def _perform(self, d):
         k = d['kind']; t0 = tnow(); rec = d['record']
@@ -256,10 +257,26 @@ class UPlanner(UP.Planner):
             if not rows_q or S.decode_rows is None: continue
             for q, (L, H) in S.decode_rows(rows_q, S).items(): acc.setdefault(q, []).append((L, H, S.label))
         return acc
+    def stream_exact_enclosures(self):
+        """{(orig var, state): (lo, hi)} of the EXACT rows recovered deterministically inside streams (constant blocks, factorless), decoded to original coordinates; zero risk"""
+        acc = {}
+        for S in self.streams:
+            rows_q = S.exact_rows() if hasattr(S, 'exact_rows') else {}
+            if not rows_q or S.decode_rows is None: continue
+            for q, (L, H) in S.decode_rows(rows_q, S).items():
+                if q in acc and acc[q] != (L, H): raise Defect('two streams recover different exact rows for %s' % (q,))
+                acc[q] = (L, H)
+        return acc
     def snapshot(self):
-        """the combined original snapshot through the one epsilon-safe publisher: per variable the row box of deterministic enclosures (orig coordinates) intersected with PAC enclosures"""
+        """the combined original snapshot through the one epsilon-safe publisher: per variable the row box of deterministic enclosures (orig coordinates; planner-retained + streams' exact rows) intersected with PAC enclosures"""
         M = self.M; det = {}
         for (v, a), (lo, hi) in self.retained.items(): det[(M.orig_of[v], a)] = (lo, hi)
+        for q, (L, H) in self.stream_exact_enclosures().items():
+            if q in det:
+                nlo, nhi = max(det[q][0], L), min(det[q][1], H)
+                if nlo > nhi: raise Defect('deterministic rows disagree at %s' % (q,))
+                det[q] = (nlo, nhi)
+            else: det[q] = (L, H)
         pac = self.pac_enclosures(); rows = {}
         by_var = {}
         for (x, a) in list(det) + list(pac): by_var.setdefault(x, set()).add(a)
@@ -293,6 +310,7 @@ class UPlanner(UP.Planner):
         """every original coordinate -> its current valid enclosure (deterministic / PAC intersection), [0, 1] if unresolved; fixed rows exact"""
         M = self.M; enc = {}
         det = {(M.orig_of[v], a): (lo, hi) for (v, a), (lo, hi) in self.retained.items()} if M is not None else {}
+        for q, (L, H) in self.stream_exact_enclosures().items(): det[q] = (max(det[q][0], L), min(det[q][1], H)) if q in det else (L, H)
         pac = self.pac_enclosures()
         for (x, a) in self.inventory:
             if M is not None and (x, a) in M.fixed_rows and M.fixed_rows[(x, a)][0] is not None: val = M.fixed_rows[(x, a)][0]; enc[(x, a)] = (val, val); continue
@@ -349,6 +367,8 @@ class UPlanner(UP.Planner):
             if S.pending is not None: S.mech['pending_batch_at_end'] = dict(draws_generated=int(S.pending['Sb'].shape[0]), blocks_done=S.pending['bi'])
         for S in self.streams:
             if hasattr(S, 'fingerprint'): S.mech['proposal_fingerprint_at_ready'] = S.fingerprint; S.mech['proposal_fingerprint_at_end'] = S.proposal_fingerprint(); S.mech['proposal_immutable'] = (S.fingerprint == S.mech['proposal_fingerprint_at_end'])
+        defects = [dict(stream=S.label, defect=S.defect) for S in self.streams if getattr(S, 'defect', None)]
+        if defects: mech['stream_certificate_defects'] = defects; mech['defect'] = (mech.get('defect') or '') + ' | stream defects: ' + '; '.join(d['stream'] + ': ' + d['defect'][:80] for d in defects)
         out['streams'] = [S.diagnostics() for S in self.streams]; mech.update(exploration_account_s=self.E, exploration_used_s=self.E_used, streams_created=len(self.streams), live_memory_named_bytes=dict(constructor_live=self.budget.live, streams_retained=sum(S.retained_bytes for S in self.streams)), lift_only_candidates=[dict(name=c.name, cards=c.cards, charged_bytes=c.charged, R_bits_discarded=c.R_bits_discarded, exact=c.exact, mixed=c.mixed) for c in self.lift_cands])
         try: enc = self.all_enclosures() if not isinstance(self.M, _EmptyCanon) else {}
         except Exception as e: enc = {}; mech['enclosure_report_error'] = repr(e)[:120]
