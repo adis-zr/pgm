@@ -78,9 +78,14 @@ def cause(r, arm):
         return 'sampling budget: max width %.4f at the deadline (mean X %.3f, ESS %.0f, %d draws, first batch at %s s)' % (prim.get('max_remaining_width') or 0, xm, ess, prim['draws'], (d.get('cost_breakdown') or {}).get('time_to_first_committed_batch_s'))
     return 'not distinguished by this run (%s)' % d.get('outcome')
 
-def main():
-    res = load(os.path.join(RD, 'main/RESULTS_main_primary.json')); assert res, 'no main results'
-    for r in res['results']: r['_dir'] = 'main/%02d__%s__%s__p' % (r['task_index'], r['task'], r['arm'])
+def main(sub='main', merge_from=None, out_name='ANALYSIS.json'):
+    """sub = the directory with the UPAC / FULL (and BASE / DET) cells; merge_from = a directory whose BASE / DET cells are used when `sub` lacks them (the frozen primary: BASE / DET code unchanged)"""
+    res = load(os.path.join(RD, sub, 'RESULTS_main_primary.json')); assert res, 'no main results'
+    for r in res['results']: r['_dir'] = '%s/%02d__%s__%s__p' % (sub, r['task_index'], r['task'], r['arm'])
+    if merge_from:
+        have = {(r['task'], r['arm']) for r in res['results']}; base = load(os.path.join(RD, merge_from, 'RESULTS_main_primary.json'))
+        for r in base['results']:
+            if (r['task'], r['arm']) not in have: r['_dir'] = '%s/%02d__%s__%s__p' % (merge_from, r['task_index'], r['task'], r['arm']); r['_merged_from'] = merge_from; res['results'].append(r)
     by = rows_by(res['results']); man = load(os.path.join(RD, 'MAIN_MANIFEST.json')); tasks = [t['name'] for t in man['tasks']]; meta = {t['name']: t for t in man['tasks']}
     table = []; comp = {a: 0 for a in ARMS}; dense = {a: 0 for a in ARMS}; sparse = {a: 0 for a in ARMS}; ext = {a: 0 for a in ARMS}
     for t in tasks:
@@ -120,11 +125,12 @@ def main():
     rs = [json.loads(l) for l in open(os.path.join(RD, 'DGP_LEDGER.jsonl'))]; rc = [x for x in rs if x.get('kind') == 'RECEIPT']
     charges = {s: round(sum(x['wall_s'] for x in rc if x['scope'] == s), 2) for s in sorted(set(x['scope'] for x in rc))}; charges['total'] = round(sum(x['wall_s'] for x in rc), 2); charges['n_receipts'] = len(rc); charges['non_completed_receipts'] = [dict(job=x['job'], outcome=x['outcome'], wall_s=round(x['wall_s'], 2)) for x in rc if x['outcome'] != 'COMPLETED']
     out = dict(utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), completions=comp, dense_completions=dense, sparse_completions=sparse, external_completions=ext, new_completion_FULL_not_BASE=new_completion, lost_BASE_not_FULL=lost, integration_UPAC_not_BASE=integ, proposal_FULL_not_UPAC=prop, accuracy_pairs=acc, efficiency_mutual=eff, failure_causes=causes, charges=charges, table=table)
-    json.dump(out, open(os.path.join(RD, 'ANALYSIS.json'), 'w'), indent=1, default=str)
+    out['sources'] = dict(sub=sub, merge_from=merge_from); json.dump(out, open(os.path.join(RD, out_name), 'w'), indent=1, default=str)
     print(json.dumps({k: v for k, v in out.items() if k not in ('table', 'accuracy_pairs', 'efficiency_mutual')}, default=str))
     for r in table: print('%-24s %-8s' % (r['task'], str(r['topology'])), ' '.join('%s:%s/%s %5.2fs w%.4f' % (a, ('C' if r[a]['complete'] else 'x'), r[a]['published'], r[a]['receipt_wall_s'] or 0, r[a]['worst_radius'] or 0) if r.get(a) else a + ':-' for a in ARMS))
 
 if __name__ == '__main__' and len(sys.argv) == 1: main()
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'repaired': main(sub='main_v051', merge_from='main', out_name='ANALYSIS.json')
 
 
 def report():
@@ -161,14 +167,22 @@ def report():
         for a in ('BASE', 'UPAC', 'FULL'):
             c = r.get(a)
             if c and c.get('checkpoints'): P('| %s | %s | %s | %s | %s | %s | %s | %s |' % (r['task'], a, *(c['checkpoints'].get(str(t), '-') for t in CHECK_T), r['K']))
-    for name, title in (('confirm', 'Confirmations (seeds 2 and 3, reversed order; selected by the frozen rule)'), ('long', 'Long-budget panel (60 s; predetermined dense-random strong-coupling tasks)'), ('preservation_18', 'Preservation: 18 unified inputs at 4 s (BASE, FULL)'), ('preservation_13', 'Preservation: 12 exposed cases + G4 at 20 s (BASE, FULL)')):
+    Af = load(os.path.join(RD, 'ANALYSIS_frozen_v05.json'))
+    if Af:
+        P(); P('## Frozen v0.5 primary vs the repaired v0.5.1 rerun (UPAC / FULL cells; BASE / DET are the unchanged frozen cells)'); P(); P('Frozen v0.5 completions: %s. Repaired v0.5.1: %s. Cells whose completion or outcome changed:' % (Af['completions'], A['completions'])); P()
+        tf = {r['task']: r for r in Af['table']}
+        for r in A['table']:
+            for a in ('UPAC', 'FULL'):
+                c = r.get(a); cf = (tf.get(r['task']) or {}).get(a)
+                if c and cf and (c['complete'] != cf['complete'] or c['outcome'] != cf['outcome'] or (c['published'] != cf['published'])): P('- %s %s: v0.5 %s %s/%s -> v0.5.1 %s %s/%s' % (r['task'], a, cf['outcome'], cf['published'], r['K'], c['outcome'], c['published'], r['K']))
+    for name, title in (('confirm', 'Confirmations (seeds 2 and 3, reversed order; selected by the frozen rule on the repaired primary)'), ('long', 'Long-budget panel (60 s; predetermined dense-random strong-coupling tasks)'), ('preservation_18', 'Preservation: 18 unified inputs at 4 s, FROZEN v0.5 (BASE, FULL)'), ('preservation_18_v051', 'Preservation: 18 unified inputs at 4 s, repaired v0.5.1 (FULL)'), ('preservation_13', 'Preservation: 12 exposed cases + G4 at 20 s, FROZEN v0.5 (BASE, FULL)'), ('preservation_13_v051', 'Preservation: 12 exposed cases + G4 at 20 s, repaired v0.5.1 (FULL)')):
         files = sorted(glob.glob(os.path.join(RD, name, 'RESULTS_*.json')))
         if not files: continue
         P(); P('## ' + title); P(); P('| task | arm | seed | complete | published / K | receipt s | outcome | worst radius |'); P('|---|---|---:|---|---|---:|---|---:|')
         for f in files:
             d = load(f)
             for r in d['results']:
-                r['_dir'] = '%s/%02d__%s__%s__%s' % (name, r['task_index'], r['task'], r['arm'], ('c%d' % r['seed']) if r['confirm'] else 'p'); rad = enclosure_radii(r, r['arm']) or []
+                r['_dir'] = '%s/%02d__%s__%s__%s' % (name, r['task_index'], r['task'], r['arm'], ('c%d' % r['seed']) if r['confirm'] else ('p' if r['seed'] == 1 else 's%d' % r['seed'])); rad = enclosure_radii(r, r['arm']) or []
                 P('| %s | %s | %s | %s | %s / %s | %.2f | %s | %s |' % (r['task'], r['arm'], r['seed'], 'C' if r['complete'] else 'x', r['published'], r['K'], r['receipt_wall_s'] or 0, r['outcome'], ('%.4f' % max(rad)) if rad else '-'))
     P(); P('## Charges (supervisor receipts, DGP_LEDGER.jsonl)'); P(); P('```'); P(json.dumps(A['charges'], indent=1)); P('```')
     open(os.path.join(RD, 'RESULTS.md'), 'w').write('\n'.join(L) + '\n'); print('RESULTS.md written', len(L), 'lines')

@@ -2,7 +2,8 @@
 sha256(name) among the DENSE tasks (er50, clique, external), deduplicated. Writes RD/CONFIRM_MANIFEST.json. usage: dgp_confirm_select.py"""
 import sys, os, json, hashlib, time
 RD = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1'
-res = json.load(open(os.path.join(RD, 'main/RESULTS_main_primary.json'))); man = json.load(open(os.path.join(RD, 'MAIN_MANIFEST.json'))); meta = {t['name']: t for t in man['tasks']}
+A = json.load(open(os.path.join(RD, 'ANALYSIS.json')))  # the (repaired) primary analysis: BASE / DET frozen cells + UPAC / FULL cells
+res = dict(results=[dict(task=r['task'], arm=a, complete=r[a]['complete']) for r in A['table'] for a in ('BASE', 'DET', 'UPAC', 'FULL') if r.get(a)]); man = json.load(open(os.path.join(RD, 'MAIN_MANIFEST.json'))); meta = {t['name']: t for t in man['tasks']}
 by = {}
 for r in res['results']: by.setdefault(r['task'], {})[r['arm']] = r
 order = [t['name'] for t in man['tasks']]; gains = [t for t in order if by[t]['FULL']['complete'] and not by[t]['BASE']['complete']]; losses = [t for t in order if by[t]['BASE']['complete'] and not by[t]['FULL']['complete']]
