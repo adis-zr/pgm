@@ -205,4 +205,52 @@ def select_confirm():
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'select-confirm': select_confirm()
+    elif len(sys.argv) > 1 and sys.argv[1] == 'report': pass
     else: analyze()
+
+
+def report():
+    """REPORT.md and the DIAGNOSTICS-derived tables; THEORY_RETURN.md is written by hand from DIAGNOSTICS.json / RESULTS.json (the analyzer supplies every number it cites)"""
+    R = load(os.path.join(RD, 'RESULTS.json')); D = load(os.path.join(RD, 'DIAGNOSTICS.json')); fr = load(os.path.join(RD, 'FREEZE.json')); man = load(os.path.join(RD, 'MODEL_MANIFEST.json')); L = []
+    def P(s=''): L.append(s)
+    def f4(x): return ('%.4f' % x) if isinstance(x, (int, float)) and x is not None else '-'
+    def f2(x): return ('%.2f' % x) if isinstance(x, (int, float)) and x is not None else '-'
+    P('# DGP2_REPAIR_AND_DIAGNOSIS -- REPORT (analyzer-derived; code pgm %s, tree %s; freeze sha256 %s)' % (fr['code']['commit'][:9], fr['code']['tree'][:9], R['freeze_sha256'][:12])); P()
+    P('Question (PROTOCOL.md section 1): on dense generic cyclic models, is the obstruction primarily avoidable fixed-q cap slack (H1), coarse sampler / cap construction (H2), information lost by the conditional decoder / representation (H3), numerical allowance or arithmetic (H4), query-specific certification (H5), or planner reachability / scheduling (H6)? Every count below is derived from the raw cells and oracle outputs by `dgp2_analyze.py`; oracle and forced-stream results never enter completion counts.'); P()
+    P('## 1. Completion matrix (production arms; completion = receipt COMPLETED, wall <= outer, published == K, outcome COMPLETE / EXACT, positive witness, hard deadline respected)'); P()
+    for sub, title in (('exposed_main', 'Exposed main panel (28 DGP1 inputs, original bytes; 20 s)'), ('fresh', 'Fresh dense panel (8 new DENSE-GENERIC-PAC-EVAL-2 inputs; 20 s)'), ('preservation_18', 'Preservation: 18 unified inputs at 4 s (FULL2)'), ('preservation_13', 'Preservation: 12 exposed + G4 at 20 s (FULL2)'), ('confirm', 'Confirmations (seeds 2, 3; reversed order)')):
+        rows = R['tables'].get(sub)
+        if not rows: P('### %s: NOT RUN' % title); P(); continue
+        cb = R['completions_by_sub'][sub]; P('### %s -- cells %d, complete %d; by arm: %s' % (title, cb['cells'], cb['complete'], ', '.join('%s %d / %d' % (a, v['complete'], v['cells']) for a, v in cb['by_arm'].items()))); P()
+        arms = sorted({a for r in rows for a in r['arms']}); P('| task | topology | seed | ' + ' | '.join(arms) + ' |'); P('|---|---|---:|' + '---|' * len(arms))
+        for r in rows: P('| %s | %s | %s | %s |' % (r['task'], r['topology'], r['seed'], ' | '.join(('%s %s/%s %.2fs r%s%s' % ('C' if c['complete'] else 'x', c['published'], c['K'], c['receipt_wall_s'] or 0, f4(c['worst_radius']), ('' if c.get('identity_ok') else ' ID!'))) if (c := r['arms'].get(a)) else '-' for a in arms)))
+        P()
+    vi = R['verdict_inputs']; ex = vi.get('exposed', {})
+    P('## 2. Exposed-panel sets'); P(); P('- Complete: %s' % {a: ex['n_complete'][a] for a in ARMS}); P('- Dense (er50 + clique + external) complete: %s' % ex['dense_complete']); P('- FULL2 not BASE: %s; BASE not FULL2: %s; UPAC2 not BASE: %s; FULL2 not UPAC2: %s' % (ex['FULL2_not_BASE'] or 'none', ex['BASE_not_FULL2'] or 'none', ex['UPAC2_not_BASE'] or 'none', ex['FULL2_not_UPAC2'] or 'none')); P('- Historical DGP1 FULL (v0.5.1, labelled comparator, not rerun) complete: %d; FULL2 gained %s, lost %s relative to it.' % (len(ex['DGP1_FULL_historical_complete']), ex['FULL2_vs_DGP1_FULL']['gained'] or 'none', ex['FULL2_vs_DGP1_FULL']['lost'] or 'none')); P()
+    for sub in ('preservation_18', 'preservation_13'):
+        p = vi.get(sub)
+        if p: P('- %s: FULL2 %d / %d (DGP1 FULL v0.5.1 %d; DGP1 BASE %d); regressions %s; gains over DGP1 FULL %s' % (sub, p['FULL2_complete'], p['n'], p['DGP1_FULL_v051_complete'], p['DGP1_BASE_complete'], p['regressions'] or 'none', p['gains_over_DGP1_FULL'] or 'none'))
+    P(); P('## 3. Original-coordinate accuracy on mutual failures (recorded final certificate widths; radius = half the max remaining width; 0.5 = unresolved)'); P(); P('| task | topology | BASE worst | UPAC2 worst | FULL2 worst | BASE / FULL2 | material (>= 2x) | FULL2 published fraction | covered BASE / FULL2 |'); P('|---|---|---:|---:|---:|---:|---|---:|---|')
+    for x in vi.get('accuracy_mutual_failures', []): P('| %s | %s | %s | %s | %s | %s | %s | %s | %s / %s |' % (x['task'], x['topology'], f4(x['BASE_worst']), f4(x['UPAC2_worst']), f4(x['FULL2_worst']), f2(x['ratio_BASE_over_FULL2']), x['material_2x'], f2(x['published_fraction_FULL2']), x['covered_BASE'], x['covered_FULL2']))
+    P(); P('## 4. Efficiency on mutual completions (receipt seconds)'); P(); P('| task | BASE | UPAC2 | FULL2 | FULL2 / BASE |'); P('|---|---:|---:|---:|---:|')
+    for x in vi.get('efficiency_mutual', []): P('| %s | %.2f | %s | %.2f | %.2f |' % (x['task'], x['BASE_s'], f2(x['UPAC2_s']), x['FULL2_s'], x['ratio_FULL2_over_BASE']))
+    if vi.get('efficiency_mutual'): rs = sorted(x['ratio_FULL2_over_BASE'] for x in vi['efficiency_mutual']); P(); P('FULL2 / BASE median %.2f (min %.2f, max %.2f) over %d mutual completions.' % (rs[len(rs) // 2], rs[0], rs[-1], len(rs)))
+    P(); P('## 5. Compact-kappa constructor on the six exposed n64 / card4 inputs (FULL2): build / preparation / first batch / useful information (counted separately)'); P(); P('| task | lift-only candidate | lifted stream construction | stages | draws | valid endpoints | max remaining width | log2 mean X | closed |'); P('|---|---|---|---|---:|---:|---:|---:|---|')
+    for k in vi.get('kappa_n64c4', []): s = k.get('stream') or {}; P('| %s | %s | %s | %s | %s | %s | %s | %s | %s |' % (k['task'], ('built' if k.get('lift_only_candidates') else 'none'), s.get('construction', 'no stream'), s.get('stages'), s.get('draws'), s.get('valid_endpoints'), f4(s.get('max_remaining_width')), f2(s.get('log2_X_mean')), (s.get('closed') or '')[:60]))
+    P(); P('## 6. Forced-stream diagnostic panel vs FULL2 (reachability; NOT completions)'); P(); P('| task | stream | forced: construction / draws / valid endpoints / max width / log2 mean X / t_prep | FULL2: offered / construction / draws / valid endpoints / max width / first batch s |'); P('|---|---|---|---|')
+    for x in vi.get('forced_vs_FULL2', []): f = x['forced']; g = x['in_FULL2']; P('| %s | %s | %s / %s / %s / %s / %s / %s | %s / %s / %s / %s / %s / %s |' % (x['task'], x['stream'], (f.get('construction') or '')[:30], f.get('draws'), f.get('valid_endpoints'), f4(f.get('max_remaining_width')), f2(f.get('log2_X_mean')), f2(f.get('t_prep')), g.get('offered'), (g.get('construction') or '')[:30], g.get('draws'), g.get('valid_endpoints'), f4(g.get('max_remaining_width')), f2(g.get('time_to_first_batch'))))
+    P(); P('## 7. Oracle panel (16 fresh small dense models, forced-PAC diagnostic profile; exact enumeration; log2 units; original target W, Z on the original model)'); P()
+    P('| model | states | law | sep / coarse states | log2 C/Z | log2 C_tight/Z | log2 M2 | log2 R* | M2_min^(r) | R*_min^(r) | exact-upper M2 / R* | B/Z_U | Z_U/Z | K_hi | support fail | replay B vs A worst (A -> B, 3 seeds) | C vs A material |'); P('|---|---:|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---|---|---|')
+    for r in D['oracle']:
+        for law in ('original_stream', 'lifted_stream'):
+            q = r.get(law) or {}; rp = r.get(law.replace('_stream', '_replay')) or {}; fin = rp.get('final') or {}; wa = fin.get('A', {}).get('worst', []); wb = fin.get('B', {}).get('worst', []); ca = rp.get('allowance_effect_C_vs_A') or {}
+            if q.get('log2_C_over_Z') is None: P('| %s | %d | %s | - | %s | | | | | | | | | | | | |' % (r['task'], r['fine_states'], law.split('_')[0] + (': ' + (q.get('closed') or q.get('note') or q.get('stage') or r.get('status') or 'not run'))[:60])); continue
+            P('| %s | %d | %s%s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |' % (r['task'], r['fine_states'], law.split('_')[0], (' (identity control)' if q.get('identity_class_map') else ''), (q.get('n_sep_states') or q.get('n_coarse_states')), f2(q['log2_C_over_Z']), f2(q.get('log2_C_tight_over_Z')), f2(q.get('log2_M2')), f2(q.get('log2_R_star')), f2(q.get('log2_M2_min_fixed_r')), f2(q.get('log2_R_star_min_fixed_r')), ('%s / %s' % (f2((q.get('exact_upper_law') or {}).get('log2_M2')), f2((q.get('exact_upper_law') or {}).get('log2_R_star')))) if q.get('exact_upper_law') else '-', f2(q.get('log2_B_over_ZU')), f2(q.get('log2_ZU_over_Z')), f2(q.get('log2_K_hi')), q.get('support_failure'), ' / '.join('%.3f->%.3f' % (a, b) for a, b in zip(wa, wb)) if wa else '-', ca.get('material', '-')))
+    P(); P('## 8. Explanation statuses (oracle cohort = controlled evidence; large cohort = exposed benchmark evidence)'); P()
+    for k, v in D['explanations'].items(): P('- **%s**: %s (supported %d, contradicted %d, unidentified %d of %d). Rule: %s' % (k, v['status'].upper(), len(v['supported']), len(v['contradicted']), len(v['unidentified']), len(v['supported']) + len(v['contradicted']) + len(v['unidentified']), v['rule']))
+    P(); P('## 9. Charges (supervisor receipts; ceiling 7,200 s)'); P(); P('```'); P(json.dumps({k: v for k, v in R['charges'].items() if k != 'non_completed'}, indent=1)); P('non-completed receipts: %s' % R['charges']['non_completed']); P('```'); P()
+    P('## 10. Disclosures'); P(); P('- The DGP1 independent review file and evidence zip named by the brief were not present on this machine; the brief\'s five-finding table was the repair specification (PROTOCOL.md section 8).'); P('- Unsupervised work: controls/UNSUPERVISED_DEV_LOG.md (import / syntax checks and one 0.3 s arithmetic smoke; everything else charged).'); P('- The DGP1 erratum (PROTOCOL.md section 9): BASE preservation 13 / 18; 358 receipts (354 completed, 4 nonzero exits); 3,877.071256 s; the "B / Z 2^60-2^131" range and "all slack is the upper envelope" are WITHDRAWN (the quantity was an absolute cap exponent); the six n64 / card4 zero-draw lifted refusals were construction failures; the 60 s statements apply to the four strong ER tasks run.')
+    open(os.path.join(RD, 'REPORT.md'), 'w').write('\n'.join(L) + '\n'); print('REPORT.md', len(L), 'lines')
+
+
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'report': report()
