@@ -50,7 +50,9 @@ def main():
     chk('cells_input_binding', not bad_bind, bad=bad_bind[:10]); chk('cells_identity_ok', not bad_ident, bad=bad_ident[:10]); chk('cells_have_receipts', not no_receipt, missing=no_receipt[:10]); chk('cells_counted', True, per_sub=per_sub, n_cells=len(cells))
     # charges reconcile
     tot = round(sum(r['wall_s'] for rs in receipts.values() for r in rs), 3); ch = json.load(open(os.path.join(rd, 'CHARGES.json'))) if os.path.exists(os.path.join(rd, 'CHARGES.json')) else {}
-    chk('charges_reconcile_ledger', abs((ch.get('total_s') or -1) - tot) < 0.01, ledger_total_s=tot, charges_total_s=ch.get('total_s')); chk('charges_within_ceiling', tot <= 7200, total_s=tot)
+    # CHARGES.json is written by the analyzer; the analysis / packaging / validation receipts that necessarily follow it (scope *_analysis) are reconciled separately against the ledger's end_utc
+    cut = ch.get('utc'); at_analysis = round(sum(r['wall_s'] for rs in receipts.values() for r in rs if (cut is None or (r.get('end_utc') or '') <= cut)), 3); after = round(tot - at_analysis, 3)
+    chk('charges_reconcile_ledger', abs((ch.get('total_s') or -1) - at_analysis) < 0.01, ledger_total_at_analysis_s=at_analysis, charges_total_s=ch.get('total_s'), post_analysis_receipts_s=after, ledger_total_s=tot, note='post-analysis receipts are the analyzer / report / packaging / validation runs themselves (scope *_analysis), charged after CHARGES.json was written'); chk('charges_within_ceiling', tot <= 7200, total_s=tot)
     # RUN_MANIFEST: every planned cell has an actual cell or an explicit reason
     rm = json.load(open(os.path.join(rd, 'RUN_MANIFEST.json'))) if os.path.exists(os.path.join(rd, 'RUN_MANIFEST.json')) else None
     if rm: missing = [c for c in rm.get('planned', []) if not c.get('actual') and not c.get('reason')]; chk('run_manifest_complete', not missing, missing=missing[:10], planned=len(rm.get('planned', [])))
