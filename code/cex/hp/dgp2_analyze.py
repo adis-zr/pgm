@@ -58,11 +58,16 @@ def sel_hash(name): return hashlib.sha256(name.encode()).hexdigest()
 
 def analyze():
     man = load(os.path.join(RD, 'MODEL_MANIFEST.json')); fr = load(os.path.join(RD, 'FREEZE.json')); res = dict(utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), code_commit=fr['code']['commit'], freeze_sha256=sha(os.path.join(RD, 'FREEZE.json')), tables={}, completions_by_sub={}, verdict_inputs={})
-    meta = {t['name']: t for p in ('exposed_28', 'fresh_8', 'preservation_18', 'preservation_13', 'oracle_16') for t in man['panels'][p]}
+    PANEL_OF = {'exposed_main': 'exposed_28', 'fresh': 'fresh_8', 'preservation_18': 'preservation_18', 'preservation_13': 'preservation_13', 'forced': 'exposed_28', 'confirm': 'exposed_28'}
+    # the fresh panel REUSES the exposed task names (different bytes / tags): metadata is resolved per panel, exposed first for the shared maps
+    meta_panel = {p: {t['name']: t for t in man['panels'][p]} for p in ('exposed_28', 'fresh_8', 'preservation_18', 'preservation_13', 'oracle_16')}
+    meta = {}
+    for p in ('fresh_8', 'oracle_16', 'preservation_13', 'preservation_18', 'exposed_28'): meta.update(meta_panel[p])          # exposed_28 last = wins on a shared name
     for sub in ('exposed_main', 'fresh', 'preservation_18', 'preservation_13', 'forced', 'confirm'):
         by, cs = table(sub)
         if not cs: continue
-        res['tables'][sub] = [dict(task=k[0], seed=k[1], confirm=k[2], topology=meta.get(k[0], {}).get('topology') or meta.get(k[0], {}).get('family'), panel=meta.get(k[0], {}).get('panel'), arms=v) for k, v in sorted(by.items(), key=lambda kv: (kv[0][2], kv[0][1], [t['name'] for t in man['panels'].get({'exposed_main': 'exposed_28', 'fresh': 'fresh_8', 'preservation_18': 'preservation_18', 'preservation_13': 'preservation_13', 'forced': 'exposed_28', 'confirm': 'exposed_28'}[sub], [])].index(kv[0][0]) if kv[0][0] in [t['name'] for t in man['panels'].get({'exposed_main': 'exposed_28', 'fresh': 'fresh_8', 'preservation_18': 'preservation_18', 'preservation_13': 'preservation_13', 'forced': 'exposed_28', 'confirm': 'exposed_28'}[sub], [])] else 999))]
+        mp = meta_panel[PANEL_OF[sub]]; order_names = [t['name'] for t in man['panels'][PANEL_OF[sub]]]
+        res['tables'][sub] = [dict(task=k[0], seed=k[1], confirm=k[2], topology=mp.get(k[0], meta.get(k[0], {})).get('topology') or mp.get(k[0], meta.get(k[0], {})).get('family'), panel=mp.get(k[0], meta.get(k[0], {})).get('panel'), arms=v) for k, v in sorted(by.items(), key=lambda kv: (kv[0][2], kv[0][1], order_names.index(kv[0][0]) if kv[0][0] in order_names else 999))]
         arms_here = sorted({c['arm'] for c in cs}); res['completions_by_sub'][sub] = dict(cells=len(cs), complete=sum(1 for c in cs if c.get('complete')), by_arm={a: dict(cells=sum(1 for c in cs if c['arm'] == a), complete=sum(1 for c in cs if c['arm'] == a and c.get('complete')), receipts_completed=sum(1 for c in cs if c['arm'] == a and c.get('receipt_outcome') == 'COMPLETED')) for a in arms_here})
     # exposed main: sets, dense subset, gains / losses vs BASE, UPAC2 vs FULL2, DGP1 historical FULL comparator
     em = res['tables'].get('exposed_main', []); dgp1 = load(os.path.join(DGP1, 'ANALYSIS.json')); hist = {r['task']: r for r in (dgp1 or {}).get('table', [])}
@@ -163,9 +168,10 @@ def analyze():
     st('H5_query_specific_certification', cases, 'supported when the global M2 is poor (>= 2 bits) but every requested response second moment V_j stays small (< 1 and <= 4 x the target-law response variance)')
     cases = []
     for x in reach:
-        f = x['forced']; g = x['in_FULL2']; useful_forced = (f.get('valid_endpoints') or 0) > 0 or (f.get('covered') or 0) > 0 or ((f.get('max_remaining_width') or 2) < 1.0); useful_full = (g.get('valid_endpoints') or 0) > 0 or ((g.get('max_remaining_width') or 2) < 1.0) if g.get('offered') else False
+        f = x['forced']; g = x['in_FULL2']; useful_forced = (f.get('covered') or 0) > 0 or (f.get('max_remaining_width') is not None and f['max_remaining_width'] < 1.0); useful_full = ((g.get('max_remaining_width') is not None and g['max_remaining_width'] < 1.0) or g.get('construction') == 'BUILT' and (g.get('draws') or 0) > 0 and False) if g.get('offered') else False
+        useful_full = (g.get('max_remaining_width') is not None and g['max_remaining_width'] < 1.0) if g.get('offered') else False
         cases.append((x['task'] + '/' + x['stream'], True if (useful_forced and not useful_full) else (False if (useful_full or not useful_forced) else None), dict(forced_useful=useful_forced, FULL2_offered=g.get('offered'), FULL2_useful=useful_full, forced_draws=f.get('draws'), FULL2_draws=g.get('draws'), forced_t_prep=f.get('t_prep'), FULL2_time_to_first_batch=g.get('time_to_first_batch'), forced_construction=f.get('construction'), FULL2_construction=g.get('construction'))))
-    st('H6_planner_reachability_or_scheduling', cases, 'supported when a forced stream reaches useful original-coordinate information (valid endpoints / width < 1) that FULL2 did not reach on the same input; contradicted when FULL2 reached it or the forced stream did not')
+    st('H6_planner_reachability_or_scheduling', cases, 'supported when a forced stream reaches INFORMATIVE original-coordinate evidence (max remaining certificate width < 1, or a covered coordinate) that FULL2 did not reach on the same input; contradicted when FULL2 reached the same or the forced stream reached nothing informative either (then the obstruction is the mechanism, not the scheduling)')
     res['explanations'] = diag['explanations']; json.dump(diag, open(os.path.join(RD, 'DIAGNOSTICS.json'), 'w'), indent=1, default=str)
     # charges
     rows = [json.loads(l) for l in open(os.path.join(RD, 'DGP2_LEDGER.jsonl'))]; rc = [r for r in rows if r.get('kind') == 'RECEIPT']; bud = load(os.path.join(RD, 'BUDGET_DECLARATION.json'))
@@ -190,7 +196,8 @@ def analyze():
     return res, diag
 
 def select_confirm():
-    res = load(os.path.join(RD, 'RESULTS.json')); man = load(os.path.join(RD, 'MODEL_MANIFEST.json')); vi = res['verdict_inputs']; meta = {t['name']: t for p in ('exposed_28', 'fresh_8', 'preservation_18', 'preservation_13') for t in man['panels'][p]}
+    res = load(os.path.join(RD, 'RESULTS.json')); man = load(os.path.join(RD, 'MODEL_MANIFEST.json')); vi = res['verdict_inputs']; meta = {}
+    for p in ('fresh_8', 'preservation_13', 'preservation_18', 'exposed_28'): meta.update({t['name']: t for t in man['panels'][p]})       # exposed_28 wins on a shared name: the anchors and the exposed-panel tiers bind the EXPOSED bytes
     tiers = []; tiers.append(('a_regression', sorted(set(vi.get('preservation_18', {}).get('regressions', []) + vi.get('preservation_13', {}).get('regressions', []) + vi['exposed']['BASE_not_FULL2'] + [t for t in vi['exposed']['DGP1_FULL_historical_complete'] if t not in vi['exposed']['complete']['FULL2']]), key=lambda t: sha(meta[t]['model']) if t in meta else t)))
     tiers.append(('b_new_completion', sorted(set(vi['exposed']['FULL2_not_BASE']) | set(vi['exposed']['FULL2_not_UPAC2']), key=lambda t: sha(meta[t]['model']))))
     tiers.append(('c_material_accuracy', sorted([x['task'] for x in vi['accuracy_mutual_failures'] if x['material_2x'] or (x['published_fraction_FULL2'] or 0) >= 0.25], key=lambda t: sha(meta[t]['model']))))
