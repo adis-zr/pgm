@@ -7,6 +7,7 @@ sharing factor). A factor that cannot be grouped under the caps stays alone (its
 Oracle control: lifted_decoder.enumerate_check with upper_fn verifies W'(z) <= G_U^G(c(z)) d(z|c(z)) on every fine state."""
 import math, itertools
 from fractions import Fraction as F
+import numpy as np
 import coarse_envelope as CE
 MAX_SCOPE = 3; MAX_CELL_STATES = 64 ** 3
 
@@ -28,14 +29,32 @@ def plan_groups(M, Cz, level):
     return groups, [tuple(sorted(set(v for i in g for v in scopes[i]))) for g in groups]
 
 
+def singleton_table_sorted(M, Cz, fi, S):
+    """DGP4 R1: the per-factor upper table U_f of factor fi, TRANSPOSED from the factor's own axis order (M.factors[fi][0]) into the declared sorted scope S (row-major over Cz.ccards in S order).
+    The DGP3 version copied Cz.U[fi] verbatim under the sorted scope: wrong semantics whenever the factor's scope is not already sorted (e.g. scope (1, 0))."""
+    sc = tuple(M.factors[fi][0]); assert tuple(sorted(sc)) == tuple(S) and len(set(sc)) == len(sc), (sc, S)
+    arr = np.array(Cz.U[fi], dtype=object).reshape([Cz.ccards[v] for v in sc]); perm = [sc.index(v) for v in S]
+    return list(np.transpose(arr, perm).reshape(-1))
+
+
 def grouped_upper_tables(M, classes, Cz, groups, gscopes, clock, budget):
-    """for each group: the joint coarse scope (variables), the coarse cell table U_g (exact Fractions, row-major over the coarse cards of the scope); charged before allocation, polled every 256 fine states"""
-    tables = []; charged = 0; scales = Cz.scales
+    """for each group: the joint coarse scope (variables, sorted), the coarse cell table U_g (exact Fractions, row-major over the coarse cards of the SORTED scope); charged before allocation, polled every 256 fine
+    states. DGP4 R2: this function OWNS its live charge until it returns it to the caller (exactly once); on ANY failure (MEMORY / DEADLINE / defect) every byte it charged is released before the exception
+    propagates (the DGP3 version left the admitted tables' bytes orphaned in the constructor account: 2,800 B after a MEMORY refusal on the second table, 8,400 B after a DEADLINE in the third)."""
+    owned = [0]
+    try: return _grouped_upper_tables(M, classes, Cz, groups, gscopes, clock, budget, owned)
+    except BaseException:
+        if owned[0]: budget.release(owned[0]); owned[0] = 0
+        raise
+
+
+def _grouped_upper_tables(M, classes, Cz, groups, gscopes, clock, budget, owned):
+    scales = Cz.scales; tables = []
     for gi, (g, S) in enumerate(zip(groups, gscopes)):
         ccs = [Cz.ccards[v] for v in S]; vol = math.prod(ccs); fine_vol = math.prod(M.cards[v] for v in S)
-        charged += budget.charge(2 * (56 + (8 + CE.FRAC_BYTES) * vol) + 64 * vol, 'grouped upper table of group %d (%d cells)' % (gi, vol)); clock.poll('before grouped table %d' % gi)
+        owned[0] += budget.charge(2 * (56 + (8 + CE.FRAC_BYTES) * vol) + 64 * vol, 'grouped upper table of group %d (%d cells)' % (gi, vol)); clock.poll('before grouped table %d' % gi)
         if len(g) == 1:
-            fi = g[0]; tables.append((S, list(Cz.U[fi]))); continue                             # ungrouped factor: the per-factor U verbatim (same scope order as the factor's scope)
+            fi = g[0]; tables.append((S, singleton_table_sorted(M, Cz, fi, S))); continue      # ungrouped factor: the per-factor U in the SORTED scope order (R1)
         cst = CE.strides(ccs); U = [None] * vol; pos = {v: k for k, v in enumerate(S)}
         facs = [(fi, tuple(M.factors[fi][0]), M.factors[fi][1], CE.strides([M.cards[v] for v in M.factors[fi][0]])) for fi in g]
         for idx, x in enumerate(itertools.product(*(range(M.cards[v]) for v in S))):
@@ -49,6 +68,7 @@ def grouped_upper_tables(M, classes, Cz, groups, gscopes, clock, budget):
             if U[c] is None or h > U[c]: U[c] = h
             if (idx & 255) == 255: clock.poll('in grouped table %d' % gi)
         tables.append((S, U))
+    charged = owned[0]; owned[0] = 0                                                              # ownership transfers to the caller exactly once (the except-path above no longer sees it)
     return tables, charged
 
 

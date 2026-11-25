@@ -461,8 +461,9 @@ class Planner:
         ws = [F(r['hi']) - F(r['lo']) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_width'] = float(max(ws)) if ws else None
         rad = [max(F(r['point']) - F(r['lo']), F(r['hi']) - F(r['point'])) for r in rows if r['guarantee'] != 'NOT_PUBLISHED']; out['max_point_radius'] = float(max(rad)) if rad else None
         suppressed = [dict(var=v, state=a, guarantee='NOT_PUBLISHED') for v, a in self.inventory]; self._fin_gs = set(gs); self._fin_pub = pub   # DGP3 RF1: every variable-sized finalization object exists BEFORE the sample (the expiry branch only assigns)
-        t_end = tnow()                                                                       # the ONE authoritative final sample
-        out['phases_s']['final_assembly'] = t_end - t_fin; out['final_J'] = len(self.inventory); acc = sum(x.get('actual_s') or 0 for x in out['actions'] if x.get('action') != 'price') + sum(v for k, v in out['phases_s'].items() if k in ('canonicalize', 'features', 'price_identity', 'pricing', 'final_assembly')); out['unassigned_residual_s'] = (t_end - self.t_start) - acc
+        acc_actions = sum(x.get('actual_s') or 0 for x in out['actions'] if x.get('action') != 'price'); acc_phases = sum(v for k, v in out['phases_s'].items() if k in ('canonicalize', 'features', 'price_identity', 'pricing')); out['final_J'] = len(self.inventory)   # DGP4 R3: the action-history and phase sums (variable-sized) BEFORE the sample
+        t_end = tnow()                                                                       # the ONE authoritative final sample; from here on only constant-size arithmetic on already-prepared values
+        out['phases_s']['final_assembly'] = t_end - t_fin; out['unassigned_residual_s'] = (t_end - self.t_start) - (acc_actions + acc_phases + out['phases_s']['final_assembly'])
         out['wall_s'] = t_end - self.t_start; out['in_process_total_s'] = t_end - T_PROCESS_START; out['hard_deadline_respected'] = t_end <= self.hard
         if not out['hard_deadline_respected'] or not rows:
             if pub or not rows: mech.setdefault('late_assembly', 'hard deadline expired before the final sample' if not out['hard_deadline_respected'] else mech.get('late_assembly'))

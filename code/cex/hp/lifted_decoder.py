@@ -75,7 +75,7 @@ def build_rows(M_par, classes, Cz, clock, budget, Qgrid=Q):
     """-> LiftedRows for the approximate stage (classes, Cz) over the parent M_par; charges 16 bytes per (class, fine state) entry before building"""
     clock.poll('at the lifted decoder entry'); n = len(M_par.cards); R = LiftedRows(); R.n = n; R.cards = list(M_par.cards); R.ccards = list(Cz.ccards); R.classes = [list(cl) for cl in classes]; R.Q = Qgrid
     total = sum(M_par.cards); R.bytes = budget.charge(16 * total + 64 * n, 'lifted decoder rows (%d entries)' % total)
-    try:
+    try:                                                                                          # DGP4 R2: the charge is owned here until the rows are returned; any failure releases it
         K = Compact.one(); R.kappa_v = []
         for v in range(n):
             mem = {}
