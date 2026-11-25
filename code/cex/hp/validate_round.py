@@ -11,13 +11,25 @@ def main():
     req = ['START_HERE.md', 'PROTOCOL.md', 'FREEZE.json', 'REPORT.md', 'THEORY_RETURN.md', 'PROOF_TO_CODE.md', 'MODEL_MANIFEST.json', 'RUN_MANIFEST.json', 'RESULTS.json', 'DIAGNOSTICS.json', 'CHARGES.json', 'IDENTITY.json', os.path.basename(ledger), 'BUDGET_DECLARATION.json']
     for f in req: chk('required_file:' + f, os.path.exists(os.path.join(rd, f)))
     for d in ('runs', 'controls', 'oracle'): chk('required_dir:' + d, os.path.isdir(os.path.join(rd, d)))
-    fr = json.load(open(os.path.join(rd, 'FREEZE.json'))); root = '/Users/adis/Workspace/pgm-eval-' + fr['code']['commit'][:7]
+    fr = json.load(open(os.path.join(rd, 'FREEZE.json'))); root = '/Users/adis/Workspace/pgm-eval-' + fr['code']['commit'][:7]; arm_files = fr.get('arm_identity_files') or list(fr['code']['files'])
     if os.path.isdir(root):
         ident = {f: sha(os.path.join(root, 'code', f)) for f in fr['code']['files']}; chk('frozen_identity_at_eval_checkout', ident == fr['code']['files'], mismatches=[f for f in ident if ident[f] != fr['code']['files'][f]])
         try:
             same = subprocess.run(['git', '-C', root, 'diff', '--quiet', '1da6da3', 'HEAD', '--', 'code/cex/blockres/integrated.py', 'code/cex/blockres/blockres.py', 'code/cex/blockres/layered_contraction.py', 'code/cex/blockres/signed_evidence.py', 'code/cex/blockres/ancestral_response.py', 'code/cex/blockres/support_closure.py', 'code/cex/newarm/cex_executor.py', 'code/cex/newarm/cex_kernel.cpp']).returncode == 0; chk('accepted_engine_byte_identical_to_1da6da3', same)
         except Exception as e: chk('accepted_engine_byte_identical_to_1da6da3', False, error=repr(e)[:100])
     else: chk('eval_checkout_present', False, root=root)
+    # every cell's recorded code commit is the frozen commit and its launch / completion identities equal the frozen ARM identity files (the harness files may carry a HARNESS amendment)
+    bad_commit = []; bad_arm_ident = []
+    for p in sorted(glob.glob(os.path.join(rd, 'runs', '*', '*', 'cell.json'))):
+        cj = json.load(open(p)); c = cj['cell']
+        if c.get('code_commit') != fr['code']['commit']: bad_commit.append(os.path.relpath(p, rd))
+        for k in ('identity_at_launch', 'identity_at_completion'):
+            if any(cj.get(k, {}).get(f) != fr['code']['files'].get(f) for f in arm_files): bad_arm_ident.append((os.path.relpath(p, rd), k))
+    chk('cells_at_frozen_commit', not bad_commit, bad=bad_commit[:10]); chk('cells_arm_identity_equals_freeze', not bad_arm_ident, bad=bad_arm_ident[:10])
+    # oracle results: produced by the frozen oracle harness or a recorded HARNESS amendment (arm files unchanged)
+    am = sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json')))
+    for a in am:
+        aj = json.load(open(a)); chk('amendment_arm_files_unchanged:' + os.path.basename(a), aj.get('arm_identity_files_unchanged') is True, kind=aj.get('kind', '')[:80])
     # cells: unique identities, manifest / result binding, identity_ok, receipt present
     cells = sorted(glob.glob(os.path.join(rd, 'runs', '*', '*', 'cell.json'))); ids = set(); bad_bind = []; bad_ident = []; no_receipt = []; per_sub = {}
     rows = [json.loads(l) for l in open(ledger)]; receipts = {}
