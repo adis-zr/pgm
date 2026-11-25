@@ -16,7 +16,7 @@ def rows_by(results):
     return out
 
 def enclosure_radii(r, arm):
-    """per-coordinate final radius ([0,1] -> 0.5 if unresolved) from the result file"""
+    """per-coordinate final radius from the result file: published rows and (UPAC / FULL) the planner's valid enclosures; an unpublished, unresolved coordinate counts 0.5 ([0, 1])"""
     p = os.path.join(RD, r['_dir'], 'result.json'); d = load(p)
     if d is None: return None
     if arm in ('UPAC', 'FULL') and d.get('enclosures'): return [float(F(e['hi']) - F(e['lo'])) / 2 for e in d['enclosures']]
@@ -25,6 +25,23 @@ def enclosure_radii(r, arm):
         if a.get('guarantee') == 'NOT_PUBLISHED': rad.append(0.5)
         else: rad.append(float(F(a['hi']) - F(a['lo'])) / 2)
     return rad if rad else [0.5] * K
+
+def certificate_widths(r, arm):
+    """the RECORDED final certificate read-out of the unpublished coordinates (anytime-valid confidence sets at the last check: max and median remaining width), for the paired accuracy comparison;
+    BASE: mechanism.max/median_remaining_width; UPAC / FULL: the primary stream's last trace row. None when no certificate exists (no draws); 2.0 = an empty / unresolved set"""
+    p = os.path.join(RD, r['_dir'], 'result.json'); d = load(p)
+    if d is None: return None
+    if arm == 'BASE':
+        m = d.get('mechanism') or {}
+        if m.get('route') != 'pac' or not m.get('draws'): return None
+        return dict(max=m.get('max_remaining_width'), median=m.get('median_remaining_width'), remaining=m.get('remaining'), draws=m.get('draws'), stream='BASE pac')
+    st = [x for x in (d.get('streams') or []) if x.get('trace')]
+    if not st: return None
+    best = None
+    for x in st:
+        t = x['trace'][-1]; cand = dict(max=t['max_remaining_width'], median=t['median_remaining_width'], remaining=t['remaining'], draws=x['draws'], stream=x['label'], empty_sets=t.get('empty_sets'))
+        if best is None or (cand['max'] or 2) < (best['max'] or 2): best = cand
+    return best
 
 def checkpoint_coverage(r, arm):
     """coverage (count of coordinates with radius <= eps) at the recorded checkpoints nearest 1, 2, 5, 10, 19 s; from the planner trace (UPAC / FULL) or the BASE certificate trace"""
@@ -112,8 +129,11 @@ def main(sub='main', merge_from=None, out_name='ANALYSIS.json'):
     acc = []
     for r in table:
         b = r.get('BASE'); f = r.get('FULL'); u = r.get('UPAC')
-        if b and f and not b['complete'] and not f['complete'] and b['worst_radius'] and f['worst_radius']:
-            acc.append(dict(task=r['task'], topology=r['topology'], BASE_worst=b['worst_radius'], UPAC_worst=(u or {}).get('worst_radius'), FULL_worst=f['worst_radius'], ratio_BASE_over_FULL=(b['worst_radius'] / f['worst_radius'] if f['worst_radius'] > 0 else None), material_2x=(f['worst_radius'] > 0 and b['worst_radius'] / f['worst_radius'] >= 2), BASE_median=b['median_radius'], FULL_median=f['median_radius'], BASE_covered=b['covered'], FULL_covered=f['covered'], UPAC_covered=(u or {}).get('covered')))
+        if b and f and not b['complete'] and not f['complete']:
+            cw = {a: certificate_widths(by[r['task']][a], a) for a in ('BASE', 'UPAC', 'FULL') if by.get(r['task'], {}).get(a)}
+            def rad(a): w = cw.get(a); return (None if not w or w.get('max') is None else min(0.5, w['max'] / 2))
+            rb, ru, rf = rad('BASE'), rad('UPAC'), rad('FULL'); ratio = (rb / rf if (rb is not None and rf is not None and rf > 0) else None)
+            acc.append(dict(task=r['task'], topology=r['topology'], BASE_worst=rb, UPAC_worst=ru, FULL_worst=rf, ratio_BASE_over_FULL=ratio, material_2x=bool(ratio is not None and ratio >= 2), BASE_median=(cw.get('BASE') or {}).get('median'), FULL_median=(cw.get('FULL') or {}).get('median'), UPAC_median=(cw.get('UPAC') or {}).get('median'), BASE_covered=b['covered'], FULL_covered=f['covered'], UPAC_covered=(u or {}).get('covered'), certificate_source={a: (w or {}).get('stream') for a, w in cw.items()}, note='radius = half the recorded max remaining certificate width at the last check (anytime-valid confidence sets of the unpublished coordinates); 0.5 = unresolved'))
     eff = []
     for r in table:
         b = r.get('BASE'); f = r.get('FULL'); u = r.get('UPAC'); d = r.get('DET')
@@ -151,8 +171,10 @@ def report():
         P('| %s | %s | %s | %s |' % (r['task'], r['topology'], r['K'], ' | '.join(cells)))
     P(); P('## Accuracy progress on tasks neither BASE nor FULL completes (paired worst-coordinate radius; material = >= 2x, and it must repeat in both confirmation seeds)'); P()
     if A['accuracy_pairs']:
-        P('| task | topology | BASE worst | UPAC worst | FULL worst | BASE/FULL | material | covered BASE / UPAC / FULL |'); P('|---|---|---:|---:|---:|---:|---|---|')
-        for x in A['accuracy_pairs']: P('| %s | %s | %.4f | %s | %.4f | %s | %s | %s / %s / %s |' % (x['task'], x['topology'], x['BASE_worst'], ('%.4f' % x['UPAC_worst']) if x['UPAC_worst'] is not None else '-', x['FULL_worst'], ('%.2f' % x['ratio_BASE_over_FULL']) if x['ratio_BASE_over_FULL'] else '-', x['material_2x'], x['BASE_covered'], x['UPAC_covered'], x['FULL_covered']))
+        P('Radius = half the recorded maximum remaining certificate width at the final check (anytime-valid confidence sets of the unpublished coordinates; 0.5 = unresolved / no certificate). Medians likewise.'); P()
+        P('| task | topology | BASE worst | UPAC worst | FULL worst | BASE / FULL | material | BASE median | FULL median | covered BASE / UPAC / FULL |'); P('|---|---|---:|---:|---:|---:|---|---:|---:|---|')
+        fm = lambda v: ('%.4f' % v) if isinstance(v, (int, float)) else '-'
+        for x in A['accuracy_pairs']: P('| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s / %s / %s |' % (x['task'], x['topology'], fm(x['BASE_worst']), fm(x['UPAC_worst']), fm(x['FULL_worst']), ('%.2f' % x['ratio_BASE_over_FULL']) if x['ratio_BASE_over_FULL'] else '-', x['material_2x'], fm((x['BASE_median'] or 0) / 2 if x['BASE_median'] is not None else None), fm((x['FULL_median'] or 0) / 2 if x['FULL_median'] is not None else None), x['BASE_covered'], x['UPAC_covered'], x['FULL_covered']))
     else: P('none')
     P(); P('## Efficiency on mutual completions (receipt seconds)'); P()
     if A['efficiency_mutual']:
