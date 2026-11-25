@@ -165,11 +165,13 @@ def canonicalize(model, clock, budget):
 
 # ------------------------------------------------------------------ checker: coarse envelopes from a candidate
 class Coarse:
-    __slots__ = ('classes', 'ccards', 'reps', 'u', 'A', 'd', 'L', 'U', 'scales', 'exact', 'R', 'Rf', 'mixed', 'gaps', 'zero_factor', 'all_positive')
+    __slots__ = ('classes', 'ccards', 'reps', 'u', 'A', 'd', 'L', 'U', 'scales', 'exact', 'R', 'Rf', 'mixed', 'gaps', 'zero_factor', 'all_positive', 'R_compact')
 
 
-def check_candidate(M, classes, scales, clock, budget):
-    """classes[v][a] in 0..k_v-1 (nonempty, canonical: class ids in order of first appearance), scales[(fi, axis)][a] > 0 exact. Recomputes EVERYTHING from the source entries."""
+def check_candidate(M, classes, scales, clock, budget, ratio_product='exact'):
+    """classes[v][a] in 0..k_v-1 (nonempty, canonical: class ids in order of first appearance), scales[(fi, axis)][a] > 0 exact. Recomputes EVERYTHING from the source entries.
+    ratio_product (DGP2 compatibility helper, default 'exact' = the unchanged v0.2 behaviour): how the GLOBAL diagnostic ratio product R = prod_f max_C U / L is formed -- 'exact' (checked rational growth),
+    'compact' (a 128-bit outward enclosure in Cz.R_compact, Cz.R = None) or 'omit' (Cz.R = None). Every entrywise quantity (u, A, d, L, U, Rf, gaps, mixed, zero_factor) is computed identically in all modes."""
     n = len(M.cards); Cz = Coarse(); Cz.classes = classes; Cz.scales = scales
     for v in range(n):
         k = max(classes[v]) + 1
@@ -211,11 +213,17 @@ def check_candidate(M, classes, scales, clock, budget):
                 elif hi / lo > Rf: Rf = hi / lo
         if all(x == 0 for x in Ucell): Cz.zero_factor = True
         Cz.L.append(L); Cz.U.append(Ucell); Cz.Rf.append(None if Cz.mixed else Rf); Cz.gaps.append(g)
-    Cz.R = None
+    Cz.R = None; Cz.R_compact = None
     if not Cz.mixed:
-        R = F(1)
-        for r in Cz.Rf: R = checked_mul(R, r)
-        Cz.R = R
+        if ratio_product == 'exact':
+            R = F(1)
+            for r in Cz.Rf: R = checked_mul(R, r)
+            Cz.R = R
+        elif ratio_product == 'compact':
+            import lifted_decoder as _LD; K = _LD.Compact.one()
+            for r in Cz.Rf: K = K.mul(_LD.Compact.from_fraction(r))
+            Cz.R_compact = K
+        elif ratio_product != 'omit': raise Defect('unknown ratio_product mode %r' % (ratio_product,))
     return Cz
 
 

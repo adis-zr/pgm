@@ -166,13 +166,14 @@ STAGES = ('INIT', 'INTEGERIZED', 'CONTRACTED', 'CONSTANTS', 'PLANNED', 'EXACT_RO
 
 class Stream:
     """kind 'original' (effective model coordinates) or 'exact_parent' (quotient coordinates; decode = exact decoder rows). Every accepted constant / function is integrated.*"""
-    def __init__(self, sid, kind, model, queries, seed, eps, delta_s, opts, decode=None, label=None):
+    def __init__(self, sid, kind, model, queries, seed, eps, delta_s, opts, decode=None, label=None, scale_to_original=F(1)):
         self.sid = sid; self.kind = kind; self.model = model; self.cards = model['cards']; self.ev = model.get('evidence', {}); self.queries = list(queries); self.qix = {q: j for j, q in enumerate(self.queries)}; self.K = len(self.queries)
+        self.scale_to_original = F(scale_to_original)                                           # F2: EXACT normalizer scale: Z_original = Z_effective x scale_to_original (the canonical scalar, the closure scalar, ...); restored exactly once at every deterministic exit
         self.seed = seed; self.rng = np.random.default_rng(seed); self.eps = eps; self.delta_s = delta_s; self.opts = opts; self.decode = decode; self.label = label or kind
         self.stage = 'INIT'; self.closed_reason = None; self.stats = dict(elim_work=0, eliminations=0, query_work=0); self.ph = {}; self.mech = dict(kind=kind, sid=sid, delta_s=str(delta_s), seed=seed)
         self.ans = {}; self.pending_rows = {}; self.failed = []; self.witness = False; self.Z = None; self.Z_enclosure = None; self.deterministic_rows = None
         self.pub = {}; self.trace = []; self.draws = 0; self.zero_draws = 0; self.sumX = 0.0; self.sumX2 = 0.0; self.maxX = 0.0; self.maxlogX = -inf; self.t_sample = 0.0; self.t_cert = 0.0; self.t_prep = 0.0; self.batches = 0; self.abandoned = 0
-        self.pending = None; self.checkpoints = 0; self.last_width = None; self.retained_bytes = 0; self.stream_refusal = None; self.range_refused = []; self.cdead = None; self.measurements = []
+        self.pending = None; self.checkpoints = 0; self.last_width = None; self.retained_bytes = 0; self.stream_refusal = None; self.range_refused = []; self.cdead = None; self.measurements = []; self.endpoints = {}
     # ---- helpers
     def _close(self, reason): self.stage = 'CLOSED'; self.closed_reason = reason; self.mech['closed'] = reason; return 'CLOSED'
     def ready(self): return self.stage == 'READY'
@@ -459,12 +460,15 @@ class Stream:
         if not hasattr(self, 'cert'): return None
         t0 = tnow(); lo, hi = self.cert.sets(); width = hi - lo
         for j in range(self.Kq):
-            if j in self.pub or not np.isfinite(width[j]): continue
+            if not np.isfinite(width[j]): continue
             L_, H_ = F(float(lo[j])), F(float(hi[j]))
-            if IG.valid_publication(L_, H_, self.eps): self.pub[j] = (L_, H_)
+            if not (0 <= L_ <= H_ <= 1): continue
+            prev = self.endpoints.get(j)
+            if prev is None or (H_ - L_) < (prev[1] - prev[0]): self.endpoints[j] = (L_, H_)                       # F4: every VALID endpoint pair is retained (the anytime-valid confidence set at this check), independently of the epsilon mask; the narrowest seen is kept
+            if j not in self.pub and IG.valid_publication(L_, H_, self.eps): self.pub[j] = (L_, H_)                 # the parent-coordinate epsilon mask stays a progress diagnostic (forecasts, all_published)
         unpub = np.array([j for j in range(self.Kq) if j not in self.pub], dtype=int); w = width[unpub] if unpub.size else np.zeros(0); wf = w[np.isfinite(w)]
         self.trace.append(dict(t=tnow(), draws=self.draws, zero_draws=self.zero_draws, X_mean=(self.sumX / max(1, self.draws)), published=len(self.pub), remaining=int(unpub.size), max_remaining_width=(float(wf.max()) if wf.size else 0.0), median_remaining_width=(float(np.median(wf)) if wf.size else 0.0), empty_sets=int((~np.isfinite(w)).sum())))
-        self.checkpoints += 1; self.last_width = width; dt = tnow() - t0; self.t_cert += dt; self.measurements.append(dict(kind='pac_check', seconds=dt, completed=True, features=dict(Kq=self.Kq))); return width
+        self.trace[-1]['valid_endpoints'] = len(self.endpoints); self.checkpoints += 1; self.last_width = width; dt = tnow() - t0; self.t_cert += dt; self.measurements.append(dict(kind='pac_check', seconds=dt, completed=True, features=dict(Kq=self.Kq))); return width
     def max_unresolved_width(self):
         if self.last_width is None: return 2.0
         unpub = [j for j in range(self.Kq) if j not in self.pub]
@@ -472,21 +476,29 @@ class Stream:
         w = self.last_width[unpub]; wf = w[np.isfinite(w)]; return float(wf.max()) if wf.size else 2.0
     def all_published(self): return hasattr(self, 'Kq') and len(self.pub) == self.Kq
     def pac_rows(self):
-        """{parent query index: (lo, hi)} of the certified coordinates (nothing without the witness; nothing from a stream with a recorded certificate defect)"""
+        """{parent query index: (lo, hi)} of EVERY retained valid confidence endpoint pair (F4: not only the parent-epsilon-publishable ones; the planner decodes them to original coordinates, intersects compatible
+        evidence and tests original-coordinate epsilon safety); nothing without the witness; nothing from a stream with a recorded certificate defect"""
+        if not self.witness or getattr(self, 'defect', None): return {}
+        return {self.qmap[self.sq[j]]: (L, H) for j, (L, H) in self.endpoints.items()}
+    def pac_rows_parent_mask(self):
+        """diagnostic: the parent-coordinate epsilon-publishable subset (the pre-F4 behaviour)"""
         if not self.witness or getattr(self, 'defect', None): return {}
         return {self.qmap[self.sq[j]]: (L, H) for j, (L, H) in self.pub.items()}
     def exact_rows(self):
         """{parent query index: (lo, hi)} of the EXACT rows recovered deterministically during preparation (factorless variables, constant blocks' interiors): published only with the positive-mass witness, as in the accepted engine (ans.update(pending) under witness); zero risk"""
         if not self.witness: return {}
         return {j: (r['lo'], r['hi']) for j, r in self.pending_rows.items()}
+    def Z_original(self):
+        """the exact original normalizer when the stream completed deterministically (None otherwise): Z_effective x scale_to_original (F2)"""
+        return None if self.Z is None else self.Z * self.scale_to_original
     def diagnostics(self):
-        d = dict(kind=self.kind, sid=self.sid, label=self.label, stage=self.stage, closed=self.closed_reason, delta_s=str(self.delta_s), K=self.K, draws=self.draws, zero_draws=self.zero_draws, batches=self.batches, abandoned=self.abandoned, checkpoints=self.checkpoints, witness=self.witness, t_prep=self.t_prep, t_sample=self.t_sample, t_cert=self.t_cert, published=len(self.pub), retained_bytes=self.retained_bytes, phases=dict(self.ph), measurements=self.measurements)
+        d = dict(kind=self.kind, sid=self.sid, label=self.label, stage=self.stage, closed=self.closed_reason, delta_s=str(self.delta_s), K=self.K, scale_to_original=str(self.scale_to_original), Z_effective=(str(self.Z) if self.Z is not None else None), Z_original=(str(self.Z_original()) if self.Z is not None else None), draws=self.draws, zero_draws=self.zero_draws, batches=self.batches, abandoned=self.abandoned, checkpoints=self.checkpoints, witness=self.witness, t_prep=self.t_prep, t_sample=self.t_sample, t_cert=self.t_cert, published=len(self.pub), retained_bytes=self.retained_bytes, phases=dict(self.ph), measurements=self.measurements)
         if self.draws: d.update(X_mean=self.sumX / self.draws, zero_weight_fraction=self.zero_draws / self.draws, ESS_DIAGNOSTIC=(self.sumX ** 2 / self.sumX2 if self.sumX2 > 0 else 0.0), largest_share=(self.maxX / self.sumX if self.sumX > 0 else None), max_log2_X_observed=self.maxlogX, log2_Zhat_over_Ucap_DIAGNOSTIC=(log2(self.sumX / self.draws) if self.sumX > 0 else None), max_remaining_width=self.max_unresolved_width(), Z_over_Ucap_EB_DIAGNOSTIC=(self.zcert.interval() if hasattr(self, 'zcert') else None), trace=self.trace)
         d['mechanism'] = self.mech; return d
 
 
 # ---------------------------------------------------------------- the lifted coarse proposal (brief section 3)
-def lifted_widening(blocks_C, mbp, fine_fts, n_coarse, maxcard_coarse, n_fine, const_log2_mag, resp_rel):
+def lifted_widening(blocks_C, mbp, fine_fts, n_coarse, maxcard_coarse, n_fine, const_log2_mag, resp_rel, abs_E_tot=0):
     """numerical widening of the LIFTED stream, operation by operation (the accepted numerical_widening's (b), (d) for the coarse proposal verbatim; new: (c') the fine-factor weight, (r) the exact dyadic
     decoder draw's float log, (k) the rounded constants, (e') the final combination; the fine tables' float conversion enters rho_X as a relative factor). Returns the same dict shape."""
     u = IG.UF; L2 = F(145, 100)
@@ -500,8 +512,8 @@ def lifted_widening(blocks_C, mbp, fine_fts, n_coarse, maxcard_coarse, n_fine, c
     SRf = sum(b.R for b in fine_fts); nf = len(fine_fts); d_zf = sum(logerr(b.R) for b in fine_fts) + u * nf * (SRf + nf)        # (c') fine weight: nf log lookups + nf - 1 partial sums of magnitude <= SRf + nf
     d_U = u * mbp.n_scalar * (mbp.n_scalar + int(maxcard_coarse).bit_length() + 2) + logerr(1) * mbp.n_scalar  # (d) verbatim
     d_r = n_fine * logerr(LD.Q_BITS) + u * n_fine * (n_fine * LD.Q_BITS + n_fine)                            # (r) log2 of integer counts in [1, 2^52] (exact dyadic rows; the draw law is exact), n_fine partial sums of magnitude <= n_fine 52
-    d_k = logerr(const_log2_mag) + u * 4 * (const_log2_mag + 4)                                              # (k) log2 of the upward-rounded constant (scale ratio x kappa x (1 + rho_cap) x U_f)
-    mags = SRf + nf + mag_logq + n_fine * LD.Q_BITS + mbp.n_scalar + 2 + const_log2_mag; d_fin = 5 * u * (mags + abs(0))        # (e') five additions / subtractions on magnitudes <= mags (+ |E_tot| added by the caller)
+    d_k = 3 * logerr(const_log2_mag) + u * 6 * (const_log2_mag + 4)                                          # (k) three log2 terms of the constant (scale_F, scale_C integers; K_hi significand + exponent) + their two additions and the two roundings of the cap sum
+    mags = SRf + nf + mag_logq + n_fine * LD.Q_BITS + mbp.n_scalar + 2 + const_log2_mag + abs_E_tot; d_fin = 5 * u * mags + 5 * u * abs_E_tot        # (e') five additions / subtractions on magnitudes <= mags; the exact integer E_tot enters the float sum once: 5 u |E_tot| (F1)
     d_total = d_zf + d_impl + d_U + d_r + d_k + d_fin
     rho_X_log = L2 * d_total * (1 + d_total); rho_fine = IG.comb(*[b.rho for b in fine_fts]) if fine_fts else F(0); rho_X = (1 + rho_X_log) * (1 + rho_fine) - 1
     rho_cap = (1 + rho_tab) * (1 + L2 * d_cap * (1 + d_cap)) * (1 + mbp.rhoU) * (1 + rho_X_log) - 1
@@ -517,9 +529,9 @@ def canon_to_model(M):
 class LiftedStream(Stream):
     """z lives on the parent canonical model M_par (identity = the base canonical model, or an EXACT quotient parent with stages par_stages); the approximate stage (classes, Cz) over M_par supplies
     c(z), d(z|c) and the upper tables; the response of original coordinate (v, a) is the exact decoder value d_par(a | z_v) (identity: the indicator). Inventory = every (v, a) of the retained fine variables."""
-    def __init__(self, sid, M_fine, M_par, par_stages, classes, Cz, seed, eps, delta_s, opts, label=None):
+    def __init__(self, sid, M_fine, M_par, par_stages, classes, Cz, seed, eps, delta_s, opts, label=None, scale_to_original=None):
         model = canon_to_model(M_par); queries = [(v, a) for v in range(len(M_fine.cards)) for a in range(M_fine.cards[v])]
-        super().__init__(sid, 'lifted', model, queries, seed, eps, delta_s, opts, label=label or 'lifted'); self.M_fine = M_fine; self.M_par = M_par; self.par_stages = par_stages; self.classes = classes; self.Cz = Cz; self.n_par = len(M_par.cards)
+        super().__init__(sid, 'lifted', model, queries, seed, eps, delta_s, opts, label=label or 'lifted', scale_to_original=(M_par.scalar if scale_to_original is None else scale_to_original)); self.M_fine = M_fine; self.M_par = M_par; self.par_stages = par_stages; self.classes = classes; self.Cz = Cz; self.n_par = len(M_par.cards)
         self.mech.update(parent_exact_stages=len(par_stages), coarse_cards=list(Cz.ccards), parent_cards=list(M_par.cards))
     def stage_features(self, st):
         return dict(n=self.n_par, entries=sum(len(x['values']) for x in self.model['factors']), K=self.K, coarse_states=sum(self.Cz.ccards), kind='lifted')
@@ -541,7 +553,7 @@ class LiftedStream(Stream):
         except (ValueError, OverflowError, ZeroDivisionError) as e: self.measurements.append(dict(kind='lifted_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='NUMERIC', features=self.stage_features(self.stage))); return self._close('NUMERIC in lifted stage %s: %s' % (self.stage, repr(e)[:160]))
     def _l_decoder(self, deadline):
         clk = CE.Clock(deadline, {}); B = self.opts.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES); self.rows = LD.build_rows(self.M_par, self.classes, self.Cz, clk, B); self.retained_bytes += self.rows.bytes
-        self.mech.update(kappa=str(self.rows.kappa) if self.rows.kappa.denominator.bit_length() < 200 else None, kappa_float=self.rows.kappa_float, kappa_log2=float(IG.lg(self.rows.kappa)) if self.rows.kappa > 0 else None); self.stage = 'INTEGERIZED'
+        self.mech.update(kappa_compact=self.rows.K.record(), kappa_float=self.rows.kappa_float, kappa_log2=self.rows.K.log2_hi(), kappa_v_max_log2=max(float(IG.lg(kv)) for kv in self.rows.kappa_v) if self.rows.kappa_v else None); self.stage = 'INTEGERIZED'
     def _l_coarse_proposal(self, deadline):
         """the accepted max mini-bucket proposal on the checked UPPER coarse model (no block contraction: every coarse variable is sampled)"""
         o = self.opts; cm = CE.coarse_model(self.M_par, self.Cz, 1); fns_C, const_C, scale_C, mult_C, factorless_C = BR.integerize(cm)
@@ -582,13 +594,15 @@ class LiftedStream(Stream):
         self.batch_used = batch_used; t0 = tnow(); mbp.prepare_sampler(release_forward=True); self.ph['sampler_prep'] = tnow() - t0
         self.E_tot = self.E_fine - mbp.E_U
         if abs(self.E_tot) >= 1 << 50: raise StreamRefused('NUMERIC_RANGE', 'exponent sum too large for an exact float')
-        ratio = F(self.scale_F, self.scale_C) * self.rows.kappa; terms = [math.log2(ratio.numerator), math.log2(ratio.denominator)]            # math.log2 on arbitrary ints: within 1 ulp of the exact value each
-        const_log2 = terms[0] - terms[1]; slack = 2.0 ** -40 + 8 * IG.U * (abs(terms[0]) + abs(terms[1]) + 2); const_log2_up = IG.up(const_log2 + slack); mag = int(abs(const_log2)) + 2; self.mech['const_log2'] = const_log2
-        wid = lifted_widening(self.blocks_C, mbp, self.fine, len(self.S), max(self.ccards), self.n_par, mag, self.resp_rel); wid['delta_log_total'] += 5 * IG.UF * abs(self.E_tot)
+        # the constant scale_F / scale_C x K_hi in the LOG domain (F1 / compact kappa): three log2 terms (two integers, one compact significand) each within 1 ulp; their magnitudes enter the widening as part (k)
+        K = self.rows.K; t_num = math.log2(self.scale_F); t_den = math.log2(self.scale_C); t_K = math.log2(K.hi_m) + K.hi_e
+        const_log2 = (t_num - t_den) + t_K; const_mag = int(abs(t_num) + abs(t_den) + abs(t_K)) + 4; self.mech['const_log2'] = const_log2; self.mech['kappa_compact'] = K.record(); self.mech['kappa_log2_hi'] = t_K
+        wid = lifted_widening(self.blocks_C, mbp, self.fine, len(self.S), max(self.ccards), self.n_par, const_mag, self.resp_rel, abs_E_tot=abs(self.E_tot))    # 5 u |E_tot| and the constant terms are INSIDE d_total before rho_X / rho_cap / eps_num are derived (F1)
         if wid['delta_log_total'] > F(1, 4): raise StreamRefused('NUMERIC_RANGE', 'log-domain error budget %s too large' % float(wid['delta_log_total']))
-        self.eps_num = IG.fup(wid['eps_num']); rho_X = IG.fup(wid['rho_X']); rho_cap = IG.fup(wid['rho_cap'])
-        self.logU_capf = IG.up(IG.up(IG.up(mbp.logU_f + IG.up(log2(1.0 + rho_cap))) + const_log2_up) + 2 ** -40); self.cap_tol = IG.up(log2(1.0 + 2 * rho_X)) + 2 ** -40
-        self.mech.update(eps_num=self.eps_num, rho_X=rho_X, rho_cap=rho_cap, E_tot=self.E_tot, batch_used=batch_used, widening={k: (float(v) if isinstance(v, F) else v) for k, v in wid.items() if k != 'parts'}, widening_parts={k: float(v) for k, v in wid['parts'].items()}, scale_ratio_log2=float(IG.lg(F(self.scale_F, self.scale_C))), cap_log2_total=self.logU_capf + self.E_tot)
+        self.eps_num = IG.fup(wid['eps_num']); rho_X = IG.fup(wid['rho_X']); rho_cap = IG.fup(wid['rho_cap']); const_slack = IG.fup(wid['parts']['d_k'])            # the consumed constant carries its own proved log error (part k) outward
+        self.logU_capf = IG.up(IG.up(IG.up(mbp.logU_f + IG.up(log2(1.0 + rho_cap))) + IG.up(const_log2 + const_slack)) + 2 ** -40); self.cap_tol = IG.up(log2(1.0 + 2 * rho_X)) + 2 ** -40
+        self.mech.update(eps_num=self.eps_num, rho_X=rho_X, rho_cap=rho_cap, E_tot=self.E_tot, batch_used=batch_used, widening={k: (float(v) if isinstance(v, F) else v) for k, v in wid.items() if k != 'parts'}, widening_parts={k: float(v) for k, v in wid['parts'].items()}, scale_ratio_log2=(t_num - t_den), cap_log2_total=self.logU_capf + self.E_tot,
+                         cap_units=dict(cap_total_log2=self.logU_capf + self.E_tot, unit='W_int = scale_F x W_par (parent canonical target without its scalar)', to_original_log2_divide_by=float(IG.lg(F(self.scale_F))) if self.scale_F > 0 else None, note='B / Z and Z_U / Z need an independent denominator; not computed in production'))
         self.alpha = float(self.delta_s) / Kq; self.cert = IG.Certificate(Kq, self.alpha, self.eps_num, float(self.eps), o['schedule']); self.zcert = IG.ZCertificate(float(self.delta_s)); self.mech['alpha_per_coordinate'] = self.alpha
         self.retained_bytes += self.plan['log_bytes'] + batch_used * cert_per_draw; self.stage = 'READY'; self.fingerprint = self.proposal_fingerprint()
     def _flat_fine(self, z, i):

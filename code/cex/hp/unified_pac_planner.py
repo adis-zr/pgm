@@ -27,14 +27,14 @@ import unified_planner as UP
 from unified_planner import tnow, Clock, Budget, Refused, Defect, CE, CM, T_PROCESS_START
 import pac_actions as PA
 import integrated as IG
-VERSION = 'unified-pac-planner v0.5.1 (2026-11-25 post-freeze repair: streams publish their deterministically recovered EXACT rows (constant blocks, factorless) with the witness; the lifted cap constant in the log domain (no float of a huge rational); numeric exceptions and certificate defects inside a stream close THAT stream typed and recorded, never the request; a fully published stream is not advanced) over v0.5 (2026-11-24, DENSE_GENERIC_PAC_INTEGRATION_1: accepted structural routes + deterministic representations + up to three statistical streams under one cumulative exploration account; lifted upper-envelope proposal optional)'
+VERSION = 'unified-pac-planner v0.6 (DGP2 25 Nov 2026: F1 consumed widening incl. 5u|E_tot| + constant terms; F2 exact normalizer scale to the original on every stream exit; F3 finalization before the authoritative sample with expiry suppression + serialization guard; F4 valid confidence endpoints retained beyond the epsilon mask, decoded / intersected / tested on original coordinates; F5 charged optional stages cut at the allowance; compact 128-bit kappa enclosure, K_hi in the cap; lift-only check through the scoped compact ratio-product mode) over v0.5.1 (2026-11-25 post-freeze repair: streams publish their deterministically recovered EXACT rows (constant blocks, factorless) with the witness; the lifted cap constant in the log domain (no float of a huge rational); numeric exceptions and certificate defects inside a stream close THAT stream typed and recorded, never the request; a fully published stream is not advanced) over v0.5 (2026-11-24, DENSE_GENERIC_PAC_INTEGRATION_1: accepted structural routes + deterministic representations + up to three statistical streams under one cumulative exploration account; lifted upper-envelope proposal optional)'
 SLICE_S = 0.5; SLICE_FRAC = 16; MAX_STREAMS = 3; EXPLORATION_FRAC = 4; CONSTRUCT_SHARE = 0.5; FINAL_RESERVE_S = CM.FINALIZE_RESERVE_S
 PAC_OPTS = dict(table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, batch=1024, schedule='targeted', crosscheck=True, exact_route=True)        # the accepted baseline settings (run_paired.FROZEN)
 
 
 class UPlanner(UP.Planner):
-    def __init__(self, model, binding, budget_s, eps=UP.EPS_DEFAULT, delta=F(1, 10 ** 6), admission_stop_s=19.0, t_start=None, seed=1, pac=True, lifted=False, sched='P1', rates='R1'):
-        super().__init__(model, budget_s, eps=eps, admission_stop_s=admission_stop_s, t_start=t_start, policy='unified', sched=sched, rates=rates)
+    def __init__(self, model, binding, budget_s, eps=UP.EPS_DEFAULT, delta=F(1, 10 ** 6), admission_stop_s=19.0, t_start=None, seed=1, pac=True, lifted=False, sched='P1', rates='R1', force_stream=None):
+        super().__init__(model, budget_s, eps=eps, admission_stop_s=admission_stop_s, t_start=t_start, policy='unified', sched=sched, rates=rates); self.force_stream = force_stream
         self.delta = delta; self.seed = seed; self.pac = pac; self.lifted = lifted; self.budget_s = budget_s; self.binding = binding
         self.req = PA.RequestState(model, binding, eps, delta); self.streams = []; self.primary = None; self.E = None; self.E_used = 0.0; self.first_decided = False; self.conflicts = []; self.checkpoints = []; self.pac_rows_orig = {}; self.lift_cands = []; self.lift_discovery_tried = False; self.fast_bits_refused = False
         self.out.update(version=VERSION, delta=str(delta), seed=seed, pac=pac, lifted=lifted, streams=[], risk_ledger=[], checkpoints=self.checkpoints, conflicts=self.conflicts); self.out['mechanism']['structural'] = self.req.mech
@@ -50,10 +50,11 @@ class UPlanner(UP.Planner):
         key = self.stream_key(kind, **kw); same = next((S for S in self.streams if getattr(S, 'semantic_key', None) == key), None)
         if same is not None: self.log_action(action='alias_stream', stream=same.label, requested=kw.get('label'), note='identical semantic stream: no restart, no new risk'); return same
         s = len(self.streams) + 1
+        if self.force_stream: s = {'original': 1, 'exact_parent': 1, 'lifted': 2}[kind]                                # forced-stream diagnostic: the PLANNER-ROLE risk index (original / exact parent = stream 1 -> delta / 2; lifted = stream 2 -> delta / 4), never a free full delta
         if s > MAX_STREAMS: raise Refused('STREAMS', 'the declared maximum of %d statistical streams is reached' % MAX_STREAMS)
         delta_s = self.delta / 2 ** s; seed = np.random.SeedSequence([int(self.seed), s]).generate_state(1)[0]
-        if kind == 'lifted': S = PA.LiftedStream(s, kw['M_fine'], kw['M_par'], kw['par_stages'], kw['classes'], kw['Cz'], int(seed), self.eps, delta_s, dict(PAC_OPTS, other_retained_bytes=self.retained_bytes(), budget_obj=self.budget), label=kw.get('label'))
-        else: S = PA.Stream(s, kind, kw['model'], kw['queries'], int(seed), self.eps, delta_s, dict(PAC_OPTS, other_retained_bytes=self.retained_bytes()), label=kw.get('label'))
+        if kind == 'lifted': S = PA.LiftedStream(s, kw['M_fine'], kw['M_par'], kw['par_stages'], kw['classes'], kw['Cz'], int(seed), self.eps, delta_s, dict(PAC_OPTS, other_retained_bytes=self.retained_bytes(), budget_obj=self.budget), label=kw.get('label'), scale_to_original=kw.get('scale_to_original'))
+        else: S = PA.Stream(s, kind, kw['model'], kw['queries'], int(seed), self.eps, delta_s, dict(PAC_OPTS, other_retained_bytes=self.retained_bytes()), label=kw.get('label'), scale_to_original=kw.get('scale_to_original', F(1)))
         S.decode_rows = kw.get('decode'); S.semantic_key = key; self.streams.append(S); self.out['risk_ledger'].append(dict(stream=s, kind=kind, label=S.label, delta_s=str(delta_s), created_t_s=round(tnow() - self.t_start, 4), seed=int(seed))); self.log_action(action='create_stream', stream=s, kind=kind, label=S.label, delta_s=str(delta_s)); return S
     def retained_bytes(self): return self.budget.live + sum(S.retained_bytes for S in self.streams)
     # ---- the three stream constructors
@@ -68,32 +69,29 @@ class UPlanner(UP.Planner):
                         c = classes1[v][a]; j = qix[(v, c)]
                         if j in rows_q: L, H = rows_q[j]; d = Cz1.d[v][a]; outr[(M.orig_of[v], a)] = (d * L, d * H)
                 return outr
-            return self.new_stream('exact_parent', model=model, queries=queries, decode=decode, label='pac(exact_quotient)')
+            return self.new_stream('exact_parent', model=model, queries=queries, decode=decode, label='pac(exact_quotient)', scale_to_original=M1.scalar * M.scalar)      # F2: the quotient parent's scalar (1 by stage_model) and the canonical scalar (absorbed nullary / fixed / factorless mass)
         st = self.req; model = st.model; queries = st.queries
         def decode(rows_q, S=None):
             ans_eff = {j: dict(lo=L, hi=H, point=(L + H) / 2, guarantee='PAC_EB') for j, (L, H) in rows_q.items()}; ans_o, failed_o = st.decode_effective(ans_eff, [], True); outr = {}
             for j, r in ans_o.items(): x, a = st.queries_orig[j]; outr[(x, a)] = (r['lo'], r['hi'])
             return outr
-        return self.new_stream('original', model=model, queries=queries, decode=decode, label='pac(original%s)' % ('/closure-reduced' if st.closure is not None else ''))
+        return self.new_stream('original', model=model, queries=queries, decode=decode, label='pac(original%s)' % ('/closure-reduced' if st.closure is not None else ''), scale_to_original=(st.closure['scalar'] if st.closure is not None else F(1)))     # F2: the accepted closure scalar (integrated.finish_ multiplies Z by it)
     def discover_fast_lift_only(self, parent, clock):
         """an approximate stage for LIFTING ONLY when the deterministic FAST discovery refused BITS on the diagnostic ratio product R = prod_f max U / L (the one-solve bound's constant, unused by the lifted
-        proposal): the SAME proposer (slice profiles, farthest split, unit scales) and the SAME independent checker, run with the bit cap raised for the R product alone; afterwards every quantity the lifted
-        proposal uses (A, d, U, L, u) is re-checked against the normal cap and R is discarded (None) when it exceeds it. The candidate is kept OUT of self.cands (never a deterministic solve)."""
+        proposal): the SAME proposer (slice profiles, farthest split, unit scales) and the SAME independent checker (coarse_envelope.check_candidate) with every entrywise quantity (u, A, d, L, U, Rf, gaps) under
+        ORDINARY admission and ONLY the global ratio product formed as a compact 128-bit outward enclosure (ratio_product='compact'; DGP2). The candidate is kept OUT of self.cands (never a deterministic solve)."""
         live0 = self.budget.live; M1 = parent.M1
         try:
             prof, why = CE.slice_profiles(M1, clock, self.budget)
             if prof is None: raise Refused('PROPOSER', why)
             self.budget.charge(sum(c * c * 8 for c in M1.cards), 'pairwise distances (lift-only discovery)')
             classes2 = [CE.canonical_classes(CE.farthest_split(prof[v], list(range(M1.cards[v])), clock), M1.cards[v]) if M1.cards[v] > 1 else [0] for v in range(len(M1.cards))]
-            cap0 = CE.BIT_CAP; CE.BIT_CAP = 1 << 24
-            try: Cz = CE.check_candidate(M1, classes2, CE.unit_scales(M1), clock, self.budget)
-            finally: CE.BIT_CAP = cap0
+            Cz = CE.check_candidate(M1, classes2, CE.unit_scales(M1), clock, self.budget, ratio_product='compact')                   # the SAME checker under ORDINARY admission for every entrywise quantity; only the unused GLOBAL ratio product is compactly bounded (never the exact 4,096-bit-capped product, never a global cap change)
             worst = max([UP.bits(x) for row in Cz.A for x in row] + [UP.bits(x) for row in Cz.d for x in row] + [UP.bits(x) for row in Cz.u for x in row] + [UP.bits(x) for tab in Cz.U for x in tab] + [UP.bits(x) for tab in Cz.L for x in tab] + [0])
-            if worst > cap0: raise Refused('BITS', 'lift-only discovery: a checker quantity needs %d > %d bits' % (worst, cap0))
-            R_bits = UP.bits(Cz.R) if Cz.R is not None else None
-            if Cz.R is not None and R_bits > cap0: Cz.R = None
+            if worst > CE.BIT_CAP: raise Refused('BITS', 'lift-only discovery: a consumed entrywise quantity needs %d > %d bits' % (worst, CE.BIT_CAP))      # every CONSUMED quantity must itself fit the ordinary cap (the checked_* operand guards bound operand growth, this bounds the stored results)
+            R_bits = None; Cz.R = None
             c = UP.Cand('approx', parent); c.Cz = Cz; c.classes = classes2; c.scales = CE.unit_scales(M1); c.prof = prof; c.M1 = M1; c.stages = list(parent.stages) + [(classes2, Cz)]; c.cards = list(Cz.ccards); c.scopes = [sc for sc, _ in M1.factors]; c.constructions = parent.constructions + 1
-            c.charged = self.budget.live - live0; c.name = 'approx_lift_only(%s)' % parent.name; c.owns = ['Cz', 'classes', 'prof', 'pairwise_distances']; c.shares = dict(M1=parent.name); c.max_bits = UP.cz_bits(Cz); c.lift_only = True; c.R_bits_discarded = R_bits; c.exact = Cz.exact; c.promising = False; c.R = None; c.mixed = Cz.mixed
+            c.charged = self.budget.live - live0; c.name = 'approx_lift_only(%s)' % parent.name; c.owns = ['Cz', 'classes', 'prof', 'pairwise_distances']; c.shares = dict(M1=parent.name); c.max_bits = UP.cz_bits(Cz); c.lift_only = True; c.R_bits_discarded = R_bits; c.R_compact_log2_hi = (Cz.R_compact.log2_hi() if Cz.R_compact is not None else None); c.exact = Cz.exact; c.promising = False; c.R = None; c.mixed = Cz.mixed
             if c.charged < 0: raise Defect('negative construction charge (lift-only discovery)')
             return c
         except Refused: self.budget.release(max(0, self.budget.live - live0)); raise
@@ -103,7 +101,7 @@ class UPlanner(UP.Planner):
             outr = {}
             for j, (L, H) in rows_q.items(): v, a = S.queries[j]; outr[(M.orig_of[v], a)] = (L, H)
             return outr
-        return self.new_stream('lifted', M_fine=M, M_par=M_par, par_stages=par_stages, classes=classes, Cz=Cz, decode=decode, label='lifted(%s)' % approx.name)
+        return self.new_stream('lifted', M_fine=M, M_par=M_par, par_stages=par_stages, classes=classes, Cz=Cz, decode=decode, label='lifted(%s)' % approx.name, scale_to_original=M_par.scalar * (M.scalar if par.kind != 'identity' else F(1)))
     # ---- forecasts
     def stream_forecast(self, S):
         """remaining seconds to complete S (heuristic; None = unknown): needs >= 2 checkpoints and a positive witness"""
@@ -113,7 +111,27 @@ class UPlanner(UP.Planner):
         chk = (S.measurements[-1]['seconds'] if S.measurements and S.measurements[-1]['kind'] in ('pac_check',) else 0.05); fin = max(FINAL_RESERVE_S, self.cm.predict('final', dict(J=len(self.inventory))) if self.cm else FINAL_RESERVE_S)
         return need + chk + fin
     # ---- decision
+    def _decide_forced(self):
+        """forced-stream diagnostic (DGP2 brief section 5): bypass ONLY the offer decision -- build the requested stream with the production construction code and advance it alone; deterministic incumbents are not run"""
+        W = self.W(); rec = dict(W_s=round(W, 4), t_s=round(tnow() - self.t_start, 4), forced=self.force_stream)
+        if not self.first_decided: self.first_decided = True; self.E = W / EXPLORATION_FRAC; self.out['mechanism']['exploration_account_s'] = self.E
+        live = [S for S in self.streams if S.live()]
+        if not live and not self.streams:
+            if self.force_stream == 'original': rec.update(chosen='create_primary', why='forced original stream'); return dict(kind='create_primary', record=rec)
+            ap = [c for c in self.cands + self.lift_cands if c.kind == 'approx' and not c.alias_of and c.Cz is not None and not c.Cz.exact and not c.Cz.zero_factor]
+            if ap: rec.update(chosen='create_lifted(%s)' % ap[-1].name, why='forced lifted stream'); return dict(kind='create_lifted', approx=ap[-1], deadline=self.adm, record=rec)
+            parent = next((c for c in self.cands if c.kind == 'identity'), None)
+            if not any(a.get('action') == 'discover_fast' for a in self.out['actions']):
+                opts = [a for a in self.optional_actions() if a['name'] == 'discover_fast']
+                if opts: rec.update(chosen='discover_fast', why='forced lifted stream: deterministic FAST discovery first'); return dict(kind='optional', act=opts[0], deadline=self.adm, record=rec)
+            if not self.lift_discovery_tried and parent is not None: rec.update(chosen='discover_fast_lift', why='forced lifted stream: lift-only discovery after the deterministic FAST discovery refused'); return dict(kind='discover_fast_lift', parent=parent, deadline=self.adm, record=rec)
+            rec.update(chosen='finalize', why='forced lifted stream: no approximate stage could be built (recorded construction failure)'); return dict(kind='finalize', outcome='REFUSED', why=rec['why'], record=rec)
+        S = self.streams[-1]
+        if S.live() and not S.ready(): rec.update(chosen='prepare_stream', stream=S.label, why='forced stream preparation'); return dict(kind='prepare', stream=S, deadline=self.adm, record=rec)
+        if S.ready() and not S.all_published(): slice_s = min(SLICE_S, W / SLICE_FRAC); rec.update(chosen='advance_stream', stream=S.label, slice_s=round(slice_s, 4), why='forced stream advance'); return dict(kind='advance', stream=S, deadline=min(self.adm, tnow() + slice_s), record=rec)
+        rows = self.snapshot(); pub = sum(1 for r in rows.values() if r is not None); rec.update(chosen='finalize', why='forced stream ended (%s)' % (S.closed_reason or S.stage)); return dict(kind='finalize', outcome=('PARTIAL' if pub else 'REFUSED'), why=rec['why'], record=rec)
     def _decide(self):
+        if self.force_stream: return self._decide_forced()
         W = self.W(); ready = self.ready_exact_or_promising(); rec = dict(W_s=round(W, 4), t_s=round(tnow() - self.t_start, 4)); scored = []
         for c, side in ready:
             T, parts = self.T_solve(c, 0 if side == 'lower' else 1); scored.append(dict(cand=c, side=side, T=T, parts=parts, admitted=self.admitted(c), order=(c.constructions, {'identity': 0, 'exact': 1, 'approx': 2}[c.kind], self.cands.index(c))))
@@ -192,6 +210,7 @@ class UPlanner(UP.Planner):
         if k == 'create_lifted':
             try: S = self.make_lifted(d['approx'])
             except Refused as e: self.lifted = False; self.log_action(action='create_lifted', status='REFUSED_' + e.kind, reason=str(e.reason)[:160]); self.E_used += tnow() - t0; return None
+            if self.force_stream == 'lifted': self.primary = S; return self._prepare(S, self.adm, charge=False)                          # forced diagnostic: the lifted stream IS the request's primary (uncharged, work cutoff)
             r = self._prepare(S, d['deadline'], charge=True)
             if r is None and S.ready() and tnow() < d['deadline']: return self._probe(S, min(d['deadline'], tnow() + min(SLICE_S, max(0.0, self.W()) / SLICE_FRAC)))        # the one probe is ONE slice inside the account
             return r
@@ -204,7 +223,9 @@ class UPlanner(UP.Planner):
         if k == 'advance': return self._advance(d['stream'], d['deadline'])
         raise Defect('unknown decision kind %s' % k)
     def _prepare(self, S, deadline, charge):
-        t0 = tnow(); r = S.prepare(self.adm, cdead=self.cdead, until=deadline); dt = tnow() - t0
+        """F5: a CHARGED (optional) stream's stages run against the allowance end `deadline` as their hard cutoff (a Deadline inside a stage closes the stream typed), so an optional action can never consume the
+        primary's remaining time first and debit the account afterwards; the primary (uncharged) stream keeps the work cutoff"""
+        t0 = tnow(); hard = min(self.adm, deadline) if charge else self.adm; r = S.prepare(hard, cdead=min(self.cdead, hard) if charge else self.cdead, until=deadline); dt = tnow() - t0
         if charge: self.E_used += dt
         self.log_action(action='prepare_stream', stream=S.label, result=r, actual_s=dt, stage=S.stage, closed=S.closed_reason, retained_bytes=S.retained_bytes)
         if S.stage == 'COMPLETE': return self._stream_terminal(S)
@@ -224,7 +245,7 @@ class UPlanner(UP.Planner):
                 acc[(v, a)] = (L, H)
             if acc: self.retained = CE.intersect(self.retained, acc) if self.retained else acc
             self.out['mechanism']['positive_mass_witness'] = True
-            if S.Z is not None: self.out['Z_enclosure'] = dict(lo=str(S.Z), hi=str(S.Z), positive=S.Z > 0, source=S.label)
+            if S.Z is not None: Zo = S.Z_original(); self.out['Z_enclosure'] = dict(lo=str(Zo), hi=str(Zo), positive=Zo > 0, source=S.label, Z_effective=str(S.Z), scale_to_original=str(S.scale_to_original), exact=True)      # F2: restored exactly once
             self.log_action(action='stream_deterministic_rows', stream=S.label, terminal=term, rows=len(acc))
             return self.try_finish()
         return None
@@ -369,17 +390,21 @@ class UPlanner(UP.Planner):
             if hasattr(S, 'fingerprint'): S.mech['proposal_fingerprint_at_ready'] = S.fingerprint; S.mech['proposal_fingerprint_at_end'] = S.proposal_fingerprint(); S.mech['proposal_immutable'] = (S.fingerprint == S.mech['proposal_fingerprint_at_end'])
         defects = [dict(stream=S.label, defect=S.defect) for S in self.streams if getattr(S, 'defect', None)]
         if defects: mech['stream_certificate_defects'] = defects; mech['defect'] = (mech.get('defect') or '') + ' | stream defects: ' + '; '.join(d['stream'] + ': ' + d['defect'][:80] for d in defects)
-        out['streams'] = [S.diagnostics() for S in self.streams]; mech.update(exploration_account_s=self.E, exploration_used_s=self.E_used, streams_created=len(self.streams), live_memory_named_bytes=dict(constructor_live=self.budget.live, streams_retained=sum(S.retained_bytes for S in self.streams)), lift_only_candidates=[dict(name=c.name, cards=c.cards, charged_bytes=c.charged, R_bits_discarded=c.R_bits_discarded, exact=c.exact, mixed=c.mixed) for c in self.lift_cands])
+        out['streams'] = [S.diagnostics() for S in self.streams]; mech.update(exploration_account_s=self.E, exploration_used_s=self.E_used, streams_created=len(self.streams), live_memory_named_bytes=dict(constructor_live=self.budget.live, streams_retained=sum(S.retained_bytes for S in self.streams)), lift_only_candidates=[dict(name=c.name, cards=c.cards, charged_bytes=c.charged, R_compact_log2_hi=getattr(c, 'R_compact_log2_hi', None), exact=c.exact, mixed=c.mixed) for c in self.lift_cands])
+        # F3: ALL enclosure / radius / cost / diagnostic work happens here, BEFORE the authoritative final sample inside super().fin; afterwards only the already-built objects are attached, and only when the sample respected the hard deadline
         try: enc = self.all_enclosures() if not isinstance(self.M, _EmptyCanon) else {}
         except Exception as e: enc = {}; mech['enclosure_report_error'] = repr(e)[:120]
+        enc_rows = [dict(var=x, state=a, lo=str(enc[(x, a)][0]), hi=str(enc[(x, a)][1])) for (x, a) in self.inventory if (x, a) in enc]
+        ws = [float(enc[(x, a)][1] - enc[(x, a)][0]) / 2 for (x, a) in self.inventory if (x, a) in enc]; radius = dict(worst=(max(ws) if ws else None), median=(float(np.median(ws)) if ws else None), p90=(float(np.percentile(ws, 90)) if ws else None), covered_at_eps=sum(1 for w in ws if w <= float(self.eps)), K=len(self.inventory))
+        cost = self.cost_breakdown()
         res = super().fin(oc, rows, note=note); mech['constructor_live_ledger_identity'] = (self.budget.live == getattr(self, 'canonical_charge', 0) + sum(c.charged for c in self.cands) + sum(c.charged for c in self.lift_cands) + sum(getattr(S, 'rows', None).bytes if getattr(S, 'rows', None) is not None else 0 for S in self.streams))
         gs = {r['guarantee'] for r in res['answers']}; res['guarantee'] = 'EXACT' if gs <= {'EXACT'} else ('DETERMINISTIC' if gs <= {'EXACT', 'DETERMINISTIC'} else ('PAC' if gs <= {'EXACT', 'DETERMINISTIC', 'PAC_EB'} else 'PARTIAL'))
         pub = res['published']
         if pub == len(res['answers']) and pub > 0 and res['hard_deadline_respected'] and res['guarantee'] in ('EXACT', 'DETERMINISTIC', 'PAC') and mech.get('positive_mass_witness'): res['outcome'] = 'COMPLETE'
         elif res['outcome'] == 'COMPLETE' and pub < len(res['answers']): res['outcome'] = 'PARTIAL'
-        res['enclosures'] = [dict(var=x, state=a, lo=str(enc[(x, a)][0]), hi=str(enc[(x, a)][1])) for (x, a) in self.inventory if (x, a) in enc] if res['hard_deadline_respected'] else []
-        ws = [float(F(e['hi']) - F(e['lo'])) / 2 for e in res['enclosures']]; res['radius_report'] = dict(worst=(max(ws) if ws else None), median=(float(np.median(ws)) if ws else None), p90=(float(np.percentile(ws, 90)) if ws else None), covered_at_eps=sum(1 for w in ws if w <= float(self.eps)), K=len(self.inventory))
-        res['cost_breakdown'] = self.cost_breakdown(); return res
+        if res['hard_deadline_respected']: res['enclosures'] = enc_rows; res['radius_report'] = radius
+        else: res['enclosures'] = []; res['radius_report'] = None; mech['suppressed_on_expiry'] = dict(enclosures=len(enc_rows), radius_report=True)
+        res['cost_breakdown'] = cost; return res
     def cost_breakdown(self):
         ph = self.out['phases_s']; acts = self.out['actions']; b = dict(structural_routes=ph.get('structural_routes', 0.0), canonicalize=ph.get('canonicalize', 0.0), features=ph.get('features', 0.0), pricing=ph.get('pricing', 0.0) + ph.get('price_identity', 0.0), final_assembly=ph.get('final_assembly', 0.0), output=ph.get('output', 0.0))
         b['quotient_construction'] = sum(a.get('actual_s') or 0 for a in acts if a.get('action') in ('discover_exact', 'discover_fast', 'refine')); b['native_solves'] = sum(a.get('actual_s') or 0 for a in acts if str(a.get('action', '')).startswith('solve_'))
@@ -398,7 +423,7 @@ class _EmptyCanon:
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=19.5); ap.add_argument('--admission-stop', type=float, default=19.0); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--lifted', action='store_true'); ap.add_argument('--no-pac', action='store_true'); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=19.5); ap.add_argument('--admission-stop', type=float, default=19.0); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--lifted', action='store_true'); ap.add_argument('--no-pac', action='store_true'); ap.add_argument('--force-stream', default=None, choices=[None, 'original', 'lifted'], help='DIAGNOSTIC: bypass only the offer decision and run one stream kind (never a production arm)'); a = ap.parse_args()
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm')); import core as CORE
     t0 = tnow()
     try: model, binding = CORE.read_uai(a.input)
@@ -406,7 +431,7 @@ def main():
         out = dict(version=VERSION, outcome='INVALID_TASK', guarantee='PARTIAL', published=0, K=0, answers=[], mechanism=dict(refusal=dict(kind='INVALID_TASK', reason=repr(e)[:300]), positive_mass_witness=None, termination='INVALID_TASK'), phases_s=dict(read=tnow() - t0), wall_s=tnow() - t0, input=os.path.abspath(a.input), argv=sys.argv[1:], hard_deadline_respected=True)
         UP.write_result(out, a.output, a.budget); print(json.dumps(dict(outcome='INVALID_TASK', reason=repr(e)[:200]))); return
     tread = tnow() - t0
-    P = UPlanner(model, binding, a.budget, eps=F(a.epsilon), delta=F(a.delta), admission_stop_s=a.admission_stop, seed=a.seed, pac=not a.no_pac, lifted=a.lifted); out = P.run()
+    P = UPlanner(model, binding, a.budget, eps=F(a.epsilon), delta=F(a.delta), admission_stop_s=a.admission_stop, seed=a.seed, pac=not a.no_pac, lifted=(a.lifted or a.force_stream == 'lifted'), force_stream=a.force_stream); out = P.run(); out['forced_stream'] = a.force_stream
     out['phases_s']['read'] = tread; out['binding'] = binding; out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]; out['process_start_to_read_s'] = t0 - T_PROCESS_START
     out = UP.write_result(out, a.output, a.budget)
     print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), streams=[(s['label'], s['stage'], s['draws'], s['published']) for s in out['streams']], route=out['mechanism'].get('route'), termination=out['mechanism'].get('termination'))))

@@ -484,7 +484,12 @@ def write_result(out, path, budget_s, t_process_start=None):
     """serialize to a temporary file, enforce the hard deadline before the commit (a late commit publishes nothing, whatever the outcome label), record the output time"""
     t_process_start = T_PROCESS_START if t_process_start is None else t_process_start; t_w = tnow(); tmp = path + '.tmp'; os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True); json.dump(out, open(tmp, 'w'), indent=1, default=str)
     if tnow() > t_process_start + budget_s and (out.get('published') or 0) > 0:
-        out['mechanism']['late_commit'] = dict(outcome_before=out['outcome'], published_before=out.get('published')); out['outcome'] = 'DEADLINE'; out['answers'] = [dict(var=r['var'], state=r['state'], guarantee='NOT_PUBLISHED') for r in (out.get('answers') or [])]; out['published'] = 0; out['guarantee'] = 'PARTIAL'; out['max_width'] = None; out['max_point_radius'] = None; json.dump(out, open(tmp, 'w'), indent=1, default=str)
+        out['mechanism']['late_commit'] = dict(outcome_before=out['outcome'], published_before=out.get('published')); out['outcome'] = 'DEADLINE'; out['answers'] = [dict(var=r['var'], state=r['state'], guarantee='NOT_PUBLISHED') for r in (out.get('answers') or [])]; out['published'] = 0; out['guarantee'] = 'PARTIAL'; out['max_width'] = None; out['max_point_radius'] = None
+        for k in ('enclosures',):
+            if k in out: out[k] = []
+        for k in ('radius_report',):
+            if k in out: out[k] = None
+        json.dump(out, open(tmp, 'w'), indent=1, default=str)                                      # DGP2 F3: publication-derived fields of the PAC planner (enclosures, radius_report) are stripped on a late commit too; keys absent in v0.4.1 outputs -> no change for them
     out['hard_deadline_respected_at_commit'] = tnow() <= t_process_start + budget_s; out['phases_s']['output'] = tnow() - t_w
     json.dump(dict(output_s=out['phases_s']['output'], hard_deadline_respected_at_commit=out['hard_deadline_respected_at_commit'], wall_s=out.get('wall_s'), in_process_total_s=out.get('in_process_total_s'), outcome=out['outcome'], published=out.get('published')), open(path + '.timing.json', 'w'), indent=1)   # the output measurement persists in a sidecar written after the authoritative check (no unbounded work added to the result)
     os.replace(tmp, path); return out

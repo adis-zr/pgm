@@ -367,8 +367,8 @@ def D15_lift_only_discovery_recheck():
     """when the deterministic FAST discovery refuses BITS on the diagnostic ratio product R, the lift-only discovery builds the SAME classes with the SAME checker, discards R (None) and re-checks every quantity the lifted proposal uses (A, d, u, U, L) under the normal bit cap; the candidate never enters the deterministic candidate list; its charge is in the ledger identity; a model whose decoder itself exceeds the cap is refused BITS (nothing lifted)"""
     model, binding = load_mid('dg_n24_c4_clique_two'); P = UPlanner(model, binding, 4.0, admission_stop_s=3.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True); out = P.run()
     acts = out['actions']; fast = [a for a in acts if a.get('action') == 'discover_fast']; lift = [a for a in acts if a.get('action') == 'discover_fast_lift']; lo = out['mechanism'].get('lift_only_candidates') or []
-    ok_a = bool(fast) and fast[0].get('status') == 'REFUSED_BITS' and bool(lift) and lift[0].get('status') == 'READY_LIFT_ONLY' and len(lo) == 1 and lo[0]['R_bits_discarded'] is not None and lo[0]['R_bits_discarded'] > CE.BIT_CAP and not any(c['name'].startswith('approx_lift_only') for c in out['candidates']) and out['mechanism']['constructor_live_ledger_identity'] and any(S.kind == 'lifted' for S in P.streams)
-    c = P.lift_cands[0]; worst = max([UP.bits(x) for row in c.Cz.A for x in row] + [UP.bits(x) for row in c.Cz.d for x in row] + [UP.bits(x) for tab in c.Cz.U for x in tab] + [UP.bits(x) for tab in c.Cz.L for x in tab]); recheck_ok = worst <= CE.BIT_CAP and c.Cz.R is None and c.R is None
+    ok_a = bool(fast) and fast[0].get('status') == 'REFUSED_BITS' and bool(lift) and lift[0].get('status') == 'READY_LIFT_ONLY' and len(lo) == 1 and lo[0].get('R_compact_log2_hi') is not None and math.isfinite(lo[0]['R_compact_log2_hi']) and lo[0]['R_compact_log2_hi'] > 0 and not any(c['name'].startswith('approx_lift_only') for c in out['candidates']) and out['mechanism']['constructor_live_ledger_identity'] and any(S.kind == 'lifted' for S in P.streams)      # DGP2: the unused global ratio product is a COMPACT enclosure (log2 > 4,096, which is why the exact product refused), never a raised global cap
+    c = P.lift_cands[0]; worst = max([UP.bits(x) for row in c.Cz.A for x in row] + [UP.bits(x) for row in c.Cz.d for x in row] + [UP.bits(x) for tab in c.Cz.U for x in tab] + [UP.bits(x) for tab in c.Cz.L for x in tab]); recheck_ok = worst <= CE.BIT_CAP and c.Cz.R is None and c.R is None and c.Cz.R_compact is not None and CE.BIT_CAP == 4096
     # the lifted stream built on it reproduces the checker's classes and decoder (fingerprint of the stage), and its cap / kappa are finite
     S = next(S for S in P.streams if S.kind == 'lifted'); same_stage = S.classes is c.classes and S.Cz is c.Cz; cap_ok = S.mech.get('cap_log2_total') is not None and S.mech.get('kappa_log2') is not None and S.stage in ('READY', 'CLOSED')
     # a decoder beyond the cap: variable 0's two states have IDENTICAL pair slices (they merge) and unary masses of ~2,378 / ~2,322 bits (each < 4,096), so the decoder d = u / A needs ~4,757 bits -> refused BITS, nothing lifted, charge released
@@ -377,7 +377,7 @@ def D15_lift_only_discovery_recheck():
     try: P2.discover_fast_lift_only(ident, Clock(PA.tnow() + 5, {}))
     except Refused as e: refused = e.kind
     released = P2.budget.live == live0
-    rec('D15_lift_only_discovery_recheck', ok_a and recheck_ok and same_stage and cap_ok and refused == 'BITS' and released, fast_status=(fast[0].get('status') if fast else None), lift=(lift[0] if lift else None), lift_only=lo, worst_bits_rechecked=worst, stream=(S.label, S.stage, S.draws, S.mech.get('cap_log2_total'), S.mech.get('kappa_log2')), big_decoder_refusal=refused, charge_released=released, outcome=out['outcome'])
+    rec('D15_lift_only_discovery_recheck', ok_a and recheck_ok and same_stage and cap_ok and refused == 'BITS' and released, fast_status=(fast[0].get('status') if fast else None), lift=(lift[0] if lift else None), lift_only=lo, worst_bits_rechecked=worst, R_compact_log2_hi=c.Cz.R_compact.log2_hi(), stream=(S.label, S.stage, S.draws, S.mech.get('cap_log2_total'), S.mech.get('kappa_log2')), big_decoder_refusal=refused, charge_released=released, outcome=out['outcome'])
 
 CONTROLS.append(D15_lift_only_discovery_recheck)
 
@@ -436,6 +436,136 @@ def D18_optional_stream_exception_leaves_request_usable():
     rec('D18_optional_stream_exception_leaves_request_usable', ok, **res)
 
 CONTROLS += [D16_exact_rows_from_constant_blocks_published, D17_lifted_constant_log_domain_huge_scale, D18_optional_stream_exception_leaves_request_usable]
+
+
+
+
+
+# ---------------------------------------------------------------- DGP2 repair controls (branch-executing; the before-failures are in DGP2_REPAIR_AND_DIAGNOSIS/controls/before)
+def D19_F1_widening_consumed_bounds():
+    """F1: the CONSUMED rho_X / cap_tol / Certificate eps_num derive from a d_total that already includes 5u|E_tot| and the constant's log terms; exercised with a nonzero exponent shift (tiny entries -> |E_tot| > 0)"""
+    import random; rng = random.Random(3); n = 5; card = 3
+    def val(): return F(rng.randrange(1, 2 ** 30), 2 ** 600)
+    model = dict(cards=[card] * n, factors=[dict(scope=(i, j), values=[val() for _ in range(card * card)]) for i in range(n) for j in range(i + 1, n)] + [dict(scope=(v,), values=[F(1) + F(rng.randrange(0, 5), 8) for _ in range(card)]) for v in range(n)], evidence={})
+    clk = CE.Clock(time.monotonic() + 30, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B); classes, Cz = fast_stage(M, clk, B)
+    S = PA.LiftedStream(1, M, M, [], classes, Cz, 1, EPS, DELTA / 2, dict(PAC_OPTS)); r = S.prepare(time.monotonic() + 30); assert r == 'READY', (r, S.closed_reason)
+    w = S.mech['widening']; parts = S.mech['widening_parts']; d_rep = F(w['delta_log_total']); five_u_E = 5 * IG.UF * abs(S.E_tot)
+    d_parts = sum(F(parts[k]) for k in ('d_zf', 'd_impl', 'd_U', 'd_r', 'd_k', 'd_fin')); includes_E = abs(d_parts - d_rep) <= F(1, 10 ** 20) and F(parts['d_fin']) >= five_u_E
+    rho_from_total = float((1 + F(145, 100) * d_rep * (1 + d_rep)) * (1 + F(parts['rho_fine'])) - 1); consumed_ok = S.mech['rho_X'] >= rho_from_total * (1 - 1e-12)
+    cap_tol_ok = abs(S.cap_tol - (IG.up(math.log2(1.0 + 2 * S.mech['rho_X'])) + 2 ** -40)) <= 1e-18; cert_ok = (S.cert.eps_num == S.eps_num) and abs(S.eps_num - (2 * S.mech['rho_X'] + float(w['rho_f']) + float(w['law']) + float(w['trunc']))) <= 1e-24
+    const_ok = 'kappa_compact' in S.mech and parts['d_k'] > 0
+    rec('D19_F1_widening_consumed_bounds', includes_E and consumed_ok and cap_tol_ok and cert_ok and const_ok and abs(S.E_tot) > 0, E_tot=S.E_tot, five_u_E=float(five_u_E), d_fin=parts['d_fin'], d_k=parts['d_k'], rho_X=S.mech['rho_X'], rho_X_from_total=rho_from_total, cap_tol=S.cap_tol, eps_num=S.eps_num)
+
+def D20_F2_normalizer_ownership():
+    """F2: [1,2,2,4] + nullary 7 through the exact-parent stream -> original Z = 63 exactly, marginals 1/3 / 2/3; composition with a factorless variable and a fixed (card-1) variable; zero-mass stays typed"""
+    def run(model):
+        P = UPlanner(model, dict(model_sha256='ctrl'), 10.0, admission_stop_s=9.5, t_start=PA.tnow(), seed=1, pac=True, lifted=False); P.M = CE.canonicalize(model, P.hclock, P.budget); P.orig_to_canon = {int(P.M.orig_of[v]): v for v in range(len(P.M.cards))}; P.mf = CM.model_features(P.M, P.clock, P.budget); P.canonical_charge = P.budget.live; P.t_mark = PA.tnow()
+        ident = P.make_identity(P.clock); P.cands.append(ident); ex = P.discover_exact(P.clock); P.cands.append(ex); S = P.make_primary(); P.primary = S; S.prepare(P.adm, cdead=P.cdead); P._stream_terminal(S); return P, S
+    P, S = run(dict(cards=[2, 2], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(2), F(4)]), dict(scope=(), values=[F(7)])], evidence={})); ze = P.out['Z_enclosure']; enc = P.all_enclosures()
+    a = ze['lo'] == '63' and ze['hi'] == '63' and ze.get('exact') and str(S.Z) == '9' and str(S.scale_to_original) == '7' and enc[(0, 0)] == (F(1, 3), F(1, 3)) and enc[(1, 1)] == (F(2, 3), F(2, 3))
+    # composition: factorless variable 2 (card 3, unary 1,2,1) and a card-1 variable 3: scalar absorbs 4 (unary sum) x 1; Z = 63 x 4 = 252
+    P2, S2 = run(dict(cards=[2, 2, 3, 1], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(2), F(4)]), dict(scope=(), values=[F(7)]), dict(scope=(2,), values=[F(1), F(2), F(1)])], evidence={})); ze2 = P2.out['Z_enclosure']; enc2 = P2.all_enclosures()
+    b = ze2['lo'] == '252' and ze2['hi'] == '252' and enc2[(2, 1)] == (F(1, 2), F(1, 2)) and enc2[(3, 0)] == (F(1), F(1)) and enc2[(0, 1)] == (F(2, 3), F(2, 3))
+    # zero mass: nullary 0 -> ZERO_EVIDENCE typed, nothing published
+    P3 = UPlanner(dict(cards=[2, 2], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(2), F(4)]), dict(scope=(), values=[F(0)])], evidence={}), dict(model_sha256='ctrl'), 3.0, admission_stop_s=2.5, t_start=PA.tnow(), seed=1, pac=True, lifted=False); o3 = P3.run()
+    rec('D20_F2_normalizer_ownership', a and b and o3['outcome'] == 'ZERO_EVIDENCE' and o3['published'] == 0, Z63=ze, Z252=ze2, zero=o3['outcome'], stream=(S.kind, S.mech.get('terminal'), str(S.Z), str(S.scale_to_original)))
+
+def D21_F3_finalization_expiry_tails():
+    """F3: on a nontrivial PAC request and on a factorless-only request, an expired hard deadline at finalization suppresses answers, enclosures and radius (mechanism.suppressed_on_expiry recorded); the enclosure / cost work happens before the authoritative sample; a late commit strips the new fields on disk"""
+    res = {}
+    model, binding = load_mid('dg_n16_c4_clique_two'); P = UPlanner(model, binding, 30.0, admission_stop_s=29.0, t_start=PA.tnow(), seed=1, pac=True, lifted=False); P.M = CE.canonicalize(model, P.hclock, P.budget); P.orig_to_canon = {int(P.M.orig_of[v]): v for v in range(len(P.M.cards))}; P.mf = CM.model_features(P.M, P.clock, P.budget); P.t_mark = PA.tnow()
+    PA.structural_routes(P.req, P.adm, flags=dict(evidence_expansion=False, layered_contraction=False, ancestral_response=False)); S = P.make_primary(); P.primary = S; S.prepare(P.adm, cdead=P.cdead)
+    for _ in range(20): S.batch(P.adm)
+    S.check(); P.out['mechanism']['positive_mass_witness'] = S.witness; rows = P.snapshot(); P.hard = PA.tnow() - 1.0; o = P.fin('DEADLINE_PARTIAL', rows, note='control'); res['pac'] = dict(outcome=o['outcome'], published=o['published'], enclosures=len(o['enclosures']), radius=o['radius_report'], suppressed=o['mechanism'].get('suppressed_on_expiry'), cost_present=bool(o.get('cost_breakdown')))
+    fl_model = dict(cards=[3, 2], factors=[dict(scope=(0,), values=[F(1), F(2), F(1)]), dict(scope=(1,), values=[F(1), F(3)])], evidence={}); P2 = UPlanner(fl_model, dict(model_sha256='ctrl'), 3.0, admission_stop_s=2.5, t_start=PA.tnow(), seed=1, pac=True, lifted=False); P2.M = CE.canonicalize(fl_model, P2.hclock, P2.budget); P2.orig_to_canon = {}; P2.out['mechanism']['positive_mass_witness'] = True; P2.t_mark = PA.tnow(); P2.hard = PA.tnow() - 1.0; o2 = P2.fin('COMPLETE', {}, note='control')
+    res['factorless'] = dict(outcome=o2['outcome'], published=o2['published'], enclosures=len(o2['enclosures']), radius=o2['radius_report'])
+    src = open(os.path.join(HERE, 'unified_pac_planner.py')).read(); fin_src = src[src.index('    def fin(self, oc, rows, note=None):'):src.index('    def cost_breakdown(self):')]; order_ok = fin_src.index('self.all_enclosures()') < fin_src.index('res = super().fin(') and fin_src.index('self.cost_breakdown()') < fin_src.index('res = super().fin(')
+    import tempfile; d = tempfile.mkdtemp(); o3 = dict(outcome='COMPLETE', published=1, K=1, answers=[dict(var=0, state=0, lo='1', hi='1', point='1', guarantee='EXACT')], enclosures=[dict(var=0, state=0, lo='0', hi='1')], radius_report=dict(worst=0.5), phases_s={}, mechanism={}); UP.write_result(o3, os.path.join(d, 'r.json'), 1.0, t_process_start=PA.tnow() - 5.0); disk = json.load(open(os.path.join(d, 'r.json')))
+    res['late_commit'] = dict(outcome=disk['outcome'], published=disk['published'], enclosures=len(disk.get('enclosures') or []), radius=disk.get('radius_report'))
+    ok = res['pac']['outcome'] == 'DEADLINE' and res['pac']['published'] == 0 and res['pac']['enclosures'] == 0 and res['pac']['radius'] is None and res['pac']['suppressed'] and res['pac']['cost_present'] and res['factorless']['outcome'] == 'DEADLINE' and res['factorless']['published'] == 0 and res['factorless']['enclosures'] == 0 and order_ok and res['late_commit']['outcome'] == 'DEADLINE' and res['late_commit']['enclosures'] == 0 and res['late_commit']['radius'] is None
+    rec('D21_F3_finalization_expiry_tails', ok, work_before_sample=order_ok, **res)
+
+def D22_F4_confidence_endpoints():
+    """F4: (a) two wide parent intervals whose INTERSECTION with a deterministic row is publishable -> published; (b) an exact decoder d = 1/2 makes a wide parent interval (width 0.012 > 2 eps) publishable on the original coordinate; (c) an informative interval that does not meet epsilon stays in the enclosures (diagnostic) and is not published; witness / defect rules preserved"""
+    class FakeCert:
+        def __init__(self, lo, hi): self.lo = np.array(lo); self.hi = np.array(hi)
+        def sets(self): return self.lo, self.hi
+    def fake_stream(P, queries, lo, hi, decode, label='fake'):
+        S = PA.Stream.__new__(PA.Stream); S.sid = 1; S.kind = 'original'; S.label = label; S.queries = list(queries); S.qix = {q: j for j, q in enumerate(queries)}; S.K = len(queries); S.sq = list(queries); S.qmap = {q: j for j, q in enumerate(queries)}; S.Kq = len(queries); S.eps = EPS; S.pub = {}; S.endpoints = {}; S.trace = []; S.draws = 1024; S.zero_draws = 0; S.sumX = 500.0; S.checkpoints = 0; S.t_cert = 0.0; S.measurements = []; S.witness = True; S.stage = 'READY'; S.pending = None; S.retained_bytes = 0; S.pending_rows = {}; S.defect = None; S.mech = {}; S.cert = FakeCert(lo, hi); S.decode_rows = decode; S.semantic_key = label
+        def live(): return True
+        S.live = live; S.exact_rows = lambda: {}; S.check(); return S
+    # (a) identity decode, var 0 states: parent intervals [0.30, 0.312], [0.688, 0.70] (width 0.012); deterministic retained row [0.303, 0.309] / [0.691, 0.697]: intersection width 0.006 -> publishable
+    model = dict(cards=[2, 2], factors=[dict(scope=(0, 1), values=[F(1), F(2), F(3), F(4)])], evidence={}); P = UPlanner(model, dict(model_sha256='ctrl'), 3.0, admission_stop_s=2.5, t_start=PA.tnow(), seed=1, pac=True, lifted=False); P.M = CE.canonicalize(model, P.hclock, P.budget); P.orig_to_canon = {int(P.M.orig_of[v]): v for v in range(2)}; P.mf = CM.model_features(P.M, P.clock, P.budget); P.t_mark = PA.tnow(); P.out['mechanism']['positive_mass_witness'] = True
+    P.retained = {(0, 0): (F(303, 1000), F(309, 1000)), (0, 1): (F(691, 1000), F(697, 1000))}
+    S = fake_stream(P, [(0, 0), (0, 1), (1, 0), (1, 1)], [0.300, 0.688, 0.40, 0.594], [0.312, 0.700, 0.412, 0.606], lambda rows_q, S=None: {(0, 0): rows_q[0], (0, 1): rows_q[1], (1, 0): rows_q[2], (1, 1): rows_q[3]}); P.streams = [S]; rows = P.snapshot(); enc = P.all_enclosures()
+    a = len(S.endpoints) == 4 and rows.get((0, 0)) is not None and rows[(0, 0)]['guarantee'] == 'DETERMINISTIC' and rows.get((1, 0)) is None and enc[(1, 0)] == (F(0.40), F(0.412)) and enc[(1, 1)] == (F(0.594), F(0.606))
+    # (b) exact decoder d = 1/2 on both states of class 0 of var 0: parent interval [0.60, 0.612] (width 0.012) -> decoded [0.30, 0.306] (width 0.006) publishable; var 1 class 0 -> parent [0.388, 0.40] -> [0.194, 0.20]
+    P2 = UPlanner(model, dict(model_sha256='ctrl'), 3.0, admission_stop_s=2.5, t_start=PA.tnow(), seed=1, pac=True, lifted=False); P2.M = CE.canonicalize(model, P2.hclock, P2.budget); P2.orig_to_canon = {int(P2.M.orig_of[v]): v for v in range(2)}; P2.mf = CM.model_features(P2.M, P2.clock, P2.budget); P2.t_mark = PA.tnow(); P2.out['mechanism']['positive_mass_witness'] = True
+    half = F(1, 2)
+    def dec(rows_q, S=None):
+        out = {}
+        if 0 in rows_q: L, H = rows_q[0]; out[(0, 0)] = (half * L, half * H); out[(0, 1)] = (half * L, half * H)
+        if 1 in rows_q: L, H = rows_q[1]; out[(1, 0)] = (half * L, half * H); out[(1, 1)] = (half * L, half * H)
+        return out
+    S2 = fake_stream(P2, [(0, 0), (1, 0)], [0.988, 0.988], [1.0, 1.0], dec, 'fake_exact_parent'); P2.streams = [S2]; rows2 = P2.snapshot()           # the class holds both states (class probability 1): parent width 0.012 > 2 eps; decoded [0.494, 0.5] per state (width 0.006), the row box meets the simplex
+    b = len(S2.endpoints) == 2 and len(S2.pub) == 0 and all(rows2.get(q) is not None for q in ((0, 0), (0, 1), (1, 0), (1, 1))) and rows2[(0, 0)]['guarantee'] == 'PAC_EB' and rows2[(0, 0)]['lo'] == F(0.988) / 2
+    # (c) witness False -> nothing from the stream; defect -> nothing
+    S.witness = False; rows3 = P.snapshot(); c1 = rows3.get((0, 0)) is not None and all(P.pac_enclosures().get(q) is None for q in ((1, 0), (1, 1)))     # the deterministic row still publishes var 0; the stream contributes nothing
+    S.witness = True; S.defect = 'injected'; c2 = P.pac_enclosures() == {}
+    rec('D22_F4_confidence_endpoints', a and b and c1 and c2, intersection_published=a, decoder_made_publishable=b, informative_diagnostic=(rows.get((1, 0)) is None and enc[(1, 0)] != (F(0), F(1))), witness_rule=c1, defect_rule=c2)
+
+def D23_F5_optional_stage_bounded():
+    """F5: a deliberately slow optional (lifted) preparation stage (3 s > the remaining account) is cut at the account's end (closed typed), the account is debited by the actual time only, and the primary stream completes the request"""
+    model, binding = load_mid('dg_n16_c4_clique_two'); orig = PA.LiftedStream._l_coarse_proposal
+    def slow(self, deadline):
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 3.0:
+            if time.monotonic() >= deadline: raise PA.Deadline('slow optional stage cut at its deadline')
+            time.sleep(0.02)
+        return orig(self, deadline)
+    PA.LiftedStream._l_coarse_proposal = slow
+    try: P = UPlanner(model, binding, 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True); o = P.run()
+    finally: PA.LiftedStream._l_coarse_proposal = orig
+    lift = [S for S in P.streams if S.kind == 'lifted']; prep = [x for x in o['actions'] if x.get('action') == 'prepare_stream' and 'lifted' in str(x.get('stream'))]; E_rem = next((d.get('E_remaining_s') for d in o['decisions'] if str(d.get('chosen', '')).startswith('create_lifted')), None)
+    ok = bool(lift) and 'DEADLINE' in str(lift[0].closed_reason) and prep and prep[0]['actual_s'] <= (E_rem or 0) + 0.1 and o['outcome'] == 'COMPLETE' and P.E_used <= P.E + 0.1
+    rec('D23_F5_optional_stage_bounded', ok, E=P.E, E_used=P.E_used, E_remaining_at_creation=E_rem, lifted_prepare_s=[round(x['actual_s'], 3) for x in prep], lifted_closed=(lift[0].closed_reason if lift else None), outcome=o['outcome'], published=(o['published'], o['K']))
+
+def D24_compact_kappa_and_scoped_lift_check():
+    """compact kappa: (a) the n64/card4 strong clique decoder builds with a 128-bit outward enclosure containing the exact oracle product (no exact product in production; bit cap unchanged); (b) random products of 300-bit ratios stay enclosed; (c) the scoped checker mode gives IDENTICAL entrywise quantities to the default mode and a compact R containing the exact R; (d) an invalid partition and an understated upper table are still rejected"""
+    p = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n64_c4_clique_two.uai'; model, binding = CORE.read_uai(p)
+    P = UPlanner(model, binding, 30.0, admission_stop_s=29.0, t_start=PA.tnow(), seed=1, pac=True, lifted=True); P.M = CE.canonicalize(model, P.hclock, P.budget); P.mf = CM.model_features(P.M, P.clock, P.budget); ident = P.make_identity(P.clock); P.cands.append(ident); P.canonical_charge = P.budget.live
+    cap0 = CE.BIT_CAP; c = P.discover_fast_lift_only(ident, Clock(PA.tnow() + 30, {})); R = LD.build_rows(P.M, c.classes, c.Cz, Clock(PA.tnow() + 30, {}), P.budget); kap = LD.exact_kappa(R)
+    a = R.kappa is None and R.K is not None and R.K.contains(kap) and CE.BIT_CAP == cap0 == 4096 and CE.bits(kap) > 4096 and R.K.inflation() < 2 ** -100
+    import random; rng = random.Random(11); K = LD.Compact.one(); exact = F(1)
+    for _ in range(300): q = F(rng.randrange(1, 2 ** 300), rng.randrange(1, 2 ** 300)); exact *= q; K = K.mul(LD.Compact.from_fraction(q))
+    b = K.contains(exact) and K.lo_m.bit_length() == 128 and K.hi_m.bit_length() == 128
+    model2, b2 = load('dg_n8_c4_clique_two'); clk = CE.Clock(PA.tnow() + 30, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M2 = CE.canonicalize(model2, clk, B); classes2, Cz_e = fast_stage(M2, clk, B); Cz_c = CE.check_candidate(M2, classes2, CE.unit_scales(M2), clk, B, ratio_product='compact')
+    same = Cz_e.u == Cz_c.u and Cz_e.A == Cz_c.A and Cz_e.d == Cz_c.d and Cz_e.L == Cz_c.L and Cz_e.U == Cz_c.U and Cz_e.Rf == Cz_c.Rf and Cz_e.gaps == Cz_c.gaps and Cz_e.mixed == Cz_c.mixed and Cz_e.exact == Cz_c.exact; cR = Cz_c.R is None and Cz_c.R_compact is not None and Cz_c.R_compact.contains(Cz_e.R)
+    bad_part = None
+    try: CE.check_candidate(M2, [[0, 0, 0, 2]] + classes2[1:], CE.unit_scales(M2), clk, B, ratio_product='compact')
+    except CE.Defect as e: bad_part = 'Defect'
+    Cz_bad = CE.check_candidate(M2, classes2, CE.unit_scales(M2), clk, B, ratio_product='compact'); fi = 0; cidx = max(range(len(Cz_bad.U[fi])), key=lambda i: Cz_bad.U[fi][i]); Cz_bad.U[fi][cidx] = Cz_bad.L[fi][cidx] / 10 ** 6; R2 = LD.build_rows(M2, classes2, Cz_bad, clk, B); rejected = None     # a deliberately INVALID upper table (one cell below its own lower extremum): the independent enumeration must reject it
+    try: LD.enumerate_check(M2, classes2, Cz_bad, R2)
+    except CE.Defect as e: rejected = str(e)[:60]
+    rec('D24_compact_kappa_and_scoped_lift_check', a and b and same and cR and bad_part == 'Defect' and rejected is not None and 'upper envelope violated' in rejected, n64_compact=R.K.record(), exact_oracle_kappa_bits=CE.bits(kap), exact_oracle_kappa_float=float(kap), random_product_enclosed=b, entrywise_identical=same, compact_R_contains_exact=cR, invalid_partition=bad_part, understated_upper_rejected=rejected)
+
+def D25_fixed_r_limits_attaining_laws():
+    """lemma R: on a tiny enumeration the fixed-r limits are attained by their explicit laws, M2_lift equals sum p_C^2 H_c / q_C, the ordering 1 <= M2 <= R* <= C/Z holds for both laws, and the exact-upper law's quantities are finite"""
+    import dgp2_oracle as OR; p = os.path.join(os.path.dirname(DEV), '..', '..', 'DGP2_REPAIR_AND_DIAGNOSIS', 'oracle', 'dev_inputs', 'dg_n6_c4_clique_two.uai'); p = os.path.abspath(p); model, binding = CORE.read_uai(p)
+    clk = CE.Clock(PA.tnow() + 60, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B); enum = OR.enumerate_original(M, PA.tnow() + 60); st = PA.RequestState(model, binding, EPS, DELTA); PA.structural_routes(st, PA.tnow() + 60, flags=dict(evidence_expansion=False, layered_contraction=False, ancestral_response=False))
+    S1, r1 = OR.original_stream(st, 1, PA.tnow() + 60); q1, _ = OR.original_quantities(S1, enum, M, PA.tnow() + 60); S2, r2, classes, Cz = OR.lifted_stream(M, 1, PA.tnow() + 60, B); q2, _ = OR.lifted_quantities(S2, classes, Cz, enum, M, PA.tnow() + 60)
+    ok = q1['ordering_ok'] and q2['ordering_ok'] and abs(q2['M2_lift_check'] - q2['M2']) <= 1e-9 * q2['M2'] and abs(q2['M2_at_attaining_law'] - q2['M2_min_fixed_r']) <= 1e-9 * q2['M2_min_fixed_r'] and abs(q2['R_star_at_attaining_law'] - q2['R_star_min_fixed_r']) <= 1e-9 * q2['R_star_min_fixed_r'] and q2['M2_min_fixed_r'] <= q2['M2'] * (1 + 1e-9) and q2['R_star_min_fixed_r'] <= q2['R_star'] * (1 + 1e-9) and q2['B_cap_violations'] == 0 and abs(q2['log2_C_over_Z'] - q2['decomposition_check_log2'] - q2['numerical_cap_inflation_log2']) < 1e-9 and not q1['support_failure'] and not q2['support_failure']
+    rec('D25_fixed_r_limits_attaining_laws', ok, original=dict(log2_M2=q1['log2_M2'], log2_R_star=q1['log2_R_star'], log2_C_over_Z=q1['log2_C_over_Z'], tight=q1['log2_C_tight_over_Z']), lifted=dict(log2_M2=q2['log2_M2'], M2_min=q2['M2_min_fixed_r'], M2_at_law=q2['M2_at_attaining_law'], R_min=q2['R_star_min_fixed_r'], R_at_law=q2['R_star_at_attaining_law'], decomposition=(q2['log2_B_over_ZU'], q2['log2_ZU_over_Z'], q2['log2_K_hi'], q2['log2_C_over_Z']), exact_upper=q2['exact_upper_law']))
+
+def D26_forced_stream_mode():
+    """forced-stream diagnostic: --force-stream lifted builds and advances ONLY the lifted stream with the planner-role risk delta/4 (stream index 2), never a deterministic solve; --force-stream original runs stream 1 with delta/2; outcomes are recorded, not counted"""
+    model, binding = load_mid('dg_n16_c4_clique_two')
+    P = UPlanner(model, binding, 4.0, admission_stop_s=3.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, force_stream='lifted'); o = P.run(); L = [S for S in P.streams if S.kind == 'lifted']
+    a = len(P.streams) == 1 and bool(L) and L[0].sid == 2 and F(o['risk_ledger'][0]['delta_s']) == DELTA / 4 and not any(str(x.get('action', '')).startswith('solve_') for x in o['actions']) and L[0].draws > 0
+    P2 = UPlanner(model, binding, 4.0, admission_stop_s=3.5, t_start=PA.tnow(), seed=1, pac=True, lifted=False, force_stream='original'); o2 = P2.run(); b = len(P2.streams) == 1 and P2.streams[0].kind == 'original' and F(o2['risk_ledger'][0]['delta_s']) == DELTA / 2 and P2.streams[0].draws > 0
+    rec('D26_forced_stream_mode', a and b, lifted=dict(outcome=o['outcome'], draws=(L[0].draws if L else None), delta_s=o['risk_ledger'][0]['delta_s'] if o['risk_ledger'] else None, decisions=[d.get('chosen') for d in o['decisions']][:6]), original=dict(outcome=o2['outcome'], draws=P2.streams[0].draws if P2.streams else None, delta_s=o2['risk_ledger'][0]['delta_s'] if o2['risk_ledger'] else None))
+
+CONTROLS += [D19_F1_widening_consumed_bounds, D20_F2_normalizer_ownership, D21_F3_finalization_expiry_tails, D22_F4_confidence_endpoints, D23_F5_optional_stage_bounded, D24_compact_kappa_and_scoped_lift_check, D25_fixed_r_limits_attaining_laws, D26_forced_stream_mode]
 
 
 if __name__ == '__main__':
