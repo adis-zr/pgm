@@ -60,7 +60,7 @@ def main():
     tot = round(sum(r['wall_s'] for rs in receipts.values() for r in rs), 3); ch = json.load(open(os.path.join(rd, 'CHARGES.json'))) if os.path.exists(os.path.join(rd, 'CHARGES.json')) else {}
     # CHARGES.json is written by the analyzer; the analysis / packaging / validation receipts that necessarily follow it (scope *_analysis) are reconciled separately against the ledger's end_utc
     cut = ch.get('utc'); at_analysis = round(sum(r['wall_s'] for rs in receipts.values() for r in rs if (cut is None or (r.get('end_utc') or '') <= cut)), 3); after = round(tot - at_analysis, 3)
-    chk('charges_reconcile_ledger', abs((ch.get('total_s') or -1) - at_analysis) < 0.01, ledger_total_at_analysis_s=at_analysis, charges_total_s=ch.get('total_s'), post_analysis_receipts_s=after, ledger_total_s=tot, note='post-analysis receipts are the analyzer / report / packaging / validation runs themselves (scope *_analysis), charged after CHARGES.json was written'); chk('charges_within_ceiling', tot <= 7200, total_s=tot)
+    chk('charges_reconcile_ledger', abs((ch.get('total_s') or -1) - at_analysis) < 0.01, ledger_total_at_analysis_s=at_analysis, charges_total_s=ch.get('total_s'), post_analysis_receipts_s=after, ledger_total_s=tot, note='post-analysis receipts are the analyzer / report / packaging / validation runs themselves (scope *_analysis), charged after CHARGES.json was written'); ceiling = (json.load(open(os.path.join(rd, 'BUDGET_DECLARATION.json'))).get('ceiling_s') if os.path.exists(os.path.join(rd, 'BUDGET_DECLARATION.json')) else None) or 7200; chk('charges_within_ceiling', tot <= ceiling, total_s=tot, ceiling_s=ceiling)
     # RUN_MANIFEST: every planned cell has an actual cell or an explicit reason
     rm = json.load(open(os.path.join(rd, 'RUN_MANIFEST.json'))) if os.path.exists(os.path.join(rd, 'RUN_MANIFEST.json')) else None
     if rm: missing = [c for c in rm.get('planned', []) if not c.get('actual') and not c.get('reason')]; chk('run_manifest_complete', not missing, missing=missing[:10], planned=len(rm.get('planned', [])))
@@ -70,13 +70,13 @@ def main():
         for sub, cnt in (rs.get('completions_by_sub') or {}).items():
             if sub in per_sub: chk('results_counts_match_cells:' + sub, cnt.get('cells') == per_sub[sub]['cells'] and cnt.get('complete') == per_sub[sub]['complete'], results=cnt, cells=per_sub[sub])
     # DGP3+: the EXECUTED harness / analyzer snapshot (git bundle of the branch + hashes of the executed files) and a replay command must be in the packet (DGP2 review, packaging finding)
-    if fr.get('experiment', '').startswith(('DGP3', 'DGP4')):
+    if fr.get('experiment', '').startswith(('DGP3', 'DGP4', 'DGP5')):
         hs = os.path.join(rd, 'harness'); bundle = glob.glob(os.path.join(hs, '*.bundle')); ex = os.path.join(hs, 'EXECUTED_HARNESS_SHA256.json')
         chk('executed_harness_snapshot_present', bool(bundle) and os.path.exists(ex), bundle=[os.path.basename(b) for b in bundle])
         if os.path.exists(ex):
             exh = json.load(open(ex)); bad = [f for f, h in exh.get('files', {}).items() if not os.path.exists(os.path.join(hs, 'files', os.path.basename(f))) or sha(os.path.join(hs, 'files', os.path.basename(f))) != h]
             chk('executed_harness_files_match_hashes', not bad, bad=bad)
-        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and ('run_dgp3.py' in open(rp).read() or 'run_dgp4.py' in open(rp).read()) and 'harness/files' in open(rp).read())
+        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and any(('run_dgp%d.py' % k) in open(rp).read() for k in (3, 4, 5)) and 'harness/files' in open(rp).read())
     # unsupported claims: forbidden phrases in REPORT / THEORY_RETURN
     for f in ('REPORT.md', 'THEORY_RETURN.md', 'START_HERE.md'):
         p = os.path.join(rd, f)

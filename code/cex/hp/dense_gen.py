@@ -25,8 +25,10 @@ TOPOS = ('reg6', 'er50', 'clique'); SCALE_NAME = {F(1, 2): 'half', F(2): 'two', 
 def seed_of(tag, n, card, topo, scale):
     """per-input seed: first eight SHA-256 bytes (unsigned big-endian) of the UTF-8 tag string feeding random.Random. DGP1-3 tags: '<tag>|<n>|<card>|<topo>|<scale>'. DGP4 tags (brief section 6 / 7, verbatim):
     'DGP4-EVAL4|<n>|<topology>|<coupling>|c4' and 'DGP4-ORACLE4|<n>|<topology>|<coupling>|c4' with topology in {ER, clique} and coupling the rational string ('1/2', '2')"""
-    if tag in ('DGP4-EVAL4', 'DGP4-ORACLE4'):
+    if tag in ('DGP4-EVAL4', 'DGP4-ORACLE4', 'DGP5-EVAL5'):
         assert card == 4; key = '%s|%d|%s|%s|c4' % (tag, n, {'er50': 'ER', 'clique': 'clique'}[topo], str(F(scale)))
+    elif tag == 'DGP5-ORACLE5':                                                                         # DGP5 brief section 12: 'DGP5-ORACLE5|n|topology|two|c4' (coupling 2 written as the word 'two')
+        assert card == 4 and F(scale) == 2; key = '%s|%d|%s|two|c4' % (tag, n, {'er50': 'ER', 'clique': 'clique'}[topo])
     else: key = '%s|%d|%d|%s|%s' % (tag, n, card, topo, scale)
     return int.from_bytes(hashlib.sha256(key.encode('utf-8')).digest()[:8], 'big')
 
@@ -115,13 +117,15 @@ def exact_reduction(model):
     return dict(variables_reduced=len(red), detail=red[:16], retained_variables=len(M.cards), zero_mass=M.zero_mass)
 
 
-TAG_ORACLE_EVAL = 'DGP2-ORACLE-EVAL-1'; TAG_ORACLE_DEV = 'DGP2-ORACLE-DEV-1'; TAG_EVAL2 = 'DENSE-GENERIC-PAC-EVAL-2'; TAG_EVAL3 = 'DENSE-GENERIC-PAC-EVAL-3'; TAG_EVAL4 = 'DGP4-EVAL4'; TAG_ORACLE4 = 'DGP4-ORACLE4'
+TAG_ORACLE_EVAL = 'DGP2-ORACLE-EVAL-1'; TAG_ORACLE_DEV = 'DGP2-ORACLE-DEV-1'; TAG_EVAL2 = 'DENSE-GENERIC-PAC-EVAL-2'; TAG_EVAL3 = 'DENSE-GENERIC-PAC-EVAL-3'; TAG_EVAL4 = 'DGP4-EVAL4'; TAG_ORACLE4 = 'DGP4-ORACLE4'; TAG_EVAL5 = 'DGP5-EVAL5'; TAG_ORACLE5 = 'DGP5-ORACLE5'
 DGP4_TAGS = (TAG_EVAL4, TAG_ORACLE4)
 
 
 def panel(kind):
     if kind == 'oracle_eval': return TAG_ORACLE_EVAL, [(n, c, t, s) for (n, c) in ((8, 2), (12, 2), (6, 4), (8, 4)) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]           # DGP2 brief section 4: 16 oracle inputs, each <= 2^16 fine states
     if kind == 'oracle_dev': return TAG_ORACLE_DEV, [(n, c, t, s) for (n, c) in ((6, 2), (8, 2), (5, 4), (6, 4)) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]
+    if kind == 'eval5': return TAG_EVAL5, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP5 brief section 12: 8 fresh production inputs (seed string DGP5-EVAL5|n|ER/clique|coupling|c4; recipe unchanged)
+    if kind == 'oracle5': return TAG_ORACLE5, [(n, 4, t, F(2)) for n in (6, 8) for t in ('er50', 'clique')]                                                                                  # DGP5 brief section 12: 4 fresh strong small oracle models (coupling 2 only)
     if kind == 'eval4': return TAG_EVAL4, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP4 brief section 6: 8 fresh production inputs (seed string DGP4-EVAL4|n|ER/clique|coupling|c4; recipe unchanged)
     if kind == 'oracle4': return TAG_ORACLE4, [(n, 4, t, s) for n in (6, 8) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                        # DGP4 brief section 7: 8 fresh small oracle models
     if kind == 'eval3': return TAG_EVAL3, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP3 PROTOCOL section 3: 8 fresh production inputs (new tag -> new seed domain; recipe unchanged)
@@ -145,4 +149,4 @@ def generate(kind, outdir):
 
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser(); ap.add_argument('kind', choices=['eval', 'dev', 'devmid', 'oracle_eval', 'oracle_dev', 'eval2', 'eval3', 'eval4', 'oracle4']); ap.add_argument('outdir'); a = ap.parse_args(); generate(a.kind, a.outdir)
+    ap = argparse.ArgumentParser(); ap.add_argument('kind', choices=['eval', 'dev', 'devmid', 'oracle_eval', 'oracle_dev', 'eval2', 'eval3', 'eval4', 'oracle4', 'eval5', 'oracle5']); ap.add_argument('outdir'); a = ap.parse_args(); generate(a.kind, a.outdir)

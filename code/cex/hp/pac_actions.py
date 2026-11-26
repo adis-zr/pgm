@@ -206,12 +206,18 @@ class Stream:
         self.pub = {}; self.trace = []; self.draws = 0; self.zero_draws = 0; self.sumX = 0.0; self.sumX2 = 0.0; self.maxX = 0.0; self.maxlogX = -inf; self.t_sample = 0.0; self.t_cert = 0.0; self.t_prep = 0.0; self.batches = 0; self.abandoned = 0
         self.pending = None; self.checkpoints = 0; self.last_width = None; self.retained_bytes = 0; self.stream_refusal = None; self.range_refused = []; self.cdead = None; self.measurements = []; self.endpoints = {}
     # ---- helpers
+    OWNED_ATTRS = ('fine_bytes', 'grouped_bytes', 'rmax_bytes', 'joint_bytes')                 # constructor-account charges owned by a stream (sampler log tables live under the memory plan, not this account)
+    def _drop_owned(self):
+        """DGP5 repair (finding 3): every reference to a constructor-owned array is dropped BEFORE its charge is released, so a released charge never leaves a reachable array (base Stream: nothing owned)"""
+        return []
     def _close(self, reason):
-        self.stage = 'CLOSED'; self.closed_reason = reason; self.mech['closed'] = reason; B_ = self.opts.get('budget_obj')
+        self.stage = 'CLOSED'; self.closed_reason = reason; self.mech['closed'] = reason; B_ = self.opts.get('budget_obj'); self.pending = None
+        dropped = self._drop_owned(); released = 0
         if B_ is not None:
-            for attr in ('fine_bytes', 'grouped_bytes', 'rmax_bytes'):                         # constructor-account charges (sampler log tables live under the memory plan, not this account)
+            for attr in self.OWNED_ATTRS:
                 n = getattr(self, attr, 0)
-                if n: B_.release(n); setattr(self, attr, 0)
+                if n: B_.release(n); setattr(self, attr, 0); released += n
+        self.mech['close_release'] = dict(released_bytes=released, dropped=dropped, rule='references dropped before release (DGP5 finding 3)')
         return 'CLOSED'
     def ready(self): return self.stage == 'READY'
     def live(self): return self.stage not in ('COMPLETE', 'CLOSED')
@@ -434,8 +440,9 @@ class Stream:
         self.sep_pos = np.array([self.pos[x] for (x, v) in self.sep_q], dtype=np.int64); self.sep_val = np.array([v for (x, v) in self.sep_q], dtype=np.int64)
         pac_peak = self.base_bytes + self.plan['log_bytes'] + min(IG.RECOVERY_BYTE_BUDGET, 1 << 62) + IG.BATCH_BUDGET; cache_allow = (max(0, min(IG.RESPONSE_CACHE_BUDGET, IG.USABLE_BYTES - pac_peak)) if self.shared_blocks else 0)
         self.rcache = dict(entries={}, bytes=0, budget=cache_allow); self.retained_bytes = self.base_bytes + self.plan['log_bytes'] + self.bytes_used + batch_used * cert_per_draw + fixed_ws
+        fp = self.proposal_fingerprint(deadline=deadline, budget=o.get('budget_obj'))                # DGP5 repair (finding 4): the fingerprint traversal (admitted per chunk, polled) runs BEFORE the final readiness poll
         if tnow() >= deadline: raise Deadline('sampler stage (before READY)')                       # RF2: READY only after a post-stage poll
-        self.stage = 'READY'; self.fingerprint = self.proposal_fingerprint()
+        self.stage = 'READY'; self.fingerprint = fp
     def _flat_index(self, Sb, i):
         idx = np.zeros(Sb.shape[0], dtype=np.int64)
         for u in self.bscope[i]: idx += Sb[:, self.pos[u]] * self.bstr[i][u]
@@ -479,15 +486,26 @@ class Stream:
             self.abandoned += 1; self.pending = None; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('NUMERIC_RANGE_REFUSED in a batch: %s; %d committed batches retained' % (str(e)[:120], self.batches))
         except AssertionError as e:
             self.abandoned += 1; self.pending = None; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a batch (rows withheld): %s' % str(e)[:120])
-    def proposal_fingerprint(self):
-        """sha256 over the sampler's log tables, the cap, the risk, the response inventory and (lifted) the decoder counts; DGP4: + the RMAX profile / plan hash / bound kind when present: the frozen law of this stream"""
+    FP_CHUNK = 1 << 17                                                                            # fingerprint chunk: 2^17 doubles = 1 MiB per transient copy
+    def _fp_table(self, h, LM, deadline, budget, what):
+        """hash one table in bounded chunks: each chunk's byte copy is ADMITTED against the constructor account before it is made and released after; the deadline is polled per chunk (DGP5 finding 4)"""
+        flat = LM.reshape(-1); n = flat.size
+        for off in range(0, max(n, 1), self.FP_CHUNK):
+            part = flat[off:off + self.FP_CHUNK]; c = budget.charge(part.nbytes + 64, 'fingerprint chunk of %s' % what) if budget is not None else 0
+            try: h.update(part.tobytes())
+            finally:
+                if c: budget.release(c)
+            if deadline is not None and tnow() >= deadline: raise Deadline('proposal fingerprint (%s, entries %d..)' % (what, off))
+    def proposal_fingerprint(self, deadline=None, budget=None):
+        """sha256 over the sampler's log tables, the cap, the risk, the response inventory and (lifted) the decoder counts; DGP4: + the RMAX profile / plan hash / bound kind when present: the frozen law of this stream.
+        DGP5 (finding 4): with `deadline` / `budget` the traversal is polled per chunk and every transient copy admitted (the same hash either way)"""
         import hashlib; h = hashlib.sha256()
         rm = (getattr(self, 'mech', {}) or {}).get('rmax')
         if rm: h.update(json.dumps(dict(bound_kind=rm.get('bound_kind'), profile=rm.get('profile'), plan_sha256=rm.get('plan_sha256'), stages_done=rm.get('stages_done')), sort_keys=True).encode())
         for v, tabs in (self.mbp.prep or []):
             h.update(str(v).encode())
             if tabs:
-                for LM, strides, scope in tabs: h.update(LM.tobytes()); h.update(str(scope).encode())
+                for LM, strides, scope in tabs: self._fp_table(h, LM, deadline, budget, 'sampler table of %s' % (v,)); h.update(str(scope).encode())
         h.update(repr((self.logU_capf, self.cap_tol, self.alpha, self.eps_num, getattr(self, 'E_tot', None), len(self.sq))).encode())
         R = getattr(self, 'rows', None)
         if R is not None:
@@ -574,15 +592,35 @@ class LiftedStream(Stream):
     def __init__(self, sid, M_fine, M_par, par_stages, classes, Cz, seed, eps, delta_s, opts, label=None, scale_to_original=None, envelope='G1'):
         model = canon_to_model(M_par); queries = [(v, a) for v in range(len(M_fine.cards)) for a in range(M_fine.cards[v])]
         super().__init__(sid, 'lifted', model, queries, seed, eps, delta_s, opts, label=label or 'lifted', scale_to_original=(M_par.scalar if scale_to_original is None else scale_to_original)); self.M_fine = M_fine; self.M_par = M_par; self.par_stages = par_stages; self.classes = classes; self.Cz = Cz; self.n_par = len(M_par.cards); self.envelope = envelope; self.grouped = None; self.mech['envelope'] = envelope
-        self.mech.update(parent_exact_stages=len(par_stages), coarse_cards=list(Cz.ccards), parent_cards=list(M_par.cards)); self.rmax = None; self.rmax_bytes = 0; self.rmax_midpoint = None; self.bound_kind = ('target_over_actual_decoder' if envelope == 'RMAX' else 'target_over_upper_times_ideal_decoder'); self.mech['bound_kind'] = self.bound_kind
+        self.mech.update(parent_exact_stages=len(par_stages), coarse_cards=list(Cz.ccards), parent_cards=list(M_par.cards)); self.rmax = None; self.rmax_bytes = 0; self.rmax_midpoint = None; self.rmax_allowance_end = None; self.bound_kind = ('target_over_actual_decoder' if envelope == 'RMAX' else 'target_over_upper_times_ideal_decoder'); self.mech['bound_kind'] = self.bound_kind
     def stage_features(self, st):
         return dict(n=self.n_par, entries=sum(len(x['values']) for x in self.model['factors']), K=self.K, coarse_states=sum(self.Cz.ccards), kind='lifted')
+    def _drop_owned(self):
+        """DGP5 (finding 3): the fine float / log tables, the grouped tables and the RMAX compile object (its active / closed / packed arrays) are dereferenced before their charges are released; the committed certificate,
+        the decoder rows (still charged; counted by the ledger identity), the sampler log tables (memory plan) and every diagnostic record stay"""
+        dropped = []
+        for attr in ('fine', 'fLM', 'fstr', 'fscope'):
+            if getattr(self, attr, None): setattr(self, attr, []); dropped.append(attr)
+        if getattr(self, 'grouped', None) is not None: self.grouped = None; dropped.append('grouped')
+        comp = getattr(self, 'rmax', None)
+        if comp is not None: comp.active = []; comp.closed = []; comp.packed = []; self.rmax = None; dropped.append('rmax')
+        return dropped
     def prepare(self, deadline, cdead=None, until=None):
-        until = deadline if until is None else min(until, deadline); t0 = tnow(); eff = until if self.envelope == 'RMAX' else deadline     # DGP4: the RMAX route's stages run against the EFFECTIVE preparation deadline min(hard, allowance)
-        if self.envelope == 'RMAX' and self.rmax_midpoint is None: self.rmax_midpoint = tnow() + 0.5 * max(0.0, eff - tnow()); self.mech['rmax_allowance'] = dict(entry_offset_s=0.0, effective_allowance_s=eff - tnow(), midpoint_s=0.5 * max(0.0, eff - tnow()))   # ONE midpoint, set once at entry
+        until = deadline if until is None else min(until, deadline); t0 = tnow()
+        if self.envelope == 'RMAX':
+            # DGP4: the RMAX route's stages run against the EFFECTIVE preparation deadline min(hard, allowance). DGP5 repair (finding 5): the allowance has ONE stored ABSOLUTE end, fixed at the first entry together with
+            # the midpoint; a later call with a longer `until` cannot reopen it; an exhausted allowance before READY is a TYPED refusal (the primary is preserved), never a YIELD that resumes later
+            if self.rmax_allowance_end is None: self.rmax_allowance_end = until; self.mech['rmax_allowance'] = dict(entry_offset_s=0.0, effective_allowance_s=until - tnow(), midpoint_s=0.5 * max(0.0, until - tnow()), absolute_end=self.rmax_allowance_end, rule='absolute end + midpoint persist across calls (DGP5 finding 5)')
+            if self.rmax_midpoint is None: self.rmax_midpoint = tnow() + 0.5 * max(0.0, until - tnow())                  # ONE midpoint, set once (an injected earlier midpoint is honoured: control D41)
+            eff = min(deadline, self.rmax_allowance_end); until = min(until, self.rmax_allowance_end)
+            if self.stage not in ('READY', 'COMPLETE', 'CLOSED') and tnow() >= self.rmax_allowance_end:
+                self.measurements.append(dict(kind='lifted_stage', stage=self.stage, seconds=0.0, completed=False, censored='ALLOWANCE', features=self.stage_features(self.stage))); return self._close('ALLOWANCE in lifted stage %s: the optional preparation allowance (absolute end) expired before READY (not reopened)' % self.stage)
+        else: eff = deadline
         try:
             while self.stage not in ('READY', 'COMPLETE', 'CLOSED'):
-                if tnow() >= until: return 'YIELD'
+                if tnow() >= until:
+                    if self.envelope == 'RMAX' and tnow() >= self.rmax_allowance_end: self.measurements.append(dict(kind='lifted_stage', stage=self.stage, seconds=0.0, completed=False, censored='ALLOWANCE', features=self.stage_features(self.stage))); return self._close('ALLOWANCE in lifted stage %s: the optional preparation allowance (absolute end) expired between stages (not reopened)' % self.stage)
+                    return 'YIELD'
                 t0 = tnow(); st = self.stage
                 if st == 'INIT': self._l_decoder(eff)
                 elif st == 'INTEGERIZED': self._l_coarse_proposal(eff)
@@ -629,7 +667,7 @@ class LiftedStream(Stream):
             comp.build_sources(); groups, _ = GE.plan_groups(self.M_par, self.Cz, 'G2'); comp.build_seeds(groups); comp.set_order(); self.ph['rmax_sources_seeds'] = tnow() - t0
             if tnow() >= deadline: raise Deadline('RMAX after sources / seeds')
             t1 = tnow(); comp.run_stages(self.rmax_midpoint if self.rmax_midpoint is not None else deadline); self.ph['rmax_stages'] = tnow() - t1
-            t2 = tnow(); comp.closure(); comp.pack(); self.ph['rmax_closure_pack'] = tnow() - t2; pk = RM.check_packing(comp.closed, comp.packed)
+            t2 = tnow(); comp.closure(); comp.pack(); self.ph['rmax_closure_pack'] = tnow() - t2; pk = RM.check_packing(comp.closed, comp.packed, clk)         # DGP5 (finding 1): closure / packing / checker admitted + polled
             if not pk['ok']: raise CE.Defect('RMAX packing check failed: %s' % pk)
             if not comp.record()['checker']['all_ok']: raise CE.Defect('RMAX stage checker rejected a stage')
             if tnow() >= deadline: raise Deadline('RMAX after closure / packing')
@@ -639,7 +677,7 @@ class LiftedStream(Stream):
                 scope = tuple(a >> 1 for a in P['axes']); assert tuple(sorted(scope)) == scope and len(set(scope)) == len(scope)
                 if (max(int(x).bit_length() for x in P['ints'].reshape(-1)) if P['ints'].size else 0) > 4096: raise StreamRefused('BITS', 'a packed RMAX mantissa exceeds the bit cap')
                 if abs(P['E']) >= 1 << 40: raise StreamRefused('NUMERIC_RANGE', 'a packed RMAX exponent %d is out of the admitted range' % P['E'])
-                fn = BR.Fn(scope, np.asarray(P['ints'], dtype=object), [P['tid']], []); ft = IG.ft_from_int(fn, ccards); ft.e += int(P['E']); E_pack += int(P['E']); blocks.append(ft); touched |= set(scope)
+                comp.owned[0] += B_.charge(int(P['ints'].size) * 8 + 128, 'RMAX adapter float table %d' % P['tid']); fn = BR.Fn(scope, np.asarray(P['ints'], dtype=object), [P['tid']], []); ft = IG.ft_from_int(fn, ccards); ft.e += int(P['E']); E_pack += int(P['E']); blocks.append(ft); touched |= set(scope)     # DGP5 (finding 1): the adapter buffer admitted before allocation, owned by the compile object
             for v in range(len(ccards)):
                 if v not in touched: blocks.append(IG.ft_from_int(BR.Fn((v,), np.ones(ccards[v], dtype=object), [], []), ccards))
             if not blocks: raise StreamRefused('SUPPORT', 'RMAX produced no coarse table (no coarse variable)')
@@ -698,8 +736,9 @@ class LiftedStream(Stream):
                          cap_units=dict(cap_Wint_log2=cap_Wint_log2, unit='W_int = scale_F x W_par (parent canonical target without its scalar); X = W_int(z) / (2^cap_Wint_log2 q(z))', cap_original_units_log2=(cap_Wint_log2 - float(IG.lg(F(self.scale_F)))) if self.scale_F > 0 else None, legacy_logU_capf_plus_E_tot=self.logU_capf + self.E_tot, note='DGP2 records reported logU_capf + E_tot (a unit error of E_fine - 2 E_U bits); B / Z and Z_U / Z need an independent denominator; not computed in production'))
         self.alpha = float(self.delta_s) / Kq; self.cert = IG.Certificate(Kq, self.alpha, self.eps_num, float(self.eps), o['schedule']); self.zcert = IG.ZCertificate(float(self.delta_s)); self.mech['alpha_per_coordinate'] = self.alpha
         self.retained_bytes += self.plan['log_bytes'] + batch_used * cert_per_draw
+        fp = self.proposal_fingerprint(deadline=deadline, budget=o.get('budget_obj'))                # DGP5 repair (finding 4): fingerprint (admitted per chunk, polled) BEFORE the final readiness poll
         if tnow() >= deadline: raise Deadline('lifted sampler stage (before READY)')               # RF2
-        self.stage = 'READY'; self.fingerprint = self.proposal_fingerprint()
+        self.stage = 'READY'; self.fingerprint = fp
     def _flat_fine(self, z, i):
         idx = np.zeros(z.shape[0], dtype=np.int64)
         for u in self.fscope[i]: idx += z[:, u] * self.fstr[i][u]
