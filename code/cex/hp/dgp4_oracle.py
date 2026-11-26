@@ -101,7 +101,12 @@ def main():
             #      B_U(q) = max_c U(c) / q(c) (checked at EVERY coarse assignment: U(c) <= B_U q(c)); sum U is the MINIMUM of that cap over laws (attained by q_U = U / sum U) and is NOT the cap for q_T -- the DGP4
             #      frozen harness replayed q_T under sum U ('required_by_*_sumU_over_Z0'): that column is RELABELLED an oracle-only numerical-cap counterfactual (valid as a target cap since T <= sum U; not certifiable through U)
             laws = {}
-            if 'counterfactual_laws' not in out['replays'] or not O3.complete_record(out['replays']['counterfactual_laws']):
+            cf_prev = out['replays'].get('counterfactual_laws') or {}; cf_complete = bool(cf_prev) and O3.complete_record(cf_prev) and ('required_by_RMAX_V4096_U' in ((cf_prev.get('q_T_cap_optimal') or {}).get('caps') or {}))
+            if not cf_complete:
+                for key, env, prof_ in [('G2', 'G2', PROFILE), ('RMAX_V4096', 'RMAX', dict(PROFILE, rmax_profile=dict(V=4096, fanin=16, mantissa_bits=128)))]:     # the retained envelopes U are read from LIVE streams: rebuild deterministically when a --continue run reused the constructions
+                    if key not in streams and out['constructions'].get(key, {}).get('prepare') == 'READY':
+                        S = PA.LiftedStream(2, M, M, [], classes, Cz, 1, EPS, DELTA / 4, dict(prof_, budget_obj=B), envelope=env)
+                        if S.prepare(deadline) == 'READY': streams[key] = S
                 eps_num = streams['RMAX_V4096'].eps_num if 'RMAX_V4096' in streams else (streams['G2'].eps_num if 'G2' in streams else 1e-11); W0 = [w / M.scalar for w in W]
                 qT = {c: t[c] / T for c in t}; sA = {c: O2.sqrt_up(H2[c]) for c in H2}; sA_sum = sum(sA.values()); q2 = {c: sA[c] / sA_sum for c in sA}        # q_T = t / T (cap-optimal; lemma 5) and q_2 proportional to sqrt(A_c) (second-moment-optimal; lemma R of DGP2)
                 Uf = {k: ((streams[k].upper_weight_fn()) if k in streams else None) for k in ('G2', 'RMAX_V4096')}
