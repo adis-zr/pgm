@@ -29,36 +29,40 @@ import pac_actions as PA
 import integrated as IG
 import joint_stream as JS
 import joint_proposal as JP
-VERSION = 'unified-pac-planner v0.9 (DGP5 25 Nov 2026: six DGP4-review repairs (bounded packing diagnostics + guarded comparisons + admission / polls of closure / packing / checker / adapter / fingerprint; exact-once checker inventory + bucket partition + closure / packing inventories; references dropped before charge release; fingerprint before the final readiness poll; ONE absolute optional allowance end that never reopens; strengthened D37 / D38 / D39 / D41); --joint seed|joint|cap_only|moment_only = the direct conditional proposal (joint_stream.JointStream: checked SUM / MAX seed with D = 2^40 dyadic conditionals, 1,024-draw pilot committed to ONE Certificate, <= 2 bounded MAX / SUM coefficient updates under the law\'s own checked cap / moment witnesses with the payback rule; offered in the optional slot instead of a not-yet-created RMAX stream when >= 8 s of work remain and shared admission passes; allowance min(E_remaining, 0.2 x work allowance, 4 s) with one absolute end) | v0.8 (DGP4 25 Nov 2026: R1 sorted-scope singleton tables; R2 owned construction charges released on every failure (grouped tables, decoder rows, RMAX); R3 action / phase sums before the authoritative sample; --envelope RMAX = residual MAX compilation on W_0 / r with the actual dyadic decoder, bound kind target_over_actual_decoder, production profile V 4096 / fan-in 16 / 128-bit, one midpoint allowance policy) | v0.7 (DGP3 25 Nov 2026: RF1 no variable-sized finalization work after the authoritative sample; RF2 deadline-aware admitted sampler / fine-table / grouped-table preparation with READY after a poll; RF3 cap metadata in W_int units 2^(logU_capf + E_U); --envelope G1|G2|G3 grouped-factor upper envelope for the lifted stream (lemma G); budget_obj on every stream) over v0.6 (DGP2 25 Nov 2026: F1 consumed widening incl. 5u|E_tot| + constant terms; F2 exact normalizer scale to the original on every stream exit; F3 finalization before the authoritative sample with expiry suppression + serialization guard; F4 valid confidence endpoints retained beyond the epsilon mask, decoded / intersected / tested on original coordinates; F5 charged optional stages cut at the allowance; compact 128-bit kappa enclosure, K_hi in the cap; lift-only check through the scoped compact ratio-product mode) over v0.5.1 (2026-11-25 post-freeze repair: streams publish their deterministically recovered EXACT rows (constant blocks, factorless) with the witness; the lifted cap constant in the log domain (no float of a huge rational); numeric exceptions and certificate defects inside a stream close THAT stream typed and recorded, never the request; a fully published stream is not advanced) over v0.5 (2026-11-24, DENSE_GENERIC_PAC_INTEGRATION_1: accepted structural routes + deterministic representations + up to three statistical streams under one cumulative exploration account; lifted upper-envelope proposal optional)'
+import global_stream as GS
+VERSION = 'unified-pac-planner v0.10 (DGP6 26 Nov 2026: nine DGP5-review repairs (independent source binding; ownership of seed_prop / pairs / candidates + exception-safe interaction scores + idempotent close; admitted replication / intersection / counts; transactional epoch + batch commits with the final poll after every variable-size step; bounded compact SUM; rebuilt S / H / d / J comparators; affine C grid in the DGP5 replay utility; epoch-local weight diagnostics; packet-relative input resolution); --global seed|global|g0_global|cap_only|moment_only = the direct conditional proposal with ONE bounded GLOBAL optimization attempt (global_stream.GlobalStream: G1 = seed graph + <= 1 extra parent per variable, two structural scalar circuits (cap MAX / moment SUM-MAX), whole-workspace admission, checked same-law reference, two-phase L-BFGS-B p = 16 / 64 <= 32 evaluations inside <= 40 %% of the remaining allowance, 17-point probability segment, ONE exactly quantized candidate certified independently through the compact circuits, promotion at >= 1 %% lower J vs the best unchanged-law comparator, <= 2 activation batches); the common primary-probe / protection policy for the unified optional slot (REPAIRED / SEED / GLOBAL: once the primary is READY and before the first optional constructor, <= 4 ordinary batches ending at the first boundary >= 0.10 s with checks after the first and last; a finite affordable forecast advances the primary and defers optional constructors; disabled below 8 s of remaining work; --old-policy restores the DGP5 scheduling) | v0.9 (DGP5 25 Nov 2026: six DGP4-review repairs (bounded packing diagnostics + guarded comparisons + admission / polls of closure / packing / checker / adapter / fingerprint; exact-once checker inventory + bucket partition + closure / packing inventories; references dropped before charge release; fingerprint before the final readiness poll; ONE absolute optional allowance end that never reopens; strengthened D37 / D38 / D39 / D41); --joint seed|joint|cap_only|moment_only = the direct conditional proposal (joint_stream.JointStream: checked SUM / MAX seed with D = 2^40 dyadic conditionals, 1,024-draw pilot committed to ONE Certificate, <= 2 bounded MAX / SUM coefficient updates under the law\'s own checked cap / moment witnesses with the payback rule; offered in the optional slot instead of a not-yet-created RMAX stream when >= 8 s of work remain and shared admission passes; allowance min(E_remaining, 0.2 x work allowance, 4 s) with one absolute end) | v0.8 (DGP4 25 Nov 2026: R1 sorted-scope singleton tables; R2 owned construction charges released on every failure (grouped tables, decoder rows, RMAX); R3 action / phase sums before the authoritative sample; --envelope RMAX = residual MAX compilation on W_0 / r with the actual dyadic decoder, bound kind target_over_actual_decoder, production profile V 4096 / fan-in 16 / 128-bit, one midpoint allowance policy) | v0.7 (DGP3 25 Nov 2026: RF1 no variable-sized finalization work after the authoritative sample; RF2 deadline-aware admitted sampler / fine-table / grouped-table preparation with READY after a poll; RF3 cap metadata in W_int units 2^(logU_capf + E_U); --envelope G1|G2|G3 grouped-factor upper envelope for the lifted stream (lemma G); budget_obj on every stream) over v0.6 (DGP2 25 Nov 2026: F1 consumed widening incl. 5u|E_tot| + constant terms; F2 exact normalizer scale to the original on every stream exit; F3 finalization before the authoritative sample with expiry suppression + serialization guard; F4 valid confidence endpoints retained beyond the epsilon mask, decoded / intersected / tested on original coordinates; F5 charged optional stages cut at the allowance; compact 128-bit kappa enclosure, K_hi in the cap; lift-only check through the scoped compact ratio-product mode) over v0.5.1 (2026-11-25 post-freeze repair: streams publish their deterministically recovered EXACT rows (constant blocks, factorless) with the witness; the lifted cap constant in the log domain (no float of a huge rational); numeric exceptions and certificate defects inside a stream close THAT stream typed and recorded, never the request; a fully published stream is not advanced) over v0.5 (2026-11-24, DENSE_GENERIC_PAC_INTEGRATION_1: accepted structural routes + deterministic representations + up to three statistical streams under one cumulative exploration account; lifted upper-envelope proposal optional)'
 SLICE_S = 0.5; SLICE_FRAC = 16; MAX_STREAMS = 3; EXPLORATION_FRAC = 4; CONSTRUCT_SHARE = 0.5; FINAL_RESERVE_S = CM.FINALIZE_RESERVE_S
 JOINT_OFFER_MIN_WORK_S = JP.PROFILE_PRODUCTION['offer_min_work_s']; JOINT_ALLOWANCE_FRAC = JP.PROFILE_PRODUCTION['allowance_frac']; JOINT_ALLOWANCE_MAX_S = JP.PROFILE_PRODUCTION['allowance_max_s']        # DGP5 brief section 3 (frozen)
+PROBE_POLICY_MIN_WORK_S = 8.0; PROBE_SLICE_S = 0.10; PROBE_MAX_BATCHES = 4                                   # DGP6 brief section 4: the common primary-probe / protection policy (frozen)
 PAC_OPTS = dict(table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, batch=1024, schedule='targeted', crosscheck=True, exact_route=True)        # the accepted baseline settings (run_paired.FROZEN)
 
 
 class UPlanner(UP.Planner):
-    def __init__(self, model, binding, budget_s, eps=UP.EPS_DEFAULT, delta=F(1, 10 ** 6), admission_stop_s=19.0, t_start=None, seed=1, pac=True, lifted=False, sched='P1', rates='R1', force_stream=None, envelope='G1', joint=None):
-        super().__init__(model, budget_s, eps=eps, admission_stop_s=admission_stop_s, t_start=t_start, policy='unified', sched=sched, rates=rates); self.force_stream = force_stream; self.envelope = envelope; self.joint = joint; self.joint_refused = None
+    def __init__(self, model, binding, budget_s, eps=UP.EPS_DEFAULT, delta=F(1, 10 ** 6), admission_stop_s=19.0, t_start=None, seed=1, pac=True, lifted=False, sched='P1', rates='R1', force_stream=None, envelope='G1', joint=None, glob=None, old_policy=False):
+        super().__init__(model, budget_s, eps=eps, admission_stop_s=admission_stop_s, t_start=t_start, policy='unified', sched=sched, rates=rates); self.force_stream = force_stream; self.envelope = envelope; self.joint = joint; self.joint_refused = None; self.glob = glob; self.old_policy = old_policy; self.primary_probe = None; self.policy_deferrals = 0
+        assert not (joint and glob), 'one optional direct proposal per request (--joint or --global)'
         self.delta = delta; self.seed = seed; self.pac = pac; self.lifted = lifted; self.budget_s = budget_s; self.binding = binding
         self.req = PA.RequestState(model, binding, eps, delta); self.streams = []; self.primary = None; self.E = None; self.E_used = 0.0; self.first_decided = False; self.conflicts = []; self.checkpoints = []; self.pac_rows_orig = {}; self.lift_cands = []; self.lift_discovery_tried = False; self.fast_bits_refused = False
-        self.out.update(version=VERSION, delta=str(delta), seed=seed, pac=pac, lifted=lifted, joint=joint, streams=[], risk_ledger=[], checkpoints=self.checkpoints, conflicts=self.conflicts); self.out['mechanism']['structural'] = self.req.mech
+        self.out.update(version=VERSION, delta=str(delta), seed=seed, pac=pac, lifted=lifted, joint=joint, glob=glob, old_policy=old_policy, streams=[], risk_ledger=[], checkpoints=self.checkpoints, conflicts=self.conflicts); self.out['mechanism']['structural'] = self.req.mech
         self.cdead = self.t_start + min(budget_s, CONSTRUCT_SHARE * budget_s)
     # ---- risk
     def stream_key(self, kind, **kw):
         """semantic identity of a statistical stream: kind + target model (cards, evidence, every scope + exact value) + response inventory (+ lifted: class map and decoder)"""
         import hashlib; h = hashlib.sha256(kind.encode())
         if kind == 'lifted': M_par = kw['M_par']; h.update(self.envelope.encode()); h.update(json.dumps([list(M_par.cards), [[list(sc), [str(x) for x in v]] for sc, v in M_par.factors], [[str(x) for x in ps] for ps in M_par.psi], [list(c) for c in kw['classes']], [[str(x) for x in row] for row in kw['Cz'].d]]).encode())
-        elif kind == 'joint': M_par = kw['M_par']; h.update(str(self.joint).encode()); h.update(json.dumps([list(M_par.cards), [[list(sc), [str(x) for x in v]] for sc, v in M_par.factors], [[str(x) for x in ps] for ps in M_par.psi], len(kw['par_stages'])]).encode())
+        elif kind in ('joint', 'global'): M_par = kw['M_par']; h.update(str(self.joint if kind == 'joint' else ('global:' + str(self.glob))).encode()); h.update(json.dumps([list(M_par.cards), [[list(sc), [str(x) for x in v]] for sc, v in M_par.factors], [[str(x) for x in ps] for ps in M_par.psi], len(kw['par_stages'])]).encode())
         else: m = kw['model']; h.update(json.dumps([list(m['cards']), sorted(m.get('evidence', {}).items()), [[list(f['scope']), [str(x) for x in f['values']]] for f in m['factors']], list(kw['queries'])]).encode())
         return h.hexdigest()
     def new_stream(self, kind, **kw):
         key = self.stream_key(kind, **kw); same = next((S for S in self.streams if getattr(S, 'semantic_key', None) == key), None)
         if same is not None: self.log_action(action='alias_stream', stream=same.label, requested=kw.get('label'), note='identical semantic stream: no restart, no new risk'); return same
         s = len(self.streams) + 1
-        if self.force_stream: s = {'original': 1, 'exact_parent': 1, 'lifted': 2, 'joint': 2}[kind]                      # the joint stream takes the OPTIONAL role's risk (delta / 4), never fresh risk                                # forced-stream diagnostic: the PLANNER-ROLE risk index (original / exact parent = stream 1 -> delta / 2; lifted = stream 2 -> delta / 4), never a free full delta
+        if self.force_stream: s = {'original': 1, 'exact_parent': 1, 'lifted': 2, 'joint': 2, 'global': 2}[kind]                      # the joint stream takes the OPTIONAL role's risk (delta / 4), never fresh risk                                # forced-stream diagnostic: the PLANNER-ROLE risk index (original / exact parent = stream 1 -> delta / 2; lifted = stream 2 -> delta / 4), never a free full delta
         if s > MAX_STREAMS: raise Refused('STREAMS', 'the declared maximum of %d statistical streams is reached' % MAX_STREAMS)
         delta_s = self.delta / 2 ** s; seed = np.random.SeedSequence([int(self.seed), s]).generate_state(1)[0]
         if kind == 'lifted': S = PA.LiftedStream(s, kw['M_fine'], kw['M_par'], kw['par_stages'], kw['classes'], kw['Cz'], int(seed), self.eps, delta_s, dict(PAC_OPTS, other_retained_bytes=self.retained_bytes(), budget_obj=self.budget), label=kw.get('label'), scale_to_original=kw.get('scale_to_original'), envelope=self.envelope)
         elif kind == 'joint': S = JS.JointStream(s, kw['M_fine'], kw['M_par'], kw['par_stages'], int(seed), self.eps, delta_s, dict(PAC_OPTS, other_retained_bytes=self.retained_bytes(), budget_obj=self.budget), label=kw.get('label'), scale_to_original=kw.get('scale_to_original'), mode=self.joint, profile=JP.PROFILE_PRODUCTION)
+        elif kind == 'global': S = GS.GlobalStream(s, kw['M_fine'], kw['M_par'], kw['par_stages'], int(seed), self.eps, delta_s, dict(PAC_OPTS, other_retained_bytes=self.retained_bytes(), budget_obj=self.budget), label=kw.get('label'), scale_to_original=kw.get('scale_to_original'), mode=self.glob)
         else: S = PA.Stream(s, kind, kw['model'], kw['queries'], int(seed), self.eps, delta_s, dict(PAC_OPTS, other_retained_bytes=self.retained_bytes(), budget_obj=self.budget), label=kw.get('label'), scale_to_original=kw.get('scale_to_original', F(1)))
         S.decode_rows = kw.get('decode'); S.semantic_key = key; self.streams.append(S); self.out['risk_ledger'].append(dict(stream=s, kind=kind, label=S.label, delta_s=str(delta_s), created_t_s=round(tnow() - self.t_start, 4), seed=int(seed))); self.log_action(action='create_stream', stream=s, kind=kind, label=S.label, delta_s=str(delta_s)); return S
     def retained_bytes(self): return self.budget.live + sum(S.retained_bytes for S in self.streams)
@@ -121,13 +125,22 @@ class UPlanner(UP.Planner):
     def joint_allowance(self):
         """min(E_remaining, 0.20 x the initial request work allowance, 4 s) -- ONE absolute end set at the stream's first entry"""
         E_rem = max(0.0, (self.E or 0.0) - self.E_used); return min(E_rem, JOINT_ALLOWANCE_FRAC * (self.adm - self.t_start), JOINT_ALLOWANCE_MAX_S)
+    def direct_kind(self): return 'global' if self.glob else ('joint' if self.joint else None)
+    def direct_mode(self): return self.glob if self.glob else self.joint
     def make_joint(self):
-        par = self.joint_parent(); M = self.M; M_par = M if par.kind == 'identity' else par.M1; par_stages = [] if par.kind == 'identity' else par.stages
+        par = self.joint_parent(); M = self.M; M_par = M if par.kind == 'identity' else par.M1; par_stages = [] if par.kind == 'identity' else par.stages; kind = self.direct_kind()
         def decode(rows_q, S):
             outr = {}
             for j, (L, H) in rows_q.items(): v, a = S.queries[j]; outr[(M.orig_of[v], a)] = (L, H)
             return outr
-        return self.new_stream('joint', M_fine=M, M_par=M_par, par_stages=par_stages, decode=decode, label='joint_%s(%s)' % (self.joint, par.name), scale_to_original=M_par.scalar * (M.scalar if par.kind != 'identity' else F(1)))
+        return self.new_stream(kind, M_fine=M, M_par=M_par, par_stages=par_stages, decode=decode, label='%s_%s(%s)' % (kind, self.direct_mode(), par.name), scale_to_original=M_par.scalar * (M.scalar if par.kind != 'identity' else F(1)))
+    def is_direct(self, S): return S.kind in ('joint', 'global')
+    # ---- DGP6: the common primary-probe / protection policy (REPAIRED / SEED / GLOBAL; disabled below 8 s of remaining work and under --old-policy)
+    def policy_active(self): return (not self.old_policy) and (not self.force_stream) and self.primary is not None
+    def primary_protected(self, W):
+        """True when the probed primary's FINITE completion forecast fits the remaining work: optional constructors are deferred (reconsidered only at completed action / checkpoint boundaries)"""
+        if not self.policy_active() or self.primary_probe is None or not self.primary.ready() or self.primary.all_published(): return False
+        fc = self.stream_forecast(self.primary); return fc is not None and math.isfinite(fc) and fc <= W
     # ---- forecasts
     def stream_forecast(self, S):
         """remaining seconds to complete S (heuristic; None = unknown): needs >= 2 checkpoints and a positive witness"""
@@ -144,7 +157,7 @@ class UPlanner(UP.Planner):
         live = [S for S in self.streams if S.live()]
         if not live and not self.streams:
             if self.force_stream == 'original': rec.update(chosen='create_primary', why='forced original stream'); return dict(kind='create_primary', record=rec)
-            if self.force_stream == 'joint': rec.update(chosen='create_joint(%s)' % self.joint, why='forced joint stream (offer / selection forced only; the same allowance and profile)'); return dict(kind='create_joint', deadline=self.adm, record=rec)
+            if self.force_stream in ('joint', 'global'): rec.update(chosen='create_%s(%s)' % (self.force_stream, self.direct_mode()), why='forced %s stream (offer / selection forced only; the same allowance and profile)' % self.force_stream); return dict(kind='create_joint', deadline=self.adm, record=rec)
             ap = [c for c in self.cands + self.lift_cands if c.kind == 'approx' and not c.alias_of and c.Cz is not None and not c.Cz.exact and not c.Cz.zero_factor]
             if ap: rec.update(chosen='create_lifted(%s)' % ap[-1].name, why='forced lifted stream'); return dict(kind='create_lifted', approx=ap[-1], deadline=self.adm, record=rec)
             parent = next((c for c in self.cands if c.kind == 'identity'), None)
@@ -154,9 +167,11 @@ class UPlanner(UP.Planner):
             if not self.lift_discovery_tried and parent is not None: rec.update(chosen='discover_fast_lift', why='forced lifted stream: lift-only discovery after the deterministic FAST discovery refused'); return dict(kind='discover_fast_lift', parent=parent, deadline=self.adm, record=rec)
             rec.update(chosen='finalize', why='forced lifted stream: no approximate stage could be built (recorded construction failure)'); return dict(kind='finalize', outcome='REFUSED', why=rec['why'], record=rec)
         S = self.streams[-1]
-        if S.live() and not S.ready(): rec.update(chosen='prepare_stream', stream=S.label, why='forced stream preparation'); return dict(kind='prepare', stream=S, deadline=(min(self.adm, S.allowance_end) if S.kind == 'joint' and S.allowance_end else self.adm), record=rec)
-        if S.kind == 'joint' and S.ready() and S.can_pilot(): rec.update(chosen='joint_pilot', stream=S.label, why='forced joint: the seed pilot (charged action)'); return dict(kind='joint_pilot', stream=S, record=rec)
+        if S.live() and not S.ready(): rec.update(chosen='prepare_stream', stream=S.label, why='forced stream preparation'); return dict(kind='prepare', stream=S, deadline=(min(self.adm, S.allowance_end) if self.is_direct(S) and S.allowance_end else self.adm), record=rec)
+        if self.is_direct(S) and S.ready() and S.can_pilot(): rec.update(chosen='joint_pilot', stream=S.label, why='forced direct proposal: the seed pilot (charged action)'); return dict(kind='joint_pilot', stream=S, record=rec)
         if S.kind == 'joint' and S.ready() and S.can_refine(): rec.update(chosen='joint_refine', stream=S.label, why='forced joint: a bounded update attempt (charged action)'); return dict(kind='joint_refine', stream=S, record=rec)
+        if S.kind == 'global' and S.ready() and S.can_optimize(): rec.update(chosen='global_optimize', stream=S.label, why='forced global: the ONE bounded global optimization attempt (charged action)'); return dict(kind='global_optimize', stream=S, record=rec)
+        if S.kind == 'global' and S.ready() and S.can_activate(): rec.update(chosen='global_activate', stream=S.label, why='forced global: bounded activation of the promoted law'); return dict(kind='global_activate', stream=S, record=rec)
         if S.ready() and not S.all_published(): slice_s = min(SLICE_S, W / SLICE_FRAC); rec.update(chosen='advance_stream', stream=S.label, slice_s=round(slice_s, 4), why='forced stream advance'); return dict(kind='advance', stream=S, deadline=min(self.adm, tnow() + slice_s), record=rec)
         rows = self.snapshot(); pub = sum(1 for r in rows.values() if r is not None); rec.update(chosen='finalize', why='forced stream ended (%s)' % (S.closed_reason or S.stage)); return dict(kind='finalize', outcome=('PARTIAL' if pub else 'REFUSED'), why=rec['why'], record=rec)
     def _decide(self):
@@ -190,23 +205,34 @@ class UPlanner(UP.Planner):
             rec.update(chosen='create_primary', why='no affordable deterministic completion: prepare the primary PAC stream under the accepted construction window (step 3)'); return dict(kind='create_primary', record=rec)
         if self.primary is not None and self.primary.live() and not self.primary.ready():
             rec.update(chosen='prepare_primary', why='primary PAC preparation continues (stages atomic; yields between stages)'); return dict(kind='prepare', stream=self.primary, deadline=self.adm, record=rec)
-        # alternatives inside E (step 4): lifted stream creation + one probe (FULL), FAST discovery that enables it, unknown-quality solves / refinement
+        # DGP6 (brief section 4): the common primary-probe / protection policy -- once the primary is READY and BEFORE the first optional constructor: <= 4 ordinary batches ending at the first boundary >= 0.10 s with checks after
+        # the first and the last (useful incumbent sampling charged to total wall time, not to E); only when >= 8 s of work remain (the 4 s path keeps the old scheduling); never under --old-policy / a forced stream
+        if self.policy_active() and self.primary.ready() and not self.primary.all_published() and self.primary_probe is None and not any(S.kind in ('lifted', 'joint', 'global') for S in self.streams):
+            if W >= PROBE_POLICY_MIN_WORK_S: rec.update(chosen='primary_probe', stream=self.primary.label, why='DGP6 primary-probe policy: <= %d batches ending at the first boundary >= %.2f s, checks after the first and last; charged to wall time' % (PROBE_MAX_BATCHES, PROBE_SLICE_S)); return dict(kind='primary_probe', stream=self.primary, record=rec)
+            self.primary_probe = dict(skipped='below %.1f s of remaining work (old scheduling path)' % PROBE_POLICY_MIN_WORK_S, W_s=round(W, 4)); self.log_action(action='primary_probe', status='SKIPPED', reason=self.primary_probe['skipped'])
+        protected = self.primary_protected(W); rec['primary_protected'] = protected
+        for S in self.streams:                                                                            # bounded activation of a promoted law: charged to SAMPLING work (never to E), so it is offered independently of the account
+            if S.kind == 'global' and S.ready() and S.can_activate(): rec.update(chosen='global_activate', stream=S.label, why='bounded activation of the promoted law (<= 2 x 256 draws, a check after each; charged to sampling work)'); return dict(kind='global_activate', stream=S, record=rec)
+        # alternatives inside E (step 4): lifted stream creation + one probe (FULL), FAST discovery that enables it, unknown-quality solves / refinement; under protection NO new optional constructor (deferred)
         alt = []
         if E_rem > 0.01:
             for a in opts:
-                if a.get('admitted', True) and a['D'] <= E_rem: alt.append(dict(kind='optional', act=a, D=a['D'] + a['S'], name=a['name']))
-            joint_live = [S for S in self.streams if S.kind == 'joint']
-            for S in joint_live:                                                                      # the explicit CHARGED actions of a ready joint stream (pilot, then <= 2 refinement attempts) inside the account
+                if a.get('admitted', True) and a['D'] <= E_rem: alt.append(dict(kind='optional', act=a, D=a['D'] + a['S'], name=a['name']))            # deterministic discovery / refinement stay available under protection (only optional PROPOSAL constructors are deferred)
+            joint_live = [S for S in self.streams if self.is_direct(S)]
+            for S in joint_live:                                                                      # the explicit CHARGED actions of a ready direct-proposal stream (pilot, then the bounded update / global attempt, then activation) inside the account
                 if S.ready() and S.can_pilot(): alt.append(dict(kind='joint_pilot', stream=S, D=0.0, name='joint_pilot(%s)' % S.label))
-                elif S.ready() and S.can_refine(): alt.append(dict(kind='joint_refine', stream=S, D=0.0, name='joint_refine(%s)' % S.label))
-            offer_joint = False
-            if self.joint and len(self.streams) < MAX_STREAMS and not any(S.kind in ('lifted', 'joint') for S in self.streams) and self.joint_refused is None:
+                elif S.kind == 'joint' and S.ready() and S.can_refine(): alt.append(dict(kind='joint_refine', stream=S, D=0.0, name='joint_refine(%s)' % S.label))
+                elif S.kind == 'global' and S.ready() and S.can_optimize(): alt.append(dict(kind='global_optimize', stream=S, D=0.0, name='global_optimize(%s)' % S.label))
+                elif S.kind == 'global' and S.ready() and S.can_activate(): alt.append(dict(kind='global_activate', stream=S, D=0.0, name='global_activate(%s)' % S.label))
+            offer_joint = False; dkind = self.direct_kind()
+            if dkind and len(self.streams) < MAX_STREAMS and not any(S.kind in ('lifted', 'joint', 'global') for S in self.streams) and self.joint_refused is None and not protected:
                 if W >= JOINT_OFFER_MIN_WORK_S:
                     ok, why = self.joint_admitted()
-                    if ok: offer_joint = True; alt.append(dict(kind='create_joint', D=0.0, name='create_joint(%s)' % self.joint)); rec['joint_offer'] = dict(offered=True, admission=why, allowance_s=round(self.joint_allowance(), 4))
-                    else: self.joint_refused = 'ADMISSION: %s' % why; rec['joint_offer'] = dict(offered=False, reason=self.joint_refused); self.log_action(action='joint_offer', status='NOT_OFFERED', reason=self.joint_refused)
-                else: self.joint_refused = 'OFFER_THRESHOLD: %.3f s of work remain < %.1f s' % (W, JOINT_OFFER_MIN_WORK_S); rec['joint_offer'] = dict(offered=False, reason=self.joint_refused); self.log_action(action='joint_offer', status='NOT_OFFERED', reason=self.joint_refused)
-            if (not offer_joint) and self.lifted and len(self.streams) < MAX_STREAMS and not any(S.kind in ('lifted', 'joint') for S in self.streams):       # the repaired old optional route (RMAX / G2) when the new offer does not apply; never both in one slot
+                    if ok: offer_joint = True; alt.append(dict(kind='create_joint', D=0.0, name='create_%s(%s)' % (dkind, self.direct_mode()))); rec['joint_offer'] = dict(offered=True, kind=dkind, admission=why, allowance_s=round(self.joint_allowance(), 4))
+                    else: self.joint_refused = 'ADMISSION: %s' % why; rec['joint_offer'] = dict(offered=False, reason=self.joint_refused); self.log_action(action='joint_offer', kind=dkind, status='NOT_OFFERED', reason=self.joint_refused)
+                else: self.joint_refused = 'OFFER_THRESHOLD: %.3f s of work remain < %.1f s' % (W, JOINT_OFFER_MIN_WORK_S); rec['joint_offer'] = dict(offered=False, reason=self.joint_refused); self.log_action(action='joint_offer', kind=dkind, status='NOT_OFFERED', reason=self.joint_refused)
+            elif dkind and protected and len(self.streams) < MAX_STREAMS and not any(S.kind in ('lifted', 'joint', 'global') for S in self.streams) and self.joint_refused is None: self.policy_deferrals += 1; rec['joint_offer'] = dict(offered=False, deferred='primary protected (finite affordable forecast)')
+            if (not offer_joint) and self.lifted and not protected and len(self.streams) < MAX_STREAMS and not any(S.kind in ('lifted', 'joint', 'global') for S in self.streams):       # the repaired old optional route (RMAX / G2) when the new offer does not apply; never both in one slot
                 ap = [c for c in self.cands + self.lift_cands if c.kind == 'approx' and not c.alias_of and c.Cz is not None and not c.Cz.exact and not c.Cz.zero_factor]
                 if ap: a0 = ap[-1]; alt.append(dict(kind='create_lifted', approx=a0, D=0.0, name='create_lifted(%s)' % a0.name))
                 elif 'fast_discovery' in self.failed_global and self.fast_bits_refused and not self.lift_cands and not self.lift_discovery_tried:
@@ -259,13 +285,20 @@ class UPlanner(UP.Planner):
             try: c = self.discover_fast_lift_only(d['parent'], aclock); self.lift_cands.append(c); self.log_action(action='discover_fast_lift', parent=d['parent'].name, actual_s=tnow() - t0, status='READY_LIFT_ONLY', cards=c.cards, R_bits_discarded=c.R_bits_discarded, charged_bytes=c.charged)
             except Refused as e: self.log_action(action='discover_fast_lift', parent=d['parent'].name, actual_s=tnow() - t0, status='REFUSED_' + e.kind, reason=str(e.reason)[:160])
             self.E_used += tnow() - t0; return None
+        if k == 'primary_probe': return self._primary_probe(d['stream'])
         if k == 'create_joint':
             try: S = self.make_joint()
-            except Refused as e: self.joint_refused = 'CREATE_' + e.kind; self.log_action(action='create_joint', status='REFUSED_' + e.kind, reason=str(e.reason)[:160]); self.E_used += tnow() - t0; return None
-            allow = (min(JOINT_ALLOWANCE_FRAC * (self.adm - self.t_start), JOINT_ALLOWANCE_MAX_S) if self.force_stream == 'joint' else self.joint_allowance()); until = tnow() + allow
-            self.log_action(action='create_joint', stream=S.label, mode=self.joint, allowance_s=allow, absolute_allowance_end_offset_s=until - self.t_start, parent=S.label)
-            if self.force_stream == 'joint': self.primary = S; return self._prepare(S, min(self.adm, until), charge=False)              # forced diagnostic: the joint stream IS the request's primary; the SAME allowance bounds its preparation
+            except Refused as e: self.joint_refused = 'CREATE_' + e.kind; self.log_action(action='create_joint', kind=self.direct_kind(), status='REFUSED_' + e.kind, reason=str(e.reason)[:160]); self.E_used += tnow() - t0; return None
+            forced = self.force_stream in ('joint', 'global'); allow = (min(JOINT_ALLOWANCE_FRAC * (self.adm - self.t_start), JOINT_ALLOWANCE_MAX_S) if forced else self.joint_allowance()); until = tnow() + allow
+            self.log_action(action='create_joint', kind=S.kind, stream=S.label, mode=self.direct_mode(), allowance_s=allow, absolute_allowance_end_offset_s=until - self.t_start, parent=S.label)
+            if forced: self.primary = S; return self._prepare(S, min(self.adm, until), charge=False)              # forced diagnostic: the direct-proposal stream IS the request's primary; the SAME allowance bounds its preparation
             return self._prepare(S, min(self.adm, until), charge=True)
+        if k == 'global_optimize':
+            S = d['stream']; r = S.optimize_action(min(self.adm, S.allowance_end), self.adm); dt = tnow() - t0; self.E_used += dt
+            self.log_action(action='global_optimize', stream=S.label, actual_s=dt, status=r.get('status'), promoted=r.get('promoted'), witness_only=r.get('witness_only'), winner=r.get('winner'), graph=(r.get('graph') or {}).get('label'), kind=r.get('kind'), why=r.get('why'), label=r.get('label'), committed_epoch=r.get('committed_epoch'), evaluations=(r.get('optimizer') or {}).get('evaluations')); return None
+        if k == 'global_activate':
+            S = d['stream']; r = S.activation_action(self.adm); dt = tnow() - t0                                   # charged to remaining SAMPLING work (not E); recorded separately from construction
+            self.log_action(action='global_activate', stream=S.label, actual_s=dt, status=r.get('status'), batches=r.get('batches'), draws=r.get('draws'), checks=r.get('checks'), epoch=r.get('epoch')); self.record_checkpoint(); return self.try_finish()
         if k == 'joint_pilot':
             S = d['stream']; r = S.pilot_action(min(self.adm, S.allowance_end)); dt = tnow() - t0; self.E_used += dt
             self.log_action(action='joint_pilot', stream=S.label, actual_s=dt, result=r.get('status'), draws=r.get('draws'), batches=r.get('batches'), log2_Z_proxy_fit=r.get('log2_Z_proxy_fit'), d_seed_s_per_draw=r.get('d_seed_s_per_draw'), closed=S.closed_reason); self.record_checkpoint(); return self.try_finish()
@@ -278,7 +311,7 @@ class UPlanner(UP.Planner):
     def _prepare(self, S, deadline, charge):
         """F5: a CHARGED (optional) stream's stages run against the allowance end `deadline` as their hard cutoff (a Deadline inside a stage closes the stream typed), so an optional action can never consume the
         primary's remaining time first and debit the account afterwards; the primary (uncharged) stream keeps the work cutoff"""
-        t0 = tnow(); hard = min(self.adm, deadline) if (charge or S.kind == 'joint') else self.adm; r = S.prepare(hard, cdead=min(self.cdead, hard) if charge else self.cdead, until=deadline); dt = tnow() - t0
+        t0 = tnow(); hard = min(self.adm, deadline) if (charge or self.is_direct(S)) else self.adm; r = S.prepare(hard, cdead=min(self.cdead, hard) if charge else self.cdead, until=deadline); dt = tnow() - t0
         if charge: self.E_used += dt
         self.log_action(action='prepare_stream', stream=S.label, result=r, actual_s=dt, stage=S.stage, closed=S.closed_reason, retained_bytes=S.retained_bytes)
         if S.stage == 'COMPLETE': return self._stream_terminal(S)
@@ -302,6 +335,20 @@ class UPlanner(UP.Planner):
             self.log_action(action='stream_deterministic_rows', stream=S.label, terminal=term, rows=len(acc))
             return self.try_finish()
         return None
+    def _primary_probe(self, S):
+        """DGP6: <= PROBE_MAX_BATCHES ordinary batches of the primary ending at the first batch boundary at or after PROBE_SLICE_S (one already-admitted batch may exceed the slice; the hard work cutoff is never extended), a certificate check
+        after the first and after the last committed batch (two checkpoints -> a forecast can exist); charged to total wall time, never to the exploration account"""
+        t0 = tnow(); n = 0; r = None
+        while n < PROBE_MAX_BATCHES and S.ready() and not S.all_published() and tnow() < self.adm and (n == 0 or tnow() - t0 < PROBE_SLICE_S):
+            r = S.batch(self.adm, self.adm)
+            if r != 'COMMITTED': break
+            n += 1
+            if n == 1 and S.ready(): S.check()
+        if n >= 2 and S.ready(): S.check()
+        fc = self.stream_forecast(S) if S.ready() else None; self.primary_probe = dict(batches=n, last=r, seconds=tnow() - t0, draws=S.draws, forecast_s=fc, slice_s=PROBE_SLICE_S, max_batches=PROBE_MAX_BATCHES, charged_to='total wall time (not the exploration account)')
+        self.log_action(action='primary_probe', stream=S.label, result=r, batches=n, actual_s=tnow() - t0, draws=S.draws, witness=S.witness, forecast_s=fc, max_remaining_width=S.max_unresolved_width(), closed=S.closed_reason); self.record_checkpoint()
+        if S.witness: self.out['mechanism']['positive_mass_witness'] = True
+        return self.try_finish()
     def _probe(self, S, deadline):
         """one probe inside the exploration account: committed batches for the allowance with a certificate check after the first and after the last (two checkpoints -> a forecast can exist)"""
         t0 = tnow(); r = S.batch(deadline, self.adm); n = (r == 'COMMITTED')
@@ -443,7 +490,7 @@ class UPlanner(UP.Planner):
             if hasattr(S, 'fingerprint'): S.mech['proposal_fingerprint_at_ready'] = S.fingerprint; S.mech['proposal_fingerprint_at_end'] = S.proposal_fingerprint(); S.mech['proposal_immutable'] = (S.fingerprint == S.mech['proposal_fingerprint_at_end'])
         defects = [dict(stream=S.label, defect=S.defect) for S in self.streams if getattr(S, 'defect', None)]
         if defects: mech['stream_certificate_defects'] = defects; mech['defect'] = (mech.get('defect') or '') + ' | stream defects: ' + '; '.join(d['stream'] + ': ' + d['defect'][:80] for d in defects)
-        out['streams'] = [S.diagnostics() for S in self.streams]; mech['joint_offer'] = dict(mode=self.joint, refused=self.joint_refused, created=any(S.kind == 'joint' for S in self.streams)); mech.update(exploration_account_s=self.E, exploration_used_s=self.E_used, streams_created=len(self.streams), live_memory_named_bytes=dict(constructor_live=self.budget.live, streams_retained=sum(S.retained_bytes for S in self.streams)), lift_only_candidates=[dict(name=c.name, cards=c.cards, charged_bytes=c.charged, R_compact_log2_hi=getattr(c, 'R_compact_log2_hi', None), exact=c.exact, mixed=c.mixed) for c in self.lift_cands])
+        out['streams'] = [S.diagnostics() for S in self.streams]; mech['joint_offer'] = dict(kind=self.direct_kind(), mode=self.direct_mode(), refused=self.joint_refused, created=any(self.is_direct(S) for S in self.streams)); mech['scheduling_policy'] = dict(old_policy=self.old_policy, primary_probe=self.primary_probe, optional_deferrals=self.policy_deferrals, min_work_s=PROBE_POLICY_MIN_WORK_S, slice_s=PROBE_SLICE_S, max_batches=PROBE_MAX_BATCHES); mech.update(exploration_account_s=self.E, exploration_used_s=self.E_used, streams_created=len(self.streams), live_memory_named_bytes=dict(constructor_live=self.budget.live, streams_retained=sum(S.retained_bytes for S in self.streams)), lift_only_candidates=[dict(name=c.name, cards=c.cards, charged_bytes=c.charged, R_compact_log2_hi=getattr(c, 'R_compact_log2_hi', None), exact=c.exact, mixed=c.mixed) for c in self.lift_cands])
         # F3: ALL enclosure / radius / cost / diagnostic work happens here, BEFORE the authoritative final sample inside super().fin; afterwards only the already-built objects are attached, and only when the sample respected the hard deadline
         try: enc = self.all_enclosures() if not isinstance(self.M, _EmptyCanon) else {}
         except Exception as e: enc = {}; mech['enclosure_report_error'] = repr(e)[:120]
@@ -463,12 +510,16 @@ class UPlanner(UP.Planner):
         b['quotient_construction'] = sum(a.get('actual_s') or 0 for a in acts if a.get('action') in ('discover_exact', 'discover_fast', 'refine')); b['native_solves'] = sum(a.get('actual_s') or 0 for a in acts if str(a.get('action', '')).startswith('solve_'))
         for S in self.streams:
             for m in S.measurements:
-                key = {'pac_stage': 'pac_preparation', 'lifted_stage': 'lifted_preparation', 'joint_stage': 'joint_preparation', 'pac_batch': 'sampling_target_evaluation', 'lifted_batch': 'sampling_target_evaluation', 'joint_batch': 'sampling_target_evaluation', 'joint_action': 'joint_actions', 'pac_check': 'confidence_checks'}[m['kind']]; b[key] = b.get(key, 0.0) + m['seconds']
+                key = {'pac_stage': 'pac_preparation', 'lifted_stage': 'lifted_preparation', 'joint_stage': 'joint_preparation', 'pac_batch': 'sampling_target_evaluation', 'lifted_batch': 'sampling_target_evaluation', 'joint_batch': 'sampling_target_evaluation', 'joint_action': 'joint_actions', 'pac_check': 'confidence_checks'}[m['kind']]
+                if m['kind'] == 'joint_action' and m.get('action') == 'global_optimize': key = 'global_optimization'
+                elif m['kind'] == 'joint_action' and m.get('action') == 'global_activation': key = 'global_activation_sampling'
+                b[key] = b.get(key, 0.0) + m['seconds']
             if S.kind != 'lifted':
                 for k in ('contract', 'mb_construct', 'exact_route', 'executor_crosscheck', 'sampler_prep', 'enumerate'):
                     if k in S.ph: b['pac_' + k] = b.get('pac_' + k, 0.0) + S.ph[k]
-        b['time_to_first_committed_batch_s'] = next((a['t_s'] for a in acts if a.get('action') in ('advance_stream', 'probe_stream', 'joint_pilot') and (a.get('batches') or a.get('result') == 'COMMITTED')), None)
-        b['joint_mechanism'] = next(({k: S.diagnostics().get('joint', {}).get(k) for k in ('mode', 'current_epoch', 'epoch_switches', 'refinement_ended')} | dict(stage=S.stage, closed=S.closed_reason, draws=S.draws, published=len(S.pub), attempts=len(S.attempts), offered=True) for S in self.streams if S.kind == 'joint'), dict(offered=False, reason=self.joint_refused))
+        b['time_to_first_committed_batch_s'] = next((a['t_s'] for a in acts if a.get('action') in ('advance_stream', 'probe_stream', 'primary_probe', 'joint_pilot') and (a.get('batches') or a.get('result') == 'COMMITTED')), None)
+        b['primary_probe_s'] = sum(a.get('actual_s') or 0 for a in acts if a.get('action') == 'primary_probe')
+        b['joint_mechanism'] = next(({k: S.diagnostics().get('joint', {}).get(k) for k in ('mode', 'current_epoch', 'epoch_switches', 'refinement_ended', 'global_mode', 'promotion', 'activation')} | dict(kind=S.kind, stage=S.stage, closed=S.closed_reason, draws=S.draws, published=len(S.pub), attempts=len(S.attempts), offered=True) for S in self.streams if self.is_direct(S)), dict(offered=False, reason=self.joint_refused))
         return b
 
 
@@ -477,7 +528,7 @@ class _EmptyCanon:
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=19.5); ap.add_argument('--admission-stop', type=float, default=19.0); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--lifted', action='store_true'); ap.add_argument('--no-pac', action='store_true'); ap.add_argument('--force-stream', default=None, choices=[None, 'original', 'lifted', 'joint'], help='DIAGNOSTIC: bypass only the offer decision and run one stream kind (never a production arm)'); ap.add_argument('--envelope', default='G1', choices=['G1', 'G2', 'G3', 'RMAX'], help='lifted upper envelope: G1 per-factor maxima (DGP2), G2 / G3 grouped joint maxima (DGP3 lemma G)'); ap.add_argument('--joint', default=None, choices=[None, 'seed', 'joint', 'cap_only', 'moment_only'], help='DGP5: the direct conditional proposal in the optional slot (seed = checked seed only; joint = + bounded joint updates; cap_only / moment_only = strategy ablations)'); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=19.5); ap.add_argument('--admission-stop', type=float, default=19.0); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000'); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--lifted', action='store_true'); ap.add_argument('--no-pac', action='store_true'); ap.add_argument('--force-stream', default=None, choices=[None, 'original', 'lifted', 'joint', 'global'], help='DIAGNOSTIC: bypass only the offer decision and run one stream kind (never a production arm)'); ap.add_argument('--envelope', default='G1', choices=['G1', 'G2', 'G3', 'RMAX'], help='lifted upper envelope: G1 per-factor maxima (DGP2), G2 / G3 grouped joint maxima (DGP3 lemma G)'); ap.add_argument('--joint', default=None, choices=[None, 'seed', 'joint', 'cap_only', 'moment_only'], help='DGP5: the direct conditional proposal in the optional slot (seed = checked seed only; joint = + bounded joint updates; cap_only / moment_only = strategy ablations)'); ap.add_argument('--global', dest='glob', default=None, choices=[None, 'seed', 'global', 'g0_global', 'cap_only', 'moment_only'], help='DGP6: the direct conditional proposal with ONE bounded GLOBAL optimization attempt (seed = checked seed + pilot only; global = G1-only coordinated optimization; g0_global / cap_only / moment_only = diagnostics)'); ap.add_argument('--old-policy', action='store_true', help='DIAGNOSTIC: disable the DGP6 primary-probe / protection policy (DGP5 scheduling)'); a = ap.parse_args()
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm')); import core as CORE
     t0 = tnow()
     try: model, binding = CORE.read_uai(a.input)
@@ -485,7 +536,7 @@ def main():
         out = dict(version=VERSION, outcome='INVALID_TASK', guarantee='PARTIAL', published=0, K=0, answers=[], mechanism=dict(refusal=dict(kind='INVALID_TASK', reason=repr(e)[:300]), positive_mass_witness=None, termination='INVALID_TASK'), phases_s=dict(read=tnow() - t0), wall_s=tnow() - t0, input=os.path.abspath(a.input), argv=sys.argv[1:], hard_deadline_respected=True)
         UP.write_result(out, a.output, a.budget); print(json.dumps(dict(outcome='INVALID_TASK', reason=repr(e)[:200]))); return
     tread = tnow() - t0
-    P = UPlanner(model, binding, a.budget, eps=F(a.epsilon), delta=F(a.delta), admission_stop_s=a.admission_stop, seed=a.seed, pac=not a.no_pac, lifted=(a.lifted or a.force_stream == 'lifted'), force_stream=a.force_stream, envelope=a.envelope, joint=(a.joint or ('joint' if a.force_stream == 'joint' else None))); out = P.run(); out['forced_stream'] = a.force_stream; out['envelope'] = a.envelope; out['joint_mode'] = P.joint
+    P = UPlanner(model, binding, a.budget, eps=F(a.epsilon), delta=F(a.delta), admission_stop_s=a.admission_stop, seed=a.seed, pac=not a.no_pac, lifted=(a.lifted or a.force_stream == 'lifted'), force_stream=a.force_stream, envelope=a.envelope, joint=(a.joint or ('joint' if a.force_stream == 'joint' and not a.glob else None)), glob=(a.glob or ('global' if a.force_stream == 'global' else None)), old_policy=a.old_policy); out = P.run(); out['forced_stream'] = a.force_stream; out['envelope'] = a.envelope; out['joint_mode'] = P.joint; out['global_mode'] = P.glob; out['old_policy'] = a.old_policy
     out['phases_s']['read'] = tread; out['binding'] = binding; out['input'] = os.path.abspath(a.input); out['argv'] = sys.argv[1:]; out['process_start_to_read_s'] = t0 - T_PROCESS_START
     out = UP.write_result(out, a.output, a.budget)
     print(json.dumps(dict(outcome=out['outcome'], guarantee=out.get('guarantee'), published=out.get('published'), K=out.get('K'), wall_s=round(out['wall_s'], 3), streams=[(s['label'], s['stage'], s['draws'], s['published']) for s in out['streams']], route=out['mechanism'].get('route'), termination=out['mechanism'].get('termination'))))
