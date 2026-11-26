@@ -83,16 +83,19 @@ class WitnessPacket:
 
 def build_packet(M_par, prop, z, parents, order, profile, budget, clock, deadline_fn=None, inherit=True):
     """both passes on the candidate context (parents) of conditional z; the current conditional replicated onto that context; b intersected with the inherited coefficient when `inherit`"""
-    cards = list(M_par.cards); cur = prop.conds[z]; ctx = cur if tuple(cur.parents) == tuple(parents) else cur.replicate(tuple(parents), cards, budget=budget)      # DGP6 repair (finding 3): the replicated table is ADMITTED before allocation
-    b_fresh, rec_b, own_b = coefficient_pass(M_par, prop, z, parents, order, 'max', profile, budget, clock, deadline_fn)
+    cards = list(M_par.cards); cur = prop.conds[z]; ctx = cur if tuple(cur.parents) == tuple(parents) else cur.replicate(tuple(parents), cards, budget=budget); own_ctx = ctx.bytes if ctx is not cur else 0      # DGP6 repair (finding 3): the replicated table is ADMITTED before allocation; its charge is owned by the packet (released with it; released on every failure path)
+    def bail(*owned):
+        for n in owned:
+            if n: budget.release(n)
+    try: b_fresh, rec_b, own_b = coefficient_pass(M_par, prop, z, parents, order, 'max', profile, budget, clock, deadline_fn)
+    except BaseException: bail(own_ctx); raise
     try: a, rec_a, own_a = coefficient_pass(M_par, prop, z, parents, order, 'sum', profile, budget, clock, deadline_fn)
-    except BaseException:
-        if own_b[0]: budget.release(own_b[0]); own_b[0] = 0
-        raise
-    extra = budget.charge(ENTRY_BYTES * int(b_fresh.size) * 2 + (ctx.bytes if ctx is not cur else 0) + 256, 'inherited coefficient + intersection + replicated context')       # DGP6 repair (finding 3): admitted before allocation
+    except BaseException: bail(own_b[0], own_ctx); own_b[0] = 0; raise
+    try: extra = budget.charge(ENTRY_BYTES * int(b_fresh.size) * 2 + 256, 'inherited coefficient + intersection')       # DGP6 repair (finding 3): admitted before allocation (the replicated context was charged by replicate)
+    except BaseException: bail(own_b[0], own_a[0], own_ctx); own_b[0] = 0; own_a[0] = 0; raise
     try: b = intersect_b(b_fresh, inherited_b(prop, ctx)) if inherit else b_fresh
-    except BaseException: budget.release(extra); raise
-    pk = WitnessPacket(z, parents, b, a, b_fresh, rec_b, rec_a, ctx, prop); pk.owned = own_b[0] + own_a[0] + extra; own_b[0] = 0; own_a[0] = 0; pk.release = lambda: budget.release(pk.owned); return pk
+    except BaseException: bail(extra, own_b[0], own_a[0], own_ctx); own_b[0] = 0; own_a[0] = 0; raise
+    pk = WitnessPacket(z, parents, b, a, b_fresh, rec_b, rec_a, ctx, prop); pk.owned = own_b[0] + own_a[0] + extra + own_ctx; own_b[0] = 0; own_a[0] = 0; pk.release = lambda: budget.release(pk.owned); return pk
 
 
 def witnesses_of(pk, cond, S_ref=None, gamma_ok=True):
