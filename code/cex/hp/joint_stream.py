@@ -41,7 +41,7 @@ def joint_widening(fine_fts, n, scale_F_bits, E_mag, resp_rel):
 
 class Epoch:
     """an immutable committed proposal epoch: the law, its consumed cap (compact + the float pieces of the batch constant), its numerical allowance, the certificate t at commit, draw range, fingerprint"""
-    __slots__ = ('index', 'prop', 'B_eff_log2', 'logB_m', 'e_B', 'eps_num', 'rho_X', 'cap_tol', 'E_int', 't_commit', 'draws_from', 'draws_to', 'fingerprint', 'record', 'zcert', 'parent', 'committed_at', 'allowance_end')
+    __slots__ = ('index', 'prop', 'B_eff_log2', 'logB_m', 'e_B', 'eps_num', 'rho_X', 'cap_tol', 'E_int', 't_commit', 'draws_from', 'draws_to', 'fingerprint', 'record', 'zcert', 'parent', 'committed_at', 'allowance_end', 'draws_n', 'sumX', 'sumX2', 'maxX', 'zero_n')
 
 
 class JointStream(Stream):
@@ -54,12 +54,14 @@ class JointStream(Stream):
     # ---- ownership (DGP5 finding 3)
     OWNED_ATTRS = ('fine_bytes', 'joint_bytes')
     def _drop_owned(self):
+        """DGP6 repair (finding 2): seed_prop, the interaction-score dict and every candidate reference are dropped as well (the DGP5 close retained the 992 B seed law and the score dict after release); idempotent"""
         dropped = []
         for attr in ('fine', 'fLM', 'fstr', 'fscope'):
             if getattr(self, attr, None): setattr(self, attr, []); dropped.append(attr)
         for ep in self.epochs:
             if ep.prop is not None: ep.prop = None; dropped.append('epoch_%d_law' % ep.index)
-        if self.pilot_store is not None: self.pilot_store = None; dropped.append('pilot_store')
+        for attr in ('pilot_store', 'seed_prop', 'pairs', 'candidate', 'graph'):
+            if getattr(self, attr, None) is not None: setattr(self, attr, None); dropped.append(attr)
         self.epoch = None; return dropped
     def stage_features(self, st): return dict(n=self.n_par, entries=sum(len(x['values']) for x in self.model['factors']), K=self.K, kind='joint', mode=self.mode)
     # ---- the allowance (ONE absolute end; phase ends derived once)
@@ -144,16 +146,21 @@ class JointStream(Stream):
         """commit a new epoch BEFORE its first draw: constants, eps_num = max over consumed epochs incl. this one, a fresh normalizer diagnostic, the fingerprint (admitted / polled); the previous epoch's law storage is released
         after its references are dropped (its record stays)"""
         if self.pending is not None: raise StreamRefused('PENDING', 'an epoch switch with a pending batch is refused')
-        k = self._epoch_constants(prop); ep = Epoch(); ep.index = len(self.epochs); ep.prop = prop; ep.B_eff_log2 = k['B_eff_log2']; ep.logB_m = k['logB_m']; ep.e_B = k['e_B']; ep.eps_num = k['eps_num']; ep.rho_X = k['rho_X']; ep.cap_tol = k['cap_tol']; ep.E_int = k['E_int']; ep.t_commit = (self.cert.t if hasattr(self, 'cert') else 0); ep.draws_from = self.draws; ep.draws_to = None; ep.parent = (self.epochs[-1].index if self.epochs else None); ep.committed_at = tnow(); ep.allowance_end = self.allowance_end
-        ep.zcert = IG.ZCertificate(float(self.delta_s)); self.log_sF = k['log_sF']
-        ep.fingerprint = self._fingerprint_of(ep, deadline, budget)                                                # the fingerprint traversal (admitted / polled) BEFORE any certificate mutation: a Deadline here leaves the incumbent untouched
-        if hasattr(self, 'cert'): self.cert.eps_num = max(self.cert.eps_num, ep.eps_num)                        # re-widens every historical term under the accepted interpretation (included BEFORE the first batch of the new epoch)
+        # DGP6 repair (finding 4: transactional epoch commit): EVERY variable-size preparation / diagnostic first (constants, fingerprint, the prior epoch's normalizer diagnostic + record), then the FINAL allowance poll, then the bounded swap
+        k = self._epoch_constants(prop); ep = Epoch(); ep.index = len(self.epochs); ep.prop = prop; ep.B_eff_log2 = k['B_eff_log2']; ep.logB_m = k['logB_m']; ep.e_B = k['e_B']; ep.eps_num = k['eps_num']; ep.rho_X = k['rho_X']; ep.cap_tol = k['cap_tol']; ep.E_int = k['E_int']; ep.t_commit = (self.cert.t if hasattr(self, 'cert') else 0); ep.draws_from = self.draws; ep.draws_to = None; ep.parent = (self.epochs[-1].index if self.epochs else None); ep.allowance_end = self.allowance_end; ep.draws_n = 0; ep.sumX = 0.0; ep.sumX2 = 0.0; ep.maxX = 0.0; ep.zero_n = 0
+        ep.zcert = IG.ZCertificate(float(self.delta_s)); ep.fingerprint = self._fingerprint_of(ep, deadline, budget)
+        eps_after = max(self.cert.eps_num, ep.eps_num) if hasattr(self, 'cert') else ep.eps_num
+        ep.record = dict(index=ep.index, reason=reason, proposal=prop.record(), constants={kk: vv for kk, vv in k.items() if kk not in ('widening_parts',)}, widening_parts=k['widening_parts'], eps_num_epoch=ep.eps_num, eps_num_certificate_after=eps_after, cert_t_at_commit=ep.t_commit, draws_from=ep.draws_from, predecessor=ep.parent, fingerprint=ep.fingerprint, committed_offset_s=(tnow() - self.allowance_start) if self.allowance_start else None, absolute_allowance_end=self.allowance_end, live_joint_bytes=self.joint_bytes)
+        prev = self.epoch; prev_diag = None
+        if prev is not None: prev_diag = dict(interval=prev.zcert.interval(), cap_log2_W0=prev.B_eff_log2, draws=self.draws - prev.draws_from, epoch_X_mean=((prev.sumX / prev.draws_n) if getattr(prev, 'draws_n', 0) else None), epoch_ESS_DIAGNOSTIC=((prev.sumX ** 2 / prev.sumX2) if getattr(prev, 'sumX2', 0.0) > 0 else None), epoch_max_X=getattr(prev, 'maxX', None), note='fixed-cap EPOCH-LOCAL diagnostic; never pooled across epochs')
+        if deadline is not None and tnow() >= deadline: raise Deadline('epoch commit: the allowance passed during the preparation / diagnostics (nothing committed)')
+        # ---- swap (bounded references and counters only)
+        ep.committed_at = tnow(); self.log_sF = k['log_sF']
+        if hasattr(self, 'cert'): self.cert.eps_num = eps_after                                                   # re-widens every historical term under the accepted interpretation (included BEFORE the first batch of the new epoch)
         else: self.cert = IG.Certificate(self.Kq, self.alpha, ep.eps_num, float(self.eps), self.opts['schedule']); self.mech['alpha_per_coordinate'] = self.alpha
         self.eps_num = self.cert.eps_num
-        ep.record = dict(index=ep.index, reason=reason, proposal=prop.record(), constants={kk: vv for kk, vv in k.items() if kk not in ('widening_parts',)}, widening_parts=k['widening_parts'], eps_num_epoch=ep.eps_num, eps_num_certificate_after=self.cert.eps_num, cert_t_at_commit=ep.t_commit, draws_from=ep.draws_from, predecessor=ep.parent, fingerprint=ep.fingerprint, committed_offset_s=(tnow() - self.allowance_start) if self.allowance_start else None, absolute_allowance_end=self.allowance_end, live_joint_bytes=self.joint_bytes)
-        prev = self.epoch
         if prev is not None:
-            prev.draws_to = self.draws; prev.record['draws_to'] = self.draws; prev.record['Z_over_cap_EB_DIAGNOSTIC_epoch'] = dict(interval=prev.zcert.interval(), cap_log2_W0=prev.B_eff_log2, draws=prev.draws_to - prev.draws_from, note='fixed-cap epoch diagnostic; never pooled across epochs')
+            prev.draws_to = self.draws; prev.record['draws_to'] = self.draws; prev.record['Z_over_cap_EB_DIAGNOSTIC_epoch'] = prev_diag
             if prev.prop is not None and prev.prop is not prop: n = prev.prop.bytes; prev.prop = None; self._release_joint(n, budget); prev.record['storage_released_bytes'] = n
         self.epochs.append(ep); self.epoch = ep; self.fingerprint = ep.fingerprint; self.epoch_switches += int(prev is not None); self.mech['epochs'] = [e.record for e in self.epochs]; return ep
     def _release_joint(self, n, budget):
@@ -196,14 +203,28 @@ class JointStream(Stream):
             X = np.where(zero, 0.0, np.minimum(1.0, np.exp2(logX))); f = np.zeros((Bn, self.Kq))
             for v in range(self.n_par): f[:, self.col0[v]:self.col0[v] + self.M_fine.cards[v]] = self.Dm[v][X_states[:, v]]
             ids = np.arange(self.draws, self.draws + Bn)
-            if pilot:                                                                                       # the fit / held-out split by draw id parity; the pilot states are stored (charged) for the held-out off-policy diagnostics
-                for half, mask in (('fit', (ids & 1) == 1), ('held', (ids & 1) == 0)):
-                    acc = self.fit if half == 'fit' else self.held; vals = logW0q[mask & ~zero]
-                    if vals.size:
-                        m = float(vals.max()); lm = max(acc['lmax'], m); acc['lsum'] = acc['lsum'] * (2.0 ** (acc['lmax'] - lm) if acc['n'] else 0.0) + float(np.exp2(vals - lm).sum()); acc['lmax'] = lm
-                    acc['n'] += int(mask.sum())
-                if self.pilot_store is not None: self.pilot_store['states'].append(X_states.copy()); self.pilot_store['logW0q'].append(logW0q.copy()); self.pilot_store['ids'].append(ids.copy())
-            self.cert.update_batch(X, f); ep.zcert.update_batch(X); self.draws += Bn; self.zero_draws += int(zero.sum()); self.sumX += float(X.sum()); self.sumX2 += float((X * X).sum()); self.maxX = max(self.maxX, float(X.max())); self.maxlogX = max(self.maxlogX, mx)
+            # DGP6 repair (finding 4: transactional batch): every variable-size statistic is built in admitted SCRATCH (a copy of the small certificate state, the epoch's normalizer diagnostic, the fit / held-out accumulators),
+            # the HARD clock is polled AFTER that work, and only then are the bounded references swapped; a crossing anywhere inside the assembly discards the batch and closes the stream (nothing committed)
+            B_ = self.opts.get('budget_obj'); scratch = 0
+            if B_ is not None: scratch = B_.charge(self.cert.K * 8 * 12 + 512 + Bn * 8, 'batch scratch (certificate copy)')
+            try:
+                import copy as _copy; cert2 = _copy.deepcopy(self.cert); zc2 = _copy.deepcopy(ep.zcert); fit2 = dict(self.fit); held2 = dict(self.held); store_add = None
+                if pilot:
+                    for half, mask in (('fit', (ids & 1) == 1), ('held', (ids & 1) == 0)):
+                        acc = fit2 if half == 'fit' else held2; vals = logW0q[mask & ~zero]
+                        if vals.size:
+                            m = float(vals.max()); lm = max(acc['lmax'], m); acc['lsum'] = acc['lsum'] * (2.0 ** (acc['lmax'] - lm) if acc['n'] else 0.0) + float(np.exp2(vals - lm).sum()); acc['lmax'] = lm
+                        acc['n'] += int(mask.sum())
+                    if self.pilot_store is not None: store_add = (X_states.copy(), logW0q.copy(), ids.copy())
+                cert2.update_batch(X, f); zc2.update_batch(X)
+                if tnow() >= hard: raise Deadline('joint batch: the hard cutoff passed during the statistics assembly (nothing committed)')
+                # ---- swap (bounded)
+                self.cert = cert2; ep.zcert = zc2; self.fit = fit2; self.held = held2
+                if store_add is not None: self.pilot_store['states'].append(store_add[0]); self.pilot_store['logW0q'].append(store_add[1]); self.pilot_store['ids'].append(store_add[2])
+            finally:
+                if scratch: B_.release(scratch)
+            self.draws += Bn; self.zero_draws += int(zero.sum()); self.sumX += float(X.sum()); self.sumX2 += float((X * X).sum()); self.maxX = max(self.maxX, float(X.max())); self.maxlogX = max(self.maxlogX, mx)
+            ep.draws_n = getattr(ep, 'draws_n', 0) + Bn; ep.sumX = getattr(ep, 'sumX', 0.0) + float(X.sum()); ep.sumX2 = getattr(ep, 'sumX2', 0.0) + float((X * X).sum()); ep.maxX = max(getattr(ep, 'maxX', 0.0), float(X.max())); ep.zero_n = getattr(ep, 'zero_n', 0) + int(zero.sum())      # DGP6 repair (finding 8): epoch-LOCAL weight statistics
             if (X > 0).any(): self.witness = True
             self.batches += 1; dt = tnow() - t0; self.t_sample += dt; self.batch_pins.append((ep.index, int(ids[0]), int(ids[-1]))); self.measurements.append(dict(kind='joint_batch', seconds=dt, completed=True, features=dict(B=Bn, n=self.n_par, fine_factors=len(self.fine), Kq=self.Kq, epoch=ep.index, pilot=pilot))); return 'COMMITTED'
         except (IG.Deadline, Deadline) as e: self.abandoned += 1; self.t_sample += tnow() - t0; return self._close('joint batch abandoned at a hard cut (%s); %d committed batches retained' % (e, self.batches))
@@ -307,4 +328,9 @@ class JointStream(Stream):
         return self.stage == 'READY' and not self.all_published() and self.mode != 'seed' and self.pilot is not None and self.refinement_ended is None and len(self.attempts) < self.profile['max_attempts'] and self.allowance_end is not None and tnow() < self.phase_ends['reserve']
     def can_pilot(self): return self.stage == 'READY' and not self.all_published() and self.pilot is None and self.allowance_end is not None and tnow() < self.phase_ends['pilot']
     def diagnostics(self):
-        d = super().diagnostics(); d['joint'] = dict(mode=self.mode, epochs=[e.record for e in self.epochs], current_epoch=(self.epoch.index if self.epoch else None), epoch_switches=self.epoch_switches, attempts=self.attempts, pilot=self.pilot, refinement_ended=self.refinement_ended, batch_pins=self.batch_pins[:64], joint_bytes=self.joint_bytes, allowance=self.mech.get('allowance')); return d
+        d = super().diagnostics(); multi = sum(1 for e in self.epochs if getattr(e, 'draws_n', 0) > 0) > 1
+        if multi:                                                                                                  # DGP6 repair (finding 8): pooled weight statistics across epochs with DIFFERENT caps are meaningless -> removed; the epoch-local ones replace them
+            for k in ('X_mean', 'ESS_DIAGNOSTIC', 'largest_share', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'Z_over_Ucap_EB_DIAGNOSTIC', 'max_log2_X_observed'): d.pop(k, None)
+            d['pooled_weight_statistics'] = 'REMOVED: %d epochs with different caps consumed draws; see joint.epoch_weight_statistics' % sum(1 for e in self.epochs if getattr(e, 'draws_n', 0) > 0)
+        d['joint'] = dict(mode=self.mode, epochs=[e.record for e in self.epochs], current_epoch=(self.epoch.index if self.epoch else None), epoch_switches=self.epoch_switches, attempts=self.attempts, pilot=self.pilot, refinement_ended=self.refinement_ended, batch_pins=self.batch_pins[:64], joint_bytes=self.joint_bytes, allowance=self.mech.get('allowance'),
+                          epoch_weight_statistics=[dict(epoch=e.index, cap_log2_W0=e.B_eff_log2, draws=getattr(e, 'draws_n', 0), X_mean=((e.sumX / e.draws_n) if getattr(e, 'draws_n', 0) else None), ESS_DIAGNOSTIC=((e.sumX ** 2 / e.sumX2) if getattr(e, 'sumX2', 0.0) > 0 else None), max_X=getattr(e, 'maxX', None), zero_draws=getattr(e, 'zero_n', 0), Z_over_cap_EB_DIAGNOSTIC=(e.zcert.interval() if getattr(e, 'draws_n', 0) else None)) for e in self.epochs]); return d

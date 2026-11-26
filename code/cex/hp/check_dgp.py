@@ -1098,23 +1098,24 @@ def D41_lifetime_cutoffs_and_incumbent():
             if undo: undo()
         L = [S for S in P.streams if S.kind == 'lifted']; m = o['mechanism']
         res[label] = dict(outcome=o['outcome'], published=o['published'], K=o['K'], ledger_identity=m.get('constructor_live_ledger_identity'), lifted=[(S.stage, (S.closed_reason or '')[:80], S.rmax_bytes, (S.mech.get('rmax_refusal') or {}).get('kind'), (S.mech.get('rmax') or {}).get('stages_done')) for S in L], hard_respected=o['hard_deadline_respected'], late=m.get('late_assembly'), request_defect=m.get('defect'))
+    hits = dict(adapter_packing_refused=0, sampler_stage_deadline=0, midpoint_zero_allowance=0)                       # DGP6 repair (finding 8): every injection counts its hits; a branch with zero hits is a VACUOUS control
     def patch_pack(P):
-        real = RM.check_packing; RM.check_packing = lambda *a_, **k_: dict(ok=False, why='injected')
-        return lambda: setattr(RM, 'check_packing', real)
+        real = RM.check_packing
+        def fail(*a_, **k_): hits['adapter_packing_refused'] += 1; return dict(ok=False, why='injected')
+        RM.check_packing = fail; return lambda: setattr(RM, 'check_packing', real)
     def patch_sampler(P):
         real = PA.prepare_sampler_polled
         def fail(mbp, deadline, *a_, **k_):
-            if getattr(mbp, '_is_lifted_probe', False) or True:
-                import inspect; f = inspect.currentframe().f_back
-                if f.f_code.co_name == '_l_sampler': raise PA.Deadline('injected in the lifted sampler stage')
+            import inspect; f = inspect.currentframe().f_back
+            if f.f_code.co_name == '_l_sampler': hits['sampler_stage_deadline'] += 1; raise PA.Deadline('injected in the lifted sampler stage')
             return real(mbp, deadline, *a_, **k_)
         PA.prepare_sampler_polled = fail; return lambda: setattr(PA, 'prepare_sampler_polled', real)
     def patch_midpoint(P):
         real = PA.LiftedStream.prepare
         def prep(self, deadline, cdead=None, until=None):
-            self.rmax_midpoint = PA.tnow() - 1.0; return real(self, deadline, cdead, until)
+            hits['midpoint_zero_allowance'] += 1; self.rmax_midpoint = PA.tnow() - 1.0; return real(self, deadline, cdead, until)
         PA.LiftedStream.prepare = prep; return lambda: setattr(PA.LiftedStream, 'prepare', real)
-    run('baseline', None); run('adapter_packing_refused', patch_pack); run('sampler_stage_deadline', patch_sampler); run('midpoint_zero_allowance', patch_midpoint)
+    run('baseline', None); run('adapter_packing_refused', patch_pack); run('sampler_stage_deadline', patch_sampler); run('midpoint_zero_allowance', patch_midpoint); res['injection_hits'] = dict(hits)
     # (d) forced RMAX with a tight allowance: the stream closes typed with its charge released; the hard deadline is NOT substituted
     P = UPlanner(model, binding, 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, force_stream='lifted', envelope='RMAX'); P.M = CE.canonicalize(model, P.hclock, P.budget); P.canonical_charge = P.budget.live; P.mf = CM.model_features(P.M, P.clock, P.budget)
     ident = P.make_identity(P.clock); P.cands.append(ident); c = P.discover_fast_lift_only(ident, Clock(PA.tnow() + 5, {})); P.lift_cands.append(c); S = P.make_lifted(c); l0 = P.budget.live
@@ -1127,7 +1128,7 @@ def D41_lifetime_cutoffs_and_incumbent():
     cr = str(S.closed_reason or ''); res['forced_tight_allowance'] = dict(result=r, stage=S.stage, closed=cr[:100], injected_reads=inj['reads'], injected_elapsed_s=inj['reads'] * 0.001, hard_deadline_margin_s=P.adm - inj['now'], released=(P.budget.live - l0 - (S.rows.bytes if getattr(S, 'rows', None) else 0) <= 0), allowance=S.mech.get('rmax_allowance'), typed_allowance_refusal=(r == 'CLOSED' and ('ALLOWANCE' in cr or 'DEADLINE' in cr) and inj['now'] < P.adm - 1.0))
     ok = (all(res[k]['ledger_identity'] is True and res[k]['hard_respected'] for k in ('baseline', 'adapter_packing_refused', 'sampler_stage_deadline', 'midpoint_zero_allowance')) and res['baseline']['outcome'] == 'COMPLETE' and res['adapter_packing_refused']['outcome'] == 'COMPLETE' and res['sampler_stage_deadline']['outcome'] == 'COMPLETE'
           and all(l[0] == 'CLOSED' and l[2] == 0 and l[3] == 'Defect' for l in res['adapter_packing_refused']['lifted']) and all(l[0] == 'CLOSED' and l[2] == 0 for l in res['sampler_stage_deadline']['lifted']) and res['midpoint_zero_allowance']['outcome'] == 'COMPLETE' and all(l[4] == 0 for l in res['midpoint_zero_allowance']['lifted'])
-          and res['forced_tight_allowance']['typed_allowance_refusal'] and res['forced_tight_allowance']['released'])        # DGP5 (finding 6): the specific injected outcome is REQUIRED
+          and res['forced_tight_allowance']['typed_allowance_refusal'] and res['forced_tight_allowance']['released'] and all(v >= 1 for v in res['injection_hits'].values()) and all(len(res[k]['lifted']) >= 1 for k in ('adapter_packing_refused', 'sampler_stage_deadline', 'midpoint_zero_allowance')))        # DGP5 (finding 6): the specific injected outcome is REQUIRED; DGP6 (finding 8): every injection hit >= 1 and every targeted branch NONEMPTY
     rec('D41_lifetime_cutoffs_and_incumbent', ok, **res)
 
 

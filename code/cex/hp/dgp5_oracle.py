@@ -6,7 +6,7 @@ model's seed stream) laws -- each ACTUAL dyadic law with its OWN checked cap / m
 selector (eta = eps Z_0 / 6 with the TRUE Z_0: oracle-assisted); (6) bounded coefficients at volumes 1,024 / 4,096 / 16,384 on the same family (refusals / censoring recorded; only 4,096 is production); (7) --replay: the
 accepted certificate replayed for 2^18 draws x seeds 1 / 2 / 3 for the four pinned laws (seed, cap-only, moment-only, joint-selected), each frozen BEFORE any replay draw, with the implemented cap and the exact tight cap
 paired on IDENTICAL draws (dgp3_oracle.replay_fine_law shape; one inverse-CDF stream per law); the production trajectory (what the planner would commit over <= 2 attempts) is reported SEPARATELY (not a same-family law
-comparison). ORACLE ONLY: exact enumeration, b* / a*, Z_0 never reach production. usage: dgp5_oracle.py MODEL.uai OUT.json [--cap-s 100] [--replay] [--replay-draws 262144] [--seeds 1,2,3] [--continue]"""
+comparison). ORACLE ONLY: exact enumeration, b* / a*, Z_0 never reach production. DGP6 AMENDMENT of this DGP5 replay utility (labelled; the DGP5 scored records are unchanged): the retune / exact-coefficient / oracle-Z comparators rebuild S / H / d / J together (finding 6) and joint_optimize.frontier_laws uses the specified AFFINE C grid (finding 7). usage: dgp5_oracle.py MODEL.uai OUT.json [--cap-s 100] [--replay] [--replay-draws 262144] [--seeds 1,2,3] [--continue]"""
 import sys, os, json, time, math, argparse, itertools
 from fractions import Fraction as F
 import numpy as np
@@ -38,6 +38,14 @@ def candidate_laws(pk, prop, cards, z, mode, B_cur, S_ref, log2_eta, d_hat_fn, l
         w = JW.witnesses_of(pk, cond, S_ref=S_ref); conds = dict(prop.conds); conds[z] = cond; newp = JP.Proposal(cards, conds, prop.order, w['B'], w['S'], dict(kind='oracle_candidate', label=lab, mode=mode, nominal_log2_C=nominal)); d = d_hat_fn(newp); H = JO.H_log2(w['log2_S'], w['log2_B'], log2_eta, mode)
         out.append(dict(label=label_prefix + lab, prop=newp, log2_B=w['log2_B'], log2_S=w['log2_S'], S_witness=w['S_witness'], log2_H=H, log2_J=math.log2(d) + H, d_hat=d, nominal_log2_C=nominal, family_volume=cond.family_volume(), index=i + 1, is_current=False))
     return out
+
+
+def rebuilt(incumbent, S_ref, log2_eta=None, mode='joint'):
+    """DGP6 repair (finding 6: oracle objectives -- an amendment of the DGP5 replay utility, labelled): whenever the comparator's moment witness (or eta) changes, S / H / d / J are rebuilt TOGETHER (the frozen DGP5 utility
+    replaced log2_S alone and kept the stale log2_J in the retune / exact-coefficient selections)"""
+    from residual_max_envelope import log2_up
+    l2 = lambda x: (log2_up(x) if x[1] else -math.inf); inc = dict(incumbent); inc['log2_S'] = l2(S_ref) if not isinstance(S_ref, float) else S_ref; eta = incumbent['log2_eta'] if log2_eta is None else log2_eta; inc['log2_eta'] = eta
+    inc['log2_H'] = JO.H_log2(inc['log2_S'], inc['log2_B'], eta, mode); inc['log2_J'] = math.log2(inc['d_hat']) + inc['log2_H']; return inc
 
 
 def select_from(cands, incumbent):
@@ -93,18 +101,18 @@ def main():
                 inc = JW.witnesses_of(pk, pk.cond_ctx, S_ref=None); B_tight = min(prop_seed.B, inc['B']); S_ref = min([s for s in (prop_seed.S, inc['S']) if s[1]] + [norm_up(*mul_exact(B_tight, B_tight))]); l2 = lambda x: (log2_up(x) if x[1] else -math.inf)
                 rec_pk['incumbent'] = dict(log2_B_consumed=prop_seed.log2_B(), log2_B_tight=l2(B_tight), log2_S_ref=l2(S_ref), log2_S_sum_a=inc['log2_S_sum_a'])
                 if V == 4096:
-                    incumbent = dict(label='seed', is_current=True, log2_B=prop_seed.log2_B(), log2_S=l2(S_ref), log2_H=JO.H_log2(l2(S_ref), prop_seed.log2_B(), log2_eta), family_volume=prop_seed.conds[z].family_volume(), index=-1, d_hat=d_hat(prop_seed)); incumbent['log2_J'] = math.log2(incumbent['d_hat']) + incumbent['log2_H']
+                    incumbent = dict(label='seed', is_current=True, log2_B=prop_seed.log2_B(), log2_S=l2(S_ref), log2_eta=log2_eta, log2_H=JO.H_log2(l2(S_ref), prop_seed.log2_B(), log2_eta), family_volume=prop_seed.conds[z].family_volume(), index=-1, d_hat=d_hat(prop_seed)); incumbent['log2_J'] = math.log2(incumbent['d_hat']) + incumbent['log2_H']
                     cj = candidate_laws(pk, prop_seed, cards, z, 'joint', prop_seed.B, S_ref, log2_eta, d_hat); win, prom = select_from(cj, incumbent)
                     cc = candidate_laws(pk, prop_seed, cards, z, 'cap_only', prop_seed.B, S_ref, log2_eta, d_hat); cm = candidate_laws(pk, prop_seed, cards, z, 'moment_only', prop_seed.B, S_ref, log2_eta, d_hat)
                     props['seed'] = prop_seed; props['cap_only'] = next((c['prop'] for c in cc if 'prop' in c), None); props['moment_only'] = next((c['prop'] for c in cm if 'prop' in c), None); props['joint_selected'] = (win['prop'] if prom else prop_seed)
                     # the UNCHANGED-family retune (parents = the seed's parents) within the same packet machinery
                     pk_u = JW.build_packet(M, prop_seed, z, tuple(prop_seed.conds[z].parents), order, prof, B, clk, deadline_fn=(lambda: tnow() >= deadline)) if tuple(prop_seed.conds[z].parents) != parents else pk
-                    inc_u = JW.witnesses_of(pk_u, pk_u.cond_ctx, S_ref=None); S_ref_u = min([s for s in (prop_seed.S, inc_u['S']) if s[1]]); cu = candidate_laws(pk_u, prop_seed, cards, z, 'joint', prop_seed.B, S_ref_u, log2_eta, d_hat, 'retune:'); win_u, prom_u = select_from(cu, dict(incumbent, log2_S=l2(S_ref_u)))
+                    inc_u = JW.witnesses_of(pk_u, pk_u.cond_ctx, S_ref=None); S_ref_u = min([s for s in (prop_seed.S, inc_u['S']) if s[1]]); cu = candidate_laws(pk_u, prop_seed, cards, z, 'joint', prop_seed.B, S_ref_u, log2_eta, d_hat, 'retune:'); win_u, prom_u = select_from(cu, rebuilt(incumbent, S_ref_u))         # DGP6 repair (finding 6): S / H / J rebuilt together
                     props['retune_selected'] = (win_u['prop'] if prom_u else prop_seed)
                     # the oracle-assisted counterfactuals: exact coefficients on the same family; the oracle-Z selector on the bounded packet
                     pk_x, lb_x2, la_x2 = exact_packet(M, prop_seed, z, parents, cards, states, logW0); inc_x = JW.witnesses_of(pk_x, pk_x.cond_ctx, S_ref=None); S_ref_x = min([s for s in (prop_seed.S, inc_x['S']) if s[1]])
-                    cx = candidate_laws(pk_x, prop_seed, cards, z, 'joint', prop_seed.B, S_ref_x, log2_eta, d_hat, 'exact_coef:'); win_x, prom_x = select_from(cx, dict(incumbent, log2_S=l2(S_ref_x))); props['exact_coef_selected'] = (win_x['prop'] if prom_x else prop_seed)
-                    cz = candidate_laws(pk, prop_seed, cards, z, 'joint', prop_seed.B, S_ref, log2_eta_oracle, d_hat, 'oracleZ:'); incZ = dict(incumbent, log2_H=JO.H_log2(l2(S_ref), prop_seed.log2_B(), log2_eta_oracle)); incZ['log2_J'] = math.log2(incZ['d_hat']) + incZ['log2_H']; win_z, prom_z = select_from(cz, incZ); props['oracleZ_selected'] = (win_z['prop'] if prom_z else prop_seed)
+                    cx = candidate_laws(pk_x, prop_seed, cards, z, 'joint', prop_seed.B, S_ref_x, log2_eta, d_hat, 'exact_coef:'); win_x, prom_x = select_from(cx, rebuilt(incumbent, S_ref_x))                  # DGP6 repair (finding 6); props['exact_coef_selected'] = (win_x['prop'] if prom_x else prop_seed)
+                    cz = candidate_laws(pk, prop_seed, cards, z, 'joint', prop_seed.B, S_ref, log2_eta_oracle, d_hat, 'oracleZ:'); incZ = rebuilt(incumbent, S_ref, log2_eta_oracle); win_z, prom_z = select_from(cz, incZ); props['oracleZ_selected'] = (win_z['prop'] if prom_z else prop_seed)
                     rec_pk['selection'] = dict(production=dict(winner=win['label'], promoted=prom, incumbent_log2_J=incumbent['log2_J'], winner_log2_J=win['log2_J'], candidates=[{k: v for k, v in c.items() if k != 'prop'} for c in cj]), cap_only=[{k: v for k, v in c.items() if k != 'prop'} for c in cc], moment_only=[{k: v for k, v in c.items() if k != 'prop'} for c in cm], retune=dict(winner=win_u['label'], promoted=prom_u, family=list(prop_seed.conds[z].parents)), exact_coefficients=dict(winner=win_x['label'], promoted=prom_x), oracle_Z_selector=dict(winner=win_z['label'], promoted=prom_z, log2_eta=log2_eta_oracle))
                     for name, p_ in props.items():
                         if p_ is not None: laws[name] = law_record(p_, states, logW0, name, dict(same_as_seed=(p_.sha256 == prop_seed.sha256), exact_check=({k_: v_ for k_, v_ in CJ.ref_check_law(M, p_).items() if k_ not in ('Z0', 'Rstar', 'S0')} if states.shape[0] <= 4096 else None)))

@@ -4,6 +4,7 @@ new construction disabled), SEED (--lifted --envelope RMAX --joint seed), JOINT 
 delta / 4; never completions). Sample seed per task: first eight SHA-256 bytes of 'DGP5-SAMPLE|<model_sha256>|<k>' (unsigned big-endian) reduced to 1..2^31-1 (k = 0 primary, 1 / 2 confirmations), shared across arms. Primary arm order rotated by the model hash (first eight hex digits mod the arm count); reversed for confirmations.
 Contracts: main 20.0 / 19.5 / 19.0; p4 4.0 / 3.85 / 3.5; p20 = main. usage: run_dgp5.py SUBDIR MANIFEST.json --code-root /path/to/detached --arms BASE,REPAIRED,SEED,JOINT --contract main|p4|p20 [--confirm --seed-index K] [--only a,b] [--scope S] [--records RD]"""
 import sys, os, json, time, subprocess, argparse, hashlib
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 RD_DEFAULT = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP5_JOINT_CONSTRUCTION'; SUP_CODE = os.environ.get('PGM_CODE', '/Users/adis/Workspace/pgm/code'); PY = os.environ.get('PY', os.path.join(SUP_CODE, '.venv/bin/python')); CAFF = os.environ.get('CAFF', '/usr/bin/caffeinate')
 CONTRACTS = dict(main=dict(outer=20.0, hard=19.5, work=19.0), p4=dict(outer=4.0, hard=3.85, work=3.5), p20=dict(outer=20.0, hard=19.5, work=19.0))
 FROZEN = dict(mem_gib=3, epsilon='1/200', delta='1/1000000', base=dict(route='auto', proposal='mb', schedule='targeted', table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, batch=1024), contracts=CONTRACTS)
@@ -69,6 +70,8 @@ def main():
     seen = set()
     for t in tasks:
         key = (t['model_sha256'], t['evid_sha256']); assert key not in seen, 'duplicate input identity in the manifest: %s' % t['name']; seen.add(key)        # preflight: cells are joined by hashes, never names
+    import dgp_paths
+    for t in tasks: t['model'] = dgp_paths.resolve_input(t['model'], RD, t.get('model_sha256'))                  # DGP6 repair (finding 9): packet-relative / DGP_ROOTS resolution; a non-existent recorded path is never used silently
     for i, t in enumerate(tasks):
         if a.only and t['name'] not in a.only.split(','): continue
         r = arm_rotation(t['model_sha256'], len(arms)); order = arms[r:] + arms[:r]

@@ -114,9 +114,12 @@ class Conditional:
         return idx
     def family_volume(self): return int(self.counts.size)
     def theta_exact(self, row, a): return F(int(self.counts[row, a]), D)
-    def replicate(self, new_parents, cards):
-        """row replication across added parents (lemma L4): the SAME law on the larger context; new_parents must contain the old parents"""
+    def replicate(self, new_parents, cards, budget=None):
+        """row replication across added parents (lemma L4): the SAME law on the larger context; new_parents must contain the old parents. DGP6 repair (finding 3): with `budget` the counts + cumulative arrays are
+        CHARGED before allocation (a zero-headroom expansion refuses MEMORY before any array exists); the charge is owned by the returned Conditional's `bytes` (the caller releases it with the table)"""
         assert set(self.parents) <= set(new_parents)
+        n_new = vol_of(new_parents, cards) * cards[self.z]
+        if budget is not None: budget.charge(COUNT_BYTES * n_new + 256, 'replicated conditional of %d (%d entries)' % (self.z, n_new))
         new = np.empty((vol_of(new_parents, cards), cards[self.z]), dtype=np.int64); st = {}; s_ = 1
         for p in reversed(new_parents): st[p] = s_; s_ *= cards[p]
         for idx, asg in enumerate(itertools.product(*[range(cards[p]) for p in new_parents])):

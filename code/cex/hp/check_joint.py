@@ -21,10 +21,58 @@ def _exact_prod(entries):
 
 
 def _exact_sum(entries):
-    """exact (unnormalized) sum of (e, m) pairs: aligned to the smallest exponent (bounded by the inputs' own spread: inputs of ONE table share a bounded exponent range after normalization)"""
+    """DGP6 repair (finding 5: compact SUM growth): the former exact sum aligned every term to the SMALLEST exponent (m << spread: two 128-bit terms with exponent spread 2^24 allocated 2^24 bits). The checker now uses the
+    separately proved BOUNDED upward sum `residual_max_envelope.sum_up` (terms aligned to lead_max - MBITS - 8; a term below the grid contributes its ceiling, at least one unit): the SUM message must dominate this UPPER bound,
+    a stricter (sufficient) condition than dominating the exact sum. Growth is refused typed beyond 1,048,576 terms."""
     entries = [x for x in entries if x[1]]
     if not entries: return ZERO
-    e0 = min(e for e, _ in entries); return (e0, sum(m << (e - e0) for e, m in entries))
+    if len(entries) > (1 << 20): raise CE.Refused('GROWTH', 'the checker sum has %d terms' % len(entries))
+    return sum_up(entries)
+
+
+def expected_sources(M_par, prop, z=None, power=1, cards=None):
+    """DGP6 repair (finding 1: independent source binding): the EXPECTED raw-source inventory of a coefficient / circuit pass derived from the canonical target and the proposal ALONE (never from the producer's table list):
+    every unary psi_v^power and factor^power of M_par (sorted axes; row-major re-laid), and the reciprocal D / c of EVERY conditional except z (z = None: every conditional). Returns [(role, key, axes, exact_fn)] with exact_fn(idx) the
+    exact rational value at a multi-index over `axes`."""
+    import joint_proposal as JP
+    cards = list(cards or M_par.cards); out = []
+    for v in range(len(cards)): out.append(('unary', v, (v,), (lambda psi: (lambda idx: F(psi[idx[0]]) ** power))(M_par.psi[v])))
+    for fi, (sc, vals) in enumerate(M_par.factors):
+        sc = tuple(sc); axes = tuple(sorted(sc)); st = CE.strides([cards[v] for v in sc])
+        def fn(idx, sc=sc, axes=axes, vals=vals, st=st): return F(vals[sum(st[i] * idx[axes.index(v)] for i, v in enumerate(sc))]) ** power
+        out.append(('factor', fi, axes, fn))
+    for v in prop.order:
+        if v == z: continue
+        c = prop.conds[v]; axes = tuple(sorted(c.parents + (c.z,))); layout = c.parents + (c.z,)
+        def fr(idx, c=c, axes=axes, layout=layout): return F(JP.D, int(c.counts[sum(c.pstrides[p_] * idx[axes.index(p_)] for p_ in c.parents) if c.parents else 0, idx[axes.index(c.z)]]))
+        out.append(('reciprocal', v, axes, fr))
+    return out
+
+
+def certify_sources(M_par, prop, tables, z=None, power=1, cards=None, sample=64, rng_seed=7):
+    """DGP6 repair (finding 1): bind the producer's source tables to the EXPECTED inventory by role, axes and VALUES (never ids): every expected source present exactly once; every table maps to one expected source; each table's
+    compact entries dominate the exact expected value (upward) at every entry when the table has <= `sample` x 16 entries, else at `sample` deterministic positions + the extremes; omitted / duplicated / wrong-axis / wrong-value
+    tables are rejected. Returns a receipt."""
+    import random
+    cards = list(cards or M_par.cards); exp = expected_sources(M_par, prop, z, power, cards); by_key = {}
+    for T in tables:
+        role = T.origin[0]; key = T.origin[1] if len(T.origin) > 1 else None; k = ('unary', key) if role == 'unary' else ('factor', key) if role == 'factor' else ('reciprocal', key) if role == 'reciprocal' else (role, key)
+        if k in by_key: return dict(ok=False, why='duplicate source %s' % (k,))
+        by_key[k] = T
+    missing = [(r, k) for r, k, _, _ in exp if (r, k) not in by_key]; extra = [k for k in by_key if k not in {(r, kk) for r, kk, _, _ in exp}]
+    if missing: return dict(ok=False, why='missing expected source(s) %s' % missing[:4])
+    if extra: return dict(ok=False, why='unexpected source(s) %s' % extra[:4])
+    checked = 0; rng = random.Random(rng_seed)
+    for role, key, axes, fn in exp:
+        T = by_key[(role, key)]
+        if tuple(T.axes) != tuple(axes): return dict(ok=False, why='source %s axes %s != expected %s' % ((role, key), T.axes, axes))
+        shape = [cards[v] for v in axes]; n = int(np.prod(shape)) if shape else 1; idxs = list(itertools.product(*[range(k) for k in shape])) if n <= sample * 16 else [tuple(rng.randrange(k) for k in shape) for _ in range(sample)] + [tuple(0 for _ in shape), tuple(k - 1 for k in shape)]
+        for idx in idxs:
+            ex = fn(idx); got = T.arr[idx] if shape else T.arr.reshape(-1)[0]
+            if (ex == 0) != (got[1] == 0): return dict(ok=False, why='source %s zero / positive mismatch at %s' % ((role, key), idx))
+            if ex > 0 and to_fraction(got) < ex: return dict(ok=False, why='source %s underbounds the expected value at %s' % ((role, key), idx))
+            checked += 1
+    return dict(ok=True, sources=len(exp), entries_checked=checked, roles=dict(unary=sum(1 for r, _, _, _ in exp if r == 'unary'), factor=sum(1 for r, _, _, _ in exp if r == 'factor'), reciprocal=sum(1 for r, _, _, _ in exp if r == 'reciprocal')), power=power, excluded=z)
 
 
 def check_inventory(inputs, output, inventory=None, bucket_ids=None, eliminated=None):

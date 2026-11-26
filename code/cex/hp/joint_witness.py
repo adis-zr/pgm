@@ -36,7 +36,9 @@ def coefficient_pass(M_par, prop, z, parents, order, mode, profile, budget, cloc
         for v in prop.order:
             if v == z: continue
             srcs.append(reciprocal_table(prop.conds[v], cards, tid, budget, clock, owned)); tid += 1
-        comp = JP.JointCompile(cards, srcs, order, profile['V_coef'], profile['fanin'], budget, clock, mode, retain=Fax, owned=owned); comp.run(deadline_fn); T = comp.retained_product()
+        import check_joint as CJ; bind = CJ.certify_sources(M_par, prop, srcs, z=z, power=(2 if mode == 'sum' else 1), cards=cards)            # DGP6 repair (finding 1): the sources are bound to the EXPECTED inventory (roles / axes / values) before any elimination
+        if not bind['ok']: raise CE.Defect('source binding (%s pass): %s' % (mode, bind['why']))
+        comp = JP.JointCompile(cards, srcs, order, profile['V_coef'], profile['fanin'], budget, clock, mode, retain=Fax, owned=owned); comp.checker_receipts.append(dict(bind, kind='source_binding', cells=0)); comp.run(deadline_fn); T = comp.retained_product()
         # re-lay the retained product (sorted axes) into the COUNTS layout (parents in sampling order, z last)
         layout = tuple(parents) + (z,); perm = [Fax.index(v) for v in layout]; arr = np.ascontiguousarray(np.transpose(T.arr, perm)).reshape(-1, cards[z])
         rec = comp.record(); rec.update(seconds=CE.tnow() - t0, family=list(Fax), family_volume=int(arr.size), owned_bytes=owned[0], source_tables=len(srcs), reciprocals=len(srcs) - len(M_par.cards) - len(M_par.factors))
@@ -81,14 +83,16 @@ class WitnessPacket:
 
 def build_packet(M_par, prop, z, parents, order, profile, budget, clock, deadline_fn=None, inherit=True):
     """both passes on the candidate context (parents) of conditional z; the current conditional replicated onto that context; b intersected with the inherited coefficient when `inherit`"""
-    cards = list(M_par.cards); cur = prop.conds[z]; ctx = cur if tuple(cur.parents) == tuple(parents) else cur.replicate(tuple(parents), cards)
+    cards = list(M_par.cards); cur = prop.conds[z]; ctx = cur if tuple(cur.parents) == tuple(parents) else cur.replicate(tuple(parents), cards, budget=budget)      # DGP6 repair (finding 3): the replicated table is ADMITTED before allocation
     b_fresh, rec_b, own_b = coefficient_pass(M_par, prop, z, parents, order, 'max', profile, budget, clock, deadline_fn)
     try: a, rec_a, own_a = coefficient_pass(M_par, prop, z, parents, order, 'sum', profile, budget, clock, deadline_fn)
     except BaseException:
         if own_b[0]: budget.release(own_b[0]); own_b[0] = 0
         raise
-    b = intersect_b(b_fresh, inherited_b(prop, ctx)) if inherit else b_fresh
-    pk = WitnessPacket(z, parents, b, a, b_fresh, rec_b, rec_a, ctx, prop); pk.owned = own_b[0] + own_a[0]; own_b[0] = 0; own_a[0] = 0; pk.release = lambda: budget.release(pk.owned); return pk
+    extra = budget.charge(ENTRY_BYTES * int(b_fresh.size) * 2 + (ctx.bytes if ctx is not cur else 0) + 256, 'inherited coefficient + intersection + replicated context')       # DGP6 repair (finding 3): admitted before allocation
+    try: b = intersect_b(b_fresh, inherited_b(prop, ctx)) if inherit else b_fresh
+    except BaseException: budget.release(extra); raise
+    pk = WitnessPacket(z, parents, b, a, b_fresh, rec_b, rec_a, ctx, prop); pk.owned = own_b[0] + own_a[0] + extra; own_b[0] = 0; own_a[0] = 0; pk.release = lambda: budget.release(pk.owned); return pk
 
 
 def witnesses_of(pk, cond, S_ref=None, gamma_ok=True):

@@ -35,10 +35,12 @@ def log2_range(vals):
 def interaction_scores(M_par, budget, clock):
     """pair -> sum over target factors containing both variables of the positive log-range (64 bits for a factor with a structural zero); charged (one float per pair) and polled; ordering only, never a proof"""
     n = len(M_par.cards); pairs = {}; charged = budget.charge(8 * sum(len(sc) * (len(sc) - 1) // 2 for sc, _ in M_par.factors) + 64, 'joint interaction scores')
-    for fi, (sc, vals) in enumerate(M_par.factors):
-        r = log2_range(vals); r = ZERO_BITS if r is None else r
-        for u, v in itertools.combinations(sorted(set(sc)), 2): pairs[(u, v)] = pairs.get((u, v), 0.0) + r
-        if (fi & 255) == 255: clock.poll('in the interaction scores')
+    try:                                                                                      # DGP6 repair (finding 2): exception-safe ownership -- an interrupted scan releases its charge (2,272 B orphaned before)
+        for fi, (sc, vals) in enumerate(M_par.factors):
+            r = log2_range(vals); r = ZERO_BITS if r is None else r
+            for u, v in itertools.combinations(sorted(set(sc)), 2): pairs[(u, v)] = pairs.get((u, v), 0.0) + r
+            if (fi & 255) == 255: clock.poll('in the interaction scores')
+    except BaseException: budget.release(charged); raise
     return pairs, charged
 
 
@@ -136,7 +138,7 @@ def frontier_laws(pk, prop, cards, profile, mode, B_current):
     if mode == 'cap_only': quantize(bf, 'cap_only_b_rows', None); return out
     if mode == 'moment_only': quantize(np.sqrt(af), 'moment_only_sqrt_a_rows', None); return out
     log2_Cmin = (log2_up(pk.Cmin) if pk.Cmin[1] else -math.inf); log2_Bcur = (log2_up(B_current) if B_current[1] else -math.inf); log2_Cmax = max(log2_Cmin, log2_Bcur + 2.0)
-    grid = [log2_Cmin + (log2_Cmax - log2_Cmin) * i / (profile['frontier_points'] - 1) for i in range(profile['frontier_points'])]
+    ratio = 2.0 ** min(1000.0, log2_Cmax - log2_Cmin); grid = [log2_Cmin + math.log2(1.0 + (ratio - 1.0) * i / (profile['frontier_points'] - 1)) for i in range(profile['frontier_points'])]      # DGP6 repair (finding 7): the DGP5 brief specified 17 AFFINE points in C between C_min and C_max; the frozen DGP5 utility used a geometric grid in log2 C -- corrected here as an amendment of the DGP5 replay utility ONLY (the DGP6 global optimizer has no cap grid)
     if log2_Bcur >= log2_Cmin and all(abs(g - log2_Bcur) > 1e-9 for g in grid): grid.append(log2_Bcur)
     for gi, lc in enumerate(grid):
         C = 2.0 ** min(1000.0, lc - shift_b); th, feas = _rows_solve(bf, af, C, profile['bisections']); quantize(th, 'frontier_%02d' % gi, lc, feas)
