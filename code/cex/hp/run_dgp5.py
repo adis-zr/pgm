@@ -29,9 +29,9 @@ def last_receipt(ledger, job):
     rows = [json.loads(l) for l in open(ledger)]; r = [x for x in rows if x.get('kind') == 'RECEIPT' and x['job'] == job]; return r[-1] if r else None
 
 def joint_summary(s):
-    j = s.get('joint') or {}; m = s.get('mechanism') or {}
+    j = s.get('joint') or {}; m = s.get('mechanism') or {}; sd = m.get('seed') if isinstance(m.get('seed'), dict) else {}        # HARNESS amendment 2: a joint stream closed BEFORE its seed stage leaves the base Stream's integer RNG seed under mech['seed']
     return dict(mode=j.get('mode'), stage=s.get('stage'), closed=s.get('closed'), draws=s.get('draws'), published=s.get('published'), epochs=[{k: e.get(k) for k in ('index', 'reason', 'draws_from', 'draws_to', 'eps_num_epoch', 'eps_num_certificate_after', 'cert_t_at_commit', 'committed_offset_s', 'fingerprint', 'predecessor', 'live_joint_bytes', 'storage_released_bytes')} | dict(proposal={k: e['proposal'].get(k) for k in ('sha256', 'log2_B_W0', 'log2_S_W0sq', 'conditionals', 'provenance', 'bytes')}, constants={k: (e.get('constants') or {}).get(k) for k in ('B_eff_log2', 'eps_num', 'rho_X', 'rho_cap', 'cap_tol', 'cap_units')}, Z_epoch=e.get('Z_over_cap_EB_DIAGNOSTIC_epoch')) for e in j.get('epochs', [])],
-                current_epoch=j.get('current_epoch'), epoch_switches=j.get('epoch_switches'), attempts=j.get('attempts'), pilot=j.get('pilot'), refinement_ended=j.get('refinement_ended'), joint_bytes=j.get('joint_bytes'), allowance=j.get('allowance'), seed={k: (m.get('seed') or {}).get(k) for k in ('seconds', 'stages_done', 'stages_total', 'max_splits', 'work_cells', 'consumed_messages', 'peak_owned_bytes', 'owned_bytes', 'zero_rows', 'checker', 'absent_sum_scalars', 'plan_groups')}, elimination=m.get('elimination'), eps_num=m.get('eps_num'), cap_units=m.get('cap_units'), widening_parts=m.get('widening_parts'), construction_defect=m.get('construction_defect'), candidate_defect=m.get('candidate_defect'), close_release=m.get('close_release'))
+                current_epoch=j.get('current_epoch'), epoch_switches=j.get('epoch_switches'), attempts=j.get('attempts'), pilot=j.get('pilot'), refinement_ended=j.get('refinement_ended'), joint_bytes=j.get('joint_bytes'), allowance=j.get('allowance'), seed={k: sd.get(k) for k in ('seconds', 'stages_done', 'stages_total', 'max_splits', 'work_cells', 'consumed_messages', 'peak_owned_bytes', 'owned_bytes', 'zero_rows', 'checker', 'absent_sum_scalars', 'plan_groups')}, elimination=m.get('elimination'), eps_num=m.get('eps_num'), cap_units=m.get('cap_units'), widening_parts=m.get('widening_parts'), construction_defect=m.get('construction_defect'), candidate_defect=m.get('candidate_defect'), close_release=m.get('close_release'))
 
 def summarize(arm, out, rc, c):
     from fractions import Fraction as F
@@ -46,7 +46,21 @@ def summarize(arm, out, rc, c):
     row['complete'] = bool(rc and rc['outcome'] == 'COMPLETED' and rc['wall_s'] <= c['outer'] and row.get('published') is not None and row.get('K') and row['published'] == row['K'] and row.get('outcome') in ('COMPLETE', 'EXACT') and bool(row.get('positive_mass_witness')) and (row.get('hard_deadline_respected') is not False)) and arm not in DIAGNOSTIC_ARMS
     return row
 
+def resummarize(RD, amendment_name):
+    """HARNESS amendment 2: for every cell whose recorded summary failed (outcome NO_RESULT_FILE) while its result.json exists, recompute the summary row from the immutable result.json + the ledger receipt; identity fields,
+    the receipt and the original error are preserved; the cell records `resummarized`. Never re-runs anything."""
+    ledger = os.path.join(RD, 'DGP5_LEDGER.jsonl'); n = 0
+    for p in sorted(__import__('glob').glob(os.path.join(RD, 'runs', '*', '*', 'cell.json'))):
+        cj = json.load(open(p)); c = cj['cell']; res = os.path.join(os.path.dirname(p), 'result.json')
+        if c.get('outcome') != 'NO_RESULT_FILE' or not os.path.exists(res) or 'superseded' in p: continue
+        rc = last_receipt(ledger, c['job']); row = summarize(c['arm'], res, rc, CONTRACTS[c['contract']]); orig_err = c.get('error')
+        keep = {k: c[k] for k in c if k not in row}; keep.update(row); keep['resummarized'] = dict(amendment=amendment_name, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), original_summary_error=orig_err, note='summary recomputed from the unchanged result.json and the ledger receipt; nothing re-run'); cj['cell'] = keep
+        json.dump(cj, open(p, 'w'), indent=1, default=str); n += 1; print('resummarized', os.path.relpath(p, RD), '->', keep.get('outcome'), keep.get('published'), '/', keep.get('K'), 'complete', keep.get('complete'))
+    print('resummarized cells:', n)
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == 'resummarize': resummarize(sys.argv[2] if len(sys.argv) > 2 else RD_DEFAULT, sys.argv[3] if len(sys.argv) > 3 else 'FREEZE_AMENDMENT_harness2.json'); return
     ap = argparse.ArgumentParser(); ap.add_argument('sub'); ap.add_argument('manifest'); ap.add_argument('--code-root', required=True); ap.add_argument('--arms', default='BASE,REPAIRED,SEED,JOINT'); ap.add_argument('--contract', default='main', choices=list(CONTRACTS)); ap.add_argument('--confirm', action='store_true'); ap.add_argument('--seed-index', type=int, default=0, help='k in DGP5-SAMPLE|<model_sha256>|<k>: 0 primary, 1 / 2 confirmations'); ap.add_argument('--only', default=None); ap.add_argument('--scope', default='dgp5_main'); ap.add_argument('--records', default=RD_DEFAULT); ap.add_argument('--freeze', default=None); ap.add_argument('--amendment', default=None, help='a FREEZE_AMENDMENT_*.json of kind validity whose code.commit / code.files the checkout must match (cells record the amendment)'); ap.add_argument('--skip-existing', action='store_true', help='skip a cell whose cell.json already exists (resuming an interrupted panel after an amendment; superseded cells live in runs/<sub>/superseded_*/)'); a = ap.parse_args()
     RD = a.records; man = json.load(open(a.manifest)); tasks = man['tasks']; arms = a.arms.split(','); c = CONTRACTS[a.contract]; env = dict(os.environ, OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1', VECLIB_MAXIMUM_THREADS='1'); env.pop('PYTHONPATH', None); results = []; ledger = os.path.join(RD, 'DGP5_LEDGER.jsonl')
     root = os.path.abspath(a.code_root); head = subprocess.check_output(['git', '-C', root, 'rev-parse', 'HEAD']).decode().strip(); tree = subprocess.check_output(['git', '-C', root, 'rev-parse', 'HEAD^{tree}']).decode().strip(); dirty = subprocess.check_output(['git', '-C', root, 'status', '--porcelain', '--untracked-files=no', '--', 'code/cex', 'code/gbidi']).decode().strip()
