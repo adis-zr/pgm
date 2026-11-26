@@ -86,7 +86,9 @@ class FloatCircuit:
         self.plan = plan; self.cards = list(cards); self.src = source_logs; self.n = len(cards)
         self.row_slices = {}; off = 0
         for v in plan.order: R = vol_of(plan.parents[v], cards); k = cards[v]; self.row_slices[v] = (off, R, k); off += R * k
-        self.n_params = off
+        self.n_params = off; self.n_consumers = [0] * len(plan.nodes)                                               # a leaf / message may feed several products (repeated uses accumulate adjoints): its value is dropped after its LAST consumer
+        for nd in plan.nodes:
+            for j in (nd.get('inputs') or ([nd['input']] if nd['op'] == 'reduce' else [])): self.n_consumers[j] += 1
     def logits_from_counts(self, prop):
         """the parameter vector t = log(count) - max log(count) per row (the brief's initialization; every entry in [-40 ln 2, 0])"""
         t = np.zeros(self.n_params)
@@ -97,7 +99,10 @@ class FloatCircuit:
         """-> (log value of the closure, tape); p_smooth None = exact MAX; else the p-norm upper surrogate LSE(p x) / p for every MAX reduction. Every node's value is dropped once its single consumer has used it (sources are
         consumed exactly once in these plans); the tape retains only what the reverse pass needs: the softmax weights of every reduction, the reciprocal rows' logits / LSE (and, for a hard MAX with keep_hard_inputs, the
         tie masks)"""
-        P = self.plan; cards = self.cards; vals = [None] * len(P.nodes); aux = [None] * len(P.nodes)
+        P = self.plan; cards = self.cards; vals = [None] * len(P.nodes); aux = [None] * len(P.nodes); left = list(self.n_consumers)
+        def used(j):
+            left[j] -= 1
+            if left[j] <= 0: vals[j] = None
         for i, nd in enumerate(P.nodes):
             op = nd['op']
             if op == 'source':
@@ -108,10 +113,10 @@ class FloatCircuit:
             elif op == 'const_card': vals[i] = np.array(math.log(nd['value']))
             elif op == 'product':
                 u = nd['axes']; acc = np.zeros([cards[a] for a in u])
-                for j in nd['inputs']: acc = acc + _bcast(vals[j], P.nodes[j]['axes'], u, cards); vals[j] = None
+                for j in nd['inputs']: acc = acc + _bcast(vals[j], P.nodes[j]['axes'], u, cards); used(j)
                 vals[i] = acc
             elif op == 'reduce':
-                x = vals[nd['input']]; ax = P.nodes[nd['input']]['axes'].index(nd['axis']); vals[nd['input']] = None
+                x = vals[nd['input']]; ax = P.nodes[nd['input']]['axes'].index(nd['axis']); used(nd['input'])
                 with np.errstate(invalid='ignore', over='ignore'):
                     m = np.max(x, axis=ax, keepdims=True); fin = np.isfinite(m); m0 = np.where(fin, m, 0.0)
                     if nd['agg'] == 'sum' or p_smooth is not None:

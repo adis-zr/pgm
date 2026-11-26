@@ -1626,6 +1626,294 @@ def D54_scalar_messages_and_internal_errors():
 CONTROLS.append(D54_scalar_messages_and_internal_errors)
 
 
+
+# ---------------------------------------------------------------- DGP6 (D55-D62): the nine repairs + the global construction (brief section 5)
+import global_circuit as GC, global_optimize as GO, check_global as CG, global_stream as GS, dgp_paths as DPATH
+import residual_max_envelope as _RM
+_LN2 = math.log(2.0)
+def _gstage(model, budget_s=120):
+    M, order, clk, B = _jstage(model, budget_s); cards = list(M.cards); prop, rec_, owned = JP.compile_seed(M, order, JPROF, B, clk); return M, order, clk, B, cards, prop, owned
+def _gplans(M, prop, order, parents=None):
+    parents = parents or {v: tuple(prop.conds[v].parents) for v in prop.order}; PB, PS = GC.build_plans(M, prop.order, parents, order); cards = list(M.cards)
+    return PB, PS, GC.FloatCircuit(PB, GC.source_logs(M, 1), cards), GC.FloatCircuit(PS, GC.source_logs(M, 2), cards)
+def _gstream(M, mode='global', seed=1, budget=None, allow=10.0, profile=None):
+    B = budget or CE.Budget(CE.CONSTRUCTOR_BYTES); S = GS.GlobalStream(2, M, M, [], seed, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B), mode=mode, profile=profile); r = S.prepare(PA.tnow() + allow, until=PA.tnow() + allow); return S, B, r
+
+def D55_source_binding_mutants():
+    """DGP6 finding 1 (+ brief 5: omitted target / reciprocal mutants rejected by the PRODUCTION checker without exhaustive enumeration; values / axes checked, not only ids): (a) the DGP5 coefficient-pass binder rejects an omitted reciprocal,
+    an omitted target factor, a reciprocal with WRONG VALUES (same role / axes / id), a factor with transposed axes, a duplicate reciprocal; accepts the complete inventory; (b) the DGP6 circuit certifier rejects the omitted-source plan, a plan whose
+    reciprocal axes do not match the actual conditional, a producer value below the independent re-derivation, a duplicated source and a tampered power; accepts the honest plan; (c) the binder's rejection happens with NO enumeration (the model has 4^8 states)"""
+    res = {}; model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B, cards, prop, owned = _gstage(model); z = prop.order[-1]; own = [0]
+    srcs = JP.source_tables(M, B, clk, own, V=4096); recs = [JW.reciprocal_table(prop.conds[v], cards, 100 + v, B, clk, own) for v in prop.order if v != z]; full = srcs + recs
+    res['complete_accepted'] = CJ.certify_sources(M, prop, full, z=z)['ok']; res['omitted_reciprocal'] = CJ.certify_sources(M, prop, srcs + recs[1:], z=z); res['omitted_target'] = CJ.certify_sources(M, prop, [T for T in srcs if T.origin[0] != 'factor' or T.origin[1] != 0] + recs, z=z)
+    bad = recs[0]; wrong = JP.JTable(bad.axes, bad.arr.copy(), bad.tid, bad.origin); idx = tuple(0 for _ in bad.axes); wrong.arr[idx] = _RM.norm_up(wrong.arr[idx][0] - 1, wrong.arr[idx][1]); res['wrong_values_same_id'] = CJ.certify_sources(M, prop, srcs + [wrong] + recs[1:], z=z)
+    f0 = next(T for T in srcs if T.origin[0] == 'factor'); tr = JP.JTable(f0.axes, np.ascontiguousarray(np.transpose(f0.arr)), f0.tid, f0.origin) if f0.arr.ndim == 2 else None
+    res['transposed_factor'] = CJ.certify_sources(M, prop, [tr if T is f0 else T for T in srcs] + recs, z=z) if tr is not None else dict(ok=False, why='n/a')
+    res['duplicate_reciprocal'] = CJ.certify_sources(M, prop, full + [recs[0]], z=z); B.release(own[0])
+    PB, PS, FB, FS = _gplans(M, prop, order); cB, _ = GC.compact_evaluate(PB, M, prop, B, clk); live0 = B.live
+    res['circuit_honest'] = CG.certify(PB, M, prop, cB, clk, budget=B)['ok']; p2, i2 = CG.mutate_omit(PB, 'reciprocal', prop.order[0]); res['circuit_omitted'] = CG.certify(p2, M, prop, cB, clk, budget=B).get('why')
+    import copy; p3 = copy.copy(PB); p3.nodes = [dict(nd) for nd in PB.nodes]; j = next(i for i, nd in enumerate(p3.nodes) if nd['op'] == 'source' and nd['role'] == 'reciprocal' and len(nd['axes']) >= 2); p3.nodes[j]['axes'] = tuple(reversed(p3.nodes[j]['axes'])); res['circuit_wrong_axes'] = CG.certify(p3, M, prop, cB, clk).get('why')
+    low = _RM.norm_up(cB[0] - 1, cB[1]); res['circuit_underbound_producer'] = CG.certify(PB, M, prop, low, clk).get('why')
+    p4 = copy.copy(PB); p4.nodes = [dict(nd) for nd in PB.nodes]; k = next(i for i, nd in enumerate(p4.nodes) if nd['op'] == 'product'); p4.nodes[k]['inputs'] = list(p4.nodes[k]['inputs']) + [p4.nodes[k]['inputs'][0]]; res['circuit_duplicate_input'] = CG.certify(p4, M, prop, cB, clk).get('why')
+    p5 = copy.copy(PB); p5.nodes = [dict(nd) for nd in PB.nodes]; u = next(i for i, nd in enumerate(p5.nodes) if nd['op'] == 'source' and nd['role'] == 'factor'); p5.nodes[u]['power'] = 2; res['circuit_wrong_power'] = CG.certify(p5, M, prop, cB, clk).get('why')
+    res['live_delta_after_certifier'] = B.live - live0; res['states'] = math.prod(cards); B.release(owned)
+    ok = (res['complete_accepted'] and not res['omitted_reciprocal']['ok'] and not res['omitted_target']['ok'] and not res['wrong_values_same_id']['ok'] and (tr is None or not res['transposed_factor']['ok']) and not res['duplicate_reciprocal']['ok'] and res['circuit_honest'] and all(res[k] for k in ('circuit_omitted', 'circuit_wrong_axes', 'circuit_underbound_producer', 'circuit_duplicate_input', 'circuit_wrong_power')) and res['live_delta_after_certifier'] == 0 and res['states'] > 4096)
+    rec('D55_source_binding_mutants', ok, **{k: (v if not isinstance(v, dict) else {kk: v.get(kk) for kk in ('ok', 'why')}) for k, v in res.items()})
+
+def D56_ownership_admission_cutoffs():
+    """DGP6 findings 2 / 3 / 4: (a) ownership: after a close no seed_prop / pairs / candidate / graph reference survives, the constructor live count returns to its pre-stream value, close is idempotent; an interrupted interaction_scores orphans
+    0 B; (b) admission: Conditional.replicate 2,048 -> 4,096 entries under ZERO headroom refuses MEMORY before allocation; a successful replication + release conserves ownership; quantize_segment under zero headroom refuses and releases;
+    (c) cutoffs: a clock crossing inside the batch statistics assembly discards the batch (certificate t unchanged, stream closed typed); a crossing inside the prior-epoch diagnostics suppresses the epoch commit (epochs unchanged, typed Deadline)"""
+    import gc, weakref; res = {}; model, _ = load('dg_n8_c4_clique_two')
+    M, order, clk, B = _jstage(model); l0 = B.live; S, Bq, r = _gstream(M, budget=B); S.pilot_action(PA.tnow() + 10); att = S.optimize_action(PA.tnow() + 10, PA.tnow() + 30)
+    refs = [weakref.ref(x) for x in (S.epoch.prop,) if x is not None]; S._close('ctrl'); l1 = B.live; S._close('twice'); gc.collect()
+    res['ownership'] = dict(prepare=r, attempt=att.get('status'), live_before=l0, live_after_close=l1, idempotent=(l1 == B.live), seed_prop=S.seed_prop, pairs=S.pairs, candidate=S.candidate, graph_ref=S.graph is None or isinstance(S.graph, dict), epoch=S.epoch, epoch_laws_dropped=all(e.prop is None for e in S.epochs), joint_bytes=S.joint_bytes, released=S.mech.get('close_release'))
+    class Clk(CE.Clock):
+        def __init__(self, d, s): super().__init__(d, s); self.hit = 0
+        def poll(self, where):
+            if 'interaction' in where: self.hit += 1; raise CE.Refused('DEADLINE', 'injected ' + where)
+    rng = random.Random(1); big = _rand_model(rng, [2] * 24, [(i, j) for i in range(24) for j in range(i + 1, 24)]); Mb, ob, cb, Bb = _jstage(big); lb = Bb.live; ck = Clk(PA.tnow() + 10, {}); kind = None
+    try: JO.interaction_scores(Mb, Bb, ck)
+    except CE.Refused as e: kind = e.kind
+    res['interaction_interrupted'] = dict(refusal=kind, hits=ck.hit, orphaned=Bb.live - lb)
+    # (b) admission
+    rng = random.Random(3); m7 = _rand_model(rng, [4] * 7, [(i, j) for i in range(7) for j in range(i + 1, 7)]); M7, o7, c7, B7, cards7, p7, own7 = _gstage(m7); c = max(p7.conds.values(), key=lambda c_: c_.family_volume()); extra = [v for v in p7.order if v not in c.parents and v != c.z][0]; newpar = tuple(sorted(c.parents + (extra,), key=lambda q: p7.order.index(q)))
+    cap0 = B7.cap; B7.cap = B7.live; lz = B7.live; kind = None
+    try: c.replicate(newpar, cards7, budget=B7)
+    except CE.Refused as e: kind = e.kind
+    res['replicate_zero_headroom'] = dict(refusal=kind, live_delta=B7.live - lz, from_entries=c.family_volume(), to_entries=JP.vol_of(newpar, cards7) * cards7[c.z]); B7.cap = cap0
+    rep = c.replicate(newpar, cards7, budget=B7); l_after = B7.live; B7.release(rep.bytes); res['replicate_conserves'] = dict(charged=l_after - lz, bytes=rep.bytes, back_to_start=(B7.live == lz))
+    PB, PS, FB, FS = _gplans(M7, p7, o7); t = FB.logits_from_counts(p7); rows = {v: GO.logits_to_rows(FB, t, v) for v in p7.order}; B7.cap = B7.live + 1000; kind = None
+    try: GO.quantize_segment(FB, rows, rows, 0.5, cards7, p7.order, {v: tuple(p7.conds[v].parents) for v in p7.order}, budget=B7)
+    except CE.Refused as e: kind = e.kind
+    res['quantize_zero_headroom'] = dict(refusal=kind, live_delta=B7.live - lz); B7.cap = cap0; B7.release(own7)
+    # (c) cutoffs (the DGP6 probe constructions, repeated as controls)
+    M, order, clk, B = _jstage(model); S = _jstream(M, allow=10.0)[0]; S.batch(PA.tnow() + 10); t_before = S.cert.t; state = {'now': 100.0, 'hits': 0}; old = (JS.tnow, PA.tnow, CE.tnow)
+    class Timed(np.ndarray):
+        def __getitem__(self, k): state['hits'] += 1; state['now'] = 200.0; return super().__getitem__(k)
+    S.Dm = [d.view(Timed) for d in S.Dm]; JS.tnow = PA.tnow = CE.tnow = lambda: state['now']
+    try: rb = S.batch(150.0, 150.0)
+    finally: JS.tnow, PA.tnow, CE.tnow = old
+    res['batch_assembly_crossing'] = dict(result=rb, hits=state['hits'], cert_t_unchanged=(S.cert.t == t_before), closed=(S.closed_reason or '')[:60])
+    S2 = _jstream(M, allow=10.0)[0]; S2.pilot_action(PA.tnow() + 10); n_ep = len(S2.epochs); st2 = {'now': 100.0, 'hits': 0}
+    class ZC:
+        def __init__(self, inner): self.inner = inner
+        def interval(self): st2['hits'] += 1; st2['now'] = 200.0; return self.inner.interval()
+        def update_batch(self, X): return self.inner.update_batch(X)
+        @property
+        def t(self): return self.inner.t
+    S2.epoch.zcert = ZC(S2.epoch.zcert); old = (JS.tnow, PA.tnow, CE.tnow); JS.tnow = PA.tnow = CE.tnow = lambda: st2['now']; kind = None
+    try: S2._commit_epoch(S2.epoch.prop, 'ctrl', 150.0, S2.opts['budget_obj'])
+    except Exception as e: kind = type(e).__name__
+    finally: JS.tnow, PA.tnow, CE.tnow = old
+    res['epoch_diag_crossing'] = dict(exception=kind, hits=st2['hits'], epochs_unchanged=(len(S2.epochs) == n_ep))
+    o = res['ownership']; ok = (o['prepare'] == 'READY' and o['idempotent'] and o['seed_prop'] is None and o['pairs'] is None and o['candidate'] is None and o['epoch'] is None and o['epoch_laws_dropped'] and o['joint_bytes'] == 0 and o['live_after_close'] == o['live_before'] and res['interaction_interrupted']['refusal'] == 'DEADLINE' and res['interaction_interrupted']['hits'] >= 1 and res['interaction_interrupted']['orphaned'] == 0
+          and res['replicate_zero_headroom']['refusal'] == 'MEMORY' and res['replicate_zero_headroom']['live_delta'] == 0 and res['replicate_conserves']['back_to_start'] and res['quantize_zero_headroom']['refusal'] == 'MEMORY' and res['quantize_zero_headroom']['live_delta'] == 0
+          and res['batch_assembly_crossing']['result'] == 'CLOSED' and res['batch_assembly_crossing']['hits'] >= 1 and res['batch_assembly_crossing']['cert_t_unchanged'] and res['epoch_diag_crossing']['exception'] == 'Deadline' and res['epoch_diag_crossing']['hits'] >= 1 and res['epoch_diag_crossing']['epochs_unchanged'])
+    rec('D56_ownership_admission_cutoffs', ok, **res)
+
+def D57_bounded_sum_and_rebuilt_J():
+    """DGP6 findings 5 / 6 / 7 / 8: (a) the exact checker's sum on two 128-bit inputs with exponent spread 2^24 allocates O(128) bits (not 2^24), is an UPPER bound, and refuses GROWTH typed beyond 2^20 terms; (b) dgp5_oracle.rebuilt rebuilds
+    S / H / J together (a comparator with a tighter S has a lower J; J is never stale); (c) the DGP5 frontier grid is affine in C (the endpoints and the midpoint are exact); (d) a two-epoch joint stream reports no pooled X_mean / ESS and reports epoch-local statistics"""
+    res = {}; a_ = _fu(F(3)); b_ = (a_[0] - (1 << 24), a_[1]); t0 = time.monotonic(); s_ = CJ._exact_sum([a_, b_]); res['sum_bits'] = s_[1].bit_length(); res['sum_seconds'] = time.monotonic() - t0; res['sum_upper'] = _tf(s_) >= _tf(a_) + _tf(b_)
+    kind = None
+    try: CJ._exact_sum([a_] * ((1 << 20) + 1))
+    except CE.Refused as e: kind = e.kind
+    res['growth_refusal'] = kind
+    import dgp5_oracle as O5; inc = dict(label='x', is_current=True, log2_B=10.0, log2_S=20.0, log2_eta=-5.0, d_hat=1e-6, family_volume=16, index=-1); inc['log2_H'] = JO.H_log2(20.0, 10.0, -5.0); inc['log2_J'] = math.log2(1e-6) + inc['log2_H']
+    r1 = O5.rebuilt(inc, 18.0); r2 = O5.rebuilt(inc, 18.0, log2_eta=-3.0); res['rebuilt'] = dict(S=r1['log2_S'], H=r1['log2_H'], J=r1['log2_J'], J_lower=(r1['log2_J'] < inc['log2_J']), H_consistent=abs(r1['log2_H'] - JO.H_log2(18.0, 10.0, -5.0)) < 1e-12, eta_changes_J=(r2['log2_J'] != r1['log2_J']))
+    src = open(os.path.join(HERE, 'joint_optimize.py')).read(); res['grid_affine'] = ('log2(1.0 + (ratio - 1.0) * i' in src) and ('log2_Cmin + (log2_Cmax - log2_Cmin) * i' not in src)
+    lo, hi, n_ = 3.0, 7.0, 5; ratio = 2.0 ** (hi - lo); grid = [lo + math.log2(1.0 + (ratio - 1.0) * i / (n_ - 1)) for i in range(n_)]; Cs = [2.0 ** g for g in grid]; res['grid_check'] = dict(endpoints=(abs(Cs[0] - 8.0) < 1e-9 and abs(Cs[-1] - 128.0) < 1e-9), midpoint_affine=(abs(Cs[2] - 68.0) < 1e-9))
+    model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B = _jstage(model); S = _jstream(M, allow=10.0)[0]; S.pilot_action(PA.tnow() + 10); a1 = S.refine_action(PA.tnow() + 10, PA.tnow() + 30)
+    if not a1.get('promoted'):
+        pairs, chg = JO.interaction_scores(M, B, clk); e = JO.rank_expansions(S.epoch.prop, pairs, list(M.cards), 4096)[0]; pk = JW.build_packet(M, S.epoch.prop, e['z'], tuple(e['new_parents']), order, JPROF, B, clk); cond = [c for _, c, _ in JO.frontier_laws(pk, S.epoch.prop, list(M.cards), JPROF, 'moment_only', S.epoch.prop.B) if c is not None][0]
+        w = JW.witnesses_of(pk, cond, S_ref=S.epoch.prop.S); conds = dict(S.epoch.prop.conds); conds[e['z']] = cond; newp = JP.Proposal(list(M.cards), conds, S.epoch.prop.order, w['B'], w['S'], {}); B.charge(newp.bytes, 'ctrl'); S.joint_bytes += newp.bytes; S._commit_epoch(newp, 'ctrl', PA.tnow() + 5, B); pk.release()
+    for _ in range(3): S.batch(PA.tnow() + 10)
+    d = S.diagnostics(); pooled = [k for k in ('X_mean', 'ESS_DIAGNOSTIC', 'largest_share', 'Z_over_Ucap_EB_DIAGNOSTIC', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'max_log2_X_observed') if d.get(k) is not None]; ews = d['joint']['epoch_weight_statistics']
+    res['epoch_local'] = dict(epochs=len(S.epochs), pooled_fields=pooled, removed_note=bool(d.get('pooled_weight_statistics')), epoch_stats=[(x['epoch'], x['draws'], x['X_mean'] is not None) for x in ews]); S._close('ctrl')
+    ok = (res['sum_bits'] <= 256 and res['sum_seconds'] < 0.05 and res['sum_upper'] and res['growth_refusal'] == 'GROWTH' and all(res['rebuilt'][k] for k in ('J_lower', 'H_consistent', 'eta_changes_J')) and res['grid_affine'] and all(res['grid_check'].values()) and res['epoch_local']['epochs'] >= 2 and not pooled and res['epoch_local']['removed_note'] and all(x[2] for x in res['epoch_local']['epoch_stats'] if x[1] > 0))
+    rec('D57_bounded_sum_and_rebuilt_J', ok, **res)
+
+def D58_circuits_vs_exhaustive_reference():
+    """brief section 5 (new controls): on binary and card-4 graphs, a scalar (nullary-factor) and a factorless-variable target, a target with hard zeros, and the four-cycle: (a) the compact MAX / SUM circuits at the SEED counts dominate the exact-rational
+    B* = max W_0 / q and S* = sum W_0^2 / q by enumeration (<= 4,096 states) and the float evaluator agrees with the compact value within 1e-9 relative (log2); (b) G1 row replication preserves q EXACTLY on random assignments and the circuits on G1
+    give the same values; (c) the quantized candidate law is RECOMPUTED through the circuits from its actual counts and dominates its own exhaustive reference; (d) a huge target scaling (2^200) shifts log2 B by 200, log2 S by 400 and leaves the
+    chosen rows invariant; (e) a target with an all-zero row keeps exact zero mass (-inf) with zero adjoint; a zero-mass target gives B = S = 0 typed"""
+    res = {}; rng = random.Random(11); ok_all = True
+    fixtures = dict(four_cycle=_four_cycle(), binary_n10=_rand_model(rng, [2] * 10, [(i, j) for i in range(10) for j in range(i + 1, 10) if rng.random() < 0.5]), card4_n6=_rand_model(rng, [4] * 6, [(i, j) for i in range(6) for j in range(i + 1, 6)]), scalar_nullary=_rand_model(rng, [3] * 5, [(i, i + 1) for i in range(4)], nullary=F(7, 3)), factorless=_rand_model(rng, [3] * 5, [(0, 1), (1, 2)], factorless=(3, 4)), hard_zeros=_rand_model(rng, [3] * 6, [(i, j) for i in range(6) for j in range(i + 1, 6) if rng.random() < 0.7], zeros=2))
+    for name, model in fixtures.items():
+        try:
+            M, order, clk, B, cards, prop, owned = _gstage(model); PB, PS, FB, FS = _gplans(M, prop, order); t = FB.logits_from_counts(prop); lB, _ = FB.forward(t); lS, _ = FS.forward(t); cB, rB = GC.compact_evaluate(PB, M, prop, B, clk); cS, rS = GC.compact_evaluate(PS, M, prop, B, clk); ref = CG.ref_exact_BS(M, prop, cap=1 << 12)
+            r = dict(n=len(cards), states=math.prod(cards), log2_B=rB['log2'], log2_S=rS['log2'], ref_B=ref['log2_B_star'], ref_S=ref['log2_S_star'], B_dom=(_tf(cB) >= ref['B_star']), S_dom=(_tf(cS) >= ref['S_star']), float_B_agrees=(abs(lB / _LN2 - rB['log2']) <= 1e-9 * max(1.0, abs(rB['log2'])) + 1e-9), float_S_agrees=(abs(lS / _LN2 - rS['log2']) <= 1e-9 * max(1.0, abs(rS['log2'])) + 1e-9), cert=CG.certify(PB, M, prop, cB, clk)['ok'] and CG.certify(PS, M, prop, cS, clk)['ok'])
+            pairs, chg = JO.interaction_scores(M, B, clk); parents1, g1 = GO.select_g1(prop, pairs, cards)
+            if not g1['alias_G0']:
+                p1 = GO.replicate_graph(prop, parents1, cards, budget=B); xs = [tuple(rng.randrange(k) for k in cards) for _ in range(32)]; r['g1_q_exact'] = all(p1.q_exact(x) == prop.q_exact(x) for x in xs); PB1, PS1, FB1, FS1 = _gplans(M, prop, order, parents1); cB1, rB1 = GC.compact_evaluate(PB1, M, p1, B, clk); cS1, rS1 = GC.compact_evaluate(PS1, M, p1, B, clk); r['g1_B_dom'] = _tf(cB1) >= ref['B_star']; r['g1_S_dom'] = _tf(cS1) >= ref['S_star']; r['g1_extended'] = g1['n_extended']
+                B.release(sum(c.bytes for v, c in p1.conds.items() if c is not prop.conds[v]))
+            # (c) a candidate: optimize briefly then quantize lambda = 1 and recompute
+            log_eta = math.log(0.005) + (lS - lB) / 2 if math.isfinite(lS) and math.isfinite(lB) else 0.0
+            if math.isfinite(lB):
+                opt = GO.BoundedLBFGS(FB, FS, log_eta, 'joint', PA.tnow() + 20); endpoint, phases = opt.run(t)
+                if endpoint is not None:
+                    rows_s = {v: GO.logits_to_rows(FB, t, v) for v in prop.order}; rows_o = {v: GO.logits_to_rows(FB, endpoint['t'], v) for v in prop.order}; conds = GO.quantize_segment(FB, rows_s, rows_o, 1.0, cards, prop.order, {v: tuple(prop.conds[v].parents) for v in prop.order}); newp = JP.Proposal(cards, conds, prop.order, _ZERO, _ZERO, {})
+                    cB2, rB2 = GC.compact_evaluate(PB, M, newp, B, clk); cS2, rS2 = GC.compact_evaluate(PS, M, newp, B, clk); ref2 = CG.ref_exact_BS(M, newp, cap=1 << 12); r['candidate'] = dict(evals=opt.evals, log2_B=rB2['log2'], log2_S=rS2['log2'], B_dom=(_tf(cB2) >= ref2['B_star']), S_dom=(_tf(cS2) >= ref2['S_star']), cert=CG.certify(PB, M, newp, cB2, clk)['ok'] and CG.certify(PS, M, newp, cS2, clk)['ok'], rows_sum_D=all((c.counts.sum(axis=1) == JP.D).all() and (c.counts >= 1).all() for c in conds.values()), changed=any(not np.array_equal(conds[v].counts, prop.conds[v].counts) for v in prop.order))
+                    # (d) huge scaling: multiply one unary by 2^200 -> log2 B + 200, log2 S + 400; the optimizer's chosen rows invariant
+                    M2 = copy.deepcopy(M); M2.psi[0] = [x * (F(2) ** 200) for x in M2.psi[0]]; FB2 = GC.FloatCircuit(PB, GC.source_logs(M2, 1), cards); FS2 = GC.FloatCircuit(PS, GC.source_logs(M2, 2), cards); lB2, _ = FB2.forward(t); lS2, _ = FS2.forward(t)
+                    opt2 = GO.BoundedLBFGS(FB2, FS2, log_eta + 200 * _LN2, 'joint', PA.tnow() + 20); e2, _ = opt2.run(t); r['scaling'] = dict(dB=(lB2 - lB) / _LN2, dS=(lS2 - lS) / _LN2, shift_ok=(abs((lB2 - lB) / _LN2 - 200) < 1e-6 and abs((lS2 - lS) / _LN2 - 400) < 1e-6), rows_invariant=(e2 is not None and endpoint is not None and all(np.allclose(GO.logits_to_rows(FB, endpoint['t'], v), GO.logits_to_rows(FB2, e2['t'], v), rtol=1e-6, atol=1e-9) for v in prop.order)))
+            B.release(owned); res[name] = r
+            ok_all = ok_all and r['B_dom'] and r['S_dom'] and r['float_B_agrees'] and r['float_S_agrees'] and r['cert'] and r.get('g1_q_exact', True) and r.get('g1_B_dom', True) and r.get('g1_S_dom', True) and (r.get('candidate') is None or (r['candidate']['B_dom'] and r['candidate']['S_dom'] and r['candidate']['cert'] and r['candidate']['rows_sum_D'])) and (r.get('scaling') is None or (r['scaling']['shift_ok'] and r['scaling']['rows_invariant']))
+        except Exception as e: res[name] = dict(error=repr(e)[:200], tb=traceback.format_exc()[-600:]); ok_all = False
+    # (e) an all-zero reduction stays -inf with zero adjoint; zero-mass target: the seed reports zero U
+    rng2 = random.Random(5); mz = _rand_model(rng2, [2, 2, 2], [(0, 1), (1, 2)]); mz['factors'][0]['values'] = [F(0)] * 4; M, order, clk, B = _jstage(mz); prop, rec_, owned = JP.compile_seed(M, order, JPROF, B, clk); res['zero_mass'] = dict(zero_U=rec_['zero_U'], B_zero=(prop.B[1] == 0))
+    if not rec_['zero_U']: ok_all = False
+    mh = _rand_model(rng2, [3, 3, 3], [(0, 1), (1, 2)]); mh['factors'][0]['values'] = [F(0)] * 3 + mh['factors'][0]['values'][3:]; M, order, clk, B = _jstage(mh); prop, rec_, owned = JP.compile_seed(M, order, JPROF, B, clk); PB, PS, FB, FS = _gplans(M, prop, order); t = FB.logits_from_counts(prop); lB, tp = FB.forward(t); g = FB.reverse(tp); res['hard_zero_row'] = dict(finite=math.isfinite(lB), grad_finite=bool(np.isfinite(g).all()), has_inf_source=bool(np.isinf(GC.source_logs(M, 1)[('factor', 0)]).any()))
+    ok_all = ok_all and res['hard_zero_row']['finite'] and res['hard_zero_row']['grad_finite'] and res['hard_zero_row']['has_inf_source']
+    rec('D58_circuits_vs_exhaustive_reference', ok_all, **res)
+
+def D59_gradient_convexity_pnorm():
+    """brief section 5: on tiny positive models (a) all-row central finite differences of the smoothed objective agree with the reverse-pass gradient (relative error <= 1e-4 over 8 random directions and 16 single coordinates); (b) every row gradient
+    sums to zero (<= 1e-10); (c) the p-norm surrogate is an UPPER bound of the hard MAX circuit value and decreases toward it as p grows (p = 4, 16, 64, 256) with the structural Delta bounding the gap; (d) the fixed-circuit convex midpoint
+    inequality f((t1 + t2) / 2) <= (f(t1) + f(t2)) / 2 + 1e-9 holds on 16 random pairs (a bug detector); (e) a shared source used by two products accumulates adjoints (a two-factor model where the unary of the middle variable feeds two groups
+    under fan-in 1) -- checked against finite differences; (f) transposed source axes: a factor given with reversed scope evaluates identically; (g) no stale numeric reuse: after changing two rows at once the forward value equals a fresh evaluator's"""
+    res = {}; rng = random.Random(23); np_rng = np.random.default_rng(23); ok_all = True
+    for name, model in dict(card4_n5=_rand_model(rng, [4] * 5, [(i, j) for i in range(5) for j in range(i + 1, 5) if rng.random() < 0.8]), binary_n8=_rand_model(rng, [2] * 8, [(i, j) for i in range(8) for j in range(i + 1, 8) if rng.random() < 0.5]), mixed=_rand_model(rng, [2, 3, 4, 3, 2], [(0, 1), (1, 2), (2, 3), (3, 4), (0, 4)])).items():
+        M, order, clk, B, cards, prop, owned = _gstage(model); PB, PS, FB, FS = _gplans(M, prop, order); t = FB.logits_from_counts(prop) + 0.3 * np_rng.standard_normal(FB.n_params); lB, _ = FB.forward(t); lS, _ = FS.forward(t); log_eta = math.log(0.005) + (lS - lB) / 2
+        o = GC.objective(FB, FS, t, log_eta, 16.0); g = o['g']; errs = []
+        for _ in range(8):
+            d = np_rng.standard_normal(t.size); d /= np.linalg.norm(d); h = 1e-5; fp = GC.objective(FB, FS, t + h * d, log_eta, 16.0)['f']; fm = GC.objective(FB, FS, t - h * d, log_eta, 16.0)['f']; errs.append(abs((fp - fm) / (2 * h) - float(g @ d)) / max(1e-8, abs(float(g @ d)), 1e-3 * np.abs(g).max()))
+        for i in np_rng.choice(t.size, size=min(16, t.size), replace=False):
+            e = np.zeros(t.size); e[i] = 1.0; h = 1e-5; fp = GC.objective(FB, FS, t + h * e, log_eta, 16.0)['f']; fm = GC.objective(FB, FS, t - h * e, log_eta, 16.0)['f']; errs.append(abs((fp - fm) / (2 * h) - g[i]) / max(1e-8, abs(g[i]), 1e-3 * np.abs(g).max()))
+        rowsum = max(abs(g[off:off + R * k].reshape(R, k).sum(axis=1)).max() for v, (off, R, k) in FB.row_slices.items())
+        hard = FB.forward(t, None)[0]; ps = [4.0, 16.0, 64.0, 256.0]; vals = [FB.forward(t, p)[0] for p in ps]; deltas = [FB.delta_smoothing(p) for p in ps]
+        pn = dict(hard=hard, smoothed=vals, upper=all(v >= hard - 1e-9 for v in vals), decreasing=all(vals[i] >= vals[i + 1] - 1e-9 for i in range(len(vals) - 1)), within_delta=all(v - hard <= dl + 1e-9 for v, dl in zip(vals, deltas)), deltas=deltas)
+        mid_ok = True; worst = 0.0
+        for _ in range(16):
+            t1 = t + 0.5 * np_rng.standard_normal(t.size); t2 = t + 0.5 * np_rng.standard_normal(t.size); f1 = GC.objective(FB, FS, t1, log_eta, 16.0)['f']; f2 = GC.objective(FB, FS, t2, log_eta, 16.0)['f']; fm_ = GC.objective(FB, FS, (t1 + t2) / 2, log_eta, 16.0)['f']; worst = max(worst, fm_ - (f1 + f2) / 2); mid_ok = mid_ok and fm_ <= (f1 + f2) / 2 + 1e-9
+        # (f) transposed scope
+        M2 = copy.deepcopy(M); sc, vals_ = M2.factors[0]; sc = tuple(sc)
+        if len(sc) == 2:
+            arr = np.array(vals_, dtype=object).reshape(cards[sc[0]], cards[sc[1]]).T.reshape(-1); M2.factors[0] = ((sc[1], sc[0]), list(arr)); PB2, PS2 = GC.build_plans(M2, prop.order, {v: tuple(prop.conds[v].parents) for v in prop.order}, order); FB2 = GC.FloatCircuit(PB2, GC.source_logs(M2, 1), cards); tr_ok = abs(FB2.forward(t)[0] - lB) < 1e-9; cB2, _ = GC.compact_evaluate(PB2, M2, prop, B, clk); cB1, _ = GC.compact_evaluate(PB, M, prop, B, clk); tr_ok = tr_ok and cB2 == cB1
+        else: tr_ok = True
+        # (g) no stale reuse
+        t3 = t.copy(); v0, v1 = prop.order[0], prop.order[-1]; off0, R0, k0 = FB.row_slices[v0]; off1, R1, k1 = FB.row_slices[v1]; t3[off0:off0 + k0] -= 1.0; t3[off1:off1 + k1] -= 2.0; fresh = GC.FloatCircuit(PB, GC.source_logs(M, 1), cards); stale_ok = abs(FB.forward(t3)[0] - fresh.forward(t3)[0]) < 1e-12 and abs(FB.forward(t)[0] - lB) < 1e-12
+        B.release(owned); r = dict(n_params=t.size, max_fd_rel_error=max(errs), max_row_sum=float(rowsum), pnorm=pn, midpoint_ok=mid_ok, midpoint_worst_violation=worst, transposed_ok=tr_ok, no_stale_reuse=stale_ok); res[name] = r
+        ok_all = ok_all and r['max_fd_rel_error'] <= 1e-4 and r['max_row_sum'] <= 1e-10 and pn['upper'] and pn['decreasing'] and pn['within_delta'] and mid_ok and tr_ok and stale_ok
+    # (e) shared-source adjoint accumulation: fan-in 1 plan on a chain -> the middle unary is MAXed in its own group; compare to finite differences AND to a hand-built two-consumer plan
+    m = _rand_model(rng, [3, 3, 3], [(0, 1), (1, 2)]); M, order, clk, B, cards, prop, owned = _gstage(m); parents = {v: tuple(prop.conds[v].parents) for v in prop.order}; PB = GC.CircuitPlan(cards, prop.order, parents, [tuple(sc) for sc, _ in M.factors], 1, order, V=4096, fanin=1)
+    # a hand-made plan where ONE reciprocal leaf feeds two products (accumulation): duplicate the first product's reciprocal input into the second product
+    import copy as _c; P2 = _c.copy(PB); P2.nodes = [dict(nd) for nd in PB.nodes]; prods = [i for i, nd in enumerate(P2.nodes) if nd['op'] == 'product']; recs = [i for i, nd in enumerate(P2.nodes) if nd['op'] == 'source' and nd['role'] == 'reciprocal']; shared = None
+    for i in prods:
+        for j in recs:
+            if j not in P2.nodes[i]['inputs'] and set(P2.nodes[j]['axes']) <= set(P2.nodes[i]['axes']): P2.nodes[i]['inputs'] = list(P2.nodes[i]['inputs']) + [j]; shared = (i, j); break
+        if shared: break
+    FB2 = GC.FloatCircuit(P2, GC.source_logs(M, 1), cards); t = FB2.logits_from_counts(prop) + 0.2 * np_rng.standard_normal(FB2.n_params); f0, tp = FB2.forward(t, 16.0); g = FB2.reverse(tp); errs = []
+    for _ in range(12):
+        d = np_rng.standard_normal(t.size); d /= np.linalg.norm(d); h = 1e-5; errs.append(abs((FB2.forward(t + h * d, 16.0)[0] - FB2.forward(t - h * d, 16.0)[0]) / (2 * h) - float(g @ d)) / max(1e-8, abs(float(g @ d)), 1e-3 * np.abs(g).max()))
+    res['shared_source'] = dict(shared=shared, max_fd_rel_error=max(errs), uses=(sum(1 for nd in P2.nodes if nd['op'] == 'product' and shared and shared[1] in nd['inputs']) if shared else 0)); B.release(owned); ok_all = ok_all and shared is not None and res['shared_source']['uses'] == 2 and res['shared_source']['max_fd_rel_error'] <= 1e-4
+    rec('D59_gradient_convexity_pnorm', ok_all, **res)
+
+def D60_optimizer_limits_and_expiry():
+    """brief section 5: (a) the evaluation counter: a phase never exceeds 16 circuit evaluations and the total never exceeds 32 even with maxiter raised (counter enforced BEFORE evaluating; SciPy maxfun not relied on); cached identical requests are
+    counted as cache hits, not evaluations; (b) EARLY expiry (deadline already passed) -> no evaluation, no endpoint, typed; LATE expiry (deadline inside phase 2) -> phase 1's best iterate survives as the endpoint; (c) checker expiry: a Clock
+    deadline inside the compact certifier raises typed and releases every charge; (d) a low-count row (counts near 1) quantizes to positive counts summing to D and the exact floor rule holds; (e) the segment scorer censors points past its deadline"""
+    res = {}; model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B, cards, prop, owned = _gstage(model); PB, PS, FB, FS = _gplans(M, prop, order); t = FB.logits_from_counts(prop); lB, _ = FB.forward(t); lS, _ = FS.forward(t); log_eta = math.log(0.005) + (lS - lB) / 2
+    old = GO.MAXITER; GO.MAXITER = 200
+    try: opt = GO.BoundedLBFGS(FB, FS, log_eta, 'joint', PA.tnow() + 60); ep, ph = opt.run(t)
+    finally: GO.MAXITER = old
+    res['counter'] = dict(total=opt.evals, per_phase=[p_['evaluations'] for p_ in ph], cache_hits=opt.cache_hits, statuses=[(p_['status'] or {}).get('message', '')[:30] for p_ in ph], trace_len=len(opt.trace))
+    opt_e = GO.BoundedLBFGS(FB, FS, log_eta, 'joint', PA.tnow() - 1.0); ep_e, ph_e = opt_e.run(t); res['early_expiry'] = dict(evals=opt_e.evals, endpoint=(ep_e is not None), status=[(p_['status'] or {}).get('message', '')[:40] for p_ in ph_e])
+    class LateClock:
+        def __init__(self): self.n = 0
+        def __call__(self): self.n += 1; return 0.0 if self.n < 40 else 1e9
+    oldt = (CE.tnow,); lc = LateClock(); CE.tnow = lc
+    try: opt_l = GO.BoundedLBFGS(FB, FS, log_eta, 'joint', 5.0); ep_l, ph_l = opt_l.run(t)
+    finally: CE.tnow = oldt[0]
+    res['late_expiry'] = dict(evals=opt_l.evals, phases=[(p_['phase'], p_['evaluations'], (p_['status'] or {}).get('message', '')[:30]) for p_ in ph_l], endpoint_from_phase=(0 if ep_l is opt_l.best.get(0) else 1) if ep_l is not None else None, has_endpoint=(ep_l is not None))
+    l0 = B.live; kind = None; cB, _ = GC.compact_evaluate(PB, M, prop, B, clk)
+    try: CG.certify(PB, M, prop, cB, CE.Clock(PA.tnow() - 1.0, {}), budget=B)
+    except CE.Refused as e: kind = e.kind
+    res['checker_expiry'] = dict(refusal=kind, live_delta=B.live - l0)
+    kind = None
+    try: GC.compact_evaluate(PB, M, prop, B, CE.Clock(PA.tnow() - 1.0, {}))
+    except CE.Refused as e: kind = e.kind
+    res['producer_expiry'] = dict(refusal=kind, live_delta=B.live - l0)
+    rows = np.array([[1e-300, 1.0 - 3e-300, 1e-300, 1e-300], [0.25, 0.25, 0.25, 0.25], [1e-17, 1e-17, 0.5, 0.5], [0.0, 0.0, 0.0, 1.0]]); q = GO.quantize_rows_exact(rows, 4); res['low_counts'] = dict(sums_D=bool((q.sum(axis=1) == JP.D).all()), positive=bool((q >= 1).all()), row0=[int(x) for x in q[0]], row3=[int(x) for x in q[3]], exact_floor_row1=bool((q[1] == 1 + ((JP.D - 4) * 1) // 4 + np.array([1, 1, 1, 1]) * 0 + (np.arange(4) < (JP.D - 4 * (1 + (JP.D - 4) // 4)))).all()))
+    seg, best, _ = GO.segment_scores(FB, FS, t, t, log_eta, 0.0, 'joint', PA.tnow() - 1.0); res['segment_censored'] = dict(points=len(seg), censored=sum(1 for x in seg if x.get('censored')), best=best is None)
+    B.release(owned)
+    ok = (res['counter']['total'] <= 32 and all(x <= 16 for x in res['counter']['per_phase']) and res['counter']['total'] == len(opt.trace) and res['early_expiry']['evals'] == 0 and not res['early_expiry']['endpoint'] and res['late_expiry']['has_endpoint'] and res['late_expiry']['evals'] < 32 and res['checker_expiry']['refusal'] == 'DEADLINE' and res['checker_expiry']['live_delta'] == 0 and res['producer_expiry']['refusal'] == 'DEADLINE' and res['producer_expiry']['live_delta'] == 0 and res['low_counts']['sums_D'] and res['low_counts']['positive'] and res['low_counts']['exact_floor_row1'] and res['segment_censored']['censored'] == 17 and res['segment_censored']['best'])
+    rec('D60_optimizer_limits_and_expiry', ok, **res)
+
+def D61_global_stream_lifecycle():
+    """brief section 5: on the n8 card-4 clique through GlobalStream: (a) the full attempt promotes or keeps the incumbent with a CHECKED candidate (certifier ok on both circuits; the committed epoch's B / S are the certified values; the
+    activation runs <= 2 x 256 draws with a check after each); (b) a REFUSED candidate (injected certifier rejection) preserves the RNG state, the certificate t, the epoch count, the risk ledger and the pilot statistics -- the incumbent is
+    untouched; (c) an unchanged-law witness-only candidate: with the optimizer disabled (zero float share) the same-law tighter cap is the only candidate and is labelled witness_only when promoted; (d) no optimized law enters production before
+    its final checked commit: the epoch list is unchanged until the certifier returned ok (checked via a certifier spy); (e) seed mode never optimizes; (f) a planner request with --global on the dev n16 clique completes through the primary
+    with the ledger identity TRUE, the primary probe recorded, and the global stream's actions logged; the old-policy flag disables the probe"""
+    res = {}; model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B = _jstage(model)
+    S, Bq, r = _gstream(M, budget=B); pil = S.pilot_action(PA.tnow() + 10); att = S.optimize_action(PA.tnow() + 10, PA.tnow() + 30); act = S.activation_action(PA.tnow() + 10) if S.can_activate() else None
+    cert = att.get('certification') or {}; res['full_attempt'] = dict(prepare=r, pilot=pil.get('status'), status=att.get('status'), promoted=att.get('promoted'), witness_only=att.get('witness_only'), graph=(att.get('graph') or {}).get('label'), certifier_ok=((cert.get('certifier') or {}).get('B_ok') and (cert.get('certifier') or {}).get('S_ok')), epochs=len(S.epochs), committed_B_is_certified=(S.epoch.prop.log2_B() == (cert.get('certifier') or {}).get('log2_B')) if att.get('promoted') and not att.get('witness_only') else None, activation=({k: act.get(k) for k in ('status', 'batches', 'draws', 'checks')} if act else None), evals=(att.get('optimizer') or {}).get('evaluations'), label=att.get('label'))
+    # (b) injected certifier rejection
+    M, order, clk, B = _jstage(model); S2, Bq2, r2 = _gstream(M, budget=B); S2.pilot_action(PA.tnow() + 10); rng_state = S2.rng.bit_generator.state['state']['state']; t_cert = S2.cert.t; n_ep = len(S2.epochs); fit = dict(S2.fit); l0 = B.live; real = CG.certify; hits = [0]
+    def reject(plan, M_, prop_, val, clock, budget=None, graph_sha=None):
+        hits[0] += 1
+        if hits[0] > 2: return dict(ok=False, why='injected certifier rejection')
+        return real(plan, M_, prop_, val, clock, budget=budget, graph_sha=graph_sha)
+    CG.certify = reject
+    try: att2 = S2.optimize_action(PA.tnow() + 10, PA.tnow() + 30)
+    finally: CG.certify = real
+    res['refused_candidate'] = dict(status=att2.get('status'), why=(att2.get('why') or '')[:80], hits=hits[0], rng_unchanged=(S2.rng.bit_generator.state['state']['state'] == rng_state), cert_t_unchanged=(S2.cert.t == t_cert), epochs_unchanged=(len(S2.epochs) == n_ep), fit_unchanged=(S2.fit == fit), live_back=(B.live - l0 - S2.pairs_bytes), pairs_bytes=S2.pairs_bytes, stage=S2.stage, delta_s=str(S2.delta_s))
+    # (d) no law before the checked commit: spy on certify -> the epoch list must be unchanged at every certifier call
+    M, order, clk, B = _jstage(model); S3, Bq3, r3 = _gstream(M, budget=B); S3.pilot_action(PA.tnow() + 10); seen = []
+    def spy(plan, M_, prop_, val, clock, budget=None, graph_sha=None): seen.append(len(S3.epochs)); return real(plan, M_, prop_, val, clock, budget=budget, graph_sha=graph_sha)
+    CG.certify = spy
+    try: att3 = S3.optimize_action(PA.tnow() + 10, PA.tnow() + 30)
+    finally: CG.certify = real
+    res['no_law_before_check'] = dict(certifier_calls=len(seen), epochs_at_calls=sorted(set(seen)), epochs_after=len(S3.epochs), status=att3.get('status'))
+    # (c) witness-only: on a model whose seed cap is LOOSER than the G1 circuit cap (the mid n16 clique: many seed splits), with the optimizer given no time (zero float share) the same-law tighter cap is the only candidate; when promoted it is labelled witness_only, the committed epoch keeps the SAME conditionals and carries the certified tighter cap
+    model16, binding16 = load_mid('dg_n16_c4_clique_two'); M16 = CE.canonicalize(model16, CE.Clock(PA.tnow() + 60, {}), CE.Budget(CE.CONSTRUCTOR_BYTES)); S4, Bq4, r4 = _gstream(M16, allow=20.0, profile=dict(float_frac=1e-9)); S4.pilot_action(PA.tnow() + 20); conds0 = {v: S4.epoch.prop.conds[v] for v in S4.epoch.prop.order}; B0 = S4.epoch.prop.B; att4 = S4.optimize_action(PA.tnow() + 20, PA.tnow() + 60)
+    res['witness_only_path'] = dict(prepare=r4, status=att4.get('status'), kind=att4.get('kind'), optimizer_failure=(att4.get('optimizer_failure') or '')[:60], candidates=[(c.get('label'), c.get('change')) for c in att4.get('candidates', [])], witness_only=att4.get('witness_only'), promoted=att4.get('promoted'), why=(att4.get('why') or '')[:80], B_tight_lt_consumed=((att4.get('baselines') or {}).get('B_tight_log2', 0) < (att4.get('baselines') or {}).get('consumed', {}).get('log2_B', 0)) if att4.get('baselines') else None, same_conditionals=(all(S4.epoch.prop.conds[v] is conds0[v] for v in conds0) if att4.get('promoted') else None), cap_tighter=((S4.epoch.prop.B < B0) if att4.get('promoted') else None))
+    # (e) seed mode
+    S5, Bq5, r5 = _gstream(M, mode='seed'); S5.pilot_action(PA.tnow() + 10); att5 = S5.optimize_action(PA.tnow() + 10, PA.tnow() + 30); res['seed_mode'] = dict(can_optimize=S5.can_optimize(), status=att5.get('status'))
+    # (f) planner cells
+    model16, binding16 = load_mid('dg_n16_c4_clique_two'); P = UPlanner(model16, binding16, 10.0, admission_stop_s=9.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, envelope='RMAX', glob='global'); o = P.run(); m = o['mechanism']; G_ = [s for s in o['streams'] if s['kind'] == 'global']
+    res['planner_global'] = dict(outcome=o['outcome'], published=o['published'], K=o['K'], ledger=m.get('constructor_live_ledger_identity'), probe=({k: (m.get('scheduling_policy') or {}).get('primary_probe', {}).get(k) for k in ('batches', 'forecast_s')} if (m.get('scheduling_policy') or {}).get('primary_probe') else None), created=bool(G_), actions=[a.get('action') for a in o['actions'] if a.get('action') in ('primary_probe', 'create_joint', 'joint_pilot', 'global_optimize', 'global_activate')], global_status=[(s['stage'], (s.get('closed') or '')[:60], [(a_.get('status'), (a_.get('kind') or a_.get('label') or '')[:60]) for a_ in (s.get('joint') or {}).get('attempts', [])]) for s in G_], hard=o['hard_deadline_respected'])
+    P2 = UPlanner(model16, binding16, 10.0, admission_stop_s=9.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, envelope='RMAX', old_policy=True); o2 = P2.run(); res['planner_old_policy'] = dict(outcome=o2['outcome'], probe=(o2['mechanism'].get('scheduling_policy') or {}).get('primary_probe'), old=(o2['mechanism'].get('scheduling_policy') or {}).get('old_policy'), ledger=o2['mechanism'].get('constructor_live_ledger_identity'))
+    fa = res['full_attempt']; rc = res['refused_candidate']
+    ok = (fa['prepare'] == 'READY' and fa['pilot'] == 'COMPLETE' and fa['status'] in ('PROMOTED', 'KEPT_INCUMBENT') and (not fa['promoted'] or fa['witness_only'] or (fa['certifier_ok'] and fa['committed_B_is_certified'] and fa['activation'] and fa['activation']['batches'] <= 2 and fa['activation']['draws'] <= 512 and fa['activation']['checks'] == fa['activation']['batches'])) and (fa['evals'] or 0) <= 32
+          and rc['status'] == 'DEFECT' and rc['hits'] >= 3 and rc['rng_unchanged'] and rc['cert_t_unchanged'] and rc['epochs_unchanged'] and rc['fit_unchanged'] and rc['live_back'] == 0 and rc['stage'] == 'READY'
+          and res['no_law_before_check']['certifier_calls'] >= 2 and res['no_law_before_check']['epochs_at_calls'] == [1] and res['witness_only_path']['prepare'] == 'READY' and all(c[1] == 'witness_only' for c in res['witness_only_path']['candidates']) and res['witness_only_path']['status'] in ('REFUSED', 'KEPT_INCUMBENT', 'PROMOTED') and (res['witness_only_path']['status'] == 'REFUSED' or bool(res['witness_only_path']['optimizer_failure'])) and (not res['witness_only_path']['promoted'] or (res['witness_only_path']['witness_only'] and res['witness_only_path']['same_conditionals'] and res['witness_only_path']['cap_tighter'])) and not res['seed_mode']['can_optimize'] and res['seed_mode']['status'] == 'DISABLED'
+          and res['planner_global']['outcome'] == 'COMPLETE' and res['planner_global']['ledger'] is True and res['planner_global']['hard'] and res['planner_global']['probe'] is not None and res['planner_old_policy']['probe'] is None and res['planner_old_policy']['old'] is True and res['planner_old_policy']['ledger'] is True)
+    rec('D61_global_stream_lifecycle', ok, **res)
+
+def D62_primary_preservation_and_relocation():
+    """brief section 5: (a) accepted primary preservation: a --global request on three dev models completes with the same published set as the --lifted RMAX request (REPAIRED) and never publishes from the global stream before the primary is READY;
+    the probe policy never extends the hard cutoff (every cell's hard_deadline_respected); (b) the resolver (finding 9): a manifest path rewritten onto a non-existent workstation prefix resolves back through DGP_ROOTS / the packet root with its
+    sha256 verified, and a missing file raises InputUnresolved listing the candidates (never a silent substitute)"""
+    res = {}; ok = True
+    for name in ('dg_n12_c4_clique_two', 'dg_n8_c4_er50_two'):
+        model, binding = load(name); outs = {}
+        for arm, kw in (('REPAIRED', dict(lifted=True, envelope='RMAX')), ('GLOBAL', dict(lifted=True, envelope='RMAX', glob='global')), ('SEED', dict(lifted=True, envelope='RMAX', glob='seed'))):
+            P = UPlanner(model, binding, 6.0, admission_stop_s=5.5, t_start=PA.tnow(), seed=1, pac=True, **kw); o = P.run(); outs[arm] = dict(outcome=o['outcome'], published=o['published'], K=o['K'], hard=o['hard_deadline_respected'], ledger=o['mechanism'].get('constructor_live_ledger_identity'), wall=round(o['wall_s'], 3), probe=bool((o['mechanism'].get('scheduling_policy') or {}).get('primary_probe')), pub_set=sorted((a['var'], a['state']) for a in o['answers'] if a['guarantee'] != 'NOT_PUBLISHED'))
+        res[name] = {a: {k: v for k, v in o.items() if k != 'pub_set'} for a, o in outs.items()}; same = outs['REPAIRED']['pub_set'] == outs['GLOBAL']['pub_set'] == outs['SEED']['pub_set']; res[name]['same_published_set'] = same
+        ok = ok and same and all(o['outcome'] == 'COMPLETE' and o['hard'] and o['ledger'] is True for o in outs.values())
+    man = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP5_JOINT_CONSTRUCTION/MAIN_MANIFEST.json'
+    if os.path.exists(man):
+        tasks = json.load(open(man))['tasks'][:5]; old_env = os.environ.get('DGP_ROOTS'); os.environ['DGP_ROOTS'] = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28'
+        try: rel = DPATH.relocation_test(tasks, '/nonexistent/packet')
+        finally:
+            if old_env is None: os.environ.pop('DGP_ROOTS', None)
+            else: os.environ['DGP_ROOTS'] = old_env
+        kind = None
+        try: DPATH.resolve_input('/nonexistent/workstation/code/runs/mdi_2026-10-28/NOWHERE/missing.uai', '/nonexistent/packet', 'ab' * 32)
+        except DPATH.InputUnresolved as e: kind = str(e)[:120]
+        kind2 = None
+        try: DPATH.resolve_input(tasks[0]['model'], None, 'ff' * 32)
+        except DPATH.InputUnresolved as e: kind2 = 'sha mismatch refused'
+        res['resolver'] = dict(relocated_ok=all(r['ok'] for r in rel), n=len(rel), missing_raises=(kind is not None and 'not resolved' in kind), wrong_sha_refused=(kind2 is not None)); ok = ok and res['resolver']['relocated_ok'] and res['resolver']['missing_raises'] and res['resolver']['wrong_sha_refused']
+    else: res['resolver'] = dict(skipped='DGP5 MAIN_MANIFEST absent')
+    rec('D62_primary_preservation_and_relocation', ok, **res)
+
+CONTROLS += [D55_source_binding_mutants, D56_ownership_admission_cutoffs, D57_bounded_sum_and_rebuilt_J, D58_circuits_vs_exhaustive_reference, D59_gradient_convexity_pnorm, D60_optimizer_limits_and_expiry, D61_global_stream_lifecycle, D62_primary_preservation_and_relocation]
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('--only', default=None); a = ap.parse_args(); t0 = time.time()
     for c in CONTROLS:
