@@ -5,7 +5,7 @@ scale_F), sum U (RMAX: packed, and the compact pre-packing closure; G2: sum_c G_
 seconds, owned peak bytes, packing inflation, checker receipt; both decompositions log2(B / T) = log2(B / sum U) + log2(sum U / T) and log2(B / T) = log2((B / Z_0) / R*) + log2(R* / (T / Z_0)); sum p^2 / q (M2) and the
 requested-response second moments V_j (G2 and RMAX V4096); (4) with --replay: the accepted certificate replayed for 2^18 draws x seeds 1-3 for the realized G2 and RMAX V4096 laws (implemented cap / tight cap on the SAME
 draws: dgp2_oracle.replay_lifted treatments A / B) and the fixed-decoder ideal law q_C = t / T under its tight cap T / Z_0 and under the cap required by each arm's retained U (sum U / Z_0) -- labelled counterfactuals.
---continue reuses every completed phase. ORACLE ONLY. usage: dgp4_oracle.py MODEL.uai OUT.json [--cap-s 100] [--replay] [--replay-draws 262144] [--seeds 1,2,3] [--continue]"""
+(5) harness amendment 3 (DGP4 review): counterfactual laws q_T = t / T (cap-optimal) and q_2 proportional to sqrt(A_c) (moment-optimal) replayed under their TIGHT caps and under the cap each retained envelope actually requires, B_U(q) = max_c U(c) / q(c) (checked at every coarse state); the frozen 'required_by_*_sumU' column is relabelled an oracle-only numerical-cap counterfactual; the checked cap / moment frontier of the retained RMAX envelope. --continue reuses every completed phase. ORACLE ONLY. usage: dgp4_oracle.py MODEL.uai OUT.json [--cap-s 100] [--replay] [--replay-draws 262144] [--seeds 1,2,3] [--continue]"""
 import sys, os, json, time, math, argparse, itertools
 from fractions import Fraction as F
 import numpy as np
@@ -97,8 +97,60 @@ def main():
                 if key not in streams: continue
                 if tnow() >= deadline: raise Deadline('replay ' + key)
                 t0 = tnow(); out['replays'][key] = dict(realized=O2.replay_lifted(streams[key], tabs[key], enum, seeds, a.replay_draws, deadline), seconds=tnow() - t0, note='treatments A current (implemented) cap / B tight cap on the SAME draws; C / D zero allowance (counterfactual)')
+            # ---- counterfactual coarse LAWS with the SAME decoder (DGP4 review, section 1 / 2; harness amendment 3): for a law q certified through a RETAINED envelope U the required cap is
+            #      B_U(q) = max_c U(c) / q(c) (checked at EVERY coarse assignment: U(c) <= B_U q(c)); sum U is the MINIMUM of that cap over laws (attained by q_U = U / sum U) and is NOT the cap for q_T -- the DGP4
+            #      frozen harness replayed q_T under sum U ('required_by_*_sumU_over_Z0'): that column is RELABELLED an oracle-only numerical-cap counterfactual (valid as a target cap since T <= sum U; not certifiable through U)
+            laws = {}
+            if 'counterfactual_laws' not in out['replays'] or not O3.complete_record(out['replays']['counterfactual_laws']):
+                eps_num = streams['RMAX_V4096'].eps_num if 'RMAX_V4096' in streams else (streams['G2'].eps_num if 'G2' in streams else 1e-11); W0 = [w / M.scalar for w in W]
+                qT = {c: t[c] / T for c in t}; sA = {c: O2.sqrt_up(H2[c]) for c in H2}; sA_sum = sum(sA.values()); q2 = {c: sA[c] / sA_sum for c in sA}        # q_T = t / T (cap-optimal; lemma 5) and q_2 proportional to sqrt(A_c) (second-moment-optimal; lemma R of DGP2)
+                Uf = {k: ((streams[k].upper_weight_fn()) if k in streams else None) for k in ('G2', 'RMAX_V4096')}
+                def U_of(k, c):
+                    S_ = streams[k]; u = Uf[k](c)
+                    return (u if k == 'RMAX_V4096' else u * S_.rows.K.hi() / M.scalar)                                 # both in W_0 units (G2's envelope bounds W_0 / d; x K_hi bounds W_0 / r)
+                def required_cap(k, q):
+                    # B_U(q) = max_c U(c) / q(c) over coarse states with U > 0; a law giving zero mass to a state with positive U cannot be certified through U
+                    best = F(0); unsupported = 0
+                    for c in cstates:
+                        u = U_of(k, c)
+                        if u == 0: continue
+                        qc = q.get(c, F(0))
+                        if qc == 0: unsupported += 1; continue
+                        best = max(best, u / qc)
+                    return best, unsupported
+                def law_rep(name, q):
+                    qlog = np.array([lg(q.get(c, F(0)) * r_) if (q.get(c, F(0)) > 0 and r_ > 0) else -np.inf for c, r_ in zip(cmap, rvals)]); Rstar = max(t[c] / (Z0 * q[c]) for c in t if q.get(c, F(0)) > 0); M2 = sum(H2[c] / q[c] for c in H2 if q.get(c, F(0)) > 0)
+                    rec = dict(law=name, log2_tight_cap_over_Z0=lg(Rstar), log2_M2=lg(M2), caps={}, checks={})
+                    caps = [('tight', lg(Rstar))]
+                    for k in ('G2', 'RMAX_V4096'):
+                        if k not in streams: continue
+                        Bq, uns = required_cap(k, q)
+                        if uns: rec['caps']['required_by_%s_U' % k] = dict(not_certifiable='the law gives zero mass to %d coarse states with positive U' % uns); continue
+                        rec['checks']['U_le_Bq_%s' % k] = all(U_of(k, c) <= Bq * q.get(c, F(0)) for c in cstates); caps.append(('required_by_%s_U' % k, lg(Bq / Z0)))
+                        if k == 'RMAX_V4096' and out['constructions'].get(k, {}).get('log2_sumU') is not None: rec['log2_understatement_of_frozen_sumU_column_bits'] = lg(Bq / Z0) - (out['constructions'][k]['log2_sumU'] - lg(Z0))
+                    for capname, caplog in caps:
+                        if tnow() >= deadline: rec['caps'][capname] = dict(censored='deadline'); continue
+                        rec['caps'][capname] = O3.replay_fine_law(states, W0, Z0, G, mu, qlog, caplog, K, alpha, eps_num, seeds, a.replay_draws, deadline, name + ':' + capname)
+                    return rec
+                for name, q in (('q_T_cap_optimal', qT), ('q_2_moment_optimal', q2)):
+                    if tnow() >= deadline: raise Deadline('counterfactual law ' + name)
+                    laws[name] = law_rep(name, q)
+                # the checked cap / moment FRONTIER of the retained RMAX envelope (review section 2): for a cap budget C >= sum U, min M2 s.t. q_c >= U_c / C, sum q = 1: q_c = max(U_c / C, lambda sqrt(A_c)); exact diagnostic, not replayed
+                if 'RMAX_V4096' in streams and tnow() < deadline:
+                    U = {c: U_of('RMAX_V4096', c) for c in cstates}; sumU = sum(U.values()); front = []; pos_sA = [x for x in sA.values() if x > 0]
+                    for mult in (1, 2, 4, 8, 16, 64):
+                        C = sumU * mult; lo_, hi_ = F(0), (F(1) / min(pos_sA) if pos_sA else F(1))
+                        for _ in range(120):
+                            lam = (lo_ + hi_) / 2; tot = sum(max(U[c] / C, lam * sA.get(c, F(0))) for c in cstates)
+                            if tot > 1: hi_ = lam
+                            else: lo_ = lam
+                        lam = lo_; q = {c: max(U[c] / C, lam * sA.get(c, F(0))) for c in cstates}; Zq = sum(q.values()); q = {c: v / Zq for c, v in q.items()}
+                        Bq = max((U[c] / q[c] for c in cstates if U[c] > 0), default=F(0)); M2 = sum(H2[c] / q[c] for c in H2 if q[c] > 0); Rstar = max(t[c] / (Z0 * q[c]) for c in t if q[c] > 0)
+                        front.append(dict(cap_budget_multiple_of_sumU=mult, log2_required_cap_over_Z0=lg(Bq / Z0), log2_tight_cap_over_Z0=lg(Rstar), log2_M2=lg(M2), law_is_U_over_sumU=(mult == 1)))
+                    laws['frontier_RMAX_U'] = dict(note='exact diagnostic of the retained RMAX envelope: min M2 at cap budget C = mult x sum U (not replayed; no production construction implied)', points=front)
+                out['replays']['counterfactual_laws'] = laws
             if 'ideal_t_over_T' not in out['replays'] or not O3.complete_record(out['replays']['ideal_t_over_T']):
-                qlog = np.array([lg((t[c] / T) * r_) if (c in t and r_ > 0) else -np.inf for c, r_ in zip(cmap, rvals)]); eps_num = streams['RMAX_V4096'].eps_num if 'RMAX_V4096' in streams else (streams['G2'].eps_num if 'G2' in streams else 1e-11); W0 = [w / M.scalar for w in W]; rep = dict(label='ideal fixed-decoder law q_C = t / T', caps={})
+                qlog = np.array([lg((t[c] / T) * r_) if (c in t and r_ > 0) else -np.inf for c, r_ in zip(cmap, rvals)]); eps_num = streams['RMAX_V4096'].eps_num if 'RMAX_V4096' in streams else (streams['G2'].eps_num if 'G2' in streams else 1e-11); W0 = [w / M.scalar for w in W]; rep = dict(label='ideal fixed-decoder law q_C = t / T -- the required_by_*_sumU columns are ORACLE-ONLY numerical-cap counterfactuals (sum U is the minimum cap over laws, attained by U / sum U; T <= sum U makes it a valid TARGET cap for q_T but NOT a cap certifiable through U for q_T; DGP4 review section 1; the certifiable caps are in replays.counterfactual_laws)', caps={})
                 for capname, caplog in [('tight_T_over_Z0', lg(T / Z0))] + [('required_by_%s_sumU_over_Z0' % k, out['constructions'][k]['log2_sumU'] - lg(Z0)) for k in ('G2', 'RMAX_V4096') if out['constructions'].get(k, {}).get('log2_sumU') is not None]:
                     if tnow() >= deadline: rep['caps'][capname] = dict(censored='deadline'); continue
                     rep['caps'][capname] = O3.replay_fine_law(states, W0, Z0, G, mu, qlog, caplog, K, alpha, eps_num, seeds, a.replay_draws, deadline, capname)
