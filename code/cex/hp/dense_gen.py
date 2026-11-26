@@ -13,7 +13,7 @@ exponential family. No evidence; the request is every singleton coordinate (K = 
 exact-profile reduction found by the unchanged coarse_envelope.exact_profile_classes (an incidental reduction is disclosed, never grounds to replace the input).
 Development panel: n in {8, 12} x card in {2, 4} x the three topologies x scale in {1/2, 2} (24) + boundary cases (near-product scale 1/8: n 8 c2 er50, n 8 c4 clique; strong frustrated
 scale 4: n 8 c2 clique, n 8 c2 reg6); exact-enumeration oracle eligibility card^n <= 2^16 recorded.
-usage: dense_gen.py eval|dev|devmid|oracle_eval|oracle_dev|eval2|eval3 OUTDIR  (DGP2 tags: DGP2-ORACLE-EVAL-1 / DGP2-ORACLE-DEV-1 / DENSE-GENERIC-PAC-EVAL-2; DGP3: DENSE-GENERIC-PAC-EVAL-3; the table / unary recipe is UNCHANGED)"""
+usage: dense_gen.py eval|dev|devmid|oracle_eval|oracle_dev|eval2|eval3|...|eval7|oracle7 OUTDIR  (DGP2 tags: DGP2-ORACLE-EVAL-1 / DGP2-ORACLE-DEV-1 / DENSE-GENERIC-PAC-EVAL-2; DGP3: DENSE-GENERIC-PAC-EVAL-3; DGP7: prefixes DGP7/EVAL7/ and DGP7/ORACLE7/ with the canonical-JSON seed rule, ORACLE7 carrying an integer `variant` 0 / 1 (dgp7_seed_record); the table / unary recipe is UNCHANGED)"""
 import sys, os, json, hashlib, random, math, argparse, time
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -28,13 +28,24 @@ def dgp6_canonical_json(n, card, topo, scale):
     return json.dumps(dict(card=int(card), coupling=str(F(scale)), family={'er50': 'ER', 'clique': 'clique'}[topo], n=int(n)), sort_keys=True, separators=(',', ':'))
 def dgp6_seed_record(tag, n, card, topo, scale):
     key = tag + dgp6_canonical_json(n, card, topo, scale); x = int.from_bytes(hashlib.sha256(key.encode('utf-8')).digest()[:8], 'big'); return dict(prefix=tag, canonical_json=dgp6_canonical_json(n, card, topo, scale), seed_string=key, sha256_first8_big_endian=x, seed=x % ((1 << 31) - 1), rule="int.from_bytes(SHA256(prefix + canonical sorted JSON of family, n, card, coupling)[:8], 'big') mod (2^31 - 1)")
-def seed_of(tag, n, card, topo, scale):
+def dgp7_canonical_json(n, card, topo, scale, variant=None):
+    """DGP7 (PROTOCOL section 3): the canonical sorted JSON of (card, coupling, family, n[, variant]) -- keys sorted, no spaces, coupling as its exact rational string ('1/2' | '2'), family 'ER' | 'clique'; `variant` (0 | 1) only for the
+    ORACLE7 panel (two strong cliques + two strong ER50 at n 8 from the same recipe)"""
+    import json
+    d = dict(card=int(card), coupling=str(F(scale)), family={'er50': 'ER', 'clique': 'clique'}[topo], n=int(n))
+    if variant is not None: d['variant'] = int(variant)
+    return json.dumps(d, sort_keys=True, separators=(',', ':'))
+def dgp7_seed_record(tag, n, card, topo, scale, variant=None):
+    key = tag + dgp7_canonical_json(n, card, topo, scale, variant); x = int.from_bytes(hashlib.sha256(key.encode('utf-8')).digest()[:8], 'big'); return dict(prefix=tag, canonical_json=dgp7_canonical_json(n, card, topo, scale, variant), seed_string=key, sha256_first8_big_endian=x, seed=x % ((1 << 31) - 1), variant=variant, rule="int.from_bytes(SHA256(prefix + canonical sorted JSON {card, coupling, family, n[, variant]})[:8], 'big') mod (2^31 - 1)")
+def seed_of(tag, n, card, topo, scale, variant=None):
     """per-input seed: first eight SHA-256 bytes (unsigned big-endian) of the UTF-8 tag string feeding random.Random. DGP1-3 tags: '<tag>|<n>|<card>|<topo>|<scale>'. DGP4 tags (brief section 6 / 7, verbatim):
     'DGP4-EVAL4|<n>|<topology>|<coupling>|c4' and 'DGP4-ORACLE4|<n>|<topology>|<coupling>|c4' with topology in {ER, clique} and coupling the rational string ('1/2', '2')"""
     if tag in ('DGP4-EVAL4', 'DGP4-ORACLE4', 'DGP5-EVAL5'):
         assert card == 4; key = '%s|%d|%s|%s|c4' % (tag, n, {'er50': 'ER', 'clique': 'clique'}[topo], str(F(scale)))
     elif tag == 'DGP5-ORACLE5':                                                                         # DGP5 brief section 12: 'DGP5-ORACLE5|n|topology|two|c4' (coupling 2 written as the word 'two')
         assert card == 4 and F(scale) == 2; key = '%s|%d|%s|two|c4' % (tag, n, {'er50': 'ER', 'clique': 'clique'}[topo])
+    elif tag in ('DGP7/EVAL7/', 'DGP7/ORACLE7/'):                                                      # DGP7 PROTOCOL section 3: the DGP6 JSON rule with the DGP7 prefixes; ORACLE7 adds the integer `variant` key (recorded by dgp7_seed_record)
+        key = tag + dgp7_canonical_json(n, card, topo, scale, variant); return int.from_bytes(hashlib.sha256(key.encode('utf-8')).digest()[:8], 'big') % ((1 << 31) - 1)
     elif tag in ('DGP6/EVAL6/', 'DGP6/ORACLE6/'):                                                      # DGP6 brief section 6: int.from_bytes(SHA256(prefix + canonical sorted JSON of family, n, card, coupling)[:8], 'big') mod (2^31 - 1); the JSON string is recorded by dgp6_seed_record
         key = tag + dgp6_canonical_json(n, card, topo, scale); return int.from_bytes(hashlib.sha256(key.encode('utf-8')).digest()[:8], 'big') % ((1 << 31) - 1)
     else: key = '%s|%d|%d|%s|%s' % (tag, n, card, topo, scale)
@@ -99,8 +110,8 @@ def round_pos(x):
     q = F(x) * (1 << ROUND_BITS); k = math.floor(q + F(1, 2)); return F(max(1, k), 1 << ROUND_BITS)
 
 
-def build(tag, n, card, topo, scale):
-    rng = random.Random(seed_of(tag, n, card, topo, scale)); E, rejected, reasons = graph(rng, topo, n); mean_deg = 2.0 * len(E) / n; beta = float(scale) / math.sqrt(mean_deg)
+def build(tag, n, card, topo, scale, variant=None):
+    rng = random.Random(seed_of(tag, n, card, topo, scale, variant)); E, rejected, reasons = graph(rng, topo, n); mean_deg = 2.0 * len(E) / n; beta = float(scale) / math.sqrt(mean_deg)
     unaries = [[round_pos(math.exp(float(UNARY_SCALE * raw(rng)))) for _ in range(card)] for _ in range(n)]
     pairs = []
     for (u, v) in E:
@@ -112,6 +123,7 @@ def build(tag, n, card, topo, scale):
     rec = dict(n=n, card=card, topology=topo, scale=str(scale), beta=beta, edges=len(E), degree=dict(min=min(deg), max=max(deg), mean=mean_deg), cycle_rank=len(E) - n + 1, graph_attempts_rejected=rejected, graph_rejection_reasons=reasons,
                entries=dict(pair=len(allp), unary=len(allu), total=len(allp) + len(allu)), dynamic_range=dict(pair_max=str(max(allp)), pair_min=str(min(allp)), pair_log10=math.log10(float(max(allp) / min(allp))), unary_max=str(max(allu)), unary_min=str(min(allu))),
                oracle_eligible=(card ** n <= ORACLE_CAP), K=n * card)
+    if variant is not None: rec['variant'] = int(variant)
     return model, rec
 
 
@@ -125,13 +137,15 @@ def exact_reduction(model):
     return dict(variables_reduced=len(red), detail=red[:16], retained_variables=len(M.cards), zero_mass=M.zero_mass)
 
 
-TAG_ORACLE_EVAL = 'DGP2-ORACLE-EVAL-1'; TAG_ORACLE_DEV = 'DGP2-ORACLE-DEV-1'; TAG_EVAL2 = 'DENSE-GENERIC-PAC-EVAL-2'; TAG_EVAL3 = 'DENSE-GENERIC-PAC-EVAL-3'; TAG_EVAL4 = 'DGP4-EVAL4'; TAG_ORACLE4 = 'DGP4-ORACLE4'; TAG_EVAL5 = 'DGP5-EVAL5'; TAG_ORACLE5 = 'DGP5-ORACLE5'; TAG_EVAL6 = 'DGP6/EVAL6/'; TAG_ORACLE6 = 'DGP6/ORACLE6/'
+TAG_ORACLE_EVAL = 'DGP2-ORACLE-EVAL-1'; TAG_ORACLE_DEV = 'DGP2-ORACLE-DEV-1'; TAG_EVAL2 = 'DENSE-GENERIC-PAC-EVAL-2'; TAG_EVAL3 = 'DENSE-GENERIC-PAC-EVAL-3'; TAG_EVAL4 = 'DGP4-EVAL4'; TAG_ORACLE4 = 'DGP4-ORACLE4'; TAG_EVAL5 = 'DGP5-EVAL5'; TAG_ORACLE5 = 'DGP5-ORACLE5'; TAG_EVAL6 = 'DGP6/EVAL6/'; TAG_ORACLE6 = 'DGP6/ORACLE6/'; TAG_EVAL7 = 'DGP7/EVAL7/'; TAG_ORACLE7 = 'DGP7/ORACLE7/'
 DGP4_TAGS = (TAG_EVAL4, TAG_ORACLE4)
 
 
 def panel(kind):
     if kind == 'oracle_eval': return TAG_ORACLE_EVAL, [(n, c, t, s) for (n, c) in ((8, 2), (12, 2), (6, 4), (8, 4)) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]           # DGP2 brief section 4: 16 oracle inputs, each <= 2^16 fine states
     if kind == 'oracle_dev': return TAG_ORACLE_DEV, [(n, c, t, s) for (n, c) in ((6, 2), (8, 2), (5, 4), (6, 4)) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]
+    if kind == 'eval7': return TAG_EVAL7, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP7 PROTOCOL section 3: 8 fresh production inputs (unchanged recipe; seed domain DGP7/EVAL7/ + canonical JSON)
+    if kind == 'oracle7': return TAG_ORACLE7, [(8, 4, t, F(2), v) for t in ('clique', 'er50') for v in (0, 1)]                                                                           # DGP7 PROTOCOL section 3: 4 fresh strong n8 card-4 coupling-2 oracle models (two cliques, two ER50) by the `variant` key 0 / 1
     if kind == 'eval6': return TAG_EVAL6, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP6 brief section 6: 8 fresh production inputs (unchanged generator recipe; new seed domain DGP6/EVAL6/ + canonical JSON)
     if kind == 'oracle6': return TAG_ORACLE6, [(n, 4, t, F(2)) for n in (6, 8) for t in ('er50', 'clique')]                                                                                  # DGP6 brief section 6: 4 fresh strong small oracle models (coupling 2 only)
     if kind == 'eval5': return TAG_EVAL5, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP5 brief section 12: 8 fresh production inputs (seed string DGP5-EVAL5|n|ER/clique|coupling|c4; recipe unchanged)
@@ -149,9 +163,10 @@ def panel(kind):
 def generate(kind, outdir):
     import hp_gen as G
     tag, combos = panel(kind); os.makedirs(outdir, exist_ok=True); man = []
-    for (n, card, topo, scale) in combos:
-        model, rec = build(tag, n, card, topo, scale); name = 'dg_n%d_c%d_%s_%s' % (n, card, topo, SCALE_NAME[scale]); p = os.path.join(outdir, name + '.uai'); G.write(p, model)
-        rec.update(name=name, tag=tag, seed=seed_of(tag, n, card, topo, scale), seed_record=(dgp6_seed_record(tag, n, card, topo, scale) if tag.startswith('DGP6/') else None), model=os.path.abspath(p), model_sha256=hashlib.sha256(open(p, 'rb').read()).hexdigest(), evid_sha256=hashlib.sha256(open(p + '.evid', 'rb').read()).hexdigest(), exact_profile_reduction=exact_reduction(model))
+    for combo in combos:
+        n, card, topo, scale = combo[:4]; variant = combo[4] if len(combo) > 4 else None
+        model, rec = build(tag, n, card, topo, scale, variant); name = 'dg_n%d_c%d_%s_%s' % (n, card, topo, SCALE_NAME[scale]) + ('_v%d' % variant if variant is not None else ''); p = os.path.join(outdir, name + '.uai'); G.write(p, model)
+        rec.update(name=name, tag=tag, seed=seed_of(tag, n, card, topo, scale, variant), seed_record=(dgp6_seed_record(tag, n, card, topo, scale) if tag.startswith('DGP6/') else dgp7_seed_record(tag, n, card, topo, scale, variant) if tag.startswith('DGP7/') else None), model=os.path.abspath(p), model_sha256=hashlib.sha256(open(p, 'rb').read()).hexdigest(), evid_sha256=hashlib.sha256(open(p + '.evid', 'rb').read()).hexdigest(), exact_profile_reduction=exact_reduction(model))
         man.append(rec); print(name, rec['edges'], 'edges', 'rej', rec['graph_attempts_rejected'], 'reduced', rec['exact_profile_reduction'].get('variables_reduced'), rec['model_sha256'][:12], flush=True)
     json.dump(dict(kind=kind, tag=tag, generator_sha256=hashlib.sha256(open(__file__, 'rb').read()).hexdigest(), hp_gen_sha256=hashlib.sha256(open(os.path.join(HERE, 'hp_gen.py'), 'rb').read()).hexdigest(), constants=dict(GRID=GRID, ROUND_BITS=ROUND_BITS, UNARY_SCALE=str(UNARY_SCALE), MAX_GRAPH_ATTEMPTS=MAX_GRAPH_ATTEMPTS, ORACLE_CAP=ORACLE_CAP),
                    python=sys.version.split()[0], platform=sys.platform, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), inputs=man, note='exp() is evaluated in double precision once per entry; the serialized rationals define the model; the sha256 of each file is the frozen identity (regeneration on another libm may differ in the last bit)'), open(os.path.join(outdir, 'GENERATED_MANIFEST.json'), 'w'), indent=1)
@@ -159,4 +174,4 @@ def generate(kind, outdir):
 
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser(); ap.add_argument('kind', choices=['eval', 'dev', 'devmid', 'oracle_eval', 'oracle_dev', 'eval2', 'eval3', 'eval4', 'oracle4', 'eval5', 'oracle5', 'eval6', 'oracle6']); ap.add_argument('outdir'); a = ap.parse_args(); generate(a.kind, a.outdir)
+    ap = argparse.ArgumentParser(); ap.add_argument('kind', choices=['eval', 'dev', 'devmid', 'oracle_eval', 'oracle_dev', 'eval2', 'eval3', 'eval4', 'oracle4', 'eval5', 'oracle5', 'eval6', 'oracle6', 'eval7', 'oracle7']); ap.add_argument('outdir'); a = ap.parse_args(); generate(a.kind, a.outdir)

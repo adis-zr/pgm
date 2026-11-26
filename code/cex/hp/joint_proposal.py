@@ -165,7 +165,8 @@ class JointCompile:
     """mode 'seed': group 0 -> family table + SUM message + conditional; others MAX. mode 'max': every group MAX (the b-pass). mode 'sum': group 0 SUM, others MAX (the a-pass). `retain` = variables never eliminated
     (the family F of a witness pass). Every output is admitted before allocation; every stage is checked independently (check_joint.check_stage) before commit; consumed inputs are released at commit; refusal /
     interruption releases everything owned."""
-    def __init__(self, cards, sources, order, V, fanin, budget, clock, mode, retain=(), owned=None, trace=None):
+    def __init__(self, cards, sources, order, V, fanin, budget, clock, mode, retain=(), owned=None, trace=None, sink=None):
+        self.sink = sink                                                                                     # DGP7: an optional residual-bank sink (residual_bank.BankSink) offered every checked MAX group while its inputs / message are live
         self.cards = list(cards); self.active = list(sources); self.order = [v for v in order if v not in set(retain)]; self.V = int(V); self.fanin = int(fanin); self.budget = budget; self.clock = clock; self.mode = mode; self.retain = tuple(retain)
         self.owned = owned if owned is not None else [0]; self.next_tid = (max(T.tid for T in sources) + 1) if sources else 0; self.plan = []; self.stages_done = 0; self.max_splits = 0; self.work_cells = 0; self.peak_owned = 0; self.checker_receipts = []
         self.conditionals = {}; self.scalars = []; self.trace = trace if trace is not None else []; self.zero_rows = 0; self.k_values = []; self.consumed_messages = 0; self.absent_sum_scalars = []
@@ -200,6 +201,7 @@ class JointCompile:
         if len(groups) > 1: self.max_splits += len(groups) - 1
         out_bytes = sum(ENTRY_BYTES * vol_of([a for a in u if a != v], self.cards) + 128 for u, _ in groups); fam = (ENTRY_BYTES * vol_of(groups[0][0], self.cards) + COUNT_BYTES * vol_of(groups[0][0], self.cards) + 256) if self.mode == 'seed' else 0
         peak_extra = max(ENTRY_BYTES * vol_of(u, self.cards) * 2 for u, _ in groups)
+        if self.sink is not None: self.sink.make_room(out_bytes + fam + peak_extra)                        # DGP7 (brief section 3): optional residual atoms are evicted BEFORE the ordinary seed allocation could fail
         self.owned[0] += self.budget.charge(out_bytes + fam + peak_extra, 'joint stage %d outputs + family + workspace' % v); self._bump(); self.budget.release(peak_extra); self.owned[0] -= peak_extra
         outs = []; rec = dict(v=v, groups=[], mode=self.mode); cond = None; charged_now = out_bytes + fam
         try:
@@ -211,8 +213,18 @@ class JointCompile:
                 if agg == 'sum': R, raxes = sum_over_up(P, u, [v])
                 else: R, raxes = max_over(P, u, [v])
                 T = JTable(raxes, R, self.next_tid, ('sum_message' if agg == 'sum' else 'max_message', v, tuple(t.tid for t in mem))); self.next_tid += 1
-                receipt = CJ.check_stage(mem, T, v, self.cards, agg, self.clock, inventory=inv, bucket_ids=[t.tid for t in bucket], P=(P if agg == 'sum' else None)); self.checker_receipts.append(receipt)
-                if not receipt['ok']: raise CE.Defect('joint stage checker rejected group %d of variable %d: %s' % (gi, v, receipt.get('why')))
+                pre = None
+                if self.sink is not None and self.mode == 'seed' and agg == 'max':
+                    try: pre = self.sink.prepare(v, gi, mem, P, u, T, raxes, self.cards)                 # DGP7: the candidate residual rho = P / M (upward) is formed BEFORE the stage check and verified INSIDE it (M rho >= the exact input product at every cell)
+                    except CE.Refused: pre = None
+                try: receipt = CJ.check_stage(mem, T, v, self.cards, agg, self.clock, inventory=inv, bucket_ids=[t.tid for t in bucket], P=(P if agg == 'sum' else None), rho=(pre['rho'] if pre is not None else None)); self.checker_receipts.append(receipt)
+                except BaseException:
+                    if pre is not None: self.sink.abort(pre)
+                    raise
+                if not receipt['ok']:
+                    if pre is not None: self.sink.abort(pre)
+                    raise CE.Defect('joint stage checker rejected group %d of variable %d: %s' % (gi, v, receipt.get('why')))
+                if pre is not None: self.sink.commit(pre, receipt, mem, T)                             # the slack verified by the stage checker's exact pass -> the atom is installed (dropped with its reason otherwise)
                 if self.mode == 'seed' and gi == 0:
                     parents = tuple(a for a in u if a != v); k = self.cards[v]; zi = u.index(v); Pm = np.moveaxis(P, zi, -1).reshape(-1, k); Mf = R.reshape(-1); counts = np.empty((Pm.shape[0], k), dtype=np.int64); zr = 0
                     for ri in range(Pm.shape[0]):
@@ -314,12 +326,12 @@ class Proposal:
         return dict(sha256=self.sha256, order=self.order, conditionals=[dict(z=v, parents=list(self.conds[v].parents), volume=self.conds[v].family_volume(), counts_sha256=self.conds[v].sha256) for v in self.order], log2_B_W0=self.log2_B(), log2_S_W0sq=self.log2_S(), B=(self.B[0], str(self.B[1])), S=(self.S[0], str(self.S[1])), bytes=self.bytes, provenance=self.provenance, predecessor=self.predecessor)
 
 
-def compile_seed(M_par, order, profile, budget, clock, deadline_fn=None, trace=None):
+def compile_seed(M_par, order, profile, budget, clock, deadline_fn=None, trace=None, sink=None):
     """the checked seed proposal on the parent canonical model; returns (Proposal, record). Raises RefusedJoint / CE.Refused / CE.Defect with every owned byte released; on success the Proposal's conditionals are owned by
     the caller (their bytes are left charged: `owned_bytes` in the record)"""
     owned = [0]; cards = list(M_par.cards); t0 = CE.tnow()
     try:
-        srcs = source_tables(M_par, budget, clock, owned, V=profile['V_seed']); comp = JointCompile(cards, srcs, order, profile['V_seed'], profile['fanin'], budget, clock, 'seed', owned=owned, trace=trace); comp.run(deadline_fn)
+        srcs = source_tables(M_par, budget, clock, owned, V=profile['V_seed']); comp = JointCompile(cards, srcs, order, profile['V_seed'], profile['fanin'], budget, clock, 'seed', owned=owned, trace=trace, sink=sink); comp.run(deadline_fn)
         if comp.active: raise CE.Defect('seed: live tables remain after the elimination: %s' % [(T.tid, T.axes) for T in comp.active])
         U = comp.scalar_product(); zero = (U[1] == 0)
         # the cap: U x prod_z D / (D - k_z), rounded upward

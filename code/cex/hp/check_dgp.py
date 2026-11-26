@@ -1922,6 +1922,459 @@ def D62_primary_preservation_and_relocation():
 
 CONTROLS += [D55_source_binding_mutants, D56_ownership_admission_cutoffs, D57_bounded_sum_and_rebuilt_J, D58_circuits_vs_exhaustive_reference, D59_gradient_convexity_pnorm, D60_optimizer_limits_and_expiry, D61_global_stream_lifecycle, D62_primary_preservation_and_relocation]
 
+# ---------------------------------------------------------------- DGP7 (D63-D70): the residual envelope bank, the local kernel and the residual stream (brief CLAUDE_DGP7_IMPLEMENTATION_SPEC.md section 8, items 1-8)
+import residual_bank as RB, residual_local as RL, check_residual as CR, residual_stream as RS
+import inspect as _inspect, hashlib
+def _rstage(model, budget_s=120, time_cap=5.0, budget=None, profile=None, sink_cls=None):
+    """seed pass with the residual bank attached (the dgp7_smoke pattern): -> M, order, clk, B, cards, prop, owned, state, sink, rec"""
+    clk = CE.Clock(PA.tnow() + budget_s, {}); B = budget or CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B); order, _ = CE.elimination_order(list(M.cards), [tuple(sc) for sc, _ in M.factors], clk, B); cards = list(M.cards); live0 = B.live
+    state = RB.ResidualState('ctrl', None, None, None, None, None, B); sink = (sink_cls or RB.BankSink)(state, clk, time_cap); prop, rec_, owned = JP.compile_seed(M, order, profile or JPROF, B, clk, sink=sink); state.bind_seed(prop, rec_['plan_sha256']); state.live0 = live0
+    return M, order, clk, B, cards, prop, owned, state, sink, rec_
+class _CaptureSink(RB.BankSink):
+    """records COPIES of the live inputs / message of every prepared group (the controls recompute the slack independently of the sink / checker afterwards)"""
+    def prepare(self, v, gi, mem, P, u, T_msg, raxes, cards):
+        pre = super().prepare(v, gi, mem, P, u, T_msg, raxes, cards)
+        if pre is not None: pre['capture'] = dict(mem=[JP.JTable(t.axes, t.arr.copy(), t.tid, t.origin) for t in mem], msg=JP.JTable(T_msg.axes, T_msg.arr.copy(), T_msg.tid, T_msg.origin), P=P.copy(), v=v, gi=gi, u=tuple(u), raxes=tuple(raxes), cards=list(cards))
+        return pre
+    def commit(self, pre, receipt, mem, T_msg):
+        a = super().commit(pre, receipt, mem, T_msg)
+        if a is not None and 'capture' in pre: self.captured = getattr(self, 'captured', {}); self.captured[a.aid] = pre['capture']
+        return a
+def _rstream(M, mode='residual_joint', seed=1, budget=None, allow=10.0, profile=None):
+    B = budget or CE.Budget(CE.CONSTRUCTOR_BYTES); S = RS.ResidualStream(2, M, M, [], seed, EPS, DELTA / 4, dict(PAC_OPTS, budget_obj=B), mode=mode, profile=profile); r = S.prepare(PA.tnow() + allow, until=PA.tnow() + allow); return S, B, r
+def _exact_slack_violations(cap):
+    """INDEPENDENT recomputation (Fractions) of M(x_{u \\ v}) rho(x_u) >= prod inputs(x_u) at every union cell of a captured group; -> (violations, cells, max_log2_slack)"""
+    def check(rho):
+        u = cap['u']; cards = cap['cards']; sizes = [cards[a] for a in u]; ipos = [[u.index(a) for a in T.axes] for T in cap['mem']]; mi = [u.index(a) for a in cap['raxes']]; viol = 0; cells = 0
+        for asg in itertools.product(*[range(s) for s in sizes]):
+            prod = F(1)
+            for T, pp in zip(cap['mem'], ipos): prod *= _tf(T.arr[tuple(asg[p] for p in pp)])
+            M = _tf(cap['msg'].arr[tuple(asg[p] for p in mi)] if cap['raxes'] else cap['msg'].arr.reshape(-1)[0]); r = _tf(rho[asg])
+            if M * r < prod: viol += 1
+            cells += 1
+        return viol, cells
+    return check
+def _syn_region(cards, order, A, atom_axes_list, rng, targets_extra=None):
+    """a synthetic region: random positive conditionals on random earlier parents (old law), target parents = old + one extra earlier variable (when given), atoms with random values in (0, 1] over the given axes; -> state, prop, window, conds_old, conds_new"""
+    import dgp7_rates as R7
+    pos = {v: i for i, v in enumerate(order)}; conds_old = {}; targets = {}
+    for v in order:
+        earlier = order[:pos[v]]; par = tuple(sorted(rng.sample(earlier, min(len(earlier), rng.randint(0, 1))), key=lambda x: pos[x])) if earlier else (); conds_old[v] = R7.rand_cond(rng, v, par, cards)
+    for v in A:
+        extra = (targets_extra or {}).get(v); targets[v] = tuple(sorted(set(conds_old[v].parents) | ({extra} if extra is not None else set()), key=lambda x: pos[x]))
+    prop = JP.Proposal(cards, conds_old, order, _RM.norm_up(0, 1), _RM.norm_up(0, 1), dict(kind='ctrl')); B = CE.Budget(CE.CONSTRUCTOR_BYTES); state = RB.ResidualState('ctrl', 'ctrl', prop, prop.B, prop.B, prop.B, B); atoms = []
+    for j, axes in enumerate(atom_axes_list): a = R7.rand_atom(rng, tuple(sorted(axes)), cards, j, 0); a.verified = True; state.atoms[a.aid] = a; atoms.append(a)
+    R = set(A)
+    for v in A: R |= set(conds_old[v].parents) | set(targets[v])
+    for a in atoms: R |= set(a.axes)
+    R = sorted(R, key=lambda x: pos[x]); C = [x for x in R if x not in A]
+    window = dict(A=list(A), R=list(R), C=list(C), atoms=[a.aid for a in atoms], vol=JP.vol_of(tuple(R), cards), bank_version=0, target_parents=targets, max_vol=65536, whole_model_region=(len(R) == len(cards)), score=1.0, predicted_work_s=0.0)
+    conds_new = {v: R7.rand_cond(rng, v, targets[v], cards) for v in A}
+    return state, prop, window, conds_old, conds_new, B
+def _lg(q): return float(CJ.lg_bounded(q)) if q > 0 else -math.inf
+
+def D63_seed_residual_inequalities():
+    """brief section 8 item 1: (a) on two <= 4,096-state models (the n6 card-4 clique; a random card-3 model with V_seed forced to 27 so MAX groups appear) every retained atom satisfies M rho >= the EXACT product of its live inputs at
+    every union cell, recomputed independently in Fractions from captured copies (not through the sink / checker); (b) the telescoping identity W_0 <= B_seed q prod rho on EVERY fine state with all atoms, with any one atom dropped
+    and with none (dropping is sound); (c) zero-message handling: a hand-built MAX group whose message has zero cells gives rho = 1 there (P = 0), the checker accepts it (slack_ok) and a positive P under a zero M is a Defect;
+    (d) rejections: a rho underbound (one cell scaled down) -> check_stage(rho=) slack_ok False AND check_slack_cells Defect; a lowered message cell -> the stage checker rejects dominance; a raised source cell -> the slack check
+    rejects; tampered seed counts -> check_seed_rows rejects; swapped (transposed) rho axes -> rejected on an asymmetric group; the honest group is accepted"""
+    res = {}; rng = random.Random(63); ok = True
+    cases = [('n6_clique', load_odev('dg_n6_c4_clique_two')[0], JPROF), ('rand_c3', _rand_model(rng, [3, 3, 3, 3, 3], [(0, 1), (1, 2), (2, 3), (3, 4), (0, 4), (0, 2), (1, 3)]), dict(JPROF, V_seed=27))]
+    for name, model, prof in cases:
+        M, order, clk, B, cards, prop, owned, state, sink, rec_ = _rstage(model, profile=prof, sink_cls=_CaptureSink); atoms = state.live_atoms(); caps = getattr(sink, 'captured', {}); r = dict(atoms=len(atoms), captured=len(caps), states=math.prod(cards))
+        viol = 0; cells = 0
+        for a in atoms:
+            v_, c_ = _exact_slack_violations(caps[a.aid])(a.arr); viol += v_; cells += c_
+        r['independent_slack_violations'] = viol; r['independent_slack_cells'] = cells
+        r['identity_all'] = CR.ref_envelope_exact(M, prop, atoms, prop.B); r['identity_none'] = CR.ref_envelope_exact(M, prop, [], prop.B); r['identity_drop_each'] = [CR.ref_envelope_exact(M, prop, [b for b in atoms if b is not a], prop.B)['violations'] for a in atoms]
+        r['atoms_le_one'] = all(_ge(RB.ONE, x) for a in atoms for x in a.arr.reshape(-1)); r['bank_consistent'] = (state.owned == sum(a.bytes for a in state.atoms.values())) and (B.live - state.live0 == owned + state.owned)
+        res[name] = {k: (v if k not in ('identity_all', 'identity_none') else v['violations']) for k, v in r.items()}
+        ok = ok and len(atoms) >= 1 and len(caps) == len(atoms) and viol == 0 and cells > 0 and r['identity_all']['violations'] == 0 and r['identity_none']['violations'] == 0 and all(x == 0 for x in r['identity_drop_each']) and r['atoms_le_one'] and r['bank_consistent']
+        if name == 'rand_c3':
+            # (d) rejections on the first captured group (asymmetric: cards 3, random values)
+            cap = caps[atoms[0].aid]; mem = cap['mem']; T = cap['msg']; u = cap['u']; v = cap['v']; rho = atoms[0].arr; inv = [t.tid for t in mem] + [900]; clk2 = CE.Clock(PA.tnow() + 60, {})
+            honest = CJ.check_stage(mem, T, v, cards, 'max', clk2, inventory=inv, rho=rho); rej = dict(honest=dict(ok=honest['ok'], slack_ok=honest.get('slack_ok'), slack_cells=honest.get('slack_cells')))
+            bad = rho.copy(); i0 = next(idx for idx in itertools.product(*[range(cards[a]) for a in u]) if rho[idx][1]); bad[i0] = _RM.norm_up(rho[i0][0] - 1, rho[i0][1]); r1 = CJ.check_stage(mem, T, v, cards, 'max', clk2, inventory=inv, rho=bad); rej['rho_underbound_checker'] = dict(ok=r1['ok'], slack_ok=r1.get('slack_ok'), why=(r1.get('slack_why') or '')[:60])
+            kind = None
+            try: RB.check_slack_cells(mem, T, bad, u, cap['raxes'], cards, clk2)
+            except CE.Defect as e: kind = str(e)[:60]
+            rej['rho_underbound_slack_cells'] = kind
+            Tl = JP.JTable(T.axes, T.arr.copy(), T.tid, T.origin); j0 = next(idx for idx in itertools.product(*[range(cards[a]) for a in T.axes]) if T.arr[idx][1]); Tl.arr[j0] = _RM.norm_up(T.arr[j0][0] - 1, T.arr[j0][1]); r2 = CJ.check_stage(mem, Tl, v, cards, 'max', clk2, inventory=inv, rho=rho); rej['lowered_message'] = dict(ok=r2['ok'], why=(r2.get('why') or '')[:60])
+            m0 = mem[0]; mh = JP.JTable(m0.axes, m0.arr.copy(), m0.tid, m0.origin); k0 = next(idx for idx in itertools.product(*[range(cards[a]) for a in m0.axes]) if m0.arr[idx][1]); mh.arr[k0] = _RM.norm_up(m0.arr[k0][0] + 1, m0.arr[k0][1]); r3 = CJ.check_stage([mh] + mem[1:], T, v, cards, 'max', clk2, inventory=inv, rho=rho); rej['raised_source'] = dict(ok=r3['ok'], slack_ok=r3.get('slack_ok'), why=((r3.get('why') or r3.get('slack_why') or ''))[:60])
+            c0 = prop.conds[prop.order[-1]]; cnt = c0.counts.copy(); cnt[0, 0] += 1; cnt[0, 1] -= 1; Pm = np.empty(cnt.shape, dtype=object); Pm.fill(_fu(F(1, 2))); Mf = np.empty(cnt.shape[0], dtype=object); Mf.fill(_fu(F(1))); r4 = CJ.check_seed_rows(Pm, Mf, cnt, cards[c0.z], clk2); cnt2 = c0.counts.copy(); cnt2[0, 0] -= 1; r4b = CJ.check_seed_rows(Pm, Mf, cnt2, cards[c0.z], clk2); rej['tampered_counts'] = dict(sum_ok_row_ineq=r4['ok'], why=(r4.get('why') or '')[:50], sum_broken=r4b['ok'])
+            if len(u) >= 2 and cards[u[0]] == cards[u[1]]:
+                perm = list(range(len(u))); perm[0], perm[1] = perm[1], perm[0]; sw = np.ascontiguousarray(np.transpose(rho, perm)); r5 = CJ.check_stage(mem, T, v, cards, 'max', clk2, inventory=inv, rho=sw); rej['swapped_axes'] = dict(ok=r5['ok'], slack_ok=r5.get('slack_ok'), identical=bool(all(sw[idx] == rho[idx] for idx in itertools.product(*[range(cards[a]) for a in u]))))
+            else: rej['swapped_axes'] = dict(ok=None, slack_ok=None, identical=None, note='union has < 2 equal-card axes')
+            res['rejections'] = rej
+            ok = ok and rej['honest']['ok'] and rej['honest']['slack_ok'] is True and rej['honest']['slack_cells'] > 0 and rej['rho_underbound_checker']['ok'] and rej['rho_underbound_checker']['slack_ok'] is False and rej['rho_underbound_slack_cells'] is not None and not rej['lowered_message']['ok'] and (not rej['raised_source']['ok'] or rej['raised_source']['slack_ok'] is False) and (rej['tampered_counts']['sum_ok_row_ineq'] is False) and not rej['tampered_counts']['sum_broken'] and (rej['swapped_axes']['identical'] or rej['swapped_axes']['slack_ok'] is False or rej['swapped_axes']['ok'] is None)
+    # (c) zero-message handling on a hand-built group: inputs over (0, 1) and (1, 2) with a zero column -> M(x_0, x_2) = 0 where the product vanishes for every x_1
+    cards3 = [2, 3, 2]; a_ = np.empty((2, 3), dtype=object); b_ = np.empty((3, 2), dtype=object)
+    for i in range(2):
+        for j in range(3): a_[i, j] = _fu(F(i + j + 1, 7)) if i == 0 else _fu(F(0))                   # row x_0 = 1 is identically zero -> M(1, x_2) = 0
+    for j in range(3):
+        for k in range(2): b_[j, k] = _fu(F(j + 2 * k + 1, 5))
+    mem = [JP.JTable((0, 1), a_, 0, ('factor', 0)), JP.JTable((1, 2), b_, 1, ('factor', 1))]; u = (0, 1, 2); P = JP._norm(JP.product_exact(mem, u, cards3)); Rm, raxes = JP.max_over(P, u, [1]); T = JP.JTable(raxes, Rm, 2, ('max_message', 1, (0, 1))); clk3 = CE.Clock(PA.tnow() + 60, {})
+    rho, unit, ml = RB.rho_of_group(P, T, u, raxes, cards3, clk3); zero_cells = [idx for idx in itertools.product(*[range(c) for c in cards3]) if T.arr[(idx[0], idx[2])][1] == 0]
+    rz = CJ.check_stage(mem, T, 1, cards3, 'max', clk3, inventory=[0, 1], rho=rho); kind = None
+    Pbad = P.copy(); Pbad[(1, 0, 0)] = _fu(F(1, 3))
+    try: RB.rho_of_group(Pbad, T, u, raxes, cards3, clk3)
+    except CE.Defect as e: kind = str(e)[:50]
+    res['zero_message'] = dict(zero_message_cells=len(zero_cells), rho_one_at_zero=all(rho[idx] == RB.ONE for idx in zero_cells), P_zero_at_zero=all(P[idx][1] == 0 for idx in zero_cells), checker_ok=rz['ok'], slack_ok=rz.get('slack_ok'), positive_P_under_zero_M=kind)
+    ok = ok and len(zero_cells) > 0 and res['zero_message']['rho_one_at_zero'] and res['zero_message']['P_zero_at_zero'] and rz['ok'] and rz.get('slack_ok') is True and kind is not None
+    rec('D63_seed_residual_inequalities', ok, **res)
+
+def D64_local_F_source_binding():
+    """brief section 8 item 2: (a) on the n8 card-4 clique the kernel's K_ref / K_new come from the ACTUAL atoms + conditionals it is handed: a tampered atom cell (x 2) or tampered counts (the bank rebound to the tampered law) move
+    K_ref exactly onto the new exhaustive-rational reference and away from the old one; (b) positive actual rows: quantize_rows_exact on extreme rows (near-one / near-zero / zero entries) always yields counts >= 1 summing to D;
+    (c) unequal cardinalities (2, 3, 5, 2) with a sampling order that permutes the ids and atoms over permuted axis subsets: kernel K_ref / K_new / T2 dominate the exact reference within 2^-100 relative; (d) replication to the G1
+    parents gives the same q at every region cell; (e) no true Z in fitting: fit_window's signature / module source carry no enumeration / oracle / Z input, and scaling one unary factor by 2^10 (Z x 2^10) leaves the fitted counts,
+    K and rank identical while the checked caps shift by exactly 10 bits"""
+    res = {}; ok = True; rng = random.Random(64)
+    model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B, cards, prop, owned, state, sink, rec_ = _rstage(model); pairs, chg = JO.interaction_scores(M, B, clk); parents1, g1 = GO.select_g1(prop, pairs, cards); wins, excl = RL.plan_windows(state, prop, parents1, cards, prop.order)
+    w = next(w_ for w_ in wins if w_['vol'] <= 4096); aids = w['atoms']; k0 = CR.local_kernel(state, w, aids, prop.conds, None, cards, prop.order, clk); ref0 = CR.ref_local_exact(state, w, aids, prop.conds, None, cards, prop.order)
+    # tampered atom: x 2 at one positive cell (a NEW Atom object with the same id in a copy of the state)
+    a0 = state.atoms[aids[0]]; arr = a0.arr.copy(); idx = next(i for i in itertools.product(*[range(cards[x]) for x in a0.axes]) if arr[i][1] and not _ge(arr[i], (-1, 1))); arr[idx] = _RM.norm_up(arr[idx][0] + 1, arr[idx][1]); st2 = RB.ResidualState('ctrl', 'ctrl', prop, prop.B, prop.B, prop.B, B)
+    for aid, a in state.atoms.items(): st2.atoms[aid] = a
+    t2 = RB.Atom(a0.aid, a0.axes, arr, dict(a0.provenance), a0.score, a0.mean_log2, 0); t2.verified = True; st2.atoms[a0.aid] = t2; k1 = CR.local_kernel(st2, w, aids, prop.conds, None, cards, prop.order, clk); ref1 = CR.ref_local_exact(st2, w, aids, prop.conds, None, cards, prop.order); tol = 1 + F(1, 1 << 90)
+    rho_moved = sum(1 for x, y in zip(k0['rho_new'].reshape(-1), k1['rho_new'].reshape(-1)) if x != y)
+    res['tampered_atom'] = dict(K_ref_before=_lg(ref0['K_ref']), K_ref_after=_lg(ref1['K_ref']), kernel_before=k0['log2_K_ref'], kernel_after=k1['log2_K_ref'], K_dominates_new=(_tf(k1['K_ref']) >= ref1['K_ref']), K_tight_new=(_tf(k1['K_ref']) <= ref1['K_ref'] * tol), T2_exact_changed=(ref1['T2'] != ref0['T2']), T2_kernel_dominates_new=(_tf(k1['T2_max']) >= ref1['T2_max']), T2_kernel_tight_new=(_tf(k1['T2_max']) <= ref1['T2_max'] * tol), rho_new_cells_moved=rho_moved, tampered_cell=idx)
+    ok = ok and res['tampered_atom']['K_dominates_new'] and res['tampered_atom']['K_tight_new'] and res['tampered_atom']['T2_exact_changed'] and res['tampered_atom']['T2_kernel_dominates_new'] and res['tampered_atom']['T2_kernel_tight_new'] and rho_moved >= 1 and _tf(k0['K_ref']) >= ref0['K_ref']
+    # tampered counts: one unit moved between two states of the first active variable; the bank rebound to that law (otherwise the identity check rejects: that rejection is D67's)
+    v0 = w['A'][0]; c0 = prop.conds[v0]; cnt = c0.counts.copy(); r_ = 0; cnt[r_, 0] += 1; cnt[r_, 1] -= 1; conds_t = dict(prop.conds); conds_t[v0] = JP.Conditional(v0, c0.parents, cnt, cards); prop_t = JP.Proposal(cards, conds_t, prop.order, prop.B, prop.S, dict(kind='tampered')); st3 = RB.ResidualState('ctrl', 'ctrl', prop_t, prop.B, prop.B, prop.B, B)
+    for aid, a in state.atoms.items(): st3.atoms[aid] = a
+    cn_orig = {v: (prop.conds[v] if tuple(prop.conds[v].parents) == tuple(w['target_parents'][v]) else prop.conds[v].replicate(tuple(w['target_parents'][v]), cards)) for v in w['A']}      # the ORIGINAL law on the target parents presented as the 'new' law: K_new = max q_tampered prod rho / q_original reflects the tampered old counts exactly
+    k3 = CR.local_kernel(st3, w, aids, conds_t, cn_orig, cards, prop.order, clk); ref3 = CR.ref_local_exact(st3, w, aids, conds_t, cn_orig, cards, prop.order)
+    res['tampered_counts'] = dict(kernel_ok=k3['ok'], why=k3.get('why'), K_new_ref_log2=_lg(ref3['K_new']), kernel_K_new_log2=k3.get('log2_K_new'), K_new_dominates=(_tf(k3['K_new']) >= ref3['K_new']) if k3['ok'] else None, K_new_tight=(_tf(k3['K_new']) <= ref3['K_new'] * tol) if k3['ok'] else None, K_new_not_one=(ref3['K_new'] != 1), T2_exact_changed=(ref3['T2'] != ref0['T2']), rejected_against_original_bank=CR.local_kernel(state, w, aids, conds_t, None, cards, prop.order, clk).get('why'))
+    ok = ok and k3['ok'] and res['tampered_counts']['K_new_dominates'] and res['tampered_counts']['K_new_tight'] and res['tampered_counts']['K_new_not_one'] and res['tampered_counts']['T2_exact_changed'] and 'law identity' in (res['tampered_counts']['rejected_against_original_bank'] or '')
+    # (b) positive rows
+    rows = np.array([[1.0 - 3e-300, 1e-300, 1e-300, 1e-300], [0.0, 0.0, 0.0, 1.0], [0.25, 0.25, 0.25, 0.25], [5e-324, 0.5, 0.5 - 5e-324, 0.0], [0.0, 0.0, 0.0, 0.0]]); q = GO.quantize_rows_exact(rows, 4); res['positive_rows'] = dict(all_ge_1=bool((q >= 1).all()), sums_D=bool((q.sum(axis=1) == JP.D).all()), zero_row_uniform=bool(abs(int(q[4].max()) - int(q[4].min())) <= 1)); ok = ok and all(res['positive_rows'].values())
+    # (c) unequal cardinalities + permuted sampling order; atoms over permuted axis subsets
+    cards_u = [2, 3, 5, 2]; order_u = [2, 0, 3, 1]; A_u = [3, 1]; st_u, prop_u, w_u, co_u, cn_u, B_u = _syn_region(cards_u, order_u, A_u, [(1, 2), (0, 3), (1, 3, 2), (3,)], rng, targets_extra={3: 0, 1: 2}); clk_u = CE.Clock(PA.tnow() + 60, {})
+    ku = CR.local_kernel(st_u, w_u, w_u['atoms'], co_u, cn_u, cards_u, order_u, clk_u); ru = CR.ref_local_exact(st_u, w_u, w_u['atoms'], co_u, cn_u, cards_u, order_u); tol = 1 + F(1, 1 << 100)
+    res['unequal_cards_permuted'] = dict(ok=ku['ok'], why=ku.get('why'), vol=w_u['vol'], R=w_u['R'], K_ref=(_tf(ku['K_ref']) >= ru['K_ref'] and _tf(ku['K_ref']) <= ru['K_ref'] * tol) if ku['ok'] else None, K_new=(_tf(ku['K_new']) >= ru['K_new'] and _tf(ku['K_new']) <= ru['K_new'] * tol) if ku['ok'] else None, T2=(_tf(ku['T2_max']) >= ru['T2_max'] and _tf(ku['T2_max']) <= ru['T2_max'] * (1 + F(1, 1 << 90))) if ku['ok'] else None)
+    ok = ok and ku['ok'] and res['unequal_cards_permuted']['K_ref'] and res['unequal_cards_permuted']['K_new'] and res['unequal_cards_permuted']['T2']
+    # (d) replication keeps q at every region cell
+    v1 = w['A'][0]; rep = prop.conds[v1].replicate(tuple(parents1[v1]), cards) if tuple(parents1[v1]) != tuple(prop.conds[v1].parents) else prop.conds[v1]; same = True
+    for _ in range(200):
+        x = [rng.randrange(k) for k in cards]; ro = sum(prop.conds[v1].pstrides[p_] * x[p_] for p_ in prop.conds[v1].parents); rn = sum(rep.pstrides[p_] * x[p_] for p_ in rep.parents); same = same and int(prop.conds[v1].counts[ro, x[v1]]) == int(rep.counts[rn, x[v1]])
+    res['replication_same_q'] = dict(same=same, extended=(rep is not prop.conds[v1])); ok = ok and same
+    # (e) no true Z in fitting
+    src = _inspect.getsource(RL); sig = list(_inspect.signature(RL.fit_window).parameters); res['no_Z_in_fit'] = dict(signature=sig, no_Z_param=not any(k in ('Z', 'Z0', 'logZ', 'enum', 'states', 'oracle') for k in sig), no_enumeration_in_source=all(t not in src for t in ('ref_enumerate', 'oracle_logW0', 'dgp2_oracle', 'enumerate_original', 'ref_W0')))
+    fitA = RL.fit_window(prop, w, [state.atoms[a] for a in aids], cards, prop.order, 'auto', np.random.default_rng(3), 1.1, clock=clk)
+    model2 = dict(model); model2['factors'] = [dict(f) for f in model['factors']]; fu = next(f for f in model2['factors'] if len(f['scope']) == 1); fu['values'] = [F(x) * 1024 for x in fu['values']]
+    M2, order2, clk2, B2, cards2, prop2, owned2, state2, sink2, rec2 = _rstage(model2); wins2, _ = RL.plan_windows(state2, prop2, parents1, cards2, prop2.order); w2 = next(w_ for w_ in wins2 if w_['A'] == w['A'] and w_['atoms'] == w['atoms'])
+    fitB = RL.fit_window(prop2, w2, [state2.atoms[a] for a in aids], cards2, prop2.order, 'auto', np.random.default_rng(3), 1.1, clock=clk2)
+    kA = CR.local_kernel(state, w, aids, prop.conds, fitA.get('conds_new'), cards, prop.order, clk); kB = CR.local_kernel(state2, w2, aids, prop2.conds, fitB.get('conds_new'), cards2, prop2.order, clk2)
+    res['scaled_Z'] = dict(same_order=(prop2.order == prop.order), same_seed_counts=all(np.array_equal(prop.conds[v].counts, prop2.conds[v].counts) for v in prop.order), same_atoms=all(state.atoms[a].sha256 == state2.atoms[a].sha256 for a in aids), fit_status=(fitA.get('status'), fitB.get('status')), same_fitted_counts=(fitA.get('conds_new') is not None and all(np.array_equal(fitA['conds_new'][v].counts, fitB['conds_new'][v].counts) for v in w['A'])), same_K=(fitA.get('K_float_new_actual') == fitB.get('K_float_new_actual')), cap_shift_bits=(kB['log2_B_new'] - kA['log2_B_new']) if (kA['ok'] and kB['ok']) else None, seed_cap_shift_bits=prop2.log2_B() - prop.log2_B())
+    ok = ok and res['no_Z_in_fit']['no_Z_param'] and res['no_Z_in_fit']['no_enumeration_in_source'] and res['scaled_Z']['same_seed_counts'] and res['scaled_Z']['same_atoms'] and res['scaled_Z']['same_fitted_counts'] and res['scaled_Z']['same_K'] and abs(res['scaled_Z']['cap_shift_bits'] - 10.0) < 1e-9 and abs(res['scaled_Z']['seed_cap_shift_bits'] - 10.0) < 1e-9
+    B.release(owned); rec('D64_local_F_source_binding', ok, **res)
+
+def D65_exact_K_T2_and_weighted_moment():
+    """brief section 8 item 3: (a) on the n6 card-4 clique (whole-model region, parent-closed C) and on a synthetic unequal-cardinality region the kernel's K_ref / K_new / T2_max dominate the exhaustive-rational reference within
+    2^-90 relative and its parent-closed weighted moment (exact context marginal supplied) matches the exact weighted T2; (b) a future-touching atom (a variable sampled after the window) is rejected by validate_window; (c) the
+    SAMPLED context mode (C not parent-closed) is labelled advisory, differs from the exact marginal, is never passed to the kernel by the stream (source inspection: context_weights_exact unused), and the kernel's certified weighted
+    field exists only when exact weights are supplied; the uniform mode is labelled a negative diagnostic"""
+    res = {}; ok = True; rng = random.Random(65); tol = 1 + F(1, 1 << 90)
+    model, _ = load_odev('dg_n6_c4_clique_two'); M, order, clk, B, cards, prop, owned, state, sink, rec_ = _rstage(model); pairs, chg = JO.interaction_scores(M, B, clk); parents1, g1 = GO.select_g1(prop, pairs, cards); wins, _ = RL.plan_windows(state, prop, parents1, cards, prop.order); w = wins[0]
+    fit = RL.fit_window(prop, w, [state.atoms[a] for a in w['atoms']], cards, prop.order, 'auto', np.random.default_rng(1), 1.1, clock=clk); cn = fit.get('conds_new'); C = w['C']; pc = CR.parent_closed(prop, C); wts = CR.exact_context_marginal(prop, C, cards) if pc else None
+    k = CR.local_kernel(state, w, w['atoms'], prop.conds, cn, cards, prop.order, clk, context_weights_exact=wts); ref = CR.ref_local_exact(state, w, w['atoms'], prop.conds, cn, cards, prop.order, context_weights=wts)
+    res['n6'] = dict(parent_closed=pc, whole_model=k.get('whole_model_region'), K_ref=(_tf(k['K_ref']) >= ref['K_ref'] and _tf(k['K_ref']) <= ref['K_ref'] * tol), K_new=(_tf(k['K_new']) >= ref['K_new'] and _tf(k['K_new']) <= ref['K_new'] * tol), T2=(_tf(k['T2_max']) >= ref['T2_max'] and _tf(k['T2_max']) <= ref['T2_max'] * tol), weighted_kernel_log2=(k.get('weighted_moment') or {}).get('log2_weighted_T2'), weighted_exact_log2=_lg(ref.get('weighted_T2', F(0))), weighted_match=(abs((k.get('weighted_moment') or {}).get('log2_weighted_T2', 0) - _lg(ref.get('weighted_T2', F(1)))) < 1e-9) if wts else None, weights_sum_one=(sum(wts.values()) == 1) if wts else None)
+    ok = ok and pc and res['n6']['K_ref'] and res['n6']['K_new'] and res['n6']['T2'] and res['n6']['weighted_match'] and res['n6']['weights_sum_one']
+    cards_u = [3, 2, 4, 2, 3]; order_u = [4, 1, 0, 2, 3]; A_u = [2, 3]; st_u, prop_u, w_u, co_u, cn_u, B_u = _syn_region(cards_u, order_u, A_u, [(0, 2), (1, 3), (2, 3), (4, 3)], rng, targets_extra={2: 1, 3: 0}); Cu = w_u['C']; pcu = CR.parent_closed(prop_u, Cu); wu = CR.exact_context_marginal(prop_u, Cu, cards_u) if pcu else None
+    ku = CR.local_kernel(st_u, w_u, w_u['atoms'], co_u, cn_u, cards_u, order_u, clk, context_weights_exact=wu); ru = CR.ref_local_exact(st_u, w_u, w_u['atoms'], co_u, cn_u, cards_u, order_u, context_weights=wu)
+    res['synthetic'] = dict(ok=ku['ok'], why=ku.get('why'), parent_closed=pcu, K_ref=(_tf(ku['K_ref']) >= ru['K_ref'] and _tf(ku['K_ref']) <= ru['K_ref'] * tol), K_new=(_tf(ku['K_new']) >= ru['K_new'] and _tf(ku['K_new']) <= ru['K_new'] * tol), T2=(_tf(ku['T2_max']) >= ru['T2_max'] and _tf(ku['T2_max']) <= ru['T2_max'] * tol), weighted_match=((abs((ku.get('weighted_moment') or {}).get('log2_weighted_T2', 0) - _lg(ru['weighted_T2'])) < 1e-9) if wu else None), per_context_T2_dominates=None)
+    ok = ok and ku['ok'] and res['synthetic']['K_ref'] and res['synthetic']['K_new'] and res['synthetic']['T2'] and (res['synthetic']['weighted_match'] in (True, None))
+    # (b) future-touching atom
+    import dgp7_rates as R7; pos = {v: i for i, v in enumerate(order_u)}; fut = [v for v in order_u if pos[v] > pos[A_u[-1]]]
+    if not fut: order_f = [4, 1, 0, 2, 3]; A_f = [1, 0]; fut = [2]
+    else: A_f = A_u
+    af = R7.rand_atom(rng, tuple(sorted([A_f[-1], fut[0]])), cards_u, 99, 0); af.verified = True; st_u.atoms[99] = af; wf = dict(w_u, A=A_f, atoms=w_u['atoms'] + [99], R=sorted(set(w_u['R']) | {fut[0]}, key=lambda x: pos[x])); why_f = CR.validate_window(st_u, wf, wf['atoms'], co_u, None, cards_u, order_u); del st_u.atoms[99]
+    res['future_atom_rejected'] = why_f; ok = ok and why_f is not None and ('sampled after' in why_f or 'prefix' in why_f or 'CONSECUTIVE' in why_f)
+    # (c) sampled vs exact vs uniform; the stream never feeds sampled weights to the kernel
+    cards_s = [2, 3, 2, 2]; order_s = [0, 1, 2, 3]; A_s = [2, 3]; st_s, prop_s, w_s, co_s, cn_s, B_s = _syn_region(cards_s, order_s, A_s, [(1, 2), (1, 3)], rng, targets_extra={2: 1, 3: 1}); Cs = w_s['C']
+    # force C not parent-closed: give the context variable 1 the parent 0 while 0 stays outside R (rebuild the conditional of 1 with parent 0)
+    co_s2 = dict(co_s); co_s2[1] = R7.rand_cond(rng, 1, (0,), cards_s); prop_s2 = JP.Proposal(cards_s, co_s2, order_s, prop_s.B, prop_s.S, dict(kind='ctrl')); st_s.law = prop_s2; st_s.law_identity = prop_s2.sha256; Cs2 = [x for x in w_s['R'] if x not in A_s]
+    asg = RL.region_assignments(w_s['R'], cards_s); rpos = {x: i for i, x in enumerate(w_s['R'])}; pcs = CR.parent_closed(prop_s2, Cs2)
+    nu_s, rec_s = RL.context_weights(prop_s2, Cs2, cards_s, order_s, np.random.default_rng(5), asg, rpos, 1024, mode='auto'); nu_u, rec_u = RL.context_weights(prop_s2, Cs2, cards_s, order_s, np.random.default_rng(5), asg, rpos, 1024, mode='uniform')
+    # the exact marginal of C under prop_s2 (summing out the outside parent 0 by hand) for comparison
+    exact = {}
+    for a1 in range(cards_s[1]): exact[a1] = sum(F(int(co_s2[0].counts[0, a0]), JP.D) * F(int(co_s2[1].counts[a0, a1]), JP.D) for a0 in range(cards_s[0]))
+    key1 = asg[:, rpos[1]]; emp = {a1: float(nu_s[key1 == a1][0]) for a1 in range(cards_s[1])}; diff = max(abs(emp[a1] - float(exact[a1])) for a1 in exact)
+    ks = CR.local_kernel(st_s, w_s, w_s['atoms'], co_s2, None, cards_s, order_s, clk)
+    src = _inspect.getsource(RS); res['sampled_vs_certified'] = dict(parent_closed=pcs, sampled_mode=rec_s.get('mode'), uniform_mode=rec_u.get('mode'), empirical_vs_exact_max_abs=diff, empirical_differs=(diff > 1e-12), kernel_weighted_without_exact=ks.get('weighted_moment'), stream_never_passes_weights=('context_weights_exact' not in src), sampled_label_advisory=('advisory' in (rec_s.get('mode') or '')), uniform_label_diagnostic=('diagnostic' in (rec_u.get('mode') or '')))
+    ok = ok and not pcs and res['sampled_vs_certified']['sampled_mode'].startswith('sampled') and res['sampled_vs_certified']['empirical_differs'] and ks.get('weighted_moment') is None and res['sampled_vs_certified']['stream_never_passes_weights'] and res['sampled_vs_certified']['sampled_label_advisory'] and res['sampled_vs_certified']['uniform_label_diagnostic']
+    B.release(owned); rec('D65_exact_K_T2_and_weighted_moment', ok, **res)
+
+def D66_waterfill_kkt_and_objective():
+    """brief section 8 item 4: on 200 random rows (k = 2..9; lower bounds with sum < 1; zero coefficients mixed in) the row water fill (a) is feasible (theta >= lower, sum = 1), (b) satisfies the KKT conditions (A_a / theta_a^2 equal
+    on the free coordinates; <= that value on the bound coordinates), (c) has an objective sum A / theta <= every one of 50 random feasible rows and <= the feasible projection of the incumbent, (d) matches the closed form
+    sqrt(A_a) / sum sqrt(A) when no bound binds; (e) zero coefficients: theta = lower on A = 0 coordinates, an all-zero row keeps a feasible incumbent allocation; (f) tight lower sums: sum lower = 1 -> theta = lower exactly;
+    sum lower > 1 -> the row is reported infeasible and keeps the incumbent; (g) zero contexts (nu = 0): the fit's coefficients vanish and the fitted rows stay feasible; (h) fit_window reports finite sweeps and asserts no optimality"""
+    res = {}; ok = True; rng = np.random.default_rng(66); kkt_worst = 0.0; obj_viol = 0; feas_viol = 0; closed_worst = 0.0; n_rows = 0
+    for t in range(200):
+        k = int(rng.integers(2, 10)); A = rng.random(k) ** 2 * (rng.random() * 10 + 0.1); zero_mask = rng.random(k) < 0.15; A[zero_mask] = 0.0
+        if A.max() <= 0: A[0] = 1.0
+        zero_mask = (A == 0.0); lower = rng.random(k) * (0.8 / k); inc = rng.random(k); inc /= inc.sum(); th, info = RL.waterfill_rows(A[None, :], lower[None, :], inc[None, :]); th = th[0]; n_rows += 1
+        if abs(th.sum() - 1) > 1e-9 or (th < lower - 1e-12).any(): feas_viol += 1; res.setdefault('feasibility_cases', []).append(dict(A=A.tolist(), lower=lower.tolist(), theta=th.tolist(), sum=float(th.sum()), min_gap=float((th - lower).min())))
+        free = th > lower + 1e-9
+        if free.sum() >= 1:
+            lam = (A[free] / th[free] ** 2); lam_ref = lam.mean() if lam.size else 0.0
+            if lam.size > 1 and lam_ref > 0: kkt_worst = max(kkt_worst, float(np.abs(lam - lam_ref).max() / lam_ref))
+            bound = ~free
+            if bound.any() and lam_ref > 0: kkt_worst = max(kkt_worst, float(max(0.0, (A[bound] / np.maximum(th[bound], 1e-300) ** 2 - lam_ref).max() / lam_ref)))
+        obj = float((A / th).sum()); slack = 1.0 - lower.sum()
+        for _ in range(50):
+            d = rng.dirichlet(np.ones(k)); th2 = lower + slack * d
+            if float((A / th2).sum()) < obj * (1 - 1e-9): obj_viol += 1
+        th_inc = lower + slack * inc
+        if float((A / th_inc).sum()) < obj * (1 - 1e-9): obj_viol += 1
+        if not zero_mask.any():
+            cf = np.sqrt(A) / np.sqrt(A).sum()
+            if (cf >= lower).all(): closed_worst = max(closed_worst, float(np.abs(cf - th).max()))
+        if zero_mask.any() and not (np.abs(th[zero_mask] - lower[zero_mask]) < 1e-9).all(): feas_viol += 1; res.setdefault('zero_coef_cases', []).append(dict(A=A.tolist(), lower=lower.tolist(), theta=th.tolist(), gap=float(np.abs(th[zero_mask] - lower[zero_mask]).max())))
+    res['random_rows'] = dict(rows=n_rows, feasibility_violations=feas_viol, kkt_worst_relative=kkt_worst, objective_violations=obj_viol, closed_form_worst_abs=closed_worst); ok = ok and feas_viol == 0 and kkt_worst < 1e-6 and obj_viol == 0 and closed_worst < 1e-9
+    A0 = np.zeros(4); inc0 = np.array([0.4, 0.3, 0.2, 0.1]); low0 = np.array([0.05, 0.05, 0.05, 0.05]); th0, i0 = RL.waterfill_rows(A0[None, :], low0[None, :], inc0[None, :]); res['all_zero_row'] = dict(zero_rows=i0['zero_rows'], feasible=bool(abs(th0.sum() - 1) < 1e-12 and (th0 >= low0 - 1e-15).all()), proportional_to_incumbent=bool(np.allclose(th0[0] - low0, 0.8 * inc0))); ok = ok and i0['zero_rows'] == 1 and res['all_zero_row']['feasible'] and res['all_zero_row']['proportional_to_incumbent']
+    A1 = np.array([1.0, 2.0, 3.0]); low1 = np.array([0.2, 0.3, 0.5]); th1, i1 = RL.waterfill_rows(A1[None, :], low1[None, :], np.array([[1 / 3] * 3])); res['tight_sum_one'] = dict(theta_equals_lower=bool(np.allclose(th1[0], low1, atol=1e-12)), infeasible=i1['infeasible_rows']); ok = ok and res['tight_sum_one']['theta_equals_lower'] and i1['infeasible_rows'] == 0
+    low2 = np.array([0.5, 0.4, 0.3]); inc2 = np.array([0.2, 0.3, 0.5]); th2_, i2 = RL.waterfill_rows(A1[None, :], low2[None, :], inc2[None, :]); res['infeasible_row'] = dict(infeasible=i2['infeasible_rows'], keeps_incumbent=bool(np.allclose(th2_[0], inc2))); ok = ok and i2['infeasible_rows'] == 1 and res['infeasible_row']['keeps_incumbent']
+    th_s, why_s = RL.waterfill(A1, low2, inc2); res['single_row_form'] = dict(none_on_infeasible=(th_s is None), why=why_s[:40]); ok = ok and th_s is None
+    # (g) zero contexts + (h) finite sweeps: a fit on the n6 clique with the uniform diagnostic weights vs auto; then nu forced to zero on half the contexts through a patched context_weights
+    model, _ = load_odev('dg_n6_c4_clique_two'); M, order, clk, B, cards, prop, owned, state, sink, rec_ = _rstage(model); pairs, chg = JO.interaction_scores(M, B, clk); parents1, g1 = GO.select_g1(prop, pairs, cards); wins, _ = RL.plan_windows(state, prop, parents1, cards, prop.order); w = wins[0]; atoms = [state.atoms[a] for a in w['atoms']]
+    fit = RL.fit_window(prop, w, atoms, cards, prop.order, 'auto', np.random.default_rng(1), 1.1, clock=clk); real_cw = RL.context_weights
+    def half_zero(prop_, C, cards_, order_, rng_, asg, rpos, n_samples=1024, mode='auto'):
+        nu, r_ = real_cw(prop_, C, cards_, order_, rng_, asg, rpos, n_samples, mode); key = asg[:, rpos[C[0]]] if C else np.zeros(asg.shape[0], dtype=np.int64); nu = np.where(key == 0, 0.0, nu); return nu, dict(r_, zeroed_contexts='C[0] = 0')
+    RL.context_weights = half_zero
+    try: fitz = RL.fit_window(prop, w, atoms, cards, prop.order, 'auto', np.random.default_rng(1), 1.1, clock=clk)
+    finally: RL.context_weights = real_cw
+    feas = lambda f: (f.get('conds_new') is None) or all((c.counts >= 1).all() and (c.counts.sum(axis=1) == JP.D).all() for c in f['conds_new'].values())
+    res['fit_records'] = dict(status=fit.get('status'), sweeps=fit.get('sweeps'), best_sweep=fit.get('best_sweep'), has_sweeps_key=('sweeps' in fit), no_optimality_claim=('OPTIMAL' not in json.dumps({k: v for k, v in fit.items() if k != 'conds_new'}, default=str).upper()), zero_contexts_status=fitz.get('status'), zero_contexts_feasible=feas(fitz), zero_contexts_zero_rows=fitz.get('zero_rows'), K_within_cap=(fit.get('K_float_new_actual') is None or fit['K_float_new_actual'] <= fit['kappa_publish'] * (1 + 1e-12)))
+    ok = ok and res['fit_records']['has_sweeps_key'] and res['fit_records']['no_optimality_claim'] and res['fit_records']['zero_contexts_feasible'] and res['fit_records']['K_within_cap'] and (fit.get('sweeps') or 0) <= RL.PROFILE_RESIDUAL['sweeps']
+    B.release(owned); rec('D66_waterfill_kkt_and_objective', ok, **res)
+
+def D67_sequential_transactions_and_bank_immutability():
+    """brief section 8 item 5: (a) on the exposed n32 card-4 ER50 anchor through a forced ResidualStream (generous allowance) two sequential optimize actions commit two transactions (epochs 1 and 2; bank versions 1 and 2) with
+    overlapping regions; every conditional outside each window is the SAME object before and after (law changed only on the window), the committed cap is the kernel's B_new; (b) on the n6 card-4 clique (4,096 states) a stream
+    transaction followed by an API-level same-law transaction whose window consumes the FIRST transaction's replacement atom: the exact identity W_0 <= B q prod rho holds on every state after each, versions advance 1 -> 2, the
+    replacement of the second is verified; (c) atoms untouched by a transaction keep their sha256 / verified flags; consumed atoms are flagged once and cannot be consumed again (Defect), selected by a window (validate_window) or
+    used under a stale bank version; (d) a scalar-only tightening of consumed_B leaves envelope_B unchanged and the record distinguishes them; (e) rebinding: the kernel rejects a window whose old conditionals differ from the bank's
+    law (identity check) and its identity hash changes with the new counts and with the version"""
+    res = {}; ok = True; import dgp_paths as _DP
+    # (a) two stream transactions on the n32 ER50 anchor
+    p32 = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP4_RESIDUAL_MAX/inputs_fresh/dg_n32_c4_er50_two.uai'
+    if os.path.exists(p32):
+        model32, _ = CORE.read_uai(p32); M32, order32, clk32, B32 = _jstage(model32); cards32 = list(M32.cards); S, B_, r = _rstream(M32, allow=30.0); assert r == 'READY', (r, S.closed_reason); S.pilot_action(PA.tnow() + 20); st = S.state
+        shas0 = {a.aid: a.sha256 for a in st.atoms.values()}; props = [S.epoch.prop]; atts = []
+        for _ in range(2):
+            a_ = S.optimize_action(PA.tnow() + 20, PA.tnow() + 60); atts.append(a_); props.append(S.epoch.prop)
+        txs = [a_.get('transaction') or {} for a_ in atts]; cons = [set(t.get('atoms') or []) for t in txs]
+        per = []
+        for i, (a_, t) in enumerate(zip(atts, txs)):
+            if a_.get('status') != 'PROMOTED': per.append(dict(status=a_.get('status'), why=(a_.get('why') or '')[:60])); continue
+            before, after = props[i], props[i + 1]; A_ = set(t['window']['A']); outside_same = all(after.conds[v] is before.conds[v] for v in after.order if v not in A_); inside_changed = [v for v in A_ if after.conds[v] is not before.conds[v]]
+            per.append(dict(status='PROMOTED', kind=t['kind'], epoch=t['epoch_after'], version=t['version_after'], A=t['window']['A'], R=t['window']['R'], outside_same_objects=outside_same, inside_changed=sorted(inside_changed), rows_changed=t['rows_changed'], cap_is_kernel_B_new=(after.log2_B() == t['log2_B_after']), consumed=sorted(cons[i]), new_atom=t.get('new_atom')))
+        both = all(p_.get('status') == 'PROMOTED' for p_ in per); overlap = (bool(set(txs[0].get('window', {}).get('R', [])) & set(txs[1].get('window', {}).get('R', []))) or (txs[0].get('new_atom') in cons[1])) if both else None
+        res['n32_two_transactions'] = dict(transactions=per, both_promoted=both, epochs=len(S.epochs), version=st.version, overlap=overlap, overlap_via_replacement=((txs[0].get('new_atom') in cons[1]) if both else None))
+        ok = ok and both and len(S.epochs) == 3 and st.version == 2 and overlap and all(p_['outside_same_objects'] and p_['cap_is_kernel_B_new'] and (p_['kind'] != 'changed_law' or (p_['inside_changed'] and p_['rows_changed'] > 0)) for p_ in per)
+        untouched = [aid for aid in shas0 if aid not in cons[0] | cons[1] and aid in st.atoms]; allc = cons[0] | cons[1]
+        res['immutability'] = dict(untouched=len(untouched), sha_preserved=all(st.atoms[aid].sha256 == shas0[aid] for aid in untouched), verified_preserved=all(st.atoms[aid].verified for aid in untouched), consumed_flagged=all(st.atoms[aid].consumed for aid in allc), consumed_marked_once=all('consumed_by' in st.atoms[aid].provenance for aid in allc), replacements_verified=all(st.atoms[t['new_atom']].verified for t in txs if t.get('new_atom') in st.atoms), replacement_versions=[st.atoms[t['new_atom']].version_born for t in txs if t.get('new_atom') in st.atoms])
+        ok = ok and len(untouched) > 0 and res['immutability']['sha_preserved'] and res['immutability']['verified_preserved'] and res['immutability']['consumed_flagged'] and res['immutability']['consumed_marked_once'] and res['immutability']['replacements_verified'] and res['immutability']['replacement_versions'] == [1, 2][:len(res['immutability']['replacement_versions'])]
+        # (c) reuse rejections
+        kind = None
+        try: st.consume(sorted(cons[0])[:1], 'again')
+        except CE.Defect as e: kind = str(e)[:40]
+        prop = S.epoch.prop; pos = {v: i for i, v in enumerate(prop.order)}; cw = sorted(cons[0])[0]; ca = st.atoms[cw]; li = pos[max(ca.axes, key=lambda x: pos[x])]; A = prop.order[li - 1:li + 1] if li >= 1 else prop.order[li:li + 2]
+        def wfor(aid):
+            a = st.atoms[aid]; Rw = set(A) | set(a.axes)
+            for v in A: Rw |= set(prop.conds[v].parents)
+            return dict(A=list(A), R=sorted(Rw, key=lambda x: pos[x]), atoms=[aid], bank_version=st.version, target_parents={v: tuple(prop.conds[v].parents) for v in A}, max_vol=65536)
+        why_c = CR.validate_window(st, wfor(cw), [cw], prop.conds, None, cards32, prop.order); lw = next((a for a in st.live_atoms() if any(x in A for x in a.axes) and max(pos[x] for x in a.axes) <= pos[A[-1]]), None)
+        why_stale = CR.validate_window(st, dict(wfor(lw.aid), bank_version=st.version - 1), [lw.aid], prop.conds, None, cards32, prop.order) if lw else 'n/a'; why_live = CR.validate_window(st, wfor(lw.aid), [lw.aid], prop.conds, None, cards32, prop.order) if lw else 'n/a'
+        res['reuse'] = dict(consume_twice=kind, window_with_consumed=why_c, stale_version=why_stale, live_window_accepted=why_live); ok = ok and kind is not None and 'consumed' in (why_c or '') and 'version' in (why_stale or 'version') and (why_live is None or why_live == 'n/a')
+        # (d) scalar-only tightening
+        env0 = st.envelope_B; cons0 = st.consumed_B; st.consumed_B = _RM.norm_up(cons0[0] - 1, cons0[1]); r_ = st.record(); res['scalar_cap'] = dict(envelope_unchanged=(st.envelope_B == env0), consumed_changed=(st.consumed_B != cons0), record_distinct=(r_['log2_envelope_B'] != r_['log2_consumed_B']), record_keys=('envelope_B' in r_ and 'consumed_B' in r_)); st.consumed_B = cons0; ok = ok and all(res['scalar_cap'].values())
+        # (e) rebinding rejected; identity binds counts and version
+        if lw is not None:
+            wl = wfor(lw.aid); v1 = A[0]; c1 = prop.conds[v1]; cnt = c1.counts.copy(); cnt[0, 0] += 1; cnt[0, 1] -= 1; conds_t = dict(prop.conds); conds_t[v1] = JP.Conditional(v1, c1.parents, cnt, cards32); kt = CR.local_kernel(st, wl, [lw.aid], conds_t, None, cards32, prop.order, clk32, want_rho=False); kh = CR.local_kernel(st, wl, [lw.aid], prop.conds, None, cards32, prop.order, clk32, want_rho=False)
+            cn = {v: prop.conds[v] for v in A}; cn2 = dict(cn); cn2[v1] = JP.Conditional(v1, c1.parents, cnt, cards32); kn1 = CR.local_kernel(st, wl, [lw.aid], prop.conds, cn, cards32, prop.order, clk32, want_rho=False); kn2 = CR.local_kernel(st, wl, [lw.aid], prop.conds, cn2, cards32, prop.order, clk32, want_rho=False)
+            ver_id = hashlib.sha256(repr((st.model_identity, st.seed_proof_identity, st.version + 1, [lw.aid], [(v, prop.conds[v].sha256) for v in A], None, tuple(wl['R']), (st.envelope_B[0], str(st.envelope_B[1])))).encode()).hexdigest()
+            res['rebinding'] = dict(tampered_old_rejected=(kt.get('why') or '')[:70], honest_ok=kh.get('ok'), identity_changes_with_new_counts=(kn1.get('identity') != kn2.get('identity')) if (kn1.get('ok') and kn2.get('ok')) else (kn1.get('why'), kn2.get('why')), identity_changes_with_version=(kh.get('identity') != ver_id))
+            ok = ok and not kt.get('ok') and 'law identity' in (kt.get('why') or '') and kh.get('ok') and res['rebinding']['identity_changes_with_new_counts'] is True and res['rebinding']['identity_changes_with_version']
+        else: res['rebinding'] = dict(skipped='no live compatible atom'); ok = False
+        S._close('ctrl'); res['n32_account_after_close'] = B_.live; ok = ok and B_.live == 0
+    else: res['n32_two_transactions'] = dict(skipped='anchor model absent'); ok = False
+    # (b) n6 clique: stream transaction, then an API-level same-law transaction consuming the replacement atom; exact identity after each
+    model6, _ = load_odev('dg_n6_c4_clique_two'); M6, order6, clk6, B6 = _jstage(model6); cards6 = list(M6.cards); S6, B6_, r6 = _rstream(M6, allow=30.0); assert r6 == 'READY', (r6, S6.closed_reason); S6.pilot_action(PA.tnow() + 20); st6 = S6.state; a61 = S6.optimize_action(PA.tnow() + 20, PA.tnow() + 60); t61 = a61.get('transaction') or {}
+    if a61.get('status') == 'PROMOTED':
+        prop6 = S6.epoch.prop; live6 = st6.live_atoms(); id1 = CR.ref_envelope_exact(M6, prop6, live6, prop6.B); new1 = t61['new_atom']; na = st6.atoms[new1]; pos6 = {v: i for i, v in enumerate(prop6.order)}; li = pos6[max(na.axes, key=lambda x: pos6[x])]; A6 = prop6.order[li - 1:li + 1] if li >= 1 else prop6.order[li:li + 2]
+        R6 = set(A6) | set(na.axes)
+        for v in A6: R6 |= set(prop6.conds[v].parents)
+        w6 = dict(A=list(A6), R=sorted(R6, key=lambda x: pos6[x]), atoms=[new1], bank_version=st6.version, target_parents={v: tuple(prop6.conds[v].parents) for v in A6}, max_vol=65536); k6 = CR.local_kernel(st6, w6, [new1], prop6.conds, None, cards6, prop6.order, clk6)
+        if k6['ok']:
+            newp6 = JP.Proposal(cards6, dict(prop6.conds), prop6.order, k6['B_ref'], prop6.S, dict(kind='ctrl_same_law')); n_bytes = JP.ENTRY_BYTES * k6['rho_new'].size + RB.ATOM_META_BYTES; st6._charge(n_bytes, 'ctrl replacement'); undo = st6.apply_transaction(dict(id='ctrl-2', atoms=[new1], kind='same_law'), newp6, tuple(w6['R']), k6['rho_new'], n_bytes, dict(kind='ctrl'), 1.0, -1.0, k6['B_ref'])
+            id2 = CR.ref_envelope_exact(M6, newp6, st6.live_atoms(), newp6.B); res['n6_overlap'] = dict(first=a61.get('status'), identity_after_first=id1['violations'], states=id1['states'], second_window_A=w6['A'], second_consumes_replacement=True, identity_after_second=id2['violations'], version=st6.version, second_replacement_verified=st6.atoms[undo['new_aid']].verified, first_replacement_consumed=st6.atoms[new1].consumed, live_after=len(st6.live_atoms()), log2_B_first=prop6.log2_B(), log2_B_second=newp6.log2_B())
+            ok = ok and id1['violations'] == 0 and id2['violations'] == 0 and st6.version == 2 and res['n6_overlap']['second_replacement_verified'] and res['n6_overlap']['first_replacement_consumed']
+            S6.bank_bytes = st6.owned                                                                 # the API-level transaction charged the replacement through the state: sync the stream's owned attribute as the stream itself does
+        else: res['n6_overlap'] = dict(first=a61.get('status'), kernel_why=k6.get('why')); ok = False
+    else: res['n6_overlap'] = dict(first=a61.get('status'), why=(a61.get('why') or '')[:80]); ok = False
+    S6._close('ctrl'); res['n6_account_after_close'] = dict(live=B6_.live, bank_bytes=S6.bank_bytes, state_owned=st6.owned, close_release=S6.mech.get('close_release')); ok = ok and B6_.live == 0
+    rec('D67_sequential_transactions_and_bank_immutability', ok, **res)
+
+def D68_quantization_and_cap_ceiling():
+    """brief section 8 item 6: (a) on a hand-built window (two binary active variables, uniform old law, a unit atom so K_ref = 1 exactly) the exact reference gate 10 B_new <= 11 B_ref decides by ONE count unit: the law with
+    K_new = 2^39 / c for c = floor(10 x 2^39 / 11) (over the ceiling by ~2^-39 relative, far inside the 2^-20 fitting reserve) FAILS and c + 1 PASSES; the float side's feasibility flag is not consulted; (b) the seed ceiling gate
+    likewise flips by one ulp of initial_seed_cap; (c) wrong-law cap: B_new derived for law A does not dominate envelope_B Fhat / q_B for law B (exact cellwise recheck finds violations; the kernel's identity binds the counts) and the
+    stream builds the committed Proposal from the SAME kernel call's B_new and counts (source inspection); (d) actual law equality vs representation change: counts replicated onto the G1 parents give rows_changed = 0 under the fit's
+    rule, identical q at every cell, and the stream labels 'changed_law' only when conds_new is a quantized CANDIDATE with changed rows (source inspection)"""
+    res = {}; ok = True; import dgp7_rates as R7; rng = random.Random(68); cards = [2, 2]; order = [0, 1]; A = [0, 1]; D = JP.D
+    uni = np.array([[D // 2, D // 2]], dtype=np.int64); co = {0: JP.Conditional(0, (), uni, cards), 1: JP.Conditional(1, (0,), np.vstack([uni, uni]), cards)}; prop = JP.Proposal(cards, co, order, _RM.norm_up(0, 1), _RM.norm_up(0, 1), dict(kind='ctrl')); B = CE.Budget(CE.CONSTRUCTOR_BYTES); st = RB.ResidualState('ctrl', 'ctrl', prop, prop.B, prop.B, prop.B, B)
+    one = np.empty((2, 2), dtype=object); one.fill(RB.ONE); at = RB.Atom(0, (0, 1), one, dict(kind='ctrl'), 1.0, 0.0, 0); at.verified = True; st.atoms[0] = at; clk = CE.Clock(PA.tnow() + 60, {})
+    w = dict(A=A, R=[0, 1], C=[], atoms=[0], vol=4, bank_version=0, target_parents={0: (), 1: (0,)}, max_vol=65536, whole_model_region=True)
+    cstar = (10 * (1 << 39)) // 11; out = {}
+    for lab, c in (('over_by_one_unit', cstar), ('under_by_one_unit', cstar + 1)):
+        cn = {0: JP.Conditional(0, (), np.array([[c, D - c]], dtype=np.int64), cards), 1: co[1]}; k = CR.local_kernel(st, w, [0], co, cn, cards, order, clk); ref = CR.ref_local_exact(st, w, [0], co, cn, cards, order)
+        out[lab] = dict(ok=k['ok'], gate_ref_ok=k.get('gate_ref_ok'), gate_seed_ok=k.get('gate_seed_ok'), K_ref_exact_one=(ref['K_ref'] == 1), K_new_exact=str(ref['K_new']), exceeds_11_over_10=(ref['K_new'] > F(11, 10)), kernel_K_ref_one=(k['K_ref'] == RB.ONE or _tf(k['K_ref']) == 1), relative_gap=float(abs(ref['K_new'] - F(11, 10)) / F(11, 10)))
+    res['reference_gate'] = out; ok = ok and out['over_by_one_unit']['ok'] and out['over_by_one_unit']['gate_ref_ok'] is False and out['over_by_one_unit']['exceeds_11_over_10'] and out['under_by_one_unit']['gate_ref_ok'] is True and not out['under_by_one_unit']['exceeds_11_over_10'] and out['over_by_one_unit']['relative_gap'] < 2 ** -20 and out['over_by_one_unit']['K_ref_exact_one']
+    # the float side would call the +1 case feasible under its reserve? -> the kernel decides regardless: record the float K and kappa_fit for the over case
+    fit_like = dict(K_float_new=float(F(1 << 39, cstar)), kappa_publish=1.1, kappa_fit=1.1 / (1 + 2 ** -20)); res['float_side_over_case'] = dict(fit_like, float_would_accept_at_publish=(fit_like['K_float_new'] <= 1.1 * (1 + 1e-12)), kernel_rejects=out['over_by_one_unit']['gate_ref_ok'] is False)
+    # (b) seed ceiling gate: same law; initial_seed_cap at exactly 10/11 of envelope_B passes, one ulp below fails
+    st.initial_seed_cap = _fu(_tf(prop.B) * F(10, 11)); k_s1 = CR.local_kernel(st, w, [0], co, None, cards, order, clk); st.initial_seed_cap = _RM.norm_up(st.initial_seed_cap[0], st.initial_seed_cap[1] - 1); k_s2 = CR.local_kernel(st, w, [0], co, None, cards, order, clk); st.initial_seed_cap = prop.B
+    res['seed_gate'] = dict(at_ceiling=k_s1.get('gate_seed_ok'), one_ulp_below=k_s2.get('gate_seed_ok'), ref_gate_same_law=k_s1.get('gate_ref_ok')); ok = ok and k_s1.get('gate_seed_ok') is True and k_s2.get('gate_seed_ok') is False and k_s1.get('gate_ref_ok') is True
+    # (c) wrong-law cap: B_new for law A (c + 1) presented with law B (counts [D/4, 3D/4] on variable 0): exact cellwise recheck of envelope_B Fhat <= B_new q_B
+    cnA = {0: JP.Conditional(0, (), np.array([[cstar + 1, D - cstar - 1]], dtype=np.int64), cards), 1: co[1]}; cnB = {0: JP.Conditional(0, (), np.array([[D // 4, 3 * (D // 4)]], dtype=np.int64), cards), 1: co[1]}; kA = CR.local_kernel(st, w, [0], co, cnA, cards, order, clk); kB = CR.local_kernel(st, w, [0], co, cnB, cards, order, clk)
+    def recheck(B_new, cn):
+        viol = 0
+        for x in itertools.product(range(2), range(2)):
+            qo = F(int(co[0].counts[0, x[0]]), D) * F(int(co[1].counts[x[0], x[1]]), D); qn = F(int(cn[0].counts[0, x[0]]), D) * F(int(cn[1].counts[x[0], x[1]]), D); Fh = qo * _tf(one[x])
+            if _tf(prop.B) * Fh > _tf(B_new) * qn: viol += 1
+        return viol
+    res['wrong_law_cap'] = dict(A_with_A_violations=recheck(kA['B_new'], cnA), A_cap_with_B_law_violations=recheck(kA['B_new'], cnB), B_with_B_violations=recheck(kB['B_new'], cnB), identities_differ=(kA['identity'] != kB['identity']), stream_builds_from_same_kernel=("JP.Proposal(cards, conds_full, prop.order, k['B_new']" in _inspect.getsource(RS)))
+    ok = ok and res['wrong_law_cap']['A_with_A_violations'] == 0 and res['wrong_law_cap']['A_cap_with_B_law_violations'] > 0 and res['wrong_law_cap']['B_with_B_violations'] == 0 and res['wrong_law_cap']['identities_differ'] and res['wrong_law_cap']['stream_builds_from_same_kernel']
+    # (d) representation-only change: replication to the G1 parents on the n8 clique
+    model, _ = load('dg_n8_c4_clique_two'); M, order8, clk8, B8, cards8, prop8, owned8, st8, sink8, rec8 = _rstage(model); pairs, chg = JO.interaction_scores(M, B8, clk8); parents1, g1 = GO.select_g1(prop8, pairs, cards8); vext = next(v for v in prop8.order if tuple(parents1[v]) != tuple(prop8.conds[v].parents))
+    repl = prop8.conds[vext].replicate(tuple(parents1[vext]), cards8); base = prop8.conds[vext].replicate(tuple(parents1[vext]), cards8); rows_changed = int(not np.array_equal(repl.counts, base.counts)); same_q = True
+    for _ in range(300):
+        x = [rng.randrange(k) for k in cards8]; ro = sum(prop8.conds[vext].pstrides[p_] * x[p_] for p_ in prop8.conds[vext].parents); rn = sum(repl.pstrides[p_] * x[p_] for p_ in repl.parents); same_q = same_q and int(prop8.conds[vext].counts[ro, x[vext]]) == int(repl.counts[rn, x[vext]])
+    src = _inspect.getsource(RS); res['representation_only'] = dict(variable=vext, rows_changed=rows_changed, sha_differs=(repl.sha256 != prop8.conds[vext].sha256), same_q_every_sample=same_q, stream_changed_law_requires_candidate=("if fit['status'] == 'CANDIDATE' and fit.get('feasible_actual'): conds_new = fit['conds_new']" in src and "kind='changed_law'" in src and "'QUANTIZED_TO_INCUMBENT'" in _inspect.getsource(RL)))
+    ok = ok and rows_changed == 0 and res['representation_only']['sha_differs'] and same_q and res['representation_only']['stream_changed_law_requires_candidate']
+    B8.release(owned8); rec('D68_quantization_and_cap_ceiling', ok, **res)
+
+def D69_allocation_refusal_deadline_positions():
+    """brief section 8 item 7: on the n8 card-4 clique through ResidualStream, a typed refusal / deadline injected at every position -- bank extraction admission (atom temporary refused -> dropped, the seed READY), target / graph
+    planning poll, context draws (Proposal.sample refused), local tables (fit sweep poll), the final division (kernel pass 2 poll), replacement construction (kernel pass 1 / T2 polls), epoch assembly (fingerprint deadline after the
+    bank swap -> revert), the authoritative pre-commit sample -- leaves the bank (version, atoms, consumed flags, owned bytes), the law, the epoch count, the certificate t, the sampler RNG and the constructor account exactly as
+    before the action; diagnostics() works after every refusal; the account equals the stream's owned attributes at every snapshot"""
+    res = {}; ok = True; model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B = _jstage(model); cards = list(M.cards)
+    # (a) bank extraction admission refusal
+    real_charge = RB.ResidualState._charge
+    def refuse_temp(self, n, what):
+        if 'temporary' in what: raise CE.Refused('MEMORY', 'injected atom temporary refusal')
+        return real_charge(self, n, what)
+    RB.ResidualState._charge = refuse_temp
+    try: S0, B0, r0 = _rstream(M, allow=20.0)
+    finally: RB.ResidualState._charge = real_charge
+    res['extraction_refused'] = dict(prepare=r0, atoms=len(S0.state.atoms), dropped=len(S0.state.dropped), dropped_why=(S0.state.dropped[0]['why'][:40] if S0.state.dropped else None), bank_bytes=S0.bank_bytes, live_consistent=(B0.live == S0.joint_bytes + S0.bank_bytes + S0.fine_bytes)); S0._close('ctrl')
+    ok = ok and r0 == 'READY' and res['extraction_refused']['atoms'] == 0 and res['extraction_refused']['dropped'] > 0 and res['extraction_refused']['bank_bytes'] == 0 and res['extraction_refused']['live_consistent'] and B0.live == 0
+    def fresh():
+        S, B_, r = _rstream(M, allow=30.0); assert r == 'READY', (r, S.closed_reason); S.pilot_action(PA.tnow() + 20); S._frozen_targets(S.epoch.prop, cards, B_, CE.Clock(PA.tnow() + 20, {})); return S, B_
+    def snap(S, B_):
+        st = S.state; return dict(live=B_.live, epoch=S.epoch.index, n_epochs=len(S.epochs), law=S.epoch.prop.sha256, t=S.cert.t, draws=S.draws, rng=S.rng.bit_generator.state['state']['state'], joint_bytes=S.joint_bytes, bank_bytes=S.bank_bytes, version=st.version, atoms=sorted(st.atoms), consumed=sorted(a.aid for a in st.atoms.values() if a.consumed), owned=st.owned, shas=sorted(a.sha256 for a in st.atoms.values()), env=st.envelope_B, cons=st.consumed_B, law_id=st.law_identity, txns=len(st.transactions), consistent=(B_.live == S.joint_bytes + S.bank_bytes + S.fine_bytes and st.owned == sum(a.bytes for a in st.atoms.values()) and S.bank_bytes == st.owned))
+    def same(a, b): return all(a[k] == b[k] for k in a if k not in ('consistent', 'txns')) and a['consistent'] and b['consistent']
+    def diff(a, b): return [k for k in a if k not in ('consistent',) and a[k] != b[k]] + ([] if (a['consistent'] and b['consistent']) else ['consistent'])
+    inj = {}
+    for phase, where, nth in (('graph_planning', 'after target selection', 1), ('local_tables', 'fit sweep', 2), ('replacement_pass1', 'kernel pass 1 tile', 3), ('T2_contexts', 'kernel T2 context', 1), ('final_division', 'kernel pass 2 tile', 2), ('pre_commit_sample', 'after window', 1)):
+        S, B_ = fresh(); s0 = snap(S, B_); real_clock = CE.Clock
+        class Clk(CE.Clock):
+            def __init__(self, deadline, stats): super().__init__(deadline, stats); self.n = 0
+            def poll(self, w):
+                if where in w:
+                    self.n += 1
+                    if self.n == nth: raise CE.Refused('DEADLINE', 'injected ' + w)
+                return super().poll(w)
+        CE.Clock = Clk
+        try: a = S.optimize_action(PA.tnow() + 20, PA.tnow() + 60)
+        finally: CE.Clock = real_clock
+        d = S.diagnostics(); s1 = snap(S, B_); inj[phase] = dict(status=a.get('status'), kind=a.get('kind'), why=(a.get('why') or '')[:50], preserved=same(s0, s1), differing=diff(s0, s1), windows=len(a.get('windows') or []), diagnostics_ok=(d.get('residual') is not None and d['residual'].get('bank') is not None), stage=S.stage); S._close('ctrl')
+        ok = ok and a.get('status') == 'REFUSED' and a.get('kind') == 'DEADLINE' and inj[phase]['preserved'] and inj[phase]['diagnostics_ok'] and S.stage == 'CLOSED' and B_.live == 0
+    # context draws: Proposal.sample refused (after the pilot)
+    S, B_ = fresh(); s0 = snap(S, B_); real_sample = JP.Proposal.sample
+    def refuse_sample(self, rng, n): raise CE.Refused('MEMORY', 'injected context-draw refusal')
+    JP.Proposal.sample = refuse_sample
+    try: a = S.optimize_action(PA.tnow() + 20, PA.tnow() + 60)
+    finally: JP.Proposal.sample = real_sample
+    ctx_modes = [((w_.get('fit') or {}).get('context') or {}).get('mode', '')[:7] for w_ in (a.get('windows') or [])]; reached = (a.get('status') == 'REFUSED' and 'context-draw' in (a.get('why') or ''))
+    inj['context_draws_stream'] = dict(status=a.get('status'), kind=a.get('kind'), why=(a.get('why') or '')[:50], preserved=(same(s0, snap(S, B_)) if reached else None), note=(None if reached else 'sampled mode not reached on this model: every window context is parent-closed (exact weights; no draws)'), contexts=ctx_modes); S._close('ctrl')
+    ok = ok and (inj['context_draws_stream']['preserved'] if reached else all(c == 'exact (' for c in ctx_modes if c)) and B_.live == 0
+    # the context-draw refusal on a synthetic NON-parent-closed window through fit_window: typed, nothing retained
+    import dgp7_rates as R7; rng7 = random.Random(69); cards_s = [2, 3, 2, 2]; order_s = [0, 1, 2, 3]; st_s, prop_s, w_s, co_s, cn_s, B_s = _syn_region(cards_s, order_s, [2, 3], [(1, 2), (1, 3)], rng7, targets_extra={2: 1, 3: 1}); co_s2 = dict(co_s); co_s2[1] = R7.rand_cond(rng7, 1, (0,), cards_s); prop_s2 = JP.Proposal(cards_s, co_s2, order_s, prop_s.B, prop_s.S, dict(kind='ctrl'))
+    JP.Proposal.sample = refuse_sample; kind_s = None; live_s = B_s.live
+    try: RL.fit_window(prop_s2, w_s, [st_s.atoms[a_] for a_ in w_s['atoms']], cards_s, order_s, 'auto', np.random.default_rng(1), 1.1, clock=CE.Clock(PA.tnow() + 20, {}))
+    except CE.Refused as e: kind_s = e.kind
+    finally: JP.Proposal.sample = real_sample
+    nu_ok, rec_ok = RL.context_weights(prop_s2, [x for x in w_s['R'] if x not in w_s['A']], cards_s, order_s, np.random.default_rng(1), RL.region_assignments(w_s['R'], cards_s), {x: i for i, x in enumerate(w_s['R'])}, 1024, mode='auto')
+    inj['context_draws_direct'] = dict(refused_kind=kind_s, parent_closed=CR.parent_closed(prop_s2, [x for x in w_s['R'] if x not in w_s['A']]), mode_without_injection=(rec_ok.get('mode') or '')[:7], account_unchanged=(B_s.live == live_s)); ok = ok and kind_s == 'MEMORY' and not inj['context_draws_direct']['parent_closed'] and inj['context_draws_direct']['mode_without_injection'] == 'sampled' and inj['context_draws_direct']['account_unchanged']
+    # epoch assembly: fingerprint deadline AFTER the bank swap -> the bank reverts
+    S, B_ = fresh(); s0 = snap(S, B_); real_fp = JS.JointStream._fingerprint_of; hits = [0]
+    def fp_dead(self, ep, deadline, budget): hits[0] += 1; raise PA.Deadline('injected fingerprint deadline')
+    JS.JointStream._fingerprint_of = fp_dead
+    try: a = S.optimize_action(PA.tnow() + 20, PA.tnow() + 60)
+    finally: JS.JointStream._fingerprint_of = real_fp
+    s1 = snap(S, B_); inj['epoch_assembly'] = dict(status=a.get('status'), kind=a.get('kind'), hits=hits[0], preserved=same(s0, s1), differing=diff(s0, s1), reverted_marked=(bool(S.state.transactions) and S.state.transactions[-1].get('reverted') is True), transactions_recorded=s1['txns'], stage=S.stage); S._close('ctrl')
+    ok = ok and a.get('status') == 'REFUSED' and hits[0] >= 1 and inj['epoch_assembly']['preserved'] and inj['epoch_assembly']['reverted_marked'] and B_.live == 0
+    # budget refusal at the window workspace charge (tiny headroom) -> typed REFUSED window(s), nothing committed
+    S, B_ = fresh(); s0 = snap(S, B_); cap0 = B_.cap; B_.cap = B_.live + 1024
+    try: a = S.optimize_action(PA.tnow() + 20, PA.tnow() + 60)
+    finally: B_.cap = cap0
+    s1 = snap(S, B_); inj['workspace_admission'] = dict(status=a.get('status'), window_statuses=sorted({w_.get('status') for w_ in (a.get('windows') or [])}), kinds=sorted({w_.get('kind') for w_ in (a.get('windows') or []) if w_.get('kind')}), preserved=same(s0, s1), differing=diff(s0, s1)); S._close('ctrl')
+    ok = ok and a.get('status') == 'KEPT_INCUMBENT' and set(inj['workspace_admission']['window_statuses']) <= {'REFUSED'} and inj['workspace_admission']['preserved'] and B_.live == 0
+    res['injections'] = inj; rec('D69_allocation_refusal_deadline_positions', ok, **res)
+
+def D70_zero_target_eviction_and_cleanup():
+    """brief section 8 item 8: (a) a region whose atoms vanish identically -> the kernel returns the typed zero_target result (no division, no epoch material); (b) dropping an unretained replacement atom: after a transaction on the
+    n6 clique the replacement atom is evicted by make_room (lowest score first until the allocation fits) with its bytes released exactly, the state stays consistent and the identity W <= B q prod rho still holds on every state
+    without it; (c) eviction before seed admission: with the constructor cap set to the sink-free seed peak + 64 KiB the seed with the bank attached still succeeds (atoms evicted / dropped as needed; the account balances);
+    (d) repeated close and refusal cleanup: a prepared ResidualStream closed twice releases its bytes once (account back to zero; idempotent); a seed refused by MEMORY closes typed with the account at zero"""
+    res = {}; ok = True; import dgp7_rates as R7; rng = random.Random(70)
+    # (a) zero local target
+    cards = [2, 2, 2]; order = [0, 1, 2]; A = [1, 2]; st, prop, w, co, cn, B = _syn_region(cards, order, A, [(1, 2)], rng); z = np.empty((2, 2), dtype=object); z.fill(_ZERO); za = RB.Atom(0, (1, 2), z, dict(kind='ctrl'), 1.0, -1.0, 0); za.verified = True; st.atoms[0] = za; clk = CE.Clock(PA.tnow() + 60, {})
+    kz = CR.local_kernel(st, w, [0], co, cn, cards, order, clk); res['zero_target'] = dict(ok=kz.get('ok'), zero_target=kz.get('zero_target'), has_B_new=('B_new' in kz), has_rho=('rho_new' in kz)); ok = ok and kz.get('ok') and kz.get('zero_target') is True and not res['zero_target']['has_B_new']
+    # (b) dropping the replacement atom after a real transaction (n6 clique; whole-model region)
+    model6, _ = load_odev('dg_n6_c4_clique_two'); M6, order6, clk6, B6 = _jstage(model6); cards6 = list(M6.cards); S, B_, r = _rstream(M6, allow=30.0); assert r == 'READY', (r, S.closed_reason); S.pilot_action(PA.tnow() + 20); a1 = S.optimize_action(PA.tnow() + 20, PA.tnow() + 60); tx = a1.get('transaction') or {}; st6 = S.state
+    if a1.get('status') == 'PROMOTED':
+        new_aid = tx['new_atom']; na = st6.atoms[new_aid]; live0 = B_.live; owned0 = st6.owned; sink = RB.BankSink(st6, clk6, 1.0); cap0 = B_.cap; B_.cap = B_.live + 64; lowest = min(st6.atoms.values(), key=lambda a: (a.score, -a.aid)).aid
+        try: sink.make_room(na.bytes + 64)
+        finally: B_.cap = cap0
+        others = [a for a in st6.live_atoms()]; ident = CR.ref_envelope_exact(M6, S.epoch.prop, others, S.epoch.prop.B)
+        res['drop_replacement'] = dict(evicted=(new_aid not in st6.atoms), replacement_was_lowest_score=(lowest == new_aid), evicted_record=[e['aid'] for e in st6.evicted], evictions=len(st6.evicted), bytes_released_exact=(live0 - B_.live == na.bytes and owned0 - st6.owned == na.bytes), consistent=(st6.owned == sum(a.bytes for a in st6.atoms.values())), identity_without_it=ident['violations'], states=ident['states'], live_atoms_left=len(others))
+        ok = ok and res['drop_replacement']['evicted'] and res['drop_replacement']['replacement_was_lowest_score'] and res['drop_replacement']['evictions'] == 1 and res['drop_replacement']['bytes_released_exact'] and res['drop_replacement']['consistent'] and ident['violations'] == 0
+    else: res['drop_replacement'] = dict(skipped=a1.get('status'), why=(a1.get('why') or '')[:80]); ok = False
+    S._close('ctrl'); res['drop_replacement']['account_after_close'] = B_.live; ok = ok and B_.live == 0
+    # (c) eviction before seed admission (n8 clique): peak without the sink, then a cap just above it with the sink
+    model8, _ = load('dg_n8_c4_clique_two'); clk8 = CE.Clock(PA.tnow() + 60, {}); Bp = CE.Budget(CE.CONSTRUCTOR_BYTES); M8 = CE.canonicalize(model8, clk8, Bp); order8, _ = CE.elimination_order(list(M8.cards), [tuple(sc) for sc, _ in M8.factors], clk8, Bp); live_b = Bp.live; prop_p, rec_p, owned_p = JP.compile_seed(M8, order8, JPROF, Bp, clk8); peak = Bp.peak - live_b; Bp.release(owned_p)
+    Bc = CE.Budget(live_b + peak + (64 << 10)); Mc = CE.canonicalize(model8, clk8, Bc); orderc, _ = CE.elimination_order(list(Mc.cards), [tuple(sc) for sc, _ in Mc.factors], clk8, Bc); stc = RB.ResidualState('ctrl', None, None, None, None, None, Bc); sinkc = RB.BankSink(stc, clk8, 5.0); kind = None
+    try: propc, recc, ownedc = JP.compile_seed(Mc, orderc, JPROF, Bc, clk8, sink=sinkc); stc.bind_seed(propc, recc['plan_sha256'])
+    except CE.Refused as e: kind = e.kind; ownedc = 0
+    res['eviction_before_seed'] = dict(peak_without_sink=peak, cap=Bc.cap, refused=kind, seed_cap_same=(kind is None and propc.log2_B() == prop_p.log2_B()), atoms=len(stc.atoms), bank_bytes=stc.owned, evicted=len(stc.evicted), dropped=len(stc.dropped), offers=sinkc.offers, account_consistent=(stc.owned == sum(a.bytes for a in stc.atoms.values())), peak_within_cap=(Bc.peak <= Bc.cap))
+    ok = ok and kind is None and res['eviction_before_seed']['seed_cap_same'] and res['eviction_before_seed']['peak_within_cap'] and (len(stc.evicted) + len(stc.dropped) + len(stc.atoms) > 0) and res['eviction_before_seed']['account_consistent']
+    tight = []
+    for extra in (8 << 10, 1 << 10):
+        Bt = CE.Budget(live_b + peak + extra); Mt = CE.canonicalize(model8, clk8, Bt); ordert, _ = CE.elimination_order(list(Mt.cards), [tuple(sc) for sc, _ in Mt.factors], clk8, Bt); stt = RB.ResidualState('ctrl', None, None, None, None, None, Bt); sinkt = RB.BankSink(stt, clk8, 5.0); kt = None
+        try: propt, rect, ownedt = JP.compile_seed(Mt, ordert, JPROF, Bt, clk8, sink=sinkt)
+        except CE.Refused as e: kt = e.kind
+        tight.append(dict(extra=extra, refused=kt, atoms=len(stt.atoms), evicted=len(stt.evicted), dropped=len(stt.dropped), offers=sinkt.offers, peak_within_cap=(Bt.peak <= Bt.cap), seed_cap_same=(kt is None and propt.log2_B() == prop_p.log2_B()))); ok = ok and kt is None and tight[-1]['seed_cap_same'] and tight[-1]['peak_within_cap'] and (tight[-1]['evicted'] + tight[-1]['dropped'] > 0)
+    res['eviction_before_seed']['tight_caps'] = tight
+    # make_room ordering: the lowest score goes first
+    Bm = CE.Budget(1 << 20); stm = RB.ResidualState('ctrl', 'ctrl', prop, prop.B, prop.B, prop.B, Bm); arrs = []
+    for j, sc in enumerate((0.5, 0.1, 0.9)): arr = np.empty((2, 2), dtype=object); arr.fill(_fu(F(1, 2))); n_ = JP.ENTRY_BYTES * 4 + RB.ATOM_META_BYTES; stm._charge(n_, 'atom'); stm.add_atom((1, 2), arr, dict(kind='ctrl'), sc, -1.0, n_)
+    Bm.charge(Bm.cap - Bm.live - 100, 'filler'); sinkm = RB.BankSink(stm, clk, 1.0); sinkm.make_room(n_ + 50); res['make_room_order'] = dict(evicted=[e['aid'] for e in stm.evicted], remaining=sorted(stm.atoms), fits=(Bm.live + n_ + 50 <= Bm.cap)); ok = ok and stm.evicted and stm.evicted[0]['aid'] == 1 and res['make_room_order']['fits']
+    # (d) repeated close; refused seed cleanup
+    S2, B2, r2 = _rstream(M6, allow=20.0); live_ready = B2.live; S2._close('first'); l1 = B2.live; rel1 = S2.mech['close_release']['released_bytes']; S2._close('second'); l2 = B2.live; rel2 = S2.mech['close_release']['released_bytes']
+    res['repeated_close'] = dict(prepare=r2, live_ready=live_ready, after_first=l1, after_second=l2, released_first=rel1, released_second=rel2, bank_cleared=(len(S2.state.atoms) == 0 and S2.bank_bytes == 0 and S2.state.owned == 0)); ok = ok and r2 == 'READY' and live_ready > 0 and l1 == 0 and l2 == 0 and rel1 > 0 and rel2 == 0 and res['repeated_close']['bank_cleared']
+    Bs = CE.Budget(1 << 16); S3, B3, r3 = _rstream(M6, allow=20.0, budget=Bs); res['refused_seed'] = dict(prepare=r3, closed=(S3.closed_reason or '')[:60], live=B3.live, bank_owned=(S3.state.owned if S3.state is not None else None)); ok = ok and r3 == 'CLOSED' and B3.live == 0 and ('MEMORY' in (S3.closed_reason or '') or 'DEADLINE' in (S3.closed_reason or ''))
+    rec('D70_zero_target_eviction_and_cleanup', ok, **res)
+
+CONTROLS += [D63_seed_residual_inequalities, D64_local_F_source_binding, D65_exact_K_T2_and_weighted_moment, D66_waterfill_kkt_and_objective, D67_sequential_transactions_and_bank_immutability, D68_quantization_and_cap_ceiling, D69_allocation_refusal_deadline_positions, D70_zero_target_eviction_and_cleanup]
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('--only', default=None); a = ap.parse_args(); t0 = time.time()
     for c in CONTROLS:

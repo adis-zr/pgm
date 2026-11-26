@@ -78,24 +78,25 @@ def main():
         for sub, cnt in (rs.get('completions_by_sub') or {}).items():
             if sub in per_sub: chk('results_counts_match_cells:' + sub, cnt.get('cells') == per_sub[sub]['cells'] and cnt.get('complete') == per_sub[sub]['complete'], results=cnt, cells=per_sub[sub])
     # DGP3+: the EXECUTED harness / analyzer snapshot (git bundle of the branch + hashes of the executed files) and a replay command must be in the packet (DGP2 review, packaging finding)
-    if fr.get('experiment', '').startswith(('DGP3', 'DGP4', 'DGP5', 'DGP6')):
+    if fr.get('experiment', '').startswith(('DGP3', 'DGP4', 'DGP5', 'DGP6', 'DGP7')):
         hs = os.path.join(rd, 'harness'); bundle = glob.glob(os.path.join(hs, '*.bundle')); ex = os.path.join(hs, 'EXECUTED_HARNESS_SHA256.json')
         chk('executed_harness_snapshot_present', bool(bundle) and os.path.exists(ex), bundle=[os.path.basename(b) for b in bundle])
         if os.path.exists(ex):
             exh = json.load(open(ex)); bad = [f for f, h in exh.get('files', {}).items() if not os.path.exists(os.path.join(hs, 'files', os.path.basename(f))) or sha(os.path.join(hs, 'files', os.path.basename(f))) != h]
             chk('executed_harness_files_match_hashes', not bad, bad=bad)
-        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and any(('run_dgp%d.py' % k) in open(rp).read() for k in (3, 4, 5, 6)) and 'harness/files' in open(rp).read())
+        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and any(('run_dgp%d.py' % k) in open(rp).read() for k in (3, 4, 5, 6, 7)) and 'harness/files' in open(rp).read())
     # DGP6 (finding 9): relocation test -- every manifest input path rewritten onto a NON-EXISTENT workstation prefix must resolve back through the packet / DGP_ROOTS with its sha256 (never a silent substitute); run with the original paths ABSENT from the candidates
-    if fr.get('experiment', '').startswith('DGP6'):
+    if fr.get('experiment', '').startswith(('DGP6', 'DGP7')):
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import dgp_paths
-            mm = json.load(open(os.path.join(rd, 'MODEL_MANIFEST.json'))); tasks = [t for p_ in ('main_68', 'oracle_32', 'preservation_18', 'preservation_13') for t in mm['panels'][p_]]
+            mm = json.load(open(os.path.join(rd, 'MODEL_MANIFEST.json'))); pnames = [p_ for p_ in mm['panels'] if isinstance(mm['panels'][p_], list) and mm['panels'][p_] and isinstance(mm['panels'][p_][0], dict) and 'model' in mm['panels'][p_][0]]; tasks = [t for p_ in pnames for t in mm['panels'][p_]]       # DGP7: every task-list panel of the manifest (main / oracle / preservation / guard / gate / policy8), deduplicated by model path below
             roots_env = os.environ.get('DGP_ROOTS'); os.environ['DGP_ROOTS'] = os.environ.get('DGP6_RELOCATION_ROOTS', dgp_paths._repo_root_of(rd) or os.path.dirname(rd))          # default: the records repository holding this packet (inputs under code/runs/... AND docs/...); a restored packet sets DGP6_RELOCATION_ROOTS / DGP_ROOTS to the relocated copy
+            seen = set(); tasks = [t for t in tasks if not (t.get('model') in seen or seen.add(t.get('model')))]
             try: rel = dgp_paths.relocation_test(tasks, rd)
             finally:
                 if roots_env is None: os.environ.pop('DGP_ROOTS', None)
                 else: os.environ['DGP_ROOTS'] = roots_env
-            bad = [r for r in rel if not r['ok']]; chk('relocation_resolves_every_manifest_input', not bad, n=len(rel), bad=bad[:5], roots='DGP6_RELOCATION_ROOTS or the records repository root; every fake prefix /nonexistent/workstation/... never exists')
+            bad = [r for r in rel if not r['ok']]; chk('relocation_resolves_every_manifest_input', not bad, n=len(rel), bad=bad[:5], roots='DGP6_RELOCATION_ROOTS (also honoured for DGP7) or the records repository root; every fake prefix /nonexistent/workstation/... never exists')
         except Exception as e: chk('relocation_resolves_every_manifest_input', False, error=repr(e)[:200])
     # unsupported claims: forbidden phrases in REPORT / THEORY_RETURN
     for f in ('REPORT.md', 'THEORY_RETURN.md', 'START_HERE.md'):

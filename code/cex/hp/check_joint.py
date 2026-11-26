@@ -93,7 +93,7 @@ def check_inventory(inputs, output, inventory=None, bucket_ids=None, eliminated=
     return dict(ok=True)
 
 
-def check_stage(inputs, output, eliminated, cards, agg, clock, inventory=None, bucket_ids=None, P=None, scalars=None):
+def check_stage(inputs, output, eliminated, cards, agg, clock, inventory=None, bucket_ids=None, P=None, scalars=None, rho=None):
     """agg 'max' / 'sum': output over union minus eliminated dominates max / sum over the eliminated variable of the EXACT product of the inputs; agg 'product': output over the union dominates the exact product
     (times the exact product of `scalars`). For agg 'sum' with the producer's normalized product P supplied, P is ALSO checked to dominate the exact product (P is the retained family table of the seed)."""
     clock.poll('at the joint stage checker entry'); union = tuple(sorted(set(a for T in inputs for a in T.axes))); expect = tuple(a for a in union if a != eliminated) if eliminated is not None else union
@@ -102,7 +102,8 @@ def check_stage(inputs, output, eliminated, cards, agg, clock, inventory=None, b
     if tuple(output.axes) != expect: return dict(ok=False, why='output axes %s != expected %s' % (output.axes, expect), cells=0)
     if len(inputs) > 16: return dict(ok=False, why='fan-in %d > 16' % len(inputs), cells=0)
     sizes = [cards[a] for a in union]; opos = [union.index(a) for a in output.axes]; ipos = [[union.index(a) for a in T.axes] for T in inputs]; cells = 0; worst = None
-    sc = _exact_prod(scalars) if scalars else (0, 1)
+    sc = _exact_prod(scalars) if scalars else (0, 1); slack_ok = None; slack_why = None; slack_cells = 0
+    if rho is not None and (agg != 'max' or tuple(rho.shape) != tuple(sizes)): return dict(ok=False, why='slack array offered for a non-MAX stage or with the wrong shape %s' % (getattr(rho, 'shape', None),), cells=0)
     if agg in ('max', 'product'):
         for idx, asg in enumerate(itertools.product(*[range(s) for s in sizes])):
             prod = (0, 1)
@@ -114,6 +115,11 @@ def check_stage(inputs, output, eliminated, cards, agg, clock, inventory=None, b
             elif agg == 'product' and not sc[1]: prod = ZERO
             o = output.arr[tuple(asg[p] for p in opos)]
             if not ge_exact(o, prod): return dict(ok=False, why='output does not dominate the exact %s at %s' % (agg, asg), cells=cells)
+            if rho is not None and slack_ok is not False:                                                                        # DGP7 (brief section 3): the residual slack rho(x_u) must satisfy M(x_{u \ v}) rho(x_u) >= the EXACT input product at every cell (the atom is dropped, the stage proof stands)
+                r = rho[asg]; bound = (o[0] + r[0], o[1] * r[1]) if (o[1] and r[1]) else ZERO
+                if prod[1] and (not ge_exact(bound, prod)): slack_ok = False; slack_why = 'residual slack: M rho < the exact input product at %s' % (asg,)
+                elif r[1] and ge_exact(r, (1, 1)): slack_ok = False; slack_why = 'residual slack > 1 at %s' % (asg,)
+                else: slack_cells += 1
             if prod[1] and o[1]:
                 sl = RM.lead(o) - RM.lead(prod)
                 if worst is None or sl > worst: worst = sl
@@ -140,7 +146,8 @@ def check_stage(inputs, output, eliminated, cards, agg, clock, inventory=None, b
                 if worst is None or sl > worst: worst = sl
             cells += cards[eliminated]
             if (idx & 255) == 255: clock.poll('in the joint stage checker (sum)')
-    return dict(ok=True, cells=cells, max_slack_bits_upper=worst, agg=agg, eliminated=eliminated, inputs=[T.tid for T in inputs], output=output.tid)
+    if rho is not None and slack_ok is None: slack_ok = True
+    return dict(ok=True, cells=cells, max_slack_bits_upper=worst, agg=agg, eliminated=eliminated, inputs=[T.tid for T in inputs], output=output.tid, slack_ok=slack_ok, slack_why=slack_why, slack_cells=slack_cells)
 
 
 def check_seed_rows(Pm, Mf, counts, k, clock):
