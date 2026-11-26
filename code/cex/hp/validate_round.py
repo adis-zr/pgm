@@ -90,12 +90,12 @@ def main():
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import dgp_paths
             mm = json.load(open(os.path.join(rd, 'MODEL_MANIFEST.json'))); tasks = [t for p_ in ('main_68', 'oracle_32', 'preservation_18', 'preservation_13') for t in mm['panels'][p_]]
-            roots_env = os.environ.get('DGP_ROOTS'); os.environ['DGP_ROOTS'] = os.environ.get('DGP6_RELOCATION_ROOTS', os.path.dirname(rd))
+            roots_env = os.environ.get('DGP_ROOTS'); os.environ['DGP_ROOTS'] = os.environ.get('DGP6_RELOCATION_ROOTS', dgp_paths._repo_root_of(rd) or os.path.dirname(rd))          # default: the records repository holding this packet (inputs under code/runs/... AND docs/...); a restored packet sets DGP6_RELOCATION_ROOTS / DGP_ROOTS to the relocated copy
             try: rel = dgp_paths.relocation_test(tasks, rd)
             finally:
                 if roots_env is None: os.environ.pop('DGP_ROOTS', None)
                 else: os.environ['DGP_ROOTS'] = roots_env
-            bad = [r for r in rel if not r['ok']]; chk('relocation_resolves_every_manifest_input', not bad, n=len(rel), bad=bad[:5], roots='DGP6_RELOCATION_ROOTS or the records parent; the fake prefix /nonexistent/workstation/... never exists')
+            bad = [r for r in rel if not r['ok']]; chk('relocation_resolves_every_manifest_input', not bad, n=len(rel), bad=bad[:5], roots='DGP6_RELOCATION_ROOTS or the records repository root; every fake prefix /nonexistent/workstation/... never exists')
         except Exception as e: chk('relocation_resolves_every_manifest_input', False, error=repr(e)[:200])
     # unsupported claims: forbidden phrases in REPORT / THEORY_RETURN
     for f in ('REPORT.md', 'THEORY_RETURN.md', 'START_HERE.md'):

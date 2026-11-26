@@ -1,7 +1,7 @@
 """DGP6 packaging (derived from dgp5_package.py): IDENTITY.json + CODE zip (git archive of the frozen commit + sidecar) + RESULTS zip + the EXECUTED harness snapshot with a SELF-CONTAINED git bundle (every object of the branch; no prerequisite commits) whose restoration into an empty directory is TESTED here (clone, checkout of the frozen commit, arm-file hash verification): IDENTITY.json (commits, trees, source / configuration / native / dependency identities, archive hashes) + CODE zip (git archive of the frozen commit + sidecar) + RESULTS zip (this round's records only, bound to the code zip).
 usage: dgp6_package.py"""
 import os, sys, json, hashlib, subprocess, time, zipfile, platform
-RD = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP6_GLOBAL_CONSTRUCTION'; REC = '/Users/adis/Workspace/pgm-records'; PGM = '/Users/adis/Workspace/pgm'; W = os.environ.get('DGP6_ARCHIVE_DIR', '/Users/adis/Workspace')
+RD = os.environ.get('DGP6_RD', '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP6_GLOBAL_CONSTRUCTION'); REC = '/Users/adis/Workspace/pgm-records'; PGM = '/Users/adis/Workspace/pgm'; W = os.environ.get('DGP6_ARCHIVE_DIR', '/Users/adis/Workspace')
 def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
 def git(repo, *a): return subprocess.check_output(['git', '-C', repo] + list(a)).decode().strip()
 fr = json.load(open(RD + '/FREEZE.json')); commit = fr['code']['commit']; short = commit[:7]; tree = fr['code']['tree']; rec_commit = git(REC, 'rev-parse', 'HEAD'); head_pgm = git(PGM, 'rev-parse', 'HEAD')
