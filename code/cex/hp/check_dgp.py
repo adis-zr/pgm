@@ -1,4 +1,4 @@
-"""Qualification controls of DENSE_GENERIC_PAC_INTEGRATION_1 (brief section 7), DGP2 (D19-D26), DGP3 (D27-D31: RF1-RF4, lemma G), DGP4 (D32-D41: R1-R3, residual MAX compiler, checker, whole proposal, lifetime; D37 / D38 / D39 / D41 strengthened in DGP5) and DGP5 (D42-D53: the joint conditional construction -- seed, exact floor, local witnesses, mutants, quantization / incumbent witness, replication / staleness, units, epochs, refusal lifetime, held-out isolation, feature-disabled / expiry, real clock). usage: check_dgp.py OUT.json [--only D1,D2,..]. Every control asserts actual branch execution."""
+"""Qualification controls of DENSE_GENERIC_PAC_INTEGRATION_1 (brief section 7), DGP2 (D19-D26), DGP3 (D27-D31: RF1-RF4, lemma G), DGP4 (D32-D41: R1-R3, residual MAX compiler, checker, whole proposal, lifetime; D37 / D38 / D39 / D41 strengthened in DGP5) and DGP5 (D42-D54: the joint conditional construction -- seed, exact floor, local witnesses, mutants, quantization / incumbent witness, replication / staleness, units, epochs, refusal lifetime, held-out isolation, feature-disabled / expiry, real clock). usage: check_dgp.py OUT.json [--only D1,D2,..]. Every control asserts actual branch execution."""
 import sys, os, json, time, math, argparse, traceback
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm')); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'blockres'))
@@ -1587,6 +1587,43 @@ def D53_real_clock_planner_cells():
 
 
 CONTROLS += [D42_seed_exhaustive_validity, D43_exact_floor_and_count_boundaries, D44_local_witness_inequalities, D45_witness_pass_mutants, D46_quantization_cap_and_incumbent_witness, D47_context_replication_and_staleness, D48_units_and_paired_arithmetic, D49_epoch_switch_and_certificate_continuity, D50_candidate_refusal_lifetime, D51_heldout_isolation_and_forecast_independence, D52_feature_disabled_and_expiry_suppression, D53_real_clock_planner_cells]
+
+def D54_scalar_messages_and_internal_errors():
+    """DGP5 validity amendment 1 (the n64 clique / CSP_11 production crash): (a) a MAX group that reduces to a SCALAR (every axis eliminated: a saturated bucket's leftover unary-only group) yields a 0-d object array,
+    the seed / b-pass / a-pass complete and are valid by enumeration on a fixture that FORCES it (fan-in 1: every table its own group -> the unary of the eliminated variable is a scalar MAX message) and on the 7-variable
+    card-4 clique at the production profile; (b) an injected unexpected exception inside the optional joint stream's preparation / pilot / refine closes THAT stream typed (INTERNAL, traceback recorded) and the full
+    planner request on the dev n16 clique still completes through the primary with the ledger identity TRUE"""
+    res = {}; M, order, clk, B = _jstage(_four_cycle()); cards = list(M.cards)
+    # (a) max_over to a scalar is an ndarray
+    arr = np.empty((4,), dtype=object)
+    for i in range(4): arr[i] = _fu(F(i + 1))
+    out, cur = JP.max_over(arr, (0,), [0]); res['max_over_scalar_is_ndarray'] = isinstance(out, np.ndarray) and out.shape == () and out[()] == _fu(F(4))
+    prop, rec_, owned = JP.compile_seed(M, order, dict(JPROF, fanin=1), B, clk); ref = CJ.ref_check_law(M, prop); res['fanin1_seed'] = dict(splits=rec_['max_splits'], violations=ref['violations'], normalized=ref['normalized'], log2_B=prop.log2_B(), log2_Rstar=ref['log2_Rstar'], scalar_messages=sum(1 for p_ in rec_['plan'] for g in p_['groups'] if not g['output_axes']))
+    z = prop.order[-1]; parents = tuple(prop.conds[z].parents); pk = JW.build_packet(M, prop, z, parents, order, dict(JPROF, fanin=1), B, clk); b_ref, a_ref = CJ.ref_coefficients(M, prop, z, parents); wc = CJ.ref_witness_check(pk.b, pk.a, b_ref, a_ref); res['fanin1_packet'] = dict(violations=wc['violations'], b_scalar_messages=sum(1 for p_ in pk.rec_b['plan'] for g in p_['groups'] if not g['output_axes']), a_scalar_messages=sum(1 for p_ in pk.rec_a['plan'] for g in p_['groups'] if not g['output_axes'])); pk.release(); B.release(owned)
+    rng = random.Random(21); clique7 = _rand_model(rng, [4] * 7, [(i, j) for i in range(7) for j in range(i + 1, 7)]); M7, order7, clk7, B7 = _jstage(clique7); prop7, rec7, owned7 = JP.compile_seed(M7, order7, JPROF, B7, clk7); S7, Bs7, r7 = _jstream(M7, allow=10.0); p7 = S7.pilot_action(PA.tnow() + 10); a7 = S7.refine_action(PA.tnow() + 10, PA.tnow() + 20)
+    res['clique7_production_profile'] = dict(seed_splits=rec7['max_splits'], stream=r7, pilot=p7.get('status'), refine=a7.get('status'), scalar_messages_seed=sum(1 for p_ in rec7['plan'] for g in p_['groups'] if not g['output_axes']), internal=S7.mech.get('internal_error')); B7.release(owned7); S7._close('ctrl')
+    # (b) injected unexpected exceptions: preparation, pilot, refine
+    model, binding = load_mid('dg_n16_c4_clique_two'); inj = {}
+    real_cs = JP.compile_seed
+    def boom(*a_, **k_): raise AttributeError("injected 'tuple' object has no attribute 'size'")
+    JP.compile_seed = boom
+    try: P = UPlanner(model, binding, 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, envelope='RMAX', joint='joint'); o = P.run()
+    finally: JP.compile_seed = real_cs
+    J = [s for s in o['streams'] if s['kind'] == 'joint']; inj['prepare'] = dict(outcome=o['outcome'], published=o['published'], K=o['K'], ledger=o['mechanism'].get('constructor_live_ledger_identity'), joint=[(s['stage'], (s.get('closed') or '')[:60], bool((s.get('mechanism') or {}).get('internal_error'))) for s in J], lifted_fallback=[(s['label'][:20], s['stage'], s['draws']) for s in o['streams'] if s['kind'] == 'lifted'])
+    real_bp = JW.build_packet
+    def boom2(*a_, **k_): raise TypeError('injected unexpected error in the packet')
+    JW.build_packet = boom2
+    try: P2 = UPlanner(model, binding, 8.0, admission_stop_s=7.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, envelope='RMAX', joint='joint'); o2 = P2.run()
+    finally: JW.build_packet = real_bp
+    J2 = [s for s in o2['streams'] if s['kind'] == 'joint']; inj['refine'] = dict(outcome=o2['outcome'], published=o2['published'], ledger=o2['mechanism'].get('constructor_live_ledger_identity'), joint=[(s['stage'], s['draws'], [(a_.get('status'), (a_.get('why') or '')[:40]) for a_ in (s.get('joint') or {}).get('attempts', [])]) for s in J2])
+    res['injected'] = inj
+    ok = (res['max_over_scalar_is_ndarray'] and res['fanin1_seed']['violations'] == 0 and res['fanin1_seed']['normalized'] and res['fanin1_seed']['scalar_messages'] >= 1 and res['fanin1_packet']['violations'] == 0 and r7 == 'READY' and p7.get('status') == 'COMPLETE' and a7.get('status') in ('PROMOTED', 'KEPT_INCUMBENT') and not res['clique7_production_profile']['internal']
+          and inj['prepare']['outcome'] == 'COMPLETE' and inj['prepare']['ledger'] is True and all(j[0] == 'CLOSED' and 'INTERNAL' in j[1] and j[2] for j in inj['prepare']['joint']) and inj['refine']['outcome'] == 'COMPLETE' and inj['refine']['ledger'] is True and all(j[0] == 'READY' and j[1] > 0 and any(a_[0] == 'INTERNAL' for a_ in j[2]) for j in inj['refine']['joint']))
+    rec('D54_scalar_messages_and_internal_errors', ok, **res)
+
+
+CONTROLS.append(D54_scalar_messages_and_internal_errors)
+
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('out'); ap.add_argument('--only', default=None); a = ap.parse_args(); t0 = time.time()

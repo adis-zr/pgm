@@ -52,10 +52,12 @@ def product_exact(tables, axes, cards):
 
 
 def max_over(arr, axes, drop):
-    """MAX of upward-normalized entries over the axis ids in `drop` (lexicographic (e, m) order == numeric order on normalized entries)"""
+    """MAX of upward-normalized entries over the axis ids in `drop` (lexicographic (e, m) order == numeric order on normalized entries). ALWAYS returns an object ndarray (0-d when every axis is dropped: numpy's reduce of a
+    1-d object array yields a bare Python tuple, which the DGP5 validity amendment 1 wraps back into a 0-d array -- a scalar MAX message of a saturated bucket crashed the n64 clique / CSP_11 SEED and JOINT cells)"""
     out = arr; cur = list(axes)
     for a in sorted(drop, reverse=True):
         k = cur.index(a); out = np.maximum.reduce(out, axis=k) if out.shape[k] > 1 else out.reshape([s for i, s in enumerate(out.shape) if i != k]); cur.pop(k)
+        if not isinstance(out, np.ndarray): sc = np.empty((), dtype=object); sc[()] = out; out = sc
     return out, tuple(cur)
 
 
@@ -249,7 +251,7 @@ class JointCompile:
         if vol > self.V: raise RefusedJoint('VOLUME', 'the retained family (%d entries) exceeds the volume cap %d' % (vol, self.V))
         self.clock.poll('before the retained product'); steps = 0
         while True:
-            live = sorted(self.active, key=lambda T: (-T.volume(), T.tid)); chunk = live[:self.fanin]; last = (len(live) <= self.fanin); uax = tuple(sorted(set(a for T in chunk for a in T.axes)))
+            live = sorted(self.active, key=lambda T: (-T.volume(), T.tid)); step_fanin = max(2, min(self.fanin, 16)); chunk = live[:step_fanin]; last = (len(live) <= step_fanin); uax = tuple(sorted(set(a for T in chunk for a in T.axes)))      # at least TWO tables per step (a chain of one-table steps would re-wrap forever: amendment 1 / D54)
             if last and uax != Fax: raise CE.Defect('retained product: the live tables cover %s, not the family %s' % (uax, Fax))      # every family variable carries its unary source: the final union IS F
             axes_out = Fax if last else uax; vol_out = vol_of(axes_out, self.cards)
             charge = ENTRY_BYTES * vol_out * 2 + 128; self.owned[0] += self.budget.charge(charge, 'retained family product step %d (%d entries)' % (steps, vol_out)); self._bump()

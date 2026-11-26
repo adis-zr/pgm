@@ -19,17 +19,25 @@ def main():
         except Exception as e: chk('accepted_engine_byte_identical_to_1da6da3', False, error=repr(e)[:100])
     else: chk('eval_checkout_present', False, root=root)
     # every cell's recorded code commit is the frozen commit and its launch / completion identities equal the frozen ARM identity files (the harness files may carry a HARNESS amendment)
-    bad_commit = []; bad_arm_ident = []
+    bad_commit = []; bad_arm_ident = []; amends = {}
+    for a_ in sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json'))):
+        aj = json.load(open(a_))
+        if aj.get('kind', '').startswith('validity') and aj.get('code'): amends[aj['code']['commit']] = aj          # DGP5: a VALIDITY amendment carries its own commit + identity files; cells launched after it record the amendment
+    n_amended = 0
     for p in sorted(glob.glob(os.path.join(rd, 'runs', '*', '*', 'cell.json'))):
-        cj = json.load(open(p)); c = cj['cell']
-        if c.get('code_commit') != fr['code']['commit']: bad_commit.append(os.path.relpath(p, rd))
+        cj = json.load(open(p)); c = cj['cell']; ref = fr['code']
+        if c.get('code_commit') != fr['code']['commit']:
+            if c.get('code_commit') in amends and c.get('amendment'): ref = amends[c['code_commit']]['code']; n_amended += 1
+            else: bad_commit.append(os.path.relpath(p, rd))
         for k in ('identity_at_launch', 'identity_at_completion'):
-            if any(cj.get(k, {}).get(f) != fr['code']['files'].get(f) for f in arm_files): bad_arm_ident.append((os.path.relpath(p, rd), k))
-    chk('cells_at_frozen_commit', not bad_commit, bad=bad_commit[:10]); chk('cells_arm_identity_equals_freeze', not bad_arm_ident, bad=bad_arm_ident[:10])
+            if any(cj.get(k, {}).get(f) != ref['files'].get(f) for f in (ref.get('arm_identity_files') or arm_files)): bad_arm_ident.append((os.path.relpath(p, rd), k))
+    chk('cells_at_frozen_commit', not bad_commit, bad=bad_commit[:10], cells_at_validity_amendment_commit=n_amended, amendments=sorted(amends)); chk('cells_arm_identity_equals_freeze', not bad_arm_ident, bad=bad_arm_ident[:10])
     # oracle results: produced by the frozen oracle harness or a recorded HARNESS amendment (arm files unchanged)
     am = sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json')))
     for a in am:
-        aj = json.load(open(a)); chk('amendment_arm_files_unchanged:' + os.path.basename(a), aj.get('arm_identity_files_unchanged') is True, kind=aj.get('kind', '')[:80])
+        aj = json.load(open(a))
+        if aj.get('kind', '').startswith('validity'): chk('validity_amendment_complete:' + os.path.basename(a), bool(aj.get('code', {}).get('commit')) and bool(aj.get('affected_cells')) and bool(aj.get('requalification')) and bool(aj.get('superseded_dir')), kind=aj.get('kind', '')[:80], affected=len(aj.get('affected_cells') or []))
+        else: chk('amendment_arm_files_unchanged:' + os.path.basename(a), aj.get('arm_identity_files_unchanged') is True, kind=aj.get('kind', '')[:80])
     # cells: unique identities, manifest / result binding, identity_ok, receipt present
     cells = sorted(glob.glob(os.path.join(rd, 'runs', '*', '*', 'cell.json'))); ids = set(); bad_bind = []; bad_ident = []; no_receipt = []; per_sub = {}
     rows = [json.loads(l) for l in open(ledger)]; receipts = {}

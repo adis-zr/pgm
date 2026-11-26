@@ -89,6 +89,8 @@ class JointStream(Stream):
         except (JP.RefusedJoint, StreamRefused) as e: self.measurements.append(dict(kind='joint_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored=e.kind, features=self.stage_features(self.stage))); return self._close('%s in joint stage %s: %s' % (e.kind, self.stage, str(e.reason)[:160]))
         except CE.Defect as e: self.measurements.append(dict(kind='joint_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='DEFECT', features=self.stage_features(self.stage))); self.defect = 'joint construction defect (optional route closed, nothing published from it): %s' % str(e)[:160]; self.mech['construction_defect'] = self.defect; return self._close('DEFECT in joint stage %s: %s' % (self.stage, str(e)[:160]))
         except (ValueError, OverflowError, ZeroDivisionError) as e: self.measurements.append(dict(kind='joint_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='NUMERIC', features=self.stage_features(self.stage))); return self._close('NUMERIC in joint stage %s: %s' % (self.stage, repr(e)[:160]))
+        except Exception as e:                                                                              # DGP5 validity amendment 1: an UNEXPECTED exception inside the OPTIONAL joint stream closes THIS stream typed (recorded with its traceback) and never the request
+            import traceback; self.measurements.append(dict(kind='joint_stage', stage=self.stage, seconds=tnow() - t0, completed=False, censored='INTERNAL', features=self.stage_features(self.stage))); self.mech['internal_error'] = dict(stage=self.stage, error=repr(e)[:200], traceback=traceback.format_exc()[-1500:]); self.defect = 'joint internal error (optional route closed, nothing published from it): %s' % repr(e)[:120]; self.mech['construction_defect'] = self.defect; return self._close('INTERNAL in joint stage %s: %s' % (self.stage, repr(e)[:160]))
     def _j_order(self, deadline):
         clk = CE.Clock(deadline, {}); B_ = self.opts.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES); self.order, vols = CE.elimination_order(list(self.M_par.cards), [tuple(sc) for sc, _ in self.M_par.factors], clk, B_); self.mech['elimination'] = dict(order=self.order, max_bucket_volume=max(vols) if vols else 0); self.stage = 'INTEGERIZED'
     def _j_seed(self, deadline):
@@ -209,6 +211,10 @@ class JointStream(Stream):
         except AssertionError as e: self.abandoned += 1; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a joint batch (rows withheld): %s' % str(e)[:120])
     # ---- the explicit charged actions
     def pilot_action(self, hard):
+        try: return self._pilot_action(hard)
+        except Exception as e:
+            import traceback; self.mech['internal_error'] = dict(stage='pilot', error=repr(e)[:200], traceback=traceback.format_exc()[-1500:]); self.defect = 'joint internal error in the pilot (optional route closed): %s' % repr(e)[:120]; self.mech['construction_defect'] = self.defect; self._close('INTERNAL in the joint pilot: %s' % repr(e)[:160]); return dict(status='INTERNAL', error=repr(e)[:200])
+    def _pilot_action(self, hard):
         """1,024 committed draws in batches of 256 pinned to the seed epoch, inside the pilot phase end; a short pilot keeps the checked seed and skips optimization; one certificate check afterwards"""
         if self.stage != 'READY' or self.pilot is not None: return dict(status='NOT_APPLICABLE')
         p = self.profile; end = min(hard, self.phase_ends['pilot']); t0 = tnow(); B_ = self.opts.get('budget_obj'); n_target = p['pilot_draws']; nb = 0; r = None
@@ -290,6 +296,8 @@ class JointStream(Stream):
         except (ValueError, OverflowError, ZeroDivisionError) as e: att.update(status='NUMERIC', why=repr(e)[:200]); self.refinement_ended = 'numeric failure in candidate construction at attempt %d (incumbent kept)' % att['index']
         except (Deadline, IG.Deadline) as e: att.update(status='REFUSED', kind='DEADLINE', why=str(e)[:200]); self.refinement_ended = 'candidate refused (DEADLINE) at attempt %d' % att['index']
         except AssertionError as e: att.update(status='DEFECT', why=str(e)[:200]); self.refinement_ended = 'candidate invariant failure at attempt %d (incumbent kept)' % att['index']; self.mech['candidate_defect'] = str(e)[:200]
+        except Exception as e:                                                                              # DGP5 validity amendment 1: an unexpected exception in a candidate construction keeps the incumbent (typed INTERNAL, traceback recorded)
+            import traceback; att.update(status='INTERNAL', why=repr(e)[:200], traceback=traceback.format_exc()[-1500:]); self.refinement_ended = 'internal error in candidate construction at attempt %d (incumbent kept)' % att['index']; self.mech['candidate_defect'] = repr(e)[:200]
         finally:
             if pk is not None: pk.release(); att['packet_released_bytes'] = pk.owned
         att['seconds'] = tnow() - t0; att['ended_offset_s'] = tnow() - self.allowance_start; self.attempts.append(att); self.mech['attempts'] = self.attempts; self.mech['refinement_ended'] = self.refinement_ended

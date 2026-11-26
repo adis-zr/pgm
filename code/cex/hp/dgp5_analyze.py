@@ -12,7 +12,7 @@ def load(p):
     try: return json.load(open(p))
     except Exception: return None
 def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
-def med(xs): xs = [x for x in xs if x is not None]; return float(statistics.median(xs)) if xs else None
+def med(xs): xs = [x for x in (xs or []) if isinstance(x, (int, float)) and not (isinstance(x, float) and math.isnan(x))]; return float(statistics.median(xs)) if xs else None
 
 _SHA_NAME = None
 def sha_name_map():
