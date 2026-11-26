@@ -6,7 +6,8 @@ vi = R['verdict_inputs']; V = R['verdicts']; G = R['gates']; mi = vi['main']; mc
 def f2(x): return ('%.2f' % x) if isinstance(x, (int, float)) else '-'
 def f3(x): return ('%.3f' % x) if isinstance(x, (int, float)) else '-'
 def f4(x): return ('%.4f' % x) if isinstance(x, (int, float)) else '-'
-L = []; P = L.append
+L = []
+def P(s=''): L.append(s)
 P('# START_HERE -- DGP7_RESIDUAL_JOINT (26 Nov 2026)'); P()
 P('**Question.** Retain the checked MAX-group slacks of the seed pass as a residual envelope bank (W_0 <= envelope_B q prod rho) and jointly re-optimize 2 / 4 consecutive conditionals per local window under a kernel-checked residual update (G1 fixed; regions <= 65,536 states; exact gates 10 B_new <= 11 B_ref and 10 B_new <= 11 initial_seed_cap): does it (M) lower the TRUE second moment by >= 0.5 bits at a checked cap <= 1.10 x the best same-law seed cap on 2 of the 3 exposed n8 reference cliques, (X) execute a genuinely changed law with >= 1,024 future draws on an n32 AND an n64 anchor at 20 s / 4 s, and (E / O) transfer to completions / radii at equal cost without preservation loss? One substantive round (brief section 9); the eight DGP6-review repairs R1-R8 are bundled (PROTOCOL.md section 8).'); P()
 P('## Disclosure first (brief section 0 / BUDGET_DECLARATION.json)'); P()
