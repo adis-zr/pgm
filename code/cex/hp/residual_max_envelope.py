@@ -110,7 +110,9 @@ def sum_up(terms):
     for e, m in terms:
         sh = e - base
         if sh >= 0: acc += m << sh
-        else: q = m >> (-sh); acc += q + (1 if (m & ((1 << (-sh)) - 1)) else 0)
+        else:
+            g = -sh; q = m >> g; rem = (m != 0) if g >= m.bit_length() else bool(m & ((1 << g) - 1))         # DGP7 repair R2: the remainder test never builds a mask wider than the mantissa (a 2^24 exponent gap allocated a 2 MiB temporary before)
+            acc += q + (1 if rem else 0)
     return norm_up(base, acc)
 
 

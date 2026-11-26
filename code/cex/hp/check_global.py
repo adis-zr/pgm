@@ -37,12 +37,54 @@ def _source_checks(nd, plan, M_par, prop, exp_roles, seen):
     return None
 
 
-def certify(plan, M_par, prop, producer_value, clock, budget=None, graph_sha=None):
-    """-> receipt(ok, value (compact upward), log2, why, roles, cells, identities). Independent re-derivation of the whole circuit in compact arithmetic from the EXPECTED sources (inventory = every unary / factor of the
+def expected_plan(plan, M_par, prop, order_elim, kind, clock=None):
+    """DGP7 repair R1: the certifier REBUILDS the structural plan of the claimed proof kind from the target (cards, factor scopes), the actual proposal (sampling order, parents) and the elimination order -- cap = power 1 / all MAX;
+    moment = power 2 / SUM at group 0 of every stage -- with the submitted plan's caps V / fan-in, and compares structural identities; the submitted plan's SUM / MAX labels, powers, constants and closure are never trusted"""
+    from global_circuit import CircuitPlan
+    power = 1 if kind == 'cap' else 2; cards = list(M_par.cards); scopes = [tuple(sc) for sc, _ in M_par.factors]; parents = {int(v): tuple(prop.conds[v].parents) for v in prop.order}
+    return CircuitPlan(cards, list(prop.order), parents, scopes, power, list(order_elim), plan.V, plan.fanin, clock=clock)
+
+
+def structural_checks(plan, kind, cards):
+    """R1 structural rules independent of the producer: every reduce's cardinality equals cards[axis]; the aggregation per stage = all MAX (cap) or SUM exactly at the first group of every eliminated variable (moment); const_card only in the
+    moment plan; non-reciprocal source powers equal the proof power; every eliminated variable's stage consumes exactly the live tables carrying it (a complete, non-overlapping partition); nothing remains after the last stage"""
+    stages = {}
+    for i, nd in enumerate(plan.nodes):
+        if nd['op'] == 'reduce':
+            if nd.get('m') != cards[nd['axis']]: return 'reduce %d: cardinality %s != cards[%d] = %d' % (i, nd.get('m'), nd['axis'], cards[nd['axis']])
+            stages.setdefault(nd['axis'], []).append(nd['agg'])
+        elif nd['op'] == 'const_card' and kind == 'cap': return 'const_card node %d in a cap plan' % i
+        elif nd['op'] == 'source' and nd['role'] != 'reciprocal' and nd.get('power') != (1 if kind == 'cap' else 2): return 'source %d power %s != the %s proof power' % (i, nd.get('power'), kind)
+    for v, aggs in stages.items():
+        if kind == 'cap' and any(a_ != 'max' for a_ in aggs): return 'cap proof: variable %d has a non-MAX group' % v
+        if kind == 'moment' and (aggs[0] != 'sum' or any(a_ != 'max' for a_ in aggs[1:])): return 'moment proof: variable %d groups %s (SUM must be exactly the first group)' % (v, aggs)
+    live = {i for i, nd in enumerate(plan.nodes) if nd['op'] == 'source'}
+    for st in plan.stages:
+        v = st['v']; carrying = {j for j in live if v in plan.nodes[j].get('axes', ())}; consumed = []
+        for g in st.get('groups', []): consumed += list(g['inputs'])
+        if sorted(consumed) != sorted(carrying): return 'variable %d: the stage consumes %s but the live tables carrying it are %s (incomplete / overlapping partition)' % (v, sorted(consumed), sorted(carrying))
+        live -= set(consumed); live |= {g['reduce'] for g in st.get('groups', []) if g['out_axes']}
+    if live: return 'tables never eliminated: %s' % sorted(live)[:6]
+    return None
+
+
+def certify(plan, M_par, prop, producer_value, clock, budget=None, graph_sha=None, order_elim=None, kind=None):
+    """-> receipt(ok, value (compact upward), log2, why, roles, cells, identities). DGP7 repair R1: `kind` ('cap' | 'moment') is the proof the CALLER claims; when `order_elim` is given the certifier rebuilds the expected structural plan
+    of that kind and requires the submitted plan's structural identity to equal it (an all-MAX plan labelled moment is rejected before any arithmetic); the structural rules (stages, complete partitions, aggregation ownership, powers,
+    constants, closure) are checked in every case. Independent re-derivation of the whole circuit in compact arithmetic from the EXPECTED sources (inventory = every unary / factor of the
     target at the plan's power exactly once + one reciprocal per conditional of the ACTUAL proposal; values / axes from the target and the counts, never from the producer; each source materialized lazily inside its
     consuming product and dropped after it); every product is checked for exact multiplicity, axis containment and the fan-in / volume caps, every reduction for its axis map, the closure for its scalar inventory; the live
     set is bounded by the plan's peak; the producer's value must dominate the re-derivation"""
     cards = list(M_par.cards); A = RM.Arith('compact'); vals = {}; cells = 0; owned = 0; charged = {}; t0 = CE.tnow()
+    kind = kind or ('cap' if plan.power == 1 else 'moment')
+    if kind not in ('cap', 'moment'): return dict(ok=False, why='unknown proof kind %r' % kind)
+    if plan.power != (1 if kind == 'cap' else 2): return dict(ok=False, why='plan power %d does not match the claimed %s proof' % (plan.power, kind))
+    if order_elim is not None:
+        exp = expected_plan(plan, M_par, prop, order_elim, kind, clock); ps = plan.structural_sha256() if hasattr(plan, 'structural_sha256') else plan.sha256
+        if ps != exp.sha256: return dict(ok=False, why='the submitted plan\'s structure does not match the independently rebuilt %s proof plan (sha %s != %s)' % (kind, ps[:12], exp.sha256[:12]))
+        if ps != plan.sha256: return dict(ok=False, why='the submitted plan\'s recorded sha256 does not match its own structure')
+    why = structural_checks(plan, kind, cards)
+    if why: return dict(ok=False, why='structure: ' + why)
     exp_roles = dict(unary=set(range(len(cards))), factor=set(range(len(M_par.factors))), reciprocal=set(prop.order)); seen = dict(unary=set(), factor=set(), reciprocal=set()); consumed = set()
     def admit(i, n_):
         nonlocal owned
@@ -82,7 +124,7 @@ def certify(plan, M_par, prop, producer_value, clock, budget=None, graph_sha=Non
                 if j in consumed or vals.get(j) is None: return dict(ok=False, why='reduce %d consumes node %d twice / before it exists' % (i, j))
                 x = vals[j]; inax = plan.nodes[j]['axes']
                 if nd['axis'] not in inax or tuple(nd['axes']) != tuple(a for a in inax if a != nd['axis']): return dict(ok=False, why='reduce %d axis map mismatch' % i)
-                ax = inax.index(nd['axis']); admit(i, ENTRY_C * int(x.size) + 128); clock.poll('certifier reduce %d' % i)
+                ax = inax.index(nd['axis']); admit(i, ENTRY_C * vol_of(nd['axes'], cards) + 128); clock.poll('certifier reduce %d' % i)
                 if nd['agg'] == 'max': out = np.maximum.reduce(x, axis=ax) if x.shape[ax] > 1 else x.reshape([s_ for k_, s_ in enumerate(x.shape) if k_ != ax])
                 elif nd['agg'] == 'sum':
                     mv = np.moveaxis(x, ax, -1); flat = mv.reshape(-1, mv.shape[-1]); res = np.empty(flat.shape[0], dtype=object)
@@ -110,7 +152,7 @@ def certify(plan, M_par, prop, producer_value, clock, budget=None, graph_sha=Non
         val = vals[plan.closure]
         if producer_value is not None and not ge_exact(producer_value, val): return dict(ok=False, why='the producer value does not dominate the independent re-derivation', producer=(producer_value[0], str(producer_value[1])[:20]), independent=(val[0], str(val[1])[:20]))
         ident = hashlib.sha256(repr((plan.sha256, [(v, prop.conds[v].sha256) for v in prop.order], [[str(x) for x in ps] for ps in M_par.psi], [[list(sc), [str(x) for x in vv]] for sc, vv in M_par.factors])).encode()).hexdigest()
-        return dict(ok=True, value=val, log2=(log2_up(val) if val[1] else -math.inf), cells=cells, seconds=CE.tnow() - t0, roles={k: len(v) for k, v in seen.items()}, identity=ident, plan_sha256=plan.sha256, graph_sha256=graph_sha, units=('W_0' if plan.power == 1 else 'W_0^2'))
+        return dict(ok=True, value=val, log2=(log2_up(val) if val[1] else -math.inf), cells=cells, seconds=CE.tnow() - t0, roles={k: len(v) for k, v in seen.items()}, identity=ident, plan_sha256=plan.sha256, graph_sha256=graph_sha, units=('W_0' if plan.power == 1 else 'W_0^2'), kind=kind, structure_rebuilt=(order_elim is not None))
     finally:
         if budget is not None and owned: budget.release(owned)
 

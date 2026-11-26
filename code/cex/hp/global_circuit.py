@@ -22,7 +22,14 @@ LN2 = math.log(2.0); V_UNION = 4096; FANIN = 16; ENTRY_F = 8; ENTRY_C = RM.ENTRY
 
 class CircuitPlan:
     """immutable: graph (cards, order, parents per variable), the source inventory (role, key, axes, power), the node list, work / peak counts, a structural sha256"""
-    def __init__(self, cards, sampling_order, parents, factors_scopes, power, order_elim, V=V_UNION, fanin=FANIN):
+    def __init__(self, cards, sampling_order, parents, factors_scopes, power, order_elim, V=V_UNION, fanin=FANIN, clock=None, budget=None):
+        # DGP7 repair R3: the plan's metadata (node dicts, stage records, the structural hash) is ADMITTED before any node is built (a bounded estimate: sources + <= 4 nodes per eliminated variable per group, 512 B each) and the
+        # construction is POLLED once per eliminated variable; the charge is released on exit (the plan is a small immutable object owned by its creator afterwards)
+        n_ = len(cards); self._meta_estimate = 512 * (2 * n_ + len(factors_scopes) + 4 * n_ * max(1, fanin)); self._charged = budget.charge(self._meta_estimate, 'circuit plan metadata') if budget is not None else 0
+        try: self._build(cards, sampling_order, parents, factors_scopes, power, order_elim, V, fanin, clock)
+        finally:
+            if budget is not None and self._charged: budget.release(self._charged); self._charged = 0
+    def _build(self, cards, sampling_order, parents, factors_scopes, power, order_elim, V, fanin, clock):
         self.cards = list(cards); self.order = list(sampling_order); self.parents = {int(v): tuple(parents[v]) for v in parents}; self.power = int(power); self.V = int(V); self.fanin = int(fanin); self.kind = 'cap' if power == 1 else 'moment'
         n = len(cards); nodes = []; live = []                                                   # live: (node id, axes)
         # ---- sources: unaries, factors (sorted axes), reciprocals (sorted parents + z)
@@ -31,8 +38,9 @@ class CircuitPlan:
         for v in self.order: axes = tuple(sorted(self.parents[v] + (v,))); nodes.append(dict(op='source', role='reciprocal', key=v, axes=axes, power=1, layout=self.parents[v] + (v,))); live.append((len(nodes) - 1, axes))
         self.n_sources = len(nodes); work = 0; scalars = []; self.stages = []
         # peak storage (entries) with LAZILY materialized sources: a source lives only inside the product that consumes it; the live frontier = intermediate messages not yet consumed
-        frontier = 0; peak = 0; self.red_input_entries = 0
+        frontier = 0; peak = 0; self.red_input_entries = 0; frontier_b = 0; peak_b = 0
         for v in order_elim:
+            if clock is not None: clock.poll('circuit plan construction (variable %d)' % v)
             bucket = [(nid, ax) for nid, ax in live if v in ax]
             if not bucket:
                 if power == 2: nodes.append(dict(op='const_card', value=cards[v], axes=())); scalars.append(len(nodes) - 1)      # a variable absent from every live factor contributes its cardinality to a SUM
@@ -54,26 +62,31 @@ class CircuitPlan:
                 raxes = tuple(a for a in u if a != v); nodes.append(dict(op='reduce', agg=agg, input=pid, axis=v, axes=raxes, m=cards[v])); rid = len(nodes) - 1; work += vol_of(u, cards); self.red_input_entries += vol_of(u, cards)
                 stage['groups'].append(dict(inputs=[nid for nid, _ in mem], union=u, product=pid, reduce=rid, agg=agg, out_axes=raxes))
                 src_in = sum(vol_of(ax, cards) for nid, ax in mem if nodes[nid]['op'] == 'source'); peak = max(peak, frontier + src_in + vol_of(u, cards) + vol_of(raxes, cards))
+                src_b = sum(ENTRY_C * vol_of(ax, cards) + 128 for nid, ax in mem if nodes[nid]['op'] == 'source'); peak_b = max(peak_b, frontier_b + src_b + (2 * ENTRY_C * vol_of(u, cards) + 128) + (ENTRY_C * vol_of(raxes, cards) + 128))      # DGP7 repair R3: the symbolic peak uses the SAME per-node admission rule as compact_evaluate / certify
                 if raxes: outs.append((rid, raxes))
                 else: scalars.append(rid)
-            live = [(nid, ax) for nid, ax in live if v not in ax] + outs; frontier = sum(vol_of(ax, cards) for nid, ax in live if nodes[nid]['op'] != 'source'); self.stages.append(stage)
+            live = [(nid, ax) for nid, ax in live if v not in ax] + outs; frontier = sum(vol_of(ax, cards) for nid, ax in live if nodes[nid]['op'] != 'source'); frontier_b = sum(ENTRY_C * vol_of(ax, cards) + 128 for nid, ax in live if nodes[nid]['op'] != 'source'); self.stages.append(stage)
         if live: raise CE.Defect('circuit plan: tables remain after the elimination: %s' % [ax for _, ax in live])
-        nodes.append(dict(op='closure', inputs=list(scalars))); self.closure = len(nodes) - 1; self.nodes = nodes; self.work_cells = work; self.peak_entries = peak; self.n_params = sum(vol_of(self.parents[v], cards) * cards[v] for v in self.order)
+        nodes.append(dict(op='closure', inputs=list(scalars))); self.closure = len(nodes) - 1; self.nodes = nodes; self.work_cells = work; self.peak_entries = peak; self.peak_bytes_symbolic = peak_b; self.n_params = sum(vol_of(self.parents[v], cards) * cards[v] for v in self.order)
         self.max_splits = max([len(st['groups']) - 1 for st in self.stages if st.get('groups')] + [0]); self.n_reductions = sum(len(st.get('groups', [])) for st in self.stages)
-        self.sha256 = hashlib.sha256(repr((self.cards, self.order, sorted(self.parents.items()), [(nd['op'], nd.get('role'), nd.get('key'), nd.get('axes'), nd.get('inputs'), nd.get('input'), nd.get('agg'), nd.get('axis')) for nd in nodes], power, V, fanin)).encode()).hexdigest()
+        if clock is not None: clock.poll('circuit plan hash')
+        self.sha256 = self.structural_sha256()
+    def structural_sha256(self):
+        """the structural identity: cards, sampling order, parents, every node's op / role / key / axes / inputs / aggregation / eliminated axis / constant, power, caps (no numeric quantity)"""
+        return hashlib.sha256(repr((self.cards, self.order, sorted(self.parents.items()), [(nd['op'], nd.get('role'), nd.get('key'), nd.get('axes'), nd.get('inputs'), nd.get('input'), nd.get('agg'), nd.get('axis'), nd.get('value')) for nd in self.nodes], self.power, self.V, self.fanin)).encode()).hexdigest()
     def n_source_cells(self, cards): return sum(vol_of(nd['axes'], cards) for nd in self.nodes if nd['op'] == 'source')
     def float_tape_bytes(self):
         """the retained forward tape (softmax weights of every reduction = its product's volume; the reciprocal rows' logits + LSE = 2 n_params; the live frontier of products / messages) + the reverse adjoint frontier (freed
         progressively: <= 2 x the peak frontier) + the parameter vector; counted per 8-byte entry"""
         return ENTRY_F * (self.red_input_entries + 3 * self.n_params + 3 * self.peak_entries) + 64 * len(self.nodes)
-    def compact_peak_bytes(self): return ENTRY_C * self.peak_entries + 128 * len(self.nodes)
+    def compact_peak_bytes(self): return self.peak_bytes_symbolic + 128 * len(self.nodes)                                                   # R3: the symbolic simultaneous ownership (admission rule) + per-node metadata slack
     def record(self): return dict(kind=self.kind, power=self.power, V=self.V, fanin=self.fanin, n_sources=self.n_sources, n_nodes=len(self.nodes), n_reductions=self.n_reductions, max_splits=self.max_splits, work_cells=self.work_cells, peak_entries=self.peak_entries, n_params=self.n_params, float_tape_bytes=self.float_tape_bytes(), compact_peak_bytes=self.compact_peak_bytes(), sha256=self.sha256, stages=[dict(v=s['v'], groups=[(g['agg'], len(g['inputs']), vol_of(g['union'], self.cards)) for g in s.get('groups', [])]) for s in self.stages])
 
 
-def build_plans(M_par, prop_order, parents, order_elim, V=V_UNION, fanin=FANIN):
-    """the cap plan (power 1) and the moment plan (power 2) of one frozen graph"""
+def build_plans(M_par, prop_order, parents, order_elim, V=V_UNION, fanin=FANIN, budget=None, clock=None):
+    """the cap plan (power 1) and the moment plan (power 2) of one frozen graph (DGP7 repair R3: admitted + polled when a budget / clock is given)"""
     cards = list(M_par.cards); scopes = [tuple(sc) for sc, _ in M_par.factors]
-    return CircuitPlan(cards, prop_order, parents, scopes, 1, order_elim, V, fanin), CircuitPlan(cards, prop_order, parents, scopes, 2, order_elim, V, fanin)
+    return CircuitPlan(cards, prop_order, parents, scopes, 1, order_elim, V, fanin, clock=clock, budget=budget), CircuitPlan(cards, prop_order, parents, scopes, 2, order_elim, V, fanin, clock=clock, budget=budget)
 
 
 # ---------------------------------------------------------------- the FLOATING evaluator (log space; forward tape + reverse)
@@ -211,10 +224,10 @@ def compact_evaluate(plan, M_par, prop, budget, clock):
     """upward compact value of the closure at the ACTUAL counts over the structural plan: sources materialized LAZILY inside the product that consumes them (exact rationals of W_0^power; D / c for a reciprocal), products exact
     then normalized upward, SUM via the bounded upward sum, MAX by exact order, closure = exact product normalized upward. Every node is admitted before allocation (when a budget is given) and every consumed input is dropped
     + released right after its product / reduction, so the live set never exceeds the plan's lazy-source peak. Returns (value (e, m), record). The INDEPENDENT certifier (check_global.certify) re-derives the same plan."""
-    cards = list(M_par.cards); A = RM.Arith('compact'); vals = {}; charged = {}; owned = 0; t0 = CE.tnow(); cells = 0
+    cards = list(M_par.cards); A = RM.Arith('compact'); vals = {}; charged = {}; owned = 0; peak_owned = 0; t0 = CE.tnow(); cells = 0
     def admit(i, n_):
-        nonlocal owned
-        if budget is not None: budget.charge(n_, 'circuit node %d (%s)' % (i, plan.nodes[i]['op'])); charged[i] = n_; owned += n_
+        nonlocal owned, peak_owned
+        if budget is not None: budget.charge(n_, 'circuit node %d (%s)' % (i, plan.nodes[i]['op'])); charged[i] = n_; owned += n_; peak_owned = max(peak_owned, owned)      # DGP7 repair R3: the ACTUAL simultaneous ownership is measured and reconciled with the plan's symbolic peak
     def drop(j):
         nonlocal owned
         vals[j] = None
@@ -234,7 +247,7 @@ def compact_evaluate(plan, M_par, prop, budget, clock):
                 vals[i] = A.norm(np.broadcast_to(acc, [cards[a] for a in u]).copy()); cells += vol * len(nd['inputs'])
                 for j in nd['inputs']: drop(j)
             elif op == 'reduce':
-                x = vals[nd['input']]; ax = plan.nodes[nd['input']]['axes'].index(nd['axis']); admit(i, ENTRY_C * int(x.size) + 128); clock.poll('before circuit reduce %d' % i)
+                x = vals[nd['input']]; ax = plan.nodes[nd['input']]['axes'].index(nd['axis']); admit(i, ENTRY_C * vol_of(nd['axes'], cards) + 128); clock.poll('before circuit reduce %d' % i)      # R3: the reduce output is what stays live (its input is dropped right after)
                 if nd['agg'] == 'max': out = np.maximum.reduce(x, axis=ax) if x.shape[ax] > 1 else x.reshape([s_ for k_, s_ in enumerate(x.shape) if k_ != ax])
                 else:
                     mv = np.moveaxis(x, ax, -1); flat = mv.reshape(-1, mv.shape[-1]); res = np.empty(flat.shape[0], dtype=object)
@@ -252,6 +265,8 @@ def compact_evaluate(plan, M_par, prop, budget, clock):
                     val = norm_up(*mul_exact(val, x))
                 vals[i] = val
         res = vals[plan.closure]
-        return res, dict(seconds=CE.tnow() - t0, cells=cells, log2=(log2_up(res) if res[1] else -math.inf), peak_admitted_ok=True)
+        sym = plan.compact_peak_bytes()
+        if budget is not None and peak_owned > sym: raise CE.Defect('compact circuit: the actual simultaneous ownership %d B exceeds the plan\'s symbolic peak %d B' % (peak_owned, sym))
+        return res, dict(seconds=CE.tnow() - t0, cells=cells, log2=(log2_up(res) if res[1] else -math.inf), peak_owned_bytes=peak_owned, symbolic_peak_bytes=sym, peak_reconciled=(budget is None or peak_owned <= sym))
     finally:
         if owned > 0 and budget is not None: budget.release(owned)

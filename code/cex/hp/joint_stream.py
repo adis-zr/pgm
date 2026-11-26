@@ -147,7 +147,8 @@ class JointStream(Stream):
         after its references are dropped (its record stays)"""
         if self.pending is not None: raise StreamRefused('PENDING', 'an epoch switch with a pending batch is refused')
         # DGP6 repair (finding 4: transactional epoch commit): EVERY variable-size preparation / diagnostic first (constants, fingerprint, the prior epoch's normalizer diagnostic + record), then the FINAL allowance poll, then the bounded swap
-        k = self._epoch_constants(prop); ep = Epoch(); ep.index = len(self.epochs); ep.prop = prop; ep.B_eff_log2 = k['B_eff_log2']; ep.logB_m = k['logB_m']; ep.e_B = k['e_B']; ep.eps_num = k['eps_num']; ep.rho_X = k['rho_X']; ep.cap_tol = k['cap_tol']; ep.E_int = k['E_int']; ep.t_commit = (self.cert.t if hasattr(self, 'cert') else 0); ep.draws_from = self.draws; ep.draws_to = None; ep.parent = (self.epochs[-1].index if self.epochs else None); ep.allowance_end = self.allowance_end; ep.draws_n = 0; ep.sumX = 0.0; ep.sumX2 = 0.0; ep.maxX = 0.0; ep.zero_n = 0
+        k = self._epoch_constants(prop); ep = Epoch(); ep.index = len(self.epochs); prior_records = [e.record for e in self.epochs]                  # DGP7 repair R5: the variable-sized epochs record list is assembled BEFORE the authoritative poll
+        ep.index = len(self.epochs); ep.prop = prop; ep.B_eff_log2 = k['B_eff_log2']; ep.logB_m = k['logB_m']; ep.e_B = k['e_B']; ep.eps_num = k['eps_num']; ep.rho_X = k['rho_X']; ep.cap_tol = k['cap_tol']; ep.E_int = k['E_int']; ep.t_commit = (self.cert.t if hasattr(self, 'cert') else 0); ep.draws_from = self.draws; ep.draws_to = None; ep.parent = (self.epochs[-1].index if self.epochs else None); ep.allowance_end = self.allowance_end; ep.draws_n = 0; ep.sumX = 0.0; ep.sumX2 = 0.0; ep.maxX = 0.0; ep.zero_n = 0
         ep.zcert = IG.ZCertificate(float(self.delta_s)); ep.fingerprint = self._fingerprint_of(ep, deadline, budget)
         eps_after = max(self.cert.eps_num, ep.eps_num) if hasattr(self, 'cert') else ep.eps_num
         ep.record = dict(index=ep.index, reason=reason, proposal=prop.record(), constants={kk: vv for kk, vv in k.items() if kk not in ('widening_parts',)}, widening_parts=k['widening_parts'], eps_num_epoch=ep.eps_num, eps_num_certificate_after=eps_after, cert_t_at_commit=ep.t_commit, draws_from=ep.draws_from, predecessor=ep.parent, fingerprint=ep.fingerprint, committed_offset_s=(tnow() - self.allowance_start) if self.allowance_start else None, absolute_allowance_end=self.allowance_end, live_joint_bytes=self.joint_bytes)
@@ -162,7 +163,7 @@ class JointStream(Stream):
         if prev is not None:
             prev.draws_to = self.draws; prev.record['draws_to'] = self.draws; prev.record['Z_over_cap_EB_DIAGNOSTIC_epoch'] = prev_diag
             if prev.prop is not None and prev.prop is not prop: n = prev.prop.bytes; prev.prop = None; self._release_joint(n, budget); prev.record['storage_released_bytes'] = n
-        self.epochs.append(ep); self.epoch = ep; self.fingerprint = ep.fingerprint; self.epoch_switches += int(prev is not None); self.mech['epochs'] = [e.record for e in self.epochs]; return ep
+        self.epochs.append(ep); self.epoch = ep; self.fingerprint = ep.fingerprint; self.epoch_switches += int(prev is not None); prior_records.append(ep.record); self.mech['epochs'] = prior_records; return ep
     def _release_joint(self, n, budget):
         if budget is not None and n: budget.release(min(n, self.joint_bytes)); self.joint_bytes -= min(n, self.joint_bytes); self.retained_bytes -= n
     def _fingerprint_of(self, ep, deadline, budget):
@@ -230,9 +231,11 @@ class JointStream(Stream):
         except (IG.Deadline, Deadline) as e: self.abandoned += 1; self.t_sample += tnow() - t0; return self._close('joint batch abandoned at a hard cut (%s); %d committed batches retained' % (e, self.batches))
         except IG.RangeRefused as e: self.abandoned += 1; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('NUMERIC_RANGE_REFUSED in a joint batch: %s' % str(e)[:120])
         except AssertionError as e: self.abandoned += 1; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a joint batch (rows withheld): %s' % str(e)[:120])
+        except (CE.Refused, StreamRefused) as e: self.abandoned += 1; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('%s in a joint batch (resource refusal; nothing committed): %s' % (getattr(e, 'kind', 'REFUSED'), str(getattr(e, 'reason', e))[:120]))      # DGP7 repair R4: a constructor refusal inside the batch closes THIS stream typed
     # ---- the explicit charged actions
     def pilot_action(self, hard):
         try: return self._pilot_action(hard)
+        except (CE.Refused, StreamRefused) as e: self._close('%s in the joint pilot (resource refusal): %s' % (getattr(e, 'kind', 'REFUSED'), str(getattr(e, 'reason', e))[:120])); return dict(status='REFUSED', kind=getattr(e, 'kind', 'REFUSED'), why=str(getattr(e, 'reason', e))[:200])      # DGP7 repair R4
         except Exception as e:
             import traceback; self.mech['internal_error'] = dict(stage='pilot', error=repr(e)[:200], traceback=traceback.format_exc()[-1500:]); self.defect = 'joint internal error in the pilot (optional route closed): %s' % repr(e)[:120]; self.mech['construction_defect'] = self.defect; self._close('INTERNAL in the joint pilot: %s' % repr(e)[:160]); return dict(status='INTERNAL', error=repr(e)[:200])
     def _pilot_action(self, hard):

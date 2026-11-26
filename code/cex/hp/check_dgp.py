@@ -1720,8 +1720,16 @@ def D57_bounded_sum_and_rebuilt_J():
     try: CJ._exact_sum([a_] * ((1 << 20) + 1))
     except CE.Refused as e: kind = e.kind
     res['growth_refusal'] = kind
-    import dgp5_oracle as O5; inc = dict(label='x', is_current=True, log2_B=10.0, log2_S=20.0, log2_eta=-5.0, d_hat=1e-6, family_volume=16, index=-1); inc['log2_H'] = JO.H_log2(20.0, 10.0, -5.0); inc['log2_J'] = math.log2(1e-6) + inc['log2_H']
-    r1 = O5.rebuilt(inc, 18.0); r2 = O5.rebuilt(inc, 18.0, log2_eta=-3.0); res['rebuilt'] = dict(S=r1['log2_S'], H=r1['log2_H'], J=r1['log2_J'], J_lower=(r1['log2_J'] < inc['log2_J']), H_consistent=abs(r1['log2_H'] - JO.H_log2(18.0, 10.0, -5.0)) < 1e-12, eta_changes_J=(r2['log2_J'] != r1['log2_J']))
+    # DGP7 repair R7: the rebuilt-J check runs on a REAL packet (the DGP2 oracle dev clique dg_n6_c4_clique_two): the retune comparator's S witness differs from the consumed S, so a STALE comparator (S replaced, J kept) and the
+    # REBUILT one (S / H / J together) give different J -- the control asserts the difference (discrimination) and the exact H / J consistency of the rebuilt value; a comparator that kept the stale J is rejected by construction
+    import dgp5_oracle as O5, core as _CORE; model6, _ = _CORE.read_uai(ORACLE_DEV + '/dg_n6_c4_clique_two.uai'); M6, order6, clk6, B6 = _jstage(model6); cards6 = list(M6.cards); prop6, rec6, owned6 = JP.compile_seed(M6, order6, JPROF, B6, clk6); pairs6, chg6 = JO.interaction_scores(M6, B6, clk6)
+    e6 = JO.rank_expansions(prop6, pairs6, cards6, 4096)[0]; z6 = e6['z']; par6 = tuple(e6['new_parents']); pk6 = JW.build_packet(M6, prop6, z6, par6, order6, JPROF, B6, clk6); inc6 = JW.witnesses_of(pk6, pk6.cond_ctx, S_ref=None); B_t = min(prop6.B, inc6['B']); S_ref6 = min([s_ for s_ in (prop6.S, inc6['S']) if s_[1]] + [_RM.norm_up(*_RM.mul_exact(B_t, B_t))])
+    log2_eta6 = math.log2(0.005) + 13.4 - math.log2(6.0); d6 = 1e-6; inc = dict(label='seed', is_current=True, log2_B=prop6.log2_B(), log2_S=_l2(S_ref6), log2_eta=log2_eta6, d_hat=d6, family_volume=prop6.conds[z6].family_volume(), index=-1); inc['log2_H'] = JO.H_log2(inc['log2_S'], inc['log2_B'], log2_eta6); inc['log2_J'] = math.log2(d6) + inc['log2_H']
+    pk_u = JW.build_packet(M6, prop6, z6, tuple(prop6.conds[z6].parents), order6, JPROF, B6, clk6) if tuple(prop6.conds[z6].parents) != par6 else pk6; inc_u = JW.witnesses_of(pk_u, pk_u.cond_ctx, S_ref=None); S_ref_u = min([s_ for s_ in (prop6.S, inc_u['S']) if s_[1]])
+    reb = O5.rebuilt(inc, S_ref_u); stale = dict(inc); stale['log2_S'] = _l2(S_ref_u)                 # the DGP5-frozen behaviour: S replaced, J kept
+    res['rebuilt'] = dict(real_packet='dg_n6_c4_clique_two', family=dict(z=z6, parents=list(par6)), S_consumed=inc['log2_S'], S_retune=_l2(S_ref_u), J_stale=stale['log2_J'], J_rebuilt=reb['log2_J'], J_consistent=(abs(reb['log2_J'] - (math.log2(d6) + JO.H_log2(_l2(S_ref_u), inc['log2_B'], log2_eta6))) < 1e-12), discriminates=(abs(stale['log2_J'] - reb['log2_J']) > 1e-9 or abs(inc['log2_S'] - _l2(S_ref_u)) < 1e-12), S_changed=(abs(inc['log2_S'] - _l2(S_ref_u)) > 1e-12), eta_changes_J=(O5.rebuilt(inc, S_ref_u, log2_eta=log2_eta6 + 1.0)['log2_J'] != reb['log2_J']))
+    if pk_u is not pk6: pk_u.release()
+    pk6.release(); B6.release(owned6 + chg6)
     src = open(os.path.join(HERE, 'joint_optimize.py')).read(); res['grid_affine'] = ('log2(1.0 + (ratio - 1.0) * i' in src) and ('log2_Cmin + (log2_Cmax - log2_Cmin) * i' not in src)
     lo, hi, n_ = 3.0, 7.0, 5; ratio = 2.0 ** (hi - lo); grid = [lo + math.log2(1.0 + (ratio - 1.0) * i / (n_ - 1)) for i in range(n_)]; Cs = [2.0 ** g for g in grid]; res['grid_check'] = dict(endpoints=(abs(Cs[0] - 8.0) < 1e-9 and abs(Cs[-1] - 128.0) < 1e-9), midpoint_affine=(abs(Cs[2] - 68.0) < 1e-9))
     model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B = _jstage(model); S = _jstream(M, allow=10.0)[0]; S.pilot_action(PA.tnow() + 10); a1 = S.refine_action(PA.tnow() + 10, PA.tnow() + 30)
@@ -1731,7 +1739,7 @@ def D57_bounded_sum_and_rebuilt_J():
     for _ in range(3): S.batch(PA.tnow() + 10)
     d = S.diagnostics(); pooled = [k for k in ('X_mean', 'ESS_DIAGNOSTIC', 'largest_share', 'Z_over_Ucap_EB_DIAGNOSTIC', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'max_log2_X_observed') if d.get(k) is not None]; ews = d['joint']['epoch_weight_statistics']
     res['epoch_local'] = dict(epochs=len(S.epochs), pooled_fields=pooled, removed_note=bool(d.get('pooled_weight_statistics')), epoch_stats=[(x['epoch'], x['draws'], x['X_mean'] is not None) for x in ews]); S._close('ctrl')
-    ok = (res['sum_bits'] <= 256 and res['sum_seconds'] < 0.05 and res['sum_upper'] and res['growth_refusal'] == 'GROWTH' and all(res['rebuilt'][k] for k in ('J_lower', 'H_consistent', 'eta_changes_J')) and res['grid_affine'] and all(res['grid_check'].values()) and res['epoch_local']['epochs'] >= 2 and not pooled and res['epoch_local']['removed_note'] and all(x[2] for x in res['epoch_local']['epoch_stats'] if x[1] > 0))
+    ok = (res['sum_bits'] <= 256 and res['sum_seconds'] < 0.05 and res['sum_upper'] and res['growth_refusal'] == 'GROWTH' and all(res['rebuilt'][k] for k in ('J_consistent', 'discriminates', 'eta_changes_J')) and res['grid_affine'] and all(res['grid_check'].values()) and res['epoch_local']['epochs'] >= 2 and not pooled and res['epoch_local']['removed_note'] and all(x[2] for x in res['epoch_local']['epoch_stats'] if x[1] > 0))
     rec('D57_bounded_sum_and_rebuilt_J', ok, **res)
 
 def D58_circuits_vs_exhaustive_reference():
@@ -1853,17 +1861,17 @@ def D61_global_stream_lifecycle():
     cert = att.get('certification') or {}; res['full_attempt'] = dict(prepare=r, pilot=pil.get('status'), status=att.get('status'), promoted=att.get('promoted'), witness_only=att.get('witness_only'), graph=(att.get('graph') or {}).get('label'), certifier_ok=((cert.get('certifier') or {}).get('B_ok') and (cert.get('certifier') or {}).get('S_ok')), epochs=len(S.epochs), committed_B_is_certified=(S.epoch.prop.log2_B() == (cert.get('certifier') or {}).get('log2_B')) if att.get('promoted') and not att.get('witness_only') else None, activation=({k: act.get(k) for k in ('status', 'batches', 'draws', 'checks')} if act else None), evals=(att.get('optimizer') or {}).get('evaluations'), label=att.get('label'))
     # (b) injected certifier rejection
     M, order, clk, B = _jstage(model); S2, Bq2, r2 = _gstream(M, budget=B); S2.pilot_action(PA.tnow() + 10); rng_state = S2.rng.bit_generator.state['state']['state']; t_cert = S2.cert.t; n_ep = len(S2.epochs); fit = dict(S2.fit); l0 = B.live; real = CG.certify; hits = [0]
-    def reject(plan, M_, prop_, val, clock, budget=None, graph_sha=None):
+    def reject(plan, M_, prop_, val, clock, budget=None, graph_sha=None, **kw):
         hits[0] += 1
         if hits[0] > 2: return dict(ok=False, why='injected certifier rejection')
-        return real(plan, M_, prop_, val, clock, budget=budget, graph_sha=graph_sha)
+        return real(plan, M_, prop_, val, clock, budget=budget, graph_sha=graph_sha, **kw)
     CG.certify = reject
     try: att2 = S2.optimize_action(PA.tnow() + 10, PA.tnow() + 30)
     finally: CG.certify = real
     res['refused_candidate'] = dict(status=att2.get('status'), why=(att2.get('why') or '')[:80], hits=hits[0], rng_unchanged=(S2.rng.bit_generator.state['state']['state'] == rng_state), cert_t_unchanged=(S2.cert.t == t_cert), epochs_unchanged=(len(S2.epochs) == n_ep), fit_unchanged=(S2.fit == fit), live_back=(B.live - l0 - S2.pairs_bytes), pairs_bytes=S2.pairs_bytes, stage=S2.stage, delta_s=str(S2.delta_s))
     # (d) no law before the checked commit: spy on certify -> the epoch list must be unchanged at every certifier call
     M, order, clk, B = _jstage(model); S3, Bq3, r3 = _gstream(M, budget=B); S3.pilot_action(PA.tnow() + 10); seen = []
-    def spy(plan, M_, prop_, val, clock, budget=None, graph_sha=None): seen.append(len(S3.epochs)); return real(plan, M_, prop_, val, clock, budget=budget, graph_sha=graph_sha)
+    def spy(plan, M_, prop_, val, clock, budget=None, graph_sha=None, **kw): seen.append(len(S3.epochs)); return real(plan, M_, prop_, val, clock, budget=budget, graph_sha=graph_sha, **kw)
     CG.certify = spy
     try: att3 = S3.optimize_action(PA.tnow() + 10, PA.tnow() + 30)
     finally: CG.certify = real

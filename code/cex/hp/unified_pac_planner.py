@@ -139,7 +139,8 @@ class UPlanner(UP.Planner):
     def policy_active(self): return (not self.old_policy) and (not self.force_stream) and self.primary is not None
     def primary_protected(self, W):
         """True when the probed primary's FINITE completion forecast fits the remaining work: optional constructors are deferred (reconsidered only at completed action / checkpoint boundaries)"""
-        if not self.policy_active() or self.primary_probe is None or not self.primary.ready() or self.primary.all_published(): return False
+        if not self.policy_active() or not isinstance(self.primary_probe, dict) or not self.primary_probe.get('batches') or not self.primary.ready() or self.primary.all_published(): return False      # DGP7 repair R6: no protection without an EXECUTED probe (a skipped probe below 8 s never protects)
+        if W < PROBE_POLICY_MIN_WORK_S: return False                                                                                                                                                # R6: the policy is disabled below eight seconds of remaining work
         fc = self.stream_forecast(self.primary); return fc is not None and math.isfinite(fc) and fc <= W
     # ---- forecasts
     def stream_forecast(self, S):
@@ -293,6 +294,14 @@ class UPlanner(UP.Planner):
             self.log_action(action='create_joint', kind=S.kind, stream=S.label, mode=self.direct_mode(), allowance_s=allow, absolute_allowance_end_offset_s=until - self.t_start, parent=S.label)
             if forced: self.primary = S; return self._prepare(S, min(self.adm, until), charge=False)              # forced diagnostic: the direct-proposal stream IS the request's primary; the SAME allowance bounds its preparation
             return self._prepare(S, min(self.adm, until), charge=True)
+        if k in ('global_optimize', 'global_activate', 'joint_pilot', 'joint_refine', 'probe', 'advance', 'residual_optimize', 'residual_activate'):
+            try: return self._perform_stream_action(k, d, t0)
+            except (Refused, PA.StreamRefused) as e:                                                                   # DGP7 repair R4: a resource refusal at the action boundary closes THAT stream typed; every other incumbent stays usable
+                S = d['stream']; self.E_used += (tnow() - t0) if k not in ('advance', 'global_activate', 'residual_activate') else 0.0
+                if S.live(): S._close('%s at the %s action boundary: %s' % (getattr(e, 'kind', 'REFUSED'), k, str(getattr(e, 'reason', e))[:120]))
+                self.log_action(action=k, stream=S.label, status='REFUSED_' + str(getattr(e, 'kind', 'REFUSED')), reason=str(getattr(e, 'reason', e))[:160], actual_s=tnow() - t0); return None
+        raise Defect('unknown decision kind %s' % k)
+    def _perform_stream_action(self, k, d, t0):
         if k == 'global_optimize':
             S = d['stream']; r = S.optimize_action(min(self.adm, S.allowance_end), self.adm); dt = tnow() - t0; self.E_used += dt
             self.log_action(action='global_optimize', stream=S.label, actual_s=dt, status=r.get('status'), promoted=r.get('promoted'), witness_only=r.get('witness_only'), winner=r.get('winner'), graph=(r.get('graph') or {}).get('label'), kind=r.get('kind'), why=r.get('why'), label=r.get('label'), committed_epoch=r.get('committed_epoch'), evaluations=(r.get('optimizer') or {}).get('evaluations')); return None
@@ -307,7 +316,7 @@ class UPlanner(UP.Planner):
             self.log_action(action='joint_refine', stream=S.label, actual_s=dt, status=r.get('status'), promoted=r.get('promoted'), winner=r.get('winner'), family=r.get('family'), payback=r.get('payback'), kind=r.get('kind'), why=r.get('why'), committed_epoch=r.get('committed_epoch')); return None
         if k == 'probe': return self._probe(d['stream'], d['deadline'])
         if k == 'advance': return self._advance(d['stream'], d['deadline'])
-        raise Defect('unknown decision kind %s' % k)
+        raise Defect('unknown stream action %s' % k)
     def _prepare(self, S, deadline, charge):
         """F5: a CHARGED (optional) stream's stages run against the allowance end `deadline` as their hard cutoff (a Deadline inside a stage closes the stream typed), so an optional action can never consume the
         primary's remaining time first and debit the account afterwards; the primary (uncharged) stream keeps the work cutoff"""
