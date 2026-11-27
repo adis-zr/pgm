@@ -67,7 +67,12 @@ def main():
     # charges reconcile
     tot = round(sum(r['wall_s'] for rs in receipts.values() for r in rs), 3); ch = json.load(open(os.path.join(rd, 'CHARGES.json'))) if os.path.exists(os.path.join(rd, 'CHARGES.json')) else {}
     # CHARGES.json is written by the analyzer; the analysis / packaging / validation receipts that necessarily follow it (scope *_analysis) are reconciled separately against the ledger's end_utc
-    cut = ch.get('utc'); at_analysis = round(sum(r['wall_s'] for rs in receipts.values() for r in rs if (cut is None or (r.get('end_utc') or '') <= cut)), 3); after = round(tot - at_analysis, 3)
+    # DGP8 HARNESS AMENDMENT 1: reconcile by receipt COUNT when CHARGES.json records n_receipts (the analyzer summed exactly the first n_receipts RECEIPT rows in ledger order); the utc cut alone counted the analyzer's
+    # own receipt when it ended in the same UTC second as the CHARGES.json write (a 0.4 s analysis run) -- a boundary artifact, not a charge discrepancy. The utc cut remains the fallback for records without n_receipts.
+    cut = ch.get('utc'); rc_ordered = [r for r in rows if r.get('kind') == 'RECEIPT']
+    if isinstance(ch.get('n_receipts'), int) and 0 <= ch['n_receipts'] <= len(rc_ordered): at_analysis = round(sum(r['wall_s'] for r in rc_ordered[:ch['n_receipts']]), 3)
+    else: at_analysis = round(sum(r['wall_s'] for rs in receipts.values() for r in rs if (cut is None or (r.get('end_utc') or '') <= cut)), 3)
+    after = round(tot - at_analysis, 3)
     chk('charges_reconcile_ledger', abs((ch.get('total_s') or -1) - at_analysis) < 0.01, ledger_total_at_analysis_s=at_analysis, charges_total_s=ch.get('total_s'), post_analysis_receipts_s=after, ledger_total_s=tot, note='post-analysis receipts are the analyzer / report / packaging / validation runs themselves (scope *_analysis), charged after CHARGES.json was written'); ceiling = (json.load(open(os.path.join(rd, 'BUDGET_DECLARATION.json'))).get('ceiling_s') if os.path.exists(os.path.join(rd, 'BUDGET_DECLARATION.json')) else None) or 7200; chk('charges_within_ceiling', tot <= ceiling, total_s=tot, ceiling_s=ceiling)
     # RUN_MANIFEST: every planned cell has an actual cell or an explicit reason
     rm = json.load(open(os.path.join(rd, 'RUN_MANIFEST.json'))) if os.path.exists(os.path.join(rd, 'RUN_MANIFEST.json')) else None
