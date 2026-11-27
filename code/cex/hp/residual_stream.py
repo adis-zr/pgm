@@ -109,7 +109,7 @@ class ResidualStream(JS.JointStream):
         self._work0 = self.epochs[0].prop.work(self.arity_sum, self.Kq) if self.epochs[0].prop is not None else getattr(self, '_work0', prop.work(self.arity_sum, self.Kq))
         live = st.live_atoms(); att['bank'] = dict(version=st.version, live_atoms=len(live), entries=st.entries(), bytes=st.bytes_live(), log2_envelope_B=_l2(st.envelope_B), log2_consumed_B=_l2(st.consumed_B), log2_initial_seed_cap=_l2(st.initial_seed_cap))
         if not live: att.update(status='NO_RESIDUAL_INFORMATION', why='the bank holds no live atom (every checked MAX slack was a unit atom, dropped by the retention rule, or already consumed)'); self.refinement_ended = att['why']; self.attempts.append(att); self.mech['attempts'] = self.attempts; return att
-        ws = 0; best = None; best_bytes = 0; windows = []; promoted = False
+        ws = 0; best = None; best_bytes = 0; windows = []; promoted = False; postcommit_records = None
         try:
             targets = self._frozen_targets(prop, cards, B_, clk); att['graph'] = dict(self.graph, parents=None)
             clk.poll('after target selection')
@@ -186,6 +186,10 @@ class ResidualStream(JS.JointStream):
             charged_shared = B_.charge(shared, 'residual epoch %d law (shared tables re-charged; the old epoch release balances)' % len(self.epochs)); self.joint_bytes += shared + best['counts_bytes']; self.retained_bytes += shared + best['counts_bytes']
             try:
                 undo = st.apply_transaction(txn, newp, tuple(best['region']), rho_arr, best['atom_bytes'], prov, score, mean_log2, best['B_new']); st.owned += best['atom_bytes']; st.ledger.append(('transfer', best['atom_bytes'], 'replacement atom (admitted with the window workspace)'))
+                # DGP10 (DGP9 independent review; carried repair contract section 3): EVERY variable-size postcommit diagnostic is assembled HERE, after the swap and BEFORE the commit sample -- the bank record (st.record(): per-atom
+                # scopes / scores / transactions), the bank_after summary (live-atom scans) and the consumed-bytes figure the release will free; after the commit only bounded scalar bookkeeping and the <= BANK_MAX_ATOMS array drops run
+                freed_prosp = sum(a_.bytes for a_ in st.atoms.values() if a_.consumed and a_.bytes and a_.arr is not None); rec_prosp = st.record(); rec_prosp['owned_bytes'] = st.owned - freed_prosp
+                bank_after_prosp = dict(version=st.version, live_atoms=len(st.live_atoms()), entries=st.entries(), bytes=st.bytes_live(), log2_envelope_B=_l2(st.envelope_B), log2_consumed_B=_l2(st.consumed_B))
                 ep = self._commit_epoch(newp, 'promoted:%s' % best['kind'], end, B_)
             except BaseException:
                 if undo is not None: st.revert_transaction(undo); st.owned -= best['atom_bytes']
@@ -193,6 +197,7 @@ class ResidualStream(JS.JointStream):
             # DGP9 repair (original DGP7 finding F3, residual commit tail): the transaction's commit time IS the epoch's one authoritative sample (taken inside _commit_epoch before the swap); the tail after it is BOUNDED
             # (release of <= BANK_MAX_ATOMS consumed arrays, scalar bookkeeping); no second timestamp is taken for the commit; the payback diagnostic uses the same sample
             t_commit = ep.committed_at; best_bytes = 0; freed = st.release_consumed(txn['id']); txn['consumed_atoms_released_bytes'] = freed; self.bank_bytes = st.owned; txn['committed_offset_s'] = t_commit - self.allowance_start; txn['epoch_after'] = ep.index; txn['version_after'] = st.version; txn['new_atom'] = undo['new_aid']
+            assert freed == freed_prosp, (freed, freed_prosp); postcommit_records = (rec_prosp, bank_after_prosp)                   # the prospective records ARE the post-release state (asserted on the freed bytes)
             self.transactions_done += 1; promoted = True; self.activation_pending = (best['kind'] == 'changed_law'); self.promotions.append(txn); self.mech['promotion'] = txn; self.mech['transactions'] = self.promotions
             att.update(status='PROMOTED', promoted=True, transaction=txn, committed_epoch=ep.index, label=('actual law change' if best['kind'] == 'changed_law' else 'cap-only change (same law)'))
             T_after = work_end - t_commit; att['payback'] = dict(T_before_s=T_before, T_after_s=T_after, construction_seconds=t_commit - t0, d_ratio=best['d_ratio'], rank=best['rank'], note='end-to-end payback is judged by the harness on completions / widths / time; a local proxy win is not a performance win')
@@ -206,8 +211,10 @@ class ResidualStream(JS.JointStream):
         finally:
             if ws: B_.release(ws); ws = 0
             if best_bytes and not promoted: B_.release(best_bytes)
-            att.setdefault('windows', windows); att['bank_after'] = dict(version=st.version, live_atoms=len(st.live_atoms()), entries=st.entries(), bytes=st.bytes_live(), log2_envelope_B=_l2(st.envelope_B), log2_consumed_B=_l2(st.consumed_B))
-            self.bank_bytes = st.owned; self.mech['residual_bank'] = dict(st.record(), sink=self.sink_record)
+            att.setdefault('windows', windows)
+            if promoted and postcommit_records is not None: att['bank_after'] = postcommit_records[1]; self.mech['residual_bank'] = dict(postcommit_records[0], sink=self.sink_record)          # DGP10: no bank scan / record after the commit sample
+            else: att['bank_after'] = dict(version=st.version, live_atoms=len(st.live_atoms()), entries=st.entries(), bytes=st.bytes_live(), log2_envelope_B=_l2(st.envelope_B), log2_consumed_B=_l2(st.consumed_B)); self.mech['residual_bank'] = dict(st.record(), sink=self.sink_record)
+            self.bank_bytes = st.owned
             att['seconds'] = tnow() - t0; att['ended_offset_s'] = (tnow() - self.allowance_start) if self.allowance_start else None; self.attempts.append(att); self.mech['attempts'] = self.attempts; self.mech['refinement_ended'] = self.refinement_ended
             self.measurements.append(dict(kind='joint_action', action='residual_optimize', seconds=att['seconds'], completed=(att.get('status') in ('PROMOTED', 'KEPT_INCUMBENT')), features=dict(status=att.get('status'), promoted=att.get('promoted'), windows=len(windows), mode=self.mode)))
         if self.transactions_done >= p['max_transactions'] and self.refinement_ended is None: self.refinement_ended = 'transaction cap (%d successful transactions per request)' % p['max_transactions']
