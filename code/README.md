@@ -1,6 +1,6 @@
 # Retained implementations
 
-The supported entrypoint is now `pgm.infer` / `python -m pgm`; see the root README.
+The supported entrypoint is `pgm.infer` / `python -m pgm`; see the root README.  Consolidation step 1 (27 Nov 2026) relocated the live implementations to `src/pgm/algorithms/*`; the historical module paths here are alias shims returning the canonical module objects (`documentation/consolidation/step1/PATH_MAP.json`).  Every file under `code/` is classified in `research/CLASSIFICATION.json`.
 
 This directory preserves the algorithm implementations and historical campaign interfaces used by the research program. Public adapters isolate their module policies, numerical state and resource lifetimes. Existing direct worker commands remain compatibility/reproduction interfaces, not separate recommended user APIs.
 

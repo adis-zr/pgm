@@ -3,14 +3,15 @@
  "counts": {
   "benchmark-inputs": 122,
   "benchmark-tooling": 36,
-  "correctness-qualification": 82,
-  "documentation": 16,
+  "correctness-qualification": 84,
+  "documentation": 17,
   "historical-evidence": 170,
-  "packaging": 10,
+  "packaging": 11,
   "production": 90,
   "production-shim": 47,
   "research-campaign-tooling": 139,
-  "specialist": 55
+  "specialist": 61,
+  "unclassified": 1
  },
  "files": {
   ".gitattributes": {
@@ -2601,6 +2602,14 @@
    "cls": "correctness-qualification",
    "note": "step-1 qualification receipts"
   },
+  "documentation/consolidation/step1/qualification/04_research/specialist_conformance_pytest.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/tools/classify_tree.py": {
+   "cls": "packaging",
+   "note": "step-1 consolidation tools"
+  },
   "documentation/consolidation/step1/tools/closure_inventory.py": {
    "cls": "packaging",
    "note": "step-1 consolidation tools"
@@ -2640,6 +2649,14 @@
   "pyproject.toml": {
    "cls": "packaging",
    "note": "repository root"
+  },
+  "research/CLASSIFICATION.json": {
+   "cls": "unclassified",
+   "note": ""
+  },
+  "research/README.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
   },
   "src/pgm/__init__.py": {
    "cls": "production",
@@ -2985,6 +3002,30 @@
    "cls": "production",
    "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
   },
+  "src/pgm/specialists/__init__.py": {
+   "cls": "specialist",
+   "note": "explicit specialist entrypoints"
+  },
+  "src/pgm/specialists/_bridge.py": {
+   "cls": "specialist",
+   "note": "explicit specialist entrypoints"
+  },
+  "src/pgm/specialists/cbi.py": {
+   "cls": "specialist",
+   "note": "explicit specialist entrypoints"
+  },
+  "src/pgm/specialists/cqr.py": {
+   "cls": "specialist",
+   "note": "explicit specialist entrypoints"
+  },
+  "src/pgm/specialists/h4a.py": {
+   "cls": "specialist",
+   "note": "explicit specialist entrypoints"
+  },
+  "src/pgm/specialists/sf.py": {
+   "cls": "specialist",
+   "note": "explicit specialist entrypoints"
+  },
   "src/pgm/supervision.py": {
    "cls": "production",
    "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
@@ -3078,6 +3119,10 @@
    "note": "portable public / repair / regression tests"
   },
   "tests/test_public_planning.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_specialists_and_registry.py": {
    "cls": "correctness-qualification",
    "note": "portable public / repair / regression tests"
   }

@@ -12,26 +12,28 @@ The objective is broad end-to-end advantages over libDAI as problems scale, with
 from pgm import infer
 
 result = infer("model.uai", budget=20, memory_mib=3072,
-               epsilon="1/200", delta="1/1000000")
+               epsilon="1/200", delta="1/1000000", policy="accepted")
 if result.complete:
-    print(result.guarantee, result.probability(variable=0, state=1))
+    print(result.guarantee, result.policy, result.probability(variable=0, state=1))
 else:
     print(result.outcome, result.to_dict()["published"])
 ```
 
-Evidence is read from the adjacent `model.uai.evid` file; a missing file means no evidence. By default the request covers every state of every original nonobserved variable. `queries=[(variable, state), ...]` selects original singleton coordinates explicitly; observed coordinates are supported after positive evidence mass is established. Queries are recovered in the original model, not returned in a compressed internal state space.
+Evidence is read from the adjacent `model.uai.evid` file; a missing file means no evidence. By default the request covers every state of every original nonobserved variable. `queries=[(variable, state), ...]` restricts the inventory.
 
-`mode="auto"` permits all three guarantee classes. `mode="deterministic"` forbids PAC publication; `mode="exact"` publishes only exact represented values. `delta=0` also selects deterministic mode. Finite budgets may produce partial results or typed refusals. The current public API does not silently interpret a joint query, normalizer or expectation as a singleton request; the older CQR finite-query interface is retained separately until it has an explicit common adapter.
+`mode="auto"` permits all three guarantee classes. `mode="deterministic"` forbids PAC publication; `mode="exact"` publishes only exact represented values. `delta=0` also selects deterministic mode.
+
+`policy` selects the public scheduling policy, separately from the guarantee mode: `"accepted"` (the DEFAULT since consolidation step 1) runs the accepted engine v2.13.2 through the common contract with its benchmarked configuration; `"experimental"` runs the frozen `structural-portfolio-1` of the scored commit `3283cfd`. Every result records `policy`, `policy_version`, the full `policy_record` and the PAC `risk_allocations`. See `documentation/consolidation/step1/PUBLIC_API_AND_POLICIES.md`.
 
 The same API is available from the command line:
 
 ```bash
 python -m pgm --input model.uai --output result.json \
-  --budget 20 --memory-mib 3072 --epsilon 1/200 --delta 1/1000000
+  --budget 20 --memory-mib 3072 --epsilon 1/200 --delta 1/1000000 [--policy accepted|experimental]
 python -m pgm --capabilities
 ```
 
-Results contain original coordinate inventory, exact rational endpoint/point strings, guarantees, input hashes, attempt outcomes, resource measurements and the selection reasons. `EXACT` means a point enclosure, not just use of an exact inference algorithm. `DETERMINISTIC` denotes a checked numerical enclosure. `PAC` carries the request's allocated probability allowance. Coordinatewise points need not form an exactly normalized probability vector; their interval box must intersect the simplex. `NOT_PUBLISHED` is never an approximate point answer.
+Results contain the original coordinate inventory, exact rational endpoint/point strings, guarantees, input hashes, attempt outcomes, resource measurements and the selection reasons. `EXACT` means a point; `DETERMINISTIC` a checked enclosure with an epsilon-safe point; `PAC` an enclosure that spends the request's delta allowance.
 
 ## Installation and native builds
 
@@ -48,15 +50,17 @@ The numerical dependencies are NumPy, gmpy2, SciPy and psutil. Linux and macOS r
 
 | Location | Role |
 |---|---|
-| `src/pgm/api.py`, `contracts.py` | Supported API and request/result types |
-| `src/pgm/planning.py`, `switchboard.py` | Bounded structural inspection and one automatic policy |
-| `src/pgm/backends/` | Process-isolated adapters to retained implementations |
-| `src/pgm/registry.py` | Explicit automatic and specialist capability inventory |
-| `code/cex/newarm`, `blockres`, `hp` | Retained numerical/algorithm implementations; historical commands are compatibility interfaces |
-| `code/cex/cqr`, `code/cbi`, `code/sf`, `code/h4a` | Preserved specialist/query interfaces and research references |
-| `tests/` | Portable exact-oracle, resource, publication and API correctness tests |
-| `benchmarks/external/` | Frozen external suite, exposure splits and libDAI comparison harness |
-| `documentation/` | Architecture, migration scope and independent review |
+| `src/pgm/api.py`, `contracts.py`, `__main__.py` | Supported API, request/result types, CLI |
+| `src/pgm/policies/` | Explicit public policies: `accepted` (default) and `experimental` |
+| `src/pgm/switchboard.py`, `planning/`, `runtime/`, `validation/` | Controller, bounded inspection, supervised attempts, common publication |
+| `src/pgm/model/uai.py` | The one input boundary (exact reader, binding, original inventory) |
+| `src/pgm/backends/` | Explicit process-isolated adapters (structural, block, quotient, response) and the worker |
+| `src/pgm/algorithms/` | The canonical implementations: structural, block (accepted engine), quotient, response, with their native sources and build records |
+| `src/pgm/specialists/`, `registry.py` | Explicit specialist entrypoints (CQR, CBI, SF, H4) and the capability registry |
+| `code/` | Historical layout: alias shims at the relocated paths, campaign tooling, specialists, frozen snapshots, evidence (`research/CLASSIFICATION.json`) |
+| `tests/` | Portable exact-oracle, resource, publication, API, boundary and parity tests |
+| `benchmarks/external/` | Frozen external suite, exposure history, libDAI harness with explicit policy arms, the step-2 plan |
+| `documentation/` | Architecture, reviews, consolidation step 1 (manifest, path map, capability matrix, blocked controls, qualification) |
 
 This is a staged consolidation. Retained algorithms and pinned historical snapshots are not deleted merely because a newer entrypoint does not invoke them. The first stage standardizes selection and lifetime boundaries. Future extraction of numerical modules must preserve these contracts and the external suite.
 

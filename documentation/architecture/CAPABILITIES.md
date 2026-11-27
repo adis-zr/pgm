@@ -1,3 +1,5 @@
+> Source inspection at `d6d751d`, kept as a record.  The current machine-readable inventory is `../consolidation/step1/CAPABILITY_MATRIX.json` (from `pgm.registry`).
+
 # Capability inventory and consolidation boundary
 
 Source inspected: merged main `d6d751d`, including frozen DGP10 engine `13c4302`. This is a source inspection and architecture recommendation, not a new performance experiment. No engine source was changed and no benchmark was run for this inventory.

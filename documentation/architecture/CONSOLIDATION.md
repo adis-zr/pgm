@@ -1,3 +1,5 @@
+> Record of the pre-step-1 contract (first-stage boundary at `f8197e6`).  The implemented layout is described in `ARCHITECTURE.md`; the policy change (accepted engine as the default) in `../consolidation/step1/PUBLIC_API_AND_POLICIES.md`.
+
 # Consolidation contract and first-stage boundary
 
 The public task is a nonnegative rational UAI model, evidence, original singleton-coordinate queries, an accuracy requirement, time and memory. All recognition, failed construction, execution, recovery and publication count. The interface does not expose a benchmark family or require the caller to select an algorithm.
