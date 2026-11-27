@@ -266,7 +266,9 @@ def certify(M, budget, clock, l=None, u=None, policy=None):
             attempts.append(dict(attempt=k, extra_margin=e, l=lk, u=uk, width_float=uk - lk, lower_ok=lo_['ok'], upper_ok=hi_['ok'], min_pivot_lower=min(lo_['min_pivot_lower'], hi_['min_pivot_lower']), seconds=dt, gap_g_float=((1 - (uk - lk) / 2) / n)))
             low, high, l_used, u_used = lo_, hi_, lk, uk
             if lo_['ok'] and hi_['ok']: break
-        if low is None: return dict(eligible=False, refusal=dict(kind='SPECTRAL_WIDTH', reason=stop or 'no proof attempt'), l=l0, u=u0, width=None, width_proposal_float=u0 - l0, width_exact=str(F(u0) - F(l0)), gap_g=None, proposal=prop, policy=policy['name'], attempts=attempts, dimension=D, n=n, seconds=CE.tnow() - t0, bytes=owned, retained_bytes=retained, cache=cache_rec, **_strip(built))
+        if low is None:
+            w0 = F(u0) - F(l0); w0_up = math.nextafter(float(w0), math.inf) if F(float(w0)) < w0 else float(w0)                 # the PROPOSED width (no proof was attempted: the width test alone refuses); reported as `width` for the refusal record, flagged unproved
+            return dict(eligible=False, refusal=dict(kind='SPECTRAL_WIDTH', reason=stop or 'no proof attempt'), l=l0, u=u0, width=w0_up, width_proved=False, width_proposal_float=u0 - l0, width_exact=str(w0), margin_m=float(1 - w0 / 2), gap_g=None, proposal=prop, policy=policy['name'], attempts=attempts, dimension=D, n=n, seconds=CE.tnow() - t0, bytes=owned, retained_bytes=retained, cache=cache_rec, **_strip(built))
         l, u = l_used, u_used
         # w = u - l rounded UP; m = 1 - w / 2 rounded DOWN; g = m / n rounded DOWN (exact dyadics via Fractions of the floats)
         wF = F(u) - F(l); mF = 1 - wF / 2; gF = mF / n

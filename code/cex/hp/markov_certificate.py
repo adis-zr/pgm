@@ -11,7 +11,8 @@ row; the whole variable publishes or none of its rows (the points need the row);
 import math
 from fractions import Fraction as F
 import spectral_witness as SW
-PROFILE = dict(beta_share='delta_route / 2', policies=dict(fixed=dict(checkpoints_J=4, checkpoint_rule='N_j = ceil(N_max / 2^(J - j)), j = 1..J (geometric to the frozen-rate N_max; frozen before sampling)', delta_j_rule='delta_sample / J (equal split)'),
+PROFILE = dict(beta_share='delta_route / 2', checkpoints_J=4, checkpoint_rule='policy fixed: N_j = ceil(N_max / 2^(J - j)), j = 1..J (geometric; frozen before sampling)', delta_j_rule='policy fixed: delta_sample / J (equal split)',          # the DGP8 (policy fixed) keys kept at the top level for the inherited controls
+               policies=dict(fixed=dict(checkpoints_J=4, checkpoint_rule='N_j = ceil(N_max / 2^(J - j)), j = 1..J (geometric to the frozen-rate N_max; frozen before sampling)', delta_j_rule='delta_sample / J (equal split)'),
                                                         revised=dict(J_max=64, checkpoint_rule='N_j = ceil(rho_N^(j - 1) N_1), j = 1..J_max (finite, increasing; N_1 and rho_N frozen from development cost data before scoring)', delta_j_rule='delta_sample / (j (j + 1)) (summable: sum_j < delta_sample)')),
                concentration='Leon-Perron (2004) Theorem 1 eq. (3) for the stationary reversible chain + union bound over the Q indicators and over the DECLARED checkpoints; the whole post-burn-in path coupled within TV <= beta', rounding='exact rationals with rigorous log enclosures; square roots rounded up',
                publication='accepted epsilon-safe J-box points per variable (coarse_envelope.epsilon_safe_points); endpoint radius <= eps and simplex feasibility verified after point selection')
