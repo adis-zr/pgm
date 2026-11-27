@@ -4,6 +4,8 @@ A Python inference library with native execution kernels and one supported entry
 
 The objective is broad end-to-end advantages over libDAI as problems scale, with a fixed general policy. That is an empirical objective, not an achieved universal performance claim. The external benchmark reports wins, losses and refusals separately.
 
+**First integration candidate, not an accepted replacement.** The frozen external run at `3283cfd` completed 41/55 exposed tasks and 6/6 prospective tasks, versus libDAI junction tree's 28/55 and 0/6. It retained 27/29 prior accepted-engine external completions: DIABETES and ObjectDetection_43 regressed. PGM was faster on 4/26 mutual completions, with a maximum measured 5.47x speedup. Keep the architecture; hold default promotion until preservation and performance improve. The numerical accepted engine remains available unchanged behind its retained interface.
+
 ## Python API
 
 ```python

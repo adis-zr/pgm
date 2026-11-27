@@ -4,6 +4,10 @@ This is the repeatable performance benchmark for the supported `pgm` entrypoint.
 
 The committed inputs comprise **55 exposed regression tasks** and **6 prospective evaluation tasks**. `INPUT_MANIFEST.json` and `HOLDOUT_FREEZE.json` bind their original model/evidence bytes and preserve their separate roles. The evaluation tasks were selected before any solver run using a fixed hash rule and the available prior-exposure records. They are held-out tasks from known source families; incomplete older records prevent an absolute never-seen claim. Input files use content-based directories to prevent accidental benchmark-name dispatch.
 
+**Exposure update, 27 November 2026:** the complete campaign at `3283cfd` has now scored all 61 tasks. The original manifests preserve their roles in that experiment; all 61 are exposed regression inputs for subsequent development. `EXPOSURE_HISTORY.json` records the transition. Reusing the six under the `eval` command does not create new unseen evidence. A later prospective claim requires a separately selected and frozen external cohort.
+
+That campaign recorded all 366 cells with no identity/scoring or published-geometry faults. PGM/JT completions were 34/25 on the historical 46, 7/3 on the nine extensions, and 6/0 on the prospective six. Prior accepted-engine external coverage was retained on 27/29 tasks; DIABETES and ObjectDetection_43 were lost. The policy remains on preservation/performance hold. Results and raw receipts are preserved separately from the source tree. Checkout `3283cfd` to recover the exact scored source; this later documentation update changes no solver or harness code.
+
 ## Prerequisites
 
 Use the installed project environment with Python 3.12, NumPy, gmpy2, psutil and SciPy. The current run's exact dependency versions are captured at freeze time. Before freezing:
