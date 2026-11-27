@@ -128,7 +128,9 @@ def analyze():
     fresh_an = {}
     for (t, s), r in sorted(fresh.items()):
         if 'c4' in t and 'half' in t:
-            A = r['arms']; w_h = wr(A.get('HB_R')); w_r = wr(A.get('RESPONSE')); fresh_an['%s/seed%d' % (t, s)] = dict(HB_R_worst=w_h, RESPONSE_worst=w_r, ratio=((w_r / w_h) if (isinstance(w_r, (int, float)) and isinstance(w_h, (int, float)) and w_h > 0) else None), meets_half=(isinstance(w_r, (int, float)) and isinstance(w_h, (int, float)) and w_r <= 0.5 * w_h))
+            A = r['arms']; w_h = wr(A.get('HB_R')); w_r = wr(A.get('RESPONSE')); ref_h = (A.get('HB_R') or {}).get('refusal'); ref_r = (A.get('RESPONSE') or {}).get('refusal')
+            if ref_h or ref_r: fresh_an['%s/seed%d' % (t, s)] = dict(HB_R_worst=w_h, RESPONSE_worst=w_r, ratio=None, meets_half=None, classified='comparator refused (%s / %s): not a mechanism ratio' % (ref_h, ref_r))        # (harness amendment 3: a refused comparator is classified separately, never a 0.5 / 0.5 ratio)
+            else: fresh_an['%s/seed%d' % (t, s)] = dict(HB_R_worst=w_h, RESPONSE_worst=w_r, ratio=((w_r / w_h) if (isinstance(w_r, (int, float)) and isinstance(w_h, (int, float)) and w_h > 0) else None), meets_half=(isinstance(w_r, (int, float)) and isinstance(w_h, (int, float)) and w_r <= 0.5 * w_h))
     all_ratios = {}
     for sub, rows in (('main', main), ('fresh', fresh)):
         for (t, s), r in sorted(rows.items()):
@@ -142,12 +144,16 @@ def analyze():
             for a in ARMS: e[a][s] = bool((r['arms'].get(a) or {}).get('complete'))
         summ = {}
         for t, e in out.items():
-            inc = (meta.get(t) or {}).get('archived_incumbent') or {}; cur_fail = inc.get('current_failure'); d9 = (meta.get(t) or {}).get('archived_dgp9') or {}
-            summ[t] = dict(current_failure=cur_fail, both_seeds={a: (e[a].get(0, False) and e[a].get(1, False)) for a in ARMS}, one_seed={a: [s for s in (0, 1) if e[a].get(s)] for a in ARMS}, new_completion={a: (e[a].get(0, False) and e[a].get(1, False) and bool(cur_fail)) for a in ('HB_R', 'RESPONSE')}, dgp9_hb_revised_complete={s: ((d9.get(str(s)) or {}).get('HB_REVISED') or {}).get('complete') for s in (0, 1)})
+            inc = (meta.get(t) or {}).get('archived_incumbent') or {}; d9 = (meta.get(t) or {}).get('archived_dgp9') or {}
+            # harness amendment 3 (classification only): 'current failure' = the archived incumbent record when one exists (DGP6-DGP8 REPAIRED / BASE never completed), else the SAME-ROUND INCUMBENT_R not completing in both seeds AND the
+            # archived DGP9 INCUMBENT (when recorded) not completing; a 'new completion' = both seeds complete on a current failure (the spec's both-seeds rule; the incumbent's failure is what makes it NEW)
+            inc_same_round_fails = not (e['INCUMBENT_R'].get(0, False) and e['INCUMBENT_R'].get(1, False)); d9_inc = [((d9.get(str(s_)) or {}).get('INCUMBENT') or {}).get('complete') for s_ in (0, 1)]
+            cur_fail = inc.get('current_failure') if inc.get('current_failure') is not None else (inc_same_round_fails and not any(d9_inc))
+            summ[t] = dict(current_failure=cur_fail, current_failure_basis=('archived incumbent (DGP6-DGP8)' if inc.get('current_failure') is not None else 'same-round INCUMBENT_R (both seeds) and the archived DGP9 INCUMBENT'), incumbent_r_same_round_both_seeds=(not inc_same_round_fails), both_seeds={a: (e[a].get(0, False) and e[a].get(1, False)) for a in ARMS}, one_seed={a: [s for s in (0, 1) if e[a].get(s)] for a in ARMS}, new_completion={a: (e[a].get(0, False) and e[a].get(1, False) and bool(cur_fail)) for a in ('HB_R', 'RESPONSE')}, dgp9_hb_revised_complete={s: ((d9.get(str(s)) or {}).get('HB_REVISED') or {}).get('complete') for s in (0, 1)}, dgp9_incumbent_complete={s: d9_inc[s] for s in (0, 1)})
         return summ
     comp_main = completion_table(main); comp_fresh = completion_table(fresh)
     newc = [t for t, v in comp_main.items() if v['new_completion']['RESPONSE'] or v['new_completion']['HB_R']]; newc_f = [t for t, v in comp_fresh.items() if v['new_completion']['RESPONSE'] or v['new_completion']['HB_R']]
-    res['gates']['completion'] = dict(status=('NEW COMPLETION (exposed)' if newc else ('NO NEW COMPLETION' if main else 'NOT RUN')), exposed=comp_main, fresh=comp_fresh, new_completions_exposed=newc, new_completions_fresh=newc_f, rule='every original coordinate epsilon-published with positive mass and a valid timely receipt in BOTH seeds of a model; wide valid enclosures count for partial accuracy only; one-seed completions reported separately')
+    res['gates']['completion'] = dict(status=(('NEW COMPLETION (exposed %s; fresh %s)' % (newc, newc_f)) if (newc or newc_f) else ('NO NEW COMPLETION' if main else 'NOT RUN')), exposed=comp_main, fresh=comp_fresh, new_completions_exposed=newc, new_completions_fresh=newc_f, one_seed_only={t: {a: v['one_seed'][a] for a in ('HB_R', 'RESPONSE') if v['one_seed'][a] and not v['both_seeds'][a]} for t, v in list(comp_main.items()) + list(comp_fresh.items()) if any(v['one_seed'][a] and not v['both_seeds'][a] for a in ('HB_R', 'RESPONSE'))}, rule='every original coordinate epsilon-published with positive mass and a valid timely receipt in BOTH seeds of a model; wide valid enclosures count for partial accuracy only; one-seed completions reported separately')
     # ---- gate 5: preservation (INCUMBENT_R cohorts; RESPONSE keeps the DGP9 HB successes; passing n32 across arms)
     d7 = load(os.path.join(DGP7, 'RESULTS.json')) or {}; hist7 = {sub: {r['task']: (r['arms'].get('REPAIRED') or {}).get('complete') for r in (d7.get('tables') or {}).get(sub, [])} for sub in ('preservation_18', 'preservation_13')}; hist24 = {t['name']: True for t in tp.get('preservation_24', [])}
     pres = {}
@@ -243,9 +249,9 @@ def report():
     P(); P('## 4. Completion gate: **%s**' % G['completion']['status']); P()
     for lab, tab in (('exposed', G['completion']['exposed']), ('fresh', G['completion']['fresh'])):
         P('%s:' % lab); P()
-        for t, x in tab.items(): P('- %s (current failure %s): both seeds %s; one-seed %s; DGP9 HB_REVISED complete %s' % (t, x['current_failure'], x['both_seeds'], x['one_seed'], x['dgp9_hb_revised_complete']))
+        for t, x in tab.items(): P('- %s (current failure %s by %s): both seeds %s; one-seed %s; DGP9 HB_REVISED complete %s; DGP9 INCUMBENT complete %s' % (t, x['current_failure'], x.get('current_failure_basis'), {a: b for a, b in x['both_seeds'].items() if b} or 'none', {a: s_ for a, s_ in x['one_seed'].items() if s_} or 'none', x['dgp9_hb_revised_complete'], x.get('dgp9_incumbent_complete')))
         P()
-    P('New completions (both seeds, current failures): exposed %s; fresh %s.' % (G['completion']['new_completions_exposed'] or 'NONE', G['completion']['new_completions_fresh'] or 'NONE')); P()
+    P('New completions (both seeds, current failures): exposed %s; fresh %s. One-seed-only completions (reported separately, not completions): %s.' % (G['completion']['new_completions_exposed'] or 'NONE', G['completion']['new_completions_fresh'] or 'NONE', G['completion'].get('one_seed_only') or 'none')); P()
     P('## 5. Preservation gate: **%s**' % G['preservation']['status']); P()
     for k, x in G['preservation']['cohorts'].items(): P('- %s: cohort %d, ran %d, complete %d, lost %s, gained %s, not run %d' % (k, x['cohort_size'], x['ran'], x['complete'], x['lost'], x['gained'], len(x['not_run'])))
     for k, x in G['preservation']['response_keeps_dgp9_hb_successes'].items(): P('- DGP9 HB success cell %s (seed %s): RESPONSE complete %s (worst %s); HB_R complete %s (worst %s); DGP9 HB_REVISED radius %s' % (k, x['seed'], x['RESPONSE_complete'], f4(x['RESPONSE_worst']), x['HB_R_complete'], f4(x['HB_R_worst']), f4(x['dgp9_radius'])))
@@ -257,7 +263,7 @@ def report():
     P('| fresh input | seed | INCUMBENT_R r | HB_R r (eligible) | RESPONSE r (eligible, executed) | completions |'); P('|---|---|---:|---|---|---|')
     for t, per in G['generalization']['fresh'].items():
         for s, x in per.items(): P('| %s | %s | %s | %s (%s) | %s (%s, %s) | %s |' % (t, s, f4(x['worst']['INCUMBENT_R']), f4(x['worst']['HB_R']), x['eligible']['HB_R'], f4(x['worst']['RESPONSE']), x['eligible']['RESPONSE'], x['response_executed'], [a for a, c in x['complete'].items() if c]))
-    P(); P('Fresh card-4 half analogues of gate 3: %s' % json.dumps({k: dict(ratio=(round(v_['ratio'], 3) if isinstance(v_['ratio'], float) else None), meets_half=v_['meets_half']) for k, v_ in G['generalization']['card4_half_gate_analogue'].items()})); P()
+    P(); P('Fresh card-4 half analogues of gate 3: %s' % json.dumps({k: dict(ratio=(round(v_['ratio'], 3) if isinstance(v_['ratio'], float) else None), meets_half=v_['meets_half'], classified=v_.get('classified')) for k, v_ in G['generalization']['card4_half_gate_analogue'].items()})); P()
     P('## 8. Which term limits the result (per heat-bath cell) and same-trajectory attribution'); P(); P('Counts: %s.' % R['verdict_inputs']['limiting_term_counts']); P()
     P('| cell | term | N recorded | N needed for eps | reachable | needed / reachable | moment inflation U / y | U mode | R | local M | utilization | stop |'); P('|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---|')
     for k, x in R['verdict_inputs']['limiting_terms'].items(): P('| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |' % (k, x.get('term'), x.get('N_recorded'), ('%.3g' % x['N_needed_for_epsilon']) if isinstance(x.get('N_needed_for_epsilon'), (int, float)) else '-', ('%.3g' % x['reachable_at_measured_rate']) if isinstance(x.get('reachable_at_measured_rate'), (int, float)) else '-', f2(x.get('ratio_needed_over_reachable')), f2(x.get('moment_inflation')), x.get('U_mode') or '-', ('%.5f' % x['R']) if isinstance(x.get('R'), float) else '-', x.get('local_M') or '-', f2(x.get('checkpoint_utilization')), x.get('sampling_stop') or x.get('refusal') or '-'))
