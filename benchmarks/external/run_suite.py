@@ -25,6 +25,13 @@ LIBDAI = (
 )
 REFERENCE = HERE / "reference/previous_accepted_cells.json"
 EPS = F(1, 200)
+# The public entrypoint is run under an EXPLICIT policy per arm (consolidation step 1): the accepted engine through the
+# common contract, and the frozen experimental structural portfolio.  Both arms are the same installed package.
+PGM_ARMS = {"PGM_ACCEPTED": "accepted", "PGM_EXPERIMENTAL": "experimental"}
+
+
+def is_pgm(arm):
+    return arm in PGM_ARMS
 GENERATED = {
     "src/pgm/algorithms/structural/cex_build.json",
     "src/pgm/algorithms/structural/stream_build.json",
@@ -196,6 +203,8 @@ def check_pgm(path, task):
         max_published_radius=float(maxradius),
         max_published_width=float(maxwidth),
         backend=d.get("backend"),
+        policy=d.get("policy"),
+        policy_version=d.get("policy_version"),
         attempts=d.get("attempts"),
         solver_wall_s=d.get("wall_s"),
     )
@@ -305,7 +314,7 @@ def freeze():
     }
     # Existing executable is qualified separately; this records its exact identity.
     frozen = {
-        "schema": "CONSOLIDATION_EXTERNAL_V1",
+        "schema": "CONSOLIDATION_EXTERNAL_V2",
         "frozen_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "engine_commit": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=REPO, text=True
@@ -322,7 +331,11 @@ def freeze():
         "active_host_files": host_files(),
         "tasks": exposed + heldout,
         "replicates": [1, 2],
-        "arms": ["PGM", "LIBDAI_JT", "LIBDAI_BP"],
+        "arms": ["PGM_ACCEPTED", "PGM_EXPERIMENTAL", "LIBDAI_JT", "LIBDAI_BP"],
+        "pgm_policies": dict(PGM_ARMS),
+        "pgm_version": subprocess.check_output(
+            [str(PY), "-c", "import pgm; print(pgm.__version__)"], text=True, env=dict(os.environ, PYTHONPATH=str(REPO / "src") + os.pathsep + str(REPO / "code"))
+        ).strip(),
         "budget_s": 20,
         "memory_mib": 3072,
         "epsilon": "1/200",
@@ -355,7 +368,7 @@ def freeze():
                 "engine_commit": frozen["engine_commit"],
                 "exposed": len(exposed),
                 "eval": len(heldout),
-                "cells": len(frozen["tasks"]) * 6,
+                "cells": len(frozen["tasks"]) * len(frozen["arms"]) * len(frozen["replicates"]),
             }
         )
     )
@@ -386,7 +399,7 @@ def run_cell(task, arm, rep, frozen):
     assert len(prior) <= 1, "Duplicate terminal receipt"
     if not prior:
         folder.mkdir(parents=True, exist_ok=False)
-        if arm == "PGM":
+        if is_pgm(arm):
             cmd = [
                 str(PY),
                 "-m",
@@ -405,6 +418,8 @@ def run_cell(task, arm, rep, frozen):
                 "1/200",
                 "--delta",
                 "1/1000000",
+                "--policy",
+                frozen["pgm_policies"][arm],
             ]
         else:
             alg = (
@@ -499,7 +514,7 @@ def run_cell(task, arm, rep, frozen):
     try:
         row.update(
             check_pgm(folder / "result.json", task)
-            if arm == "PGM"
+            if is_pgm(arm)
             else check_libdai(folder, task)
         )
     except Exception as e:

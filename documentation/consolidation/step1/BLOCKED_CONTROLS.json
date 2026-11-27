@@ -1,0 +1,3323 @@
+{
+ "suite": "code/cex/hp/check_dgp.py",
+ "records_root": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee",
+ "records_root_is_empty": true,
+ "timeout_s": 900.0,
+ "counts": {
+  "BLOCKED": 51,
+  "PORTABLE": 39
+ },
+ "n": 90,
+ "wall_s": 41.1,
+ "python": "3.12.15",
+ "commit": "ed8c676644fd00ba19068d77830b077dbd632141",
+ "controls": {
+  "D1": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D1_forced_pac_matches_accepted",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                                     ^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_clique_two.uai'\n"
+   }
+  },
+  "D2": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_clique_half.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D2_suspend_resume_between_batches",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                                    ^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_clique_half.uai'\n"
+   }
+  },
+  "D3": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_reg6_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D3_pending_batch_resumes_same_draws",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                                       ^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_reg6_two.uai'\n"
+   }
+  },
+  "D4": {
+   "status": "BLOCKED",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c2_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D4_exact_route_in_stream",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                                     ^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c2_clique_two.uai'\n"
+   }
+  },
+  "D5": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D5_lifted_enumeration_identity_parent",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D6": {
+   "status": "PORTABLE",
+   "seconds": 4.3,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D6_lifted_enumeration_exact_then_approx",
+    "ok": true,
+    "max_X_analyzed": 0.9999999999887452,
+    "estimating_equation_max_abs": 0.0,
+    "total_q": 1.0,
+    "published": 40,
+    "K": 40,
+    "violations": 0,
+    "X_mean": 8.816813267320647e-05,
+    "draws": 2959360,
+    "parent_cards": [
+     4,
+     4,
+     4,
+     4,
+     4
+    ],
+    "coarse_cards": [
+     2,
+     2,
+     2,
+     2,
+     2
+    ],
+    "decoder_stages": 1,
+    "kappa": 1.0000000000000016
+   }
+  },
+  "D7": {
+   "status": "PORTABLE",
+   "seconds": 0.57,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D7_zero_lower_positive_upper_witness",
+    "ok": true,
+    "lower_zero": true,
+    "upper_zero": false,
+    "Z": "21",
+    "witness": true,
+    "zero_weight_fraction": 0.5004780614098837,
+    "published": 6,
+    "violations": 0,
+    "draws": 880640
+   }
+  },
+  "D8": {
+   "status": "PORTABLE",
+   "seconds": 2.1,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D8_surrogate_mutant_fails_oracle",
+    "ok": true,
+    "surrogate_gap": 0.19763960271439376,
+    "strength": "3/2",
+    "production": {
+     "published": 16,
+     "K": 16,
+     "violations": 0,
+     "X_mean": 0.07794832872822464,
+     "draws": 1925120
+    },
+    "mutant": {
+     "published": 16,
+     "violations": 16,
+     "X_mean": 0.9999999999933094,
+     "draws": 409600
+    }
+   }
+  },
+  "D9": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c2_er50_eighth.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D9_numerical_bound_operation_by_operation",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c2_er50_eighth.uai'\n"
+   }
+  },
+  "D10": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D10_three_streams_risk_and_conflicts",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D11": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D11_expiry_and_memory_injections",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_clique_two.uai'\n"
+   }
+  },
+  "D12": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [
+    "'/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19'",
+    "RECORDS"
+   ],
+   "other_missing_paths": [],
+   "error_tail": "",
+   "control_record": {
+    "control": "D12_structural_routes_reach_accepted_completions",
+    "ok": false,
+    "fixtures": [
+     {
+      "name": "layered",
+      "missing": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19/round20/R20_PACKET/theory_r20_prototype/tiny/case1.uai"
+     },
+     {
+      "name": "layered2",
+      "missing": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19/round20/R20_PACKET/theory_r20_prototype/tiny/case7.uai"
+     },
+     {
+      "name": "ancestral_G4",
+      "missing": "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19/round21/inputs/G4_near_c3_theta17-20_span3.uai"
+     }
+    ]
+   }
+  },
+  "D13": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D13_functional_completion_after_partial_action",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D14": {
+   "status": "PORTABLE",
+   "seconds": 0.26,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D14_edge_cases_typed",
+    "ok": true,
+    "zero_evidence": [
+     "ZERO_EVIDENCE",
+     0,
+     false
+    ],
+    "hard_zeros": [
+     "COMPLETE",
+     7,
+     7,
+     "DETERMINISTIC"
+    ],
+    "zero_unary": [
+     "ZERO_EVIDENCE",
+     0
+    ],
+    "extreme_rationals": [
+     "COMPLETE",
+     4,
+     4,
+     null
+    ],
+    "factorless_fixed_scalar": [
+     "COMPLETE",
+     10,
+     10,
+     "1",
+     "1/2",
+     "EXACT"
+    ],
+    "plain": [
+     "COMPLETE",
+     4
+    ],
+    "incompatible_binding": [
+     "INVALID_TASK",
+     0,
+     0
+    ]
+   }
+  },
+  "D15": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n24_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D15_lift_only_discovery_recheck",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n24_c4_clique_two.uai'\n"
+   }
+  },
+  "D16": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D16_exact_rows_from_constant_blocks_published",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D17": {
+   "status": "PORTABLE",
+   "seconds": 0.25,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D17_lifted_constant_log_domain_huge_scale",
+    "ok": true,
+    "ready": true,
+    "closed": null,
+    "scale_F_bits": 6190,
+    "const_log2": 67.0,
+    "max_X_analyzed": 0.9999999999517178,
+    "draws": 20480,
+    "published": 0
+   }
+  },
+  "D18": {
+   "status": "BLOCKED",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D18_optional_stream_exception_leaves_request_usable",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D19": {
+   "status": "PORTABLE",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D19_F1_widening_consumed_bounds",
+    "ok": true,
+    "E_tot": -11,
+    "five_u_E": 6.106226635438361e-15,
+    "d_fin": 9.37860900052101e-12,
+    "d_k": 1.2022383089060895e-11,
+    "rho_X": 3.436431139728752e-11,
+    "rho_X_from_total": 3.436431139728751e-11,
+    "cap_tol": 1.0006387390034719e-10,
+    "eps_num": 6.873794866798189e-11
+   }
+  },
+  "D20": {
+   "status": "PORTABLE",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D20_F2_normalizer_ownership",
+    "ok": true,
+    "Z63": {
+     "lo": "63",
+     "hi": "63",
+     "positive": true,
+     "source": "pac(exact_quotient)",
+     "Z_effective": "9",
+     "scale_to_original": "7",
+     "exact": true
+    },
+    "Z252": {
+     "lo": "252",
+     "hi": "252",
+     "positive": true,
+     "source": "pac(exact_quotient)",
+     "Z_effective": "9",
+     "scale_to_original": "28",
+     "exact": true
+    },
+    "zero": "ZERO_EVIDENCE",
+    "stream": [
+     "exact_parent",
+     "EXACT_CONTRACTION",
+     "9",
+     "7"
+    ]
+   }
+  },
+  "D21": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D21_F3_finalization_expiry_tails",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D22": {
+   "status": "PORTABLE",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D22_F4_confidence_endpoints",
+    "ok": true,
+    "intersection_published": true,
+    "decoder_made_publishable": true,
+    "informative_diagnostic": true,
+    "witness_rule": true,
+    "defect_rule": true
+   }
+  },
+  "D23": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D23_F5_optional_stage_bounded",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D24": {
+   "status": "BLOCKED",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n64_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "'/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n64_c4",
+    "DEV",
+    "RECORDS"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D24_compact_kappa_and_scoped_lift_check",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "DS + '/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n64_c4_clique_two.uai'; model, binding = CORE.read_uai(p)\n                                                                                                                                     ^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n64_c4_clique_two.uai'\n"
+   }
+  },
+  "D25": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D25_fixed_r_limits_attaining_laws",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "wo.uai'); p = os.path.abspath(p); model, binding = CORE.read_uai(p)\n                                                                                                                                                                                                           ^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D26": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D26_forced_stream_mode",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D27": {
+   "status": "PORTABLE",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D27_RF1_no_work_after_authoritative_sample",
+    "ok": true,
+    "source_order_ok": true,
+    "row_injection": {
+     "outcome": "COMPLETE",
+     "published": 2,
+     "K": 2,
+     "classified_after_sample": 0,
+     "hard_deadline_respected": true,
+     "injected_wall": 0.010000000002037268
+    },
+    "expiry_at_sample": {
+     "outcome": "DEADLINE",
+     "published": 0,
+     "hard_deadline_respected": false,
+     "suppressed": {
+      "enclosures": 2,
+      "radius_report": true
+     }
+    }
+   }
+  },
+  "D28": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D28_RF2_sampler_stage_deadline_and_byte_identity",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D29": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D29_RF3_cap_units_equality",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D30": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D30_lemma_G_grouped_envelope",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D31": {
+   "status": "BLOCKED",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D31_RF4_paired_arithmetic_power",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D32": {
+   "status": "PORTABLE",
+   "seconds": 0.18,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D32_R1_transpose_semantics_and_permutation_invariance",
+    "ok": true,
+    "permutation_invariant": true,
+    "groups_A": [
+     [
+      0,
+      1
+     ],
+     [
+      2
+     ]
+    ],
+    "groups_B": [
+     [
+      0,
+      1
+     ],
+     [
+      2
+     ]
+    ],
+    "manual_0011": {
+     "classes": [
+      [
+       0,
+       0,
+       1,
+       1
+      ],
+      [
+       0,
+       0,
+       1,
+       1
+      ]
+     ],
+     "violations": 0
+    },
+    "fast": {
+     "classes": [
+      [
+       0,
+       1,
+       1,
+       1
+      ],
+      [
+       0,
+       1,
+       1,
+       1
+      ]
+     ],
+     "violations": 0
+    },
+    "real_stream": {
+     "prepare": "READY",
+     "batches": [
+      "COMMITTED",
+      "COMMITTED",
+      "COMMITTED",
+      "COMMITTED"
+     ],
+     "defect": null,
+     "max_log2_X": -4.387601393318619e-12
+    }
+   }
+  },
+  "D33": {
+   "status": "BLOCKED",
+   "seconds": 0.18,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANIFEST.json"
+   ],
+   "private_record_constants_referenced": [
+    "'/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANIF",
+    "RECORDS"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D33_R2_construction_charge_ownership",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "Traceback (most recent call last):\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 3040, in <module>\n    try: c()\n         ^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 828, in D33_R2_construction_charge_ownership\n    man = json.load(open(RECORDS + '/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANIFEST.json')); t = next(x for x in man['tasks'] if x['name'] == 'grid4x4_c32_generic'); mdl, bnd = CORE.read_uai(t['model'])\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANIFEST.json'\n"
+   }
+  },
+  "D34": {
+   "status": "PORTABLE",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D34_R3_parent_final_timestamp",
+    "ok": true,
+    "source_order_ok": true,
+    "multi_query": {
+     "aggregation": {
+      "outcome": "DEADLINE",
+      "published": 0,
+      "gets": 3,
+      "respected": false
+     },
+     "at_sample": {
+      "outcome": "DEADLINE",
+      "published": 0,
+      "fin_reads": 1
+     }
+    },
+    "factorless": {
+     "aggregation": {
+      "outcome": "DEADLINE",
+      "published": 0,
+      "gets": 3,
+      "respected": false
+     },
+     "at_sample": {
+      "outcome": "DEADLINE",
+      "published": 0,
+      "fin_reads": 1
+     }
+    },
+    "scalar": {
+     "aggregation": {
+      "outcome": "DEADLINE",
+      "published": 0,
+      "gets": 3,
+      "respected": false
+     },
+     "at_sample": {
+      "outcome": "DEADLINE",
+      "published": 0,
+      "fin_reads": 1
+     }
+    }
+   }
+  },
+  "D35": {
+   "status": "PORTABLE",
+   "seconds": 0.26,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D35_rmax_exact_limit_and_prefix_validity",
+    "ok": true,
+    "four_cycle": {
+     "exact_equals_t": true,
+     "T": "186624",
+     "compact_dominates_t": true,
+     "compact_valid": true,
+     "trajectory_log2": [
+      20.67970000576925,
+      17.509775004326936,
+      17.509775004326936,
+      17.509775004326936,
+      17.509775004326936
+     ],
+     "nonincreasing": true,
+     "V64_valid": true,
+     "V64_splits": 1,
+     "zero_classes": 0
+    },
+    "triangle_zeros": {
+     "exact_equals_t": true,
+     "T": "645860538748573902862566475492400248747866908240766785527218176/57135574906986367425861229255253943983144595747208817656075",
+     "compact_dominates_t": true,
+     "compact_valid": true,
+     "trajectory_log2": [
+      13.886458695703706,
+      13.46454575033394,
+      13.46454575033394,
+      13.46454575033394
+     ],
+     "nonincreasing": true,
+     "V64_valid": true,
+     "V64_splits": 0,
+     "zero_classes": 0
+    },
+    "path5_unequal": {
+     "exact_equals_t": true,
+     "T": "14646050729064702787579882155143823247486877631280/22554037613131217873513654825865229118423129",
+     "compact_dominates_t": true,
+     "compact_valid": true,
+     "trajectory_log2": [
+      19.308694540119003,
+      19.308694540119003,
+      19.308694540119003,
+      19.308694540119003,
+      19.308694540119003,
+      19.308694540119003
+     ],
+     "nonincreasing": true,
+     "V64_valid": true,
+     "V64_splits": 0,
+     "zero_classes": 0
+    }
+   }
+  },
+  "D36": {
+   "status": "PORTABLE",
+   "seconds": 0.18,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D36_compatibility_witness_four_cycle",
+    "ok": true,
+    "t": [
+     "11664"
+    ],
+    "expected": "11664",
+    "V64": {
+     "prefix0": [
+      "104976"
+     ],
+     "U": [
+      "104976"
+     ],
+     "ratio": "1",
+     "splits": 1,
+     "message_consumed_later": true,
+     "valid": true,
+     "checker_ok": true
+    },
+    "V256": {
+     "prefix0": [
+      "104976"
+     ],
+     "U": [
+      "11664"
+     ],
+     "ratio": "9",
+     "splits": 0,
+     "message_consumed_later": true,
+     "valid": true,
+     "checker_ok": true
+    },
+    "V4096": {
+     "prefix0": [
+      "104976"
+     ],
+     "U": [
+      "11664"
+     ],
+     "ratio": "9",
+     "splits": 0,
+     "message_consumed_later": true,
+     "valid": true,
+     "checker_ok": true
+    }
+   }
+  },
+  "D37": {
+   "status": "PORTABLE",
+   "seconds": 0.28,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D37_axes_domains_support_and_scalars",
+    "ok": true,
+    "unequal_zeros": {
+     "pads": [
+      3,
+      3
+     ],
+     "U_vs_t": [
+      [
+       "39876839873547485041551367188997079041/2658455991569831745807614120560689152",
+       "4503599627370496/300239975158033"
+      ],
+      [
+       "410718794473945961293362021531891/5070602400912917605986812821504",
+       "5070602400912917605986812821504/62600029640900272957857286321"
+      ],
+      [
+       "24",
+       "24"
+      ],
+      [
+       "215334935317156419224377382820584226817/2658455991569831745807614120560689152",
+       "121597189939003392/1501199875790165"
+      ]
+     ],
+     "valid": true,
+     "zero_mass_classes": []
+    },
+    "genuine_zero_class": {
+     "zero_mass_classes": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       1
+      ]
+     ],
+     "U_on_zero_classes": [
+      "0",
+      "0"
+     ],
+     "U_on_positive": [
+      "119630519620642455124654101566991237121/2658455991569831745807614120560689152",
+      "139568939557416135664369697497410109441/1329227995784915872903807060280344576"
+     ],
+     "executed": true,
+     "all_zero_U": true,
+     "positive_elsewhere": true,
+     "valid": true
+    },
+    "empty_support": {
+     "refusal": "SUPPORT",
+     "orphaned": 0
+    },
+    "identity_classes": {
+     "U_equals_t": true,
+     "n_classes": 256
+    },
+    "scalar_7": {
+     "canonical_scalar": "7",
+     "stream_scale_to_original": "7",
+     "U_excludes_scalar": true,
+     "prepare": "READY",
+     "batches": 30,
+     "log2_Z_hat_original_units": 11.69481461933392,
+     "log2_Z_true": 11.702172685365548,
+     "Z_units_within_factor_2": true,
+     "certified_rows": 12,
+     "containment_violations": 0,
+     "factors_in_model": 5
+    },
+    "scalar_252": {
+     "canonical_scalar": "252",
+     "stream_scale_to_original": "252",
+     "U_excludes_scalar": true,
+     "prepare": "READY",
+     "batches": 30,
+     "log2_Z_hat_original_units": 16.864739620776234,
+     "log2_Z_true": 16.87209768680786,
+     "Z_units_within_factor_2": true,
+     "certified_rows": 12,
+     "containment_violations": 0,
+     "factors_in_model": 5
+    },
+    "exact_quotient_parent": {
+     "prepare": "READY",
+     "parent_cards": [
+      2,
+      2,
+      2,
+      2
+     ],
+     "fine_cards": [
+      8,
+      8,
+      8,
+      8
+     ],
+     "draws": 40960,
+     "certified_rows": 32,
+     "containment_violations": 0,
+     "witness": true,
+     "rmax_stages": 4,
+     "scale_to_original": "1",
+     "defect": null
+    }
+   }
+  },
+  "D38": {
+   "status": "PORTABLE",
+   "seconds": 0.18,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D38_numeric_upper_direction_and_packing",
+    "ok": true,
+    "conversion_up": true,
+    "mul_up": true,
+    "packing": {
+     "tiny_became_one": true,
+     "zero_kept": true,
+     "check": true,
+     "max_inflation_log2": 573.0,
+     "valid": true
+    },
+    "extreme_exponents": {
+     "prepare": "READY",
+     "closed": "",
+     "E_U": 8,
+     "packed_exponent_sum": -121,
+     "batches": [
+      "COMMITTED",
+      "COMMITTED",
+      "COMMITTED"
+     ],
+     "defect": null
+    },
+    "bits_refusal": "BITS"
+   }
+  },
+  "D39": {
+   "status": "PORTABLE",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D39_independent_checker_mutants",
+    "ok": true,
+    "valid": true,
+    "omitted_input": true,
+    "duplicated_input": true,
+    "wrong_axes": true,
+    "underbounded": true,
+    "looser_accepted": true,
+    "invalid_mask": true,
+    "downward_packing": true,
+    "duplicated_consistent": true,
+    "omitted_consistent_group_accepted_alone": true,
+    "omitted_caught_by_partition": true,
+    "reused_live_id_rejected": true,
+    "wrong_origin_rejected": true,
+    "closure_inventory_valid": true,
+    "closure_inventory_dropped_rejected": true,
+    "closure_inventory_dup_rejected": true,
+    "packing_check_with_clock": true,
+    "packing_missing_table_rejected": true
+   }
+  },
+  "D40": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D40_whole_proposal_rmax_vs_reference",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D41": {
+   "status": "BLOCKED",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D41_lifetime_cutoffs_and_incumbent",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D42": {
+   "status": "PORTABLE",
+   "seconds": 0.31,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D42_seed_exhaustive_validity",
+    "ok": true,
+    "models": 24,
+    "valid": 24,
+    "normalized": 24,
+    "splits_seen": 7,
+    "zero_rows_seen": 3,
+    "nullary_seen": 6,
+    "factorless_seen": 5,
+    "worst_B_over_Rstar_bits": 1.3940848475613166e-11,
+    "failures": [],
+    "live_after_release_zero": true,
+    "stream": {
+     "prepare": "READY",
+     "batches": [
+      "COMMITTED",
+      "COMMITTED",
+      "COMMITTED",
+      "COMMITTED",
+      "COMMITTED"
+     ],
+     "cap_equal": true,
+     "max_log2_X": -1.525535253676935e-11,
+     "cap_tol": 3.939295489077896e-12,
+     "X_mean": 0.9999999999838233
+    }
+   }
+  },
+  "D43": {
+   "status": "PORTABLE",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D43_exact_floor_and_count_boundaries",
+    "ok": true,
+    "boundary_1_minus_2pow_minus_100": {
+     "count0": 1099511627773,
+     "expected_initial": 1099511627773,
+     "sum_D": true,
+     "exact_floor_matches": true
+    },
+    "huge_gap": {
+     "tiny_count": 1,
+     "full_count": 1099511627773,
+     "sum_D": true,
+     "tiny_is_minimal": true,
+     "full_dominates": true
+    },
+    "bulk_leftover": {
+     "counts": [
+      366503875926,
+      366503875925,
+      366503875925
+     ],
+     "sum_D": true,
+     "spread": 1,
+     "positive": true
+    },
+    "k_ge_D_refused": "RANGE",
+    "quantize_k_ge_D_refused": "RANGE",
+    "row_check_k6": true,
+    "row_check_rejects_shifted": true,
+    "row_check_rejects_underweight": true,
+    "upward_direction": {
+     "ok": 600,
+     "of": 600
+    },
+    "wide_factor": {
+     "packed": true,
+     "inflation_log2": 2873.0,
+     "stream": "CLOSED",
+     "closed": "REFUSED in lifted stage CONTRACTED: an exact entry would keep -2000 < 64 significant bits",
+     "typed_not_numeric": true
+    }
+   }
+  },
+  "D44": {
+   "status": "PORTABLE",
+   "seconds": 0.52,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D44_local_witness_inequalities",
+    "ok": true,
+    "substitution_fixture": {
+     "z": 0,
+     "parents": [
+      1,
+      4
+     ],
+     "wrong_underbounds": 0,
+     "wrong_overbounds": 27,
+     "correct_violations": 0,
+     "fails_under_substitution": true,
+     "note": "(W_0 / q_-)^2 is NOT the a-target W_0^2 / q_-: the mutant differs from a* (underbounds where q_- > 1 ... overbounds elsewhere)"
+    },
+    "split_seed_direction": {
+     "seed_splits": 1,
+     "seed_log2_B": 24.349694334230605,
+     "seed_exact_S0": 47.35752108243669,
+     "seed_exact_Rstar": 24.34969433422121,
+     "best": {
+      "law": "frontier_00",
+      "exact_S0": 46.92091804150173,
+      "exact_Rstar": 24.06709255952447,
+      "checked_B": 24.06709255952447,
+      "checked_S": 46.920918041501736,
+      "violations": 0
+     },
+     "S0_lowered": true,
+     "cap_checked": true
+    },
+    "cases": {
+     "triangle": {
+      "seed_log2_B": 5.0874628412582155,
+      "seed_exact": {
+       "Rstar": 5.087462841255122,
+       "S0": 10.174925682500678,
+       "Z0": 5.087462841250339
+      },
+      "child_dependent_update": {
+       "z": 2,
+       "violations": 0,
+       "slack_b": 0.0,
+       "slack_a": 0.0
+      },
+      "family": {
+       "z": 1,
+       "parents": [
+        2
+       ],
+       "violations": 0,
+       "slack_b": 0.0,
+       "slack_a": 0.0
+      },
+      "frontier_valid": 18,
+      "frontier_invalid": 0,
+      "best_moment_law": [
+       "frontier_00",
+       10.174925682500678,
+       5.087462841253544,
+       5.08746284125354,
+       10.174925682500685
+      ]
+     },
+     "four_cycle": {
+      "seed_log2_B": 16.527477006081384,
+      "seed_exact": {
+       "Rstar": 16.527477006068565,
+       "S0": 33.054954012120795,
+       "Z0": 16.527477006060398
+      },
+      "child_dependent_update": {
+       "z": 3,
+       "violations": 0,
+       "slack_b": 0.0,
+       "slack_a": 0.0
+      },
+      "family": {
+       "z": 0,
+       "parents": [
+        3,
+        2,
+        1
+       ],
+       "violations": 0,
+       "slack_b": 0.0,
+       "slack_a": 0.0
+      },
+      "frontier_valid": 18,
+      "frontier_invalid": 0,
+      "best_moment_law": [
+       "frontier_00",
+       33.054954012120795,
+       16.527477006068565,
+       16.527477006068565,
+       33.05495401212079
+      ]
+     },
+     "five_cycle_c3": {
+      "seed_log2_B": 23.345700888980915,
+      "seed_exact": {
+       "Rstar": 23.345700888972143,
+       "S0": 46.69140177792248,
+       "Z0": 23.34570088896124
+      },
+      "child_dependent_update": {
+       "z": 4,
+       "violations": 0,
+       "slack_b": 0.0,
+       "slack_a": 0.0
+      },
+      "family": {
+       "z": 0,
+       "parents": [
+        4,
+        2,
+        1
+       ],
+       "violations": 0,
+       "slack_b": 0.0,
+       "slack_a": 0.0
+      },
+      "frontier_valid": 18,
+      "frontier_invalid": 0,
+      "best_moment_law": [
+       "frontier_00",
+       46.69140177792248,
+       23.345700888972143,
+       23.345700888972146,
+       46.69140177792248
+      ]
+     }
+    }
+   }
+  },
+  "D45": {
+   "status": "PORTABLE",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D45_witness_pass_mutants",
+    "ok": true,
+    "valid_max": true,
+    "wrong_axes": true,
+    "permuted_scope_differs": true,
+    "permuted_scope_rejected_as_underbound": true,
+    "nonbinary_shape_caught": true,
+    "duplicate_ids": true,
+    "missing_factor_partition": true,
+    "all_max_in_sum_rejected": true,
+    "sum_accepted": true,
+    "dropped_reciprocal_underbounds": true,
+    "retained_elimination": "ELIMINATED_RETAINED",
+    "retained_product_detects_eliminated_family_variable": "Defect"
+   }
+  },
+  "D46": {
+   "status": "PORTABLE",
+   "seconds": 0.21,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D46_quantization_cap_and_incumbent_witness",
+    "ok": true,
+    "frontier": {
+     "laws": 17,
+     "actual_cap_exceeds_nominal": 1,
+     "positive_rows": 17
+    },
+    "density_agreement": {
+     "max_dev": 0.0,
+     "exact_match": 2.842170943040401e-14
+    },
+    "frequency_agreement": {
+     "max_z": 1.8044490311775796,
+     "within_5_sigma": true
+    },
+    "incumbent_witness": {
+     "log2_S_tight_packet": 34.849714960432394,
+     "log2_S_loose_packet": 34.849714960432394,
+     "log2_S_ref": 34.849714960432394,
+     "S_ref_is_min": true,
+     "loose_not_used": true
+    },
+    "promotion_semantics": {
+     "moment_knowledge_promotes": false,
+     "moment_knowledge_winner": "current",
+     "cap_tightening_is_candidate": true,
+     "cap_tightening_promotes": false,
+     "log2_B_consumed": 17.424857480234564,
+     "log2_B_tight": 17.42485748022777
+    }
+   }
+  },
+  "D47": {
+   "status": "PORTABLE",
+   "seconds": 0.18,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D47_context_replication_and_staleness",
+    "ok": true,
+    "replication_exact": true,
+    "order_violation_refused": true,
+    "staleness": {
+     "changed_var": 2,
+     "family_var": 1,
+     "stale_packet_violations": 16,
+     "rebuilt_packet_violations": 0,
+     "law_changed": true
+    },
+    "family_volume_refused": "VOLUME",
+    "union_volume_refused": {
+     "kind": "VOLUME",
+     "orphaned": 0
+    },
+    "memory_refusal_releases": {
+     "kind": "MEMORY",
+     "orphaned": 0
+    }
+   }
+  },
+  "D48": {
+   "status": "PORTABLE",
+   "seconds": 0.29,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D48_units_and_paired_arithmetic",
+    "ok": true,
+    "scalar_7": {
+     "prepare": "READY",
+     "closed": "",
+     "batches": 30,
+     "rows": 16,
+     "containment_violations": 0,
+     "log2_Zhat_original": 17.74986942739679,
+     "log2_Z": 17.749869427396845,
+     "within_factor_2": true,
+     "scale_to_original_bits": 4,
+     "canonical_scalar_bits": 4
+    },
+    "scalar_252": {
+     "prepare": "READY",
+     "closed": "",
+     "batches": 30,
+     "rows": 16,
+     "containment_violations": 0,
+     "log2_Zhat_original": 20.41729408830989,
+     "log2_Z": 20.417294088309973,
+     "within_factor_2": true,
+     "scale_to_original_bits": 9,
+     "canonical_scalar_bits": 9
+    },
+    "scalar_899782758908...": {
+     "prepare": "READY",
+     "closed": "",
+     "batches": 30,
+     "rows": 16,
+     "containment_violations": 0,
+     "log2_Zhat_original": 552.9425145053391,
+     "log2_Z": 552.9425145053392,
+     "within_factor_2": true,
+     "scale_to_original_bits": 541,
+     "canonical_scalar_bits": 541
+    },
+    "scalar_114813069527...": {
+     "prepare": "READY",
+     "closed": "",
+     "batches": 30,
+     "rows": 16,
+     "containment_violations": 0,
+     "log2_Zhat_original": 2016.5274770060603,
+     "log2_Z": 2016.5274770060605,
+     "within_factor_2": true,
+     "scale_to_original_bits": 2002,
+     "canonical_scalar_bits": 2002
+    },
+    "paired_arithmetic": {
+     "compared": 768,
+     "max_abs_log2_dev": 2.4868995751603507e-14,
+     "cap_tol": 3.939295489077896e-12,
+     "within": true,
+     "rho_X": 1.0500100788853715e-12
+    },
+    "exact_quotient_parent": {
+     "prepare": "READY",
+     "closed": "",
+     "parent_cards": [
+      2,
+      2,
+      2,
+      2
+     ],
+     "fine_cards": [
+      8,
+      8,
+      8,
+      8
+     ],
+     "draws": 40960,
+     "rows": 32,
+     "containment_violations": 0,
+     "defect": null
+    }
+   }
+  },
+  "D49": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D49_epoch_switch_and_certificate_continuity",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D50": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D50_candidate_refusal_lifetime",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D51": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D51_heldout_isolation_and_forecast_independence",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D52": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D52_feature_disabled_and_expiry_suppression",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D53": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D53_real_clock_planner_cells",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D54": {
+   "status": "BLOCKED",
+   "seconds": 0.61,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D54_scalar_messages_and_internal_errors",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 16, in load_mid\n    def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n16_c4_clique_two.uai'\n"
+   }
+  },
+  "D55": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D55_source_binding_mutants",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D56": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D56_ownership_admission_cutoffs",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D57": {
+   "status": "BLOCKED",
+   "seconds": 0.25,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV",
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D57_bounded_sum_and_rebuilt_J",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "6, clk6, B6 = _jstage(model6); cards6 = list(M6.cards); prop6, rec6, owned6 = JP.compile_seed(M6, order6, JPROF, B6, clk6); pairs6, chg6 = JO.interaction_scores(M6, B6, clk6)\n                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D58": {
+   "status": "PORTABLE",
+   "seconds": 2.15,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D58_circuits_vs_exhaustive_reference",
+    "ok": true,
+    "four_cycle": {
+     "n": 4,
+     "states": 256,
+     "log2_B": 16.527477006068565,
+     "log2_S": 33.05495401212079,
+     "ref_B": 16.52747700606856,
+     "ref_S": 33.054954012120795,
+     "B_dom": true,
+     "S_dom": true,
+     "float_B_agrees": true,
+     "float_S_agrees": true,
+     "cert": true,
+     "g1_q_exact": true,
+     "g1_B_dom": true,
+     "g1_S_dom": true,
+     "g1_extended": 1,
+     "candidate": {
+      "evals": 2,
+      "log2_B": 16.52747700607604,
+      "log2_S": 33.05495401212079,
+      "B_dom": true,
+      "S_dom": true,
+      "cert": true,
+      "rows_sum_D": true,
+      "changed": true
+     },
+     "scaling": {
+      "dB": 200.0,
+      "dS": 400.0,
+      "shift_ok": true,
+      "rows_invariant": true
+     }
+    },
+    "binary_n10": {
+     "n": 10,
+     "states": 1024,
+     "log2_B": 48.11696101255522,
+     "log2_S": 96.23392202507756,
+     "ref_B": 48.11696101255522,
+     "ref_S": 96.23392202507755,
+     "B_dom": true,
+     "S_dom": true,
+     "float_B_agrees": true,
+     "float_S_agrees": true,
+     "cert": true,
+     "g1_q_exact": true,
+     "g1_B_dom": true,
+     "g1_S_dom": true,
+     "g1_extended": 5,
+     "candidate": {
+      "evals": 2,
+      "log2_B": 48.11696101256351,
+      "log2_S": 96.23392202507756,
+      "B_dom": true,
+      "S_dom": true,
+      "cert": true,
+      "rows_sum_D": true,
+      "changed": true
+     },
+     "scaling": {
+      "dB": 199.99999999999997,
+      "dS": 399.99999999999994,
+      "shift_ok": true,
+      "rows_invariant": true
+     }
+    },
+    "card4_n6": {
+     "n": 6,
+     "states": 4096,
+     "log2_B": 39.70629417343848,
+     "log2_S": 78.6885968104683,
+     "ref_B": 39.706294173438465,
+     "ref_S": 78.68859681046831,
+     "B_dom": true,
+     "S_dom": true,
+     "float_B_agrees": true,
+     "float_S_agrees": true,
+     "cert": true,
+     "g1_q_exact": true,
+     "g1_B_dom": true,
+     "g1_S_dom": true,
+     "g1_extended": 1,
+     "candidate": {
+      "evals": 27,
+      "log2_B": 41.72061837520434,
+      "log2_S": 78.46425287391581,
+      "B_dom": true,
+      "S_dom": true,
+      "cert": true,
+      "rows_sum_D": true,
+      "changed": true
+     },
+     "scaling": {
+      "dB": 200.0,
+      "dS": 399.99999999999994,
+      "shift_ok": true,
+      "rows_invariant": true
+     }
+    },
+    "scalar_nullary": {
+     "n": 5,
+     "states": 243,
+     "log2_B": 23.770761739831684,
+     "log2_S": 47.54152347963709,
+     "ref_B": 23.77076173983169,
+     "ref_S": 47.5415234796371,
+     "B_dom": true,
+     "S_dom": true,
+     "float_B_agrees": true,
+     "float_S_agrees": true,
+     "cert": true,
+     "g1_q_exact": true,
+     "g1_B_dom": true,
+     "g1_S_dom": true,
+     "g1_extended": 3,
+     "candidate": {
+      "evals": 2,
+      "log2_B": 23.77076173984058,
+      "log2_S": 47.54152347963709,
+      "B_dom": true,
+      "S_dom": true,
+      "cert": true,
+      "rows_sum_D": true,
+      "changed": true
+     },
+     "scaling": {
+      "dB": 200.00000000000006,
+      "dS": 399.99999999999994,
+      "shift_ok": true,
+      "rows_invariant": true
+     }
+    },
+    "factorless": {
+     "n": 3,
+     "states": 27,
+     "log2_B": 11.901319465538478,
+     "log2_S": 23.802638931060216,
+     "ref_B": 11.901319465538478,
+     "ref_S": 23.80263893106021,
+     "B_dom": true,
+     "S_dom": true,
+     "float_B_agrees": true,
+     "float_S_agrees": true,
+     "cert": true,
+     "g1_q_exact": true,
+     "g1_B_dom": true,
+     "g1_S_dom": true,
+     "g1_extended": 1,
+     "candidate": {
+      "evals": 4,
+      "log2_B": 11.901338113448702,
+      "log2_S": 23.802638931603298,
+      "B_dom": true,
+      "S_dom": true,
+      "cert": true,
+      "rows_sum_D": true,
+      "changed": true
+     },
+     "scaling": {
+      "dB": 200.00000000000006,
+      "dS": 400.0,
+      "shift_ok": true,
+      "rows_invariant": true
+     }
+    },
+    "hard_zeros": {
+     "n": 6,
+     "states": 729,
+     "log2_B": 23.10931927314205,
+     "log2_S": 46.218638546265765,
+     "ref_B": 23.10931927314205,
+     "ref_S": 46.21863854626577,
+     "B_dom": true,
+     "S_dom": true,
+     "float_B_agrees": true,
+     "float_S_agrees": true,
+     "cert": true,
+     "g1_q_exact": true,
+     "g1_B_dom": true,
+     "g1_S_dom": true,
+     "g1_extended": 2,
+     "candidate": {
+      "evals": 2,
+      "log2_B": 23.109319273153474,
+      "log2_S": 46.21863854627337,
+      "B_dom": true,
+      "S_dom": true,
+      "cert": true,
+      "rows_sum_D": true,
+      "changed": true
+     },
+     "scaling": {
+      "dB": 200.00000000000006,
+      "dS": 400.0,
+      "shift_ok": true,
+      "rows_invariant": true
+     }
+    },
+    "zero_mass": {
+     "zero_U": true,
+     "B_zero": true
+    },
+    "hard_zero_row": {
+     "finite": true,
+     "grad_finite": true,
+     "has_inf_source": true
+    }
+   }
+  },
+  "D59": {
+   "status": "PORTABLE",
+   "seconds": 0.29,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D59_gradient_convexity_pnorm",
+    "ok": true,
+    "card4_n5": {
+     "n_params": 356,
+     "max_fd_rel_error": 2.060644238885364e-06,
+     "max_row_sum": 8.933825901280557e-17,
+     "pnorm": {
+      "hard": 21.00360704580625,
+      "smoothed": [
+       21.6228015284098,
+       21.0413662620635,
+       21.003898225364967,
+       21.003607046012917
+      ],
+      "upper": true,
+      "decreasing": true,
+      "within_delta": true,
+      "deltas": [
+       1.7328679513998633,
+       0.4332169878499658,
+       0.10830424696249145,
+       0.027076061740622864
+      ]
+     },
+     "midpoint_ok": true,
+     "midpoint_worst_violation": 0.0,
+     "transposed_ok": true,
+     "no_stale_reuse": true
+    },
+    "binary_n8": {
+     "n_params": 58,
+     "max_fd_rel_error": 4.440123818437122e-06,
+     "max_row_sum": 1.249000902703301e-16,
+     "pnorm": {
+      "hard": 25.23703479381772,
+      "smoothed": [
+       25.763274828238796,
+       25.26573083818188,
+       25.23748850823411,
+       25.237034796737305
+      ],
+      "upper": true,
+      "decreasing": true,
+      "within_delta": true,
+      "deltas": [
+       1.3862943611198906,
+       0.34657359027997264,
+       0.08664339756999316,
+       0.02166084939249829
+      ]
+     },
+     "midpoint_ok": true,
+     "midpoint_worst_violation": 0.0,
+     "transposed_ok": true,
+     "no_stale_reuse": true
+    },
+    "mixed": {
+     "n_params": 81,
+     "max_fd_rel_error": 2.5264168780230445e-06,
+     "max_row_sum": 9.93129189996722e-17,
+     "pnorm": {
+      "hard": 17.302377470846853,
+      "smoothed": [
+       17.799762061938694,
+       17.3376811573782,
+       17.302989058896493,
+       17.302377480254513
+      ],
+      "upper": true,
+      "decreasing": true,
+      "within_delta": true,
+      "deltas": [
+       1.2424533248940002,
+       0.31061333122350004,
+       0.07765333280587501,
+       0.019413333201468753
+      ]
+     },
+     "midpoint_ok": true,
+     "midpoint_worst_violation": 0.0,
+     "transposed_ok": true,
+     "no_stale_reuse": true
+    },
+    "shared_source": {
+     "shared": [
+      8,
+      7
+     ],
+     "max_fd_rel_error": 7.374630113385542e-09,
+     "uses": 2
+    }
+   }
+  },
+  "D60": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D60_optimizer_limits_and_expiry",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D61": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D61_global_stream_lifecycle",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D62": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "\"brief section 5: (a) accepted primary preservation: a --global request on three",
+    "'/code/runs/mdi_2026-10-28'",
+    "'/code/runs/mdi_2026-10-28/DGP5_JOINT_CONSTRUCTION/MAIN_MANIFEST.json'",
+    "'/nonexistent/workstation/code/runs/mdi_2026-10-28/NOWHERE/missing.uai'",
+    "'DGP_ROOTS'",
+    "DEV",
+    "RECORDS"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D62_primary_preservation_and_relocation",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "ame); outs = {}\n                     ^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4_clique_two.uai'\n"
+   }
+  },
+  "D63": {
+   "status": "BLOCKED",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D63_seed_residual_inequalities",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D64": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D64_local_F_source_binding",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "rder)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D65": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D65_exact_K_T2_and_weighted_moment",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D66": {
+   "status": "BLOCKED",
+   "seconds": 0.31,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D66_waterfill_kkt_and_objective",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D67": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "'/code/runs/mdi_2026-10-28/DGP4_RESIDUAL_MAX/inputs_fresh/dg_n32_c4_er50_two.uai",
+    "ORACLE_DEV",
+    "RECORDS"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D67_sequential_transactions_and_bank_immutability",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D68": {
+   "status": "BLOCKED",
+   "seconds": 0.35,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D68_quantization_and_cap_ceiling",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "nts))\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D69": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D69_allocation_refusal_deadline_positions",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 14, in load\n    def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_clique_two.uai'\n"
+   }
+  },
+  "D70": {
+   "status": "BLOCKED",
+   "seconds": 0.35,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "DEV",
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D70_zero_target_eviction_and_cleanup",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D71": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [
+    "'/code/runs/mdi_2026-10-28/DGP7_RESIDUAL_JOINT'",
+    "RECORDS"
+   ],
+   "other_missing_paths": [],
+   "error_tail": "",
+   "control_record": {
+    "control": "D71_scheduling_calibration_vs_scored_cells",
+    "ok": false,
+    "n_cells": 0,
+    "n_windows": 0,
+    "median": null,
+    "p90": null,
+    "max": null,
+    "min": null,
+    "by_volume": {},
+    "skipped_statuses": {},
+    "tolerance": "median <= 1.5 and p90 <= 2.5 of actual / predicted on the scored DGP7 windows (fitted windows only)",
+    "frozen_blocks": {
+     "t_setup_s": 0.0408088,
+     "t_float_cell_s": 5.04861e-08,
+     "t_compact_cell_s": 6.767e-07,
+     "t_context_sample_s": 8.3234e-07,
+     "t_output_s": 0.002
+    },
+    "note": "the constants are NOT tuned by this control; a failure is reported as a scheduling-forecast defect (DGP7 review finding: missing scheduling calibration check)"
+   }
+  },
+  "D72": {
+   "status": "PORTABLE",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D72_interaction_matrix_and_witness_algebra",
+    "ok": true,
+    "a_orientations": {
+     "contains_ij": true,
+     "contains_ji": true,
+     "same_matrix": true,
+     "D": 5
+    },
+    "b_unaries": {
+     "A_identical": true,
+     "h_differs": true
+    },
+    "c_mixed_cards": {
+     "contains": true,
+     "worst_width": 4.440892098500626e-16,
+     "null_space": true,
+     "D": 10
+    },
+    "d_duplicate_pairs": {
+     "blocks_in_canonical": 2,
+     "contains_dup": true,
+     "contains_product": true,
+     "dup_contains_product_exact": true
+    },
+    "e_evidence": {
+     "retained": 2,
+     "D": 5,
+     "contains": true,
+     "null_space": true
+    },
+    "f_n1": {
+     "note": "canonicalize fixed every variable (factorless -> exact rows); no matrix"
+    },
+    "f_independent_3": {
+     "note": "canonicalize fixed every variable (factorless -> exact rows); no matrix"
+    }
+   }
+  },
+  "D73": {
+   "status": "PORTABLE",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D73_rigorous_logs_and_eigenvalue_witness",
+    "ok": true,
+    "logs": {
+     "n": 46,
+     "violations": 0,
+     "max_width": 8.271806125530277e-25
+    },
+    "cholesky": {
+     "pd_ok": true,
+     "indefinite_ok": false,
+     "indefinite_failed_column": 1,
+     "wide_ok": false
+    },
+    "negative_retained": {
+     "l": -0.9893924846732143,
+     "u": 0.9893924846732143,
+     "width": 1.9787849693464286,
+     "expected_width_4J": 1.9787849673444282,
+     "eligible": true,
+     "model_untouched": true
+    },
+    "ising_convention": {
+     "J_below": 0.49469624183610705,
+     "eligible_below": true,
+     "width_below": 1.9787849693464286,
+     "J_above": 0.5068176023684519,
+     "eligible_above": false,
+     "width_above": 2.027270411503078,
+     "refusal_above": "SPECTRAL_WIDTH"
+    },
+    "boundary": {
+     "width_below": 1.9999980020020007,
+     "eligible_below": true,
+     "margin_below": 9.989989996905813e-07,
+     "width_above": 2.000002002002003,
+     "eligible_above": false,
+     "refusal_above": "SPECTRAL_WIDTH"
+    },
+    "tampered": {
+     "tampered_l_eligible": false,
+     "tampered_kind": "SPECTRAL_PROOF",
+     "insufficient_u_eligible": false,
+     "insufficient_kind": "SPECTRAL_PROOF",
+     "given_true_eligible": true,
+     "proposal_recorded": true
+    }
+   }
+  },
+  "D74": {
+   "status": "PORTABLE",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D74_exact_conditionals_detailed_balance_and_independent_path",
+    "ok": true,
+    "states": 16,
+    "conditional_mismatches": 0,
+    "detailed_balance_violations": 0,
+    "independent_path_identical": true,
+    "distinct_states_visited": 11
+   }
+  },
+  "D75": {
+   "status": "PORTABLE",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D75_counters_and_occupation",
+    "ok": true,
+    "exact": {
+     "steps_counted": 500,
+     "null_moves": 315,
+     "flush_equals_explicit": true,
+     "second_flush_idempotent": true,
+     "sums": [
+      500,
+      500,
+      500,
+      500,
+      500
+     ],
+     "k_more_steps_add_k": true,
+     "first_recorded": true
+    },
+    "native": {
+     "steps_counted": 500,
+     "null_moves_observed": 310,
+     "null_moves_kernel_total": 336,
+     "flush_equals_explicit": true,
+     "second_flush_idempotent": true,
+     "sums": [
+      500,
+      500,
+      500,
+      500,
+      500
+     ],
+     "max_count_le_N": true,
+     "k_more_steps_add_k": true
+    }
+   }
+  },
+  "D76": {
+   "status": "PORTABLE",
+   "seconds": 0.21,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D76_native_exactness_qualification",
+    "ok": true,
+    "cdf_containment": {
+     "cells": 5592,
+     "violations": 0
+    },
+    "decisions": {
+     "trials": 3000,
+     "resolved": 3000,
+     "agree": 3000,
+     "disagreements": 0
+    },
+    "altered_conditional": {
+     "adversarial_u53_bits": 53,
+     "exact_with_zero_bits": 1,
+     "exact_with_one_bits": 2,
+     "altered_decision": 1,
+     "altered_disagrees_with_some_exact": true,
+     "kernel_rule_resolved_here": false,
+     "histogram_max_abs_deviation": 0.006455148819705769,
+     "histogram_looks_reasonable": true
+    }
+   }
+  },
+  "D77": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D77_optional_route_refusals",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D78": {
+   "status": "PORTABLE",
+   "seconds": 0.26,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [
+    "_WEAK32"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": null,
+   "control_record": {
+    "control": "D78_markov_certificate_algebra",
+    "ok": true,
+    "p0": {
+     "ln_p0_lower": -4.669708707125663,
+     "ln_p0_exact": -4.669708707125663,
+     "ln_px0": -1.6336199052865523,
+     "bound_le_exact_p0": true,
+     "p0_le_px0": true,
+     "Z_le_ZU": true
+    },
+    "overflow": {
+     "ln_Z_upper": 1249.0512193690215,
+     "ln_p0_lower": -1.3862943611198906,
+     "finite": true
+    },
+    "degenerate": {
+     "width": 2.0020000000000003e-09,
+     "g": 0.4999999994995,
+     "n": 2,
+     "g_times_n": 0.999999998999,
+     "burn_in": 22,
+     "eligible": true
+    },
+    "radius": {
+     "monotone": true,
+     "max_rel_err_vs_float": 1.7032286459999368e-16,
+     "upper_bound_of_float": true
+    },
+    "checkpoints": {
+     "plan": [
+      125001,
+      250001,
+      500002,
+      1000003
+     ],
+     "strictly_increasing": true,
+     "last_is_N_max": true,
+     "sum_delta_j_equals_delta_sample": true,
+     "beta_plus_sample_le_delta": true
+    },
+    "deadline_crossing": {
+     "rc": 0,
+     "outcome": "REFUSED",
+     "published": 0,
+     "refusal": {
+      "kind": "INTERNAL",
+      "reason": "FileNotFoundError(2, 'No such file or directory')"
+     },
+     "json_complete": true,
+     "stderr_tail": ""
+    }
+   }
+  },
+  "D79": {
+   "status": "BLOCKED",
+   "seconds": 0.17,
+   "returncode": 0,
+   "missing_private_dependency": [
+    "/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai"
+   ],
+   "private_record_constants_referenced": [
+    "ORACLE_DEV"
+   ],
+   "other_missing_paths": [
+    "No such file or directory"
+   ],
+   "error_tail": "FileNotFoundError(2, 'No such file or directory')",
+   "control_record": {
+    "control": "D79_rng_expiry_and_admission",
+    "ok": false,
+    "error": "FileNotFoundError(2, 'No such file or directory')",
+    "tb": "^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/code/cex/hp/check_dgp.py\", line 18, in load_odev\n    def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/core.py\", line 12, in read_uai\n    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')\n        ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1019, in read_bytes\n    with self.open(mode='rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/pathlib.py\", line 1013, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-wh7f14ee/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4_clique_two.uai'\n"
+   }
+  },
+  "D80": {
+   "status": "BLOCKED",
+   "seconds": 0.33,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [
+    "_WEAK32"
+   ],
+   "other_missing_paths": [
+    "No such \n{",
+    "No such file or directory"
+   ],
+   "error_tail": "",
+   "control_record": {
+    "control": "D80_finalizer_before_single_final_timestamp",
+    "ok": false,
+    "source": {
+     "tnow_calls_in_finish": 1,
+     "single_authoritative_sample": true,
+     "rows_assigned_after_sample": true,
+     "late_suppression_present": true
+    },
+    "late": {
+     "rc": 0,
+     "outcome": "REFUSED",
+     "hard_deadline_respected": true,
+     "published": 0,
+     "suppressed": null,
+     "refusal": {
+      "kind": "INTERNAL",
+      "reason": "FileNotFoundError(2, 'No such file or directory')"
+     },
+     "json_complete": true,
+     "stderr_tail": ""
+    },
+    "normal": {
+     "rc": 0,
+     "outcome": "REFUSED",
+     "hard_deadline_respected": true,
+     "checkpoints_completed": 0,
+     "published": 0,
+     "enclosures": 0,
+     "radius": null,
+     "total_failure_probability": null,
+     "transitions": null,
+     "wall_s": 0.000808165998,
+     "stderr_tail": ""
+    }
+   }
+  },
+  "D81": {
+   "status": "PORTABLE",
+   "seconds": 0.29,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D81_publication_geometry",
+    "ok": true,
+    "just_below": {
+     "published": 2,
+     "enclosures": 0,
+     "points_sum_one": true,
+     "point_inside": true,
+     "widths_le_2eps": true
+    },
+    "just_above": {
+     "published": 0,
+     "enclosures": 2,
+     "enclosure_width_gt_2eps": true
+    },
+    "clipping": {
+     "rows": [
+      [
+       "999/1000",
+       "1",
+       "1"
+      ],
+      [
+       "0",
+       "1/1000",
+       "0"
+      ]
+     ],
+     "clipped_to_unit": true,
+     "published": 2
+    },
+    "fixed_rows": {
+     "rc": 0,
+     "outcome": "PARTIAL",
+     "rows": {
+      "(1, 0)": [
+       "EXACT",
+       "1"
+      ],
+      "(2, 0)": [
+       "EXACT",
+       "1/4"
+      ],
+      "(2, 1)": [
+       "EXACT",
+       "1/2"
+      ],
+      "(2, 2)": [
+       "EXACT",
+       "1/4"
+      ]
+     },
+     "card1_exact_one": true,
+     "factorless_exact": true,
+     "stderr_tail": ""
+    }
+   }
+  },
+  "D82": {
+   "status": "PORTABLE",
+   "seconds": 0.62,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D82_native_range_gauges_and_exact_decisions",
+    "ok": true,
+    "gauge_0": {
+     "native_weights": [
+      0.125,
+      0.125
+     ],
+     "counts": [
+      [
+       10154,
+       9846
+      ],
+      [
+       9986,
+       10014
+      ],
+      [
+       9678,
+       10322
+      ]
+     ],
+     "unresolved": 0,
+     "range_min_log2": -3.0,
+     "absorbed": false
+    },
+    "gauge_-600": {
+     "native_weights": [
+      0.125,
+      0.125
+     ],
+     "counts": [
+      [
+       10154,
+       9846
+      ],
+      [
+       9986,
+       10014
+      ],
+      [
+       9678,
+       10322
+      ]
+     ],
+     "unresolved": 0,
+     "range_min_log2": -3.0,
+     "absorbed": false
+    },
+    "gauge_600": {
+     "native_weights": [
+      0.125,
+      0.125
+     ],
+     "counts": [
+      [
+       10154,
+       9846
+      ],
+      [
+       9986,
+       10014
+      ],
+      [
+       9678,
+       10322
+      ]
+     ],
+     "unresolved": 0,
+     "range_min_log2": -3.0,
+     "absorbed": false
+    },
+    "gauge_-540": {
+     "native_weights": [
+      0.125,
+      0.125
+     ],
+     "counts": [
+      [
+       10154,
+       9846
+      ],
+      [
+       9986,
+       10014
+      ],
+      [
+       9678,
+       10322
+      ]
+     ],
+     "unresolved": 0,
+     "range_min_log2": -3.0,
+     "absorbed": false
+    },
+    "identical_paths_across_gauges": true,
+    "runner_1e-200": {
+     "rc": 0,
+     "outcome": "COMPLETE",
+     "published": 6,
+     "wrong_rows": 0,
+     "chain": "native",
+     "stderr": ""
+    },
+    "wide_native": {
+     "refused": true,
+     "kind": "NATIVE_RANGE",
+     "live_after": 656
+    },
+    "wide_runner": {
+     "rc": 0,
+     "outcome": "PARTIAL",
+     "chain": "exact",
+     "native_refusal": "NATIVE_RANGE",
+     "rows_enclosing_truth": 4,
+     "rows": 4,
+     "transitions": 42969,
+     "stderr": ""
+    },
+    "decisions": {
+     "trials": 2000,
+     "resolved": 1800,
+     "agree": 1800,
+     "forced_fallbacks": 200,
+     "forced_consistent": 200
+    }
+   }
+  },
+  "D83": {
+   "status": "PORTABLE",
+   "seconds": 1.75,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D83_spectral_exact_accumulation",
+    "ok": true,
+    "cancellation_zero": {
+     "trials": 30,
+     "excluded": null
+    },
+    "false_admission": {
+     "eligible": false,
+     "refusal": "SPECTRAL_WIDTH",
+     "width_proposal": 2.0000000030019995,
+     "true_width_lower": 2.000000001,
+     "live_restored": true
+    },
+    "order_invariance": true,
+    "policy_boundary": [
+     {
+      "t": "41/25",
+      "fixed": true,
+      "revised": true,
+      "attempts": 1,
+      "attempt_seconds": [
+       0.0002
+      ],
+      "refusal": null,
+      "width": 1.9787849693464286
+     },
+     {
+      "t": "16487/10000",
+      "fixed": true,
+      "revised": true,
+      "attempts": 1,
+      "attempt_seconds": [
+       0.0002
+      ],
+      "refusal": null,
+      "width": 1.9999483963419833
+     },
+     {
+      "t": "83/50",
+      "fixed": false,
+      "revised": false,
+      "attempts": 0,
+      "attempt_seconds": [],
+      "refusal": "SPECTRAL_WIDTH",
+      "width": 2.027270411503078
+     }
+    ]
+   }
+  },
+  "D84": {
+   "status": "PORTABLE",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D84_jbox_publication",
+    "ok": true,
+    "clipped": {
+     "published": 3,
+     "enclosures": 0,
+     "endpoint_radii": [
+      0.004,
+      0.0045,
+      0.004
+     ],
+     "max_point_error_vs_truth": 0.0045,
+     "policy": {
+      "midpoints": 1
+     }
+    },
+    "one_wide_row_blocks_variable": {
+     "published": 0,
+     "enclosures": 3
+    },
+    "normalized_points": {
+     "published": 2,
+     "sum_one": true,
+     "policy": {
+      "J_normalized": 1
+     }
+    }
+   }
+  },
+  "D85": {
+   "status": "PORTABLE",
+   "seconds": 0.66,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D85_runner_contracts",
+    "ok": true,
+    "scalar_Z": {
+     "log2_lo": 10.965784284662087,
+     "log2_hi": 12.965784284662089,
+     "contains": true,
+     "scalar": "2000"
+    },
+    "early_inventory": {
+     "K": 6,
+     "rows": 6,
+     "outcome": "REFUSED",
+     "kind": "MEMORY"
+    },
+    "crossing_factorless": {
+     "outcome": "DEADLINE",
+     "published": 0,
+     "respected": false,
+     "suppressed": 6
+    },
+    "crossing_ordinary": {
+     "outcome": "DEADLINE",
+     "published": 0,
+     "respected": false,
+     "suppressed": 4
+    },
+    "finish_source": {
+     "tnow_calls": 1,
+     "rows_after_sample": true
+    },
+    "rate_model_missing": {
+     "rc": 3,
+     "kind": "RATE_MODEL_MISSING",
+     "outcome": "REFUSED",
+     "K": 6
+    }
+   }
+  },
+  "D86": {
+   "status": "PORTABLE",
+   "seconds": 0.29,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D86_ownership_and_admission",
+    "ok": true,
+    "witness": {
+     "global_cache_absent": true,
+     "cache": {
+      "entries": 1024,
+      "hits": 64,
+      "misses": 1024,
+      "bytes_charged": 524288
+     },
+     "retained_declared": 1736,
+     "live_after_certify_equals_retained": true,
+     "restored_after_release": true,
+     "peak_charge": 1439296
+    },
+    "native_zero_headroom": {
+     "kind": "MEMORY",
+     "traced_peak_bytes": 5359
+    },
+    "expired_plan_entry": {
+     "polls": [
+      "circuit plan construction entry"
+     ],
+     "traced_peak_bytes": 2008,
+     "ledger_live": 0
+    },
+    "retained_plans": {
+     "ledger_live": 2670592,
+     "meta_total": 2670592,
+     "released_live": 0
+    },
+    "certifier_zero_headroom": {
+     "refused": true,
+     "kind": "MEMORY"
+    }
+   }
+  },
+  "D87": {
+   "status": "BLOCKED",
+   "seconds": 0.34,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [
+    "_WEAK32"
+   ],
+   "other_missing_paths": [],
+   "error_tail": "",
+   "control_record": {
+    "control": "D87_summable_checkpoint_plan",
+    "ok": false,
+    "risk_sum_J1": "1/4000000",
+    "risk_sum_J4": "1/2500000",
+    "risk_sum_J16": "1/2125000",
+    "risk_sum_J64": "1/2031250",
+    "plan": {
+     "length": 64,
+     "strictly_increasing": true,
+     "head": [
+      1000,
+      1250,
+      1563,
+      1954,
+      2442
+     ],
+     "tail": [
+      1019578824,
+      1274473529
+     ]
+    },
+    "fixed": {
+     "rc": 0,
+     "completed": null,
+     "declared": null,
+     "N_max": null,
+     "radius": null,
+     "stop": null,
+     "risks": null
+    },
+    "revised": {
+     "rc": 0,
+     "completed": null,
+     "declared": null,
+     "last_N": null,
+     "radius": null,
+     "stop": null,
+     "total_failure": null,
+     "risk_sum": null,
+     "wall": 0.000842417001
+    }
+   }
+  },
+  "D88": {
+   "status": "PORTABLE",
+   "seconds": 0.2,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D88_original_dgp7_findings",
+    "ok": true,
+    "F1": {
+     "honest_ok": true,
+     "honest_B": "2",
+     "duplicate_ok": false,
+     "why": "structure: repeated residual atom id in the consumption inventory [0, 0, 1] (DGP",
+     "mutated": false,
+     "consume_preflight": true
+    },
+    "F2": {
+     "stage_three_halves": false,
+     "stage_one": true,
+     "standalone_three_halves_accepted": false
+    },
+    "F3_epoch": {
+     "raised": "Deadline",
+     "epochs": 1,
+     "note": "the seed epoch carries the real clock stamp of prepare(); the injected crossing must leave it the ONLY epoch"
+    },
+    "F3_batch_source": {
+     "single_sample": true,
+     "no_reduction_after": true
+    },
+    "F4c": {
+     "law_cleared": true,
+     "identity_kept": true
+    },
+    "F5": {
+     "projected": 131072,
+     "cap": 131072,
+     "evictions": 2,
+     "fits": true
+    }
+   }
+  },
+  "D89": {
+   "status": "PORTABLE",
+   "seconds": 12.35,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [],
+   "other_missing_paths": [],
+   "error_tail": null,
+   "control_record": {
+    "control": "D89_workspace_peak_admitted",
+    "ok": true,
+    "ok_kernel": true,
+    "volume": 65536,
+    "atoms": 16,
+    "admitted_workspace": 53608448,
+    "est_float": 25231360,
+    "est_kernel": 53608448,
+    "traced_peak": 39336921,
+    "peak_over_admitted": 0.7337821270259494,
+    "seconds": 12.183300834003603
+   }
+  },
+  "D90": {
+   "status": "BLOCKED",
+   "seconds": 0.16,
+   "returncode": 0,
+   "missing_private_dependency": [],
+   "private_record_constants_referenced": [
+    "_DGP9_PACKET"
+   ],
+   "other_missing_paths": [],
+   "error_tail": "",
+   "control_record": {
+    "control": "D90_recovered_references",
+    "ok": false,
+    "heatbath_reference/heatbath_reference.py": {
+     "present": false
+    },
+    "exact_reference/exact_aggregate_reference.py": {
+     "present": false
+    },
+    "blocks/check_hs_gap.py": {
+     "present": false
+    }
+   }
+  }
+ }
+}

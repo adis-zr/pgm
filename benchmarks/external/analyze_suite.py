@@ -67,16 +67,16 @@ def main():
                     )
         checked = {"output_valid": False, "all_queries_returned": False}
         output_exists = (
-            folder / ("result.json" if r["arm"] == "PGM" else "output.MAR")
+            folder / ("result.json" if h.is_pgm(r["arm"]) else "output.MAR")
         ).exists()
         if output_exists:
             try:
                 checked = (
                     h.check_pgm(folder / "result.json", task)
-                    if r["arm"] == "PGM"
+                    if h.is_pgm(r["arm"])
                     else h.check_libdai(folder, task)
                 )
-                if r["arm"] == "PGM":
+                if h.is_pgm(r["arm"]):
                     geometry["published_coordinate_instances"] += checked["published"]
                     geometry["max_endpoint_radius"] = max(
                         geometry["max_endpoint_radius"], checked["max_published_radius"]
@@ -117,6 +117,7 @@ def main():
         if receipt:
             r["wall_s"] = receipt["wall_s"]
             r["receipt_outcome"] = receipt["outcome"]
+    pgm_arms = [a for a in f["arms"] if h.is_pgm(a)]
     groups = {}
     pairs = []
     for cohort in ["historical46", "external_extension", "prospective_external_eval"]:
@@ -158,16 +159,17 @@ def main():
                     for rep in f["replicates"]
                 )
             )
-        mutual = sorted(set(sets["PGM"]) & set(sets["LIBDAI_JT"]))
-        cohortpairs = []
+        mutual = {P: sorted(set(sets[P]) & set(sets["LIBDAI_JT"])) for P in pgm_arms}
+        cohortpairs = {P: [] for P in pgm_arms}
         for t in tt:
             row = {
                 "task": t["name"],
                 "cohort": cohort,
-                "pgm_complete_both": t["name"] in sets["PGM"],
                 "jt_complete_both": t["name"] in sets["LIBDAI_JT"],
                 "bp_complete_both": t["name"] in sets["LIBDAI_BP"],
             }
+            for P in pgm_arms:
+                row[f"{P}_complete_both"] = t["name"] in sets[P]
             for arm in f["arms"]:
                 rr = [bykey.get((t["name"], arm, r), {}) for r in f["replicates"]]
                 for i, x in enumerate(rr, 1):
@@ -177,30 +179,38 @@ def main():
                     )
                 if len(rr) == 2 and all(x.get("complete_within_contract") for x in rr):
                     row[arm + "_median_s"] = statistics.median(x["wall_s"] for x in rr)
-            if t["name"] in mutual:
-                row["JT_over_PGM_median"] = (
-                    row["LIBDAI_JT_median_s"] / row["PGM_median_s"]
+            for P in pgm_arms:
+                if t["name"] in mutual[P]:
+                    row[f"JT_over_{P}_median"] = (
+                        row["LIBDAI_JT_median_s"] / row[P + "_median_s"]
+                    )
+                    for rep in f["replicates"]:
+                        row[f"JT_over_{P}_r{rep}"] = (
+                            bykey[t["name"], "LIBDAI_JT", rep]["wall_s"]
+                            / bykey[t["name"], P, rep]["wall_s"]
+                        )
+                    cohortpairs[P].append(row[f"JT_over_{P}_median"])
+                if row[f"{P}_complete_both"] and not row["jt_complete_both"]:
+                    timeout_reps = [
+                        rep
+                        for rep in f["replicates"]
+                        if bykey.get((t["name"], "LIBDAI_JT", rep), {}).get(
+                            "receipt_outcome"
+                        )
+                        == "TIMEOUT_KILL"
+                    ]
+                    if len(timeout_reps) == 2:
+                        row[f"JT_timeout_lower_bound_both_{P}"] = min(
+                            f["budget_s"] / bykey[t["name"], P, rep]["wall_s"]
+                            for rep in timeout_reps
+                        )
+            if len(pgm_arms) == 2:
+                # the two public arms are the same package under explicit policies: completion agreement per task
+                row["accepted_vs_experimental"] = (
+                    "both" if all(row[f"{P}_complete_both"] for P in pgm_arms)
+                    else "neither" if not any(row[f"{P}_complete_both"] for P in pgm_arms)
+                    else next(P for P in pgm_arms if row[f"{P}_complete_both"]) + "_only"
                 )
-                for rep in f["replicates"]:
-                    row[f"JT_over_PGM_r{rep}"] = (
-                        bykey[t["name"], "LIBDAI_JT", rep]["wall_s"]
-                        / bykey[t["name"], "PGM", rep]["wall_s"]
-                    )
-                cohortpairs.append(row["JT_over_PGM_median"])
-            if row["pgm_complete_both"] and not row["jt_complete_both"]:
-                timeout_reps = [
-                    rep
-                    for rep in f["replicates"]
-                    if bykey.get((t["name"], "LIBDAI_JT", rep), {}).get(
-                        "receipt_outcome"
-                    )
-                    == "TIMEOUT_KILL"
-                ]
-                if len(timeout_reps) == 2:
-                    row["JT_timeout_lower_bound_both"] = min(
-                        f["budget_s"] / bykey[t["name"], "PGM", rep]["wall_s"]
-                        for rep in timeout_reps
-                    )
             pairs.append(row)
         groups[cohort] = {
             "inputs": len(tt),
@@ -208,15 +218,16 @@ def main():
             "one_replicate_only": one_rep,
             "converged_both": converged,
             "mutual_pgm_jt": mutual,
-            "pgm_only_vs_jt": sorted(set(sets["PGM"]) - set(sets["LIBDAI_JT"])),
-            "jt_only_vs_pgm": sorted(set(sets["LIBDAI_JT"]) - set(sets["PGM"])),
-            "median_task_JT_over_PGM": (
-                statistics.median(cohortpairs) if cohortpairs else None
-            ),
+            "pgm_only_vs_jt": {P: sorted(set(sets[P]) - set(sets["LIBDAI_JT"])) for P in pgm_arms},
+            "jt_only_vs_pgm": {P: sorted(set(sets["LIBDAI_JT"]) - set(sets[P])) for P in pgm_arms},
+            "median_task_JT_over_PGM": {P: (statistics.median(cohortpairs[P]) if cohortpairs[P] else None) for P in pgm_arms},
+            "accepted_only_vs_experimental": (sorted(set(sets[pgm_arms[0]]) - set(sets[pgm_arms[1]])) if len(pgm_arms) == 2 else None),
+            "experimental_only_vs_accepted": (sorted(set(sets[pgm_arms[1]]) - set(sets[pgm_arms[0]])) if len(pgm_arms) == 2 else None),
         }
     for t in f["tasks"]:
+      for P in pgm_arms:
         for rep in f["replicates"]:
-            pg = bykey.get((t["name"], "PGM", rep), {})
+            pg = bykey.get((t["name"], P, rep), {})
             jt = bykey.get((t["name"], "LIBDAI_JT", rep), {})
             bp = bykey.get((t["name"], "LIBDAI_BP", rep), {})
             if pg.get("complete_within_contract") and jt.get(
@@ -241,13 +252,14 @@ def main():
                 jt_diag.append(
                     {
                         "task": t["name"],
+                        "arm": P,
                         "replicate": rep,
                         "coordinates": coords,
                         "outside_after_serialization_allowance": outside,
                         "max_distance": maxdistance,
                     }
                 )
-            if bp.get("complete_within_contract") and jt.get(
+            if P == pgm_arms[0] and bp.get("complete_within_contract") and jt.get(
                 "complete_within_contract"
             ):
                 a = h.read_mar(ROOT / "runs" / bp["job"] / "output.MAR", t)
@@ -279,19 +291,23 @@ def main():
             for rep in (1, 2)
         )
     }
-    new = set().union(
-        *(
-            set(g["complete_both"]["PGM"])
-            for key, g in groups.items()
-            if key != "prospective_external_eval"
+    new = {
+        P: set().union(
+            *(
+                set(g["complete_both"][P])
+                for key, g in groups.items()
+                if key != "prospective_external_eval"
+            )
         )
-    )
+        for P in pgm_arms
+    }
     prior_comparison = {
         "caveat": "Historical previous execution on same input hashes and20s contract, not a same-round controlled baseline arm; no paired latency claim.",
         "prior_complete_both": sorted(prior),
-        "retained": sorted(prior & new),
-        "lost": sorted(prior - new),
-        "gained": sorted(new - prior),
+        "per_arm": {
+            P: {"retained": sorted(prior & new[P]), "lost": sorted(prior - new[P]), "gained": sorted(new[P] - prior)}
+            for P in pgm_arms
+        },
     }
     charges = h.receipts(ROOT / "RECEIPTS.jsonl")
     result = {
@@ -327,40 +343,47 @@ def main():
         "",
         "One frozen public entrypoint,20 seconds end to end,3 GiB sampled process-tree RSS,epsilon0.005 and per-request delta1e-6. Every completion count requires both repeats. PGM deterministic/PAC certificates and libDAI point output have different assurance contracts.",
         "",
-        "| Cohort | Inputs | PGM | JT | BP points | BP converged |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Cohort | Inputs | " + " | ".join(pgm_arms) + " | JT | BP points | BP converged |",
+        "|---|---:|" + "---:|" * len(pgm_arms) + "---:|---:|---:|",
     ]
     for name, g in groups.items():
         lines.append(
-            f"| {name} | {g['inputs']} | {len(g['complete_both']['PGM'])} | {len(g['complete_both']['LIBDAI_JT'])} | {len(g['complete_both']['LIBDAI_BP'])} | {len(g['converged_both']['LIBDAI_BP'])} |"
+            f"| {name} | {g['inputs']} | " + " | ".join(str(len(g['complete_both'][P])) for P in pgm_arms) + f" | {len(g['complete_both']['LIBDAI_JT'])} | {len(g['complete_both']['LIBDAI_BP'])} | {len(g['converged_both']['LIBDAI_BP'])} |"
         )
     lines += [
         "",
         "The55 previously executed inputs are exposed regression tasks. Prospective evaluation tasks were selected by a frozen family-balanced hash rule after excluding model hashes in available prior records. This is not a claim that they were never encountered in unavailable historical records, and it is not unseen-family evaluation. Neither cohort contains synthetic performance tests.",
         "",
-        f"Historical accepted-engine completions retained:{len(prior&new)}/{len(prior)}. Lost:{', '.join(sorted(prior-new)) or 'none'}. Gained:{', '.join(sorted(new-prior)) or 'none'}. This is a historical coverage comparison, not a controlled same-round latency comparison.",
+        *[f"{P}: historical accepted-engine completions retained:{len(prior&new[P])}/{len(prior)}. Lost:{', '.join(sorted(prior-new[P])) or 'none'}. Gained:{', '.join(sorted(new[P]-prior)) or 'none'}." for P in pgm_arms],
         "",
         "## Timing and failures",
         "",
     ]
-    measured = sorted(
-        (p for p in pairs if "JT_over_PGM_median" in p),
-        key=lambda p: p["JT_over_PGM_median"],
-        reverse=True,
-    )
-    lines += [
-        "| Input | Cohort | PGM median s | JT median s | JT/PGM | Repeat1 | Repeat2 |",
-        "|---|---|---:|---:|---:|---:|---:|",
-    ]
-    for p in measured:
-        lines.append(
-            f"| {p['task']} | {p['cohort']} | {p['PGM_median_s']:.4f} | {p['LIBDAI_JT_median_s']:.4f} | {p['JT_over_PGM_median']:.3f} | {p['JT_over_PGM_r1']:.3f} | {p['JT_over_PGM_r2']:.3f} |"
+    for P in pgm_arms:
+        measured = sorted(
+            (p for p in pairs if f"JT_over_{P}_median" in p),
+            key=lambda p: p[f"JT_over_{P}_median"],
+            reverse=True,
         )
-    for name, g in groups.items():
         lines += [
             "",
-            f"{name}: PGM-only vs JT: {', '.join(g['pgm_only_vs_jt']) or 'none'}. JT-only vs PGM: {', '.join(g['jt_only_vs_pgm']) or 'none'}. One-repeat-only cases: {json.dumps(g['one_replicate_only'])}.",
+            f"### {P}",
+            "",
+            f"| Input | Cohort | {P} median s | JT median s | JT/{P} | Repeat1 | Repeat2 |",
+            "|---|---|---:|---:|---:|---:|---:|",
         ]
+        for p in measured:
+            lines.append(
+                f"| {p['task']} | {p['cohort']} | {p[P + '_median_s']:.4f} | {p['LIBDAI_JT_median_s']:.4f} | {p[f'JT_over_{P}_median']:.3f} | {p[f'JT_over_{P}_r1']:.3f} | {p[f'JT_over_{P}_r2']:.3f} |"
+            )
+        for name, g in groups.items():
+            lines += [
+                "",
+                f"{name} / {P}: {P}-only vs JT: {', '.join(g['pgm_only_vs_jt'][P]) or 'none'}. JT-only vs {P}: {', '.join(g['jt_only_vs_pgm'][P]) or 'none'}. One-repeat-only cases: {json.dumps(g['one_replicate_only'][P])}.",
+            ]
+    if len(pgm_arms) == 2:
+        for name, g in groups.items():
+            lines += ["", f"{name}: accepted-only vs experimental: {', '.join(g['accepted_only_vs_experimental']) or 'none'}. Experimental-only vs accepted: {', '.join(g['experimental_only_vs_accepted']) or 'none'}."]
     lines += [
         "",
         "Ratios above one favor PGM. Memory refusals have no speedup denominator. Timeouts provide only explicitly censored lower bounds. The full pair table retains failures. Two repeats do not establish population confidence intervals.",

@@ -1,0 +1,202 @@
+[
+ {
+  "capability": "structural",
+  "status": "selectable",
+  "method": [
+   "forest",
+   "source DAG",
+   "support contraction",
+   "bipartite stream"
+  ],
+  "representation": "exact rational UAI model (evidence sliced)",
+  "entrypoint": "core.solve(model, deadline, route)",
+  "adapter": "pgm.backends.structural",
+  "guarantees": [
+   "EXACT",
+   "DETERMINISTIC"
+  ],
+  "admission": "pairwise forest; empty-evidence source DAG; affordable sparse-support contraction; binary bipartite stream (checked by the route itself)",
+  "canonical_owner": "pgm.algorithms.structural",
+  "policies": [
+   "experimental"
+  ],
+  "evidence": [
+   "code/cex/newarm/*.json qualification records",
+   "tests/parity/reference_f8197e6.json"
+  ],
+  "mode": "automatic (policy-scheduled)"
+ },
+ {
+  "capability": "block",
+  "status": "selectable",
+  "method": [
+   "support closure",
+   "signed evidence",
+   "layered contraction",
+   "ancestral response",
+   "block contraction",
+   "importance sampling"
+  ],
+  "representation": "UAI file + adjacent .evid (exact rational)",
+  "entrypoint": "integrated.solve(path, budget, ..., model=, binding=)",
+  "adapter": "pgm.backends.block",
+  "guarantees": [
+   "EXACT",
+   "DETERMINISTIC",
+   "PAC"
+  ],
+  "admission": "any nonnegative rational model; exact route when affordable, certified PAC residual stream otherwise (typed refusals)",
+  "canonical_owner": "pgm.algorithms.block",
+  "policies": [
+   "accepted (default)",
+   "experimental"
+  ],
+  "evidence": [
+   "benchmarks/external/reference/previous_accepted_cells.json",
+   "documentation/reviews/QUALIFICATION.json"
+  ],
+  "mode": "automatic (policy-scheduled)"
+ },
+ {
+  "capability": "quotient",
+  "status": "selectable",
+  "method": [
+   "identity",
+   "exact quotient",
+   "checked approximate quotient",
+   "residual MAX",
+   "global proposal"
+  ],
+  "representation": "exact rational UAI model (canonicalized)",
+  "entrypoint": "unified_pac_planner.UPlanner(model, binding, budget, ...).run()",
+  "adapter": "pgm.backends.quotient",
+  "guarantees": [
+   "EXACT",
+   "DETERMINISTIC",
+   "PAC"
+  ],
+  "admission": "general nonnegative rational categorical model; each quotient / proposal is admitted by its own proof-boundary checker",
+  "canonical_owner": "pgm.algorithms.quotient",
+  "policies": [
+   "experimental"
+  ],
+  "evidence": [
+   "pgm-records DENSE_GENERIC_PAC_INTEGRATION_1 .. DGP7 rounds (E-MDI-50..56)"
+  ],
+  "mode": "automatic (policy-scheduled)"
+ },
+ {
+  "capability": "response",
+  "status": "selectable",
+  "method": [
+   "spectral admission",
+   "exact heat bath",
+   "Markov confidence certificate",
+   "conditional-response certificate"
+  ],
+  "representation": "strictly positive pairwise categorical model after canonicalization",
+  "entrypoint": "spectral_heatbath_run.solve_response(model, binding, ...)",
+  "adapter": "pgm.backends.response",
+  "guarantees": [
+   "PAC"
+  ],
+  "admission": "checked spectral witness (typed refusal on arity / hard zero / width / proof); PAC-permitted request only",
+  "canonical_owner": "pgm.algorithms.response",
+  "policies": [
+   "experimental"
+  ],
+  "evidence": [
+   "pgm-records DGP8 / DGP9 / DGP10 rounds (E-MDI-57..59)",
+   "documentation/reviews/DGP10_*.md"
+  ],
+  "mode": "automatic (policy-scheduled)"
+ },
+ {
+  "capability": "cqr",
+  "status": "specialist",
+  "method": "explicit bounded rational expectation / ratio query tables; singleton / joint / parity / conditional constructors; normalizer tasks",
+  "representation": "explicit bounded rational expectation / ratio query tables; singleton / joint / parity / conditional constructors; normalizer tasks",
+  "entrypoint": "pgm.specialists.cqr.load_task / solve",
+  "adapter": null,
+  "guarantees": [
+   "EXACT_RATIONAL",
+   "DETERMINISTIC",
+   "PAC"
+  ],
+  "admission": "general finite query / normalizer language is not silently reduced to singleton queries",
+  "canonical_owner": "code/cex/cqr (checkout-only; bare sibling imports)",
+  "policies": null,
+  "evidence": [
+   "code/cex/cqr/CQR_QUALIFICATION.json"
+  ],
+  "mode": "specialist (explicit API)"
+ },
+ {
+  "capability": "cbi",
+  "status": "specialist",
+  "method": "supplied product-kernel binary block model (JSON)",
+  "representation": "supplied product-kernel binary block model (JSON)",
+  "entrypoint": "pgm.specialists.cbi.solve / verify",
+  "adapter": null,
+  "guarantees": [
+   "CERTIFIED width"
+  ],
+  "admission": "requires a supplied product-kernel block representation",
+  "canonical_owner": "code/cbi",
+  "policies": null,
+  "evidence": [
+   "code/tests/test_cbi_conformance.py"
+  ],
+  "mode": "specialist (explicit API)"
+ },
+ {
+  "capability": "sf",
+  "status": "specialist",
+  "method": "supplied sparse two-block law (n <= 63) with bridge r",
+  "representation": "supplied sparse two-block law (n <= 63) with bridge r",
+  "entrypoint": "pgm.specialists.sf.law / select / checker",
+  "adapter": null,
+  "guarantees": [
+   "published grid enclosure (2^-80 outward)"
+  ],
+  "admission": "requires a supplied sparse two-block law",
+  "canonical_owner": "code/sf",
+  "policies": null,
+  "evidence": [
+   "code/tests/test_sf_conformance.py"
+  ],
+  "mode": "specialist (explicit API)"
+ },
+ {
+  "capability": "h4",
+  "status": "reference",
+  "method": "fixed H4 arithmetic cohort",
+  "representation": "fixed H4 arithmetic cohort",
+  "entrypoint": "pgm.specialists.h4a.available / arm_main",
+  "adapter": null,
+  "guarantees": [
+   "checked point / rectangle witnesses"
+  ],
+  "admission": "shipped worker is a fixed arithmetic cohort, not a generic UAI recognizer",
+  "canonical_owner": "code/h4a + code/native (host-built kernels in code/build)",
+  "policies": null,
+  "evidence": [
+   "code/tests/test_h4a_review2.py"
+  ],
+  "mode": "reference-only"
+ },
+ {
+  "capability": "frozen_snapshots",
+  "status": "historical",
+  "method": null,
+  "representation": null,
+  "entrypoint": null,
+  "adapter": null,
+  "guarantees": null,
+  "admission": "pinned references for differential tests and receipt identity; production never imports them",
+  "canonical_owner": "code/cex/{pac,baseline,b0_frozen_v14,newarm_dev}, code/ext",
+  "policies": null,
+  "evidence": null,
+  "mode": "reference-only (pinned snapshot)"
+ }
+]

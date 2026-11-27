@@ -141,7 +141,7 @@ def D93_reservation_transaction_and_failure_sweep():
     def fake_out(cmd, timeout=None, **kw): seen.append(('version', timeout)); return b'fake 1.0\n'
     with tempfile.TemporaryDirectory() as td:
         # the fake compiler writes into a TEMPORARY cache (HERE redirected): the real native_cache is never touched by this control
-        with patch.object(HN, 'HERE', td), patch.object(HN, 'SRC', os.path.join(HERE, 'heatbath_native.c')), patch.object(HN, 'RECORD', os.path.join(td, 'rec.json')), patch.object(HN, 'FLAGS', list(HN.FLAGS) + ['-DDGP10_TEST_%d' % random.randrange(10 ** 9)]), patch.object(HN.subprocess, 'check_call', fake_call), patch.object(HN.subprocess, 'check_output', fake_out), patch.object(HN, '_LIB', None):
+        with patch.object(HN, 'HERE', td), patch.object(HN, 'SRC', HN.SRC), patch.object(HN, 'RECORD', os.path.join(td, 'rec.json')), patch.object(HN, 'FLAGS', list(HN.FLAGS) + ['-DDGP10_TEST_%d' % random.randrange(10 ** 9)]), patch.object(HN.subprocess, 'check_call', fake_call), patch.object(HN.subprocess, 'check_output', fake_out), patch.object(HN, '_LIB', None):
             try: HN.build(CE.Clock(time.monotonic() + 0.4, {})); built = 'built'
             except Exception as e: built = repr(e)[:80]
             res['build_timeouts'] = dict(seen=[(k, round(t_, 3) if isinstance(t_, float) else t_) for k, t_ in seen], result=built)
@@ -298,7 +298,7 @@ def D98_residual_postcommit_no_scan():
 
 
 def D99_checker_identity_and_refusal():
-    res = {}; ok = True; ref = os.environ.get('DGP10_REFERENCE_CHECKED_TILT'); here_sha = hashlib.sha256(open(os.path.join(HERE, 'checked_tilt.py'), 'rb').read()).hexdigest(); res['checked_tilt_sha256'] = here_sha
+    res = {}; ok = True; ref = os.environ.get('DGP10_REFERENCE_CHECKED_TILT'); here_sha = hashlib.sha256(open(CT.__file__, 'rb').read()).hexdigest(); res['checked_tilt_sha256'] = here_sha
     if ref and os.path.exists(ref): res['reference_sha256'] = hashlib.sha256(open(ref, 'rb').read()).hexdigest(); res['byte_identical_to_reference'] = (res['reference_sha256'] == here_sha); ok &= res['byte_identical_to_reference']
     else: res['byte_identical_to_reference'] = 'reference path not given (DGP10_REFERENCE_CHECKED_TILT); the freeze records both hashes'
     # the proposer alone never authorizes: an expired checker leaves the group unavailable even when the proposer found a candidate

@@ -1,0 +1,300 @@
+{
+ "wheel": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/dist/pgm_certified-0.2.0-py3-none-any.whl",
+ "wheel_sha256": "d60452a4da6ab8c829dc925e6e3606673cf8a86ce87fa91e844198f0c4883639",
+ "work_dir": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms",
+ "python": "/Users/adis/Workspace/pgm/code/.venv/bin/python",
+ "steps": {
+  "venv": {
+   "cmd": [
+    "/Users/adis/Workspace/pgm/code/.venv/bin/python",
+    "-m",
+    "venv",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv"
+   ],
+   "returncode": 0,
+   "seconds": 1.584,
+   "stdout_tail": "",
+   "stderr_tail": ""
+  },
+  "pip_install": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-m",
+    "pip",
+    "install",
+    "-q",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/dist/pgm_certified-0.2.0-py3-none-any.whl"
+   ],
+   "returncode": 0,
+   "seconds": 4.858,
+   "stdout_tail": "",
+   "stderr_tail": "\n[notice] A new release of pip is available: 26.2.1 -> 26.3\n[notice] To update, run: pip install --upgrade pip\n"
+  },
+  "module_origins": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-c",
+    "import json, sys, pgm, pgm.api, pgm.switchboard, pgm.backends.worker, pgm.algorithms.structural.core, pgm.algorithms.block.integrated, pgm.algorithms.quotient.unified_pac_planner, pgm.algorithms.response.spectral_heatbath_run, pgm.runtime.supervise;mods={m: (getattr(sys.modules[m], '__file__', None) or '') for m in sys.modules if m.startswith('pgm')};print(json.dumps(dict(version=pgm.__version__, all_from_site_packages=all('site-packages' in f for f in mods.values() if f), n=len(mods), outside=[f for f in mods.values() if f and 'site-packages' not in f], sys_path=sys.path)))"
+   ],
+   "returncode": 0,
+   "seconds": 0.716,
+   "stdout_tail": "{\"version\": \"0.2.0\", \"all_from_site_packages\": true, \"n\": 66, \"outside\": [], \"sys_path\": [\"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python312.zip\", \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12\", \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/lib-dynload\", \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/lib/python3.12/site-packages\"]}\n",
+   "stderr_tail": ""
+  },
+  "capabilities": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-m",
+    "pgm",
+    "--capabilities"
+   ],
+   "returncode": 0,
+   "seconds": 0.05,
+   "stdout_tail": " law (n <= 63) with bridge r\",\n    \"guarantees\": [\n      \"published grid enclosure (2^-80 outward)\"\n    ],\n    \"reason\": \"requires a supplied sparse two-block law\",\n    \"evidence\": [\n      \"code/tests/test_sf_conformance.py\"\n    ]\n  },\n  \"h4\": {\n    \"status\": \"reference\",\n    \"owner\": \"code/h4a + code/native (host-built kernels in code/build)\",\n    \"entrypoint\": \"pgm.specialists.h4a.available / arm_main\",\n    \"representation\": \"fixed H4 arithmetic cohort\",\n    \"guarantees\": [\n      \"checked point / rectangle witnesses\"\n    ],\n    \"reason\": \"shipped worker is a fixed arithmetic cohort, not a generic UAI recognizer\",\n    \"evidence\": [\n      \"code/tests/test_h4a_review2.py\"\n    ]\n  },\n  \"frozen_snapshots\": {\n    \"status\": \"historical\",\n    \"owner\": \"code/cex/{pac,baseline,b0_frozen_v14,newarm_dev}, code/ext\",\n    \"entrypoint\": null,\n    \"reason\": \"pinned references for differential tests and receipt identity; production never imports them\"\n  },\n  \"unfinished\": {\n    \"status\": \"unfinished\",\n    \"items\": [\n      \"specialist bridge: pgm.specialists._bridge appends the code/ tree for cbi / sf / h4a / cqr (the only residual path manipulation; production inference does not use it)\",\n      \"CQR packaging: checkout-only (bare sibling imports inside code/cex/cqr)\",\n      \"H4 kernels: host-built executables under code/build (not wheel contents)\",\n      \"inherited D1-D90 controls: 51 depend on private record inputs (see documentation/consolidation/step1/BLOCKED_CONTROLS.json)\"\n    ]\n  }\n}\n",
+   "stderr_tail": ""
+  },
+  "cli_accepted": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-m",
+    "pgm",
+    "--input",
+    "fixtures/pos4.uai",
+    "--output",
+    "out_accepted.json",
+    "--budget",
+    "30",
+    "--memory-mib",
+    "2048",
+    "--seed",
+    "1",
+    "--epsilon",
+    "1/200",
+    "--delta",
+    "1/1000000",
+    "--policy",
+    "accepted"
+   ],
+   "returncode": 0,
+   "seconds": 1.638,
+   "stdout_tail": "",
+   "stderr_tail": "",
+   "result": {
+    "outcome": "COMPLETE",
+    "guarantee": "EXACT",
+    "published": 8,
+    "K": 8,
+    "policy": "accepted",
+    "policy_version": "accepted-engine-v2.13.2-targeted/1",
+    "attempts": [
+     [
+      "block",
+      "COMPLETE"
+     ]
+    ]
+   }
+  },
+  "cli_experimental": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-m",
+    "pgm",
+    "--input",
+    "fixtures/pos4.uai",
+    "--output",
+    "out_experimental.json",
+    "--budget",
+    "30",
+    "--memory-mib",
+    "2048",
+    "--seed",
+    "1",
+    "--epsilon",
+    "1/200",
+    "--delta",
+    "1/1000000",
+    "--policy",
+    "experimental"
+   ],
+   "returncode": 0,
+   "seconds": 2.502,
+   "stdout_tail": "",
+   "stderr_tail": "",
+   "result": {
+    "outcome": "COMPLETE",
+    "guarantee": "DETERMINISTIC",
+    "published": 8,
+    "K": 8,
+    "policy": "experimental",
+    "policy_version": "structural-portfolio-1",
+    "attempts": [
+     [
+      "structural",
+      "COMPLETE"
+     ]
+    ]
+   }
+  },
+  "worker_structural": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-m",
+    "pgm.backends.worker",
+    "--backend",
+    "structural",
+    "--input",
+    "fixtures/asym2.uai",
+    "--output",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/w_structural.json",
+    "--deadline",
+    "62044.31590475",
+    "--memory-mib",
+    "1024"
+   ],
+   "returncode": 0,
+   "seconds": 0.046,
+   "stdout_tail": "",
+   "stderr_tail": "",
+   "result": {
+    "outcome": "COMPLETE",
+    "guarantee": "DETERMINISTIC",
+    "published": 4,
+    "K": 4,
+    "route": "structural"
+   }
+  },
+  "worker_block": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-m",
+    "pgm.backends.worker",
+    "--backend",
+    "block",
+    "--input",
+    "fixtures/cyc3_card3.uai",
+    "--output",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/w_block.json",
+    "--deadline",
+    "62044.381205833",
+    "--memory-mib",
+    "1024"
+   ],
+   "returncode": 0,
+   "seconds": 0.092,
+   "stdout_tail": "",
+   "stderr_tail": "",
+   "result": {
+    "outcome": "COMPLETE",
+    "guarantee": "EXACT",
+    "published": 8,
+    "K": 8,
+    "route": null
+   }
+  },
+  "worker_quotient": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-m",
+    "pgm.backends.worker",
+    "--backend",
+    "quotient",
+    "--input",
+    "fixtures/cyc3_card3.uai",
+    "--output",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/w_quotient.json",
+    "--deadline",
+    "62044.491774541",
+    "--memory-mib",
+    "1024",
+    "--mode",
+    "deterministic",
+    "--delta",
+    "0"
+   ],
+   "returncode": 0,
+   "seconds": 0.09,
+   "stdout_tail": "",
+   "stderr_tail": "",
+   "result": {
+    "outcome": "COMPLETE",
+    "guarantee": "DETERMINISTIC",
+    "published": 8,
+    "K": 8,
+    "route": null
+   }
+  },
+  "worker_response": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-m",
+    "pgm.backends.worker",
+    "--backend",
+    "response",
+    "--input",
+    "fixtures/pos4.uai",
+    "--output",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/w_response.json",
+    "--deadline",
+    "62044.600712666",
+    "--memory-mib",
+    "1024"
+   ],
+   "returncode": 0,
+   "seconds": 24.094,
+   "stdout_tail": "",
+   "stderr_tail": "",
+   "result": {
+    "outcome": "COMPLETE",
+    "guarantee": "PAC",
+    "published": 8,
+    "K": 8,
+    "route": "spectral_heatbath_response"
+   }
+  },
+  "specialists": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-c",
+    "import json; from pgm.specialists import cbi, sf, h4a, cqr, _bridge; out={};api, model = cbi.modules(); out['cbi']=dict(solve=callable(api.solve), verify=callable(api.verify), origin=api.__file__);core, routes, check = sf.modules(); out['sf']=dict(law=hasattr(core,'Law'), origin=core.__file__);out['h4a']=h4a.available();\ntry:\n    cqr.load_task('fixtures/asym2.uai'); out['cqr']='LOADED'\nexcept _bridge.SpecialistUnavailable as e:\n    out['cqr']=dict(kind=e.kind, reason=str(e))\nout['bridge_code_root']=str(_bridge.code_root()); print(json.dumps(out))"
+   ],
+   "returncode": 0,
+   "seconds": 0.073,
+   "stdout_tail": "{\"cbi\": {\"solve\": true, \"verify\": true, \"origin\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/lib/python3.12/site-packages/cbi/api.py\"}, \"sf\": {\"law\": true, \"origin\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/lib/python3.12/site-packages/sf/core.py\"}, \"h4a\": {\"available\": false, \"build_dir\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/lib/python3.12/site-packages/build\", \"missing_kernels\": [\"h4point\", \"h4rect\", \"h4pcheck\"]}, \"cqr\": {\"kind\": \"UNAVAILABLE\", \"reason\": \"the CQR specialist is available only from a source checkout (code/cex/cqr; bare sibling imports)\"}, \"bridge_code_root\": \"None\"}\n",
+   "stderr_tail": ""
+  },
+  "native_cache_override": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-c",
+    "import os, pgm.runtime.resources as R, pgm.algorithms.structural.cex_executor as CX; print(R.native_cache_dir(os.path.dirname(CX.__file__)))"
+   ],
+   "returncode": 0,
+   "seconds": 0.043,
+   "stdout_tail": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/alt_cache/structural\n",
+   "stderr_tail": ""
+  },
+  "native_build_locations": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/bin/python",
+    "-I",
+    "-c",
+    "import pgm.algorithms.structural.cex_executor as CX, pgm.algorithms.structural.stream_float as SF, pgm.algorithms.response.heatbath_native as HN, json, os; print(json.dumps(dict(cex_lib=str(CX.LIB), cex_lib_exists=os.path.exists(CX.LIB), cex_record=str(CX.RECORD), stream_lib=str(SF.LIB), stream_lib_exists=os.path.exists(SF.LIB), heat_record=str(HN.RECORD), heat_record_exists=os.path.exists(HN.RECORD))))"
+   ],
+   "returncode": 0,
+   "seconds": 0.047,
+   "stdout_tail": "{\"cex_lib\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libcex_kernel.dylib\", \"cex_lib_exists\": true, \"cex_record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/lib/python3.12/site-packages/pgm/algorithms/structural/cex_build.json\", \"stream_lib\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libstream_kernel.so\", \"stream_lib_exists\": false, \"heat_record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/relocation/pgm-relocation-ehwplpms/venv/lib/python3.12/site-packages/pgm/algorithms/response/heatbath_build.json\", \"heat_record_exists\": true}\n",
+   "stderr_tail": ""
+  }
+ },
+ "verdict": "PASS"
+}

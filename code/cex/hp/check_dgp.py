@@ -1,10 +1,11 @@
 """Qualification controls of DENSE_GENERIC_PAC_INTEGRATION_1 (brief section 7), DGP2 (D19-D26), DGP3 (D27-D31: RF1-RF4, lemma G), DGP4 (D32-D41: R1-R3, residual MAX compiler, checker, whole proposal, lifetime; D37 / D38 / D39 / D41 strengthened in DGP5) and DGP5 (D42-D54: the joint conditional construction -- seed, exact floor, local witnesses, mutants, quantization / incumbent witness, replication / staleness, units, epochs, refusal lifetime, held-out isolation, feature-disabled / expiry, real clock). usage: check_dgp.py OUT.json [--only D1,D2,..]. Every control asserts actual branch execution."""
 import sys, os, json, time, math, argparse, traceback
+RECORDS = os.environ.get('PGM_RECORDS_ROOT', '/Users/adis/Workspace/pgm-records')   # consolidation step 1: the private records root is a parameter (controls depending on it are reported BLOCKED when it is absent; control logic unchanged)
 from fractions import Fraction as F
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm')); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'blockres'))
 import numpy as np
 import integrated as IG, blockres as BR, core as CORE, coarse_envelope as CE, pac_actions as PA, lifted_decoder as LD
-DEV = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs'
+DEV = RECORDS + '/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs'
 OPTS = dict(table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, batch=1024, schedule='targeted', crosscheck=True, exact_route=True)
 EPS = F(1, 200); DELTA = F(1, 10 ** 6)
 R = []
@@ -13,7 +14,7 @@ def rec(name, ok, **kw): R.append(dict(control=name, ok=bool(ok), **kw)); print(
 def load(name): return CORE.read_uai(os.path.join(DEV, name + '.uai'))
 MID = DEV.replace('/inputs', '/inputs_mid')
 def load_mid(name): return CORE.read_uai(os.path.join(MID, name + '.uai'))
-ORACLE_DEV = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs'
+ORACLE_DEV = RECORDS + '/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs'
 def load_odev(name): return CORE.read_uai(os.path.join(ORACLE_DEV, name + '.uai'))
 
 def run_stream(model, binding, seed, budget_s, delta_s, opts, n_batches=None, exact_route=True):
@@ -312,7 +313,7 @@ def D11_expiry_and_memory_injections():
 
 def D12_structural_routes_reach_accepted_completions():
     """the accepted structural routes execute INSIDE the planner on their fixtures and deliver the accepted rows: layered contraction (R20 tiny fixtures), signed evidence expansion (R19 fixtures), ancestral responses (G4) -- compared with integrated.solve on the same inputs"""
-    RDB = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19'
+    RDB = RECORDS + '/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19'
     fixtures = [('layered', os.path.join(RDB, 'round20/R20_PACKET/theory_r20_prototype/tiny/case1.uai'), 'layered_contraction'), ('layered2', os.path.join(RDB, 'round20/R20_PACKET/theory_r20_prototype/tiny/case7.uai'), 'layered_contraction'), ('ancestral_G4', os.path.join(RDB, 'round21/inputs/G4_near_c3_theta17-20_span3.uai'), 'ancestral_response')]
     import glob; sig = sorted(glob.glob(os.path.join(RDB, 'round19/**/*.uai'), recursive=True))[:1]
     for p in sig: fixtures.append(('signed', p, 'signed_evidence_expansion'))
@@ -481,7 +482,7 @@ def D21_F3_finalization_expiry_tails():
     S.check(); P.out['mechanism']['positive_mass_witness'] = S.witness; rows = P.snapshot(); P.hard = PA.tnow() - 1.0; o = P.fin('DEADLINE_PARTIAL', rows, note='control'); res['pac'] = dict(outcome=o['outcome'], published=o['published'], enclosures=len(o['enclosures']), radius=o['radius_report'], suppressed=o['mechanism'].get('suppressed_on_expiry'), cost_present=bool(o.get('cost_breakdown')))
     fl_model = dict(cards=[3, 2], factors=[dict(scope=(0,), values=[F(1), F(2), F(1)]), dict(scope=(1,), values=[F(1), F(3)])], evidence={}); P2 = UPlanner(fl_model, dict(model_sha256='ctrl'), 3.0, admission_stop_s=2.5, t_start=PA.tnow(), seed=1, pac=True, lifted=False); P2.M = CE.canonicalize(fl_model, P2.hclock, P2.budget); P2.orig_to_canon = {}; P2.out['mechanism']['positive_mass_witness'] = True; P2.t_mark = PA.tnow(); P2.hard = PA.tnow() - 1.0; o2 = P2.fin('COMPLETE', {}, note='control')
     res['factorless'] = dict(outcome=o2['outcome'], published=o2['published'], enclosures=len(o2['enclosures']), radius=o2['radius_report'])
-    src = open(os.path.join(HERE, 'unified_pac_planner.py')).read(); fin_src = src[src.index('    def fin(self, oc, rows, note=None):'):src.index('    def cost_breakdown(self):')]; order_ok = fin_src.index('self.all_enclosures()') < fin_src.index('res = super().fin(') and fin_src.index('self.cost_breakdown()') < fin_src.index('res = super().fin(')
+    src = open(UPP.__file__).read(); fin_src = src[src.index('    def fin(self, oc, rows, note=None):'):src.index('    def cost_breakdown(self):')]; order_ok = fin_src.index('self.all_enclosures()') < fin_src.index('res = super().fin(') and fin_src.index('self.cost_breakdown()') < fin_src.index('res = super().fin(')
     import tempfile; d = tempfile.mkdtemp(); o3 = dict(outcome='COMPLETE', published=1, K=1, answers=[dict(var=0, state=0, lo='1', hi='1', point='1', guarantee='EXACT')], enclosures=[dict(var=0, state=0, lo='0', hi='1')], radius_report=dict(worst=0.5), phases_s={}, mechanism={}); UP.write_result(o3, os.path.join(d, 'r.json'), 1.0, t_process_start=PA.tnow() - 5.0); disk = json.load(open(os.path.join(d, 'r.json')))
     res['late_commit'] = dict(outcome=disk['outcome'], published=disk['published'], enclosures=len(disk.get('enclosures') or []), radius=disk.get('radius_report'))
     ok = res['pac']['outcome'] == 'DEADLINE' and res['pac']['published'] == 0 and res['pac']['enclosures'] == 0 and res['pac']['radius'] is None and res['pac']['suppressed'] and res['pac']['cost_present'] and res['factorless']['outcome'] == 'DEADLINE' and res['factorless']['published'] == 0 and res['factorless']['enclosures'] == 0 and order_ok and res['late_commit']['outcome'] == 'DEADLINE' and res['late_commit']['enclosures'] == 0 and res['late_commit']['radius'] is None
@@ -534,7 +535,7 @@ def D23_F5_optional_stage_bounded():
 
 def D24_compact_kappa_and_scoped_lift_check():
     """compact kappa: (a) the n64/card4 strong clique decoder builds with a 128-bit outward enclosure containing the exact oracle product (no exact product in production; bit cap unchanged); (b) random products of 300-bit ratios stay enclosed; (c) the scoped checker mode gives IDENTICAL entrywise quantities to the default mode and a compact R containing the exact R; (d) an invalid partition and an understated upper table are still rejected"""
-    p = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n64_c4_clique_two.uai'; model, binding = CORE.read_uai(p)
+    p = RECORDS + '/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n64_c4_clique_two.uai'; model, binding = CORE.read_uai(p)
     P = UPlanner(model, binding, 30.0, admission_stop_s=29.0, t_start=PA.tnow(), seed=1, pac=True, lifted=True); P.M = CE.canonicalize(model, P.hclock, P.budget); P.mf = CM.model_features(P.M, P.clock, P.budget); ident = P.make_identity(P.clock); P.cands.append(ident); P.canonical_charge = P.budget.live
     cap0 = CE.BIT_CAP; c = P.discover_fast_lift_only(ident, Clock(PA.tnow() + 30, {})); R = LD.build_rows(P.M, c.classes, c.Cz, Clock(PA.tnow() + 30, {}), P.budget); kap = LD.exact_kappa(R)
     a = R.kappa is None and R.K is not None and R.K.contains(kap) and CE.BIT_CAP == cap0 == 4096 and CE.bits(kap) > 4096 and R.K.inflation() < 2 ** -100
@@ -601,7 +602,7 @@ def D27_RF1_no_work_after_authoritative_sample():
     UP.Planner.fin = expire_at_sample; UP.tnow = UPP.tnow = clock2
     try: r2 = P2.fin('COMPLETE', {}); res['expiry_at_sample'] = dict(outcome=r2['outcome'], published=r2['published'], hard_deadline_respected=r2['hard_deadline_respected'], suppressed=r2['mechanism'].get('suppressed_on_expiry'))
     finally: UP.Planner.fin = real_fin2; UP.tnow, UPP.tnow = old
-    src = open(os.path.join(HERE, 'unified_pac_planner.py')).read(); fin_src = src[src.index('    def fin(self, oc, rows, note=None):'):src.index('    def cost_breakdown(self):')]; after = fin_src[fin_src.index('res = super().fin('):]
+    src = open(UPP.__file__).read(); fin_src = src[src.index('    def fin(self, oc, rows, note=None):'):src.index('    def cost_breakdown(self):')]; after = fin_src[fin_src.index('res = super().fin('):]
     order_ok = ("for r in res['answers']" not in after) and ('self._fin_gs' in after) and (fin_src.index('ledger_identity = (') < fin_src.index('res = super().fin('))
     ok = res['row_injection']['classified_after_sample'] == 0 and res['row_injection']['outcome'] == 'COMPLETE' and res['expiry_at_sample']['outcome'] == 'DEADLINE' and res['expiry_at_sample']['published'] == 0 and res['expiry_at_sample']['hard_deadline_respected'] is False and order_ok
     rec('D27_RF1_no_work_after_authoritative_sample', ok, source_order_ok=order_ok, **res)
@@ -824,7 +825,7 @@ def D33_R2_construction_charge_ownership():
     finally: CE.Clock = real_clock
     res['stream_refused'] = dict(result=r, closed=(S.closed_reason or '')[:80], orphaned=P.budget.live - lb - S.rows.bytes)
     # (d) archived replay (real clock, p4 contract)
-    man = json.load(open('/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANIFEST.json')); t = next(x for x in man['tasks'] if x['name'] == 'grid4x4_c32_generic'); mdl, bnd = CORE.read_uai(t['model'])
+    man = json.load(open(RECORDS + '/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANIFEST.json')); t = next(x for x in man['tasks'] if x['name'] == 'grid4x4_c32_generic'); mdl, bnd = CORE.read_uai(t['model'])
     P2 = UPlanner(mdl, bnd, 3.85, admission_stop_s=3.5, t_start=PA.tnow(), seed=1, pac=True, lifted=True, envelope='G2'); o = P2.run(); res['archived_grid4x4_c32'] = dict(outcome=o['outcome'], published=o['published'], K=o['K'], ledger_identity=o['mechanism'].get('constructor_live_ledger_identity'), lifted=[(S_.stage, (S_.closed_reason or '')[:60]) for S_ in P2.streams if S_.kind == 'lifted'])
     # (e) RMAX ownership on the four-cycle under injected failures at every phase
     rel = {}
@@ -891,7 +892,7 @@ def D34_R3_parent_final_timestamp():
         try: r2 = UP.Planner.fin(P2, 'COMPLETE', rows)
         finally: UP.tnow, UPP.tnow, CE.tnow = old
         res[name] = dict(aggregation=dict(outcome=r['outcome'], published=r['published'], gets=state['gets'], respected=r['hard_deadline_respected']), at_sample=dict(outcome=r2['outcome'], published=r2['published'], fin_reads=st2['fin_reads']))
-    src = open(os.path.join(HERE, 'unified_planner.py')).read(); fin_src = src[src.index('    def fin(self, oc, rows_canon, note=None):'):src.index('def plan_and_solve')]; after = fin_src[fin_src.index('t_end = tnow()'):]
+    src = open(UP.__file__).read(); fin_src = src[src.index('    def fin(self, oc, rows_canon, note=None):'):src.index('def plan_and_solve')]; after = fin_src[fin_src.index('t_end = tnow()'):]
     order_ok = ("for x in out['actions']" not in after) and ("out['phases_s'].items()" not in after) and ('for ' not in after.split('\n')[1])
     ok = all(v['aggregation']['outcome'] == 'DEADLINE' and v['aggregation']['published'] == 0 and v['aggregation']['gets'] > 0 and v['at_sample']['outcome'] == 'DEADLINE' and v['at_sample']['published'] == 0 and v['at_sample']['fin_reads'] == 1 for v in res.values()) and order_ok
     rec('D34_R3_parent_final_timestamp', ok, source_order_ok=order_ok, **res)
@@ -1735,7 +1736,7 @@ def D57_bounded_sum_and_rebuilt_J():
                           S_changed=(abs(inc['log2_S'] - _l2(S_forced)) > 1e-12), discriminates=(abs(stale['log2_J'] - reb['log2_J']) > 1e-9 and abs(inc['log2_S'] - _l2(S_forced)) > 1e-12), stale_decision_invalid=(stale_decision != rebuilt_decision), threshold=thr, eta_changes_J=(O5.rebuilt(inc, S_forced, log2_eta=log2_eta6 + 1.0)['log2_J'] != reb['log2_J']))
     if pk_u is not pk6: pk_u.release()
     pk6.release(); B6.release(owned6 + chg6)
-    src = open(os.path.join(HERE, 'joint_optimize.py')).read(); res['grid_affine'] = ('log2(1.0 + (ratio - 1.0) * i' in src) and ('log2_Cmin + (log2_Cmax - log2_Cmin) * i' not in src)
+    src = open(JO.__file__).read(); res['grid_affine'] = ('log2(1.0 + (ratio - 1.0) * i' in src) and ('log2_Cmin + (log2_Cmax - log2_Cmin) * i' not in src)
     lo, hi, n_ = 3.0, 7.0, 5; ratio = 2.0 ** (hi - lo); grid = [lo + math.log2(1.0 + (ratio - 1.0) * i / (n_ - 1)) for i in range(n_)]; Cs = [2.0 ** g for g in grid]; res['grid_check'] = dict(endpoints=(abs(Cs[0] - 8.0) < 1e-9 and abs(Cs[-1] - 128.0) < 1e-9), midpoint_affine=(abs(Cs[2] - 68.0) < 1e-9))
     model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B = _jstage(model); S = _jstream(M, allow=10.0)[0]; S.pilot_action(PA.tnow() + 10); a1 = S.refine_action(PA.tnow() + 10, PA.tnow() + 30)
     if not a1.get('promoted'):
@@ -1908,9 +1909,9 @@ def D62_primary_preservation_and_relocation():
             P = UPlanner(model, binding, 6.0, admission_stop_s=5.5, t_start=PA.tnow(), seed=1, pac=True, **kw); o = P.run(); outs[arm] = dict(outcome=o['outcome'], published=o['published'], K=o['K'], hard=o['hard_deadline_respected'], ledger=o['mechanism'].get('constructor_live_ledger_identity'), wall=round(o['wall_s'], 3), probe=bool((o['mechanism'].get('scheduling_policy') or {}).get('primary_probe')), pub_set=sorted((a['var'], a['state']) for a in o['answers'] if a['guarantee'] != 'NOT_PUBLISHED'))
         res[name] = {a: {k: v for k, v in o.items() if k != 'pub_set'} for a, o in outs.items()}; same = outs['REPAIRED']['pub_set'] == outs['GLOBAL']['pub_set'] == outs['SEED']['pub_set']; res[name]['same_published_set'] = same
         ok = ok and same and all(o['outcome'] == 'COMPLETE' and o['hard'] and o['ledger'] is True for o in outs.values())
-    man = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP5_JOINT_CONSTRUCTION/MAIN_MANIFEST.json'
+    man = RECORDS + '/code/runs/mdi_2026-10-28/DGP5_JOINT_CONSTRUCTION/MAIN_MANIFEST.json'
     if os.path.exists(man):
-        tasks = json.load(open(man))['tasks'][:5]; old_env = os.environ.get('DGP_ROOTS'); os.environ['DGP_ROOTS'] = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28'
+        tasks = json.load(open(man))['tasks'][:5]; old_env = os.environ.get('DGP_ROOTS'); os.environ['DGP_ROOTS'] = RECORDS + '/code/runs/mdi_2026-10-28'
         try: rel = DPATH.relocation_test(tasks, '/nonexistent/packet')
         finally:
             if old_env is None: os.environ.pop('DGP_ROOTS', None)
@@ -2165,7 +2166,7 @@ def D67_sequential_transactions_and_bank_immutability():
     law (identity check) and its identity hash changes with the new counts and with the version"""
     res = {}; ok = True; import dgp_paths as _DP
     # (a) two stream transactions on the n32 ER50 anchor
-    p32 = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP4_RESIDUAL_MAX/inputs_fresh/dg_n32_c4_er50_two.uai'
+    p32 = RECORDS + '/code/runs/mdi_2026-10-28/DGP4_RESIDUAL_MAX/inputs_fresh/dg_n32_c4_er50_two.uai'
     if os.path.exists(p32):
         model32, _ = CORE.read_uai(p32); M32, order32, clk32, B32 = _jstage(model32); cards32 = list(M32.cards); S, B_, r = _rstream(M32, allow=30.0); assert r == 'READY', (r, S.closed_reason); S.pilot_action(PA.tnow() + 20); st = S.state
         shas0 = {a.aid: a.sha256 for a in st.atoms.values()}; props = [S.epoch.prop]; atts = []
@@ -2390,7 +2391,7 @@ def D71_scheduling_calibration_vs_scored_cells():
     """the FROZEN affine time blocks of residual_local.predicted_work_s (PROFILE_RESIDUAL t_*) vs the ACTUAL window seconds recorded on the DGP7 SCORED cells (runs/*/*/result.json; fitted windows only); ratio = actual / predicted per
     window; documented tolerance: median <= 1.5 and p90 <= 2.5. The control FAILS when the frozen blocks under-predict beyond the tolerance -- the constants are NEVER tuned here (a failure is a scheduling-forecast defect to report)"""
     import glob
-    RD7 = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP7_RESIDUAL_JOINT'; ratios = []; n_cells = 0; by_vol = {}; skipped = {}
+    RD7 = RECORDS + '/code/runs/mdi_2026-10-28/DGP7_RESIDUAL_JOINT'; ratios = []; n_cells = 0; by_vol = {}; skipped = {}
     for p in sorted(glob.glob(RD7 + '/runs/*/*/result.json')):
         try: d = json.load(open(p))
         except Exception: continue
@@ -2413,7 +2414,8 @@ CONTROLS += [D71_scheduling_calibration_vs_scored_cells]
 # Fraction enumeration, a second minimal chain implementation); the supplied references of the packet did not arrive.
 import spectral_witness as SW, heatbath_exact as HX, heatbath_native as HN, markov_certificate as MC
 import decimal as _dec, subprocess as _sp, ctypes as _ct, tempfile as _tmp
-_RUNNER = os.path.join(HERE, 'spectral_heatbath_run.py'); _PY8 = sys.executable; _WEAK32 = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n32_c4_er50_half.uai'; _WEAK64 = _WEAK32.replace('n32', 'n64')
+# consolidation step 1: subprocesses run the historical runner path (a shim re-executing the canonical module); SOURCE-TEXT controls read the canonical file (_RUNNER_SRC)
+_RUNNER = os.path.join(HERE, 'spectral_heatbath_run.py'); import spectral_heatbath_run as _SHR; _RUNNER_SRC = _SHR.__file__; _PY8 = sys.executable; _WEAK32 = RECORDS + '/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n32_c4_er50_half.uai'; _WEAK64 = _WEAK32.replace('n32', 'n64')
 
 
 def _hstage(model, budget_s=60):
@@ -2750,7 +2752,7 @@ def D79_rng_expiry_and_admission():
 
 
 def D80_finalizer_before_single_final_timestamp():
-    res = {}; ok = True; src = open(_RUNNER).read(); i0 = src.index('def finish('); i1 = src.index('\n    try:', i0); body = src[i0:i1]
+    res = {}; ok = True; src = open(_RUNNER_SRC).read(); i0 = src.index('def finish('); i1 = src.index('\n    try:', i0); body = src[i0:i1]
     n_tnow = body.count('tnow()'); after = body.split('t_end = tnow()')[1] if 't_end = tnow()' in body else ''
     res['source'] = dict(tnow_calls_in_finish=n_tnow, single_authoritative_sample=(n_tnow == 1), rows_assigned_after_sample=("out['answers'] = rows" in after), late_suppression_present=('suppressed_late_rows' in after)); ok = ok and n_tnow == 1 and res['source']['rows_assigned_after_sample'] and res['source']['late_suppression_present']
     # a run whose final sample lands late (the budget is below the canonicalization + witness time)
@@ -2787,7 +2789,7 @@ CONTROLS += [D72_interaction_matrix_and_witness_algebra, D73_rigorous_logs_and_e
 # variant; the controls FAIL on the parent (the DGP8 engine) and must PASS at the frozen commit
 import tracemalloc as _tm
 from unittest.mock import patch as _patch
-_DGP9_PACKET = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PACKET/review_evidence/dgp8_review/reference_recovery/packet'
+_DGP9_PACKET = RECORDS + '/code/runs/mdi_2026-10-28/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PACKET/review_evidence/dgp8_review/reference_recovery/packet'
 
 
 def _tri_model(entry):
@@ -2900,7 +2902,7 @@ def D85_runner_contracts():
             try: d = RUN.main()
             except SystemExit: d = json.load(open(od + '/c_%s.json' % name))
         res['crossing_' + name] = dict(outcome=d['outcome'], published=d['published'], respected=d['hard_deadline_respected'], suppressed=d['mechanism'].get('suppressed_late_rows')); ok = ok and d['outcome'] == 'DEADLINE' and d['published'] == 0 and d['hard_deadline_respected'] is False
-    src = open(_RUNNER).read(); i0 = src.index('def finish('); i1 = src.index('\n    try:', i0); body = src[i0:i1]; res['finish_source'] = dict(tnow_calls=body.count('tnow()'), rows_after_sample=("out['answers'] = rows" in body.split('t_end = tnow()')[1])); ok = ok and body.count('tnow()') == 1 and res['finish_source']['rows_after_sample']
+    src = open(_RUNNER_SRC).read(); i0 = src.index('def finish('); i1 = src.index('\n    try:', i0); body = src[i0:i1]; res['finish_source'] = dict(tnow_calls=body.count('tnow()'), rows_after_sample=("out['answers'] = rows" in body.split('t_end = tnow()')[1])); ok = ok and body.count('tnow()') == 1 and res['finish_source']['rows_after_sample']
     import hp_gen as _G; p = _tmp.mktemp(suffix='.uai', prefix='dgp9_rate_'); _G.write(p, _tri_model(F(1))); d, rc, err = _run_runner(p, 2.0, 1.5, extra=['--rate-model', od + '/absent_rates.json']); m = (d or {}).get('mechanism') or {}
     res['rate_model_missing'] = dict(rc=rc, kind=(m.get('refusal') or {}).get('kind'), outcome=(d or {}).get('outcome'), K=(d or {}).get('K')); ok = ok and rc == 3 and res['rate_model_missing']['kind'] == 'RATE_MODEL_MISSING' and (d or {}).get('K') == 6
     rec('D85_runner_contracts', ok, **res)

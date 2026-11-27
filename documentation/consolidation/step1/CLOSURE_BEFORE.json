@@ -1,0 +1,2207 @@
+{
+ "roots": {
+  "structural": "cex/newarm/core.py",
+  "block": "cex/blockres/integrated.py",
+  "quotient": "cex/hp/unified_pac_planner.py",
+  "response": "cex/hp/spectral_heatbath_run.py"
+ },
+ "per_root": {
+  "structural": [
+   "cex/newarm/cex_executor.py",
+   "cex/newarm/core.py",
+   "cex/newarm/dag.py",
+   "cex/newarm/forest.py",
+   "cex/newarm/geometry.py",
+   "cex/newarm/planning.py",
+   "cex/newarm/reduction.py",
+   "cex/newarm/stream.py",
+   "cex/newarm/stream_float.py",
+   "cex/newarm/support.py"
+  ],
+  "block": [
+   "cex/blockres/ancestral_response.py",
+   "cex/blockres/blockres.py",
+   "cex/blockres/integrated.py",
+   "cex/blockres/layered_contraction.py",
+   "cex/blockres/signed_evidence.py",
+   "cex/blockres/support_closure.py",
+   "cex/newarm/cex_executor.py",
+   "cex/newarm/core.py",
+   "cex/newarm/dag.py",
+   "cex/newarm/forest.py",
+   "cex/newarm/geometry.py",
+   "cex/newarm/planning.py",
+   "cex/newarm/reduction.py",
+   "cex/newarm/stream.py",
+   "cex/newarm/stream_float.py",
+   "cex/newarm/support.py"
+  ],
+  "quotient": [
+   "cex/blockres/ancestral_response.py",
+   "cex/blockres/blockres.py",
+   "cex/blockres/integrated.py",
+   "cex/blockres/layered_contraction.py",
+   "cex/blockres/signed_evidence.py",
+   "cex/blockres/support_closure.py",
+   "cex/hp/check_global.py",
+   "cex/hp/check_joint.py",
+   "cex/hp/check_residual.py",
+   "cex/hp/coarse_envelope.py",
+   "cex/hp/cost_model.py",
+   "cex/hp/global_circuit.py",
+   "cex/hp/global_optimize.py",
+   "cex/hp/global_stream.py",
+   "cex/hp/grouped_envelope.py",
+   "cex/hp/joint_optimize.py",
+   "cex/hp/joint_proposal.py",
+   "cex/hp/joint_stream.py",
+   "cex/hp/joint_witness.py",
+   "cex/hp/lifted_decoder.py",
+   "cex/hp/pac_actions.py",
+   "cex/hp/reservation.py",
+   "cex/hp/residual_bank.py",
+   "cex/hp/residual_local.py",
+   "cex/hp/residual_max_envelope.py",
+   "cex/hp/residual_stream.py",
+   "cex/hp/unified_pac_planner.py",
+   "cex/hp/unified_planner.py",
+   "cex/newarm/cex_executor.py",
+   "cex/newarm/core.py",
+   "cex/newarm/dag.py",
+   "cex/newarm/forest.py",
+   "cex/newarm/geometry.py",
+   "cex/newarm/planning.py",
+   "cex/newarm/reduction.py",
+   "cex/newarm/stream.py",
+   "cex/newarm/stream_float.py",
+   "cex/newarm/support.py"
+  ],
+  "response": [
+   "cex/blockres/ancestral_response.py",
+   "cex/blockres/blockres.py",
+   "cex/blockres/integrated.py",
+   "cex/blockres/layered_contraction.py",
+   "cex/blockres/signed_evidence.py",
+   "cex/blockres/support_closure.py",
+   "cex/hp/checked_tilt.py",
+   "cex/hp/coarse_envelope.py",
+   "cex/hp/grouped_envelope.py",
+   "cex/hp/heatbath_exact.py",
+   "cex/hp/heatbath_native.py",
+   "cex/hp/lifted_decoder.py",
+   "cex/hp/markov_certificate.py",
+   "cex/hp/pac_actions.py",
+   "cex/hp/reservation.py",
+   "cex/hp/residual_max_envelope.py",
+   "cex/hp/response_certificate.py",
+   "cex/hp/spectral_heatbath_run.py",
+   "cex/hp/spectral_witness.py",
+   "cex/newarm/cex_executor.py",
+   "cex/newarm/core.py",
+   "cex/newarm/dag.py",
+   "cex/newarm/forest.py",
+   "cex/newarm/geometry.py",
+   "cex/newarm/planning.py",
+   "cex/newarm/reduction.py",
+   "cex/newarm/stream.py",
+   "cex/newarm/stream_float.py",
+   "cex/newarm/support.py"
+  ]
+ },
+ "union_files": 45,
+ "union_lines": 14205,
+ "files": {
+  "cex/blockres/ancestral_response.py": {
+   "lines": 409,
+   "imports": [
+    {
+     "name": "layered_contraction",
+     "line": 34,
+     "kind": "import",
+     "target": "cex/blockres/layered_contraction.py"
+    }
+   ],
+   "external": [
+    "collections",
+    "fractions",
+    "itertools",
+    "json",
+    "math",
+    "os",
+    "random",
+    "sys",
+    "time",
+    "types"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [
+    33
+   ],
+   "file_relative_lookups": [
+    32
+   ],
+   "roots": [
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/blockres/blockres.py": {
+   "lines": 330,
+   "imports": [
+    {
+     "name": "core",
+     "line": 15,
+     "kind": "import",
+     "target": "cex/newarm/core.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "itertools",
+    "math",
+    "numpy",
+    "os",
+    "resource",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [
+    14
+   ],
+   "file_relative_lookups": [
+    12
+   ],
+   "roots": [
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/blockres/integrated.py": {
+   "lines": 1442,
+   "imports": [
+    {
+     "name": "blockres",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/blockres/blockres.py"
+    },
+    {
+     "name": "support_closure",
+     "line": 21,
+     "kind": "import",
+     "target": "cex/blockres/support_closure.py"
+    },
+    {
+     "name": "signed_evidence",
+     "line": 22,
+     "kind": "import",
+     "target": "cex/blockres/signed_evidence.py"
+    },
+    {
+     "name": "layered_contraction",
+     "line": 23,
+     "kind": "import",
+     "target": "cex/blockres/layered_contraction.py"
+    },
+    {
+     "name": "ancestral_response",
+     "line": 24,
+     "kind": "import",
+     "target": "cex/blockres/ancestral_response.py"
+    },
+    {
+     "name": "blockres",
+     "line": 25,
+     "kind": "from",
+     "target": "cex/blockres/blockres.py"
+    },
+    {
+     "name": "cex_executor",
+     "line": 918,
+     "kind": "import",
+     "target": "cex/newarm/cex_executor.py"
+    }
+   ],
+   "external": [
+    "argparse",
+    "fractions",
+    "itertools",
+    "json",
+    "math",
+    "numpy",
+    "os",
+    "random",
+    "resource",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [
+    ".timing.json"
+   ],
+   "sys_path_lines": [
+    19,
+    917
+   ],
+   "file_relative_lookups": [
+    18
+   ],
+   "roots": [
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/blockres/layered_contraction.py": {
+   "lines": 432,
+   "imports": [
+    {
+     "name": "cex_executor",
+     "line": 39,
+     "kind": "import",
+     "target": "cex/newarm/cex_executor.py"
+    }
+   ],
+   "external": [
+    "collections",
+    "ctypes",
+    "fractions",
+    "itertools",
+    "json",
+    "math",
+    "os",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [
+    38
+   ],
+   "file_relative_lookups": [
+    37
+   ],
+   "roots": [
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/blockres/signed_evidence.py": {
+   "lines": 225,
+   "imports": [],
+   "external": [
+    "collections",
+    "fractions",
+    "math",
+    "psutil",
+    "resource",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/blockres/support_closure.py": {
+   "lines": 188,
+   "imports": [],
+   "external": [
+    "collections",
+    "fractions",
+    "itertools",
+    "math",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/hp/check_global.py": {
+   "lines": 189,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 8,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 9,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 10,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 11,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 12,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "check_joint",
+     "line": 13,
+     "kind": "import",
+     "target": "cex/hp/check_joint.py"
+    },
+    {
+     "name": "global_circuit",
+     "line": 14,
+     "kind": "from",
+     "target": "cex/hp/global_circuit.py"
+    },
+    {
+     "name": "global_circuit",
+     "line": 44,
+     "kind": "from",
+     "target": "cex/hp/global_circuit.py"
+    }
+   ],
+   "external": [
+    "copy",
+    "fractions",
+    "hashlib",
+    "itertools",
+    "math",
+    "numpy"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/check_joint.py": {
+   "lines": 322,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 10,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 11,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 12,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 37,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 155,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 175,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 187,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 291,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 307,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "itertools",
+    "math",
+    "numpy",
+    "random"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/check_residual.py": {
+   "lines": 213,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 12,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 13,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 14,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 15,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "residual_bank",
+     "line": 16,
+     "kind": "from",
+     "target": "cex/hp/residual_bank.py"
+    },
+    {
+     "name": "check_joint",
+     "line": 17,
+     "kind": "import",
+     "target": "cex/hp/check_joint.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "itertools",
+    "math",
+    "numpy"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/checked_tilt.py": {
+   "lines": 390,
+   "imports": [],
+   "external": [
+    "__future__",
+    "dataclasses",
+    "fractions",
+    "json",
+    "math",
+    "numpy",
+    "pathlib",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [
+    "REFERENCE_CHECKED_TILT_SELFTEST.json"
+   ],
+   "sys_path_lines": [],
+   "file_relative_lookups": [
+    387
+   ],
+   "roots": [
+    "response"
+   ]
+  },
+  "cex/hp/coarse_envelope.py": {
+   "lines": 915,
+   "imports": [
+    {
+     "name": "cex_executor",
+     "line": 23,
+     "kind": "import",
+     "target": "cex/newarm/cex_executor.py"
+    },
+    {
+     "name": "core",
+     "line": 902,
+     "kind": "import",
+     "target": "cex/newarm/core.py"
+    },
+    {
+     "name": "lifted_decoder",
+     "line": 223,
+     "kind": "import",
+     "target": "cex/hp/lifted_decoder.py"
+    }
+   ],
+   "external": [
+    "argparse",
+    "ctypes",
+    "fractions",
+    "hashlib",
+    "itertools",
+    "json",
+    "math",
+    "os",
+    "queue",
+    "resource",
+    "subprocess",
+    "sys",
+    "threading",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [
+    ".timing.json"
+   ],
+   "sys_path_lines": [
+    22,
+    902
+   ],
+   "file_relative_lookups": [
+    20
+   ],
+   "roots": [
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/hp/cost_model.py": {
+   "lines": 102,
+   "imports": [],
+   "external": [
+    "hashlib",
+    "json",
+    "math",
+    "numpy",
+    "os",
+    "scipy"
+   ],
+   "unresolved": [],
+   "resources": [
+    "PHASE_RATES_R1.json"
+   ],
+   "sys_path_lines": [],
+   "file_relative_lookups": [
+    11
+   ],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/global_circuit.py": {
+   "lines": 292,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 14,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 15,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 16,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 17,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 18,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "reservation",
+     "line": 102,
+     "kind": "import",
+     "target": "cex/hp/reservation.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "itertools",
+    "math",
+    "numpy"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/global_optimize.py": {
+   "lines": 137,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 10,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 11,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_optimize",
+     "line": 11,
+     "kind": "import",
+     "target": "cex/hp/joint_optimize.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 12,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "global_circuit",
+     "line": 13,
+     "kind": "import",
+     "target": "cex/hp/global_circuit.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "math",
+    "numpy",
+    "scipy",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/global_stream.py": {
+   "lines": 185,
+   "imports": [
+    {
+     "name": "pac_actions",
+     "line": 17,
+     "kind": "import",
+     "target": "cex/hp/pac_actions.py"
+    },
+    {
+     "name": "pac_actions",
+     "line": 18,
+     "kind": "from",
+     "target": "cex/hp/pac_actions.py"
+    },
+    {
+     "name": "integrated",
+     "line": 19,
+     "kind": "import",
+     "target": "cex/blockres/integrated.py"
+    },
+    {
+     "name": "coarse_envelope",
+     "line": 19,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_optimize",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/joint_optimize.py"
+    },
+    {
+     "name": "joint_stream",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/joint_stream.py"
+    },
+    {
+     "name": "global_circuit",
+     "line": 21,
+     "kind": "import",
+     "target": "cex/hp/global_circuit.py"
+    },
+    {
+     "name": "global_optimize",
+     "line": 21,
+     "kind": "import",
+     "target": "cex/hp/global_optimize.py"
+    },
+    {
+     "name": "check_global",
+     "line": 21,
+     "kind": "import",
+     "target": "cex/hp/check_global.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 22,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "math",
+    "numpy",
+    "traceback"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/grouped_envelope.py": {
+   "lines": 104,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 11,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "itertools",
+    "math",
+    "numpy"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/hp/heatbath_exact.py": {
+   "lines": 136,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 8,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "math",
+    "random"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "response"
+   ]
+  },
+  "cex/hp/heatbath_native.py": {
+   "lines": 343,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 29,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "heatbath_exact",
+     "line": 30,
+     "kind": "import",
+     "target": "cex/hp/heatbath_exact.py"
+    },
+    {
+     "name": "reservation",
+     "line": 31,
+     "kind": "import",
+     "target": "cex/hp/reservation.py"
+    }
+   ],
+   "external": [
+    "ctypes",
+    "fractions",
+    "hashlib",
+    "json",
+    "math",
+    "os",
+    "random",
+    "subprocess",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [
+    "heatbath_build.json",
+    "heatbath_native.c"
+   ],
+   "sys_path_lines": [],
+   "file_relative_lookups": [
+    32
+   ],
+   "roots": [
+    "response"
+   ]
+  },
+  "cex/hp/joint_optimize.py": {
+   "lines": 180,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 12,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 13,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 14,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 15,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_witness",
+     "line": 16,
+     "kind": "import",
+     "target": "cex/hp/joint_witness.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 17,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "itertools",
+    "math",
+    "numpy"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/joint_proposal.py": {
+   "lines": 350,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 16,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 17,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 18,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "joint_optimize",
+     "line": 132,
+     "kind": "import",
+     "target": "cex/hp/joint_optimize.py"
+    },
+    {
+     "name": "check_joint",
+     "line": 192,
+     "kind": "import",
+     "target": "cex/hp/check_joint.py"
+    },
+    {
+     "name": "check_joint",
+     "line": 262,
+     "kind": "import",
+     "target": "cex/hp/check_joint.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "itertools",
+    "math",
+    "numpy",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/joint_stream.py": {
+   "lines": 357,
+   "imports": [
+    {
+     "name": "pac_actions",
+     "line": 17,
+     "kind": "import",
+     "target": "cex/hp/pac_actions.py"
+    },
+    {
+     "name": "pac_actions",
+     "line": 18,
+     "kind": "from",
+     "target": "cex/hp/pac_actions.py"
+    },
+    {
+     "name": "integrated",
+     "line": 19,
+     "kind": "import",
+     "target": "cex/blockres/integrated.py"
+    },
+    {
+     "name": "blockres",
+     "line": 19,
+     "kind": "import",
+     "target": "cex/blockres/blockres.py"
+    },
+    {
+     "name": "coarse_envelope",
+     "line": 19,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_witness",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/joint_witness.py"
+    },
+    {
+     "name": "joint_optimize",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/joint_optimize.py"
+    },
+    {
+     "name": "check_joint",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/check_joint.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 21,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    }
+   ],
+   "external": [
+    "copy",
+    "fractions",
+    "hashlib",
+    "json",
+    "math",
+    "numpy",
+    "os",
+    "sys",
+    "traceback"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/joint_witness.py": {
+   "lines": 109,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 13,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 14,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 15,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 16,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 17,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "check_joint",
+     "line": 103,
+     "kind": "import",
+     "target": "cex/hp/check_joint.py"
+    },
+    {
+     "name": "check_joint",
+     "line": 39,
+     "kind": "import",
+     "target": "cex/hp/check_joint.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "itertools",
+    "math",
+    "numpy"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/lifted_decoder.py": {
+   "lines": 187,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 14,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "itertools",
+    "math"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/hp/markov_certificate.py": {
+   "lines": 150,
+   "imports": [
+    {
+     "name": "spectral_witness",
+     "line": 13,
+     "kind": "import",
+     "target": "cex/hp/spectral_witness.py"
+    },
+    {
+     "name": "coarse_envelope",
+     "line": 103,
+     "kind": "from",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "coarse_envelope",
+     "line": 129,
+     "kind": "from",
+     "target": "cex/hp/coarse_envelope.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "math"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "response"
+   ]
+  },
+  "cex/hp/pac_actions.py": {
+   "lines": 794,
+   "imports": [
+    {
+     "name": "integrated",
+     "line": 22,
+     "kind": "import",
+     "target": "cex/blockres/integrated.py"
+    },
+    {
+     "name": "blockres",
+     "line": 23,
+     "kind": "import",
+     "target": "cex/blockres/blockres.py"
+    },
+    {
+     "name": "support_closure",
+     "line": 24,
+     "kind": "import",
+     "target": "cex/blockres/support_closure.py"
+    },
+    {
+     "name": "signed_evidence",
+     "line": 24,
+     "kind": "import",
+     "target": "cex/blockres/signed_evidence.py"
+    },
+    {
+     "name": "layered_contraction",
+     "line": 24,
+     "kind": "import",
+     "target": "cex/blockres/layered_contraction.py"
+    },
+    {
+     "name": "ancestral_response",
+     "line": 24,
+     "kind": "import",
+     "target": "cex/blockres/ancestral_response.py"
+    },
+    {
+     "name": "coarse_envelope",
+     "line": 25,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "lifted_decoder",
+     "line": 25,
+     "kind": "import",
+     "target": "cex/hp/lifted_decoder.py"
+    },
+    {
+     "name": "blockres",
+     "line": 26,
+     "kind": "from",
+     "target": "cex/blockres/blockres.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 664,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "grouped_envelope",
+     "line": 664,
+     "kind": "import",
+     "target": "cex/hp/grouped_envelope.py"
+    },
+    {
+     "name": "grouped_envelope",
+     "line": 786,
+     "kind": "import",
+     "target": "cex/hp/grouped_envelope.py"
+    },
+    {
+     "name": "grouped_envelope",
+     "line": 645,
+     "kind": "import",
+     "target": "cex/hp/grouped_envelope.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "json",
+    "math",
+    "numpy",
+    "os",
+    "sys"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [
+    21
+   ],
+   "file_relative_lookups": [
+    19
+   ],
+   "roots": [
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/hp/reservation.py": {
+   "lines": 86,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 10,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    }
+   ],
+   "external": [],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/hp/residual_bank.py": {
+   "lines": 228,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 13,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 14,
+     "kind": "import",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 15,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 16,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "itertools",
+    "math",
+    "numpy",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/residual_local.py": {
+   "lines": 190,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 11,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 12,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_optimize",
+     "line": 12,
+     "kind": "import",
+     "target": "cex/hp/joint_optimize.py"
+    },
+    {
+     "name": "global_optimize",
+     "line": 12,
+     "kind": "import",
+     "target": "cex/hp/global_optimize.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 13,
+     "kind": "from",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 14,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    },
+    {
+     "name": "check_residual",
+     "line": 75,
+     "kind": "import",
+     "target": "cex/hp/check_residual.py"
+    }
+   ],
+   "external": [
+    "hashlib",
+    "itertools",
+    "math",
+    "numpy"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/residual_max_envelope.py": {
+   "lines": 505,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 18,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "itertools",
+    "math",
+    "numpy",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/hp/residual_stream.py": {
+   "lines": 237,
+   "imports": [
+    {
+     "name": "pac_actions",
+     "line": 15,
+     "kind": "import",
+     "target": "cex/hp/pac_actions.py"
+    },
+    {
+     "name": "pac_actions",
+     "line": 16,
+     "kind": "from",
+     "target": "cex/hp/pac_actions.py"
+    },
+    {
+     "name": "integrated",
+     "line": 17,
+     "kind": "import",
+     "target": "cex/blockres/integrated.py"
+    },
+    {
+     "name": "coarse_envelope",
+     "line": 17,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 18,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "joint_optimize",
+     "line": 18,
+     "kind": "import",
+     "target": "cex/hp/joint_optimize.py"
+    },
+    {
+     "name": "joint_stream",
+     "line": 18,
+     "kind": "import",
+     "target": "cex/hp/joint_stream.py"
+    },
+    {
+     "name": "global_optimize",
+     "line": 19,
+     "kind": "import",
+     "target": "cex/hp/global_optimize.py"
+    },
+    {
+     "name": "residual_bank",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/residual_bank.py"
+    },
+    {
+     "name": "residual_local",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/residual_local.py"
+    },
+    {
+     "name": "check_residual",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/check_residual.py"
+    },
+    {
+     "name": "residual_max_envelope",
+     "line": 21,
+     "kind": "from",
+     "target": "cex/hp/residual_max_envelope.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "hashlib",
+    "json",
+    "math",
+    "numpy",
+    "traceback"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/response_certificate.py": {
+   "lines": 172,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 19,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "checked_tilt",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/checked_tilt.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "math"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "response"
+   ]
+  },
+  "cex/hp/spectral_heatbath_run.py": {
+   "lines": 271,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 21,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "core",
+     "line": 21,
+     "kind": "import",
+     "target": "cex/newarm/core.py"
+    },
+    {
+     "name": "spectral_witness",
+     "line": 22,
+     "kind": "import",
+     "target": "cex/hp/spectral_witness.py"
+    },
+    {
+     "name": "heatbath_exact",
+     "line": 22,
+     "kind": "import",
+     "target": "cex/hp/heatbath_exact.py"
+    },
+    {
+     "name": "heatbath_native",
+     "line": 22,
+     "kind": "import",
+     "target": "cex/hp/heatbath_native.py"
+    },
+    {
+     "name": "markov_certificate",
+     "line": 22,
+     "kind": "import",
+     "target": "cex/hp/markov_certificate.py"
+    },
+    {
+     "name": "response_certificate",
+     "line": 22,
+     "kind": "import",
+     "target": "cex/hp/response_certificate.py"
+    },
+    {
+     "name": "pac_actions",
+     "line": 23,
+     "kind": "from",
+     "target": "cex/hp/pac_actions.py"
+    }
+   ],
+   "external": [
+    "argparse",
+    "fractions",
+    "hashlib",
+    "json",
+    "math",
+    "os",
+    "resource",
+    "sys",
+    "time",
+    "traceback"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [
+    20
+   ],
+   "file_relative_lookups": [
+    20
+   ],
+   "roots": [
+    "response"
+   ]
+  },
+  "cex/hp/spectral_witness.py": {
+   "lines": 336,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 19,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "reservation",
+     "line": 20,
+     "kind": "import",
+     "target": "cex/hp/reservation.py"
+    }
+   ],
+   "external": [
+    "fractions",
+    "math",
+    "numpy",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "response"
+   ]
+  },
+  "cex/hp/unified_pac_planner.py": {
+   "lines": 573,
+   "imports": [
+    {
+     "name": "unified_planner",
+     "line": 26,
+     "kind": "import",
+     "target": "cex/hp/unified_planner.py"
+    },
+    {
+     "name": "unified_planner",
+     "line": 27,
+     "kind": "from",
+     "target": "cex/hp/unified_planner.py"
+    },
+    {
+     "name": "pac_actions",
+     "line": 28,
+     "kind": "import",
+     "target": "cex/hp/pac_actions.py"
+    },
+    {
+     "name": "integrated",
+     "line": 29,
+     "kind": "import",
+     "target": "cex/blockres/integrated.py"
+    },
+    {
+     "name": "joint_stream",
+     "line": 30,
+     "kind": "import",
+     "target": "cex/hp/joint_stream.py"
+    },
+    {
+     "name": "joint_proposal",
+     "line": 31,
+     "kind": "import",
+     "target": "cex/hp/joint_proposal.py"
+    },
+    {
+     "name": "global_stream",
+     "line": 32,
+     "kind": "import",
+     "target": "cex/hp/global_stream.py"
+    },
+    {
+     "name": "residual_stream",
+     "line": 33,
+     "kind": "import",
+     "target": "cex/hp/residual_stream.py"
+    },
+    {
+     "name": "core",
+     "line": 559,
+     "kind": "import",
+     "target": "cex/newarm/core.py"
+    }
+   ],
+   "external": [
+    "argparse",
+    "fractions",
+    "hashlib",
+    "json",
+    "math",
+    "numpy",
+    "os",
+    "resource",
+    "sys",
+    "time",
+    "traceback"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [
+    25,
+    559
+   ],
+   "file_relative_lookups": [
+    25
+   ],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/hp/unified_planner.py": {
+   "lines": 511,
+   "imports": [
+    {
+     "name": "coarse_envelope",
+     "line": 25,
+     "kind": "import",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "cost_model",
+     "line": 26,
+     "kind": "import",
+     "target": "cex/hp/cost_model.py"
+    },
+    {
+     "name": "coarse_envelope",
+     "line": 27,
+     "kind": "from",
+     "target": "cex/hp/coarse_envelope.py"
+    },
+    {
+     "name": "core",
+     "line": 503,
+     "kind": "import",
+     "target": "cex/newarm/core.py"
+    }
+   ],
+   "external": [
+    "argparse",
+    "fractions",
+    "json",
+    "math",
+    "os",
+    "resource",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [
+    ".timing.json",
+    "PHASE_RATES.json"
+   ],
+   "sys_path_lines": [
+    24,
+    503
+   ],
+   "file_relative_lookups": [
+    23
+   ],
+   "roots": [
+    "quotient"
+   ]
+  },
+  "cex/newarm/cex_executor.py": {
+   "lines": 293,
+   "imports": [],
+   "external": [
+    "ctypes",
+    "fractions",
+    "hashlib",
+    "itertools",
+    "json",
+    "math",
+    "os",
+    "pathlib",
+    "resource",
+    "subprocess",
+    "sys",
+    "threading",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [
+    "cex_build.json",
+    "cex_kernel.cpp",
+    "libcex_kernel.dylib"
+   ],
+   "sys_path_lines": [],
+   "file_relative_lookups": [
+    40
+   ],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/core.py": {
+   "lines": 276,
+   "imports": [
+    {
+     "name": "dag",
+     "line": 82,
+     "kind": "import",
+     "target": "cex/newarm/dag.py"
+    },
+    {
+     "name": "planning",
+     "line": 82,
+     "kind": "import",
+     "target": "cex/newarm/planning.py"
+    },
+    {
+     "name": "geometry",
+     "line": 82,
+     "kind": "import",
+     "target": "cex/newarm/geometry.py"
+    },
+    {
+     "name": "dag",
+     "line": 141,
+     "kind": "import",
+     "target": "cex/newarm/dag.py"
+    },
+    {
+     "name": "support",
+     "line": 141,
+     "kind": "import",
+     "target": "cex/newarm/support.py"
+    },
+    {
+     "name": "stream",
+     "line": 141,
+     "kind": "import",
+     "target": "cex/newarm/stream.py"
+    },
+    {
+     "name": "stream_float",
+     "line": 141,
+     "kind": "import",
+     "target": "cex/newarm/stream_float.py"
+    },
+    {
+     "name": "cex_executor",
+     "line": 141,
+     "kind": "import",
+     "target": "cex/newarm/cex_executor.py"
+    },
+    {
+     "name": "dag",
+     "line": 186,
+     "kind": "import",
+     "target": "cex/newarm/dag.py"
+    },
+    {
+     "name": "reduction",
+     "line": 186,
+     "kind": "import",
+     "target": "cex/newarm/reduction.py"
+    },
+    {
+     "name": "forest",
+     "line": 199,
+     "kind": "import",
+     "target": "cex/newarm/forest.py"
+    }
+   ],
+   "external": [
+    "collections",
+    "fractions",
+    "hashlib",
+    "itertools",
+    "math",
+    "pathlib",
+    "resource",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/dag.py": {
+   "lines": 395,
+   "imports": [],
+   "external": [
+    "collections",
+    "fractions",
+    "heapq",
+    "itertools",
+    "math",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/forest.py": {
+   "lines": 366,
+   "imports": [],
+   "external": [
+    "dataclasses",
+    "fractions",
+    "math",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/geometry.py": {
+   "lines": 278,
+   "imports": [],
+   "external": [
+    "collections",
+    "itertools",
+    "math",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/planning.py": {
+   "lines": 40,
+   "imports": [],
+   "external": [
+    "heapq",
+    "math",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/reduction.py": {
+   "lines": 185,
+   "imports": [],
+   "external": [
+    "collections",
+    "fractions",
+    "itertools",
+    "math",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/stream.py": {
+   "lines": 352,
+   "imports": [],
+   "external": [
+    "collections",
+    "fractions",
+    "math",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/stream_float.py": {
+   "lines": 174,
+   "imports": [
+    {
+     "name": "stream",
+     "line": 17,
+     "kind": "import",
+     "target": "cex/newarm/stream.py"
+    }
+   ],
+   "external": [
+    "ctypes",
+    "fractions",
+    "hashlib",
+    "json",
+    "math",
+    "os",
+    "pathlib",
+    "subprocess",
+    "sys",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [
+    "libstream_kernel.so",
+    "stream_build.json",
+    "stream_kernel.cpp"
+   ],
+   "sys_path_lines": [],
+   "file_relative_lookups": [
+    20
+   ],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  },
+  "cex/newarm/support.py": {
+   "lines": 256,
+   "imports": [],
+   "external": [
+    "collections",
+    "fractions",
+    "heapq",
+    "itertools",
+    "math",
+    "time"
+   ],
+   "unresolved": [],
+   "resources": [],
+   "sys_path_lines": [],
+   "file_relative_lookups": [],
+   "roots": [
+    "structural",
+    "block",
+    "quotient",
+    "response"
+   ]
+  }
+ },
+ "native_and_build_records": {
+  "cex/newarm": [
+   "cex_build.json",
+   "cex_control_driver.cpp",
+   "cex_kernel.cpp",
+   "libcex_kernel.dylib",
+   "libstream_kernel.so",
+   "stream_build.json",
+   "stream_kernel.cpp"
+  ],
+  "cex/hp": [
+   "heatbath_build.json",
+   "heatbath_native.c"
+  ]
+ },
+ "external_dependencies": [
+  "__future__",
+  "argparse",
+  "collections",
+  "copy",
+  "ctypes",
+  "dataclasses",
+  "fractions",
+  "hashlib",
+  "heapq",
+  "itertools",
+  "json",
+  "math",
+  "numpy",
+  "os",
+  "pathlib",
+  "psutil",
+  "queue",
+  "random",
+  "resource",
+  "scipy",
+  "subprocess",
+  "sys",
+  "threading",
+  "time",
+  "traceback",
+  "types"
+ ],
+ "source_commit": "f8197e6b1e90286b8554a3088a0594b9178a3595 (production tree unchanged through consolidation commit 1 c5b7708, where this inventory was taken)",
+ "note": "the BEFORE inventory: transitive bare-import closure from the four roots over code/cex/{newarm,blockres,hp} resolved by sys.path directory order (documentation/consolidation/step1/tools/closure_inventory.py)"
+}

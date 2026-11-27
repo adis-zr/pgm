@@ -1,0 +1,83 @@
+{
+ "schema": "PGM_STEP2_PLAN_V1",
+ "status": "FROZEN, NOT EXECUTED",
+ "frozen_with": "consolidation step 1 (branch consolidate/production-layout)",
+ "question": "preservation of the known external result by the consolidated package",
+ "reference": {
+  "engine": "accepted PGM v2.13.2",
+  "commit": "7f28259a4869a2c684d506b51072b04bb0ce4783",
+  "cells": "benchmarks/external/reference/previous_accepted_cells.json",
+  "known_result": "41/55 exposed + 6/6 prospective completed by 3283cfd; 27/29 accepted-engine completions retained; DIABETES and ObjectDetection_43 lost; Pedigree_12 a further gap; all 61 inputs exposed"
+ },
+ "arms": {
+  "PGM_ACCEPTED": {
+   "command": "python -m pgm --input M --output R --budget 19.5 --memory-mib 3072 --seed REP --epsilon 1/200 --delta 1/1000000 --policy accepted",
+   "role": "accepted engine through the common contract (default policy)"
+  },
+  "PGM_EXPERIMENTAL": {
+   "command": "python -m pgm ... --policy experimental",
+   "role": "frozen structural-portfolio-1 of 3283cfd under the new layout"
+  },
+  "LIBDAI_JT": {
+   "command": "qualified libDAI junction tree (provenance/LIBDAI_*)",
+   "role": "exact comparator"
+  },
+  "LIBDAI_BP": {
+   "command": "qualified libDAI loopy BP",
+   "role": "point comparator"
+  }
+ },
+ "cells": {
+  "tasks": 61,
+  "arms": 4,
+  "replicates": [
+   1,
+   2
+  ],
+  "total": 488,
+  "phases": [
+   "primary (55 exposed_regression)",
+   "eval (6 former holdout; regression now)"
+  ]
+ },
+ "contract": {
+  "budget_s": 20,
+  "pgm_allowance_s": 19.5,
+  "memory_mib": 3072,
+  "epsilon": "1/200",
+  "delta": "1/1000000",
+  "rss_sample_s": 0.01,
+  "grace_s": 0,
+  "scored_ceiling_s": 8000
+ },
+ "acceptance": [
+  "PGM_ACCEPTED loses none of the 29 reference completions (ANALYSIS.prior_accepted_comparison.per_arm.PGM_ACCEPTED.lost == [])",
+  "PGM_EXPERIMENTAL reproduces 3283cfd: lost == [DIABETES, ObjectDetection_43]; same completion set elsewhere",
+  "zero faulty published artifacts; JT point inside every published enclosure within the serialization allowance; no certificate conflict",
+  "default promotion requires acceptance 1 and 3; no re-tuning to meet them"
+ ],
+ "commands": [
+  "PYTHONPATH=src:code $PGM_BENCH_PY -m pgm.build",
+  "$PGM_BENCH_PY benchmarks/external/run_suite.py freeze",
+  "$PGM_BENCH_PY benchmarks/external/run_suite.py primary",
+  "$PGM_BENCH_PY benchmarks/external/run_suite.py eval",
+  "$PGM_BENCH_PY benchmarks/external/analyze_suite.py"
+ ],
+ "environment": [
+  "PGM_BENCH_PY",
+  "PGM_LIBDAI",
+  "CC",
+  "PGM_BENCH_RUN_DIR"
+ ],
+ "forbidden": [
+  "per-task tuning",
+  "hindsight backend selection",
+  "repair of DIABETES / ObjectDetection_43 / Pedigree_12",
+  "new rates",
+  "model-name routing",
+  "learned proposer",
+  "spectral or certificate change",
+  "dense-graph experiment"
+ ],
+ "document": "benchmarks/external/STEP2_PLAN.md"
+}
