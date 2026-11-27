@@ -1,0 +1,26 @@
+{
+  "libdai_version": "0.3.2",
+  "libdai_source_url": "https://staff.fnwi.uva.nl/j.m.mooij/libDAI/libDAI-0.3.2.tar.gz",
+  "libdai_source_sha256": "47688d7ab5129b8c0746ee39c2a2c1cc67cdf4c448609dd316c64657b1ab9de3",
+  "boost_version": "1.83.0",
+  "boost_source_url": "https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.bz2",
+  "boost_source_sha256": "6478edfe2f3305127cffe8caf73ea0176c53769f4bf1585be237eb30798c3b8e",
+  "compiler": "g++ (Debian 14.2.0-19) 14.2.0",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "compile_flags": "-O3 -std=c++11 -Wno-deprecated -Wall -W -Wextra -fpic",
+  "debug": false,
+  "source_changes": "none (Makefile.LINUX copied to Makefile.conf; build flags overridden on command line)",
+  "driver_source": "/workspace/scratch/226d1e4428b0/pgm-external-benchmark/code/bench/libdai/libdai_mar.cpp",
+  "driver_source_sha256": "6fcfb6f0ea7bcce4e77a6f5ac07c3890ab2e365b02bfbae9a9c1b4fb8561dcb3",
+  "binary": "/workspace/scratch/226d1e4428b0/external_benchmark_tools/libdai_mar",
+  "binary_sha256": "beb2850290bdbdf353e08e8e8e9695fc8b39f5c3baa693032303e88ac9474a8a",
+  "library_sha256": "c74725a495892576c30355f80380eab478405db5eb98eeb70022250768f7ae1b",
+  "dynamic_linkage": "\tlinux-vdso.so.1 (0x00007fd92eec9000)\n\tlibgmpxx.so.4 => /lib/x86_64-linux-gnu/libgmpxx.so.4 (0x00007fd92ed0a000)\n\tlibgmp.so.10 => /lib/x86_64-linux-gnu/libgmp.so.10 (0x00007fd92ec80000)\n\tlibstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x00007fd92ea1a000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007fd92e92a000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007fd92e8fb000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007fd92e707000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007fd92eecb000)\n",
+  "qualification_file": "LIBDAI_QUALIFICATION.json",
+  "qualification_sha256": "6c20a18874dd2eaff6ac5ca2e1db2a91d4091a440968fc7baa130cfdd5bee0c3",
+  "warnings": "Initial GitHub mirror clone was not used. One initial compile without -O3 was interrupted and a -B forced full optimized rebuild was executed. No scored benchmarks were run. Driver drops positive scalar factors, so its logZ is not an original-model partition oracle; all singleton marginals are retained.",
+  "algorithms": {
+    "EXACT": "JTREE[inference=SUMPROD,updates=HUGIN,maxmem=8589934592]",
+    "LBP": "BP[inference=SUMPROD,updates=SEQMAX,logdomain=0,tol=1e-9,maxiter=10000,damping=0.0,maxtime=<remaining>]"
+  }
+}

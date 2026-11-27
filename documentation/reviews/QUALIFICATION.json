@@ -1,0 +1,33 @@
+{
+  "stage": "pre-benchmark qualification",
+  "source_parent": "d6d751d",
+  "dgp10_repair_commit": "3e511fb",
+  "portable_public_and_repair_tests": "See PUBLIC_FINAL_TESTS.log; tests include exact oracle and resource controls, not performance tasks",
+  "dgp10_new_controls": {
+    "passed": 12,
+    "total": 12
+  },
+  "accepted_portable_controls": {
+    "passed": 24,
+    "total": 24
+  },
+  "native_oracle_smoke": {
+    "contained": 40,
+    "total": 40
+  },
+  "inherited_d1_d90": {
+    "passed": 39,
+    "blocked_by_missing_historical_inputs": 51,
+    "fully_qualified": false
+  },
+  "wheel_smoke": {
+    "wheel_runtime_verified": true,
+    "source_only_wheel": true,
+    "all_native_built_on_host": true,
+    "outcome": "COMPLETE",
+    "guarantee": "DETERMINISTIC",
+    "published": 4,
+    "wall_s": 0.13713409100000717
+  },
+  "note": "No external consolidation solver cell has run. Synthetic fixtures are correctness tests only."
+}

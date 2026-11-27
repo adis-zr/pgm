@@ -1,0 +1,98 @@
+[
+  {
+    "name": "asia",
+    "url": "https://www.bnlearn.com/bnrepository/asia/asia.bif.gz",
+    "path": "sources/bnlearn/asia.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 3.798986468002113
+  },
+  {
+    "name": "child",
+    "url": "https://www.bnlearn.com/bnrepository/child/child.bif.gz",
+    "path": "sources/bnlearn/child.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 3.8008012319987756
+  },
+  {
+    "name": "insurance",
+    "url": "https://www.bnlearn.com/bnrepository/insurance/insurance.bif.gz",
+    "path": "sources/bnlearn/insurance.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 4.946022988999175
+  },
+  {
+    "name": "water",
+    "url": "https://www.bnlearn.com/bnrepository/water/water.bif.gz",
+    "path": "sources/bnlearn/water.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 4.989691034999851
+  },
+  {
+    "name": "mildew",
+    "url": "https://www.bnlearn.com/bnrepository/mildew/mildew.bif.gz",
+    "path": "sources/bnlearn/mildew.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 3.64002445299775
+  },
+  {
+    "name": "alarm",
+    "url": "https://www.bnlearn.com/bnrepository/alarm/alarm.bif.gz",
+    "path": "sources/bnlearn/alarm.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 3.7336105310023413
+  },
+  {
+    "name": "barley",
+    "url": "https://www.bnlearn.com/bnrepository/barley/barley.bif.gz",
+    "path": "sources/bnlearn/barley.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 2.627953883002192
+  },
+  {
+    "name": "hailfinder",
+    "url": "https://www.bnlearn.com/bnrepository/hailfinder/hailfinder.bif.gz",
+    "path": "sources/bnlearn/hailfinder.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 2.5462073130001954
+  },
+  {
+    "name": "win95pts",
+    "url": "https://www.bnlearn.com/bnrepository/win95pts/win95pts.bif.gz",
+    "path": "sources/bnlearn/win95pts.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 3.2795289189998584
+  },
+  {
+    "name": "munin1",
+    "url": "https://www.bnlearn.com/bnrepository/munin1/munin1.bif.gz",
+    "path": "sources/bnlearn/munin1.bif.gz",
+    "returncode": 22,
+    "stderr": "curl: (22) The requested URL returned error: 404\n",
+    "wall_s": 3.2949114340008236
+  },
+  {
+    "name": "andes",
+    "url": "https://www.bnlearn.com/bnrepository/andes/andes.bif.gz",
+    "path": "sources/bnlearn/andes.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 3.3260395920005976
+  },
+  {
+    "name": "diabetes",
+    "url": "https://www.bnlearn.com/bnrepository/diabetes/diabetes.bif.gz",
+    "path": "sources/bnlearn/diabetes.bif.gz",
+    "returncode": 0,
+    "stderr": "",
+    "wall_s": 3.5863494430013816
+  }
+]

@@ -20,3 +20,11 @@ code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/setup/ibia/*.pdf
 .DS_Store
 code/cex/hp/native_cache/
 code/cex/hp/heatbath_build.json
+
+# Public API packaging and reproducible external benchmark outputs
+*.egg-info/
+/benchmark_runs/
+
+# Local package build products
+/build/
+/dist/

@@ -1,0 +1,14 @@
+[
+  {
+    "archive": "consolidation_benchmark/sources/uai2022_tuning.zip",
+    "sha256": "3a05117fe976289aab9d6c04cae8385f57908ff6ca91b65ac970348fa19b619f",
+    "bytes": 6675703,
+    "source_url": "https://ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip"
+  },
+  {
+    "archive": "consolidation_benchmark/sources/uai2022_final.zip",
+    "sha256": "3cbe1f4f640bd0e4203186588bde3fcfb64039ab71c595dade9ae18b9a65608b",
+    "bytes": 2141166,
+    "source_url": "https://ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip"
+  }
+]

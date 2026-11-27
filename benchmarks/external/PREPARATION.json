@@ -1,0 +1,36 @@
+{
+  "source_packet_sha256": "78ba37719b48a97a1a463baa00b9e33f556b5f91e3b2acd35bae11f1757ceb3d",
+  "packet_manifest_files_verified": 4056,
+  "exposed_tasks": 55,
+  "prospective_eval_tasks": 6,
+  "holdout_freeze_sha256": "1a4c560a833445084e149878e2e02f5b5fd3cb710def174e51a3235af240b0c3",
+  "native_sources_match_recovered_builds": true,
+  "libdai_binary_sha256": "beb2850290bdbdf353e08e8e8e9695fc8b39f5c3baa693032303e88ac9474a8a",
+  "libdai_exact_oracle_checks": 11,
+  "libdai_checks_pass": true,
+  "prior_artifact_checker_replays": 120,
+  "prior_artifact_checker_replays_pass": true,
+  "new_scored_cells": 0,
+  "prepared_utc": "2026-11-27T17:04:50.868739+00:00",
+  "unscored_development_disclosures": [
+    "Initial analyzer syntax compilation found one unmatched brace; corrected before any freeze or execution.",
+    "Recovered public archives and holdout selection used metadata/hashes only; no solver run on heldout inputs."
+  ],
+  "repository_input_pairs": 61,
+  "repository_input_bytes": 12213621,
+  "portable_analyzer_historical_cells_replayed": 330,
+  "portable_analyzer_issues": 0,
+  "portable_analyzer_reproduced_coverage": {
+    "historical46": {
+      "PGM": 22,
+      "LIBDAI_JT": 25,
+      "LIBDAI_BP": 46
+    },
+    "external_extension": {
+      "PGM": 7,
+      "LIBDAI_JT": 3,
+      "LIBDAI_BP": 9
+    }
+  },
+  "virtual_environment_interpreter_path_preserved": true
+}

@@ -1,0 +1,2453 @@
+{
+  "schema": "CONSOLIDATION_EXTERNAL_INPUTS_V1",
+  "status": "INPUT_IDENTITIES_FIXED; ENGINE_FREEZE_PENDING",
+  "tasks": [
+    {
+      "name": "BN_12",
+      "model": "inputs/exposed/427c631e18b8c871837b7d6033c1ac0df55f691e8fe4c5b04e61ad9a9336b8bd/model.uai",
+      "evidence": "inputs/exposed/427c631e18b8c871837b7d6033c1ac0df55f691e8fe4c5b04e61ad9a9336b8bd/model.uai.evid",
+      "model_sha256": "966a3390b8be18fbe2ad59abc2517b79b5bb6b15edd8af0729f5c39c793fe201",
+      "evidence_sha256": "7fff3dff60c893e6aefa0c8f92dc2c07686676946c16fa7cd9354b29e67acf9f",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_final/MAR/BN_12.uai",
+        "evidence_path": "sources/uai2022_final/MAR/BN_12.uai.evid",
+        "archive": "uai2022_final"
+      },
+      "family": "GridBN",
+      "canonical_model_sha256": "ad1ebc17a230a0f0dce3e10e60af59a256017d507f1267b1576d05cc16cb1fad",
+      "canonical_evidence_sha256": "b4a705fa7133b8ab7d676e084af460f200411ca4e58398dc49926ca77be3159f",
+      "structure": {
+        "variables": 90,
+        "factors": 90,
+        "domain_histogram": {
+          "2": 90
+        },
+        "max_arity": 9,
+        "arity_histogram": {
+          "1": 15,
+          "2": 19,
+          "3": 20,
+          "4": 10,
+          "5": 16,
+          "6": 6,
+          "7": 2,
+          "8": 1,
+          "9": 1
+        },
+        "table_entries_total": 2346,
+        "table_entries_largest": 512,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 3.244640549714238,
+        "evidence_count": 11,
+        "connected_components": 1,
+        "degree_mean": 10.688888888888888,
+        "degree_max": 27,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 19,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "427c631e18b8c871837b7d6033c1ac0df55f691e8fe4c5b04e61ad9a9336b8bd",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "BN_13",
+      "model": "inputs/exposed/287ce6d57670713c16b3ee70c5d88e364ffd3fc97109b7397ed2a91d8e3c2618/model.uai",
+      "evidence": "inputs/exposed/287ce6d57670713c16b3ee70c5d88e364ffd3fc97109b7397ed2a91d8e3c2618/model.uai.evid",
+      "model_sha256": "07db088fd73cbd972eae8e00cdbcbccf7d0c5a839944bfa30f8629848f41ae22",
+      "evidence_sha256": "7f0778ad3e60c7001a54e47761cc181c635b5fcd345f0e7fe04c2d44f9b17745",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_final/MAR/BN_13.uai",
+        "evidence_path": "sources/uai2022_final/MAR/BN_13.uai.evid",
+        "archive": "uai2022_final"
+      },
+      "family": "GridBN",
+      "canonical_model_sha256": "366ce444cf344385c2dacacf0ca40ead83a2733ff96b9a30215eb861b4075ff9",
+      "canonical_evidence_sha256": "48b71aa6cb06b080f505a3d6fc80232a3b3eebfe1b2aabeca6a18234c84db387",
+      "structure": {
+        "variables": 125,
+        "factors": 125,
+        "domain_histogram": {
+          "2": 125
+        },
+        "max_arity": 8,
+        "arity_histogram": {
+          "1": 20,
+          "2": 34,
+          "3": 29,
+          "4": 22,
+          "5": 11,
+          "6": 4,
+          "7": 1,
+          "8": 4
+        },
+        "table_entries_total": 2520,
+        "table_entries_largest": 256,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 3.476108454602007,
+        "evidence_count": 9,
+        "connected_components": 1,
+        "degree_mean": 8.8,
+        "degree_max": 23,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 34,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "287ce6d57670713c16b3ee70c5d88e364ffd3fc97109b7397ed2a91d8e3c2618",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "BN_15",
+      "model": "inputs/exposed/8494035561d71b2c11482a4e6133db801968da38fe463983b663bea300330fb4/model.uai",
+      "evidence": "inputs/exposed/8494035561d71b2c11482a4e6133db801968da38fe463983b663bea300330fb4/model.uai.evid",
+      "model_sha256": "3c2c18c8d2b30fee5d7f9b7d672950b2c131abb5b13ca7ca03397b90379d1b7b",
+      "evidence_sha256": "5bb4bbd3518c7007ff460f7b7349dd134e7816accad5de0e3b12c686d245bdd1",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_final/MAR/BN_15.uai",
+        "evidence_path": "sources/uai2022_final/MAR/BN_15.uai.evid",
+        "archive": "uai2022_final"
+      },
+      "family": "GridBN",
+      "canonical_model_sha256": "26007657062b2470225ce377c7fb4810e148e389994bbdd14cb05f8475aed13c",
+      "canonical_evidence_sha256": "49f35e99424d8bcb86de50e2e6d5d833a1b278cb6761a5fa5960d092c452ca56",
+      "structure": {
+        "variables": 120,
+        "factors": 120,
+        "domain_histogram": {
+          "2": 120
+        },
+        "max_arity": 8,
+        "arity_histogram": {
+          "1": 12,
+          "2": 27,
+          "3": 29,
+          "4": 25,
+          "5": 14,
+          "6": 7,
+          "7": 3,
+          "8": 3
+        },
+        "table_entries_total": 2812,
+        "table_entries_largest": 256,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 4.161120941909608,
+        "evidence_count": 19,
+        "connected_components": 1,
+        "degree_mean": 10.616666666666667,
+        "degree_max": 27,
+        "degree_min": 2,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 27,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "8494035561d71b2c11482a4e6133db801968da38fe463983b663bea300330fb4",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "BN_31",
+      "model": "inputs/exposed/4d1cfa9b53790fca7b6e9cd47f8030b8af2b6dc1ae94dc5f9d5c83eaf9562834/model.uai",
+      "evidence": "inputs/exposed/4d1cfa9b53790fca7b6e9cd47f8030b8af2b6dc1ae94dc5f9d5c83eaf9562834/model.uai.evid",
+      "model_sha256": "a4a95ab0d9370841d8639820ba405ae233e6a77e7d30f8f4ff1c48d50ed9bd5f",
+      "evidence_sha256": "5a4625a858f1d67cda41fe0caba7e16876311293684e3971785a6c6e2cae56e6",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_final/MAR/BN_31.uai",
+        "evidence_path": "sources/uai2022_final/MAR/BN_31.uai.evid",
+        "archive": "uai2022_final"
+      },
+      "family": "GridBN",
+      "canonical_model_sha256": "4a5c9084afb8c31a91a32134e3d13e0362cb6216be66abdfc653d4a4ec98e744",
+      "canonical_evidence_sha256": "2053940941343ae1d22369122e21bcffa356c53f2fca7f1be055ca2266a20d06",
+      "structure": {
+        "variables": 1156,
+        "factors": 1156,
+        "domain_histogram": {
+          "2": 1156
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 1,
+          "2": 66,
+          "3": 1089
+        },
+        "table_entries_total": 8978,
+        "table_entries_largest": 8,
+        "exact_zeros": 4030,
+        "zero_fraction": 0.4488750278458454,
+        "positive_dynamic_range_log10": 2.8449677712090296,
+        "evidence_count": 120,
+        "connected_components": 1,
+        "degree_mean": 5.76643598615917,
+        "degree_max": 6,
+        "degree_min": 2,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 59,
+        "binary_pairwise_tables": 66,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "4d1cfa9b53790fca7b6e9cd47f8030b8af2b6dc1ae94dc5f9d5c83eaf9562834",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Grids_11",
+      "model": "inputs/exposed/2982039b5e1c1aa372f5c36793095180412e4b5a1a2ae317f173a55ece84d768/model.uai",
+      "evidence": "inputs/exposed/2982039b5e1c1aa372f5c36793095180412e4b5a1a2ae317f173a55ece84d768/model.uai.evid",
+      "model_sha256": "85f8d06c1fa4d68bf2b68d4fe06747cd3fc8090c87fab4c1cb811c523affb7c8",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Grids_11.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Grids_11.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Grids",
+      "canonical_model_sha256": "6c7a939e9c0b74c7ca4e488369feccdd48c63d133962ea01ac298a96089e0987",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 100,
+        "factors": 300,
+        "domain_histogram": {
+          "2": 100
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 100,
+          "2": 200
+        },
+        "table_entries_total": 1000,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 4.259631454520832,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 4.0,
+        "degree_max": 4,
+        "degree_min": 4,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 200,
+        "binary_pairwise_tables": 200,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "2982039b5e1c1aa372f5c36793095180412e4b5a1a2ae317f173a55ece84d768",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Grids_14",
+      "model": "inputs/exposed/161f6bc268fa9337afbf924d647d5c23eb954ba6f09192100e9d1e0258a8530a/model.uai",
+      "evidence": "inputs/exposed/161f6bc268fa9337afbf924d647d5c23eb954ba6f09192100e9d1e0258a8530a/model.uai.evid",
+      "model_sha256": "a835e450ac34a740b2dc2b7c39b199ecc71e5cde4b31918e24f6f29cf829a356",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Grids_14.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Grids_14.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Grids",
+      "canonical_model_sha256": "87f0526732c86c0a1f2f8fc5ebb693ea43bfe4a18354516037c27d3ba6b5c5be",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 100,
+        "factors": 300,
+        "domain_histogram": {
+          "2": 100
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 100,
+          "2": 200
+        },
+        "table_entries_total": 1000,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 12.778895907362978,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 4.0,
+        "degree_max": 4,
+        "degree_min": 4,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 200,
+        "binary_pairwise_tables": 200,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "161f6bc268fa9337afbf924d647d5c23eb954ba6f09192100e9d1e0258a8530a",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Grids_15",
+      "model": "inputs/exposed/31c4ec81dae884fa8b0300fbd033394f2234aa661a70996dc1eafd03a72f2c99/model.uai",
+      "evidence": "inputs/exposed/31c4ec81dae884fa8b0300fbd033394f2234aa661a70996dc1eafd03a72f2c99/model.uai.evid",
+      "model_sha256": "d15c024553bba3451d23c783b69889e4711168d258dc2df6ec7ab47569f2cb4c",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Grids_15.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Grids_15.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Grids",
+      "canonical_model_sha256": "d39be6fa2a8904005a06dca5f92d9c80f90cc0835339449ea1722db398db3be5",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 400,
+        "factors": 1160,
+        "domain_histogram": {
+          "2": 400
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 400,
+          "2": 760
+        },
+        "table_entries_total": 3840,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 1.7362020785611778,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 3.8,
+        "degree_max": 4,
+        "degree_min": 2,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 760,
+        "binary_pairwise_tables": 760,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "31c4ec81dae884fa8b0300fbd033394f2234aa661a70996dc1eafd03a72f2c99",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Grids_17",
+      "model": "inputs/exposed/dee3702a1faa52f10e387ba9c1aeea30eeb0d7f95cd9ecdac8d91bf73eedb071/model.uai",
+      "evidence": "inputs/exposed/dee3702a1faa52f10e387ba9c1aeea30eeb0d7f95cd9ecdac8d91bf73eedb071/model.uai.evid",
+      "model_sha256": "fa38888996f5fb57d70c5dcced207c54a80cbe9cc60271737173e2b8c06fe25f",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Grids_17.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Grids_17.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Grids",
+      "canonical_model_sha256": "f9f7d878a24617aa3fc0b0599b13b75a40fe3cbdb16caacb6dd0cfff27f130dc",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 400,
+        "factors": 1160,
+        "domain_histogram": {
+          "2": 400
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 400,
+          "2": 760
+        },
+        "table_entries_total": 3840,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 8.68108344892017,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 3.8,
+        "degree_max": 4,
+        "degree_min": 2,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 760,
+        "binary_pairwise_tables": 760,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "dee3702a1faa52f10e387ba9c1aeea30eeb0d7f95cd9ecdac8d91bf73eedb071",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Pedigree_11",
+      "model": "inputs/exposed/63f49afa9aabb6546f46e38c6356d343877338bf04b30dbf706b0f27561cecda/model.uai",
+      "evidence": "inputs/exposed/63f49afa9aabb6546f46e38c6356d343877338bf04b30dbf706b0f27561cecda/model.uai.evid",
+      "model_sha256": "787afc6fa9c066e16339ae80491c60d6e26e53d7f7d6e19de1abd4ce1872a6d8",
+      "evidence_sha256": "4088a8c03d0983ced4cc243a6bf6b87a0fd8648b16e33257ed7fa236b76e92ac",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Pedigree_11.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Pedigree_11.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Pedigree",
+      "canonical_model_sha256": "50b6747160f854d56e1531185a1694d8ad02de55ef7e2fccba416837dc5ba9d4",
+      "canonical_evidence_sha256": "fcea5caa903f545abea832a799585e264be180e6208ed59e43148de37f90af4a",
+      "structure": {
+        "variables": 385,
+        "factors": 385,
+        "domain_histogram": {
+          "2": 362,
+          "3": 23
+        },
+        "max_arity": 4,
+        "arity_histogram": {
+          "1": 106,
+          "2": 110,
+          "3": 37,
+          "4": 132
+        },
+        "table_entries_total": 3152,
+        "table_entries_largest": 16,
+        "exact_zeros": 1298,
+        "zero_fraction": 0.4118020304568528,
+        "positive_dynamic_range_log10": 2.6935749724493125,
+        "evidence_count": 37,
+        "connected_components": 1,
+        "degree_mean": 4.8311688311688314,
+        "degree_max": 9,
+        "degree_min": 2,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 110,
+        "binary_pairwise_tables": 110,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "63f49afa9aabb6546f46e38c6356d343877338bf04b30dbf706b0f27561cecda",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Pedigree_12",
+      "model": "inputs/exposed/2e6fe3137a61d603ac54f5246b2baab31c76003dc69b4c813246d0510666c525/model.uai",
+      "evidence": "inputs/exposed/2e6fe3137a61d603ac54f5246b2baab31c76003dc69b4c813246d0510666c525/model.uai.evid",
+      "model_sha256": "e21bf0900e07111ec31c4446364561433ce66812b364c99774f3be0cb700c14a",
+      "evidence_sha256": "ac1c4b02f2c53b5391f90727d2c98bf3bc35edc1e3e027977f2dea35d6ead3e0",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Pedigree_12.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Pedigree_12.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Pedigree",
+      "canonical_model_sha256": "54ddb1c23d2a3065c5cb15b73c017c429533042d711909acb66d705503839a73",
+      "canonical_evidence_sha256": "8748520d5d0ca838ed05ff2b908a1f3e14a6006af3d5a2b9dd2408362270e2b2",
+      "structure": {
+        "variables": 385,
+        "factors": 385,
+        "domain_histogram": {
+          "2": 362,
+          "3": 23
+        },
+        "max_arity": 4,
+        "arity_histogram": {
+          "1": 106,
+          "2": 110,
+          "3": 37,
+          "4": 132
+        },
+        "table_entries_total": 3152,
+        "table_entries_largest": 16,
+        "exact_zeros": 1298,
+        "zero_fraction": 0.4118020304568528,
+        "positive_dynamic_range_log10": 3.034798298974088,
+        "evidence_count": 37,
+        "connected_components": 1,
+        "degree_mean": 4.8311688311688314,
+        "degree_max": 9,
+        "degree_min": 2,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 110,
+        "binary_pairwise_tables": 110,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "2e6fe3137a61d603ac54f5246b2baab31c76003dc69b4c813246d0510666c525",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Pedigree_13",
+      "model": "inputs/exposed/e10f28b5f8cc95b2807906c92bab24516635a1d46b3f7db5be023b3625b4431d/model.uai",
+      "evidence": "inputs/exposed/e10f28b5f8cc95b2807906c92bab24516635a1d46b3f7db5be023b3625b4431d/model.uai.evid",
+      "model_sha256": "1cf0e0f90c133e728505fc37d28555963d715607282af7cceb85b01055cc8b57",
+      "evidence_sha256": "c948715e3387baeb2e2d5e29cb64678f85eca1798c665f4b0f230e10da382a7f",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Pedigree_13.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Pedigree_13.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Pedigree",
+      "canonical_model_sha256": "6423367d39c8ead43f08fe5e81740cabbb76f2c40a1bb313abe0358dda1db4ed",
+      "canonical_evidence_sha256": "e097bd420e7e0d6017752a1fc328ceddff0459a5bbd98bff1fcb3483064d7925",
+      "structure": {
+        "variables": 385,
+        "factors": 385,
+        "domain_histogram": {
+          "2": 362,
+          "3": 23
+        },
+        "max_arity": 4,
+        "arity_histogram": {
+          "1": 106,
+          "2": 110,
+          "3": 37,
+          "4": 132
+        },
+        "table_entries_total": 3152,
+        "table_entries_largest": 16,
+        "exact_zeros": 1340,
+        "zero_fraction": 0.4251269035532995,
+        "positive_dynamic_range_log10": 4.167491087293763,
+        "evidence_count": 37,
+        "connected_components": 1,
+        "degree_mean": 4.8311688311688314,
+        "degree_max": 9,
+        "degree_min": 2,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 110,
+        "binary_pairwise_tables": 110,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "e10f28b5f8cc95b2807906c92bab24516635a1d46b3f7db5be023b3625b4431d",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Promedus_33",
+      "model": "inputs/exposed/187f8cea04d11d0a4ed43d2ea519680d3914d89fae4adc296dc64dfbe2d3cdc3/model.uai",
+      "evidence": "inputs/exposed/187f8cea04d11d0a4ed43d2ea519680d3914d89fae4adc296dc64dfbe2d3cdc3/model.uai.evid",
+      "model_sha256": "247748b1d0c99ebda5bc840a444800d3bb0a56c6bdc52e2d1f7ac241c09f83ae",
+      "evidence_sha256": "19b9150fc33307f7cde98ceefa7cf04cf9b4c8e8ab7a3b84a1cccaef37a3e154",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Promedus_33.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Promedus_33.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Promedus",
+      "canonical_model_sha256": "2bddd5d30487b4bf9af3d0436c14e8aa571dc83f1135a2ef9d0f5c9fae4957e4",
+      "canonical_evidence_sha256": "6e53c9b32445d75eab8ec5236de32702c9ec86ed120445c19d72b91b44846454",
+      "structure": {
+        "variables": 378,
+        "factors": 378,
+        "domain_histogram": {
+          "2": 378
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 185,
+          "2": 2,
+          "3": 191
+        },
+        "table_entries_total": 1906,
+        "table_entries_largest": 8,
+        "exact_zeros": 579,
+        "zero_fraction": 0.3037775445960126,
+        "positive_dynamic_range_log10": 8.0,
+        "evidence_count": 2,
+        "connected_components": 1,
+        "degree_mean": 3.0423280423280423,
+        "degree_max": 4,
+        "degree_min": 1,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 2,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "187f8cea04d11d0a4ed43d2ea519680d3914d89fae4adc296dc64dfbe2d3cdc3",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Promedus_14",
+      "model": "inputs/exposed/1c6679dc3b93cb26d142943dd1ae3d42d7e43dfcf03bedd30f74c51b641f7b86/model.uai",
+      "evidence": "inputs/exposed/1c6679dc3b93cb26d142943dd1ae3d42d7e43dfcf03bedd30f74c51b641f7b86/model.uai.evid",
+      "model_sha256": "f213b76a7f145a06f39daa9061408981dbd525e4ce2e5156edb83a7073d71349",
+      "evidence_sha256": "e345a4ebecf02cdd9fdaf42e7456afa5f6ecafa989b6a3c15ef525abe736a403",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Promedus_14.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Promedus_14.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Promedus",
+      "canonical_model_sha256": "038c881371c40fb6a90164f976b135824f09ef0c53ccec14149beea033b60668",
+      "canonical_evidence_sha256": "3e234908d387bd3849bbfb2dd206e1241997336530af95d2af4df96c5ba44076",
+      "structure": {
+        "variables": 414,
+        "factors": 414,
+        "domain_histogram": {
+          "2": 414
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 141,
+          "2": 8,
+          "3": 265
+        },
+        "table_entries_total": 2434,
+        "table_entries_largest": 8,
+        "exact_zeros": 884,
+        "zero_fraction": 0.36318816762530814,
+        "positive_dynamic_range_log10": 7.0,
+        "evidence_count": 9,
+        "connected_components": 2,
+        "degree_mean": 3.869565217391304,
+        "degree_max": 12,
+        "degree_min": 0,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 8,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "1c6679dc3b93cb26d142943dd1ae3d42d7e43dfcf03bedd30f74c51b641f7b86",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Promedus_12",
+      "model": "inputs/exposed/ccf3011b422941bce87e09b3809d824136c66a1f2c0dea3afaa74291f59a569e/model.uai",
+      "evidence": "inputs/exposed/ccf3011b422941bce87e09b3809d824136c66a1f2c0dea3afaa74291f59a569e/model.uai.evid",
+      "model_sha256": "60176b0a0d6b247cc73ed536cd4719b82d6a64852033b83d9b72bb8e072ca94b",
+      "evidence_sha256": "c0389999d5bf7e95e6a1d3473b22cf6cf56ace515afb5dacbae0e9f72519efaa",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Promedus_12.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Promedus_12.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Promedus",
+      "canonical_model_sha256": "8e34db3eba7fb16894bab18174e4bee830f55abf606943be834f26a37b8a870f",
+      "canonical_evidence_sha256": "f00e88465e8e0c5d1acf37f4d7581b2af698909f5b09be766bc5addcc97d2016",
+      "structure": {
+        "variables": 534,
+        "factors": 534,
+        "domain_histogram": {
+          "2": 534
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 219,
+          "2": 3,
+          "3": 312
+        },
+        "table_entries_total": 2946,
+        "table_entries_largest": 8,
+        "exact_zeros": 1080,
+        "zero_fraction": 0.3665987780040733,
+        "positive_dynamic_range_log10": 7.0,
+        "evidence_count": 3,
+        "connected_components": 1,
+        "degree_mean": 3.5168539325842696,
+        "degree_max": 6,
+        "degree_min": 1,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 3,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "ccf3011b422941bce87e09b3809d824136c66a1f2c0dea3afaa74291f59a569e",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Promedus_37",
+      "model": "inputs/exposed/c294d9f2b807043961737822064ef402a5f6987f4bbef6e4462d5cacb61f96d3/model.uai",
+      "evidence": "inputs/exposed/c294d9f2b807043961737822064ef402a5f6987f4bbef6e4462d5cacb61f96d3/model.uai.evid",
+      "model_sha256": "cf67930c457583f44401a435acd9a0dfadd581e2bad6e585ce892aa5380ae8cf",
+      "evidence_sha256": "32777d320b634a0bc3035db8e78c91d2d434e0773583ece41577d35b70d46940",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Promedus_37.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Promedus_37.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Promedus",
+      "canonical_model_sha256": "1ca99ebc99c429e5fc7816eddf07448bf6f4778718205cd208625e7f0df584d7",
+      "canonical_evidence_sha256": "2086a0db3c89ec65edf68c9cd4a2c2cc0fd7df66d0deaf0d57dfaeebcf889bf3",
+      "structure": {
+        "variables": 1039,
+        "factors": 1039,
+        "domain_histogram": {
+          "2": 1039
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 471,
+          "2": 4,
+          "3": 564
+        },
+        "table_entries_total": 5470,
+        "table_entries_largest": 8,
+        "exact_zeros": 1810,
+        "zero_fraction": 0.33089579524680074,
+        "positive_dynamic_range_log10": 8.0,
+        "evidence_count": 4,
+        "connected_components": 1,
+        "degree_mean": 3.264677574590953,
+        "degree_max": 6,
+        "degree_min": 1,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 4,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "c294d9f2b807043961737822064ef402a5f6987f4bbef6e4462d5cacb61f96d3",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "CSP_12",
+      "model": "inputs/exposed/faefb8349b84f1939c52d1ea2d6a4bd56dbd5b5755df3739c5541d2644f3e7fc/model.uai",
+      "evidence": "inputs/exposed/faefb8349b84f1939c52d1ea2d6a4bd56dbd5b5755df3739c5541d2644f3e7fc/model.uai.evid",
+      "model_sha256": "44becb56526d82e0c0fc0a78a57eb03d280a3b1ff550397ccd4a236193fa9450",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/CSP_12.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/CSP_12.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "CSP",
+      "canonical_model_sha256": "d3c2be496401d34db901de90688ba7baf326bb76bdc1f575640c9f7e6cc9bded",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 67,
+        "factors": 271,
+        "domain_histogram": {
+          "2": 38,
+          "4": 29
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 67,
+          "2": 181,
+          "3": 23
+        },
+        "table_entries_total": 2572,
+        "table_entries_largest": 32,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 4.0,
+        "evidence_count": 0,
+        "connected_components": 12,
+        "degree_mean": 6.746268656716418,
+        "degree_max": 17,
+        "degree_min": 0,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 35,
+        "binary_pairwise_tables": 35,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "faefb8349b84f1939c52d1ea2d6a4bd56dbd5b5755df3739c5541d2644f3e7fc",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "CSP_11",
+      "model": "inputs/exposed/bf78ad2cfe5f414cfd673d7925d81ca4622784e7121014cb4549eaaf231edf5c/model.uai",
+      "evidence": "inputs/exposed/bf78ad2cfe5f414cfd673d7925d81ca4622784e7121014cb4549eaaf231edf5c/model.uai.evid",
+      "model_sha256": "de60e1f23e64dcde493df9cec93a0b81f7d96eb9d5e228e2c839ea0ea939fed4",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/CSP_11.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/CSP_11.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "CSP",
+      "canonical_model_sha256": "1ecf4fdc9eeb3adb3b45885d17c3b8141c72d59dc786cc1685c3ca3237265f2d",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 82,
+        "factors": 462,
+        "domain_histogram": {
+          "2": 63,
+          "4": 19
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 82,
+          "2": 380
+        },
+        "table_entries_total": 3306,
+        "table_entries_largest": 16,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 4.0,
+        "evidence_count": 0,
+        "connected_components": 14,
+        "degree_mean": 9.268292682926829,
+        "degree_max": 29,
+        "degree_min": 0,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 142,
+        "binary_pairwise_tables": 142,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "bf78ad2cfe5f414cfd673d7925d81ca4622784e7121014cb4549eaaf231edf5c",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "CSP_13",
+      "model": "inputs/exposed/7c075e74ab59d786733ece9b5846b26ce6d33f740b187cd61497e4ac46d85d43/model.uai",
+      "evidence": "inputs/exposed/7c075e74ab59d786733ece9b5846b26ce6d33f740b187cd61497e4ac46d85d43/model.uai.evid",
+      "model_sha256": "a5ee981a60f551982fe57b9f9ce3fbf9f3587fbc60b53093ca94752f78d66832",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/CSP_13.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/CSP_13.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "CSP",
+      "canonical_model_sha256": "c6d7fa3f6283191ea8f6fd62616b7e6422572f7f1a61dd979050219bd6c45133",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 100,
+        "factors": 710,
+        "domain_histogram": {
+          "2": 71,
+          "4": 29
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 100,
+          "2": 592,
+          "3": 18
+        },
+        "table_entries_total": 4538,
+        "table_entries_largest": 16,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 4.0,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 12.38,
+        "degree_max": 31,
+        "degree_min": 1,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 284,
+        "binary_pairwise_tables": 284,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "7c075e74ab59d786733ece9b5846b26ce6d33f740b187cd61497e4ac46d85d43",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "DBN_11",
+      "model": "inputs/exposed/dfb03dd1e5578e9e3ab18809ad20fe59fff43a4d8cb6036858dc497467b97129/model.uai",
+      "evidence": "inputs/exposed/dfb03dd1e5578e9e3ab18809ad20fe59fff43a4d8cb6036858dc497467b97129/model.uai.evid",
+      "model_sha256": "5066de020ee0ef135c997e0f6c1e5dffa5f7956c06ea6d0f6351ed9e92d4fb01",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/DBN_11.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/DBN_11.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "DBN",
+      "canonical_model_sha256": "59ef2884567f55aaefdb7a7471974ef2b62cd13c09226b56d9c77ba19354ba2a",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 40,
+        "factors": 440,
+        "domain_histogram": {
+          "2": 40
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 40,
+          "2": 400
+        },
+        "table_entries_total": 1680,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 2.726718913164536,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 20.0,
+        "degree_max": 20,
+        "degree_min": 20,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 400,
+        "binary_pairwise_tables": 400,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "dfb03dd1e5578e9e3ab18809ad20fe59fff43a4d8cb6036858dc497467b97129",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "DBN_12",
+      "model": "inputs/exposed/226f33eab45d3421ed6196114362a72dabdf67ebfc03ac2a520d21ec53dbc3f8/model.uai",
+      "evidence": "inputs/exposed/226f33eab45d3421ed6196114362a72dabdf67ebfc03ac2a520d21ec53dbc3f8/model.uai.evid",
+      "model_sha256": "b8f4c20e461c33698b6b858b510f980e6379119b50528bfba82ee69e1e3a8052",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/DBN_12.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/DBN_12.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "DBN",
+      "canonical_model_sha256": "e1728244c47e2fd5613b1049325fedbf60f6c3123783ec1965780f52c6a62aab",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 42,
+        "factors": 483,
+        "domain_histogram": {
+          "2": 42
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 42,
+          "2": 441
+        },
+        "table_entries_total": 1848,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 3.248668397082156,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 21.0,
+        "degree_max": 21,
+        "degree_min": 21,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 441,
+        "binary_pairwise_tables": 441,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "226f33eab45d3421ed6196114362a72dabdf67ebfc03ac2a520d21ec53dbc3f8",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "DBN_15",
+      "model": "inputs/exposed/4898c7ffa18c1770ef94c38eb867fc40b547e3485b7a6d35abf7ff3a01092211/model.uai",
+      "evidence": "inputs/exposed/4898c7ffa18c1770ef94c38eb867fc40b547e3485b7a6d35abf7ff3a01092211/model.uai.evid",
+      "model_sha256": "cff232bdd2a9f757dfa849e7f861dfc63fd40c834cc405fe7b60f31ec564469f",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/DBN_15.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/DBN_15.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "DBN",
+      "canonical_model_sha256": "8387e6c74b8a20778c7621eefc65dbd8190f0cf89fa06c57b5574c92c7a66495",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 42,
+        "factors": 483,
+        "domain_histogram": {
+          "2": 42
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 42,
+          "2": 441
+        },
+        "table_entries_total": 1848,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 2.8666820017917964,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 21.0,
+        "degree_max": 21,
+        "degree_min": 21,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 441,
+        "binary_pairwise_tables": 441,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "4898c7ffa18c1770ef94c38eb867fc40b547e3485b7a6d35abf7ff3a01092211",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "DBN_16",
+      "model": "inputs/exposed/b90b1976dde9ddcbeffbcce99310481e24c65800fa9fcbde770707496d2e456b/model.uai",
+      "evidence": "inputs/exposed/b90b1976dde9ddcbeffbcce99310481e24c65800fa9fcbde770707496d2e456b/model.uai.evid",
+      "model_sha256": "44d6a0008c8df292b67577bc20c973292fd7658a967387ddb20d8271703a3cbd",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/DBN_16.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/DBN_16.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "DBN",
+      "canonical_model_sha256": "f8fabd99c19a8cb5cd6e59f6b138a0a7fd073f00157d39d96cc592c3c180d4ac",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 44,
+        "factors": 528,
+        "domain_histogram": {
+          "2": 44
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 44,
+          "2": 484
+        },
+        "table_entries_total": 2024,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 3.2112802726308467,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 22.0,
+        "degree_max": 22,
+        "degree_min": 22,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 484,
+        "binary_pairwise_tables": 484,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "b90b1976dde9ddcbeffbcce99310481e24c65800fa9fcbde770707496d2e456b",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "ObjectDetection_34",
+      "model": "inputs/exposed/1beed895f084b97b63b14bccac5e207df86fa08800549037f824a86e2cad0190/model.uai",
+      "evidence": "inputs/exposed/1beed895f084b97b63b14bccac5e207df86fa08800549037f824a86e2cad0190/model.uai.evid",
+      "model_sha256": "6369fae7d99a0bb8cfe18d59a7c6fc23b7dbaf5af2335ce37182a73418219610",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/ObjectDetection_34.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/ObjectDetection_34.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "ObjectDetection",
+      "canonical_model_sha256": "b5bd82aab77386b8aade59ad8617202a196b4ca668b6dbaaf973abd4e3a8d307",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 60,
+        "factors": 210,
+        "domain_histogram": {
+          "11": 60
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 60,
+          "2": 150
+        },
+        "table_entries_total": 18810,
+        "table_entries_largest": 121,
+        "exact_zeros": 3210,
+        "zero_fraction": 0.17065390749601275,
+        "positive_dynamic_range_log10": 8.104399673213695,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 5.0,
+        "degree_max": 16,
+        "degree_min": 2,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "1beed895f084b97b63b14bccac5e207df86fa08800549037f824a86e2cad0190",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "ObjectDetection_56",
+      "model": "inputs/exposed/7623e03431413fd6e9274c93fa749d4296a53eabb2c5ebcf3fa7fa8bb7b7f496/model.uai",
+      "evidence": "inputs/exposed/7623e03431413fd6e9274c93fa749d4296a53eabb2c5ebcf3fa7fa8bb7b7f496/model.uai.evid",
+      "model_sha256": "101cb166d9d88ca2eb52a50ed17963a4cc4ac83520ce124b841a523898979974",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/ObjectDetection_56.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/ObjectDetection_56.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "ObjectDetection",
+      "canonical_model_sha256": "3178d0b3953e69889937f0f9c2abac5b8753afa1f741741d9fe47921b5abccea",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 60,
+        "factors": 195,
+        "domain_histogram": {
+          "16": 60
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 60,
+          "2": 135
+        },
+        "table_entries_total": 35520,
+        "table_entries_largest": 256,
+        "exact_zeros": 4245,
+        "zero_fraction": 0.11951013513513513,
+        "positive_dynamic_range_log10": 16.596760373129253,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 4.5,
+        "degree_max": 14,
+        "degree_min": 2,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "7623e03431413fd6e9274c93fa749d4296a53eabb2c5ebcf3fa7fa8bb7b7f496",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "ObjectDetection_39",
+      "model": "inputs/exposed/7b9390f8722784196c052a89c7ee84faf131fd0f98f3484ccdd53a48560abff5/model.uai",
+      "evidence": "inputs/exposed/7b9390f8722784196c052a89c7ee84faf131fd0f98f3484ccdd53a48560abff5/model.uai.evid",
+      "model_sha256": "6a5200544242f9c4e249e7ec5566767a5a74771b70dc88bfbaa648b0600660bc",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/ObjectDetection_39.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/ObjectDetection_39.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "ObjectDetection",
+      "canonical_model_sha256": "f25f9c58592ad20f1083fb51090adb8e653a484d914c00eaeada2b930ade3d77",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 60,
+        "factors": 210,
+        "domain_histogram": {
+          "16": 60
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 60,
+          "2": 150
+        },
+        "table_entries_total": 39360,
+        "table_entries_largest": 256,
+        "exact_zeros": 4710,
+        "zero_fraction": 0.11966463414634146,
+        "positive_dynamic_range_log10": 12.728454042219145,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 5.0,
+        "degree_max": 16,
+        "degree_min": 2,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "7b9390f8722784196c052a89c7ee84faf131fd0f98f3484ccdd53a48560abff5",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "ObjectDetection_24",
+      "model": "inputs/exposed/b179f3381a4c5c567c26d9f0a5653951f1d8634f167627912d4b225c66a15c06/model.uai",
+      "evidence": "inputs/exposed/b179f3381a4c5c567c26d9f0a5653951f1d8634f167627912d4b225c66a15c06/model.uai.evid",
+      "model_sha256": "d19ee6246a3e9697fdc2bee6a88f4fffde3df637a3daa964de7ec30daaa6158a",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/ObjectDetection_24.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/ObjectDetection_24.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "ObjectDetection",
+      "canonical_model_sha256": "6b60a4be50244b000b715275299c24872a07b0490a5ccefd9c767ff2d2002f22",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 60,
+        "factors": 210,
+        "domain_histogram": {
+          "21": 60
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 60,
+          "2": 150
+        },
+        "table_entries_total": 67410,
+        "table_entries_largest": 441,
+        "exact_zeros": 6210,
+        "zero_fraction": 0.09212283044058744,
+        "positive_dynamic_range_log10": 6.535583014721082,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 5.0,
+        "degree_max": 10,
+        "degree_min": 2,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "b179f3381a4c5c567c26d9f0a5653951f1d8634f167627912d4b225c66a15c06",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Segmentation_11",
+      "model": "inputs/exposed/57720cff1113f2d8c54e2ee1fb25c35664ded9b90acfd589d997fa6a9b796acc/model.uai",
+      "evidence": "inputs/exposed/57720cff1113f2d8c54e2ee1fb25c35664ded9b90acfd589d997fa6a9b796acc/model.uai.evid",
+      "model_sha256": "de27f91b8428c6cc795cafc409b009a89d1d25e222ec6dfcef886e84ac63dd2f",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Segmentation_11.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Segmentation_11.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Segmentation",
+      "canonical_model_sha256": "b0196bad3ca51b216a1f0fe380092254a68c08262bceeb2b2f21c29cc0fed4c2",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 228,
+        "factors": 845,
+        "domain_histogram": {
+          "2": 228
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 228,
+          "2": 617
+        },
+        "table_entries_total": 2924,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 2.2887226803957716,
+        "evidence_count": 0,
+        "connected_components": 2,
+        "degree_mean": 5.412280701754386,
+        "degree_max": 8,
+        "degree_min": 0,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 617,
+        "binary_pairwise_tables": 617,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "57720cff1113f2d8c54e2ee1fb25c35664ded9b90acfd589d997fa6a9b796acc",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Segmentation_12",
+      "model": "inputs/exposed/4c3df0d994300bff5c81c0fa9a33de68fd0065922a9d33f595a7f463f632f3b1/model.uai",
+      "evidence": "inputs/exposed/4c3df0d994300bff5c81c0fa9a33de68fd0065922a9d33f595a7f463f632f3b1/model.uai.evid",
+      "model_sha256": "78387830f1354dd593b9c13061e0a392a345b4ec6415753a57049c7769b1ea62",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Segmentation_12.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Segmentation_12.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Segmentation",
+      "canonical_model_sha256": "930185875b10a2e1bfae0eec9ab11b4002b5d2c31c7f4642253444c5363b961b",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 229,
+        "factors": 851,
+        "domain_histogram": {
+          "2": 229
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 229,
+          "2": 622
+        },
+        "table_entries_total": 2946,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 5.473056233324883,
+        "evidence_count": 0,
+        "connected_components": 2,
+        "degree_mean": 5.432314410480349,
+        "degree_max": 9,
+        "degree_min": 0,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 622,
+        "binary_pairwise_tables": 622,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "4c3df0d994300bff5c81c0fa9a33de68fd0065922a9d33f595a7f463f632f3b1",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Segmentation_16",
+      "model": "inputs/exposed/baa8e3dfd3ff2cd9dd00bcf3a736d45c7297dba97c452702d11b0d072f8c022b/model.uai",
+      "evidence": "inputs/exposed/baa8e3dfd3ff2cd9dd00bcf3a736d45c7297dba97c452702d11b0d072f8c022b/model.uai.evid",
+      "model_sha256": "c236e72160a87f75bbc6912e6d1abf9a273dad28ab0c61f51ba2306827834187",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Segmentation_16.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Segmentation_16.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Segmentation",
+      "canonical_model_sha256": "4f9763dd923db8e4eba7a24ad338a9e9bc74737bb59b2362f5dcce3119aa321a",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 231,
+        "factors": 864,
+        "domain_histogram": {
+          "2": 231
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 231,
+          "2": 633
+        },
+        "table_entries_total": 2994,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 1.4960486985322783,
+        "evidence_count": 0,
+        "connected_components": 2,
+        "degree_mean": 5.48051948051948,
+        "degree_max": 8,
+        "degree_min": 0,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 633,
+        "binary_pairwise_tables": 633,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "baa8e3dfd3ff2cd9dd00bcf3a736d45c7297dba97c452702d11b0d072f8c022b",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Segmentation_13",
+      "model": "inputs/exposed/6ecf8a311e4bc02e96d7ed2af7ce56db4b4e104b7b23239d6bd45c12d882d607/model.uai",
+      "evidence": "inputs/exposed/6ecf8a311e4bc02e96d7ed2af7ce56db4b4e104b7b23239d6bd45c12d882d607/model.uai.evid",
+      "model_sha256": "c902793dceba386c201fc4f09afcc65548edac392cc6f8340d8655fda421b791",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Segmentation_13.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Segmentation_13.uai.evid",
+        "archive": "uai2022_tuning"
+      },
+      "family": "Segmentation",
+      "canonical_model_sha256": "8eaf0932270045b71f2ce7724fef8a9a7fb68247f7190bf21f38d699cbbe12ce",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 235,
+        "factors": 882,
+        "domain_histogram": {
+          "2": 235
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 235,
+          "2": 647
+        },
+        "table_entries_total": 3058,
+        "table_entries_largest": 4,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 2.131650676506588,
+        "evidence_count": 0,
+        "connected_components": 3,
+        "degree_mean": 5.506382978723404,
+        "degree_max": 9,
+        "degree_min": 0,
+        "topology": "binary pairwise",
+        "binary_pairwise_symmetric_tables": 647,
+        "binary_pairwise_tables": 647,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "6ecf8a311e4bc02e96d7ed2af7ce56db4b4e104b7b23239d6bd45c12d882d607",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "1qt9",
+      "model": "inputs/exposed/569b7f5a9bf19d88d43ed1990f31ffbd77763389f81a892c7c2247bfd8bd757b/model.uai",
+      "evidence": "inputs/exposed/569b7f5a9bf19d88d43ed1990f31ffbd77763389f81a892c7c2247bfd8bd757b/model.uai.evid",
+      "model_sha256": "34f85ecbd725f5b6e845cfd5e662a91aec8e7f36a580b22fa79fc0764408ee30",
+      "evidence_sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_final/MAR/1qt9.uai",
+        "evidence_path": "sources/uai2022_final/MAR/1qt9.uai.evid",
+        "archive": "uai2022_final"
+      },
+      "family": "Protein",
+      "canonical_model_sha256": "06b6cc18a6f87b66c5ae9938ce9f8e100f2a564585d9f004675ee51a4c41e1e4",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 83,
+        "factors": 259,
+        "domain_histogram": {
+          "2": 3,
+          "3": 26,
+          "6": 8,
+          "9": 25,
+          "18": 1,
+          "27": 10,
+          "36": 5,
+          "81": 5
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 83,
+          "2": 176
+        },
+        "table_entries_total": 58347,
+        "table_entries_largest": 6561,
+        "exact_zeros": 16,
+        "zero_fraction": 0.00027422146811318494,
+        "positive_dynamic_range_log10": 168.37767715792194,
+        "evidence_count": 0,
+        "connected_components": 5,
+        "degree_mean": 4.240963855421687,
+        "degree_max": 10,
+        "degree_min": 0,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "569b7f5a9bf19d88d43ed1990f31ffbd77763389f81a892c7c2247bfd8bd757b",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "1jer",
+      "model": "inputs/exposed/3e19042fc10db280b38e7e42ec8b89ccc1ff5db70d6d014b3c6d3daa3e4f1183/model.uai",
+      "evidence": "inputs/exposed/3e19042fc10db280b38e7e42ec8b89ccc1ff5db70d6d014b3c6d3daa3e4f1183/model.uai.evid",
+      "model_sha256": "15a9e48476470cd185cc06b40a9d0057d1d936b7bb3f1a5e681e8672cc95c464",
+      "evidence_sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_final/MAR/1jer.uai",
+        "evidence_path": "sources/uai2022_final/MAR/1jer.uai.evid",
+        "archive": "uai2022_final"
+      },
+      "family": "Protein",
+      "canonical_model_sha256": "7df229241d6d5887ee038fc6a04ae22069bad0415a5c44430a02104d8994553b",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 96,
+        "factors": 316,
+        "domain_histogram": {
+          "2": 4,
+          "3": 33,
+          "6": 9,
+          "9": 20,
+          "18": 11,
+          "27": 8,
+          "36": 5,
+          "81": 6
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 96,
+          "2": 220
+        },
+        "table_entries_total": 65681,
+        "table_entries_largest": 6561,
+        "exact_zeros": 10,
+        "zero_fraction": 0.0001522510315007384,
+        "positive_dynamic_range_log10": 177.83187126347883,
+        "evidence_count": 0,
+        "connected_components": 5,
+        "degree_mean": 4.583333333333333,
+        "degree_max": 17,
+        "degree_min": 0,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "3e19042fc10db280b38e7e42ec8b89ccc1ff5db70d6d014b3c6d3daa3e4f1183",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "1aie",
+      "model": "inputs/exposed/e04656255e1aa157c14454485362e0907c8250cef34435988e76b504b0bbace4/model.uai",
+      "evidence": "inputs/exposed/e04656255e1aa157c14454485362e0907c8250cef34435988e76b504b0bbace4/model.uai.evid",
+      "model_sha256": "862669646ad06633b70a2008dbaa91fa155361f1c32019f06f25dea6b1d730d5",
+      "evidence_sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_final/MAR/1aie.uai",
+        "evidence_path": "sources/uai2022_final/MAR/1aie.uai.evid",
+        "archive": "uai2022_final"
+      },
+      "family": "Protein",
+      "canonical_model_sha256": "6af2b67842dbb23c76c52659a1fccf1724ef811853aeedc601fa6d5edcb5101f",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 26,
+        "factors": 86,
+        "domain_histogram": {
+          "3": 1,
+          "6": 4,
+          "9": 6,
+          "18": 1,
+          "27": 7,
+          "36": 2,
+          "81": 5
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 26,
+          "2": 60
+        },
+        "table_entries_total": 74745,
+        "table_entries_largest": 6561,
+        "exact_zeros": 18,
+        "zero_fraction": 0.00024081878386514148,
+        "positive_dynamic_range_log10": 143.49284009632697,
+        "evidence_count": 0,
+        "connected_components": 2,
+        "degree_mean": 4.615384615384615,
+        "degree_max": 10,
+        "degree_min": 1,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "e04656255e1aa157c14454485362e0907c8250cef34435988e76b504b0bbace4",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "1npl",
+      "model": "inputs/exposed/07add3a95446de81c323df0e4ae828f5a5513d9ddf0677d66988807f4a17e79e/model.uai",
+      "evidence": "inputs/exposed/07add3a95446de81c323df0e4ae828f5a5513d9ddf0677d66988807f4a17e79e/model.uai.evid",
+      "model_sha256": "db78957d63fae8787715a447d3a5b84a5d8c61e64495d0a66dc5bcdb8460bd8b",
+      "evidence_sha256": "13bf7b3039c63bf5a50491fa3cfd8eb4e699d1ba1436315aef9cbe5711530354",
+      "source": {
+        "url": "https://www.ics.uci.edu/~dechter/uaicompetition/2022/FinalBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_final/MAR/1npl.uai",
+        "evidence_path": "sources/uai2022_final/MAR/1npl.uai.evid",
+        "archive": "uai2022_final"
+      },
+      "family": "Protein",
+      "canonical_model_sha256": "1799a346927950ddbb27c35867ce8d8449cfd071446d26b317e663fcbccaeb0d",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 94,
+        "factors": 305,
+        "domain_histogram": {
+          "2": 4,
+          "3": 25,
+          "6": 8,
+          "9": 27,
+          "18": 13,
+          "27": 6,
+          "36": 3,
+          "81": 8
+        },
+        "max_arity": 2,
+        "arity_histogram": {
+          "1": 94,
+          "2": 211
+        },
+        "table_entries_total": 93707,
+        "table_entries_largest": 6561,
+        "exact_zeros": 26,
+        "zero_fraction": 0.00027746059525969244,
+        "positive_dynamic_range_log10": 141.22913819844004,
+        "evidence_count": 0,
+        "connected_components": 6,
+        "degree_mean": 4.48936170212766,
+        "degree_max": 13,
+        "degree_min": 0,
+        "topology": "general factor graph",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "MARKOV"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "07add3a95446de81c323df0e4ae828f5a5513d9ddf0677d66988807f4a17e79e",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "ASIA",
+      "model": "inputs/exposed/306a4155bfb1941debdb1ade95b986dd03308e6b183b2eadd99fc1676d6c853a/model.uai",
+      "evidence": "inputs/exposed/306a4155bfb1941debdb1ade95b986dd03308e6b183b2eadd99fc1676d6c853a/model.uai.evid",
+      "model_sha256": "9491da382b4347d5954405a52e8ed0f315595e495df2a0035e87b224591da623",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/asia.uai",
+        "evidence_path": "sources/bnlearn_uai/asia.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "786afa2cbe052f89c2507b64ede73308344124192f1af795c01216c2e18e0ec7",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 8,
+        "factors": 8,
+        "domain_histogram": {
+          "2": 8
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 2,
+          "2": 4,
+          "3": 2
+        },
+        "table_entries_total": 36,
+        "table_entries_largest": 8,
+        "exact_zeros": 4,
+        "zero_fraction": 0.1111111111111111,
+        "positive_dynamic_range_log10": 2.0,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 2.5,
+        "degree_max": 5,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 4,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "306a4155bfb1941debdb1ade95b986dd03308e6b183b2eadd99fc1676d6c853a",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "CHILD",
+      "model": "inputs/exposed/01caa38bd5d9afaeeeba5fb42d0494f00a727d9c4a4bc49d9464f8ebf45bf3df/model.uai",
+      "evidence": "inputs/exposed/01caa38bd5d9afaeeeba5fb42d0494f00a727d9c4a4bc49d9464f8ebf45bf3df/model.uai.evid",
+      "model_sha256": "b764a0c551171c150db466a5d4b4e2f450b478bfbf7291567f242229f83f4256",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/child.uai",
+        "evidence_path": "sources/bnlearn_uai/child.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "154ca48f3dc5bc7eddc54fc8e428a26c983fae80bb9761fa2f4e9d5293a5b2ff",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 20,
+        "factors": 20,
+        "domain_histogram": {
+          "2": 8,
+          "3": 8,
+          "4": 1,
+          "5": 2,
+          "6": 1
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 1,
+          "2": 13,
+          "3": 6
+        },
+        "table_entries_total": 344,
+        "table_entries_largest": 45,
+        "exact_zeros": 3,
+        "zero_fraction": 0.00872093023255814,
+        "positive_dynamic_range_log10": 2.0,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 3.0,
+        "degree_max": 8,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 2,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "01caa38bd5d9afaeeeba5fb42d0494f00a727d9c4a4bc49d9464f8ebf45bf3df",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "INSURANCE",
+      "model": "inputs/exposed/8bb31e8c312061d3295dd3d5d772abf16d74b7ee365e391c071b6222aa13a0a6/model.uai",
+      "evidence": "inputs/exposed/8bb31e8c312061d3295dd3d5d772abf16d74b7ee365e391c071b6222aa13a0a6/model.uai.evid",
+      "model_sha256": "f133b30564f6ae3a369e3d37a479e60207478a8f593c56fe41ba075e73f2b7d4",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/insurance.uai",
+        "evidence_path": "sources/bnlearn_uai/insurance.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "45d56b2cfab7f198f044220412851fcc6d02a61ec42d6a727ed9bdb7d7260377",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 27,
+        "factors": 27,
+        "domain_histogram": {
+          "2": 8,
+          "3": 5,
+          "4": 12,
+          "5": 2
+        },
+        "max_arity": 4,
+        "arity_histogram": {
+          "1": 2,
+          "2": 3,
+          "3": 17,
+          "4": 5
+        },
+        "table_entries_total": 1419,
+        "table_entries_largest": 200,
+        "exact_zeros": 302,
+        "zero_fraction": 0.21282593375616632,
+        "positive_dynamic_range_log10": 6.0,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 5.185185185185185,
+        "degree_max": 10,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "8bb31e8c312061d3295dd3d5d772abf16d74b7ee365e391c071b6222aa13a0a6",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "WATER",
+      "model": "inputs/exposed/1dcb091cb1ebf7405787a5d3ffaa26ba033606e448f9970cdad1540e5e25b3bb/model.uai",
+      "evidence": "inputs/exposed/1dcb091cb1ebf7405787a5d3ffaa26ba033606e448f9970cdad1540e5e25b3bb/model.uai.evid",
+      "model_sha256": "04640fd96f1fb95546a8c3250a3afac30e240fea5a59bf338d9271fbab1f0755",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/water.uai",
+        "evidence_path": "sources/bnlearn_uai/water.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "611d212c8d72a40c4926109a7cb46d7108b2386eecc39096bbf953d9f4ddfab9",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 32,
+        "factors": 32,
+        "domain_histogram": {
+          "3": 12,
+          "4": 20
+        },
+        "max_arity": 6,
+        "arity_histogram": {
+          "1": 8,
+          "2": 6,
+          "3": 3,
+          "4": 9,
+          "5": 3,
+          "6": 3
+        },
+        "table_entries_total": 13484,
+        "table_entries_largest": 3072,
+        "exact_zeros": 6970,
+        "zero_fraction": 0.5169089291011569,
+        "positive_dynamic_range_log10": 3.5228787452803374,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 7.6875,
+        "degree_max": 13,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "1dcb091cb1ebf7405787a5d3ffaa26ba033606e448f9970cdad1540e5e25b3bb",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "MILDEW",
+      "model": "inputs/exposed/b11ed75d9cdab313011f907c3f85e91ad9ec9316416db2e30cb7251029bdd38f/model.uai",
+      "evidence": "inputs/exposed/b11ed75d9cdab313011f907c3f85e91ad9ec9316416db2e30cb7251029bdd38f/model.uai.evid",
+      "model_sha256": "b4d6f8ee5aa2121e13c6f06b73e381d02e039ce3c71afe29823ceefc35a63e37",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/mildew.uai",
+        "evidence_path": "sources/bnlearn_uai/mildew.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "47c381a93688e13e2e70a2da790ebea955f6740b8ebab4100db924cb4bf28850",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 35,
+        "factors": 35,
+        "domain_histogram": {
+          "3": 3,
+          "4": 15,
+          "7": 1,
+          "8": 3,
+          "9": 4,
+          "20": 2,
+          "28": 1,
+          "32": 1,
+          "33": 1,
+          "61": 1,
+          "86": 1,
+          "100": 2
+        },
+        "max_arity": 4,
+        "arity_histogram": {
+          "1": 16,
+          "2": 2,
+          "3": 7,
+          "4": 10
+        },
+        "table_entries_total": 547158,
+        "table_entries_largest": 280000,
+        "exact_zeros": 509234,
+        "zero_fraction": 0.9306891245307571,
+        "positive_dynamic_range_log10": 3.522922611238278,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 4.571428571428571,
+        "degree_max": 9,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "b11ed75d9cdab313011f907c3f85e91ad9ec9316416db2e30cb7251029bdd38f",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "ALARM",
+      "model": "inputs/exposed/24edcd084a66a16cf23f1d0c2067b1e0a1484f3a63836c7290f185d8bff2535a/model.uai",
+      "evidence": "inputs/exposed/24edcd084a66a16cf23f1d0c2067b1e0a1484f3a63836c7290f185d8bff2535a/model.uai.evid",
+      "model_sha256": "6b83de2acdca5092bad572480f64d48fd546fe83b890a503d943f04403c7df75",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/alarm.uai",
+        "evidence_path": "sources/bnlearn_uai/alarm.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "3f6cd6fb93e06251357a6f59ab7803a2a4270718d886b0a2b16323e6cc32cb09",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 37,
+        "factors": 37,
+        "domain_histogram": {
+          "2": 13,
+          "3": 17,
+          "4": 7
+        },
+        "max_arity": 5,
+        "arity_histogram": {
+          "1": 12,
+          "2": 8,
+          "3": 14,
+          "4": 2,
+          "5": 1
+        },
+        "table_entries_total": 752,
+        "table_entries_largest": 108,
+        "exact_zeros": 5,
+        "zero_fraction": 0.006648936170212766,
+        "positive_dynamic_range_log10": 2.0,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 3.5135135135135136,
+        "degree_max": 8,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 1,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "24edcd084a66a16cf23f1d0c2067b1e0a1484f3a63836c7290f185d8bff2535a",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "BARLEY",
+      "model": "inputs/exposed/921d0f5d6c94f941cd8529663846d19b0978af26d1ce407ebe2d2647ed812e44/model.uai",
+      "evidence": "inputs/exposed/921d0f5d6c94f941cd8529663846d19b0978af26d1ce407ebe2d2647ed812e44/model.uai.evid",
+      "model_sha256": "fe7d941e7b45e893cbadb9af296d0c3423394acc71dcda3c585310b2086914a0",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/barley.uai",
+        "evidence_path": "sources/bnlearn_uai/barley.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "327e95a8e4129306c0b81f7452d94ac118824ae3f594d274ce1d01bb25653c58",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 48,
+        "factors": 48,
+        "domain_histogram": {
+          "2": 1,
+          "3": 2,
+          "4": 3,
+          "5": 4,
+          "6": 7,
+          "7": 6,
+          "8": 6,
+          "9": 9,
+          "10": 7,
+          "11": 1,
+          "20": 1,
+          "67": 1
+        },
+        "max_arity": 5,
+        "arity_histogram": {
+          "1": 10,
+          "2": 9,
+          "3": 15,
+          "4": 11,
+          "5": 3
+        },
+        "table_entries_total": 130180,
+        "table_entries_largest": 40320,
+        "exact_zeros": 0,
+        "zero_fraction": 0.0,
+        "positive_dynamic_range_log10": 4.000782512791708,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 5.25,
+        "degree_max": 13,
+        "degree_min": 2,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "921d0f5d6c94f941cd8529663846d19b0978af26d1ce407ebe2d2647ed812e44",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "HAILFINDER",
+      "model": "inputs/exposed/33c42e551c3785932156965a245e52ae3185ee078b2af8c0e15236294089ec75/model.uai",
+      "evidence": "inputs/exposed/33c42e551c3785932156965a245e52ae3185ee078b2af8c0e15236294089ec75/model.uai.evid",
+      "model_sha256": "3d19152390c581d8af0425d509189fc8315f650f1051578d173489fe15edb2d7",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/hailfinder.uai",
+        "evidence_path": "sources/bnlearn_uai/hailfinder.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "dfb32ba55a8efda67acd520bc1e729549fa5ca5e17399c40d7254d012067225a",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 56,
+        "factors": 56,
+        "domain_histogram": {
+          "2": 2,
+          "3": 25,
+          "4": 20,
+          "5": 2,
+          "6": 3,
+          "7": 2,
+          "11": 2
+        },
+        "max_arity": 5,
+        "arity_histogram": {
+          "1": 17,
+          "2": 20,
+          "3": 13,
+          "4": 4,
+          "5": 2
+        },
+        "table_entries_total": 3741,
+        "table_entries_largest": 1188,
+        "exact_zeros": 501,
+        "zero_fraction": 0.1339214113873296,
+        "positive_dynamic_range_log10": 2.0,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 3.5357142857142856,
+        "degree_max": 17,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "33c42e551c3785932156965a245e52ae3185ee078b2af8c0e15236294089ec75",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "WIN95PTS",
+      "model": "inputs/exposed/aee96cab6fee611880970239efbad4902a95bc2ede65d5db5afbbbe451da2823/model.uai",
+      "evidence": "inputs/exposed/aee96cab6fee611880970239efbad4902a95bc2ede65d5db5afbbbe451da2823/model.uai.evid",
+      "model_sha256": "20d1082fa01d7b313324acdba1eff461f6212d0f98371d883b2c7e701a1de52a",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/win95pts.uai",
+        "evidence_path": "sources/bnlearn_uai/win95pts.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "21a5858641f2bbe1863a6e74979fe2afba62e19980717729effe64d83a19c256",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 76,
+        "factors": 76,
+        "domain_histogram": {
+          "2": 76
+        },
+        "max_arity": 8,
+        "arity_histogram": {
+          "1": 34,
+          "2": 10,
+          "3": 8,
+          "4": 17,
+          "5": 4,
+          "6": 1,
+          "8": 2
+        },
+        "table_entries_total": 1148,
+        "table_entries_largest": 256,
+        "exact_zeros": 224,
+        "zero_fraction": 0.1951219512195122,
+        "positive_dynamic_range_log10": 4.0,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 5.921052631578948,
+        "degree_max": 29,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 5,
+        "binary_pairwise_tables": 10,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "aee96cab6fee611880970239efbad4902a95bc2ede65d5db5afbbbe451da2823",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "MUNIN1",
+      "model": "inputs/exposed/5b548d61e14cda5897681caf5f6b091c055b33e629d8b1e68b070547c377e8f7/model.uai",
+      "evidence": "inputs/exposed/5b548d61e14cda5897681caf5f6b091c055b33e629d8b1e68b070547c377e8f7/model.uai.evid",
+      "model_sha256": "7fbd4c024de460bd4f259123ce9cdfc1e9b9734979b69f1795271cd0a4eb643f",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/munin1.uai",
+        "evidence_path": "sources/bnlearn_uai/munin1.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "9be74a577cf09b6edf93fe98d0e932cac7f112842f4a4366692c39c4dba79f98",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 186,
+        "factors": 186,
+        "domain_histogram": {
+          "2": 19,
+          "3": 27,
+          "4": 49,
+          "5": 35,
+          "6": 28,
+          "7": 7,
+          "9": 8,
+          "10": 2,
+          "12": 2,
+          "15": 1,
+          "17": 1,
+          "19": 4,
+          "20": 2,
+          "21": 1
+        },
+        "max_arity": 4,
+        "arity_histogram": {
+          "1": 34,
+          "2": 43,
+          "3": 97,
+          "4": 12
+        },
+        "table_entries_total": 19226,
+        "table_entries_largest": 600,
+        "exact_zeros": 10910,
+        "zero_fraction": 0.5674607302611048,
+        "positive_dynamic_range_log10": 4.000043952825619,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 3.806451612903226,
+        "degree_max": 17,
+        "degree_min": 1,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 1,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "5b548d61e14cda5897681caf5f6b091c055b33e629d8b1e68b070547c377e8f7",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "ANDES",
+      "model": "inputs/exposed/3c6e189aa720efbcffa2ea470ab80a30ee0323dec32881fb24ac8e0a4deabeab/model.uai",
+      "evidence": "inputs/exposed/3c6e189aa720efbcffa2ea470ab80a30ee0323dec32881fb24ac8e0a4deabeab/model.uai.evid",
+      "model_sha256": "e39c039f257e5d7abeae08ae858548c91b3b68d0cd0a64635a19a46410fe588f",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/andes.uai",
+        "evidence_path": "sources/bnlearn_uai/andes.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "118ea9e1deb2b73988b722d1657af1fbb33b3dd4dc42eea8f24cb9ccd9435ec4",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 223,
+        "factors": 223,
+        "domain_histogram": {
+          "2": 223
+        },
+        "max_arity": 7,
+        "arity_histogram": {
+          "1": 89,
+          "2": 10,
+          "3": 74,
+          "4": 32,
+          "5": 7,
+          "6": 10,
+          "7": 1
+        },
+        "table_entries_total": 2314,
+        "table_entries_largest": 128,
+        "exact_zeros": 73,
+        "zero_fraction": 0.031547104580812446,
+        "positive_dynamic_range_log10": 4.154901959985743,
+        "evidence_count": 0,
+        "connected_components": 4,
+        "degree_mean": 5.614349775784754,
+        "degree_max": 23,
+        "degree_min": 0,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 1,
+        "binary_pairwise_tables": 10,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "3c6e189aa720efbcffa2ea470ab80a30ee0323dec32881fb24ac8e0a4deabeab",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "DIABETES",
+      "model": "inputs/exposed/92074c0ccf28e48dba17af3596eb7a6106a76b4031c645a78525df81f1f9a8ae/model.uai",
+      "evidence": "inputs/exposed/92074c0ccf28e48dba17af3596eb7a6106a76b4031c645a78525df81f1f9a8ae/model.uai.evid",
+      "model_sha256": "3ded9bba3719874368686634e19c730dadea816762488cd2b13196355060a5c4",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "url": "https://www.bnlearn.com/bnrepository/ (official per-network BIF links)",
+        "model_path": "sources/bnlearn_uai/diabetes.uai",
+        "evidence_path": "sources/bnlearn_uai/diabetes.uai.evid",
+        "archive": "bnlearn"
+      },
+      "family": "bnlearn",
+      "canonical_model_sha256": "f93bb5e19c35ad9dd0b6fc252f7574552b57dcdcdb0f2ab908673e349db72e50",
+      "canonical_evidence_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "structure": {
+        "variables": 413,
+        "factors": 413,
+        "domain_histogram": {
+          "3": 48,
+          "5": 25,
+          "6": 48,
+          "7": 24,
+          "8": 24,
+          "10": 24,
+          "11": 49,
+          "13": 24,
+          "15": 24,
+          "16": 25,
+          "17": 24,
+          "19": 24,
+          "21": 50
+        },
+        "max_arity": 3,
+        "arity_histogram": {
+          "1": 76,
+          "2": 72,
+          "3": 265
+        },
+        "table_entries_total": 461069,
+        "table_entries_largest": 7056,
+        "exact_zeros": 352224,
+        "zero_fraction": 0.7639290431583993,
+        "positive_dynamic_range_log10": 4.000086867583429,
+        "evidence_count": 0,
+        "connected_components": 1,
+        "degree_mean": 3.9661016949152543,
+        "degree_max": 48,
+        "degree_min": 2,
+        "topology": "one CPT per variable (child last)",
+        "binary_pairwise_symmetric_tables": 0,
+        "binary_pairwise_tables": 0,
+        "net_type": "BAYES"
+      },
+      "historical_cohort": "historical46",
+      "split": "exposed_regression",
+      "task_id": "92074c0ccf28e48dba17af3596eb7a6106a76b4031c645a78525df81f1f9a8ae",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Alchemy_11",
+      "model": "inputs/exposed/dc0a932a1734c9eda25d3b9478f9ba7c926d55ab089c3405de8bd64b66816ece/model.uai",
+      "evidence": "inputs/exposed/dc0a932a1734c9eda25d3b9478f9ba7c926d55ab089c3405de8bd64b66816ece/model.uai.evid",
+      "model_sha256": "f9ffbe89502e69bdbfe94c387e17659c3c9aaa1f1afa8ec2946f23abcd1dffe0",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "kind": "DGP9 shipped preservation input",
+        "source_manifest": "/workspace/scratch/226d1e4428b0/dgp9_review/records/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PRESERVATION_13_MANIFEST.json",
+        "historical_original_path": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/sources/uai14/prob/Alchemy_11.uai",
+        "hash_verified": true
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "dc0a932a1734c9eda25d3b9478f9ba7c926d55ab089c3405de8bd64b66816ece",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "DBN_14",
+      "model": "inputs/exposed/2d50e0f90dd4f8d4d9ded872d289b931fcf014f24b25bb6a41677cb73c87b3ea/model.uai",
+      "evidence": "inputs/exposed/2d50e0f90dd4f8d4d9ded872d289b931fcf014f24b25bb6a41677cb73c87b3ea/model.uai.evid",
+      "model_sha256": "cee07856e7dd9d78746ac91bfa491f622c68b36ef5de27c2f760a8be0a473f10",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "kind": "DGP9 shipped preservation input",
+        "source_manifest": "/workspace/scratch/226d1e4428b0/dgp9_review/records/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PRESERVATION_13_MANIFEST.json",
+        "historical_original_path": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/sources/uai14/prob/DBN_14.uai",
+        "hash_verified": true
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "2d50e0f90dd4f8d4d9ded872d289b931fcf014f24b25bb6a41677cb73c87b3ea",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "mastermind_03_08_04-0003",
+      "model": "inputs/exposed/a8cf5ac987c1f895eabf16ba26f6ef4d715e7c8ff49bcbfe7b09cbd344f9731e/model.uai",
+      "evidence": "inputs/exposed/a8cf5ac987c1f895eabf16ba26f6ef4d715e7c8ff49bcbfe7b09cbd344f9731e/model.uai.evid",
+      "model_sha256": "420e1be6d6c7006b51b151821bd26f811065bc4ec247cbd455bb2c96dd72a0c0",
+      "evidence_sha256": "c809c55269a9e058c67928ef56e792f779481c72ec82aa75b47e1b1d41094dd6",
+      "source": {
+        "kind": "DGP9 shipped preservation input",
+        "source_manifest": "/workspace/scratch/226d1e4428b0/dgp9_review/records/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PRESERVATION_13_MANIFEST.json",
+        "historical_original_path": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/external/uai2022_mar/mastermind_03_08_04-0003.uai",
+        "hash_verified": true
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "a8cf5ac987c1f895eabf16ba26f6ef4d715e7c8ff49bcbfe7b09cbd344f9731e",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "ObjectDetection_43",
+      "model": "inputs/exposed/a8ac9c9461c29ec0a441b2dbd53a79bfdc846dc56d3fb23a1a2d4cf1c53dacbd/model.uai",
+      "evidence": "inputs/exposed/a8ac9c9461c29ec0a441b2dbd53a79bfdc846dc56d3fb23a1a2d4cf1c53dacbd/model.uai.evid",
+      "model_sha256": "a4aca89ff7c94db2421ddfb0dfd1c509c2887e540a8a7f32c720669de436d8f0",
+      "evidence_sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "source": {
+        "kind": "DGP9 shipped preservation input",
+        "source_manifest": "/workspace/scratch/226d1e4428b0/dgp9_review/records/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PRESERVATION_13_MANIFEST.json",
+        "historical_original_path": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/sources/uai14/prob/ObjectDetection_43.uai",
+        "hash_verified": true
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "a8ac9c9461c29ec0a441b2dbd53a79bfdc846dc56d3fb23a1a2d4cf1c53dacbd",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "mastermind_03_08_05-0003",
+      "model": "inputs/exposed/4ab70772f11cf439cf056bc66c7063539c4fddaa0837a7ccfc8d23e2f4e7becf/model.uai",
+      "evidence": "inputs/exposed/4ab70772f11cf439cf056bc66c7063539c4fddaa0837a7ccfc8d23e2f4e7becf/model.uai.evid",
+      "model_sha256": "36b9abf5ef932fdcdacc252cfdaef3250ff5c8f038fd346660195f628ab13bdb",
+      "evidence_sha256": "8ffe0b1f94f59b477c57ea187e68d531b3af2c56af15b7a03a7a024b58538744",
+      "source": {
+        "kind": "DGP9 shipped preservation input",
+        "source_manifest": "/workspace/scratch/226d1e4428b0/dgp9_review/records/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PRESERVATION_13_MANIFEST.json",
+        "historical_original_path": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/external/uai2022_mar/mastermind_03_08_05-0003.uai",
+        "hash_verified": true
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "4ab70772f11cf439cf056bc66c7063539c4fddaa0837a7ccfc8d23e2f4e7becf",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "or_chain_186.fg",
+      "model": "inputs/exposed/d506ee402b7057da6d03c1ce81f595c9b6ce2aa7045c8cd59fbb68e4304035d9/model.uai",
+      "evidence": "inputs/exposed/d506ee402b7057da6d03c1ce81f595c9b6ce2aa7045c8cd59fbb68e4304035d9/model.uai.evid",
+      "model_sha256": "2b2e5c6539214714300f5c8916ab890661810e4de16ad03e8e6b394209efb0b3",
+      "evidence_sha256": "54f3b5c4b82e044da7f59b8b80cc4a9ed6469b7be878875485dee1eb844bddca",
+      "source": {
+        "kind": "DGP9 shipped preservation input",
+        "source_manifest": "/workspace/scratch/226d1e4428b0/dgp9_review/records/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PRESERVATION_13_MANIFEST.json",
+        "historical_original_path": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/external/uai2022_mar/or_chain_186.fg.uai",
+        "hash_verified": true
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "d506ee402b7057da6d03c1ce81f595c9b6ce2aa7045c8cd59fbb68e4304035d9",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "or_chain_209.fg",
+      "model": "inputs/exposed/345ea70ff0dddb6d11c3a88886eb1ab167f012c6521f4edbafebe12bef807a38/model.uai",
+      "evidence": "inputs/exposed/345ea70ff0dddb6d11c3a88886eb1ab167f012c6521f4edbafebe12bef807a38/model.uai.evid",
+      "model_sha256": "dd863cf9478bac52b99c28344e27528411c73f4b0231034b59d162793253504c",
+      "evidence_sha256": "dc0b12e77e273acffeb959608a9162e3333bd7cbb6381e7db61185ccc8e7fcbb",
+      "source": {
+        "kind": "DGP9 shipped preservation input",
+        "source_manifest": "/workspace/scratch/226d1e4428b0/dgp9_review/records/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PRESERVATION_13_MANIFEST.json",
+        "historical_original_path": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/CQR_2026-11-15/external/uai2022_mar/or_chain_209.fg.uai",
+        "hash_verified": true
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "345ea70ff0dddb6d11c3a88886eb1ab167f012c6521f4edbafebe12bef807a38",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "linkage_13",
+      "model": "inputs/exposed/20e7ef22a02e470ef36ad8558246697540f752a728484c9d5e3db76bf9343fdd/model.uai",
+      "evidence": "inputs/exposed/20e7ef22a02e470ef36ad8558246697540f752a728484c9d5e3db76bf9343fdd/model.uai.evid",
+      "model_sha256": "8671bdc3348f2d87bf3fdb74eba2a6896e09d0c947fbd58094f642f8417ec172",
+      "evidence_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source": {
+        "kind": "DGP9 shipped preservation input",
+        "source_manifest": "/workspace/scratch/226d1e4428b0/dgp9_review/records/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PRESERVATION_13_MANIFEST.json",
+        "historical_original_path": "/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/sources/uai14/prob/linkage_13.uai",
+        "hash_verified": true
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "20e7ef22a02e470ef36ad8558246697540f752a728484c9d5e3db76bf9343fdd",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    },
+    {
+      "name": "Promedus_36",
+      "model": "inputs/exposed/ee1f67214098e546c32a60622f70c696a1ebf504ee57e735e81bb72d16403eaa/model.uai",
+      "evidence": "inputs/exposed/ee1f67214098e546c32a60622f70c696a1ebf504ee57e735e81bb72d16403eaa/model.uai.evid",
+      "model_sha256": "23910f71ea6ba1c3756d334204f0ec9bd8426700217536fc25de7ef9b1cfc2de",
+      "evidence_sha256": "b4d9108c7b5175285e1f8ec5e5775c57eb72d7a874481e1a4f9fed837e6b3ca7",
+      "source": {
+        "url": "https://ics.uci.edu/~dechter/uaicompetition/2022/TuningBenchmarks/MAR.zip",
+        "model_path": "sources/uai2022_tuning/MAR/Promedus_36.uai",
+        "evidence_path": "sources/uai2022_tuning/MAR/Promedus_36.uai.evid"
+      },
+      "historical_cohort": "external_extension",
+      "split": "exposed_regression",
+      "task_id": "ee1f67214098e546c32a60622f70c696a1ebf504ee57e735e81bb72d16403eaa",
+      "exposure": "Executed in prior external benchmark; available for development and regression, never an unseen evaluation claim."
+    }
+  ],
+  "unseen_eval": [],
+  "unseen_status": "No unseen task admitted yet; candidate inventory is separate and requires prior-exposure audit.",
+  "known_missing_slots": {
+    "Pedigree": {
+      "available": 3,
+      "target": 4
+    },
+    "CSP": {
+      "available": 3,
+      "target": 4
+    }
+  },
+  "source_packet_sha256": "78ba37719b48a97a1a463baa00b9e33f556b5f91e3b2acd35bae11f1757ceb3d",
+  "original_frozen_engine": "7f28259a4869a2c684d506b51072b04bb0ce4783",
+  "synthetic_performance_inputs": 0,
+  "relocation": {
+    "original_manifest_sha256": "a4134ac7b7033349ae08191c18a1116b18c44ba452a6ff32d1ea442db170b3a5",
+    "note": "Only input file paths relocated into repo; selected task identities/splits unchanged."
+  }
+}

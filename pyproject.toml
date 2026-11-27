@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pgm-certified"
+version = "0.1.0"
+description = "Certified discrete inference with one structural switchboard"
+requires-python = ">=3.12"
+dependencies = ["numpy>=2.3,<3", "gmpy2>=2.3,<3", "psutil>=7,<8", "scipy>=1.17,<2"]
+
+[project.scripts]
+pgm = "pgm.__main__:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src", "code"]
+namespaces = true
+include = ["pgm*", "cex*", "gbidi*", "ext*", "cbi*", "sf*", "h4a*"]
+exclude = ["*.native_cache*", "*.runs*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.cpp", "*.c", "*.h", "*.hpp"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "code"]
+testpaths = ["tests"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.so", "*.dylib"]
