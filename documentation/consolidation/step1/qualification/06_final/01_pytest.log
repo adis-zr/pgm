@@ -1,13 +1,35 @@
-................................. [ 47%]
-....................................                                     [100%]
+..................................................................................................        [100%]
 ==================================== PASSES ====================================
 _ CertificateCacheCleanupTests.test_setup_refusals_release_already_charged_cache _
 ----------------------------- Captured stdout call -----------------------------
 uuu
 _ NativeAllocationFailureTests.test_every_context_and_observer_allocation_rolls_back _
 ----------------------------- Captured stdout call -----------------------------
-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 39%]
+uuuuu
 =========================== short test summary info ============================
+PASSED tests/test_benchmark_harness.py::test_arms_pairs_contracts_consistent
+PASSED tests/test_benchmark_harness.py::test_native_probe_resolves_from_the_owning_implementation
+PASSED tests/test_benchmark_harness.py::test_native_probe_honours_pgm_native_cache
+PASSED tests/test_benchmark_harness.py::test_historical_reference_cells_bind_to_the_current_manifests
+PASSED tests/test_benchmark_harness.py::test_plan_declares_the_full_matrix_and_ceiling_before_scoring
+PASSED tests/test_benchmark_validator.py::test_valid_accepted_result_passes_contract
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation0-policy]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation1-policy_version]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation2-risk allocations]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation3-risk allocations]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation4-hard deadline]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation5-backend outside the policy]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation6-epsilon/delta]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation7-unresolved attempt]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation8-attempt configuration]
+PASSED tests/test_benchmark_validator.py::test_geometry_mutations_are_rejected
+PASSED tests/test_benchmark_validator.py::test_legacy_reference_contract
+PASSED tests/test_benchmark_validator.py::test_analyzer_detects_deterministic_conflicts_and_late_publication
+PASSED tests/test_compat_shims.py::test_conflicting_package_earlier_on_sys_path_does_not_win
+PASSED tests/test_compat_shims.py::test_already_imported_foreign_pgm_is_refused_explicitly
+PASSED tests/test_compat_shims.py::test_script_entry_without_installed_package_runs_the_checkout
+PASSED tests/test_compat_shims.py::test_alias_identity_and_same_checkout_already_imported_is_fine
 PASSED tests/test_consolidation_boundaries.py::test_one_input_boundary_binding_and_inventory
 PASSED tests/test_consolidation_boundaries.py::test_source_refusals_are_typed
 PASSED tests/test_consolidation_boundaries.py::test_worker_refuses_a_binding_mismatch_typed
@@ -72,9 +94,16 @@ PASSED tests/test_public_planning.py::test_deadline_and_memory_refuse_before_inv
 PASSED tests/test_public_planning.py::test_higher_arity_forest_is_not_legacy_forest
 PASSED tests/test_public_planning.py::test_optional_forecast_refusal_keeps_valid_metadata
 PASSED tests/test_public_planning.py::test_table_shape_and_trailing_tokens
+PASSED tests/test_qualification_tools.py::test_passing_receipt_passes_and_each_mutation_fails
+PASSED tests/test_qualification_tools.py::test_inherited_control_classifier_never_hides_a_failure_behind_a_static_reference
+PASSED tests/test_qualification_tools.py::test_declared_dependency_preflight_reads_the_suite
+PASSED tests/test_runtime_ownership.py::test_supervisor_killed_first_still_cleans_its_registered_worker
+PASSED tests/test_runtime_ownership.py::test_reused_group_id_older_than_the_recorded_spawn_is_refused_not_signalled
+PASSED tests/test_runtime_ownership.py::test_callers_own_group_is_never_signalled
+PASSED tests/test_runtime_ownership.py::test_valid_receipt_is_recognised
 PASSED tests/test_specialists_and_registry.py::test_registry_statuses_and_owners
 PASSED tests/test_specialists_and_registry.py::test_cbi_and_sf_entrypoints_import_their_implementations
 PASSED tests/test_specialists_and_registry.py::test_h4a_is_reference_only_with_an_availability_report
 PASSED tests/test_specialists_and_registry.py::test_cqr_explicit_task_language
 PASSED tests/test_specialists_and_registry.py::test_production_never_imports_the_specialist_bridge_or_campaign_code
-69 passed, 39 subtests passed in 5.12s
+98 passed, 39 subtests passed in 9.22s

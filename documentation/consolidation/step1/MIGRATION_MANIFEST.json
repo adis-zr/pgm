@@ -9,11 +9,11 @@
  },
  "classification_counts": {
   "benchmark-inputs": 122,
-  "benchmark-tooling": 36,
-  "correctness-qualification": 84,
-  "documentation": 17,
+  "benchmark-tooling": 38,
+  "correctness-qualification": 86,
+  "documentation": 26,
   "historical-evidence": 170,
-  "packaging": 11,
+  "packaging": 15,
   "production": 90,
   "production-shim": 47,
   "research-campaign-tooling": 139,
@@ -23,7 +23,7 @@
  "closure_after": {
   "imports_code_tree": [],
   "imports_specialists": [],
-  "lines": 16286,
+  "lines": 16344,
   "modules": 77,
   "modules_detail": {
    "pgm": {
@@ -195,7 +195,7 @@
     "path": "src/pgm/algorithms/structural/cex_executor.py"
    },
    "pgm.algorithms.structural.core": {
-    "lines": 276,
+    "lines": 260,
     "path": "src/pgm/algorithms/structural/core.py"
    },
    "pgm.algorithms.structural.dag": {
@@ -271,7 +271,7 @@
     "path": "src/pgm/contracts.py"
    },
    "pgm.model.uai": {
-    "lines": 95,
+    "lines": 96,
     "path": "src/pgm/model/uai.py"
    },
    "pgm.planning": {
@@ -303,7 +303,7 @@
     "path": "src/pgm/runtime/__init__.py"
    },
    "pgm.runtime.attempts": {
-    "lines": 175,
+    "lines": 248,
     "path": "src/pgm/runtime/attempts.py"
    },
    "pgm.runtime.build": {
@@ -382,7 +382,7 @@
   }
  ],
  "duplicates_removed": "none: no second live copy of any relocated module existed outside the frozen snapshots (which are pinned historical evidence, never imported by production)",
- "head_commit": "e365b6fd388b435ec2d88c97ccacbdaec77ed248",
+ "head_commit": "74f3c945d8fa7b32a612a0590bb713da858cc6d6",
  "path_map": {
   "code/cex/blockres/ancestral_response.py": {
    "canonical": "src/pgm/algorithms/block/ancestral_response.py",

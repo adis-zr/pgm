@@ -10,4 +10,4 @@
 {"D100_rows_from_boxes_equals_counts": {"ok": true}}
 {"D101_response_runner_end_to_end_and_exact_fallback": {"ok": true}}
 {"D102_eta_and_bounds": {"ok": true}}
-{"all_ok": true, "n": 12, "n_ok": 12, "wall_s": 8.77}
+{"all_ok": true, "n": 12, "n_ok": 12, "wall_s": 8.78}

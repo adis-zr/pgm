@@ -1,44 +1,44 @@
-D1    BLOCKED      0.3s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4
-D2    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4
-D3    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4
-D4    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c2
-D5    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
+D1    BLOCKED      0.3s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D2    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D3    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D4    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D5    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
 D6    PORTABLE     4.3s 
 D7    PORTABLE     0.6s 
-D8    PORTABLE     2.1s 
-D9    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c2_
-D10   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
-D11   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4
-D12   BLOCKED      0.2s '/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19'; RECORDS
-D13   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
+D8    PORTABLE     2.2s 
+D9    BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D10   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
+D11   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs; /var/fol
+D12   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/BLOCKRES_2026-11-19
+D13   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
 D14   PORTABLE     0.3s 
-D15   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n2
-D16   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
+D15   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
+D16   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
 D17   PORTABLE     0.3s 
-D18   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
+D18   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
 D19   PORTABLE     0.2s 
 D20   PORTABLE     0.2s 
-D21   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
+D21   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
 D22   PORTABLE     0.2s 
-D23   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
-D24   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n64_c
-D25   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D26   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
+D23   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
+D24   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs; /var/fol
+D25   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D26   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
 D27   PORTABLE     0.2s 
-D28   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
-D29   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D30   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D31   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
+D28   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
+D29   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs
+D30   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs
+D31   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs
 D32   PORTABLE     0.2s 
-D33   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANI
+D33   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/PRESERVATION_18_MANI
 D34   PORTABLE     0.2s 
 D35   PORTABLE     0.3s 
 D36   PORTABLE     0.2s 
 D37   PORTABLE     0.3s 
 D38   PORTABLE     0.2s 
 D39   PORTABLE     0.2s 
-D40   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D41   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
+D40   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs; /var/fol
+D41   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
 D42   PORTABLE     0.3s 
 D43   PORTABLE     0.2s 
 D44   PORTABLE     0.5s 
@@ -46,46 +46,46 @@ D45   PORTABLE     0.2s
 D46   PORTABLE     0.2s 
 D47   PORTABLE     0.2s 
 D48   PORTABLE     0.3s 
-D49   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D50   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D51   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D52   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
-D53   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
-D54   BLOCKED      0.6s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid/dg_n1
-D55   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D56   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D57   BLOCKED      0.3s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
+D49   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D50   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D51   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D52   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
+D53   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs; /var/fol
+D54   BLOCKED      0.6s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs_mid
+D55   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D56   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D57   BLOCKED      0.3s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs; /var/fol
 D58   PORTABLE     2.6s 
 D59   PORTABLE     0.3s 
-D60   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D61   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D62   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n12_c4
-D63   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D64   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D65   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D66   BLOCKED      0.3s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D67   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D68   BLOCKED      0.4s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D69   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs/dg_n8_c4_
-D70   BLOCKED      0.4s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D71   BLOCKED      0.2s '/code/runs/mdi_2026-10-28/DGP7_RESIDUAL_JOINT'; RECORDS
+D60   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D61   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs; /var/fol
+D62   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28; /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pg
+D63   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs
+D64   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D65   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs
+D66   BLOCKED      0.3s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs
+D67   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs; /var/fo
+D68   BLOCKED      0.4s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D69   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs
+D70   BLOCKED      0.4s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/dev/inputs; /var/fol
+D71   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP7_RESIDUAL_JOINT
 D72   PORTABLE     0.2s 
 D73   PORTABLE     0.2s 
 D74   PORTABLE     0.2s 
 D75   PORTABLE     0.2s 
 D76   PORTABLE     0.2s 
-D77   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D78   PORTABLE     0.3s _WEAK32
-D79   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-h_ndiszb/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs/dg_n6_c4
-D80   BLOCKED      0.3s _WEAK32
+D77   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs
+D78   PORTABLE     0.3s 
+D79   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS/oracle/dev_inputs
+D80   BLOCKED      0.3s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n32_c
 D81   PORTABLE     0.3s 
 D82   PORTABLE     0.6s 
 D83   PORTABLE     1.8s 
 D84   PORTABLE     0.2s 
 D85   PORTABLE     0.7s 
 D86   PORTABLE     0.3s 
-D87   BLOCKED      0.3s _WEAK32
+D87   BLOCKED      0.3s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n32_c
 D88   PORTABLE     0.2s 
-D89   PORTABLE    12.7s 
-D90   BLOCKED      0.2s _DGP9_PACKET
-inherited controls: {"BLOCKED": 51, "PORTABLE": 39} wall 43s
+D89   PORTABLE    12.6s 
+D90   BLOCKED      0.2s /var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/pgm-no-records-x303hjj1/code/runs/mdi_2026-10-28/DGP9_SPECTRAL_HEATBATH_CONTINUATION/PACKET/review_ev
+inherited controls: {"BLOCKED": 51, "PORTABLE": 39} wall 42s 

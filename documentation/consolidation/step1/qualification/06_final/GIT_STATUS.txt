@@ -1,1 +1,25 @@
-?? documentation/consolidation/step1/qualification/06_final/
+ D documentation/consolidation/step1/qualification/06_final/01_pytest.log
+ D documentation/consolidation/step1/qualification/06_final/02_parity_generate.log
+ D documentation/consolidation/step1/qualification/06_final/03_parity_compare.log
+ D documentation/consolidation/step1/qualification/06_final/04_check_dgp10.log
+ D documentation/consolidation/step1/qualification/06_final/05_dgp10_oracle.log
+ D documentation/consolidation/step1/qualification/06_final/06_inherited_controls.log
+ D documentation/consolidation/step1/qualification/06_final/07_specialist_conformance.log
+ D documentation/consolidation/step1/qualification/06_final/08_wheel_build.log
+ D documentation/consolidation/step1/qualification/06_final/09_clean_wheel_relocation.log
+ D documentation/consolidation/step1/qualification/06_final/10_closure_manifest.log
+ D documentation/consolidation/step1/qualification/06_final/11_classification.log
+ D documentation/consolidation/step1/qualification/06_final/BLOCKED_CONTROLS.json
+ M documentation/consolidation/step1/qualification/06_final/COMMANDS.log
+ M documentation/consolidation/step1/qualification/06_final/GIT_STATUS.txt
+ D documentation/consolidation/step1/qualification/06_final/QUALIFICATION.json
+ M documentation/consolidation/step1/qualification/06_final/SOURCE_COMMIT.txt
+ D documentation/consolidation/step1/qualification/06_final/WHEEL_SHA256.txt
+ D documentation/consolidation/step1/qualification/06_final/check_dgp10.json
+ D documentation/consolidation/step1/qualification/06_final/clean_wheel_relocation.json
+ D documentation/consolidation/step1/qualification/06_final/dgp10_oracle.json
+ D documentation/consolidation/step1/qualification/06_final/parity_candidate.json
+ D documentation/consolidation/step1/qualification/06_final/parity_report.json
+ D documentation/consolidation/step1/qualification/06_final/wheel_contents.txt
+ M src/pgm/algorithms/structural/cex_build.json
+ M src/pgm/algorithms/structural/libcex_kernel.dylib

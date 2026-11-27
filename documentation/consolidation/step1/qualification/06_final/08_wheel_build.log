@@ -335,7 +335,7 @@ writing manifest file 'pgm_certified.egg-info/SOURCES.txt'
 Copying pgm_certified.egg-info to build/bdist.macosx-26.0-arm64/wheel/./pgm_certified-0.2.0-py3.12.egg-info
 running install_scripts
 creating build/bdist.macosx-26.0-arm64/wheel/pgm_certified-0.2.0.dist-info/WHEEL
-creating '/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/dist/.tmp-chdzvhlr/pgm_certified-0.2.0-py3-none-any.whl' and adding 'build/bdist.macosx-26.0-arm64/wheel' to it
+creating '/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/dist/.tmp-74hq1spz/pgm_certified-0.2.0-py3-none-any.whl' and adding 'build/bdist.macosx-26.0-arm64/wheel' to it
 adding 'cbi/__init__.py'
 adding 'cbi/api.py'
 adding 'cbi/arith.py'

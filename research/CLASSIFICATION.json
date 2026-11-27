@@ -2,8 +2,8 @@
  "generated_by": "documentation/consolidation/step1/tools/classify_tree.py",
  "counts": {
   "benchmark-inputs": 122,
-  "benchmark-tooling": 38,
-  "correctness-qualification": 86,
+  "benchmark-tooling": 73,
+  "correctness-qualification": 114,
   "documentation": 26,
   "historical-evidence": 170,
   "packaging": 15,
@@ -47,6 +47,10 @@
    "note": "external benchmark harness, protocol, provenance, references"
   },
   "benchmarks/external/README.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/STEP2_AMENDMENT_1.md": {
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
@@ -574,6 +578,10 @@
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
+  "benchmarks/external/provenance/LIBDAI_QUALIFICATION_HOST_2026-11-27.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
   "benchmarks/external/provenance/LIBDAI_REQUALIFICATION.json": {
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
@@ -587,6 +595,138 @@
    "note": "external benchmark harness, protocol, provenance, references"
   },
   "benchmarks/external/provenance/prepare_inputs.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_chain.uai": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_chain.uai.evid": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_chain_BP.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_chain_BP.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_chain_JTREE.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_chain_JTREE.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_evidence.uai": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_evidence.uai.evid": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_evidence_BP.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_evidence_BP.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_evidence_JTREE.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/asymmetric_evidence_JTREE.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/hard_zeros.uai": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/hard_zeros.uai.evid": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/hard_zeros_BP.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/hard_zeros_BP.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/hard_zeros_JTREE.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/hard_zeros_JTREE.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/impossible_evidence.uai": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/impossible_evidence.uai.evid": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/isolated_and_fixed.uai": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/isolated_and_fixed.uai.evid": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/isolated_and_fixed_BP.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/isolated_and_fixed_BP.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/isolated_and_fixed_JTREE.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/isolated_and_fixed_JTREE.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/positive_scalar.uai": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/positive_scalar.uai.evid": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/positive_scalar_BP.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/positive_scalar_BP.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/positive_scalar_JTREE.MAR": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/positive_scalar_JTREE.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualification/zero.json": {
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
@@ -2658,6 +2798,98 @@
    "cls": "correctness-qualification",
    "note": "step-1 qualification receipts"
   },
+  "documentation/consolidation/step1/qualification/06_final/01_pytest.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/02_parity_generate.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/03_parity_compare.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/04_check_dgp10.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/05_dgp10_oracle.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/06_inherited_controls.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/07_specialist_conformance.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/08_wheel_build.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/09_clean_wheel_relocation.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/10_closure_manifest.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/11_classification.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/BLOCKED_CONTROLS.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/COMMANDS.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/GIT_STATUS.txt": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/QUALIFICATION.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/SOURCE_COMMIT.txt": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/WHEEL_SHA256.txt": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/check_dgp10.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/clean_wheel_relocation.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/dgp10_oracle.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/parity_candidate.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/parity_report.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/06_final/wheel_contents.txt": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
   "documentation/consolidation/step1/tools/classify_tree.py": {
    "cls": "packaging",
    "note": "step-1 consolidation tools"
@@ -3154,6 +3386,18 @@
    "cls": "correctness-qualification",
    "note": "pinned characterization reference + generator / comparator"
   },
+  "tests/test_benchmark_harness.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_benchmark_validator.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_compat_shims.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
   "tests/test_consolidation_boundaries.py": {
    "cls": "correctness-qualification",
    "note": "portable public / repair / regression tests"
@@ -3187,6 +3431,14 @@
    "note": "portable public / repair / regression tests"
   },
   "tests/test_public_planning.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_qualification_tools.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_runtime_ownership.py": {
    "cls": "correctness-qualification",
    "note": "portable public / repair / regression tests"
   },

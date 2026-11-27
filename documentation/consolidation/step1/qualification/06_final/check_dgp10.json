@@ -2,7 +2,7 @@
  "all_ok": true,
  "n": 12,
  "n_ok": 12,
- "wall_s": 8.77,
+ "wall_s": 8.78,
  "controls": [
   {
    "control": "D91_matched_run_and_commit_once",
@@ -70,7 +70,7 @@
       0.4
      ]
     ],
-    "result": "OSError(\"dlopen(/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/tmpe0xfx7e6/nat"
+    "result": "OSError(\"dlopen(/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/tmpf2if843a/nat"
    },
    "exhausted_allowance": "DEADLINE",
    "sweeps": {
@@ -245,7 +245,7 @@
     "refusal": null,
     "published": 7,
     "K": 7,
-    "wall": 1.87108025,
+    "wall": 1.873132958,
     "respected": true,
     "executed": true,
     "groups": 2,

@@ -1,7 +1,7 @@
 {
- "wheel": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/dist/pgm_certified-0.2.0-py3-none-any.whl",
- "wheel_sha256": "f8e8d4e5ff456e18bb82400cab8b652dca9710bb7db52c8544d1ecd2e82b9bc0",
- "work_dir": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if",
+ "wheel": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/dist/pgm_certified-0.2.0-py3-none-any.whl",
+ "wheel_sha256": "a78607505a3e12099540213ee6b0856437dd2b3d74f9668c7962777197f20519",
+ "work_dir": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39",
  "python": "/Users/adis/Workspace/pgm/code/.venv/bin/python",
  "steps": {
   "venv": {
@@ -9,55 +9,59 @@
     "/Users/adis/Workspace/pgm/code/.venv/bin/python",
     "-m",
     "venv",
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv"
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv"
    ],
    "returncode": 0,
-   "seconds": 1.522,
+   "seconds": 1.521,
    "stdout_tail": "",
-   "stderr_tail": ""
+   "stderr_tail": "",
+   "stdout_full": ""
   },
   "pip_install": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-m",
     "pip",
     "install",
     "-q",
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/dist/pgm_certified-0.2.0-py3-none-any.whl"
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/dist/pgm_certified-0.2.0-py3-none-any.whl"
    ],
    "returncode": 0,
-   "seconds": 3.649,
+   "seconds": 3.641,
    "stdout_tail": "",
-   "stderr_tail": "\n[notice] A new release of pip is available: 26.2.1 -> 26.3\n[notice] To update, run: pip install --upgrade pip\n"
+   "stderr_tail": "\n[notice] A new release of pip is available: 26.2.1 -> 26.3\n[notice] To update, run: pip install --upgrade pip\n",
+   "stdout_full": ""
   },
   "module_origins": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-c",
-    "import json, sys, pgm, pgm.api, pgm.switchboard, pgm.backends.worker, pgm.algorithms.structural.core, pgm.algorithms.block.integrated, pgm.algorithms.quotient.unified_pac_planner, pgm.algorithms.response.spectral_heatbath_run, pgm.runtime.supervise;mods={m: (getattr(sys.modules[m], '__file__', None) or '') for m in sys.modules if m.startswith('pgm')};print(json.dumps(dict(version=pgm.__version__, all_from_site_packages=all('site-packages' in f for f in mods.values() if f), n=len(mods), outside=[f for f in mods.values() if f and 'site-packages' not in f], sys_path=sys.path)))"
+    "import json, sys, pgm, pgm.api, pgm.switchboard, pgm.backends.worker, pgm.algorithms.structural.core, pgm.algorithms.block.integrated, pgm.algorithms.quotient.unified_pac_planner, pgm.algorithms.response.spectral_heatbath_run, pgm.runtime.supervise;mods={m: (getattr(sys.modules[m], '__file__', None) or '') for m in sys.modules if m.startswith('pgm')};print(json.dumps(dict(version=pgm.__version__, all_from_site_packages=all('site-packages' in f for f in mods.values() if f), n=len(mods), outside=[f for f in mods.values() if f and 'site-packages' not in f])))"
    ],
    "returncode": 0,
-   "seconds": 0.715,
-   "stdout_tail": "{\"version\": \"0.2.0\", \"all_from_site_packages\": true, \"n\": 66, \"outside\": [], \"sys_path\": [\"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python312.zip\", \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12\", \"/opt/homebrew/Cellar/python@3.12/3.12.15/Frameworks/Python.framework/Versions/3.12/lib/python3.12/lib-dynload\", \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/lib/python3.12/site-packages\"]}\n",
-   "stderr_tail": ""
+   "seconds": 0.777,
+   "stdout_tail": "{\"version\": \"0.2.0\", \"all_from_site_packages\": true, \"n\": 66, \"outside\": []}\n",
+   "stderr_tail": "",
+   "stdout_full": "{\"version\": \"0.2.0\", \"all_from_site_packages\": true, \"n\": 66, \"outside\": []}\n"
   },
   "capabilities": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-m",
     "pgm",
     "--capabilities"
    ],
    "returncode": 0,
-   "seconds": 0.049,
-   "stdout_tail": " law (n <= 63) with bridge r\",\n    \"guarantees\": [\n      \"published grid enclosure (2^-80 outward)\"\n    ],\n    \"reason\": \"requires a supplied sparse two-block law\",\n    \"evidence\": [\n      \"code/tests/test_sf_conformance.py\"\n    ]\n  },\n  \"h4\": {\n    \"status\": \"reference\",\n    \"owner\": \"code/h4a + code/native (host-built kernels in code/build)\",\n    \"entrypoint\": \"pgm.specialists.h4a.available / arm_main\",\n    \"representation\": \"fixed H4 arithmetic cohort\",\n    \"guarantees\": [\n      \"checked point / rectangle witnesses\"\n    ],\n    \"reason\": \"shipped worker is a fixed arithmetic cohort, not a generic UAI recognizer\",\n    \"evidence\": [\n      \"code/tests/test_h4a_review2.py\"\n    ]\n  },\n  \"frozen_snapshots\": {\n    \"status\": \"historical\",\n    \"owner\": \"code/cex/{pac,baseline,b0_frozen_v14,newarm_dev}, code/ext\",\n    \"entrypoint\": null,\n    \"reason\": \"pinned references for differential tests and receipt identity; production never imports them\"\n  },\n  \"unfinished\": {\n    \"status\": \"unfinished\",\n    \"items\": [\n      \"specialist bridge: pgm.specialists._bridge appends the code/ tree for cbi / sf / h4a / cqr (the only residual path manipulation; production inference does not use it)\",\n      \"CQR packaging: checkout-only (bare sibling imports inside code/cex/cqr)\",\n      \"H4 kernels: host-built executables under code/build (not wheel contents)\",\n      \"inherited D1-D90 controls: 51 depend on private record inputs (see documentation/consolidation/step1/BLOCKED_CONTROLS.json)\"\n    ]\n  }\n}\n",
-   "stderr_tail": ""
+   "seconds": 0.047,
+   "stdout_tail": "   \"conditional-response certificate\"\n    ],\n    \"admission\": \"checked spectral witness (typed refusal on arity / hard zero / width / proof); PAC-permitted request only\",\n    \"policies\": [\n      \"experimental\"\n    ],\n    \"evidence\": [\n      \"pgm-records DGP8 / DGP9 / DGP10 rounds (E-MDI-57..59)\",\n      \"documentation/reviews/DGP10_*.md\"\n    ]\n  },\n  \"cqr\": {\n    \"status\": \"specialist\",\n    \"owner\": \"code/cex/cqr (checkout-only; bare sibling imports)\",\n    \"entrypoint\": \"pgm.specialists.cqr.load_task / solve\",\n    \"representation\": \"explicit bounded rational expectation / ratio query tables; singleton / joint / parity / conditional constructors; normalizer tasks\",\n    \"guarantees\": [\n      \"EXACT_RATIONAL\",\n      \"DETERMINISTIC\",\n      \"PAC\"\n    ],\n    \"reason\": \"general finite query / normalizer language is not silently reduced to singleton queries\",\n    \"evidence\": [\n      \"code/cex/cqr/CQR_QUALIFICATION.json\"\n    ]\n  },\n  \"cbi\": {\n    \"status\": \"specialist\",\n    \"owner\": \"code/cbi\",\n    \"entrypoint\": \"pgm.specialists.cbi.solve / verify\",\n    \"representation\": \"supplied product-kernel binary block model (JSON)\",\n    \"guarantees\": [\n      \"CERTIFIED width\"\n    ],\n    \"reason\": \"requires a supplied product-kernel block representation\",\n    \"evidence\": [\n      \"code/tests/test_cbi_conformance.py\"\n    ]\n  },\n  \"sf\": {\n    \"status\": \"specialist\",\n    \"owner\": \"code/sf\",\n    \"entrypoint\": \"pgm.specialists.sf.law / select / checker\",\n    \"representation\": \"supplied sparse two-block law (n <= 63) with bridge r\",\n    \"guarantees\": [\n      \"published grid enclosure (2^-80 outward)\"\n    ],\n    \"reason\": \"requires a supplied sparse two-block law\",\n    \"evidence\": [\n      \"code/tests/test_sf_conformance.py\"\n    ]\n  },\n  \"h4\": {\n    \"status\": \"reference\",\n    \"owner\": \"code/h4a + code/native (host-built kernels in code/build)\",\n    \"entrypoint\": \"pgm.specialists.h4a.available / arm_main\",\n    \"representation\": \"fixed H4 arithmetic cohort\",\n    \"guarantees\": [\n      \"checked point / rectangle witnesses\"\n    ],\n    \"reason\": \"shipped worker is a fixed arithmetic cohort, not a generic UAI recognizer\",\n    \"evidence\": [\n      \"code/tests/test_h4a_review2.py\"\n    ]\n  },\n  \"frozen_snapshots\": {\n    \"status\": \"historical\",\n    \"owner\": \"code/cex/{pac,baseline,b0_frozen_v14,newarm_dev}, code/ext\",\n    \"entrypoint\": null,\n    \"reason\": \"pinned references for differential tests and receipt identity; production never imports them\"\n  },\n  \"unfinished\": {\n    \"status\": \"unfinished\",\n    \"items\": [\n      \"specialist bridge: pgm.specialists._bridge appends the code/ tree for cbi / sf / h4a / cqr (the only residual path manipulation; production inference does not use it)\",\n      \"CQR packaging: checkout-only (bare sibling imports inside code/cex/cqr)\",\n      \"H4 kernels: host-built executables under code/build (not wheel contents)\",\n      \"inherited D1-D90 controls: 51 depend on private record inputs (see documentation/consolidation/step1/BLOCKED_CONTROLS.json)\"\n    ]\n  }\n}\n",
+   "stderr_tail": "",
+   "stdout_full": "{\n  \"structural\": {\n    \"status\": \"selectable\",\n    \"owner\": \"pgm.algorithms.structural\",\n    \"entrypoint\": \"core.solve(model, deadline, route)\",\n    \"adapter\": \"pgm.backends.structural\",\n    \"representation\": \"exact rational UAI model (evidence sliced)\",\n    \"guarantees\": [\n      \"EXACT\",\n      \"DETERMINISTIC\"\n    ],\n    \"methods\": [\n      \"forest\",\n      \"source DAG\",\n      \"support contraction\",\n      \"bipartite stream\"\n    ],\n    \"admission\": \"pairwise forest; empty-evidence source DAG; affordable sparse-support contraction; binary bipartite stream (checked by the route itself)\",\n    \"policies\": [\n      \"experimental\"\n    ],\n    \"evidence\": [\n      \"code/cex/newarm/*.json qualification records\",\n      \"tests/parity/reference_f8197e6.json\"\n    ]\n  },\n  \"block\": {\n    \"status\": \"selectable\",\n    \"owner\": \"pgm.algorithms.block\",\n    \"entrypoint\": \"integrated.solve(path, budget, ..., model=, binding=)\",\n    \"adapter\": \"pgm.backends.block\",\n    \"representation\": \"UAI file + adjacent .evid (exact rational)\",\n    \"guarantees\": [\n      \"EXACT\",\n      \"DETERMINISTIC\",\n      \"PAC\"\n    ],\n    \"methods\": [\n      \"support closure\",\n      \"signed evidence\",\n      \"layered contraction\",\n      \"ancestral response\",\n      \"block contraction\",\n      \"importance sampling\"\n    ],\n    \"admission\": \"any nonnegative rational model; exact route when affordable, certified PAC residual stream otherwise (typed refusals)\",\n    \"policies\": [\n      \"accepted (default)\",\n      \"experimental\"\n    ],\n    \"evidence\": [\n      \"benchmarks/external/reference/previous_accepted_cells.json\",\n      \"documentation/reviews/QUALIFICATION.json\"\n    ]\n  },\n  \"quotient\": {\n    \"status\": \"selectable\",\n    \"owner\": \"pgm.algorithms.quotient\",\n    \"entrypoint\": \"unified_pac_planner.UPlanner(model, binding, budget, ...).run()\",\n    \"adapter\": \"pgm.backends.quotient\",\n    \"representation\": \"exact rational UAI model (canonicalized)\",\n    \"guarantees\": [\n      \"EXACT\",\n      \"DETERMINISTIC\",\n      \"PAC\"\n    ],\n    \"methods\": [\n      \"identity\",\n      \"exact quotient\",\n      \"checked approximate quotient\",\n      \"residual MAX\",\n      \"global proposal\"\n    ],\n    \"admission\": \"general nonnegative rational categorical model; each quotient / proposal is admitted by its own proof-boundary checker\",\n    \"policies\": [\n      \"experimental\"\n    ],\n    \"evidence\": [\n      \"pgm-records DENSE_GENERIC_PAC_INTEGRATION_1 .. DGP7 rounds (E-MDI-50..56)\"\n    ]\n  },\n  \"response\": {\n    \"status\": \"selectable\",\n    \"owner\": \"pgm.algorithms.response\",\n    \"entrypoint\": \"spectral_heatbath_run.solve_response(model, binding, ...)\",\n    \"adapter\": \"pgm.backends.response\",\n    \"representation\": \"strictly positive pairwise categorical model after canonicalization\",\n    \"guarantees\": [\n      \"PAC\"\n    ],\n    \"methods\": [\n      \"spectral admission\",\n      \"exact heat bath\",\n      \"Markov confidence certificate\",\n      \"conditional-response certificate\"\n    ],\n    \"admission\": \"checked spectral witness (typed refusal on arity / hard zero / width / proof); PAC-permitted request only\",\n    \"policies\": [\n      \"experimental\"\n    ],\n    \"evidence\": [\n      \"pgm-records DGP8 / DGP9 / DGP10 rounds (E-MDI-57..59)\",\n      \"documentation/reviews/DGP10_*.md\"\n    ]\n  },\n  \"cqr\": {\n    \"status\": \"specialist\",\n    \"owner\": \"code/cex/cqr (checkout-only; bare sibling imports)\",\n    \"entrypoint\": \"pgm.specialists.cqr.load_task / solve\",\n    \"representation\": \"explicit bounded rational expectation / ratio query tables; singleton / joint / parity / conditional constructors; normalizer tasks\",\n    \"guarantees\": [\n      \"EXACT_RATIONAL\",\n      \"DETERMINISTIC\",\n      \"PAC\"\n    ],\n    \"reason\": \"general finite query / normalizer language is not silently reduced to singleton queries\",\n    \"evidence\": [\n      \"code/cex/cqr/CQR_QUALIFICATION.json\"\n    ]\n  },\n  \"cbi\": {\n    \"status\": \"specialist\",\n    \"owner\": \"code/cbi\",\n    \"entrypoint\": \"pgm.specialists.cbi.solve / verify\",\n    \"representation\": \"supplied product-kernel binary block model (JSON)\",\n    \"guarantees\": [\n      \"CERTIFIED width\"\n    ],\n    \"reason\": \"requires a supplied product-kernel block representation\",\n    \"evidence\": [\n      \"code/tests/test_cbi_conformance.py\"\n    ]\n  },\n  \"sf\": {\n    \"status\": \"specialist\",\n    \"owner\": \"code/sf\",\n    \"entrypoint\": \"pgm.specialists.sf.law / select / checker\",\n    \"representation\": \"supplied sparse two-block law (n <= 63) with bridge r\",\n    \"guarantees\": [\n      \"published grid enclosure (2^-80 outward)\"\n    ],\n    \"reason\": \"requires a supplied sparse two-block law\",\n    \"evidence\": [\n      \"code/tests/test_sf_conformance.py\"\n    ]\n  },\n  \"h4\": {\n    \"status\": \"reference\",\n    \"owner\": \"code/h4a + code/native (host-built kernels in code/build)\",\n    \"entrypoint\": \"pgm.specialists.h4a.available / arm_main\",\n    \"representation\": \"fixed H4 arithmetic cohort\",\n    \"guarantees\": [\n      \"checked point / rectangle witnesses\"\n    ],\n    \"reason\": \"shipped worker is a fixed arithmetic cohort, not a generic UAI recognizer\",\n    \"evidence\": [\n      \"code/tests/test_h4a_review2.py\"\n    ]\n  },\n  \"frozen_snapshots\": {\n    \"status\": \"historical\",\n    \"owner\": \"code/cex/{pac,baseline,b0_frozen_v14,newarm_dev}, code/ext\",\n    \"entrypoint\": null,\n    \"reason\": \"pinned references for differential tests and receipt identity; production never imports them\"\n  },\n  \"unfinished\": {\n    \"status\": \"unfinished\",\n    \"items\": [\n      \"specialist bridge: pgm.specialists._bridge appends the code/ tree for cbi / sf / h4a / cqr (the only residual path manipulation; production inference does not use it)\",\n      \"CQR packaging: checkout-only (bare sibling imports inside code/cex/cqr)\",\n      \"H4 kernels: host-built executables under code/build (not wheel contents)\",\n      \"inherited D1-D90 controls: 51 depend on private record inputs (see documentation/consolidation/step1/BLOCKED_CONTROLS.json)\"\n    ]\n  }\n}\n"
   },
   "cli_accepted": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-m",
     "pgm",
@@ -79,9 +83,10 @@
     "accepted"
    ],
    "returncode": 0,
-   "seconds": 1.538,
+   "seconds": 1.531,
    "stdout_tail": "",
    "stderr_tail": "",
+   "stdout_full": "",
    "result": {
     "outcome": "COMPLETE",
     "guarantee": "EXACT",
@@ -90,16 +95,92 @@
     "policy": "accepted",
     "policy_version": "accepted-engine-v2.13.2-targeted/1",
     "attempts": [
-     [
-      "block",
-      "COMPLETE"
-     ]
-    ]
+     {
+      "backend": "block",
+      "outcome": "COMPLETE"
+     }
+    ],
+    "mechanism": null,
+    "answers": [
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 0,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 1,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 0,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 1,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 0,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 1,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     },
+     {
+      "var": 3,
+      "variable": 3,
+      "state": 0,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     },
+     {
+      "var": 3,
+      "variable": 3,
+      "state": 1,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     }
+    ],
+    "positive_mass_witness": true
    }
   },
   "cli_experimental": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-m",
     "pgm",
@@ -121,9 +202,10 @@
     "experimental"
    ],
    "returncode": 0,
-   "seconds": 2.224,
+   "seconds": 2.23,
    "stdout_tail": "",
    "stderr_tail": "",
+   "stdout_full": "",
    "result": {
     "outcome": "COMPLETE",
     "guarantee": "DETERMINISTIC",
@@ -132,16 +214,92 @@
     "policy": "experimental",
     "policy_version": "structural-portfolio-1",
     "attempts": [
-     [
-      "structural",
-      "COMPLETE"
-     ]
-    ]
+     {
+      "backend": "structural",
+      "outcome": "COMPLETE"
+     }
+    ],
+    "mechanism": null,
+    "answers": [
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "9007199254740957/18014398509481984",
+      "hi": "4503599627370496/9007199254740957",
+      "point": "9007199254741027/18014398509481984"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "9007199254740957/18014398509481984",
+      "hi": "4503599627370496/9007199254740957",
+      "point": "9007199254740957/18014398509481984"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "2251799813685241/4503599627370496",
+      "hi": "1125899906842624/2251799813685241",
+      "point": "2251799813685255/4503599627370496"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "2251799813685241/4503599627370496",
+      "hi": "1125899906842624/2251799813685241",
+      "point": "2251799813685241/4503599627370496"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "9007199254740967/18014398509481984",
+      "hi": "4503599627370496/9007199254740967",
+      "point": "9007199254741017/18014398509481984"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "9007199254740967/18014398509481984",
+      "hi": "4503599627370496/9007199254740967",
+      "point": "9007199254740967/18014398509481984"
+     },
+     {
+      "var": 3,
+      "variable": 3,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "2251799813685241/4503599627370496",
+      "hi": "1125899906842624/2251799813685241",
+      "point": "2251799813685255/4503599627370496"
+     },
+     {
+      "var": 3,
+      "variable": 3,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "2251799813685241/4503599627370496",
+      "hi": "1125899906842624/2251799813685241",
+      "point": "2251799813685241/4503599627370496"
+     }
+    ],
+    "positive_mass_witness": true
    }
   },
   "worker_structural": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-m",
     "pgm.backends.worker",
@@ -150,27 +308,596 @@
     "--input",
     "fixtures/asym2.uai",
     "--output",
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/w_structural.json",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/worker_structural.json",
     "--deadline",
-    "62877.186248166",
+    "66184.46491375",
     "--memory-mib",
     "1024"
    ],
    "returncode": 0,
-   "seconds": 0.047,
+   "seconds": 0.046,
    "stdout_tail": "",
    "stderr_tail": "",
+   "stdout_full": "",
    "result": {
     "outcome": "COMPLETE",
     "guarantee": "DETERMINISTIC",
     "published": 4,
     "K": 4,
-    "route": "structural"
+    "policy": "accepted",
+    "policy_version": null,
+    "attempts": [],
+    "mechanism": {
+     "route": "structural",
+     "structural_route": "auto",
+     "stats": {
+      "reduction": {
+       "not_attempted": "complete forest computation"
+      },
+      "total_s": 0.0013087080005789176,
+      "root_discovery": [
+       {
+        "kind": "forest",
+        "wall_s": 0.0005836250056745484
+       }
+      ],
+      "components": [
+       {
+        "variables": [
+         0,
+         1
+        ],
+        "route": "forest",
+        "discovery": [
+         {
+          "kind": "forest",
+          "recognition": {
+           "source_entries_read": 8,
+           "source_factor_occurrences": 3,
+           "scope_incidences": 4,
+           "input_numerator_bits": 16,
+           "input_denominator_bits": 8,
+           "radix_items": 2,
+           "recognition_s": 3.1624993425793946e-05,
+           "cards_read": 2,
+           "evidence_entries_read": 0,
+           "sliced_entries": 8,
+           "graph_adjacency_visits": 2,
+           "free_variables": 2,
+           "simple_edges": 1,
+           "components": 1
+          }
+         }
+        ],
+        "stats": {
+         "solver": "scaled_dyadic_forest",
+         "recognition": {
+          "source_entries_read": 8,
+          "source_factor_occurrences": 3,
+          "scope_incidences": 4,
+          "input_numerator_bits": 16,
+          "input_denominator_bits": 8,
+          "radix_items": 2,
+          "recognition_s": 3.1624993425793946e-05,
+          "cards_read": 2,
+          "evidence_entries_read": 0,
+          "sliced_entries": 8,
+          "graph_adjacency_visits": 2,
+          "free_variables": 2,
+          "simple_edges": 1,
+          "components": 1
+         },
+         "checker_recognition": {
+          "source_entries_read": 8,
+          "source_factor_occurrences": 3,
+          "scope_incidences": 4,
+          "input_numerator_bits": 16,
+          "input_denominator_bits": 8,
+          "radix_items": 2,
+          "recognition_s": 1.8457998521625996e-05,
+          "cards_read": 2,
+          "evidence_entries_read": 0,
+          "sliced_entries": 8,
+          "graph_adjacency_visits": 2,
+          "free_variables": 2,
+          "simple_edges": 1,
+          "components": 1
+         },
+         "label_passes": [
+          {
+           "precision_bits": 2,
+           "source_conversions": 8,
+           "adds": 12,
+           "mults": 26,
+           "divisions": 0,
+           "rounds": 0,
+           "large_gap_additions": 0,
+           "max_mantissa_bits": 0,
+           "max_temporary_bits": 0,
+           "max_exponent_bits": 0,
+           "max_abs_exponent": 0,
+           "instrumented_integer_bits": 0,
+           "integer_multiplications": 0,
+           "integer_divmods": 0,
+           "integer_additions": 0
+          },
+          {
+           "precision_bits": 2,
+           "source_conversions": 8,
+           "adds": 12,
+           "mults": 26,
+           "divisions": 0,
+           "rounds": 0,
+           "large_gap_additions": 0,
+           "max_mantissa_bits": 0,
+           "max_temporary_bits": 0,
+           "max_exponent_bits": 0,
+           "max_abs_exponent": 0,
+           "instrumented_integer_bits": 0,
+           "integer_multiplications": 0,
+           "integer_divmods": 0,
+           "integer_additions": 0
+          }
+         ],
+         "label_s": 9.329200838692486e-05,
+         "max_normalization_error_label": 25,
+         "precision_bits": 18,
+         "directed_unit_roundoff": "1/131072",
+         "delta_bound": "25/131072",
+         "grid_bits": 12,
+         "publication": {
+          "passes": 3,
+          "coordinates": 12,
+          "grid_endpoint_conversions": 24,
+          "simplex_allocations": 12,
+          "max_grid_integer_bits": 13
+         },
+         "producer": {
+          "precision_bits": 18,
+          "source_conversions": 8,
+          "adds": 12,
+          "mults": 26,
+          "divisions": 4,
+          "rounds": 88,
+          "large_gap_additions": 0,
+          "max_mantissa_bits": 18,
+          "max_temporary_bits": 36,
+          "max_exponent_bits": 6,
+          "max_abs_exponent": 34,
+          "instrumented_integer_bits": 5676,
+          "integer_multiplications": 52,
+          "integer_divmods": 24,
+          "integer_additions": 12
+         },
+         "replay": {
+          "precision_bits": 18,
+          "source_conversions": 8,
+          "adds": 12,
+          "mults": 26,
+          "divisions": 4,
+          "rounds": 88,
+          "large_gap_additions": 0,
+          "max_mantissa_bits": 18,
+          "max_temporary_bits": 36,
+          "max_exponent_bits": 6,
+          "max_abs_exponent": 34,
+          "instrumented_integer_bits": 5676,
+          "integer_multiplications": 52,
+          "integer_divmods": 24,
+          "integer_additions": 12
+         },
+         "producer_s": 0.00019283399160485715,
+         "replay_s": 0.00018616700253915042,
+         "elapsed_s": 0.0005478329985635355,
+         "output_coordinates": 4,
+         "independent_replay": true,
+         "certificate_coordinates": 4,
+         "certificate_s": 2.2909953258931637e-06
+        },
+        "certificate": {
+         "arithmetic": "directed p-bit significands with unbounded binary exponents",
+         "precision_choice": "two structural label passes; p>=1+ceil(log2(16*K/epsilon))",
+         "source_occurrences_consumed": 3,
+         "parallel_factors": "radix grouped; multiplied in scaled outward arithmetic",
+         "query_recovery": "both directed tree messages; prefix/suffix neighbor exclusions; all original rows",
+         "replay": "fresh source validation and opposite-root traversal; shared qualified arithmetic",
+         "publication": "direct dyadic grid conversion and bulk simplex mass allocation",
+         "tolerance": "1/200",
+         "scaled_producer_endpoints": [
+          [
+           [
+            245411,
+            -19,
+            245412,
+            -19,
+            23
+           ],
+           [
+            139438,
+            -18,
+            139439,
+            -18,
+            23
+           ]
+          ],
+          [
+           [
+            245411,
+            -20,
+            245412,
+            -20,
+            25
+           ],
+           [
+            200791,
+            -18,
+            200792,
+            -18,
+            25
+           ]
+          ]
+         ],
+         "counter_scope": "interval source/add/mul/div calls; actual significand multiply/divmod/add calls; cumulative bit lengths at rounding and division instrumentation, not a complete bit-operation count",
+         "machine_scope": "Theta(n) word operations only under Theorem 4 bounded-domain/occurrence/input-word assumptions; arbitrary integer bits and Python timings remain separately charged"
+        }
+       }
+      ]
+     },
+     "certificate": null,
+     "reduction_certificate": null,
+     "decoder": [
+      {
+       "kind": "identity",
+       "variable": 0
+      },
+      {
+       "kind": "identity",
+       "variable": 1
+      }
+     ],
+     "normalizer": "not supplied by this marginal-only adapter"
+    },
+    "answers": [
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "1917/4096",
+      "hi": "959/2048",
+      "point": "959/2048"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "1089/2048",
+      "hi": "2179/4096",
+      "point": "1089/2048"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "479/2048",
+      "hi": "959/4096",
+      "point": "959/4096"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "3137/4096",
+      "hi": "1569/2048",
+      "point": "3137/4096"
+     }
+    ],
+    "positive_mass_witness": true
+   }
+  },
+  "worker_stream": {
+   "cmd": [
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
+    "-I",
+    "-m",
+    "pgm.backends.worker",
+    "--backend",
+    "structural",
+    "--input",
+    "fixtures/bip4.uai",
+    "--output",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/worker_stream.json",
+    "--deadline",
+    "66184.530580125",
+    "--memory-mib",
+    "1024",
+    "--structural-route",
+    "stream"
+   ],
+   "returncode": 0,
+   "seconds": 1.156,
+   "stdout_tail": "",
+   "stderr_tail": "",
+   "stdout_full": "",
+   "result": {
+    "outcome": "COMPLETE",
+    "guarantee": "DETERMINISTIC",
+    "published": 8,
+    "K": 8,
+    "policy": "accepted",
+    "policy_version": null,
+    "attempts": [],
+    "mechanism": {
+     "route": "structural",
+     "structural_route": "stream",
+     "stats": {
+      "reduction": {
+       "source_entries_read": 12,
+       "initial_positive_rows": 11,
+       "support_rows_visited": 11,
+       "states_removed": 0,
+       "aliases": 0,
+       "alias_rows_visited": 0,
+       "scalar_factors_cancelled": 0,
+       "incidence_entries_built": 6,
+       "dense_entries_materialized": 12,
+       "arc_passes": 1,
+       "initial_arc_forced_beyond_evidence": 0,
+       "forced_original_variables_beyond_evidence": 0,
+       "remaining_variables": 4,
+       "elapsed_s": 7.745900074951351e-05
+      },
+      "split_s": 0.00011391700536478311,
+      "total_s": 1.0972179170057643,
+      "components": [
+       {
+        "variables": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "route": "stream",
+        "discovery": [
+         {
+          "kind": "support",
+          "stats": {
+           "order_pair_visits": 3,
+           "order_capped": false,
+           "planning_s": 1.650000922381878e-05,
+           "scalar_forecast": 153,
+           "dense_bag_rows": 14,
+           "peak_bag": 4
+          }
+         },
+         {
+          "kind": "stream",
+          "conditioned_variables": 2,
+          "scalar_forecast": 156
+         },
+         {
+          "candidate_selection": "minimum scalar forecast; not a bit-work or global optimum",
+          "candidates": [
+           [
+            153,
+            "support"
+           ],
+           [
+            156,
+            "stream"
+           ]
+          ],
+          "planning_wall_s": 6.274999759625643e-05
+         }
+        ],
+        "execution_wall_s": 1.0957876669999678,
+        "stats": {
+         "solver": "certified_binary64_product_tree_stream",
+         "build_s": 1.0873474169929978,
+         "configurations": 4,
+         "adds": 24,
+         "mults": 72,
+         "tree_updates": 15,
+         "source_conversions_checked": 20,
+         "recognition_s": 0.0004442910139914602,
+         "conversion_s": 0.0008205410122172907,
+         "execution_s": 0.00012104200141038746,
+         "publication_s": 0.000940874990192242,
+         "source_entries_validated": 12,
+         "sliced_entries": 12,
+         "denominator_lcm_steps": 12,
+         "denominator_clear_divisions": 12,
+         "denominator_clear_multiplications": 12,
+         "parallel_factor_multiplications": 0,
+         "graph_vertices": 4,
+         "graph_edges": 3,
+         "components": 1,
+         "conditioning_configurations_planned": 4,
+         "native_event_counter_bound": 232,
+         "native_allocation_bound_bytes": 2432,
+         "elapsed_s": 1.0901823330059415
+        },
+        "certificate": {
+         "method": "current-leaf product trees, per-operation error exponents, runtime range guards",
+         "components": [
+          {
+           "conditioned": [
+            0,
+            2
+           ],
+           "independent": [
+            1,
+            3
+           ],
+           "normalizer_float": 2.2666666666666666,
+           "normalizer_exponent": 23,
+           "numerator_exponents": [
+            21,
+            21,
+            23,
+            23
+           ],
+           "max_delta": "23/4503599627370496",
+           "configurations": 4
+          }
+         ],
+         "build": {
+          "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+          "binary_sha256": "da564edbd7b5b771d1b31d14e240bbbff8ffbfaf352d6df26609fe49d64d1874",
+          "compiler_flags": [
+           "-O3",
+           "-std=c++17",
+           "-shared",
+           "-fPIC",
+           "-fno-fast-math",
+           "-ffp-contract=off",
+           "-frounding-math"
+          ],
+          "loaded_binary_path": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/native_cache/stream_da564edbd7b5b771d1b31d14e240bbbff8ffbfaf352d6df26609fe49d64d1874.so",
+          "loader_binding": "immutable binary SHA256 pathname; bytes verified before dlopen"
+         },
+         "independent_numeric_replay_performed": false,
+         "clock_contract": "Linux CLOCK_MONOTONIC absolute deadline from Python, checked before/during construction and stream and after completion; wrapper final deadline remains authoritative.",
+         "input_gauge": "Each exact merged unary/pair is divided by its positive maximum; these constants cancel from normalized marginals.",
+         "cost": "Source validation/clearing/graph recognition + exact gauge/conversion checks + O(m*n+(n*log(m+1)+m+n)*2**m) binary64 work per component + exact-rational publication. Dense missing-edge identity slots are charged O(m*n). External parser and separate verifier are caller costs."
+        }
+       }
+      ],
+      "root_discovery": [
+       {
+        "kind": "representation_selection",
+        "chosen": "reduced_components",
+        "identity_forecast": null,
+        "reduced_forecast": 156,
+        "selection_scope": "heuristic scalar forecast; all discovery charged"
+       }
+      ]
+     },
+     "certificate": null,
+     "reduction_certificate": {
+      "state_removals": [],
+      "aliases": [],
+      "positive_scalar_rule": "positive source-dependent constants cancel in normalized queries"
+     },
+     "decoder": [
+      {
+       "kind": "alias",
+       "variable": 0,
+       "state_map": [
+        0,
+        1
+       ]
+      },
+      {
+       "kind": "alias",
+       "variable": 1,
+       "state_map": [
+        0,
+        1
+       ]
+      },
+      {
+       "kind": "alias",
+       "variable": 2,
+       "state_map": [
+        0,
+        1
+       ]
+      },
+      {
+       "kind": "alias",
+       "variable": 3,
+       "state_map": [
+        0,
+        1
+       ]
+      }
+     ],
+     "normalizer": "not supplied by this marginal-only adapter"
+    },
+    "answers": [
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "431940204522208347249507858781/638520302337179081210450704733",
+      "hi": "1295820613566637426647498845207/1915560907011546601110577872896",
+      "point": "1945285744132557888665982101907280539994999041/2875639795674216156306304003209573078891757568"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "619740293444909174463079027689/1915560907011546601110577872896",
+      "hi": "206580097814970733960942845952/638520302337179081210450704733",
+      "point": "930354051541658267640321901302292538896758527/2875639795674216156306304003209573078891757568"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "9465124481704053754763608029049/11493365442069220909748323841913",
+      "hi": "75720995853632982479663155013227/91946923536554236853307737899008",
+      "point": "682034097421084515581709569463193979573972552803/828184261154174069122368479815883340105350381568"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "16225927682921254373644582885781/91946923536554236853307737899008",
+      "hi": "2028240960365167154984715812864/11493365442069220909748323841913",
+      "point": "146150163733089553540658910352689360531377828765/828184261154174069122368479815883340105350381568"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "619740293444902844403602779159/1915560907011537243631352114199",
+      "hi": "309870146722459265971152393193/957780453505773300555288936448",
+      "point": "1395531077312487401460482851901972672603464957/4313459693511324234459456004814359618337636352"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "647910306783314034584136543255/957780453505773300555288936448",
+      "hi": "1295820613566634399227749335040/1915560907011537243631352114199",
+      "point": "2917928616198836832998973152912386945734171395/4313459693511324234459456004814359618337636352"
+     },
+     {
+      "var": 3,
+      "variable": 3,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "9014404268289572383691986401145/11493365442069220909748323841913",
+      "hi": "144230468292634299851617316698697/183893847073108473706615475798016",
+      "point": "1299112566516351483362430117783185551820833260401/1656368522308348138244736959631766680210700763136"
+     },
+     {
+      "var": 3,
+      "variable": 3,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "39663378780474173854998159099319/183893847073108473706615475798016",
+      "hi": "2478961173779648526056337440768/11493365442069220909748323841913",
+      "point": "357255955791996654882306841848581128389867502735/1656368522308348138244736959631766680210700763136"
+     }
+    ],
+    "positive_mass_witness": true
    }
   },
   "worker_block": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-m",
     "pgm.backends.worker",
@@ -179,27 +906,160 @@
     "--input",
     "fixtures/cyc3_card3.uai",
     "--output",
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/w_block.json",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/worker_block.json",
     "--deadline",
-    "62877.252589333",
+    "66185.706332958",
     "--memory-mib",
     "1024"
    ],
    "returncode": 0,
-   "seconds": 0.088,
+   "seconds": 0.086,
    "stdout_tail": "",
    "stderr_tail": "",
+   "stdout_full": "",
    "result": {
     "outcome": "COMPLETE",
     "guarantee": "EXACT",
     "published": 8,
     "K": 8,
-    "route": null
+    "policy": "accepted",
+    "policy_version": null,
+    "attempts": [],
+    "mechanism": {
+     "evidence_expansion": {
+      "status": "NOT_APPLICABLE: nonbinary variable",
+      "recognition_s": 6.6250067902728915e-06
+     },
+     "ancestral_response": {
+      "status": "NOT_APPLICABLE: no exact multiplexer factor",
+      "recognition_s": 7.790993549861014e-06
+     },
+     "layered_contraction": {
+      "status": "NOT_APPLICABLE: no exact symmetric binary channel factor",
+      "recognition_s": 1.3249999028630555e-05
+     },
+     "support_closure": {
+      "status": "IDENTITY",
+      "seconds": 0.00018616700253915042,
+      "rounds": 1,
+      "deleted_states": 0,
+      "fixed_nonobserved_variables": 0,
+      "bijection_relations": 0,
+      "cycle_removed_states": 0,
+      "exact_local_entry_checks": 21,
+      "representatives": 3,
+      "reduced_factors": 3,
+      "reduced_query_coordinates": 8,
+      "scalar": "1",
+      "live_bytes_estimate": 8608,
+      "byte_ceiling": 134217728,
+      "trace": [
+       {
+        "iteration": 0,
+        "gac": {
+         "rounds": 1,
+         "deleted_states": 0
+        },
+        "quotient": {
+         "bijection_relations": 0,
+         "constant_factors": 0,
+         "constant_multiplier": "1",
+         "cycle_removed_root_states": 0,
+         "removed_inconsistent_rows": 0,
+         "exact_local_entry_checks": 21
+        },
+        "largest_component": 1
+       }
+      ]
+     },
+     "blocks": 0,
+     "separator_vars": 0,
+     "eliminated_vars": 3,
+     "elim_work": 50,
+     "const_blocks": 1,
+     "factorless": 0,
+     "N_S_log2": 0.0
+    },
+    "answers": [
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 0,
+      "guarantee": "EXACT",
+      "lo": "193/580",
+      "hi": "193/580",
+      "point": "193/580"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 1,
+      "guarantee": "EXACT",
+      "lo": "97/290",
+      "hi": "97/290",
+      "point": "97/290"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 2,
+      "guarantee": "EXACT",
+      "lo": "193/580",
+      "hi": "193/580",
+      "point": "193/580"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 0,
+      "guarantee": "EXACT",
+      "lo": "193/580",
+      "hi": "193/580",
+      "point": "193/580"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 1,
+      "guarantee": "EXACT",
+      "lo": "97/290",
+      "hi": "97/290",
+      "point": "97/290"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 2,
+      "guarantee": "EXACT",
+      "lo": "193/580",
+      "hi": "193/580",
+      "point": "193/580"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 0,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 1,
+      "guarantee": "EXACT",
+      "lo": "1/2",
+      "hi": "1/2",
+      "point": "1/2"
+     }
+    ],
+    "positive_mass_witness": true
    }
   },
   "worker_quotient": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-m",
     "pgm.backends.worker",
@@ -208,9 +1068,9 @@
     "--input",
     "fixtures/cyc3_card3.uai",
     "--output",
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/w_quotient.json",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/worker_quotient.json",
     "--deadline",
-    "62877.360152",
+    "66185.811238541",
     "--memory-mib",
     "1024",
     "--mode",
@@ -219,20 +1079,212 @@
     "0"
    ],
    "returncode": 0,
-   "seconds": 0.09,
+   "seconds": 0.087,
    "stdout_tail": "",
    "stderr_tail": "",
+   "stdout_full": "",
    "result": {
     "outcome": "COMPLETE",
     "guarantee": "DETERMINISTIC",
     "published": 8,
     "K": 8,
-    "route": null
+    "policy": "accepted",
+    "policy_version": null,
+    "attempts": [],
+    "mechanism": {
+     "native_attempts": 1,
+     "positive_mass_witness": true,
+     "structural": {
+      "evidence_expansion": {
+       "status": "NOT_APPLICABLE: nonbinary variable",
+       "recognition_s": 3.916997229680419e-06
+      },
+      "layered_contraction": {
+       "status": "NOT_APPLICABLE: no exact symmetric binary channel factor",
+       "recognition_s": 1.274999522138387e-05
+      },
+      "ancestral_response": {
+       "status": "NOT_APPLICABLE: no exact multiplexer factor",
+       "recognition_s": 7.709008059464395e-06
+      },
+      "support_closure": {
+       "status": "IDENTITY",
+       "seconds": 0.0001471659925300628,
+       "rounds": 1,
+       "deleted_states": 0,
+       "fixed_nonobserved_variables": 0,
+       "bijection_relations": 0,
+       "cycle_removed_states": 0,
+       "exact_local_entry_checks": 21,
+       "representatives": 3,
+       "reduced_factors": 3,
+       "reduced_query_coordinates": 8,
+       "scalar": "1",
+       "live_bytes_estimate": 8608,
+       "byte_ceiling": 134217728,
+       "trace": [
+        {
+         "iteration": 0,
+         "gac": {
+          "rounds": 1,
+          "deleted_states": 0
+         },
+         "quotient": {
+          "bijection_relations": 0,
+          "constant_factors": 0,
+          "constant_multiplier": "1",
+          "cycle_removed_root_states": 0,
+          "removed_inconsistent_rows": 0,
+          "exact_local_entry_checks": 21
+         },
+         "largest_component": 1
+        }
+       ]
+      }
+     },
+     "structural_info": {
+      "route": null
+     },
+     "canonical": {
+      "variables": 3,
+      "factors": 3,
+      "entries": 21,
+      "removed_fixed": 0,
+      "scalar_bits": 2
+     },
+     "features": {
+      "E": 29,
+      "A": 50,
+      "G": 15,
+      "Ddist": 114,
+      "ell": 1,
+      "B_bits": 4,
+      "n": 3
+     },
+     "exploration_account_s": 0.013468764233391198,
+     "estimation_refusals": [],
+     "joint_offer": {
+      "kind": "global",
+      "mode": "global",
+      "refused": null,
+      "created": false
+     },
+     "scheduling_policy": {
+      "old_policy": false,
+      "policy8": false,
+      "exploration_frac": 4,
+      "allowance_rule": {
+       "frac": 0.2,
+       "max_s": 4.0
+      },
+      "primary_probe": null,
+      "optional_deferrals": 0,
+      "min_work_s": 8.0,
+      "slice_s": 0.1,
+      "max_batches": 4
+     },
+     "exploration_used_s": 0.0,
+     "streams_created": 0,
+     "live_memory_named_bytes": {
+      "constructor_live": 1256,
+      "streams_retained": 0
+     },
+     "lift_only_candidates": [],
+     "note": "complete after lower of identity",
+     "constructor_budget_peak_bytes": 2752,
+     "constructor_budget_cumulative_bytes": 4412,
+     "constructor_live_at_end_bytes": 1256,
+     "constructor_live_ledger_identity": true,
+     "polls": 20,
+     "exact_discoveries": 0,
+     "fast_discoveries": 0,
+     "refinements": 0,
+     "rational_bit_peak": 4,
+     "representations_solved": [
+      "identity"
+     ],
+     "termination": "COMPLETE"
+    },
+    "answers": [
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "1498611600142243/4503599627370496",
+      "hi": "374652900035565/1125899906842624",
+      "point": "374652900035565/1125899906842624"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "1506376427085985/4503599627370496",
+      "hi": "753188213543001/2251799813685248",
+      "point": "1506376427085993/4503599627370496"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 2,
+      "guarantee": "DETERMINISTIC",
+      "lo": "1498611600142243/4503599627370496",
+      "hi": "374652900035565/1125899906842624",
+      "point": "1498611600142243/4503599627370496"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "1498611600142245/4503599627370496",
+      "hi": "1498611600142257/4503599627370496",
+      "point": "1498611600142257/4503599627370496"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "1506376427085987/4503599627370496",
+      "hi": "94148526692875/281474976710656",
+      "point": "753188213542997/2251799813685248"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 2,
+      "guarantee": "DETERMINISTIC",
+      "lo": "1498611600142245/4503599627370496",
+      "hi": "1498611600142257/4503599627370496",
+      "point": "1498611600142245/4503599627370496"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 0,
+      "guarantee": "DETERMINISTIC",
+      "lo": "281474976710655/562949953421312",
+      "hi": "281474976710657/562949953421312",
+      "point": "281474976710657/562949953421312"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 1,
+      "guarantee": "DETERMINISTIC",
+      "lo": "281474976710655/562949953421312",
+      "hi": "281474976710657/562949953421312",
+      "point": "281474976710655/562949953421312"
+     }
+    ],
+    "positive_mass_witness": true
    }
   },
   "worker_response": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-m",
     "pgm.backends.worker",
@@ -241,9 +1293,9 @@
     "--input",
     "fixtures/pos4.uai",
     "--output",
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/w_response.json",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/worker_response.json",
     "--deadline",
-    "62877.46885475",
+    "66185.916678041",
     "--memory-mib",
     "1024"
    ],
@@ -251,50 +1303,1441 @@
    "seconds": 24.091,
    "stdout_tail": "",
    "stderr_tail": "",
+   "stdout_full": "",
    "result": {
     "outcome": "COMPLETE",
     "guarantee": "PAC",
     "published": 8,
     "K": 8,
-    "route": "spectral_heatbath_response"
+    "policy": "accepted",
+    "policy_version": null,
+    "attempts": [],
+    "mechanism": {
+     "route": "spectral_heatbath_response",
+     "policy": "revised",
+     "refusal": null,
+     "canonical_charge_bytes": 1312,
+     "canonical_scalar": "1",
+     "witness": {
+      "eligible": true,
+      "refusal": null,
+      "l": -0.3956535476201819,
+      "u": 0.27005365243739465,
+      "width": 0.6657072000575766,
+      "width_exact": "1499039349058579/2251799813685248",
+      "margin_m": 0.6671463999712117,
+      "gap_g": 0.16678659999280293,
+      "m_exact": "3004560278311917/4503599627370496",
+      "g_exact": "3004560278311917/18014398509481984",
+      "dimension": 8,
+      "n": 4,
+      "proposal": {
+       "lambda_min_float": -0.39565354661918184,
+       "lambda_max_float": 0.2700536514363946,
+       "radius_norm": 4.163336342344337e-17,
+       "l": -0.3956535476201819,
+       "u": 0.27005365243739465,
+       "margin": 1.0010000416333636e-09
+      },
+      "policy": "revised",
+      "attempts": [
+       {
+        "attempt": 0,
+        "extra_margin": 0.0,
+        "l": -0.3956535476201819,
+        "u": 0.27005365243739465,
+        "width_float": 0.6657072000575766,
+        "lower_ok": true,
+        "upper_ok": true,
+        "min_pivot_lower": 7.821159941912011e-09,
+        "seconds": 0.0005004590057069436,
+        "gap_g_float": 0.16678659999280293
+       }
+      ],
+      "proof": {
+       "lower": {
+        "ok": true,
+        "min_pivot_lower": 2.5202413100888766e-08,
+        "failed_column": null,
+        "seconds": 0.0002522080030757934,
+        "max_factor_width": 2.3585267319345925e-10
+       },
+       "upper": {
+        "ok": true,
+        "min_pivot_lower": 7.821159941912011e-09,
+        "failed_column": null,
+        "seconds": 0.0002023330016527325,
+        "max_factor_width": 1.3307000865255512e-10
+       },
+       "seconds_verify": 0.0005004590057069436
+      },
+      "seconds": 0.0011651249951682985,
+      "seconds_construct": 0.0005836670025018975,
+      "bytes": 1344,
+      "retained_bytes": 1448,
+      "cache": {
+       "entries": 3,
+       "hits": 21,
+       "misses": 3,
+       "bytes_charged": 131072
+      },
+      "pairs": 4,
+      "blocks": 4,
+      "log_width_max": 8.271806125530277e-25,
+      "matrix_width_max": 3.308722450212111e-24,
+      "seconds_verify": 0.0005004590057069436
+     },
+     "x0": {
+      "rule": "per variable the argmax of the unary weight (ties: smallest state)",
+      "state": [
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     "p0": {
+      "log2_p0_lower": -4.2630344058337934,
+      "ln_p0_lower": -2.954910279033736,
+      "log2_Z_upper_canonical": 14.339850002884624,
+      "ln_W_x0_lower": 6.984716320118266
+     },
+     "burn_in": {
+      "steps": 84,
+      "beta": "1/2000000",
+      "log_num_lower": -15.292965697481142,
+      "log_den_upper": -0.18246548714279387,
+      "rule": "t = ceil([ln(2 beta) + ln(p0) / 2] / ln(1 - g)) with 1 / p0 - 1 < 1 / p0"
+     },
+     "certificate_cache": {
+      "entries": 4,
+      "hits": 29,
+      "misses": 4,
+      "bytes_charged": 131072
+     },
+     "response": {
+      "eta": "3004560278311917/7508159905682413",
+      "eta_float": 0.40017265429282756,
+      "eta_rule": "eta = n g / (1 + n g) (exact rational from the exact gap lower bound; theory section 4)",
+      "n_active": 4,
+      "n_q": 4,
+      "Q": 8,
+      "local_plan_rule": "M_j = ceil(2^14 (5/4)^(j - 1)), j = 1..64 (exact integers, strictly increasing; frozen before sampling)",
+      "local_plan_head": [
+       16384,
+       20480,
+       25600,
+       32000
+      ],
+      "local_plan_J": 64,
+      "local_plan_last": 20880974298,
+      "centers": {
+       "2": 2147483648
+      },
+      "B": {
+       "2": "1/4"
+      },
+      "risks": {
+       "beta": "1/2000000",
+       "raw_total": "1/4000000",
+       "moment_total": "1/8000000",
+       "mean_total": "1/8000000",
+       "weights": "w_j = 1 / (j (j + 1))",
+       "per_variable_moment": "delta w_j / (8 n_q)",
+       "per_coordinate_mean": "delta w_j / (8 Q)",
+       "declared_total": "129/130000000",
+       "declared_total_le_delta": true
+      },
+      "tilts": "81 exact rationals alpha = 2^k (1 + j / 8), k = -6..3, j = 0..7, plus 16; moment tilt -eta alpha on the normalized observable Y / B in [0, 1]; mean tilt +eta alpha on the centered response (C = 1)",
+      "checker": "checked_tilt.py = dgp10_theory/reference_checked_tilt.py (byte-identical copy; sha256 in FREEZE.json)",
+      "tail_s": 0.22999999999999998,
+      "tail_rule": "reserved finalization tail before sampling: tail_s = tail_base_s + tail_per_group_s x min(tail_groups_cap, 2 x distinct cardinalities); FROZEN from the development cost data (controls/dev/cost: certificate 0.012-0.015 s per group, snapshot read < 1 ms, intersection ~2 ms, publication ~20 ms at K = 256) with margins >= 2.5x",
+      "unavailable": null,
+      "observer_state": {
+       "configured": true,
+       "observing": false,
+       "valid": true,
+       "invalid_code": 0,
+       "invalid_reason": null,
+       "committed": 687660503,
+       "snapshots": 168,
+       "nq": 4,
+       "Q": 8
+      },
+      "executed": true,
+      "snapshots": [
+       {
+        "site": 0,
+        "var": 0,
+        "k": 2,
+        "j": 42,
+        "M": 154074396,
+        "count": 154074396,
+        "center": 2147483648
+       },
+       {
+        "site": 1,
+        "var": 1,
+        "k": 2,
+        "j": 42,
+        "M": 154074396,
+        "count": 154074396,
+        "center": 2147483648
+       },
+       {
+        "site": 2,
+        "var": 2,
+        "k": 2,
+        "j": 42,
+        "M": 154074396,
+        "count": 154074396,
+        "center": 2147483648
+       },
+       {
+        "site": 3,
+        "var": 3,
+        "k": 2,
+        "j": 42,
+        "M": 154074396,
+        "count": 154074396,
+        "center": 2147483648
+       }
+      ],
+      "local_counts": {
+       "min": 154074396,
+       "max": 154074396,
+       "completed_j": [
+        42
+       ],
+       "sites_without_checkpoint": 0
+      },
+      "groups": [
+       {
+        "M": 154074396,
+        "eta": "3004560278311917/7508159905682413",
+        "y_upper_norm": "12128827282525873083391/528677632314616563367936",
+        "B": "1/4",
+        "delta_m": "1/57792000000",
+        "delta_b": "1/115584000000",
+        "available": true,
+        "reason": null,
+        "moment": {
+         "U_norm": "107631656409819991/4611686018427387904",
+         "U": "107631656409819991/18446744073709551616",
+         "U_float": 0.00583472378538701,
+         "alpha": "1/64",
+         "tilt": "-3004560278311917/480522233963674432",
+         "rho": "1152755299626940649/1152921504606846976",
+         "mode": "checked",
+         "proof": {
+          "accepted": true,
+          "upper_mean": "107631656409819991/4611686018427387904",
+          "rho": "1152755299626940649/1152921504606846976",
+          "log_probability_upper": "-31552175242635646986864304345635144648915/283650261492962750509775898064751427584",
+          "log_delta_lower": "-468083160638639473874891/18889465931478580854784",
+          "proof": {
+           "accepted": true,
+           "diagonal_slack_0": "318394225272831635556612314824543/34625276061152679505587878181732352",
+           "diagonal_slack_1": "69694718094157775970774328981497586041749461359027794769728251071/176672239616109606083048963724133998588139714798270032404314849280",
+           "determinant_slack": "59819624666333681133652533582505429774259540479721148170464472738977857/162951379456373187222639900398815583396557065447482718198835225053929114205971021824",
+           "exp_0": {
+            "lo": "1",
+            "hi": "1"
+           },
+           "exp_1": {
+            "lo": "20282409603651670423947251286016/20409626690523277402841025062437",
+            "hi": "20282409603651670423947251286016/20409626690523277402841025062435"
+           },
+           "rho": "1152755299626940649/1152921504606846976",
+           "steps": 166
+          },
+          "steps": 1420
+         },
+         "attempts": [
+          {
+           "k": 0,
+           "U_norm": "418800219493463/18014398509481984",
+           "alpha": "1/64",
+           "accepted": false,
+           "reason": null
+          },
+          {
+           "k": 1,
+           "U_norm": "107631656409819991/4611686018427387904",
+           "alpha": "1/64",
+           "accepted": true,
+           "reason": null
+          }
+         ]
+        },
+        "mean": {
+         "v": "107631656409819991/18446744073709551616",
+         "alpha": "1/64",
+         "tilt": "3004560278311917/480522233963674432",
+         "rho": "1152922036797734657/1152921504606846976",
+         "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+         "R_float": 0.00010098547032784763,
+         "R_float_proposed": 0.00010098532487140794,
+         "proof": {
+          "accepted": true,
+          "radius_upper": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+          "rho": "1152922036797734657/1152921504606846976",
+          "log_rho_upper": "279021231722119927/604462909807314587353088",
+          "log_two_over_delta_upper": "31633249327616928810632839/1208925819614629174706176",
+          "supplied_radius": null,
+          "proof": {
+           "accepted": true,
+           "diagonal_slack_0": "7682414584195835023258360680170349997098648977363041095348253424384935781603139869/3257729297212580532296939006502606963101163391368055966860727530472834920860629336064",
+           "diagonal_slack_1": "1113469176207301440994589279052394381725920430773714937039268275689/2825526660222959173116335815715893045677209638503247310470623789056",
+           "determinant_slack": "23825390042856425329471891384934517518082795818299193154442212197672884429494625925068791629093802715343/66074599983881850352890190695673883110262697956092294020996578690219637349559037624900174373409540759161720247681024",
+           "exp_0": {
+            "lo": "20282409603651670423947251286016/20283149575515238094263424812281",
+            "hi": "20282409603651670423947251286016/20283149575515238094263424812279"
+           },
+           "exp_1": {
+            "lo": "20409626690523277402841025062435/20282409603651670423947251286016",
+            "hi": "20409626690523277402841025062437/20282409603651670423947251286016"
+           },
+           "rho": "1152922036797734657/1152921504606846976",
+           "steps": 241
+          },
+          "steps": 1239
+         }
+        },
+        "j": 42,
+        "k": 2,
+        "C": 2147483648,
+        "sites": [
+         0,
+         1,
+         2,
+         3
+        ],
+        "n_sites": 4,
+        "w_j": "1/1806",
+        "y_max": "12128827282525873083391/528677632314616563367936",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488"
+       }
+      ],
+      "n_groups": 1,
+      "n_certified": 1,
+      "checker_calls": 3,
+      "unavailable_sites": [],
+      "variables_with_response": 4,
+      "variables_raw_only": 0,
+      "conflicts": [],
+      "per_coordinate": [
+       {
+        "var": 0,
+        "state": 0,
+        "lo": "624463758509632472647585124251704742669829435/1249203045598093377117761300627910421364342784",
+        "hi": "4373012435777071651783303973066093942412385123/8744421319186653639824329104395372949550399488",
+        "mean_lo": "110288698076047361/220581497323651072",
+        "mean_hi": "55144349128965253/110290748661825536",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+        "arith_width": 8.245621106340102e-10,
+        "y_upper": 0.003727657702763941
+       },
+       {
+        "var": 0,
+        "state": 1,
+        "lo": "4371408883409581988041025131329279007138014365/8744421319186653639824329104395372949550399488",
+        "hi": "624739287088460904470176176376205678694513349/1249203045598093377117761300627910421364342784",
+        "mean_lo": "55146399532860283/110290748661825536",
+        "mean_hi": "110292799247603711/220581497323651072",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+        "arith_width": 8.245621106340102e-10,
+        "y_upper": 0.003727657702763941
+       },
+       {
+        "var": 1,
+        "state": 0,
+        "lo": "4371295885122489136212685186151098765547693213/8744421319186653639824329104395372949550399488",
+        "hi": "4373062011332037808684943406193103773240367971/8744421319186653639824329104395372949550399488",
+        "mean_lo": "330869845917282059/661744491970953216",
+        "mean_hi": "165434923231462127/330872245985476608",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+        "arith_width": 8.245511698553746e-10,
+        "y_upper": 0.0037280397119481873
+       },
+       {
+        "var": 1,
+        "state": 1,
+        "lo": "4371359307854615831139385698202269176310031517/8744421319186653639824329104395372949550399488",
+        "hi": "4373125434064164503611643918244274184002706275/8744421319186653639824329104395372949550399488",
+        "mean_lo": "165437322754014481/330872245985476608",
+        "mean_hi": "330874646053671157/661744491970953216",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+        "arith_width": 8.245511698553746e-10,
+        "y_upper": 0.0037280397119481873
+       },
+       {
+        "var": 2,
+        "state": 0,
+        "lo": "4371396662653491312390409837332056652971533469/8744421319186653639824329104395372949550399488",
+        "hi": "4373162787760724888799580005585086653459831651/8744421319186653639824329104395372949550399488",
+        "mean_lo": "110292490792299317/220581497323651072",
+        "mean_hi": "110292490946373713/220581497323651072",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+        "arith_width": 6.984919309616089e-10,
+        "y_upper": 0.00573545509643767
+       },
+       {
+        "var": 2,
+        "state": 1,
+        "lo": "4371258531425928751024749098810286296090567837/8744421319186653639824329104395372949550399488",
+        "hi": "4373024656533162327433919267063316296578866019/8744421319186653639824329104395372949550399488",
+        "mean_lo": "110289006377277359/220581497323651072",
+        "mean_hi": "110289006531351755/220581497323651072",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+        "arith_width": 6.984919309616089e-10,
+        "y_upper": 0.00573545509643767
+       },
+       {
+        "var": 3,
+        "state": 0,
+        "lo": "4371333824560501327760244415551090938288825501/8744421319186653639824329104395372949550399488",
+        "hi": "4373099949667734904169414583804120938777123683/8744421319186653639824329104395372949550399488",
+        "mean_lo": "330872717029413625/661744491970953216",
+        "mean_hi": "330872717491636813/661744491970953216",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+        "arith_width": 6.984919309616089e-10,
+        "y_upper": 0.002066115740963743
+       },
+       {
+        "var": 3,
+        "state": 1,
+        "lo": "4371321369518918735654914520591252010773275805/8744421319186653639824329104395372949550399488",
+        "hi": "4373087494626152312064084688844282011261573987/8744421319186653639824329104395372949550399488",
+        "mean_lo": "330871774479316403/661744491970953216",
+        "mean_hi": "330871774941539591/661744491970953216",
+        "R": "883059499662922014312593693914123789638499/8744421319186653639824329104395372949550399488",
+        "arith_width": 6.984919309616089e-10,
+        "y_upper": 0.002066115740963743
+       }
+      ],
+      "radius": {
+       "response_worst": 0.00010098588260890294,
+       "response_median": 0.00010098588260343256,
+       "raw_worst": 0.0004571315936489505,
+       "intersected_worst": 0.00010098588260890294,
+       "statistical_R_by_group": {
+        "42/2": 0.00010098547032784763
+       },
+       "arithmetic_width_max": 8.245621106340102e-10
+      },
+      "publication": {
+       "variables": 4,
+       "variables_published": 4,
+       "point_policy": {
+        "J_normalized": 4
+       },
+       "simplex_violations": 0,
+       "endpoint_violations": 0
+      }
+     },
+     "rate_model": {
+      "source": "absent: conservative default (no rate file requested)",
+      "steps_per_s": 2000000.0
+     },
+     "native_build": {
+      "source_sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+      "binary_sha256": "e50fb462037cb68d7eed1ddd9a3de430f87edc27a783bd878c2dff4887de64fb",
+      "compiler": "/usr/bin/clang",
+      "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+      "library": "heatbath_e0981f0b1620eb67.dylib",
+      "range_floor_log2": -900
+     },
+     "chain": "native",
+     "bytes": {
+      "witness": 1344,
+      "witness_retained": 1448,
+      "kernel": 5024,
+      "observer": 5540,
+      "occupation": 128,
+      "peak_admitted": 147424
+     },
+     "checkpoint_plan": {
+      "policy": "revised",
+      "N_floor": 46962489,
+      "N_1": 5870312,
+      "rho_N": "5/4",
+      "J_max": 64,
+      "plan": [
+       5870312,
+       7337890,
+       9172363,
+       11465454,
+       14331817,
+       17914771,
+       22393464,
+       27991829,
+       34989787,
+       43737233,
+       54671541,
+       68339427,
+       85424283,
+       106780354,
+       133475442,
+       166844302,
+       208555378,
+       260694222,
+       325867778,
+       407334722,
+       509168402,
+       636460503,
+       795575628,
+       994469535,
+       1243086919,
+       1553858649,
+       1942323311,
+       2427904139,
+       3034880173,
+       3793600216,
+       4742000270,
+       5927500337,
+       7409375422,
+       9261719277,
+       11577149096,
+       14471436370,
+       18089295462,
+       22611619328,
+       28264524160,
+       35330655200,
+       44163318999,
+       55204148749,
+       69005185936,
+       86256482420,
+       107820603025,
+       134775753781,
+       168469692226,
+       210587115283,
+       263233894103,
+       329042367629,
+       411302959536,
+       514128699420,
+       642660874275,
+       803326092843,
+       1004157616054,
+       1255197020067,
+       1568996275084,
+       1961245343854,
+       2451556679818,
+       3064445849772,
+       3830557312215,
+       4788196640269,
+       5985245800336,
+       7481557250420
+      ],
+      "delta_j": [
+       "1/8000000",
+       "1/24000000",
+       "1/48000000",
+       "1/80000000",
+       "1/120000000",
+       "1/168000000",
+       "1/224000000",
+       "1/288000000",
+       "1/360000000",
+       "1/440000000",
+       "1/528000000",
+       "1/624000000",
+       "1/728000000",
+       "1/840000000",
+       "1/960000000",
+       "1/1088000000",
+       "1/1224000000",
+       "1/1368000000",
+       "1/1520000000",
+       "1/1680000000",
+       "1/1848000000",
+       "1/2024000000",
+       "1/2208000000",
+       "1/2400000000",
+       "1/2600000000",
+       "1/2808000000",
+       "1/3024000000",
+       "1/3248000000",
+       "1/3480000000",
+       "1/3720000000",
+       "1/3968000000",
+       "1/4224000000",
+       "1/4488000000",
+       "1/4760000000",
+       "1/5040000000",
+       "1/5328000000",
+       "1/5624000000",
+       "1/5928000000",
+       "1/6240000000",
+       "1/6560000000",
+       "1/6888000000",
+       "1/7224000000",
+       "1/7568000000",
+       "1/7920000000",
+       "1/8280000000",
+       "1/8648000000",
+       "1/9024000000",
+       "1/9408000000",
+       "1/9800000000",
+       "1/10200000000",
+       "1/10608000000",
+       "1/11024000000",
+       "1/11448000000",
+       "1/11880000000",
+       "1/12320000000",
+       "1/12768000000",
+       "1/13224000000",
+       "1/13688000000",
+       "1/14160000000",
+       "1/14640000000",
+       "1/15128000000",
+       "1/15624000000",
+       "1/16128000000",
+       "1/16640000000"
+      ],
+      "beta": "1/2000000",
+      "delta_sample": "1/4000000",
+      "rate_steps_per_s": 2000000.0,
+      "rule": "N_j = ceil(rho_N^(j - 1) N_1), j = 1..J_max (finite, increasing; N_1 and rho_N frozen from development cost data before scoring)",
+      "risk_rule": "delta_sample / (j (j + 1)) (summable: sum_j < delta_sample)",
+      "risk_sum": "1/4062500",
+      "N1_rule": "N_1 = ceil(N_floor / 8) with N_floor = frozen rate x available sampling seconds (the DGP8 first checkpoint)",
+      "response_tail_s": 0.22999999999999998
+     },
+     "checkpoint_interrupted": {
+      "index": 23,
+      "reason": "deadline expired heat-bath batch checkpoint 23 (51200000 / 159115125)",
+      "steps_done": 687660503
+     },
+     "checkpoints": [
+      {
+       "index": 1,
+       "N": 5870312,
+       "delta_j": "1/8000000",
+       "radius": 0.0041804583294106044,
+       "max_width": 0.008360916658821209,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 0.24127337499521673,
+       "checkpoint_overhead_s": 0.00047274999087676406,
+       "counters": {
+        "resolved": 5870396,
+        "unresolved": 0,
+        "null_moves": 2980038,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 2,
+       "N": 7337890,
+       "delta_j": "1/24000000",
+       "radius": 0.003847568982467985,
+       "max_width": 0.00769513796493597,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 0.2908637920045294,
+       "checkpoint_overhead_s": 0.0002748329861788079,
+       "counters": {
+        "resolved": 7337974,
+        "unresolved": 0,
+        "null_moves": 3724851,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 3,
+       "N": 9172363,
+       "delta_j": "1/48000000",
+       "radius": 0.003501190226207031,
+       "max_width": 0.007002380452414062,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 0.3535566249920521,
+       "checkpoint_overhead_s": 0.0003095840074820444,
+       "counters": {
+        "resolved": 9172447,
+        "unresolved": 0,
+        "null_moves": 4655308,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 4,
+       "N": 11465454,
+       "delta_j": "1/80000000",
+       "radius": 0.003170412903679643,
+       "max_width": 0.006340825807359286,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 0.4339473339932738,
+       "checkpoint_overhead_s": 0.0002680000034160912,
+       "counters": {
+        "resolved": 11465538,
+        "unresolved": 0,
+        "null_moves": 5819348,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 5,
+       "N": 14331817,
+       "delta_j": "1/120000000",
+       "radius": 0.002862986991168806,
+       "max_width": 0.005725973982337612,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 0.5344097920024069,
+       "checkpoint_overhead_s": 0.00025633299082983285,
+       "counters": {
+        "resolved": 14331901,
+        "unresolved": 0,
+        "null_moves": 7273728,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 6,
+       "N": 17914771,
+       "delta_j": "1/168000000",
+       "radius": 0.0025808089328735965,
+       "max_width": 0.005161617865747193,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 0.6585733340034494,
+       "checkpoint_overhead_s": 0.00032787499367259443,
+       "counters": {
+        "resolved": 17914855,
+        "unresolved": 0,
+        "null_moves": 9090836,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 7,
+       "N": 22393464,
+       "delta_j": "1/224000000",
+       "radius": 0.002323587990953033,
+       "max_width": 0.004647175981906066,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 0.8102507089934079,
+       "checkpoint_overhead_s": 0.00026533300115261227,
+       "counters": {
+        "resolved": 22393548,
+        "unresolved": 0,
+        "null_moves": 11364326,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 8,
+       "N": 27991829,
+       "delta_j": "1/288000000",
+       "radius": 0.002090117241625161,
+       "max_width": 0.004180234483250322,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 0.9987455840018811,
+       "checkpoint_overhead_s": 0.0002530419878894463,
+       "counters": {
+        "resolved": 27991913,
+        "unresolved": 0,
+        "null_moves": 14205449,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 9,
+       "N": 34989787,
+       "delta_j": "1/360000000",
+       "radius": 0.0018788081666680895,
+       "max_width": 0.003757616333336179,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 1.2342588339961367,
+       "checkpoint_overhead_s": 0.00026287500804755837,
+       "counters": {
+        "resolved": 34989871,
+        "unresolved": 0,
+        "null_moves": 17756983,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 10,
+       "N": 43737233,
+       "delta_j": "1/440000000",
+       "radius": 0.0016879427987420883,
+       "max_width": 0.0033758855974841766,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 1.5301218340027845,
+       "checkpoint_overhead_s": 0.0003363330033607781,
+       "counters": {
+        "resolved": 43737317,
+        "unresolved": 0,
+        "null_moves": 22196437,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 11,
+       "N": 54671541,
+       "delta_j": "1/528000000",
+       "radius": 0.0015157994681375556,
+       "max_width": 0.003031598936275111,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 1.8983402919984655,
+       "checkpoint_overhead_s": 0.00030029199842829257,
+       "counters": {
+        "resolved": 54671625,
+        "unresolved": 0,
+        "null_moves": 27742565,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 12,
+       "N": 68339427,
+       "delta_j": "1/624000000",
+       "radius": 0.0013607176315721821,
+       "max_width": 0.0027214352631443643,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 2.3626502499973867,
+       "checkpoint_overhead_s": 0.0003307919978396967,
+       "counters": {
+        "resolved": 68339511,
+        "unresolved": 0,
+        "null_moves": 34679305,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 13,
+       "N": 85424283,
+       "delta_j": "1/728000000",
+       "radius": 0.0012211302635529793,
+       "max_width": 0.0024422605271059586,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 2.9443471249978757,
+       "checkpoint_overhead_s": 0.0003561249905033037,
+       "counters": {
+        "resolved": 85424367,
+        "unresolved": 0,
+        "null_moves": 43350575,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 14,
+       "N": 106780354,
+       "delta_j": "1/840000000",
+       "radius": 0.0010955785197584165,
+       "max_width": 0.002191157039516833,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 3.672456959000556,
+       "checkpoint_overhead_s": 0.00033045800228137523,
+       "counters": {
+        "resolved": 106780438,
+        "unresolved": 0,
+        "null_moves": 54195135,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 15,
+       "N": 133475442,
+       "delta_j": "1/960000000",
+       "radius": 0.00098271655484392,
+       "max_width": 0.00196543310968784,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 4.5978091249999125,
+       "checkpoint_overhead_s": 0.0003341249976074323,
+       "counters": {
+        "resolved": 133475526,
+        "unresolved": 0,
+        "null_moves": 67746421,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 16,
+       "N": 166844302,
+       "delta_j": "1/1088000000",
+       "radius": 0.0008813105091814823,
+       "max_width": 0.0017626210183629646,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 5.730080749999615,
+       "checkpoint_overhead_s": 0.00034458299342077225,
+       "counters": {
+        "resolved": 166844386,
+        "unresolved": 0,
+        "null_moves": 84688713,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 17,
+       "N": 208555378,
+       "delta_j": "1/1224000000",
+       "radius": 0.00079023432872482,
+       "max_width": 0.00158046865744964,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 7.1468867090006825,
+       "checkpoint_overhead_s": 0.0003624579985626042,
+       "counters": {
+        "resolved": 208555462,
+        "unresolved": 0,
+        "null_moves": 105863752,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 18,
+       "N": 260694222,
+       "delta_j": "1/1368000000",
+       "radius": 0.0007084638170028299,
+       "max_width": 0.0014169276340056597,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 8.930540208995808,
+       "checkpoint_overhead_s": 0.000367375003406778,
+       "counters": {
+        "resolved": 260694306,
+        "unresolved": 0,
+        "null_moves": 132331400,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 19,
+       "N": 325867778,
+       "delta_j": "1/1520000000",
+       "radius": 0.0006350698106285076,
+       "max_width": 0.0012701396212570152,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 11.136606999993091,
+       "checkpoint_overhead_s": 0.00035841700446326286,
+       "counters": {
+        "resolved": 325867862,
+        "unresolved": 0,
+        "null_moves": 165412467,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 20,
+       "N": 407334722,
+       "delta_j": "1/1680000000",
+       "radius": 0.0005692110677030151,
+       "max_width": 0.0011384221354060302,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 13.909100083998055,
+       "checkpoint_overhead_s": 0.00038587499875575304,
+       "counters": {
+        "resolved": 407334806,
+        "unresolved": 0,
+        "null_moves": 206772151,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 21,
+       "N": 509168402,
+       "delta_j": "1/1848000000",
+       "radius": 0.0005101271585901269,
+       "max_width": 0.0010202543171802538,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 17.40829241699248,
+       "checkpoint_overhead_s": 0.0004035419988213107,
+       "counters": {
+        "resolved": 509168486,
+        "unresolved": 0,
+        "null_moves": 258466755,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      },
+      {
+       "index": 22,
+       "N": 636460503,
+       "delta_j": "1/2024000000",
+       "radius": 0.0004571315936489505,
+       "max_width": 0.000914263187297901,
+       "published_rows": 8,
+       "variables_published": 4,
+       "enclosures": 0,
+       "completed": true,
+       "seconds": 21.762606125004822,
+       "checkpoint_overhead_s": 0.000374084003851749,
+       "counters": {
+        "resolved": 636460587,
+        "unresolved": 0,
+        "null_moves": 323094523,
+        "site_rejections": 0,
+        "exact_fallbacks": 0,
+        "fallback_extra_bits": 0,
+        "poll_returns": 0
+       }
+      }
+     ],
+     "checkpoints_declared": 64,
+     "checkpoints_completed": 22,
+     "sampling_stop": "work clock expired inside checkpoint 23",
+     "transitions": {
+      "total": 687660587,
+      "burn_in": 84,
+      "recorded": 687660503,
+      "native_resolved": 687660587,
+      "exact_fallbacks": 0,
+      "null_moves": 349089565,
+      "poll_returns": 0,
+      "steps_per_second": 29284858.42522826
+     },
+     "certificate": {
+      "type": "markov_heatbath_response",
+      "N": 636460503,
+      "radius": 0.0004571315936489505,
+      "checkpoint_index": 22,
+      "delta_j": "1/2024000000",
+      "beta": "1/2000000",
+      "total_failure_probability": "259/260000000",
+      "worst_radius_on_inventory": 0.00010098588260890294,
+      "publication": {
+       "variables": 4,
+       "variables_published": 4,
+       "point_policy": {
+        "J_normalized": 4
+       },
+       "simplex_violations": 0,
+       "endpoint_violations": 0
+      },
+      "note": "dependent-sample certificate; never mixed with the IID importance certificate; the union bound covers every DECLARED checkpoint (raw global + response local)"
+     },
+     "chain_record": {
+      "bytes_admitted": 5024,
+      "bytes_actual": 1064,
+      "owner_bytes": 10564,
+      "range": {
+       "floor_log2": -900,
+       "min_weight_log2_lower": -4.0,
+       "max_weight_log2_upper": 0.0,
+       "admitted": true,
+       "per_variable_min_log2": [
+        -3,
+        -3,
+        -4,
+        -2
+       ],
+       "n_variables": 4,
+       "exact_products_formed": 0,
+       "bound": "exact integer floor(log2) sums (a rigorous lower bound of the exact per-variable product; the exact product itself only where the floor / ceiling sums straddle 2^-900)",
+       "rule": "every scaled entry < 1 (no overflow; prefix products nonincreasing); min over variables of psi_min x prod min_f >= 2^-900 (exact comparison) -> every weight, prefix, cumulative sum and nonzero threshold product normal"
+      },
+      "scales": {
+       "unary_distinct": 1,
+       "pair_distinct": 1,
+       "unary_min": 1,
+       "unary_max": 1,
+       "pair_min": 3,
+       "pair_max": 3
+      },
+      "observer": {
+       "sites": [
+        0,
+        1,
+        2,
+        3
+       ],
+       "centers": [
+        2147483648,
+        2147483648,
+        2147483648,
+        2147483648
+       ],
+       "plan": [
+        16384,
+        20480,
+        25600,
+        32000,
+        40000,
+        50000,
+        62500,
+        78125,
+        97657,
+        122071,
+        152588,
+        190735,
+        238419,
+        298024,
+        372530,
+        465662,
+        582077,
+        727596,
+        909495,
+        1136869,
+        1421086,
+        1776357,
+        2220447,
+        2775558,
+        3469447,
+        4336809,
+        5421011,
+        6776264,
+        8470330,
+        10587912,
+        13234890,
+        16543613,
+        20679516,
+        25849395,
+        32311743,
+        40389679,
+        50487098,
+        63108873,
+        78886091,
+        98607614,
+        123259517,
+        154074396,
+        192592995,
+        240741244,
+        300926554,
+        376158193,
+        470197741,
+        587747176,
+        734683970,
+        918354962,
+        1147943702,
+        1434929628,
+        1793662035,
+        2242077543,
+        2802596929,
+        3503246161,
+        4379057702,
+        5473822127,
+        6842277658,
+        8552847073,
+        10691058841,
+        13363823551,
+        16704779439,
+        20880974298
+       ],
+       "nq": 4,
+       "Q": 8,
+       "J": 64,
+       "bytes_admitted": 5540,
+       "bytes_actual": 1444,
+       "state": {
+        "configured": true,
+        "observing": false,
+        "valid": true,
+        "invalid_code": 0,
+        "invalid_reason": null,
+        "committed": 687660503,
+        "snapshots": 168,
+        "nq": 4,
+        "Q": 8
+       }
+      }
+     },
+     "constructor_live_at_end_bytes": 1312,
+     "constructor_live_ledger_identity": true
+    },
+    "answers": [
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 0,
+      "guarantee": "PAC",
+      "lo": "624463758509632472647585124251704742669829435/1249203045598093377117761300627910421364342784",
+      "hi": "4373012435777071651783303973066093942412385123/8744421319186653639824329104395372949550399488",
+      "point": "4373012435777071651783303973066093942412385123/8744421319186653639824329104395372949550399488"
+     },
+     {
+      "var": 0,
+      "variable": 0,
+      "state": 1,
+      "guarantee": "PAC",
+      "lo": "4371408883409581988041025131329279007138014365/8744421319186653639824329104395372949550399488",
+      "hi": "624739287088460904470176176376205678694513349/1249203045598093377117761300627910421364342784",
+      "point": "4371408883409581988041025131329279007138014365/8744421319186653639824329104395372949550399488"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 0,
+      "guarantee": "PAC",
+      "lo": "4371295885122489136212685186151098765547693213/8744421319186653639824329104395372949550399488",
+      "hi": "4373062011332037808684943406193103773240367971/8744421319186653639824329104395372949550399488",
+      "point": "4373062011332037808684943406193103773240367971/8744421319186653639824329104395372949550399488"
+     },
+     {
+      "var": 1,
+      "variable": 1,
+      "state": 1,
+      "guarantee": "PAC",
+      "lo": "4371359307854615831139385698202269176310031517/8744421319186653639824329104395372949550399488",
+      "hi": "4373125434064164503611643918244274184002706275/8744421319186653639824329104395372949550399488",
+      "point": "4371359307854615831139385698202269176310031517/8744421319186653639824329104395372949550399488"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 0,
+      "guarantee": "PAC",
+      "lo": "4371396662653491312390409837332056652971533469/8744421319186653639824329104395372949550399488",
+      "hi": "4373162787760724888799580005585086653459831651/8744421319186653639824329104395372949550399488",
+      "point": "4373162787760724888799580005585086653459831651/8744421319186653639824329104395372949550399488"
+     },
+     {
+      "var": 2,
+      "variable": 2,
+      "state": 1,
+      "guarantee": "PAC",
+      "lo": "4371258531425928751024749098810286296090567837/8744421319186653639824329104395372949550399488",
+      "hi": "4373024656533162327433919267063316296578866019/8744421319186653639824329104395372949550399488",
+      "point": "4371258531425928751024749098810286296090567837/8744421319186653639824329104395372949550399488"
+     },
+     {
+      "var": 3,
+      "variable": 3,
+      "state": 0,
+      "guarantee": "PAC",
+      "lo": "4371333824560501327760244415551090938288825501/8744421319186653639824329104395372949550399488",
+      "hi": "4373099949667734904169414583804120938777123683/8744421319186653639824329104395372949550399488",
+      "point": "4373099949667734904169414583804120938777123683/8744421319186653639824329104395372949550399488"
+     },
+     {
+      "var": 3,
+      "variable": 3,
+      "state": 1,
+      "guarantee": "PAC",
+      "lo": "4371321369518918735654914520591252010773275805/8744421319186653639824329104395372949550399488",
+      "hi": "4373087494626152312064084688844282011261573987/8744421319186653639824329104395372949550399488",
+      "point": "4371321369518918735654914520591252010773275805/8744421319186653639824329104395372949550399488"
+     }
+    ],
+    "positive_mass_witness": true
    }
   },
   "specialists": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-c",
-    "import json; from pgm.specialists import cbi, sf, h4a, cqr, _bridge; out={};api, model = cbi.modules(); out['cbi']=dict(solve=callable(api.solve), verify=callable(api.verify), origin=api.__file__);core, routes, check = sf.modules(); out['sf']=dict(law=hasattr(core,'Law'), origin=core.__file__);out['h4a']=h4a.available();\ntry:\n    cqr.load_task('fixtures/asym2.uai'); out['cqr']='LOADED'\nexcept _bridge.SpecialistUnavailable as e:\n    out['cqr']=dict(kind=e.kind, reason=str(e))\nout['bridge_code_root']=str(_bridge.code_root()); print(json.dumps(out))"
+    "\nimport json, time\nfrom fractions import Fraction as Fr\nfrom pgm.specialists import cbi, sf, h4a, cqr, _bridge\nout = {}\napi, model = cbi.modules(); from cbi import generators as G\nobj = G.mesh(2, 2, 4, 6, Fr(1, 64), 3); res = api.solve(obj, \"all\", \"1/100\"); ver = api.verify(obj, res)\nout[\"cbi\"] = dict(status=res[\"status\"], verified=bool(ver[\"accepted\"]), queries=sorted(res[\"intervals\"]), origin=api.__file__)\ncore, routes, check = sf.modules()\nlaw = core.Law(3, [(1, 1), (2, 2)], [(4, 1), (3, 1)]); sym, how = law.antipodal(); Pint, _ = law.overlap_int(); r = Fr(1, 2); eps = Fr(1, 100)\nt_end = time.monotonic() + 60\ndef dl():\n    if time.monotonic() > t_end: raise RuntimeError(\"cooperative deadline\")\nroute, params, dec = core.select(law, r, eps, sym, Pint); rr = routes.run_route(law, r, route, params, sym, deadline=dl)\nrr[\"published\"] = [core.publish(lo, hi) for lo, hi in rr[\"intervals\"]]          # the checker reads the published grid enclosures (as sf.invoke does)\ntry:\n    chk = check.check(core.Law(3, [(1, 1), (2, 2)], [(4, 1), (3, 1)]), r, rr, sym); status = \"VERIFIED\"\nexcept check.CheckFailure as e:\n    status = \"FAILED: \" + str(e)\nout[\"sf\"] = dict(route=route, route_status=rr[\"status\"], checker=status, intervals=[(str(a), str(b)) for a, b in rr.get(\"intervals\", [])], origin=core.__file__)\nout[\"h4a\"] = h4a.available()\ntry:\n    cqr.load_task(\"fixtures/asym2.uai\"); out[\"cqr\"] = dict(kind=\"LOADED\")\nexcept _bridge.SpecialistUnavailable as e:\n    out[\"cqr\"] = dict(kind=e.kind, reason=str(e))\nout[\"bridge_code_root\"] = str(_bridge.code_root()); print(json.dumps(out))\n"
    ],
    "returncode": 0,
-   "seconds": 0.071,
-   "stdout_tail": "{\"cbi\": {\"solve\": true, \"verify\": true, \"origin\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/lib/python3.12/site-packages/cbi/api.py\"}, \"sf\": {\"law\": true, \"origin\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/lib/python3.12/site-packages/sf/core.py\"}, \"h4a\": {\"available\": false, \"build_dir\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/lib/python3.12/site-packages/build\", \"missing_kernels\": [\"h4point\", \"h4rect\", \"h4pcheck\"]}, \"cqr\": {\"kind\": \"UNAVAILABLE\", \"reason\": \"the CQR specialist is available only from a source checkout (code/cex/cqr; bare sibling imports)\"}, \"bridge_code_root\": \"None\"}\n",
-   "stderr_tail": ""
+   "seconds": 0.076,
+   "stdout_tail": "{\"cbi\": {\"status\": \"CERTIFIED\", \"verified\": true, \"queries\": [\"0\", \"1\", \"2\", \"3\"], \"origin\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/cbi/api.py\"}, \"sf\": {\"route\": \"E\", \"route_status\": \"OK\", \"checker\": \"VERIFIED\", \"intervals\": [[\"1/3\", \"1/3\"], [\"2/3\", \"2/3\"], [\"0\", \"0\"]], \"origin\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/sf/core.py\"}, \"h4a\": {\"available\": false, \"build_dir\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/build\", \"missing_kernels\": [\"h4point\", \"h4rect\", \"h4pcheck\"]}, \"cqr\": {\"kind\": \"UNAVAILABLE\", \"reason\": \"the CQR specialist is available only from a source checkout (code/cex/cqr; bare sibling imports)\"}, \"bridge_code_root\": \"None\"}\n",
+   "stderr_tail": "",
+   "stdout_full": "{\"cbi\": {\"status\": \"CERTIFIED\", \"verified\": true, \"queries\": [\"0\", \"1\", \"2\", \"3\"], \"origin\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/cbi/api.py\"}, \"sf\": {\"route\": \"E\", \"route_status\": \"OK\", \"checker\": \"VERIFIED\", \"intervals\": [[\"1/3\", \"1/3\"], [\"2/3\", \"2/3\"], [\"0\", \"0\"]], \"origin\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/sf/core.py\"}, \"h4a\": {\"available\": false, \"build_dir\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/build\", \"missing_kernels\": [\"h4point\", \"h4rect\", \"h4pcheck\"]}, \"cqr\": {\"kind\": \"UNAVAILABLE\", \"reason\": \"the CQR specialist is available only from a source checkout (code/cex/cqr; bare sibling imports)\"}, \"bridge_code_root\": \"None\"}\n",
+   "result": {
+    "cbi": {
+     "status": "CERTIFIED",
+     "verified": true,
+     "queries": [
+      "0",
+      "1",
+      "2",
+      "3"
+     ],
+     "origin": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/cbi/api.py"
+    },
+    "sf": {
+     "route": "E",
+     "route_status": "OK",
+     "checker": "VERIFIED",
+     "intervals": [
+      [
+       "1/3",
+       "1/3"
+      ],
+      [
+       "2/3",
+       "2/3"
+      ],
+      [
+       "0",
+       "0"
+      ]
+     ],
+     "origin": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/sf/core.py"
+    },
+    "h4a": {
+     "available": false,
+     "build_dir": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/build",
+     "missing_kernels": [
+      "h4point",
+      "h4rect",
+      "h4pcheck"
+     ]
+    },
+    "cqr": {
+     "kind": "UNAVAILABLE",
+     "reason": "the CQR specialist is available only from a source checkout (code/cex/cqr; bare sibling imports)"
+    },
+    "bridge_code_root": "None"
+   }
   },
   "native_cache_override": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-c",
-    "import os, pgm.runtime.resources as R, pgm.algorithms.structural.cex_executor as CX; print(R.native_cache_dir(os.path.dirname(CX.__file__)))"
+    "\nimport hashlib, json, os\nimport pgm.algorithms.structural.cex_executor as CX, pgm.algorithms.structural.stream_float as SF, pgm.runtime.resources as R\nprov = CX.build(); CX.load(prov); path = prov[\"loaded_binary_path\"]\nsp = SF.build(); SF._load_verified(sp); spath = os.path.join(R.native_cache_dir(os.path.dirname(SF.__file__)), \"stream_\" + sp[\"binary_sha256\"] + \".so\")\nprint(json.dumps(dict(cache_dir=R.native_cache_dir(os.path.dirname(CX.__file__)), loaded=path, under_override=path.startswith(os.environ[\"PGM_NATIVE_CACHE\"]),\n      identity_ok=(hashlib.sha256(open(path, \"rb\").read()).hexdigest() == prov[\"binary_sha256\"]), stream_loaded=spath, stream_under_override=(os.path.exists(spath) and spath.startswith(os.environ[\"PGM_NATIVE_CACHE\"])), record=str(CX.RECORD))))\n"
    ],
    "returncode": 0,
-   "seconds": 0.042,
-   "stdout_tail": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/alt_cache/structural\n",
-   "stderr_tail": ""
+   "seconds": 1.837,
+   "stdout_tail": "{\"cache_dir\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural\", \"loaded\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/cex_115bbd2e84edc3e1695e1dd5bc948c2b36b4869da660c8d097233622890783e5.dylib\", \"under_override\": true, \"identity_ok\": true, \"stream_loaded\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/stream_01c75feef62952848924dbd48216f39222ccaafbf307a6962d3e9c3f733daf2e.so\", \"stream_under_override\": true, \"record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/cex_build.json\"}\n",
+   "stderr_tail": "",
+   "stdout_full": "{\"cache_dir\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural\", \"loaded\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/cex_115bbd2e84edc3e1695e1dd5bc948c2b36b4869da660c8d097233622890783e5.dylib\", \"under_override\": true, \"identity_ok\": true, \"stream_loaded\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/stream_01c75feef62952848924dbd48216f39222ccaafbf307a6962d3e9c3f733daf2e.so\", \"stream_under_override\": true, \"record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/cex_build.json\"}\n",
+   "result": {
+    "cache_dir": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural",
+    "loaded": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/cex_115bbd2e84edc3e1695e1dd5bc948c2b36b4869da660c8d097233622890783e5.dylib",
+    "under_override": true,
+    "identity_ok": true,
+    "stream_loaded": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/stream_01c75feef62952848924dbd48216f39222ccaafbf307a6962d3e9c3f733daf2e.so",
+    "stream_under_override": true,
+    "record": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/alt_cache/structural/cex_build.json"
+   }
   },
   "native_build_locations": {
    "cmd": [
-    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/bin/python",
+    "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/bin/python",
     "-I",
     "-c",
     "import pgm.algorithms.structural.cex_executor as CX, pgm.algorithms.structural.stream_float as SF, pgm.algorithms.response.heatbath_native as HN, json, os; print(json.dumps(dict(cex_lib=str(CX.LIB), cex_lib_exists=os.path.exists(CX.LIB), cex_record=str(CX.RECORD), stream_lib=str(SF.LIB), stream_lib_exists=os.path.exists(SF.LIB), heat_record=str(HN.RECORD), heat_record_exists=os.path.exists(HN.RECORD))))"
    ],
    "returncode": 0,
-   "seconds": 0.047,
-   "stdout_tail": "{\"cex_lib\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libcex_kernel.dylib\", \"cex_lib_exists\": true, \"cex_record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/lib/python3.12/site-packages/pgm/algorithms/structural/cex_build.json\", \"stream_lib\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libstream_kernel.so\", \"stream_lib_exists\": false, \"heat_record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation/pgm-relocation-_zyzm9if/venv/lib/python3.12/site-packages/pgm/algorithms/response/heatbath_build.json\", \"heat_record_exists\": true}\n",
-   "stderr_tail": ""
+   "seconds": 0.085,
+   "stdout_tail": "{\"cex_lib\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libcex_kernel.dylib\", \"cex_lib_exists\": true, \"cex_record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/cex_build.json\", \"stream_lib\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libstream_kernel.so\", \"stream_lib_exists\": true, \"heat_record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/response/heatbath_build.json\", \"heat_record_exists\": true}\n",
+   "stderr_tail": "",
+   "stdout_full": "{\"cex_lib\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libcex_kernel.dylib\", \"cex_lib_exists\": true, \"cex_record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/cex_build.json\", \"stream_lib\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libstream_kernel.so\", \"stream_lib_exists\": true, \"heat_record\": \"/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/response/heatbath_build.json\", \"heat_record_exists\": true}\n",
+   "result": {
+    "cex_lib": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libcex_kernel.dylib",
+    "cex_lib_exists": true,
+    "cex_record": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/cex_build.json",
+    "stream_lib": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/structural/libstream_kernel.so",
+    "stream_lib_exists": true,
+    "heat_record": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation/pgm-relocation-e5i2xy39/venv/lib/python3.12/site-packages/pgm/algorithms/response/heatbath_build.json",
+    "heat_record_exists": true
+   }
   }
  },
- "verdict": "PASS"
+ "verdict": "PASS",
+ "failures": []
 }
