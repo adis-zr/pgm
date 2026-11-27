@@ -1,0 +1,401 @@
+RELOCATION DIFF (HEAD:<old path> -> <canonical path>): every changed line listed; expected = import statements, sys.path removals, native cache / build-record locations
+
+== code/cex/blockres/ancestral_response.py -> src/pgm/algorithms/block/ancestral_response.py  (408 lines before, 407 after; -2 +1)
+   -if NEWARM not in sys.path: sys.path.insert(0, NEWARM)
+   -import layered_contraction as LC
+   +from pgm.algorithms.block import layered_contraction as LC
+
+== code/cex/blockres/blockres.py -> src/pgm/algorithms/block/blockres.py  (329 lines before, 327 after; -3 +1)
+   -for p in (os.path.join(CODE, 'cex', 'newarm'), os.path.join(CODE, 'cex', 'cqr')):
+   -    if p not in sys.path: sys.path.insert(0, p)
+   -import core                                   # shared UAI reader (cex/newarm): re-exported as blockres.core for integrated.py and the control suites
+   +from pgm.algorithms.structural import core                                   # shared UAI reader (cex/newarm): re-exported as blockres.core for integrated.py and the control suites
+
+== code/cex/blockres/integrated.py -> src/pgm/algorithms/block/integrated.py  (1441 lines before, 1439 after; -9 +7)
+   -if HERE not in sys.path: sys.path.insert(0, HERE)
+   -import blockres as BR
+   -import support_closure as SC
+   -import signed_evidence as SE
+   -import layered_contraction as LC
+   -import ancestral_response as AR
+   -from blockres import tnow, Deadline, lg
+   +from pgm.algorithms.block import blockres as BR
+   +from pgm.algorithms.block import support_closure as SC
+   +from pgm.algorithms.block import signed_evidence as SE
+   +from pgm.algorithms.block import layered_contraction as LC
+   +from pgm.algorithms.block import ancestral_response as AR
+   +from pgm.algorithms.block.blockres import tnow, Deadline, lg
+   -    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm'))
+   -    import cex_executor as NCEX
+   +    from pgm.algorithms.structural import cex_executor as NCEX
+
+== code/cex/blockres/layered_contraction.py -> src/pgm/algorithms/block/layered_contraction.py  (431 lines before, 430 after; -2 +1)
+   -if NEWARM not in sys.path: sys.path.insert(0, NEWARM)
+   -import cex_executor as CX
+   +from pgm.algorithms.structural import cex_executor as CX
+
+== code/cex/blockres/signed_evidence.py -> src/pgm/algorithms/block/signed_evidence.py  (224 lines before, 224 after; -0 +0)
+
+== code/cex/blockres/support_closure.py -> src/pgm/algorithms/block/support_closure.py  (187 lines before, 187 after; -0 +0)
+
+== code/cex/hp/check_global.py -> src/pgm/algorithms/quotient/check_global.py  (188 lines before, 188 after; -8 +8)
+   -import coarse_envelope as CE
+   -import residual_max_envelope as RM
+   -from residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   -import joint_proposal as JP
+   -from joint_proposal import D, D_BITS, vol_of
+   -import check_joint as CJ
+   -from global_circuit import _bcast, ENTRY_C
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import residual_max_envelope as RM
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   +from pgm.algorithms.quotient import joint_proposal as JP
+   +from pgm.algorithms.quotient.joint_proposal import D, D_BITS, vol_of
+   +from pgm.algorithms.quotient import check_joint as CJ
+   +from pgm.algorithms.quotient.global_circuit import _bcast, ENTRY_C
+   -    from global_circuit import CircuitPlan
+   +    from pgm.algorithms.quotient.global_circuit import CircuitPlan
+
+== code/cex/hp/check_joint.py -> src/pgm/algorithms/quotient/check_joint.py  (321 lines before, 321 after; -9 +9)
+   -import coarse_envelope as CE
+   -import residual_max_envelope as RM
+   -from residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, MBITS
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import residual_max_envelope as RM
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, MBITS
+   -    import joint_proposal as JP
+   +    from pgm.algorithms.quotient import joint_proposal as JP
+   -    from joint_proposal import D
+   +    from pgm.algorithms.quotient.joint_proposal import D
+   -    from joint_proposal import D
+   +    from pgm.algorithms.quotient.joint_proposal import D
+   -    from joint_proposal import D
+   +    from pgm.algorithms.quotient.joint_proposal import D
+   -    import joint_proposal as JP
+   +    from pgm.algorithms.quotient import joint_proposal as JP
+   -    import joint_proposal as JP
+   +    from pgm.algorithms.quotient import joint_proposal as JP
+
+== code/cex/hp/check_residual.py -> src/pgm/algorithms/quotient/check_residual.py  (212 lines before, 212 after; -6 +6)
+   -import coarse_envelope as CE
+   -import residual_max_envelope as RM
+   -from residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, log2_up, MBITS
+   -from joint_proposal import vol_of, D, D_BITS, ENTRY_BYTES, Conditional
+   -from residual_bank import div_up, ONE, RefusedResidual
+   -import check_joint as CJ
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import residual_max_envelope as RM
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, log2_up, MBITS
+   +from pgm.algorithms.quotient.joint_proposal import vol_of, D, D_BITS, ENTRY_BYTES, Conditional
+   +from pgm.algorithms.quotient.residual_bank import div_up, ONE, RefusedResidual
+   +from pgm.algorithms.quotient import check_joint as CJ
+
+== code/cex/hp/checked_tilt.py -> src/pgm/algorithms/response/checked_tilt.py  (389 lines before, 389 after; -0 +0)
+
+== code/cex/hp/coarse_envelope.py -> src/pgm/algorithms/quotient/coarse_envelope.py  (914 lines before, 912 after; -5 +3)
+   -for p in (os.path.join(CODE, 'cex', 'newarm'),):
+   -    if p not in sys.path: sys.path.insert(0, p)
+   -import cex_executor as CX
+   +from pgm.algorithms.structural import cex_executor as CX
+   -            import lifted_decoder as _LD; K = _LD.Compact.one()
+   +            from pgm.algorithms.quotient import lifted_decoder as _LD; K = _LD.Compact.one()
+   -    sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); import core as CORE
+   +    from pgm.algorithms.structural import core as CORE
+
+== code/cex/hp/cost_model.py -> src/pgm/algorithms/quotient/cost_model.py  (101 lines before, 101 after; -0 +0)
+
+== code/cex/hp/global_circuit.py -> src/pgm/algorithms/quotient/global_circuit.py  (291 lines before, 291 after; -6 +6)
+   -import coarse_envelope as CE
+   -import residual_max_envelope as RM
+   -from residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   -import joint_proposal as JP
+   -from joint_proposal import D, D_BITS, vol_of, RefusedJoint
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import residual_max_envelope as RM
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   +from pgm.algorithms.quotient import joint_proposal as JP
+   +from pgm.algorithms.quotient.joint_proposal import D, D_BITS, vol_of, RefusedJoint
+   -    import reservation as RV
+   +    from pgm.algorithms.quotient import reservation as RV
+
+== code/cex/hp/global_optimize.py -> src/pgm/algorithms/quotient/global_optimize.py  (136 lines before, 136 after; -4 +4)
+   -import coarse_envelope as CE
+   -import joint_proposal as JP, joint_optimize as JO
+   -from joint_proposal import D, D_BITS, Conditional, Proposal, vol_of, RefusedJoint
+   -import global_circuit as GC
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import joint_proposal as JP, joint_optimize as JO
+   +from pgm.algorithms.quotient.joint_proposal import D, D_BITS, Conditional, Proposal, vol_of, RefusedJoint
+   +from pgm.algorithms.quotient import global_circuit as GC
+
+== code/cex/hp/global_stream.py -> src/pgm/algorithms/quotient/global_stream.py  (184 lines before, 184 after; -6 +6)
+   -import pac_actions as PA
+   -from pac_actions import StreamRefused, tnow, Deadline, inf, log2
+   -import integrated as IG, coarse_envelope as CE
+   -import joint_proposal as JP, joint_optimize as JO, joint_stream as JS
+   -import global_circuit as GC, global_optimize as GO, check_global as CG
+   -from residual_max_envelope import ZERO, norm_up, mul_exact, log2_up, to_fraction
+   +from pgm.algorithms.quotient import pac_actions as PA
+   +from pgm.algorithms.quotient.pac_actions import StreamRefused, tnow, Deadline, inf, log2
+   +from pgm.algorithms.block import integrated as IG; from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import joint_proposal as JP, joint_optimize as JO, joint_stream as JS
+   +from pgm.algorithms.quotient import global_circuit as GC, global_optimize as GO, check_global as CG
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, mul_exact, log2_up, to_fraction
+
+== code/cex/hp/grouped_envelope.py -> src/pgm/algorithms/quotient/grouped_envelope.py  (103 lines before, 103 after; -1 +1)
+   -import coarse_envelope as CE
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+
+== code/cex/hp/heatbath_exact.py -> src/pgm/algorithms/response/heatbath_exact.py  (135 lines before, 135 after; -1 +1)
+   -import coarse_envelope as CE
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+
+== code/cex/hp/heatbath_native.py -> src/pgm/algorithms/response/heatbath_native.py  (342 lines before, 343 after; -5 +6)
+   -import coarse_envelope as CE
+   -import heatbath_exact as HX
+   -import reservation as RV
+   -HERE = os.path.dirname(os.path.abspath(__file__)); SRC = os.path.join(HERE, 'heatbath_native.c'); RECORD = os.path.join(HERE, 'heatbath_build.json')
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.response import heatbath_exact as HX
+   +from pgm.algorithms.quotient import reservation as RV
+   +from pgm.runtime.resources import native_cache_dir, writable_home
+   +HERE = os.path.dirname(os.path.abspath(__file__)); SRC = os.path.join(HERE, 'heatbath_native.c'); RECORD = os.path.join(writable_home(HERE), 'heatbath_build.json')
+   -    cc = os.environ.get('CC', 'clang'); sh = _sha(SRC); cache = os.path.join(HERE, 'native_cache'); os.makedirs(cache, exist_ok=True); digest = hashlib.sha256((sh + json.dumps(FLAGS) + cc).encode()).hexdigest()[:16]; lib = os.pat
+   +    cc = os.environ.get('CC', 'clang'); sh = _sha(SRC); cache = native_cache_dir(HERE); os.makedirs(cache, exist_ok=True); digest = hashlib.sha256((sh + json.dumps(FLAGS) + cc).encode()).hexdigest()[:16]; lib = os.path.join(cache
+
+== code/cex/hp/joint_optimize.py -> src/pgm/algorithms/quotient/joint_optimize.py  (179 lines before, 179 after; -6 +6)
+   -import coarse_envelope as CE
+   -import residual_max_envelope as RM
+   -from residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   -import joint_proposal as JP
+   -import joint_witness as JW
+   -from joint_proposal import D, D_BITS, Conditional, Proposal, RefusedJoint, vol_of
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import residual_max_envelope as RM
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   +from pgm.algorithms.quotient import joint_proposal as JP
+   +from pgm.algorithms.quotient import joint_witness as JW
+   +from pgm.algorithms.quotient.joint_proposal import D, D_BITS, Conditional, Proposal, RefusedJoint, vol_of
+
+== code/cex/hp/joint_proposal.py -> src/pgm/algorithms/quotient/joint_proposal.py  (349 lines before, 349 after; -6 +6)
+   -import coarse_envelope as CE
+   -import residual_max_envelope as RM
+   -from residual_max_envelope import MBITS, ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import residual_max_envelope as RM
+   +from pgm.algorithms.quotient.residual_max_envelope import MBITS, ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   -    import joint_optimize as JO
+   +    from pgm.algorithms.quotient import joint_optimize as JO
+   -        import check_joint as CJ
+   +        from pgm.algorithms.quotient import check_joint as CJ
+   -        import check_joint as CJ
+   +        from pgm.algorithms.quotient import check_joint as CJ
+
+== code/cex/hp/joint_stream.py -> src/pgm/algorithms/quotient/joint_stream.py  (356 lines before, 356 after; -5 +5)
+   -import pac_actions as PA
+   -from pac_actions import Stream, StreamRefused, canon_to_model, tnow, Deadline, inf, log2
+   -import integrated as IG, blockres as BR, coarse_envelope as CE
+   -import joint_proposal as JP, joint_witness as JW, joint_optimize as JO, check_joint as CJ
+   -from residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, log2_up
+   +from pgm.algorithms.quotient import pac_actions as PA
+   +from pgm.algorithms.quotient.pac_actions import Stream, StreamRefused, canon_to_model, tnow, Deadline, inf, log2
+   +from pgm.algorithms.block import integrated as IG, blockres as BR; from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import joint_proposal as JP, joint_witness as JW, joint_optimize as JO, check_joint as CJ
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, log2_up
+
+== code/cex/hp/joint_witness.py -> src/pgm/algorithms/quotient/joint_witness.py  (108 lines before, 108 after; -7 +7)
+   -import coarse_envelope as CE
+   -import residual_max_envelope as RM
+   -from residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   -import joint_proposal as JP
+   -from joint_proposal import JTable, D, D_BITS, ENTRY_BYTES, RefusedJoint, vol_of
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import residual_max_envelope as RM
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, sum_up, lead, log2_up
+   +from pgm.algorithms.quotient import joint_proposal as JP
+   +from pgm.algorithms.quotient.joint_proposal import JTable, D, D_BITS, ENTRY_BYTES, RefusedJoint, vol_of
+   -        import check_joint as CJ; bind = CJ.certify_sources(M_par, prop, srcs, z=z, power=(2 if mode == 'sum' else 1), cards=cards)            # DGP6 repair (finding 1): the sources are bound to the EXPECTED inventory (roles / ax
+   +        from pgm.algorithms.quotient import check_joint as CJ; bind = CJ.certify_sources(M_par, prop, srcs, z=z, power=(2 if mode == 'sum' else 1), cards=cards)            # DGP6 repair (finding 1): the sources are bound to the E
+   -    import check_joint as CJ
+   +    from pgm.algorithms.quotient import check_joint as CJ
+
+== code/cex/hp/lifted_decoder.py -> src/pgm/algorithms/quotient/lifted_decoder.py  (186 lines before, 186 after; -1 +1)
+   -import coarse_envelope as CE
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+
+== code/cex/hp/lp_worker.py -> src/pgm/algorithms/quotient/lp_worker.py  (36 lines before, 36 after; -0 +0)
+
+== code/cex/hp/markov_certificate.py -> src/pgm/algorithms/response/markov_certificate.py  (149 lines before, 149 after; -3 +3)
+   -import spectral_witness as SW
+   +from pgm.algorithms.response import spectral_witness as SW
+   -    from coarse_envelope import epsilon_safe_points
+   +    from pgm.algorithms.quotient.coarse_envelope import epsilon_safe_points
+   -    from coarse_envelope import epsilon_safe_points
+   +    from pgm.algorithms.quotient.coarse_envelope import epsilon_safe_points
+
+== code/cex/hp/pac_actions.py -> src/pgm/algorithms/quotient/pac_actions.py  (793 lines before, 791 after; -10 +8)
+   -for p in (HERE, BR_DIR):
+   -    if p not in sys.path: sys.path.insert(0, p)
+   -import integrated as IG                      # the accepted engine, unchanged
+   -import blockres as BR
+   -import support_closure as SC, signed_evidence as SE, layered_contraction as LC, ancestral_response as AR
+   -import coarse_envelope as CE, lifted_decoder as LD
+   -from blockres import tnow, Deadline
+   +from pgm.algorithms.block import integrated as IG                      # the accepted engine, unchanged
+   +from pgm.algorithms.block import blockres as BR
+   +from pgm.algorithms.block import support_closure as SC, signed_evidence as SE, layered_contraction as LC, ancestral_response as AR
+   +from pgm.algorithms.quotient import coarse_envelope as CE, lifted_decoder as LD
+   +from pgm.algorithms.block.blockres import tnow, Deadline
+   -                import grouped_envelope as GE; t0 = tnow(); clk = CE.Clock(deadline, {}); B_ = o.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES)
+   +                from pgm.algorithms.quotient import grouped_envelope as GE; t0 = tnow(); clk = CE.Clock(deadline, {}); B_ = o.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES)
+   -        import residual_max_envelope as RM, grouped_envelope as GE
+   +        from pgm.algorithms.quotient import residual_max_envelope as RM, grouped_envelope as GE
+   -            import grouped_envelope as GE; return GE.grouped_upper_weight(self.M_par, self.Cz, self.grouped['tables'])
+   +            from pgm.algorithms.quotient import grouped_envelope as GE; return GE.grouped_upper_weight(self.M_par, self.Cz, self.grouped['tables'])
+
+== code/cex/hp/reservation.py -> src/pgm/algorithms/quotient/reservation.py  (85 lines before, 85 after; -1 +1)
+   -import coarse_envelope as CE
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+
+== code/cex/hp/residual_bank.py -> src/pgm/algorithms/quotient/residual_bank.py  (227 lines before, 227 after; -4 +4)
+   -import coarse_envelope as CE
+   -import residual_max_envelope as RM
+   -from residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, lead, log2_up, MBITS
+   -from joint_proposal import vol_of, D, D_BITS, ENTRY_BYTES
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import residual_max_envelope as RM
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, from_fraction_up, to_fraction, mul_exact, ge_exact, lead, log2_up, MBITS
+   +from pgm.algorithms.quotient.joint_proposal import vol_of, D, D_BITS, ENTRY_BYTES
+
+== code/cex/hp/residual_local.py -> src/pgm/algorithms/quotient/residual_local.py  (189 lines before, 189 after; -5 +5)
+   -import coarse_envelope as CE
+   -import joint_proposal as JP, joint_optimize as JO, global_optimize as GO
+   -from joint_proposal import vol_of, D, D_BITS, Conditional, Proposal
+   -from residual_max_envelope import log2_up
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import joint_proposal as JP, joint_optimize as JO, global_optimize as GO
+   +from pgm.algorithms.quotient.joint_proposal import vol_of, D, D_BITS, Conditional, Proposal
+   +from pgm.algorithms.quotient.residual_max_envelope import log2_up
+   -    import check_residual as CR
+   +    from pgm.algorithms.quotient import check_residual as CR
+
+== code/cex/hp/residual_max_envelope.py -> src/pgm/algorithms/quotient/residual_max_envelope.py  (504 lines before, 504 after; -1 +1)
+   -import coarse_envelope as CE
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+
+== code/cex/hp/residual_stream.py -> src/pgm/algorithms/quotient/residual_stream.py  (236 lines before, 236 after; -7 +7)
+   -import pac_actions as PA
+   -from pac_actions import StreamRefused, tnow, Deadline, inf, log2
+   -import integrated as IG, coarse_envelope as CE
+   -import joint_proposal as JP, joint_optimize as JO, joint_stream as JS
+   -import global_optimize as GO
+   -import residual_bank as RB, residual_local as RL, check_residual as CR
+   -from residual_max_envelope import ZERO, norm_up, mul_exact, log2_up, to_fraction, ge_exact
+   +from pgm.algorithms.quotient import pac_actions as PA
+   +from pgm.algorithms.quotient.pac_actions import StreamRefused, tnow, Deadline, inf, log2
+   +from pgm.algorithms.block import integrated as IG; from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import joint_proposal as JP, joint_optimize as JO, joint_stream as JS
+   +from pgm.algorithms.quotient import global_optimize as GO
+   +from pgm.algorithms.quotient import residual_bank as RB, residual_local as RL, check_residual as CR
+   +from pgm.algorithms.quotient.residual_max_envelope import ZERO, norm_up, mul_exact, log2_up, to_fraction, ge_exact
+
+== code/cex/hp/response_certificate.py -> src/pgm/algorithms/response/response_certificate.py  (171 lines before, 171 after; -2 +2)
+   -import coarse_envelope as CE
+   -import checked_tilt as CT
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.response import checked_tilt as CT
+
+== code/cex/hp/spectral_heatbath_run.py -> src/pgm/algorithms/response/spectral_heatbath_run.py  (270 lines before, 270 after; -4 +4)
+   -HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm')); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirna
+   -import coarse_envelope as CE, core as CORE
+   -import spectral_witness as SW, heatbath_exact as HX, heatbath_native as HN, markov_certificate as MC, response_certificate as RC
+   -from pac_actions import tnow
+   +HERE = os.path.dirname(os.path.abspath(__file__))
+   +from pgm.algorithms.quotient import coarse_envelope as CE; from pgm.algorithms.structural import core as CORE
+   +from pgm.algorithms.response import spectral_witness as SW, heatbath_exact as HX, heatbath_native as HN, markov_certificate as MC, response_certificate as RC
+   +from pgm.algorithms.quotient.pac_actions import tnow
+
+== code/cex/hp/spectral_witness.py -> src/pgm/algorithms/response/spectral_witness.py  (335 lines before, 335 after; -2 +2)
+   -import coarse_envelope as CE
+   -import reservation as RV
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import reservation as RV
+
+== code/cex/hp/unified_pac_planner.py -> src/pgm/algorithms/quotient/unified_pac_planner.py  (572 lines before, 572 after; -10 +10)
+   -HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
+   -import unified_planner as UP
+   -from unified_planner import tnow, Clock, Budget, Refused, Defect, CE, CM, T_PROCESS_START
+   -import pac_actions as PA
+   -import integrated as IG
+   -import joint_stream as JS
+   -import joint_proposal as JP
+   -import global_stream as GS
+   -import residual_stream as RS
+   +HERE = os.path.dirname(os.path.abspath(__file__))
+   +from pgm.algorithms.quotient import unified_planner as UP
+   +from pgm.algorithms.quotient.unified_planner import tnow, Clock, Budget, Refused, Defect, CE, CM, T_PROCESS_START
+   +from pgm.algorithms.quotient import pac_actions as PA
+   +from pgm.algorithms.block import integrated as IG
+   +from pgm.algorithms.quotient import joint_stream as JS
+   +from pgm.algorithms.quotient import joint_proposal as JP
+   +from pgm.algorithms.quotient import global_stream as GS
+   +from pgm.algorithms.quotient import residual_stream as RS
+   -    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), 'cex', 'newarm')); import core as CORE
+   +    from pgm.algorithms.structural import core as CORE
+
+== code/cex/hp/unified_planner.py -> src/pgm/algorithms/quotient/unified_planner.py  (510 lines before, 509 after; -5 +4)
+   -if HERE not in sys.path: sys.path.insert(0, HERE)
+   -import coarse_envelope as CE
+   -import cost_model as CM
+   -from coarse_envelope import F, tnow, bits, Refused, Defect, Clock, Budget, checked_mul, fl
+   +from pgm.algorithms.quotient import coarse_envelope as CE
+   +from pgm.algorithms.quotient import cost_model as CM
+   +from pgm.algorithms.quotient.coarse_envelope import F, tnow, bits, Refused, Defect, Clock, Budget, checked_mul, fl
+   -    sys.path.insert(0, os.path.join(CODE, 'cex', 'newarm')); import core as CORE
+   +    from pgm.algorithms.structural import core as CORE
+
+== code/cex/newarm/cex_executor.py -> src/pgm/algorithms/structural/cex_executor.py  (292 lines before, 293 after; -2 +3)
+   -BASE = Path(__file__).resolve().parent; SRC = BASE / 'cex_kernel.cpp'; LIB = BASE / 'libcex_kernel.dylib'; RECORD = BASE / 'cex_build.json'
+   +from pgm.runtime.resources import native_cache_dir, writable_home
+   +BASE = Path(__file__).resolve().parent; SRC = BASE / 'cex_kernel.cpp'; LIB = Path(writable_home(BASE)) / 'libcex_kernel.dylib'; RECORD = Path(writable_home(BASE)) / 'cex_build.json'   # source with the implementation; build targe
+   -    cache = BASE / 'native_cache'; cache.mkdir(exist_ok=True); path = cache / ('cex_%s.dylib' % digest)
+   +    cache = Path(native_cache_dir(BASE)); cache.mkdir(parents=True, exist_ok=True); path = cache / ('cex_%s.dylib' % digest)
+
+== code/cex/newarm/core.py -> src/pgm/algorithms/structural/core.py  (275 lines before, 275 after; -4 +4)
+   -    import dag,planning,geometry
+   +    from pgm.algorithms.structural import dag, planning, geometry
+   -    import dag,support,stream,stream_float,cex_executor,resource,sys
+   +    import resource, sys; from pgm.algorithms.structural import dag, support, stream, stream_float, cex_executor
+   -    import dag,reduction
+   +    from pgm.algorithms.structural import dag, reduction
+   -        import forest
+   +        from pgm.algorithms.structural import forest
+
+== code/cex/newarm/dag.py -> src/pgm/algorithms/structural/dag.py  (394 lines before, 394 after; -0 +0)
+
+== code/cex/newarm/forest.py -> src/pgm/algorithms/structural/forest.py  (365 lines before, 365 after; -0 +0)
+
+== code/cex/newarm/geometry.py -> src/pgm/algorithms/structural/geometry.py  (277 lines before, 277 after; -0 +0)
+
+== code/cex/newarm/planning.py -> src/pgm/algorithms/structural/planning.py  (39 lines before, 39 after; -0 +0)
+
+== code/cex/newarm/reduction.py -> src/pgm/algorithms/structural/reduction.py  (184 lines before, 184 after; -0 +0)
+
+== code/cex/newarm/stream.py -> src/pgm/algorithms/structural/stream.py  (351 lines before, 351 after; -0 +0)
+
+== code/cex/newarm/stream_float.py -> src/pgm/algorithms/structural/stream_float.py  (173 lines before, 174 after; -4 +5)
+   -import stream
+   +from pgm.algorithms.structural import stream
+   +from pgm.runtime.resources import native_cache_dir, writable_home
+   -LIB=BASE/'libstream_kernel.so'
+   +LIB=Path(writable_home(BASE))/'libstream_kernel.so'
+   - src=BASE/'stream_kernel.cpp'; record=BASE/'stream_build.json'
+   + src=BASE/'stream_kernel.cpp'; record=Path(writable_home(BASE))/'stream_build.json'
+   - cache=BASE/'native_cache';cache.mkdir(exist_ok=True)
+   + cache=Path(native_cache_dir(BASE));cache.mkdir(parents=True,exist_ok=True)
+
+== code/cex/newarm/support.py -> src/pgm/algorithms/structural/support.py  (255 lines before, 255 after; -0 +0)
+
+== code/gbidi/supervise.py -> src/pgm/runtime/supervise.py  (234 lines before, 234 after; -0 +0)
+
+TOTAL: 47 modules; -156 +148 changed lines

@@ -1,0 +1,305 @@
+{
+ "generated_by": "documentation/consolidation/step1/tools/relocate_closures.py",
+ "modules": {
+  "code/cex/blockres/ancestral_response.py": {
+   "canonical": "src/pgm/algorithms/block/ancestral_response.py",
+   "module": "pgm.algorithms.block.ancestral_response",
+   "shim": "code/cex/blockres/ancestral_response.py"
+  },
+  "code/cex/blockres/blockres.py": {
+   "canonical": "src/pgm/algorithms/block/blockres.py",
+   "module": "pgm.algorithms.block.blockres",
+   "shim": "code/cex/blockres/blockres.py"
+  },
+  "code/cex/blockres/integrated.py": {
+   "canonical": "src/pgm/algorithms/block/integrated.py",
+   "module": "pgm.algorithms.block.integrated",
+   "shim": "code/cex/blockres/integrated.py"
+  },
+  "code/cex/blockres/layered_contraction.py": {
+   "canonical": "src/pgm/algorithms/block/layered_contraction.py",
+   "module": "pgm.algorithms.block.layered_contraction",
+   "shim": "code/cex/blockres/layered_contraction.py"
+  },
+  "code/cex/blockres/signed_evidence.py": {
+   "canonical": "src/pgm/algorithms/block/signed_evidence.py",
+   "module": "pgm.algorithms.block.signed_evidence",
+   "shim": "code/cex/blockres/signed_evidence.py"
+  },
+  "code/cex/blockres/support_closure.py": {
+   "canonical": "src/pgm/algorithms/block/support_closure.py",
+   "module": "pgm.algorithms.block.support_closure",
+   "shim": "code/cex/blockres/support_closure.py"
+  },
+  "code/cex/hp/check_global.py": {
+   "canonical": "src/pgm/algorithms/quotient/check_global.py",
+   "module": "pgm.algorithms.quotient.check_global",
+   "shim": "code/cex/hp/check_global.py"
+  },
+  "code/cex/hp/check_joint.py": {
+   "canonical": "src/pgm/algorithms/quotient/check_joint.py",
+   "module": "pgm.algorithms.quotient.check_joint",
+   "shim": "code/cex/hp/check_joint.py"
+  },
+  "code/cex/hp/check_residual.py": {
+   "canonical": "src/pgm/algorithms/quotient/check_residual.py",
+   "module": "pgm.algorithms.quotient.check_residual",
+   "shim": "code/cex/hp/check_residual.py"
+  },
+  "code/cex/hp/checked_tilt.py": {
+   "canonical": "src/pgm/algorithms/response/checked_tilt.py",
+   "module": "pgm.algorithms.response.checked_tilt",
+   "shim": "code/cex/hp/checked_tilt.py"
+  },
+  "code/cex/hp/coarse_envelope.py": {
+   "canonical": "src/pgm/algorithms/quotient/coarse_envelope.py",
+   "module": "pgm.algorithms.quotient.coarse_envelope",
+   "shim": "code/cex/hp/coarse_envelope.py"
+  },
+  "code/cex/hp/cost_model.py": {
+   "canonical": "src/pgm/algorithms/quotient/cost_model.py",
+   "module": "pgm.algorithms.quotient.cost_model",
+   "shim": "code/cex/hp/cost_model.py"
+  },
+  "code/cex/hp/global_circuit.py": {
+   "canonical": "src/pgm/algorithms/quotient/global_circuit.py",
+   "module": "pgm.algorithms.quotient.global_circuit",
+   "shim": "code/cex/hp/global_circuit.py"
+  },
+  "code/cex/hp/global_optimize.py": {
+   "canonical": "src/pgm/algorithms/quotient/global_optimize.py",
+   "module": "pgm.algorithms.quotient.global_optimize",
+   "shim": "code/cex/hp/global_optimize.py"
+  },
+  "code/cex/hp/global_stream.py": {
+   "canonical": "src/pgm/algorithms/quotient/global_stream.py",
+   "module": "pgm.algorithms.quotient.global_stream",
+   "shim": "code/cex/hp/global_stream.py"
+  },
+  "code/cex/hp/grouped_envelope.py": {
+   "canonical": "src/pgm/algorithms/quotient/grouped_envelope.py",
+   "module": "pgm.algorithms.quotient.grouped_envelope",
+   "shim": "code/cex/hp/grouped_envelope.py"
+  },
+  "code/cex/hp/heatbath_exact.py": {
+   "canonical": "src/pgm/algorithms/response/heatbath_exact.py",
+   "module": "pgm.algorithms.response.heatbath_exact",
+   "shim": "code/cex/hp/heatbath_exact.py"
+  },
+  "code/cex/hp/heatbath_native.py": {
+   "canonical": "src/pgm/algorithms/response/heatbath_native.py",
+   "module": "pgm.algorithms.response.heatbath_native",
+   "shim": "code/cex/hp/heatbath_native.py"
+  },
+  "code/cex/hp/joint_optimize.py": {
+   "canonical": "src/pgm/algorithms/quotient/joint_optimize.py",
+   "module": "pgm.algorithms.quotient.joint_optimize",
+   "shim": "code/cex/hp/joint_optimize.py"
+  },
+  "code/cex/hp/joint_proposal.py": {
+   "canonical": "src/pgm/algorithms/quotient/joint_proposal.py",
+   "module": "pgm.algorithms.quotient.joint_proposal",
+   "shim": "code/cex/hp/joint_proposal.py"
+  },
+  "code/cex/hp/joint_stream.py": {
+   "canonical": "src/pgm/algorithms/quotient/joint_stream.py",
+   "module": "pgm.algorithms.quotient.joint_stream",
+   "shim": "code/cex/hp/joint_stream.py"
+  },
+  "code/cex/hp/joint_witness.py": {
+   "canonical": "src/pgm/algorithms/quotient/joint_witness.py",
+   "module": "pgm.algorithms.quotient.joint_witness",
+   "shim": "code/cex/hp/joint_witness.py"
+  },
+  "code/cex/hp/lifted_decoder.py": {
+   "canonical": "src/pgm/algorithms/quotient/lifted_decoder.py",
+   "module": "pgm.algorithms.quotient.lifted_decoder",
+   "shim": "code/cex/hp/lifted_decoder.py"
+  },
+  "code/cex/hp/lp_worker.py": {
+   "canonical": "src/pgm/algorithms/quotient/lp_worker.py",
+   "module": "pgm.algorithms.quotient.lp_worker",
+   "shim": "code/cex/hp/lp_worker.py"
+  },
+  "code/cex/hp/markov_certificate.py": {
+   "canonical": "src/pgm/algorithms/response/markov_certificate.py",
+   "module": "pgm.algorithms.response.markov_certificate",
+   "shim": "code/cex/hp/markov_certificate.py"
+  },
+  "code/cex/hp/pac_actions.py": {
+   "canonical": "src/pgm/algorithms/quotient/pac_actions.py",
+   "module": "pgm.algorithms.quotient.pac_actions",
+   "shim": "code/cex/hp/pac_actions.py"
+  },
+  "code/cex/hp/reservation.py": {
+   "canonical": "src/pgm/algorithms/quotient/reservation.py",
+   "module": "pgm.algorithms.quotient.reservation",
+   "shim": "code/cex/hp/reservation.py"
+  },
+  "code/cex/hp/residual_bank.py": {
+   "canonical": "src/pgm/algorithms/quotient/residual_bank.py",
+   "module": "pgm.algorithms.quotient.residual_bank",
+   "shim": "code/cex/hp/residual_bank.py"
+  },
+  "code/cex/hp/residual_local.py": {
+   "canonical": "src/pgm/algorithms/quotient/residual_local.py",
+   "module": "pgm.algorithms.quotient.residual_local",
+   "shim": "code/cex/hp/residual_local.py"
+  },
+  "code/cex/hp/residual_max_envelope.py": {
+   "canonical": "src/pgm/algorithms/quotient/residual_max_envelope.py",
+   "module": "pgm.algorithms.quotient.residual_max_envelope",
+   "shim": "code/cex/hp/residual_max_envelope.py"
+  },
+  "code/cex/hp/residual_stream.py": {
+   "canonical": "src/pgm/algorithms/quotient/residual_stream.py",
+   "module": "pgm.algorithms.quotient.residual_stream",
+   "shim": "code/cex/hp/residual_stream.py"
+  },
+  "code/cex/hp/response_certificate.py": {
+   "canonical": "src/pgm/algorithms/response/response_certificate.py",
+   "module": "pgm.algorithms.response.response_certificate",
+   "shim": "code/cex/hp/response_certificate.py"
+  },
+  "code/cex/hp/spectral_heatbath_run.py": {
+   "canonical": "src/pgm/algorithms/response/spectral_heatbath_run.py",
+   "module": "pgm.algorithms.response.spectral_heatbath_run",
+   "shim": "code/cex/hp/spectral_heatbath_run.py"
+  },
+  "code/cex/hp/spectral_witness.py": {
+   "canonical": "src/pgm/algorithms/response/spectral_witness.py",
+   "module": "pgm.algorithms.response.spectral_witness",
+   "shim": "code/cex/hp/spectral_witness.py"
+  },
+  "code/cex/hp/unified_pac_planner.py": {
+   "canonical": "src/pgm/algorithms/quotient/unified_pac_planner.py",
+   "module": "pgm.algorithms.quotient.unified_pac_planner",
+   "shim": "code/cex/hp/unified_pac_planner.py"
+  },
+  "code/cex/hp/unified_planner.py": {
+   "canonical": "src/pgm/algorithms/quotient/unified_planner.py",
+   "module": "pgm.algorithms.quotient.unified_planner",
+   "shim": "code/cex/hp/unified_planner.py"
+  },
+  "code/cex/newarm/cex_executor.py": {
+   "canonical": "src/pgm/algorithms/structural/cex_executor.py",
+   "module": "pgm.algorithms.structural.cex_executor",
+   "shim": "code/cex/newarm/cex_executor.py"
+  },
+  "code/cex/newarm/core.py": {
+   "canonical": "src/pgm/algorithms/structural/core.py",
+   "module": "pgm.algorithms.structural.core",
+   "shim": "code/cex/newarm/core.py"
+  },
+  "code/cex/newarm/dag.py": {
+   "canonical": "src/pgm/algorithms/structural/dag.py",
+   "module": "pgm.algorithms.structural.dag",
+   "shim": "code/cex/newarm/dag.py"
+  },
+  "code/cex/newarm/forest.py": {
+   "canonical": "src/pgm/algorithms/structural/forest.py",
+   "module": "pgm.algorithms.structural.forest",
+   "shim": "code/cex/newarm/forest.py"
+  },
+  "code/cex/newarm/geometry.py": {
+   "canonical": "src/pgm/algorithms/structural/geometry.py",
+   "module": "pgm.algorithms.structural.geometry",
+   "shim": "code/cex/newarm/geometry.py"
+  },
+  "code/cex/newarm/planning.py": {
+   "canonical": "src/pgm/algorithms/structural/planning.py",
+   "module": "pgm.algorithms.structural.planning",
+   "shim": "code/cex/newarm/planning.py"
+  },
+  "code/cex/newarm/reduction.py": {
+   "canonical": "src/pgm/algorithms/structural/reduction.py",
+   "module": "pgm.algorithms.structural.reduction",
+   "shim": "code/cex/newarm/reduction.py"
+  },
+  "code/cex/newarm/stream.py": {
+   "canonical": "src/pgm/algorithms/structural/stream.py",
+   "module": "pgm.algorithms.structural.stream",
+   "shim": "code/cex/newarm/stream.py"
+  },
+  "code/cex/newarm/stream_float.py": {
+   "canonical": "src/pgm/algorithms/structural/stream_float.py",
+   "module": "pgm.algorithms.structural.stream_float",
+   "shim": "code/cex/newarm/stream_float.py"
+  },
+  "code/cex/newarm/support.py": {
+   "canonical": "src/pgm/algorithms/structural/support.py",
+   "module": "pgm.algorithms.structural.support",
+   "shim": "code/cex/newarm/support.py"
+  },
+  "code/gbidi/supervise.py": {
+   "canonical": "src/pgm/runtime/supervise.py",
+   "module": "pgm.runtime.supervise",
+   "shim": "code/gbidi/supervise.py"
+  }
+ },
+ "resources": {
+  "code/cex/hp/PHASE_RATES.json": "src/pgm/algorithms/quotient/PHASE_RATES.json",
+  "code/cex/hp/PHASE_RATES_R1.json": "src/pgm/algorithms/quotient/PHASE_RATES_R1.json",
+  "code/cex/hp/heatbath_native.c": "src/pgm/algorithms/response/heatbath_native.c",
+  "code/cex/newarm/cex_build.json": "src/pgm/algorithms/structural/cex_build.json",
+  "code/cex/newarm/cex_kernel.cpp": "src/pgm/algorithms/structural/cex_kernel.cpp",
+  "code/cex/newarm/libcex_kernel.dylib": "src/pgm/algorithms/structural/libcex_kernel.dylib",
+  "code/cex/newarm/libstream_kernel.so": "src/pgm/algorithms/structural/libstream_kernel.so",
+  "code/cex/newarm/stream_build.json": "src/pgm/algorithms/structural/stream_build.json",
+  "code/cex/newarm/stream_kernel.cpp": "src/pgm/algorithms/structural/stream_kernel.cpp"
+ },
+ "shims": {
+  "code/cex/blockres/ancestral_response.py": "pgm.algorithms.block.ancestral_response",
+  "code/cex/blockres/blockres.py": "pgm.algorithms.block.blockres",
+  "code/cex/blockres/integrated.py": "pgm.algorithms.block.integrated",
+  "code/cex/blockres/layered_contraction.py": "pgm.algorithms.block.layered_contraction",
+  "code/cex/blockres/signed_evidence.py": "pgm.algorithms.block.signed_evidence",
+  "code/cex/blockres/support_closure.py": "pgm.algorithms.block.support_closure",
+  "code/cex/hp/check_global.py": "pgm.algorithms.quotient.check_global",
+  "code/cex/hp/check_joint.py": "pgm.algorithms.quotient.check_joint",
+  "code/cex/hp/check_residual.py": "pgm.algorithms.quotient.check_residual",
+  "code/cex/hp/checked_tilt.py": "pgm.algorithms.response.checked_tilt",
+  "code/cex/hp/coarse_envelope.py": "pgm.algorithms.quotient.coarse_envelope",
+  "code/cex/hp/cost_model.py": "pgm.algorithms.quotient.cost_model",
+  "code/cex/hp/global_circuit.py": "pgm.algorithms.quotient.global_circuit",
+  "code/cex/hp/global_optimize.py": "pgm.algorithms.quotient.global_optimize",
+  "code/cex/hp/global_stream.py": "pgm.algorithms.quotient.global_stream",
+  "code/cex/hp/grouped_envelope.py": "pgm.algorithms.quotient.grouped_envelope",
+  "code/cex/hp/heatbath_exact.py": "pgm.algorithms.response.heatbath_exact",
+  "code/cex/hp/heatbath_native.py": "pgm.algorithms.response.heatbath_native",
+  "code/cex/hp/joint_optimize.py": "pgm.algorithms.quotient.joint_optimize",
+  "code/cex/hp/joint_proposal.py": "pgm.algorithms.quotient.joint_proposal",
+  "code/cex/hp/joint_stream.py": "pgm.algorithms.quotient.joint_stream",
+  "code/cex/hp/joint_witness.py": "pgm.algorithms.quotient.joint_witness",
+  "code/cex/hp/lifted_decoder.py": "pgm.algorithms.quotient.lifted_decoder",
+  "code/cex/hp/lp_worker.py": "pgm.algorithms.quotient.lp_worker",
+  "code/cex/hp/markov_certificate.py": "pgm.algorithms.response.markov_certificate",
+  "code/cex/hp/pac_actions.py": "pgm.algorithms.quotient.pac_actions",
+  "code/cex/hp/reservation.py": "pgm.algorithms.quotient.reservation",
+  "code/cex/hp/residual_bank.py": "pgm.algorithms.quotient.residual_bank",
+  "code/cex/hp/residual_local.py": "pgm.algorithms.quotient.residual_local",
+  "code/cex/hp/residual_max_envelope.py": "pgm.algorithms.quotient.residual_max_envelope",
+  "code/cex/hp/residual_stream.py": "pgm.algorithms.quotient.residual_stream",
+  "code/cex/hp/response_certificate.py": "pgm.algorithms.response.response_certificate",
+  "code/cex/hp/spectral_heatbath_run.py": "pgm.algorithms.response.spectral_heatbath_run",
+  "code/cex/hp/spectral_witness.py": "pgm.algorithms.response.spectral_witness",
+  "code/cex/hp/unified_pac_planner.py": "pgm.algorithms.quotient.unified_pac_planner",
+  "code/cex/hp/unified_planner.py": "pgm.algorithms.quotient.unified_planner",
+  "code/cex/newarm/cex_executor.py": "pgm.algorithms.structural.cex_executor",
+  "code/cex/newarm/core.py": "pgm.algorithms.structural.core",
+  "code/cex/newarm/dag.py": "pgm.algorithms.structural.dag",
+  "code/cex/newarm/forest.py": "pgm.algorithms.structural.forest",
+  "code/cex/newarm/geometry.py": "pgm.algorithms.structural.geometry",
+  "code/cex/newarm/planning.py": "pgm.algorithms.structural.planning",
+  "code/cex/newarm/reduction.py": "pgm.algorithms.structural.reduction",
+  "code/cex/newarm/stream.py": "pgm.algorithms.structural.stream",
+  "code/cex/newarm/stream_float.py": "pgm.algorithms.structural.stream_float",
+  "code/cex/newarm/support.py": "pgm.algorithms.structural.support",
+  "code/gbidi/supervise.py": "pgm.runtime.supervise"
+ },
+ "untracked_moves": {
+  "code/cex/hp/heatbath_build.json": "src/pgm/algorithms/response/heatbath_build.json",
+  "code/cex/hp/native_cache/": "src/pgm/algorithms/response/native_cache/",
+  "code/cex/newarm/native_cache/": "src/pgm/algorithms/structural/native_cache/"
+ }
+}

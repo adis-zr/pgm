@@ -6,11 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-HP = Path(__file__).resolve().parents[1] / "code" / "cex" / "hp"
-sys.path.insert(0, str(HP))
-import coarse_envelope as CE
-import spectral_heatbath_run as runner
-import spectral_witness as witness
+from pgm.algorithms.quotient import coarse_envelope as CE
+from pgm.algorithms.response import spectral_heatbath_run as runner
+from pgm.algorithms.response import spectral_witness as witness
 
 
 class CertificateCacheCleanupTests(unittest.TestCase):

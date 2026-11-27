@@ -1,0 +1,143 @@
+{
+ "candidate": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/parity_commit3.json",
+ "candidate_commit": "302ee54e3a4a21c5a541d0a7e20449036a84b856",
+ "cases": {
+  "block/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "block/asym2_exact_mode": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "block/bip4": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "block/cyc3": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "block/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "quotient/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "quotient/cyc3_deterministic": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "response/bip4_refused_hard_zero": {
+   "differences": [],
+   "outcome": "REFUSED",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "response/pos4_exact_mode_ineligible": {
+   "differences": [],
+   "outcome": "INELIGIBLE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "response/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "structural/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "structural/asym2_evidence": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 2,
+   "status": "IDENTICAL"
+  },
+  "structural/bip4_stream": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/bip4_support": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/cyc3": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  }
+ },
+ "differences": 0,
+ "fixtures_identical": true,
+ "reference": "/Users/adis/Workspace/pgm-consolidate/tests/parity/reference_f8197e6.json",
+ "reference_commit": "f8197e6b1e90286b8554a3088a0594b9178a3595",
+ "response_prefix": {
+  "cyc3_card3": {
+   "differences": [],
+   "layout": {
+    "candidate": "canonical",
+    "reference": "legacy"
+   },
+   "status": "IDENTICAL"
+  },
+  "pos4": {
+   "differences": [],
+   "layout": {
+    "candidate": "canonical",
+    "reference": "legacy"
+   },
+   "status": "IDENTICAL"
+  }
+ },
+ "verdict": "IDENTICAL",
+ "wall_limited": {
+  "block/pos4": {
+   "candidate_outcome": "COMPLETE",
+   "candidate_published": 8,
+   "differing": [],
+   "reference_outcome": "COMPLETE",
+   "reference_published": 8,
+   "status": "IDENTICAL_INVARIANTS"
+  },
+  "response/pos4": {
+   "candidate_outcome": "COMPLETE",
+   "candidate_published": 8,
+   "differing": [],
+   "reference_outcome": "COMPLETE",
+   "reference_published": 8,
+   "status": "IDENTICAL_INVARIANTS"
+  }
+ }
+}

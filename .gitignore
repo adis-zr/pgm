@@ -28,3 +28,8 @@ code/cex/hp/heatbath_build.json
 # Local package build products
 /build/
 /dist/
+
+# consolidation step 1: native caches / host build records live with the owning implementation under src/pgm/algorithms
+src/pgm/algorithms/*/native_cache/
+src/pgm/algorithms/response/heatbath_build.json
+src/pgm/algorithms/response/REFERENCE_CHECKED_TILT_SELFTEST.json

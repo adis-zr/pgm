@@ -8,16 +8,12 @@ from ..validation.publication import AdapterRefused
 
 
 def module():
-    from ..runtime.legacy_paths import install_paths
-    install_paths()
-    import spectral_heatbath_run
+    from ..algorithms.response import spectral_heatbath_run
     return spectral_heatbath_run
 
 
 def native_module():
-    from ..runtime.legacy_paths import install_paths
-    install_paths()
-    import heatbath_native
+    from ..algorithms.response import heatbath_native
     return heatbath_native
 
 
@@ -26,9 +22,7 @@ def run(bound, context: AdapterContext) -> dict:
         raise AdapterRefused("INELIGIBLE", "response backend requires a PAC-permitted request")
     runner = module()
     memory_policy(runner.CE, context.memory_bytes)
-    from ..runtime.legacy_paths import install_paths
-    install_paths()
-    import integrated
+    from ..algorithms.block import integrated
     memory_policy(integrated, context.memory_bytes)
     left = remaining(context.deadline)
     return runner.solve_response(bound.model, bound.binding, budget=left, admission_stop=max(0.0, left - 0.35),

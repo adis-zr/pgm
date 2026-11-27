@@ -10,9 +10,8 @@ from .base import AdapterContext, memory_policy, remaining
 
 
 def modules():
-    from ..runtime.legacy_paths import install_paths
-    install_paths()
-    import unified_pac_planner, core
+    from ..algorithms.quotient import unified_pac_planner
+    from ..algorithms.structural import core
     return unified_pac_planner, core
 
 

@@ -8,11 +8,9 @@ import tracemalloc
 from types import SimpleNamespace
 import unittest
 
-HP = Path(__file__).resolve().parents[1] / "code" / "cex" / "hp"
-sys.path.insert(0, str(HP))
-import coarse_envelope as CE
-import heatbath_exact as exact
-import heatbath_native as native
+from pgm.algorithms.quotient import coarse_envelope as CE
+from pgm.algorithms.response import heatbath_exact as exact
+from pgm.algorithms.response import heatbath_native as native
 
 
 def coprime_model():

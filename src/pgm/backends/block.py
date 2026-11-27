@@ -12,9 +12,7 @@ DEFAULT_ROUTE_BY_MODE = {"auto": "auto", "deterministic": "exact", "exact": "exa
 
 
 def module():
-    from ..runtime.legacy_paths import install_paths
-    install_paths()
-    import integrated
+    from ..algorithms.block import integrated
     return integrated
 
 

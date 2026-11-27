@@ -7,16 +7,12 @@ from .base import AdapterContext, memory_policy, remaining
 
 
 def modules():
-    from ..runtime.legacy_paths import install_paths
-    install_paths()
-    import core
+    from ..algorithms.structural import core
     return core
 
 
 def native_modules():
-    from ..runtime.legacy_paths import install_paths
-    install_paths()
-    import cex_executor, stream_float
+    from ..algorithms.structural import cex_executor, stream_float
     return cex_executor, stream_float
 
 

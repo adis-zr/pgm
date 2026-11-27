@@ -26,10 +26,10 @@ LIBDAI = (
 REFERENCE = HERE / "reference/previous_accepted_cells.json"
 EPS = F(1, 200)
 GENERATED = {
-    "code/cex/newarm/cex_build.json",
-    "code/cex/newarm/stream_build.json",
-    "code/cex/newarm/libcex_kernel.dylib",
-    "code/cex/newarm/libstream_kernel.so",
+    "src/pgm/algorithms/structural/cex_build.json",
+    "src/pgm/algorithms/structural/stream_build.json",
+    "src/pgm/algorithms/structural/libcex_kernel.dylib",
+    "src/pgm/algorithms/structural/libstream_kernel.so",
 }
 HARNESS = [
     "run_suite.py",
@@ -52,16 +52,16 @@ def dump(p, v):
 
 def host_files(warm=False):
     # Freeze the active ignored host build too; stale unused caches are irrelevant.
-    active = ["code/cex/hp/heatbath_build.json"]
+    active = ["src/pgm/algorithms/response/heatbath_build.json"]
     record = REPO / active[0]
     if not record.is_file():
         raise RuntimeError("Build the heat-bath kernel during setup before freezing")
     heat = json.loads(record.read_text())
     if Path(heat["library"]).name != heat["library"]:
         raise ValueError("Invalid heat-bath library path")
-    if heat["source_sha256"] != sha(REPO / "code/cex/hp/heatbath_native.c"):
+    if heat["source_sha256"] != sha(REPO / "src/pgm/algorithms/response/heatbath_native.c"):
         raise RuntimeError("Heat-bath build is stale")
-    active.append("code/cex/hp/native_cache/" + heat["library"])
+    active.append("src/pgm/algorithms/response/native_cache/" + heat["library"])
     if sha(REPO / active[-1]) != heat["binary_sha256"]:
         raise RuntimeError("Heat-bath binary identity mismatch")
     for record_name, source_name, binary_name, prefix, suffix in [
@@ -80,7 +80,7 @@ def host_files(warm=False):
             base / binary_name
         ):
             raise RuntimeError("Native source/build identity mismatch: " + record_name)
-        rel = "code/cex/newarm/native_cache/" + prefix + d["binary_sha256"] + suffix
+        rel = "src/pgm/algorithms/structural/native_cache/" + prefix + d["binary_sha256"] + suffix
         if warm and not (REPO / rel).exists():
             (REPO / rel).parent.mkdir(exist_ok=True)
             (REPO / rel).write_bytes((base / binary_name).read_bytes())
@@ -283,11 +283,11 @@ def freeze():
         "CC"
     ), "Set CC explicitly to the qualified native C compiler used at setup"
     host_files(warm=True)
-    heat = json.loads((REPO / "code/cex/hp/heatbath_build.json").read_text())
+    heat = json.loads((REPO / "src/pgm/algorithms/response/heatbath_build.json").read_text())
     assert (
         heat["compiler"] == os.environ["CC"]
     ), "CC differs from the qualified heat-bath build"
-    cex = json.loads((REPO / "code/cex/newarm/cex_build.json").read_text())
+    cex = json.loads((REPO / "src/pgm/algorithms/structural/cex_build.json").read_text())
     changes = subprocess.check_output(
         ["git", "status", "--porcelain", "--untracked-files=all"], cwd=REPO, text=True
     ).splitlines()
@@ -420,7 +420,7 @@ def run_cell(task, arm, rep, frozen):
                 str(folder / "side.json"),
                 alg,
             ]
-        build = json.loads((REPO / "code/cex/newarm/cex_build.json").read_text())
+        build = json.loads((REPO / "src/pgm/algorithms/structural/cex_build.json").read_text())
         env = dict(
             os.environ,
             PYTHONPATH=str(REPO / "src") + os.pathsep + str(REPO / "code"),

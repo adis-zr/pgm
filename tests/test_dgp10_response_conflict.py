@@ -4,11 +4,9 @@ from pathlib import Path
 import sys
 import unittest
 
-HP = Path(__file__).resolve().parents[1] / 'code' / 'cex' / 'hp'
-sys.path.insert(0, str(HP))
-import markov_certificate as MC
-import response_certificate as RC
-import spectral_heatbath_run as RUN
+from pgm.algorithms.response import markov_certificate as MC
+from pgm.algorithms.response import response_certificate as RC
+from pgm.algorithms.response import spectral_heatbath_run as RUN
 
 
 class ResponseConflictPublication(unittest.TestCase):

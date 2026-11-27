@@ -5,8 +5,7 @@ fresh request-level budget), the explicit backend configuration and the expected
 parses the source EXACTLY ONCE (``pgm.model.uai.load_bound``), refuses a binding mismatch, dispatches to the
 adapter, normalizes the result through the common publication boundary and commits with the staged
 late-suppression payload.  Isolation remains because the retained implementations use mutable module policies
-and bare imports; this module itself never manipulates ``sys.path`` (the adapters use the isolated legacy
-bridge until their closures are relocated).
+(module-level ceilings lowered per attempt); nothing here or in the adapters manipulates ``sys.path`` or ``sys.argv``.
 """
 from __future__ import annotations
 

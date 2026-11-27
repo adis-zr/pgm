@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-SOURCE = Path(__file__).resolve().parents[1] / "code/cex/hp/heatbath_native.c"
+SOURCE = Path(__file__).resolve().parents[1] / "src/pgm/algorithms/response/heatbath_native.c"   # the native source lives with its owning implementation (consolidation step 1)
 
 
 def build_failure_library(source, folder):
