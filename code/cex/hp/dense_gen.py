@@ -137,13 +137,14 @@ def exact_reduction(model):
     return dict(variables_reduced=len(red), detail=red[:16], retained_variables=len(M.cards), zero_mass=M.zero_mass)
 
 
-TAG_ORACLE_EVAL = 'DGP2-ORACLE-EVAL-1'; TAG_ORACLE_DEV = 'DGP2-ORACLE-DEV-1'; TAG_EVAL2 = 'DENSE-GENERIC-PAC-EVAL-2'; TAG_EVAL3 = 'DENSE-GENERIC-PAC-EVAL-3'; TAG_EVAL4 = 'DGP4-EVAL4'; TAG_ORACLE4 = 'DGP4-ORACLE4'; TAG_EVAL5 = 'DGP5-EVAL5'; TAG_ORACLE5 = 'DGP5-ORACLE5'; TAG_EVAL6 = 'DGP6/EVAL6/'; TAG_ORACLE6 = 'DGP6/ORACLE6/'; TAG_EVAL7 = 'DGP7/EVAL7/'; TAG_ORACLE7 = 'DGP7/ORACLE7/'
+TAG_ORACLE_EVAL = 'DGP2-ORACLE-EVAL-1'; TAG_ORACLE_DEV = 'DGP2-ORACLE-DEV-1'; TAG_EVAL2 = 'DENSE-GENERIC-PAC-EVAL-2'; TAG_EVAL3 = 'DENSE-GENERIC-PAC-EVAL-3'; TAG_EVAL4 = 'DGP4-EVAL4'; TAG_ORACLE4 = 'DGP4-ORACLE4'; TAG_EVAL5 = 'DGP5-EVAL5'; TAG_ORACLE5 = 'DGP5-ORACLE5'; TAG_EVAL6 = 'DGP6/EVAL6/'; TAG_ORACLE6 = 'DGP6/ORACLE6/'; TAG_EVAL7 = 'DGP7/EVAL7/'; TAG_ORACLE7 = 'DGP7/ORACLE7/'; TAG_EVAL9 = 'DGP9/EVAL9/'
 DGP4_TAGS = (TAG_EVAL4, TAG_ORACLE4)
 
 
 def panel(kind):
     if kind == 'oracle_eval': return TAG_ORACLE_EVAL, [(n, c, t, s) for (n, c) in ((8, 2), (12, 2), (6, 4), (8, 4)) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]           # DGP2 brief section 4: 16 oracle inputs, each <= 2^16 fine states
     if kind == 'oracle_dev': return TAG_ORACLE_DEV, [(n, c, t, s) for (n, c) in ((6, 2), (8, 2), (5, 4), (6, 4)) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]
+    if kind == 'eval9': return TAG_EVAL9, [(64, 2, 'er50', F(1, 2)), (64, 2, 'clique', F(1, 2)), (64, 4, 'er50', F(1, 2)), (64, 4, 'clique', F(1, 2)), (32, 4, 'er50', F(1, 2))]                  # DGP9 PROTOCOL section 3: one fresh MATCHED weak input per relevant family (unchanged recipe; seed domain DGP9/EVAL9/)
     if kind == 'eval7': return TAG_EVAL7, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP7 PROTOCOL section 3: 8 fresh production inputs (unchanged recipe; seed domain DGP7/EVAL7/ + canonical JSON)
     if kind == 'oracle7': return TAG_ORACLE7, [(8, 4, t, F(2), v) for t in ('clique', 'er50') for v in (0, 1)]                                                                           # DGP7 PROTOCOL section 3: 4 fresh strong n8 card-4 coupling-2 oracle models (two cliques, two ER50) by the `variant` key 0 / 1
     if kind == 'eval6': return TAG_EVAL6, [(n, 4, t, s) for n in (32, 64) for t in ('er50', 'clique') for s in (F(1, 2), F(2))]                                                           # DGP6 brief section 6: 8 fresh production inputs (unchanged generator recipe; new seed domain DGP6/EVAL6/ + canonical JSON)
@@ -174,4 +175,4 @@ def generate(kind, outdir):
 
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser(); ap.add_argument('kind', choices=['eval', 'dev', 'devmid', 'oracle_eval', 'oracle_dev', 'eval2', 'eval3', 'eval4', 'oracle4', 'eval5', 'oracle5', 'eval6', 'oracle6', 'eval7', 'oracle7']); ap.add_argument('outdir'); a = ap.parse_args(); generate(a.kind, a.outdir)
+    ap = argparse.ArgumentParser(); ap.add_argument('kind', choices=['eval', 'dev', 'devmid', 'oracle_eval', 'oracle_dev', 'eval2', 'eval3', 'eval4', 'oracle4', 'eval5', 'oracle5', 'eval6', 'oracle6', 'eval7', 'oracle7', 'eval9']); ap.add_argument('outdir'); a = ap.parse_args(); generate(a.kind, a.outdir)

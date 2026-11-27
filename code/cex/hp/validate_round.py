@@ -83,15 +83,15 @@ def main():
         for sub, cnt in (rs.get('completions_by_sub') or {}).items():
             if sub in per_sub: chk('results_counts_match_cells:' + sub, cnt.get('cells') == per_sub[sub]['cells'] and cnt.get('complete') == per_sub[sub]['complete'], results=cnt, cells=per_sub[sub])
     # DGP3+: the EXECUTED harness / analyzer snapshot (git bundle of the branch + hashes of the executed files) and a replay command must be in the packet (DGP2 review, packaging finding)
-    if fr.get('experiment', '').startswith(('DGP3', 'DGP4', 'DGP5', 'DGP6', 'DGP7', 'DGP8')):
+    if fr.get('experiment', '').startswith(('DGP3', 'DGP4', 'DGP5', 'DGP6', 'DGP7', 'DGP8', 'DGP9')):
         hs = os.path.join(rd, 'harness'); bundle = glob.glob(os.path.join(hs, '*.bundle')); ex = os.path.join(hs, 'EXECUTED_HARNESS_SHA256.json')
         chk('executed_harness_snapshot_present', bool(bundle) and os.path.exists(ex), bundle=[os.path.basename(b) for b in bundle])
         if os.path.exists(ex):
             exh = json.load(open(ex)); bad = [f for f, h in exh.get('files', {}).items() if not os.path.exists(os.path.join(hs, 'files', os.path.basename(f))) or sha(os.path.join(hs, 'files', os.path.basename(f))) != h]
             chk('executed_harness_files_match_hashes', not bad, bad=bad)
-        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and any(('run_dgp%d.py' % k) in open(rp).read() for k in (3, 4, 5, 6, 7, 8)) and 'harness/files' in open(rp).read())
+        rp = os.path.join(rd, 'reproduce.sh'); chk('reproduce_sh_has_replay_command', os.path.exists(rp) and any(('run_dgp%d.py' % k) in open(rp).read() for k in (3, 4, 5, 6, 7, 8, 9)) and 'harness/files' in open(rp).read())
     # DGP6 (finding 9): relocation test -- every manifest input path rewritten onto a NON-EXISTENT workstation prefix must resolve back through the packet / DGP_ROOTS with its sha256 (never a silent substitute); run with the original paths ABSENT from the candidates
-    if fr.get('experiment', '').startswith(('DGP6', 'DGP7', 'DGP8')):
+    if fr.get('experiment', '').startswith(('DGP6', 'DGP7', 'DGP8', 'DGP9')):
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import dgp_paths
             mm = json.load(open(os.path.join(rd, 'MODEL_MANIFEST.json'))); pnames = [p_ for p_ in mm['panels'] if isinstance(mm['panels'][p_], list) and mm['panels'][p_] and isinstance(mm['panels'][p_][0], dict) and 'model' in mm['panels'][p_][0]]; tasks = [t for p_ in pnames for t in mm['panels'][p_]]       # DGP7: every task-list panel of the manifest (main / oracle / preservation / guard / gate / policy8), deduplicated by model path below
@@ -103,6 +103,35 @@ def main():
                 else: os.environ['DGP_ROOTS'] = roots_env
             bad = [r for r in rel if not r['ok']]; chk('relocation_resolves_every_manifest_input', not bad, n=len(rel), bad=bad[:5], roots='DGP6_RELOCATION_ROOTS (also honoured for DGP7) or the records repository root; every fake prefix /nonexistent/workstation/... never exists')
         except Exception as e: chk('relocation_resolves_every_manifest_input', False, error=repr(e)[:200])
+    # DGP9 (review RV7 / RV8 / RPA4): the EXTERNAL identity manifest attests the actual archives; every manifest input ships its bytes in the packet (packet_copy with the recorded sha256); receipt ids are unique; the budget
+    # allocations are nonnegative and sum to at most the ceiling; every reassignment carries a UTC and no receipt of its affected phase precedes it
+    if fr.get('experiment', '').startswith('DGP9'):
+        ext = os.path.join(rd, 'IDENTITY_EXTERNAL.json')
+        if os.path.exists(ext):
+            ej = json.load(open(ext)); arc = (ej.get('archives') or {}); okz = {}
+            for k, v in arc.items():
+                p = os.path.expanduser(v.get('path', '')); okz[k] = bool(os.path.exists(p) and sha(p) == v.get('sha256') and os.path.getsize(p) == v.get('bytes'))
+            chk('external_identity_attests_actual_archives', bool(okz) and all(okz.values()), archives=okz, note='the manifest is written outside the results zip after both archives are closed; a stale internal IDENTITY.json is expected and not the attestation')
+        else: chk('external_identity_present', False)
+        try:
+            mm = json.load(open(os.path.join(rd, 'MODEL_MANIFEST.json'))); missing = []; n_in = 0
+            for p_, lst in (mm.get('panels') or {}).items():
+                if not (isinstance(lst, list) and lst and isinstance(lst[0], dict) and 'model' in lst[0]): continue
+                for t in lst:
+                    n_in += 1; pc = t.get('packet_copy'); fp = os.path.join(rd, pc) if pc else None
+                    if not (fp and os.path.exists(fp) and sha(fp) == t.get('model_sha256')): missing.append(t.get('name'))
+            chk('manifest_inputs_shipped_with_hashes', not missing, inputs=n_in, missing=missing[:10])
+        except Exception as e: chk('manifest_inputs_shipped_with_hashes', False, error=repr(e)[:200])
+        jids = [r.get('jid') for r in rows if r.get('kind') == 'RECEIPT']; chk('receipt_ids_unique', len(set(jids)) == len(jids), receipts=len(jids), duplicates=len(jids) - len(set(jids)))
+        bud = json.load(open(os.path.join(rd, 'BUDGET_DECLARATION.json'))) if os.path.exists(os.path.join(rd, 'BUDGET_DECLARATION.json')) else {}; al = bud.get('allocations') or {}
+        chk('budget_allocations_nonnegative_within_ceiling', bool(al) and all(isinstance(v, (int, float)) and v >= 0 for v in al.values()) and sum(al.values()) <= (bud.get('ceiling_s') or 0), allocations=al, ceiling=bud.get('ceiling_s'))
+        late_re = []
+        for ra in bud.get('reassignments') or []:
+            u = ra.get('utc') or ''; scopes_ = ra.get('affected_scopes') or []
+            if not (len(u) >= 20 and u[4] == '-' and u.endswith('Z')): late_re.append(dict(utc=u, why='no ISO UTC')); continue
+            early = [r for r in rows if r.get('kind') == 'RECEIPT' and r.get('scope') in scopes_ and (r.get('start_utc') or '') < u]
+            if early: late_re.append(dict(utc=u, scopes=scopes_, receipts_before=len(early)))
+        chk('budget_reassignments_dated_before_affected_phase', not late_re, reassignments=len(bud.get('reassignments') or []), problems=late_re)
     # unsupported claims: forbidden phrases in REPORT / THEORY_RETURN
     for f in ('REPORT.md', 'THEORY_RETURN.md', 'START_HERE.md'):
         p = os.path.join(rd, f)
