@@ -33,6 +33,8 @@ def validate_window(state, window, atom_ids, conds_old, conds_new, cards, order)
     if getattr(state, 'law', None) is not None and any(conds_old[v].sha256 != state.law.conds[v].sha256 for v in A): return 'the old conditionals of the window do not match the bank law identity (rebinding the atoms to other counts is rejected)'
     for key, mine in (('model_identity', getattr(state, 'model_identity', None)), ('seed_proof_identity', getattr(state, 'seed_proof_identity', None)), ('law_identity', getattr(state, 'law_identity', None))):      # DGP8 repair (DGP7 review: bank identity): a window planned against another bank never consumes this one's atoms
         if key in window and window[key] != mine: return 'the window was planned against another bank (%s mismatch)' % key
+    if len(set(atom_ids)) != len(atom_ids): return 'repeated residual atom id in the consumption inventory %s (DGP9 repair of the original DGP7 finding F1: a residual at most one may enter the envelope once; rejected BEFORE any arithmetic or mutation, never silently deduplicated)' % (list(atom_ids),)
+    if 'atoms' in window and sorted(window['atoms']) != sorted(atom_ids): return 'the consumption inventory %s differs from the window\'s declared atoms %s' % (sorted(atom_ids), sorted(window['atoms']))
     atoms = []
     for aid in atom_ids:
         a = state.atoms.get(aid)

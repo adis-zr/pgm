@@ -23,12 +23,21 @@ LN2 = math.log(2.0); V_UNION = 4096; FANIN = 16; ENTRY_F = 8; ENTRY_C = RM.ENTRY
 class CircuitPlan:
     """immutable: graph (cards, order, parents per variable), the source inventory (role, key, axes, power), the node list, work / peak counts, a structural sha256"""
     def __init__(self, cards, sampling_order, parents, factors_scopes, power, order_elim, V=V_UNION, fanin=FANIN, clock=None, budget=None):
-        # DGP7 repair R3: the plan's metadata (node dicts, stage records, the structural hash) is ADMITTED before any node is built (a bounded estimate: sources + <= 4 nodes per eliminated variable per group, 512 B each) and the
-        # construction is POLLED once per eliminated variable; the charge is released on exit (the plan is a small immutable object owned by its creator afterwards)
-        n_ = len(cards); self._meta_estimate = 512 * (2 * n_ + len(factors_scopes) + 4 * n_ * max(1, fanin)); self._charged = budget.charge(self._meta_estimate, 'circuit plan metadata') if budget is not None else 0
+        # DGP7 repair R3 + DGP9 repair (original DGP7 finding F4a / F4b): the clock is POLLED AT ENTRY before any allocation; the plan's metadata (node dicts, stage records, the structural hash) is ADMITTED before any node is built
+        # (a bounded estimate: sources + <= 4 nodes per eliminated variable per group, 512 B each) and the construction is POLLED once per eliminated variable; the charge STAYS with the plan while it is reachable (the DGP8
+        # code released it in `finally` on success while the plan remained live): the owner releases it through `release()` when it drops the plan; a failed construction releases it here
+        if clock is not None: clock.poll('circuit plan construction entry')
+        n_ = len(cards); self._meta_estimate = 512 * (2 * n_ + len(factors_scopes) + 4 * n_ * max(1, fanin)); self._budget = budget; self._charged = budget.charge(self._meta_estimate, 'circuit plan metadata') if budget is not None else 0
         try: self._build(cards, sampling_order, parents, factors_scopes, power, order_elim, V, fanin, clock)
-        finally:
+        except BaseException:
             if budget is not None and self._charged: budget.release(self._charged); self._charged = 0
+            raise
+    def release(self):
+        """the owner drops the plan: its metadata charge returns to the shared account (idempotent)"""
+        if self._charged and self._budget is not None: self._budget.release(self._charged)
+        n = self._charged; self._charged = 0; return n
+    @property
+    def charged_bytes(self): return self._charged
     def _build(self, cards, sampling_order, parents, factors_scopes, power, order_elim, V, fanin, clock):
         self.cards = list(cards); self.order = list(sampling_order); self.parents = {int(v): tuple(parents[v]) for v in parents}; self.power = int(power); self.V = int(V); self.fanin = int(fanin); self.kind = 'cap' if power == 1 else 'moment'
         n = len(cards); nodes = []; live = []                                                   # live: (node id, axes)

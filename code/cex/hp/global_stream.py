@@ -160,6 +160,8 @@ class GlobalStream(JS.JointStream):
             if cand_bytes: B_.release(cand_bytes)
             if g1_bytes: B_.release(g1_bytes)                                                                        # the replicated seed on the graph is never retained (a promoted candidate owns fresh conditionals)
             if workspace: B_.release(workspace)
+            for pl in (locals().get('PB'), locals().get('PS')):                                                     # DGP9 (original DGP7 finding F4a): the plans' metadata charge is held while they are reachable and released when the attempt drops them
+                if pl is not None and hasattr(pl, 'release'): pl.release()
             self.candidate = None
         self.refinement_ended = self.refinement_ended or ('attempt cap (one global attempt per request)' if att.get('status') in ('PROMOTED', 'KEPT_INCUMBENT') else 'attempt ended: %s' % att.get('status'))
         att['seconds'] = tnow() - t0; att['ended_offset_s'] = tnow() - self.allowance_start; att['workspace_released_bytes'] = workspace; self.attempts.append(att); self.mech['attempts'] = self.attempts; self.mech['refinement_ended'] = self.refinement_ended

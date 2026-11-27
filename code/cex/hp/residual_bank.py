@@ -80,7 +80,9 @@ def check_slack_cells(mem, T_msg, rho, u, raxes, cards, clock, tag=''):
             x = T.arr[tuple(asg[p] for p in pp)]
             if x[1] == 0: prod = ZERO; break
             prod = (prod[0] + x[0], prod[1] * x[1])
-        M = T_msg.arr[tuple(asg[p] for p in mi)] if raxes else T_msg.arr.reshape(-1)[0]; bound = mul_exact(M, rho[asg]) if (M[1] and rho[asg][1]) else ZERO
+        r_ = rho[asg]
+        if (not isinstance(r_, tuple)) or len(r_) != 2 or r_[1] < 0 or (r_[1] and not ge_exact(ONE, r_)): raise CE.Defect('residual slack check: rho outside the exact closed interval [0, 1] at %s (DGP9 repair of the original DGP7 finding F2 at the standalone checker)' % (asg,))
+        M = T_msg.arr[tuple(asg[p] for p in mi)] if raxes else T_msg.arr.reshape(-1)[0]; bound = mul_exact(M, r_) if (M[1] and r_[1]) else ZERO
         if not ge_exact(bound, prod): raise CE.Defect('residual slack check: inputs product exceeds M rho at %s' % (asg,))
         cells += 1
         if (k_ & 255) == 255: clock.poll('residual slack check %s' % tag)
@@ -124,6 +126,12 @@ class ResidualState:
     def drop_atom(self, aid, why):
         a = self.atoms.pop(aid); self._release(a.bytes, 'residual atom %d dropped (%s)' % (aid, why)); self.evicted.append(dict(aid=aid, axes=list(a.axes), entries=a.entries(), score=a.score, why=why)); return a
     def consume(self, aids, txn):
+        # DGP9 repair (original DGP7 finding F1): the COMPLETE consumption inventory is preflighted (repeated ids, unknown ids, already-consumed atoms) BEFORE any atom is mutated
+        aids = list(aids)
+        if len(set(aids)) != len(aids): raise CE.Defect('residual consumption inventory repeats an atom id: %s' % aids)
+        for aid in aids:
+            if aid not in self.atoms: raise CE.Defect('residual atom %s not in the bank' % aid)
+            if self.atoms[aid].consumed: raise CE.Defect('residual atom %d consumed twice' % aid)
         for aid in aids:
             a = self.atoms[aid]
             if a.consumed: raise CE.Defect('residual atom %d consumed twice' % aid)
@@ -179,11 +187,16 @@ class BankSink:
             mean, unit, nsmp = self._advisory_mean(P, T_msg, u, raxes, cards, vol)
             if unit or mean >= 1.0 - 2 ** -40: self.unit_atoms += 1; return None
             score = (-math.log(max(mean, 2 ** -1000))) / need
-            live = self.state.live_atoms()
-            if len(live) >= self.max_atoms or self.state.entries() + vol > self.max_entries or self.state.bytes_live() + need > self.branch_cap or self.branch_owned_fn() + need > self.branch_cap:
-                worst = min(live, key=lambda a: (a.score, -a.aid)) if live else None
-                if worst is None or worst.score >= score: self.state.dropped.append(dict(stage=v, group=gi, axes=list(u), entries=vol, score=score, why='bank full (atoms %d / entries %d / bytes %d); lower score than every retained atom' % (len(live), self.state.entries(), self.state.bytes_live()))); return None
-                self.state.drop_atom(worst.aid, 'replaced by a higher-scored atom (stage %d group %d)' % (v, gi))
+            # DGP9 repair (original DGP7 finding F5, extraction): eviction is REPEATED until the incoming atom really fits every profile constraint (atoms / entries / bytes / branch ownership), or the candidate is dropped when a
+            # retained atom with a higher score would have to go (the DGP8 code evicted at most one atom and never rechecked the fit)
+            def over():
+                live_ = self.state.live_atoms(); return (len(live_) >= self.max_atoms) or (self.state.entries() + vol > self.max_entries) or (self.state.bytes_live() + need > self.branch_cap) or (self.branch_owned_fn() + need > self.branch_cap)
+            evicted_here = 0
+            while over():
+                live = self.state.live_atoms(); worst = min(live, key=lambda a: (a.score, -a.aid)) if live else None
+                if worst is None or worst.score >= score: self.state.dropped.append(dict(stage=v, group=gi, axes=list(u), entries=vol, score=score, evicted_before_drop=evicted_here, why='bank full (atoms %d / entries %d / bytes %d); lower score than every retained atom (or no atom left to evict)' % (len(live), self.state.entries(), self.state.bytes_live()))); return None
+                self.state.drop_atom(worst.aid, 'replaced by a higher-scored atom (stage %d group %d)' % (v, gi)); evicted_here += 1
+            if over(): raise CE.Defect('residual extraction: the bank limits still fail after eviction')
             try: self.state._charge(need, 'residual atom temporary (stage %d group %d, %d entries)' % (v, gi, vol))
             except CE.Refused as e: self.state.dropped.append(dict(stage=v, group=gi, axes=list(u), entries=vol, score=score, why='admission refused: %s' % str(getattr(e, 'reason', e))[:80])); return None
             try: rho, unit2, mean_log2 = rho_of_group(P, T_msg, u, raxes, cards, self.clock, 'stage %d group %d' % (v, gi))

@@ -154,9 +154,10 @@ class JointStream(Stream):
         ep.record = dict(index=ep.index, reason=reason, proposal=prop.record(), constants={kk: vv for kk, vv in k.items() if kk not in ('widening_parts',)}, widening_parts=k['widening_parts'], eps_num_epoch=ep.eps_num, eps_num_certificate_after=eps_after, cert_t_at_commit=ep.t_commit, draws_from=ep.draws_from, predecessor=ep.parent, fingerprint=ep.fingerprint, committed_offset_s=(tnow() - self.allowance_start) if self.allowance_start else None, absolute_allowance_end=self.allowance_end, live_joint_bytes=self.joint_bytes)
         prev = self.epoch; prev_diag = None
         if prev is not None: prev_diag = dict(interval=prev.zcert.interval(), cap_log2_W0=prev.B_eff_log2, draws=self.draws - prev.draws_from, epoch_X_mean=((prev.sumX / prev.draws_n) if getattr(prev, 'draws_n', 0) else None), epoch_ESS_DIAGNOSTIC=((prev.sumX ** 2 / prev.sumX2) if getattr(prev, 'sumX2', 0.0) > 0 else None), epoch_max_X=getattr(prev, 'maxX', None), note='fixed-cap EPOCH-LOCAL diagnostic; never pooled across epochs')
-        if deadline is not None and tnow() >= deadline: raise Deadline('epoch commit: the allowance passed during the preparation / diagnostics (nothing committed)')
+        t_commit = tnow()                                                                                        # DGP9 repair (original DGP7 finding F3): ONE authoritative sample decides AND stamps the commit (the DGP8 code tested one sample and stamped a second)
+        if deadline is not None and t_commit >= deadline: raise Deadline('epoch commit: the allowance passed during the preparation / diagnostics (nothing committed)')
         # ---- swap (bounded references and counters only)
-        ep.committed_at = tnow(); self.log_sF = k['log_sF']
+        ep.committed_at = t_commit; ep.record['committed_offset_s'] = (t_commit - self.allowance_start) if self.allowance_start else None; self.log_sF = k['log_sF']
         if hasattr(self, 'cert'): self.cert.eps_num = eps_after                                                   # re-widens every historical term under the accepted interpretation (included BEFORE the first batch of the new epoch)
         else: self.cert = IG.Certificate(self.Kq, self.alpha, ep.eps_num, float(self.eps), self.opts['schedule']); self.mech['alpha_per_coordinate'] = self.alpha
         self.eps_num = self.cert.eps_num
@@ -218,16 +219,20 @@ class JointStream(Stream):
                         acc['n'] += int(mask.sum())
                     if self.pilot_store is not None: store_add = (X_states.copy(), logW0q.copy(), ids.copy())
                 cert2.update_batch(X, f); zc2.update_batch(X)
-                if tnow() >= hard: raise Deadline('joint batch: the hard cutoff passed during the statistics assembly (nothing committed)')
+                # DGP9 repair (original DGP7 finding F3): EVERY variable-size reduction of the batch (the draw-weight sums / maxima / zero counts, the pin bounds, the positivity witness) is computed into scalars BEFORE the one
+                # authoritative sample; after the sample only bounded scalar / reference swaps happen (the DGP8 code reduced X after its final poll)
+                zero_n = int(zero.sum()); sX = float(X.sum()); sX2 = float((X * X).sum()); mX = float(X.max()); any_pos = bool((X > 0).any()); pin = (ep.index, int(ids[0]), int(ids[-1]))
+                t_commit = tnow()
+                if t_commit >= hard: raise Deadline('joint batch: the hard cutoff passed during the statistics assembly (nothing committed)')
                 # ---- swap (bounded)
                 self.cert = cert2; ep.zcert = zc2; self.fit = fit2; self.held = held2
                 if store_add is not None: self.pilot_store['states'].append(store_add[0]); self.pilot_store['logW0q'].append(store_add[1]); self.pilot_store['ids'].append(store_add[2])
             finally:
                 if scratch: B_.release(scratch)
-            self.draws += Bn; self.zero_draws += int(zero.sum()); self.sumX += float(X.sum()); self.sumX2 += float((X * X).sum()); self.maxX = max(self.maxX, float(X.max())); self.maxlogX = max(self.maxlogX, mx)
-            ep.draws_n = getattr(ep, 'draws_n', 0) + Bn; ep.sumX = getattr(ep, 'sumX', 0.0) + float(X.sum()); ep.sumX2 = getattr(ep, 'sumX2', 0.0) + float((X * X).sum()); ep.maxX = max(getattr(ep, 'maxX', 0.0), float(X.max())); ep.zero_n = getattr(ep, 'zero_n', 0) + int(zero.sum())      # DGP6 repair (finding 8): epoch-LOCAL weight statistics
-            if (X > 0).any(): self.witness = True
-            self.batches += 1; dt = tnow() - t0; self.t_sample += dt; self._pin(ep.index, int(ids[0]), int(ids[-1])); self._measure_batch(dt, Bn, ep.index, pilot); return 'COMMITTED'
+            self.draws += Bn; self.zero_draws += zero_n; self.sumX += sX; self.sumX2 += sX2; self.maxX = max(self.maxX, mX); self.maxlogX = max(self.maxlogX, mx)
+            ep.draws_n = getattr(ep, 'draws_n', 0) + Bn; ep.sumX = getattr(ep, 'sumX', 0.0) + sX; ep.sumX2 = getattr(ep, 'sumX2', 0.0) + sX2; ep.maxX = max(getattr(ep, 'maxX', 0.0), mX); ep.zero_n = getattr(ep, 'zero_n', 0) + zero_n      # DGP6 repair (finding 8): epoch-LOCAL weight statistics
+            if any_pos: self.witness = True
+            self.batches += 1; dt = t_commit - t0; self.t_sample += dt; self._pin(*pin); self._measure_batch(dt, Bn, ep.index, pilot); return 'COMMITTED'
         except (IG.Deadline, Deadline) as e: self.abandoned += 1; self.t_sample += tnow() - t0; return self._close('joint batch abandoned at a hard cut (%s); %d committed batches retained' % (e, self.batches))
         except IG.RangeRefused as e: self.abandoned += 1; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('NUMERIC_RANGE_REFUSED in a joint batch: %s' % str(e)[:120])
         except AssertionError as e: self.abandoned += 1; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a joint batch (rows withheld): %s' % str(e)[:120])

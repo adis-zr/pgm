@@ -1726,8 +1726,13 @@ def D57_bounded_sum_and_rebuilt_J():
     e6 = JO.rank_expansions(prop6, pairs6, cards6, 4096)[0]; z6 = e6['z']; par6 = tuple(e6['new_parents']); pk6 = JW.build_packet(M6, prop6, z6, par6, order6, JPROF, B6, clk6); inc6 = JW.witnesses_of(pk6, pk6.cond_ctx, S_ref=None); B_t = min(prop6.B, inc6['B']); S_ref6 = min([s_ for s_ in (prop6.S, inc6['S']) if s_[1]] + [_RM.norm_up(*_RM.mul_exact(B_t, B_t))])
     log2_eta6 = math.log2(0.005) + 13.4 - math.log2(6.0); d6 = 1e-6; inc = dict(label='seed', is_current=True, log2_B=prop6.log2_B(), log2_S=_l2(S_ref6), log2_eta=log2_eta6, d_hat=d6, family_volume=prop6.conds[z6].family_volume(), index=-1); inc['log2_H'] = JO.H_log2(inc['log2_S'], inc['log2_B'], log2_eta6); inc['log2_J'] = math.log2(d6) + inc['log2_H']
     pk_u = JW.build_packet(M6, prop6, z6, tuple(prop6.conds[z6].parents), order6, JPROF, B6, clk6) if tuple(prop6.conds[z6].parents) != par6 else pk6; inc_u = JW.witnesses_of(pk_u, pk_u.cond_ctx, S_ref=None); S_ref_u = min([s_ for s_ in (prop6.S, inc_u['S']) if s_[1]])
-    reb = O5.rebuilt(inc, S_ref_u); stale = dict(inc); stale['log2_S'] = _l2(S_ref_u)                 # the DGP5-frozen behaviour: S replaced, J kept
-    res['rebuilt'] = dict(real_packet='dg_n6_c4_clique_two', family=dict(z=z6, parents=list(par6)), S_consumed=inc['log2_S'], S_retune=_l2(S_ref_u), J_stale=stale['log2_J'], J_rebuilt=reb['log2_J'], J_consistent=(abs(reb['log2_J'] - (math.log2(d6) + JO.H_log2(_l2(S_ref_u), inc['log2_B'], log2_eta6))) < 1e-12), discriminates=(abs(stale['log2_J'] - reb['log2_J']) > 1e-9 or abs(inc['log2_S'] - _l2(S_ref_u)) < 1e-12), S_changed=(abs(inc['log2_S'] - _l2(S_ref_u)) > 1e-12), eta_changes_J=(O5.rebuilt(inc, S_ref_u, log2_eta=log2_eta6 + 1.0)['log2_J'] != reb['log2_J']))
+    # DGP9 replacement of the vacuous DGP7 D57 (original DGP7 finding F7): the retune comparator's S witness is FORCED to differ from the consumed S (S' = S_ref_u / 4, an exact tighter second-moment witness fed to the rebuild),
+    # so the STALE comparator (S replaced, J kept) and the REBUILT one (S / H / J together) MUST differ, and a selection threshold placed between the two J values gives OPPOSITE decisions: the stale decision is provably
+    # invalid. The real-packet retune value is recorded as well (it may or may not differ); `discriminates` is no longer an OR with the unchanged-S case
+    S_forced = _RM.norm_up(S_ref_u[0] - 2, S_ref_u[1]); reb = O5.rebuilt(inc, S_forced); stale = dict(inc); stale['log2_S'] = _l2(S_forced)                 # the DGP5-frozen behaviour: S replaced, J kept
+    thr = 0.5 * (stale['log2_J'] + reb['log2_J']); stale_decision = (stale['log2_J'] <= thr); rebuilt_decision = (reb['log2_J'] <= thr); reb_real = O5.rebuilt(inc, S_ref_u)
+    res['rebuilt'] = dict(real_packet='dg_n6_c4_clique_two', family=dict(z=z6, parents=list(par6)), S_consumed=inc['log2_S'], S_retune_real=_l2(S_ref_u), S_forced=_l2(S_forced), J_stale=stale['log2_J'], J_rebuilt=reb['log2_J'], J_rebuilt_real_retune=reb_real['log2_J'], J_consistent=(abs(reb['log2_J'] - (math.log2(d6) + JO.H_log2(_l2(S_forced), inc['log2_B'], log2_eta6))) < 1e-12),
+                          S_changed=(abs(inc['log2_S'] - _l2(S_forced)) > 1e-12), discriminates=(abs(stale['log2_J'] - reb['log2_J']) > 1e-9 and abs(inc['log2_S'] - _l2(S_forced)) > 1e-12), stale_decision_invalid=(stale_decision != rebuilt_decision), threshold=thr, eta_changes_J=(O5.rebuilt(inc, S_forced, log2_eta=log2_eta6 + 1.0)['log2_J'] != reb['log2_J']))
     if pk_u is not pk6: pk_u.release()
     pk6.release(); B6.release(owned6 + chg6)
     src = open(os.path.join(HERE, 'joint_optimize.py')).read(); res['grid_affine'] = ('log2(1.0 + (ratio - 1.0) * i' in src) and ('log2_Cmin + (log2_Cmax - log2_Cmin) * i' not in src)
@@ -1739,7 +1744,7 @@ def D57_bounded_sum_and_rebuilt_J():
     for _ in range(3): S.batch(PA.tnow() + 10)
     d = S.diagnostics(); pooled = [k for k in ('X_mean', 'ESS_DIAGNOSTIC', 'largest_share', 'Z_over_Ucap_EB_DIAGNOSTIC', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'max_log2_X_observed') if d.get(k) is not None]; ews = d['joint']['epoch_weight_statistics']
     res['epoch_local'] = dict(epochs=len(S.epochs), pooled_fields=pooled, removed_note=bool(d.get('pooled_weight_statistics')), epoch_stats=[(x['epoch'], x['draws'], x['X_mean'] is not None) for x in ews]); S._close('ctrl')
-    ok = (res['sum_bits'] <= 256 and res['sum_seconds'] < 0.05 and res['sum_upper'] and res['growth_refusal'] == 'GROWTH' and all(res['rebuilt'][k] for k in ('J_consistent', 'discriminates', 'eta_changes_J')) and res['grid_affine'] and all(res['grid_check'].values()) and res['epoch_local']['epochs'] >= 2 and not pooled and res['epoch_local']['removed_note'] and all(x[2] for x in res['epoch_local']['epoch_stats'] if x[1] > 0))
+    ok = (res['sum_bits'] <= 256 and res['sum_seconds'] < 0.05 and res['sum_upper'] and res['growth_refusal'] == 'GROWTH' and all(res['rebuilt'][k] for k in ('J_consistent', 'discriminates', 'eta_changes_J', 'S_changed', 'stale_decision_invalid')) and res['grid_affine'] and all(res['grid_check'].values()) and res['epoch_local']['epochs'] >= 2 and not pooled and res['epoch_local']['removed_note'] and all(x[2] for x in res['epoch_local']['epoch_stats'] if x[1] > 0))
     rec('D57_bounded_sum_and_rebuilt_J', ok, **res)
 
 def D58_circuits_vs_exhaustive_reference():
@@ -2616,8 +2621,9 @@ def D76_native_exactness_qualification():
     viol = 0; checked = 0
     for _ in range(2000):
         x = [rng.randrange(k) for k in hbm.cards]; ch.lib.hb_set_state(ch.ctx, (_ct.c_int * len(x))(*x)); i = rng.randrange(hbm.n); w, clo, chi = ch.inspect(i); wx = hbm.weights_exact(x, i); cum = F(0)
+        sc_i = F(2) ** (ch.scales['unary'][i] + sum(ch.scales['pair'][f] for f, _ in hbm.incident[i]))          # DGP9: the kernel holds the power-of-two NORMALIZED tables (law-preserving); the exact cumulative is compared at the same scale
         for b in range(len(wx)):
-            cum += wx[b]; checked += 1; viol += int(not (F(clo[b]) <= cum <= F(chi[b])))
+            cum += wx[b] / sc_i; checked += 1; viol += int(not (F(clo[b]) <= cum <= F(chi[b])))
     res['cdf_containment'] = dict(cells=checked, violations=viol); ok = ok and viol == 0
     # (b) the kernel's decision rule (replicated bit-for-bit from heatbath_native.c) agrees with decide_exact whenever it resolves
     def kernel_rule(clo, chi, u53):
@@ -2731,8 +2737,9 @@ def D79_rng_expiry_and_admission():
     except CE.Refused as e: res['small_cap'] = dict(raised=True, kind=e.kind, live_after=small.live)
     ok = ok and res['small_cap'].get('kind') == 'MEMORY' and res['small_cap'].get('live_after') == 0
     # the witness releases every array on every exit: eligible, refused (width), and the raised class refusal
-    M2, ck2, B2 = _hstage(_pair_model([2, 2], [(0, 1, [F(164, 100), F(100, 164), F(100, 164), F(164, 100)])])); l0 = B2.live; W = SW.certify(M2, B2, ck2); res['witness_release_eligible'] = dict(eligible=W['eligible'], live_restored=(B2.live == l0)); ok = ok and B2.live == l0
-    M3, ck3, B3 = _hstage(load_odev('dg_n6_c4_clique_two')[0]); l0 = B3.live; W3 = SW.certify(M3, B3, ck3); res['witness_release_refused'] = dict(kind=(W3['refusal'] or {}).get('kind'), live_restored=(B3.live == l0)); ok = ok and B3.live == l0
+    # DGP9: the witness RETAINS the charge of its returned advisory fields (h / offsets / cards) until the owner releases it (review RV6); the controls check the retained charge is exactly the declared one and that the release restores the baseline
+    M2, ck2, B2 = _hstage(_pair_model([2, 2], [(0, 1, [F(164, 100), F(100, 164), F(100, 164), F(164, 100)])])); l0 = B2.live; W = SW.certify(M2, B2, ck2); ret = W.get('retained_bytes'); res['witness_release_eligible'] = dict(eligible=W['eligible'], retained_bytes=ret, live_minus_retained_restored=(B2.live - (ret or 0) == l0)); SW.release_retained(W, B2); res['witness_release_eligible']['live_restored_after_release'] = (B2.live == l0); ok = ok and B2.live == l0 and res['witness_release_eligible']['live_minus_retained_restored'] and bool(ret)
+    M3, ck3, B3 = _hstage(load_odev('dg_n6_c4_clique_two')[0]); l0 = B3.live; W3 = SW.certify(M3, B3, ck3); SW.release_retained(W3, B3); res['witness_release_refused'] = dict(kind=(W3['refusal'] or {}).get('kind'), live_restored=(B3.live == l0)); ok = ok and B3.live == l0
     M4, ck4, B4 = _hstage(_pair_model([2, 2], [(0, 1, [F(1), F(0), F(1), F(1)])])); l0 = B4.live
     try: SW.certify(M4, B4, ck4)
     except SW.RefusedSpectral: pass

@@ -57,6 +57,7 @@ class ResidualStream(JS.JointStream):
     def _drop_owned(self):
         dropped = super()._drop_owned()
         if self.state is not None and self.state.atoms: self.state.atoms.clear(); self.state.owned = 0; dropped.append('residual_bank_atoms')            # the bytes are released through bank_bytes (OWNED_ATTRS), never twice
+        if self.state is not None and getattr(self.state, 'law', None) is not None: self.state.law = None; dropped.append('residual_state_law')         # DGP9 repair (original DGP7 finding F4c): the released law is no longer reachable from the bank state (its identity string stays)
         return dropped
     # ---- the DGP5 local refinement is NOT available on this stream
     def refine_action(self, hard, work_end): return dict(status='NOT_APPLICABLE', why='ResidualStream: the DGP5 local refinement is replaced by optimize_action')
@@ -189,10 +190,12 @@ class ResidualStream(JS.JointStream):
             except BaseException:
                 if undo is not None: st.revert_transaction(undo); st.owned -= best['atom_bytes']
                 self.joint_bytes -= shared + best['counts_bytes']; self.retained_bytes -= shared + best['counts_bytes']; B_.release(charged_shared); raise
-            best_bytes = 0; freed = st.release_consumed(txn['id']); txn['consumed_atoms_released_bytes'] = freed; self.bank_bytes = st.owned; txn['committed_offset_s'] = tnow() - self.allowance_start; txn['epoch_after'] = ep.index; txn['version_after'] = st.version; txn['new_atom'] = undo['new_aid']
+            # DGP9 repair (original DGP7 finding F3, residual commit tail): the transaction's commit time IS the epoch's one authoritative sample (taken inside _commit_epoch before the swap); the tail after it is BOUNDED
+            # (release of <= BANK_MAX_ATOMS consumed arrays, scalar bookkeeping); no second timestamp is taken for the commit; the payback diagnostic uses the same sample
+            t_commit = ep.committed_at; best_bytes = 0; freed = st.release_consumed(txn['id']); txn['consumed_atoms_released_bytes'] = freed; self.bank_bytes = st.owned; txn['committed_offset_s'] = t_commit - self.allowance_start; txn['epoch_after'] = ep.index; txn['version_after'] = st.version; txn['new_atom'] = undo['new_aid']
             self.transactions_done += 1; promoted = True; self.activation_pending = (best['kind'] == 'changed_law'); self.promotions.append(txn); self.mech['promotion'] = txn; self.mech['transactions'] = self.promotions
             att.update(status='PROMOTED', promoted=True, transaction=txn, committed_epoch=ep.index, label=('actual law change' if best['kind'] == 'changed_law' else 'cap-only change (same law)'))
-            T_after = work_end - tnow(); att['payback'] = dict(T_before_s=T_before, T_after_s=T_after, construction_seconds=tnow() - t0, d_ratio=best['d_ratio'], rank=best['rank'], note='end-to-end payback is judged by the harness on completions / widths / time; a local proxy win is not a performance win')
+            T_after = work_end - t_commit; att['payback'] = dict(T_before_s=T_before, T_after_s=T_after, construction_seconds=t_commit - t0, d_ratio=best['d_ratio'], rank=best['rank'], note='end-to-end payback is judged by the harness on completions / widths / time; a local proxy win is not a performance win')
         except JP.RefusedJoint as e: att.update(status='REFUSED', kind=e.kind, why=str(e.reason)[:240], label='no checked candidate promoted under the tested windows / atoms / profile / budget')
         except CE.Refused as e: att.update(status='REFUSED', kind=e.kind, why=str(e.reason)[:240], label='no checked candidate promoted under the tested windows / atoms / profile / budget')
         except StreamRefused as e: att.update(status='REFUSED', kind=e.kind, why=str(e.reason)[:240], label='no checked candidate promoted under the tested windows / atoms / profile / budget')

@@ -118,7 +118,7 @@ def check_stage(inputs, output, eliminated, cards, agg, clock, inventory=None, b
             if rho is not None and slack_ok is not False:                                                                        # DGP7 (brief section 3): the residual slack rho(x_u) must satisfy M(x_{u \ v}) rho(x_u) >= the EXACT input product at every cell (the atom is dropped, the stage proof stands)
                 r = rho[asg]; bound = (o[0] + r[0], o[1] * r[1]) if (o[1] and r[1]) else ZERO
                 if prod[1] and (not ge_exact(bound, prod)): slack_ok = False; slack_why = 'residual slack: M rho < the exact input product at %s' % (asg,)
-                elif r[1] and ge_exact(r, (1, 1)): slack_ok = False; slack_why = 'residual slack > 1 at %s' % (asg,)
+                elif (not isinstance(r, tuple)) or len(r) != 2 or r[1] < 0 or (r[1] and not ge_exact((0, 1), r)): slack_ok = False; slack_why = 'residual slack outside the exact closed interval [0, 1] at %s (DGP9 repair of the original DGP7 finding F2: the DGP8 test compared against the compact pair (1, 1) = 2)' % (asg,)
                 else: slack_cells += 1
             if prod[1] and o[1]:
                 sl = RM.lead(o) - RM.lead(prod)

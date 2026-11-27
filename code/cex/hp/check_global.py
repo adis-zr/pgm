@@ -37,12 +37,13 @@ def _source_checks(nd, plan, M_par, prop, exp_roles, seen):
     return None
 
 
-def expected_plan(plan, M_par, prop, order_elim, kind, clock=None):
+def expected_plan(plan, M_par, prop, order_elim, kind, clock=None, budget=None):
     """DGP7 repair R1: the certifier REBUILDS the structural plan of the claimed proof kind from the target (cards, factor scopes), the actual proposal (sampling order, parents) and the elimination order -- cap = power 1 / all MAX;
-    moment = power 2 / SUM at group 0 of every stage -- with the submitted plan's caps V / fan-in, and compares structural identities; the submitted plan's SUM / MAX labels, powers, constants and closure are never trusted"""
+    moment = power 2 / SUM at group 0 of every stage -- with the submitted plan's caps V / fan-in, and compares structural identities; the submitted plan's SUM / MAX labels, powers, constants and closure are never trusted.
+    DGP9 repair (original DGP7 finding F4b): the reconstruction is ADMITTED under the caller's budget and POLLED at entry (the DGP8 code allocated the expected plan without admission even at zero headroom); the caller releases it."""
     from global_circuit import CircuitPlan
     power = 1 if kind == 'cap' else 2; cards = list(M_par.cards); scopes = [tuple(sc) for sc, _ in M_par.factors]; parents = {int(v): tuple(prop.conds[v].parents) for v in prop.order}
-    return CircuitPlan(cards, list(prop.order), parents, scopes, power, list(order_elim), plan.V, plan.fanin, clock=clock)
+    return CircuitPlan(cards, list(prop.order), parents, scopes, power, list(order_elim), plan.V, plan.fanin, clock=clock, budget=budget)
 
 
 def structural_checks(plan, kind, cards):
@@ -80,8 +81,8 @@ def certify(plan, M_par, prop, producer_value, clock, budget=None, graph_sha=Non
     if kind not in ('cap', 'moment'): return dict(ok=False, why='unknown proof kind %r' % kind)
     if plan.power != (1 if kind == 'cap' else 2): return dict(ok=False, why='plan power %d does not match the claimed %s proof' % (plan.power, kind))
     if order_elim is not None:
-        exp = expected_plan(plan, M_par, prop, order_elim, kind, clock); ps = plan.structural_sha256() if hasattr(plan, 'structural_sha256') else plan.sha256
-        if ps != exp.sha256: return dict(ok=False, why='the submitted plan\'s structure does not match the independently rebuilt %s proof plan (sha %s != %s)' % (kind, ps[:12], exp.sha256[:12]))
+        exp = expected_plan(plan, M_par, prop, order_elim, kind, clock, budget=budget); ps = plan.structural_sha256() if hasattr(plan, 'structural_sha256') else plan.sha256; exp_sha = exp.sha256; exp.release(); exp = None       # DGP9 (F4b): admitted, compared, released
+        if ps != exp_sha: return dict(ok=False, why='the submitted plan\'s structure does not match the independently rebuilt %s proof plan (sha %s != %s)' % (kind, ps[:12], exp_sha[:12]))
         if ps != plan.sha256: return dict(ok=False, why='the submitted plan\'s recorded sha256 does not match its own structure')
     why = structural_checks(plan, kind, cards)
     if why: return dict(ok=False, why='structure: ' + why)

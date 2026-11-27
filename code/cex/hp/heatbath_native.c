@@ -1,13 +1,16 @@
-// DGP8 SPECTRAL_HEATBATH, part 2b: the NATIVE exact-decision heat-bath fast path (brief section 3). Every transition: an exactly uniform site (random bits; rejection when n is not a power of two), the k conditional weights as
-// binary64 products of the incident factor values (the stored doubles are the nearest binary64 of the exact rationals; the host passes the per-table relative conversion bound), an OUTWARD relative error bound eps on every weight
-// ((2 m + 4) u, m = number of incident factors + 1 for the unary, u = 2^-53, widened), outward cumulative intervals, a 53-bit uniform U = u53 / 2^53 with U in [u53, u53 + 1) / 2^53, the decision a = min{a : U S < C_a} taken ONLY when
-// it is the same for every value inside the intervals (T_hi < Clo[a] and T_lo >= Chi[a - 1]); otherwise the step is left UNRESOLVED and control returns to the host, which refines the SAME bit stream exactly (heatbath_exact.decide_exact)
-// and applies the result through hb_apply. Counters: one completed random-site update = one step (null moves count), committed together with the state change; occupation by last-change timestamps (hb_set_recording / hb_flush).
-// RNG: xoshiro256** seeded by splitmix64 from the 64-bit seed (documented; the host records the seed). No floating softmax; no D40 rounding; no dependence on a target probability.
+// DGP8 SPECTRAL_HEATBATH, part 2b (DGP9 REPAIRED): the NATIVE exact-decision heat-bath fast path (brief section 3). Every transition: an exactly uniform site (random bits; rejection when n is not a power of two -- BOUNDED: after
+// REJECT_CAP rejections inside one batch the kernel returns to the host with a poll request), the k conditional weights as binary64 products of the incident factor values (the host stores the nearest binary64 of the EXACT
+// power-of-two NORMALIZED rationals -- every stored value <= 1 -- and admits the kernel only after proving that every weight, prefix product, cumulative sum and nonzero threshold product lies in the normal binary64 range; see
+// heatbath_native.py), an OUTWARD relative error bound eps on every weight ((2 m + 4) u, m = number of incident factors + 1 for the unary, u = 2^-53, widened), outward cumulative intervals, a 53-bit uniform U = u53 / 2^53 with
+// U in [u53, u53 + 1) / 2^53, the decision a = min{a : U S < C_a} taken ONLY when it is the same for every value inside the intervals (T_hi < Clo[a] and T_lo >= Chi[a - 1]); otherwise the step is left UNRESOLVED and control returns
+// to the host, which refines the SAME bit stream exactly (heatbath_exact.decide_exact) and applies the result through hb_apply. Counters: one completed random-site update = one step (null moves count), committed together with the
+// state change; occupation by last-change timestamps (hb_set_recording / hb_flush). RNG: xoshiro256** seeded by splitmix64 from the 64-bit seed. hb_bytes counts EVERY allocation of the context (DGP9: incl. inc_start).
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+
+#define REJECT_CAP 65536
 
 typedef struct { uint64_t s[4]; } rng_t;
 static inline uint64_t rotl(uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
@@ -26,6 +29,7 @@ typedef struct {
     long long resolved, unresolved, null_moves, site_rejections;
     int kmax; double *w, *clo, *chi;           // per-step workspace
     int unresolved_site; uint64_t unresolved_u53;
+    int poll_request; long long batch_rejections;   // DGP9: bounded site rejection -> poll request to the host
 } hb_t;
 
 static inline uint64_t get_bits(hb_t *h, int k) {
@@ -50,7 +54,7 @@ hb_t *hb_create(int n, const int *cards, const double *psi, int nf, const int *f
     h->state = (int *)calloc(n, sizeof(int)); h->occ = (long long *)calloc(D, sizeof(long long)); h->start = (long long *)calloc(n, sizeof(long long)); h->recording = 0; h->t = 0;
     h->kmax = 0; for (int i = 0; i < n; i++) if (cards[i] > h->kmax) h->kmax = cards[i];
     h->w = (double *)malloc(sizeof(double) * h->kmax); h->clo = (double *)malloc(sizeof(double) * h->kmax); h->chi = (double *)malloc(sizeof(double) * h->kmax);
-    rng_seed(&h->rng, seed); h->bits = 0; h->nbits = 0; h->unresolved_site = -1;
+    rng_seed(&h->rng, seed); h->bits = 0; h->nbits = 0; h->unresolved_site = -1; h->poll_request = 0; h->batch_rejections = 0;
     return h;
 }
 
@@ -62,7 +66,9 @@ void hb_counters(hb_t *h, long long *out) { out[0] = h->resolved; out[1] = h->un
 void hb_set_recording(hb_t *h) { h->recording = 1; for (int i = 0; i < h->n; i++) h->start[i] = h->t; memset(h->occ, 0, sizeof(long long) * h->off[h->n]); }
 void hb_flush(hb_t *h, long long *out) { for (int i = 0; i < h->n; i++) { h->occ[h->off[i] + h->state[i]] += h->t - h->start[i]; h->start[i] = h->t; } memcpy(out, h->occ, sizeof(long long) * h->off[h->n]); }
 int hb_unresolved(hb_t *h, uint64_t *u53) { *u53 = h->unresolved_u53; return h->unresolved_site; }
-size_t hb_bytes(hb_t *h) { return sizeof(hb_t) + sizeof(int) * (size_t)(h->n * 3 + 1 + h->nf * 4 + h->inc_start[h->n] * 2) + sizeof(long long) * (size_t)(h->nf + 1 + h->off[h->n] + h->n) + sizeof(double) * (size_t)(h->off[h->n] + h->foff[h->nf] + 3 * h->kmax); }
+int hb_take_poll_request(hb_t *h) { int r = h->poll_request; h->poll_request = 0; return r; }
+// every allocation of the context: struct, cards (n), off (n + 1), fi / fj / fki / fkj (4 nf), inc_start (n + 1), inc_f / inc_role (2 x incidence), foff (nf + 1), psi (D), fvals, w / clo / chi (3 kmax), state (n ints), occ (D), start (n)
+size_t hb_bytes(hb_t *h) { return sizeof(hb_t) + sizeof(int) * (size_t)(h->n + (h->n + 1) + h->nf * 4 + (h->n + 1) + h->inc_start[h->n] * 2 + h->n) + sizeof(long long) * (size_t)(h->nf + 1 + h->off[h->n] + h->n) + sizeof(double) * (size_t)(h->off[h->n] + h->foff[h->nf] + 3 * h->kmax); }
 
 static inline void commit(hb_t *h, int i, int a) {
     int old = h->state[i]; h->t += 1;
@@ -74,25 +80,29 @@ static inline void commit(hb_t *h, int i, int a) {
 // the host applies an exactly decided fallback step (the decision came from heatbath_exact.decide_exact on the same u53 + refinement bits)
 void hb_apply(hb_t *h, int i, int a) { commit(h, i, a); h->unresolved_site = -1; }
 
+// exactly uniform site; -1 when REJECT_CAP rejections accumulated in this batch (the host polls and calls hb_run again: the bit stream continues exactly where it stopped)
 static inline int select_site(hb_t *h) {
     int n = h->n; int bits = 0; while ((1 << bits) < n) bits++;
     if ((n & (n - 1)) == 0) return (int)get_bits(h, bits);
-    for (;;) { int r = (int)get_bits(h, bits); if (r < n) return r; h->site_rejections++; }
+    for (;;) { int r = (int)get_bits(h, bits); if (r < n) return r; h->site_rejections++; if (++h->batch_rejections >= REJECT_CAP) { h->batch_rejections = 0; h->poll_request = 1; return -1; } }
 }
 
-// returns the number of steps completed (== steps unless an UNRESOLVED decision stopped the batch early; then hb_unresolved gives the site and u53 and the host must call hb_apply before the next hb_run)
+// returns the number of steps completed (== steps unless an UNRESOLVED decision stopped the batch early -- then hb_unresolved gives the site and u53 and the host must call hb_apply before the next hb_run -- or a poll request
+// stopped it -- then hb_take_poll_request returns 1 and the host polls the clock)
 long long hb_run(hb_t *h, long long steps) {
-    const double u = ldexp(1.0, -53);
+    const double u = ldexp(1.0, -53); h->batch_rejections = 0;
     for (long long s = 0; s < steps; s++) {
-        if (h->unresolved_site >= 0) return s;
-        int i = select_site(h); int k = h->cards[i]; int m = h->inc_start[i + 1] - h->inc_start[i];
+        if (h->unresolved_site >= 0 || h->poll_request) return s;
+        int i = select_site(h); if (i < 0) return s;
+        int k = h->cards[i]; int m = h->inc_start[i + 1] - h->inc_start[i];
         for (int a = 0; a < k; a++) h->w[a] = h->psi[h->off[i] + a];
         for (int e = h->inc_start[i]; e < h->inc_start[i + 1]; e++) {
             int f = h->inc_f[e]; const double *v = h->fvals + h->foff[f];
             if (h->inc_role[e] == 0) { int kj = h->fkj[f]; int xb = h->state[h->fj[f]]; for (int a = 0; a < k; a++) h->w[a] *= v[(long long)a * kj + xb]; }
             else { int kj = h->fkj[f]; int xa = h->state[h->fi[f]]; for (int b = 0; b < k; b++) h->w[b] *= v[(long long)xa * kj + b]; }
         }
-        // outward relative error of every weight: (m + 1) conversions (<= u each) + m multiplications (<= u each) -> (2 m + 1) u; widened to eps = (2 m + 4) u (covers the widening roundings)
+        // outward relative error of every weight: (m + 1) conversions (<= u each) + m multiplications (<= u each) -> (2 m + 1) u; widened to eps = (2 m + 4) u (covers the widening roundings); valid because the host PROVED every
+        // operand and result normal (power-of-two normalized tables; all-assignment range witness)
         double eps = (2.0 * m + 4.0) * u; double clo = 0.0, chi = 0.0;
         for (int a = 0; a < k; a++) { double wl = h->w[a] * (1.0 - eps), wh = h->w[a] * (1.0 + eps); clo += wl; chi += wh; h->clo[a] = clo * (1.0 - (a + 2) * u); h->chi[a] = chi * (1.0 + (a + 2) * u); }
         double Slo = h->clo[k - 1], Shi = h->chi[k - 1];
