@@ -37,6 +37,12 @@ def candidate_plan(meta, request, remaining):
     native = meta.get("native_forecast") or {}
     native_work = native.get("sum_product", native.get("work", math.inf))
     native_memory = native.get("native_bytes_estimate", meta.get("native_forecast_memory_bytes", math.inf))
+    # Optional estimator refusals retain explicit null fields. They remove the
+    # affordability forecast, not the request or any later inference route.
+    if native_work is None:
+        native_work = math.inf
+    if native_memory is None:
+        native_memory = math.inf
     native_affordable = native_memory <= request.memory_mib * (1 << 20) and native_work <= NATIVE_ROWS_PER_SECOND * remaining
     groups = meta.get("bipartition_sizes", [])
     stream_steps = sum((1 << min(group)) * sum(group) for group in groups) if groups and all(min(g) < 63 for g in groups) else math.inf

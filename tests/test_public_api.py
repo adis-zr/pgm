@@ -90,6 +90,28 @@ def test_planning_refusal_preserves_explicit_inventory(tmp_path, monkeypatch):
     assert [(r["variable"], r["state"]) for r in actual.answers] == [(1, 0)]
 
 
+@pytest.mark.parametrize("work,memory", [(None, None), (None, 100), (100, None)])
+def test_optional_null_forecast_keeps_fallback_available(tmp_path, work, memory):
+    path = tiny(tmp_path)
+    meta = inspect_model(path)
+    meta.update(pairwise_forest=False, binary_pairwise_bipartite=False,
+                hard_zero_entries=1,
+                native_forecast={"sum_product": work, "native_bytes_estimate": memory})
+    choices = switchboard.candidate_plan(meta, InferenceRequest(path), 1.0)
+    assert choices[0]["backend"] == "block"
+    assert any(choice["backend"] == "structural" for choice in choices)
+
+
+def test_optional_estimator_refusal_does_not_end_request(tmp_path, monkeypatch):
+    path = tiny(tmp_path)
+    meta = inspect_model(path)
+    meta["native_forecast"] = {"sum_product": None, "native_bytes_estimate": None}
+    monkeypatch.setattr(switchboard, "inspect_model", lambda *args, **kwargs: meta)
+    actual = infer(path, budget=3, memory_mib=256)
+    assert actual.complete, actual.to_dict()
+    assert_geometry(actual, enumerated_truth())
+
+
 def test_expired_parse_retains_known_explicit_queries(tmp_path):
     actual = infer(tiny(tmp_path), queries=[(1, 1)], budget=1e-12)
     assert actual.outcome == "DEADLINE" and actual.data["published"] == 0
