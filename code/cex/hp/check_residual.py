@@ -31,6 +31,8 @@ def validate_window(state, window, atom_ids, conds_old, conds_new, cards, order)
     if len(A) not in (2, 4) or any(pos[A[i + 1]] != pos[A[i]] + 1 for i in range(len(A) - 1)): return 'A must be 2 or 4 CONSECUTIVE sampling-order variables'
     if window.get('bank_version') != state.version: return 'bank version %s != state version %d' % (window.get('bank_version'), state.version)
     if getattr(state, 'law', None) is not None and any(conds_old[v].sha256 != state.law.conds[v].sha256 for v in A): return 'the old conditionals of the window do not match the bank law identity (rebinding the atoms to other counts is rejected)'
+    for key, mine in (('model_identity', getattr(state, 'model_identity', None)), ('seed_proof_identity', getattr(state, 'seed_proof_identity', None)), ('law_identity', getattr(state, 'law_identity', None))):      # DGP8 repair (DGP7 review: bank identity): a window planned against another bank never consumes this one's atoms
+        if key in window and window[key] != mine: return 'the window was planned against another bank (%s mismatch)' % key
     atoms = []
     for aid in atom_ids:
         a = state.atoms.get(aid)
@@ -39,6 +41,9 @@ def validate_window(state, window, atom_ids, conds_old, conds_new, cards, order)
         if not a.verified: return 'atom %d not verified' % aid
         if not (set(a.axes) & set(A)): return 'atom %d touches no active variable' % aid
         if max(pos[x] for x in a.axes) > pos[A[-1]]: return 'atom %d contains a variable sampled after the window' % aid
+        if a.arr is None: return 'atom %d has no array (released)' % aid
+        for x in a.arr.reshape(-1):                                                                              # DGP8 repair (DGP7 review: bank range): every consumed value is a compact pair in [0, 1] -- re-checked at consumption, never assumed
+            if (not isinstance(x, tuple)) or len(x) != 2 or x[1] < 0 or (x[1] and not ge_exact(ONE, x)): return 'atom %d carries a value outside [0, 1] (or a malformed entry)' % aid
         atoms.append(a)
     R = set(A)
     for v in A:
@@ -63,9 +68,12 @@ def validate_window(state, window, atom_ids, conds_old, conds_new, cards, order)
     return None
 
 
-def local_kernel(state, window, atom_ids, conds_old, conds_new, cards, order, clock, budget=None, tile=TILE, want_rho=True, context_weights_exact=None):
-    """-> receipt. conds_new None = the same-law case (q_new = q_old). `context_weights_exact`: optional dict {context key -> Fraction} for the parent-closed weighted moment (independently recomputed by the caller's reference)."""
-    t0 = CE.tnow(); why = validate_window(state, window, atom_ids, conds_old, conds_new, cards, order)
+def local_kernel(state, window, atom_ids, conds_old, conds_new, cards, order, clock, budget=None, tile=TILE, want_rho=True, context_weights_exact=None, expected_identity=None):
+    """-> receipt. conds_new None = the same-law case (q_new = q_old). `context_weights_exact`: optional dict {context key -> Fraction} for the parent-closed weighted moment (independently recomputed by the caller's reference).
+    `expected_identity`: the consuming stream's own model identity (DGP8 repair, DGP7 review: bank identity) -- the bank must have been built for it."""
+    t0 = CE.tnow()
+    if expected_identity is not None and getattr(state, 'model_identity', None) != expected_identity: return dict(ok=False, why='identity: the bank was built for another model (%s != %s)' % (str(getattr(state, 'model_identity', None))[:16], str(expected_identity)[:16]))
+    why = validate_window(state, window, atom_ids, conds_old, conds_new, cards, order)
     if why: return dict(ok=False, why='structure: ' + why)
     pos = {v: i for i, v in enumerate(order)}; A = list(window['A']); R = tuple(window['R']); C = [x for x in R if x not in A]; vol = vol_of(R, cards); sizes = [cards[x] for x in R]; rpos = {x: i for i, x in enumerate(R)}
     atoms = [state.atoms[aid] for aid in atom_ids]; B_env = state.envelope_B; seed_cap = state.initial_seed_cap

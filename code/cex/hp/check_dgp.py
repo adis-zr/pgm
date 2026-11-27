@@ -2034,7 +2034,7 @@ def D64_local_F_source_binding():
     model, _ = load('dg_n8_c4_clique_two'); M, order, clk, B, cards, prop, owned, state, sink, rec_ = _rstage(model); pairs, chg = JO.interaction_scores(M, B, clk); parents1, g1 = GO.select_g1(prop, pairs, cards); wins, excl = RL.plan_windows(state, prop, parents1, cards, prop.order)
     w = next(w_ for w_ in wins if w_['vol'] <= 4096); aids = w['atoms']; k0 = CR.local_kernel(state, w, aids, prop.conds, None, cards, prop.order, clk); ref0 = CR.ref_local_exact(state, w, aids, prop.conds, None, cards, prop.order)
     # tampered atom: x 2 at one positive cell (a NEW Atom object with the same id in a copy of the state)
-    a0 = state.atoms[aids[0]]; arr = a0.arr.copy(); idx = next(i for i in itertools.product(*[range(cards[x]) for x in a0.axes]) if arr[i][1] and not _ge(arr[i], (-1, 1))); arr[idx] = _RM.norm_up(arr[idx][0] + 1, arr[idx][1]); st2 = RB.ResidualState('ctrl', 'ctrl', prop, prop.B, prop.B, prop.B, B)
+    a0 = state.atoms[aids[0]]; arr = a0.arr.copy(); idx = next(i for i in itertools.product(*[range(cards[x]) for x in a0.axes]) if arr[i][1] and not _ge(arr[i], (-1, 1))); arr[idx] = _RM.norm_up(arr[idx][0] + 1, arr[idx][1]); st2 = RB.ResidualState(state.model_identity, state.seed_proof_identity, prop, prop.B, prop.B, prop.B, B)                    # the same bank identities (DGP8: a window planned against another bank is rejected -- that rejection is R1's, not this control's)
     for aid, a in state.atoms.items(): st2.atoms[aid] = a
     t2 = RB.Atom(a0.aid, a0.axes, arr, dict(a0.provenance), a0.score, a0.mean_log2, 0); t2.verified = True; st2.atoms[a0.aid] = t2; k1 = CR.local_kernel(st2, w, aids, prop.conds, None, cards, prop.order, clk); ref1 = CR.ref_local_exact(st2, w, aids, prop.conds, None, cards, prop.order); tol = 1 + F(1, 1 << 90)
     rho_moved = sum(1 for x, y in zip(k0['rho_new'].reshape(-1), k1['rho_new'].reshape(-1)) if x != y)
@@ -2044,7 +2044,7 @@ def D64_local_F_source_binding():
     v0 = w['A'][0]; c0 = prop.conds[v0]; cnt = c0.counts.copy(); r_ = 0; cnt[r_, 0] += 1; cnt[r_, 1] -= 1; conds_t = dict(prop.conds); conds_t[v0] = JP.Conditional(v0, c0.parents, cnt, cards); prop_t = JP.Proposal(cards, conds_t, prop.order, prop.B, prop.S, dict(kind='tampered')); st3 = RB.ResidualState('ctrl', 'ctrl', prop_t, prop.B, prop.B, prop.B, B)
     for aid, a in state.atoms.items(): st3.atoms[aid] = a
     cn_orig = {v: (prop.conds[v] if tuple(prop.conds[v].parents) == tuple(w['target_parents'][v]) else prop.conds[v].replicate(tuple(w['target_parents'][v]), cards)) for v in w['A']}      # the ORIGINAL law on the target parents presented as the 'new' law: K_new = max q_tampered prod rho / q_original reflects the tampered old counts exactly
-    k3 = CR.local_kernel(st3, w, aids, conds_t, cn_orig, cards, prop.order, clk); ref3 = CR.ref_local_exact(st3, w, aids, conds_t, cn_orig, cards, prop.order)
+    w3 = dict(w, model_identity=st3.model_identity, seed_proof_identity=st3.seed_proof_identity, law_identity=st3.law_identity); k3 = CR.local_kernel(st3, w3, aids, conds_t, cn_orig, cards, prop.order, clk); ref3 = CR.ref_local_exact(st3, w3, aids, conds_t, cn_orig, cards, prop.order)
     res['tampered_counts'] = dict(kernel_ok=k3['ok'], why=k3.get('why'), K_new_ref_log2=_lg(ref3['K_new']), kernel_K_new_log2=k3.get('log2_K_new'), K_new_dominates=(_tf(k3['K_new']) >= ref3['K_new']) if k3['ok'] else None, K_new_tight=(_tf(k3['K_new']) <= ref3['K_new'] * tol) if k3['ok'] else None, K_new_not_one=(ref3['K_new'] != 1), T2_exact_changed=(ref3['T2'] != ref0['T2']), rejected_against_original_bank=CR.local_kernel(state, w, aids, conds_t, None, cards, prop.order, clk).get('why'))
     ok = ok and k3['ok'] and res['tampered_counts']['K_new_dominates'] and res['tampered_counts']['K_new_tight'] and res['tampered_counts']['K_new_not_one'] and res['tampered_counts']['T2_exact_changed'] and 'law identity' in (res['tampered_counts']['rejected_against_original_bank'] or '')
     # (b) positive rows
@@ -2177,7 +2177,7 @@ def D67_sequential_transactions_and_bank_immutability():
         ok = ok and both and len(S.epochs) == 3 and st.version == 2 and overlap and all(p_['outside_same_objects'] and p_['cap_is_kernel_B_new'] and (p_['kind'] != 'changed_law' or (p_['inside_changed'] and p_['rows_changed'] > 0)) for p_ in per)
         untouched = [aid for aid in shas0 if aid not in cons[0] | cons[1] and aid in st.atoms]; allc = cons[0] | cons[1]
         res['immutability'] = dict(untouched=len(untouched), sha_preserved=all(st.atoms[aid].sha256 == shas0[aid] for aid in untouched), verified_preserved=all(st.atoms[aid].verified for aid in untouched), consumed_flagged=all(st.atoms[aid].consumed for aid in allc), consumed_marked_once=all('consumed_by' in st.atoms[aid].provenance for aid in allc), replacements_verified=all(st.atoms[t['new_atom']].verified for t in txs if t.get('new_atom') in st.atoms), replacement_versions=[st.atoms[t['new_atom']].version_born for t in txs if t.get('new_atom') in st.atoms])
-        ok = ok and len(untouched) > 0 and res['immutability']['sha_preserved'] and res['immutability']['verified_preserved'] and res['immutability']['consumed_flagged'] and res['immutability']['consumed_marked_once'] and res['immutability']['replacements_verified'] and res['immutability']['replacement_versions'] == [1, 2][:len(res['immutability']['replacement_versions'])]
+        ok = ok and len(untouched) > 0 and res['immutability']['sha_preserved'] and res['immutability']['verified_preserved'] and res['immutability']['consumed_flagged'] and res['immutability']['consumed_marked_once'] and res['immutability']['replacements_verified'] and (res['immutability']['replacement_versions'] == [1, 2][:len(res['immutability']['replacement_versions'])] or (res['immutability']['replacement_versions'] == [2] and any('bank limits' in (e_.get('why') or '') for e_ in st.evicted)))      # DGP8 (over-cap banks repair): the first replacement may have been evicted to keep the bank inside its declared limits before the second swap -- recorded in st.evicted
         # (c) reuse rejections
         kind = None
         try: st.consume(sorted(cons[0])[:1], 'again')
@@ -2188,6 +2188,11 @@ def D67_sequential_transactions_and_bank_immutability():
             for v in A: Rw |= set(prop.conds[v].parents)
             return dict(A=list(A), R=sorted(Rw, key=lambda x: pos[x]), atoms=[aid], bank_version=st.version, target_parents={v: tuple(prop.conds[v].parents) for v in A}, max_vol=65536)
         why_c = CR.validate_window(st, wfor(cw), [cw], prop.conds, None, cards32, prop.order); lw = next((a for a in st.live_atoms() if any(x in A for x in a.axes) and max(pos[x] for x in a.axes) <= pos[A[-1]]), None)
+        if lw is None:                                                                                                   # DGP8: no live atom touches the A of the first consumed atom in this run -> take A from a live atom (the rebinding sub-check needs one compatible live atom, not that A)
+            for la in sorted((a for a in st.live_atoms() if a.axes and a.arr is not None), key=lambda a: (a.entries(), a.aid)):                                 # the smallest live atom whose window region fits the cap
+                li = pos[max(la.axes, key=lambda x: pos[x])]; A_try = prop.order[li - 1:li + 1] if li >= 1 else prop.order[li:li + 2]; Rw = set(A_try) | set(la.axes)
+                for v in A_try: Rw |= set(prop.conds[v].parents)
+                if JP.vol_of(tuple(Rw), cards32) <= 65536: A = A_try; lw = la; res['rebinding_A_from_live_atom'] = dict(A=list(A), atom=la.aid, vol=JP.vol_of(tuple(Rw), cards32)); break
         why_stale = CR.validate_window(st, dict(wfor(lw.aid), bank_version=st.version - 1), [lw.aid], prop.conds, None, cards32, prop.order) if lw else 'n/a'; why_live = CR.validate_window(st, wfor(lw.aid), [lw.aid], prop.conds, None, cards32, prop.order) if lw else 'n/a'
         res['reuse'] = dict(consume_twice=kind, window_with_consumed=why_c, stale_version=why_stale, live_window_accepted=why_live); ok = ok and kind is not None and 'consumed' in (why_c or '') and 'version' in (why_stale or 'version') and (why_live is None or why_live == 'n/a')
         # (d) scalar-only tightening
@@ -2373,6 +2378,402 @@ def D70_zero_target_eviction_and_cleanup():
     rec('D70_zero_target_eviction_and_cleanup', ok, **res)
 
 CONTROLS += [D63_seed_residual_inequalities, D64_local_F_source_binding, D65_exact_K_T2_and_weighted_moment, D66_waterfill_kkt_and_objective, D67_sequential_transactions_and_bank_immutability, D68_quantization_and_cap_ceiling, D69_allocation_refusal_deadline_positions, D70_zero_target_eviction_and_cleanup]
+
+
+# ---------------------------------------------------------------- DGP8 (D71): the DGP7-review finding 'missing scheduling calibration check'
+def D71_scheduling_calibration_vs_scored_cells():
+    """the FROZEN affine time blocks of residual_local.predicted_work_s (PROFILE_RESIDUAL t_*) vs the ACTUAL window seconds recorded on the DGP7 SCORED cells (runs/*/*/result.json; fitted windows only); ratio = actual / predicted per
+    window; documented tolerance: median <= 1.5 and p90 <= 2.5. The control FAILS when the frozen blocks under-predict beyond the tolerance -- the constants are NEVER tuned here (a failure is a scheduling-forecast defect to report)"""
+    import glob
+    RD7 = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DGP7_RESIDUAL_JOINT'; ratios = []; n_cells = 0; by_vol = {}; skipped = {}
+    for p in sorted(glob.glob(RD7 + '/runs/*/*/result.json')):
+        try: d = json.load(open(p))
+        except Exception: continue
+        for S in d.get('streams') or []:
+            if S.get('kind') != 'residual': continue
+            n_cells += 1
+            for att in (S.get('joint') or {}).get('attempts') or []:
+                for w in att.get('windows') or []:
+                    pred = w.get('predicted_work_s'); act = w.get('seconds') or (((w.get('fit') or {}).get('seconds') or 0.0) + ((w.get('kernel') or {}).get('seconds') or 0.0))
+                    if w.get('status') in ('INTERRUPTED', 'FORECAST_SKIPPED', 'REFUSED', 'NOT_STARTED', 'STARTED') or not pred or not act: skipped[w.get('status')] = skipped.get(w.get('status'), 0) + 1; continue
+                    r = act / pred; ratios.append(r); by_vol.setdefault(w.get('vol'), []).append(r)
+    med = float(np.median(ratios)) if ratios else None; p90 = float(np.percentile(ratios, 90)) if ratios else None; ok = bool(ratios) and med <= 1.5 and p90 <= 2.5
+    rec('D71_scheduling_calibration_vs_scored_cells', ok, n_cells=n_cells, n_windows=len(ratios), median=med, p90=p90, max=(max(ratios) if ratios else None), min=(min(ratios) if ratios else None), by_volume={str(v): dict(n=len(x), median=float(np.median(x)), p90=float(np.percentile(x, 90))) for v, x in sorted(by_vol.items(), key=lambda kv: (kv[0] or 0))}, skipped_statuses=skipped,
+        tolerance='median <= 1.5 and p90 <= 2.5 of actual / predicted on the scored DGP7 windows (fitted windows only)', frozen_blocks={k: RL.PROFILE_RESIDUAL[k] for k in ('t_setup_s', 't_float_cell_s', 't_compact_cell_s', 't_context_sample_s', 't_output_s')}, note='the constants are NOT tuned by this control; a failure is reported as a scheduling-forecast defect (DGP7 review finding: missing scheduling calibration check)')
+
+CONTROLS += [D71_scheduling_calibration_vs_scored_cells]
+
+
+# ---- DGP8 (D72-D81): spectral witness / exact heat-bath / Markov certificate (brief CLAUDE_DGP8_SPECTRAL_HEATBATH_PROMPT.md section 5). Every reference here is INDEPENDENT of the production modules (decimal logarithms at 60 digits,
+# Fraction enumeration, a second minimal chain implementation); the supplied references of the packet did not arrive.
+import spectral_witness as SW, heatbath_exact as HX, heatbath_native as HN, markov_certificate as MC
+import decimal as _dec, subprocess as _sp, ctypes as _ct, tempfile as _tmp
+_RUNNER = os.path.join(HERE, 'spectral_heatbath_run.py'); _PY8 = sys.executable; _WEAK32 = '/Users/adis/Workspace/pgm-records/code/runs/mdi_2026-10-28/DENSE_GENERIC_PAC_INTEGRATION_1/inputs_eval/dg_n32_c4_er50_half.uai'; _WEAK64 = _WEAK32.replace('n32', 'n64')
+
+
+def _hstage(model, budget_s=60):
+    clk = CE.Clock(time.monotonic() + budget_s, {}); B = CE.Budget(CE.CONSTRUCTOR_BYTES); M = CE.canonicalize(model, clk, B); return M, clk, B
+
+
+def _dec_ln(x):
+    """an independent high-precision natural logarithm of a positive Fraction (decimal module, 60 digits) as a Fraction"""
+    _dec.getcontext().prec = 60; x = F(x); v = _dec.Decimal(x.numerator).ln() - _dec.Decimal(x.denominator).ln(); return F(v)
+
+
+def _exact_A(M):
+    """the exact centered-one-hot interaction matrix (Fractions of 60-digit decimal logs): blocks P_i log(F_ij) P_j, factors on a pair added, zero variable blocks"""
+    cards = list(M.cards); off = [0]
+    for k in cards: off.append(off[-1] + k)
+    D = off[-1]; A = [[F(0)] * D for _ in range(D)]
+    for sc, vals in M.factors:
+        if len(sc) != 2: continue
+        i, j = sc; ki, kj = cards[i], cards[j]; L = [[_dec_ln(vals[a * kj + b]) for b in range(kj)] for a in range(ki)]
+        rm = [sum(L[a]) / kj for a in range(ki)]; cm = [sum(L[a][b] for a in range(ki)) / ki for b in range(kj)]; gm = sum(rm) / ki
+        for a in range(ki):
+            for b in range(kj):
+                c = L[a][b] - rm[a] - cm[b] + gm; A[off[i] + a][off[j] + b] += c; A[off[j] + b][off[i] + a] += c
+    return A, off
+
+
+def _pair_model(cards, pairs, unaries=None, evidence=None):
+    """pairs = [(i, j, values row-major over (i, j))]; unaries = {v: values}"""
+    facs = [dict(scope=(i, j), values=[F(v) for v in vals]) for (i, j, vals) in pairs]
+    for v, vals in (unaries or {}).items(): facs.append(dict(scope=(v,), values=[F(x) for x in vals]))
+    return dict(cards=list(cards), factors=facs, evidence=dict(evidence or {}))
+
+
+def _contains(M, built):
+    """A_lo <= A_exact <= A_hi entrywise; the constant directions are in the null space within the interval (sum over a variable block of [lo, hi] brackets 0)"""
+    A, off = _exact_A(M); D = built['D']; ok = True; worst = 0.0; null_ok = True
+    for r in range(D):
+        for c in range(D):
+            lo = F(float(built['A_lo'][r, c])); hi = F(float(built['A_hi'][r, c])); ok = ok and (lo <= A[r][c] <= hi); worst = max(worst, float(hi - lo))
+        for i in range(len(off) - 1):
+            slo = sum(float(built['A_lo'][r, c]) for c in range(off[i], off[i + 1])); shi = sum(float(built['A_hi'][r, c]) for c in range(off[i], off[i + 1])); null_ok = null_ok and (slo - 1e-15 <= 0.0 <= shi + 1e-15)
+    return ok, worst, null_ok
+
+
+def D72_interaction_matrix_and_witness_algebra():
+    res = {}; ok = True; rng = random.Random(72)
+    T = [[F(rng.randint(1, 9), rng.randint(1, 5)) for _ in range(3)] for _ in range(2)]                          # a 2 x 3 table over (0, 1)
+    m1 = _pair_model([2, 3], [(0, 1, [T[a][b] for a in range(2) for b in range(3)])]); m2 = _pair_model([2, 3], [(1, 0, [T[a][b] for b in range(3) for a in range(2)])])
+    M1, clk, B = _hstage(m1); b1 = SW.build_interaction(M1, B, clk); M2, clk2, B2 = _hstage(m2); b2 = SW.build_interaction(M2, B2, clk2)
+    c1 = _contains(M1, b1); c2 = _contains(M2, b2); mid1 = 0.5 * (b1['A_lo'] + b1['A_hi']); mid2 = 0.5 * (b2['A_lo'] + b2['A_hi']); same = float(np.max(np.abs(mid1 - mid2))) <= float(np.max(b1['A_hi'] - b1['A_lo'] + b2['A_hi'] - b2['A_lo'])) + 1e-15
+    res['a_orientations'] = dict(contains_ij=c1[0], contains_ji=c2[0], same_matrix=same, D=b1['D']); ok = ok and c1[0] and c2[0] and same and c1[2] and c2[2]
+    # (b) unaries never enter A (they move to h)
+    m3 = _pair_model([2, 3], [(0, 1, [T[a][b] for a in range(2) for b in range(3)])], unaries={0: [5, F(1, 3)], 1: [2, 7, F(1, 2)]}); M3, clk3, B3 = _hstage(m3); b3 = SW.build_interaction(M3, B3, clk3)
+    res['b_unaries'] = dict(A_identical=bool(np.array_equal(b1['A_lo'], b3['A_lo']) and np.array_equal(b1['A_hi'], b3['A_hi'])), h_differs=bool(np.max(np.abs(b1['h'] - b3['h'])) > 0.1)); ok = ok and res['b_unaries']['A_identical'] and res['b_unaries']['h_differs']
+    # (c) mixed cardinalities 2 / 3 / 5 on three pairs
+    cards = [2, 3, 5]; prs = [(i, j, [F(rng.randint(1, 20), rng.randint(1, 9)) for _ in range(cards[i] * cards[j])]) for (i, j) in ((0, 1), (0, 2), (1, 2))]; m4 = _pair_model(cards, prs, unaries={1: [1, 2, 3]}); M4, clk4, B4 = _hstage(m4); b4 = SW.build_interaction(M4, B4, clk4); c4 = _contains(M4, b4)
+    res['c_mixed_cards'] = dict(contains=c4[0], worst_width=c4[1], null_space=c4[2], D=b4['D']); ok = ok and c4[0] and c4[2] and b4['D'] == 10
+    # (d) duplicate pair factors add: two tables on (0, 1) == their elementwise product in one factor
+    T2 = [F(rng.randint(1, 9), rng.randint(1, 5)) for _ in range(6)]; T1 = [T[a][b] for a in range(2) for b in range(3)]
+    md = _pair_model([2, 3], [(0, 1, T1), (0, 1, T2)]); mp = _pair_model([2, 3], [(0, 1, [x * y for x, y in zip(T1, T2)])]); Md, ck, Bd = _hstage(md); bd = SW.build_interaction(Md, Bd, ck); Mp, ck2, Bp = _hstage(mp); bp = SW.build_interaction(Mp, Bp, ck2)
+    cd = _contains(Md, bd); cp = _contains(Mp, bp); Aex, _ = _exact_A(Mp); cont_cross = all(F(float(bd['A_lo'][r, c])) <= Aex[r][c] <= F(float(bd['A_hi'][r, c])) for r in range(bd['D']) for c in range(bd['D']))
+    res['d_duplicate_pairs'] = dict(blocks_in_canonical=len([1 for sc, _ in Md.factors if len(sc) == 2]), contains_dup=cd[0], contains_product=cp[0], dup_contains_product_exact=cont_cross); ok = ok and cd[0] and cp[0] and cont_cross
+    # (e) evidence conditioning: observed variable restricted out before the construction
+    me = _pair_model([2, 3, 2], [(0, 1, T1), (1, 2, [F(rng.randint(1, 9)) for _ in range(6)])], evidence={2: 1}); Me, cke, Be = _hstage(me); be = SW.build_interaction(Me, Be, cke); ce = _contains(Me, be)
+    res['e_evidence'] = dict(retained=len(Me.cards), D=be['D'], contains=ce[0], null_space=ce[2]); ok = ok and len(Me.cards) == 2 and be['D'] == 5 and ce[0]
+    # (f) n = 1 and the independent model: A = 0, eligible, g = 1 / n (within the proposal margin)
+    for name, mm in (('n1', dict(cards=[3], factors=[dict(scope=(0,), values=[F(1), F(2), F(3)])], evidence={})), ('independent_3', dict(cards=[2, 3, 2], factors=[dict(scope=(v,), values=[F(1 + v + a) for a in range(c)]) for v, c in enumerate([2, 3, 2])], evidence={}))):
+        Mi, cki, Bi = _hstage(mm)
+        if not Mi.cards: res['f_' + name] = dict(note='canonicalize fixed every variable (factorless -> exact rows); no matrix'); continue
+        Wi = SW.certify(Mi, Bi, cki); res['f_' + name] = dict(eligible=Wi['eligible'], width=Wi['width'], g=Wi.get('gap_g'), n=Wi['n'], A_zero=bool(np.all(Wi['h'] == Wi['h']) and SW.build_interaction(Mi, Bi, cki)['A_hi'].max() == 0.0)); ok = ok and Wi['eligible'] and Wi['width'] < 1e-8 and abs(Wi['gap_g'] * Wi['n'] - 1) < 1e-8
+    rec('D72_interaction_matrix_and_witness_algebra', ok, **res)
+
+
+def D73_rigorous_logs_and_eigenvalue_witness():
+    res = {}; ok = True; rng = random.Random(73)
+    # rigorous logs incl. huge / tiny rationals (no binary64 overflow in the enclosure arithmetic)
+    xs = [F(2) ** 300, F(1, 2 ** 300), F(1) + F(1, 10 ** 20), F(7, 5), F(7, 10), F(10 ** 40 + 7, 3)] + [F(rng.randint(1, 10 ** 9), rng.randint(1, 10 ** 9)) for _ in range(40)]
+    bad = 0; wmax = F(0)
+    for x in xs:
+        lo, hi = SW.log_enclosure(x); ref = _dec_ln(x); bad += int(not (lo <= ref <= hi)); wmax = max(wmax, hi - lo); float(lo); float(hi)
+    res['logs'] = dict(n=len(xs), violations=bad, max_width=float(wmax)); ok = ok and bad == 0 and wmax <= F(1, 2 ** 60)
+    # interval Cholesky: a known PD matrix is proved, an indefinite one refused, a too-wide interval cannot be proved
+    clk = CE.Clock(time.monotonic() + 30, {}); Mpd = np.array([[4.0, 1.0, 0.5], [1.0, 3.0, 0.2], [0.5, 0.2, 2.0]]); ind = np.array([[1.0, 0.0], [0.0, -1.0]]); wide_lo = np.array([[1.0, 0.9], [0.9, 1.0]]); wide_hi = np.array([[1.0, 1.1], [1.1, 1.0]])
+    r1 = SW.interval_cholesky_pd(Mpd, Mpd, clk); r2 = SW.interval_cholesky_pd(ind, ind, clk); r3 = SW.interval_cholesky_pd(wide_lo, wide_hi, clk)
+    res['cholesky'] = dict(pd_ok=r1['ok'], indefinite_ok=r2['ok'], indefinite_failed_column=r2['failed_column'], wide_ok=r3['ok']); ok = ok and r1['ok'] and (not r2['ok']) and r2['failed_column'] == 1 and (not r3['ok'])
+    # negative eigenvalues retained: the Ising pair exp(+-J) (table [[t, 1/t], [1/t, t]]): A has eigenvalues +-2J; the proof of A - lI uses the NEGATIVE l; the model is untouched
+    def ising(t):
+        return _pair_model([2, 2], [(0, 1, [t, 1 / t, 1 / t, t])])
+    t = F(164, 100); mdl = ising(t); snap = json.dumps(mdl, default=str); M, clk, B = _hstage(mdl); W = SW.certify(M, B, clk); J = _dec_ln(t)
+    res['negative_retained'] = dict(l=W['l'], u=W['u'], width=W['width'], expected_width_4J=float(4 * J), eligible=W['eligible'], model_untouched=(json.dumps(mdl, default=str) == snap)); ok = ok and W['l'] < 0 and abs(W['width'] - float(4 * J)) < 1e-8 and res['negative_retained']['model_untouched']
+    # the factor-of-two convention: Ising width(J) = 2 J < 1 iff categorical w(A) = 4 J < 2
+    below = SW.certify(*(lambda M_, c_, b_: (M_, b_, c_))(*_hstage(ising(F(164, 100))))); above = SW.certify(*(lambda M_, c_, b_: (M_, b_, c_))(*_hstage(ising(F(166, 100)))))
+    res['ising_convention'] = dict(J_below=float(_dec_ln(F(164, 100))), eligible_below=below['eligible'], width_below=below['width'], J_above=float(_dec_ln(F(166, 100))), eligible_above=above['eligible'], width_above=above['width'], refusal_above=(above['refusal'] or {}).get('kind'))
+    ok = ok and below['eligible'] and (not above['eligible']) and (above['refusal'] or {}).get('kind') == 'SPECTRAL_WIDTH'
+    # the boundary just below / above width two: 4 ln t = 2 -+ 2e-6
+    t_lo = F(math.exp(0.5 - 5e-7)).limit_denominator(10 ** 15); t_hi = F(math.exp(0.5 + 5e-7)).limit_denominator(10 ** 15)
+    wl = SW.certify(*(lambda M_, c_, b_: (M_, b_, c_))(*_hstage(ising(t_lo)))); wh = SW.certify(*(lambda M_, c_, b_: (M_, b_, c_))(*_hstage(ising(t_hi))))
+    res['boundary'] = dict(width_below=wl['width'], eligible_below=wl['eligible'], margin_below=wl.get('margin_m'), width_above=wh['width'], eligible_above=wh['eligible'], refusal_above=(wh['refusal'] or {}).get('kind'))
+    ok = ok and wl['eligible'] and wl['width'] < 2 and (not wh['eligible']) and wh['width'] >= 2
+    # tampered / insufficient witnesses are rejected by the proof; the proposal eigenvalues are advisory (eligibility with given l / u never consults them)
+    M, clk, B = _hstage(ising(t)); good = SW.certify(M, B, clk); lt, ut = good['l'], good['u']
+    tam = SW.certify(M, B, clk, l=lt + 0.1, u=ut); ins = SW.certify(M, B, clk, l=lt, u=ut - 0.1); fine = SW.certify(M, B, clk, l=lt, u=ut)
+    res['tampered'] = dict(tampered_l_eligible=tam['eligible'], tampered_kind=(tam['refusal'] or {}).get('kind'), insufficient_u_eligible=ins['eligible'], insufficient_kind=(ins['refusal'] or {}).get('kind'), given_true_eligible=fine['eligible'], proposal_recorded=('lambda_min_float' in fine['proposal']))
+    ok = ok and (not tam['eligible']) and tam['refusal']['kind'] == 'SPECTRAL_PROOF' and (not ins['eligible']) and ins['refusal']['kind'] == 'SPECTRAL_PROOF' and fine['eligible']
+    rec('D73_rigorous_logs_and_eigenvalue_witness', ok, **res)
+
+
+def _enum_p(hbm):
+    states = list(itertools.product(*[range(k) for k in hbm.cards])); W = [hbm.log_weight(x) for x in states]; Z = sum(W); return states, [w / Z for w in W], Z
+
+
+def D74_exact_conditionals_detailed_balance_and_independent_path():
+    rng = random.Random(74); model = _rand_model(rng, [2, 2, 2, 2], [(0, 1), (1, 2), (2, 3), (0, 3), (0, 2)]); M, clk, B = _hstage(model); hbm = HX.HeatBathModel(M); n = hbm.n
+    states, p, Z = _enum_p(hbm); idx = {x: k for k, x in enumerate(states)}; res = dict(states=len(states)); ok = True
+    # conditional rows == the Fraction normalization of W over the variable
+    bad = 0
+    for x in states:
+        for i in range(n):
+            c = HX.conditional_exact(hbm, list(x), i); ws = [p[idx[tuple(list(x[:i]) + [a] + list(x[i + 1:]))]] for a in range(hbm.cards[i])]; S = sum(ws); bad += int(any(c[a] != ws[a] / S for a in range(hbm.cards[i]))) + int(sum(c) != 1)
+    res['conditional_mismatches'] = bad; ok = ok and bad == 0
+    # exact detailed balance of the random-scan heat-bath kernel
+    def P(x, y):
+        tot = F(0)
+        for i in range(n):
+            if all(x[k] == y[k] for k in range(n) if k != i): tot += HX.conditional_exact(hbm, list(x), i)[y[i]]
+        return tot / n
+    viol = 0
+    for x in states:
+        for y in states: viol += int(p[idx[x]] * P(x, y) != p[idx[y]] * P(y, x))
+    res['detailed_balance_violations'] = viol; ok = ok and viol == 0
+    # the ExactChain path reproduced by an independent minimal implementation on the same bit stream (same rejection protocol)
+    def indep_path(seed, steps):
+        r = random.Random(seed); x = [0] * n; path = []
+        def bits(k): return r.getrandbits(k) if k > 0 else 0
+        for _ in range(steps):
+            if n & (n - 1) == 0: i = bits(n.bit_length() - 1)
+            else:
+                k = n.bit_length()
+                while True:
+                    v = bits(k)
+                    if v < n: i = v; break
+            w = []
+            for a in range(hbm.cards[i]):                                                                 # the SAME weight convention as the reference (unary of i x the INCIDENT pair factors): a different common factor would change the integer scale and the bits consumed
+                y = list(x); y[i] = a; wv = F(M.psi[i][a])
+                for sc, vals in M.factors:
+                    if len(sc) == 2 and i in sc: wv *= vals[y[sc[0]] * hbm.cards[sc[1]] + y[sc[1]]]
+                w.append(wv)
+            den = 1
+            for v in w: den = den * v.denominator // math.gcd(den, v.denominator)
+            ints = [v.numerator * (den // v.denominator) for v in w]; S = sum(ints); kb = S.bit_length()
+            while True:
+                u = bits(kb)
+                if u < S: break
+            c = 0
+            for a, wi in enumerate(ints):
+                c += wi
+                if u < c: x[i] = a; break
+            path.append(tuple(x))
+        return path
+    ec = HX.ExactChain(hbm, [0] * n, 1234); ref = []
+    for _ in range(400): ec.step(); ref.append(tuple(ec.x))
+    ip = indep_path(1234, 400); res['independent_path_identical'] = (ip == ref); res['distinct_states_visited'] = len(set(ref)); ok = ok and ip == ref and ec.t == 400
+    rec('D74_exact_conditionals_detailed_balance_and_independent_path', ok, **res)
+
+
+def D75_counters_and_occupation():
+    rng = random.Random(75); model = _rand_model(rng, [2, 3, 2, 3, 2], [(0, 1), (1, 2), (2, 3), (3, 4), (0, 4)]); M, clk, B = _hstage(model); hbm = HX.HeatBathModel(M); n = hbm.n; res = {}; ok = True
+    # exact chain: explicit per-step counts over 500 recorded steps
+    ec = HX.ExactChain(hbm, [0] * n, 5)
+    for _ in range(40): ec.step()
+    t_before = ec.t; ec.start_recording(); counts = [[0] * k for k in hbm.cards]; nulls = 0
+    for _ in range(500):
+        i, old, new = ec.step(); nulls += int(old == new)
+        for v in range(n): counts[v][ec.x[v]] += 1
+    occ = ec.flush(); occ2 = ec.flush()
+    res['exact'] = dict(steps_counted=ec.t - t_before, null_moves=nulls, flush_equals_explicit=(occ == counts), second_flush_idempotent=(occ2 == occ), sums=[sum(r) for r in occ]); ok = ok and ec.t - t_before == 500 and occ == counts and occ2 == occ and all(sum(r) == 500 for r in occ)
+    for _ in range(7):
+        ec.step()
+        for v in range(n): counts[v][ec.x[v]] += 1
+    occ3 = ec.flush(); res['exact']['k_more_steps_add_k'] = (occ3 == counts and all(sum(r) == 507 for r in occ3)); ok = ok and res['exact']['k_more_steps_add_k']
+    # first recorded state convention: the state AFTER the first step following start_recording is the first counted
+    ec2 = HX.ExactChain(hbm, [1, 2, 1, 0, 1], 6); ec2.start_recording(); i, old, new = ec2.step(); o1 = ec2.flush(); res['exact']['first_recorded'] = all(o1[v][ec2.x[v]] == 1 and sum(o1[v]) == 1 for v in range(n)); ok = ok and res['exact']['first_recorded']
+    # native chain: single-step runs with explicit occupancy
+    ch = HN.NativeChain(hbm, [0] * n, 5, clk, budget=B)
+    for _ in range(40): ch.run(1)
+    s0 = ch.steps(); ch.set_recording(); counts = [[0] * k for k in hbm.cards]; prev = ch.state(); nulls = 0
+    for _ in range(500):
+        ch.run(1); x = ch.state(); nulls += int(x == prev); prev = x
+        for v in range(n): counts[v][x[v]] += 1
+    occ = ch.flush(); occ2 = ch.flush(); c = ch.counters()
+    res['native'] = dict(steps_counted=ch.steps() - s0, null_moves_observed=nulls, null_moves_kernel_total=c['null_moves'], flush_equals_explicit=(occ == counts), second_flush_idempotent=(occ2 == occ), sums=[sum(r) for r in occ], max_count_le_N=all(max(r) <= 500 for r in occ))
+    ok = ok and ch.steps() - s0 == 500 and occ == counts and occ2 == occ and all(sum(r) == 500 for r in occ)
+    for _ in range(9):
+        ch.run(1); x = ch.state()
+        for v in range(n): counts[v][x[v]] += 1
+    occ3 = ch.flush(); res['native']['k_more_steps_add_k'] = (occ3 == counts and all(sum(r) == 509 for r in occ3)); ok = ok and res['native']['k_more_steps_add_k']; ch.close()
+    rec('D75_counters_and_occupation', ok, **res)
+
+
+def D76_native_exactness_qualification():
+    rng = random.Random(76); n = 5; cards = [2, 3, 2, 4, 3]
+    model = dict(cards=cards, factors=[dict(scope=(i, j), values=[F(rng.randint(1, 50), rng.randint(1, 7)) for _ in range(cards[i] * cards[j])]) for i in range(n) for j in range(i + 1, n) if rng.random() < 0.7] + [dict(scope=(v,), values=[F(rng.randint(1, 9)) for _ in range(cards[v])]) for v in range(n)], evidence={})
+    M, clk, B = _hstage(model); hbm = HX.HeatBathModel(M); ch = HN.NativeChain(hbm, [0] * hbm.n, 7, clk); u = 2.0 ** -53; res = {}; ok = True
+    # (a) CDF interval containment at 2,000 random states (every site)
+    viol = 0; checked = 0
+    for _ in range(2000):
+        x = [rng.randrange(k) for k in hbm.cards]; ch.lib.hb_set_state(ch.ctx, (_ct.c_int * len(x))(*x)); i = rng.randrange(hbm.n); w, clo, chi = ch.inspect(i); wx = hbm.weights_exact(x, i); cum = F(0)
+        for b in range(len(wx)):
+            cum += wx[b]; checked += 1; viol += int(not (F(clo[b]) <= cum <= F(chi[b])))
+    res['cdf_containment'] = dict(cells=checked, violations=viol); ok = ok and viol == 0
+    # (b) the kernel's decision rule (replicated bit-for-bit from heatbath_native.c) agrees with decide_exact whenever it resolves
+    def kernel_rule(clo, chi, u53):
+        k = len(clo); Slo, Shi = clo[-1], chi[-1]; Tlo = (u53 * u) * Slo * (1 - 2 * u); Thi = ((u53 + 1) * u) * Shi * (1 + 2 * u); a = 0
+        while a < k - 1 and not (Thi < clo[a]): a += 1
+        return a, ((a == 0) or (Tlo >= chi[a - 1]))
+    agree = 0; resolved = 0
+    for _ in range(3000):
+        x = [rng.randrange(k) for k in hbm.cards]; ch.lib.hb_set_state(ch.ctx, (_ct.c_int * len(x))(*x)); i = rng.randrange(hbm.n); w, clo, chi = ch.inspect(i); u53 = rng.getrandbits(53); a, okd = kernel_rule(clo, chi, u53)
+        ex, extra = HX.decide_exact(hbm.weights_exact(x, i), u53, lambda kk: rng.getrandbits(kk) if kk else 0)
+        if okd: resolved += 1; agree += int(ex == a)
+    res['decisions'] = dict(trials=3000, resolved=resolved, agree=agree, disagreements=resolved - agree); ok = ok and resolved == agree and resolved > 2900
+    # (c) a DELIBERATELY ALTERED floating conditional (eps = 0, nearest sums, no unresolved state) fails on an adversarial u53 at a cumulative boundary, although its histogram looks fine; the kernel rule reports UNRESOLVED there
+    x = [1, 2, 0, 3, 1]; i = 3; wx = hbm.weights_exact(x, i); S = sum(wx); cum = []; c = F(0)
+    for v in wx: c += v; cum.append(c)
+    a_b = 1; frac = cum[a_b] / S; u53 = (frac.numerator << 53) // frac.denominator                      # U in [u53, u53 + 1) / 2^53 straddles C_{a_b} / S
+    assert F(u53, 1 << 53) <= frac < F(u53 + 1, 1 << 53)
+    def altered_rule(wf, u53):
+        Sf = sum(wf); T = (u53 / 2.0 ** 53) * Sf; cf = 0.0
+        for a, v in enumerate(wf):
+            cf += v
+            if T < cf: return a
+        return len(wf) - 1
+    wf = [float(v) for v in wx]; alt = altered_rule(wf, u53); ex0, _ = HX.decide_exact(wx, u53, lambda kk: 0); ex1, _ = HX.decide_exact(wx, u53, lambda kk: (1 << kk) - 1 if kk else 0)
+    ch.lib.hb_set_state(ch.ctx, (_ct.c_int * len(x))(*x)); w_, clo_, chi_ = ch.inspect(i); ka, kok = kernel_rule(clo_, chi_, u53)
+    hist = [0] * len(wx); T = 20000
+    for _ in range(T): hist[altered_rule(wf, rng.getrandbits(53))] += 1
+    hist_dev = max(abs(hist[a] / T - float(wx[a] / S)) for a in range(len(wx)))
+    res['altered_conditional'] = dict(adversarial_u53_bits=u53.bit_length(), exact_with_zero_bits=ex0, exact_with_one_bits=ex1, altered_decision=alt, altered_disagrees_with_some_exact=(alt != ex0 or alt != ex1), kernel_rule_resolved_here=kok, histogram_max_abs_deviation=hist_dev, histogram_looks_reasonable=(hist_dev < 0.02))
+    ok = ok and (ex0 != ex1) and (alt != ex0 or alt != ex1) and (not kok); ch.close()
+    rec('D76_native_exactness_qualification', ok, **res)
+
+
+def _run_runner(path, budget, stop, extra=()):
+    out = _tmp.mktemp(suffix='.json', prefix='dgp8_ctl_'); p = _sp.run([_PY8, _RUNNER, '--input', path, '--output', out, '--budget', str(budget), '--admission-stop', str(stop), '--seed', '1'] + list(extra), capture_output=True, text=True, timeout=60)
+    d = json.load(open(out)) if os.path.exists(out) else None
+    return d, p.returncode, (p.stderr or '')[-600:]
+
+
+def D77_optional_route_refusals():
+    res = {}; ok = True; clk = CE.Clock(time.monotonic() + 30, {})
+    # hard zero -> typed RefusedSpectral('HARD_ZERO')
+    mz = _pair_model([2, 2], [(0, 1, [F(1), F(0), F(2), F(3)])]); Mz, ck, Bz = _hstage(mz); live0 = Bz.live
+    try: SW.certify(Mz, Bz, ck); res['hard_zero'] = dict(raised=False)
+    except SW.RefusedSpectral as e: res['hard_zero'] = dict(raised=True, kind=e.kind, live_restored=(Bz.live == live0))
+    ok = ok and res['hard_zero'].get('kind') == 'HARD_ZERO' and res['hard_zero'].get('live_restored')
+    # a 3-ary factor -> RefusedSpectral('ARITY')
+    m3 = dict(cards=[2, 2, 2], factors=[dict(scope=(0, 1, 2), values=[F(1 + k) for k in range(8)])], evidence={}); M3, ck3, B3 = _hstage(m3); live0 = B3.live
+    try: SW.certify(M3, B3, ck3); res['arity'] = dict(raised=False)
+    except SW.RefusedSpectral as e: res['arity'] = dict(raised=True, kind=e.kind, live_restored=(B3.live == live0))
+    ok = ok and res['arity'].get('kind') == 'ARITY' and res['arity'].get('live_restored')
+    # a strong model (width >= 2): eligible False, typed SPECTRAL_WIDTH, no exception
+    model, _ = load_odev('dg_n6_c4_clique_two'); M6, ck6, B6 = _hstage(model); W = SW.certify(M6, B6, ck6); res['strong_n6'] = dict(eligible=W['eligible'], kind=(W['refusal'] or {}).get('kind'), width=W['width']); ok = ok and (not W['eligible']) and res['strong_n6']['kind'] == 'SPECTRAL_WIDTH' and W['width'] >= 2
+    # the runner on the strong model: outcome REFUSED, refusal recorded, every row NOT_PUBLISHED, complete JSON, deadline respected
+    d, rc, err = _run_runner(os.path.join(ORACLE_DEV, 'dg_n6_c4_clique_two.uai'), 4.0, 3.5)
+    res['runner_strong'] = dict(rc=rc, outcome=(d or {}).get('outcome'), refusal=((d or {}).get('mechanism') or {}).get('refusal'), K=(d or {}).get('K'), published=(d or {}).get('published'), all_not_published=(bool(d) and all(r.get('guarantee') == 'NOT_PUBLISHED' for r in d.get('answers') or []) and len(d.get('answers') or []) in (0, d.get('K'))), hard_deadline_respected=(d or {}).get('hard_deadline_respected'), stderr_tail=err[-200:])
+    ok = ok and d is not None and rc == 0 and d.get('outcome') == 'REFUSED' and (d['mechanism'].get('refusal') or {}).get('kind') == 'SPECTRAL_WIDTH' and d.get('published') == 0 and d.get('hard_deadline_respected') is True
+    rec('D77_optional_route_refusals', ok, **res)
+
+
+def D78_markov_certificate_algebra():
+    rng = random.Random(78); res = {}; ok = True
+    model = _rand_model(rng, [2, 2, 2, 2], [(0, 1), (1, 2), (2, 3), (0, 3)]); M, clk, B = _hstage(model); hbm = HX.HeatBathModel(M); states, p, Z = _enum_p(hbm); idx = {x: k for k, x in enumerate(states)}
+    x0 = MC.choose_x0(hbm); lp0, lw = MC.log_p0_lower(hbm, x0); px0 = p[idx[tuple(x0)]]; ZU = F(1)
+    for i, k in enumerate(hbm.cards): ZU *= k * max(hbm.psi[i])
+    for (_, _, _, _, vals) in hbm.pairs: ZU *= max(vals)
+    p0_exact = hbm.log_weight(x0) / ZU
+    res['p0'] = dict(ln_p0_lower=float(lp0), ln_p0_exact=float(_dec_ln(p0_exact)), ln_px0=float(_dec_ln(px0)), bound_le_exact_p0=(lp0 <= _dec_ln(p0_exact)), p0_le_px0=(p0_exact <= px0), Z_le_ZU=(Z <= ZU)); ok = ok and lp0 <= _dec_ln(p0_exact) and p0_exact <= px0 and Z <= ZU
+    # logarithmic overflow handling: factor values 2^+-900 as rationals -> finite exact Fractions, finite floats
+    mh = _pair_model([2, 2], [(0, 1, [F(2) ** 900, F(1, 2 ** 900), F(1), F(3)])], unaries={0: [F(2) ** 900, F(1)]}); Mh, ckh, Bh = _hstage(mh); hh = HX.HeatBathModel(Mh); lz = MC.log_Z_upper(hh); lph, _ = MC.log_p0_lower(hh, MC.choose_x0(hh))
+    res['overflow'] = dict(ln_Z_upper=float(lz), ln_p0_lower=float(lph), finite=(math.isfinite(float(lz)) and math.isfinite(float(lph)))); ok = ok and res['overflow']['finite'] and lph <= 0
+    # degenerate gaps: n = 1 (g -> 1), the independent model; burn-in finite
+    m1 = dict(cards=[3, 2], factors=[dict(scope=(0,), values=[F(1), F(2), F(3)]), dict(scope=(1,), values=[F(1), F(5)]), dict(scope=(0, 1), values=[F(1)] * 6)], evidence={}); M1, ck1, B1 = _hstage(m1); W1 = SW.certify(M1, B1, ck1); h1 = HX.HeatBathModel(M1); lp1, _ = MC.log_p0_lower(h1, MC.choose_x0(h1))
+    g1 = F(W1['g_exact']); t1, b1 = MC.burn_in_steps(lp1, g1, F(1, 2 * 10 ** 6)); res['degenerate'] = dict(width=W1['width'], g=float(g1), n=W1['n'], g_times_n=float(g1 * W1['n']), burn_in=t1, eligible=W1['eligible']); ok = ok and W1['eligible'] and abs(float(g1 * W1['n']) - 1) < 1e-8 and isinstance(t1, int) and t1 >= 0
+    # the radius formula: monotone in N, matches a float evaluation
+    g = F(1, 3000); Q = 256; dj = F(1, 8 * 10 ** 6); prev = F(2); mono = True; relerr = 0.0
+    for N in (10 ** 3, 10 ** 4, 10 ** 5, 10 ** 6, 10 ** 7):
+        r = MC.radius_upper(N, Q, dj, g); mono = mono and r <= prev; prev = r; rf = min(1.0, math.sqrt((2 - float(g)) * math.log(2 * Q / float(dj)) / (2 * N * float(g)))); relerr = max(relerr, abs(float(r) - rf) / rf)          # the certificate clips the radius at one
+        ok = ok and float(r) >= rf * (1 - 1e-15)
+    res['radius'] = dict(monotone=mono, max_rel_err_vs_float=relerr, upper_bound_of_float=True); ok = ok and mono and relerr < 1e-12
+    # fixed checkpoints and the delta accounting
+    plan = MC.checkpoint_plan(1000003); J = MC.PROFILE['checkpoints_J']; dsample = F(1, 2 * 10 ** 6); djs = [dsample / J] * J
+    import spectral_heatbath_run as SHR
+    res['checkpoints'] = dict(plan=plan, strictly_increasing=all(plan[k] < plan[k + 1] for k in range(len(plan) - 1)), last_is_N_max=(plan[-1] == 1000003), sum_delta_j_equals_delta_sample=(sum(djs) == dsample), beta_plus_sample_le_delta=(SHR.PROFILE['beta_share'] + SHR.PROFILE['delta_sample_share'] <= 1))
+    ok = ok and res['checkpoints']['strictly_increasing'] and res['checkpoints']['last_is_N_max'] and res['checkpoints']['sum_delta_j_equals_delta_sample'] and res['checkpoints']['beta_plus_sample_le_delta']
+    # a deliberate deadline crossing in the runner: zero rows, complete JSON, typed outcome
+    d, rc, err = _run_runner(_WEAK32, 0.3, 0.2); res['deadline_crossing'] = dict(rc=rc, outcome=(d or {}).get('outcome'), published=(d or {}).get('published'), refusal=((d or {}).get('mechanism') or {}).get('refusal'), json_complete=(d is not None and 'wall_s' in d), stderr_tail=err[-300:])
+    ok = ok and d is not None and rc == 0 and d.get('outcome') in ('REFUSED', 'DEADLINE') and d.get('published') == 0
+    rec('D78_markov_certificate_algebra', ok, **res)
+
+
+def D79_rng_expiry_and_admission():
+    res = {}; ok = True; rng = random.Random(79)
+    # rejection loop expiry: a bit source that always rejects + an expired clock -> typed DEADLINE refusal (never an endless loop)
+    dead = CE.Clock(time.monotonic() - 1.0, {})
+    try: HX.uniform_below(5, lambda k: (1 << k) - 1, dead, 'ctl'); res['rejection_expiry'] = dict(raised=False)
+    except CE.Refused as e: res['rejection_expiry'] = dict(raised=True, kind=e.kind)
+    ok = ok and res['rejection_expiry'].get('kind') == 'DEADLINE'
+    # refinement expiry: weights (1, 2) with U at the boundary 1/3 whose binary expansion is fed as the refinement bits -> RNG_REFINEMENT
+    S = 3; u53 = (1 << 53) // 3
+    def third_bits(k, _st=[53]):
+        v = ((1 << (_st[0] + k)) // 3) & ((1 << k) - 1) if k else 0; _st[0] += k; return v
+    try: HX.decide_exact([F(1), F(2)], u53, third_bits, max_extra_bits=8); res['refinement_expiry'] = dict(raised=False)
+    except CE.Refused as e: res['refinement_expiry'] = dict(raised=True, kind=e.kind)
+    ok = ok and res['refinement_expiry'].get('kind') == 'RNG_REFINEMENT'
+    # admission of the native kernel: estimate >= actual, charged before creation, released on close; a small cap refuses typed with no leak
+    model = _rand_model(rng, [2, 3, 2, 3], [(0, 1), (1, 2), (2, 3)]); M, clk, B = _hstage(model); hbm = HX.HeatBathModel(M); live0 = B.live; ch = HN.NativeChain(hbm, [0] * hbm.n, 3, clk, budget=B); est = HN.kernel_bytes_estimate(hbm); act = int(ch.lib.hb_bytes(ch.ctx))
+    res['kernel_admission'] = dict(estimate=est, actual=act, estimate_ge_actual=(est >= act), live_after_create=B.live - live0, charged_equals_estimate=(B.live - live0 == est)); ch.close(); res['kernel_admission']['live_after_close_restored'] = (B.live == live0); ok = ok and est >= act and B.live - live0 == 0 and res['kernel_admission']['charged_equals_estimate']
+    small = CE.Budget(est // 2)
+    try: HN.NativeChain(hbm, [0] * hbm.n, 3, clk, budget=small); res['small_cap'] = dict(raised=False)
+    except CE.Refused as e: res['small_cap'] = dict(raised=True, kind=e.kind, live_after=small.live)
+    ok = ok and res['small_cap'].get('kind') == 'MEMORY' and res['small_cap'].get('live_after') == 0
+    # the witness releases every array on every exit: eligible, refused (width), and the raised class refusal
+    M2, ck2, B2 = _hstage(_pair_model([2, 2], [(0, 1, [F(164, 100), F(100, 164), F(100, 164), F(164, 100)])])); l0 = B2.live; W = SW.certify(M2, B2, ck2); res['witness_release_eligible'] = dict(eligible=W['eligible'], live_restored=(B2.live == l0)); ok = ok and B2.live == l0
+    M3, ck3, B3 = _hstage(load_odev('dg_n6_c4_clique_two')[0]); l0 = B3.live; W3 = SW.certify(M3, B3, ck3); res['witness_release_refused'] = dict(kind=(W3['refusal'] or {}).get('kind'), live_restored=(B3.live == l0)); ok = ok and B3.live == l0
+    M4, ck4, B4 = _hstage(_pair_model([2, 2], [(0, 1, [F(1), F(0), F(1), F(1)])])); l0 = B4.live
+    try: SW.certify(M4, B4, ck4)
+    except SW.RefusedSpectral: pass
+    res['witness_release_raised'] = dict(live_restored=(B4.live == l0)); ok = ok and B4.live == l0
+    # no negative release: a budget never goes below its baseline after charge / release cycles
+    res['no_negative_release'] = (B.live >= 0 and B2.live >= 0 and B3.live >= 0 and B4.live >= 0); ok = ok and res['no_negative_release']
+    rec('D79_rng_expiry_and_admission', ok, **res)
+
+
+def D80_finalizer_before_single_final_timestamp():
+    res = {}; ok = True; src = open(_RUNNER).read(); i0 = src.index('def finish('); i1 = src.index('\n    try:', i0); body = src[i0:i1]
+    n_tnow = body.count('tnow()'); after = body.split('t_end = tnow()')[1] if 't_end = tnow()' in body else ''
+    res['source'] = dict(tnow_calls_in_finish=n_tnow, single_authoritative_sample=(n_tnow == 1), rows_assigned_after_sample=("out['answers'] = rows" in after), late_suppression_present=('suppressed_late_rows' in after)); ok = ok and n_tnow == 1 and res['source']['rows_assigned_after_sample'] and res['source']['late_suppression_present']
+    # a run whose final sample lands late (the budget is below the canonicalization + witness time)
+    d, rc, err = _run_runner(_WEAK64, 0.05, 0.04); res['late'] = dict(rc=rc, outcome=(d or {}).get('outcome'), hard_deadline_respected=(d or {}).get('hard_deadline_respected'), published=(d or {}).get('published'), suppressed=((d or {}).get('mechanism') or {}).get('suppressed_late_rows'), refusal=((d or {}).get('mechanism') or {}).get('refusal'), json_complete=(d is not None and 'wall_s' in d), stderr_tail=err[-300:])
+    ok = ok and d is not None and rc == 0 and d.get('hard_deadline_respected') is False and d.get('published') == 0 and d.get('outcome') in ('DEADLINE', 'REFUSED')
+    # a normal short run: deadline respected, at least one completed checkpoint, rows or enclosures, total failure probability within delta
+    d2, rc2, err2 = _run_runner(_WEAK32, 3.0, 2.5); m = (d2 or {}).get('mechanism') or {}; cps = m.get('checkpoints') or []; cert = m.get('certificate') or {}
+    res['normal'] = dict(rc=rc2, outcome=(d2 or {}).get('outcome'), hard_deadline_respected=(d2 or {}).get('hard_deadline_respected'), checkpoints_completed=sum(1 for c in cps if c.get('completed')), published=(d2 or {}).get('published'), enclosures=len((d2 or {}).get('enclosures') or []), radius=cert.get('radius'), total_failure_probability=cert.get('total_failure_probability'), transitions=(m.get('transitions') or {}).get('recorded'), wall_s=(d2 or {}).get('wall_s'), stderr_tail=err2[-300:])
+    ok = ok and d2 is not None and rc2 == 0 and d2.get('hard_deadline_respected') is True and res['normal']['checkpoints_completed'] >= 1 and (d2.get('published') or len(d2.get('enclosures') or [])) and cert.get('total_failure_probability') is not None and F(cert['total_failure_probability']) <= F(1, 10 ** 6)
+    rec('D80_finalizer_before_single_final_timestamp', ok, **res)
+
+
+def D81_publication_geometry():
+    res = {}; ok = True; eps = F(1, 200)
+    pub, enc, st = MC.rows_from_counts([[60, 40]], 100, eps - F(1, 10 ** 9), eps, [0], {}); res['just_below'] = dict(published=len(pub), enclosures=len(enc), points_sum_one=(sum(v[2] for v in pub.values()) == 1 if pub else None), point_inside=all(v[0] <= v[2] <= v[1] for v in pub.values()), widths_le_2eps=all(v[1] - v[0] <= 2 * eps for v in pub.values()))
+    ok = ok and len(pub) == 2 and len(enc) == 0 and res['just_below']['points_sum_one'] and res['just_below']['point_inside'] and res['just_below']['widths_le_2eps']
+    pub2, enc2, st2 = MC.rows_from_counts([[60, 40]], 100, eps + F(1, 10 ** 9), eps, [0], {}); res['just_above'] = dict(published=len(pub2), enclosures=len(enc2), enclosure_width_gt_2eps=all(e[3] - e[2] > 2 * eps for e in enc2)); ok = ok and len(pub2) == 0 and len(enc2) == 2 and res['just_above']['enclosure_width_gt_2eps']
+    pub3, enc3, _ = MC.rows_from_counts([[100, 0]], 100, F(1, 1000), eps, [0], {}); res['clipping'] = dict(rows=[(str(v[0]), str(v[1]), str(v[2])) for v in pub3.values()], clipped_to_unit=all(F(0) <= v[0] <= v[1] <= F(1) for v in pub3.values()), published=len(pub3)); ok = ok and len(pub3) == 2 and res['clipping']['clipped_to_unit']
+    # fixed rows (card-1 and factorless variables) are EXACT rows in the runner
+    import hp_gen as _G
+    m = dict(cards=[2, 1, 3, 2], factors=[dict(scope=(0, 3), values=[F(3), F(1), F(1), F(2)]), dict(scope=(0,), values=[F(1), F(2)]), dict(scope=(2,), values=[F(1), F(2), F(1)])], evidence={})          # variable 1 card-1, variable 2 factorless
+    path = _tmp.mktemp(suffix='.uai', prefix='dgp8_fixed_'); _G.write(path, m); d, rc, err = _run_runner(path, 2.0, 1.5); rows = {(r['var'], r['state']): r for r in (d or {}).get('answers') or []}
+    fixed = {k: rows.get(k) for k in ((1, 0), (2, 0), (2, 1), (2, 2))}
+    def exact_ok(r, val): return r is not None and r.get('guarantee') == 'EXACT' and r.get('lo') == r.get('hi') == r.get('point') and F(r['lo']) == val
+    res['fixed_rows'] = dict(rc=rc, outcome=(d or {}).get('outcome'), rows={str(k): (v.get('guarantee'), v.get('lo')) if v else None for k, v in fixed.items()}, card1_exact_one=exact_ok(fixed[(1, 0)], F(1)), factorless_exact=(exact_ok(fixed[(2, 0)], F(1, 4)) and exact_ok(fixed[(2, 1)], F(1, 2)) and exact_ok(fixed[(2, 2)], F(1, 4))), stderr_tail=err[-200:])
+    ok = ok and d is not None and res['fixed_rows']['card1_exact_one'] and res['fixed_rows']['factorless_exact']
+    rec('D81_publication_geometry', ok, **res)
+
+
+CONTROLS += [D72_interaction_matrix_and_witness_algebra, D73_rigorous_logs_and_eigenvalue_witness, D74_exact_conditionals_detailed_balance_and_independent_path, D75_counters_and_occupation, D76_native_exactness_qualification, D77_optional_route_refusals, D78_markov_certificate_algebra, D79_rng_expiry_and_admission, D80_finalizer_before_single_final_timestamp, D81_publication_geometry]
 
 
 if __name__ == '__main__':

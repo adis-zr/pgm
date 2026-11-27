@@ -1,0 +1,87 @@
+"""DGP8 SPECTRAL_HEATBATH, part 3: the separate MARKOV confidence certificate (brief section 4; theory section 4 'Complete finite-time confidence statement'). Never fed to the accepted IID importance-sampling code. Inputs: the
+checked gap g (lower bound), the deterministic x0, the request delta. (1) p0: p(x0) >= W(x0) / Z_U with Z_U = (prod_i k_i)(prod_f max f) -- log W(x0) from the exact rational W(x0) with a rigorous LOWER log enclosure, log Z_U with
+rigorous UPPER enclosures (spectral_witness.log_enclosure), so log p0 is a proved lower bound (never binary64 overflow / underflow: everything is exact rational until the end). (2) burn-in t: the smallest integer with
+(1/2) sqrt(1 / p0 - 1)(1 - g)^t <= beta, computed outward (the log of 1 - g enclosed rigorously; the less negative endpoint and the more negative numerator endpoint make t larger). (3) radius at a checkpoint with N recorded states, Q
+indicators and its own delta_j: r = sqrt((2 - g) ln(2 Q / delta_j) / (2 N g)) rounded UP (rational arithmetic with the upper log enclosure; the square root rounded up); the stationary Leon-Perron inequality + the union bound; the
+burn-in coupling costs beta; beta + sum_j delta_j <= delta_route. (4) The checkpoint plan is FROZEN before sampling: J geometric checkpoints N_j (frozen rule in the runner) each with delta_j = delta_sample / J; a deadline-selected N is
+never a checkpoint; only a COMPLETED checkpoint publishes; snapshots are immutable. (5) Rows: the occupation frequency as the point, [max(0, p - r), min(1, p + r)]; a row is PUBLISHED only when the accepted geometry accepts it
+(integrated.valid_publication: 0 <= lo <= hi <= 1 and width <= 2 eps) -- the all-or-nothing per-query rule of the accepted engine; informative wider intervals are recorded as enclosures, never as completed answers."""
+import math
+from fractions import Fraction as F
+import spectral_witness as SW
+PROFILE = dict(beta_share='delta_route / 2', checkpoints_J=4, checkpoint_rule='N_j = ceil(N_max / 2^(J - j)), j = 1..J (geometric; frozen before sampling)', delta_j_rule='delta_sample / J (equal split)', concentration='Leon-Perron (2004) Theorem 1 eq. (3) for the stationary reversible chain + union bound over the Q indicators; the whole post-burn-in path coupled within TV <= beta', rounding='exact rationals with rigorous log enclosures; square roots rounded up')
+
+
+def _sqrt_up(q):
+    """an upper bound of sqrt(q) for a nonnegative Fraction, as a Fraction (via integer square roots)"""
+    if q <= 0: return F(0)
+    SCALE = 1 << 120; num = q.numerator * SCALE * SCALE // q.denominator + 1; r = math.isqrt(num) + 1; return F(r, SCALE)
+
+
+def log_Z_upper(hbm):
+    """ln Z_U = sum_i ln k_i + sum_f ln max f (UPPER enclosure, exact Fraction); the unary weights are inside the per-variable products (max over the unary row included)"""
+    tot = F(0)
+    for i, k in enumerate(hbm.cards): tot += SW.log_enclosure(F(k))[1] + SW.log_enclosure(max(hbm.psi[i]))[1]
+    for (_, _, _, _, vals) in hbm.pairs: tot += SW.log_enclosure(max(vals))[1]
+    return tot
+
+
+def log_W_lower(hbm, x):
+    """ln W(x) >= sum of the LOWER log enclosures of the selected unary and pair values (each a small cached rational log; never a logarithm of the huge product)"""
+    tot = F(0)
+    for i in range(hbm.n): tot += SW.log_enclosure(hbm.psi[i][x[i]])[0]
+    for (i, j, ki, kj, vals) in hbm.pairs: tot += SW.log_enclosure(vals[x[i] * kj + x[j]])[0]
+    return tot
+
+
+def log_p0_lower(hbm, x0):
+    """ln p(x0) >= ln W(x0) - ln Z_U (both sides rigorous exact Fractions); returns (bound, ln W(x0) lower)"""
+    lw = log_W_lower(hbm, x0); return lw - log_Z_upper(hbm), lw
+
+
+def choose_x0(hbm):
+    """deterministic initial state: per variable the argmax of the unary weight (ties -> the smallest state id)"""
+    return [max(range(k), key=lambda a: (hbm.psi[i][a], -a)) for i, k in enumerate(hbm.cards)]
+
+
+def burn_in_steps(log_p0_lo, g_lo, beta):
+    """the smallest t with (1/2) sqrt(1 / p0 - 1)(1 - g)^t <= beta, outward: since 1 / p0 - 1 < 1 / p0, it suffices that t >= [ln(2 beta) + (1/2) ln p0] / ln(1 - g) (both negative); the numerator uses the LOWER endpoints
+    (ln(2 beta) lower, ln p0 lower), the denominator the UPPER (less negative) endpoint of ln(1 - g) -> t is an upper bound of the exact requirement"""
+    g = F(g_lo); beta = F(beta); lp = F(log_p0_lo)
+    if not (0 < g < 1): raise ValueError('gap must lie in (0, 1)')
+    num = SW.log_enclosure(2 * beta)[0] + lp / 2; den = SW.log_enclosure(1 - g)[1]
+    if den >= 0: raise ValueError('ln(1 - g) enclosure not negative')
+    if num >= 0: return 0, dict(note='the initial TV bound (1/2) sqrt(1 / p0 - 1) is already below beta', log_num_lower=float(num), log_den_upper=float(den))
+    t = math.ceil(num / den); return int(max(t, 0)), dict(log_num_lower=float(num), log_den_upper=float(den), rule='t = ceil([ln(2 beta) + ln(p0) / 2] / ln(1 - g)) with 1 / p0 - 1 < 1 / p0')
+
+
+def radius_upper(N, Q, delta_j, g_lo):
+    """r = sqrt((2 - g) ln(2 Q / delta_j) / (2 N g)) rounded UP as a Fraction (g = the gap LOWER bound; a smaller g gives a larger r)"""
+    g = F(g_lo); N = int(N); Q = int(Q); d = F(delta_j)
+    if N <= 0: return F(1)
+    L = SW.log_enclosure(2 * Q / d)[1]; q = (2 - g) * L / (2 * N * g); r = _sqrt_up(q); r = F(math.ceil(r * (1 << 64)), 1 << 64)      # rounded UP to the dyadic grid 2^-64 (readable rows; still an upper bound)
+    return min(F(1), r)
+
+
+def checkpoint_plan(N_max, J=PROFILE['checkpoints_J']):
+    """the frozen geometric checkpoint sequence N_j = ceil(N_max / 2^(J - j)), j = 1..J (strictly increasing, >= 1)"""
+    N_max = max(int(N_max), 1); plan = []
+    for j in range(1, J + 1):
+        Nj = max(1, -(-N_max // (2 ** (J - j))))
+        if plan and Nj <= plan[-1]: Nj = plan[-1] + 1
+        plan.append(Nj)
+    return plan
+
+
+def rows_from_counts(occ, N, r, eps, orig_of, fixed_rows):
+    """-> (published rows {j: (lo, hi, point, 'PAC_MARKOV')}, enclosures [(var, state, lo, hi)], stats) over the ORIGINAL query inventory: canonical variable i -> original var orig_of[i]; fixed / factorless rows come exactly from
+    canonicalization (fixed_rows). The point is the occupation frequency; the interval [p - r, p + r] clipped to [0, 1]; the accepted geometry decides publication (width <= 2 eps, 0 <= lo <= hi <= 1); a wider interval is an enclosure."""
+    from integrated import valid_publication
+    pub = {}; enc = []; widths = []; N = int(N); r = F(r)
+    for i, row in enumerate(occ):
+        v = orig_of[i] if orig_of is not None else i
+        for a, c in enumerate(row):
+            p = F(int(c), N) if N > 0 else F(1, 2); lo = max(F(0), p - r); hi = min(F(1), p + r); widths.append(float(hi - lo))
+            if valid_publication(lo, hi, eps) and lo <= p <= hi: pub[(v, a)] = (lo, hi, p, 'PAC_MARKOV')
+            else: enc.append((v, a, lo, hi))
+    return pub, enc, dict(max_width=(max(widths) if widths else None), radius=float(r))

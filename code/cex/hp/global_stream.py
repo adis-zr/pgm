@@ -169,12 +169,14 @@ class GlobalStream(JS.JointStream):
     def activation_action(self, hard):
         p = self.profile; t0 = tnow(); d0 = self.draws; nb = 0; r = None; checks = 0
         if not self.can_activate(): return dict(status='NOT_APPLICABLE')
+        late_skipped = 0
         while nb < p['activation_batches'] and self.stage == 'READY':
             if tnow() >= hard: break
             r = self.batch(hard, hard, B_override=p['activation_batch']); nb += (r == 'COMMITTED')
             if r != 'COMMITTED': break
+            if tnow() >= hard: late_skipped += 1; break                                                      # DGP8 repair (DGP7 review finding 2, carried to the GLOBAL stream): no certificate check (the publishing step) after the hard clock
             if self.stage == 'READY': self.check(); checks += 1
-        self.activation_pending = False; self.activation = dict(status=('COMPLETE' if nb == p['activation_batches'] else 'SHORT' if self.stage == 'READY' else 'CLOSED'), batches=nb, draws=self.draws - d0, checks=checks, seconds=tnow() - t0, epoch=(self.epoch.index if self.epoch else None), last=r, cap_draws=p['activation_batches'] * p['activation_batch'], forecast_metadata_reset='none required: the planner forecast uses cumulative width / time statistics (no unchanged-epoch assumption)', note='bounded activation of the promoted law: certificate / risk unchanged; charged to sampling work')
+        self.activation_pending = False; self.activation = dict(status=('COMPLETE' if nb == p['activation_batches'] else 'SHORT' if self.stage == 'READY' else 'CLOSED'), batches=nb, draws=self.draws - d0, checks=checks, late_checks_skipped=late_skipped, seconds=tnow() - t0, epoch=(self.epoch.index if self.epoch else None), last=r, cap_draws=p['activation_batches'] * p['activation_batch'], forecast_metadata_reset='none required: the planner forecast uses cumulative width / time statistics (no unchanged-epoch assumption)', note='bounded activation of the promoted law: certificate / risk unchanged; charged to sampling work')
         self.mech['activation'] = self.activation; self.measurements.append(dict(kind='joint_action', action='global_activation', seconds=self.activation['seconds'], completed=(nb == p['activation_batches']), features=dict(batches=nb, draws=self.draws - d0))); return self.activation
     def diagnostics(self):
         d = super().diagnostics(); d['joint'].update(kind='global', global_mode=self.mode, objective=self.objective_mode(), graph=self.graph, promotion=self.promotion, activation=self.activation); d['global'] = d['joint']; return d

@@ -23,6 +23,24 @@ RESIDUAL_MODES = ('residual_only', 'residual_joint')
 PROFILE_RESIDUAL_STREAM = dict(JP.PROFILE_PRODUCTION, max_attempts=4, max_transactions=RL.PROFILE_RESIDUAL['max_transactions'], activation_batches=4, activation_batch=256, retention_share=RB.RETENTION_SHARE, bank_time_floor_s=0.05, forecast_skip_share=0.90, local=dict(RL.PROFILE_RESIDUAL))
 
 
+# DGP8 repair (DGP7 review: underestimated workspace): the admitted window workspace is a calibrated model of the ACTUAL simultaneous lifetimes -- the floating fit (index arrays of the region assignments: 8 B x vol x nR for the
+# assignment table plus its construction copies, ~16 float arrays of vol) and, AFTER the fit arrays are released, the compact kernel (three object arrays / lists of vol compact pairs at ENTRY_BYTES each, one pointer array of vol per
+# atom, the per-cell count / key arrays); the two phases never coexist, so the admission test uses max(fit, kernel) + the candidate counts, and the ledger charges each phase for its own lifetime
+WORKSPACE = dict(float_per_cell=8, float_region_arrays=2, float_arrays=16, compact_entry_bytes=JP.ENTRY_BYTES, compact_arrays=3, atom_pointer_bytes=8, index_arrays_per_region_var=1, index_extra_arrays=4, per_atom_fixed=4096, overhead=1 << 16)
+def window_workspace_estimate(vol, nR, n_atoms, est_counts):
+    """-> (est_float, est_kernel, admitted_total = max(est_float, est_kernel) + est_counts) for a window of vol cells over nR region variables with n_atoms atoms"""
+    W = WORKSPACE; est_float = W['float_per_cell'] * vol * (W['float_region_arrays'] * nR + W['float_arrays']) + W['overhead']
+    est_kernel = (W['compact_entry_bytes'] * W['compact_arrays'] + W['atom_pointer_bytes'] * n_atoms + 8 * (W['index_arrays_per_region_var'] * nR + W['index_extra_arrays'])) * vol + W['per_atom_fixed'] * n_atoms + W['overhead']
+    return est_float, est_kernel, max(est_float, est_kernel) + est_counts
+def same_law_window(w, prop, state, cards, order, profile):
+    """DGP8 repair (DGP7 review: same-law region mismatch): the SAME-LAW kernel pass needs the region of A + the OLD parents + the atom scopes (the G1 target parents belong to the changed-law pass only); -> the window copy the kernel
+    validates (R / C / vol recomputed; the identity stamps kept), or None when the recomputed region exceeds the cap"""
+    pos = {v: i for i, v in enumerate(order)}; A = list(w['A']); R = set(A)
+    for v in A: R |= set(prop.conds[v].parents)
+    for aid in w['atoms']: R |= set(state.atoms[aid].axes)
+    Rs = sorted(R, key=lambda x: pos[x]); vol = JP.vol_of(tuple(Rs), cards)
+    if vol > w.get('max_vol', profile['max_region']): return None
+    return dict(w, R=Rs, C=[x for x in Rs if x not in A], vol=vol, whole_model_region=(len(Rs) == len(cards)), same_law_region=True)
 def _l2(x): return (log2_up(x) if x[1] else -inf) if x is not None else None
 def _pr(x): return (x[0], str(x[1])) if x is not None else None
 
@@ -51,7 +69,7 @@ class ResidualStream(JS.JointStream):
         B_ = self.opts.get('budget_obj') or CE.Budget(CE.CONSTRUCTOR_BYTES); clk = CE.Clock(deadline, {}); t0 = tnow(); trace = []; p = self.profile; live0 = B_.live
         A_total = (self.mech.get('allowance') or {}).get('total_s') or max(0.0, (self.allowance_end or tnow()) - tnow()); time_cap = max(p['bank_time_floor_s'], p['retention_share'] * A_total)
         mid = hashlib.sha256(json.dumps([list(self.M_par.cards), [[list(sc), [str(x) for x in v]] for sc, v in self.M_par.factors], [[str(x) for x in ps] for ps in self.M_par.psi]]).encode()).hexdigest()
-        self.state = RB.ResidualState(model_identity=mid, seed_proof_identity=None, law=None, envelope_B=None, consumed_B=None, initial_seed_cap=None, budget=B_)
+        self.model_identity = mid; self.state = RB.ResidualState(model_identity=mid, seed_proof_identity=None, law=None, envelope_B=None, consumed_B=None, initial_seed_cap=None, budget=B_)
         sink = RB.BankSink(self.state, clk, time_cap, branch_owned_fn=(lambda: self.joint_bytes + max(0, B_.live - live0)), phase=(t0, deadline))
         try: prop, rec, owned = JP.compile_seed(self.M_par, self.order, self.profile, B_, clk, deadline_fn=(lambda: tnow() >= deadline), trace=trace, sink=sink)
         except BaseException:
@@ -101,12 +119,12 @@ class ResidualStream(JS.JointStream):
                 remaining = end - tnow()
                 if remaining <= 0: windows.append(dict(A=w['A'], atoms=w['atoms'], status='NOT_STARTED', why='allowance exhausted')); break
                 if fitted > 0 and w['predicted_work_s'] > p['forecast_skip_share'] * remaining: windows.append(dict(A=w['A'], atoms=w['atoms'], status='FORECAST_SKIPPED', predicted_work_s=w['predicted_work_s'], remaining_s=remaining, note='scheduling heuristic only (the first admitted window of an attempt is always tried)')); continue
-                vol = w['vol']; nR = len(w['R']); A = w['A']; est_float = 8 * vol * (nR + 12) + 65536; est_kernel = JP.ENTRY_BYTES * vol * 3 + 4096 * len(w['atoms']); est_counts = sum(JP.COUNT_BYTES * JP.vol_of(tuple(targets[v]), cards) * cards[v] + 256 for v in A); total = est_float + est_kernel + est_counts
-                wrec = dict(A=A, R=w['R'], C=w['C'], atoms=w['atoms'], vol=vol, whole_model_region=w['whole_model_region'], predicted_work_s=w['predicted_work_s'], admission=dict(float=est_float, kernel=est_kernel, counts=est_counts, total=total, branch_live=self.joint_bytes + self.bank_bytes + best_bytes))
+                vol = w['vol']; nR = len(w['R']); A = w['A']; est_counts = sum(JP.COUNT_BYTES * JP.vol_of(tuple(targets[v]), cards) * cards[v] + 256 for v in A); est_float, est_kernel, total = window_workspace_estimate(vol, nR, len(w['atoms']), est_counts)
+                wrec = dict(A=A, R=w['R'], C=w['C'], atoms=w['atoms'], vol=vol, whole_model_region=w['whole_model_region'], predicted_work_s=w['predicted_work_s'], admission=dict(float=est_float, kernel=est_kernel, counts=est_counts, total=total, rule='max(fit, kernel) + counts: the fit arrays are released before the kernel (simultaneous lifetimes, DGP7 brief section 7)', branch_live=self.joint_bytes + self.bank_bytes + best_bytes))
                 if self.joint_bytes + self.bank_bytes + best_bytes + total > p['owned_cap_bytes']: wrec.update(status='REFUSED', kind='MEMORY_POLICY', why='window workspace %d B + branch %d B > the 64 MiB ceiling' % (total, self.joint_bytes + self.bank_bytes + best_bytes)); windows.append(wrec); continue
                 head = CE.USABLE_BYTES - CE.CX.rss_bytes()
                 if total > head: wrec.update(status='REFUSED', kind='MEMORY', why='process headroom %d < %d' % (head, total)); windows.append(wrec); continue
-                try: ws = B_.charge(total, 'residual window workspace (%d cells)' % vol)
+                try: ws = B_.charge(est_float + est_counts, 'residual window fitting workspace (%d cells)' % vol)
                 except CE.Refused as e: wrec.update(status='REFUSED', kind=e.kind, why=str(e.reason)[:160]); windows.append(wrec); continue
                 tw = tnow(); fitted += 1; fit = None; conds_new = None; cand = None; windows.append(wrec); wrec['status'] = 'STARTED'
                 try:
@@ -115,7 +133,10 @@ class ResidualStream(JS.JointStream):
                         fit = RL.fit_window(prop, w, atoms, cards, prop.order, 'auto', self.rng_ctx, kappa_seed, lp, clock=clk, deadline=end); wrec['fit'] = {k: v for k, v in fit.items() if k not in ('conds_new',)}
                         if fit['status'] == 'CANDIDATE' and fit.get('feasible_actual'): conds_new = fit['conds_new']
                     B_.release(est_float); ws -= est_float                                                                                   # the fitting arrays are released BEFORE the trusted check (the fit returns only the counts + scalars)
-                    k = CR.local_kernel(st, w, w['atoms'], prop.conds, conds_new, cards, prop.order, clk, budget=None, want_rho=True)
+                    ws += B_.charge(est_kernel, 'residual window kernel workspace (%d cells)' % vol)                                         # the kernel's own lifetime (a refusal here is a typed window refusal: CE.Refused -> the attempt's REFUSED branch)
+                    w_use = w if conds_new is not None else (same_law_window(w, prop, st, cards, prop.order, lp) or w)                     # DGP8 repair: the same-law pass validates the region WITHOUT the target-only parents
+                    if conds_new is None: wrec['same_law_region'] = dict(R=w_use['R'], vol=w_use['vol'], recomputed=bool(w_use.get('same_law_region')))
+                    k = CR.local_kernel(st, w_use, w_use['atoms'], prop.conds, conds_new, cards, prop.order, clk, budget=None, want_rho=True, expected_identity=self.model_identity)
                     wrec['kernel'] = {kk: vv for kk, vv in k.items() if kk not in ('rho_new', 'K_ref', 'K_new', 'B_ref', 'B_new', 'T2_max', 'moment_bound')}
                     if not k['ok']: raise CE.Defect('the independent kernel rejected the window: %s' % k.get('why'))
                     if k.get('zero_target'): wrec['status'] = 'ZERO_TARGET'; att['zero_target'] = True; continue
@@ -123,13 +144,13 @@ class ResidualStream(JS.JointStream):
                     if conds_new is not None:
                         conds_full = dict(prop.conds); conds_full.update(conds_new); newp = JP.Proposal(cards, conds_full, prop.order, k['B_new'], min(norm_up(*mul_exact(k['B_new'], k['B_new'])), k['moment_bound']) if k['moment_bound'][1] else norm_up(*mul_exact(k['B_new'], k['B_new'])), dict(kind='residual_joint_candidate', window=dict(A=A, R=w['R'], atoms=w['atoms']), graph=self.graph['label']), predecessor=inc_ep.index)
                         d_ratio = self._d_hat(newp) / self._d_hat(prop); rank = (fit['G_new_actual'] / fit['G_ref']) * d_ratio if fit['G_ref'] > 0 else inf
-                        cand = dict(kind='changed_law', window=wrec, prop=newp, conds_new=conds_new, rho_new=k['rho_new'], B_new=k['B_new'], B_ref=k['B_ref'], moment_bound=k['moment_bound'], rank=rank, d_ratio=d_ratio, gates=gates, promotable=(gates and rank < lp['promote_ratio']), counts_bytes=sum(c.bytes for c in conds_new.values()), atom_bytes=JP.ENTRY_BYTES * vol + RB.ATOM_META_BYTES, kernel_identity=k['identity'], log2_B_new=k['log2_B_new'], log2_B_ref=k['log2_B_ref'], rows_changed=fit['rows_changed'])
+                        cand = dict(kind='changed_law', window=wrec, region=list(k['region']), prop=newp, conds_new=conds_new, rho_new=k['rho_new'], B_new=k['B_new'], B_ref=k['B_ref'], moment_bound=k['moment_bound'], rank=rank, d_ratio=d_ratio, gates=gates, promotable=(gates and rank < lp['promote_ratio']), counts_bytes=sum(c.bytes for c in conds_new.values()), atom_bytes=JP.ENTRY_BYTES * int(k['rho_new'].size) + RB.ATOM_META_BYTES, kernel_identity=k['identity'], log2_B_new=k['log2_B_new'], log2_B_ref=k['log2_B_ref'], rows_changed=fit['rows_changed'])
                         wrec.update(status=('PROMOTABLE' if cand['promotable'] else 'NOT_PROMOTABLE'), rank=rank, d_ratio=d_ratio, gates=gates, log2_cap_change_vs_consumed=k['log2_B_new'] - _l2(st.consumed_B))
                     else:
                         tight = ge_exact((st.consumed_B[0], 99 * st.consumed_B[1]), (k['B_ref'][0], 100 * k['B_ref'][1]))                      # 100 B_ref <= 99 consumed_B: >= 1 % tighter EXACTLY
                         conds_full = dict(prop.conds); S_same = min([s for s in (prop.S, norm_up(*mul_exact(k['B_ref'], k['B_ref'])), k['moment_bound']) if s[1]])
-                        newp = JP.Proposal(cards, conds_full, prop.order, k['B_ref'], S_same, dict(kind='residual_same_law_tightening', window=dict(A=A, R=w['R'], atoms=w['atoms'])), predecessor=inc_ep.index)
-                        cand = dict(kind='same_law', window=wrec, prop=newp, conds_new=None, rho_new=k['rho_new'], B_new=k['B_ref'], B_ref=k['B_ref'], moment_bound=k['moment_bound'], rank=1.0, d_ratio=1.0, gates=k['gate_seed_ok'], promotable=(tight and k['gate_seed_ok']), counts_bytes=0, atom_bytes=JP.ENTRY_BYTES * vol + RB.ATOM_META_BYTES, kernel_identity=k['identity'], log2_B_new=k['log2_B_ref'], log2_B_ref=k['log2_B_ref'], rows_changed=0)
+                        newp = JP.Proposal(cards, conds_full, prop.order, k['B_ref'], S_same, dict(kind='residual_same_law_tightening', window=dict(A=A, R=list(k['region']), atoms=w['atoms'])), predecessor=inc_ep.index)
+                        cand = dict(kind='same_law', window=wrec, region=list(k['region']), prop=newp, conds_new=None, rho_new=k['rho_new'], B_new=k['B_ref'], B_ref=k['B_ref'], moment_bound=k['moment_bound'], rank=1.0, d_ratio=1.0, gates=k['gate_seed_ok'], promotable=(tight and k['gate_seed_ok']), counts_bytes=0, atom_bytes=JP.ENTRY_BYTES * int(k['rho_new'].size) + RB.ATOM_META_BYTES, kernel_identity=k['identity'], log2_B_new=k['log2_B_ref'], log2_B_ref=k['log2_B_ref'], rows_changed=0)
                         wrec.update(status=('PROMOTABLE' if cand['promotable'] else 'NOT_PROMOTABLE'), tighter_than_consumed_1pct=tight, log2_cap_change_vs_consumed=k['log2_B_ref'] - _l2(st.consumed_B), fit_status=(fit or {}).get('status'))
                     wrec['seconds'] = tnow() - tw
                     better = cand['promotable'] and (best is None or (cand['kind'] == 'changed_law' and best['kind'] != 'changed_law') or (cand['kind'] == best['kind'] and ((cand['rank'] < best['rank']) if cand['kind'] == 'changed_law' else ge_exact(best['B_new'], cand['B_new']) and best['B_new'] != cand['B_new'])))
@@ -140,6 +161,8 @@ class ResidualStream(JS.JointStream):
                 finally:
                     wrec.setdefault('seconds', tnow() - tw)
                     if wrec.get('status') == 'STARTED': wrec['status'] = 'INTERRUPTED'
+                    wrec['actual_over_predicted'] = (wrec['seconds'] / w['predicted_work_s']) if w.get('predicted_work_s') else None                    # DGP8 repair (DGP7 review: scheduling calibration): the frozen forecast is checked against the actual window time on every cell
+                    if wrec['actual_over_predicted'] is not None and wrec['actual_over_predicted'] > 1.0: att['forecast_underestimates'] = att.get('forecast_underestimates', 0) + 1
                     if ws: B_.release(ws); ws = 0
                 clk.poll('after window %s' % (A,))
             att['windows'] = windows; att['windows_fitted'] = fitted
@@ -148,14 +171,20 @@ class ResidualStream(JS.JointStream):
                 if fitted and all(w_.get('status') in ('NOT_PROMOTABLE', 'ZERO_TARGET', 'REFUSED', 'FORECAST_SKIPPED', 'NOT_STARTED') for w_ in windows): self.refinement_ended = 'no promotable candidate among the planned windows'
                 return att
             # ---- the transaction: preassemble, ONE authoritative deadline sample, bounded swap (a failure leaves law / bank / RNG / certificate / risk unchanged)
-            newp = best['prop']; txn = dict(id='txn-%d-%d' % (self.sid, self.transactions_done), kind=best['kind'], window=dict(A=best['window']['A'], R=best['window']['R'], atoms=best['window']['atoms'], vol=best['window']['vol'], whole_model_region=best['window']['whole_model_region']), atoms=list(best['window']['atoms']), kernel_identity=best['kernel_identity'], log2_B_before=_l2(st.consumed_B), log2_B_after=best['log2_B_new'], log2_B_ref_same_law=best['log2_B_ref'], rank=best['rank'], d_ratio=best['d_ratio'], rows_changed=best['rows_changed'], law_before=prop.sha256, law_after=newp.sha256, epoch_before=inc_ep.index, committed_offset_s=None)
-            prov = dict(kind=('residual_replacement_changed_law' if best['kind'] == 'changed_law' else 'residual_replacement_same_law'), transaction=txn['id'], consumed_atoms=list(best['window']['atoms']), region=list(best['window']['R']), active=list(best['window']['A']), kernel_identity=best['kernel_identity'], arithmetic=RB.ARITH_VERSION, inequality='rho_new = (envelope_B / B_new) Fhat / q_new <= 1 proved exactly cellwise; Fhat >= q_old,A prod_J rho_j (upward) from the actual old conditionals + the immutable atoms')
+            newp = best['prop']; txn = dict(id='txn-%d-%d' % (self.sid, self.transactions_done), kind=best['kind'], window=dict(A=best['window']['A'], R=list(best['region']), atoms=best['window']['atoms'], vol=int(best['rho_new'].size), whole_model_region=(len(best['region']) == len(cards))), atoms=list(best['window']['atoms']), kernel_identity=best['kernel_identity'], log2_B_before=_l2(st.consumed_B), log2_B_after=best['log2_B_new'], log2_B_ref_same_law=best['log2_B_ref'], rank=best['rank'], d_ratio=best['d_ratio'], rows_changed=best['rows_changed'], law_before=prop.sha256, law_after=newp.sha256, epoch_before=inc_ep.index, committed_offset_s=None)
+            prov = dict(kind=('residual_replacement_changed_law' if best['kind'] == 'changed_law' else 'residual_replacement_same_law'), transaction=txn['id'], consumed_atoms=list(best['window']['atoms']), region=list(best['region']), active=list(best['window']['A']), kernel_identity=best['kernel_identity'], arithmetic=RB.ARITH_VERSION, inequality='rho_new = (envelope_B / B_new) Fhat / q_new <= 1 proved exactly cellwise; Fhat >= q_old,A prod_J rho_j (upward) from the actual old conditionals + the immutable atoms')
             rho_arr = best['rho_new']; finite = [x for x in rho_arr.reshape(-1) if x[1]]; mean_log2 = (sum(log2_up(x) for x in finite) / rho_arr.size) if finite else -inf; mean_rho = (sum(min(1.0, 2.0 ** log2_up(x)) for x in finite) / rho_arr.size) if finite else 0.0; score = (-math.log(max(mean_rho, 2 ** -1000))) / best['atom_bytes']
+            consumed_set = set(best['window']['atoms']); keep = [a_ for a_ in st.live_atoms() if a_.aid not in consumed_set]; new_entries = int(rho_arr.size); evict = []           # DGP8 repair (DGP7 review: over-cap banks): the bank limits hold AFTER the swap
+            def over(lst): return (len(lst) + 1 > RB.BANK_MAX_ATOMS) or (sum(a_.entries() for a_ in lst) + new_entries > RB.BANK_MAX_ENTRIES) or (sum(a_.bytes for a_ in lst) + best['atom_bytes'] > RB.BRANCH_CAP_BYTES)
+            while keep and over(keep): worst = min(keep, key=lambda a_: (a_.score, -a_.aid)); keep.remove(worst); evict.append(worst.aid)
+            if over(keep): raise JP.RefusedJoint('MEMORY_POLICY', 'the replacement atom (%d entries, %d B) cannot fit the bank limits (<= %d atoms / %d entries / %d B) even after evicting every other live atom' % (new_entries, best['atom_bytes'], RB.BANK_MAX_ATOMS, RB.BANK_MAX_ENTRIES, RB.BRANCH_CAP_BYTES))
+            for aid_ in evict: st.drop_atom(aid_, 'evicted before %s: the bank limits (<= %d atoms / %d entries / %d B) must hold after the swap' % (txn['id'], RB.BANK_MAX_ATOMS, RB.BANK_MAX_ENTRIES, RB.BRANCH_CAP_BYTES))
+            txn['evicted_for_bank_limits'] = evict; self.bank_bytes = st.owned
             shared = newp.bytes - best['counts_bytes']; charged_shared = 0; undo = None
             if tnow() >= end: raise Deadline('residual transaction: the allowance passed after the preassembly (nothing committed)')
             charged_shared = B_.charge(shared, 'residual epoch %d law (shared tables re-charged; the old epoch release balances)' % len(self.epochs)); self.joint_bytes += shared + best['counts_bytes']; self.retained_bytes += shared + best['counts_bytes']
             try:
-                undo = st.apply_transaction(txn, newp, tuple(best['window']['R']), rho_arr, best['atom_bytes'], prov, score, mean_log2, best['B_new']); st.owned += best['atom_bytes']; st.ledger.append(('transfer', best['atom_bytes'], 'replacement atom (admitted with the window workspace)'))
+                undo = st.apply_transaction(txn, newp, tuple(best['region']), rho_arr, best['atom_bytes'], prov, score, mean_log2, best['B_new']); st.owned += best['atom_bytes']; st.ledger.append(('transfer', best['atom_bytes'], 'replacement atom (admitted with the window workspace)'))
                 ep = self._commit_epoch(newp, 'promoted:%s' % best['kind'], end, B_)
             except BaseException:
                 if undo is not None: st.revert_transaction(undo); st.owned -= best['atom_bytes']
@@ -182,14 +211,16 @@ class ResidualStream(JS.JointStream):
         return att
     # ---- bounded activation of a changed law (charged to sampling work; recorded separately from construction)
     def activation_action(self, hard):
-        p = self.profile; t0 = tnow(); d0 = self.draws; nb = 0; r = None; checks = 0
+        p = self.profile; t0 = tnow(); d0 = self.draws; nb = 0; r = None; checks = 0; late_skipped = 0
         if not self.can_activate(): return dict(status='NOT_APPLICABLE')
         while nb < p['activation_batches'] and self.stage == 'READY':
             if tnow() >= hard: break
             r = self.batch(hard, hard, B_override=p['activation_batch']); nb += (r == 'COMMITTED')
             if r != 'COMMITTED': break
-            if self.stage == 'READY': self.check(); checks += 1
-        self.activation_pending = False; act = dict(status=('COMPLETE' if nb == p['activation_batches'] else 'SHORT' if self.stage == 'READY' else 'CLOSED'), batches=nb, draws=self.draws - d0, checks=checks, seconds=tnow() - t0, epoch=(self.epoch.index if self.epoch else None), last=r, cap_draws=p['activation_batches'] * p['activation_batch'], note='bounded activation of the changed law under the accepted epoch protocol: certificate / risk unchanged; charged to sampling work')
+            if self.stage == 'READY':
+                if tnow() >= hard: late_skipped += 1; break                                                                                    # DGP8 repair (DGP7 review: post-deadline publication): no certificate check (the step that publishes rows) after the action's hard clock
+                self.check(); checks += 1
+        self.activation_pending = False; act = dict(status=('COMPLETE' if nb == p['activation_batches'] else 'SHORT' if self.stage == 'READY' else 'CLOSED'), batches=nb, draws=self.draws - d0, checks=checks, late_checks_skipped=late_skipped, seconds=tnow() - t0, epoch=(self.epoch.index if self.epoch else None), last=r, cap_draws=p['activation_batches'] * p['activation_batch'], note='bounded activation of the changed law under the accepted epoch protocol: certificate / risk unchanged; charged to sampling work')
         self.activation = act if self.activation is None else dict(act, previous=self.activation); self.mech['activation'] = self.activation; self.measurements.append(dict(kind='joint_action', action='residual_activation', seconds=act['seconds'], completed=(nb == p['activation_batches']), features=dict(batches=nb, draws=self.draws - d0))); return act
     def diagnostics(self):
         d = super().diagnostics(); d['joint'].update(kind='residual', residual_mode=self.mode, graph=self.graph, promotion=self.mech.get('promotion'), transactions=self.promotions, activation=self.activation, bank=(dict(self.state.record(), sink=self.sink_record) if self.state is not None else None), bank_bytes=self.bank_bytes, transactions_done=self.transactions_done); d['residual'] = d['joint']; return d

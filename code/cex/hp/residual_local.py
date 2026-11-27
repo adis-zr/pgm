@@ -47,7 +47,7 @@ def plan_windows(state, prop, parents_target, cards, order, profile=PROFILE_RESI
                 if vol_of(tuple(u), cards) <= profile['max_region']: chosen.append(a); Rcur = u
             if not chosen: excluded.append(dict(A=A, why='no compatible atom (touching A, no later variable, inside the region cap)')); continue
             Rs = tuple(sorted(Rcur, key=lambda x: pos[x])); vol = vol_of(Rs, cards); score = sum(a.score for a in chosen); work = predicted_work_s(vol, len(A), len(chosen), profile)
-            cands.append(dict(A=list(A), R=list(Rs), C=[x for x in Rs if x not in A], atoms=[a.aid for a in chosen], vol=vol, score=score, predicted_work_s=work, rank_key=(-(score / max(work, 1e-9)), pos[A[0]], len(A), tuple(a.aid for a in chosen)), whole_model_region=(len(Rs) == len(cards)), bank_version=state.version, target_parents={v: tuple(parents_target[v]) for v in A}, max_vol=profile['max_region']))
+            cands.append(dict(A=list(A), R=list(Rs), C=[x for x in Rs if x not in A], atoms=[a.aid for a in chosen], vol=vol, score=score, predicted_work_s=work, rank_key=(-(score / max(work, 1e-9)), pos[A[0]], len(A), tuple(a.aid for a in chosen)), whole_model_region=(len(Rs) == len(cards)), bank_version=state.version, model_identity=getattr(state, 'model_identity', None), seed_proof_identity=getattr(state, 'seed_proof_identity', None), law_identity=getattr(state, 'law_identity', None), target_parents={v: tuple(parents_target[v]) for v in A}, max_vol=profile['max_region']))
     # merge duplicate (A, atoms) specifications by identity
     seen = {}; uniq = []
     for w in cands:

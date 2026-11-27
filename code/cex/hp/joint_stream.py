@@ -227,11 +227,23 @@ class JointStream(Stream):
             self.draws += Bn; self.zero_draws += int(zero.sum()); self.sumX += float(X.sum()); self.sumX2 += float((X * X).sum()); self.maxX = max(self.maxX, float(X.max())); self.maxlogX = max(self.maxlogX, mx)
             ep.draws_n = getattr(ep, 'draws_n', 0) + Bn; ep.sumX = getattr(ep, 'sumX', 0.0) + float(X.sum()); ep.sumX2 = getattr(ep, 'sumX2', 0.0) + float((X * X).sum()); ep.maxX = max(getattr(ep, 'maxX', 0.0), float(X.max())); ep.zero_n = getattr(ep, 'zero_n', 0) + int(zero.sum())      # DGP6 repair (finding 8): epoch-LOCAL weight statistics
             if (X > 0).any(): self.witness = True
-            self.batches += 1; dt = tnow() - t0; self.t_sample += dt; self.batch_pins.append((ep.index, int(ids[0]), int(ids[-1]))); self.measurements.append(dict(kind='joint_batch', seconds=dt, completed=True, features=dict(B=Bn, n=self.n_par, fine_factors=len(self.fine), Kq=self.Kq, epoch=ep.index, pilot=pilot))); return 'COMMITTED'
+            self.batches += 1; dt = tnow() - t0; self.t_sample += dt; self._pin(ep.index, int(ids[0]), int(ids[-1])); self._measure_batch(dt, Bn, ep.index, pilot); return 'COMMITTED'
         except (IG.Deadline, Deadline) as e: self.abandoned += 1; self.t_sample += tnow() - t0; return self._close('joint batch abandoned at a hard cut (%s); %d committed batches retained' % (e, self.batches))
         except IG.RangeRefused as e: self.abandoned += 1; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('NUMERIC_RANGE_REFUSED in a joint batch: %s' % str(e)[:120])
         except AssertionError as e: self.abandoned += 1; self.defect = str(e)[:200]; self.mech['certificate_defect'] = self.defect; self.t_sample += tnow() - t0; return self._close('CERTIFICATE_DEFECT in a joint batch (rows withheld): %s' % str(e)[:120])
         except (CE.Refused, StreamRefused) as e: self.abandoned += 1; self.stream_refusal = str(e); self.t_sample += tnow() - t0; return self._close('%s in a joint batch (resource refusal; nothing committed): %s' % (getattr(e, 'kind', 'REFUSED'), str(getattr(e, 'reason', e))[:120]))      # DGP7 repair R4: a constructor refusal inside the batch closes THIS stream typed
+    # ---- DGP8 repair (DGP7 review: retained-object accounting): per-batch records are BOUNDED -- the first BOUNDED_RECORDS batches keep full records, later batches fold into ONE aggregate record (seconds / draws summed, so every
+    # cost sum over measurements is unchanged) and ONE overflow counter for the pins; the stream never retains an unbounded variable-size object outside its byte ledger
+    BOUNDED_RECORDS = 64
+    def _pin(self, e, a, b):
+        if len(self.batch_pins) < self.BOUNDED_RECORDS: self.batch_pins.append((e, a, b))
+        else: self.batch_pins_overflow = getattr(self, 'batch_pins_overflow', 0) + 1; self.batch_pins_last = (e, a, b)
+    def _measure_batch(self, dt, Bn, epoch, pilot):
+        agg = getattr(self, '_batch_agg', None)
+        if agg is None:
+            if sum(1 for m in self.measurements if m.get('kind') == 'joint_batch') < self.BOUNDED_RECORDS: self.measurements.append(dict(kind='joint_batch', seconds=dt, completed=True, features=dict(B=Bn, n=self.n_par, fine_factors=len(self.fine), Kq=self.Kq, epoch=epoch, pilot=pilot))); return
+            agg = dict(kind='joint_batch', seconds=0.0, completed=True, aggregated=True, n_batches=0, draws=0, features=dict(n=self.n_par, Kq=self.Kq, note='per-batch records bounded at %d; later batches aggregated here (seconds / draws summed)' % self.BOUNDED_RECORDS)); self.measurements.append(agg); self._batch_agg = agg
+        agg['seconds'] += dt; agg['n_batches'] += 1; agg['draws'] += Bn
     # ---- the explicit charged actions
     def pilot_action(self, hard):
         try: return self._pilot_action(hard)
@@ -335,5 +347,5 @@ class JointStream(Stream):
         if multi:                                                                                                  # DGP6 repair (finding 8): pooled weight statistics across epochs with DIFFERENT caps are meaningless -> removed; the epoch-local ones replace them
             for k in ('X_mean', 'ESS_DIAGNOSTIC', 'largest_share', 'log2_Zhat_over_Ucap_DIAGNOSTIC', 'Z_over_Ucap_EB_DIAGNOSTIC', 'max_log2_X_observed'): d.pop(k, None)
             d['pooled_weight_statistics'] = 'REMOVED: %d epochs with different caps consumed draws; see joint.epoch_weight_statistics' % sum(1 for e in self.epochs if getattr(e, 'draws_n', 0) > 0)
-        d['joint'] = dict(mode=self.mode, epochs=[e.record for e in self.epochs], current_epoch=(self.epoch.index if self.epoch else None), epoch_switches=self.epoch_switches, attempts=self.attempts, pilot=self.pilot, refinement_ended=self.refinement_ended, batch_pins=self.batch_pins[:64], joint_bytes=self.joint_bytes, allowance=self.mech.get('allowance'),
+        d['joint'] = dict(mode=self.mode, epochs=[e.record for e in self.epochs], current_epoch=(self.epoch.index if self.epoch else None), epoch_switches=self.epoch_switches, attempts=self.attempts, pilot=self.pilot, refinement_ended=self.refinement_ended, batch_pins=self.batch_pins[:64], batch_pins_overflow=getattr(self, 'batch_pins_overflow', 0), joint_bytes=self.joint_bytes, allowance=self.mech.get('allowance'),
                           epoch_weight_statistics=[dict(epoch=e.index, cap_log2_W0=e.B_eff_log2, draws=getattr(e, 'draws_n', 0), X_mean=((e.sumX / e.draws_n) if getattr(e, 'draws_n', 0) else None), ESS_DIAGNOSTIC=((e.sumX ** 2 / e.sumX2) if getattr(e, 'sumX2', 0.0) > 0 else None), max_X=getattr(e, 'maxX', None), zero_draws=getattr(e, 'zero_n', 0), Z_over_cap_EB_DIAGNOSTIC=(e.zcert.interval() if getattr(e, 'draws_n', 0) else None)) for e in self.epochs]); return d
