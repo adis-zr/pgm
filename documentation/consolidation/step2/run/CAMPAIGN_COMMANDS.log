@@ -1,0 +1,11 @@
+## 0_setup 2026-11-27T20:18:16Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/run_suite.py setup
+exit 0 2026-11-27T20:18:20Z
+## 1_freeze 2026-11-27T20:18:20Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/run_suite.py freeze
+exit 0 2026-11-27T20:18:21Z
+## 2_primary 2026-11-27T20:18:21Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/run_suite.py primary
+exit 1 2026-11-27T20:32:45Z
+## 3_eval 2026-11-27T20:32:45Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/run_suite.py eval
+exit 1 2026-11-27T20:32:45Z
+## 4_analyze 2026-11-27T20:32:45Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/analyze_suite.py
+exit 1 2026-11-27T20:32:46Z
+campaign finished 2026-11-27T20:32:46Z

@@ -1,0 +1,10 @@
+{
+  "method": "Evaluate the exact AST of the shipped ok expression on archived receipt plus synthetic negative receipts. No solver, compiler, installation or benchmark executed.",
+  "source_file": "documentation/consolidation/step1/tools/clean_wheel_relocation_test.py",
+  "source_line": 68,
+  "archived_receipt_gate": true,
+  "all_four_workers_fail_gate": true,
+  "native_cache_build_and_capabilities_fail_gate": true,
+  "archived_stream_library_exists": false,
+  "note": "A dictionary-shaped refusal satisfies the worker check. Native/cache/capability statuses are not in the expression. main writes FAIL but has no nonzero failure exit."
+}

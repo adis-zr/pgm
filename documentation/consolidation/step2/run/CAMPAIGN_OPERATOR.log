@@ -1,0 +1,18 @@
+resume guard started 2026-11-27T20:21:11Z pid 4578
+driver gone 2026-11-27T20:32:54Z
+resume check done; receipts: 114
+## 2_primary 2026-11-27T20:32:54Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/run_suite.py primary
+exit 1 2026-11-27T20:32:54Z
+## 3_eval 2026-11-27T20:32:54Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/run_suite.py eval
+exit 1 2026-11-27T20:32:54Z
+## 4_analyze 2026-11-27T20:32:54Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/analyze_suite.py
+exit 1 2026-11-27T20:32:55Z
+resume guard finished 2026-11-27T20:32:55Z
+OPERATOR INCIDENT 2026-11-27T20:33:53Z: at 20:32:45Z the operator (Claude) edited the TRACKED file documentation/consolidation/step1/START_HERE.md while the frozen run was in progress; the harness identity guard (identity() == FREEZE.engine_files) aborted run_suite.py primary BEFORE launching cell 115 ("Source/build changed before cell"); the resume guard's primary / eval / analyze attempts at 20:32:54Z hit the same guard and exited 1. No cell was launched, no cell folder was created, 114 cells / 114 receipts stand. The edit was reverted with  at 20:33:11Z, restoring the frozen tree byte-for-byte (the two host-generated native files are unchanged since freeze). No harness, policy, rate, inference or input change occurred. Resuming the frozen phases from cell 115 under the same freeze; tracked files will not be touched until the campaign finishes.
+## 2_primary (resume 2) 2026-11-27T20:33:54Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/run_suite.py primary
+exit 0 2026-11-27T21:27:14Z
+## 3_eval (resume 2) 2026-11-27T21:27:14Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/run_suite.py eval
+exit 0 2026-11-27T21:32:55Z
+## 4_analyze (resume 2) 2026-11-27T21:32:55Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/analyze_suite.py
+exit 1 2026-11-27T21:33:03Z
+resume 2 finished 2026-11-27T21:33:03Z

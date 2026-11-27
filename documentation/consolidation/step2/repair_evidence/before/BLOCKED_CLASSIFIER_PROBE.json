@@ -1,0 +1,33 @@
+{
+  "method": "Execute exact shipped classification if/elif AST on synthetic failed controls; no solver execution.",
+  "source_file": "documentation/consolidation/step1/tools/run_inherited_controls.py",
+  "source_line": 82,
+  "classification_probes": [
+    {
+      "timeout": false,
+      "ok": false,
+      "missing": [],
+      "static": [
+        "RECORDS"
+      ],
+      "stderr": "RuntimeError: injected new regression",
+      "status": "BLOCKED"
+    },
+    {
+      "timeout": false,
+      "ok": false,
+      "missing": [],
+      "static": [],
+      "stderr": "RuntimeError: injected new regression",
+      "status": "FAILED"
+    }
+  ],
+  "archived_blocked_with_explicit_missing_path": 46,
+  "archived_blocked_without_extracted_path": [
+    "D12",
+    "D71",
+    "D80",
+    "D87",
+    "D90"
+  ]
+}

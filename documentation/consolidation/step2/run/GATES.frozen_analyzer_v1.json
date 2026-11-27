@@ -1,0 +1,544 @@
+{
+  "validity": {
+    "decision": "FAIL",
+    "issues": [
+      "Cell source identity failed exposed_regression__DBN_11__LIBDAI_BP__r1"
+    ],
+    "artifact_faults": [
+      {
+        "job": "exposed_regression__Grids_15__PGM_REFERENCE__r1",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__Grids_17__PGM_REFERENCE__r1",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__Promedus_14__PGM_REFERENCE__r1",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__DBN_12__PGM_REFERENCE__r1",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__DBN_15__PGM_REFERENCE__r1",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__DBN_16__PGM_REFERENCE__r1",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__1qt9__PGM_REFERENCE__r1",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__MUNIN1__PGM_REFERENCE__r1",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__Grids_15__PGM_REFERENCE__r2",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__Grids_17__PGM_REFERENCE__r2",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__Promedus_14__PGM_REFERENCE__r2",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__DBN_12__PGM_REFERENCE__r2",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__DBN_15__PGM_REFERENCE__r2",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__DBN_16__PGM_REFERENCE__r2",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__1qt9__PGM_REFERENCE__r2",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      },
+      {
+        "job": "exposed_regression__MUNIN1__PGM_REFERENCE__r2",
+        "contract_faults": [
+          "internal wall exceeds the allowance"
+        ]
+      }
+    ],
+    "deterministic_conflicts": 0,
+    "pac_conflicts": 0
+  },
+  "completeness": {
+    "decision": "PASS",
+    "expected_cells": 732,
+    "recorded_cells": 732,
+    "missing_cells": 0,
+    "budget_stop": false
+  },
+  "historical_accepted_preservation": {
+    "decision": "PASS",
+    "prior_complete_both": [
+      "ALARM",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "BN_12",
+      "BN_15",
+      "BN_31",
+      "CHILD",
+      "CSP_11",
+      "CSP_13",
+      "DIABETES",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "ObjectDetection_34",
+      "ObjectDetection_43",
+      "ObjectDetection_56",
+      "Promedus_12",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "mastermind_03_08_04-0003",
+      "mastermind_03_08_05-0003",
+      "or_chain_186.fg",
+      "or_chain_209.fg"
+    ],
+    "retained": [
+      "ALARM",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "BN_12",
+      "BN_15",
+      "BN_31",
+      "CHILD",
+      "CSP_11",
+      "CSP_13",
+      "DIABETES",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "ObjectDetection_34",
+      "ObjectDetection_43",
+      "ObjectDetection_56",
+      "Promedus_12",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "mastermind_03_08_04-0003",
+      "mastermind_03_08_05-0003",
+      "or_chain_186.fg",
+      "or_chain_209.fg"
+    ],
+    "lost": [],
+    "gained": [
+      "BN_13",
+      "DBN_11",
+      "DBN_14",
+      "Grids_11",
+      "Grids_14",
+      "ObjectDetection_24",
+      "ObjectDetection_30",
+      "ObjectDetection_39",
+      "Promedus_18",
+      "Segmentation_12",
+      "Segmentation_13",
+      "blockmap_10_01-0009",
+      "fs-07",
+      "linkage_13",
+      "mastermind_05_08_03-0002",
+      "or_chain_188.fg"
+    ],
+    "one_repeat_only": []
+  },
+  "reference_reproduction": {
+    "decision": "PASS",
+    "note": "the pinned 7f28259 engine executed here versus its own historical cells; a loss here is a host / timing / reproduction issue of the reference, not evidence against the new wrapper",
+    "retained": [
+      "ALARM",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "BN_12",
+      "BN_15",
+      "BN_31",
+      "CHILD",
+      "CSP_11",
+      "CSP_13",
+      "DIABETES",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "ObjectDetection_34",
+      "ObjectDetection_43",
+      "ObjectDetection_56",
+      "Promedus_12",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "mastermind_03_08_04-0003",
+      "mastermind_03_08_05-0003",
+      "or_chain_186.fg",
+      "or_chain_209.fg"
+    ],
+    "lost": [],
+    "gained": [
+      "BN_13",
+      "DBN_11",
+      "DBN_14",
+      "Grids_11",
+      "Grids_14",
+      "ObjectDetection_24",
+      "ObjectDetection_30",
+      "ObjectDetection_39",
+      "Promedus_18",
+      "Segmentation_12",
+      "Segmentation_13",
+      "blockmap_10_01-0009",
+      "fs-07",
+      "linkage_13",
+      "mastermind_05_08_03-0002",
+      "or_chain_188.fg"
+    ],
+    "one_repeat_only": []
+  },
+  "same_round_accepted_preservation": {
+    "decision": "PASS",
+    "lost_vs_reference": [],
+    "gained_vs_reference": [],
+    "mutual": 45
+  },
+  "historical_experimental_preservation": {
+    "decision": "NOT_EVALUABLE",
+    "prerequisite": "the scored 3283cfd campaign's raw CELLS.jsonl / ANALYSIS.json (EXPOSURE_HISTORY.json records analysis_sha256 45d954bb3c4d68e8804a42041bd90c6f79a668dccb61f2692b7bfb8b6fe52d6f) from the consolidation-v1 run directory, which was never committed and is not present in this checkout, the records repository or the review packet",
+    "note": "requires the hashed extract of the 122 scored 3283cfd PGM cells; not present on this host; no target rows invented",
+    "historical_accepted29_view": {
+      "retained": [
+        "ALARM",
+        "ASIA",
+        "Alchemy_11",
+        "BARLEY",
+        "BN_12",
+        "BN_15",
+        "BN_31",
+        "CHILD",
+        "CSP_11",
+        "CSP_13",
+        "DIABETES",
+        "HAILFINDER",
+        "INSURANCE",
+        "MILDEW",
+        "ObjectDetection_34",
+        "ObjectDetection_43",
+        "ObjectDetection_56",
+        "Promedus_12",
+        "Promedus_33",
+        "Promedus_36",
+        "Promedus_37",
+        "Segmentation_11",
+        "Segmentation_16",
+        "WATER",
+        "WIN95PTS",
+        "mastermind_03_08_04-0003",
+        "mastermind_03_08_05-0003",
+        "or_chain_186.fg",
+        "or_chain_209.fg"
+      ],
+      "lost": [],
+      "gained": [
+        "ANDES",
+        "BN_13",
+        "CSP_12",
+        "DBN_11",
+        "DBN_12",
+        "DBN_14",
+        "DBN_15",
+        "DBN_16",
+        "Grids_11",
+        "Grids_14",
+        "MUNIN1",
+        "ObjectDetection_24",
+        "ObjectDetection_30",
+        "ObjectDetection_39",
+        "Pedigree_11",
+        "Pedigree_12",
+        "Pedigree_13",
+        "Promedus_18",
+        "Segmentation_12",
+        "Segmentation_13",
+        "blockmap_10_01-0009",
+        "fs-07",
+        "linkage_13",
+        "mastermind_05_08_03-0002",
+        "or_chain_188.fg"
+      ],
+      "one_repeat_only": []
+    }
+  },
+  "same_round_experimental_preservation": {
+    "decision": "PASS",
+    "lost_vs_pinned_3283cfd": [],
+    "gained_vs_pinned_3283cfd": [],
+    "mutual": 54
+  },
+  "paired_overhead": {
+    "decision": "FLAGGED",
+    "criterion": "a task is FLAGGED when PGM_ACCEPTED is slower than PGM_REFERENCE in BOTH repeats by more than 1.25x AND more than 0.1 s (paired, same-round mutual completions)",
+    "flags": [
+      {
+        "task": "BN_31",
+        "ratios": [
+          1.9283271832344893,
+          1.8090634720965613
+        ],
+        "differences_s": [
+          0.26157637499272823,
+          0.227499209009693
+        ]
+      },
+      {
+        "task": "Promedus_33",
+        "ratios": [
+          2.21254136014418,
+          2.451523822431447
+        ],
+        "differences_s": [
+          0.17302475099859294,
+          0.20756204100325704
+        ]
+      },
+      {
+        "task": "Promedus_12",
+        "ratios": [
+          2.283490341997805,
+          2.1682829212941943
+        ],
+        "differences_s": [
+          0.20445525100512896,
+          0.18995462500606664
+        ]
+      },
+      {
+        "task": "Promedus_37",
+        "ratios": [
+          1.7810921956343877,
+          1.8250207225249155
+        ],
+        "differences_s": [
+          0.2033767499960959,
+          0.2154238759976579
+        ]
+      },
+      {
+        "task": "ASIA",
+        "ratios": [
+          2.1114555838958937,
+          2.0448900996913917
+        ],
+        "differences_s": [
+          0.13623291702242568,
+          0.11836262499855366
+        ]
+      },
+      {
+        "task": "CHILD",
+        "ratios": [
+          2.0843678066695066,
+          2.1195981512749906
+        ],
+        "differences_s": [
+          0.1331305009953212,
+          0.1291867919935612
+        ]
+      },
+      {
+        "task": "INSURANCE",
+        "ratios": [
+          1.795011399244013,
+          1.5464591954977898
+        ],
+        "differences_s": [
+          0.17461941699730232,
+          0.12302087500574999
+        ]
+      },
+      {
+        "task": "WATER",
+        "ratios": [
+          1.7575895074644727,
+          1.864583127009852
+        ],
+        "differences_s": [
+          0.15362908299721312,
+          0.17375566701230127
+        ]
+      },
+      {
+        "task": "MILDEW",
+        "ratios": [
+          1.3320941030682127,
+          1.3482064618908471
+        ],
+        "differences_s": [
+          0.8348116249981103,
+          0.8699701669975184
+        ]
+      },
+      {
+        "task": "ALARM",
+        "ratios": [
+          2.1360243350263475,
+          2.3385656491320055
+        ],
+        "differences_s": [
+          0.13792050100164488,
+          0.15726958400045987
+        ]
+      },
+      {
+        "task": "HAILFINDER",
+        "ratios": [
+          1.807987689767662,
+          1.6387161928124196
+        ],
+        "differences_s": [
+          0.16475316700234544,
+          0.14030345900391694
+        ]
+      },
+      {
+        "task": "WIN95PTS",
+        "ratios": [
+          1.8217881432354237,
+          1.7212605661349056
+        ],
+        "differences_s": [
+          0.16646270800265484,
+          0.1444546669954434
+        ]
+      },
+      {
+        "task": "mastermind_03_08_04-0003",
+        "ratios": [
+          1.299322159762542,
+          1.3020092558411624
+        ],
+        "differences_s": [
+          0.30121975000656676,
+          0.30564158398192376
+        ]
+      },
+      {
+        "task": "mastermind_03_08_05-0003",
+        "ratios": [
+          1.2551946285994138,
+          1.2668707288572414
+        ],
+        "differences_s": [
+          0.40819424999062903,
+          0.41852629199274816
+        ]
+      },
+      {
+        "task": "or_chain_186.fg",
+        "ratios": [
+          1.320803035065324,
+          1.3335752754542352
+        ],
+        "differences_s": [
+          0.22167120799713302,
+          0.22699575099977665
+        ]
+      },
+      {
+        "task": "Promedus_36",
+        "ratios": [
+          2.0259423085309947,
+          2.2137213446854176
+        ],
+        "differences_s": [
+          0.16525241699127946,
+          0.19465779200254474
+        ]
+      },
+      {
+        "task": "Promedus_18",
+        "ratios": [
+          1.5236870121673454,
+          1.5267384673396915
+        ],
+        "differences_s": [
+          0.15585562599881086,
+          0.15922079200390726
+        ]
+      },
+      {
+        "task": "blockmap_10_01-0009",
+        "ratios": [
+          2.3648563890080485,
+          2.3924756369400977
+        ],
+        "differences_s": [
+          0.4628614160174038,
+          0.47001187500427477
+        ]
+      }
+    ],
+    "effect": "a flag holds default promotion pending a recorded explanation; all paired wall ratios and differences are reported",
+    "median_ratio_accepted_over_reference": 1.089939745848026
+  },
+  "promotion_decision": {
+    "decision": "HOLD",
+    "rule": "accepted becomes the shipped default on main only with validity PASS, completeness PASS, historical_accepted_preservation PASS, same_round_accepted_preservation PASS and no unexplained cost flag; no re-tuning to meet any gate"
+  }
+}

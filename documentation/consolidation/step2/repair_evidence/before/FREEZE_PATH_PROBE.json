@@ -1,0 +1,6 @@
+{
+  "failed": true,
+  "exception": "RuntimeError",
+  "message": "Build the heat-bath kernel during setup before freezing",
+  "traceback": "Traceback (most recent call last):\n  File \"<stdin>\", line 4, in <module>\n  File \"/workspace/scratch/226d1e4428b0/pgm-step1-review/benchmarks/external/run_suite.py\", line 65, in host_files\n    raise RuntimeError(\"Build the heat-bath kernel during setup before freezing\")\nRuntimeError: Build the heat-bath kernel during setup before freezing\n"
+}

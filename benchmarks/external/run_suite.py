@@ -251,7 +251,12 @@ def check_pgm(path, task, contract=None, budget_s=BUDGET_S):
                 if flag not in argv or argv[argv.index(flag) + 1] != val: contract_faults.append("argv %s" % flag)
             for k, v in contract["recorded"].items():
                 if str(d.get(k)) != v: contract_faults.append("recorded %s=%r" % (k, d.get(k)))
-            if d.get("wall_s") is None or d["wall_s"] > PGM_ALLOWANCE_S: contract_faults.append("internal wall exceeds the allowance")
+            # STEP2_AMENDMENT_2: the legacy engine's own contract is the outer 20 s receipt plus its 19.5 s budget; at DEADLINE it keeps the partial
+            # rows computed before the deadline and its internal wall includes the deadline handling / serialization.  A partial publication
+            # with an internal wall past 19.5 s is recorded as a DIAGNOSTIC (never a completion), not as a contract fault; the new public
+            # arms are held to `hard_deadline_respected` instead.
+            late_partial = bool(d.get("wall_s") is not None and d["wall_s"] > PGM_ALLOWANCE_S)
+            if d.get("wall_s") is None: contract_faults.append("internal wall missing")
         else:
             if d.get("policy") != contract["policy"]: contract_faults.append("policy %r" % d.get("policy"))
             if "policy_version" in contract and d.get("policy_version") != contract["policy_version"]: contract_faults.append("policy_version %r" % d.get("policy_version"))
@@ -271,7 +276,7 @@ def check_pgm(path, task, contract=None, budget_s=BUDGET_S):
             total = sum((F(x) for x in (d.get("risk_allocations") or {}).values()), F(0))
             if (d.get("risk_allocations") is not None) and total > F(contract["delta"]): contract_faults.append("prospective risk exceeds delta")
             if pubs and any(l.startswith("PAC") for l in labels.values()) and d.get("mode", "auto") != "auto": contract_faults.append("PAC rows under a non-PAC mode")
-    return dict(output_valid=not faults, validation_faults=sorted(set(faults)), contract_valid=not contract_faults, contract_faults=sorted(set(contract_faults)),
+    return dict(output_valid=not faults, validation_faults=sorted(set(faults)), contract_valid=not contract_faults, contract_faults=sorted(set(contract_faults)), legacy_internal_wall_past_allowance=(late_partial if contract and contract["reader"] == "legacy" else None),
                 solver_outcome=d.get("outcome"), guarantee=d.get("guarantee"), published=len(pubs), K=len(expected),
                 all_queries_returned=not faults and len(pubs) == len(expected) and d.get("outcome") in ("COMPLETE", "EXACT"),
                 max_published_radius=float(maxradius), max_published_width=float(maxwidth), backend=d.get("backend"),

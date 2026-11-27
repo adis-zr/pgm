@@ -1,0 +1,20 @@
+# Repair pass before step 2: before / after evidence
+
+Review inputs (copied here): `REVIEW_VERDICT.md`, `CODE_REVIEW.md`, `STRUCTURE_REVIEW.md`, `BENCHMARK_REVIEW.md`, the brief
+`CLAUDE_REPAIR_AND_STEP2.md`. The reviewer's probes are under `repair_evidence/before/`; the same probes and the new
+controls on the repaired source are under `repair_evidence/after/`. Commits: `047b0d1` (R1-R5), `74f3c94` (amendment),
+`f74f7f3` (qualification receipts).
+
+| finding | before (reviewer evidence) | after (this pass) |
+|---|---|---|
+| R1 supervisor dies first, registered worker leaks | `before/RUNTIME_OWNERSHIP.json`: supervisor rc -9, child alive after `kill_owned`, `leaked: true` | `after/RUNTIME_OWNERSHIP.json`: same probe, `leaked: false`; `kill_owned` reconciles the durable SPAWNED / registry groups with an identity check (spawn time), refuses a reused pgid and the caller's own group, reports `unresolved` -> attempt outcome `CLEANUP_UNRESOLVED` (never success). `tests/test_runtime_ownership.py` (4) |
+| R2 shims import any installed `pgm` first | `before/SHIM.stderr`: `ModuleNotFoundError: No module named 'pgm.algorithms'` from an older editable install | shims put their own checkout's `src` first and refuse an already-imported foreign `pgm` explicitly; `tests/test_compat_shims.py` (4): conflicting package earlier on sys.path, foreign package already imported, `-I` script entry, alias identity |
+| R3 wheel gate fail-open | `before/STRUCTURE_PREDICATE_PROBES.json`: all four workers failing still PASS; cache / capability checks not in the predicate; no nonzero exit | `verdict()` requires exit 0 + expected outcome / inventory / guarantee / backend / route for every required probe; forced native STREAM on bip4; CBI + SF solve-and-check; cqr typed UNAVAILABLE; build + load under `PGM_NATIVE_CACHE` with location and identity verified; exit 1 on FAIL; 20 negative controls (`tests/test_qualification_tools.py`); `after/clean_wheel_relocation_strict_gate.json`: PASS, `failures: []` |
+| R4 classifier hides failures behind static references | `before/BLOCKED_CLASSIFIER_PROBE.json`: injected RuntimeError classified BLOCKED when `static=['RECORDS']` | BLOCKED only on a dependency PREFLIGHT (declared private paths absent) or validated missing-path evidence; FAILED otherwise and the driver exits 1; `after/BLOCKED_CONTROLS_preflight_classifier.json`: 39 PORTABLE / 51 BLOCKED, every BLOCKED by `declared dependency absent (preflight)`; classifier regression in `tests/test_qualification_tools.py` |
+| R5 CBI collection error hides 22 tests; H4 packet errors; wrong override docs | 1 collection error + 5 H4 failures; `PGM_RECORDS_ROOT` claimed | CBI packet is a fixture of its one dependent test (22 run, 1 BLOCKED skip; `CBI_COUNTEREXAMPLES`); H4 packet tests skip BLOCKED naming the path (`H4A_PACKET`); qualification reports blocked / collection errors / failed separately; `overall` status requires every required step |
+| B1 freeze reads deleted `code/cex/newarm` paths; cache override unfrozen | `before/FREEZE_PATH_PROBE.json`: `RuntimeError: Build the heat-bath kernel during setup before freezing` on a correct build | `run_suite.native_probe` resolves per arm from the owning implementation (incl. `PGM_NATIVE_CACHE`, pinned and passed to every cell), verifies and hashes the loaded artifacts; `tests/test_benchmark_harness.py` covers both settings |
+| B2-B7 | no executed reference; no full oracle; positional pairs; no gate record | `STEP2_AMENDMENT_1.md`: PGM_REFERENCE (7f28259) and PGM_EXPERIMENTAL_REF (3283cfd) executed; explicit pairs; contracts; GATES; cost criterion; 732 cells; ceiling 14,640 s; `tests/test_benchmark_validator.py` (13 mutation controls) |
+
+Duplicate exact reader: `pgm.algorithms.structural.core.read_uai` now **is** `pgm.model.uai.read_uai` (one definition; parity
+IDENTICAL after the change). Same-host comparison: the parity reference and the candidate were regenerated on this host; the
+archived Mac witness constants are not compared against another platform.

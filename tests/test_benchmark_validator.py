@@ -107,3 +107,16 @@ def test_analyzer_detects_deterministic_conflicts_and_late_publication(tmp_path)
     (root / "RECEIPTS.jsonl").write_text("\n".join(json.dumps(r) for r in receipts) + "\n")
     f, rws, result = A.analyze(root)
     assert any("Recomputed completion disagrees" in i or "Cell/receipt disagreement" in i for i in result["validation_issues"])
+
+
+def test_amendment_2_internal_wall_rule_guards_late_publication_only(tmp_path):
+    t = task(tmp_path)
+    base = dict(outcome="DEADLINE_PARTIAL", guarantee="PARTIAL", K=4, published=0, answers=[dict(var=v, state=a, guarantee="NOT_PUBLISHED") for v in range(2) for a in range(2)], positive_mass_witness=None,
+                binding=dict(model_sha256=t["model_sha256"], evidence_sha256=t["evidence_sha256"]), wall_s=19.55, argv=["--budget", "19.5", "--epsilon", "1/200", "--delta", "1/1000000", "--schedule", "targeted", "--route", "auto", "--proposal", "mb"],
+                schedule="targeted", route_requested="auto", proposal="mb", epsilon="1/200", delta="1/1000000")
+    c = h.check_pgm(write(tmp_path, base), t, h.CONTRACTS["PGM_REFERENCE"]); assert c["contract_valid"] and not c["all_queries_returned"]      # non-publishing deadline cell: no fault
+    assert c["legacy_internal_wall_past_allowance"] is True                                                                       # recorded as a diagnostic
+    late = dict(base, outcome="EXACT", guarantee="EXACT", published=4, answers=rows(), positive_mass_witness=True, wall_s=19.6)
+    c = h.check_pgm(write(tmp_path, late), t, h.CONTRACTS["PGM_REFERENCE"]); assert c["contract_valid"] and c["legacy_internal_wall_past_allowance"] is True   # the legacy engine's own contract; completion still requires the outer receipt <= 20 s
+    pub = public_result(t, hard_deadline_respected=False)
+    c = h.check_pgm(write(tmp_path, pub), t, h.CONTRACTS["PGM_ACCEPTED"]); assert not c["contract_valid"]                                 # the new public arms are held to hard_deadline_respected

@@ -14,7 +14,10 @@ Branch `consolidate/production-layout` (review branch; `main` unchanged pending 
 | 4/5 `ed8c676` | research / specialist organization: `pgm.specialists` (cqr / cbi / sf / h4a, explicit APIs), registry statuses (selectable / specialist / reference / historical / unfinished), `research/CLASSIFICATION.json` for every tracked file |
 | 5/5 `181583e` | packaging (wheel; clean-venv relocation PASS), inherited controls classified portable / blocked, harness policy arms, frozen step-2 plan, machine-readable manifest / path map / capability matrix |
 | 6 | this documentation packet (START_HERE, ARCHITECTURE, API / policy specification, deletion / move inventory, README) |
-| 7 | the final combined qualification receipts taken at the clean commit 6 tree (`qualification/06_final/`; `SOURCE_COMMIT.txt` names it) |
+| 7 `f21b2d3` | the first combined qualification receipts (reviewed) |
+| repair `047b0d1` | review repairs R1-R5 (see `../step2/REPAIRS.md`) |
+| amendment `74f3c94` | STEP2_AMENDMENT_1 (executed pinned references, owner-resolved natives, contracts, GATES) |
+| receipts `f74f7f3` | the enforcing combined qualification at the repaired state (`qualification/06_final/`; `SOURCE_COMMIT.txt` names the commit; uncommitted at that time: the host-rebuilt structural kernel + record and the receipts directory being regenerated) |
 
 ## Read in this order
 
@@ -33,7 +36,7 @@ Branch `consolidate/production-layout` (review branch; `main` unchanged pending 
 
 | check | result |
 |---|---|
-| portable tests (`tests/`) | 69 passed, 39 subtests (53 at `f8197e6` + 16 new: policy contract, boundaries, specialists / registry) |
+| portable tests (`tests/`) | 98 passed, 39 subtests (53 at `f8197e6` + 45 new: policy contract, boundaries, specialists / registry, runtime ownership, shim binding, qualification-tool negative controls, harness validator mutation controls, harness preflight) |
 | characterization parity vs `tests/parity/reference_f8197e6.json` | IDENTICAL (16 deterministic cases: exact rational bounds / points / labels, bindings, witnesses, refusals, Z enclosures, ledger identity, risk; 2 wall-limited invariants; 2 fixed-work 75,000-step native response prefixes) -- after commit 2, commit 3 and at the final state |
 | relocation diff | 304 changed lines across 47 modules, every one an import / `sys.path` / resource-location line |
 | DGP10 new controls (`check_dgp10.py`) | 12 / 12 |

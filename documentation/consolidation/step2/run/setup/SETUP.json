@@ -1,0 +1,1177 @@
+{
+  "started_utc": "2026-11-27T20:18:16Z",
+  "compilers": {
+    "CC": "/usr/bin/clang",
+    "CXX": "/usr/bin/clang++",
+    "CC_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+    "CXX_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+    "CC_sha256": "b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9",
+    "CXX_sha256": "b8763cf250e607a778bb4603cecb5b90338814d0a3dfcba0d57b1de242f610e9",
+    "machine": "arm64",
+    "platform": "macOS-26.6.2-arm64-arm-64bit"
+  },
+  "native_cache": null,
+  "builds": {
+    "PGM_ACCEPTED": "built 757032135b0b 5b1862487a9b",
+    "PGM_REFERENCE": "built 182f22c3714b 5b1862487a9b",
+    "PGM_EXPERIMENTAL_REF": "built 6fcec3f7edeb 5b1862487a9b"
+  },
+  "natives": {
+    "PGM_REFERENCE": {
+      "layout": "legacy",
+      "root": "/Users/adis/Workspace/pgm-ref-7f28259",
+      "native_cache": null,
+      "active": [
+        {
+          "role": "cex_source",
+          "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/cex_kernel.cpp",
+          "sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104"
+        },
+        {
+          "role": "cex_record",
+          "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/cex_build.json",
+          "record": {
+            "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+            "binary_sha256": "182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330",
+            "flags": [
+              "-std=c++17",
+              "-O2",
+              "-ffp-model=strict",
+              "-ffp-contract=off",
+              "-fno-fast-math",
+              "-fno-unsafe-math-optimizations",
+              "-fno-reciprocal-math",
+              "-fno-associative-math",
+              "-fPIC",
+              "-shared"
+            ],
+            "compiler": "/usr/bin/clang++",
+            "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+            "build_wall_s": 0.8334874580032192,
+            "platform": "darwin",
+            "built_utc": "2026-11-27T20:08:27Z",
+            "plan_format": 2
+          },
+          "sha256": "18c5742db5b4c476be344bdaee8c314d22b47404b997a785f06a0bad45413f54"
+        },
+        {
+          "role": "cex_build_target",
+          "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/libcex_kernel.dylib",
+          "sha256": "182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330"
+        },
+        {
+          "role": "cex_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/native_cache/cex_182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330.dylib",
+          "sha256": "182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330"
+        },
+        {
+          "role": "stream_source",
+          "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/stream_kernel.cpp",
+          "sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786"
+        },
+        {
+          "role": "stream_record",
+          "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/stream_build.json",
+          "record": {
+            "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+            "binary_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+            "compiler_flags": [
+              "-O3",
+              "-std=c++17",
+              "-shared",
+              "-fPIC",
+              "-fno-fast-math",
+              "-ffp-contract=off",
+              "-frounding-math"
+            ]
+          },
+          "sha256": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b"
+        },
+        {
+          "role": "stream_build_target",
+          "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/libstream_kernel.so",
+          "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+        },
+        {
+          "role": "stream_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/native_cache/stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so",
+          "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+        }
+      ],
+      "cache_inventory": {
+        "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/native_cache": [
+          "cex_182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330.dylib",
+          "stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so"
+        ]
+      },
+      "stale_cache_files_not_used": {
+        "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/native_cache": []
+      }
+    },
+    "PGM_ACCEPTED": {
+      "layout": "pgm",
+      "root": "/Users/adis/Workspace/pgm-consolidate",
+      "native_cache": null,
+      "active": [
+        {
+          "role": "cex_source",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/cex_kernel.cpp",
+          "sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104"
+        },
+        {
+          "role": "cex_record",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/cex_build.json",
+          "record": {
+            "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+            "binary_sha256": "757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355",
+            "flags": [
+              "-std=c++17",
+              "-O2",
+              "-ffp-model=strict",
+              "-ffp-contract=off",
+              "-fno-fast-math",
+              "-fno-unsafe-math-optimizations",
+              "-fno-reciprocal-math",
+              "-fno-associative-math",
+              "-fPIC",
+              "-shared"
+            ],
+            "compiler": "/usr/bin/clang++",
+            "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+            "build_wall_s": 0.8141431249969173,
+            "platform": "darwin",
+            "built_utc": "2026-11-27T20:08:24Z",
+            "plan_format": 2
+          },
+          "sha256": "a2a379a42c48c81db0d263c267b367097cd1aa7f61fb17dedf88ab0d20d86c17"
+        },
+        {
+          "role": "cex_build_target",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/libcex_kernel.dylib",
+          "sha256": "757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355"
+        },
+        {
+          "role": "cex_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/native_cache/cex_757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355.dylib",
+          "sha256": "757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355"
+        },
+        {
+          "role": "stream_source",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/stream_kernel.cpp",
+          "sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786"
+        },
+        {
+          "role": "stream_record",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/stream_build.json",
+          "record": {
+            "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+            "binary_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+            "compiler_flags": [
+              "-O3",
+              "-std=c++17",
+              "-shared",
+              "-fPIC",
+              "-fno-fast-math",
+              "-ffp-contract=off",
+              "-frounding-math"
+            ]
+          },
+          "sha256": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b"
+        },
+        {
+          "role": "stream_build_target",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/libstream_kernel.so",
+          "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+        },
+        {
+          "role": "stream_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/native_cache/stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so",
+          "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+        },
+        {
+          "role": "heat_source",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/heatbath_native.c",
+          "sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4"
+        },
+        {
+          "role": "heat_record",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/heatbath_build.json",
+          "record": {
+            "source_sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+            "binary_sha256": "66b20fc39d2ef886930646d7e5b1544a4853fe2c6be0e132ff56060fe85f1063",
+            "flags": [
+              "-std=c11",
+              "-O2",
+              "-ffp-model=strict",
+              "-ffp-contract=off",
+              "-fno-fast-math",
+              "-fno-unsafe-math-optimizations",
+              "-fno-reciprocal-math",
+              "-fno-associative-math",
+              "-fPIC",
+              "-shared"
+            ],
+            "compiler": "/usr/bin/clang",
+            "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+            "build_wall_s": 0.3149463750014547,
+            "platform": "darwin",
+            "built_utc": "2026-11-27T20:08:25Z",
+            "library": "heatbath_e0981f0b1620eb67.dylib",
+            "rng": "xoshiro256** seeded by splitmix64 from the 64-bit sample seed",
+            "decision": "outward binary64 weight / CDF intervals on power-of-two normalized tables inside a proved normal range, 53-bit uniform prefix, exact fallback on the same bit stream",
+            "range_floor_log2": -900,
+            "observer": "DGP10 conditional-response observer (optional; off unless configured)"
+          },
+          "sha256": "b767a446a202d258319a9e5c1ebdd1ecb3ebe29203aa9f26daf1ac085328b957"
+        },
+        {
+          "role": "heat_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/native_cache/heatbath_e0981f0b1620eb67.dylib",
+          "sha256": "66b20fc39d2ef886930646d7e5b1544a4853fe2c6be0e132ff56060fe85f1063"
+        }
+      ],
+      "cache_inventory": {
+        "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/native_cache": [
+          "heatbath_729b6486f8757f70.dylib",
+          "heatbath_e0981f0b1620eb67.dylib"
+        ],
+        "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/native_cache": [
+          "cex_720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b.dylib",
+          "cex_757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355.dylib",
+          "stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so"
+        ]
+      },
+      "stale_cache_files_not_used": {
+        "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/native_cache": [
+          "heatbath_729b6486f8757f70.dylib"
+        ],
+        "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/native_cache": [
+          "cex_720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b.dylib"
+        ]
+      }
+    },
+    "PGM_EXPERIMENTAL": {
+      "layout": "pgm",
+      "root": "/Users/adis/Workspace/pgm-consolidate",
+      "native_cache": null,
+      "active": [
+        {
+          "role": "cex_source",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/cex_kernel.cpp",
+          "sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104"
+        },
+        {
+          "role": "cex_record",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/cex_build.json",
+          "record": {
+            "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+            "binary_sha256": "757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355",
+            "flags": [
+              "-std=c++17",
+              "-O2",
+              "-ffp-model=strict",
+              "-ffp-contract=off",
+              "-fno-fast-math",
+              "-fno-unsafe-math-optimizations",
+              "-fno-reciprocal-math",
+              "-fno-associative-math",
+              "-fPIC",
+              "-shared"
+            ],
+            "compiler": "/usr/bin/clang++",
+            "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+            "build_wall_s": 0.8141431249969173,
+            "platform": "darwin",
+            "built_utc": "2026-11-27T20:08:24Z",
+            "plan_format": 2
+          },
+          "sha256": "a2a379a42c48c81db0d263c267b367097cd1aa7f61fb17dedf88ab0d20d86c17"
+        },
+        {
+          "role": "cex_build_target",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/libcex_kernel.dylib",
+          "sha256": "757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355"
+        },
+        {
+          "role": "cex_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/native_cache/cex_757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355.dylib",
+          "sha256": "757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355"
+        },
+        {
+          "role": "stream_source",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/stream_kernel.cpp",
+          "sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786"
+        },
+        {
+          "role": "stream_record",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/stream_build.json",
+          "record": {
+            "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+            "binary_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+            "compiler_flags": [
+              "-O3",
+              "-std=c++17",
+              "-shared",
+              "-fPIC",
+              "-fno-fast-math",
+              "-ffp-contract=off",
+              "-frounding-math"
+            ]
+          },
+          "sha256": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b"
+        },
+        {
+          "role": "stream_build_target",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/libstream_kernel.so",
+          "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+        },
+        {
+          "role": "stream_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/native_cache/stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so",
+          "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+        },
+        {
+          "role": "heat_source",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/heatbath_native.c",
+          "sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4"
+        },
+        {
+          "role": "heat_record",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/heatbath_build.json",
+          "record": {
+            "source_sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+            "binary_sha256": "66b20fc39d2ef886930646d7e5b1544a4853fe2c6be0e132ff56060fe85f1063",
+            "flags": [
+              "-std=c11",
+              "-O2",
+              "-ffp-model=strict",
+              "-ffp-contract=off",
+              "-fno-fast-math",
+              "-fno-unsafe-math-optimizations",
+              "-fno-reciprocal-math",
+              "-fno-associative-math",
+              "-fPIC",
+              "-shared"
+            ],
+            "compiler": "/usr/bin/clang",
+            "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+            "build_wall_s": 0.3149463750014547,
+            "platform": "darwin",
+            "built_utc": "2026-11-27T20:08:25Z",
+            "library": "heatbath_e0981f0b1620eb67.dylib",
+            "rng": "xoshiro256** seeded by splitmix64 from the 64-bit sample seed",
+            "decision": "outward binary64 weight / CDF intervals on power-of-two normalized tables inside a proved normal range, 53-bit uniform prefix, exact fallback on the same bit stream",
+            "range_floor_log2": -900,
+            "observer": "DGP10 conditional-response observer (optional; off unless configured)"
+          },
+          "sha256": "b767a446a202d258319a9e5c1ebdd1ecb3ebe29203aa9f26daf1ac085328b957"
+        },
+        {
+          "role": "heat_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/native_cache/heatbath_e0981f0b1620eb67.dylib",
+          "sha256": "66b20fc39d2ef886930646d7e5b1544a4853fe2c6be0e132ff56060fe85f1063"
+        }
+      ],
+      "cache_inventory": {
+        "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/native_cache": [
+          "heatbath_729b6486f8757f70.dylib",
+          "heatbath_e0981f0b1620eb67.dylib"
+        ],
+        "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/native_cache": [
+          "cex_720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b.dylib",
+          "cex_757032135b0b3e61b841932e284d775a4d215f85acf731b15f895b66e169e355.dylib",
+          "stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so"
+        ]
+      },
+      "stale_cache_files_not_used": {
+        "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/response/native_cache": [
+          "heatbath_729b6486f8757f70.dylib"
+        ],
+        "/Users/adis/Workspace/pgm-consolidate/src/pgm/algorithms/structural/native_cache": [
+          "cex_720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b.dylib"
+        ]
+      }
+    },
+    "PGM_EXPERIMENTAL_REF": {
+      "layout": "legacy",
+      "root": "/Users/adis/Workspace/pgm-ref-3283cfd",
+      "native_cache": null,
+      "active": [
+        {
+          "role": "cex_source",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/cex_kernel.cpp",
+          "sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104"
+        },
+        {
+          "role": "cex_record",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/cex_build.json",
+          "record": {
+            "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+            "binary_sha256": "6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf",
+            "flags": [
+              "-std=c++17",
+              "-O2",
+              "-ffp-model=strict",
+              "-ffp-contract=off",
+              "-fno-fast-math",
+              "-fno-unsafe-math-optimizations",
+              "-fno-reciprocal-math",
+              "-fno-associative-math",
+              "-fPIC",
+              "-shared"
+            ],
+            "compiler": "/usr/bin/clang++",
+            "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+            "build_wall_s": 0.8205604160029907,
+            "platform": "darwin",
+            "built_utc": "2026-11-27T20:08:28Z",
+            "plan_format": 2
+          },
+          "sha256": "f9af993532e0049b212e99c47ba46774cc316d0107d3861ee2b2a5cca63c4023"
+        },
+        {
+          "role": "cex_build_target",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/libcex_kernel.dylib",
+          "sha256": "6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf"
+        },
+        {
+          "role": "cex_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/native_cache/cex_6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf.dylib",
+          "sha256": "6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf"
+        },
+        {
+          "role": "stream_source",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/stream_kernel.cpp",
+          "sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786"
+        },
+        {
+          "role": "stream_record",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/stream_build.json",
+          "record": {
+            "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+            "binary_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+            "compiler_flags": [
+              "-O3",
+              "-std=c++17",
+              "-shared",
+              "-fPIC",
+              "-fno-fast-math",
+              "-ffp-contract=off",
+              "-frounding-math"
+            ]
+          },
+          "sha256": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b"
+        },
+        {
+          "role": "stream_build_target",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/libstream_kernel.so",
+          "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+        },
+        {
+          "role": "stream_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/native_cache/stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so",
+          "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+        },
+        {
+          "role": "heat_source",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/heatbath_native.c",
+          "sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4"
+        },
+        {
+          "role": "heat_record",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/heatbath_build.json",
+          "record": {
+            "source_sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+            "binary_sha256": "416e9dd03a9f0870fd138e80730b5ad17fb34d92215bb4a31a1ab43d1387cef8",
+            "flags": [
+              "-std=c11",
+              "-O2",
+              "-ffp-model=strict",
+              "-ffp-contract=off",
+              "-fno-fast-math",
+              "-fno-unsafe-math-optimizations",
+              "-fno-reciprocal-math",
+              "-fno-associative-math",
+              "-fPIC",
+              "-shared"
+            ],
+            "compiler": "/usr/bin/clang",
+            "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+            "build_wall_s": 0.3197565839946037,
+            "platform": "darwin",
+            "built_utc": "2026-11-27T20:08:29Z",
+            "library": "heatbath_e0981f0b1620eb67.dylib",
+            "rng": "xoshiro256** seeded by splitmix64 from the 64-bit sample seed",
+            "decision": "outward binary64 weight / CDF intervals on power-of-two normalized tables inside a proved normal range, 53-bit uniform prefix, exact fallback on the same bit stream",
+            "range_floor_log2": -900,
+            "observer": "DGP10 conditional-response observer (optional; off unless configured)"
+          },
+          "sha256": "3098a1654cf50d53d14819819ab0073d6e0cb596f9ae2b61210cfed2872ebb86"
+        },
+        {
+          "role": "heat_loaded_binary",
+          "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/native_cache/heatbath_e0981f0b1620eb67.dylib",
+          "sha256": "416e9dd03a9f0870fd138e80730b5ad17fb34d92215bb4a31a1ab43d1387cef8"
+        }
+      ],
+      "cache_inventory": {
+        "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/native_cache": [
+          "heatbath_729b6486f8757f70.dylib",
+          "heatbath_e0981f0b1620eb67.dylib"
+        ],
+        "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/native_cache": [
+          "cex_6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf.dylib",
+          "stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so"
+        ]
+      },
+      "stale_cache_files_not_used": {
+        "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/native_cache": [
+          "heatbath_729b6486f8757f70.dylib"
+        ],
+        "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/native_cache": []
+      }
+    }
+  },
+  "roots": {
+    "PGM_REFERENCE": {
+      "path": "/Users/adis/Workspace/pgm-ref-7f28259",
+      "commit": "7f28259a4869a2c684d506b51072b04bb0ce4783",
+      "closure_files": 79,
+      "closure_sha256": {
+        "code/cex/blockres/NOTE.md": "ff560d651d6299e13b3bb2484f71c77475c799c753507e6e3eb5de8201e678d5",
+        "code/cex/blockres/ancestral_response.py": "516bc6ae81e2ba8418e40f1a469c8f69c60988308e5a650e333e05bbdb626e91",
+        "code/cex/blockres/blockres.py": "963a1fcc3e0b7d807797d65bc63f1651cafcf78f3af1acbbb34b2f740fc0240b",
+        "code/cex/blockres/check_exact_route.py": "f3418468283711fde1fe6c3fd5982a70fbfff7f13d9fe9943afe3cb9d923b2b5",
+        "code/cex/blockres/check_integrated_v2.py": "c252460f4f9e422fa446b9c64017c65c259e7e05ae35c7a4612d43189598d42a",
+        "code/cex/blockres/check_round11.py": "98ce3e8c0d807895495572e2b1aef7cb72620d4a08fac1f8ce694332ab862ecc",
+        "code/cex/blockres/check_round12.py": "6e9a5f8a1f7fb5a715f1e7fafb4b0c59e25c0f12f6b7eb41bd191f4943891c34",
+        "code/cex/blockres/check_round13.py": "d75281641becdd59e26815b51abeb53868fd64f624783b7f795f24eee7647989",
+        "code/cex/blockres/check_round15.py": "883f9b30723db5faaf65849c63e6203dd43549914f55795af054f7fe5fe8b50e",
+        "code/cex/blockres/check_round16.py": "958b9cc242cd24a3fa0af49015951b2fe9d5d976823a1f4b4d3ad7bb77309ba3",
+        "code/cex/blockres/check_round17.py": "649fc116cba91958f852c94fe549f10ced45436375844c96792d669112db5c97",
+        "code/cex/blockres/check_round18.py": "27c85b91c5da4bf80fbc3803649f4254dd10709bcbb7dfd4a2cadcc7953e2132",
+        "code/cex/blockres/check_round18_oracle.py": "b70c05663f5d5ca27ca963e76386b820c7643e715bbd4eebb0650ba458521a02",
+        "code/cex/blockres/check_round19.py": "14403e116174db0f49d0da0367aff0b9f1b5456d208761cc76cc401bd8cb99b4",
+        "code/cex/blockres/check_round19_oracle.py": "07b9425d6b6c88e5919cef16fee02d55cea573d4a4f2012d6bd9f66a9589494b",
+        "code/cex/blockres/check_round19b.py": "d4d1ce4f76a05c36f8345406749eacd6d8d24e432889ea96cc5462cde7917773",
+        "code/cex/blockres/check_round20.py": "703d1500f1f2ce31abc26e1a4a4c374ed9547c603e01b04973ea9ae2247aca44",
+        "code/cex/blockres/check_round20b.py": "cd9ac90a445dcd052c311bb8470fc4abc828e3cbc21410750b0d54574dd675e0",
+        "code/cex/blockres/check_round22.py": "c758ca914c37a9d9c0e6fd1ced0e48c83f1627c91044124b563d7444c3dffab8",
+        "code/cex/blockres/check_round22b.py": "00d121718a5fd70c5b794a4007deab2884d904a544325228923d4b698d791cf3",
+        "code/cex/blockres/check_wmb.py": "5e3a21922303759ef8ae2ca92e277efb38ea293d22a19c5a7a2fb0c233d09e06",
+        "code/cex/blockres/integrated.py": "19705c01f3a7b7cbb77f00d580b1ef800e94caee7601017013357dc3417746ff",
+        "code/cex/blockres/job.sh": "cad8b461c967be7cef1855e2104a302f4549385cd719e656ee6188f6163c59bc",
+        "code/cex/blockres/layered_contraction.py": "b1bec8d30d7a58a1ce835167a2b80b0b9e08e1e32c65dd243200282835fe5ed0",
+        "code/cex/blockres/r23_gen.py": "61a9f8ffb233668431ee3e153c5d8e9f03a56fc711c5bee350df2e93009ddc77",
+        "code/cex/blockres/report.py": "5358346a73fc8a48e4c992c50f7ac5821ccd901c743f3e502e6e5a6e3d339915",
+        "code/cex/blockres/run_paired.py": "f0a74ea0398e74de915b9d957cba84951a85774e7ea0ee153416e32bef5c021a",
+        "code/cex/blockres/run_r23.py": "3974c80a4f3fd1ec5d715396418263fbcf5cef7e5aca1ed7db2ccd7092c8731d",
+        "code/cex/blockres/run_transfer.py": "53fcd8e796450589c83baafb82c57f7a331e0e9b620d2dde2e243d1d54c7179f",
+        "code/cex/blockres/signed_evidence.py": "e4272a7f1893e882627ad63fdee3efe219f06b36c4e9188b9f4fe414050f7141",
+        "code/cex/blockres/support_closure.py": "ae53029afd026bf19a74af894e007f36f677cfff7d2bb1eb359147ab6782b4e6",
+        "code/cex/blockres/transfer_gen.py": "f46da0cfe247ca02c76f92ac4ecb4ea181c72e5268b697fd1ef905824a4936ed",
+        "code/cex/newarm/CEX_QUALIFICATION.json": "98f8af35298f484deefe3b1f34473579facbd329916c110ecf51697823d3af52",
+        "code/cex/newarm/FOREST_QUALIFICATION.json": "fdcbba37540c873d06b4fa5bfea9397cf8cdbd1feafbbb4a61e70828ce3183d6",
+        "code/cex/newarm/GATE_CONTROLS.json": "774e62f2c6b8e13670ae15c61185d1a72b037a57730fdcc029709891f76df226",
+        "code/cex/newarm/REVIEW_ADDITIVE_RESULTS.json": "5e092c55d565367c9978d25c2ca8612d77dc04a9e5141a3e47747589d6e2909e",
+        "code/cex/newarm/REVIEW_REGRESSION_RESULTS.json": "d4069310418742b66fe6e92b4b3b7bd7081089898556b320e2f6781f8745cf5e",
+        "code/cex/newarm/SOURCE_HASHES.json": "5995110a4590c06ec9c8316da5d0ce32873cd9977f01cbddbee4c8cf0642c278",
+        "code/cex/newarm/THEORY_NATIVE_AUDIT.json": "1b9c99605770002e82bfb98f34108a2e1db7e311034a70d92ba4932139d25c63",
+        "code/cex/newarm/analyze.py": "c994966d5c6e5c0352b61b093d0f1c46699f0f29d592839f3107192072c349f3",
+        "code/cex/newarm/audit_forest_theory.py": "7d880094e355e26f8b9f76de7ce2213d136ea6f396802982c21b08ba10bb6746",
+        "code/cex/newarm/audit_native_theory.py": "ce56f22d90618e75fd5649fb03f57903c864d4a1a04c170a24dc626e59a1d132",
+        "code/cex/newarm/audit_response_theory.py": "0ed6545a6255a659896f3cf67686d7231b91b47b6b058f3974cba709f291a95d",
+        "code/cex/newarm/cex_build.json": "18c5742db5b4c476be344bdaee8c314d22b47404b997a785f06a0bad45413f54",
+        "code/cex/newarm/cex_control_driver.cpp": "3fdd6b19d551cc213054f5939462b10c1768de7115e8089eee9c2bbc21ba7bfe",
+        "code/cex/newarm/cex_executor.py": "3480e9ba3b9109d436a350af5efb12cf5a3e7516ce42c4d8e7e9c9e1f92c9a4e",
+        "code/cex/newarm/cex_kernel.cpp": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+        "code/cex/newarm/cex_qualification.py": "8670db60ae2729b416d8827b3301c7b602282c6c256a4f58c60cec01aac35417",
+        "code/cex/newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
+        "code/cex/newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+        "code/cex/newarm/dag_additive_controls.json": "72a90d870d93152f2e68c0eeadbead8b6369b0321f16d7dc373a45c2d978b8fe",
+        "code/cex/newarm/evaluate.py": "eaa50de6d6f452568df000b490ae8ac7195b00cba9a79c2dddb979e570d75508",
+        "code/cex/newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+        "code/cex/newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90",
+        "code/cex/newarm/geometry_controls.py": "16e5e347ea4b39bc7616306a88aa54a4dd1f3aabed26ad7a915cb2502f7ea1c5",
+        "code/cex/newarm/libcex_kernel.dylib": "182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330",
+        "code/cex/newarm/libstream_kernel.so": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+        "code/cex/newarm/native_qualification.json": "f590048213143fb0120813ecb542883490ea6d078b6cdb2f828e5c30e6e06984",
+        "code/cex/newarm/native_qualification.py": "3f1fdb1095d57ddc4f3223a9a2eb86538e28ab9d6d572655ad68b625bbc7c365",
+        "code/cex/newarm/native_qualification_stdout.json": "db3333f829e53a560f464892329487a003ec762b725309022f74966bb7fcbefa",
+        "code/cex/newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+        "code/cex/newarm/qualification.json": "8545088dfd03299d69931c8ba4d099eea3aed2561b9bff8e2c52a6522980adec",
+        "code/cex/newarm/qualification.py": "98054ffc5f81625439f713b2f104c0aa31f891e0281c8b85900ff66faf8f30c4",
+        "code/cex/newarm/qualification_stdout.json": "5db9932a31265df3a5e3e44ed98092a30b11e8e57f6fc7fb05d2ff7be2a24da8",
+        "code/cex/newarm/qualify_dag_additive.py": "2bf31d8ca37ac371341dd2dcbc1f91ab93dd3c6548261f21a36b13effcb180ce",
+        "code/cex/newarm/reduction.py": "7899047ec2feca256d695d4529e7ce1ae5a89182bc2e64d3b98c7bf7f02a9342",
+        "code/cex/newarm/reduction_qualification.json": "6e210a64ff6215c8f2adf4165bab6948f4711b87f421739994d6e119a2c0522e",
+        "code/cex/newarm/reduction_qualification.py": "8d31fd218a302e2d861443fc9472b10a923c46450304909ebfdd7af522edb604",
+        "code/cex/newarm/review_additive.py": "5f1bb34ef77bbbe109f7a14924b763de4da5f4c769b54e03c7b51a24d5f67288",
+        "code/cex/newarm/review_regression.py": "edc11d5e52d0f1a1339bf60635265adf9d5009b7628dc9ff38829b6ec134fcbe",
+        "code/cex/newarm/smoke_cex.py": "55335f2e22528956d1a77725df4adb904c4b63c6b674899c5c2979b832b58f6d",
+        "code/cex/newarm/stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+        "code/cex/newarm/stream_build.json": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b",
+        "code/cex/newarm/stream_float.py": "1319565b2e6048b1a66153c732e37f5f00e41ab5391600fe9b793fed7fcdcb72",
+        "code/cex/newarm/stream_kernel.cpp": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+        "code/cex/newarm/support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+        "code/cex/newarm/test_dag.py": "b089ae9c8cc75cd4b9c9f6062cb5f118bb365f88ea47940d5b720b7ff8d65161",
+        "code/cex/newarm/test_forest.py": "7582f75259a7c90f4608f6469eeb1e6aaddbe4d116097ec3349657093404e1a7",
+        "code/cex/newarm/test_reduction.py": "c8623008fa6cd7f0a7bf1731577803b63dde9ccebb87b54c0db3bf7e29c5c33f"
+      },
+      "natives": {
+        "layout": "legacy",
+        "root": "/Users/adis/Workspace/pgm-ref-7f28259",
+        "native_cache": null,
+        "active": [
+          {
+            "role": "cex_source",
+            "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/cex_kernel.cpp",
+            "sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104"
+          },
+          {
+            "role": "cex_record",
+            "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/cex_build.json",
+            "record": {
+              "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+              "binary_sha256": "182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330",
+              "flags": [
+                "-std=c++17",
+                "-O2",
+                "-ffp-model=strict",
+                "-ffp-contract=off",
+                "-fno-fast-math",
+                "-fno-unsafe-math-optimizations",
+                "-fno-reciprocal-math",
+                "-fno-associative-math",
+                "-fPIC",
+                "-shared"
+              ],
+              "compiler": "/usr/bin/clang++",
+              "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+              "build_wall_s": 0.8334874580032192,
+              "platform": "darwin",
+              "built_utc": "2026-11-27T20:08:27Z",
+              "plan_format": 2
+            },
+            "sha256": "18c5742db5b4c476be344bdaee8c314d22b47404b997a785f06a0bad45413f54"
+          },
+          {
+            "role": "cex_build_target",
+            "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/libcex_kernel.dylib",
+            "sha256": "182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330"
+          },
+          {
+            "role": "cex_loaded_binary",
+            "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/native_cache/cex_182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330.dylib",
+            "sha256": "182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330"
+          },
+          {
+            "role": "stream_source",
+            "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/stream_kernel.cpp",
+            "sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786"
+          },
+          {
+            "role": "stream_record",
+            "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/stream_build.json",
+            "record": {
+              "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+              "binary_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+              "compiler_flags": [
+                "-O3",
+                "-std=c++17",
+                "-shared",
+                "-fPIC",
+                "-fno-fast-math",
+                "-ffp-contract=off",
+                "-frounding-math"
+              ]
+            },
+            "sha256": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b"
+          },
+          {
+            "role": "stream_build_target",
+            "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/libstream_kernel.so",
+            "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+          },
+          {
+            "role": "stream_loaded_binary",
+            "path": "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/native_cache/stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so",
+            "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+          }
+        ],
+        "cache_inventory": {
+          "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/native_cache": [
+            "cex_182f22c3714b15dde4529b529ebb9820460d5e50d009ba0f0df4b7121b2aa330.dylib",
+            "stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so"
+          ]
+        },
+        "stale_cache_files_not_used": {
+          "/Users/adis/Workspace/pgm-ref-7f28259/code/cex/newarm/native_cache": []
+        }
+      }
+    },
+    "PGM_EXPERIMENTAL_REF": {
+      "path": "/Users/adis/Workspace/pgm-ref-3283cfd",
+      "commit": "3283cfde40fe277e218987954b01b3ed94f4a712",
+      "closure_files": 241,
+      "closure_sha256": {
+        "code/cex/blockres/NOTE.md": "ff560d651d6299e13b3bb2484f71c77475c799c753507e6e3eb5de8201e678d5",
+        "code/cex/blockres/ancestral_response.py": "516bc6ae81e2ba8418e40f1a469c8f69c60988308e5a650e333e05bbdb626e91",
+        "code/cex/blockres/blockres.py": "963a1fcc3e0b7d807797d65bc63f1651cafcf78f3af1acbbb34b2f740fc0240b",
+        "code/cex/blockres/check_exact_route.py": "f3418468283711fde1fe6c3fd5982a70fbfff7f13d9fe9943afe3cb9d923b2b5",
+        "code/cex/blockres/check_integrated_v2.py": "c252460f4f9e422fa446b9c64017c65c259e7e05ae35c7a4612d43189598d42a",
+        "code/cex/blockres/check_round11.py": "98ce3e8c0d807895495572e2b1aef7cb72620d4a08fac1f8ce694332ab862ecc",
+        "code/cex/blockres/check_round12.py": "6e9a5f8a1f7fb5a715f1e7fafb4b0c59e25c0f12f6b7eb41bd191f4943891c34",
+        "code/cex/blockres/check_round13.py": "d75281641becdd59e26815b51abeb53868fd64f624783b7f795f24eee7647989",
+        "code/cex/blockres/check_round15.py": "883f9b30723db5faaf65849c63e6203dd43549914f55795af054f7fe5fe8b50e",
+        "code/cex/blockres/check_round16.py": "958b9cc242cd24a3fa0af49015951b2fe9d5d976823a1f4b4d3ad7bb77309ba3",
+        "code/cex/blockres/check_round17.py": "649fc116cba91958f852c94fe549f10ced45436375844c96792d669112db5c97",
+        "code/cex/blockres/check_round18.py": "27c85b91c5da4bf80fbc3803649f4254dd10709bcbb7dfd4a2cadcc7953e2132",
+        "code/cex/blockres/check_round18_oracle.py": "b70c05663f5d5ca27ca963e76386b820c7643e715bbd4eebb0650ba458521a02",
+        "code/cex/blockres/check_round19.py": "14403e116174db0f49d0da0367aff0b9f1b5456d208761cc76cc401bd8cb99b4",
+        "code/cex/blockres/check_round19_oracle.py": "07b9425d6b6c88e5919cef16fee02d55cea573d4a4f2012d6bd9f66a9589494b",
+        "code/cex/blockres/check_round19b.py": "d4d1ce4f76a05c36f8345406749eacd6d8d24e432889ea96cc5462cde7917773",
+        "code/cex/blockres/check_round20.py": "703d1500f1f2ce31abc26e1a4a4c374ed9547c603e01b04973ea9ae2247aca44",
+        "code/cex/blockres/check_round20b.py": "cd9ac90a445dcd052c311bb8470fc4abc828e3cbc21410750b0d54574dd675e0",
+        "code/cex/blockres/check_round22.py": "c758ca914c37a9d9c0e6fd1ced0e48c83f1627c91044124b563d7444c3dffab8",
+        "code/cex/blockres/check_round22b.py": "00d121718a5fd70c5b794a4007deab2884d904a544325228923d4b698d791cf3",
+        "code/cex/blockres/check_wmb.py": "5e3a21922303759ef8ae2ca92e277efb38ea293d22a19c5a7a2fb0c233d09e06",
+        "code/cex/blockres/integrated.py": "19705c01f3a7b7cbb77f00d580b1ef800e94caee7601017013357dc3417746ff",
+        "code/cex/blockres/job.sh": "cad8b461c967be7cef1855e2104a302f4549385cd719e656ee6188f6163c59bc",
+        "code/cex/blockres/layered_contraction.py": "b1bec8d30d7a58a1ce835167a2b80b0b9e08e1e32c65dd243200282835fe5ed0",
+        "code/cex/blockres/r23_gen.py": "61a9f8ffb233668431ee3e153c5d8e9f03a56fc711c5bee350df2e93009ddc77",
+        "code/cex/blockres/report.py": "5358346a73fc8a48e4c992c50f7ac5821ccd901c743f3e502e6e5a6e3d339915",
+        "code/cex/blockres/run_paired.py": "f0a74ea0398e74de915b9d957cba84951a85774e7ea0ee153416e32bef5c021a",
+        "code/cex/blockres/run_r23.py": "3974c80a4f3fd1ec5d715396418263fbcf5cef7e5aca1ed7db2ccd7092c8731d",
+        "code/cex/blockres/run_transfer.py": "53fcd8e796450589c83baafb82c57f7a331e0e9b620d2dde2e243d1d54c7179f",
+        "code/cex/blockres/signed_evidence.py": "e4272a7f1893e882627ad63fdee3efe219f06b36c4e9188b9f4fe414050f7141",
+        "code/cex/blockres/support_closure.py": "ae53029afd026bf19a74af894e007f36f677cfff7d2bb1eb359147ab6782b4e6",
+        "code/cex/blockres/transfer_gen.py": "f46da0cfe247ca02c76f92ac4ecb4ea181c72e5268b697fd1ef905824a4936ed",
+        "code/cex/hp/.gitignore": "c86ba39a55a71f92b85ea7020b94825396cc379dbe4f9edbe99f0b134debc221",
+        "code/cex/hp/DGP_NOTE.md": "a9946488b70e5ce81d59d8d2603dcd838a982315e3b13b75c48f437abc04ec36",
+        "code/cex/hp/NOTE.md": "bf8b7ddfe4eb01a96cc021d236ea07ba8de48724423130de3d8ae6a558306a7b",
+        "code/cex/hp/PHASE_RATES.json": "47fcb0024754e54bf957b41c7c9cf0391f7cebfb0a15fe18664ab28bf88c18a6",
+        "code/cex/hp/PHASE_RATES_R1.json": "db2786e451760380714b98b3df50af059c6a41c620fe1b660088fe7923c86a44",
+        "code/cex/hp/UNIFIED_NOTE.md": "923ee250a0942a025ce5545562881eab5c5cca5bc17239d897365a4a80851082",
+        "code/cex/hp/calibrate_revision.py": "b3d0461f19a97253fa3d740f180128950cc7c03cd2fe74ce42e9fde57745e17b",
+        "code/cex/hp/calibrate_unified.py": "5ef016f50e3c524dc38138426d78cacce7ae5227cd5693529d2392a4828e9f74",
+        "code/cex/hp/check_dgp.py": "e308ac36b453e918cf1c7f3c189b655c5ec9a9aee9d2eca11c8eb4c5471746f5",
+        "code/cex/hp/check_dgp10.py": "d07e11dc386dd3bf7104a3cc8a118caf5f3f16d3768c26f025425ac8723b1562",
+        "code/cex/hp/check_global.py": "937cc15c4904dbf45add3030c6d30607c9056e4a0cd5a7a58b65b9be2ce40072",
+        "code/cex/hp/check_hp.py": "a8454f9547e77f521c5ca3a8f38c36b8f2ae3f06689ef445917e93b5ae337b45",
+        "code/cex/hp/check_joint.py": "1a4ce70be620e7424b7bfe17aeb9cc27e100d4cfe7d615d90d2affb1849ccf21",
+        "code/cex/hp/check_residual.py": "a92d700b79e108fb88221130b327ee2d65b12139eb91b769545925bdbd4be87f",
+        "code/cex/hp/check_revision.py": "632a4fad3ae4f631dd503afe3e9ae6a147f21d79e2d12cfabf0e0a13261d2b6f",
+        "code/cex/hp/check_unified.py": "500ee80df5fc9fde6d7ab4a2ae0a2a75c651102168ef9daade637eda1a3836e3",
+        "code/cex/hp/checked_tilt.py": "a631a74a1fb6e910f9cae1303bc5693b127b6a983ac1a951779d83932ed12a79",
+        "code/cex/hp/coarse_envelope.py": "1a3cba648df89af9673a9c89df67eff9702c9c07259d89b50bc7686408b66019",
+        "code/cex/hp/cost_model.py": "6c46fa61203c8b0b817a8bff1a9de7c3e111406e4c4f3e64b2431f03578c14f7",
+        "code/cex/hp/dense_gen.py": "8ccb45cc4ab8aa2fee572a82706b5ee5b2504dbe2088d771a3961140ae8505af",
+        "code/cex/hp/dgp10_analyze.py": "1d67eeaff62622ffbf53c398d26d724ddaa2e7eb3fe95d94019372e209eb0cf3",
+        "code/cex/hp/dgp10_closure.py": "278a26e8e90aea930b79af533793049b3083d1c628b67f898b35ffd7af84d11c",
+        "code/cex/hp/dgp10_inventory.py": "30302eb0c8f14f54f75bcfe1591ca5d1f35da6632194541c6c2738f9096b20a3",
+        "code/cex/hp/dgp10_manifests.py": "3f5789a001c592572b06c3f6dc060c2c78963991634e6da3c521f07ec10b3066",
+        "code/cex/hp/dgp10_oracle.py": "ed7872cd7bd10f24c06ccc5c0feda14ac04a49a0970e57d05e46d9cee0d0d6fe",
+        "code/cex/hp/dgp10_package.py": "068006d2609fc1599aa4364dfd09df8d518b5c3a68f2fb11c3bae3df7b63169e",
+        "code/cex/hp/dgp10_probes_layout.py": "3cd9ec9845f834091da6a881aaed798deaba6cb2b78647999c5a4c8e680fa6b4",
+        "code/cex/hp/dgp10_proof_to_code.py": "7a0cac41a78bc2e56b6bbfed616a022731e318f04773c2d02ac13aca23bf44f2",
+        "code/cex/hp/dgp10_rates.py": "dd389a914941d216db9625747cdbcd0b98f282b2af2cfd3650086db5908ba39f",
+        "code/cex/hp/dgp10_sidecar.py": "2f1a8d73f2d8231211430c58a71832e99e3cfcd0a64e055bcdf349162aa1a4c1",
+        "code/cex/hp/dgp10_start_here.py": "811770e8678d1b9e54c63223bada70476daa39175281314e53de195d8515fb0a",
+        "code/cex/hp/dgp10_theory_return.py": "3a5ce2191cc6a08cdd23301e8e63fd7f464e4d127cdff1ab197454ba81ada239",
+        "code/cex/hp/dgp2_analyze.py": "f7de772efd59d0575959cf3232a5c228295d8d9fcba535f0c52eaad968a330a7",
+        "code/cex/hp/dgp2_manifests.py": "bfad91a040a21205117ca18174c997e5cfa0e604030a0d161573d359bd759993",
+        "code/cex/hp/dgp2_oracle.py": "bf57b515d53aefbfdf72004946b13b9be6486dcf2aaa6c4e8919326099a9b4d3",
+        "code/cex/hp/dgp2_oracle_driver.py": "80e425903eb2329e5954a8a72ccd1bd7024482c467be3eb750cd2ddf25e49133",
+        "code/cex/hp/dgp2_package.py": "58711c5376d3dc6998351384630a2b73cdb1208912a29f07f3c15623a4274b8a",
+        "code/cex/hp/dgp2_start_here.py": "9e53acad6247b2b857e21ce0eb6e5eb0f049433d6a238a2dbc834b4f23ca76b6",
+        "code/cex/hp/dgp3_analyze.py": "3b912225a231ab46cf9bbdb9a207d1ae19e99be0b8baaf5c1305367492cd7c93",
+        "code/cex/hp/dgp3_manifests.py": "65556056384fe622f892dfb2dc9f8d5156c2adde97214ba05c5ec04acba3ed65",
+        "code/cex/hp/dgp3_oracle.py": "abe19e12995c94b0448dfc1a158b4a43173c2381e5cecb7fdecadcd9b1c8baf1",
+        "code/cex/hp/dgp3_oracle_driver.py": "dac8f1d01a936dcacf4794c3a2cd573a53f12636964ee95dab986454abfa97fa",
+        "code/cex/hp/dgp3_package.py": "4d0de68f1770e0691867f55820287a0e044c3dd695fb8e70f5a5d95f5884caaa",
+        "code/cex/hp/dgp3_start_here.py": "0adaadede0ade1756bbc63fda2d0a97c828152514c050999cad4d828b139390f",
+        "code/cex/hp/dgp3_theory_return.py": "7b8438f43be28d81fb6fd3147c59c208a03da0a0a276e77df8c0c66ac34d4268",
+        "code/cex/hp/dgp4_analyze.py": "d35fa078c344f101da3833be6d7c82f98ebb8060265e825697183fe83cd50ba5",
+        "code/cex/hp/dgp4_manifests.py": "511312334d9f48adb9ee014e8b6539f24d6385cad01c142888bea88a47942985",
+        "code/cex/hp/dgp4_oracle.py": "3f293fec38c5b07b1af5037b3fe8d8edea644c9f3ce513a160bf55362ca7372e",
+        "code/cex/hp/dgp4_oracle_driver.py": "423ade379058b6d26894cc7e759f8645145fa7959a13afd4204aa992a3240a00",
+        "code/cex/hp/dgp4_package.py": "6bf5607b60977707d0b813e1279bbe8511506cbb37de52cb8d68073eff961a8f",
+        "code/cex/hp/dgp4_probes.py": "5e79546f86941e2585ae2780845a3cd12fcc15ff097ed7376e4ad215f1472f48",
+        "code/cex/hp/dgp4_start_here.py": "c01b33a812a5b50cecef71484e445d404c9b1a7a06cfd6cb40ef879c86af3ce7",
+        "code/cex/hp/dgp4_theory_return.py": "625c1d30d9c746ea27fe266d713434f41f6639bada1b1cac574bc0e234a94946",
+        "code/cex/hp/dgp5_analyze.py": "59f977ab63eb5b5ce94e499ec76c006514a76c339f60ba2fcda760149c873da0",
+        "code/cex/hp/dgp5_manifests.py": "ec4a1284705e5e6ad30760f4dd38c9b051802a4173c4aa15052346609f962572",
+        "code/cex/hp/dgp5_oracle.py": "e7f26115b8e170628191aa99d73bd5174d26a1ab714b44ecd8007c323bf8a33b",
+        "code/cex/hp/dgp5_oracle_driver.py": "9c1b1292cd3cf31437964797c216da88f687aec4e436820684a0bf99ff017d82",
+        "code/cex/hp/dgp5_package.py": "775998157a0158cf6806a666aefe923a31baec8124ee7d9c253379f9f2a39ec9",
+        "code/cex/hp/dgp5_probes.py": "2e86336193685d2529b472899e0454ec7bfc2d83ae617dc657c3f5c8581c6529",
+        "code/cex/hp/dgp5_start_here.py": "57c0cc968809bd6dc38d12670b55e5ff0c70422446ead2d6fe222f86ce241b8d",
+        "code/cex/hp/dgp5_theory_return.py": "d0ef328100bcab7fe848adfb5eb1aa56a778c43e59a071cb432d95af87c9f5c4",
+        "code/cex/hp/dgp6_analyze.py": "c1a392e7de6f01f4536aa63cdd2569e01e5dcdde8acec1daf1d3ca1dd74a6596",
+        "code/cex/hp/dgp6_manifests.py": "92bcbca2d9cd059684aceda2db4d670585aaa0a298f2c758df603e45b68fc437",
+        "code/cex/hp/dgp6_oracle.py": "a237d09b20b91282cfe1eda85dd9f1de0467b2cad52c8c587bb2491f9de199ba",
+        "code/cex/hp/dgp6_oracle_driver.py": "3f95b5c97a2bfca7e7c5b56f07f7b3c60896c2d36c9177a4a8a0cd6079e63576",
+        "code/cex/hp/dgp6_package.py": "1277c57a88afa688d55dd16ae42fa88c751fe4ed507c4f2a57fdcff55b5fe336",
+        "code/cex/hp/dgp6_probes.py": "63b4d27eacc38eb3250c5a578de4fa9da8b0cedf337f65423f7bd5afcd224346",
+        "code/cex/hp/dgp6_rates.py": "8118d108268a9dbe6557e69fd0af814e53ec218284c4753ef82f09819563c61a",
+        "code/cex/hp/dgp6_sidecar.py": "8d9c9f05e419723c5097e3a3bee9c16149bc99ce317bc679503dbdda07c6fe53",
+        "code/cex/hp/dgp6_smoke.py": "df1f99d3567dc25f93ce7eb7b657f96270fe262aacd25f04faa30e4910a2c73d",
+        "code/cex/hp/dgp6_start_here.py": "a9e193e4f0966198f8310ff3ee4ede856e37eaf6fe510254335db6946bb53d59",
+        "code/cex/hp/dgp6_theory_return.py": "63dadbf5299bf9e50305366acdbf7be69d57438a50dfd874679b9e438fc4a949",
+        "code/cex/hp/dgp7_analyze.py": "084857d4a8b87fdd60a518c76283496807a2de573f9e2e948cc762a6773b0a23",
+        "code/cex/hp/dgp7_manifests.py": "4cbcc95091464b2ab6f26e5064dd06432d10de4cf49dc4cf3c7ae176d0a5d703",
+        "code/cex/hp/dgp7_oracle.py": "891ca8a8d82bd4173fcb70ee7e8647dc8240d7fa75647d30fdf8a5981d085f19",
+        "code/cex/hp/dgp7_oracle_driver.py": "ea88c59005d9987b4f3c731a537afaed4667efc700385cfe3141af9d682bbed0",
+        "code/cex/hp/dgp7_package.py": "b0bf5c8d8db1a624ce3b098c74427469b7bec010ad3ced43f4050d7d639aa877",
+        "code/cex/hp/dgp7_probes.py": "d98aa24662f4ee523aef96868ae34042e6c114a2aeb6451b095d7de484e512b1",
+        "code/cex/hp/dgp7_rates.py": "3f50e3f4e506839ecfbab1f857644c0044bdcaaa727d4b2b96dafe60479935c8",
+        "code/cex/hp/dgp7_sidecar.py": "c89d2523cb3ca1f84008a06d1a3dccec9767e5dfac6640fc86d6b93ede329cc2",
+        "code/cex/hp/dgp7_smoke.py": "6af87e1e3c44b6af7f7ba6c6065a80546239813092896a02d7272fc9a4dc77d4",
+        "code/cex/hp/dgp7_start_here.py": "ac4b845f9da9a30fd0cfcc99a52cd6cedbb2a46e178692dab1be3bf031d8f166",
+        "code/cex/hp/dgp7_theory_return.py": "37ecd209162c6447f5cdc679a04b99c9d303d522e41e155a79de62d0a2ccc25f",
+        "code/cex/hp/dgp8_analyze.py": "3eb2b6dc21b8b580521264ae544cef43183dabf8991ef94fd3f4bc908fd27500",
+        "code/cex/hp/dgp8_manifests.py": "8fe7079c9d87232aaf547fefa92c70b03a8ea0ad0aff7ca173c9d00147410717",
+        "code/cex/hp/dgp8_package.py": "c703d501fd48addae269c37df014fd19a9976696b9e9ed9467a9c8557c810b42",
+        "code/cex/hp/dgp8_probes.py": "f93b9eec6a44602f236795944ad3f514936e51644dfb83477f2cefaf3e55a5ea",
+        "code/cex/hp/dgp8_rates.py": "4723d760737a4f4615c259348ead24338ab97b356e37079bb5806fb0cab772ea",
+        "code/cex/hp/dgp8_sidecar.py": "b7f3ce0a6a87bcd86c15f550cd68f70b4b52160df2b6ed7f44806c28450937f9",
+        "code/cex/hp/dgp8_start_here.py": "9cd0204d4d08708e302c732b2841c7640ccf2e49ebb500eccb98e796fb914bb3",
+        "code/cex/hp/dgp8_theory_return.py": "d1f1400dfc752de1c222b234c088dc32eaced7027b6d9383c71c09f6d8129904",
+        "code/cex/hp/dgp9_analyze.py": "0da50d708a4ac3d70bfd2da09ad415ea36020cbcd463f3cb1829ffa7359f512c",
+        "code/cex/hp/dgp9_manifests.py": "e6748fe72b2fefef5191540150671757b43406a24be201aac0b5b39e98d84bc1",
+        "code/cex/hp/dgp9_package.py": "ad3d3e0b20b250ee646b0e6fd0810faa2463e23f86892c8f17de7f30d4ca43a8",
+        "code/cex/hp/dgp9_probes.py": "f572251302fc2d06f01fe88b83b1123690d15999c65d882282ba62c47323b20a",
+        "code/cex/hp/dgp9_rates.py": "3a99fce7ed50b60a5afc978e88cbbf4109f90b5e6741dc187f8d7cd39c57539d",
+        "code/cex/hp/dgp9_sidecar.py": "414ec8ca5c0ee4ec5342bea13800dfbf475ee7f986a7b18cebe7d34155ce236b",
+        "code/cex/hp/dgp9_start_here.py": "dcf7b55a853d05dfa7c688ea5e56dec9e3aaf717eda3a025f401ebaa74c81101",
+        "code/cex/hp/dgp9_theory_return.py": "0bb0e83722e78917acc52e611405043e9f6e942aa98ae19a7cfa044963250e7b",
+        "code/cex/hp/dgp_analyze.py": "522b6f805d3bf5b574ea42339f801021a4373aad421f388b4304169f22995f3d",
+        "code/cex/hp/dgp_confirm_select.py": "ec150c7d311fe59a26c33c37c204d75167214c88f0fddcb38735415889e1de5f",
+        "code/cex/hp/dgp_dev_smoke.py": "a91d8f253f9dbe00c0e394dba529ca9da17a99458fb4ef0cd89e43c6d402fb8b",
+        "code/cex/hp/dgp_external_select.py": "3b387f1124b4b527192639d2995eed055c92dd59c1c4f80cd4a9130432a30ece",
+        "code/cex/hp/dgp_manifests.py": "1d05581b0b2afb3294001b463bb814154903b0ac292c03a2700263e3a355538c",
+        "code/cex/hp/dgp_package.py": "f057312e4f35a2366ac29909c29346904a479f70b34a47f9a00bc4e8ca87f19d",
+        "code/cex/hp/dgp_paths.py": "d462524642710969fc4229a942edf323ef6ab7acc647c8e1b6b107ae1ca1be0d",
+        "code/cex/hp/fixtures_closeout/point_error_repro.uai": "b600661d6ce1b40e2935797a7670c7ae6d749eb5627ff6b9c55642bbc0bec9ce",
+        "code/cex/hp/fixtures_closeout/point_error_repro.uai.evid": "41076331dd794a2a155e9a375f6d9227cb82906867adce1b5089aa553c4ccaa9",
+        "code/cex/hp/gen_unified.py": "56392fd443da10f471a340ed5dd6201204eed3918665f59d5a992e8d5aa36803",
+        "code/cex/hp/global_circuit.py": "b54f7c26ff90c0f93a2db745fbc53e3fed9713568ce0bfd330d7d80e5717b285",
+        "code/cex/hp/global_optimize.py": "527c0ce6759c007f9dfef0f48814a3ea19b5cc1598f0af84714b0c14787fd9be",
+        "code/cex/hp/global_stream.py": "692de7e7a7cf096e465c920b90cbc1823d37deb1c01dd7f011456281295183eb",
+        "code/cex/hp/grouped_envelope.py": "10f0352c959e39e13108e2ba6edaa310e52979e3566c71f0dbe3ad25ca721208",
+        "code/cex/hp/heatbath_exact.py": "21e437b7317f3155c9f494f0a5e9e772439c251043bad7f32b9987e619e7062d",
+        "code/cex/hp/heatbath_native.c": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+        "code/cex/hp/heatbath_native.py": "4a2961a5a68a76efb9effa5f8413540770d18d5f66ccffa18792dd64aa129598",
+        "code/cex/hp/hp_gen.py": "dcd75e696a7cddc3b890570a105db4db7a26f57d45af3761fd8018537d01615d",
+        "code/cex/hp/joint_optimize.py": "16942fe7269334cc30d4a4b69ee5f8d54ea8098f80a29ac34f93b4c6e9f4a940",
+        "code/cex/hp/joint_proposal.py": "2077d55539b63f284dfe3da49dcbb603616385627e34c540ead9d577237bc24f",
+        "code/cex/hp/joint_stream.py": "3cc9663b6239b2309e136db2a6478ffd6042bfcacb698ff9306289d3649fce4e",
+        "code/cex/hp/joint_witness.py": "f31bbd54e1755464bdd151e5879afa71f48662f8de741d6cf80e870fccf0ee9c",
+        "code/cex/hp/lifted_decoder.py": "aba41b448871bdc9aa6b421c80bace172ee3157a679be4e54ab7c6236ef6b595",
+        "code/cex/hp/lp_worker.py": "0b4707d9504dcfaef47ef76233d875882ed6033adaf67760683ad4e94d221a50",
+        "code/cex/hp/markov_certificate.py": "91d2086d866e42fe8d17bdf8e39059c24f55dad6978bef9b168808fea2c9c55d",
+        "code/cex/hp/pac_actions.py": "dcca29ccfe12d0246bf92c483a973ab840d8a8193a228937af9fb64fdd6676f3",
+        "code/cex/hp/reservation.py": "95f26747d6eb5c9addf20f68c170bb6494b7f0202427d4da9eaede549eca2a7b",
+        "code/cex/hp/residual_bank.py": "ffc84249fe51652551d583b017964cd844c45f8c577a089555a9dddd431cbc38",
+        "code/cex/hp/residual_local.py": "4e75b2631e0aec1bb3551adacfdc2369742aa5a8d19c162fdf0248f32840a3a9",
+        "code/cex/hp/residual_max_envelope.py": "bf39cc6c600111b0dc23289ca5ba98ffa71130ae7b95972b300636f16a3028ab",
+        "code/cex/hp/residual_stream.py": "903864e0d07c628d44d9e408206489c0892ae0145ec75cc160169e47495e93d5",
+        "code/cex/hp/response_certificate.py": "714daa12804b62de227bb8ebb34205645eb5be51831939ef70b7c56d1833d3b1",
+        "code/cex/hp/run_dgp.py": "37f1a2c5fb9d4cd367fb6e817173835014766c622ce8696e7e7cf33da35178f4",
+        "code/cex/hp/run_dgp10.py": "d13ba61562515d2f6f81e29a0de16805811fb10dff94fbf300239bd0a87cc0da",
+        "code/cex/hp/run_dgp2.py": "2a25e8acb86fda41df3e853fae598d3aa03952cdce2f78bd6a62c3a03427b44c",
+        "code/cex/hp/run_dgp3.py": "2ed14e41c98583fdfd4ea49dfc77e6630545d8033eadfac75e836a0f8ccff163",
+        "code/cex/hp/run_dgp4.py": "f127baea63d3a6af1c39fa61b69046b68054e7f2882c724b5ca892d87d16c4c0",
+        "code/cex/hp/run_dgp5.py": "27eb1626951987f3cd863e968cdd63bf0624828bf77c7763409c8b891dc0dc50",
+        "code/cex/hp/run_dgp6.py": "51034e3435c4b74c66bc3a6b73f1b08d7cdf38ec747753635b979604c33c7566",
+        "code/cex/hp/run_dgp7.py": "4a4aff0505efdc525829fbfd8fd406c321865160def926655de03f7c7066f876",
+        "code/cex/hp/run_dgp8.py": "c5f3f68630d7d34479e52a6da26333037a35c1fda093126fdb07105f26a405df",
+        "code/cex/hp/run_dgp9.py": "9fe7e66b9b8be6392a173a854d848b3801b2c97b0e8b67dc5808694ffd9bcc97",
+        "code/cex/hp/run_hp.py": "e0cb5076bfd273051ca99986909108f0e03bc81f189654502485a955b51bb647",
+        "code/cex/hp/run_revision.py": "2eff2e01ff5a606fb2cc90a0c5a31f925fcfd2382b407281f07acb16947e1f4c",
+        "code/cex/hp/run_unified.py": "bd04b2e62f5ece3d671851488be97342380e82e21896c6b3317046310af4bc26",
+        "code/cex/hp/spectral_heatbath_run.py": "11c257576689ff0c302793384a9beff81c95b245ed74d4892ba5436df2585a04",
+        "code/cex/hp/spectral_witness.py": "e9394541b09c2f383bdf96495fece6f5cc8409d331e08265898bc5f6ca803141",
+        "code/cex/hp/unified_pac_planner.py": "b0f424b36472316864dceb9b5080b476135a4c6361a04a35d3aaad92b39e24c9",
+        "code/cex/hp/unified_planner.py": "89c82a59641f73626013da9519a463493904d029ac4ed5bda1a9d2a6977466a1",
+        "code/cex/hp/validate_round.py": "8e2957d43f19ea11558517f3edca6fb6669d3ee380d4bed1ffee481ff9e1d790",
+        "code/cex/newarm/CEX_QUALIFICATION.json": "98f8af35298f484deefe3b1f34473579facbd329916c110ecf51697823d3af52",
+        "code/cex/newarm/FOREST_QUALIFICATION.json": "fdcbba37540c873d06b4fa5bfea9397cf8cdbd1feafbbb4a61e70828ce3183d6",
+        "code/cex/newarm/GATE_CONTROLS.json": "774e62f2c6b8e13670ae15c61185d1a72b037a57730fdcc029709891f76df226",
+        "code/cex/newarm/REVIEW_ADDITIVE_RESULTS.json": "5e092c55d565367c9978d25c2ca8612d77dc04a9e5141a3e47747589d6e2909e",
+        "code/cex/newarm/REVIEW_REGRESSION_RESULTS.json": "d4069310418742b66fe6e92b4b3b7bd7081089898556b320e2f6781f8745cf5e",
+        "code/cex/newarm/SOURCE_HASHES.json": "5995110a4590c06ec9c8316da5d0ce32873cd9977f01cbddbee4c8cf0642c278",
+        "code/cex/newarm/THEORY_NATIVE_AUDIT.json": "1b9c99605770002e82bfb98f34108a2e1db7e311034a70d92ba4932139d25c63",
+        "code/cex/newarm/analyze.py": "c994966d5c6e5c0352b61b093d0f1c46699f0f29d592839f3107192072c349f3",
+        "code/cex/newarm/audit_forest_theory.py": "7d880094e355e26f8b9f76de7ce2213d136ea6f396802982c21b08ba10bb6746",
+        "code/cex/newarm/audit_native_theory.py": "ce56f22d90618e75fd5649fb03f57903c864d4a1a04c170a24dc626e59a1d132",
+        "code/cex/newarm/audit_response_theory.py": "0ed6545a6255a659896f3cf67686d7231b91b47b6b058f3974cba709f291a95d",
+        "code/cex/newarm/cex_build.json": "f9af993532e0049b212e99c47ba46774cc316d0107d3861ee2b2a5cca63c4023",
+        "code/cex/newarm/cex_control_driver.cpp": "3fdd6b19d551cc213054f5939462b10c1768de7115e8089eee9c2bbc21ba7bfe",
+        "code/cex/newarm/cex_executor.py": "3480e9ba3b9109d436a350af5efb12cf5a3e7516ce42c4d8e7e9c9e1f92c9a4e",
+        "code/cex/newarm/cex_kernel.cpp": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+        "code/cex/newarm/cex_qualification.py": "8670db60ae2729b416d8827b3301c7b602282c6c256a4f58c60cec01aac35417",
+        "code/cex/newarm/core.py": "f23c46247adbc57db7fbbb84b6eeb21b01706069e70d5493c9ac0b3ab99a72fe",
+        "code/cex/newarm/dag.py": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+        "code/cex/newarm/dag_additive_controls.json": "72a90d870d93152f2e68c0eeadbead8b6369b0321f16d7dc373a45c2d978b8fe",
+        "code/cex/newarm/evaluate.py": "eaa50de6d6f452568df000b490ae8ac7195b00cba9a79c2dddb979e570d75508",
+        "code/cex/newarm/forest.py": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+        "code/cex/newarm/geometry.py": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90",
+        "code/cex/newarm/geometry_controls.py": "16e5e347ea4b39bc7616306a88aa54a4dd1f3aabed26ad7a915cb2502f7ea1c5",
+        "code/cex/newarm/libcex_kernel.dylib": "6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf",
+        "code/cex/newarm/libstream_kernel.so": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+        "code/cex/newarm/native_qualification.json": "f590048213143fb0120813ecb542883490ea6d078b6cdb2f828e5c30e6e06984",
+        "code/cex/newarm/native_qualification.py": "3f1fdb1095d57ddc4f3223a9a2eb86538e28ab9d6d572655ad68b625bbc7c365",
+        "code/cex/newarm/native_qualification_stdout.json": "db3333f829e53a560f464892329487a003ec762b725309022f74966bb7fcbefa",
+        "code/cex/newarm/planning.py": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+        "code/cex/newarm/qualification.json": "8545088dfd03299d69931c8ba4d099eea3aed2561b9bff8e2c52a6522980adec",
+        "code/cex/newarm/qualification.py": "98054ffc5f81625439f713b2f104c0aa31f891e0281c8b85900ff66faf8f30c4",
+        "code/cex/newarm/qualification_stdout.json": "5db9932a31265df3a5e3e44ed98092a30b11e8e57f6fc7fb05d2ff7be2a24da8",
+        "code/cex/newarm/qualify_dag_additive.py": "2bf31d8ca37ac371341dd2dcbc1f91ab93dd3c6548261f21a36b13effcb180ce",
+        "code/cex/newarm/reduction.py": "7899047ec2feca256d695d4529e7ce1ae5a89182bc2e64d3b98c7bf7f02a9342",
+        "code/cex/newarm/reduction_qualification.json": "6e210a64ff6215c8f2adf4165bab6948f4711b87f421739994d6e119a2c0522e",
+        "code/cex/newarm/reduction_qualification.py": "8d31fd218a302e2d861443fc9472b10a923c46450304909ebfdd7af522edb604",
+        "code/cex/newarm/review_additive.py": "5f1bb34ef77bbbe109f7a14924b763de4da5f4c769b54e03c7b51a24d5f67288",
+        "code/cex/newarm/review_regression.py": "edc11d5e52d0f1a1339bf60635265adf9d5009b7628dc9ff38829b6ec134fcbe",
+        "code/cex/newarm/smoke_cex.py": "55335f2e22528956d1a77725df4adb904c4b63c6b674899c5c2979b832b58f6d",
+        "code/cex/newarm/stream.py": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+        "code/cex/newarm/stream_build.json": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b",
+        "code/cex/newarm/stream_float.py": "1319565b2e6048b1a66153c732e37f5f00e41ab5391600fe9b793fed7fcdcb72",
+        "code/cex/newarm/stream_kernel.cpp": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+        "code/cex/newarm/support.py": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+        "code/cex/newarm/test_dag.py": "b089ae9c8cc75cd4b9c9f6062cb5f118bb365f88ea47940d5b720b7ff8d65161",
+        "code/cex/newarm/test_forest.py": "7582f75259a7c90f4608f6469eeb1e6aaddbe4d116097ec3349657093404e1a7",
+        "code/cex/newarm/test_reduction.py": "c8623008fa6cd7f0a7bf1731577803b63dde9ccebb87b54c0db3bf7e29c5c33f",
+        "code/gbidi/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "code/gbidi/supervise.py": "738c97547acd55ec49a2c74a296b370890d3d19a6997fd402de6f83284068a53",
+        "src/pgm/__init__.py": "f6909bbc10f519363269dd9ebaa2b1caa26fa81dc8b0a2a7e5a3536251e0a251",
+        "src/pgm/__main__.py": "6161f08cca0b90e7a1baec1ed336a7bec47cc14838a7e1b7ffa96b7ce94881fb",
+        "src/pgm/api.py": "cc9f3d89589282a143deef6c1a0121171eee56baf10fe0c2c6cff9115a7beb5a",
+        "src/pgm/backends/__init__.py": "81d0911926a8c351903a0a637f4bb98c9f66fd9746614aaba4547ffb35b24e71",
+        "src/pgm/backends/worker.py": "3ae2683834bdcedd63483796d9132adf819e23d1d6d7931b92fe9fed1a063b25",
+        "src/pgm/build.py": "6efe2010c5899e43e6a45fe59847dc43010a51ad3eec619e82a5432b336ad285",
+        "src/pgm/contracts.py": "98eb4d9e1f31684fefecda98b9a6710b7169afae8e291fdc7a975d4cda9d71f7",
+        "src/pgm/planning.py": "7d25ed95a107cb3b3437e46843340a620c718547e6786d7e90f1a94ce5257931",
+        "src/pgm/registry.py": "dad826d1c06f1a0daecd977e14f905a41d7b543939c6dfef917467d3bf5a94dc",
+        "src/pgm/supervision.py": "af8bfcd4d5d49b510dbef984f45d55b228272866879cb4d90803e82b2aad4a8c",
+        "src/pgm/switchboard.py": "18e3bd3685b52845aad1121b8ff9b83bd5e02a59dd91b7cf460f32161cdf55f9"
+      },
+      "natives": {
+        "layout": "legacy",
+        "root": "/Users/adis/Workspace/pgm-ref-3283cfd",
+        "native_cache": null,
+        "active": [
+          {
+            "role": "cex_source",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/cex_kernel.cpp",
+            "sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104"
+          },
+          {
+            "role": "cex_record",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/cex_build.json",
+            "record": {
+              "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+              "binary_sha256": "6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf",
+              "flags": [
+                "-std=c++17",
+                "-O2",
+                "-ffp-model=strict",
+                "-ffp-contract=off",
+                "-fno-fast-math",
+                "-fno-unsafe-math-optimizations",
+                "-fno-reciprocal-math",
+                "-fno-associative-math",
+                "-fPIC",
+                "-shared"
+              ],
+              "compiler": "/usr/bin/clang++",
+              "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+              "build_wall_s": 0.8205604160029907,
+              "platform": "darwin",
+              "built_utc": "2026-11-27T20:08:28Z",
+              "plan_format": 2
+            },
+            "sha256": "f9af993532e0049b212e99c47ba46774cc316d0107d3861ee2b2a5cca63c4023"
+          },
+          {
+            "role": "cex_build_target",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/libcex_kernel.dylib",
+            "sha256": "6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf"
+          },
+          {
+            "role": "cex_loaded_binary",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/native_cache/cex_6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf.dylib",
+            "sha256": "6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf"
+          },
+          {
+            "role": "stream_source",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/stream_kernel.cpp",
+            "sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786"
+          },
+          {
+            "role": "stream_record",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/stream_build.json",
+            "record": {
+              "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+              "binary_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+              "compiler_flags": [
+                "-O3",
+                "-std=c++17",
+                "-shared",
+                "-fPIC",
+                "-fno-fast-math",
+                "-ffp-contract=off",
+                "-frounding-math"
+              ]
+            },
+            "sha256": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b"
+          },
+          {
+            "role": "stream_build_target",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/libstream_kernel.so",
+            "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+          },
+          {
+            "role": "stream_loaded_binary",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/native_cache/stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so",
+            "sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad"
+          },
+          {
+            "role": "heat_source",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/heatbath_native.c",
+            "sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4"
+          },
+          {
+            "role": "heat_record",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/heatbath_build.json",
+            "record": {
+              "source_sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+              "binary_sha256": "416e9dd03a9f0870fd138e80730b5ad17fb34d92215bb4a31a1ab43d1387cef8",
+              "flags": [
+                "-std=c11",
+                "-O2",
+                "-ffp-model=strict",
+                "-ffp-contract=off",
+                "-fno-fast-math",
+                "-fno-unsafe-math-optimizations",
+                "-fno-reciprocal-math",
+                "-fno-associative-math",
+                "-fPIC",
+                "-shared"
+              ],
+              "compiler": "/usr/bin/clang",
+              "compiler_version": "Apple clang version 15.0.0 (clang-1500.0.40.1)",
+              "build_wall_s": 0.3197565839946037,
+              "platform": "darwin",
+              "built_utc": "2026-11-27T20:08:29Z",
+              "library": "heatbath_e0981f0b1620eb67.dylib",
+              "rng": "xoshiro256** seeded by splitmix64 from the 64-bit sample seed",
+              "decision": "outward binary64 weight / CDF intervals on power-of-two normalized tables inside a proved normal range, 53-bit uniform prefix, exact fallback on the same bit stream",
+              "range_floor_log2": -900,
+              "observer": "DGP10 conditional-response observer (optional; off unless configured)"
+            },
+            "sha256": "3098a1654cf50d53d14819819ab0073d6e0cb596f9ae2b61210cfed2872ebb86"
+          },
+          {
+            "role": "heat_loaded_binary",
+            "path": "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/native_cache/heatbath_e0981f0b1620eb67.dylib",
+            "sha256": "416e9dd03a9f0870fd138e80730b5ad17fb34d92215bb4a31a1ab43d1387cef8"
+          }
+        ],
+        "cache_inventory": {
+          "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/native_cache": [
+            "heatbath_729b6486f8757f70.dylib",
+            "heatbath_e0981f0b1620eb67.dylib"
+          ],
+          "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/native_cache": [
+            "cex_6fcec3f7edeb8a3057955b1674211885227026fb22f211c1058a4458191dbbbf.dylib",
+            "stream_5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad.so"
+          ]
+        },
+        "stale_cache_files_not_used": {
+          "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/hp/native_cache": [
+            "heatbath_729b6486f8757f70.dylib"
+          ],
+          "/Users/adis/Workspace/pgm-ref-3283cfd/code/cex/newarm/native_cache": []
+        }
+      }
+    }
+  },
+  "smoke": {
+    "PGM_REFERENCE": {
+      "receipt_outcome": "COMPLETED",
+      "wall_s": 0.28155979099392425,
+      "returncode": 0,
+      "output_valid": true,
+      "contract_valid": true,
+      "all_queries_returned": true,
+      "solver_outcome": "EXACT",
+      "guarantee": "EXACT",
+      "faults": [],
+      "validation_error": null
+    },
+    "PGM_ACCEPTED": {
+      "receipt_outcome": "COMPLETED",
+      "wall_s": 0.23758991601062007,
+      "returncode": 0,
+      "output_valid": true,
+      "contract_valid": true,
+      "all_queries_returned": true,
+      "solver_outcome": "COMPLETE",
+      "guarantee": "EXACT",
+      "faults": [],
+      "validation_error": null
+    },
+    "PGM_EXPERIMENTAL": {
+      "receipt_outcome": "COMPLETED",
+      "wall_s": 0.19504808299825527,
+      "returncode": 0,
+      "output_valid": true,
+      "contract_valid": true,
+      "all_queries_returned": true,
+      "solver_outcome": "COMPLETE",
+      "guarantee": "DETERMINISTIC",
+      "faults": [],
+      "validation_error": null
+    },
+    "PGM_EXPERIMENTAL_REF": {
+      "receipt_outcome": "COMPLETED",
+      "wall_s": 0.19868504200712778,
+      "returncode": 0,
+      "output_valid": true,
+      "contract_valid": true,
+      "all_queries_returned": true,
+      "solver_outcome": "COMPLETE",
+      "guarantee": "DETERMINISTIC",
+      "faults": [],
+      "validation_error": null
+    },
+    "LIBDAI_JT": {
+      "receipt_outcome": "COMPLETED",
+      "wall_s": 0.2970852919970639,
+      "returncode": 0,
+      "output_valid": true,
+      "contract_valid": true,
+      "all_queries_returned": true,
+      "solver_outcome": "COMPLETE",
+      "guarantee": "POINT_ONLY",
+      "faults": [],
+      "validation_error": null
+    },
+    "LIBDAI_BP": {
+      "receipt_outcome": "COMPLETED",
+      "wall_s": 0.025422834005439654,
+      "returncode": 0,
+      "output_valid": true,
+      "contract_valid": true,
+      "all_queries_returned": true,
+      "solver_outcome": "COMPLETE",
+      "guarantee": "POINT_ONLY",
+      "faults": [],
+      "validation_error": null
+    }
+  },
+  "smoke_all_valid": true,
+  "finished_utc": "2026-11-27T20:18:20Z"
+}

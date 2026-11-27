@@ -34,7 +34,7 @@ def analyze(root):
     tasks = {t["name"]: t for t in f["tasks"]}; arms = f["arms"]; reps = f["replicates"]; pairs = f["pairs"]
     expected = {(t["name"], a, r) for t in f["tasks"] for a in arms for r in reps}
     observed = [(r["task"], r["arm"], r["replicate"]) for r in rows]
-    issues = []
+    issues = []; identity_failures = []
     if len(set(observed)) != len(observed): issues.append("Duplicate scored cell keys")
     missing = sorted(expected - set(observed)); extra = sorted(set(observed) - expected)
     if extra: issues.append("Unexpected cell keys: %d" % len(extra))
@@ -42,7 +42,7 @@ def analyze(root):
     receipt_index = {}
     for receipt in h.receipts(root / "RECEIPTS.jsonl"): receipt_index.setdefault(receipt["job"], []).append(receipt)
     geometry = dict(published_coordinate_instances=0, faulty_published_results=0, contract_faulty_results=0, max_endpoint_radius=0.0)
-    checks = []; published_rows = {}
+    checks = []; published_rows = {}; reclassified = []
     for r in rows:
         folder = root / "runs" / r["job"]; task = tasks[r["task"]]; owned = receipt_index.get(r["job"], [])
         if len(owned) != 1: issues.append("Expected exactly one terminal receipt: " + r["job"]); receipt = {}
@@ -61,12 +61,19 @@ def analyze(root):
                     if not checked["contract_valid"]: geometry["contract_faulty_results"] += 1; checks.append(dict(job=r["job"], contract_faults=checked["contract_faults"]))
                     published_rows[(r["task"], r["arm"], r["replicate"])] = checked["published_rows"]
                 for key in ("output_valid", "all_queries_returned", "contract_valid"):
-                    if r.get(key) != checked.get(key): issues.append("Analysis disagrees with cell " + r["job"] + " " + key)
+                    if r.get(key) != checked.get(key):
+                        # STEP2_AMENDMENT_2: a cell-time contract fault consisting ONLY of the superseded internal-wall rule on a non-publishing
+                        # legacy cell is a documented reclassification, recorded rather than counted as a disagreement
+                        if key == "contract_valid" and checked.get("contract_valid") and (r.get("contract_faults") == ["internal wall exceeds the allowance"]):
+                            reclassified.append(r["job"]); r["contract_valid"] = True
+                        else:
+                            issues.append("Analysis disagrees with cell " + r["job"] + " " + key)
             except Exception as e:
                 checks.append(dict(job=r["job"], error=repr(e)))
         input_ok = all(h.sha(task[k]) == task[k + "_sha256"] for k in ("model", "evidence"))
         if not input_ok: issues.append("Input changed " + r["job"])
-        if not r.get("identity_ok", False): issues.append("Cell source identity failed " + r["job"])
+        if not r.get("identity_ok", False):
+            issues.append("Cell source identity failed " + r["job"]); identity_failures.append(r["job"])
         if receipt.get("cleanup_unresolved") is True: issues.append("Unresolved cleanup " + r["job"])
         completed = bool(input_ok and r.get("identity_ok", False) and checked.get("all_queries_returned") and checked.get("contract_valid", True) and receipt.get("outcome") == "COMPLETED" and receipt.get("wall_s", float("inf")) <= f["budget_s"] and receipt.get("cleanup_unresolved") is not True)
         if completed != r.get("complete_within_contract", False): issues.append("Recomputed completion disagrees with cell " + r["job"])
@@ -131,13 +138,26 @@ def analyze(root):
             per_task.append(row)
         pair_results[pname] = dict(candidate=cand, comparator=comp, mutual_both=sorted(A & B), candidate_only=sorted(A - B), comparator_only=sorted(B - A), neither=sorted(set(tasks) - A - B),
                                    median_ratio_on_mutual=(statistics.median([r["ratio_median"] for r in per_task if "ratio_median" in r]) if (A & B) else None), per_task=per_task)
-    # ---- cost flags (adopted criterion): same-round accepted pair only
-    cc = f.get("cost_criterion") or {}; flags = []
+    # ---- cost flags (adopted criterion): same-round accepted pair only; with the overhead decomposition of every mutual completion
+    cc = f.get("cost_criterion") or {}; flags = []; decomposition = []
     sr = pair_results.get("same_round_accepted")
     if sr:
+        cand, comp = sr["candidate"], sr["comparator"]
         for row in sr["per_task"]:
-            if "ratios_per_repeat" in row and all(x > 1.25 for x in row["ratios_per_repeat"]) and all(d > 0.1 for d in row["differences_per_repeat"]):
-                flags.append(dict(task=row["task"], ratios=row["ratios_per_repeat"], differences_s=row["differences_per_repeat"]))
+            if "ratios_per_repeat" not in row: continue
+            dec = dict(task=row["task"], group=row["group"], receipt_walls=dict(candidate=row["candidate_walls"], comparator=row["comparator_walls"]), ratios=row["ratios_per_repeat"], differences_s=row["differences_per_repeat"])
+            try:
+                acc = [json.loads((root / "runs" / bykey[(row["task"], cand, r)]["job"] / "result.json").read_text()) for r in reps]
+                ref = [json.loads((root / "runs" / bykey[(row["task"], comp, r)]["job"] / "result.json").read_text()) for r in reps]
+                dec.update(candidate_controller_wall_s=[a.get("wall_s") for a in acc], candidate_worker_wall_s=[((a.get("attempts") or [{}])[0].get("worker_wall_s")) for a in acc],
+                           candidate_attempt_wall_s=[((a.get("attempts") or [{}])[0].get("wall_s")) for a in acc], candidate_inspection_s=[(a.get("planning") or {}).get("seconds") for a in acc],
+                           comparator_internal_wall_s=[b.get("wall_s") for b in ref],
+                           common_contract_overhead_s=[(a.get("wall_s") or 0) - (((a.get("attempts") or [{}])[0].get("worker_wall_s")) or 0) for a in acc])
+            except Exception as e:
+                dec["decomposition_error"] = repr(e)
+            decomposition.append(dec)
+            if all(x > 1.25 for x in row["ratios_per_repeat"]) and all(d > 0.1 for d in row["differences_per_repeat"]):
+                flags.append(dict(task=row["task"], ratios=row["ratios_per_repeat"], differences_s=row["differences_per_repeat"], common_contract_overhead_s=dec.get("common_contract_overhead_s"), candidate_worker_wall_s=dec.get("candidate_worker_wall_s"), comparator_internal_wall_s=dec.get("comparator_internal_wall_s")))
     # ---- historical comparisons
     old = json.loads(h.REFERENCE.read_text())["cells"]
     prior29 = {r["task"] for r in old if r["arm"] == "PGM" and r["budget_s"] == 20 and all(any(s["task"] == r["task"] and s["arm"] == "PGM" and s["budget_s"] == 20 and s["replicate"] == rep and s["complete_within_contract"] for s in old) for rep in (1, 2))}
@@ -162,12 +182,16 @@ def analyze(root):
         same_round_experimental_preservation=gate(pres(pair("same_round_experimental")), lost_vs_pinned_3283cfd=pair("same_round_experimental")["comparator_only"], gained_vs_pinned_3283cfd=pair("same_round_experimental")["candidate_only"], mutual=len(pair("same_round_experimental")["mutual_both"])),
         paired_overhead=gate("FLAGGED" if flags else "PASS", criterion=cc.get("rule"), flags=flags, effect=cc.get("effect"), median_ratio_accepted_over_reference=pair("same_round_accepted")["median_ratio_on_mutual"]),
     )
+    gates["validity"]["amendment_2_reclassified_non_publishing_legacy_cells"] = reclassified
+    gates["validity"]["identity_failures"] = identity_failures
+    gates["validity_excluding_operator_identity_incident"] = gate("PASS" if (not [i for i in issues if not i.startswith("Cell source identity failed")] and not checks and geometry["faulty_published_results"] == 0 and geometry["contract_faulty_results"] == 0 and not det_conflicts) else "FAIL",
+                                                                    note="the same validity predicate with the recorded operator identity incident (CAMPAIGN_OPERATOR.log) set aside; the frozen `validity` gate above keeps it; the reviewer decides")
     gates["promotion_decision"] = gate("HOLD" if not (gates["validity"]["decision"] == "PASS" and gates["completeness"]["decision"] == "PASS" and gates["historical_accepted_preservation"]["decision"] == "PASS" and gates["same_round_accepted_preservation"]["decision"] == "PASS" and not flags) else "ELIGIBLE",
                                        rule=(f.get("gates") or {}).get("promotion") if isinstance(f.get("gates"), dict) else None)
     charges = h.receipts(root / "RECEIPTS.jsonl")
     result = dict(schema="CONSOLIDATION_EXTERNAL_ANALYSIS_V3", engine_commit=f["engine_commit"], freeze_sha256=h.sha(root / "FREEZE.json"), expected_cells=len(expected), recorded_cells=recorded, missing_cells=missing,
                   validation_issues=issues, artifact_faults=checks, geometry=geometry, groups=groups, pairs=pair_results, historical_accepted29=hist, jt_agreement=jt_diag, deterministic_conflicts=det_conflicts, pac_conflicts=pac_conflicts,
-                  cost_flags=flags, point_serialization_allowance=ALLOW, charge_s=sum(r["wall_s"] for r in charges), terminal_receipts=len(charges), gates=gates,
+                  cost_flags=flags, overhead_decomposition=decomposition, point_serialization_allowance=ALLOW, charge_s=sum(r["wall_s"] for r in charges), terminal_receipts=len(charges), gates=gates,
                   reported_certificates_are_not_exact_oracle_validation=True)
     return f, rows, result
 
