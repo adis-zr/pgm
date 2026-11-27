@@ -127,10 +127,13 @@ def main():
         chk('budget_allocations_nonnegative_within_ceiling', bool(al) and all(isinstance(v, (int, float)) and v >= 0 for v in al.values()) and sum(al.values()) <= (bud.get('ceiling_s') or 0), allocations=al, ceiling=bud.get('ceiling_s'))
         late_re = []
         for ra in bud.get('reassignments') or []:
-            u = ra.get('utc') or ''; scopes_ = ra.get('affected_scopes') or []
+            # HARNESS AMENDMENT 2: a reassignment is 'before its phase' when the charge of its affected scope accumulated BEFORE its UTC fits the allocation that held before it (the earlier work of that scope ran under the earlier
+            # allocation) and the reassignment carries an ISO UTC, the affected scopes, the allocation key and the allocations before / after
+            u = ra.get('utc') or ''; scopes_ = ra.get('affected_scopes') or []; key = ra.get('affected_allocation'); before = (ra.get('allocations_before') or {}).get(key) if key else None
             if not (len(u) >= 20 and u[4] == '-' and u.endswith('Z')): late_re.append(dict(utc=u, why='no ISO UTC')); continue
-            early = [r for r in rows if r.get('kind') == 'RECEIPT' and r.get('scope') in scopes_ and (r.get('start_utc') or '') < u]
-            if early: late_re.append(dict(utc=u, scopes=scopes_, receipts_before=len(early)))
+            if not scopes_ or key is None or before is None: late_re.append(dict(utc=u, why='missing affected_scopes / affected_allocation / allocations_before')); continue
+            spent_before = round(sum(r['wall_s'] for r in rows if r.get('kind') == 'RECEIPT' and r.get('scope') in scopes_ and (r.get('start_utc') or '') < u), 3)
+            if spent_before > before: late_re.append(dict(utc=u, scopes=scopes_, spent_before_s=spent_before, allocation_before_s=before, why='the affected scope had already exceeded the earlier allocation before the reassignment'))
         chk('budget_reassignments_dated_before_affected_phase', not late_re, reassignments=len(bud.get('reassignments') or []), problems=late_re)
     # unsupported claims: forbidden phrases in REPORT / THEORY_RETURN
     for f in ('REPORT.md', 'THEORY_RETURN.md', 'START_HERE.md'):

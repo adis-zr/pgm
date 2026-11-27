@@ -92,7 +92,7 @@ def holdout(root):
     for panel, tasks in (('exposed', exposed), ('preservation_24', p24), ('preservation_18', p18), ('preservation_13', p13)):
         d = os.path.join(RD, 'inputs', panel); os.makedirs(d, exist_ok=True)
         for t in tasks:
-            dst = os.path.join(d, os.path.basename(t['model'])); shutil.copyfile(t['model'], dst)
+            dst = os.path.join(d, t['name'] + '.uai'); shutil.copyfile(t['model'], dst)                       # HARNESS AMENDMENT 2: named by TASK (the preservation_24 cohort holds distinct files sharing a basename, e.g. dg_n32_c4_er50_half.uai from five fresh-input archives)
             if os.path.exists(t['model'] + '.evid'): shutil.copyfile(t['model'] + '.evid', dst + '.evid')
             t['packet_copy'] = os.path.relpath(dst, RD); copied[t['name']] = t['packet_copy']
     for t in fresh: t['packet_copy'] = os.path.relpath(t['model'], RD)
