@@ -1,0 +1,42 @@
+==================================== ERRORS ====================================
+_____________ ERROR collecting code/tests/test_cbi_conformance.py ______________
+PASSED code/tests/test_bench_adapters.py::test_adapter_admits_mixed_binary_model_and_intervals_contain_brute_force
+PASSED code/tests/test_bench_adapters.py::test_source_order_and_state_order_permutations_give_identical_marginals
+PASSED code/tests/test_bench_adapters.py::test_evidence_indexing_zero_factors_impossible_evidence_and_disconnected
+PASSED code/tests/test_bench_adapters.py::test_adapter_refusals_are_precise
+PASSED code/tests/test_bench_adapters.py::test_reference_pointer_and_certificate_tampering_rejected
+PASSED code/tests/test_bench_adapters.py::test_cell_runner_output_validation_rejects_bad_vectors
+PASSED code/tests/test_bench_adapters.py::test_checker_rejects_added_native_edge_and_invented_fixation
+PASSED code/tests/test_bench_adapters.py::test_checker_structural_rejections
+PASSED code/tests/test_bench_adapters.py::test_checker_honest_controls_evidence_forced_separable_duplicates_signed_ids
+PASSED code/tests/test_bench_adapters.py::test_rooted_proof_valid_for_aliased_queries_after_equality_contraction
+PASSED code/tests/test_bench_adapters.py::test_paid_attempt_preserved_when_timeout_follows_a_paid_candidate
+PASSED code/tests/test_bench_adapters.py::test_fixed_state_value_variants_one_interpretation
+PASSED code/tests/test_bench_adapters.py::test_contract_binding_subset_and_mismatch
+PASSED code/tests/test_ext_adapter.py::test_table_order_last_var_fastest
+PASSED code/tests/test_ext_adapter.py::test_table_order_is_not_first_var_fastest
+PASSED code/tests/test_ext_adapter.py::test_nonbinary_and_zeros_read_exactly
+PASSED code/tests/test_ext_adapter.py::test_evidence_restriction_preserves_every_weight_exactly
+PASSED code/tests/test_ext_adapter.py::test_evidence_restriction_preserves_normalized_marginals_exactly
+PASSED code/tests/test_ext_adapter.py::test_hard_zero_yields_exact_zero_marginal
+PASSED code/tests/test_ext_adapter.py::test_mar_round_trip_with_observed_point_masses
+PASSED code/tests/test_ext_adapter.py::test_mar_reader_handles_leading_pr_block
+PASSED code/tests/test_ext_adapter.py::test_model_check_rejects_wrong_table_length
+PASSED code/tests/test_h4a_review2.py::test_signed_division_encloses_truth
+PASSED code/tests/test_h4a_review2.py::test_power_of_two_scaling_preserves_width
+PASSED code/tests/test_sf_conformance.py::test_exact_routes_match_exhaustive_pairs_generic_and_antipodal_and_asymmetric
+PASSED code/tests/test_sf_conformance.py::test_sparse_routes_retained_mass_omitted_bound_and_enclosure
+PASSED code/tests/test_sf_conformance.py::test_fourier_truncation_enclosure_and_tails_generic_and_parity
+PASSED code/tests/test_sf_conformance.py::test_signed_truncated_rows_Zk_refusal_and_small_positive_Zk_certificate
+PASSED code/tests/test_sf_conformance.py::test_endpoints_overlap_disjoint_rejection_and_pi
+PASSED code/tests/test_sf_conformance.py::test_outward_rounding_grid_and_width_slack
+PASSED code/tests/test_sf_conformance.py::test_duplicate_rows_and_missing_coordinates_and_bad_weights
+PASSED code/tests/test_sf_conformance.py::test_tampering_is_detected
+PASSED code/tests/test_sf_conformance.py::test_scouts_are_sufficient_on_small_instances_and_generator_is_deterministic
+ERROR code/tests/test_cbi_conformance.py - FileNotFoundError: [Errno 2] No su...
+FAILED code/tests/test_h4a_review2.py::test_small_fixtures_through_all_four_kernel_paths[0]
+FAILED code/tests/test_h4a_review2.py::test_small_fixtures_through_all_four_kernel_paths[1]
+FAILED code/tests/test_h4a_review2.py::test_verifier_rejects_duplicate_response_and_false_probe_and_empty_certificates
+FAILED code/tests/test_h4a_review2.py::test_accepted_and_weighted_counts_replay_independently
+FAILED code/tests/test_h4a_review2.py::test_rect_arm_consumes_true_enclosures_not_quantized_points
+5 failed, 33 passed, 1 skipped, 1 error in 0.20s

@@ -1,0 +1,3085 @@
+{
+ "generated_by": "documentation/consolidation/step1/tools/classify_tree.py",
+ "counts": {
+  "benchmark-inputs": 122,
+  "benchmark-tooling": 36,
+  "correctness-qualification": 82,
+  "documentation": 16,
+  "historical-evidence": 170,
+  "packaging": 10,
+  "production": 90,
+  "production-shim": 47,
+  "research-campaign-tooling": 139,
+  "specialist": 55
+ },
+ "files": {
+  ".gitattributes": {
+   "cls": "packaging",
+   "note": "repository root"
+  },
+  ".gitignore": {
+   "cls": "packaging",
+   "note": "repository root"
+  },
+  "README.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "benchmarks/external/EXPOSURE_HISTORY.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/HOLDOUT_FREEZE.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/INPUT_MANIFEST.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/PREPARATION.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/PROTOCOL.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/README.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/analyze_suite.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/inputs/eval/107b9059aa2222bf0e9b449142b481cef7811806271c48680f75d98a9bef7b06/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/107b9059aa2222bf0e9b449142b481cef7811806271c48680f75d98a9bef7b06/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/2b8501be950d16a7ff1925fa3c99107a53773eca9846af1048975c78ef34a493/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/2b8501be950d16a7ff1925fa3c99107a53773eca9846af1048975c78ef34a493/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/3cc50bd30976cb48d4116024887dfe2e9d3bfdadb857c524ee85dd94cad49d46/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/3cc50bd30976cb48d4116024887dfe2e9d3bfdadb857c524ee85dd94cad49d46/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/4a829432e24af814a13c841d2c528e6be4dea04b7498c534b6b10fa5345532fa/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/4a829432e24af814a13c841d2c528e6be4dea04b7498c534b6b10fa5345532fa/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/835f6c771a5686417a2669bd79fe8c9fcbbf34d32a91d8f138b7dc727425c4fe/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/835f6c771a5686417a2669bd79fe8c9fcbbf34d32a91d8f138b7dc727425c4fe/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/8abd7488921d9b4e6c190ebe49147ede1ed310b7fd9d48e3e291f061356049b7/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/eval/8abd7488921d9b4e6c190ebe49147ede1ed310b7fd9d48e3e291f061356049b7/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/01caa38bd5d9afaeeeba5fb42d0494f00a727d9c4a4bc49d9464f8ebf45bf3df/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/01caa38bd5d9afaeeeba5fb42d0494f00a727d9c4a4bc49d9464f8ebf45bf3df/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/07add3a95446de81c323df0e4ae828f5a5513d9ddf0677d66988807f4a17e79e/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/07add3a95446de81c323df0e4ae828f5a5513d9ddf0677d66988807f4a17e79e/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/161f6bc268fa9337afbf924d647d5c23eb954ba6f09192100e9d1e0258a8530a/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/161f6bc268fa9337afbf924d647d5c23eb954ba6f09192100e9d1e0258a8530a/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/187f8cea04d11d0a4ed43d2ea519680d3914d89fae4adc296dc64dfbe2d3cdc3/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/187f8cea04d11d0a4ed43d2ea519680d3914d89fae4adc296dc64dfbe2d3cdc3/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/1beed895f084b97b63b14bccac5e207df86fa08800549037f824a86e2cad0190/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/1beed895f084b97b63b14bccac5e207df86fa08800549037f824a86e2cad0190/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/1c6679dc3b93cb26d142943dd1ae3d42d7e43dfcf03bedd30f74c51b641f7b86/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/1c6679dc3b93cb26d142943dd1ae3d42d7e43dfcf03bedd30f74c51b641f7b86/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/1dcb091cb1ebf7405787a5d3ffaa26ba033606e448f9970cdad1540e5e25b3bb/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/1dcb091cb1ebf7405787a5d3ffaa26ba033606e448f9970cdad1540e5e25b3bb/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/20e7ef22a02e470ef36ad8558246697540f752a728484c9d5e3db76bf9343fdd/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/20e7ef22a02e470ef36ad8558246697540f752a728484c9d5e3db76bf9343fdd/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/226f33eab45d3421ed6196114362a72dabdf67ebfc03ac2a520d21ec53dbc3f8/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/226f33eab45d3421ed6196114362a72dabdf67ebfc03ac2a520d21ec53dbc3f8/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/24edcd084a66a16cf23f1d0c2067b1e0a1484f3a63836c7290f185d8bff2535a/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/24edcd084a66a16cf23f1d0c2067b1e0a1484f3a63836c7290f185d8bff2535a/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/287ce6d57670713c16b3ee70c5d88e364ffd3fc97109b7397ed2a91d8e3c2618/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/287ce6d57670713c16b3ee70c5d88e364ffd3fc97109b7397ed2a91d8e3c2618/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/2982039b5e1c1aa372f5c36793095180412e4b5a1a2ae317f173a55ece84d768/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/2982039b5e1c1aa372f5c36793095180412e4b5a1a2ae317f173a55ece84d768/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/2d50e0f90dd4f8d4d9ded872d289b931fcf014f24b25bb6a41677cb73c87b3ea/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/2d50e0f90dd4f8d4d9ded872d289b931fcf014f24b25bb6a41677cb73c87b3ea/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/2e6fe3137a61d603ac54f5246b2baab31c76003dc69b4c813246d0510666c525/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/2e6fe3137a61d603ac54f5246b2baab31c76003dc69b4c813246d0510666c525/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/306a4155bfb1941debdb1ade95b986dd03308e6b183b2eadd99fc1676d6c853a/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/306a4155bfb1941debdb1ade95b986dd03308e6b183b2eadd99fc1676d6c853a/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/31c4ec81dae884fa8b0300fbd033394f2234aa661a70996dc1eafd03a72f2c99/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/31c4ec81dae884fa8b0300fbd033394f2234aa661a70996dc1eafd03a72f2c99/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/33c42e551c3785932156965a245e52ae3185ee078b2af8c0e15236294089ec75/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/33c42e551c3785932156965a245e52ae3185ee078b2af8c0e15236294089ec75/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/345ea70ff0dddb6d11c3a88886eb1ab167f012c6521f4edbafebe12bef807a38/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/345ea70ff0dddb6d11c3a88886eb1ab167f012c6521f4edbafebe12bef807a38/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/3c6e189aa720efbcffa2ea470ab80a30ee0323dec32881fb24ac8e0a4deabeab/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/3c6e189aa720efbcffa2ea470ab80a30ee0323dec32881fb24ac8e0a4deabeab/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/3e19042fc10db280b38e7e42ec8b89ccc1ff5db70d6d014b3c6d3daa3e4f1183/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/3e19042fc10db280b38e7e42ec8b89ccc1ff5db70d6d014b3c6d3daa3e4f1183/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/427c631e18b8c871837b7d6033c1ac0df55f691e8fe4c5b04e61ad9a9336b8bd/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/427c631e18b8c871837b7d6033c1ac0df55f691e8fe4c5b04e61ad9a9336b8bd/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/4898c7ffa18c1770ef94c38eb867fc40b547e3485b7a6d35abf7ff3a01092211/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/4898c7ffa18c1770ef94c38eb867fc40b547e3485b7a6d35abf7ff3a01092211/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/4ab70772f11cf439cf056bc66c7063539c4fddaa0837a7ccfc8d23e2f4e7becf/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/4ab70772f11cf439cf056bc66c7063539c4fddaa0837a7ccfc8d23e2f4e7becf/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/4c3df0d994300bff5c81c0fa9a33de68fd0065922a9d33f595a7f463f632f3b1/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/4c3df0d994300bff5c81c0fa9a33de68fd0065922a9d33f595a7f463f632f3b1/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/4d1cfa9b53790fca7b6e9cd47f8030b8af2b6dc1ae94dc5f9d5c83eaf9562834/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/4d1cfa9b53790fca7b6e9cd47f8030b8af2b6dc1ae94dc5f9d5c83eaf9562834/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/569b7f5a9bf19d88d43ed1990f31ffbd77763389f81a892c7c2247bfd8bd757b/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/569b7f5a9bf19d88d43ed1990f31ffbd77763389f81a892c7c2247bfd8bd757b/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/57720cff1113f2d8c54e2ee1fb25c35664ded9b90acfd589d997fa6a9b796acc/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/57720cff1113f2d8c54e2ee1fb25c35664ded9b90acfd589d997fa6a9b796acc/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/5b548d61e14cda5897681caf5f6b091c055b33e629d8b1e68b070547c377e8f7/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/5b548d61e14cda5897681caf5f6b091c055b33e629d8b1e68b070547c377e8f7/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/63f49afa9aabb6546f46e38c6356d343877338bf04b30dbf706b0f27561cecda/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/63f49afa9aabb6546f46e38c6356d343877338bf04b30dbf706b0f27561cecda/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/6ecf8a311e4bc02e96d7ed2af7ce56db4b4e104b7b23239d6bd45c12d882d607/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/6ecf8a311e4bc02e96d7ed2af7ce56db4b4e104b7b23239d6bd45c12d882d607/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/7623e03431413fd6e9274c93fa749d4296a53eabb2c5ebcf3fa7fa8bb7b7f496/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/7623e03431413fd6e9274c93fa749d4296a53eabb2c5ebcf3fa7fa8bb7b7f496/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/7b9390f8722784196c052a89c7ee84faf131fd0f98f3484ccdd53a48560abff5/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/7b9390f8722784196c052a89c7ee84faf131fd0f98f3484ccdd53a48560abff5/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/7c075e74ab59d786733ece9b5846b26ce6d33f740b187cd61497e4ac46d85d43/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/7c075e74ab59d786733ece9b5846b26ce6d33f740b187cd61497e4ac46d85d43/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/8494035561d71b2c11482a4e6133db801968da38fe463983b663bea300330fb4/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/8494035561d71b2c11482a4e6133db801968da38fe463983b663bea300330fb4/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/8bb31e8c312061d3295dd3d5d772abf16d74b7ee365e391c071b6222aa13a0a6/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/8bb31e8c312061d3295dd3d5d772abf16d74b7ee365e391c071b6222aa13a0a6/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/92074c0ccf28e48dba17af3596eb7a6106a76b4031c645a78525df81f1f9a8ae/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/92074c0ccf28e48dba17af3596eb7a6106a76b4031c645a78525df81f1f9a8ae/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/921d0f5d6c94f941cd8529663846d19b0978af26d1ce407ebe2d2647ed812e44/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/921d0f5d6c94f941cd8529663846d19b0978af26d1ce407ebe2d2647ed812e44/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/a8ac9c9461c29ec0a441b2dbd53a79bfdc846dc56d3fb23a1a2d4cf1c53dacbd/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/a8ac9c9461c29ec0a441b2dbd53a79bfdc846dc56d3fb23a1a2d4cf1c53dacbd/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/a8cf5ac987c1f895eabf16ba26f6ef4d715e7c8ff49bcbfe7b09cbd344f9731e/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/a8cf5ac987c1f895eabf16ba26f6ef4d715e7c8ff49bcbfe7b09cbd344f9731e/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/aee96cab6fee611880970239efbad4902a95bc2ede65d5db5afbbbe451da2823/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/aee96cab6fee611880970239efbad4902a95bc2ede65d5db5afbbbe451da2823/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/b11ed75d9cdab313011f907c3f85e91ad9ec9316416db2e30cb7251029bdd38f/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/b11ed75d9cdab313011f907c3f85e91ad9ec9316416db2e30cb7251029bdd38f/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/b179f3381a4c5c567c26d9f0a5653951f1d8634f167627912d4b225c66a15c06/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/b179f3381a4c5c567c26d9f0a5653951f1d8634f167627912d4b225c66a15c06/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/b90b1976dde9ddcbeffbcce99310481e24c65800fa9fcbde770707496d2e456b/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/b90b1976dde9ddcbeffbcce99310481e24c65800fa9fcbde770707496d2e456b/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/baa8e3dfd3ff2cd9dd00bcf3a736d45c7297dba97c452702d11b0d072f8c022b/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/baa8e3dfd3ff2cd9dd00bcf3a736d45c7297dba97c452702d11b0d072f8c022b/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/bf78ad2cfe5f414cfd673d7925d81ca4622784e7121014cb4549eaaf231edf5c/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/bf78ad2cfe5f414cfd673d7925d81ca4622784e7121014cb4549eaaf231edf5c/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/c294d9f2b807043961737822064ef402a5f6987f4bbef6e4462d5cacb61f96d3/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/c294d9f2b807043961737822064ef402a5f6987f4bbef6e4462d5cacb61f96d3/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/ccf3011b422941bce87e09b3809d824136c66a1f2c0dea3afaa74291f59a569e/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/ccf3011b422941bce87e09b3809d824136c66a1f2c0dea3afaa74291f59a569e/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/d506ee402b7057da6d03c1ce81f595c9b6ce2aa7045c8cd59fbb68e4304035d9/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/d506ee402b7057da6d03c1ce81f595c9b6ce2aa7045c8cd59fbb68e4304035d9/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/dc0a932a1734c9eda25d3b9478f9ba7c926d55ab089c3405de8bd64b66816ece/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/dc0a932a1734c9eda25d3b9478f9ba7c926d55ab089c3405de8bd64b66816ece/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/dee3702a1faa52f10e387ba9c1aeea30eeb0d7f95cd9ecdac8d91bf73eedb071/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/dee3702a1faa52f10e387ba9c1aeea30eeb0d7f95cd9ecdac8d91bf73eedb071/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/dfb03dd1e5578e9e3ab18809ad20fe59fff43a4d8cb6036858dc497467b97129/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/dfb03dd1e5578e9e3ab18809ad20fe59fff43a4d8cb6036858dc497467b97129/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/e04656255e1aa157c14454485362e0907c8250cef34435988e76b504b0bbace4/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/e04656255e1aa157c14454485362e0907c8250cef34435988e76b504b0bbace4/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/e10f28b5f8cc95b2807906c92bab24516635a1d46b3f7db5be023b3625b4431d/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/e10f28b5f8cc95b2807906c92bab24516635a1d46b3f7db5be023b3625b4431d/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/ee1f67214098e546c32a60622f70c696a1ebf504ee57e735e81bb72d16403eaa/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/ee1f67214098e546c32a60622f70c696a1ebf504ee57e735e81bb72d16403eaa/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/faefb8349b84f1939c52d1ea2d6a4bd56dbd5b5755df3739c5541d2644f3e7fc/model.uai": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/inputs/exposed/faefb8349b84f1939c52d1ea2d6a4bd56dbd5b5755df3739c5541d2644f3e7fc/model.uai.evid": {
+   "cls": "benchmark-inputs",
+   "note": "frozen external inputs (61 tasks)"
+  },
+  "benchmarks/external/provenance/BUILD_LIBDAI.sh": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/DATA_RECOVERY.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/DOWNLOADS.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/DOWNLOADS_BNLEARN.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/LIBDAI_BUILD.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/LIBDAI_QUALIFICATION.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/LIBDAI_REQUALIFICATION.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/PANEL_SELECTION.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/freeze_holdout.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/prepare_inputs.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/qualify_libdai.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/recovery_scripts/bif.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/recovery_scripts/build_manifest.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/provenance/recovery_scripts/inventory.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/reference/PRIOR_LEGACY_REPORT.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/reference/PRIOR_PRIMARY_REPORT.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/reference/PRIOR_RESEARCH_REPORT.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/reference/previous_accepted_cells.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/run_suite.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/strict_supervisor.py": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "code/.gitignore": {
+   "cls": "packaging",
+   "note": "package markers"
+  },
+  "code/.gitkeep": {
+   "cls": "packaging",
+   "note": "package markers"
+  },
+  "code/PINNED_BINARIES.json": {
+   "cls": "historical-evidence",
+   "note": "pinned binary identities"
+  },
+  "code/README.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "code/bench/cbi_adapter.py": {
+   "cls": "benchmark-tooling",
+   "note": "benchmark adapters / cells / libDAI driver source"
+  },
+  "code/bench/cells.py": {
+   "cls": "benchmark-tooling",
+   "note": "benchmark adapters / cells / libDAI driver source"
+  },
+  "code/bench/controls/impossible_evidence.uai": {
+   "cls": "correctness-qualification",
+   "note": "control inputs"
+  },
+  "code/bench/controls/impossible_evidence.uai.evid": {
+   "cls": "correctness-qualification",
+   "note": "control inputs"
+  },
+  "code/bench/controls/tiny_asym.uai": {
+   "cls": "correctness-qualification",
+   "note": "control inputs"
+  },
+  "code/bench/controls/tiny_asym.uai.evid": {
+   "cls": "correctness-qualification",
+   "note": "control inputs"
+  },
+  "code/bench/libdai/libdai_mar.cpp": {
+   "cls": "benchmark-tooling",
+   "note": "benchmark adapters / cells / libDAI driver source"
+  },
+  "code/bench/pgmax_mar.py": {
+   "cls": "benchmark-tooling",
+   "note": "benchmark adapters / cells / libDAI driver source"
+  },
+  "code/build/h4pcheck": {
+   "cls": "historical-evidence",
+   "note": "host-built H4 executables (pinned; not wheel contents)"
+  },
+  "code/build/h4point": {
+   "cls": "historical-evidence",
+   "note": "host-built H4 executables (pinned; not wheel contents)"
+  },
+  "code/build/h4rect": {
+   "cls": "historical-evidence",
+   "note": "host-built H4 executables (pinned; not wheel contents)"
+  },
+  "code/cbi/README.md": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/__init__.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/api.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/arith.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/cli.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/coarse.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/exact.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/experiment.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CBI campaign scripts"
+  },
+  "code/cbi/generators.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CBI campaign scripts"
+  },
+  "code/cbi/influence.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/model.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/plan.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/region.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/replay.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CBI campaign scripts"
+  },
+  "code/cbi/run_case.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CBI campaign scripts"
+  },
+  "code/cbi/score.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CBI campaign scripts"
+  },
+  "code/cbi/score3.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CBI campaign scripts"
+  },
+  "code/cbi/transfer.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CBI campaign scripts"
+  },
+  "code/cbi/tree.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cbi/verify.py": {
+   "cls": "specialist",
+   "note": "CBI implementation + checker"
+  },
+  "code/cex/.gitignore": {
+   "cls": "packaging",
+   "note": "package markers"
+  },
+  "code/cex/b0_frozen_v14/CEX_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/FOREST_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/GATE_CONTROLS.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/REVIEW_ADDITIVE_RESULTS.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/REVIEW_REGRESSION_RESULTS.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/SOURCE_HASHES.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/THEORY_NATIVE_AUDIT.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/analyze.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/audit_forest_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/audit_native_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/audit_response_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/cex_build.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/cex_control_driver.cpp": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/cex_executor.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/cex_kernel.cpp": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/cex_qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/core.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/dag.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/dag_additive_controls.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/evaluate.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/forest.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/geometry.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/geometry_controls.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/libcex_kernel.dylib": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/libstream_kernel.so": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/native_qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/native_qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/native_qualification_stdout.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/planning.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/qualification_stdout.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/qualify_dag_additive.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/reduction.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/reduction_qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/reduction_qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/review_additive.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/review_regression.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/smoke_cex.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/stream.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/stream_build.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/stream_float.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/stream_kernel.cpp": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/support.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/test_dag.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/test_forest.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/b0_frozen_v14/test_reduction.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/FOREST_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/REVIEW_ADDITIVE_RESULTS.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/REVIEW_REGRESSION_RESULTS.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/SOURCE_HASHES.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/THEORY_NATIVE_AUDIT.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/analyze.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/audit_forest_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/audit_native_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/audit_response_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/core.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/dag.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/dag_additive_controls.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/evaluate.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/forest.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/geometry.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/geometry_controls.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/native_qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/native_qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/native_qualification_stdout.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/planning.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/qualification_stdout.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/qualify_dag_additive.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/reduction.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/reduction_qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/reduction_qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/review_additive.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/review_regression.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/stream.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/stream_build.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/stream_float.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/stream_kernel.cpp": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/support.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/test_dag.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/test_forest.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/baseline/test_reduction.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/blockres/NOTE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "code/cex/blockres/ancestral_response.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.block.ancestral_response"
+  },
+  "code/cex/blockres/blockres.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.block.blockres"
+  },
+  "code/cex/blockres/check_exact_route.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_integrated_v2.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round11.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round12.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round13.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round15.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round16.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round17.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round18.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round18_oracle.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round19.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round19_oracle.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round19b.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round20.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round20b.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round22.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_round22b.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/check_wmb.py": {
+   "cls": "correctness-qualification",
+   "note": "BlockRes round controls"
+  },
+  "code/cex/blockres/integrated.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.block.integrated"
+  },
+  "code/cex/blockres/job.sh": {
+   "cls": "research-campaign-tooling",
+   "note": "BlockRes campaign"
+  },
+  "code/cex/blockres/layered_contraction.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.block.layered_contraction"
+  },
+  "code/cex/blockres/r23_gen.py": {
+   "cls": "research-campaign-tooling",
+   "note": "BlockRes campaign"
+  },
+  "code/cex/blockres/report.py": {
+   "cls": "research-campaign-tooling",
+   "note": "BlockRes campaign"
+  },
+  "code/cex/blockres/run_paired.py": {
+   "cls": "research-campaign-tooling",
+   "note": "BlockRes campaign"
+  },
+  "code/cex/blockres/run_r23.py": {
+   "cls": "research-campaign-tooling",
+   "note": "BlockRes campaign"
+  },
+  "code/cex/blockres/run_transfer.py": {
+   "cls": "research-campaign-tooling",
+   "note": "BlockRes campaign"
+  },
+  "code/cex/blockres/signed_evidence.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.block.signed_evidence"
+  },
+  "code/cex/blockres/support_closure.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.block.support_closure"
+  },
+  "code/cex/blockres/transfer_gen.py": {
+   "cls": "research-campaign-tooling",
+   "note": "BlockRes campaign"
+  },
+  "code/cex/cqr/CQR_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "CQR qualification record"
+  },
+  "code/cex/cqr/__init__.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/acquire.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CQR campaign"
+  },
+  "code/cex/cqr/campaign.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CQR campaign"
+  },
+  "code/cex/cqr/checker.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/closeout.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CQR campaign"
+  },
+  "code/cex/cqr/compiler.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/diag.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/finalize.sh": {
+   "cls": "research-campaign-tooling",
+   "note": "CQR campaign"
+  },
+  "code/cex/cqr/frontier.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/gate.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CQR campaign"
+  },
+  "code/cex/cqr/generators.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/kernel_identity.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/numerics.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/oracle.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/qualification.py": {
+   "cls": "correctness-qualification",
+   "note": "CQR qualification / tests"
+  },
+  "code/cex/cqr/reference.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/references.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/registry.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/report.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CQR campaign"
+  },
+  "code/cex/cqr/resolve_design.py": {
+   "cls": "research-campaign-tooling",
+   "note": "CQR campaign"
+  },
+  "code/cex/cqr/schedule.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/solve.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/structural.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/task.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/test_acquire.py": {
+   "cls": "correctness-qualification",
+   "note": "CQR qualification / tests"
+  },
+  "code/cex/cqr/test_cqr_provenance_intake.py": {
+   "cls": "correctness-qualification",
+   "note": "CQR qualification / tests"
+  },
+  "code/cex/cqr/views.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/wcnf.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/cqr/worker.py": {
+   "cls": "specialist",
+   "note": "CQR implementation (checkout-only)"
+  },
+  "code/cex/gate_controls.py": {
+   "cls": "research-campaign-tooling",
+   "note": "campaign-level controls / plan"
+  },
+  "code/cex/hp/.gitignore": {
+   "cls": "packaging",
+   "note": "package markers"
+  },
+  "code/cex/hp/DGP_NOTE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "code/cex/hp/NOTE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "code/cex/hp/UNIFIED_NOTE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "code/cex/hp/calibrate_revision.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/calibrate_unified.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/check_dgp.py": {
+   "cls": "correctness-qualification",
+   "note": "DGP / HP control suites (patch-sensitive; import canonical modules through the shims)"
+  },
+  "code/cex/hp/check_dgp10.py": {
+   "cls": "correctness-qualification",
+   "note": "DGP / HP control suites (patch-sensitive; import canonical modules through the shims)"
+  },
+  "code/cex/hp/check_global.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.check_global"
+  },
+  "code/cex/hp/check_hp.py": {
+   "cls": "correctness-qualification",
+   "note": "DGP / HP control suites (patch-sensitive; import canonical modules through the shims)"
+  },
+  "code/cex/hp/check_joint.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.check_joint"
+  },
+  "code/cex/hp/check_residual.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.check_residual"
+  },
+  "code/cex/hp/check_revision.py": {
+   "cls": "correctness-qualification",
+   "note": "DGP / HP control suites (patch-sensitive; import canonical modules through the shims)"
+  },
+  "code/cex/hp/check_unified.py": {
+   "cls": "correctness-qualification",
+   "note": "DGP / HP control suites (patch-sensitive; import canonical modules through the shims)"
+  },
+  "code/cex/hp/checked_tilt.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.response.checked_tilt"
+  },
+  "code/cex/hp/coarse_envelope.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.coarse_envelope"
+  },
+  "code/cex/hp/cost_model.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.cost_model"
+  },
+  "code/cex/hp/dense_gen.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_closure.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_inventory.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_oracle.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_probes_layout.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_proof_to_code.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_rates.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_sidecar.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp10_theory_return.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp2_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp2_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp2_oracle.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp2_oracle_driver.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp2_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp2_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp3_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp3_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp3_oracle.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp3_oracle_driver.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp3_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp3_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp3_theory_return.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp4_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp4_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp4_oracle.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp4_oracle_driver.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp4_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp4_probes.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp4_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp4_theory_return.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp5_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp5_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp5_oracle.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp5_oracle_driver.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp5_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp5_probes.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp5_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp5_theory_return.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_oracle.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_oracle_driver.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_probes.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_rates.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_sidecar.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_smoke.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp6_theory_return.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_oracle.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_oracle_driver.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_probes.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_rates.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_sidecar.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_smoke.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp7_theory_return.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp8_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp8_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp8_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp8_probes.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp8_rates.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp8_sidecar.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp8_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp8_theory_return.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp9_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp9_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp9_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp9_probes.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp9_rates.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp9_sidecar.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp9_start_here.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp9_theory_return.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp_analyze.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp_confirm_select.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp_dev_smoke.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp_external_select.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp_manifests.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp_package.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/dgp_paths.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/fixtures_closeout/point_error_repro.uai": {
+   "cls": "correctness-qualification",
+   "note": "closeout fixture"
+  },
+  "code/cex/hp/fixtures_closeout/point_error_repro.uai.evid": {
+   "cls": "correctness-qualification",
+   "note": "closeout fixture"
+  },
+  "code/cex/hp/gen_unified.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/global_circuit.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.global_circuit"
+  },
+  "code/cex/hp/global_optimize.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.global_optimize"
+  },
+  "code/cex/hp/global_stream.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.global_stream"
+  },
+  "code/cex/hp/grouped_envelope.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.grouped_envelope"
+  },
+  "code/cex/hp/heatbath_exact.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.response.heatbath_exact"
+  },
+  "code/cex/hp/heatbath_native.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.response.heatbath_native"
+  },
+  "code/cex/hp/hp_gen.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/joint_optimize.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.joint_optimize"
+  },
+  "code/cex/hp/joint_proposal.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.joint_proposal"
+  },
+  "code/cex/hp/joint_stream.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.joint_stream"
+  },
+  "code/cex/hp/joint_witness.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.joint_witness"
+  },
+  "code/cex/hp/lifted_decoder.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.lifted_decoder"
+  },
+  "code/cex/hp/lp_worker.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.lp_worker"
+  },
+  "code/cex/hp/markov_certificate.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.response.markov_certificate"
+  },
+  "code/cex/hp/pac_actions.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.pac_actions"
+  },
+  "code/cex/hp/reservation.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.reservation"
+  },
+  "code/cex/hp/residual_bank.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.residual_bank"
+  },
+  "code/cex/hp/residual_local.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.residual_local"
+  },
+  "code/cex/hp/residual_max_envelope.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.residual_max_envelope"
+  },
+  "code/cex/hp/residual_stream.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.residual_stream"
+  },
+  "code/cex/hp/response_certificate.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.response.response_certificate"
+  },
+  "code/cex/hp/run_dgp.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp10.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp2.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp3.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp4.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp5.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp6.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp7.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp8.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_dgp9.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_hp.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_revision.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/run_unified.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/hp/spectral_heatbath_run.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.response.spectral_heatbath_run"
+  },
+  "code/cex/hp/spectral_witness.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.response.spectral_witness"
+  },
+  "code/cex/hp/unified_pac_planner.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.unified_pac_planner"
+  },
+  "code/cex/hp/unified_planner.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.quotient.unified_planner"
+  },
+  "code/cex/hp/validate_round.py": {
+   "cls": "research-campaign-tooling",
+   "note": "DGP campaign runners / analyzers / packagers"
+  },
+  "code/cex/locked_plan.py": {
+   "cls": "research-campaign-tooling",
+   "note": "campaign-level controls / plan"
+  },
+  "code/cex/newarm/CEX_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/FOREST_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/GATE_CONTROLS.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/REVIEW_ADDITIVE_RESULTS.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/REVIEW_REGRESSION_RESULTS.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/SOURCE_HASHES.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/THEORY_NATIVE_AUDIT.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/analyze.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/audit_forest_theory.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/audit_native_theory.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/audit_response_theory.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/cex_control_driver.cpp": {
+   "cls": "correctness-qualification",
+   "note": "native control driver"
+  },
+  "code/cex/newarm/cex_executor.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.cex_executor"
+  },
+  "code/cex/newarm/cex_qualification.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/core.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.core"
+  },
+  "code/cex/newarm/dag.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.dag"
+  },
+  "code/cex/newarm/dag_additive_controls.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/evaluate.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/forest.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.forest"
+  },
+  "code/cex/newarm/geometry.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.geometry"
+  },
+  "code/cex/newarm/geometry_controls.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/native_qualification.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/native_qualification.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/native_qualification_stdout.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/planning.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.planning"
+  },
+  "code/cex/newarm/qualification.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/qualification.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/qualification_stdout.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/qualify_dag_additive.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/reduction.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.reduction"
+  },
+  "code/cex/newarm/reduction_qualification.json": {
+   "cls": "historical-evidence",
+   "note": "structural qualification records"
+  },
+  "code/cex/newarm/reduction_qualification.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/review_additive.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/review_regression.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/smoke_cex.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/stream.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.stream"
+  },
+  "code/cex/newarm/stream_float.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.stream_float"
+  },
+  "code/cex/newarm/support.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.algorithms.structural.support"
+  },
+  "code/cex/newarm/test_dag.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/test_forest.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm/test_reduction.py": {
+   "cls": "correctness-qualification",
+   "note": "structural qualification / audits"
+  },
+  "code/cex/newarm_dev/CEX_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/FOREST_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/REVIEW_ADDITIVE_RESULTS.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/REVIEW_REGRESSION_RESULTS.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/SOURCE_HASHES.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/THEORY_NATIVE_AUDIT.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/analyze.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/audit_forest_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/audit_native_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/audit_response_theory.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/cex_build.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/cex_executor.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/cex_kernel.cpp": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/cex_qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/core.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/dag.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/dag_additive_controls.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/evaluate.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/forest.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/geometry.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/geometry_controls.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/native_qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/native_qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/native_qualification_stdout.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/planning.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/qualification_stdout.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/qualify_dag_additive.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/reduction.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/reduction_qualification.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/reduction_qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/review_additive.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/review_regression.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/smoke_cex.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/stream.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/stream_build.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/stream_float.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/stream_kernel.cpp": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/support.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/test_dag.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/test_forest.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/newarm_dev/test_reduction.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/PAC_QUALIFICATION.json": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/campaign.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/closeout.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/comparator_cell.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/contrib.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/engine.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/finalize_v2.sh": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/finalize_v3.sh": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/finalize_v4.sh": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/finalize_v5.sh": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/finalize_v6.sh": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/gate.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/legacy_cbi_uai.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/legacy_qgrid.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/legacy_sf_uai.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/native_isolated.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/package.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/qualification.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/references.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/registry.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/report.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/rig.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/solve.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/uai_export.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/cex/pac/worker.py": {
+   "cls": "historical-evidence",
+   "note": "frozen snapshots (pinned references; never imported by production)"
+  },
+  "code/ext/comparator/MERLIN_PIN.json": {
+   "cls": "benchmark-tooling",
+   "note": "external comparator adapters"
+  },
+  "code/ext/comparator/__init__.py": {
+   "cls": "benchmark-tooling",
+   "note": "external comparator adapters"
+  },
+  "code/ext/comparator/merlin_adapter.py": {
+   "cls": "benchmark-tooling",
+   "note": "external comparator adapters"
+  },
+  "code/ext/supervise.py": {
+   "cls": "benchmark-tooling",
+   "note": "external comparator adapters"
+  },
+  "code/ext/uai.py": {
+   "cls": "benchmark-tooling",
+   "note": "external comparator adapters"
+  },
+  "code/gbidi/__init__.py": {
+   "cls": "packaging",
+   "note": "package markers"
+  },
+  "code/gbidi/supervise.py": {
+   "cls": "production-shim",
+   "note": "alias shim -> pgm.runtime.supervise"
+  },
+  "code/h4a/__init__.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/h4a/arm.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/h4a/build.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/h4a/certs.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/h4a/crosscheck.py": {
+   "cls": "research-campaign-tooling",
+   "note": "H4 campaign driver / reports"
+  },
+  "code/h4a/emit.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/h4a/grid.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/h4a/masses.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/h4a/model.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/h4a/refenum.py": {
+   "cls": "research-campaign-tooling",
+   "note": "H4 campaign driver / reports"
+  },
+  "code/h4a/report.py": {
+   "cls": "research-campaign-tooling",
+   "note": "H4 campaign driver / reports"
+  },
+  "code/h4a/run.py": {
+   "cls": "research-campaign-tooling",
+   "note": "H4 campaign driver / reports"
+  },
+  "code/h4a/stagea.py": {
+   "cls": "research-campaign-tooling",
+   "note": "H4 campaign driver / reports"
+  },
+  "code/h4a/stagea_main.py": {
+   "cls": "research-campaign-tooling",
+   "note": "H4 campaign driver / reports"
+  },
+  "code/h4a/tables.py": {
+   "cls": "specialist",
+   "note": "H4 arithmetic + provenance"
+  },
+  "code/native/dqchain.cpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/dqcheck.cpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/dqcommon.hpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/dqinput.hpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/h4pcheck.cpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/h4point.cpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/h4rect.cpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/mpiv.hpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/nfchain.cpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/native/nfcheck.cpp": {
+   "cls": "specialist",
+   "note": "H4 native kernel sources (host-built)"
+  },
+  "code/sf/__init__.py": {
+   "cls": "specialist",
+   "note": "SF implementation + checker"
+  },
+  "code/sf/check.py": {
+   "cls": "specialist",
+   "note": "SF implementation + checker"
+  },
+  "code/sf/core.py": {
+   "cls": "specialist",
+   "note": "SF implementation + checker"
+  },
+  "code/sf/generate.py": {
+   "cls": "research-campaign-tooling",
+   "note": "SF campaign scripts"
+  },
+  "code/sf/invoke.py": {
+   "cls": "research-campaign-tooling",
+   "note": "SF campaign scripts"
+  },
+  "code/sf/report.py": {
+   "cls": "research-campaign-tooling",
+   "note": "SF campaign scripts"
+  },
+  "code/sf/routes.py": {
+   "cls": "specialist",
+   "note": "SF implementation + checker"
+  },
+  "code/sf/runner.py": {
+   "cls": "research-campaign-tooling",
+   "note": "SF campaign scripts"
+  },
+  "code/sf/score.py": {
+   "cls": "research-campaign-tooling",
+   "note": "SF campaign scripts"
+  },
+  "code/tests/test_bench_adapters.py": {
+   "cls": "correctness-qualification",
+   "note": "specialist and adapter conformance tests (run from the checkout)"
+  },
+  "code/tests/test_cbi_conformance.py": {
+   "cls": "correctness-qualification",
+   "note": "specialist and adapter conformance tests (run from the checkout)"
+  },
+  "code/tests/test_ext_adapter.py": {
+   "cls": "correctness-qualification",
+   "note": "specialist and adapter conformance tests (run from the checkout)"
+  },
+  "code/tests/test_h4a_review2.py": {
+   "cls": "correctness-qualification",
+   "note": "specialist and adapter conformance tests (run from the checkout)"
+  },
+  "code/tests/test_sf_conformance.py": {
+   "cls": "correctness-qualification",
+   "note": "specialist and adapter conformance tests (run from the checkout)"
+  },
+  "documentation/architecture/CAPABILITIES.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/architecture/CONSOLIDATION.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step1/PATH_MAP.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step1/qualification/02_boundaries/parity_candidate.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/02_boundaries/parity_report.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/02_boundaries/pytest.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/03_algorithms/parity_candidate.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/03_algorithms/parity_report.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/03_algorithms/pytest.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/03_algorithms/relocation_diff_summary.txt": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/tools/closure_inventory.py": {
+   "cls": "packaging",
+   "note": "step-1 consolidation tools"
+  },
+  "documentation/consolidation/step1/tools/relocate_closures.py": {
+   "cls": "packaging",
+   "note": "step-1 consolidation tools"
+  },
+  "documentation/reviews/DGP10_ERRATUM.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/reviews/DGP10_EVIDENCE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/reviews/DGP10_IMPLEMENTATION.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/reviews/DGP10_MATH.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/reviews/PUBLIC_API.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/reviews/PUBLIC_FINAL_TESTS.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/reviews/QUALIFICATION.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "pyproject.toml": {
+   "cls": "packaging",
+   "note": "repository root"
+  },
+  "src/pgm/__init__.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/__main__.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/algorithms/__init__.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/block/__init__.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/block/ancestral_response.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/block/blockres.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/block/integrated.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/block/layered_contraction.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/block/signed_evidence.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/block/support_closure.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/PHASE_RATES.json": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/PHASE_RATES_R1.json": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/__init__.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/check_global.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/check_joint.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/check_residual.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/coarse_envelope.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/cost_model.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/global_circuit.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/global_optimize.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/global_stream.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/grouped_envelope.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/joint_optimize.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/joint_proposal.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/joint_stream.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/joint_witness.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/lifted_decoder.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/lp_worker.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/pac_actions.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/reservation.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/residual_bank.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/residual_local.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/residual_max_envelope.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/residual_stream.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/unified_pac_planner.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/quotient/unified_planner.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/__init__.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/checked_tilt.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/heatbath_exact.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/heatbath_native.c": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/heatbath_native.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/markov_certificate.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/response_certificate.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/spectral_heatbath_run.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/response/spectral_witness.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/__init__.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/cex_build.json": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/cex_executor.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/cex_kernel.cpp": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/core.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/dag.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/forest.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/geometry.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/libcex_kernel.dylib": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/libstream_kernel.so": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/planning.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/reduction.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/stream.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/stream_build.json": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/stream_float.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/stream_kernel.cpp": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/algorithms/structural/support.py": {
+   "cls": "production",
+   "note": "canonical implementation closure (host binaries excluded from the wheel)"
+  },
+  "src/pgm/api.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/backends/__init__.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/backends/base.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/backends/block.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/backends/quotient.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/backends/response.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/backends/structural.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/backends/worker.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/build.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/contracts.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/model/__init__.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/model/uai.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/planning/__init__.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/planning/features.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/policies/__init__.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/policies/accepted.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/policies/experimental.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/registry.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/runtime/__init__.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/runtime/attempts.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/runtime/build.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/runtime/resources.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/runtime/supervise.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/runtime/supervision.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/supervision.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/switchboard.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/validation/__init__.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "src/pgm/validation/publication.py": {
+   "cls": "production",
+   "note": "public API, contracts, policies, model boundary, planning, runtime, validation, backends"
+  },
+  "tests/parity/compare.py": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/fixtures/asym2.uai": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/fixtures/asym2_evidence.uai": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/fixtures/asym2_evidence.uai.evid": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/fixtures/bip4.uai": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/fixtures/cyc3_card3.uai": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/fixtures/pos4.uai": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/fixtures/zero_mass.uai": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/fixtures/zero_mass.uai.evid": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/generate_reference.py": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/parity/reference_f8197e6.json": {
+   "cls": "correctness-qualification",
+   "note": "pinned characterization reference + generator / comparator"
+  },
+  "tests/test_consolidation_boundaries.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_dgp10_analysis_units.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_dgp10_cache_cleanup.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_dgp10_fallback_admission.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_dgp10_response_conflict.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_heatbath_allocation_failure.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_public_api.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_public_backends.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  },
+  "tests/test_public_planning.py": {
+   "cls": "correctness-qualification",
+   "note": "portable public / repair / regression tests"
+  }
+ }
+}
