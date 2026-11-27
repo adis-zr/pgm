@@ -8,24 +8,8 @@ from itertools import product
 from pathlib import Path
 import hashlib, math, time
 
-def read_uai(path):
-    raw=Path(path).read_bytes(); epath=Path(str(path)+'.evid')
-    eb=epath.read_bytes() if epath.exists() else b'0'
-    ts=iter(raw.decode().split()); kind=next(ts); assert kind in ('MARKOV','BAYES')
-    n=int(next(ts)); cards=[int(next(ts)) for _ in range(n)]; assert all(d>0 for d in cards)
-    scopes=[tuple(int(next(ts)) for _ in range(int(next(ts)))) for _ in range(int(next(ts)))]
-    factors=[]
-    for s in scopes:
-        assert len(s)==len(set(s)) and all(0<=v<n for v in s)
-        k=int(next(ts)); assert k==math.prod(cards[v] for v in s)
-        vs=[F(next(ts)) for _ in range(k)]; assert all(v>=0 for v in vs)
-        factors.append(dict(scope=s,values=vs))
-    assert next(ts,None) is None
-    es=iter(map(int,eb.split())); k=next(es); evidence={}
-    for _ in range(k):
-        v,a=next(es),next(es);assert 0<=v<n and 0<=a<cards[v] and v not in evidence;evidence[v]=a
-    assert next(es,None) is None
-    return dict(cards=cards,factors=factors,evidence=evidence),dict(model_sha256=hashlib.sha256(raw).hexdigest(),evidence_sha256=hashlib.sha256(eb).hexdigest())
+from pgm.model.uai import read_uai                                 # the ONE canonical exact UAI reader (consolidation repair: the former duplicate body here was byte-identical in semantics; pgm.model.uai owns it)
+
 
 def components(model, deadline=None):
     """Evidence restriction, positive scalar cancellation, exact component split."""

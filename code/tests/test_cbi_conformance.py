@@ -253,10 +253,20 @@ def test_movement_case_and_width_adaptation():
 
 
 # ------------------------------------------------------------------ the reviewer's counterexamples (6 Nov 2026 review) must be contained AFTER the repair
-CE = json.load(open(os.path.join(HERE, "runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json")))
+# consolidation repair R5: the private counterexample packet (pgm-records: code/runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json)
+# is loaded by a FIXTURE used only by the dependent test below, so its absence blocks that one test (reported as a skip with reason BLOCKED) and
+# the other 22 conformance tests still run.  Override the location with CBI_COUNTEREXAMPLES=/path/to/counterexamples.json.
+CE_PATH = os.environ.get("CBI_COUNTEREXAMPLES", os.path.join(HERE, "runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json"))
 
 
-def test_review_counterexamples_contained_and_verified():
+@pytest.fixture(scope="module")
+def CE():
+    if not os.path.exists(CE_PATH):
+        pytest.skip("BLOCKED: private CBI counterexample packet absent: %s (set CBI_COUNTEREXAMPLES)" % CE_PATH)
+    return json.load(open(CE_PATH))
+
+
+def test_review_counterexamples_contained_and_verified(CE):
     for name, (q, j) in (("CE1", (0, 0)), ("CE2", (2, 0)), ("CE3", (2, 0))):
         obj = CE[name]; res = api.solve(obj, [q], "1/100"); tr = brute_truth(obj)[q][j]
         row = res["intervals"][str(q)]["coordinates"][j]; lo, hi = Fr(int(row["lo"]), Q), Fr(int(row["hi"]), Q)

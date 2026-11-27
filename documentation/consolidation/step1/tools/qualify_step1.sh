@@ -1,6 +1,7 @@
 #!/bin/sh
-# ONE combined qualification of consolidation step 1 at the final source state (brief section 8).  Every command is
-# recorded with its exit code; receipts land in documentation/consolidation/step1/qualification/06_final/.
+# ONE combined qualification of consolidation step 1 at the final source state (brief section 8; repair R3/R5: required steps
+# PROPAGATE failure; the aggregate status distinguishes required, blocked and failed checks).  Receipts land in
+# documentation/consolidation/step1/qualification/06_final/.
 # usage: qualify_step1.sh <venv python> <build-venv python> [scratch dir]
 set -u
 PY="$1"; BPY="$2"; SCR="${3:-$(mktemp -d /tmp/pgm-qualify-XXXXXX)}"
@@ -21,24 +22,36 @@ run 07_specialist_conformance "$PY" -m pytest code/tests -q -rA -p no:cacheprovi
 rm -rf "$SCR/dist" "$REPO/build" "$REPO/pgm_certified.egg-info"
 run 08_wheel_build "$BPY" -m build --wheel --no-isolation --outdir "$SCR/dist" .
 rm -rf "$REPO/build" "$REPO/pgm_certified.egg-info"
-WHEEL="$(ls "$SCR"/dist/*.whl | head -1)"; shasum -a 256 "$WHEEL" > "$Q/WHEEL_SHA256.txt"; cp "$WHEEL" "$SCR/"
-unzip -l "$WHEEL" > "$Q/wheel_contents.txt"
-run 09_clean_wheel_relocation "$PY" "$T/clean_wheel_relocation_test.py" "$WHEEL" "$SCR/relocation"
-cp "$SCR/relocation/clean_wheel_relocation.json" "$Q/"
+WHEEL="$(ls "$SCR"/dist/*.whl 2>/dev/null | head -1)"
+if [ -n "$WHEEL" ]; then shasum -a 256 "$WHEEL" > "$Q/WHEEL_SHA256.txt"; unzip -l "$WHEEL" > "$Q/wheel_contents.txt"; run 09_clean_wheel_relocation "$PY" "$T/clean_wheel_relocation_test.py" "$WHEEL" "$SCR/relocation"; cp "$SCR/relocation/clean_wheel_relocation.json" "$Q/" 2>/dev/null; else echo "## 09_clean_wheel_relocation: (no wheel)" >> "$LOG"; echo "exit 1" >> "$LOG"; fi
 run 10_closure_manifest "$PY" "$T/manifest.py"
 run 11_classification "$PY" "$T/classify_tree.py"
 "$PY" - "$Q" <<'PYEOF'
-import json, re, sys, subprocess, platform
+import json, re, sys, platform
 from pathlib import Path
-Q = Path(sys.argv[1]); out = dict(commit=(Q / "SOURCE_COMMIT.txt").read_text().strip(), git_status_dirty_lines=(Q / "GIT_STATUS.txt").read_text().splitlines(), python=sys.version.split()[0], platform=platform.platform())
+Q = Path(sys.argv[1])
+REQUIRED = ["01_pytest", "02_parity_generate", "03_parity_compare", "04_check_dgp10", "05_dgp10_oracle", "06_inherited_controls", "07_specialist_conformance", "08_wheel_build", "09_clean_wheel_relocation", "10_closure_manifest", "11_classification"]
+out = dict(commit=(Q / "SOURCE_COMMIT.txt").read_text().strip(), git_status_dirty_lines=(Q / "GIT_STATUS.txt").read_text().splitlines(), python=sys.version.split()[0], platform=platform.platform())
 log = (Q / "COMMANDS.log").read_text(); out["commands"] = [dict(step=m.group(1), command=m.group(2), exit=int(m.group(3))) for m in re.finditer(r"## (\S+): (.*)\nexit (\d+)", log)]
-def tail(n): p = Q / (n + ".log"); return p.read_text().strip().splitlines()[-1] if p.exists() and p.read_text().strip() else None
-out["pytest_summary"] = tail("01_pytest"); out["parity"] = json.loads((Q / "parity_report.json").read_text())["verdict"] if (Q / "parity_report.json").exists() else None
+exits = {c["step"]: c["exit"] for c in out["commands"]}
+def text(n): p = Q / (n + ".log"); return p.read_text() if p.exists() else ""
+def tail(n): t = text(n).strip(); return t.splitlines()[-1] if t else None
+def pytest_summary(n):
+    t = text(n); last = tail(n) or ""
+    return dict(summary=last, collection_errors=len(re.findall(r"^ERROR (?:collecting )?[\w/\.]+", t, re.M)), blocked_skips=[l.strip() for l in t.splitlines() if l.startswith("SKIPPED") and "BLOCKED" in l], failed=[l.strip() for l in t.splitlines() if l.startswith("FAILED")])
+out["pytest"] = pytest_summary("01_pytest"); out["specialist_conformance"] = pytest_summary("07_specialist_conformance")
+out["parity"] = json.loads((Q / "parity_report.json").read_text())["verdict"] if (Q / "parity_report.json").exists() else None
 d10 = json.loads((Q / "check_dgp10.json").read_text()) if (Q / "check_dgp10.json").exists() else {}; out["check_dgp10"] = dict(all_ok=d10.get("all_ok"), n_ok=d10.get("n_ok"), n=d10.get("n"))
 orc = json.loads((Q / "dgp10_oracle.json").read_text()) if (Q / "dgp10_oracle.json").exists() else {}; out["dgp10_oracle"] = dict(all_ok=orc.get("all_ok"), gate=orc.get("gate"), models=len(orc.get("models", {})), nonvacuous=len(orc.get("nonvacuous_models", [])))
-bc = json.loads((Q / "BLOCKED_CONTROLS.json").read_text()) if (Q / "BLOCKED_CONTROLS.json").exists() else {}; out["inherited_controls"] = bc.get("counts")
-out["specialist_conformance"] = tail("07_specialist_conformance"); out["wheel"] = (Q / "WHEEL_SHA256.txt").read_text().split()[0] if (Q / "WHEEL_SHA256.txt").exists() else None
-rel = json.loads((Q / "clean_wheel_relocation.json").read_text()) if (Q / "clean_wheel_relocation.json").exists() else {}; out["clean_wheel_relocation"] = rel.get("verdict")
-out["all_commands_exit_zero"] = all(c["exit"] == 0 for c in out["commands"] if c["step"] not in ("06_inherited_controls", "07_specialist_conformance"))
-(Q / "QUALIFICATION.json").write_text(json.dumps(out, indent=1) + "\n"); print(json.dumps({k: v for k, v in out.items() if k != "commands"}, indent=1))
+bc = json.loads((Q / "BLOCKED_CONTROLS.json").read_text()) if (Q / "BLOCKED_CONTROLS.json").exists() else {}; out["inherited_controls"] = dict(counts=bc.get("counts"), classification=bc.get("classification"))
+out["wheel"] = (Q / "WHEEL_SHA256.txt").read_text().split()[0] if (Q / "WHEEL_SHA256.txt").exists() else None
+rel = json.loads((Q / "clean_wheel_relocation.json").read_text()) if (Q / "clean_wheel_relocation.json").exists() else {}; out["clean_wheel_relocation"] = dict(verdict=rel.get("verdict"), failures=rel.get("failures"))
+out["required_steps"] = REQUIRED; out["required_exit_codes"] = {s: exits.get(s) for s in REQUIRED}
+failed_required = [s for s in REQUIRED if exits.get(s) != 0]
+out["blocked"] = dict(inherited_controls=(bc.get("counts") or {}).get("BLOCKED"), specialist_tests=len(out["specialist_conformance"]["blocked_skips"]), note="blocked = declared private-record dependencies absent on this host; listed per item in BLOCKED_CONTROLS.json and the pytest log")
+out["failed"] = dict(required_steps=failed_required, specialist_collection_errors=out["specialist_conformance"]["collection_errors"], specialist_failed=out["specialist_conformance"]["failed"], pytest_failed=out["pytest"]["failed"])
+out["overall"] = "PASS" if (not failed_required and out["parity"] == "IDENTICAL" and out["check_dgp10"].get("all_ok") and out["dgp10_oracle"].get("all_ok") and out["clean_wheel_relocation"].get("verdict") == "PASS" and out["specialist_conformance"]["collection_errors"] == 0 and not out["specialist_conformance"]["failed"] and not out["pytest"]["failed"]) else "FAIL"
+(Q / "QUALIFICATION.json").write_text(json.dumps(out, indent=1) + "\n"); print(json.dumps({k: v for k, v in out.items() if k not in ("commands",)}, indent=1))
+sys.exit(0 if out["overall"] == "PASS" else 1)
 PYEOF
+rc=$?; echo "combined qualification overall exit $rc"; exit $rc

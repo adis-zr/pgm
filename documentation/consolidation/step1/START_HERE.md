@@ -38,10 +38,10 @@ Branch `consolidate/production-layout` (review branch; `main` unchanged pending 
 | relocation diff | 304 changed lines across 47 modules, every one an import / `sys.path` / resource-location line |
 | DGP10 new controls (`check_dgp10.py`) | 12 / 12 |
 | native response oracle (`dgp10_oracle.py`) | PASS (9 models, 7 nonvacuous, scalar checker reference + mutations) |
-| inherited D1-D90 | 39 portable / 51 blocked by private record inputs (same counts as `f8197e6`'s 39 / 51) |
-| specialist conformance (`code/tests`) | 33 passed, 1 skipped; 5 failed + 1 collection error, all reading private record fixtures absent from the checkout (named in the log) |
-| wheel | `pgm_certified-0.2.0-py3-none-any.whl` (sha in `qualification/06_final/WHEEL_SHA256.txt`); contents listed; no binaries, no campaign code |
-| clean-wheel relocation | PASS: fresh venv outside the repo, `python -I`, both policies COMPLETE, all four adapters COMPLETE, specialists resolved from site-packages, kernels built in the installation, `$PGM_NATIVE_CACHE` honored |
+| inherited D1-D90 | 39 portable / 51 BLOCKED by a dependency PREFLIGHT (repair R4: a declared private-record path absent on this host, named per control); a failure with its dependencies present stays FAILED and fails the qualification |
+| specialist conformance (`code/tests`) | all tests collect (repair R5): the CBI counterexample packet is a fixture of its one dependent test (22 other CBI tests run); the 5 H4 packet tests are BLOCKED skips naming the absent private file; overrides `CBI_COUNTEREXAMPLES` / `H4A_PACKET` (not `PGM_RECORDS_ROOT`) |
+| wheel | `pgm_certified-0.2.0-py3-none-any.whl` (sha in `qualification/06_final/WHEEL_SHA256.txt`); contents listed; no host binaries; no campaign code in the production inference dependency closure (the cbi / sf / h4a specialist packages ship whole, including their small helper scripts) |
+| clean-wheel relocation | PASS under the ENFORCING gate (repair R3): fresh venv outside the repo, `python -I`; both policies COMPLETE with the expected inventory / guarantee / backend; all four adapters COMPLETE with the expected route, the bipartite STREAM kernel forced and natively executed; tiny CBI and SF solve-and-check round trips; h4a availability report; cqr typed UNAVAILABLE; a kernel built and loaded under `$PGM_NATIVE_CACHE` with its location and identity verified; negative controls in `tests/test_qualification_tools.py` |
 | production isolation | the after-closure from the five process entrypoints (77 modules / 16,286 lines) contains no module under `code/`, no specialist, no campaign code (subprocess test + manifest) |
 
 No external benchmark cell was run; no performance or holdout campaign; the three coverage gaps were not repaired.
@@ -49,14 +49,16 @@ No external benchmark cell was run; no performance or holdout campaign; the thre
 ## Unresolved / unfinished (also in `pgm.registry.CAPABILITIES["unfinished"]`)
 
 - **Step 2 not run**: default promotion of `accepted` on `main` waits for the preservation regression (`STEP2_PLAN.md`).
-- **51 inherited controls blocked** on private record inputs (`BLOCKED_CONTROLS.md`); 6 specialist conformance tests likewise.
-  They run unchanged when `PGM_RECORDS_ROOT` points at the records checkout.
+- **51 inherited controls blocked** on private record inputs (`BLOCKED_CONTROLS.md`); they run unchanged when `PGM_RECORDS_ROOT`
+  points at the records checkout. The specialist tests need their own overrides: `CBI_COUNTEREXAMPLES` (1 test) and `H4A_PACKET`
+  (5 tests). None of these has been shown to pass with the inputs present on this host.
 - **Specialist bridge**: `pgm.specialists._bridge` appends the `code/` tree for cbi / sf / h4a / cqr -- the only residual path
   manipulation; production inference never imports it.
 - **CQR packaging**: checkout-only (bare sibling imports inside `code/cex/cqr`).
 - **H4 kernels**: host-built executables under `code/build`; the wheel reports them missing.
 - **Wheel exception**: cbi / sf / h4a ship whole, including their small campaign helper scripts.
-- **Controller lexical pass**: the one remaining parse besides the worker's exact parse (documented; both charged).
+- **Controller lexical pass**: the one remaining parse besides the worker's exact parse (documented; both charged). The exact
+  reader is defined once (`pgm.model.uai`; the structural core re-exports it).
 
 ## Reproduce
 

@@ -60,7 +60,8 @@ canonical module object; running one as a script re-executes the canonical modul
 `pgm.build`, `pgm.backends.worker.{normalize_result, read_inventory, write_result, AdapterRefused}` and the switchboard
 names `run_attempt / candidate_plan / POLICY_VERSION / NATIVE_ROWS_PER_SECOND / RISK_SHARES` are retained.
 
-The remaining parse besides the worker's exact parse is the controller's lexical inspection (it never constructs a model);
+The exact UAI reader has one definition (`pgm.model.uai.read_uai`; `pgm.algorithms.structural.core.read_uai` is the same
+function). The remaining parse besides the worker's exact parse is the controller's lexical inspection (it never constructs a model);
 both are charged to the request and there is no persistent cache.  See `documentation/consolidation/step1/` for the manifest,
 path map, capability matrix, blocked controls and qualification receipts; `CONSOLIDATION.md` and `CAPABILITIES.md` are the
 pre-step-1 contract and inventory, kept as records.

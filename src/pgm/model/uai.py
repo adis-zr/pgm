@@ -1,7 +1,8 @@
 """The canonical EXACT UAI reader and the request-local bound model.
 
-``read_uai`` is the retained exact parser (formerly ``code/cex/newarm/core.read_uai``; every retained
-implementation reads through it): exact ``Fraction`` factor values, hard zeros and tiny rationals preserved,
+``read_uai`` is the retained exact parser, defined ONCE here: ``pgm.algorithms.structural.core.read_uai`` is this
+function (the former duplicate body was removed in the step-1 repair pass), so the public worker, the accepted engine
+(``blockres.core.read_uai``) and the inherited direct entrypoints (quotient / response CLIs) all read through it: exact ``Fraction`` factor values, hard zeros and tiny rationals preserved,
 validated scopes (distinct in-range variables, table length = product of cardinalities), observed variables from
 the adjacent ``.evid`` file (a missing file is the canonical byte string ``b'0'``), and the binding = SHA-256 of the
 exact model and evidence bytes.  ``load_bound`` parses ONCE per worker, checks the binding against the controller's

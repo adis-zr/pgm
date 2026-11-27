@@ -12,16 +12,26 @@ from h4a.emit import Cache, write_point_witness, write_rect_witness
 from h4a.build import producer_tables, checker_tables
 from h4a import certs
 
+# consolidation repair R5: the H4 arithmetic packet is a PRIVATE record dependency (pgm-records: docs/h4-arithmetic-contract-2026-10-27);
+# override its location with H4A_PACKET=/path/to/h4-arithmetic-contract-2026-10-27.  When absent, the dependent tests are BLOCKED (skipped
+# with that reason) instead of erroring; the assertions are unchanged.
 PACKET = os.environ.get("H4A_PACKET", str(HERE.parent / "docs" / "h4-arithmetic-contract-2026-10-27"))
 BUILD = HERE / "build"
 
+
+def _packet_file(*parts):
+    path = os.path.join(PACKET, *parts)
+    if not os.path.exists(path):
+        pytest.skip("BLOCKED: private H4 packet file absent: %s (set H4A_PACKET)" % path)
+    return path
+
 def _frozen():
-    return json.load(open(os.path.join(PACKET, "inputs", "FROZEN_NODES.json")))
+    return json.load(open(_packet_file("inputs", "FROZEN_NODES.json")))
 
 # ---- item 3: uninitialised message slots (small fixtures trigger it; HARD E0 does not)
 @pytest.mark.parametrize("fixture_ix", [0, 1])
 def test_small_fixtures_through_all_four_kernel_paths(fixture_ix):
-    S = json.load(open(os.path.join(PACKET, "inputs", "SMALL_FIXTURES.json")))
+    S = json.load(open(_packet_file("inputs", "SMALL_FIXTURES.json")))
     F = _frozen(); g = Grid(F["frequency_grids"]["1"])
     f = S["fixtures"][fixture_ix]; m = Model(f["model"]["n"], f["model"]["seed"])
     prob = NodeProblem(m, f["source_site"], f["source_sign"], f["target_site"], f["positive_node"], f["context"])
@@ -74,7 +84,7 @@ def test_verifier_rejects_duplicate_response_and_false_probe_and_empty_certifica
 
 # ---- item 1: independent count replay and weighted counts
 def test_accepted_and_weighted_counts_replay_independently():
-    S = json.load(open(os.path.join(PACKET, "inputs", "SMALL_FIXTURES.json")))
+    S = json.load(open(_packet_file("inputs", "SMALL_FIXTURES.json")))
     F = _frozen(); f = S["fixtures"][0]; m = Model(f["model"]["n"], f["model"]["seed"])
     prob = NodeProblem(m, f["source_site"], f["source_sign"], f["target_site"], f["positive_node"], f["context"])
     Zp, _ = marker_masses(prob, 256); Zc, _ = marker_masses(prob, 320, reverse=True)

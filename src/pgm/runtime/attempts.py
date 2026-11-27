@@ -37,42 +37,108 @@ def ledger_records(path, *, tolerate_partial=False):
     return records
 
 
-def kill_owned(process, ledger):
-    """Let the supervisor reconcile first; emergency cleanup uses its registry.
+def _utc_epoch(text):
+    import calendar
+    try:
+        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return None
 
-    A leader exiting before our first RSS sample cannot hide its orphaned child:
-    ownership is a process group recorded by the supervisor, not a sampled PID
-    ancestry. Never signal the caller's process group.
-    """
+
+def owned_groups(ledger):
+    """This invocation's DURABLE ownership: the SPAWNED groups of the attempt ledger and every nested registration whose
+    parent chain leads to this START (the supervisor's `<owner_dir>/groups.jsonl`).  Returns {pgid: identity} with the
+    recorded leader pid and spawn time, plus whether a valid terminal receipt already establishes cleanup."""
+    records = ledger_records(ledger, tolerate_partial=True)
+    starts = [r for r in records if r.get("kind") == "START"]
+    groups = {}
+    for r in records:
+        if r.get("kind") == "SPAWNED" and r.get("pgid") is not None:
+            groups[r["pgid"]] = dict(pid=r.get("pid"), jid=r.get("jid"), spawned=_utc_epoch(r.get("spawn_utc")), source="SPAWNED")
+    own = starts[-1] if starts else None
+    if own is not None and own.get("owner_dir"):
+        registrations = ledger_records(Path(own["owner_dir"]) / "groups.jsonl", tolerate_partial=True)
+        parents = {r.get("jid"): r.get("parent_jid") for r in registrations}
+        def owned(jid):
+            visited = set()
+            while jid is not None and jid not in visited:
+                if jid == own["jid"]:
+                    return True
+                visited.add(jid)
+                jid = parents.get(jid)
+            return False
+        for r in registrations:
+            if r.get("pgid") is not None and owned(r.get("jid")):
+                groups.setdefault(r["pgid"], dict(pid=r.get("pid"), jid=r.get("jid"), spawned=_utc_epoch(r.get("utc")), source="registry"))
+    receipts = [r for r in records if r.get("kind") == "RECEIPT" and own is not None and r.get("jid") == own.get("jid")]
+    receipt = receipts[-1] if receipts else None
+    established = bool(receipt and receipt.get("cleanup_unresolved") is False and receipt.get("group_empty_at_receipt") is True
+                       and receipt.get("nested_groups_live_at_receipt") == 0)
+    return groups, established, receipt
+
+
+def _identity_members(pgid, identity, slack_s=5.0):
+    """the live members of a recorded group that are OURS: created no earlier than the recorded spawn (a reused pgid of an
+    unrelated, older process is never signalled); -> (ours, foreign)"""
+    from .supervise import group_members
+    ours, foreign = [], []
+    spawned = identity.get("spawned")
+    for pid in group_members(pgid):
+        try:
+            created = psutil.Process(pid).create_time()
+        except psutil.Error:
+            continue
+        if spawned is None or created >= spawned - slack_s:
+            ours.append(pid)
+        else:
+            foreign.append(pid)
+    return ours, foreign
+
+
+def kill_owned(process, ledger, wait_s=0.5):
+    """Terminate the supervisor if it is still running, then RECONCILE this invocation's durable ownership whenever a valid
+    terminal receipt does not establish cleanup -- including when the supervisor has already exited or was killed (repair R1).
+    Only this invocation's registered groups and their descendants are signalled, after an identity check against the recorded
+    spawn; a stale reused pgid is reported, not signalled.  Bounded; returns the cleanup record (`unresolved` non-empty means
+    success must be refused).  Never signals the caller's own process group."""
+    record = dict(supervisor_alive_at_entry=process.poll() is None, receipt_established=False, groups=[], killed=[], unresolved=[], identity_refused=[])
     if process.poll() is None:
         process.terminate()
         try:
             process.wait(timeout=0.25)
         except subprocess.TimeoutExpired:
-            # The supervisor may itself be stuck during cleanup. Reconcile only
-            # the groups registered under this invocation's START identity.
-            from .supervision import implementation
-            supervisor = implementation()
-            records = ledger_records(ledger, tolerate_partial=True)
-            starts = [r for r in records if r.get("kind") == "START"]
-            if starts:
-                own = starts[-1]
-                registrations = ledger_records(Path(own["owner_dir"]) / "groups.jsonl", tolerate_partial=True)
-                parents = {r["jid"]: r.get("parent_jid") for r in registrations}
-                def owned(jid):
-                    visited = set()
-                    while jid is not None and jid not in visited:
-                        if jid == own["jid"]:
-                            return True
-                        visited.add(jid)
-                        jid = parents.get(jid)
-                    return False
-                groups = {r["pgid"] for r in records if r.get("kind") == "SPAWNED"}
-                groups.update(r["pgid"] for r in registrations if owned(r["jid"]))
-                for pgid in groups:
-                    supervisor.kill_group_and_wait(pgid, wait_s=0.1)
-            process.kill()
+            pass
+    own_pgid = os.getpgrp()
+    try:
+        groups, established, _receipt = owned_groups(ledger)
+    except (OSError, ValueError, KeyError) as e:
+        groups, established = {}, False
+        record["ledger_error"] = str(e)[:200]
+    record["receipt_established"] = established
+    from .supervise import kill_group_and_wait, group_members
+    for pgid, identity in groups.items():
+        if pgid == own_pgid:
+            record["identity_refused"].append(dict(pgid=pgid, reason="caller's own process group"))
+            continue
+        ours, foreign = _identity_members(pgid, identity)
+        entry = dict(pgid=pgid, source=identity.get("source"), leader_pid=identity.get("pid"), live_at_entry=ours, foreign=foreign)
+        if foreign:
+            record["identity_refused"].append(dict(pgid=pgid, pids=foreign, reason="members older than the recorded spawn (reused group id)"))
+        if ours:
+            kill_group_and_wait(pgid, wait_s=wait_s)
+            still = [pid for pid in group_members(pgid) if pid in ours]
+            entry["killed"] = [pid for pid in ours if pid not in still]
+            record["killed"] += entry["killed"]
+            if still:
+                record["unresolved"].append(dict(pgid=pgid, pids=still))
+        record["groups"].append(entry)
+    if process.poll() is None:
+        process.kill()
+        try:
             process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            record["unresolved"].append(dict(pgid=None, pids=[process.pid], reason="supervisor did not exit"))
+    return record
 
 
 def run_attempt(choice, request, deadline, directory, number):
@@ -132,14 +198,18 @@ def run_attempt(choice, request, deadline, directory, number):
                     kill_owned(process, ledger)
                     break
                 time.sleep(min(0.01, max(0, deadline-now)))
-        # Cleanup is part of the charged attempt and precedes every acceptance.
-        kill_owned(process, ledger)
+        # Cleanup is part of the charged attempt and precedes every acceptance (durable ownership reconciled even when the
+        # supervisor already exited; unresolved ownership refuses success).
+        record["cleanup"] = kill_owned(process, ledger)
         ended = time.monotonic()
         record.update(wall_s=ended-start, returncode=process.returncode)
         records = ledger_records(ledger)
         receipts = [r for r in records if r.get("kind") == "RECEIPT"]
         receipt = receipts[-1] if receipts else None
         record["supervisor_receipt"] = receipt
+        if record["cleanup"]["unresolved"]:
+            record.update(outcome="CLEANUP_UNRESOLVED", reason="owned process groups could not be reconciled")
+            return None, record
         if record["outcome"] != "NOT_STARTED":
             return None, record
         if ended > deadline:
@@ -166,7 +236,10 @@ def run_attempt(choice, request, deadline, directory, number):
         return None, record
     finally:
         if process is not None:
-            kill_owned(process, ledger)
+            final = kill_owned(process, ledger)
+            record["cleanup_final"] = final
+            if final["unresolved"] and record.get("outcome") not in ("CLEANUP_UNRESOLVED",):
+                record.update(outcome="CLEANUP_UNRESOLVED", reason="owned process groups could not be reconciled at exit")
         if stderr.exists():
             with stderr.open("rb") as f:
                 f.seek(max(0, stderr.stat().st_size-1200))
