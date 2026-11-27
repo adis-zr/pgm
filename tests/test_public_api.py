@@ -97,7 +97,7 @@ def test_optional_null_forecast_keeps_fallback_available(tmp_path, work, memory)
     meta.update(pairwise_forest=False, binary_pairwise_bipartite=False,
                 hard_zero_entries=1,
                 native_forecast={"sum_product": work, "native_bytes_estimate": memory})
-    choices = switchboard.candidate_plan(meta, InferenceRequest(path), 1.0)
+    choices = switchboard.candidate_plan(meta, InferenceRequest(path, policy="experimental"), 1.0)      # the null-estimate regression belongs to the frozen experimental portfolio
     assert choices[0]["backend"] == "block"
     assert any(choice["backend"] == "structural" for choice in choices)
 
@@ -276,3 +276,41 @@ def test_nested_supervisor_receipt_survives_request_directory_cleanup(tmp_path):
     nested = [r for r in registrations if r["jid"] != receipt["jid"]]
     assert len(nested) == 1 and Path(nested[0]["ledger"]).is_file()
     assert switchboard._ledger_records(Path(nested[0]["ledger"]))[-1]["outcome"] == "COMPLETED"
+
+
+def test_default_policy_is_the_accepted_engine_with_its_benchmarked_configuration(tmp_path):
+    actual = infer(tiny(tmp_path), budget=3, memory_mib=256)
+    assert actual.complete, actual.to_dict()
+    assert actual.data["policy"] == "accepted" and actual.data["policy_version"].startswith("accepted-engine-v2.13.2-targeted")
+    assert [a["backend"] for a in actual.data["attempts"]] == ["block"]
+    cfg = actual.data["attempts"][0]["configuration"]
+    assert cfg["schedule"] == "targeted" and cfg["proposal"] == "mb" and cfg["batch"] == 1024
+    assert actual.data["risk_allocations"] == {"block": str(F(1, 10**6))}
+    assert actual.data["planning"]["forecast_refusal"]["kind"] == "NOT_REQUESTED"
+    assert_geometry(actual, enumerated_truth())
+
+
+def test_experimental_policy_is_the_frozen_portfolio(tmp_path):
+    actual = infer(tiny(tmp_path), budget=3, memory_mib=256, policy="experimental")
+    assert actual.complete, actual.to_dict()
+    assert actual.data["policy"] == "experimental" and actual.data["policy_version"] == "structural-portfolio-1"
+    assert actual.data["attempts"][0]["backend"] == "structural"
+    assert sum(map(F, actual.data["risk_allocations"].values())) == F(1, 10**6)
+    assert set(actual.data["risk_allocations"]) == {"structural", "block", "quotient", "response"}
+
+
+def test_policy_is_validated_and_separate_from_mode(tmp_path):
+    with pytest.raises(ValueError):
+        InferenceRequest(tiny(tmp_path), policy="fastest")
+    request = InferenceRequest(tiny(tmp_path), mode="exact", policy="experimental")
+    assert request.mode == "exact" and request.policy == "experimental"
+
+
+def test_cli_records_the_selected_policy(tmp_path):
+    out = tmp_path / "r.json"
+    source = str(Path(switchboard.__file__).resolve().parents[1])
+    env = os.environ.copy(); env["PYTHONPATH"] = source + os.pathsep + env.get("PYTHONPATH", "")
+    for policy in ("accepted", "experimental"):
+        subprocess.run([sys.executable, "-m", "pgm", "--input", str(tiny(tmp_path)), "--output", str(out), "--budget", "3", "--memory-mib", "256", "--policy", policy], check=True, env=env, timeout=30)
+        data = json.loads(out.read_text())
+        assert data["policy"] == policy and data["outcome"] == "COMPLETE", data

@@ -18,7 +18,8 @@ def main(argv=None):
     ap.add_argument("--epsilon", default="1/200")
     ap.add_argument("--delta", default="1/1000000")
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--mode", choices=["auto","exact","deterministic"], default="auto")
+    ap.add_argument("--mode", choices=["auto","exact","deterministic"], default="auto", help="permitted guarantee")
+    ap.add_argument("--policy", choices=["accepted","experimental"], default="accepted", help="public scheduling policy (default: the accepted engine through the common contract)")
     ap.add_argument("--query", action="append", metavar="VARIABLE:STATE")
     ap.add_argument("--capabilities", action="store_true")
     a = ap.parse_args(argv)
@@ -32,7 +33,7 @@ def main(argv=None):
     if remaining <= 0:
         ap.error("budget expired during argument parsing")
     result = infer(a.input, budget=remaining, memory_mib=a.memory_mib, epsilon=a.epsilon,
-                   delta=a.delta, seed=a.seed, mode=a.mode, queries=queries).to_dict()
+                   delta=a.delta, seed=a.seed, mode=a.mode, queries=queries, policy=a.policy).to_dict()
     # Encode both outcomes before the publication check; a late success is
     # never committed. Outer supervision includes the final file commit.
     late = dict(result, outcome="DEADLINE", guarantee="NONE", published=0, max_published_radius=None, hard_deadline_respected=False,

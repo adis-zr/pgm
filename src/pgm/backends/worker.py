@@ -156,9 +156,16 @@ def _structural(args) -> dict:
 def _block(args) -> dict:
     module = importlib.import_module("integrated")
     _memory_policy(module, args.memory_bytes)
+    # The accepted engine's benchmarked configuration is passed EXPLICITLY (pgm.policies.accepted.ACCEPTED_CONFIGURATION);
+    # integrated.solve's own defaults (schedule 'baseline') do not reproduce the accepted arm.  The frozen experimental
+    # portfolio used the same targeted configuration for this adapter.
+    cfg = dict(args.configuration or {})
+    route_by_mode = cfg.get("route_by_mode") or {"auto": "auto", "deterministic": "exact", "exact": "exact"}
     return module.solve(str(args.input), _remaining(args.deadline), seed=args.seed,
-                        eps=args.epsilon, delta=args.delta, schedule="targeted",
-                        route="auto" if args.mode == "auto" else "exact")
+                        eps=args.epsilon, delta=args.delta, schedule=cfg.get("schedule", "targeted"),
+                        route=route_by_mode.get(args.mode, "exact"), proposal=cfg.get("proposal", "mb"),
+                        table_cap=int(cfg.get("table_cap", 1 << 18)), enum_cap=int(cfg.get("enum_cap", 1 << 16)),
+                        mb_cap=int(cfg.get("mb_cap", 1 << 24)), batch=int(cfg.get("batch", 1024)), crosscheck=bool(cfg.get("crosscheck", True)))
 
 
 def _quotient(args) -> dict:
@@ -346,7 +353,8 @@ def run(args) -> dict:
         result["mechanism"]["traceback"] = traceback.format_exc()[-3000:]
     result.update(backend=args.backend, input=str(args.input.resolve()), binding=binding,
                   epsilon=str(args.epsilon), delta=str(args.delta), seed=args.seed,
-                  memory_mib=args.memory_mib, deadline_monotonic=args.deadline)
+                  memory_mib=args.memory_mib, deadline_monotonic=args.deadline, policy=getattr(args, "policy", None),
+                  configuration=getattr(args, "configuration", None))
     return write_result(args.output, result, inventory, args.deadline, started)
 
 
@@ -362,7 +370,10 @@ def main(argv=None):
     ap.add_argument("--memory-mib", type=int, default=3072)
     ap.add_argument("--mode", choices=("auto", "exact", "deterministic"), default="auto")
     ap.add_argument("--structural-route", "--route", choices=("auto", "stream", "support", "dag"), default="auto")
+    ap.add_argument("--policy", default="accepted", help="the public policy that selected this attempt (recorded)")
+    ap.add_argument("--configuration", default=None, help="JSON: the explicit backend configuration selected by the policy")
     args = ap.parse_args(argv)
+    args.configuration = json.loads(args.configuration) if args.configuration else None
     if not math.isfinite(args.deadline) or args.epsilon <= 0 or not 0 <= args.delta < 1 or (args.delta == 0 and args.backend != "structural" and args.mode == "auto") or args.memory_mib <= 0:
         ap.error("finite deadline, positive epsilon/memory and a positive PAC allowance when sampling are required")
     args.memory_bytes = args.memory_mib << 20

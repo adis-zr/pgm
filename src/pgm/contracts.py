@@ -17,6 +17,7 @@ class InferenceRequest:
     seed: int = 1
     mode: str = "auto"
     queries: Sequence[tuple[int, int]] | None = None
+    policy: str = "accepted"
 
     def __post_init__(self):
         object.__setattr__(self, "model", Path(self.model).expanduser().resolve())
@@ -30,6 +31,8 @@ class InferenceRequest:
             raise ValueError("epsilon must be in (0,1] and delta in [0,1)")
         if self.mode not in {"auto", "exact", "deterministic"}:
             raise ValueError("mode must be auto, exact, or deterministic")
+        if self.policy not in {"accepted", "experimental"}:
+            raise ValueError("policy must be accepted or experimental")
         if self.mode == "auto" and self.delta == 0:
             object.__setattr__(self, "mode", "deterministic")
         if type(self.seed) is not int:
@@ -50,6 +53,8 @@ class InferenceResult:
     Fractions are serialized as strings; exact labels never mean merely that an
     exact algorithm was used.  `complete` concerns the requested coordinates.
     The API currently accepts UAI files and singleton-coordinate queries.
+    ``policy`` / ``policy_version`` record the public scheduling policy that
+    produced the result (separately from the guarantee ``mode``).
     """
     data: Mapping[str, Any] = field(repr=False)
 
@@ -64,6 +69,10 @@ class InferenceResult:
     @property
     def guarantee(self) -> str:
         return self.data["guarantee"]
+
+    @property
+    def policy(self) -> str:
+        return self.data["policy"]
 
     @property
     def answers(self) -> tuple[dict, ...]:

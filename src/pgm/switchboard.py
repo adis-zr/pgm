@@ -1,9 +1,14 @@
-"""One resource-owned, untuned switchboard over isolated retained algorithms.
+"""One resource-owned controller over isolated retained algorithms.
 
-The ordering is a fixed structural policy. Work forecasts affect scheduling,
-never certificate validity. Only one backend runs at a time; each is attempted
-at most once. A refusal permits another applicable method within the SAME
-request deadline. No outcome from another backend or benchmark is consulted.
+The controller owns the request-level absolute deadline, the risk budget, the
+original inventory and the final publication boundary.  WHICH backends run, in
+which order, with which allowance fraction and which prospective delta share is
+the selected public POLICY (``pgm.policies``): ``accepted`` (default) runs the
+accepted engine once with its benchmarked configuration; ``experimental`` is
+the frozen ``structural-portfolio-1`` switchboard.  Only one backend runs at a
+time; each is attempted at most once; a refusal permits the policy's next
+candidate within the SAME request deadline.  No outcome from another backend
+or benchmark is consulted.
 """
 from __future__ import annotations
 from fractions import Fraction as F
@@ -19,58 +24,19 @@ import psutil
 
 from .contracts import InferenceRequest, InferenceResult
 from .planning import inspect_model, PlanningRefused
+from . import policies
+from .policies import experimental as _experimental
 
-POLICY_VERSION = "structural-portfolio-1"
-# Retained native planning rate, not fitted on this experiment. It is an
-# optimistic scheduling estimate only, not an accuracy or completion promise.
-NATIVE_ROWS_PER_SECOND = 20_000_000
+# Compatibility names of the frozen experimental portfolio (tests and the review reference them here).
+POLICY_VERSION = _experimental.VERSION
+NATIVE_ROWS_PER_SECOND = _experimental.NATIVE_ROWS_PER_SECOND
+RISK_SHARES = _experimental.RISK_SHARES
 FINAL_RESERVE_SECONDS = 0.15
-RISK_SHARES = {"structural": F(0), "block": F(1, 2), "quotient": F(1, 4), "response": F(1, 4)}
 
 
-def candidate_plan(meta, request, remaining):
-    """Return ordered candidates and explanations, without allocating a solver."""
-    cards = meta["cards"]
-    arity = meta.get("max_effective_arity", max(map(len, meta.get("conditioned_scopes", [])), default=0))
-    binary = all(c <= 2 for v, c in enumerate(cards) if v not in meta["evidence"])
-    pairwise = arity <= 2
-    native = meta.get("native_forecast") or {}
-    native_work = native.get("sum_product", native.get("work", math.inf))
-    native_memory = native.get("native_bytes_estimate", meta.get("native_forecast_memory_bytes", math.inf))
-    # Optional estimator refusals retain explicit null fields. They remove the
-    # affordability forecast, not the request or any later inference route.
-    if native_work is None:
-        native_work = math.inf
-    if native_memory is None:
-        native_memory = math.inf
-    native_affordable = native_memory <= request.memory_mib * (1 << 20) and native_work <= NATIVE_ROWS_PER_SECOND * remaining
-    groups = meta.get("bipartition_sizes", [])
-    stream_steps = sum((1 << min(group)) * sum(group) for group in groups) if groups and all(min(g) < 63 for g in groups) else math.inf
-    stream_affordable = bool(meta.get("binary_pairwise_bipartite")) and bool(meta.get("stream_native_admissible", True)) and stream_steps <= NATIVE_ROWS_PER_SECOND * remaining
-    positive = meta.get("hard_zero_entries", 0) == 0
-    choices = []
-    def add(name, reason, fraction=1.0, route="auto"):
-        if name not in [c["backend"] for c in choices]:
-            choices.append(dict(backend=name, reason=reason, allowance_fraction=fraction, structural_route=route))
-    if meta.get("pairwise_forest"):
-        add("structural", "evidence-sliced pairwise forest")
-    elif stream_affordable:
-        add("structural", "admitted binary bipartite streaming work", route="stream")
-    elif pairwise and native_affordable:
-        add("structural", "pairwise exact contraction physically affordable")
-    elif not binary and native_affordable:
-        add("structural", "bounded exact attempt on nonbinary factors", fraction=0.25)
-    elif pairwise and positive and request.mode == "auto":
-        add("response", "positive pairwise model; spectral admission checks applicability")
-    if not binary and not native_affordable:
-        add("quotient", "identity forecast unaffordable; bounded checked state compression", fraction=0.25)
-    add("block", "accepted reductions, contraction and certified residual stream")
-    add("quotient", "checked quotient alternative after an early refusal")
-    if not any(c["backend"] == "structural" for c in choices):
-        add("structural", "remaining deterministic alternative")
-    if pairwise and positive and request.mode == "auto":
-        add("response", "remaining checked Markov alternative")
-    return choices
+def candidate_plan(meta, request, remaining, policy=None):
+    """Ordered candidates of the selected public policy (default: the request's policy), without allocating a solver."""
+    return policies.get(policy or getattr(request, "policy", policies.DEFAULT_POLICY)).candidates(meta, request, remaining)
 
 
 def _ledger_records(path, *, tolerate_partial=False):
@@ -136,12 +102,15 @@ def run_attempt(choice, request, deadline, directory, number):
     import uuid
     ledger_root = Path(os.environ.get("GBIDI_OWNER_DIR", str(directory)))
     ledger = ledger_root / ("api-" + uuid.uuid4().hex + ".jsonl")
-    delta = request.delta * RISK_SHARES[backend]
+    policy = policies.get(getattr(request, "policy", policies.DEFAULT_POLICY))
+    delta = request.delta * policy.RISK_SHARES.get(backend, F(0))
     worker = [sys.executable, "-m", "pgm.backends.worker", "--backend", backend,
               "--input", str(request.model), "--output", str(output), "--deadline", repr(deadline),
               "--epsilon", str(request.epsilon), "--delta", str(delta), "--seed", str(request.seed),
               "--memory-mib", str(request.memory_mib), "--mode", request.mode,
-              "--structural-route", choice["structural_route"]]
+              "--structural-route", choice["structural_route"], "--policy", policy.NAME]
+    if choice.get("configuration"):
+        worker += ["--configuration", json.dumps(choice["configuration"], sort_keys=True)]
     env = os.environ.copy()
     src = str(Path(__file__).resolve().parent.parent)
     env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
@@ -243,19 +212,20 @@ def solve(request: InferenceRequest) -> InferenceResult:
     start = time.monotonic()
     deadline = start + request.budget
     work_deadline = deadline - min(FINAL_RESERVE_SECONDS, request.budget / 10)
+    policy = policies.get(request.policy)
     inventory, binding, attempts, chosen, meta = list(request.queries or ()), {}, [], {}, {}
     witness = False
     outcome = "REFUSED"
     error = None
     try:
-        meta = inspect_model(request.model, deadline=work_deadline, memory_bytes=request.memory_mib << 20)
+        meta = inspect_model(request.model, deadline=work_deadline, memory_bytes=request.memory_mib << 20, forecast=policy.NEEDS_FORECAST)
         binding = meta["binding"]
         cards, evidence = meta["cards"], meta["evidence"]
         inventory = list(request.queries) if request.queries is not None else [(v,a) for v,c in enumerate(cards) if v not in evidence for a in range(c)]
         if any(v < 0 or v >= len(cards) or a < 0 or a >= cards[v] for v,a in inventory):
             raise PlanningRefused("INVALID_TASK", "query outside original model domain", inventory=inventory, metadata=meta)
         query_set = set(inventory)
-        choices = candidate_plan(meta, request, max(0, work_deadline-time.monotonic()))
+        choices = candidate_plan(meta, request, max(0, work_deadline-time.monotonic()))          # dispatches to the request's policy (tests may substitute the plan)
         with tempfile.TemporaryDirectory(prefix="pgm-infer-") as temporary:
             for number, choice in enumerate(choices):
                 now = time.monotonic()
@@ -326,12 +296,12 @@ def solve(request: InferenceRequest) -> InferenceResult:
     elif outcome == "COMPLETE":
         outcome = "REFUSED"
     guarantee = ("EXACT" if labels <= {"EXACT"} else "DETERMINISTIC" if labels <= {"EXACT","DETERMINISTIC"} else "PAC") if outcome == "COMPLETE" else "PARTIAL" if published else "NONE"
-    result = dict(api_version="1", policy=POLICY_VERSION, outcome=outcome, guarantee=guarantee,
+    result = dict(api_version="1", policy=policy.NAME, policy_version=policy.VERSION, policy_record=policy.record(), outcome=outcome, guarantee=guarantee,
                   input=str(request.model), binding=binding, epsilon=str(request.epsilon), delta=str(request.delta),
                   mode=request.mode, seed=request.seed, K=len(inventory), published=published, answers=rows,
                   positive_mass_witness=witness, backend=attempts[-1]["backend"] if attempts else None,
                   attempts=attempts, requested_budget_s=request.budget, memory_mib=request.memory_mib,
-                  risk_allocations={k:str(request.delta*v) for k,v in RISK_SHARES.items()},
+                  risk_allocations={k:str(v) for k,v in policy.risk_allocation(request).items()},
                   error=error, planning={k:v for k,v in meta.items() if k not in {"inventory","all_inventory","unobserved_inventory","cards","evidence","conditioned_scopes","scopes"}},
                   max_published_radius=max((float(max(F(r["point"])-F(r["lo"]),F(r["hi"])-F(r["point"]))) for r in rows if r["guarantee"] != "NOT_PUBLISHED"), default=None))
     now = time.monotonic()

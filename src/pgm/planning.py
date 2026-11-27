@@ -330,13 +330,16 @@ def _forecast(cards, evidence, scopes, source_entries, context, deadline):
                 note="scope-only min-product forecast; not a support-size or runtime certificate")
 
 
-def inspect_model(path, evidence_path=None, *, deadline=math.inf, memory_bytes=3 << 30):
+def inspect_model(path, evidence_path=None, *, deadline=math.inf, memory_bytes=3 << 30, forecast=True):
     """Inspect a UAI model without constructing its rational factor tables.
 
     Missing implicit evidence is the canonical byte string ``b'0'``. Explicit
     evidence paths must exist. ``inventory`` includes observed coordinates;
     ``unobserved_inventory`` matches the existing modern backend convention.
     Optional forecast failure is recorded and does not reject a valid input.
+    ``forecast=False`` skips the optional min-product physical forecast (a
+    policy that never uses it does not pay for it); the structural facts and
+    the binding are unaffected.
     """
     if isinstance(memory_bytes, bool) or not isinstance(memory_bytes, int) or memory_bytes <= 0:
         raise PlanningRefused("INVALID_TASK", "memory_bytes must be a positive integer")
@@ -425,14 +428,18 @@ def inspect_model(path, evidence_path=None, *, deadline=math.inf, memory_bytes=3
     base_charge = context.used
     remaining = max(0.0, deadline-time.monotonic())
     forecast_deadline = min(deadline, time.monotonic()+min(0.1*remaining, 0.5))
-    try:
+    if not forecast:
+        context.meta["physical_volume"] = None
+        context.meta["forecast_refusal"] = dict(kind="NOT_REQUESTED", reason="the selected policy performs no optional physical forecast")
+    else:
+      try:
         context.meta["physical_volume"] = _forecast(cards, evidence, conditioned,
                                                      effective_entries, context, forecast_deadline)
         context.meta["forecast_refusal"] = None
-    except PlanningRefused as exc:
+      except PlanningRefused as exc:
         context.meta["physical_volume"] = None
         context.meta["forecast_refusal"] = dict(kind=exc.kind, reason=exc.reason)
-    finally:
+      finally:
         context.used = base_charge
     context.meta["native_forecast"] = context.meta["physical_volume"]
     context.meta["native_work"] = (2 * context.meta["physical_volume"]["sum_product"]
