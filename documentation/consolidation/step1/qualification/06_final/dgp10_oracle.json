@@ -1,0 +1,592 @@
+{
+ "all_ok": true,
+ "models": {
+  "n2_binary_correlated_weak_symmetric": {
+   "ok": true,
+   "g_lower": "58919941241976479/144115188075855872",
+   "g_float": 0.4088392211025227,
+   "eta": "58919941241976479/130977535279904415",
+   "eta_float": 0.4498476865980271,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 4,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 3,
+    "observed_once": true,
+    "committed": 98311,
+    "steps": 98311,
+    "null_moves": 50836,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 2,
+    "groups": 1,
+    "certified": 1,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.003471753660265833,
+    "raw_radius_same_trajectory": 0.014800369600877416,
+    "nonvacuous": true,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 2,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.0032968389447085846,
+      "mode": "checked",
+      "R": 0.0034717533110198676
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "58919941241976479/130977535279904415",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -1.2692730485173877e-07,
+    "n": 24
+   },
+   "seconds": 0.1438121795654297
+  },
+  "n3_binary_cycle_weak_symmetric": {
+   "ok": true,
+   "g_lower": "52351114880065579/216172782113783808",
+   "g_float": 0.24217255460268935,
+   "eta": "52351114880065579/124408708917993515",
+   "eta_float": 0.42079943868378106,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 6,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 4,
+    "observed_once": true,
+    "committed": 147463,
+    "steps": 147463,
+    "null_moves": 75983,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 3,
+    "groups": 1,
+    "certified": 1,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.0045722241432376775,
+    "raw_radius_same_trajectory": 0.016803148143197295,
+    "nonvacuous": true,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 2,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.005435146317992991,
+      "mode": "checked",
+      "R": 0.004572223730504616
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "52351114880065579/124408708917993515",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -2.2553820930773637e-07,
+    "n": 36
+   },
+   "seconds": 0.12596893310546875
+  },
+  "n2_card3_weak_symmetric_circulant": {
+   "ok": true,
+   "g_lower": "1841248163811765/4503599627370496",
+   "g_float": 0.4088392211025227,
+   "eta": "1841248163811765/4093047977497013",
+   "eta_float": 0.4498476865980271,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 6,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 4,
+    "observed_once": true,
+    "committed": 98311,
+    "steps": 98311,
+    "null_moves": 33951,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 2,
+    "groups": 1,
+    "certified": 1,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.0029290854414087703,
+    "raw_radius_same_trajectory": 0.015069062338207893,
+    "nonvacuous": true,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 3,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.0020795504635872605,
+      "mode": "checked",
+      "R": 0.002929084975747483
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "1841248163811765/4093047977497013",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -5.3327129909147425e-08,
+    "n": 36
+   },
+   "seconds": 0.11610984802246094
+  },
+  "n4_binary_weak_asymmetric_unaries": {
+   "ok": true,
+   "g_lower": "13369536826505413/72057594037927936",
+   "g_float": 0.1855395951670032,
+   "eta": "13369536826505413/31383935335987397",
+   "eta_float": 0.42599937462829285,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 8,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 4,
+    "observed_once": true,
+    "committed": 196615,
+    "steps": 196615,
+    "null_moves": 102733,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 4,
+    "groups": 1,
+    "certified": 1,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.007166473709360537,
+    "raw_radius_same_trajectory": 0.017101406278787597,
+    "nonvacuous": true,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 2,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.01504468648336693,
+      "mode": "checked",
+      "R": 0.007166473300559403
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "13369536826505413/31383935335987397",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -2.254518457415618e-07,
+    "n": 48
+   },
+   "seconds": 0.26897120475769043
+  },
+  "n3_binary_independent": {
+   "ok": true,
+   "g_lower": "100743818200374535772661/302231454903657293676544",
+   "g_float": 0.33333333299966666,
+   "eta": "302231454601123607317983/604462909504780900994527",
+   "eta_float": 0.49999999974975,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 0,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 4,
+    "observed_once": true,
+    "committed": 147463,
+    "steps": 147463,
+    "null_moves": 94608,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 3,
+    "groups": 1,
+    "certified": 1,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.015104296099902971,
+    "raw_radius_same_trajectory": 0.01394601088354891,
+    "nonvacuous": false,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 2,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.0958053989469385,
+      "mode": "checked",
+      "R": 0.015104295634241684
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "302231454601123607317983/604462909504780900994527",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -2.1373253730368738e-25,
+    "n": 36
+   },
+   "seconds": 0.11482095718383789
+  },
+  "n2_binary_repeated_weak_factor": {
+   "ok": true,
+   "g_lower": "23906107067156645/72057594037927936",
+   "g_float": 0.3317638811888935,
+   "eta": "23906107067156645/59934904086120613",
+   "eta_float": 0.39886786225278514,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 4,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 3,
+    "observed_once": true,
+    "committed": 98311,
+    "steps": 98311,
+    "null_moves": 51961,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 2,
+    "groups": 1,
+    "certified": 1,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.005885520274426029,
+    "raw_radius_same_trajectory": 0.016823099471606755,
+    "nonvacuous": true,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 2,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.00924472762776672,
+      "mode": "checked",
+      "R": 0.005885519925180063
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "23906107067156645/59934904086120613",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -4.131813736640908e-07,
+    "n": 24
+   },
+   "seconds": 0.07573723793029785
+  },
+  "n3_mixed_card_2_3_4_weak": {
+   "ok": true,
+   "g_lower": "12485907301336061/54043195528445952",
+   "g_float": 0.23103569615464412,
+   "eta": "12485907301336061/30500305810818045",
+   "eta_float": 0.4093699052980472,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 9,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 3,
+    "observed_once": true,
+    "committed": 147463,
+    "steps": 147463,
+    "null_moves": 54676,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 3,
+    "groups": 3,
+    "certified": 3,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.004526808672214221,
+    "raw_radius_same_trajectory": 0.017560110109289536,
+    "nonvacuous": true,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 2,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.0034034683005760903,
+      "mode": "checked",
+      "R": 0.0039005455907875426
+     },
+     {
+      "j": 5,
+      "k": 3,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.004869144985911205,
+      "mode": "checked",
+      "R": 0.004526808322968256
+     },
+     {
+      "j": 5,
+      "k": 4,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.0020089972803671984,
+      "mode": "checked",
+      "R": 0.0031669497348570785
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "12485907301336061/30500305810818045",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -1.6235639220204387e-08,
+    "n": 54
+   },
+   "seconds": 0.3919947147369385
+  },
+  "n2_binary_weak_extreme_scale_2^-600": {
+   "ok": true,
+   "g_lower": "58919941241976479/144115188075855872",
+   "g_float": 0.4088392211025227,
+   "eta": "58919941241976479/130977535279904415",
+   "eta_float": 0.4498476865980271,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 4,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 3,
+    "observed_once": true,
+    "committed": 98311,
+    "steps": 98311,
+    "null_moves": 50836,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 2,
+    "groups": 1,
+    "certified": 1,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.003471753660265833,
+    "raw_radius_same_trajectory": 0.014800369600877416,
+    "nonvacuous": true,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 2,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.0032968389447085846,
+      "mode": "checked",
+      "R": 0.0034717533110198676
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "58919941241976479/130977535279904415",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -1.2692730485173877e-07,
+    "n": 24
+   },
+   "seconds": 0.07664895057678223
+  },
+  "n2_binary_weak_null_move_heavy": {
+   "ok": true,
+   "g_lower": "58919941241976479/144115188075855872",
+   "g_float": 0.4088392211025227,
+   "eta": "58919941241976479/130977535279904415",
+   "eta_float": 0.4498476865980271,
+   "exact_algebra": {
+    "ok": true,
+    "P_stochastic_stationary_reversible": true,
+    "poisson_identity_exact": true,
+    "response_mean_identity_exact": true,
+    "conditional_variance_le_indicator": true,
+    "nonconstant_conditionals": 4,
+    "observation_chain_stochastic_stationary_reversible_psd": true,
+    "observation_chain_dominated_by_(1-eta)I+eta_Pi_exact": true
+   },
+   "production_observer": {
+    "enclosure_violations": 0,
+    "enclosure_width_units_max": 4,
+    "observed_once": true,
+    "committed": 98311,
+    "steps": 98311,
+    "null_moves": 96176,
+    "exact_fallbacks": 0,
+    "observer_valid": true,
+    "snapshots_sites": 2,
+    "groups": 1,
+    "certified": 1,
+    "coverage_true_marginals": true,
+    "raw_coverage": true,
+    "response_radius_max": 0.023887456746918927,
+    "raw_radius_same_trajectory": 0.014800369600877416,
+    "nonvacuous": false,
+    "groups_record": [
+     {
+      "j": 5,
+      "k": 2,
+      "M": 40000,
+      "available": true,
+      "reason": null,
+      "U": 0.23146137958719765,
+      "mode": "checked",
+      "R": 0.02449150178805871
+     }
+    ],
+    "live_after_close": 0,
+    "eta": "58919941241976479/130977535279904415",
+    "ok": true
+   },
+   "mgf_diagnostic": {
+    "ok": true,
+    "kind": "NUMERICAL (mpmath 60 digits): log E_pi exp(t sum Z_s) - M log rho <= 0 for M = 1..24 at three grid tilts per family / coordinate; not a proof",
+    "worst": -6.929379664673447e-11,
+    "n": 24
+   },
+   "seconds": 0.0733938217163086
+  }
+ },
+ "scalar": {
+  "ok": true,
+  "checks": {
+   "exp_zero_exact": true,
+   "log_one_exact": true,
+   "valid_mean_certificate_accepted": true,
+   "lowered_rho_rejected": true,
+   "explicit_radius_accepted": true,
+   "lowered_radius_rejected": true,
+   "valid_moment_endpoint_accepted": true,
+   "too_small_moment_endpoint_rejected": true,
+   "support_endpoint_accepted": true,
+   "constant_observable_accepted": true,
+   "budget_refusal_is_not_acceptance": true,
+   "mut_lowered_rho_rejected": true,
+   "mut_lowered_radius_rejected": true,
+   "moment_valid_accepted": true,
+   "mut_U_below_observed_mean_rejected": true,
+   "mut_positive_tilt_for_moment_refused": true,
+   "mut_negative_tilt_for_mean_refused": true,
+   "reversed_interval_refused": true,
+   "expired_budget_refuses": true,
+   "eta_one_accepts_valid": true,
+   "tiny_eta_accepts_valid": true,
+   "U_zero_is_a_rejection_not_a_crash": true,
+   "U_equal_B_support_mode": true,
+   "p_zero_moment_y_zero_U_small_accepted_at_large_tilt": true,
+   "p_zero_moment_y_zero_U_small_rejected_at_small_tilt": true,
+   "constant_observable_zero_radius": true,
+   "tiny_delta_accepts_with_larger_radius": true,
+   "near_one_rho_handled": true,
+   "M_too_large_refused": true,
+   "proposer_grid_81_exact_rationals": true
+  },
+  "summary": "30 / 30"
+ },
+ "nonvacuous_models": [
+  "n2_binary_correlated_weak_symmetric",
+  "n3_binary_cycle_weak_symmetric",
+  "n2_card3_weak_symmetric_circulant",
+  "n4_binary_weak_asymmetric_unaries",
+  "n2_binary_repeated_weak_factor",
+  "n3_mixed_card_2_3_4_weak",
+  "n2_binary_weak_extreme_scale_2^-600"
+ ],
+ "nonvacuity_rule": "the certified response radius (delta = 1e-3; local snapshot M_j; per-site allowances) is below 1/2 AND below the raw occupation radius on the same trajectory (delta / 8 at the first global checkpoint) on at least three of the symmetric weak models",
+ "gate": "PASS",
+ "labels": {
+  "exact": "Fraction algebra: target, projections, Poisson / response-mean identities, observation chain, PSD and eta-domination (LDL^T)",
+  "production": "the native observer and the checked certificate on the kernel's own snapshots at delta = 1e-3; coverage of the true marginal on the run; nonvacuity vs the raw radius on the same trajectory",
+  "numerical": "mpmath MGF diagnostic (labelled)"
+ },
+ "wall_s": 1.46,
+ "utc": "2026-11-27T19:21:07Z"
+}

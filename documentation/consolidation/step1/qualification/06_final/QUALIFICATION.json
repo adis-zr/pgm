@@ -1,0 +1,86 @@
+{
+ "commit": "e365b6fd388b435ec2d88c97ccacbdaec77ed248",
+ "git_status_dirty_lines": [
+  "?? documentation/consolidation/step1/qualification/06_final/"
+ ],
+ "python": "3.12.15",
+ "platform": "macOS-26.6.2-arm64-arm-64bit",
+ "commands": [
+  {
+   "step": "01_pytest",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python -m pytest tests -q -rA -p no:cacheprovider",
+   "exit": 0
+  },
+  {
+   "step": "02_parity_generate",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python tests/parity/generate_reference.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/parity_final.json",
+   "exit": 0
+  },
+  {
+   "step": "03_parity_compare",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python tests/parity/compare.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/parity_final.json --report /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/qualification/06_final/parity_report.json",
+   "exit": 0
+  },
+  {
+   "step": "04_check_dgp10",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python check_dgp10.py /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/qualification/06_final/check_dgp10.json",
+   "exit": 0
+  },
+  {
+   "step": "05_dgp10_oracle",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python dgp10_oracle.py /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/qualification/06_final/dgp10_oracle.json",
+   "exit": 0
+  },
+  {
+   "step": "06_inherited_controls",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/tools/run_inherited_controls.py /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/qualification/06_final/BLOCKED_CONTROLS.json --timeout 900",
+   "exit": 0
+  },
+  {
+   "step": "07_specialist_conformance",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python -m pytest code/tests -q -rA -p no:cacheprovider --continue-on-collection-errors",
+   "exit": 1
+  },
+  {
+   "step": "08_wheel_build",
+   "command": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/buildenv/bin/python -m build --wheel --no-isolation --outdir /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/dist .",
+   "exit": 0
+  },
+  {
+   "step": "09_clean_wheel_relocation",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/tools/clean_wheel_relocation_test.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/dist/pgm_certified-0.2.0-py3-none-any.whl /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/relocation",
+   "exit": 0
+  },
+  {
+   "step": "10_closure_manifest",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/tools/manifest.py",
+   "exit": 0
+  },
+  {
+   "step": "11_classification",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/tools/classify_tree.py",
+   "exit": 0
+  }
+ ],
+ "pytest_summary": "69 passed, 39 subtests passed in 5.12s",
+ "parity": "IDENTICAL",
+ "check_dgp10": {
+  "all_ok": true,
+  "n_ok": 12,
+  "n": 12
+ },
+ "dgp10_oracle": {
+  "all_ok": true,
+  "gate": "PASS",
+  "models": 9,
+  "nonvacuous": 7
+ },
+ "inherited_controls": {
+  "BLOCKED": 51,
+  "PORTABLE": 39
+ },
+ "specialist_conformance": "5 failed, 33 passed, 1 skipped, 1 error in 0.19s",
+ "wheel": "f8e8d4e5ff456e18bb82400cab8b652dca9710bb7db52c8544d1ecd2e82b9bc0",
+ "clean_wheel_relocation": "PASS",
+ "all_commands_exit_zero": true
+}

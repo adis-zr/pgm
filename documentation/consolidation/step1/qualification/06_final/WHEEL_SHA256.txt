@@ -1,0 +1,1 @@
+f8e8d4e5ff456e18bb82400cab8b652dca9710bb7db52c8544d1ecd2e82b9bc0  /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/dist/pgm_certified-0.2.0-py3-none-any.whl

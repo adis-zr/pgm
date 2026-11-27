@@ -1,0 +1,368 @@
+{
+ "all_ok": true,
+ "n": 12,
+ "n_ok": 12,
+ "wall_s": 8.77,
+ "controls": [
+  {
+   "control": "D91_matched_run_and_commit_once",
+   "ok": true,
+   "same_state": true,
+   "same_occupation": true,
+   "same_counters": true,
+   "observed_once": true,
+   "same_after_more": true,
+   "live_after": 0,
+   "forced_fallback": {
+    "steps": 1,
+    "unresolved": 1,
+    "exact_fallbacks": 1,
+    "visits": 1,
+    "state": [
+     1
+    ],
+    "encloses_half": true
+   },
+   "abandoned": "DEADLINE",
+   "abandoned_visits_eq_steps": true
+  },
+  {
+   "control": "D92_enclosure_differential_and_gauges",
+   "ok": true,
+   "mixed": {
+    "violations": 0,
+    "width_units_max": 4
+   },
+   "dup": {
+    "violations": 0,
+    "width_units_max": 3
+   },
+   "rand": {
+    "violations": 0,
+    "width_units_max": 4
+   },
+   "identical_across_gauges": true
+  },
+  {
+   "control": "D93_reservation_transaction_and_failure_sweep",
+   "ok": true,
+   "temp_released_retained_kept": true,
+   "idempotent_close": true,
+   "rollback_restores_entry": true,
+   "underflow_is_defect": true,
+   "double_release_is_defect": true,
+   "spectral_sweep_ok": true,
+   "native_sweep_ok": true,
+   "spectral_release_returns_to_entry": true,
+   "native_close_returns_to_entry": true,
+   "two_plan_release_zero": true,
+   "two_plan_second_refused": "MEMORY",
+   "two_plan_no_orphan": true,
+   "retained_dropped": true,
+   "build_timeouts": {
+    "seen": [
+     [
+      "call",
+      0.4
+     ],
+     [
+      "version",
+      0.4
+     ]
+    ],
+    "result": "OSError(\"dlopen(/var/folders/gl/8l05l35s32bfrm93b650y2cr0000gp/T/tmpe0xfx7e6/nat"
+   },
+   "exhausted_allowance": "DEADLINE",
+   "sweeps": {
+    "spectral": [
+     [
+      1,
+      "MEMORY",
+      0
+     ],
+     [
+      2,
+      "MEMORY",
+      0
+     ],
+     [
+      3,
+      "MEMORY",
+      0
+     ],
+     [
+      4,
+      "MEMORY",
+      0
+     ],
+     [
+      5,
+      "MEMORY",
+      0
+     ],
+     [
+      6,
+      "constructed",
+      0
+     ],
+     [
+      7,
+      "constructed",
+      0
+     ],
+     [
+      8,
+      "constructed",
+      0
+     ],
+     [
+      9,
+      "constructed",
+      0
+     ],
+     [
+      10,
+      "constructed",
+      0
+     ]
+    ],
+    "native_with_observer": [
+     [
+      1,
+      "MEMORY",
+      0
+     ],
+     [
+      2,
+      "MEMORY",
+      0
+     ],
+     [
+      3,
+      "MEMORY",
+      0
+     ],
+     [
+      4,
+      "MEMORY",
+      0
+     ],
+     [
+      5,
+      "constructed",
+      0
+     ],
+     [
+      6,
+      "constructed",
+      0
+     ],
+     [
+      7,
+      "constructed",
+      0
+     ],
+     [
+      8,
+      "constructed",
+      0
+     ]
+    ]
+   }
+  },
+  {
+   "control": "D94_bitlength_range_witness_and_fallback_admission",
+   "ok": true,
+   "fixtures": {
+    "admitted_straddle": {
+     "admitted": true,
+     "exact_formed": 2,
+     "min_log2": -900.0
+    },
+    "refused_straddle": {
+     "admitted": false,
+     "exact_formed": 2,
+     "min_log2": -901.0
+    }
+   },
+   "trials": 62,
+   "agree_with_exact_predicate": 62,
+   "straddling_cases": 2,
+   "fallback_zero_headroom": "MEMORY",
+   "weights_exact_called_before_admission": false
+  },
+  {
+   "control": "D95_risk_allocation_grouping_intersection",
+   "ok": true,
+   "total_over_delta": "129/130",
+   "delta_m_17": "1/156672000000",
+   "delta_b_17": "1/626688000000",
+   "group_max_ge_each": true,
+   "intersection": {
+    "box": [
+     [
+      "1/5",
+      "3/10"
+     ],
+     [
+      "7/10",
+      "9/10"
+     ]
+    ],
+    "conflict": false
+   },
+   "conflict_detected": true
+  },
+  {
+   "control": "D96_local_plan_snapshots_centers",
+   "ok": true,
+   "plan_formula_exact": true,
+   "strictly_increasing": true,
+   "centers": {
+    "2": 2147483648,
+    "3": 1431655765,
+    "4": 1073741824,
+    "5": 858993459,
+    "7": 613566757
+   },
+   "no_snapshot_before_M1": true,
+   "snapshot_at_M1": true,
+   "snapshot_immutable_while_current_moves": true,
+   "snapshot_at_M2": true
+  },
+  {
+   "control": "D97_staged_output_commit",
+   "ok": true,
+   "crossing_in_encoder": {
+    "outcome": "DEADLINE",
+    "published": 0,
+    "respected": false,
+    "wall": 100.0,
+    "suppressed": 0
+   },
+   "real_cell": {
+    "outcome": "COMPLETE",
+    "refusal": null,
+    "published": 7,
+    "K": 7,
+    "wall": 1.87108025,
+    "respected": true,
+    "executed": true,
+    "groups": 2,
+    "certified": 2,
+    "enclosures": 0,
+    "diag_keys": [
+     "raw_full_delta_same_path"
+    ],
+    "ledger_identity": true,
+    "rc": 0
+   },
+   "every_coordinate_has_row_or_enclosure": true,
+   "tail_crossing": {
+    "outcome": "COMPLETE",
+    "executed": false,
+    "unavailable": "DEADLINE: injected inside the response tail",
+    "cert_type": "markov_heatbath",
+    "enclosures": 0
+   }
+  },
+  {
+   "control": "D98_residual_postcommit_no_scan",
+   "ok": true,
+   "status": "fixture unavailable in this suite: ModuleNotFoundError(\"No module named 'dgp9_probes_support'\")",
+   "status2": "fixture unavailable: RuntimeError('check_dgp has no _ready_stream helper')",
+   "note": "the carried probe_commit_boundaries (controls/after) is the authoritative check of this path"
+  },
+  {
+   "control": "D99_checker_identity_and_refusal",
+   "ok": true,
+   "checked_tilt_sha256": "a631a74a1fb6e910f9cae1303bc5693b127b6a983ac1a951779d83932ed12a79",
+   "byte_identical_to_reference": "reference path not given (DGP10_REFERENCE_CHECKED_TILT); the freeze records both hashes",
+   "expired_checker": {
+    "available": false,
+    "reason": "DEADLINE: response certificate: moment check expired"
+   },
+   "live_checker": {
+    "available": true,
+    "U": 0.001159909818938233,
+    "R": 0.0011427856955120387,
+    "mode": "checked"
+   }
+  },
+  {
+   "control": "D100_rows_from_boxes_equals_counts",
+   "ok": true,
+   "trials": 20
+  },
+  {
+   "control": "D101_response_runner_end_to_end_and_exact_fallback",
+   "ok": true,
+   "exact_chain_response": {
+    "outcome": "PARTIAL",
+    "chain": "exact",
+    "unavailable": "exact chain fallback (no native observer): raw-only rows at the response allocation (delta / 4)",
+    "executed": null,
+    "cert_type": "markov_heatbath",
+    "published": 0,
+    "rc": 0
+   },
+   "records_present": {
+    "eta": true,
+    "local_plan_head": true,
+    "centers": true,
+    "risks": true,
+    "snapshots": true,
+    "groups": true,
+    "per_coordinate": true,
+    "radius": true,
+    "publication": true,
+    "observer_state": true,
+    "local_counts": true,
+    "tail_s": true
+   },
+   "per_coordinate": {
+    "n": 7,
+    "fields": [
+     "R",
+     "arith_width",
+     "hi",
+     "lo",
+     "mean_hi",
+     "mean_lo",
+     "state",
+     "var",
+     "y_upper"
+    ]
+   },
+   "phases": [
+    "burn_in",
+    "canonicalize",
+    "certificate_setup",
+    "chain_construct",
+    "publication",
+    "response_certificate",
+    "response_intersection",
+    "response_snapshots",
+    "sampling",
+    "witness"
+   ],
+   "bytes": {
+    "witness": 1032,
+    "witness_retained": 1360,
+    "kernel": 4960,
+    "observer": 5404,
+    "occupation": 112,
+    "peak_admitted": 148520
+   }
+  },
+  {
+   "control": "D102_eta_and_bounds",
+   "ok": true,
+   "eta_monotone": true,
+   "eta_formula": true,
+   "eta_refuses_g_ge_1": true,
+   "M_too_large_refused": true,
+   "limb_recombination": true
+  }
+ ]
+}

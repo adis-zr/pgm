@@ -1,0 +1,20 @@
+structural/asym2 COMPLETE 4
+structural/asym2_evidence COMPLETE 2
+structural/bip4_stream COMPLETE 8
+structural/bip4_support COMPLETE 8
+structural/cyc3 COMPLETE 8
+structural/zero_mass ZERO_EVIDENCE 0
+block/asym2 COMPLETE 4
+block/asym2_exact_mode COMPLETE 4
+block/cyc3 COMPLETE 8
+block/bip4 COMPLETE 8
+block/zero_mass ZERO_EVIDENCE 0
+quotient/cyc3_deterministic COMPLETE 8
+quotient/asym2 COMPLETE 4
+response/bip4_refused_hard_zero REFUSED 0
+response/zero_mass ZERO_EVIDENCE 0
+response/pos4_exact_mode_ineligible INELIGIBLE 0
+response/pos4 (wall-limited) COMPLETE 8
+block/pos4 (wall-limited) COMPLETE 8
+response prefix pos4 eligible True eta 3004560278311917/7508159905682413
+written /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/parity_final.json

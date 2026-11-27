@@ -10,14 +10,15 @@
  "classification_counts": {
   "benchmark-inputs": 122,
   "benchmark-tooling": 36,
-  "correctness-qualification": 82,
-  "documentation": 16,
+  "correctness-qualification": 84,
+  "documentation": 17,
   "historical-evidence": 170,
-  "packaging": 10,
+  "packaging": 11,
   "production": 90,
   "production-shim": 47,
   "research-campaign-tooling": 139,
-  "specialist": 55
+  "specialist": 61,
+  "unclassified": 1
  },
  "closure_after": {
   "imports_code_tree": [],
@@ -381,7 +382,7 @@
   }
  ],
  "duplicates_removed": "none: no second live copy of any relocated module existed outside the frozen snapshots (which are pinned historical evidence, never imported by production)",
- "head_commit": "ed8c676644fd00ba19068d77830b077dbd632141",
+ "head_commit": "e365b6fd388b435ec2d88c97ccacbdaec77ed248",
  "path_map": {
   "code/cex/blockres/ancestral_response.py": {
    "canonical": "src/pgm/algorithms/block/ancestral_response.py",

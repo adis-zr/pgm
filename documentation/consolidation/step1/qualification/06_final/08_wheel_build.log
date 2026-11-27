@@ -1,0 +1,482 @@
+* Getting build dependencies for wheel...
+running egg_info
+creating pgm_certified.egg-info
+writing pgm_certified.egg-info/PKG-INFO
+writing dependency_links to pgm_certified.egg-info/dependency_links.txt
+writing entry points to pgm_certified.egg-info/entry_points.txt
+writing requirements to pgm_certified.egg-info/requires.txt
+writing top-level names to pgm_certified.egg-info/top_level.txt
+writing manifest file 'pgm_certified.egg-info/SOURCES.txt'
+reading manifest file 'pgm_certified.egg-info/SOURCES.txt'
+writing manifest file 'pgm_certified.egg-info/SOURCES.txt'
+* Building wheel...
+running bdist_wheel
+running build
+running build_py
+creating build/lib/pgm
+copying src/pgm/build.py -> build/lib/pgm
+copying src/pgm/registry.py -> build/lib/pgm
+copying src/pgm/__init__.py -> build/lib/pgm
+copying src/pgm/api.py -> build/lib/pgm
+copying src/pgm/supervision.py -> build/lib/pgm
+copying src/pgm/switchboard.py -> build/lib/pgm
+copying src/pgm/contracts.py -> build/lib/pgm
+copying src/pgm/__main__.py -> build/lib/pgm
+creating build/lib/pgm/backends
+copying src/pgm/backends/quotient.py -> build/lib/pgm/backends
+copying src/pgm/backends/structural.py -> build/lib/pgm/backends
+copying src/pgm/backends/worker.py -> build/lib/pgm/backends
+copying src/pgm/backends/__init__.py -> build/lib/pgm/backends
+copying src/pgm/backends/response.py -> build/lib/pgm/backends
+copying src/pgm/backends/block.py -> build/lib/pgm/backends
+copying src/pgm/backends/base.py -> build/lib/pgm/backends
+creating build/lib/pgm/runtime
+copying src/pgm/runtime/build.py -> build/lib/pgm/runtime
+copying src/pgm/runtime/__init__.py -> build/lib/pgm/runtime
+copying src/pgm/runtime/supervision.py -> build/lib/pgm/runtime
+copying src/pgm/runtime/attempts.py -> build/lib/pgm/runtime
+copying src/pgm/runtime/resources.py -> build/lib/pgm/runtime
+copying src/pgm/runtime/supervise.py -> build/lib/pgm/runtime
+creating build/lib/pgm/algorithms
+copying src/pgm/algorithms/__init__.py -> build/lib/pgm/algorithms
+creating build/lib/pgm/planning
+copying src/pgm/planning/__init__.py -> build/lib/pgm/planning
+copying src/pgm/planning/features.py -> build/lib/pgm/planning
+creating build/lib/pgm/policies
+copying src/pgm/policies/experimental.py -> build/lib/pgm/policies
+copying src/pgm/policies/__init__.py -> build/lib/pgm/policies
+copying src/pgm/policies/accepted.py -> build/lib/pgm/policies
+creating build/lib/pgm/specialists
+copying src/pgm/specialists/sf.py -> build/lib/pgm/specialists
+copying src/pgm/specialists/__init__.py -> build/lib/pgm/specialists
+copying src/pgm/specialists/cbi.py -> build/lib/pgm/specialists
+copying src/pgm/specialists/_bridge.py -> build/lib/pgm/specialists
+copying src/pgm/specialists/h4a.py -> build/lib/pgm/specialists
+copying src/pgm/specialists/cqr.py -> build/lib/pgm/specialists
+creating build/lib/pgm/model
+copying src/pgm/model/__init__.py -> build/lib/pgm/model
+copying src/pgm/model/uai.py -> build/lib/pgm/model
+creating build/lib/pgm/validation
+copying src/pgm/validation/__init__.py -> build/lib/pgm/validation
+copying src/pgm/validation/publication.py -> build/lib/pgm/validation
+creating build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/response/__init__.py -> build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/response/spectral_heatbath_run.py -> build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/response/response_certificate.py -> build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/response/checked_tilt.py -> build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/response/heatbath_native.py -> build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/response/markov_certificate.py -> build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/response/spectral_witness.py -> build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/response/heatbath_exact.py -> build/lib/pgm/algorithms/response
+creating build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/joint_proposal.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/reservation.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/residual_local.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/joint_stream.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/coarse_envelope.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/global_stream.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/residual_stream.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/residual_bank.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/pac_actions.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/check_global.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/__init__.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/joint_optimize.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/global_circuit.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/unified_planner.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/check_joint.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/joint_witness.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/cost_model.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/unified_pac_planner.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/grouped_envelope.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/check_residual.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/lp_worker.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/global_optimize.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/residual_max_envelope.py -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/lifted_decoder.py -> build/lib/pgm/algorithms/quotient
+creating build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/support.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/reduction.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/cex_executor.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/dag.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/__init__.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/stream_float.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/core.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/stream.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/geometry.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/planning.py -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/forest.py -> build/lib/pgm/algorithms/structural
+creating build/lib/pgm/algorithms/block
+copying src/pgm/algorithms/block/signed_evidence.py -> build/lib/pgm/algorithms/block
+copying src/pgm/algorithms/block/layered_contraction.py -> build/lib/pgm/algorithms/block
+copying src/pgm/algorithms/block/blockres.py -> build/lib/pgm/algorithms/block
+copying src/pgm/algorithms/block/ancestral_response.py -> build/lib/pgm/algorithms/block
+copying src/pgm/algorithms/block/__init__.py -> build/lib/pgm/algorithms/block
+copying src/pgm/algorithms/block/support_closure.py -> build/lib/pgm/algorithms/block
+copying src/pgm/algorithms/block/integrated.py -> build/lib/pgm/algorithms/block
+creating build/lib/cbi
+copying code/cbi/tree.py -> build/lib/cbi
+copying code/cbi/plan.py -> build/lib/cbi
+copying code/cbi/region.py -> build/lib/cbi
+copying code/cbi/__init__.py -> build/lib/cbi
+copying code/cbi/influence.py -> build/lib/cbi
+copying code/cbi/run_case.py -> build/lib/cbi
+copying code/cbi/coarse.py -> build/lib/cbi
+copying code/cbi/model.py -> build/lib/cbi
+copying code/cbi/generators.py -> build/lib/cbi
+copying code/cbi/api.py -> build/lib/cbi
+copying code/cbi/experiment.py -> build/lib/cbi
+copying code/cbi/transfer.py -> build/lib/cbi
+copying code/cbi/replay.py -> build/lib/cbi
+copying code/cbi/cli.py -> build/lib/cbi
+copying code/cbi/exact.py -> build/lib/cbi
+copying code/cbi/score3.py -> build/lib/cbi
+copying code/cbi/arith.py -> build/lib/cbi
+copying code/cbi/verify.py -> build/lib/cbi
+copying code/cbi/score.py -> build/lib/cbi
+creating build/lib/sf
+copying code/sf/runner.py -> build/lib/sf
+copying code/sf/check.py -> build/lib/sf
+copying code/sf/generate.py -> build/lib/sf
+copying code/sf/__init__.py -> build/lib/sf
+copying code/sf/core.py -> build/lib/sf
+copying code/sf/invoke.py -> build/lib/sf
+copying code/sf/report.py -> build/lib/sf
+copying code/sf/score.py -> build/lib/sf
+copying code/sf/routes.py -> build/lib/sf
+creating build/lib/h4a
+copying code/h4a/build.py -> build/lib/h4a
+copying code/h4a/grid.py -> build/lib/h4a
+copying code/h4a/run.py -> build/lib/h4a
+copying code/h4a/refenum.py -> build/lib/h4a
+copying code/h4a/crosscheck.py -> build/lib/h4a
+copying code/h4a/certs.py -> build/lib/h4a
+copying code/h4a/__init__.py -> build/lib/h4a
+copying code/h4a/model.py -> build/lib/h4a
+copying code/h4a/arm.py -> build/lib/h4a
+copying code/h4a/stagea_main.py -> build/lib/h4a
+copying code/h4a/tables.py -> build/lib/h4a
+copying code/h4a/masses.py -> build/lib/h4a
+copying code/h4a/stagea.py -> build/lib/h4a
+copying code/h4a/emit.py -> build/lib/h4a
+copying code/h4a/report.py -> build/lib/h4a
+copying src/pgm/algorithms/response/heatbath_native.c -> build/lib/pgm/algorithms/response
+copying src/pgm/algorithms/quotient/PHASE_RATES.json -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/quotient/PHASE_RATES_R1.json -> build/lib/pgm/algorithms/quotient
+copying src/pgm/algorithms/structural/cex_kernel.cpp -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/stream_kernel.cpp -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/cex_build.json -> build/lib/pgm/algorithms/structural
+copying src/pgm/algorithms/structural/stream_build.json -> build/lib/pgm/algorithms/structural
+installing to build/bdist.macosx-26.0-arm64/wheel
+running install
+running install_lib
+creating build/bdist.macosx-26.0-arm64/wheel
+creating build/bdist.macosx-26.0-arm64/wheel/cbi
+copying build/lib/cbi/tree.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/plan.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/region.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/influence.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/run_case.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/coarse.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/model.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/generators.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/api.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/experiment.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/transfer.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/replay.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/cli.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/exact.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/score3.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/arith.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/verify.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+copying build/lib/cbi/score.py -> build/bdist.macosx-26.0-arm64/wheel/./cbi
+creating build/bdist.macosx-26.0-arm64/wheel/sf
+copying build/lib/sf/runner.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+copying build/lib/sf/check.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+copying build/lib/sf/generate.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+copying build/lib/sf/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+copying build/lib/sf/core.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+copying build/lib/sf/invoke.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+copying build/lib/sf/report.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+copying build/lib/sf/score.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+copying build/lib/sf/routes.py -> build/bdist.macosx-26.0-arm64/wheel/./sf
+creating build/bdist.macosx-26.0-arm64/wheel/h4a
+copying build/lib/h4a/build.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/grid.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/run.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/refenum.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/crosscheck.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/certs.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/model.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/arm.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/stagea_main.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/tables.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/masses.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/stagea.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/emit.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+copying build/lib/h4a/report.py -> build/bdist.macosx-26.0-arm64/wheel/./h4a
+creating build/bdist.macosx-26.0-arm64/wheel/pgm
+copying build/lib/pgm/build.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm
+copying build/lib/pgm/registry.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/backends
+copying build/lib/pgm/backends/quotient.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/backends
+copying build/lib/pgm/backends/structural.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/backends
+copying build/lib/pgm/backends/worker.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/backends
+copying build/lib/pgm/backends/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/backends
+copying build/lib/pgm/backends/response.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/backends
+copying build/lib/pgm/backends/block.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/backends
+copying build/lib/pgm/backends/base.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/backends
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/runtime
+copying build/lib/pgm/runtime/build.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/runtime
+copying build/lib/pgm/runtime/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/runtime
+copying build/lib/pgm/runtime/supervision.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/runtime
+copying build/lib/pgm/runtime/attempts.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/runtime
+copying build/lib/pgm/runtime/resources.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/runtime
+copying build/lib/pgm/runtime/supervise.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/runtime
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/algorithms
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/spectral_heatbath_run.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/response_certificate.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/checked_tilt.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/heatbath_native.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/markov_certificate.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/heatbath_native.c -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/spectral_witness.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/response/heatbath_exact.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/response
+copying build/lib/pgm/algorithms/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/joint_proposal.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/reservation.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/residual_local.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/joint_stream.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/coarse_envelope.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/global_stream.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/residual_stream.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/residual_bank.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/pac_actions.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/check_global.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/joint_optimize.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/global_circuit.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/unified_planner.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/PHASE_RATES.json -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/check_joint.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/joint_witness.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/cost_model.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/PHASE_RATES_R1.json -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/unified_pac_planner.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/grouped_envelope.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/check_residual.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/lp_worker.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/global_optimize.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/residual_max_envelope.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+copying build/lib/pgm/algorithms/quotient/lifted_decoder.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/quotient
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/support.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/cex_build.json -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/reduction.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/cex_executor.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/dag.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/stream_float.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/core.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/stream_build.json -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/stream.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/stream_kernel.cpp -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/geometry.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/planning.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/forest.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+copying build/lib/pgm/algorithms/structural/cex_kernel.cpp -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/structural
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/algorithms/block
+copying build/lib/pgm/algorithms/block/signed_evidence.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/block
+copying build/lib/pgm/algorithms/block/layered_contraction.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/block
+copying build/lib/pgm/algorithms/block/blockres.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/block
+copying build/lib/pgm/algorithms/block/ancestral_response.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/block
+copying build/lib/pgm/algorithms/block/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/block
+copying build/lib/pgm/algorithms/block/support_closure.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/block
+copying build/lib/pgm/algorithms/block/integrated.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/algorithms/block
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/planning
+copying build/lib/pgm/planning/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/planning
+copying build/lib/pgm/planning/features.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/planning
+copying build/lib/pgm/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/policies
+copying build/lib/pgm/policies/experimental.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/policies
+copying build/lib/pgm/policies/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/policies
+copying build/lib/pgm/policies/accepted.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/policies
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/specialists
+copying build/lib/pgm/specialists/sf.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/specialists
+copying build/lib/pgm/specialists/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/specialists
+copying build/lib/pgm/specialists/cbi.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/specialists
+copying build/lib/pgm/specialists/_bridge.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/specialists
+copying build/lib/pgm/specialists/h4a.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/specialists
+copying build/lib/pgm/specialists/cqr.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/specialists
+copying build/lib/pgm/api.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm
+copying build/lib/pgm/supervision.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm
+copying build/lib/pgm/switchboard.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/model
+copying build/lib/pgm/model/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/model
+copying build/lib/pgm/model/uai.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/model
+copying build/lib/pgm/contracts.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm
+copying build/lib/pgm/__main__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm
+creating build/bdist.macosx-26.0-arm64/wheel/pgm/validation
+copying build/lib/pgm/validation/__init__.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/validation
+copying build/lib/pgm/validation/publication.py -> build/bdist.macosx-26.0-arm64/wheel/./pgm/validation
+running install_egg_info
+running egg_info
+writing pgm_certified.egg-info/PKG-INFO
+writing dependency_links to pgm_certified.egg-info/dependency_links.txt
+writing entry points to pgm_certified.egg-info/entry_points.txt
+writing requirements to pgm_certified.egg-info/requires.txt
+writing top-level names to pgm_certified.egg-info/top_level.txt
+reading manifest file 'pgm_certified.egg-info/SOURCES.txt'
+writing manifest file 'pgm_certified.egg-info/SOURCES.txt'
+Copying pgm_certified.egg-info to build/bdist.macosx-26.0-arm64/wheel/./pgm_certified-0.2.0-py3.12.egg-info
+running install_scripts
+creating build/bdist.macosx-26.0-arm64/wheel/pgm_certified-0.2.0.dist-info/WHEEL
+creating '/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final2/dist/.tmp-chdzvhlr/pgm_certified-0.2.0-py3-none-any.whl' and adding 'build/bdist.macosx-26.0-arm64/wheel' to it
+adding 'cbi/__init__.py'
+adding 'cbi/api.py'
+adding 'cbi/arith.py'
+adding 'cbi/cli.py'
+adding 'cbi/coarse.py'
+adding 'cbi/exact.py'
+adding 'cbi/experiment.py'
+adding 'cbi/generators.py'
+adding 'cbi/influence.py'
+adding 'cbi/model.py'
+adding 'cbi/plan.py'
+adding 'cbi/region.py'
+adding 'cbi/replay.py'
+adding 'cbi/run_case.py'
+adding 'cbi/score.py'
+adding 'cbi/score3.py'
+adding 'cbi/transfer.py'
+adding 'cbi/tree.py'
+adding 'cbi/verify.py'
+adding 'h4a/__init__.py'
+adding 'h4a/arm.py'
+adding 'h4a/build.py'
+adding 'h4a/certs.py'
+adding 'h4a/crosscheck.py'
+adding 'h4a/emit.py'
+adding 'h4a/grid.py'
+adding 'h4a/masses.py'
+adding 'h4a/model.py'
+adding 'h4a/refenum.py'
+adding 'h4a/report.py'
+adding 'h4a/run.py'
+adding 'h4a/stagea.py'
+adding 'h4a/stagea_main.py'
+adding 'h4a/tables.py'
+adding 'pgm/__init__.py'
+adding 'pgm/__main__.py'
+adding 'pgm/api.py'
+adding 'pgm/build.py'
+adding 'pgm/contracts.py'
+adding 'pgm/registry.py'
+adding 'pgm/supervision.py'
+adding 'pgm/switchboard.py'
+adding 'pgm/algorithms/__init__.py'
+adding 'pgm/algorithms/block/__init__.py'
+adding 'pgm/algorithms/block/ancestral_response.py'
+adding 'pgm/algorithms/block/blockres.py'
+adding 'pgm/algorithms/block/integrated.py'
+adding 'pgm/algorithms/block/layered_contraction.py'
+adding 'pgm/algorithms/block/signed_evidence.py'
+adding 'pgm/algorithms/block/support_closure.py'
+adding 'pgm/algorithms/quotient/PHASE_RATES.json'
+adding 'pgm/algorithms/quotient/PHASE_RATES_R1.json'
+adding 'pgm/algorithms/quotient/__init__.py'
+adding 'pgm/algorithms/quotient/check_global.py'
+adding 'pgm/algorithms/quotient/check_joint.py'
+adding 'pgm/algorithms/quotient/check_residual.py'
+adding 'pgm/algorithms/quotient/coarse_envelope.py'
+adding 'pgm/algorithms/quotient/cost_model.py'
+adding 'pgm/algorithms/quotient/global_circuit.py'
+adding 'pgm/algorithms/quotient/global_optimize.py'
+adding 'pgm/algorithms/quotient/global_stream.py'
+adding 'pgm/algorithms/quotient/grouped_envelope.py'
+adding 'pgm/algorithms/quotient/joint_optimize.py'
+adding 'pgm/algorithms/quotient/joint_proposal.py'
+adding 'pgm/algorithms/quotient/joint_stream.py'
+adding 'pgm/algorithms/quotient/joint_witness.py'
+adding 'pgm/algorithms/quotient/lifted_decoder.py'
+adding 'pgm/algorithms/quotient/lp_worker.py'
+adding 'pgm/algorithms/quotient/pac_actions.py'
+adding 'pgm/algorithms/quotient/reservation.py'
+adding 'pgm/algorithms/quotient/residual_bank.py'
+adding 'pgm/algorithms/quotient/residual_local.py'
+adding 'pgm/algorithms/quotient/residual_max_envelope.py'
+adding 'pgm/algorithms/quotient/residual_stream.py'
+adding 'pgm/algorithms/quotient/unified_pac_planner.py'
+adding 'pgm/algorithms/quotient/unified_planner.py'
+adding 'pgm/algorithms/response/__init__.py'
+adding 'pgm/algorithms/response/checked_tilt.py'
+adding 'pgm/algorithms/response/heatbath_exact.py'
+adding 'pgm/algorithms/response/heatbath_native.c'
+adding 'pgm/algorithms/response/heatbath_native.py'
+adding 'pgm/algorithms/response/markov_certificate.py'
+adding 'pgm/algorithms/response/response_certificate.py'
+adding 'pgm/algorithms/response/spectral_heatbath_run.py'
+adding 'pgm/algorithms/response/spectral_witness.py'
+adding 'pgm/algorithms/structural/__init__.py'
+adding 'pgm/algorithms/structural/cex_build.json'
+adding 'pgm/algorithms/structural/cex_executor.py'
+adding 'pgm/algorithms/structural/cex_kernel.cpp'
+adding 'pgm/algorithms/structural/core.py'
+adding 'pgm/algorithms/structural/dag.py'
+adding 'pgm/algorithms/structural/forest.py'
+adding 'pgm/algorithms/structural/geometry.py'
+adding 'pgm/algorithms/structural/planning.py'
+adding 'pgm/algorithms/structural/reduction.py'
+adding 'pgm/algorithms/structural/stream.py'
+adding 'pgm/algorithms/structural/stream_build.json'
+adding 'pgm/algorithms/structural/stream_float.py'
+adding 'pgm/algorithms/structural/stream_kernel.cpp'
+adding 'pgm/algorithms/structural/support.py'
+adding 'pgm/backends/__init__.py'
+adding 'pgm/backends/base.py'
+adding 'pgm/backends/block.py'
+adding 'pgm/backends/quotient.py'
+adding 'pgm/backends/response.py'
+adding 'pgm/backends/structural.py'
+adding 'pgm/backends/worker.py'
+adding 'pgm/model/__init__.py'
+adding 'pgm/model/uai.py'
+adding 'pgm/planning/__init__.py'
+adding 'pgm/planning/features.py'
+adding 'pgm/policies/__init__.py'
+adding 'pgm/policies/accepted.py'
+adding 'pgm/policies/experimental.py'
+adding 'pgm/runtime/__init__.py'
+adding 'pgm/runtime/attempts.py'
+adding 'pgm/runtime/build.py'
+adding 'pgm/runtime/resources.py'
+adding 'pgm/runtime/supervise.py'
+adding 'pgm/runtime/supervision.py'
+adding 'pgm/specialists/__init__.py'
+adding 'pgm/specialists/_bridge.py'
+adding 'pgm/specialists/cbi.py'
+adding 'pgm/specialists/cqr.py'
+adding 'pgm/specialists/h4a.py'
+adding 'pgm/specialists/sf.py'
+adding 'pgm/validation/__init__.py'
+adding 'pgm/validation/publication.py'
+adding 'sf/__init__.py'
+adding 'sf/check.py'
+adding 'sf/core.py'
+adding 'sf/generate.py'
+adding 'sf/invoke.py'
+adding 'sf/report.py'
+adding 'sf/routes.py'
+adding 'sf/runner.py'
+adding 'sf/score.py'
+adding 'pgm_certified-0.2.0.dist-info/METADATA'
+adding 'pgm_certified-0.2.0.dist-info/WHEEL'
+adding 'pgm_certified-0.2.0.dist-info/entry_points.txt'
+adding 'pgm_certified-0.2.0.dist-info/top_level.txt'
+adding 'pgm_certified-0.2.0.dist-info/RECORD'
+removing build/bdist.macosx-26.0-arm64/wheel
+Successfully built pgm_certified-0.2.0-py3-none-any.whl

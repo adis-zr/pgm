@@ -2,11 +2,11 @@
  "generated_by": "documentation/consolidation/step1/tools/classify_tree.py",
  "counts": {
   "benchmark-inputs": 122,
-  "benchmark-tooling": 36,
-  "correctness-qualification": 84,
-  "documentation": 17,
+  "benchmark-tooling": 38,
+  "correctness-qualification": 86,
+  "documentation": 26,
   "historical-evidence": 170,
-  "packaging": 11,
+  "packaging": 15,
   "production": 90,
   "production-shim": 47,
   "research-campaign-tooling": 139,
@@ -47,6 +47,14 @@
    "note": "external benchmark harness, protocol, provenance, references"
   },
   "benchmarks/external/README.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/STEP2_PLAN.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/STEP2_PLAN.md": {
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
@@ -2562,6 +2570,10 @@
    "cls": "correctness-qualification",
    "note": "specialist and adapter conformance tests (run from the checkout)"
   },
+  "documentation/architecture/ARCHITECTURE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
   "documentation/architecture/CAPABILITIES.md": {
    "cls": "documentation",
    "note": "notes / reports"
@@ -2570,9 +2582,41 @@
    "cls": "documentation",
    "note": "notes / reports"
   },
+  "documentation/consolidation/step1/BLOCKED_CONTROLS.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step1/BLOCKED_CONTROLS.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step1/CAPABILITY_MATRIX.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step1/CLOSURE_BEFORE.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step1/DELETIONS_AND_MOVES.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step1/MIGRATION_MANIFEST.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
   "documentation/consolidation/step1/PATH_MAP.json": {
    "cls": "documentation",
    "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step1/PUBLIC_API_AND_POLICIES.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step1/START_HERE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
   },
   "documentation/consolidation/step1/qualification/02_boundaries/parity_candidate.json": {
    "cls": "correctness-qualification",
@@ -2606,7 +2650,19 @@
    "cls": "correctness-qualification",
    "note": "step-1 qualification receipts"
   },
+  "documentation/consolidation/step1/qualification/05_packaging/clean_wheel_relocation.json": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
+  "documentation/consolidation/step1/qualification/05_packaging/wheel_build.log": {
+   "cls": "correctness-qualification",
+   "note": "step-1 qualification receipts"
+  },
   "documentation/consolidation/step1/tools/classify_tree.py": {
+   "cls": "packaging",
+   "note": "step-1 consolidation tools"
+  },
+  "documentation/consolidation/step1/tools/clean_wheel_relocation_test.py": {
    "cls": "packaging",
    "note": "step-1 consolidation tools"
   },
@@ -2614,7 +2670,19 @@
    "cls": "packaging",
    "note": "step-1 consolidation tools"
   },
+  "documentation/consolidation/step1/tools/manifest.py": {
+   "cls": "packaging",
+   "note": "step-1 consolidation tools"
+  },
+  "documentation/consolidation/step1/tools/qualify_step1.sh": {
+   "cls": "packaging",
+   "note": "step-1 consolidation tools"
+  },
   "documentation/consolidation/step1/tools/relocate_closures.py": {
+   "cls": "packaging",
+   "note": "step-1 consolidation tools"
+  },
+  "documentation/consolidation/step1/tools/run_inherited_controls.py": {
    "cls": "packaging",
    "note": "step-1 consolidation tools"
   },
