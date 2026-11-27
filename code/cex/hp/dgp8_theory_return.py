@@ -39,7 +39,8 @@ P('## 3. Does the new route materially tighten a failed input\'s certificate at 
 if guard:
     P('| input | incumbent worst r (hash-matched) | achieved worst r seed 0 / 1 | certified r seed 0 / 1 | improvement seed 0 / 1 | >= 2x both seeds | new completion |'); P('|---|---:|---|---|---|---|---|')
     for g in guard:
-        s0 = g['seeds'].get(0, {}); s1 = g['seeds'].get(1, {}); P('| %s | %s | %s / %s | %s / %s | %s / %s | %s | %s |' % (g['task'], f4(g['incumbent_best_worst_radius']), f4(s0.get('worst_radius_achieved')), f4(s1.get('worst_radius_achieved')), f4(s0.get('certified_radius')), f4(s1.get('certified_radius')), f2(s0.get('improvement')), f2(s1.get('improvement')), g['gain_2x_both_seeds'], g['new_completion_both_seeds']))
+        s0 = g['seeds'].get('0') or g['seeds'].get(0) or {}; s1 = g['seeds'].get('1') or g['seeds'].get(1) or {}      # HARNESS AMENDMENT 2: the seed keys are strings after the RESULTS.json round-trip (the frozen writer printed '-' for every guard figure)
+        P('| %s | %s | %s / %s | %s / %s | %s / %s | %s | %s |' % (g['task'], f4(g['incumbent_best_worst_radius']), f4(s0.get('worst_radius_achieved')), f4(s1.get('worst_radius_achieved')), f4(s0.get('certified_radius')), f4(s1.get('certified_radius')), f2(s0.get('improvement')), f2(s1.get('improvement')), g['gain_2x_both_seeds'], g['new_completion_both_seeds']))
     P(); P('Verdict partial accuracy: %s (%s). New completion: %s.' % (V['partial_accuracy']['status'], V['partial_accuracy']['passing_both_seeds'], V['new_completion']['status']))
 else:
     P('Stage B was not released, so no certified radius was produced on a failing input. The Stage A FORECASTS (frozen rate model x checked gap; floats, not certificates): ' + '; '.join('%s: forecast r(20 s) %s vs incumbent %s (x%s)' % (x['task'], f4((x['forecast_20s'] or {}).get('radius')), f4(x['incumbent_best_worst_radius']), f2(x['forecast_improvement_20s'])) for x in failing if x['eligible']) + '.')
