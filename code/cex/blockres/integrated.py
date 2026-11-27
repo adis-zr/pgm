@@ -957,11 +957,13 @@ def numerical_widening_wmb(blocks, mbp, qrhos, n_sep, maxcard, E_tot):
 
 
 # ---------------------------------------------------------------- the integrated solve
-def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F(1, 200), delta=F(1, 10 ** 6), mb_cap=1 << 24, construct_share=0.5, batch=1024, check_s=0.5, force_approx=False, schedule='baseline', route='auto', construct_only=False, crosscheck=True, proposal='mb', opt_s=3.0, support_closure=None, evidence_expansion=None, layered_contraction=None, ancestral_response=None):
+def solve(model_path, budget, seed=1, table_cap=1 << 18, enum_cap=1 << 16, eps=F(1, 200), delta=F(1, 10 ** 6), mb_cap=1 << 24, construct_share=0.5, batch=1024, check_s=0.5, force_approx=False, schedule='baseline', route='auto', construct_only=False, crosscheck=True, proposal='mb', opt_s=3.0, support_closure=None, evidence_expansion=None, layered_contraction=None, ancestral_response=None, model=None, binding=None):
     global BLOCK_CARDS
     t_start = tnow(); deadline = t_start + budget; ph = {}; rng = np.random.default_rng(seed); stats = dict(elim_work=0, eliminations=0, query_work=0)
     out = dict(version=VERSION, seed=seed, budget_s=budget, table_cap=table_cap, enum_cap=enum_cap, mb_cap=mb_cap, batch=batch, schedule=schedule, route_requested=route, proposal=proposal, epsilon=str(eps), delta=str(delta), phases_s=ph, mechanism={}, outcome=None, answers=None)
-    t0 = tnow(); model, binding = BR.core.read_uai(model_path); cards = model['cards']; n = len(cards); ev = model.get('evidence', {}); out['binding'] = binding; ph['read'] = tnow() - t0
+    t0 = tnow()
+    if model is None or binding is None: model, binding = BR.core.read_uai(model_path)          # the parse / infer seam (consolidation step 1): a caller holding the validated model passes it with its binding; the path stays the record
+    cards = model['cards']; n = len(cards); ev = model.get('evidence', {}); out['binding'] = binding; ph['read'] = tnow() - t0
     queries_orig = [(x, v) for x in range(n) if x not in ev for v in range(cards[x])]; K_orig = len(queries_orig); out['K'] = K_orig
     cards_orig, ev_orig = cards, ev; model_orig = model; closure = None; ans = {}; pending = {}; failed = []        # the closure returns a NEW reduced model; the original object stays intact for the original-bound constructors
     # ---- SIGNED EVIDENCE EXPANSION, step 1 (round 19): recognise the family on the ORIGINAL model before closure; the checked plan is immutable (closure may rewrite the model)

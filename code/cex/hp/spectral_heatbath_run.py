@@ -51,13 +51,38 @@ def publish_response_boxes(boxes, eps, orig_of, fixed_rows, conflicts):
                               withheld_variables={c['var'] for c in conflicts})
 
 
-def main():
+RATE_MODEL_MISSING_EXIT = 3
+OPTION_NAMES = ('input', 'output', 'budget', 'admission_stop', 'seed', 'epsilon', 'delta', 'policy', 'dev_stream', 'rate_model', 'exact_chain', 'plan_rho', 'response')
+
+
+class Options:
+    """the request options of one run (the CLI's namespace shape; built directly by the callable solver)"""
+    def __init__(self, **kw):
+        for k in OPTION_NAMES: setattr(self, k, kw.pop(k))
+        assert not kw, kw
+
+
+def solve_response(model, binding, budget, admission_stop, seed, epsilon, delta, policy='revised', response=True, input_path=None, rate_model=None, exact_chain=False, plan_rho=None):
+    """The CALLABLE solver (consolidation step 1): the same request on an already validated model + binding, nothing written, no argv.
+    Returns the result record (the in-memory mirror of the chosen payload: rows suppressed when the hard sample is late)."""
+    a = Options(input=(input_path or '<model>'), output=None, budget=float(budget), admission_stop=float(admission_stop), seed=int(seed), epsilon=str(epsilon), delta=str(delta), policy=policy, dev_stream=None, rate_model=rate_model, exact_chain=bool(exact_chain), plan_rho=plan_rho, response=bool(response))
+    return run_request(a, model=model, binding=binding)
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=19.5); ap.add_argument('--admission-stop', type=float, default=19.0); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000')
     ap.add_argument('--policy', default='fixed', choices=['fixed', 'revised']); ap.add_argument('--dev-stream', type=float, default=None); ap.add_argument('--rate-model', default=None); ap.add_argument('--exact-chain', action='store_true', help='CONTROLS: force the exact rational chain (the checked fallback) even when the native range witness admits the kernel')
-    ap.add_argument('--plan-rho', default=None, help='override the frozen rho_N of policy revised (development only; the frozen value is in PROFILE)'); ap.add_argument('--response', action='store_true', help='DGP10: the conditional-response observer + checked moment / mean certificate (requires policy revised)'); a = ap.parse_args()
+    ap.add_argument('--plan-rho', default=None, help='override the frozen rho_N of policy revised (development only; the frozen value is in PROFILE)'); ap.add_argument('--response', action='store_true', help='DGP10: the conditional-response observer + checked moment / mean certificate (requires policy revised)'); a = ap.parse_args(argv)
+    out = run_request(a)
+    if ((out.get('mechanism') or {}).get('refusal') or {}).get('kind') == 'RATE_MODEL_MISSING': sys.exit(RATE_MODEL_MISSING_EXIT)
+    return out
+
+
+def run_request(a, model=None, binding=None):
+    """one request under the options `a` (CLI namespace or Options); `a.output` None = return the record without writing; a supplied (model, binding) skips the parse (the parse / infer seam)"""
     t_start = tnow(); hard = t_start + a.budget; work = t_start + a.admission_stop; eps = F(a.epsilon); delta = F(a.delta); ph = {}; policy = a.policy; response = bool(a.response)
     if response and policy != 'revised': raise SystemExit('--response requires --policy revised')
-    out = dict(version=VERSION, input=os.path.abspath(a.input), argv=sys.argv[1:], seed=a.seed, epsilon=str(eps), delta=str(delta), budget_s=a.budget, admission_stop_s=a.admission_stop, policy=policy, response=response, mechanism=dict(route=('spectral_heatbath_response' if response else 'spectral_heatbath'), policy=policy, refusal=None), Z=None, Z_enclosure=None, positive_mass_witness=None, K=0, answers=[], enclosures=[], published=0, diagnostics={})
+    out = dict(version=VERSION, input=(os.path.abspath(a.input) if a.output is not None else str(a.input)), argv=[('--%s' % k.replace('_', '-'), getattr(a, k)) for k in OPTION_NAMES if getattr(a, k) not in (None, False)], seed=a.seed, epsilon=str(eps), delta=str(delta), budget_s=a.budget, admission_stop_s=a.admission_stop, policy=policy, response=response, mechanism=dict(route=('spectral_heatbath_response' if response else 'spectral_heatbath'), policy=policy, refusal=None), Z=None, Z_enclosure=None, positive_mass_witness=None, K=0, answers=[], enclosures=[], published=0, diagnostics={})
     mech = out['mechanism']; B = CE.Budget(CE.CONSTRUCTOR_BYTES); hclock = CE.Clock(hard, {}); wclock = CE.Clock(work, {}); chain_box = [None]; canonical_charge_box = [0]; witness_box = [None]; inventory = []; rows_none = []; exit_code = [0]
     def finish(outcome, rows=None, enc=None, note=None):
         """EVERY variable-size assembly happens BEFORE the one authoritative final timestamp (the kernel's storage and the retained witness fields are released first; rows / enclosures / counts / guarantee / resource diagnostics are
@@ -81,20 +106,23 @@ def main():
         t_end = tnow()                                                                                     # the ONE authoritative final sample: nothing variable-size after it
         late = not (t_end <= hard); wall = t_end - t_start
         # the BOUNDED choice after the sample: one placeholder substitution on the pre-encoded payload + one write; the in-memory `out` mirrors the chosen payload (rows_pub when timely; rows_none + suppressed_late_rows when late)
-        if not late: out['answers'] = rows_pub; out['enclosures'] = enc_pub; out['published'] = published_pub; out['guarantee'] = guarantee_pub; out['outcome'] = outcome; out['hard_deadline_respected'] = True; s = sA.replace(WALL_TOKEN, '%.9e' % wall, 1)
-        else: mech['suppressed_late_rows'] = published_pub; out['answers'] = rows_none; out['enclosures'] = []; out['published'] = 0; out['guarantee'] = 'NONE'; out['outcome'] = 'DEADLINE'; out['hard_deadline_respected'] = False; s = sL.replace(WALL_TOKEN, '%.9e' % wall, 1)
-        out['wall_s'] = wall
-        with open(a.output, 'w') as f: f.write(s)
+        if not late: out['answers'] = rows_pub; out['enclosures'] = enc_pub; out['published'] = published_pub; out['guarantee'] = guarantee_pub; out['outcome'] = outcome; out['hard_deadline_respected'] = True; out['mechanism'] = A['mechanism']; s = sA.replace(WALL_TOKEN, '%.9e' % wall, 1)
+        else: mech['suppressed_late_rows'] = published_pub; out['answers'] = rows_none; out['enclosures'] = []; out['published'] = 0; out['guarantee'] = 'NONE'; out['outcome'] = 'DEADLINE'; out['hard_deadline_respected'] = False; out['mechanism'] = L_['mechanism']; s = sL.replace(WALL_TOKEN, '%.9e' % wall, 1)
+        out['wall_s'] = wall; out['peak_rss_bytes'] = rss; out['phases_s'] = phases                        # bounded mirroring (the record returned to a caller carries the same fields as the written payload)
+        if a.output is not None:
+            with open(a.output, 'w') as f: f.write(s)
         return out
     try:
         # ---- the ORIGINAL query inventory first (before anything can refuse)
-        t0 = tnow(); model, binding = CORE.read_uai(a.input); out['binding'] = binding
+        t0 = tnow()
+        if model is None or binding is None: model, binding = CORE.read_uai(a.input)
+        out['binding'] = binding
         cards_o = list(model['cards']); ev = dict(model.get('evidence', {})); inventory = [(x, v) for x in range(len(cards_o)) if x not in ev for v in range(cards_o[x])]; out['K'] = len(inventory)
         rows_none = [dict(var=x, state=v, guarantee='NOT_PUBLISHED') for (x, v) in inventory]; out['answers'] = rows_none
         # ---- the rate model: requested and absent -> typed failure (never a default rate)
         rates = None
         if a.rate_model:
-            if not os.path.exists(a.rate_model): mech['refusal'] = dict(kind='RATE_MODEL_MISSING', reason='the requested frozen rate-model file is absent: %s' % a.rate_model); exit_code[0] = 3; return finish('REFUSED', note='requested rate model absent (typed failure; no default rate substituted)')
+            if not os.path.exists(a.rate_model): mech['refusal'] = dict(kind='RATE_MODEL_MISSING', reason='the requested frozen rate-model file is absent: %s' % a.rate_model); exit_code[0] = RATE_MODEL_MISSING_EXIT; return finish('REFUSED', note='requested rate model absent (typed failure; no default rate substituted)')
             rates = json.load(open(a.rate_model)); mech['rate_model_file'] = dict(path=os.path.abspath(a.rate_model), sha256=hashlib.sha256(open(a.rate_model, 'rb').read()).hexdigest())
         M = CE.canonicalize(model, hclock, B); ph['canonicalize'] = tnow() - t0; canonical_charge_box[0] = B.live; mech['canonical_charge_bytes'] = B.live; mech['canonical_scalar'] = str(M.scalar)
         if M.zero_mass: out['positive_mass_witness'] = False; out['Z_enclosure'] = dict(lo='0', hi='0'); return finish('ZERO_EVIDENCE', note='a canonical scalar is exactly zero')
@@ -237,7 +265,6 @@ def main():
     finally:
         if chain_box[0] is not None: chain_box[0].close(); chain_box[0] = None
         if witness_box[0] is not None: SW.release_retained(witness_box[0], B); witness_box[0] = None
-        if exit_code[0]: sys.exit(exit_code[0])
 
 
 if __name__ == '__main__': main()

@@ -76,7 +76,7 @@ def test_optional_forecast_refusal_keeps_valid_metadata(tmp_path, monkeypatch):
     p = model(tmp_path, "MARKOV 1 2 0")
     def refuse(*args):
         raise PlanningRefused("MEMORY", "injected optional graph refusal")
-    monkeypatch.setattr(planning, "_forecast", refuse)
+    monkeypatch.setattr(planning.features, "_forecast", refuse)   # the inspector lives in pgm.planning.features (consolidation step 1)
     r = planning.inspect_model(p)
     assert r["cards"] == [2] and r["physical_volume"] is None
     assert r["forecast_refusal"]["kind"] == "MEMORY"
