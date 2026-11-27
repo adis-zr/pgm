@@ -23,15 +23,17 @@ def main():
     for a_ in sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json'))):
         aj = json.load(open(a_))
         if aj.get('kind', '').startswith('validity') and aj.get('code'): amends[aj['code']['commit']] = aj          # DGP5: a VALIDITY amendment carries its own commit + identity files; cells launched after it record the amendment
-    n_amended = 0
+    harness_amends = {aj['amendment_commit'] for aj in (json.load(open(a_)) for a_ in sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json')))) if aj.get('amendment_commit') and aj.get('arm_identity_files_unchanged') is True}       # DGP10 (harness amendment 4): a HARNESS amendment commit keeps the frozen ARM identity; a cell launched there with --amendment (recorded, identity_ok) is at the frozen engine
+    n_amended = 0; n_harness = 0
     for p in sorted(glob.glob(os.path.join(rd, 'runs', '*', '*', 'cell.json'))):
         cj = json.load(open(p)); c = cj['cell']; ref = fr['code']
         if c.get('code_commit') != fr['code']['commit']:
             if c.get('code_commit') in amends and c.get('amendment'): ref = amends[c['code_commit']]['code']; n_amended += 1
+            elif c.get('code_commit') in harness_amends and c.get('amendment') and c.get('identity_ok') is True: n_harness += 1                    # the arm identity is checked against FREEZE.json below (ref stays the frozen record)
             else: bad_commit.append(os.path.relpath(p, rd))
         for k in ('identity_at_launch', 'identity_at_completion'):
             if any(cj.get(k, {}).get(f) != ref['files'].get(f) for f in (ref.get('arm_identity_files') or arm_files)): bad_arm_ident.append((os.path.relpath(p, rd), k))
-    chk('cells_at_frozen_commit', not bad_commit, bad=bad_commit[:10], cells_at_validity_amendment_commit=n_amended, amendments=sorted(amends)); chk('cells_arm_identity_equals_freeze', not bad_arm_ident, bad=bad_arm_ident[:10])
+    chk('cells_at_frozen_commit', not bad_commit, bad=bad_commit[:10], cells_at_validity_amendment_commit=n_amended, cells_at_harness_amendment_commit=n_harness, amendments=sorted(amends), harness_amendments=sorted(harness_amends)); chk('cells_arm_identity_equals_freeze', not bad_arm_ident, bad=bad_arm_ident[:10])
     # oracle results: produced by the frozen oracle harness or a recorded HARNESS amendment (arm files unchanged)
     am = sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json')))
     for a in am:
@@ -44,7 +46,7 @@ def main():
     for r in rows:
         if r.get('kind') == 'RECEIPT': receipts.setdefault(r['job'], []).append(r)
     for p in cells:
-        c = json.load(open(p))['cell']; key = (c['task'], c['arm'], c['seed'], c.get('confirm', False), os.path.basename(os.path.dirname(os.path.dirname(p))))          # DGP9 HARNESS AMENDMENT 1: run_dgp9 cells carry no `confirm` field (no confirmation phase this round)
+        c = json.load(open(p))['cell']; key = (c['task'], c['arm'], c['seed'], c.get('confirm', False), os.path.basename(os.path.dirname(os.path.dirname(p))))          # DGP9 HARNESS AMENDMENT 1: run_dgp9 cells carry no `confirm` field (no confirmation phase this round) (the same one-line fix as DGP10 HARNESS AMENDMENT 2, which imported it)
         if key in ids: chk('duplicate_cell:' + str(key), False)
         ids.add(key); sub = key[4]; per_sub.setdefault(sub, dict(cells=0, complete=0, arms={}))
         per_sub[sub]['cells'] += 1; per_sub[sub]['complete'] += int(bool(c.get('complete'))); per_sub[sub]['arms'][c['arm']] = per_sub[sub]['arms'].get(c['arm'], 0) + 1
@@ -135,6 +137,57 @@ def main():
             spent_before = round(sum(r['wall_s'] for r in rows if r.get('kind') == 'RECEIPT' and r.get('scope') in scopes_ and (r.get('start_utc') or '') < u), 3)
             if spent_before > before: late_re.append(dict(utc=u, scopes=scopes_, spent_before_s=spent_before, allocation_before_s=before, why='the affected scope had already exceeded the earlier allocation before the reassignment'))
         chk('budget_reassignments_dated_before_affected_phase', not late_re, reassignments=len(bud.get('reassignments') or []), problems=late_re)
+    # DGP10 (FROZEN_EXPERIMENT_SPEC sections 4, 6, 9): the HB_R rate file is the exact DGP9 bytes; every RESPONSE cell planned from the frozen RESPONSE rate file (hash recorded in FREEZE_RATES.json BEFORE the main experiment); every exposed
+    # cell's seed equals the DGP9 rule on its model hash (and the archived DGP9 cell where one exists); every fresh cell's seed equals the DGP10-SAMPLE rule; every cell's response record carries the risk allocation with declared_total <= delta;
+    # no RESPONSE cell publishes from a non-checked moment alone... (the support fallback is allowed but recorded); the external identity manifest attests the archives; the normative inventory hashes resolve
+    if fr.get('experiment', '').startswith('DGP10'):
+        import hashlib as _h
+        def seed_rule(msha, k, tag): x = int.from_bytes(_h.sha256(('%s|%s|%d' % (tag, msha, k)).encode()).digest()[:8], 'big'); return (x % ((1 << 31) - 1)) + 1
+        hbr = os.path.join(rd, 'HEATBATH_RATES.json'); chk('hb_rate_file_is_exact_dgp9_bytes', os.path.exists(hbr) and sha(hbr) == 'bd508154db959e77fe2ae6b8d5d66a94b4eeecad3727422db605a25bd7735049', sha256=(sha(hbr) if os.path.exists(hbr) else None))
+        frz = json.load(open(os.path.join(rd, 'FREEZE_RATES.json'))) if os.path.exists(os.path.join(rd, 'FREEZE_RATES.json')) else {}; rr = os.path.join(rd, 'RESPONSE_RATES.json'); rr_sha = sha(rr) if os.path.exists(rr) else None
+        chk('response_rate_file_frozen_before_main', bool(frz) and frz.get('response_rates_sha256') == rr_sha and bool(frz.get('utc')) and not [r for r in rows if r.get('kind') == 'RECEIPT' and r.get('scope') in ('dgp10_main', 'dgp10_fresh') and (r.get('start_utc') or '') < (frz.get('utc') or '9')], frozen=frz.get('response_rates_sha256'), actual=rr_sha, frozen_utc=frz.get('utc'), note='the scopes that USE the RESPONSE rate file (main / fresh); the preservation cohorts are INCUMBENT_R only and do not depend on it')
+        bad_seed = []; bad_rate = []; bad_risk = []; n_resp = 0; n_cells = 0
+        for p_ in glob.glob(os.path.join(rd, 'runs', '*', '*', 'cell.json')):
+            c = json.load(open(p_))['cell']; n_cells += 1; tag = c.get('seed_tag') or 'DGP9-SAMPLE'
+            if c.get('model_sha256_at_run') and c.get('seed') != seed_rule(c['model_sha256_at_run'], c.get('seed_index', 0), tag): bad_seed.append(os.path.relpath(p_, rd))
+            if c.get('arm') == 'RESPONSE':
+                n_resp += 1
+                if not (c.get('rate_model_file') and c['rate_model_file'].get('sha256') == rr_sha): bad_rate.append(os.path.relpath(p_, rd))
+                rs = c.get('response') or {}; rk = rs.get('risks') or {}
+                if rs and rs.get('executed') and rk.get('declared_total_le_delta') is not True: bad_risk.append(os.path.relpath(p_, rd))
+            if c.get('arm') == 'HB_R' and not (c.get('rate_model_file') and c['rate_model_file'].get('sha256') == 'bd508154db959e77fe2ae6b8d5d66a94b4eeecad3727422db605a25bd7735049'): bad_rate.append(os.path.relpath(p_, rd))
+        chk('every_cell_seed_follows_its_frozen_rule', not bad_seed, cells=n_cells, bad=bad_seed[:5]); chk('every_heatbath_cell_bound_to_its_frozen_rate_file', not bad_rate, response_cells=n_resp, bad=bad_rate[:5]); chk('every_response_cell_risk_total_le_delta', not bad_risk, bad=bad_risk[:5])
+        ext = os.path.join(rd, 'IDENTITY_EXTERNAL.json')
+        if os.path.exists(ext):
+            ej = json.load(open(ext)); arc = (ej.get('archives') or {}); okz = {}
+            for k, v in arc.items():
+                pp = os.path.expanduser(v.get('path', '')); okz[k] = bool(os.path.exists(pp) and sha(pp) == v.get('sha256') and os.path.getsize(pp) == v.get('bytes'))
+            chk('external_identity_attests_actual_archives', bool(okz) and all(okz.values()), archives=okz)
+        else: chk('external_identity_present', False)
+        inv = os.path.join(rd, 'PACKET', 'NORMATIVE_INVENTORY.json')
+        if os.path.exists(inv):
+            ij = json.load(open(inv)); badi = [k for k, v in (ij.get('files') or {}).items() if not (os.path.exists(os.path.join(rd, v.get('path', ''))) and sha(os.path.join(rd, v['path'])) == v.get('sha256'))]; chk('normative_inventory_resolves', not badi, n=len(ij.get('files') or {}), bad=badi[:5])
+        else: chk('normative_inventory_present', False)
+        try:
+            mm = json.load(open(os.path.join(rd, 'MODEL_MANIFEST.json'))); missing = []; n_in = 0
+            for p_, lst in (mm.get('panels') or {}).items():
+                if not (isinstance(lst, list) and lst and isinstance(lst[0], dict) and 'model' in lst[0]): continue
+                for t in lst:
+                    n_in += 1; pc = t.get('packet_copy'); fp = os.path.join(rd, pc) if pc else None
+                    if not (fp and os.path.exists(fp) and sha(fp) == t.get('model_sha256')): missing.append(t.get('name'))
+            chk('manifest_inputs_shipped_with_hashes', not missing, inputs=n_in, missing=missing[:10])
+        except Exception as e: chk('manifest_inputs_shipped_with_hashes', False, error=repr(e)[:200])
+        jids = [r.get('jid') for r in rows if r.get('kind') == 'RECEIPT']; chk('receipt_ids_unique', len(set(jids)) == len(jids), receipts=len(jids), duplicates=len(jids) - len(set(jids)))
+        bud = json.load(open(os.path.join(rd, 'BUDGET_DECLARATION.json'))) if os.path.exists(os.path.join(rd, 'BUDGET_DECLARATION.json')) else {}; al = bud.get('allocations') or {}
+        chk('budget_allocations_nonnegative_within_ceiling', bool(al) and all(isinstance(v, (int, float)) and v >= 0 for v in al.values()) and sum(al.values()) <= (bud.get('ceiling_s') or 0), allocations=al, ceiling=bud.get('ceiling_s'))
+        late_re = []
+        for ra in bud.get('reassignments') or []:
+            u = ra.get('utc') or ''; scopes_ = ra.get('affected_scopes') or []
+            if not (len(u) >= 20 and u[4] == '-' and u.endswith('Z')): late_re.append(dict(utc=u, why='no ISO UTC')); continue
+            early = [r for r in rows if r.get('kind') == 'RECEIPT' and r.get('scope') in scopes_ and (r.get('start_utc') or '') < u]
+            if early: late_re.append(dict(utc=u, scopes=scopes_, receipts_before=len(early)))
+        chk('budget_reassignments_dated_before_affected_phase', not late_re, reassignments=len(bud.get('reassignments') or []), problems=late_re)
+        tot = sum(r['wall_s'] for r in rows if r.get('kind') == 'RECEIPT'); chk('charges_within_ceiling', tot <= (bud.get('ceiling_s') or 0), total_s=round(tot, 1), ceiling=bud.get('ceiling_s'))
     # unsupported claims: forbidden phrases in REPORT / THEORY_RETURN
     for f in ('REPORT.md', 'THEORY_RETURN.md', 'START_HERE.md'):
         p = os.path.join(rd, f)

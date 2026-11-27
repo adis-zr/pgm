@@ -96,6 +96,31 @@ def checkpoint_risks(policy, delta_sample, J):
     return [ds / (j * (j + 1)) for j in range(1, J + 1)]
 
 
+def rows_from_boxes(boxes, eps, orig_of, fixed_rows, tag='PAC_MARKOV'):
+    """DGP10: the SAME accepted publication policy applied to per-variable interval boxes already formed by the caller (the RESPONSE arm: raw occupation interval cap checked response interval per coordinate): boxes[i] = [(lo, hi), ...]
+    over the states of canonical variable i. -> (published rows {(var, state): (lo, hi, point, tag)}, enclosures [(var, state, lo, hi)], stats) -- identical geometry checks to rows_from_counts"""
+    from coarse_envelope import epsilon_safe_points
+    pub = {}; enc = []; widths = []; eps = F(eps); st = dict(variables=0, variables_published=0, point_policy_counts={}, simplex_violations=0, endpoint_violations=0)
+    for i, row in enumerate(boxes):
+        v = orig_of[i] if orig_of is not None else i; st['variables'] += 1; box = []
+        for (lo, hi) in row:
+            lo = max(F(0), F(lo)); hi = min(F(1), F(hi)); widths.append(float(hi - lo)); box.append((lo, hi, tag))
+        s_lo = sum(b[0] for b in box); s_hi = sum(b[1] for b in box); meets = (s_lo <= 1 <= s_hi)
+        if not meets: st['simplex_violations'] += 1
+        ok = meets and all(b[1] - b[0] <= 2 * eps for b in box) and all(F(0) <= b[0] <= b[1] <= F(1) for b in box)
+        pts = None
+        if ok:
+            pts, policy = epsilon_safe_points(box, eps); st['point_policy_counts'][policy] = st['point_policy_counts'].get(policy, 0) + 1
+            ok = all(b[0] <= p_ <= b[1] and max(p_ - b[0], b[1] - p_) <= eps for b, p_ in zip(box, pts))
+            if not ok: st['endpoint_violations'] += 1
+        if ok:
+            st['variables_published'] += 1
+            for a, (b, p_) in enumerate(zip(box, pts)): pub[(v, a)] = (b[0], b[1], p_, tag)
+        else:
+            for a, b in enumerate(box): enc.append((v, a, b[0], b[1]))
+    return pub, enc, dict(st, max_width=(max(widths) if widths else None))
+
+
 def rows_from_counts(occ, N, r, eps, orig_of, fixed_rows):
     """-> (published rows {(var, state): (lo, hi, point, 'PAC_MARKOV')}, enclosures [(var, state, lo, hi)], stats) over the ORIGINAL query inventory: canonical variable i -> original var orig_of[i]; fixed / factorless rows come exactly
     from canonicalization (fixed_rows). Per canonical variable: the interval [p_a - r, p_a + r] clipped to [0, 1] for every state; the variable PUBLISHES iff every width <= 2 eps, the row box meets the simplex and the accepted

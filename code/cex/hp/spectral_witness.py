@@ -8,11 +8,16 @@ every operation widened by WIDEN x ulp relative + an absolute floor; inclusion m
 particular the exact A -- is positive definite). Eligibility w = u - l < 2 (w computed upward), m = 1 - w / 2 (downward), g = m / n (downward). DGP9 mechanism change A (policy 'revised'): the proposal may be widened by a FROZEN short
 geometric sequence of extra endpoint margins, each attempt re-running the UNCHANGED proofs; retries stop at the first success, when the width cannot qualify, or when the sequence is exhausted. Ownership (review RV6): the rational-log
 cache is REQUEST-SCOPED and charged; the exact block accumulators, the eigensolver temporaries, the shifted matrices and the Cholesky factors are admitted before allocation; the retained arrays (h, offsets, cards) stay charged to the
-caller until it releases `retained_bytes`; the clock is polled at entry, inside the positivity scans, the unary logs, every block and the conversions. Nothing floating is a certificate here except through the interval proof."""
+caller until it releases `retained_bytes`; the clock is polled at entry, inside the positivity scans, the unary logs, every block and the conversions. Nothing floating is a certificate here except through the interval proof.
+DGP10 (DGP9 independent review F9-2 / F9-3; carried repair contract sections 1-2): EVERY reservation of this module runs inside ONE `reservation.Txn` per `certify` call -- the exact block accumulators, the request-scoped log cache
+chunks, the eigensolver workspace, the shifted interval matrices and the Cholesky factors are TRANSACTION-OWNED temporaries (rolled back on any exception, released at scope exit), the retained fields (h / offsets / cards) are
+TRANSFERRED to an explicit `reservation.Owner` returned in the record (`W['owner']`) and released by `release_retained`, which also DROPS the retained arrays from the record; `_prove` admits the shifted matrices BEFORE allocating
+them and never allocates an identity matrix (the shift is applied in place on admitted copies). Live charge after any failure equals the caller's entry charge exactly (probe_resource_failures: 352 / 131,072 / 1,096 B leaks)."""
 import math, time
 from fractions import Fraction as F
 import numpy as np
 import coarse_envelope as CE
+import reservation as RV
 GRID_BITS = 80; SERIES_TERMS = 16; LOG2_TERMS = 48; WIDEN = 4; U53 = 2.0 ** -53; TINY = 1e-290
 CACHE_ENTRY_BYTES = 512; CACHE_CHUNK = 256; FRACTION_BYTES = 200
 POLICY_FIXED = dict(name='fixed', extra_margins=[0.0])                                                                   # DGP8: ONE proposal, no retry
@@ -65,18 +70,23 @@ def _log_enclosure_exact(x):
 
 class LogCache:
     """request-scoped memo of log enclosures, CHARGED to the shared constructor account in chunks (CACHE_ENTRY_BYTES per entry) and released by its owner (`release`); polled every chunk"""
-    def __init__(self, budget=None, clock=None, tag='rational-log cache'):
-        self.map = {}; self.budget = budget; self.clock = clock; self.owned = 0; self.admitted_entries = 0; self.tag = tag; self.hits = 0; self.misses = 0
+    def __init__(self, budget=None, clock=None, tag='rational-log cache', txn=None):
+        self.map = {}; self.budget = budget; self.clock = clock; self.owned = 0; self.admitted_entries = 0; self.tag = tag; self.hits = 0; self.misses = 0; self.txn = txn; self.tokens = []
     def get(self, x):
         x = F(x); v = self.map.get(x)
         if v is not None: self.hits += 1; return v
         if len(self.map) >= self.admitted_entries:
             if self.clock is not None: self.clock.poll('%s (%d entries)' % (self.tag, len(self.map)))
-            if self.budget is not None: self.owned += self.budget.charge(CACHE_ENTRY_BYTES * CACHE_CHUNK, '%s chunk' % self.tag)
+            if self.txn is not None: self.tokens.append(self.txn.reserve(CACHE_ENTRY_BYTES * CACHE_CHUNK, '%s chunk' % self.tag)); self.owned += CACHE_ENTRY_BYTES * CACHE_CHUNK          # DGP10: a TRANSACTION-owned temporary (rolled back with the constructor)
+            elif self.budget is not None: self.owned += self.budget.charge(CACHE_ENTRY_BYTES * CACHE_CHUNK, '%s chunk' % self.tag)
             self.admitted_entries += CACHE_CHUNK
         v = _log_enclosure_exact(x); self.map[x] = v; self.misses += 1; return v
     def release(self):
-        if self.owned and self.budget is not None: self.budget.release(self.owned)
+        if self.txn is not None:
+            for t in self.tokens:
+                if t.state == 'TXN': self.txn.release(t)
+            self.tokens = []
+        elif self.owned and self.budget is not None: self.budget.release(self.owned)
         self.owned = 0; self.map.clear(); self.admitted_entries = 0
     def record(self): return dict(entries=len(self.map), hits=self.hits, misses=self.misses, bytes_charged=self.owned)
 
@@ -101,13 +111,15 @@ def log_div_ln2_outward(lo, hi):
 
 
 # ---------------------------------------------------------------- the interval matrix A
-def build_interaction(M, budget, clock, cache=None):
+def build_interaction(M, budget, clock, cache=None, txn=None):
     """M = coarse_envelope.Canon (cards, psi, factors=[(scope, values)]). -> dict(A_lo, A_hi (D x D float arrays), offsets, D, n, cards, pairs, blocks, log_width_max, matrix_width_max, h (advisory float unary fields), bytes (the
-    retained charge of A_lo / A_hi / h still owned by the caller), seconds, cache record). Raises RefusedSpectral('ARITY' | 'HARD_ZERO'). Every pair block is accumulated as EXACT rational intervals and converted outward ONCE."""
+    retained charge of A_lo / A_hi / h: a TRANSACTION-owned token `token` when a txn is given -- the caller transfers or releases it), seconds, cache record). Raises RefusedSpectral('ARITY' | 'HARD_ZERO'). Every pair block is
+    accumulated as EXACT rational intervals and converted outward ONCE. DGP10: every reservation goes through the transaction (an own transaction is opened when none is given: then the matrix charge is released at return as before)."""
     t0 = CE.tnow(); clock.poll('spectral witness: entry'); cards = list(M.cards); n = len(cards); off = [0]
     for k in cards: off.append(off[-1] + k)
-    D = off[-1]; own_cache = cache is None
-    if own_cache: cache = LogCache(budget, clock)
+    D = off[-1]; own_cache = cache is None; own_txn = txn is None
+    if own_txn: txn = RV.Txn(budget, clock, 'spectral build'); txn.__enter__()
+    if own_cache: cache = LogCache(budget, clock, txn=txn)
     checked = 0
     for sc, vals in M.factors:
         if len(sc) >= 3: raise RefusedSpectral('ARITY', 'a factor of arity %d is outside the pairwise class' % len(sc))
@@ -125,9 +137,10 @@ def build_interaction(M, budget, clock, cache=None):
     for sc, vals in M.factors:
         if len(sc) == 2: key = (min(sc), max(sc)); pair_entries[key] = cards[sc[0]] * cards[sc[1]]
     acc_entries = sum(pair_entries.values()); max_block = max([cards[i] * cards[j] for (i, j) in pair_entries] + [1])
-    need = 2 * 8 * D * D + 8 * D + 64 * len(M.factors); budget.charge(need, 'spectral witness: interval matrix %d x %d + unary fields' % (D, D)); owned = need
-    temp = 2 * FRACTION_BYTES * acc_entries + 2 * FRACTION_BYTES * (max_block + 2 * max([max(cards[i], cards[j]) for (i, j) in pair_entries] + [1])) + 4096; budget.charge(temp, 'spectral witness: exact block accumulators (%d entries) + one block of log enclosures' % acc_entries)
+    need = 2 * 8 * D * D + 8 * D + 64 * len(M.factors); temp = 2 * FRACTION_BYTES * acc_entries + 2 * FRACTION_BYTES * (max_block + 2 * max([max(cards[i], cards[j]) for (i, j) in pair_entries] + [1])) + 4096
     try:
+        tok_need = txn.reserve(need, 'spectral witness: interval matrix %d x %d + unary fields' % (D, D)); owned = need
+        tok_temp = txn.reserve(temp, 'spectral witness: exact block accumulators (%d entries) + one block of log enclosures' % acc_entries)
         A_lo = np.zeros((D, D)); A_hi = np.zeros((D, D)); h = np.zeros(D); lw_max = F(0); mw_max = F(0); acc = {}; nblocks = 0; done = 0
         for i in range(n):
             for a in range(cards[i]):
@@ -167,14 +180,13 @@ def build_interaction(M, budget, clock, cache=None):
                 for b in range(cards[j]):
                     flo, fhi = to_float_outward(blk[a][b][0], blk[a][b][1]); A_lo[off[i] + a, off[j] + b] = flo; A_hi[off[i] + a, off[j] + b] = fhi; A_lo[off[j] + b, off[i] + a] = flo; A_hi[off[j] + b, off[i] + a] = fhi; done += 1
                     if (done & 255) == 255: clock.poll('spectral witness: outward conversion (%d entries)' % done)
-        acc = None; budget.release(temp); temp = 0
-        rec = dict(A_lo=A_lo, A_hi=A_hi, offsets=off, D=D, n=n, cards=cards, pairs=len(pair_entries), blocks=nblocks, log_width_max=float(lw_max), matrix_width_max=float(mw_max), h=h, bytes=owned, seconds=CE.tnow() - t0, cache=cache.record(), exact_accumulation=True)
+        acc = None; txn.release(tok_temp)
+        rec = dict(A_lo=A_lo, A_hi=A_hi, offsets=off, D=D, n=n, cards=cards, pairs=len(pair_entries), blocks=nblocks, log_width_max=float(lw_max), matrix_width_max=float(mw_max), h=h, bytes=owned, token=tok_need, seconds=CE.tnow() - t0, cache=cache.record(), exact_accumulation=True)
         if own_cache: cache.release()
+        if own_txn: txn.release(tok_need); rec['token'] = None; txn.__exit__(None, None, None)                   # a standalone call (controls): the matrix charge is released at return (the arrays are returned uncharged, as before)
         return rec
-    except BaseException:
-        if temp: budget.release(temp)
-        budget.release(owned)
-        if own_cache: cache.release()
+    except BaseException as e:
+        if own_txn: txn.__exit__(type(e), e, e.__traceback__)
         raise
 
 
@@ -222,53 +234,74 @@ def interval_cholesky_pd(M_lo, M_hi, clock, budget=None, tag=''):
         if owned: budget.release(owned)
 
 
-def propose_bounds(A_lo, A_hi, budget=None, clock=None):
-    """advisory: floating eigenvalues of the midpoint matrix, widened by the matrix radius and a relative margin -> proposed (l, u). The midpoint matrix and the eigensolver workspace are ADMITTED before allocation (review RV6)."""
-    D = A_lo.shape[0]; owned = 0
-    if budget is not None: owned = budget.charge(3 * 8 * D * D + 64 * 8 * D + 4096, 'eigenvalue proposal: midpoint matrix + eigensolver workspace %d x %d' % (D, D))
+def propose_bounds(A_lo, A_hi, budget=None, clock=None, txn=None):
+    """advisory: floating eigenvalues of the midpoint matrix, widened by the matrix radius and a relative margin -> proposed (l, u). The midpoint matrix and the eigensolver workspace are ADMITTED before allocation (review RV6) as a
+    transaction-owned temporary (DGP10: rolled back on any exception; the 1,096 B retained charge of the review's fixture is a transferred token of the same transaction)."""
+    D = A_lo.shape[0]; own = txn is None
+    if own: txn = RV.Txn(budget, clock, 'eigenvalue proposal'); txn.__enter__()
     try:
         if clock is not None: clock.poll('eigenvalue proposal')
+        tok = txn.reserve(3 * 8 * D * D + 64 * 8 * D + 4096, 'eigenvalue proposal: midpoint matrix + eigensolver workspace %d x %d' % (D, D))
         mid = 0.5 * (A_lo + A_hi); rad = float(np.max(np.sum(0.5 * (A_hi - A_lo), axis=1))); ev = np.linalg.eigvalsh(mid); lmin = float(ev[0]); lmax = float(ev[-1]); scale = max(abs(lmin), abs(lmax), 1.0)
-        marg = rad + PROFILE['proposal_margin_rel'] * scale + PROFILE['proposal_margin_abs']
+        marg = rad + PROFILE['proposal_margin_rel'] * scale + PROFILE['proposal_margin_abs']; mid = None; ev = None; txn.release(tok)
+        if own: txn.__exit__(None, None, None)
         return dict(lambda_min_float=lmin, lambda_max_float=lmax, radius_norm=rad, l=lmin - marg, u=lmax + marg, margin=marg)
-    finally:
-        if owned: budget.release(owned)
+    except BaseException as e:
+        if own: txn.__exit__(type(e), e, e.__traceback__)
+        raise
 
 
-def _prove(built, l, u, clock, budget):
-    """both proofs at the given (l, u); the two shifted interval matrices are admitted before allocation and released after"""
-    D = built['D']; I = np.eye(D); owned = budget.charge(2 * 8 * D * D + 8 * D * D + 4096, 'shifted interval matrices %d x %d' % (D, D)) if budget is not None else 0
+def _shifted(A, s, sign, lo_side):
+    """sign x (A - s I) widened outward (lo_side: lower endpoint, else upper) on an ADMITTED copy, in place: no identity matrix, one D x D temporary for |x| (admitted by the caller)"""
+    M = A.copy() if sign > 0 else -A; idx = np.arange(A.shape[0]); M[idx, idx] -= sign * s
+    if lo_side: M -= WIDEN * U53 * np.abs(M); M -= TINY
+    else: M += WIDEN * U53 * np.abs(M); M += TINY
+    return M
+
+
+def _prove(built, l, u, clock, budget, txn=None):
+    """both proofs at the given (l, u); DGP10 (review F9-3): the shifted interval matrices (two D x D arrays + one D x D temporary for the outward widening) are ADMITTED BEFORE any allocation and no identity matrix is ever built;
+    the charge is a transaction-owned temporary (rolled back on any exception) when a txn is given"""
+    D = built['D']; own = txn is None
+    if own: txn = RV.Txn(budget, clock, 'spectral proof'); txn.__enter__()
     try:
-        t1 = CE.tnow()
-        low = interval_cholesky_pd(_wlo(built['A_lo'] - l * I), _whi(built['A_hi'] - l * I), clock, budget, 'A - lI')                       # the shift acts on the DIAGONAL only (widened inside)
-        high = interval_cholesky_pd(_wlo(u * I - built['A_hi']), _whi(u * I - built['A_lo']), clock, budget, 'uI - A')
+        tok = txn.reserve(3 * 8 * D * D + 4096, 'shifted interval matrices %d x %d' % (D, D)); t1 = CE.tnow()
+        low = interval_cholesky_pd(_shifted(built['A_lo'], l, +1, True), _shifted(built['A_hi'], l, +1, False), clock, budget, 'A - lI')                       # the shift acts on the DIAGONAL only (widened inside)
+        high = interval_cholesky_pd(_shifted(built['A_hi'], u, -1, True), _shifted(built['A_lo'], u, -1, False), clock, budget, 'uI - A')
+        txn.release(tok)
+        if own: txn.__exit__(None, None, None)
         return low, high, CE.tnow() - t1
-    finally:
-        if owned: budget.release(owned)
+    except BaseException as e:
+        if own: txn.__exit__(type(e), e, e.__traceback__)
+        raise
 
 
 def certify(M, budget, clock, l=None, u=None, policy=None):
     """the full witness: build the interval matrix, propose (l, u) unless given, PROVE lambda_min(A) >= l and lambda_max(A) <= u by two interval Cholesky runs (under `policy` the proposal is widened by the frozen extra margins
     until a proof succeeds or the width cannot qualify), compute w / m / g outward. -> dict (never raises on ineligibility: `eligible` False with `refusal`); raises RefusedSpectral only for the class violations (arity / hard zero)
     and CE.Refused / Deadline from admission / polls. The returned record keeps `retained_bytes` CHARGED (h / offsets / cards): the caller releases them (`release_retained`)."""
-    t0 = CE.tnow(); policy = policy or POLICY_FIXED; cache = LogCache(budget, clock); built = build_interaction(M, budget, clock, cache); owned = built['bytes']; cache_rec = cache.record(); cache.release()
-    D = built['D']; n = built['n']; retained = 8 * D + 8 * (n + 1) + 8 * n + 1024; budget.charge(retained, 'spectral witness: retained advisory fields / offsets / cards')
-    try:
-        prop = propose_bounds(built['A_lo'], built['A_hi'], budget, clock)
+    t0 = CE.tnow(); policy = policy or POLICY_FIXED
+    with RV.Txn(budget, clock, 'spectral witness') as txn:
+        cache = LogCache(budget, clock, txn=txn); built = build_interaction(M, budget, clock, cache, txn=txn); owned = built['bytes']; cache_rec = cache.record(); cache.release()
+        D = built['D']; n = built['n']; retained = 8 * D + 40 * (2 * n + 1) + 1024; tok_ret = txn.reserve(retained, 'spectral witness: retained advisory fields / offsets / cards'); owner = RV.Owner(budget, 'spectral witness retained fields')
+        def done(rec):
+            """the successful return: the retained token is TRANSFERRED to the owner (the matrix token is released: A_lo / A_hi are not retained), the owner travels with the record"""
+            txn.release(built['token']); txn.transfer(tok_ret, owner); rec['owner'] = owner; return rec
+        prop = propose_bounds(built['A_lo'], built['A_hi'], budget, clock, txn=txn)
         l0 = prop['l'] if l is None else float(l); u0 = prop['u'] if u is None else float(u)
-        if not (l0 <= 0.0 <= u0): return dict(eligible=False, refusal=dict(kind='SPECTRAL_BOUNDS', reason='proposed bounds do not bracket zero (trace A = 0 forces lambda_min <= 0 <= lambda_max)'), proposal=prop, policy=policy['name'], attempts=[], dimension=D, n=n, seconds=CE.tnow() - t0, bytes=owned, retained_bytes=retained, cache=cache_rec, **_strip(built))
+        if not (l0 <= 0.0 <= u0): return done(dict(eligible=False, refusal=dict(kind='SPECTRAL_BOUNDS', reason='proposed bounds do not bracket zero (trace A = 0 forces lambda_min <= 0 <= lambda_max)'), proposal=prop, policy=policy['name'], attempts=[], dimension=D, n=n, seconds=CE.tnow() - t0, bytes=owned, retained_bytes=retained, cache=cache_rec, **_strip(built)))
         attempts = []; low = high = None; l_used = u_used = None; t_ver = 0.0; stop = None
         for k, e in enumerate(policy['extra_margins']):
             lk = l0 - e; uk = u0 + e
             if F(uk) - F(lk) >= 2:
                 stop = 'width cannot qualify at extra margin %g (u - l = %.9f >= 2)' % (e, uk - lk); break
-            lo_, hi_, dt = _prove(built, lk, uk, clock, budget); t_ver += dt
+            lo_, hi_, dt = _prove(built, lk, uk, clock, budget, txn=txn); t_ver += dt
             attempts.append(dict(attempt=k, extra_margin=e, l=lk, u=uk, width_float=uk - lk, lower_ok=lo_['ok'], upper_ok=hi_['ok'], min_pivot_lower=min(lo_['min_pivot_lower'], hi_['min_pivot_lower']), seconds=dt, gap_g_float=((1 - (uk - lk) / 2) / n)))
             low, high, l_used, u_used = lo_, hi_, lk, uk
             if lo_['ok'] and hi_['ok']: break
         if low is None:
             w0 = F(u0) - F(l0); w0_up = math.nextafter(float(w0), math.inf) if F(float(w0)) < w0 else float(w0)                 # the PROPOSED width (no proof was attempted: the width test alone refuses); reported as `width` for the refusal record, flagged unproved
-            return dict(eligible=False, refusal=dict(kind='SPECTRAL_WIDTH', reason=stop or 'no proof attempt'), l=l0, u=u0, width=w0_up, width_proved=False, width_proposal_float=u0 - l0, width_exact=str(w0), margin_m=float(1 - w0 / 2), gap_g=None, proposal=prop, policy=policy['name'], attempts=attempts, dimension=D, n=n, seconds=CE.tnow() - t0, bytes=owned, retained_bytes=retained, cache=cache_rec, **_strip(built))
+            return done(dict(eligible=False, refusal=dict(kind='SPECTRAL_WIDTH', reason=stop or 'no proof attempt'), l=l0, u=u0, width=w0_up, width_proved=False, width_proposal_float=u0 - l0, width_exact=str(w0), margin_m=float(1 - w0 / 2), gap_g=None, proposal=prop, policy=policy['name'], attempts=attempts, dimension=D, n=n, seconds=CE.tnow() - t0, bytes=owned, retained_bytes=retained, cache=cache_rec, **_strip(built)))
         l, u = l_used, u_used
         # w = u - l rounded UP; m = 1 - w / 2 rounded DOWN; g = m / n rounded DOWN (exact dyadics via Fractions of the floats)
         wF = F(u) - F(l); mF = 1 - wF / 2; gF = mF / n
@@ -278,15 +311,17 @@ def certify(M, budget, clock, l=None, u=None, policy=None):
         if not low['ok']: ref = dict(kind='SPECTRAL_PROOF', reason='A - lI not proved positive definite (pivot lower bound %.3e at column %s) after %d attempt(s)%s' % (low['min_pivot_lower'], low['failed_column'], len(attempts), ('; ' + stop) if stop else ''))
         elif not high['ok']: ref = dict(kind='SPECTRAL_PROOF', reason='uI - A not proved positive definite (pivot lower bound %.3e at column %s) after %d attempt(s)%s' % (high['min_pivot_lower'], high['failed_column'], len(attempts), ('; ' + stop) if stop else ''))
         elif wF >= 2: ref = dict(kind='SPECTRAL_WIDTH', reason='checked width %.6f >= 2: the spectral condition does not hold (not a statement about mixing)' % float(wF))
-        return dict(eligible=elig, refusal=ref, l=l, u=u, width=float(w_up), width_exact=str(wF), margin_m=(m_dn if elig else float(m_dn)), gap_g=(g_dn if elig else None), m_exact=str(mF), g_exact=str(gF), dimension=D, n=n, proposal=prop, policy=policy['name'], attempts=attempts, proof=dict(lower=low, upper=high, seconds_verify=t_ver), seconds=CE.tnow() - t0, seconds_construct=built['seconds'], bytes=owned, retained_bytes=retained, cache=cache_rec, **_strip(built))
-    finally:
-        budget.release(owned)
+        return done(dict(eligible=elig, refusal=ref, l=l, u=u, width=float(w_up), width_exact=str(wF), margin_m=(m_dn if elig else float(m_dn)), gap_g=(g_dn if elig else None), m_exact=str(mF), g_exact=str(gF), dimension=D, n=n, proposal=prop, policy=policy['name'], attempts=attempts, proof=dict(lower=low, upper=high, seconds_verify=t_ver), seconds=CE.tnow() - t0, seconds_construct=built['seconds'], bytes=owned, retained_bytes=retained, cache=cache_rec, **_strip(built)))
 
 
 def release_retained(W, budget):
-    """the caller's release of the retained witness fields (idempotent)"""
-    n = W.get('retained_bytes') or 0
-    if n: budget.release(n); W['retained_bytes'] = 0; W['retained_released'] = True
+    """the caller's release of the retained witness fields (idempotent): DGP10 (review F9-3) the owner's token is closed AND the retained arrays / lists are DROPPED from the record (h / offsets / cards -> None), so no alias of the
+    released data survives through the record; returns the bytes released"""
+    n = 0; owner = W.get('owner')
+    if owner is not None: n = owner.close(); W['owner'] = None
+    elif W.get('retained_bytes'): n = W['retained_bytes']; budget.release(n)
+    if W.get('retained_bytes'): W['retained_bytes'] = 0; W['retained_released'] = True
+    for k in ('h', 'offsets', 'cards', 'A_lo', 'A_hi'): W[k] = None
     return n
 
 
@@ -295,6 +330,6 @@ def _strip(built): return dict(pairs=built['pairs'], blocks=built['blocks'], log
 
 def witness_record(w):
     """the JSON-safe record of a certify() result (arrays dropped)"""
-    out = {k: v for k, v in w.items() if k not in ('h', 'offsets', 'cards')}
+    out = {k: v for k, v in w.items() if k not in ('h', 'offsets', 'cards', 'owner', 'token')}
     if 'proposal' in out: out['proposal'] = {k: v for k, v in out['proposal'].items()}
     return out

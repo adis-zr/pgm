@@ -36,6 +36,9 @@ class CircuitPlan:
         """the owner drops the plan: its metadata charge returns to the shared account (idempotent)"""
         if self._charged and self._budget is not None: self._budget.release(self._charged)
         n = self._charged; self._charged = 0; return n
+    close = release                                                                                                      # DGP10: the reservation.Txn adoption interface (idempotent)
+    @property
+    def closed(self): return self._charged == 0
     @property
     def charged_bytes(self): return self._charged
     def _build(self, cards, sampling_order, parents, factors_scopes, power, order_elim, V, fanin, clock):
@@ -93,9 +96,16 @@ class CircuitPlan:
 
 
 def build_plans(M_par, prop_order, parents, order_elim, V=V_UNION, fanin=FANIN, budget=None, clock=None):
-    """the cap plan (power 1) and the moment plan (power 2) of one frozen graph (DGP7 repair R3: admitted + polled when a budget / clock is given)"""
+    """the cap plan (power 1) and the moment plan (power 2) of one frozen graph (DGP7 repair R3: admitted + polled when a budget / clock is given). DGP10 (DGP9 independent review F9-2): the two plans are constructed SEQUENTIALLY
+    inside ONE reservation transaction -- the first plan is ADOPTED by the transaction, so a refusal / deadline while constructing the second closes the first INSIDE this constructor (its metadata charge returns to the shared
+    account) before the exception propagates; the caller never owns a tuple that was not returned (probe_partial_plan_ownership: the 135,168 B orphan)"""
+    import reservation as RV
     cards = list(M_par.cards); scopes = [tuple(sc) for sc, _ in M_par.factors]
-    return CircuitPlan(cards, prop_order, parents, scopes, 1, order_elim, V, fanin, clock=clock, budget=budget), CircuitPlan(cards, prop_order, parents, scopes, 2, order_elim, V, fanin, clock=clock, budget=budget)
+    with RV.Txn(budget, clock, 'global two-plan construction') as txn:
+        p1 = CircuitPlan(cards, prop_order, parents, scopes, 1, order_elim, V, fanin, clock=clock, budget=budget); txn.adopt(p1)
+        p2 = CircuitPlan(cards, prop_order, parents, scopes, 2, order_elim, V, fanin, clock=clock, budget=budget)
+        txn.adopted = []                                                                                                 # both constructed: the transaction hands them to the caller (no rollback scope remains)
+    return p1, p2
 
 
 # ---------------------------------------------------------------- the FLOATING evaluator (log space; forward tape + reverse)
