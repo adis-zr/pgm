@@ -1,0 +1,1 @@
+{"algorithm": "JTREE[inference=SUMPROD,updates=HUGIN,maxmem=8589934592]", "iterations": 1, "maxdiff": 0, "converged": true, "logZ": 6.54247, "n_vars": 3, "n_evidence": 0, "n_factors_after_clamp": 3, "phases_s": {"parse": 0.00103425, "clamp_build": 7.2e-05, "construct": 0.000869792, "run": 4.5167e-05, "serialize": 0.000263333, "total": 0.00228454}}

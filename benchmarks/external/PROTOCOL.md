@@ -1,3 +1,5 @@
+> **Superseded in part by `STEP2_AMENDMENT_1.md` (27 Nov 2026).** The v1 three-arm protocol below was executed at `3283cfd` (366 cells). The current normative experiment is the amended six-arm matrix (732 cells; `STEP2_PLAN.md`, `STEP2_AMENDMENT_1.md`): all 61 inputs are exposed regression inputs, `old55` / `former_eval6` are historical groups, and the accepted reference is EXECUTED (`PGM_REFERENCE`), not substituted by historical cells. Paragraphs below describing a prospective cohort, three arms, 366 cells or an 8,000 s ceiling are historical provenance of the v1 campaign.
+
 # Consolidation external benchmark protocol
 
 Status: design fixed; source freeze and scored execution pending. No scored solver has been run for this consolidation campaign.

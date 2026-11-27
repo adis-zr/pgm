@@ -2,8 +2,10 @@ from pathlib import Path
 from fractions import Fraction
 from itertools import product
 import json, subprocess, hashlib, platform, time
+import os, sys
 ROOT=Path(__file__).resolve().parent
-BIN=ROOT/'libdai_mar'
+BIN=Path(os.environ.get('PGM_LIBDAI', ROOT/'libdai_mar'))            # the comparator under test (step-2 amendment 1: parameterised; default unchanged)
+RECORD=ROOT/(sys.argv[1] if len(sys.argv)>1 else 'LIBDAI_QUALIFICATION.json')   # usage: qualify_libdai.py [RECORD_NAME.json]
 OUT=ROOT/'qualification'
 OUT.mkdir(exist_ok=True)
 CASES=[
@@ -53,6 +55,8 @@ for name,cards,fac,ev in CASES:
 p,e=write('impossible_evidence',[2,2],[([0],[1,0]),([1],[2,3])],{0:1})
 proc=subprocess.run([str(BIN),str(p),str(e),str(OUT/'zero.MAR'),str(OUT/'zero.json'),'JTREE[inference=SUMPROD,updates=HUGIN]'],capture_output=True,text=True,timeout=5)
 rows.append(dict(case='impossible_evidence',returncode=proc.returncode,pass_=proc.returncode==5 and json.loads((OUT/'zero.json').read_text())['status']=='ZERO_PARTITION'))
-res=dict(all_ok=all(r['pass_'] for r in rows),n=len(rows),checks=rows,binary_sha256=hashlib.sha256(BIN.read_bytes()).hexdigest())
-(ROOT/'LIBDAI_QUALIFICATION.json').write_text(json.dumps(res,indent=2)+'\n')
+res=dict(all_ok=all(r['pass_'] for r in rows),n=len(rows),checks=rows,binary_sha256=hashlib.sha256(BIN.read_bytes()).hexdigest(),binary=str(BIN),platform=platform.platform(),qualified_utc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
+RECORD.write_text(json.dumps(res,indent=2)+'\n')
+print(json.dumps(dict(all_ok=res['all_ok'],n=res['n'],binary_sha256=res['binary_sha256'],record=str(RECORD))))
+sys.exit(0 if res['all_ok'] else 1)
 print(json.dumps(res,indent=2))

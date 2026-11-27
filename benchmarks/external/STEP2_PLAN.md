@@ -1,7 +1,8 @@
-# Step 2: external preservation regression of the consolidated package (FROZEN PLAN, ready to run)
+# Step 2: external preservation regression of the consolidated package (v2 = STEP2_AMENDMENT_1)
 
-Status: frozen with consolidation step 1 (branch `consolidate/production-layout`). Nothing in this plan has been executed.
-No performance or holdout campaign ran during step 1; the synthetic fixtures of step 1 are correctness tests only.
+Status: the v1 plan (four arms, 488 cells) was frozen with consolidation step 1 and had NO scored execution; it is superseded by
+`STEP2_AMENDMENT_1.md` BEFORE any scored cell. This document is the amended normative plan; `STEP2_PLAN.json` is its
+machine-readable form read by the harness at freeze.
 
 ## Question
 
@@ -11,54 +12,50 @@ scored implementation `3283cfd`; DIABETES and ObjectDetection_43 were lost; Pedi
 external inputs are already exposed (`EXPOSURE_HISTORY.json`); there is no holdout left, so step 2 is a regression, not a
 prospective evaluation, and must be reported as such.
 
-## Arms (one frozen package, explicit policy per arm; same 20 s outer contract, 3 GiB sampled process-tree RSS, epsilon 1/200, delta 1e-6)
+## Arms (one frozen package per arm; same 20 s outer contract, 3 GiB sampled process-tree RSS, epsilon 1/200, delta 1e-6, two repeats, serial)
 
-| arm | command | role |
+| arm | what runs | role |
 |---|---|---|
-| accepted reference | historical cells of engine `7f28259` (`reference/previous_accepted_cells.json`; not re-run) | the preservation target |
-| `PGM_ACCEPTED` | `python -m pgm ... --policy accepted` | the accepted engine through the common contract (DEFAULT policy); must retain the reference completions |
-| `PGM_EXPERIMENTAL` | `python -m pgm ... --policy experimental` | the frozen `structural-portfolio-1` of `3283cfd` under the new layout; must reproduce its 27 / 29 (DIABETES, ObjectDetection_43 lost) |
-| `LIBDAI_JT` | qualified libDAI junction tree (`provenance/LIBDAI_*`) | exact comparator (geometry agreement) |
+| `PGM_REFERENCE` | the accepted standalone engine of pinned `7f28259` in a detached checkout, historical invocation (`integrated.py --budget 19.5 --seed REP --epsilon 1/200 --delta 1/1000000 --schedule targeted --route auto --proposal mb`), own import root | EXECUTED accepted reference (same round, same host) |
+| `PGM_ACCEPTED` | `python -m pgm ... --policy accepted` | the accepted engine through the new common contract (DEFAULT policy) |
+| `PGM_EXPERIMENTAL` | `python -m pgm ... --policy experimental` | the frozen `structural-portfolio-1` under the new layout |
+| `PGM_EXPERIMENTAL_REF` | the scored public implementation of pinned `3283cfd` in a detached checkout (`python -m pgm`, its single policy) | EXECUTED experimental reference (same round, same host) |
+| `LIBDAI_JT` | qualified libDAI junction tree (`provenance/LIBDAI_QUALIFICATION_HOST_2026-11-27.json`) | exact comparator (geometry agreement) |
 | `LIBDAI_BP` | qualified libDAI loopy BP | point comparator (convergence recorded) |
 
-Cells: 61 tasks x 4 arms x 2 replicates = 488 (the 55 `exposed_regression` tasks in phase `primary`, the 6 former holdout
-tasks in phase `eval`; both phases are regression now). Scored ceiling 8000 s per the frozen harness; the ceiling may be
-raised ONLY in the freeze record before any cell runs.
+Cells: 61 tasks x 6 arms x 2 replicates = **732**; phase `primary` runs the `old55` group, phase `eval` the `former_eval6` group;
+both are exposed regression inputs. Declared ceiling 14,640 s (= 732 x 20 s, the maximum possible charge); exhaustion returns
+INCOMPLETE. Historical cells of `7f28259` (`reference/previous_accepted_cells.json`, 29 both-repeat completions) remain a
+coverage target; the 3283cfd extract required for the historical experimental target is unavailable on this host (see the
+amendment, item 4).
 
-## Acceptance (decided before execution)
+## Explicit comparison pairs
 
-1. `PGM_ACCEPTED` retains every task in `prior_complete_both` of the reference (29 tasks; `ANALYSIS.json.prior_accepted_comparison.per_arm.PGM_ACCEPTED.lost == []`). Any loss is a preservation regression of the common contract (controller / worker / publication), to be diagnosed, not re-tuned.
-2. `PGM_EXPERIMENTAL` reproduces the scored portfolio: retained set equal to `3283cfd`'s (27 / 29; lost exactly {DIABETES, ObjectDetection_43}) and the same completion set on the remaining inputs. Differences are layout regressions (the arithmetic is byte-identical; a difference can only come from the request-level boundaries) and block default promotion.
-3. Geometry: zero faulty published artifacts; every published enclosure contains the JT point within the serialization allowance (`jt_agreement` per arm); no certificate conflict.
-4. Default promotion (`accepted` becomes the shipped default on main) requires 1 and 3; `experimental` stays selectable only. No new rates, per-instance exceptions, model-name routing or spectral / certificate change may be introduced to meet 1-3.
+`same_round_accepted` (PGM_ACCEPTED vs PGM_REFERENCE), `same_round_experimental` (PGM_EXPERIMENTAL vs PGM_EXPERIMENTAL_REF),
+`accepted_vs_experimental`, and each result arm vs LIBDAI_JT.
 
-## Commands (run on the qualified host; all paths relative to the repository root)
+## Gates (decided before execution; `GATES.json`)
 
-```bash
-# 0. environment: the frozen interpreter, the qualified comparator, the qualified C compiler
-export PGM_BENCH_PY=/path/to/venv/bin/python PGM_LIBDAI=/path/to/code/bench/libdai/libdai_mar CC=clang
-export PGM_BENCH_RUN_DIR=$PWD/benchmark_runs/step2-preservation-v1
-# 1. build the native kernels during setup (never inside a timed cell) and warm the caches
-PYTHONPATH=src:code $PGM_BENCH_PY -m pgm.build
-# 2. smoke: one task through every arm BEFORE freezing (no scoring; deleted afterwards)
-PYTHONPATH=src:code $PGM_BENCH_PY -m pgm --input benchmarks/external/inputs/<one task>.uai --output /tmp/smoke_acc.json --budget 19.5 --memory-mib 3072 --seed 1 --epsilon 1/200 --delta 1/1000000 --policy accepted
-PYTHONPATH=src:code $PGM_BENCH_PY -m pgm --input benchmarks/external/inputs/<one task>.uai --output /tmp/smoke_exp.json --budget 19.5 --memory-mib 3072 --seed 1 --epsilon 1/200 --delta 1/1000000 --policy experimental
-# 3. freeze (records engine commit, every tracked file hash, the active host builds, both policies, the harness hashes)
-$PGM_BENCH_PY benchmarks/external/run_suite.py freeze
-# 4. execute (resumable; one terminal receipt per cell; stops at the scored ceiling)
-$PGM_BENCH_PY benchmarks/external/run_suite.py primary
-$PGM_BENCH_PY benchmarks/external/run_suite.py eval
-# 5. analyse (recomputes completion / geometry from raw artifacts; per-arm prior comparison; REPORT.md)
-$PGM_BENCH_PY benchmarks/external/analyze_suite.py
-```
+1. **validity**: every recorded cell has one terminal receipt, identity_ok, valid output (inventory, geometry, labels, witness,
+   simplex, binding) and a valid arm contract (policy / version / configuration / allowed backends / risk allocations / epsilon /
+   delta / deadline / terminal attempts); every published coordinate contains the JT point wherever a valid JT point exists
+   (partial outputs included); no deterministic interval conflict across arms or repeats.
+2. **completeness**: all 732 cells recorded within the ceiling.
+3. **historical_accepted_preservation**: PGM_ACCEPTED loses none of the 29 historical completions.
+4. **reference_reproduction**: PGM_REFERENCE vs its own historical cells (a loss is a reproduction failure of the reference).
+5. **same_round_accepted_preservation**: PGM_ACCEPTED loses no PGM_REFERENCE both-repeat completion.
+6. **historical_experimental_preservation**: NOT EVALUABLE without the hashed 3283cfd extract (prerequisite named).
+7. **same_round_experimental_preservation**: PGM_EXPERIMENTAL loses no PGM_EXPERIMENTAL_REF both-repeat completion.
+8. **paired_overhead**: FLAGGED when PGM_ACCEPTED is slower than PGM_REFERENCE in both repeats by more than 1.25x and more than
+   0.1 s; a flag holds promotion pending explanation.
+9. **promotion_decision**: ELIGIBLE only with 1, 2, 3, 5 PASS and no unexplained flag. Gains are reported, never forbidden.
 
-Outputs: `FREEZE.json`, `RECEIPTS.jsonl`, `CELLS.jsonl`, `runs/*/`, `ANALYSIS.json`, `PAIRS.csv`, `REPORT.md` under
-`$PGM_BENCH_RUN_DIR`. Charge every cell; keep failed and timed-out cells in coverage; memory refusals never enter a
-speedup denominator.
+## Commands
+
+See `STEP2_AMENDMENT_1.md` (setup -> freeze -> primary -> eval -> analyze). Setup evidence (builds, warm caches, the six-arm
+smoke on the committed tiny fixture) is retained under `<run>/setup/`.
 
 ## What this plan does not do
 
 No per-task tuning, no hindsight backend selection, no repair of the three coverage gaps (DIABETES, ObjectDetection_43,
-Pedigree_12), no dense-graph experiment, no learned proposer, no new rate files. The harness change of step 1 is limited
-to running the public entrypoint under an explicit `--policy` per arm and analysing each public arm against the
-comparators and the reference.
+Pedigree_12), no dense-graph experiment, no learned proposer, no new rate files. The harness changes of the amendment are limited to arm definitions, resource resolution, validation and analysis; no inference, scheduling or rate code is touched.

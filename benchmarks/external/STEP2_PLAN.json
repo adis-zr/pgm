@@ -1,25 +1,32 @@
 {
- "schema": "PGM_STEP2_PLAN_V1",
- "status": "FROZEN, NOT EXECUTED",
- "frozen_with": "consolidation step 1 (branch consolidate/production-layout)",
- "question": "preservation of the known external result by the consolidated package",
+ "schema": "PGM_STEP2_PLAN_V2",
+ "status": "FROZEN BY STEP2_AMENDMENT_1 (27 Nov 2026); the V1 plan had NO scored execution and is superseded, not executed",
+ "question": "does the consolidated package preserve the accepted implementation under the common contract (same-round, same host) and keep the experimental portfolio's capabilities (same-round pinned experimental reference), with the historical results as coverage targets",
  "reference": {
   "engine": "accepted PGM v2.13.2",
   "commit": "7f28259a4869a2c684d506b51072b04bb0ce4783",
-  "cells": "benchmarks/external/reference/previous_accepted_cells.json",
-  "known_result": "41/55 exposed + 6/6 prospective completed by 3283cfd; 27/29 accepted-engine completions retained; DIABETES and ObjectDetection_43 lost; Pedigree_12 a further gap; all 61 inputs exposed"
+  "historical_cells": "benchmarks/external/reference/previous_accepted_cells.json (110 cells, engine 7f28259; 29 both-repeat completions at 20 s)",
+  "known_result": "3283cfd scored 41/55 exposed + 6/6 former-eval tasks; retained 27/29 accepted completions; DIABETES and ObjectDetection_43 lost; Pedigree_12 a further gap; all 61 inputs now exposed"
  },
  "arms": {
+  "PGM_REFERENCE": {
+   "command": "PYTHONPATH=<ref>/code PY <ref>/code/cex/blockres/integrated.py --input M --output R --budget 19.5 --seed REP --epsilon 1/200 --delta 1/1000000 --schedule targeted --route auto --proposal mb",
+   "role": "EXECUTED pinned accepted standalone engine (7f28259, detached checkout, its own import root; legacy reader)"
+  },
   "PGM_ACCEPTED": {
-   "command": "python -m pgm --input M --output R --budget 19.5 --memory-mib 3072 --seed REP --epsilon 1/200 --delta 1/1000000 --policy accepted",
-   "role": "accepted engine through the common contract (default policy)"
+   "command": "PY -m pgm --input M --output R --budget 19.5 --memory-mib 3072 --seed REP --epsilon 1/200 --delta 1/1000000 --policy accepted",
+   "role": "new public API, accepted (default) policy"
   },
   "PGM_EXPERIMENTAL": {
-   "command": "python -m pgm ... --policy experimental",
-   "role": "frozen structural-portfolio-1 of 3283cfd under the new layout"
+   "command": "PY -m pgm ... --policy experimental",
+   "role": "new public API, frozen structural-portfolio-1"
+  },
+  "PGM_EXPERIMENTAL_REF": {
+   "command": "PYTHONPATH=<ref3>/src:<ref3>/code PY -m pgm --input M --output R --budget 19.5 --memory-mib 3072 --seed REP --epsilon 1/200 --delta 1/1000000",
+   "role": "EXECUTED pinned scored public implementation (3283cfd, detached checkout) = same-round experimental reference"
   },
   "LIBDAI_JT": {
-   "command": "qualified libDAI junction tree (provenance/LIBDAI_*)",
+   "command": "qualified libDAI junction tree (provenance/LIBDAI_QUALIFICATION_HOST_2026-11-27.json)",
    "role": "exact comparator"
   },
   "LIBDAI_BP": {
@@ -27,17 +34,39 @@
    "role": "point comparator"
   }
  },
+ "pairs": {
+  "same_round_accepted": [
+   "PGM_ACCEPTED",
+   "PGM_REFERENCE"
+  ],
+  "same_round_experimental": [
+   "PGM_EXPERIMENTAL",
+   "PGM_EXPERIMENTAL_REF"
+  ],
+  "accepted_vs_experimental": [
+   "PGM_ACCEPTED",
+   "PGM_EXPERIMENTAL"
+  ],
+  "jt_vs_<each result arm>": [
+   "<arm>",
+   "LIBDAI_JT"
+  ]
+ },
  "cells": {
   "tasks": 61,
-  "arms": 4,
+  "arms": 6,
   "replicates": [
    1,
    2
   ],
-  "total": 488,
+  "total": 732,
+  "groups": {
+   "old55": "55 tasks of INPUT_MANIFEST.json (historical group; exposed regression)",
+   "former_eval6": "6 tasks of HOLDOUT_FREEZE.json (historical group; exposed regression)"
+  },
   "phases": [
-   "primary (55 exposed_regression)",
-   "eval (6 former holdout; regression now)"
+   "primary (old55)",
+   "eval (former_eval6)"
   ]
  },
  "contract": {
@@ -48,26 +77,46 @@
   "delta": "1/1000000",
   "rss_sample_s": 0.01,
   "grace_s": 0,
-  "scored_ceiling_s": 8000
+  "scored_ceiling_s": 14640,
+  "ceiling_rationale": "732 cells x 20 s = the maximum possible charge of the declared matrix, so exhaustion cannot silently omit costly inputs; declared before any scored cell (the V1 8,000 s ceiling covered 366 cells)"
  },
- "acceptance": [
-  "PGM_ACCEPTED loses none of the 29 reference completions (ANALYSIS.prior_accepted_comparison.per_arm.PGM_ACCEPTED.lost == [])",
-  "PGM_EXPERIMENTAL reproduces 3283cfd: lost == [DIABETES, ObjectDetection_43]; same completion set elsewhere",
-  "zero faulty published artifacts; JT point inside every published enclosure within the serialization allowance; no certificate conflict",
-  "default promotion requires acceptance 1 and 3; no re-tuning to meet them"
- ],
+ "acceptance": {
+  "validity": "every recorded cell has one terminal receipt, identity_ok, a valid output (inventory, geometry, labels, witness, simplex, binding) and a valid arm contract (policy / version / configuration / allowed backends / risk shares / epsilon / delta / deadline / terminal attempts); zero published-geometry faults; no deterministic interval conflict across arms or repeats",
+  "completeness": "all 732 declared cells recorded within the ceiling; otherwise INCOMPLETE",
+  "historical_accepted_preservation": "PGM_ACCEPTED both-repeat completions include every task of the 29 both-repeat completions of previous_accepted_cells.json (lost == [])",
+  "same_round_accepted_preservation": "PGM_ACCEPTED both-repeat completions include every PGM_REFERENCE both-repeat completion; a PGM_REFERENCE task that misses a historical success is a reference-reproduction failure, recorded separately, never attributed to the new wrapper",
+  "historical_experimental_preservation": "PGM_EXPERIMENTAL both-repeat completions include every task of the 3283cfd both-repeat completion set (47 tasks) -- requires the hashed extract of the 122 scored 3283cfd PGM cells (prior_experimental_extract below); NOT EVALUABLE when that extract is absent",
+  "same_round_experimental_preservation": "PGM_EXPERIMENTAL both-repeat completions include every PGM_EXPERIMENTAL_REF both-repeat completion (same host, same round)",
+  "paired_overhead": "see cost_criterion; flags hold default promotion pending explanation, they do not fail validity",
+  "promotion": "accepted becomes the shipped default on main only with validity PASS, completeness PASS, historical_accepted_preservation PASS, same_round_accepted_preservation PASS and no unexplained cost flag; no re-tuning to meet any gate"
+ },
+ "cost_criterion": {
+  "adopted": true,
+  "rule": "a task is FLAGGED when PGM_ACCEPTED is slower than PGM_REFERENCE in BOTH repeats by more than 1.25x AND more than 0.1 s (paired, same-round mutual completions)",
+  "effect": "a flag holds default promotion pending a recorded explanation; all paired wall ratios and differences are reported",
+  "origin": "proposed by the step-1 benchmark review; adopted prospectively in STEP2_AMENDMENT_1 before any scored cell"
+ },
+ "prior_experimental_extract": {
+  "status": "UNAVAILABLE ON THIS HOST",
+  "prerequisite": "the scored 3283cfd campaign's raw CELLS.jsonl / ANALYSIS.json (EXPOSURE_HISTORY.json records analysis_sha256 45d954bb3c4d68e8804a42041bd90c6f79a668dccb61f2692b7bfb8b6fe52d6f) from the consolidation-v1 run directory, which was never committed and is not present in this checkout, the records repository or the review packet",
+  "consequence": "the historical experimental preservation gate is NOT EVALUABLE in this run; the same-round pinned PGM_EXPERIMENTAL_REF arm (3283cfd executed here) supplies the executable experimental comparator instead; no target rows are invented from task names or summary counts"
+ },
  "commands": [
-  "PYTHONPATH=src:code $PGM_BENCH_PY -m pgm.build",
-  "$PGM_BENCH_PY benchmarks/external/run_suite.py freeze",
-  "$PGM_BENCH_PY benchmarks/external/run_suite.py primary",
-  "$PGM_BENCH_PY benchmarks/external/run_suite.py eval",
-  "$PGM_BENCH_PY benchmarks/external/analyze_suite.py"
+  "PY benchmarks/external/run_suite.py setup",
+  "PY benchmarks/external/run_suite.py freeze",
+  "PY benchmarks/external/run_suite.py primary",
+  "PY benchmarks/external/run_suite.py eval",
+  "PY benchmarks/external/analyze_suite.py"
  ],
  "environment": [
   "PGM_BENCH_PY",
   "PGM_LIBDAI",
   "CC",
-  "PGM_BENCH_RUN_DIR"
+  "CXX",
+  "PGM_BENCH_RUN_DIR",
+  "PGM_BENCH_REFERENCE_ROOT",
+  "PGM_BENCH_EXPERIMENTAL_REF_ROOT",
+  "PGM_NATIVE_CACHE (optional; pinned at freeze)"
  ],
  "forbidden": [
   "per-task tuning",
@@ -77,7 +126,11 @@
   "model-name routing",
   "learned proposer",
   "spectral or certificate change",
-  "dense-graph experiment"
+  "dense-graph experiment",
+  "changing the matrix or the ceiling after any scored outcome"
  ],
- "document": "benchmarks/external/STEP2_PLAN.md"
+ "documents": [
+  "benchmarks/external/STEP2_PLAN.md",
+  "benchmarks/external/STEP2_AMENDMENT_1.md"
+ ]
 }

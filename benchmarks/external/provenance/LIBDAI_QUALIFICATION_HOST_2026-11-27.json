@@ -1,0 +1,105 @@
+{
+  "all_ok": true,
+  "n": 11,
+  "checks": [
+    {
+      "case": "asymmetric_chain",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 4.409228537838317e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "asymmetric_chain",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 4.409228537838317e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "asymmetric_evidence",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 4.285716226348768e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "asymmetric_evidence",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 4.285716226348768e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "isolated_and_fixed",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 3.33333360913457e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "isolated_and_fixed",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 3.33333360913457e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "hard_zeros",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 3.33333360913457e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "hard_zeros",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 3.33333360913457e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "positive_scalar",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 0.0,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "positive_scalar",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 0.0,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "impossible_evidence",
+      "returncode": 5,
+      "pass_": true
+    }
+  ],
+  "binary_sha256": "68e893f3805a4a8fb10bfe71e1e592f0ee0de2a90eea452fe936737b4cb6c42f",
+  "binary": "/Users/adis/Workspace/pgm/code/bench/libdai/libdai_mar",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "qualified_utc": "2026-11-27T19:58:23Z"
+}
