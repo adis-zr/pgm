@@ -44,7 +44,7 @@ def main():
     for r in rows:
         if r.get('kind') == 'RECEIPT': receipts.setdefault(r['job'], []).append(r)
     for p in cells:
-        c = json.load(open(p))['cell']; key = (c['task'], c['arm'], c['seed'], c['confirm'], os.path.basename(os.path.dirname(os.path.dirname(p))))
+        c = json.load(open(p))['cell']; key = (c['task'], c['arm'], c['seed'], c.get('confirm', False), os.path.basename(os.path.dirname(os.path.dirname(p))))          # DGP9 HARNESS AMENDMENT 1: run_dgp9 cells carry no `confirm` field (no confirmation phase this round)
         if key in ids: chk('duplicate_cell:' + str(key), False)
         ids.add(key); sub = key[4]; per_sub.setdefault(sub, dict(cells=0, complete=0, arms={}))
         per_sub[sub]['cells'] += 1; per_sub[sub]['complete'] += int(bool(c.get('complete'))); per_sub[sub]['arms'][c['arm']] = per_sub[sub]['arms'].get(c['arm'], 0) + 1
