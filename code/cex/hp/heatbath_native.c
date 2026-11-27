@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <limits.h>
 
 #define REJECT_CAP 65536
 
@@ -54,26 +55,62 @@ static inline uint64_t get_bits(hb_t *h, int k) {
     uint64_t v = h->bits & ((k == 64) ? ~0ULL : ((1ULL << k) - 1)); h->bits >>= k; h->nbits -= k; return v;
 }
 
+/* Constructors fail closed: admission does not guarantee allocator success. */
+void hb_free(hb_t *h);
 hb_t *hb_create(int n, const int *cards, const double *psi, int nf, const int *fi, const int *fj, const double *fvals, const long long *foff, uint64_t seed) {
-    hb_t *h = (hb_t *)calloc(1, sizeof(hb_t)); h->n = n; h->cards = (int *)malloc(sizeof(int) * n); memcpy(h->cards, cards, sizeof(int) * n);
-    h->off = (int *)malloc(sizeof(int) * (n + 1)); h->off[0] = 0; for (int i = 0; i < n; i++) h->off[i + 1] = h->off[i] + cards[i];
-    int D = h->off[n]; h->psi = (double *)malloc(sizeof(double) * D); memcpy(h->psi, psi, sizeof(double) * D);
-    h->nf = nf; h->fi = (int *)malloc(sizeof(int) * nf); h->fj = (int *)malloc(sizeof(int) * nf); h->fki = (int *)malloc(sizeof(int) * nf); h->fkj = (int *)malloc(sizeof(int) * nf); h->foff = (long long *)malloc(sizeof(long long) * (nf + 1));
-    memcpy(h->fi, fi, sizeof(int) * nf); memcpy(h->fj, fj, sizeof(int) * nf); memcpy(h->foff, foff, sizeof(long long) * (nf + 1));
-    for (int f = 0; f < nf; f++) { h->fki[f] = cards[fi[f]]; h->fkj[f] = cards[fj[f]]; }
-    h->fvals = (double *)malloc(sizeof(double) * foff[nf]); memcpy(h->fvals, fvals, sizeof(double) * foff[nf]);
-    int *cnt = (int *)calloc(n, sizeof(int)); for (int f = 0; f < nf; f++) { cnt[fi[f]]++; cnt[fj[f]]++; }
-    h->inc_start = (int *)malloc(sizeof(int) * (n + 1)); h->inc_start[0] = 0; for (int i = 0; i < n; i++) h->inc_start[i + 1] = h->inc_start[i] + cnt[i];
-    h->inc_f = (int *)malloc(sizeof(int) * h->inc_start[n]); h->inc_role = (int *)malloc(sizeof(int) * h->inc_start[n]); int *fill = (int *)calloc(n, sizeof(int));
+    int *cnt = NULL, *fill = NULL;
+    if (n <= 0 || n == INT_MAX || nf < 0 || nf > INT_MAX / 2) return NULL;
+    hb_t *h = (hb_t *)calloc(1, sizeof(hb_t));
+    if (!h) return NULL;
+    h->n = n; h->nf = nf;
+    h->cards = (int *)malloc(sizeof(int) * (size_t)n);
+    h->off = (int *)malloc(sizeof(int) * (size_t)(n + 1));
+    if (!h->cards || !h->off) goto fail;
+    memcpy(h->cards, cards, sizeof(int) * (size_t)n);
+    h->off[0] = 0;
+    for (int i = 0; i < n; i++) {
+        if (cards[i] <= 0 || cards[i] > INT_MAX - h->off[i]) goto fail;
+        h->off[i + 1] = h->off[i] + cards[i];
+    }
+    int D = h->off[n];
+    h->psi = (double *)malloc(sizeof(double) * (size_t)D);
+    if (!h->psi) goto fail;
+    memcpy(h->psi, psi, sizeof(double) * (size_t)D);
+    size_t nf_storage = (size_t)(nf ? nf : 1);
+    h->fi = (int *)malloc(sizeof(int) * nf_storage); h->fj = (int *)malloc(sizeof(int) * nf_storage);
+    h->fki = (int *)malloc(sizeof(int) * nf_storage); h->fkj = (int *)malloc(sizeof(int) * nf_storage);
+    h->foff = (long long *)malloc(sizeof(long long) * (size_t)(nf + 1));
+    if (!h->fi || !h->fj || !h->fki || !h->fkj || !h->foff) goto fail;
+    if (nf) { memcpy(h->fi, fi, sizeof(int) * (size_t)nf); memcpy(h->fj, fj, sizeof(int) * (size_t)nf); }
+    memcpy(h->foff, foff, sizeof(long long) * (size_t)(nf + 1));
+    if (foff[0] != 0 || foff[nf] < 0 || (uint64_t)foff[nf] > SIZE_MAX / sizeof(double)) goto fail;
+    for (int f = 0; f < nf; f++) {
+        if (fi[f] < 0 || fi[f] >= n || fj[f] < 0 || fj[f] >= n || foff[f] < 0 || foff[f + 1] < foff[f]) goto fail;
+        h->fki[f] = cards[fi[f]]; h->fkj[f] = cards[fj[f]];
+        if (foff[f + 1] - foff[f] != (long long)h->fki[f] * h->fkj[f]) goto fail;
+    }
+    h->fvals = (double *)malloc(sizeof(double) * (size_t)(foff[nf] ? foff[nf] : 1));
+    if (!h->fvals) goto fail;
+    if (foff[nf]) memcpy(h->fvals, fvals, sizeof(double) * (size_t)foff[nf]);
+    cnt = (int *)calloc((size_t)n, sizeof(int)); fill = (int *)calloc((size_t)n, sizeof(int));
+    h->inc_start = (int *)malloc(sizeof(int) * (size_t)(n + 1));
+    if (!cnt || !fill || !h->inc_start) goto fail;
+    for (int f = 0; f < nf; f++) { cnt[fi[f]]++; cnt[fj[f]]++; }
+    h->inc_start[0] = 0;
+    for (int i = 0; i < n; i++) h->inc_start[i + 1] = h->inc_start[i] + cnt[i];
+    size_t incidence_storage = (size_t)(h->inc_start[n] ? h->inc_start[n] : 1);
+    h->inc_f = (int *)malloc(sizeof(int) * incidence_storage); h->inc_role = (int *)malloc(sizeof(int) * incidence_storage);
+    if (!h->inc_f || !h->inc_role) goto fail;
     for (int f = 0; f < nf; f++) { int a = fi[f], b = fj[f]; h->inc_f[h->inc_start[a] + fill[a]] = f; h->inc_role[h->inc_start[a] + fill[a]] = 0; fill[a]++; h->inc_f[h->inc_start[b] + fill[b]] = f; h->inc_role[h->inc_start[b] + fill[b]] = 1; fill[b]++; }
-    free(cnt); free(fill);
-    h->state = (int *)calloc(n, sizeof(int)); h->occ = (long long *)calloc(D, sizeof(long long)); h->start = (long long *)calloc(n, sizeof(long long)); h->recording = 0; h->t = 0;
+    free(cnt); cnt = NULL; free(fill); fill = NULL;
+    h->state = (int *)calloc((size_t)n, sizeof(int)); h->occ = (long long *)calloc((size_t)D, sizeof(long long)); h->start = (long long *)calloc((size_t)n, sizeof(long long));
     h->kmax = 0; for (int i = 0; i < n; i++) if (cards[i] > h->kmax) h->kmax = cards[i];
-    h->w = (double *)malloc(sizeof(double) * h->kmax); h->clo = (double *)malloc(sizeof(double) * h->kmax); h->chi = (double *)malloc(sizeof(double) * h->kmax);
-    rng_seed(&h->rng, seed); h->bits = 0; h->nbits = 0; h->unresolved_site = -1; h->poll_request = 0; h->batch_rejections = 0;
-    h->observe = 0; h->obs_configured = 0; h->nq = 0; h->J = 0; h->qidx = NULL; h->qsite = NULL; h->qoff = NULL; h->center = NULL; h->visits = NULL; h->next_cp = NULL; h->plan = NULL; h->first_lo = h->first_hi = h->second_hi = NULL;
-    h->snap_count = NULL; h->snap_j = NULL; h->snap_first_lo = h->snap_first_hi = h->snap_second_hi = NULL; h->obs_committed = 0; h->obs_snapshots = 0; h->obs_valid = 1; h->obs_invalid_code = 0; h->pending_k = 0; h->pending_eps = 0.0; h->pending_obs = 0; h->obs_bytes = 0;
+    h->w = (double *)malloc(sizeof(double) * (size_t)h->kmax); h->clo = (double *)malloc(sizeof(double) * (size_t)h->kmax); h->chi = (double *)malloc(sizeof(double) * (size_t)h->kmax);
+    if (!h->state || !h->occ || !h->start || !h->w || !h->clo || !h->chi) goto fail;
+    rng_seed(&h->rng, seed); h->unresolved_site = -1; h->obs_valid = 1;
     return h;
+fail:
+    free(cnt); free(fill); hb_free(h); return NULL;
 }
 
 static void observer_free(hb_t *h) {
@@ -93,24 +130,34 @@ int hb_take_poll_request(hb_t *h) { int r = h->poll_request; h->poll_request = 0
 // qualification hook (controls only; never called by the runner): replace the random bit buffer so the NEXT draws are the given bits (forces ambiguous prefixes -> the exact fallback path with a pending observation)
 void hb_inject_bits(hb_t *h, uint64_t bits, int nbits) { h->bits = bits; h->nbits = nbits; }
 // every allocation of the context: struct, cards (n), off (n + 1), fi / fj / fki / fkj (4 nf), inc_start (n + 1), inc_f / inc_role (2 x incidence), foff (nf + 1), psi (D), fvals, w / clo / chi (3 kmax), state (n ints), occ (D), start (n)
-size_t hb_bytes(hb_t *h) { return sizeof(hb_t) + sizeof(int) * (size_t)(h->n + (h->n + 1) + h->nf * 4 + (h->n + 1) + h->inc_start[h->n] * 2 + h->n) + sizeof(long long) * (size_t)(h->nf + 1 + h->off[h->n] + h->n) + sizeof(double) * (size_t)(h->off[h->n] + h->foff[h->nf] + 3 * h->kmax) + h->obs_bytes; }
+size_t hb_bytes(hb_t *h) { return sizeof(hb_t) + sizeof(int) * (size_t)(h->n + (h->n + 1) + h->nf * 4 + (h->n + 1) + h->inc_start[h->n] * 2 + h->n) + sizeof(long long) * (size_t)(h->nf + 1 + h->off[h->n] + h->n) + sizeof(double) * (size_t)(h->off[h->n] + h->foff[h->nf] + 3 * h->kmax) + h->obs_bytes + (h->nf ? 0 : 6 * sizeof(int) + sizeof(double)); }
 
 // ---- DGP10 observer: setup (the host admits hb_observer_bytes_for first), start / stop, state, snapshots
 size_t hb_observer_bytes_for(int n, int nq, int Q, int J) { return sizeof(int) * (size_t)(n + nq + nq + 1 + nq + nq) + sizeof(uint32_t) * (size_t)nq + sizeof(long long) * (size_t)(nq + J + nq) + 16 * (size_t)(3 * Q + 3 * Q); }
 int hb_observer_setup(hb_t *h, int nq, const int *qsites, const uint32_t *centers, int J, const long long *plan) {
-    if (h->obs_configured || nq <= 0 || J <= 0 || J > 4096) return -1;
-    for (int j = 1; j < J; j++) if (plan[j] <= plan[j - 1]) return -2;         // the plan must be strictly increasing
+    if (!h || h->obs_configured || nq <= 0 || J <= 0 || J > 4096) return -1;
+    if (nq > h->n) return -3;
+    for (int j = 1; j < J; j++) if (plan[j] <= plan[j - 1]) return -2;
     if (plan[0] < 1) return -2;
-    h->qidx = (int *)malloc(sizeof(int) * h->n); for (int i = 0; i < h->n; i++) h->qidx[i] = -1;
-    h->qsite = (int *)malloc(sizeof(int) * nq); h->qoff = (int *)malloc(sizeof(int) * (nq + 1)); h->center = (uint32_t *)malloc(sizeof(uint32_t) * nq); h->visits = (long long *)calloc(nq, sizeof(long long)); h->next_cp = (int *)calloc(nq, sizeof(int)); h->plan = (long long *)malloc(sizeof(long long) * J);
-    memcpy(h->plan, plan, sizeof(long long) * J); h->J = J; h->qoff[0] = 0;
+    h->qidx = (int *)malloc(sizeof(int) * (size_t)h->n);
+    if (!h->qidx) goto allocation_failed;
+    for (int i = 0; i < h->n; i++) h->qidx[i] = -1;
+    h->qsite = (int *)malloc(sizeof(int) * (size_t)nq); h->qoff = (int *)malloc(sizeof(int) * (size_t)(nq + 1)); h->center = (uint32_t *)malloc(sizeof(uint32_t) * (size_t)nq);
+    h->visits = (long long *)calloc((size_t)nq, sizeof(long long)); h->next_cp = (int *)calloc((size_t)nq, sizeof(int)); h->plan = (long long *)malloc(sizeof(long long) * (size_t)J);
+    if (!h->qsite || !h->qoff || !h->center || !h->visits || !h->next_cp || !h->plan) goto allocation_failed;
+    memcpy(h->plan, plan, sizeof(long long) * (size_t)J); h->J = J; h->qoff[0] = 0;
     for (int q = 0; q < nq; q++) { int i = qsites[q]; if (i < 0 || i >= h->n || h->qidx[i] >= 0) { observer_free(h); return -3; } h->qidx[i] = q; h->qsite[q] = i; h->center[q] = centers[q]; h->qoff[q + 1] = h->qoff[q] + h->cards[i]; }
     int Q = h->qoff[nq]; h->nq = nq;
-    h->first_lo = (unsigned __int128 *)calloc(Q, sizeof(unsigned __int128)); h->first_hi = (unsigned __int128 *)calloc(Q, sizeof(unsigned __int128)); h->second_hi = (unsigned __int128 *)calloc(Q, sizeof(unsigned __int128));
-    h->snap_count = (long long *)calloc(nq, sizeof(long long)); h->snap_j = (int *)malloc(sizeof(int) * nq); for (int q = 0; q < nq; q++) h->snap_j[q] = -1;
-    h->snap_first_lo = (unsigned __int128 *)calloc(Q, sizeof(unsigned __int128)); h->snap_first_hi = (unsigned __int128 *)calloc(Q, sizeof(unsigned __int128)); h->snap_second_hi = (unsigned __int128 *)calloc(Q, sizeof(unsigned __int128));
+    h->first_lo = (unsigned __int128 *)calloc((size_t)Q, sizeof(unsigned __int128)); h->first_hi = (unsigned __int128 *)calloc((size_t)Q, sizeof(unsigned __int128)); h->second_hi = (unsigned __int128 *)calloc((size_t)Q, sizeof(unsigned __int128));
+    h->snap_count = (long long *)calloc((size_t)nq, sizeof(long long)); h->snap_j = (int *)malloc(sizeof(int) * (size_t)nq);
+    h->snap_first_lo = (unsigned __int128 *)calloc((size_t)Q, sizeof(unsigned __int128)); h->snap_first_hi = (unsigned __int128 *)calloc((size_t)Q, sizeof(unsigned __int128)); h->snap_second_hi = (unsigned __int128 *)calloc((size_t)Q, sizeof(unsigned __int128));
+    if (!h->first_lo || !h->first_hi || !h->second_hi || !h->snap_count || !h->snap_j || !h->snap_first_lo || !h->snap_first_hi || !h->snap_second_hi) goto allocation_failed;
+    for (int q = 0; q < nq; q++) h->snap_j[q] = -1;
     h->obs_configured = 1; h->observe = 0; h->obs_valid = 1; h->obs_invalid_code = 0; h->obs_committed = 0; h->obs_snapshots = 0; h->obs_bytes = hb_observer_bytes_for(h->n, nq, Q, J); return Q;
+allocation_failed:
+    observer_free(h); return -4;
 }
+
 void hb_observer_start(hb_t *h) { if (!h->obs_configured) return; int Q = h->qoff[h->nq]; for (int c = 0; c < Q; c++) { h->first_lo[c] = 0; h->first_hi[c] = 0; h->second_hi[c] = 0; h->snap_first_lo[c] = 0; h->snap_first_hi[c] = 0; h->snap_second_hi[c] = 0; } for (int q = 0; q < h->nq; q++) { h->visits[q] = 0; h->next_cp[q] = 0; h->snap_count[q] = 0; h->snap_j[q] = -1; } h->observe = 1; h->obs_valid = 1; h->obs_invalid_code = 0; h->obs_committed = 0; h->obs_snapshots = 0; }
 void hb_observer_stop(hb_t *h) { h->observe = 0; }
 // out[0] = configured, out[1] = observing, out[2] = valid, out[3] = invalid code, out[4] = committed observations, out[5] = completed snapshots, out[6] = nq, out[7] = Q

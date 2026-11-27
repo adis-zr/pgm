@@ -51,6 +51,10 @@ def radii_full_inventory(c):
 
 def cell_row(c):
     full, info = radii_full_inventory(c); d = c['_result'] or {}; m = d.get('mechanism') or {}; hb = c.get('heatbath') if c['arm'] in HB_ARMS else None; rs = c.get('response') if c['arm'] in ('RESPONSE', 'RESPONSE_SCREEN') else None
+    if rs is not None:
+        # The compact cell record omits B. Recover the frozen physical scale
+        # from the raw result rather than guessing it from cardinality.
+        rs = dict(rs, moment_bounds=(m.get('response') or {}).get('B') or {})
     late = bool(d.get('published')) and d.get('hard_deadline_respected') is False
     return dict(complete=bool(c.get('complete')), outcome=c.get('outcome'), receipt_outcome=c.get('receipt_outcome'), receipt_wall_s=c.get('receipt_wall_s'), solver_wall_s=c.get('solver_wall_s'), published=c.get('published'), K=c.get('K'), identity_ok=c.get('identity_ok'), hard_deadline_respected=c.get('hard_deadline_respected'), late_rows=late, seed=c.get('seed'), seed_index=c.get('seed_index', 0), seed_tag=c.get('seed_tag'), dir=os.path.relpath(c['_dir'], RD),
                 worst_radius=(max(full) if full else None), median_radius=(med(full) if full else None), covered_at_eps=(sum(1 for w in full if w <= EPS) if full else None), inventory=info, ledger_identity=m.get('constructor_live_ledger_identity'), defect=(m.get('defect') or m.get('candidate_defect') or m.get('certificate_defect') or m.get('internal_error')), heatbath=hb, response=rs, rate_model_file=c.get('rate_model_file'), peak_rss_bytes=c.get('peak_rss_bytes'),
@@ -63,9 +67,22 @@ def table(sub):
     return by, cs
 
 
+def moment_inflation(group, bounds):
+    """Compare physical U with B*y_max, where y_max estimates Y/B."""
+    try:
+        bound = F(str(bounds[str(group['k'])]))
+        normalized = F(str(group['y_max']))
+        upper = F(str(group['U']))
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        return None
+    if bound <= 0 or normalized <= 0 or upper < 0:
+        return None
+    return float(upper / (bound * normalized))
+
+
 def limiting_term(hb, rs, contract_work_s=19.0):
     """which term limits a heat-bath / response cell: admission (typed refusal), observation_overhead (RESPONSE recorded fewer transitions than HB_R by > 15 %: reported by the caller), gap (the N needed for epsilon exceeds what the measured
-    rate could record in the whole allowance), draw_rate (within 2x), checkpoint_loss (local count at the last completed local checkpoint < 80 % of the visits), moment_conservatism (U / y_max > 2), mean_tail (R / arithmetic >= ... the
+    rate could record in the whole allowance), draw_rate (within 2x), checkpoint_loss (local count at the last completed local checkpoint < 80 % of the visits), moment_conservatism (U / (B*y_max) > 2), mean_tail (R / arithmetic >= ... the
     statistical radius dominates), burn_in (> 25 %), publication_cost (> 10 %), none (epsilon reached)"""
     if not hb: return dict(term='no_cell')
     if hb.get('refusal_kind'): return dict(term='admission', refusal=hb.get('refusal_kind'))
@@ -75,7 +92,15 @@ def limiting_term(hb, rs, contract_work_s=19.0):
     extra = {}
     if rs and rs.get('executed'):
         lc = rs.get('local_counts') or {}; gr = rs.get('groups') or []; tr = hb.get('transitions_recorded') or 0; n_act = (rs.get('risks') or {}) and None
-        if gr: g0 = max(gr, key=lambda g: g.get('M') or 0); extra = dict(moment_inflation=((g0.get('U') / float(F(g0['y_max']))) if (g0.get('U') and g0.get('y_max') and float(F(g0['y_max'])) > 0) else None), U=g0.get('U'), U_mode=g0.get('U_mode'), R=g0.get('R'), local_M=g0.get('M'), checkpoint_utilization=((g0.get('M') * (g0.get('sites') or 1)) / tr if (g0.get('M') and tr) else None))
+        if gr:
+            g0 = max(gr, key=lambda g: g.get('M') or 0)
+            bounds = rs.get('moment_bounds') or {}
+            extra = dict(moment_inflation=moment_inflation(g0, bounds),
+                         moment_scale_B=bounds.get(str(g0.get('k'))),
+                         moment_inflation_rule='physical U / (B * normalized y_max)',
+                         U=g0.get('U'), U_mode=g0.get('U_mode'), R=g0.get('R'),
+                         local_M=g0.get('M'),
+                         checkpoint_utilization=((g0.get('M') * (g0.get('sites') or 1)) / tr if (g0.get('M') and tr) else None))
     if r <= EPS: term = 'none (epsilon reached)'
     elif burn_share > 0.25: term = 'burn_in'
     elif rs and rs.get('executed') and extra.get('moment_inflation') and extra['moment_inflation'] > 2.0: term = 'moment_conservatism'

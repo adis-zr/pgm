@@ -45,6 +45,12 @@ def response_tail_s(cards):
     p = PROFILE['response']; return p['tail_base_s'] + p['tail_per_group_s'] * min(p['tail_groups_cap'], 2 * len(set(cards)))
 
 
+def publish_response_boxes(boxes, eps, orig_of, fixed_rows, conflicts):
+    """Keep raw enclosures for conflicted variables without publishing their points."""
+    return MC.rows_from_boxes(boxes, eps, orig_of, fixed_rows,
+                              withheld_variables={c['var'] for c in conflicts})
+
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); ap.add_argument('--output', required=True); ap.add_argument('--budget', type=float, default=19.5); ap.add_argument('--admission-stop', type=float, default=19.0); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--epsilon', default='1/200'); ap.add_argument('--delta', default='1/1000000')
     ap.add_argument('--policy', default='fixed', choices=['fixed', 'revised']); ap.add_argument('--dev-stream', type=float, default=None); ap.add_argument('--rate-model', default=None); ap.add_argument('--exact-chain', action='store_true', help='CONTROLS: force the exact rational chain (the checked fallback) even when the native range witness admits the kernel')
@@ -104,9 +110,16 @@ def main():
         if not W['eligible']: mech['refusal'] = W['refusal']; return finish('REFUSED', note='spectral eligibility refused: %s' % W['refusal']['reason'])
         g = F(W['g_exact']); n = len(M.cards); hbm = HX.HeatBathModel(M)
         # ---- x0, p0, burn-in, the original-Z enclosure WITH the canonical scalar
-        t0 = tnow(); cache = SW.LogCache(B, wclock, 'certificate log cache'); x0 = MC.choose_x0(hbm); lp0, W0 = MC.log_p0_lower(hbm, x0, cache); beta = delta * PROFILE['beta_share']
-        delta_sample = delta * (PROFILE['response']['raw_share'] if response else PROFILE['delta_sample_share'])
-        t_burn, brec = MC.burn_in_steps(lp0, g, beta); lZU = MC.log_Z_upper(hbm, cache); sl, sh = SW.log_enclosure(M.scalar, cache); cache_rec = cache.record(); cache.release(); ph['certificate_setup'] = tnow() - t0
+        t0 = tnow(); cache = SW.LogCache(B, wclock, 'certificate log cache')
+        try:
+            x0 = MC.choose_x0(hbm); lp0, W0 = MC.log_p0_lower(hbm, x0, cache); beta = delta * PROFILE['beta_share']
+            delta_sample = delta * (PROFILE['response']['raw_share'] if response else PROFILE['delta_sample_share'])
+            t_burn, brec = MC.burn_in_steps(lp0, g, beta); lZU = MC.log_Z_upper(hbm, cache); sl, sh = SW.log_enclosure(M.scalar, cache); cache_rec = cache.record()
+        finally:
+            # This cache is outside the spectral-witness transaction.  Its
+            # chunks must also be released on deadline, memory or other exits.
+            cache.release()
+        ph['certificate_setup'] = tnow() - t0
         zlo = W0 + sl; zhi = lZU + sh; z2lo, z2hi = SW.log_div_ln2_outward(zlo, zhi); f2lo, f2hi = SW.to_float_outward(z2lo, z2hi)
         mech['x0'] = dict(rule=PROFILE['x0_rule'], state=x0); mech['p0'] = dict(log2_p0_lower=float(SW.log_div_ln2_outward(lp0, lp0)[0]), ln_p0_lower=float(lp0), log2_Z_upper_canonical=float(SW.log_div_ln2_outward(lZU, lZU)[1]), ln_W_x0_lower=float(W0)); mech['burn_in'] = dict(steps=t_burn, beta=str(beta), **brec); mech['certificate_cache'] = cache_rec
         out['Z_enclosure'] = dict(log2_lo=f2lo, log2_hi=f2hi, ln_lo_exact=str(zlo), ln_hi_exact=str(zhi), canonical_scalar=str(M.scalar), note='ORIGINAL Z: ln Z in [ln W(x0) + ln scalar, ln Z_U + ln scalar] (W(x0) > 0 strict positivity; Z_U = prod k_i prod_f max f over the canonical model; the canonical scalar restored); base-2 by sign-aware outward division by the ln 2 enclosure; this route does not estimate Z'); out['positive_mass_witness'] = True
@@ -193,7 +206,7 @@ def main():
                     box, conflict = RC.intersect_boxes(boxes_raw[i], ps['coords'])
                     if conflict: conflicts.append(dict(var=M.orig_of[i], canonical=i, raw=[(str(l_), str(h_)) for l_, h_ in boxes_raw[i]], response=[(str(c_['lo']), str(c_['hi'])) for c_ in ps['coords']])); boxes.append(boxes_raw[i]); continue
                     boxes.append(box); n_resp += 1
-                pub2, enc2, st2 = MC.rows_from_boxes(boxes, eps, M.orig_of, M.fixed_rows); ph['response_intersection'] = tnow() - t3
+                pub2, enc2, st2 = publish_response_boxes(boxes, eps, M.orig_of, M.fixed_rows, conflicts); ph['response_intersection'] = tnow() - t3
                 radii_resp = [float(c_['hi'] - c_['lo']) / 2 for ps in rc_['per_site'].values() for c_ in ps['coords']]; radii_raw = [float(h_ - l_) / 2 for row in boxes_raw for (l_, h_) in row]; radii_int = [float(h_ - l_) / 2 for row in boxes for (l_, h_) in row]
                 resp.update(executed=True, snapshots=[dict(site=s_['site'], var=M.orig_of[s_['site']], k=s_['k'], j=s_['j'], M=s_['M'], count=s_['count'], center=s_['center']) for s_ in snaps], local_counts=dict(min=min(s_['count'] for s_ in snaps), max=max(s_['count'] for s_ in snaps), completed_j=sorted({s_['j'] for s_ in snaps if s_['j'] is not None}), sites_without_checkpoint=sum(1 for s_ in snaps if s_['j'] is None)),
                             groups=rc_['groups'], n_groups=rc_['n_groups'], n_certified=rc_['n_certified'], checker_calls=rc_['checker_calls'], unavailable_sites=rc_['unavailable'], variables_with_response=n_resp, variables_raw_only=n_raw_only, conflicts=conflicts,

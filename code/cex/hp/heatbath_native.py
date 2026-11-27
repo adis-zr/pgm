@@ -31,7 +31,7 @@ import heatbath_exact as HX
 import reservation as RV
 HERE = os.path.dirname(os.path.abspath(__file__)); SRC = os.path.join(HERE, 'heatbath_native.c'); RECORD = os.path.join(HERE, 'heatbath_build.json')
 FLAGS = ['-std=c11', '-O2', '-ffp-model=strict', '-ffp-contract=off', '-fno-fast-math', '-fno-unsafe-math-optimizations', '-fno-reciprocal-math', '-fno-associative-math', '-fPIC', '-shared']
-RANGE_FLOOR_LOG2 = -900; REJECT_CAP = 1 << 16; FALLBACK_POLL_BITS = 64; STAGING_OVERHEAD = 4096; OBS_S = 1 << 32
+RANGE_FLOOR_LOG2 = -900; REJECT_CAP = 1 << 16; FALLBACK_POLL_BITS = 64; FALLBACK_MAX_EXTRA_BITS = 4096; STAGING_OVERHEAD = 4096; OBS_S = 1 << 32
 PROFILE = dict(normalization='every table divided by the exact power of two 2^s with max entry / 2^s in [1/2, 1): law-preserving, stored doubles <= 1 (converted on the fly after admission)', range_floor_log2=RANGE_FLOOR_LOG2, range_witness='exact rational all-assignment lower bound psi_min x prod min_f per variable >= 2^-900 from per-table maxima / minima only, else typed NATIVE_RANGE refusal before any commit; DGP10: decided by exact bit-length floor / ceiling sums, the exact product formed only when they straddle the floor (admitted first)',
                error_model='(2 m + 4) u relative per weight on normal binary64 values; thresholds (1 +- 2 u); CDF (1 +- (a + 2) u)', reject_cap=REJECT_CAP, fallback='heatbath_exact.decide_exact on the same 53-bit prefix, polled every %d refinement bits, integer temporaries admitted first (DGP10: from a per-variable bit-length estimate BEFORE weights_exact)' % FALLBACK_POLL_BITS, build='compiled under the caller clock (compiler and version-probe timeouts = the positive remaining allowance; DGP10: no floors)',
                observer=dict(grid='Q32 (S = 2^32): L = max(0, floor(qlo 2^32) - 1), U = min(2^32, ceil(qhi 2^32) + 1)', enclosure='qlo = RN(RN(wl rlo)(1 - 2u)) <= q_a, qhi = RN(RN(wh rhi)(1 + 4u)) >= q_a with rlo = RN(1 / Shi)(1 - 2u), rhi = RN(1 / Slo)(1 + 4u) on the step\'s own outward weight / sum bounds (normal by the range witness)', center='C = round(2^32 / k), ties to the smaller integer, frozen before sampling', sums='uint128 first_lo / first_hi / second_hi = sum max((L - C)^2, (U - C)^2); local count < 2^63 -> first sums < 2^95, squared sums < 2^127', commit='one committed visit observes exactly once (resolved: inside hb_run after the commit; exact fallback: inside hb_apply from the unchanged workspace; null moves observe; rejected site indices / abandoned batches never)', snapshots='per queried site the latest COMPLETED local checkpoint M_j (immutable buffer written only by the kernel at the checkpoint event; read by the host between synchronous kernel calls)'))
@@ -176,9 +176,26 @@ def range_witness(hbm, clock=None, budget=None, txn=None):
 
 
 def fallback_bytes_estimate_one(hbm, i):
-    """variable i: the bit-length estimate of the exact fallback's integer temporaries (k weights whose bits are bounded by the unary + incident maximal entry bits; the common denominator; the integer weights; the cumulative row)"""
+    """Admit the rational weights, common-denominator row and decision workspace.
+
+    Let b bound numerator-plus-denominator bits of each conditional weight.
+    The LCM of k unrelated denominators can have k*b bits; consequently EACH
+    cleared integer weight can have (k+1)*b bits.  Both the integer row and
+    its cumulative row are retained by decide_exact, so storage may grow as
+    k**2*b, even for nearly uniform probabilities.  Include the bounded bit
+    refinement, arithmetic temporaries, list slots and copied native state.
+    Integer sizes use the supported CPython 30-bit limb representation with
+    64 bytes of object/slack overhead; rational scratch is charged generously.
+    """
     bits = max(v.numerator.bit_length() + v.denominator.bit_length() for v in hbm.psi[i]) + sum(max(v.numerator.bit_length() + v.denominator.bit_length() for v in hbm.pairs[fi][4]) for fi, _ in hbm.incident[i]); k = hbm.cards[i]
-    return 4 * k * (bits // 8 + 64) + 1024
+    def integer_bytes(nbits): return 64 + 4 * ((nbits + 29) // 30)
+    integer_bits = (k + 1) * bits
+    sum_bits = integer_bits + max(1, k.bit_length())
+    decision_bits = sum_bits + 53 + FALLBACK_MAX_EXTRA_BITS + 1
+    rational_workspace = 4 * k * (128 + 2 * integer_bytes(bits))
+    integer_workspace = (k + 8) * integer_bytes(integer_bits)
+    decision_workspace = (k + 6) * integer_bytes(decision_bits)
+    return rational_workspace + integer_workspace + decision_workspace + 64 * (hbm.n + 6 * k + 16) + 4096
 
 
 def fallback_bytes_estimates(hbm):
@@ -276,7 +293,7 @@ class NativeChain:
         est = self.fb_est[i] if getattr(self, 'fb_est', None) is not None else fallback_bytes_estimate_one(self.m, i)             # (an injected / partially constructed chain: the estimate is formed for this variable, still BEFORE weights_exact)
         with RV.Txn(self.budget, None, 'exact fallback') as txn:
             txn.reserve(est, 'exact fallback integers (variable %d)' % i); x = self.state(); w = self.m.weights_exact(x, i)
-            a, extra = HX.decide_exact(w, int(u.value), lambda k: self.refine.getrandbits(k) if k else 0, clock=self.clock, poll_every=FALLBACK_POLL_BITS)
+            a, extra = HX.decide_exact(w, int(u.value), lambda k: self.refine.getrandbits(k) if k else 0, max_extra_bits=FALLBACK_MAX_EXTRA_BITS, clock=self.clock, poll_every=FALLBACK_POLL_BITS)
         self.fallbacks += 1; self.fallback_extra_bits += extra; self.lib.hb_apply(self.ctx, i, a); return True
     def run(self, steps, batch=200000, tag=''):
         """exactly `steps` completed transitions (batches polled; unresolved decisions resolved exactly in between; a bounded site-rejection return polls the clock); returns the steps done"""
