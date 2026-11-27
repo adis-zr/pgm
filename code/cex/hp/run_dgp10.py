@@ -75,8 +75,12 @@ def main():
         if head != ref['commit']: raise SystemExit('checkout %s is not the %s commit %s' % (head, schema, ref['commit']))
         bad = [f for f in ref['files'] if ident0.get(f) != ref['files'][f]]
         if bad: raise SystemExit('arm identity mismatch at launch: %s' % bad[:5])
-        if 'HB_R' in arms and frozen.get('heatbath', {}).get('rate_model_hb', {}).get('sha256') and hb_sha != frozen['heatbath']['rate_model_hb']['sha256']: raise SystemExit('HB_R rate file does not match the frozen hash')
-        if any(x in arms for x in ('RESPONSE',)) and frozen.get('heatbath', {}).get('rate_model_response', {}).get('sha256') and rr_sha != frozen['heatbath']['rate_model_response']['sha256']: raise SystemExit('RESPONSE rate file does not match the frozen hash')
+        rmh = frozen.get('heatbath', {}).get('rate_model_hb'); rmr = frozen.get('heatbath', {}).get('rate_model_response')                    # (harness amendment 1: FREEZE.json records 'NOT YET' as a STRING for a rate file written after the freeze; only dict records carry a hash)
+        if 'HB_R' in arms and isinstance(rmh, dict) and rmh.get('sha256') and hb_sha != rmh['sha256']: raise SystemExit('HB_R rate file does not match the frozen hash')
+        if 'RESPONSE' in arms:
+            if isinstance(rmr, dict) and rmr.get('sha256') and rr_sha != rmr['sha256']: raise SystemExit('RESPONSE rate file does not match the frozen hash')
+            frz = os.path.join(RD, 'FREEZE_RATES.json')
+            if not os.path.exists(frz) or json.load(open(frz)).get('response_rates_sha256') != rr_sha: raise SystemExit('RESPONSE rate file is not the one frozen in FREEZE_RATES.json')
     build_rec = None; hb_build = os.path.join(root, 'code', 'cex', 'hp', 'heatbath_build.json')
     import dgp_paths
     for t in tasks: t['model'] = dgp_paths.resolve_input(t['model'], RD, t.get('model_sha256'))
