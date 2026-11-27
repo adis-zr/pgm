@@ -23,15 +23,17 @@ def main():
     for a_ in sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json'))):
         aj = json.load(open(a_))
         if aj.get('kind', '').startswith('validity') and aj.get('code'): amends[aj['code']['commit']] = aj          # DGP5: a VALIDITY amendment carries its own commit + identity files; cells launched after it record the amendment
-    n_amended = 0
+    harness_amends = {aj['amendment_commit'] for aj in (json.load(open(a_)) for a_ in sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json')))) if aj.get('amendment_commit') and aj.get('arm_identity_files_unchanged') is True}       # DGP10 (harness amendment 4): a HARNESS amendment commit keeps the frozen ARM identity; a cell launched there with --amendment (recorded, identity_ok) is at the frozen engine
+    n_amended = 0; n_harness = 0
     for p in sorted(glob.glob(os.path.join(rd, 'runs', '*', '*', 'cell.json'))):
         cj = json.load(open(p)); c = cj['cell']; ref = fr['code']
         if c.get('code_commit') != fr['code']['commit']:
             if c.get('code_commit') in amends and c.get('amendment'): ref = amends[c['code_commit']]['code']; n_amended += 1
+            elif c.get('code_commit') in harness_amends and c.get('amendment') and c.get('identity_ok') is True: n_harness += 1                    # the arm identity is checked against FREEZE.json below (ref stays the frozen record)
             else: bad_commit.append(os.path.relpath(p, rd))
         for k in ('identity_at_launch', 'identity_at_completion'):
             if any(cj.get(k, {}).get(f) != ref['files'].get(f) for f in (ref.get('arm_identity_files') or arm_files)): bad_arm_ident.append((os.path.relpath(p, rd), k))
-    chk('cells_at_frozen_commit', not bad_commit, bad=bad_commit[:10], cells_at_validity_amendment_commit=n_amended, amendments=sorted(amends)); chk('cells_arm_identity_equals_freeze', not bad_arm_ident, bad=bad_arm_ident[:10])
+    chk('cells_at_frozen_commit', not bad_commit, bad=bad_commit[:10], cells_at_validity_amendment_commit=n_amended, cells_at_harness_amendment_commit=n_harness, amendments=sorted(amends), harness_amendments=sorted(harness_amends)); chk('cells_arm_identity_equals_freeze', not bad_arm_ident, bad=bad_arm_ident[:10])
     # oracle results: produced by the frozen oracle harness or a recorded HARNESS amendment (arm files unchanged)
     am = sorted(glob.glob(os.path.join(rd, 'FREEZE_AMENDMENT*.json')))
     for a in am:

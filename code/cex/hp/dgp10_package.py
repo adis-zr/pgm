@@ -18,7 +18,7 @@ restored = {f: sha(os.path.join(tmp, 'pgm-restored', 'code', f)) for f in fr['co
 for a_ in sorted(glob.glob(RD + '/FREEZE_AMENDMENT_*.json')):
     aj = json.load(open(a_)); c_ = (aj.get('code') or {}).get('commit') or aj.get('amendment_commit')
     if c_:
-        subprocess.check_call(['git', '-C', tmp + '/pgm-restored', 'checkout', '-q', '--detach', c_]); files_ = (aj.get('code') or {}).get('files') or {f: v['amended'] for f, v in (aj.get('files_changed') or {}).items()}
+        subprocess.check_call(['git', '-C', tmp + '/pgm-restored', 'checkout', '-q', '--detach', c_]); files_ = (aj.get('code') or {}).get('files') or {f: (v['amended'] if isinstance(v, dict) else v) for f, v in (aj.get('files_changed') or {}).items()}          # both amendment schemas (path -> sha, or path -> {frozen, amended})
         amend_ok[os.path.basename(a_)] = all(sha(os.path.join(tmp, 'pgm-restored', 'code', f)) == h for f, h in files_.items())
 subprocess.check_call(['git', '-C', tmp + '/pgm-restored', 'checkout', '-q', '--detach', commit]); shutil.rmtree(tmp, ignore_errors=True)
 exec_src = {}
