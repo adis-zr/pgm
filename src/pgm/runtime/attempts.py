@@ -292,7 +292,7 @@ def run_attempt(choice, request, deadline, directory, number):
             staged = json.loads(output.read_text())
             record.update(outcome=staged.get("outcome", "REFUSED"), published=staged.get("published", 0),
                           guarantee=staged.get("guarantee"), mechanism=staged.get("mechanism"),
-                          worker_wall_s=staged.get("wall_s"))
+                          worker_wall_s=staged.get("wall_s"), worker_timings=staged.get("runtime_timings"))
             candidate = staged
     except (OSError, ValueError, subprocess.SubprocessError) as e:
         record.update(outcome="BACKEND_EXIT", reason=str(e)[:250]); candidate = None

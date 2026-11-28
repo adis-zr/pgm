@@ -1,0 +1,39 @@
+{
+  "pytest": {
+    "passed": 200,
+    "skipped": 1,
+    "subtests_passed": 39,
+    "log": "pytest_final.log"
+  },
+  "DGP10": {
+    "passed": 12,
+    "total": 12
+  },
+  "same_host_parity": "IDENTICAL",
+  "historical_mac_parity": {
+    "differences": 10,
+    "scope": "last-bit spectral witness quantities, both fixed native trajectories identical"
+  },
+  "libdai_qualification": {
+    "passed": 11,
+    "total": 11
+  },
+  "benchmark_setup": {
+    "completed": 6,
+    "total": 6
+  },
+  "independent_review": "no blocker; full benchmark must test preservation",
+  "files": {
+    "DGP10_CONTROLS.json": "92fc70823c986e4c517b73dc1ed2670d2ff644cb0f40ff311345a0a9324f7c93",
+    "LEXICAL_EQUIVALENCE.json": "ee3019ec1b86ddf2141cbe6171e53383950aef14fba26153abfb1d6f7c726166",
+    "LIBDAI_QUALIFICATION.json": "390bb3c2e93c8f2b890e6d5e9c91a17014823eb5c94fcb173605344490a6265c",
+    "PARITY_COMPARISON.json": "06f2a77e2e45b5c346e5adbcea34ea0b478138bbdb1773f3681d8ff0837d6eea",
+    "ROUTE_AUDIT.json": "19d65bf5b04812a3df3e868a2bd4e93e860569fdd05e6c33a5b83b7fb28d6bb1",
+    "SAME_HOST_PARITY.json": "171afabcc753bc2accf4b76a70eebf5317ea22b366ea70a206a46507056f8594",
+    "TOOLCHAIN.json": "8de04e336fb75cadc1b4a645ef1d5aa1124825a536b0ed7fc9767736e25c0e26",
+    "baseline_parity.json": "6ab7b43348e26d62f259e93b6aa1a9c47e2cedc56aea372eef6ba7d8035659d9",
+    "parity.json": "d6f745757daba023b9fcf55ccbfc17e09bbdc112063f38204fd835fddbb383eb",
+    "pytest_final.log": "5cfdba1622c271dd318f97c22fd1430b36546fb53317257fd2812df11f54bd6a",
+    "startup_measurement.json": "3a4f4c36cc927db522a799e2cbcc4606171966ab7a96fb399182a729513f7384"
+  }
+}

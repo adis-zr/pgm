@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import time
 from . import infer, capabilities
+from .policies import names as policy_names
 
 
 def main(argv=None):
@@ -19,7 +20,7 @@ def main(argv=None):
     ap.add_argument("--delta", default="1/1000000")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--mode", choices=["auto","exact","deterministic"], default="auto", help="permitted guarantee")
-    ap.add_argument("--policy", choices=["accepted","experimental"], default="accepted", help="public scheduling policy (default: the accepted engine through the common contract)")
+    ap.add_argument("--policy", choices=policy_names(), default="accepted", help="public scheduling policy (default: the accepted engine through the common contract)")
     ap.add_argument("--query", action="append", metavar="VARIABLE:STATE")
     ap.add_argument("--capabilities", action="store_true")
     a = ap.parse_args(argv)

@@ -1,0 +1,195 @@
+{
+ "candidate": "/workspace/scratch/226d1e4428b0/performance_qualification/parity.json",
+ "candidate_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+ "cases": {
+  "block/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "block/asym2_exact_mode": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "block/bip4": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "block/cyc3": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "block/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "quotient/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "quotient/cyc3_deterministic": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "response/bip4_refused_hard_zero": {
+   "differences": [],
+   "outcome": "REFUSED",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "response/pos4_exact_mode_ineligible": {
+   "differences": [],
+   "outcome": "INELIGIBLE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "response/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "structural/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "structural/asym2_evidence": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 2,
+   "status": "IDENTICAL"
+  },
+  "structural/bip4_stream": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/bip4_support": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/cyc3": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  }
+ },
+ "differences": 10,
+ "fixtures_identical": true,
+ "reference": "/workspace/scratch/226d1e4428b0/pgm-step2-review/tests/parity/reference_f8197e6.json",
+ "reference_commit": "f8197e6b1e90286b8554a3088a0594b9178a3595",
+ "response_prefix": {
+  "cyc3_card3": {
+   "differences": [
+    {
+     "candidate": "24810390262792725/60839187281756693",
+     "path": "/eta",
+     "reference": "49620780525585441/121678374563513377"
+    },
+    {
+     "candidate": "8270130087597575/36028797018963968",
+     "path": "/g_exact",
+     "reference": "16540260175195147/72057594037927936"
+    },
+    {
+     "candidate": "-0.40253411540477047",
+     "path": "/l",
+     "reference": "-0.40253411540477063"
+    },
+    {
+     "candidate": "0.22021255861081596",
+     "path": "/u",
+     "reference": "0.22021255861081604"
+    },
+    {
+     "candidate": "11218406756171243/18014398509481984",
+     "path": "/width_exact",
+     "reference": "22436813512342495/36028797018963968"
+    }
+   ],
+   "layout": {
+    "candidate": "canonical",
+    "reference": "legacy"
+   },
+   "status": "DIFFERENT"
+  },
+  "pos4": {
+   "differences": [
+    {
+     "candidate": "24036482226495335/60065279245459303",
+     "path": "/eta",
+     "reference": "3004560278311917/7508159905682413"
+    },
+    {
+     "candidate": "24036482226495335/144115188075855872",
+     "path": "/g_exact",
+     "reference": "3004560278311917/18014398509481984"
+    },
+    {
+     "candidate": "-0.395653547620182",
+     "path": "/l",
+     "reference": "-0.3956535476201819"
+    },
+    {
+     "candidate": "0.2700536524373946",
+     "path": "/u",
+     "reference": "0.27005365243739465"
+    },
+    {
+     "candidate": "11992314792468633/18014398509481984",
+     "path": "/width_exact",
+     "reference": "1499039349058579/2251799813685248"
+    }
+   ],
+   "layout": {
+    "candidate": "canonical",
+    "reference": "legacy"
+   },
+   "status": "DIFFERENT"
+  }
+ },
+ "verdict": "DIFFERENT",
+ "wall_limited": {
+  "block/pos4": {
+   "candidate_outcome": "COMPLETE",
+   "candidate_published": 8,
+   "differing": [],
+   "reference_outcome": "COMPLETE",
+   "reference_published": 8,
+   "status": "IDENTICAL_INVARIANTS"
+  },
+  "response/pos4": {
+   "candidate_outcome": "COMPLETE",
+   "candidate_published": 8,
+   "differing": [],
+   "reference_outcome": "COMPLETE",
+   "reference_published": 8,
+   "status": "IDENTICAL_INVARIANTS"
+  }
+ }
+}

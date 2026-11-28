@@ -10,7 +10,7 @@ late-suppression payload.  Isolation remains because the retained implementation
 from __future__ import annotations
 
 import argparse
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from fractions import Fraction
 import json
 import math
@@ -29,6 +29,21 @@ F = Fraction
 BACKENDS = {"structural": structural.run, "block": block.run, "quotient": quotient.run, "response": response.run}
 
 
+@contextmanager
+def _record_stage(timings, name):
+    """Diagnostic elapsed time only; all stages precede the publication clock.
+
+    perf_counter is separate from the hard-deadline monotonic reads so timing
+    instrumentation cannot alter the clock-read protocol used by controls.
+    A refused stage records its actual consumed time as well.
+    """
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        timings[name] = time.perf_counter() - started
+
+
 def read_inventory(path: Path, memory_bytes: int):
     """Compatibility: the original nonobserved inventory and binding of a source (one exact parse)."""
     bound = load_bound(path, memory_bytes=memory_bytes)
@@ -38,9 +53,11 @@ def read_inventory(path: Path, memory_bytes: int):
 def run(args) -> dict:
     started = time.monotonic()
     inventory, binding = [], {}
+    timings = {}
     result = {"backend": args.backend, "outcome": "REFUSED", "answers": [], "mechanism": {}}
     try:
-        bound = load_bound(args.input, expected_binding=args.expected_binding, memory_bytes=args.memory_bytes)
+        with _record_stage(timings, "source_parse_s"):
+            bound = load_bound(args.input, expected_binding=args.expected_binding, memory_bytes=args.memory_bytes)
         inventory, binding = bound.inventory, bound.binding
         result["binding"] = binding
         context = AdapterContext(deadline=args.deadline, epsilon=args.epsilon, delta=args.delta, seed=args.seed,
@@ -49,9 +66,10 @@ def run(args) -> dict:
         context.remaining()
         # Existing runners print diagnostics; keep stdout available for one
         # adapter record and retain backend output in the worker's stderr log.
-        with redirect_stdout(sys.stderr):
+        with _record_stage(timings, "adapter_s"), redirect_stdout(sys.stderr):
             result = BACKENDS[args.backend](bound, context)
-        result = normalize_result(result, inventory, binding, args.epsilon)
+        with _record_stage(timings, "normalization_s"):
+            result = normalize_result(result, inventory, binding, args.epsilon)
     except SourceRefused as e:
         if e.bound is not None:
             inventory, binding = e.bound.inventory, e.bound.binding; result["binding"] = binding
@@ -77,7 +95,7 @@ def run(args) -> dict:
     result.update(backend=args.backend, input=str(args.input.resolve()), binding=binding,
                   epsilon=str(args.epsilon), delta=str(args.delta), seed=args.seed,
                   memory_mib=args.memory_mib, deadline_monotonic=args.deadline, policy=getattr(args, "policy", None),
-                  configuration=getattr(args, "configuration", None))
+                  configuration=getattr(args, "configuration", None), runtime_timings=timings)
     return write_result(args.output, result, inventory, args.deadline, started)
 
 

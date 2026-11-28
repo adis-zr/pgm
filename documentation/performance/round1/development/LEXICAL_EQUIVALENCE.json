@@ -1,0 +1,315 @@
+{
+  "baseline_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+  "tasks": 61,
+  "entries": 1914150,
+  "all_metadata_identical": true,
+  "excluded_field": "inspection_s (elapsed time)",
+  "forecast": false,
+  "rows": [
+    {
+      "task": "BN_12",
+      "metadata_identical": true,
+      "source_entries": 2346
+    },
+    {
+      "task": "BN_13",
+      "metadata_identical": true,
+      "source_entries": 2520
+    },
+    {
+      "task": "BN_15",
+      "metadata_identical": true,
+      "source_entries": 2812
+    },
+    {
+      "task": "BN_31",
+      "metadata_identical": true,
+      "source_entries": 8978
+    },
+    {
+      "task": "Grids_11",
+      "metadata_identical": true,
+      "source_entries": 1000
+    },
+    {
+      "task": "Grids_14",
+      "metadata_identical": true,
+      "source_entries": 1000
+    },
+    {
+      "task": "Grids_15",
+      "metadata_identical": true,
+      "source_entries": 3840
+    },
+    {
+      "task": "Grids_17",
+      "metadata_identical": true,
+      "source_entries": 3840
+    },
+    {
+      "task": "Pedigree_11",
+      "metadata_identical": true,
+      "source_entries": 3152
+    },
+    {
+      "task": "Pedigree_12",
+      "metadata_identical": true,
+      "source_entries": 3152
+    },
+    {
+      "task": "Pedigree_13",
+      "metadata_identical": true,
+      "source_entries": 3152
+    },
+    {
+      "task": "Promedus_33",
+      "metadata_identical": true,
+      "source_entries": 1906
+    },
+    {
+      "task": "Promedus_14",
+      "metadata_identical": true,
+      "source_entries": 2434
+    },
+    {
+      "task": "Promedus_12",
+      "metadata_identical": true,
+      "source_entries": 2946
+    },
+    {
+      "task": "Promedus_37",
+      "metadata_identical": true,
+      "source_entries": 5470
+    },
+    {
+      "task": "CSP_12",
+      "metadata_identical": true,
+      "source_entries": 2572
+    },
+    {
+      "task": "CSP_11",
+      "metadata_identical": true,
+      "source_entries": 3306
+    },
+    {
+      "task": "CSP_13",
+      "metadata_identical": true,
+      "source_entries": 4538
+    },
+    {
+      "task": "DBN_11",
+      "metadata_identical": true,
+      "source_entries": 1680
+    },
+    {
+      "task": "DBN_12",
+      "metadata_identical": true,
+      "source_entries": 1848
+    },
+    {
+      "task": "DBN_15",
+      "metadata_identical": true,
+      "source_entries": 1848
+    },
+    {
+      "task": "DBN_16",
+      "metadata_identical": true,
+      "source_entries": 2024
+    },
+    {
+      "task": "ObjectDetection_34",
+      "metadata_identical": true,
+      "source_entries": 18810
+    },
+    {
+      "task": "ObjectDetection_56",
+      "metadata_identical": true,
+      "source_entries": 35520
+    },
+    {
+      "task": "ObjectDetection_39",
+      "metadata_identical": true,
+      "source_entries": 39360
+    },
+    {
+      "task": "ObjectDetection_24",
+      "metadata_identical": true,
+      "source_entries": 67410
+    },
+    {
+      "task": "Segmentation_11",
+      "metadata_identical": true,
+      "source_entries": 2924
+    },
+    {
+      "task": "Segmentation_12",
+      "metadata_identical": true,
+      "source_entries": 2946
+    },
+    {
+      "task": "Segmentation_16",
+      "metadata_identical": true,
+      "source_entries": 2994
+    },
+    {
+      "task": "Segmentation_13",
+      "metadata_identical": true,
+      "source_entries": 3058
+    },
+    {
+      "task": "1qt9",
+      "metadata_identical": true,
+      "source_entries": 58347
+    },
+    {
+      "task": "1jer",
+      "metadata_identical": true,
+      "source_entries": 65681
+    },
+    {
+      "task": "1aie",
+      "metadata_identical": true,
+      "source_entries": 74745
+    },
+    {
+      "task": "1npl",
+      "metadata_identical": true,
+      "source_entries": 93707
+    },
+    {
+      "task": "ASIA",
+      "metadata_identical": true,
+      "source_entries": 36
+    },
+    {
+      "task": "CHILD",
+      "metadata_identical": true,
+      "source_entries": 344
+    },
+    {
+      "task": "INSURANCE",
+      "metadata_identical": true,
+      "source_entries": 1419
+    },
+    {
+      "task": "WATER",
+      "metadata_identical": true,
+      "source_entries": 13484
+    },
+    {
+      "task": "MILDEW",
+      "metadata_identical": true,
+      "source_entries": 547158
+    },
+    {
+      "task": "ALARM",
+      "metadata_identical": true,
+      "source_entries": 752
+    },
+    {
+      "task": "BARLEY",
+      "metadata_identical": true,
+      "source_entries": 130180
+    },
+    {
+      "task": "HAILFINDER",
+      "metadata_identical": true,
+      "source_entries": 3741
+    },
+    {
+      "task": "WIN95PTS",
+      "metadata_identical": true,
+      "source_entries": 1148
+    },
+    {
+      "task": "MUNIN1",
+      "metadata_identical": true,
+      "source_entries": 19226
+    },
+    {
+      "task": "ANDES",
+      "metadata_identical": true,
+      "source_entries": 2314
+    },
+    {
+      "task": "DIABETES",
+      "metadata_identical": true,
+      "source_entries": 461069
+    },
+    {
+      "task": "Alchemy_11",
+      "metadata_identical": true,
+      "source_entries": 4080
+    },
+    {
+      "task": "DBN_14",
+      "metadata_identical": true,
+      "source_entries": 1680
+    },
+    {
+      "task": "mastermind_03_08_04-0003",
+      "metadata_identical": true,
+      "source_entries": 16008
+    },
+    {
+      "task": "ObjectDetection_43",
+      "metadata_identical": true,
+      "source_entries": 39360
+    },
+    {
+      "task": "mastermind_03_08_05-0003",
+      "metadata_identical": true,
+      "source_entries": 26186
+    },
+    {
+      "task": "or_chain_186.fg",
+      "metadata_identical": true,
+      "source_entries": 5736
+    },
+    {
+      "task": "or_chain_209.fg",
+      "metadata_identical": true,
+      "source_entries": 4744
+    },
+    {
+      "task": "linkage_13",
+      "metadata_identical": true,
+      "source_entries": 13456
+    },
+    {
+      "task": "Promedus_36",
+      "metadata_identical": true,
+      "source_entries": 2558
+    },
+    {
+      "task": "ObjectDetection_30",
+      "metadata_identical": true,
+      "source_entries": 20625
+    },
+    {
+      "task": "Promedus_18",
+      "metadata_identical": true,
+      "source_entries": 2228
+    },
+    {
+      "task": "blockmap_10_01-0009",
+      "metadata_identical": true,
+      "source_entries": 40070
+    },
+    {
+      "task": "fs-07",
+      "metadata_identical": true,
+      "source_entries": 7798
+    },
+    {
+      "task": "mastermind_05_08_03-0002",
+      "metadata_identical": true,
+      "source_entries": 11278
+    },
+    {
+      "task": "or_chain_188.fg",
+      "metadata_identical": true,
+      "source_entries": 5606
+    }
+  ]
+}

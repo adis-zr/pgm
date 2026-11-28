@@ -1,0 +1,21 @@
+{
+  "schema": "PGM_UNTUNED_PERFORMANCE_PLAN_1",
+  "question": "Can general inspection, runtime and structural dispatch improvements deliver broad end-to-end gains without losing existing completions?",
+  "baseline_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+  "arms": ["BASE_ACCEPTED", "PGM_ACCEPTED", "BASE_EXPERIMENTAL", "PGM_AUTOMATIC", "LIBDAI_JT", "LIBDAI_BP"],
+  "tasks": 61,
+  "exposure": "All tasks are exposed external regression inputs; no unseen claim.",
+  "replicates": [1, 2],
+  "expected_cells": 732,
+  "contract": {"outer_seconds": 20, "pgm_seconds": 19.5, "memory_mib": 3072, "epsilon": "1/200", "delta": "1/1000000", "sample_interval_seconds": 0.01, "grace_seconds": 0, "scored_ceiling_seconds": 14640},
+  "candidate": {
+    "accepted": "Unchanged accepted-engine policy through the revised common runtime.",
+    "automatic": "structural-portfolio-2: fixed existing rates and risk shares; existing affordable native exact-contraction admission also applies to binary higher-arity models, with the existing quarter allowance. No benchmark-name dispatch or per-input tuning."
+  },
+  "execution": "Serial fresh-process cells. The six-arm order reverses by task index plus replicate. Native setup is outside timed cells and separately recorded. Entire source closure and active native files are checked before and after every cell.",
+  "preservation": {"same_host_accepted": "PGM_ACCEPTED retains every BASE_ACCEPTED both-repeat completion", "same_host_automatic": "PGM_AUTOMATIC retains the union of BASE_ACCEPTED and BASE_EXPERIMENTAL both-repeat completions", "historical": "Report historical accepted45 and experimental54 targets separately from same-host preservation; cross-host reproduction failures remain visible."},
+  "validity": ["One terminal outer receipt per cell and no unresolved cleanup", "Input, source, compiler, Python and active native identities match the freeze", "Public-policy contract, original inventory, rational geometry, witness and prospective risk checks pass on every returned output", "No conflicting deterministic intervals", "JT numerical containment with the inherited 5e-10 serialization allowance wherever valid JT points exist"],
+  "performance": {"confirmed_overhead_flag": "Candidate slower by more than 1.25x and 0.1 seconds in both matched replicates", "timing_pairs": "Only mutual both-repeat completions have finite latency ratios; failures, timeouts and memory refusals remain censored", "report": "Completion sets, gains/losses, full paired ratios, memory, routes, phase decomposition, model size/family groups and BP convergence/error diagnostics. No universal or asymptotic dominance claim from this panel."},
+  "amendments": "No source changes during a frozen run. Any required repair gets a new commit and labelled freeze; original receipts remain. A partial run may resume under its original identities but cannot silently rerun a launched cell.",
+  "synthetic_performance_inputs": false
+}

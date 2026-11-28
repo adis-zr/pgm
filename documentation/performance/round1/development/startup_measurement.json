@@ -1,0 +1,138 @@
+{
+  "purpose": "development startup attribution only; no inference or benchmark claim",
+  "command": [
+    "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+    "-c",
+    "import pgm.supervision"
+  ],
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "base_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+  "rows": [
+    {
+      "repeat": 0,
+      "arm": "baseline",
+      "wall_s": 0.029803330999129685
+    },
+    {
+      "repeat": 0,
+      "arm": "candidate",
+      "wall_s": 0.009413671999936923
+    },
+    {
+      "repeat": 1,
+      "arm": "candidate",
+      "wall_s": 0.00891528000101971
+    },
+    {
+      "repeat": 1,
+      "arm": "baseline",
+      "wall_s": 0.049615838999670814
+    },
+    {
+      "repeat": 2,
+      "arm": "baseline",
+      "wall_s": 0.030932253001083154
+    },
+    {
+      "repeat": 2,
+      "arm": "candidate",
+      "wall_s": 0.009545311000692891
+    },
+    {
+      "repeat": 3,
+      "arm": "candidate",
+      "wall_s": 0.009007479000501917
+    },
+    {
+      "repeat": 3,
+      "arm": "baseline",
+      "wall_s": 0.0379192750006041
+    },
+    {
+      "repeat": 4,
+      "arm": "baseline",
+      "wall_s": 0.030135371000142186
+    },
+    {
+      "repeat": 4,
+      "arm": "candidate",
+      "wall_s": 0.009142302000327618
+    },
+    {
+      "repeat": 5,
+      "arm": "candidate",
+      "wall_s": 0.00898181100092188
+    },
+    {
+      "repeat": 5,
+      "arm": "baseline",
+      "wall_s": 0.030251394999140757
+    },
+    {
+      "repeat": 6,
+      "arm": "baseline",
+      "wall_s": 0.04851075199985644
+    },
+    {
+      "repeat": 6,
+      "arm": "candidate",
+      "wall_s": 0.009723327999381581
+    },
+    {
+      "repeat": 7,
+      "arm": "candidate",
+      "wall_s": 0.009199980000630603
+    },
+    {
+      "repeat": 7,
+      "arm": "baseline",
+      "wall_s": 0.04004160400108958
+    },
+    {
+      "repeat": 8,
+      "arm": "baseline",
+      "wall_s": 0.031230892000166932
+    },
+    {
+      "repeat": 8,
+      "arm": "candidate",
+      "wall_s": 0.00910276300055557
+    },
+    {
+      "repeat": 9,
+      "arm": "candidate",
+      "wall_s": 0.00906871100050921
+    },
+    {
+      "repeat": 9,
+      "arm": "baseline",
+      "wall_s": 0.031328919998486526
+    },
+    {
+      "repeat": 10,
+      "arm": "baseline",
+      "wall_s": 0.031158582998614293
+    },
+    {
+      "repeat": 10,
+      "arm": "candidate",
+      "wall_s": 0.009437307999178302
+    },
+    {
+      "repeat": 11,
+      "arm": "candidate",
+      "wall_s": 0.008994609999717795
+    },
+    {
+      "repeat": 11,
+      "arm": "baseline",
+      "wall_s": 0.030359568001586013
+    }
+  ],
+  "medians_s": {
+    "baseline": 0.031194737499390612,
+    "candidate": 0.009122532500441594
+  },
+  "saved_s": 0.02207220499894902
+}

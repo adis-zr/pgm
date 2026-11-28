@@ -1,0 +1,210 @@
+{
+  "schema": "PGM_LINUX_PERFORMANCE_TOOLCHAIN_V1",
+  "utc": "2026-11-28T01:48:52Z",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "clang_source": "Debian 19.1.7-3+b1 packages; all SHA256 match previously archived provenance",
+  "CC": "/workspace/scratch/226d1e4428b0/performance_toolchain/clang/usr/bin/clang-19",
+  "CXX": "/workspace/scratch/226d1e4428b0/performance_toolchain/clang/usr/bin/clang++-19",
+  "compiler_sha256": "0a3c55936ac43954fbe4914e6e73b577ca9e35e75d89ef13d3e28c187f41ca1a",
+  "compiler_version": "Debian clang version 19.1.7 (3+b1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /workspace/scratch/226d1e4428b0/performance_toolchain/clang/usr/lib/llvm-19/bin\n",
+  "libdai": {
+    "path": "/workspace/scratch/226d1e4428b0/performance_toolchain/libdai_mar",
+    "sha256": "beb2850290bdbdf353e08e8e8e9695fc8b39f5c3baa693032303e88ac9474a8a",
+    "provenance": {
+      "libdai_version": "0.3.2",
+      "libdai_source_url": "https://staff.fnwi.uva.nl/j.m.mooij/libDAI/libDAI-0.3.2.tar.gz",
+      "libdai_source_sha256": "47688d7ab5129b8c0746ee39c2a2c1cc67cdf4c448609dd316c64657b1ab9de3",
+      "boost_version": "1.83.0",
+      "boost_source_url": "https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.bz2",
+      "boost_source_sha256": "6478edfe2f3305127cffe8caf73ea0176c53769f4bf1585be237eb30798c3b8e",
+      "compiler": "g++ (Debian 14.2.0-19) 14.2.0",
+      "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+      "compile_flags": "-O3 -std=c++11 -Wno-deprecated -Wall -W -Wextra -fpic",
+      "debug": false,
+      "source_changes": "none (Makefile.LINUX copied to Makefile.conf; build flags overridden on command line)",
+      "driver_source": "/workspace/scratch/226d1e4428b0/pgm-external-benchmark/code/bench/libdai/libdai_mar.cpp",
+      "driver_source_sha256": "6fcfb6f0ea7bcce4e77a6f5ac07c3890ab2e365b02bfbae9a9c1b4fb8561dcb3",
+      "binary": "/workspace/scratch/226d1e4428b0/external_benchmark_tools/libdai_mar",
+      "binary_sha256": "beb2850290bdbdf353e08e8e8e9695fc8b39f5c3baa693032303e88ac9474a8a",
+      "library_sha256": "c74725a495892576c30355f80380eab478405db5eb98eeb70022250768f7ae1b",
+      "dynamic_linkage": "\tlinux-vdso.so.1 (0x00007fd92eec9000)\n\tlibgmpxx.so.4 => /lib/x86_64-linux-gnu/libgmpxx.so.4 (0x00007fd92ed0a000)\n\tlibgmp.so.10 => /lib/x86_64-linux-gnu/libgmp.so.10 (0x00007fd92ec80000)\n\tlibstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x00007fd92ea1a000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007fd92e92a000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x00007fd92e8fb000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007fd92e707000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007fd92eecb000)\n",
+      "qualification_file": "LIBDAI_QUALIFICATION.json",
+      "qualification_sha256": "6c20a18874dd2eaff6ac5ca2e1db2a91d4091a440968fc7baa130cfdd5bee0c3",
+      "warnings": "Initial GitHub mirror clone was not used. One initial compile without -O3 was interrupted and a -B forced full optimized rebuild was executed. No scored benchmarks were run. Driver drops positive scalar factors, so its logZ is not an original-model partition oracle; all singleton marginals are retained.",
+      "algorithms": {
+        "EXACT": "JTREE[inference=SUMPROD,updates=HUGIN,maxmem=8589934592]",
+        "LBP": "BP[inference=SUMPROD,updates=SEQMAX,logdomain=0,tol=1e-9,maxiter=10000,damping=0.0,maxtime=<remaining>]"
+      }
+    },
+    "qualification": {
+      "all_ok": true,
+      "n": 11,
+      "checks": [
+        {
+          "case": "asymmetric_chain",
+          "arm": "JTREE",
+          "returncode": 0,
+          "max_abs_error": 4.409228537838317e-11,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "asymmetric_chain",
+          "arm": "BP",
+          "returncode": 0,
+          "max_abs_error": 4.409228537838317e-11,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "asymmetric_evidence",
+          "arm": "JTREE",
+          "returncode": 0,
+          "max_abs_error": 4.285716226348768e-11,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "asymmetric_evidence",
+          "arm": "BP",
+          "returncode": 0,
+          "max_abs_error": 4.285716226348768e-11,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "isolated_and_fixed",
+          "arm": "JTREE",
+          "returncode": 0,
+          "max_abs_error": 3.33333360913457e-11,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "isolated_and_fixed",
+          "arm": "BP",
+          "returncode": 0,
+          "max_abs_error": 3.33333360913457e-11,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "hard_zeros",
+          "arm": "JTREE",
+          "returncode": 0,
+          "max_abs_error": 3.33333360913457e-11,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "hard_zeros",
+          "arm": "BP",
+          "returncode": 0,
+          "max_abs_error": 3.33333360913457e-11,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "positive_scalar",
+          "arm": "JTREE",
+          "returncode": 0,
+          "max_abs_error": 0.0,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "positive_scalar",
+          "arm": "BP",
+          "returncode": 0,
+          "max_abs_error": 0.0,
+          "pass_": true,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "case": "impossible_evidence",
+          "returncode": 5,
+          "pass_": true
+        }
+      ],
+      "binary_sha256": "beb2850290bdbdf353e08e8e8e9695fc8b39f5c3baa693032303e88ac9474a8a",
+      "binary": "/workspace/scratch/226d1e4428b0/performance_toolchain/libdai_mar",
+      "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+      "qualified_utc": "2026-11-28T01:47:20Z"
+    }
+  },
+  "native_cache": "/workspace/scratch/226d1e4428b0/performance_toolchain/native_cache",
+  "native_build": {
+    "contraction": {
+      "source_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+      "binary_sha256": "52d0f0b718deba473308eeffc6d7f98ecd9765e2a93fa798ab068c55113fb01b",
+      "flags": [
+        "-std=c++17",
+        "-O2",
+        "-ffp-model=strict",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-fno-unsafe-math-optimizations",
+        "-fno-reciprocal-math",
+        "-fno-associative-math",
+        "-fPIC",
+        "-shared"
+      ],
+      "compiler": "/workspace/scratch/226d1e4428b0/performance_toolchain/clang/usr/bin/clang++-19",
+      "compiler_version": "Debian clang version 19.1.7 (3+b1)",
+      "build_wall_s": 1.8214047319997917,
+      "platform": "linux",
+      "built_utc": "2026-11-28T01:48:09Z",
+      "plan_format": 2
+    },
+    "bipartite_stream": {
+      "source_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+      "binary_sha256": "e23428b4743b8227a9285c584fa7e413d64547095c95c6befac0c1f6e10d43f8",
+      "compiler_flags": [
+        "-O3",
+        "-std=c++17",
+        "-shared",
+        "-fPIC",
+        "-fno-fast-math",
+        "-ffp-contract=off",
+        "-frounding-math"
+      ]
+    },
+    "heatbath": {
+      "source_sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+      "binary_sha256": "44550994fa5f4c8c27b8b4e5018fdd0d6875e331d404c376197611ba96fca4f0",
+      "flags": [
+        "-std=c11",
+        "-O2",
+        "-ffp-model=strict",
+        "-ffp-contract=off",
+        "-fno-fast-math",
+        "-fno-unsafe-math-optimizations",
+        "-fno-reciprocal-math",
+        "-fno-associative-math",
+        "-fPIC",
+        "-shared"
+      ],
+      "compiler": "/workspace/scratch/226d1e4428b0/performance_toolchain/clang/usr/bin/clang-19",
+      "compiler_version": "Debian clang version 19.1.7 (3+b1)",
+      "build_wall_s": 0.3332706520013744,
+      "platform": "linux",
+      "built_utc": "2026-11-28T01:48:10Z",
+      "library": "heatbath_df27100be44a9b5a.dylib",
+      "rng": "xoshiro256** seeded by splitmix64 from the 64-bit sample seed",
+      "decision": "outward binary64 weight / CDF intervals on power-of-two normalized tables inside a proved normal range, 53-bit uniform prefix, exact fallback on the same bit stream",
+      "range_floor_log2": -900,
+      "observer": "DGP10 conditional-response observer (optional; off unless configured)"
+    }
+  },
+  "tracked_source_modified": false
+}

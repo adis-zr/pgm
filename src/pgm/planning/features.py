@@ -118,7 +118,14 @@ class _Tokens:
 
 def _number(token, context):
     """Return (exactly_zero, conservative numerator+denominator bit estimate)."""
-    if b"/" in token:
+    if token.isdigit():
+        # Most external factor tables contain many literal 0/1 entries.
+        # Their lexical validation and the SAME conservative payload estimate
+        # need no regular expression, exponent split or decimal reconstruction.
+        zero = not token.strip(b"0")
+        negative = False
+        bits = 4 * (len(token) + 1)
+    elif b"/" in token:
         parts = token.split(b"/")
         if len(parts) != 2 or not all(_SIGNED_INT.fullmatch(p) for p in parts):
             context.fail("INVALID_TASK", "invalid rational factor value")
@@ -133,8 +140,12 @@ def _number(token, context):
     else:
         if not _DECIMAL.fullmatch(token):
             context.fail("INVALID_TASK", "invalid decimal factor value")
-        lower = token.lower()
-        mantissa, separator, exponent = lower.partition(b"e")
+        # Decimal points without exponents do not require case folding or
+        # exponent parsing.  The regex above still defines the accepted grammar.
+        if b"e" in token or b"E" in token:
+            mantissa, separator, exponent = token.lower().partition(b"e")
+        else:
+            mantissa, separator, exponent = token, b"", b""
         exponent_value = 0
         if separator:
             significant = exponent.lstrip(b"+-0") or b"0"

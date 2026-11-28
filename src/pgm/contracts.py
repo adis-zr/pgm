@@ -31,8 +31,9 @@ class InferenceRequest:
             raise ValueError("epsilon must be in (0,1] and delta in [0,1)")
         if self.mode not in {"auto", "exact", "deterministic"}:
             raise ValueError("mode must be auto, exact, or deterministic")
-        if self.policy not in {"accepted", "experimental"}:
-            raise ValueError("policy must be accepted or experimental")
+        from .policies import names
+        if self.policy not in names():
+            raise ValueError("policy must be one of %s" % (", ".join(names()),))
         if self.mode == "auto" and self.delta == 0:
             object.__setattr__(self, "mode", "deterministic")
         if type(self.seed) is not int:

@@ -9,12 +9,14 @@ allowance and delta it is handed, and the controller's publication geometry is p
   the full requested delta when PAC is permitted; no optional quotient / spectral exploration.
 * ``experimental``: the frozen ``structural-portfolio-1`` switchboard of the scored commit 3283cfd, with its
   choices, coefficients, allowance fractions and prospective backend risk shares unchanged.
+* ``automatic``: the same portfolio, additionally admitting a bounded structural attempt on physically
+  affordable binary higher-arity models using the existing categorical admission rule.
 """
 from __future__ import annotations
 
-from . import accepted, experimental
+from . import accepted, experimental, automatic
 
-POLICIES = {accepted.NAME: accepted, experimental.NAME: experimental}
+POLICIES = {accepted.NAME: accepted, experimental.NAME: experimental, automatic.NAME: automatic}
 DEFAULT_POLICY = accepted.NAME
 
 

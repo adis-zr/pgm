@@ -1,0 +1,143 @@
+{
+ "candidate": "/workspace/scratch/226d1e4428b0/performance_qualification/parity.json",
+ "candidate_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+ "cases": {
+  "block/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "block/asym2_exact_mode": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "block/bip4": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "block/cyc3": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "block/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "quotient/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "quotient/cyc3_deterministic": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "response/bip4_refused_hard_zero": {
+   "differences": [],
+   "outcome": "REFUSED",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "response/pos4_exact_mode_ineligible": {
+   "differences": [],
+   "outcome": "INELIGIBLE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "response/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  },
+  "structural/asym2": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 4,
+   "status": "IDENTICAL"
+  },
+  "structural/asym2_evidence": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 2,
+   "status": "IDENTICAL"
+  },
+  "structural/bip4_stream": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/bip4_support": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/cyc3": {
+   "differences": [],
+   "outcome": "COMPLETE",
+   "published": 8,
+   "status": "IDENTICAL"
+  },
+  "structural/zero_mass": {
+   "differences": [],
+   "outcome": "ZERO_EVIDENCE",
+   "published": 0,
+   "status": "IDENTICAL"
+  }
+ },
+ "differences": 0,
+ "fixtures_identical": true,
+ "reference": "/workspace/scratch/226d1e4428b0/performance_qualification/baseline_parity.json",
+ "reference_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+ "response_prefix": {
+  "cyc3_card3": {
+   "differences": [],
+   "layout": {
+    "candidate": "canonical",
+    "reference": "canonical"
+   },
+   "status": "IDENTICAL"
+  },
+  "pos4": {
+   "differences": [],
+   "layout": {
+    "candidate": "canonical",
+    "reference": "canonical"
+   },
+   "status": "IDENTICAL"
+  }
+ },
+ "verdict": "IDENTICAL",
+ "wall_limited": {
+  "block/pos4": {
+   "candidate_outcome": "COMPLETE",
+   "candidate_published": 8,
+   "differing": [],
+   "reference_outcome": "COMPLETE",
+   "reference_published": 8,
+   "status": "IDENTICAL_INVARIANTS"
+  },
+  "response/pos4": {
+   "candidate_outcome": "COMPLETE",
+   "candidate_published": 8,
+   "differing": [],
+   "reference_outcome": "COMPLETE",
+   "reference_published": 8,
+   "status": "IDENTICAL_INVARIANTS"
+  }
+ }
+}

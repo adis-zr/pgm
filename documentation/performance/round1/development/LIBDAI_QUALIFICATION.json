@@ -1,0 +1,105 @@
+{
+  "all_ok": true,
+  "n": 11,
+  "checks": [
+    {
+      "case": "asymmetric_chain",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 4.409228537838317e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "asymmetric_chain",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 4.409228537838317e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "asymmetric_evidence",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 4.285716226348768e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "asymmetric_evidence",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 4.285716226348768e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "isolated_and_fixed",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 3.33333360913457e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "isolated_and_fixed",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 3.33333360913457e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "hard_zeros",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 3.33333360913457e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "hard_zeros",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 3.33333360913457e-11,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "positive_scalar",
+      "arm": "JTREE",
+      "returncode": 0,
+      "max_abs_error": 0.0,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "positive_scalar",
+      "arm": "BP",
+      "returncode": 0,
+      "max_abs_error": 0.0,
+      "pass_": true,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "case": "impossible_evidence",
+      "returncode": 5,
+      "pass_": true
+    }
+  ],
+  "binary_sha256": "beb2850290bdbdf353e08e8e8e9695fc8b39f5c3baa693032303e88ac9474a8a",
+  "binary": "/workspace/scratch/226d1e4428b0/performance_toolchain/libdai_mar",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "qualified_utc": "2026-11-28T01:47:20Z"
+}

@@ -22,6 +22,11 @@ BACKENDS = ("structural", "block", "quotient", "response")
 
 def candidates(meta, request, remaining):
     """Return ordered candidates and explanations, without allocating a solver."""
+    return _candidates(meta, request, remaining, allow_binary_contraction=False)
+
+
+def _candidates(meta, request, remaining, *, allow_binary_contraction):
+    """Shared fixed rules; the automatic policy also admits affordable binary higher-arity contraction."""
     cards = meta["cards"]
     arity = meta.get("max_effective_arity", max(map(len, meta.get("conditioned_scopes", [])), default=0))
     binary = all(c <= 2 for v, c in enumerate(cards) if v not in meta["evidence"])
@@ -50,8 +55,10 @@ def candidates(meta, request, remaining):
         add("structural", "admitted binary bipartite streaming work", route="stream")
     elif pairwise and native_affordable:
         add("structural", "pairwise exact contraction physically affordable")
-    elif not binary and native_affordable:
-        add("structural", "bounded exact attempt on nonbinary factors", fraction=0.25)
+    elif native_affordable and (not binary or allow_binary_contraction):
+        reason = ("bounded exact attempt on affordable binary higher-arity factors" if binary
+                  else "bounded exact attempt on nonbinary factors")
+        add("structural", reason, fraction=0.25)
     elif pairwise and positive and request.mode == "auto":
         add("response", "positive pairwise model; spectral admission checks applicability")
     if not binary and not native_affordable:

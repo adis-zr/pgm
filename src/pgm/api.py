@@ -8,7 +8,9 @@ def infer(model=None, *, request=None, budget=20.0, memory_mib=3072,
 
     ``mode`` is the permitted GUARANTEE (auto / deterministic / exact); ``policy`` is the public SCHEDULING
     policy: ``accepted`` (default; the accepted engine through the common contract) or ``experimental``
-    (the frozen ``structural-portfolio-1`` switchboard).  Callers never select an internal algorithm.
+    (the frozen ``structural-portfolio-1`` switchboard), or ``automatic`` (the candidate
+    ``structural-portfolio-2``, also admitting affordable higher-order binary contraction).
+    Callers never select an internal algorithm.
     """
     if request is not None:
         if model is not None or not isinstance(request, InferenceRequest):

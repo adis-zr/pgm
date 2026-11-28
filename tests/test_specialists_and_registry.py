@@ -21,7 +21,8 @@ def test_registry_statuses_and_owners():
     for name, cap in selectable.items():
         importlib.import_module(cap["owner"]); importlib.import_module(cap["adapter"])
         assert cap["entrypoint"] and cap["admission"] and cap["guarantees"]
-    assert "accepted (default)" in caps["block"]["policies"] and caps["structural"]["policies"] == ["experimental"]
+    assert "accepted (default)" in caps["block"]["policies"]
+    assert caps["structural"]["policies"] == ["experimental", "automatic"]
     caps["block"]["status"] = "x"; assert registry.CAPABILITIES["block"]["status"] == "selectable"     # a copy
 
 

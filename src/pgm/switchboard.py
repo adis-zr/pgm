@@ -57,22 +57,36 @@ def solve(request: InferenceRequest) -> InferenceResult:
     witness = False
     outcome = "REFUSED"
     error = None
+    choices = []
+    # Observational timers only: the existing monotonic deadline remains authoritative.
+    # All diagnostics are assembled before its final sample.
+    phases = dict(inspection_s=0.0, planning_s=0.0, attempts_s=0.0, publication_s=0.0)
     try:
-        meta = inspect_model(request.model, deadline=work_deadline, memory_bytes=request.memory_mib << 20, forecast=policy.NEEDS_FORECAST)
+        phase_start = time.perf_counter()
+        try:
+            meta = inspect_model(request.model, deadline=work_deadline, memory_bytes=request.memory_mib << 20, forecast=policy.NEEDS_FORECAST)
+        finally:
+            phases["inspection_s"] = time.perf_counter() - phase_start
         binding = meta["binding"]
         cards, evidence = meta["cards"], meta["evidence"]
         inventory = list(request.queries) if request.queries is not None else [(v,a) for v,c in enumerate(cards) if v not in evidence for a in range(c)]
         if any(v < 0 or v >= len(cards) or a < 0 or a >= cards[v] for v,a in inventory):
             raise PlanningRefused("INVALID_TASK", "query outside original model domain", inventory=inventory, metadata=meta)
         query_set = set(inventory)
+        phase_start = time.perf_counter()
         choices = candidate_plan(meta, request, max(0, work_deadline-time.monotonic()))          # dispatches to the request's policy (tests may substitute the plan)
+        phases["planning_s"] = time.perf_counter() - phase_start
         with tempfile.TemporaryDirectory(prefix="pgm-infer-") as temporary:
             for number, choice in enumerate(choices):
                 now = time.monotonic()
                 if now >= work_deadline:
                     break
                 attempt_deadline = now + (work_deadline-now) * choice["allowance_fraction"]
-                result, record = run_attempt(dict(choice, expected_binding=binding), request, attempt_deadline, Path(temporary), number)
+                phase_start = time.perf_counter()
+                try:
+                    result, record = run_attempt(dict(choice, expected_binding=binding), request, attempt_deadline, Path(temporary), number)
+                finally:
+                    phases["attempts_s"] += time.perf_counter() - phase_start
                 attempts.append(record)
                 if result is not None and not _consistent_candidate(record):
                     # defense in depth: a candidate whose terminal attempt state or cleanup record contradicts success is refused
@@ -111,6 +125,7 @@ def solve(request: InferenceRequest) -> InferenceResult:
     except (OSError, ValueError, StopIteration, OverflowError) as e:
         outcome = "INVALID_TASK" if not binding else "CERTIFICATE_DEFECT"
         error = str(e)[:500]; chosen = {}
+    phase_start = time.perf_counter()
     rows, outcome, guarantee, published, assembly_error = assemble(inventory, chosen, meta.get("cards"), witness, outcome)
     error = assembly_error or error
     result = dict(api_version="1", policy=policy.NAME, policy_version=policy.VERSION, policy_record=policy.record(), outcome=outcome, guarantee=guarantee,
@@ -121,6 +136,12 @@ def solve(request: InferenceRequest) -> InferenceResult:
                   risk_allocations={k:str(v) for k,v in policy.risk_allocation(request).items()},
                   error=error, planning={k:v for k,v in meta.items() if k not in {"inventory","all_inventory","unobserved_inventory","cards","evidence","conditioned_scopes","scopes"}},
                   max_published_radius=max((float(max(F(r["point"])-F(r["lo"]),F(r["hi"])-F(r["point"]))) for r in rows if r["guarantee"] != "NOT_PUBLISHED"), default=None))
+    result["dispatch"] = [dict(backend=c["backend"], reason=c.get("reason"),
+                               allowance_fraction=c["allowance_fraction"],
+                               structural_route=c["structural_route"], attempted=i < len(attempts))
+                          for i, c in enumerate(choices)]
+    phases["publication_s"] = time.perf_counter() - phase_start
+    result["phase_timings"] = phases
     now = time.monotonic()
     if now > deadline:
         result.update(outcome="DEADLINE", guarantee="NONE", published=0, answers=_empty(inventory), max_published_radius=None)

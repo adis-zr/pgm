@@ -35,6 +35,10 @@ python -m pgm --capabilities
 
 Results contain the original coordinate inventory, exact rational endpoint/point strings, guarantees, input hashes, attempt outcomes, resource measurements and the selection reasons. `EXACT` means a point; `DETERMINISTIC` a checked enclosure with an epsilon-safe point; `PAC` an enclosure that spends the request's delta allowance.
 
+The opt-in candidate `policy="automatic"` (`structural-portfolio-2`) extends the experimental policy's bounded exact attempt to binary higher-order factors when the existing physical forecast admits it. It uses the same rates, quarter-budget allowance and prospective risk allocation. The accepted default and frozen experimental ordering remain available as references. Performance claims require the separately frozen full-suite run in `benchmarks/external/PERFORMANCE_PLAN.md`.
+
+Results additionally record the complete proposed dispatch order and whether each candidate was attempted. `phase_timings` separates inspection, policy planning, supervised attempts and publication preparation; attempts carry worker parse, adapter and normalization timings. These timers are nested diagnostics, not additive replacements for the end-to-end wall time. Admission, output and cleanup remain charged to the same request deadline.
+
 ## Installation and native builds
 
 Use Python 3.12 or newer:
@@ -51,7 +55,7 @@ The numerical dependencies are NumPy, gmpy2, SciPy and psutil. Linux and macOS r
 | Location | Role |
 |---|---|
 | `src/pgm/api.py`, `contracts.py`, `__main__.py` | Supported API, request/result types, CLI |
-| `src/pgm/policies/` | Explicit public policies: `accepted` (default) and `experimental` |
+| `src/pgm/policies/` | Explicit public policies: `accepted` (default), frozen `experimental`, candidate `automatic` |
 | `src/pgm/switchboard.py`, `planning/`, `runtime/`, `validation/` | Controller, bounded inspection, supervised attempts, common publication |
 | `src/pgm/model/uai.py` | The one input boundary (exact reader, binding, original inventory) |
 | `src/pgm/backends/` | Explicit process-isolated adapters (structural, block, quotient, response) and the worker |
