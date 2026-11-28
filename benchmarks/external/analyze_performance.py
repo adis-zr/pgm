@@ -16,6 +16,7 @@ from pathlib import Path
 import statistics
 
 import run_suite as h
+from benchmark_validity import censored_comparator, censored_fields, check_public_output
 
 ALLOWANCE = F(5, 10_000_000_000)
 PUBLIC_ARMS = ("BASE_ACCEPTED", "PGM_ACCEPTED", "BASE_EXPERIMENTAL", "PGM_AUTOMATIC")
@@ -160,6 +161,95 @@ def _historical(frozen, sets, issues):
     return result
 
 
+def previous_candidate_target(frozen, sets, missing, issues):
+    """Bind the known first-round completion set to its freeze and model bytes."""
+    reference = frozen.get("previous_candidate_reference")
+    if not reference:
+        issues.append("Missing previous-candidate preservation reference")
+        return dict(decision="FAIL", reason="missing hash-bound reference")
+    try:
+        analysis_path = _source_path(frozen, reference["analysis_path"])
+        freeze_path = _source_path(frozen, reference["freeze_path"])
+        if h.sha(analysis_path) != reference["analysis_sha256"] or h.sha(freeze_path) != reference["freeze_sha256"]:
+            raise ValueError("reference file hash mismatch")
+        analysis = json.loads(analysis_path.read_text()); old_freeze = json.loads(freeze_path.read_text())
+        if analysis["freeze_sha256"] != reference["freeze_sha256"]:
+            raise ValueError("analysis does not bind to its freeze")
+        if old_freeze["roots"]["candidate"]["commit"] != reference["engine_commit"]:
+            raise ValueError("previous candidate commit mismatch")
+        old_tasks = {t["name"]: t for t in old_freeze["tasks"]}
+        current_tasks = {t["name"]: t for t in frozen["tasks"]}
+        if len(old_tasks) != len(old_freeze["tasks"]) or len(current_tasks) != len(frozen["tasks"]):
+            raise ValueError("duplicate task identity")
+        if set(old_tasks) != set(current_tasks):
+            raise ValueError("external panel differs from previous candidate")
+        for name, task in old_tasks.items():
+            if any(task[k] != current_tasks[name][k] for k in ("model_sha256", "evidence_sha256")):
+                raise ValueError("task input hash mismatch: " + name)
+        names = analysis["complete_both"][reference["arm"]]
+        if len(names) != 50 or len(set(names)) != 50 or not set(names) <= set(old_tasks):
+            raise ValueError("previous candidate must bind exactly 50 known completions")
+        if analysis.get("completeness") != "PASS" or analysis.get("recorded_cells") != 732:
+            raise ValueError("previous candidate evidence is not the complete 732-cell round")
+        current = set(sets.get("PGM_AUTOMATIC", [])); prior = set(names)
+        lost = sorted(prior - current)
+        return dict(decision="INCOMPLETE" if missing else "FAIL" if lost else "PASS", previous_count=50,
+                    previous=sorted(prior), retained=sorted(prior & current), lost=lost, gained=sorted(current - prior),
+                    source_engine_commit=reference["engine_commit"], source_analysis_sha256=reference["analysis_sha256"],
+                    source_freeze_sha256=reference["freeze_sha256"],
+                    interpretation="Known first-round completion target; the original round's validity verdict is unchanged.")
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        issues.append("Previous-candidate preservation reference invalid: " + str(error))
+        return dict(decision="FAIL", reason=str(error))
+
+
+def partial_coordinate_changes(rows, published, tasks, replicates):
+    """Report delivered coordinates on non-mutual-completion cells separately."""
+    bykey = {(r["task"], r["arm"], r["replicate"]): r for r in rows}
+    out = {}
+    for name in ("accepted_preservation", "automatic_vs_experimental", "automatic_vs_accepted"):
+        candidate, comparator = PAIRS[name]; comparisons = []
+        for task in sorted(tasks):
+            for replicate in replicates:
+                ak, bk = (task, candidate, replicate), (task, comparator, replicate)
+                if ak not in bykey or bk not in bykey: continue
+                if bykey[ak].get("complete_within_contract") and bykey[bk].get("complete_within_contract"): continue
+                aa, bb = published.get(ak, {}), published.get(bk, {})
+                shared = set(aa) & set(bb)
+                narrower = wider = labels_changed = 0
+                for coordinate in shared:
+                    width_a = F(aa[coordinate]["hi"]) - F(aa[coordinate]["lo"])
+                    width_b = F(bb[coordinate]["hi"]) - F(bb[coordinate]["lo"])
+                    narrower += width_a < width_b; wider += width_a > width_b
+                    labels_changed += aa[coordinate]["label"] != bb[coordinate]["label"]
+                comparisons.append(dict(task=task, replicate=replicate, candidate_published=len(aa), comparator_published=len(bb),
+                    shared=len(shared), gained=len(set(aa) - set(bb)), lost=len(set(bb) - set(aa)),
+                    narrower=narrower, wider=wider, guarantee_labels_changed=labels_changed))
+        out[name] = dict(candidate=candidate, comparator=comparator, cells=len(comparisons),
+                        gained_coordinate_instances=sum(r["gained"] for r in comparisons),
+                        lost_coordinate_instances=sum(r["lost"] for r in comparisons), per_cell=comparisons,
+                        interpretation="Validated coordinates delivered within the outer contract on cells where at least one arm is incomplete. Separate diagnostic, not a completion or release gate.")
+    return out
+
+
+def release_decision(result):
+    """All predeclared release gates must pass; research speed wins cannot waive one."""
+    full = (result["completeness"] == "PASS" and result["expected_cells"] == 732
+            and result["recorded_cells"] == 732 and result["terminal_receipts"] == 732)
+    gates = dict(strict_validity=result["validity"], full_matrix="PASS" if full else "INCOMPLETE",
+                 accepted_preservation=result["same_host_preservation"].get("accepted", {}).get("decision", "INCOMPLETE"),
+                 automatic_union_preservation=result["same_host_preservation"].get("automatic", {}).get("decision", "INCOMPLETE"),
+                 previous_automatic50=result["previous_candidate_preservation"]["decision"])
+    flags = {}
+    for name in ("accepted_preservation", "automatic_vs_experimental"):
+        pair = result["pairs"].get(name)
+        flags[name] = None if pair is None else pair["cost_flags"]
+        gates[name + "_cost"] = "INCOMPLETE" if not full or pair is None else "FAIL" if pair["cost_flags"] else "PASS"
+    return dict(decision="ELIGIBLE" if all(value == "PASS" for value in gates.values()) else "HOLD", gates=gates,
+                confirmed_cost_flags=flags,
+                interpretation="Release eligibility requires every frozen gate. Broad dominance over libDAI is reported separately as the research outcome.")
+
+
 def analyze(root):
     root = Path(root)
     frozen = json.loads((root / "FREEZE.json").read_text())
@@ -178,7 +268,7 @@ def analyze(root):
     for r in terminal: byreceipt[r["job"]].append(r)
     extra_receipts = sorted(set(byreceipt) - {r["job"] for r in rows})
     if extra_receipts: issues.append("Terminal receipts without a scored cell")
-    published = {}; points = {}; raw_results = {}; faults = []
+    published = {}; delivered = {}; points = {}; raw_results = {}; faults = []; censored = []; late_refusals = []
     coordinates = 0
     for row in rows:
         key = (row["task"], row["arm"], row["replicate"])
@@ -208,9 +298,19 @@ def analyze(root):
         if not input_ok: issues.append("Input binding failed: " + row["job"])
         output = folder / ("result.json" if row["arm"] in PUBLIC_ARMS else "output.MAR")
         checked = dict(output_valid=False, contract_valid=False, all_queries_returned=False)
-        if output.exists():
+        if censored_comparator(frozen, row["arm"], receipt):
+            checked = censored_fields(receipt)
+            censored.append(dict(job=row["job"], arm=row["arm"], outcome=receipt["outcome"], retained_output=output.exists()))
+            for field, value in checked.items():
+                if row.get(field) != value: issues.append("Recomputed censored output differs: %s %s" % (row["job"], field))
+        elif output.exists():
             try:
-                checked = h.check_pgm(output, task, frozen["contracts"].get(row["arm"]), frozen["budget_s"]) if row["arm"] in PUBLIC_ARMS else h.check_libdai(folder, task)
+                checked = check_public_output(frozen, output, task, frozen["contracts"].get(row["arm"]), receipt) if row["arm"] in PUBLIC_ARMS else h.check_libdai(folder, task)
+                if checked.get("late_empty_deadline_refusal"):
+                    late_refusals.append(dict(job=row["job"], arm=row["arm"], late_refusal_wall_s=checked["late_refusal_wall_s"],
+                                              late_refusal_api_wall_s=checked.get("late_refusal_api_wall_s")))
+                    for field in ("late_empty_deadline_refusal", "late_refusal_wall_s", "late_refusal_api_wall_s"):
+                        if row.get(field) != checked.get(field): issues.append("Recomputed late refusal differs: %s %s" % (row["job"], field))
                 if not checked["output_valid"] or not checked["contract_valid"]:
                     faults.append(dict(job=row["job"], validation_faults=checked.get("validation_faults"), contract_faults=checked.get("contract_faults")))
                 if row["arm"] in PUBLIC_ARMS:
@@ -234,6 +334,12 @@ def analyze(root):
             issues.append("Recomputed completion differs: " + row["job"])
         row["complete_within_contract"] = complete
         row["converged_within_contract"] = complete and (row["arm"] != "LIBDAI_BP" or checked.get("converged") is True)
+        if (key in published and input_ok and row.get("identity_ok") is True and checked.get("output_valid")
+                and checked.get("contract_valid") and len(receipts) == 1 and receipt.get("outcome") == "COMPLETED"
+                and receipt.get("returncode") == 0 and 0 < receipt.get("wall_s", float("inf")) <= frozen["budget_s"]
+                and receipt.get("cleanup_unresolved") is False and receipt.get("group_empty_at_receipt") is True
+                and receipt.get("nested_groups_live_at_receipt") == 0):
+            delivered[key] = published[key]
     bykey = {(r["task"], r["arm"], r["replicate"]): r for r in rows}
     jt_comparisons = []; bp_errors = []
     for key, pub in published.items():
@@ -264,6 +370,8 @@ def analyze(root):
     pairs = {name: compare_pair(rows, tasks, reps, *arms_) for name, arms_ in PAIRS.items() if all(a in arms for a in arms_)}
     preservation = preservation_decisions(sets, missing)
     historical = _historical(frozen, sets, issues)
+    round2 = (frozen.get("protocol") or {}).get("schema") == "PGM_UNTUNED_PERFORMANCE_PLAN_2"
+    previous = previous_candidate_target(frozen, sets, missing, issues) if round2 else None
     route_counts = {}; dispatch_counts = {}; phases = {}; outcomes = {}; scaling = {}; families = {}
     for arm in arms:
         armrows = [r for r in rows if r["arm"] == arm]
@@ -329,6 +437,14 @@ def analyze(root):
                                "Timeouts and missing outputs are censored; no speed ratio uses a failed task.",
                                "Size-group comparisons are descriptive on mutual completions, not a scaling theorem.",
                                "Phase timings are diagnostic and not necessarily disjoint; end-to-end supervised wall is authoritative."])
+    if round2:
+        result.update(schema="UNTUNED_RUNTIME_ANALYSIS_V2", previous_candidate_preservation=previous,
+                      censored_comparator_outputs=censored,
+                      late_empty_deadline_refusals=late_refusals,
+                      partial_coordinates=partial_coordinate_changes(rows, delivered, tasks, reps))
+        result["release"] = release_decision(result)
+        result["research_outcome"] = dict(automatic_vs_jt=pairs.get("automatic_vs_jt"),
+            interpretation="Coverage, mutual-completion latency and descriptive size groups quantify the external result. No universal dominance or scaling theorem is inferred, and these metrics do not override a release hold.")
     return frozen, rows, result
 
 
@@ -357,6 +473,17 @@ def write_report(root, result):
     lines += ["", "Historical completion targets (separate host):", ""]
     for policy, d in result["historical_reference"].get("policies", {}).items():
         lines.append(f"- {policy}: retained {len(d['retained'])}/{d['previous_count']}; candidate losses {d['lost']}; same-host baseline historical losses {d['baseline_lost']}.")
+    if "release" in result:
+        lines += ["", "Release gates:", "", "| Gate | Decision |", "|---|---|"]
+        lines += [f"| {name} | {decision} |" for name, decision in result["release"]["gates"].items()]
+        previous = result["previous_candidate_preservation"]
+        lines += ["", f"Release: **{result['release']['decision']}**. Previous automatic target: "
+                  f"{len(previous.get('retained', []))}/50 retained; losses {previous.get('lost', [])}.", "",
+                  f"Censored resource-killed comparator outputs: {len(result['censored_comparator_outputs'])}. "
+                  f"Typed late empty deadline refusals: {len(result['late_empty_deadline_refusals'])}. "
+                  "Both are nonanswers; neither contributes a completion or latency ratio.", "", "Partial-coordinate diagnostics:", ""]
+        for name, comparison in result["partial_coordinates"].items():
+            lines.append(f"- {name}: {comparison['gained_coordinate_instances']} gained and {comparison['lost_coordinate_instances']} lost coordinate instances across {comparison['cells']} cells with at least one incomplete arm. Separate from completion preservation.")
     lines += ["", f"Published coordinate instances: {result['geometry']['published_coordinate_instances']}; JT comparisons: {result['geometry']['jt_coordinate_comparisons']}; exclusions after allowance: {result['geometry']['jt_outside']}; deterministic conflicts: {len(result['deterministic_conflicts'])}.", "", "Limitations:", ""]
     lines += ["- " + text for text in result["limitations"]]
     if result["validation_issues"]:
@@ -368,8 +495,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("run_dir", type=Path)
     args = parser.parse_args(argv)
     _, _, result = analyze(args.run_dir); write_report(args.run_dir, result)
-    print(json.dumps({k: result[k] for k in ("validity", "completeness", "recorded_cells", "charge_s", "same_host_preservation")}))
-    return 0 if result["validity"] == "PASS" else 1
+    fields = ("validity", "completeness", "recorded_cells", "charge_s", "same_host_preservation", "release")
+    print(json.dumps({k: result[k] for k in fields if k in result}))
+    return 0 if result["validity"] == "PASS" and result.get("release", {}).get("decision", "ELIGIBLE") == "ELIGIBLE" else 1
 
 
 if __name__ == "__main__":

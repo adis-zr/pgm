@@ -231,3 +231,145 @@ def test_runner_analysis_dispatch_propagates_analyzer_status(tmp_path, monkeypat
         runner.main(["analyze", "--run-dir", str(tmp_path)])
     assert stopped.value.code == exit_code
     assert calls == [[str(tmp_path.resolve())]]
+
+
+def test_previous_candidate_reference_binds_inputs_commit_and_fifty_tasks():
+    directory = ROOT / "documentation/performance/round1/results"
+    previous = json.loads((directory / "ANALYSIS.json").read_text())
+    old_freeze = json.loads((directory / "FREEZE.json").read_text())
+    reference = dict(analysis_path=str(directory / "ANALYSIS.json"), analysis_sha256=h.sha(directory / "ANALYSIS.json"),
+                     freeze_path=str(directory / "FREEZE.json"), freeze_sha256=h.sha(directory / "FREEZE.json"),
+                     arm="PGM_AUTOMATIC", engine_commit=old_freeze["roots"]["candidate"]["commit"])
+    frozen = dict(tasks=old_freeze["tasks"], previous_candidate_reference=reference)
+    sets = dict(PGM_AUTOMATIC=previous["complete_both"]["PGM_AUTOMATIC"])
+    issues = []
+    result = a.previous_candidate_target(frozen, sets, [], issues)
+    assert not issues and result["decision"] == "PASS" and len(result["retained"]) == 50
+    missing = sets["PGM_AUTOMATIC"][0]
+    result = a.previous_candidate_target(frozen, dict(PGM_AUTOMATIC=sets["PGM_AUTOMATIC"][1:]), [], [])
+    assert result["decision"] == "FAIL" and result["lost"] == [missing]
+    frozen["tasks"] = json.loads(json.dumps(frozen["tasks"]))
+    frozen["tasks"][0]["model_sha256"] = "0" * 64
+    result = a.previous_candidate_target(frozen, sets, [], issues)
+    assert result["decision"] == "FAIL" and "task input hash mismatch" in result["reason"]
+    frozen["tasks"] = old_freeze["tasks"]
+    reference["engine_commit"] = "wrong-commit"
+    assert a.previous_candidate_target(frozen, sets, [], [])["decision"] == "FAIL"
+
+
+def test_release_requires_every_gate_and_zero_cost_flags():
+    result = dict(validity="PASS", completeness="PASS", expected_cells=732, recorded_cells=732, terminal_receipts=732,
+                  same_host_preservation={"accepted": {"decision": "PASS"}, "automatic": {"decision": "PASS"}},
+                  previous_candidate_preservation={"decision": "PASS"},
+                  pairs={"accepted_preservation": {"cost_flags": []}, "automatic_vs_experimental": {"cost_flags": []}})
+    assert a.release_decision(result)["decision"] == "ELIGIBLE"
+    result["pairs"]["automatic_vs_experimental"]["cost_flags"] = ["cost-loss"]
+    assert a.release_decision(result)["decision"] == "HOLD"
+    result["pairs"]["automatic_vs_experimental"]["cost_flags"] = []
+    result["validity"] = "FAIL"
+    assert a.release_decision(result)["decision"] == "HOLD"
+    result["validity"] = "PASS"; result["recorded_cells"] = 731
+    assert a.release_decision(result)["gates"]["full_matrix"] == "INCOMPLETE"
+    assert a.release_decision(result)["decision"] == "HOLD"
+
+
+def test_partial_coordinate_changes_are_separate_from_completion():
+    rows = [simple_row("partial", arm, 1, 1, False) for arm in ("PGM_AUTOMATIC", "BASE_EXPERIMENTAL")]
+    published = {
+        ("partial", "PGM_AUTOMATIC", 1): {
+            "0:0": dict(lo="1/2", hi="1/2", label="EXACT"), "1:0": dict(lo="1/2", hi="1/2", label="EXACT")},
+        ("partial", "BASE_EXPERIMENTAL", 1): {
+            "0:0": dict(lo="49/100", hi="51/100", label="PAC"), "2:0": dict(lo="1/2", hi="1/2", label="EXACT")}}
+    result = a.partial_coordinate_changes(rows, published, ["partial"], [1])["automatic_vs_experimental"]
+    assert result["gained_coordinate_instances"] == result["lost_coordinate_instances"] == 1
+    assert result["per_cell"][0]["narrower"] == 1
+    assert result["per_cell"][0]["guarantee_labels_changed"] == 1
+    assert all(not r["complete_within_contract"] for r in rows)
+
+
+def _add_truncated_comparator(root, outcome, prospective=True):
+    freeze = json.loads((root / "FREEZE.json").read_text())
+    task = freeze["tasks"][0]
+    freeze["arms"].append("LIBDAI_JT")
+    freeze["expected_cells"] = 6
+    freeze["scored_ceiling_s"] = 120
+    if prospective:
+        freeze["protocol"] = dict(schema="PGM_UNTUNED_PERFORMANCE_PLAN_2",
+                                  output_validation=dict(resource_killed_comparator="censored_nonanswer"))
+    (root / "FREEZE.json").write_text(json.dumps(freeze))
+    for rep in freeze["replicates"]:
+        job = f"asym2__LIBDAI_JT__r{rep}"; folder = root / "runs" / job; folder.mkdir()
+        (folder / "output.MAR").write_text("MAR 2 2 0.5")
+        receipt = dict(kind="RECEIPT", job=job, outcome=outcome, returncode=-9 if outcome != "COMPLETED" else 0,
+                       wall_s=20.01 if outcome != "COMPLETED" else 0.2, peak_tree_rss_bytes=100,
+                       cleanup_unresolved=False, group_empty_at_receipt=True, nested_groups_live_at_receipt=0)
+        with (root / "RECEIPTS.jsonl").open("a") as stream: stream.write(json.dumps(receipt) + "\n")
+        checked = a.censored_fields(receipt) if prospective and outcome != "COMPLETED" else dict(output_valid=False, contract_valid=False, all_queries_returned=False)
+        row = dict(job=job, task="asym2", arm="LIBDAI_JT", replicate=rep, wall_s=receipt["wall_s"], receipt_outcome=outcome,
+                   returncode=receipt["returncode"], peak_rss_bytes=100, identity_ok=True, cleanup_unresolved=False,
+                   complete_within_contract=False, model_sha256=task["model_sha256"], evidence_sha256=task["evidence_sha256"], **checked)
+        (folder / "cell.json").write_text(json.dumps(row))
+
+
+def test_prospective_resource_kill_retains_truncation_as_nonanswer(campaign):
+    _add_truncated_comparator(campaign, "TIMEOUT_KILL")
+    _, _, result = a.analyze(campaign)
+    assert not result["artifact_faults"]
+    assert len(result["censored_comparator_outputs"]) == 2
+    assert result["complete_both"]["LIBDAI_JT"] == []
+    assert not result["pairs"]["accepted_vs_jt"]["per_task"]
+    # Censoring never excuses an identity failure.
+    path = campaign / "runs/asym2__LIBDAI_JT__r1/cell.json"
+    row = json.loads(path.read_text()); row["identity_ok"] = False; path.write_text(json.dumps(row))
+    assert any("identity failed" in issue for issue in a.analyze(campaign)[2]["validation_issues"])
+
+
+def test_original_protocol_still_rejects_truncated_killed_output(campaign):
+    _add_truncated_comparator(campaign, "MEMORY_KILL", prospective=False)
+    _, _, result = a.analyze(campaign)
+    assert result["validity"] == "FAIL" and len(result["artifact_faults"]) == 2
+    assert "censored_comparator_outputs" not in result
+
+
+def test_completed_malformed_output_stays_invalid_under_prospective_rule(campaign):
+    _add_truncated_comparator(campaign, "COMPLETED")
+    _, _, result = a.analyze(campaign)
+    assert len(result["artifact_faults"]) == 2
+    assert result["censored_comparator_outputs"] == []
+    assert result["validity"] == "FAIL"
+
+
+def test_late_empty_refusal_is_reported_without_completion(campaign):
+    freeze_path = campaign / "FREEZE.json"; freeze = json.loads(freeze_path.read_text())
+    freeze["protocol"] = dict(schema="PGM_UNTUNED_PERFORMANCE_PLAN_2",
+        output_validation=dict(late_empty_deadline_refusal="typed_nonanswer_with_clean_outer_completion"))
+    freeze_path.write_text(json.dumps(freeze))
+    folder = campaign / "runs/asym2__PGM_ACCEPTED__r1"
+    raw = json.loads((folder / "result.json").read_text())
+    raw.update(outcome="DEADLINE", guarantee="NONE", published=0, hard_deadline_respected=False,
+               max_published_radius=None, wall_s=19.6)
+    raw["answers"] = [dict(variable=v, state=s, guarantee="NOT_PUBLISHED", lo=None, hi=None, point=None)
+                      for v in range(2) for s in range(2)]
+    (folder / "result.json").write_text(json.dumps(raw))
+    receipt_path = campaign / "RECEIPTS.jsonl"
+    receipts = [json.loads(line) for line in receipt_path.read_text().splitlines()]
+    receipt = next(r for r in receipts if r["job"] == folder.name); receipt["wall_s"] = 19.7
+    receipt_path.write_text("".join(json.dumps(r) + "\n" for r in receipts))
+    row = json.loads((folder / "cell.json").read_text())
+    row.update(a.check_public_output(freeze, folder / "result.json", freeze["tasks"][0], freeze["contracts"]["PGM_ACCEPTED"], receipt))
+    row.update(wall_s=19.7, complete_within_contract=False)
+    (folder / "cell.json").write_text(json.dumps(row))
+    _, _, result = a.analyze(campaign)
+    assert not result["artifact_faults"]
+    assert len(result["late_empty_deadline_refusals"]) == 1
+    assert result["late_empty_deadline_refusals"][0]["late_refusal_wall_s"] == 19.6
+    assert result["complete_both"]["PGM_ACCEPTED"] == []
+    assert not result["pairs"]["accepted_preservation"]["per_task"]
+
+
+def test_analysis_cli_does_not_hide_release_hold(tmp_path, monkeypatch):
+    result = dict(validity="PASS", completeness="PASS", recorded_cells=732, charge_s=1,
+                  same_host_preservation={}, release=dict(decision="HOLD"))
+    monkeypatch.setattr(a, "analyze", lambda _: ({}, [], result))
+    monkeypatch.setattr(a, "write_report", lambda *_: None)
+    assert a.main([str(tmp_path)]) == 1

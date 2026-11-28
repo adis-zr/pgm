@@ -76,7 +76,7 @@ def test_unresolved_terminal_cleanup_cannot_complete(tmp_path):
 def test_automatic_contract_is_explicit_and_keeps_risk():
     c = campaign.contract("PGM_AUTOMATIC")
     assert c["policy"] == "automatic"
-    assert c["policy_version"] == "structural-portfolio-2"
+    assert c["policy_version"] == "structural-portfolio-3"
     assert c["risk_shares"] == campaign.contract("BASE_EXPERIMENTAL")["risk_shares"]
     config = dict(runtime_python="python", libdai_binary="libdai")
     cmd = campaign.command(config, dict(model="model"), "PGM_AUTOMATIC", 2, Path("out"))

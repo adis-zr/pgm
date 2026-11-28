@@ -140,10 +140,13 @@ def solve(request: InferenceRequest) -> InferenceResult:
                                allowance_fraction=c["allowance_fraction"],
                                structural_route=c["structural_route"], attempted=i < len(attempts))
                           for i, c in enumerate(choices)]
+    # Prepare the late-suppression inventory before the single publication
+    # sample. A late result may select it, but must not build O(K) rows after it.
+    late_rows = rows if published == 0 else _empty(inventory)
     phases["publication_s"] = time.perf_counter() - phase_start
     result["phase_timings"] = phases
     now = time.monotonic()
     if now > deadline:
-        result.update(outcome="DEADLINE", guarantee="NONE", published=0, answers=_empty(inventory), max_published_radius=None)
+        result.update(outcome="DEADLINE", guarantee="NONE", published=0, answers=late_rows, max_published_radius=None)
     result.update(wall_s=now-start, hard_deadline_respected=now <= deadline)
     return InferenceResult(result)

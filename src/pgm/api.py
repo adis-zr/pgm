@@ -9,7 +9,8 @@ def infer(model=None, *, request=None, budget=20.0, memory_mib=3072,
     ``mode`` is the permitted GUARANTEE (auto / deterministic / exact); ``policy`` is the public SCHEDULING
     policy: ``accepted`` (default; the accepted engine through the common contract) or ``experimental``
     (the frozen ``structural-portfolio-1`` switchboard), or ``automatic`` (the candidate
-    ``structural-portfolio-2``, also admitting affordable higher-order binary contraction).
+    ``structural-portfolio-3``, admitting affordable higher-order binary contraction
+    and deferring optional compression until after the incumbent block attempt).
     Callers never select an internal algorithm.
     """
     if request is not None:

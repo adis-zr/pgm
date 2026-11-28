@@ -1,0 +1,181 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+___________ test_expired_absolute_supervisor_deadline_never_launches ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-29/test_expired_absolute_supervis0')
+
+    def test_expired_absolute_supervisor_deadline_never_launches(tmp_path):
+        ledger = tmp_path / "ledger.jsonl"
+        marker = tmp_path / "must-not-exist"
+        deadline = time.monotonic() - 1
+        result = subprocess.run(
+            [sys.executable, "-m", "pgm.supervision", "--ledger", str(ledger),
+             "--scope", "test", "--job", "expired", "--timeout", "60",
+             "--deadline-monotonic", repr(deadline), "--", sys.executable,
+             "-c", "from pathlib import Path; Path(%r).write_text('launched')" % str(marker)],
+            env=ENV, capture_output=True, text=True, timeout=5,
+        )
+>       records = [json.loads(line) for line in ledger.read_text().splitlines()]
+                                                ^^^^^^^^^^^^^^^^^^
+
+tests/test_runtime_deadlines.py:29: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/tmp/pytest-of-agent/pytest-29/test_expired_absolute_supervis0/ledger.jsonl')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-agent/pytest-29/test_expired_absolute_supervis0/ledger.jsonl'
+
+/opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/pathlib.py:1013: FileNotFoundError
+_____ test_attempt_forwards_one_absolute_deadline_to_supervisor_and_worker _____
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-29/test_attempt_forwards_one_abso0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6fab330ef0>
+
+    def test_attempt_forwards_one_absolute_deadline_to_supervisor_and_worker(tmp_path, monkeypatch):
+        seen = []
+    
+        class FinishedProcess:
+            returncode = 1
+            pid = 123456789
+    
+            def __init__(self, command, **kwargs):
+                seen.append(command)
+    
+            def poll(self):
+                return self.returncode
+    
+        monkeypatch.setattr(attempts.subprocess, "Popen", FinishedProcess)
+        monkeypatch.setattr(attempts, "kill_owned", lambda *a, **k: dict(unresolved=[]))
+        deadline = time.monotonic() + 5
+        choice = dict(backend="block", structural_route="auto", allowance_fraction=1)
+        result, record = attempts.run_attempt(choice, InferenceRequest(tmp_path / "unused"),
+                                               deadline, tmp_path, 0)
+        command = seen[0]
+        supervisor, worker = command[:command.index("--")], command[command.index("--")+1:]
+>       assert float(supervisor[supervisor.index("--deadline-monotonic")+1]) == deadline
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       ValueError: '--deadline-monotonic' is not in list
+
+tests/test_runtime_deadlines.py:59: ValueError
+______ test_ownership_identity_does_not_parse_obsolete_wall_clock_fields _______
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-29/test_ownership_identity_does_n0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6fab336510>
+
+    def test_ownership_identity_does_not_parse_obsolete_wall_clock_fields(tmp_path, monkeypatch):
+        ledger = tmp_path / "ledger.jsonl"
+        ledger.write_text("\n".join(map(json.dumps, [
+            dict(kind="START", jid="owned"),
+            dict(kind="SPAWNED", jid="owned", pid=123, pgid=123,
+                 leader_create_time=17.0, spawn_utc="irrelevant diagnostic"),
+            dict(kind="RECEIPT", jid="owned", cleanup_unresolved=False,
+                 group_empty_at_receipt=True, nested_groups_live_at_receipt=0),
+        ])) + "\n")
+    
+        def obsolete_parse(*args):
+            raise AssertionError("wall-clock parsing is not an ownership proof")
+    
+        monkeypatch.setattr(attempts.time, "strptime", obsolete_parse)
+>       groups, established, _ = attempts.owned_groups(ledger)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_runtime_deadlines.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/pgm/runtime/attempts.py:57: in owned_groups
+    groups[r["pgid"]] = dict(pid=r.get("pid"), jid=r.get("jid"), create_time=r.get("leader_create_time"), spawned=_utc_epoch(r.get("spawn_utc")), source="SPAWNED")
+                                                                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/pgm/runtime/attempts.py:43: in _utc_epoch
+    return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ('irrelevant diagnostic', '%Y-%m-%dT%H:%M:%SZ')
+
+    def obsolete_parse(*args):
+>       raise AssertionError("wall-clock parsing is not an ownership proof")
+E       AssertionError: wall-clock parsing is not an ownership proof
+
+tests/test_runtime_deadlines.py:75: AssertionError
+_______ test_late_api_fallback_inventory_is_prepared_before_final_sample _______
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-29/test_late_api_fallback_invento0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6fab333c20>
+
+    def test_late_api_fallback_inventory_is_prepared_before_final_sample(tmp_path, monkeypatch):
+        binding = dict(model_sha256="model", evidence_sha256="evidence")
+        meta = dict(binding=binding, cards=[2], evidence={})
+        choice = dict(backend="block", structural_route="auto", allowance_fraction=1)
+        candidate = dict(outcome="COMPLETE", binding=binding, positive_mass_witness=True,
+                         answers=[dict(variable=0, var=0, state=a, lo="1/2", hi="1/2",
+                                       point="1/2", guarantee="EXACT") for a in range(2)])
+        monkeypatch.setattr(switchboard, "inspect_model", lambda *a, **k: meta)
+        monkeypatch.setattr(switchboard, "candidate_plan", lambda *a, **k: [choice])
+        monkeypatch.setattr(switchboard, "run_attempt", lambda *a, **k:
+                            (candidate, dict(backend="block", outcome="COMPLETE", wall_s=0)))
+        samples = []
+        allocations = []
+        empty = switchboard._empty
+    
+        def clock():
+            samples.append(1)
+            return 102.0 if len(samples) == 4 else 100.0
+    
+        def prepare_empty(inventory):
+            allocations.append(len(samples))
+            return empty(inventory)
+    
+        monkeypatch.setattr(switchboard, "_empty", prepare_empty)
+        monkeypatch.setattr(switchboard.time, "monotonic", clock)
+        result = switchboard.solve(InferenceRequest(tmp_path / "unused", budget=1)).to_dict()
+>       assert allocations == [3] and len(samples) == 4
+E       assert ([4] == [3]
+E         
+E         At index 0 diff: 4 != 3
+E         Use -v to get more diff)
+
+tests/test_runtime_deadlines.py:108: AssertionError
+________ test_cli_keeps_api_timestamp_when_its_own_publication_is_late _________
+
+tmp_path = PosixPath('/tmp/pytest-of-agent/pytest-29/test_cli_keeps_api_timestamp_w0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6fab2e4c80>
+
+    def test_cli_keeps_api_timestamp_when_its_own_publication_is_late(tmp_path, monkeypatch):
+        from pgm import __main__ as cli
+    
+        result = dict(outcome="COMPLETE", guarantee="EXACT", published=2,
+                      max_published_radius=0, hard_deadline_respected=True, wall_s=0.8,
+                      answers=[dict(var=0, variable=0, state=a, lo="1/2", hi="1/2",
+                                    point="1/2", guarantee="EXACT") for a in range(2)])
+        monkeypatch.setattr(cli, "infer", lambda *a, **k: InferenceResult(result))
+        ticks = iter((100.0, 100.0, 100.99, 101.1, 101.1))
+        monkeypatch.setattr(cli.time, "monotonic", lambda: next(ticks))
+        output = tmp_path / "result.json"
+        cli.main(["--input", str(tmp_path / "unused"), "--output", str(output), "--budget", "1"])
+        actual = json.loads(output.read_text())
+>       assert actual["api_wall_s"] == 0.8 and actual["api_hard_deadline_respected"] is True
+               ^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'api_wall_s'
+
+tests/test_runtime_deadlines.py:127: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_runtime_deadlines.py::test_expired_absolute_supervisor_deadline_never_launches
+FAILED tests/test_runtime_deadlines.py::test_attempt_forwards_one_absolute_deadline_to_supervisor_and_worker
+FAILED tests/test_runtime_deadlines.py::test_ownership_identity_does_not_parse_obsolete_wall_clock_fields
+FAILED tests/test_runtime_deadlines.py::test_late_api_fallback_inventory_is_prepared_before_final_sample
+FAILED tests/test_runtime_deadlines.py::test_cli_keeps_api_timestamp_when_its_own_publication_is_late
+5 failed in 0.13s

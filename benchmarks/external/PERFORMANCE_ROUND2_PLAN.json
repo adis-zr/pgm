@@ -1,0 +1,45 @@
+{
+  "schema": "PGM_UNTUNED_PERFORMANCE_PLAN_2",
+  "question": "Can incumbent-first optional compression preserve the combined coverage and structural speed gains under one untuned policy?",
+  "baseline_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+  "previous_candidate_commit": "d33d40aec7a05ec43cd52ff2793e544f9edc4cf0",
+  "arms": ["BASE_ACCEPTED", "PGM_ACCEPTED", "BASE_EXPERIMENTAL", "PGM_AUTOMATIC", "LIBDAI_JT", "LIBDAI_BP"],
+  "tasks": 61,
+  "exposure": "All tasks are exposed external regression inputs; no unseen claim.",
+  "replicates": [1, 2],
+  "expected_cells": 732,
+  "contract": {"outer_seconds": 20, "pgm_seconds": 19.5, "memory_mib": 3072, "epsilon": "1/200", "delta": "1/1000000", "sample_interval_seconds": 0.01, "grace_seconds": 0, "scored_ceiling_seconds": 14640},
+  "candidate": {
+    "accepted": "The accepted-engine policy through the repaired common runtime; no rates, reserve, risk shares or numerical kernel changes.",
+    "automatic": "structural-portfolio-3: retain affordable structural attempts including binary higher-arity contraction; defer optional quotient construction until after the incumbent block attempt. Existing rates and prospective risk shares remain fixed; no benchmark-name dispatch or per-input tuning."
+  },
+  "execution": "Serial fresh-process cells. The six-arm order reverses by task index plus replicate. Native setup is outside timed cells and separately recorded. Entire source closure and active native files are checked before and after every cell.",
+  "output_validation": {
+    "claimed_publication_timestamps": "finite_within_cli_and_recorded_api_budgets",
+    "claimed_publication_timestamps_definition": "Any published coordinate or completing status requires a finite nonboolean CLI wall within 19.5 seconds, regardless of a true deadline flag. When API timing fields are present, api_wall_s must be finite and within the recorded positive requested_budget_s (itself no greater than the CLI allowance), and api_hard_deadline_respected must be true. Contradictory timestamps are faults; no numerical grace is added.",
+    "resource_killed_comparator": "censored_nonanswer",
+    "resource_killed_comparator_definition": "For LIBDAI_JT/BP only, terminal TIMEOUT_KILL or MEMORY_KILL means no accepted answer. Any partial MAR/side bytes are retained and counted as a censored failed cell, not parsed as a completed answer or assigned a latency ratio. Identity, unique receipt, input and artifact hashes, and cleanup are still checked. A malformed output from a completed comparator remains a validity fault.",
+    "late_empty_deadline_refusal": "typed_nonanswer_with_clean_outer_completion",
+    "late_empty_deadline_refusal_definition": "A PGM result with outcome DEADLINE, aggregate NONE, zero published rows, every original coordinate NOT_PUBLISHED with no lo/hi/point payload, hard_deadline_respected=false, correct inventory/binding, and clean terminal outer completion within 20 seconds is a valid refusal, never a completion. Its truthful internal/CLI times are reported. Every other old contract fault is retained; any late published row remains invalid. This prospective rule does not alter the first round's strict FAIL verdict."
+  },
+  "release_gates": {
+    "validity": "Every identity, input binding, unique receipt, cleanup and claimed-output contract passes; no conflicting deterministic intervals or JT exclusions under the retained 5e-10 allowance.",
+    "completeness": "All 732 planned cells have exactly one terminal receipt and recorded classification within the 14640-second scored ceiling.",
+    "accepted_preservation": "PGM_ACCEPTED retains every same-round BASE_ACCEPTED both-repeat completion.",
+    "automatic_union_preservation": "PGM_AUTOMATIC retains the union of same-round BASE_ACCEPTED and BASE_EXPERIMENTAL both-repeat completions.",
+    "previous_automatic_preservation": "PGM_AUTOMATIC retains all 50 recorded round-1 automatic both-repeat completions. The prior analysis, prior freeze, input bindings and d33d40a identity are hash-bound; this is a historical coverage target, not a same-round prior-candidate timing claim.",
+    "accepted_overhead": "Zero confirmed cost flags for PGM_ACCEPTED versus BASE_ACCEPTED.",
+    "automatic_overhead": "Zero confirmed cost flags for PGM_AUTOMATIC versus BASE_EXPERIMENTAL.",
+    "decision": "ELIGIBLE only if every listed gate passes. Otherwise HOLD and do not present a passing implementation bundle. Default-policy promotion is a separate decision."
+  },
+  "performance": {
+    "confirmed_overhead_flag": "Candidate slower by more than 1.25x and 0.1 seconds in both matched replicates on mutual both-repeat completions.",
+    "timing_pairs": "Only mutual both-repeat completions have finite latency ratios; failures, timeouts and memory refusals remain censored.",
+    "partial_coordinates": "Report per-replicate gains/losses of certified coordinates against both baseline policies separately; do not turn partial changes into completions.",
+    "report": "Full completion sets, gains/losses, latency, memory, routes, phase costs, fixed variable-count groups 1-100/101-1000/1001+, family groups, BP convergence/error diagnostics and the full libDAI comparison.",
+    "broad_dominance": "A separate research outcome, never implied by the implementation release gates. Report losses and limits; no universal or asymptotic dominance claim from this panel."
+  },
+  "historical_mac_reference": "Report accepted45 and experimental54 original-host coverage separately; neither substitutes for the same-host preservation gates.",
+  "amendments": "No source changes during a frozen run. A required repair gets a new commit and labelled freeze; original receipts remain. A partial run resumes only under its original identities and cannot silently rerun a launched cell.",
+  "synthetic_performance_inputs": false
+}

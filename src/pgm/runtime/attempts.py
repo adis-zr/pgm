@@ -37,14 +37,6 @@ def ledger_records(path, *, tolerate_partial=False):
     return records
 
 
-def _utc_epoch(text):
-    import calendar
-    try:
-        return calendar.timegm(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
-    except (TypeError, ValueError):
-        return None
-
-
 def owned_groups(ledger):
     """This invocation's DURABLE ownership: the SPAWNED groups of the attempt ledger and every nested registration whose
     parent chain leads to this START (the supervisor's `<owner_dir>/groups.jsonl`).  Returns {pgid: identity} with the
@@ -54,7 +46,7 @@ def owned_groups(ledger):
     groups = {}
     for r in records:
         if r.get("kind") == "SPAWNED" and r.get("pgid") is not None:
-            groups[r["pgid"]] = dict(pid=r.get("pid"), jid=r.get("jid"), create_time=r.get("leader_create_time"), spawned=_utc_epoch(r.get("spawn_utc")), source="SPAWNED")
+            groups[r["pgid"]] = dict(pid=r.get("pid"), jid=r.get("jid"), create_time=r.get("leader_create_time"), source="SPAWNED")
     own = starts[-1] if starts else None
     if own is not None and own.get("owner_dir"):
         registrations = ledger_records(Path(own["owner_dir"]) / "groups.jsonl", tolerate_partial=True)
@@ -69,7 +61,7 @@ def owned_groups(ledger):
             return False
         for r in registrations:
             if r.get("pgid") is not None and owned(r.get("jid")):
-                groups.setdefault(r["pgid"], dict(pid=r.get("pid"), jid=r.get("jid"), create_time=r.get("leader_create_time"), spawned=_utc_epoch(r.get("utc")), source="registry"))
+                groups.setdefault(r["pgid"], dict(pid=r.get("pid"), jid=r.get("jid"), create_time=r.get("leader_create_time"), source="registry"))
     receipts = [r for r in records if r.get("kind") == "RECEIPT" and own is not None and r.get("jid") == own.get("jid")]
     receipt = receipts[-1] if receipts else None
     established = bool(receipt and receipt.get("cleanup_unresolved") is False and receipt.get("group_empty_at_receipt") is True
@@ -243,6 +235,7 @@ def run_attempt(choice, request, deadline, directory, number):
         cmd = [sys.executable, "-m", "pgm.supervision", "--ledger", str(ledger),
                "--scope", "public-api", "--job", str(number) + "-" + backend,
                "--timeout", repr(max(0.0, deadline-start)), "--interval", "0.01",
+               "--deadline-monotonic", repr(deadline),
                "--mem-gib", repr(request.memory_mib / 1024), "--", *worker]
         with stderr.open("wb") as log:
             process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=log, env=env)

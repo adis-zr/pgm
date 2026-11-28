@@ -18,7 +18,7 @@ membership is re-checked with os.getpgid immediately before the signal).
 
     python -m gbidi.supervise --ledger L.jsonl --scope S --job NAME [--timeout S] [--mem-gib G] [--cwd DIR] [--stdout F] [--stderr F] [--env K=V]... -- cmd..."""
 from __future__ import annotations
-import argparse, json, os, subprocess, sys, time, signal
+import argparse, json, math, os, subprocess, sys, time, signal
 import psutil
 
 GRACE_S = 4.0; GROUP_WAIT_S = 10.0
@@ -98,8 +98,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ledger", required=True); ap.add_argument("--scope", required=True); ap.add_argument("--job", required=True)
     ap.add_argument("--timeout", type=float, default=None); ap.add_argument("--mem-gib", type=float, default=None); ap.add_argument("--interval", type=float, default=0.05)
+    ap.add_argument("--deadline-monotonic", type=float, default=None,
+                    help="optional absolute work-stop timestamp; never extended by startup or grace")
     ap.add_argument("--cwd", default=None); ap.add_argument("--stdout", default=None); ap.add_argument("--stderr", default=None); ap.add_argument("--env", action="append", default=[])
     ap.add_argument("cmd", nargs=argparse.REMAINDER); a = ap.parse_args(); cmd = a.cmd[1:] if a.cmd and a.cmd[0] == "--" else a.cmd
+    if a.deadline_monotonic is not None and not math.isfinite(a.deadline_monotonic):
+        ap.error("--deadline-monotonic must be finite")
     env = dict(os.environ)
     for kv in a.env:
         k, v = kv.split("=", 1); env[k] = v
@@ -109,6 +113,9 @@ def main():
     own_dir = root_owner_dir or (a.ledger + ".owned/" + jid.replace("|", "_").replace(":", "_").replace("/", "_")); os.makedirs(own_dir, exist_ok=True)
     groups_file = os.path.join(own_dir, "groups.jsonl"); env["GBIDI_OWNER_DIR"] = own_dir; env["GBIDI_PARENT_JID"] = jid
     maxcharge = (a.timeout + GRACE_S) if a.timeout is not None else None
+    if a.deadline_monotonic is not None:
+        absolute_remaining = max(0.0, a.deadline_monotonic - m0)
+        maxcharge = absolute_remaining if maxcharge is None else min(maxcharge, absolute_remaining)
     proc = None; pgid = None; launching = False; pending_signal = None; error = None
     peak = 0; overshoot = 0; outcome = "COMPLETED"; samples = 0; rc = None; survivors = 0; survivor_details = None; survivor_detect_utc = None; survivor_leader_rc = None; survivor_leader_exit_to_detect_s = None; group_empty = None; nested = {"registered": 0, "killed": 0, "live_at_receipt": 0, "receipts_written_by_parent": 0}
     def killgroup():
@@ -131,10 +138,14 @@ def main():
         stop("SUPERVISOR_SIGNAL_%d" % signum); raise KeyboardInterrupt()
     launching = True
     signal.signal(signal.SIGTERM, on_term); signal.signal(signal.SIGINT, on_term)
-    append(a.ledger, {"kind": "START", "jid": jid, "scope": a.scope, "job": a.job, "cmd": cmd, "cwd": a.cwd or os.getcwd(), "start_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)), "supervisor_pid": os.getpid(), "timeout_s": a.timeout, "mem_cap_gib": a.mem_gib, "max_permitted_charge_s": maxcharge, "parent_jid": parent_jid, "owner_dir": own_dir, "supervisor": "gbidi.supervise v3 (owned-tree completion)"})
+    append(a.ledger, {"kind": "START", "jid": jid, "scope": a.scope, "job": a.job, "cmd": cmd, "cwd": a.cwd or os.getcwd(), "start_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)), "supervisor_pid": os.getpid(), "timeout_s": a.timeout, "deadline_monotonic": a.deadline_monotonic, "mem_cap_gib": a.mem_gib, "max_permitted_charge_s": maxcharge, "parent_jid": parent_jid, "owner_dir": own_dir, "supervisor": "gbidi.supervise v3 (owned-tree completion)"})
     try:
         if pending_signal is not None:
             launching = False; on_term(pending_signal, None)
+        if a.deadline_monotonic is not None and time.monotonic() >= a.deadline_monotonic:
+            outcome = "TIMEOUT_KILL"; group_empty = True
+            error = "absolute monotonic deadline reached before launch"
+            raise TimeoutError(error)
         try:
             try:
                 proc = subprocess.Popen(cmd, cwd=a.cwd, stdout=so or sys.stdout, stderr=se or sys.stderr, env=env, start_new_session=True)
@@ -154,7 +165,7 @@ def main():
             r = tree_rss(p); samples += 1; peak = max(peak, r); el = time.monotonic() - m0
             if a.mem_gib is not None and r > a.mem_gib * 2 ** 30:
                 overshoot = r - a.mem_gib * 2 ** 30; stop("MEMORY_KILL"); proc.wait(); break
-            if a.timeout is not None and el > a.timeout + GRACE_S:
+            if maxcharge is not None and el >= maxcharge:
                 stop("TIMEOUT_KILL"); proc.wait(); break
             time.sleep(a.interval)
         rc = proc.returncode
@@ -226,8 +237,8 @@ def main():
         wall = time.monotonic() - m0
         append(a.ledger, {"kind": "RECEIPT", "jid": jid, "scope": a.scope, "job": a.job, "start_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)), "end_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "parent_jid": parent_jid,
                            "wall_s": wall, "returncode": rc, "outcome": outcome, "outcome_before_cleanup": outcome_before_cleanup, "cleanup_unresolved": cleanup_unresolved, "descendants_after_leader_exit": survivors, "survivor_details": survivor_details, "survivor_detect_utc": survivor_detect_utc, "survivor_leader_returncode": survivor_leader_rc, "survivor_detect_wall_s": survivor_leader_exit_to_detect_s, "group_empty_at_receipt": group_empty, "nested_groups_registered": nested["registered"], "nested_groups_killed": nested["killed"], "nested_groups_live_at_receipt": nested["live_at_receipt"], "nested_receipts_written_by_parent": nested["receipts_written_by_parent"], "nested_live": nested_live, "owner_dir": own_dir, "launch_error": (error if outcome_before_cleanup == "LAUNCH_FAILED" else None), "error": error, "pending_signal": pending_signal,
-                           "peak_tree_rss_bytes": peak, "rss_samples": samples, "sampling_interval_s": a.interval, "mem_cap_gib": a.mem_gib, "mem_overshoot_bytes": overshoot, "timeout_s": a.timeout, "pid": (proc.pid if proc is not None else None), "pgid": pgid,
-                           "enforcement": "sampled process-tree RSS (best effort, not an allocator cap); SIGKILL of RECORDED groups only (membership re-checked at signal time) on threshold, deadline + grace, supervisor signal, survivors after the leader's exit or registered nested groups still alive; cancellation deferred across the launch boundary; completion = every owned group empty; wall measured after cleanup"})
+                           "peak_tree_rss_bytes": peak, "rss_samples": samples, "sampling_interval_s": a.interval, "mem_cap_gib": a.mem_gib, "mem_overshoot_bytes": overshoot, "timeout_s": a.timeout, "deadline_monotonic": a.deadline_monotonic, "pid": (proc.pid if proc is not None else None), "pgid": pgid,
+                           "enforcement": "sampled process-tree RSS (best effort, not an allocator cap); SIGKILL of RECORDED groups only (membership re-checked at signal time) on threshold, the earlier of relative timeout + grace and an explicit absolute work-stop deadline, supervisor signal, survivors after the leader's exit or registered nested groups still alive; cancellation deferred across the launch boundary; completion = every owned group empty; wall measured after cleanup"})
         print(json.dumps({"job": a.job, "wall_s": round(wall, 3), "rc": rc, "outcome": outcome, "peak_MB": round(peak / 1e6, 1), "survivors": survivors, "survivor_details": survivor_details, "nested": nested}), file=sys.stderr)
     sys.exit(0 if outcome == "COMPLETED" else 1)
 

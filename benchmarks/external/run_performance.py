@@ -20,6 +20,7 @@ import sys
 import time
 
 import run_suite as checks
+from benchmark_validity import censored_comparator, censored_fields, check_public_output
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -29,9 +30,9 @@ POLICIES = {"BASE_ACCEPTED": "accepted", "PGM_ACCEPTED": "accepted", "BASE_EXPER
 ROOT_KEYS = {a: "baseline" if a.startswith("BASE_") else "candidate" for a in POLICIES}
 HOST_OVERLAYS = frozenset("src/pgm/algorithms/structural/" + n for n in (
     "libcex_kernel.dylib", "cex_build.json", "libstream_kernel.so", "stream_build.json"))
-PROTOCOL_PATH = HERE / "PERFORMANCE_PLAN.json"
+PROTOCOL_PATH = HERE / "PERFORMANCE_ROUND2_PLAN.json"
 MANIFEST_NAMES = ("INPUT_MANIFEST.json", "HOLDOUT_FREEZE.json", "EXPOSURE_HISTORY.json")
-HARNESS_NAMES = ("run_performance.py", "analyze_performance.py", "PERFORMANCE_PLAN.json", "PERFORMANCE_PLAN.md", "run_suite.py", "strict_supervisor.py")
+HARNESS_NAMES = ("run_performance.py", "analyze_performance.py", "benchmark_validity.py", "PERFORMANCE_ROUND2_PLAN.json", "PERFORMANCE_ROUND2_PLAN.md", "run_suite.py", "strict_supervisor.py")
 sha = checks.sha
 
 
@@ -152,7 +153,7 @@ def schedule(frozen):
 
 def contract(arm):
     if arm == "PGM_AUTOMATIC":
-        return dict(checks.CONTRACTS["PGM_EXPERIMENTAL"], policy="automatic", policy_version="structural-portfolio-2")
+        return dict(checks.CONTRACTS["PGM_EXPERIMENTAL"], policy="automatic", policy_version="structural-portfolio-3")
     return checks.CONTRACTS["PGM_" + POLICIES[arm].upper()] if arm in POLICIES else None
 
 
@@ -198,7 +199,10 @@ def read_cell(config, task, arm, replicate, folder, receipt, identity_ok):
                peak_rss_bytes=receipt["peak_tree_rss_bytes"], cleanup_unresolved=receipt.get("cleanup_unresolved"),
                identity_ok=identity_ok, receipt_jid=receipt["jid"])
     try:
-        row.update(checks.check_pgm(folder / "result.json", task, config["contracts"][arm]) if arm in POLICIES else checks.check_libdai(folder, task))
+        if censored_comparator(config, arm, receipt):
+            row.update(censored_fields(receipt))
+        else:
+            row.update(check_public_output(config, folder / "result.json", task, config["contracts"][arm], receipt) if arm in POLICIES else checks.check_libdai(folder, task))
         if arm in POLICIES:
             result = json.loads((folder / "result.json").read_text())
             row["attempts"] = result.get("attempts", [])
@@ -228,6 +232,7 @@ def config_from_args(args):
                 roots={key: dict(path=str(path), native_cache=str(args.run_dir / "setup/native" / key)) for key, path in (("baseline", baseline), ("candidate", REPO))},
                 compilers=checks.resolve_compilers(), libdai_binary=str(binary), libdai_sha256=sha(binary),
                 libdai_qualification_path=str(qualification_path), libdai_qualification_sha256=sha(qualification_path),
+                protocol=json.loads(PROTOCOL_PATH.read_text()), protocol_sha256=sha(PROTOCOL_PATH),
                 contracts={arm: contract(arm) for arm in POLICIES})
 
 
@@ -281,6 +286,8 @@ def freeze(args):
     if config.get("smoke_all_valid") is not True:
         raise RuntimeError("All setup arms must pass")
     protocol = json.loads(PROTOCOL_PATH.read_text())
+    if config.get("protocol") != protocol or config.get("protocol_sha256") != sha(PROTOCOL_PATH):
+        raise RuntimeError("Protocol changed after setup qualification")
     if (protocol.get("arms") != list(ARMS) or protocol.get("replicates") != [1, 2]
             or protocol.get("tasks") != 61 or protocol.get("expected_cells") != 732
             or protocol.get("contract") != dict(outer_seconds=20, pgm_seconds=19.5,
@@ -298,10 +305,19 @@ def freeze(args):
     historical_path = REPO / "documentation/consolidation/step2/supplement/ANALYSIS.json"
     historical = json.loads(historical_path.read_text())["complete_both"]
     tasks = task_inventory()
-    config.update(schema="PGM_UNTUNED_PERFORMANCE_1", frozen_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    previous_dir = REPO / "documentation/performance/round1/results"
+    previous_analysis = previous_dir / "ANALYSIS.json"
+    previous_freeze = previous_dir / "FREEZE.json"
+    previous = json.loads(previous_analysis.read_text())
+    if previous["freeze_sha256"] != sha(previous_freeze) or len(previous["complete_both"]["PGM_AUTOMATIC"]) != 50:
+        raise RuntimeError("Round-1 candidate coverage reference is not the recorded 50-task set")
+    config.update(schema="PGM_UNTUNED_PERFORMANCE_2", frozen_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                   tasks=tasks, arms=list(ARMS), replicates=[1, 2], expected_cells=732,
                   budget_s=20, pgm_allowance_s=19.5, memory_mib=3072, epsilon="1/200", delta="1/1000000", scored_ceiling_s=14640,
                   protocol=protocol, protocol_sha256=sha(PROTOCOL_PATH),
+                  previous_candidate_reference=dict(analysis_path=str(previous_analysis), analysis_sha256=sha(previous_analysis),
+                      freeze_path=str(previous_freeze), freeze_sha256=sha(previous_freeze), arm="PGM_AUTOMATIC",
+                      engine_commit="d33d40aec7a05ec43cd52ff2793e544f9edc4cf0"),
                   harness_files={name: sha(HERE / name) for name in HARNESS_NAMES},
                   input_manifests={name: sha(HERE / name) for name in MANIFEST_NAMES},
                   setup_sha256=sha(args.run_dir / "setup/SETUP.json"),
@@ -351,6 +367,10 @@ def verify_identity(config):
     reference = config["historical_reference"]
     if sha(reference["path"]) != reference["sha256"]:
         raise RuntimeError("Historical preservation reference changed")
+    previous = config["previous_candidate_reference"]
+    for field in ("analysis", "freeze"):
+        if sha(previous[field + "_path"]) != previous[field + "_sha256"]:
+            raise RuntimeError("Previous candidate reference changed: " + field)
 
 
 def run(args):
@@ -418,7 +438,7 @@ def run(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("setup", "freeze", "run", "analyze"))
-    parser.add_argument("--run-dir", type=Path, default=Path(os.environ.get("PGM_PERFORMANCE_RUN_DIR", REPO / "benchmark_runs/untuned-runtime-1")))
+    parser.add_argument("--run-dir", type=Path, default=Path(os.environ.get("PGM_PERFORMANCE_RUN_DIR", REPO / "benchmark_runs/untuned-runtime-2")))
     parser.add_argument("--baseline-root", default=os.environ.get("PGM_PERFORMANCE_BASELINE_ROOT", str(REPO.parent / "pgm-performance-baseline")))
     parser.add_argument("--libdai", default=os.environ.get("PGM_LIBDAI", str(REPO / "code/bench/libdai/libdai_mar")))
     parser.add_argument("--qualification", default=os.environ.get("PGM_LIBDAI_QUALIFICATION", str(HERE / "provenance/LIBDAI_QUALIFICATION.json")))

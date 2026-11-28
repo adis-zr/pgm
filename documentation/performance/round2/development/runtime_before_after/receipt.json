@@ -1,0 +1,18 @@
+{
+  "parent_commit": "607631adba2b68c68880d3ed330bd680b2c5b285",
+  "before_exit": 1,
+  "after_exit": 0,
+  "before_summary": "5 failed in 0.13s",
+  "after_summary": "5 passed in 0.07s",
+  "test": "tests/test_runtime_deadlines.py",
+  "note": "new deterministic regression probes, restored parent source; no scored benchmark rerun",
+  "test_sha256": "3b2b5a6ee6390d034f2cbcb6421757a6722dccb00b7e0ace7271a18a07598a09",
+  "parent_behaviors": {
+    "expired_absolute_supervisor_deadline": "parent rejects unsupported CLI argument before creating a ledger; no claim that the expired absolute option existed or that this probe launched work",
+    "one_absolute_deadline_forwarded": "parent command lacks the absolute supervisor deadline argument",
+    "ownership_wall_clock_parse": "parent invokes obsolete time.strptime and triggers the injected error",
+    "fallback_inventory": "parent allocates late inventory after final sample (allocation sample index4 vs required3)",
+    "cli_api_timestamp": "parent omits distinct API timestamp fields"
+  },
+  "repaired_behaviors": "All five regressions pass; exact deadlines forwarded, expiry refused before spawn, ownership no UTC parse, fallback preassembled, API and CLI timing distinguished."
+}

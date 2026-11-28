@@ -35,6 +35,10 @@ def main(argv=None):
         ap.error("budget expired during argument parsing")
     result = infer(a.input, budget=remaining, memory_mib=a.memory_mib, epsilon=a.epsilon,
                    delta=a.delta, seed=a.seed, mode=a.mode, queries=queries, policy=a.policy).to_dict()
+    # Keep the API boundary's honest timestamp when the CLI replaces wall_s
+    # with its own end-to-end publication time after encoding and staging.
+    result["api_wall_s"] = result["wall_s"]
+    result["api_hard_deadline_respected"] = result["hard_deadline_respected"]
     # Encode both outcomes before the publication check; a late success is
     # never committed. Outer supervision includes the final file commit.
     late = dict(result, outcome="DEADLINE", guarantee="NONE", published=0, max_published_radius=None, hard_deadline_respected=False,
