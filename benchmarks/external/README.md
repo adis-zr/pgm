@@ -2,11 +2,11 @@
 
 This is the repeatable performance benchmark for the supported `pgm` entrypoint. It runs every committed external input against libDAI junction tree and loopy belief propagation. Synthetic models are used by the correctness tests, not by this performance suite.
 
-The committed inputs comprise **61 exposed regression tasks** in two historical groups: `old55` (INPUT_MANIFEST.json) and `former_eval6` (HOLDOUT_FREEZE.json; prospective only in the v1 campaign at `3283cfd`). `INPUT_MANIFEST.json` and `HOLDOUT_FREEZE.json` bind their original model/evidence bytes and preserve their separate roles. The evaluation tasks were selected before any solver run using a fixed hash rule and the available prior-exposure records. They are held-out tasks from known source families; incomplete older records prevent an absolute never-seen claim. Input files use content-based directories to prevent accidental benchmark-name dispatch.
+The committed inputs comprise **61 exposed regression tasks** in two historical groups: `old55` (INPUT_MANIFEST.json) and `former_eval6` (HOLDOUT_FREEZE.json; prospective only in the v1 campaign at `3283cfd`). `INPUT_MANIFEST.json` and `HOLDOUT_FREEZE.json` bind their original model/evidence bytes and preserve their separate roles. The former evaluation tasks were selected before that campaign using a fixed hash rule and the available prior-exposure records. They are now exposed; incomplete older records also prevent an absolute never-seen claim about their original selection. Input files use content-based directories to prevent accidental benchmark-name dispatch.
 
 **Exposure update, 27 November 2026:** the complete campaign at `3283cfd` has now scored all 61 tasks. The original manifests preserve their roles in that experiment; all 61 are exposed regression inputs for subsequent development. `EXPOSURE_HISTORY.json` records the transition. Reusing the six under the `eval` command does not create new unseen evidence. A later prospective claim requires a separately selected and frozen external cohort.
 
-That campaign recorded all 366 cells with no identity/scoring or published-geometry faults. PGM/JT completions were 34/25 on the historical 46, 7/3 on the nine extensions, and 6/0 on the prospective six. Prior accepted-engine external coverage was retained on 27/29 tasks; DIABETES and ObjectDetection_43 were lost. The policy remains on preservation/performance hold. Results and raw receipts are preserved separately from the source tree. Checkout `3283cfd` to recover the exact scored source; this later documentation update changes no solver or harness code.
+The current consolidation evidence comprises the six-arm 732-cell step-2 run and a 245-cell supplement of the repaired public runtime plus one comparator replay. Accepted retains 45 same-round reference completions; experimental retains 54, including all 47 historical experimental successes. The original campaign's one documentation-edit identity failure remains recorded; its comparator cell has a separately labelled valid replay. The 18 accepted/reference overhead flags remain reported. See [acceptance and limitations](../../documentation/consolidation/ACCEPTANCE.md) and [the complete step-2 packet](../../documentation/consolidation/step2/START_HERE.md). Older 366-cell results and their original holds remain historical evidence, not the current preservation verdict.
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ From the repository root, with the project interpreter active:
 export CC=/absolute/path/to/qualified/clang CXX=/absolute/path/to/qualified/clang++
 export PGM_LIBDAI=/absolute/path/to/qualified/libdai_mar
 export PGM_BENCH_REFERENCE_ROOT=<detached checkout at 7f28259> PGM_BENCH_EXPERIMENTAL_REF_ROOT=<detached checkout at 3283cfd>
-export PGM_BENCH_RUN_DIR="$PWD/benchmark_runs/step2-preservation-v1"
+export PGM_BENCH_RUN_DIR="$PWD/benchmark_runs/external-new-run"
 
 python benchmarks/external/run_suite.py setup
 python benchmarks/external/run_suite.py freeze
@@ -37,13 +37,13 @@ python benchmarks/external/analyze_suite.py
 
 `PGM_BENCH_PY` may select a different project interpreter explicitly; otherwise the scripts use their own `sys.executable`. `PGM_BENCH_RUN_DIR` defaults to `benchmark_runs/consolidation-v1`. Choose a new directory for a new experiment. A freeze is never overwritten. Existing completed cells may be resumed only under the identical freeze; an incomplete launch requires explicit receipt reconciliation.
 
-The two phases use the same committed implementation and policy, with no modifications after the exposed outcomes and before evaluation. There are **732 cells**: 61 inputs × six arms (PGM_REFERENCE, PGM_ACCEPTED, PGM_EXPERIMENTAL, PGM_EXPERIMENTAL_REF, LIBDAI_JT, LIBDAI_BP) × two fresh-process repeats. Each receives **20 seconds and 3 GiB** under a zero-grace supervisor sampling process-tree RSS every 10 ms. PGM receives a 19.5-second internal allowance, epsilon 1/200 and per-request delta 1/1,000,000. The total scored ceiling is 8,000 supervisor seconds.
+The two historical-cohort phases use the same committed implementation and policies. There are **732 cells**: 61 inputs × six arms (PGM_REFERENCE, PGM_ACCEPTED, PGM_EXPERIMENTAL, PGM_EXPERIMENTAL_REF, LIBDAI_JT, LIBDAI_BP) × two fresh-process repeats. Each receives **20 seconds and 3 GiB** under a zero-grace supervisor sampling process-tree RSS every 10 ms. PGM receives a 19.5-second internal allowance, epsilon 1/200 and per-request delta 1/1,000,000. The step-2 scored ceiling is **14,640 supervisor seconds**, fixed in `STEP2_AMENDMENT_1.md`. A new experiment needs its own committed declaration and freeze; do not edit a frozen source while it runs. The separate 245-cell supplement has its own 4,900-second ceiling in `STEP2_SUPPLEMENT_1.md`.
 
 The output directory contains `FREEZE.json`, `CELLS.jsonl`, `RECEIPTS.jsonl`, all individual `runs/` outputs/logs, `ANALYSIS.json`, `GATES.json`, `PAIRS.csv` and `REPORT.md`. It is ignored by git. Preserve a complete run packet for review; do not overwrite an older experiment's files.
 
 ## Interpret
 
-Read `PROTOCOL.md` before interpreting the results. Completion requires both repeats to finish and pass the independent inventory, binding, guarantee-label and probability-geometry checks. The report keeps the historical 46, later 9 and prospective evaluation cohorts separate. A libDAI point answer or BP convergence is not a certified epsilon answer. Memory refusals have no latency denominator. Timeouts support only censored lower bounds.
+Read `STEP2_PLAN.md`, `STEP2_AMENDMENT_1.md` and the explicitly labelled later amendments before interpreting current results. `PROTOCOL.md` preserves the original three-arm campaign's historical protocol. Completion requires both repeats to finish and pass the independent inventory, binding, guarantee-label and probability-geometry checks. Historical cohort labels do not make current tasks unseen. A libDAI point answer or BP convergence is not a certified epsilon answer. Memory refusals have no latency denominator. Timeouts support only censored lower bounds.
 
 `reference/` contains compact historical reports and accepted-engine cell summaries, not a large copy of the prior raw campaign. Those results are historical coverage references, not same-round controlled timings. The selected cohort alone cannot establish universal dominance or scaling laws. The benchmark retains failures and losses alongside wins.
 

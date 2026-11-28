@@ -1,10 +1,10 @@
 # pgm — certified discrete inference
 
-A Python inference library with native execution kernels and one supported entrypoint for original-variable singleton marginals. The automatic switchboard selects among structural exact execution, block contraction and certified importance sampling, checked quotients, and spectrally admitted conditional-response sampling.
+A Python inference library with native execution kernels and one supported entrypoint for original-variable singleton marginals. The default `accepted` policy runs the established block-contraction engine, including its exact and certified importance-sampling routes. The opt-in `experimental` switchboard also selects structural execution, checked quotients, and spectrally admitted conditional-response sampling under the same public contract.
 
 The objective is broad end-to-end advantages over libDAI as problems scale, with a fixed general policy. That is an empirical objective, not an achieved universal performance claim. The external benchmark reports wins, losses and refusals separately.
 
-**First integration candidate, not an accepted replacement.** The frozen external run at `3283cfd` completed 41/55 exposed tasks and 6/6 prospective tasks, versus libDAI junction tree's 28/55 and 0/6. It retained 27/29 prior accepted-engine external completions: DIABETES and ObjectDetection_43 regressed. PGM was faster on 4/26 mutual completions, with a maximum measured 5.47x speedup. Keep the architecture; hold default promotion until preservation and performance improve. The numerical accepted engine remains available unchanged behind its retained interface.
+**Consolidated implementation with preserved coverage.** On the 61 exposed external tasks, the accepted policy and its pinned reference both complete 45 tasks; the experimental policy and its pinned reference both complete 54. The repaired-runtime supplement retains those sets. All 29 historical accepted successes and all 47 historical experimental successes are preserved. The experimental arm includes all 25 libDAI junction-tree completions and 29 additional tasks; on the 25 shared completions its median wall-time ratio to JT is 1.34, with individual speedups up to 28.17x. Broad latency dominance remains future work. See [the consolidation acceptance record](documentation/consolidation/ACCEPTANCE.md) for the independent review, incident disposition, known overhead and exact evidence identities.
 
 ## Python API
 
@@ -29,7 +29,7 @@ The same API is available from the command line:
 
 ```bash
 python -m pgm --input model.uai --output result.json \
-  --budget 20 --memory-mib 3072 --epsilon 1/200 --delta 1/1000000 [--policy accepted|experimental]
+  --budget 20 --memory-mib 3072 --epsilon 1/200 --delta 1/1000000 --policy accepted
 python -m pgm --capabilities
 ```
 
@@ -62,7 +62,7 @@ The numerical dependencies are NumPy, gmpy2, SciPy and psutil. Linux and macOS r
 | `benchmarks/external/` | Frozen external suite, exposure history, libDAI harness with explicit policy arms, the step-2 plan |
 | `documentation/` | Architecture, reviews, consolidation step 1 (manifest, path map, capability matrix, blocked controls, qualification) |
 
-This is a staged consolidation. Retained algorithms and pinned historical snapshots are not deleted merely because a newer entrypoint does not invoke them. The first stage standardizes selection and lifetime boundaries. Future extraction of numerical modules must preserve these contracts and the external suite.
+Production implementations live under `src/pgm`; historical paths delegate through compatibility shims. Specialist methods retain explicit interfaces and capability status; they are not all automatically selected by the default policy. Research snapshots and their evidence remain available for provenance. Future performance changes must preserve the public contracts and the full external suite.
 
 ## Testing and performance evidence
 
@@ -70,6 +70,6 @@ This is a staged consolidation. Retained algorithms and pinned historical snapsh
 python -m pytest tests/
 ```
 
-Synthetic inputs are correctness and adversarial tests only. They never enter the external performance numerator. The performance benchmark uses the entire recovered external suite against libDAI JT and BP, with separately labelled exposed-regression and prospective-evaluation inputs. Run the commands in `benchmarks/external/README.md` after committing source and preparing the comparator/native builds.
+Synthetic inputs are correctness and adversarial tests only. They never enter the external performance numerator. The performance benchmark uses the entire recovered external suite against libDAI JT and BP. All 61 current tasks are exposed regression inputs; the original manifests preserve earlier cohort roles. Any new unseen-evaluation claim requires a separately selected and frozen external cohort. Run the commands in [the benchmark instructions](benchmarks/external/README.md) after committing source and preparing the comparator/native builds.
 
 The latest DGP10 review retains its conditional-response accuracy mechanism, corrects its diagnostic units and comparator interpretation, and repairs resource/publication boundaries. See `documentation/reviews/`. DGP10's synthetic performance results are not evidence of superiority over libDAI. Historical campaign receipts remain in the separately preserved research records; none is silently reclassified as a result of this public switchboard.

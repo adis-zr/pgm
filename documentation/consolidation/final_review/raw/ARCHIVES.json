@@ -1,0 +1,62 @@
+[
+  {
+    "name": "PGM_STEP2_RUN_2026-11-27_f74f7f3.zip",
+    "sha256": "4f088a35c5ee28ac97596a96ab6df3de713fba648b7999721acf14558a76d11c",
+    "bytes": 39220001,
+    "members": 5925,
+    "first": [
+      "step2-preservation-v1/0_setup.log",
+      "step2-preservation-v1/1_freeze.log",
+      "step2-preservation-v1/2_primary.log",
+      "step2-preservation-v1/3_eval.log",
+      "step2-preservation-v1/4_analyze.log",
+      "step2-preservation-v1/ANALYSIS.frozen_analyzer_v1.json",
+      "step2-preservation-v1/ANALYSIS.json",
+      "step2-preservation-v1/CAMPAIGN_COMMANDS.log",
+      "step2-preservation-v1/CAMPAIGN_OPERATOR.log",
+      "step2-preservation-v1/CELLS.jsonl"
+    ],
+    "dir": "/workspace/scratch/226d1e4428b0/bounded_final_review/raw/PGM_STEP2_RUN_2026-11-27_f74f7f3",
+    "badzip": null
+  },
+  {
+    "name": "PGM_STEP2_RUN_2026-11-27_f74f7f3_POSTRUN_RECORDS.zip",
+    "sha256": "d7743b8a510ab9e16f379cba66474ca4cacdfd026feea6738afd2d112012347a",
+    "bytes": 620097,
+    "members": 52,
+    "first": [
+      "step2-preservation-v1/INCIDENTS.json",
+      "step2-preservation-v1/CAMPAIGN_OPERATOR.log",
+      "step2-preservation-v1/ANALYSIS.json",
+      "step2-preservation-v1/GATES.json",
+      "step2-preservation-v1/REPORT.md",
+      "step2-preservation-v1/PAIRS.csv",
+      "step2-preservation-v1/ANALYSIS.amendment2_rev1.json",
+      "step2-preservation-v1/GATES.amendment2_rev1.json",
+      "step2-preservation-v1/REPORT.amendment2_rev1.md",
+      "step2-preservation-v1/PAIRS.amendment2_rev1.csv"
+    ],
+    "dir": "/workspace/scratch/226d1e4428b0/bounded_final_review/raw/PGM_STEP2_RUN_2026-11-27_f74f7f3_POSTRUN_RECORDS",
+    "badzip": null
+  },
+  {
+    "name": "PGM_STEP2_SUPPLEMENT_RUN_step2-supplement-v1.zip",
+    "sha256": "ac1ff9a6606fbad2096cb12b5fb459bd03498ff290acf0562a41549979462fea",
+    "bytes": 18774550,
+    "members": 2145,
+    "first": [
+      "step2-supplement-v1/0_setup.log",
+      "step2-supplement-v1/1_freeze_supplement.log",
+      "step2-supplement-v1/2_supplement.log",
+      "step2-supplement-v1/3_analyze.log",
+      "step2-supplement-v1/ANALYSIS.json",
+      "step2-supplement-v1/CAMPAIGN_COMMANDS.log",
+      "step2-supplement-v1/CELLS.jsonl",
+      "step2-supplement-v1/ENGINE_COMMIT.txt",
+      "step2-supplement-v1/FREEZE.json",
+      "step2-supplement-v1/GATES.json"
+    ],
+    "dir": "/workspace/scratch/226d1e4428b0/bounded_final_review/raw/PGM_STEP2_SUPPLEMENT_RUN_step2-supplement-v1",
+    "badzip": null
+  }
+]

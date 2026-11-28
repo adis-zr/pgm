@@ -1,0 +1,63 @@
+original 732 468324 0 0 0
+supplement 245 233228 0 0 0
+{
+  "original": {
+    "cells": 732,
+    "terminal_receipts": 732,
+    "charge_s": 4130.23139837796,
+    "raw_pgm_results": 488,
+    "raw_mar_results": 172,
+    "published_coordinates": 468324,
+    "max_radius": "1/200",
+    "geometry_faults": [],
+    "contract_faults": [],
+    "faults": [],
+    "completion_counts": {
+      "PGM_REFERENCE": 45,
+      "PGM_ACCEPTED": 45,
+      "PGM_EXPERIMENTAL": 54,
+      "PGM_EXPERIMENTAL_REF": 54,
+      "LIBDAI_JT": 25,
+      "LIBDAI_BP": 60
+    },
+    "identity_failures": [
+      "exposed_regression__DBN_11__LIBDAI_BP__r1"
+    ],
+    "jt_comparison": {
+      "outputs": 180,
+      "coordinates": 119224,
+      "outside": [],
+      "max_gap": "1/20000000000",
+      "allowance": "1/2000000000"
+    }
+  },
+  "supplement": {
+    "cells": 245,
+    "terminal_receipts": 245,
+    "charge_s": 1626.1058695330576,
+    "raw_pgm_results": 244,
+    "raw_mar_results": 1,
+    "published_coordinates": 233228,
+    "max_radius": "1/200",
+    "geometry_faults": [],
+    "contract_faults": [],
+    "faults": [],
+    "completion_counts": {
+      "PGM_ACCEPTED": 45,
+      "PGM_EXPERIMENTAL": 54
+    },
+    "identity_failures": [],
+    "jt_comparison": {
+      "outputs": 90,
+      "coordinates": 59612,
+      "outside": [],
+      "max_gap": "1/20000000000",
+      "allowance": "1/2000000000"
+    }
+  },
+  "cross_campaign_compatibility": {
+    "coordinate_groups": 60325,
+    "deterministic_disjoint": [],
+    "pac_disjoint": []
+  }
+}

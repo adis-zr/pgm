@@ -1,0 +1,41 @@
+{
+  "reviewed_head": "0fe5f9cfcdb759c95c71cc76e537fd7b5727911b",
+  "branches": [
+    {
+      "ref": "origin/consolidate/production-layout",
+      "sha": "0fe5f9cfcdb759c95c71cc76e537fd7b5727911b",
+      "ancestor_of_reviewed_head": true,
+      "commits_not_in_reviewed_head": 0
+    },
+    {
+      "ref": "origin/consolidate/public-api",
+      "sha": "f8197e6b1e90286b8554a3088a0594b9178a3595",
+      "ancestor_of_reviewed_head": true,
+      "commits_not_in_reviewed_head": 0
+    },
+    {
+      "ref": "origin/dgp10-query-response",
+      "sha": "90605ec565ae4885dd24138d012e94d6b4e2615b",
+      "ancestor_of_reviewed_head": true,
+      "commits_not_in_reviewed_head": 0
+    },
+    {
+      "ref": "origin/dgp8-spectral-heatbath",
+      "sha": "ebf994c6f9f1386ffbfa00ae1a0b181f5a257dbc",
+      "ancestor_of_reviewed_head": true,
+      "commits_not_in_reviewed_head": 0
+    },
+    {
+      "ref": "origin/dgp9-heatbath-continuation",
+      "sha": "7f28259a4869a2c684d506b51072b04bb0ce4783",
+      "ancestor_of_reviewed_head": true,
+      "commits_not_in_reviewed_head": 0
+    },
+    {
+      "ref": "origin/main",
+      "sha": "d6d751d5a13cb48d0d8175df744ba2f95eef1b9f",
+      "ancestor_of_reviewed_head": true,
+      "commits_not_in_reviewed_head": 0
+    }
+  ]
+}

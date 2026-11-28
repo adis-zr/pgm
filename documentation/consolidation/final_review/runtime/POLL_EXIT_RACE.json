@@ -1,0 +1,6 @@
+{
+  "exception": "NoSuchProcess",
+  "typed_cleanup_returned": false,
+  "propagates_past_switchboard_handler": true,
+  "note": "synthetic process-exit boundary: pid_exists saw live PID; construction observes it already disappeared; no process signalled"
+}

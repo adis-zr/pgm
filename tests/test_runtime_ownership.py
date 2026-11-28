@@ -97,6 +97,37 @@ def test_missing_or_malformed_identity_fails_closed():
             victim.kill(); victim.wait()
 
 
+def test_cleanup_poll_tolerates_a_process_disappearing_between_reads():
+    """Exit can race either Process construction or status(), without turning cleanup into an exception."""
+    pid = 123456789
+    with patch.object(attempts.psutil, "Process", side_effect=psutil.NoSuchProcess(pid)):
+        assert attempts._kill_pids_and_wait([pid], 0) == []
+
+    class ExitingProcess:
+        def __init__(self, process_pid): self.pid = process_pid
+        def kill(self): pass
+        def is_running(self): return True
+        def status(self): raise psutil.NoSuchProcess(self.pid)
+
+    with patch.object(attempts.psutil, "Process", ExitingProcess):
+        assert attempts._kill_pids_and_wait([pid], 0) == []
+
+
+def test_cleanup_poll_keeps_denied_inspection_unresolved():
+    pid = 123456789
+    with patch.object(attempts.psutil, "Process", side_effect=psutil.AccessDenied(pid)):
+        assert attempts._kill_pids_and_wait([pid], 0) == [pid]
+
+    class DeniedProcess:
+        def __init__(self, process_pid): self.pid = process_pid
+        def kill(self): pass
+        def is_running(self): return True
+        def status(self): raise psutil.AccessDenied(self.pid)
+
+    with patch.object(attempts.psutil, "Process", DeniedProcess):
+        assert attempts._kill_pids_and_wait([pid], 0) == [pid]
+
+
 def test_callers_own_group_is_never_signalled():
     with tempfile.TemporaryDirectory(prefix="pgm-own-") as tmp:
         ledger = _ledger(tmp, dict(pid=os.getpid(), pgid=os.getpgrp(), leader_create_time=psutil.Process().create_time(), spawn_utc="2000-01-01T00:00:00Z"))

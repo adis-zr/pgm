@@ -124,19 +124,31 @@ def _verified_members(pgid, identity):
 
 def _kill_pids_and_wait(pids, wait_s):
     """signal POSITIVELY identified processes individually (never the whole group) and wait for them to disappear"""
-    import signal
+    processes = []; unverified = set()
     for pid in pids:
         try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
+            process = psutil.Process(pid)
+            process.kill()             # psutil checks the captured process incarnation before signalling
+            processes.append(process)
+        except (psutil.NoSuchProcess, ProcessLookupError):
             pass
+        except (psutil.AccessDenied, PermissionError):
+            unverified.add(pid)        # inability to signal/inspect must remain unresolved
     deadline = time.monotonic() + wait_s
-    while time.monotonic() < deadline:
-        alive = [pid for pid in pids if psutil.pid_exists(pid) and (lambda p: p.status() != psutil.STATUS_ZOMBIE if p else False)(psutil.Process(pid) if psutil.pid_exists(pid) else None)]
-        if not alive:
-            return []
-        time.sleep(0.02)
-    return [pid for pid in pids if psutil.pid_exists(pid)]
+    while True:
+        alive = set(unverified)
+        for process in processes:
+            try:
+                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                    alive.add(process.pid)
+            except psutil.NoSuchProcess:
+                pass                  # ordinary exit between the liveness and status reads
+            except psutil.AccessDenied:
+                alive.add(process.pid)
+        remaining = deadline - time.monotonic()
+        if not alive or remaining <= 0:
+            return sorted(alive)
+        time.sleep(min(0.02, remaining))
 
 
 def kill_owned(process, ledger, wait_s=0.5):

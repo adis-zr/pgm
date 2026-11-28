@@ -1,0 +1,5 @@
+{
+  "returned": [],
+  "typed_cleanup_returned": true,
+  "note": "same synthetic exit boundary after repair; no process signalled"
+}
