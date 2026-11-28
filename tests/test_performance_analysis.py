@@ -167,3 +167,67 @@ def test_missing_cell_and_receipt_are_incomplete(campaign):
     _, _, result = a.analyze(campaign)
     assert result["validity"] == "INCOMPLETE" and result["completeness"] == "INCOMPLETE"
     assert result["missing_cells"] == [("asym2", "PGM_ACCEPTED", 1)]
+
+
+def test_historical_reference_relocates_without_rewriting_freeze(tmp_path, monkeypatch):
+    restored = tmp_path / "restored"
+    restored.mkdir()
+    monkeypatch.setattr(a.h, "REPO", restored)
+    original = Path("/creator-workstation-unavailable/pgm")
+    relative = Path("documentation/consolidation/step2/supplement/ANALYSIS.json")
+    target = restored / relative
+    target.parent.mkdir(parents=True)
+    target.write_text(json.dumps({"complete_both": {"PGM_ACCEPTED": ["a"], "PGM_EXPERIMENTAL": ["a", "b"]}}))
+    frozen = {"roots": {"candidate": {"path": str(original)}},
+              "historical_reference": {"path": str(original / relative), "sha256": a.h.sha(target)}}
+    before = json.dumps(frozen, sort_keys=True)
+    sets = {"BASE_ACCEPTED": ["a"], "PGM_ACCEPTED": ["a"],
+            "BASE_EXPERIMENTAL": ["a", "b"], "PGM_AUTOMATIC": ["a", "b"]}
+    issues = []
+    result = a._historical(frozen, sets, issues)
+    assert not issues and result["policies"]["experimental"]["retained"] == ["a", "b"]
+    assert json.dumps(frozen, sort_keys=True) == before
+    target.write_text("{}")
+    assert a._historical(frozen, sets, issues)["status"] == "INVALID_REFERENCE"
+    assert issues == ["Historical reference missing or changed"]
+
+
+def test_restored_input_preferred_over_old_workstation_path(tmp_path, monkeypatch):
+    restored = tmp_path / "restored"
+    restored.mkdir()
+    monkeypatch.setattr(a.h, "REPO", restored)
+    original = tmp_path / "original"
+    original.write_text("stale original")
+    local = restored / "model.uai"
+    local.write_text("restored source")
+    assert a._source_path({}, original, "model.uai") == local
+
+
+@pytest.mark.parametrize("relative", ["../outside", "/tmp/outside"])
+def test_restored_input_cannot_escape_checkout(tmp_path, monkeypatch, relative):
+    monkeypatch.setattr(a.h, "REPO", tmp_path)
+    with pytest.raises(ValueError, match="escapes"):
+        a._source_path({}, "/old/model.uai", relative)
+
+
+def test_restored_input_symlink_escape_refused(tmp_path, monkeypatch):
+    restored = tmp_path / "restored"
+    restored.mkdir()
+    monkeypatch.setattr(a.h, "REPO", restored)
+    (restored / "escape").symlink_to(tmp_path)
+    with pytest.raises(ValueError, match="escapes"):
+        a._source_path({}, "/old/model.uai", "escape/outside")
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_runner_analysis_dispatch_propagates_analyzer_status(tmp_path, monkeypatch, exit_code):
+    import run_performance as runner
+    calls = []
+    def analyze_main(argv):
+        calls.append(argv)
+        return exit_code
+    monkeypatch.setattr(a, "main", analyze_main)
+    with pytest.raises(SystemExit) as stopped:
+        runner.main(["analyze", "--run-dir", str(tmp_path)])
+    assert stopped.value.code == exit_code
+    assert calls == [[str(tmp_path.resolve())]]

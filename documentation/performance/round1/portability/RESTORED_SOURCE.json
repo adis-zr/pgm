@@ -1,0 +1,11 @@
+{
+  "frozen_source_commit": "d33d40aec7a05ec43cd52ff2793e544f9edc4cf0",
+  "archive": "/workspace/scratch/226d1e4428b0/performance_relocation/analysis_source_d33d40a.tar",
+  "restored_checkout": "/workspace/scratch/226d1e4428b0/performance_relocation/restored_source",
+  "archived_paths": [
+    "benchmarks/external",
+    "documentation/consolidation/step2/supplement/ANALYSIS.json"
+  ],
+  "portability_overlay": "benchmarks/external/analyze_performance.py",
+  "overlay_reason": "Only frozen path resolution; no scoring or verdict change"
+}

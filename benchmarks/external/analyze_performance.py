@@ -105,11 +105,37 @@ def interval_conflicts(published):
     return deterministic, pac
 
 
-def _relocate_task(task):
+def _source_path(frozen, original, relative=None):
+    """Resolve recorded source locations under this checkout without rewriting evidence.
+
+    Relative paths must stay inside the restored repository. Original absolute
+    paths remain a fallback when no restored counterpart exists. Callers retain
+    the frozen SHA256 checks; resolving a filename never authenticates its bytes.
+    """
+    original = Path(original)
+    if relative is None and not original.is_absolute():
+        relative = original
+    if relative is None:
+        old_root = (frozen.get("roots", {}).get("candidate", {}) or {}).get("path")
+        if old_root:
+            try:
+                relative = original.relative_to(Path(old_root))
+            except ValueError:
+                pass
+    if relative is None:
+        return original
+    relative = Path(relative)
+    restored_root = h.REPO.resolve()
+    relocated = (restored_root / relative).resolve()
+    if relative.is_absolute() or not relocated.is_relative_to(restored_root):
+        raise ValueError("Frozen source path escapes the restored repository")
+    return relocated if relocated.is_file() or not original.is_file() else original
+
+
+def _relocate_task(task, frozen=None):
     task = dict(task)
     for key in ("model", "evidence"):
-        if not Path(task[key]).exists() and task.get(key + "_relative"):
-            task[key] = str(h.REPO / task[key + "_relative"])
+        task[key] = str(_source_path(frozen or {}, task[key], task.get(key + "_relative")))
     return task
 
 
@@ -117,8 +143,7 @@ def _historical(frozen, sets, issues):
     ref = frozen.get("historical_reference")
     if not ref:
         return dict(status="NOT_EVALUABLE", reason="No hash-bound historical reference in freeze")
-    path = Path(ref["path"])
-    if not path.is_absolute(): path = h.REPO / path
+    path = _source_path(frozen, ref["path"])
     if not path.is_file() or h.sha(path) != ref["sha256"]:
         issues.append("Historical reference missing or changed")
         return dict(status="INVALID_REFERENCE")
@@ -138,7 +163,7 @@ def _historical(frozen, sets, issues):
 def analyze(root):
     root = Path(root)
     frozen = json.loads((root / "FREEZE.json").read_text())
-    tasks = {t["name"]: _relocate_task(t) for t in frozen["tasks"]}
+    tasks = {t["name"]: _relocate_task(t, frozen) for t in frozen["tasks"]}
     arms = frozen["arms"]; reps = frozen["replicates"]
     expected = {(name, arm, rep) for name in tasks for arm in arms for rep in reps}
     rows = [json.loads(p.read_text()) for p in sorted((root / "runs").glob("*/cell.json"))]

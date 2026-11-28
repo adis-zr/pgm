@@ -1,0 +1,14 @@
+{
+  "identical": {
+    "ANALYSIS.json": true,
+    "PAIRS.csv": true,
+    "REPORT.md": true
+  },
+  "sha256": {
+    "ANALYSIS.json": "cd1630dc1d7fcf0ef364297bd219f086126075c006e763b2d8e3e2ff2cfda165",
+    "PAIRS.csv": "94d6e34ad33212fed690718a7eb87c2dbdf76a8c17f70296758647be388f5510",
+    "REPORT.md": "d4d9286ab92b0e4ca955e10ab6e9d8eb3bffb8f74774d5505b05bff2c52a7369"
+  },
+  "expected_analyzer_exit": 1,
+  "reason": "Frozen validity FAIL is preserved"
+}

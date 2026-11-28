@@ -1,0 +1,32 @@
+{
+  "decision": "REVIEW_ONLY; default accepted unchanged; automatic promotion HOLD",
+  "engine_commit": "d33d40aec7a05ec43cd52ff2793e544f9edc4cf0",
+  "parent_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+  "analysis_amendment": "Source-path relocation only after all 732 cells; original frozen outputs retained and byte-identical to amended analysis.",
+  "scoring_reruns": 0,
+  "engine_changes_after_scoring": false,
+  "validation_failures": [
+    {
+      "error": "StopIteration()",
+      "job": "DBN_12__LIBDAI_JT__r2"
+    },
+    {
+      "error": "StopIteration()",
+      "job": "DBN_15__LIBDAI_JT__r1"
+    },
+    {
+      "contract_faults": [
+        "hard deadline not respected"
+      ],
+      "job": "Grids_15__PGM_ACCEPTED__r2",
+      "validation_faults": []
+    }
+  ],
+  "interpretation": [
+    "Both JT parse failures are four-byte MAR prefixes after TIMEOUT_KILL, not accepted numerical answers.",
+    "Grids_15 PGM_ACCEPTED r2 reports DEADLINE/NONE, 0/800 rows, 19.50255564 internal seconds against 19.5; clean ownership and within outer 20-second contract. Strict frozen failure retained.",
+    "DIABETES automatic completes one of two repeats; accepted completes both. ObjectDetection_39 automatic fails both; accepted completes both.",
+    "BN_13 completion gain is a near-cutoff timing observation on the unchanged block route, not the new binary higher-order admission.",
+    "Historical Mac 45/54 targets and same-host Linux 40/48 baselines are separate. No reference results were rewritten."
+  ]
+}

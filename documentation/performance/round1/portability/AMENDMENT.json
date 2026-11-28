@@ -1,0 +1,20 @@
+{
+  "kind": "post-run analysis portability only",
+  "scored_engine_commit": "d33d40aec7a05ec43cd52ff2793e544f9edc4cf0",
+  "after_all_scored_cells": 732,
+  "changes": [
+    "Resolve frozen model/evidence/historical-reference locations inside restored checkout with path containment and unchanged SHA256 checks",
+    "Add relocation and dispatch controls, portable analysis replay wrapper, reports and archive identity"
+  ],
+  "engine_changes": false,
+  "reruns": 0,
+  "frozen_gates_changed": false,
+  "original_analysis_preserved": true,
+  "analysis_outputs_byte_identical": true,
+  "restored_inputs_verified": 122,
+  "restored_historical_references_verified": 1,
+  "creator_source_reads_attempted": 0,
+  "expected_original_analysis_exit": 1,
+  "campaign_validity": "FAIL",
+  "campaign_completeness": "PASS"
+}

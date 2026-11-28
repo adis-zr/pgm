@@ -1,0 +1,21 @@
+{
+  "method": "Independent agent review of complete analysis plus direct raw-result checks",
+  "cells": 732,
+  "unique_terminal_receipts": 732,
+  "pgm_results": 488,
+  "published_coordinates": 421809,
+  "geometry_inventory_binding_witness_faults": 0,
+  "late_publication_results": 0,
+  "source_identity_failures": 0,
+  "cleanup_flags": 0,
+  "accepted_same_host_preserved": 40,
+  "experimental_both_preserved": 48,
+  "automatic_both": 50,
+  "automatic_union_losses": [
+    "DIABETES",
+    "ObjectDetection_39"
+  ],
+  "union_only_gain": "Pedigree_12",
+  "near_cutoff_gain_over_experimental": "BN_13",
+  "verdict": "Opt-in review candidate; no default promotion; frozen validity FAIL retained"
+}

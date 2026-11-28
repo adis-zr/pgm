@@ -1,0 +1,20 @@
+{
+  "filename": "PGM_UNTUNED_RUNTIME_RUN_2026-11-27_d33d40a.zip",
+  "sha256": "da1a400e974881a2bf62dad79f00d372ef46d78684d75ca140b55f6f6e3418c4",
+  "bytes": 40593311,
+  "members": 5940,
+  "engine_commit": "d33d40aec7a05ec43cd52ff2793e544f9edc4cf0",
+  "cells": 732,
+  "charged_s": 4595.72770671698,
+  "integrity_test": "PASS",
+  "contains": [
+    "all raw cells and outputs",
+    "all terminal receipts and ownership records",
+    "launch logs",
+    "executed native artifacts",
+    "setup qualification",
+    "FREEZE.json",
+    "original frozen analysis and identical portable analysis"
+  ],
+  "seconds_to_pack_and_test": 5.740665912628174
+}

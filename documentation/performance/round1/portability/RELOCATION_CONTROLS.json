@@ -1,0 +1,12 @@
+{
+  "passed": 7,
+  "checks": [
+    "historical_absolute_path_relocated_with_original_hash",
+    "both_inputs_relocated",
+    "changed_reference_fails_hash_check",
+    "parent_escape_refused",
+    "absolute_relative_path_refused",
+    "restored_input_preferred_over_existing_old_location",
+    "symlink_escape_refused"
+  ]
+}
