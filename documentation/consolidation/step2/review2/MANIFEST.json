@@ -1,0 +1,112 @@
+{
+  "reviewed_commit": "d45a1367101ff5d68597684aa29c1cecced76fd9",
+  "scored_commit": "f74f7f3da84cade7ac2bc6776087790a0c698a73",
+  "scope": "Independent read-only source, compact+receipt recomputation, recovered prior records, bounded probes; no current raw coordinate replay",
+  "files": [
+    {
+      "path": "CLAUDE_STEP2_BOUNDED_COMPLETION.md",
+      "bytes": 7978,
+      "sha256": "b8f7f02fa69f178a067dc9a4486bf01a94d3027af770e12562a555035a9c42ff"
+    },
+    {
+      "path": "PGM_STEP2_REVIEW.md",
+      "bytes": 9697,
+      "sha256": "d6ed52f5baa40e63c77c816c685738ec8a854c6944391f7bdd716fea37b84906"
+    },
+    {
+      "path": "REPAIR_TESTS.log",
+      "bytes": 4307,
+      "sha256": "da0fcd5fee3181ac47c4e7aa23d0babeb5c98ecdbe25c05d003149e9a3649bdf"
+    },
+    {
+      "path": "START_HERE.md",
+      "bytes": 2462,
+      "sha256": "a5104c9e0b7f546aa87c99e3d40ca8edd0aa1c5a0bedd4daf70c0d4855aa4ff0"
+    },
+    {
+      "path": "gates/ANALYSIS_BOUNDARIES.json",
+      "bytes": 507,
+      "sha256": "db1164461f9adf6e2b9c73131ad962267488de5bae8bcf86ebe85355c13e9278"
+    },
+    {
+      "path": "gates/COMPACT_RECOMPUTATION.json",
+      "bytes": 12768,
+      "sha256": "edf2e034309c74df3ce141bf92b33f0b582658dcb36d46c68d3f66a09235f293"
+    },
+    {
+      "path": "gates/GATE_REVIEW.md",
+      "bytes": 8823,
+      "sha256": "b70f9f139d55e76ad2a8f569a29aa0de0dfdfc51b20484ee89ec65d9ec398c90"
+    },
+    {
+      "path": "gates/PORTABLE_PROBE_REPLAY.json",
+      "bytes": 507,
+      "sha256": "db1164461f9adf6e2b9c73131ad962267488de5bae8bcf86ebe85355c13e9278"
+    },
+    {
+      "path": "gates/probe_analysis_boundaries.py",
+      "bytes": 3513,
+      "sha256": "a588033824731f0c6593d9d239983f0a0ae74b97eeddaff7fad0a9f0ebbac64d"
+    },
+    {
+      "path": "historical/PGM_CONSOLIDATION_EVIDENCE_2026-11-27.zip",
+      "bytes": 10431190,
+      "sha256": "3fb49e60a9dba094fd6192e0478d4b547199903bf503efcfb3bdb38f79e3547c"
+    },
+    {
+      "path": "results/HISTORICAL_3283CFD_122_CELLS.json",
+      "bytes": 134477,
+      "sha256": "80d464b998bb40bfa92636108d200d27fd60b143653d05f3a47dbe82e126a417"
+    },
+    {
+      "path": "results/HISTORICAL_3283CFD_COMPARISON.json",
+      "bytes": 4726,
+      "sha256": "8ce498e58f4b2b7c872f7e50959cbde64c23ecb64f856b6ba17596fae0be90f0"
+    },
+    {
+      "path": "results/RECOMPUTED_RESULTS.json",
+      "bytes": 134605,
+      "sha256": "196b5b3e35bd01a3e98c2c4695dc7aff01efc51c28d09bd69a1f6dcc4c23d483"
+    },
+    {
+      "path": "results/RESULTS_REVIEW.md",
+      "bytes": 8704,
+      "sha256": "4087194af3c1fa114ce022fb03d033d263249c800742c062178ee9af0775ac18"
+    },
+    {
+      "path": "results/recompute_results.py",
+      "bytes": 5574,
+      "sha256": "a3a00baa052b3a295be7d709105810772497e1d0724d0b836e05b4e7c555e34a"
+    },
+    {
+      "path": "results/recover_historical_experimental.py",
+      "bytes": 3378,
+      "sha256": "45f68e6f567e2315827d64c29d4f6bd81238fabb1c40c1fdb430dddc8cdfba11"
+    },
+    {
+      "path": "runtime/PORTABLE_PROBE_REPLAY.json",
+      "bytes": 1601,
+      "sha256": "c1c8b97f3ae0795db91c43c4606dceea844ef5ac42a0a7780ea16570740ccade"
+    },
+    {
+      "path": "runtime/PROBE_RESULTS.json",
+      "bytes": 1601,
+      "sha256": "c1c8b97f3ae0795db91c43c4606dceea844ef5ac42a0a7780ea16570740ccade"
+    },
+    {
+      "path": "runtime/REPAIR_TESTS.log",
+      "bytes": 110,
+      "sha256": "277758ccd9b74417567e19fc5c949c15c877237df938126e4a02ad9115b1b07e"
+    },
+    {
+      "path": "runtime/REVIEW.md",
+      "bytes": 6878,
+      "sha256": "b48427e1efada95ff7295dc40a9607ae712c518939935fec7f1b571615ba28f0"
+    },
+    {
+      "path": "runtime/probe_repairs.py",
+      "bytes": 4362,
+      "sha256": "33a38a2b919b7708048d2455f2d7b966687ccb241398d92458c00135ba3775b1"
+    }
+  ]
+}

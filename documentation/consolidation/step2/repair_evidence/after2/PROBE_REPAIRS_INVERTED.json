@@ -1,0 +1,83 @@
+{
+  "stale_without_receipt": {
+    "terminal_receipt": false,
+    "unrelated_newer_process_killed": false,
+    "returncode": null,
+    "cleanup": {
+      "supervisor_alive_at_entry": false,
+      "receipt_established": false,
+      "groups": [
+        {
+          "pgid": 29615,
+          "source": "SPAWNED",
+          "leader_pid": 29615,
+          "recorded_create_time": null,
+          "verified": [],
+          "unverified": [
+            29615
+          ]
+        }
+      ],
+      "killed": [],
+      "unresolved": [
+        {
+          "pgid": 29615,
+          "pids": [
+            29615
+          ],
+          "reason": "unverified members not signalled: no recorded incarnation identity (pid + creation time) for this group"
+        }
+      ],
+      "identity_refused": [
+        {
+          "pgid": 29615,
+          "pids": [
+            29615
+          ],
+          "reason": "no recorded incarnation identity (pid + creation time) for this group"
+        }
+      ]
+    }
+  },
+  "stale_with_terminal_receipt": {
+    "terminal_receipt": true,
+    "unrelated_newer_process_killed": false,
+    "returncode": null,
+    "cleanup": {
+      "supervisor_alive_at_entry": false,
+      "receipt_established": true,
+      "groups": [],
+      "killed": [],
+      "unresolved": [],
+      "identity_refused": []
+    }
+  },
+  "final_cleanup": {
+    "cleanup_calls": 2,
+    "outcome": "CLEANUP_UNRESOLVED",
+    "published": 0,
+    "attempt_outcome": "CLEANUP_UNRESOLVED",
+    "cleanup_final": {
+      "unresolved": [
+        {
+          "pgid": 123456789,
+          "pids": [
+            123456789
+          ]
+        }
+      ]
+    }
+  },
+  "wheel_inventory": {
+    "original": [
+      "PASS",
+      []
+    ],
+    "duplicated_state_keys": [
+      "FAIL",
+      [
+        "worker_block: published coordinate set / geometry invalid (exact original inventory, unique keys, rational geometry, simplex, witness)"
+      ]
+    ]
+  }
+}

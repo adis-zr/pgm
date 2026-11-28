@@ -16,6 +16,7 @@ def main():
     run = Path(sys.argv[1]).resolve(); archive = Path(sys.argv[2]).resolve(); dest = OUT / "run"; dest.mkdir(parents=True, exist_ok=True)
     copied = {}
     for name in ("FREEZE.json", "CELLS.jsonl", "RECEIPTS.jsonl", "ANALYSIS.json", "GATES.json", "PAIRS.csv", "REPORT.md", "ANALYSIS.frozen_analyzer_v1.json", "GATES.frozen_analyzer_v1.json", "REPORT.frozen_analyzer_v1.md", "PAIRS.frozen_analyzer_v1.csv",
+                 "ANALYSIS.amendment2_rev1.json", "GATES.amendment2_rev1.json", "REPORT.amendment2_rev1.md", "PAIRS.amendment2_rev1.csv", "INCIDENTS.json",
                  "BUDGET_STOP.json", "PRIMARY_RETURN.json", "EVAL_RETURN.json", "CAMPAIGN_COMMANDS.log", "CAMPAIGN_OPERATOR.log", "ENGINE_COMMIT.txt", "GIT_STATUS_AT_START.txt", "0_setup.log", "1_freeze.log", "2_primary.log", "3_eval.log", "4_analyze.log", "resume2.sh", "resume_guard.out", "resume2.out"):
         if (run / name).exists(): shutil.copy(run / name, dest / name); copied[name] = sha(dest / name)
     # the full CELLS.jsonl (every published row of every cell, ~60 MB) stays in the raw archive; the repository copy is the compact per-cell record
@@ -53,19 +54,33 @@ def main():
     import statistics
     ov = [statistics.median(d["common_contract_overhead_s"]) for d in dec if d.get("common_contract_overhead_s")]
     lines += ["", "## Paired overhead (adopted criterion: both repeats > 1.25x and > 0.1 s slower than PGM_REFERENCE)", "",
-              f"Flagged tasks: {len(flags)} of {len(dec)} same-round mutual completions: {', '.join(x['task'] for x in flags) or 'none'}. Median common-contract overhead per request (controller wall minus worker wall: lexical inspection, supervised worker spawn, interpreter + package import, exact parse) = {statistics.median(ov):.3f} s over the mutual completions (min {min(ov):.3f}, max {max(ov):.3f})." if ov else "No paired measurement.",
+              f"Flagged tasks: {len(flags)} of {len(dec)} same-round mutual completions: {', '.join(x['task'] for x in flags) or 'none'}. Outside-worker time per request (controller wall minus worker wall: lexical inspection, supervised worker spawn, interpreter + package import, publication; the exact parse runs INSIDE the worker timer) = median {statistics.median(ov):.3f} s over the mutual completions (min {min(ov):.3f}, max {max(ov):.3f}). This is a timer decomposition, not an isolated kernel attribution: the outside-worker amount includes input-dependent inspection and serialization, and worker / standalone timers cover different boundaries." if ov else "No paired measurement.",
               "", "| task | reference receipt s | accepted receipt s | difference s | fixed overhead s | accepted worker s | reference internal s |", "|---|---:|---:|---:|---:|---:|---:|"]
     for d in sorted(dec, key=lambda d: -statistics.median(d["differences_s"])):
         if d["task"] in {x["task"] for x in flags} and d.get("common_contract_overhead_s"):
             lines.append(f"| {d['task']} | {statistics.median(d['receipt_walls']['comparator']):.3f} | {statistics.median(d['receipt_walls']['candidate']):.3f} | {statistics.median(d['differences_s']):.3f} | {statistics.median(d['common_contract_overhead_s']):.3f} | {statistics.median([x or 0 for x in d['candidate_worker_wall_s']]):.3f} | {statistics.median(d['comparator_internal_wall_s']):.3f} |")
-    lines += ["", "Every paired wall, ratio and difference is in `run/PAIRS.csv` (pair `same_round_accepted`) and `run/ANALYSIS.json` (`overhead_decomposition`). The flags hold default promotion pending the reviewer's reading of this decomposition; no rate or scheduler was changed.", "",
+    lines += ["", "Every paired wall, ratio and difference is in `run/PAIRS.csv` (pair `same_round_accepted`) and `run/ANALYSIS.json` (`overhead_decomposition`). The 18 flags are real end-to-end latency regressions under the adopted rule and remain reported; the decomposition supports wrapper overhead as a major contributor on the flagged (cheap) tasks, where the flagged-task MEDIAN worker-versus-reference-internal difference is small, but across all mutual tasks individual differences reach several tenths of a second (e.g. BN_12, BN_13, a DBN_14 repeat). No rate or scheduler was changed; reducing duplicated boundary work is the next performance task.", "",
               "## Amendments and incidents", "",
               "- `STEP2_AMENDMENT_1` (pre-run, committed): the six-arm matrix, executed pinned references, owner-resolved natives, contracts, explicit pairs, GATES, ceiling 14,640 s.",
               "- `STEP2_AMENDMENT_2` (post-run analysis only; `../../../benchmarks/external/STEP2_AMENDMENT_2.md`): the legacy internal-wall rule became a diagnostic (16 non-completing PGM_REFERENCE cells reclassified; frozen-analyzer outputs preserved as `run/*.frozen_analyzer_v1.*`), and the operator identity incident is recorded: during the run the operator edited a tracked documentation file, the harness identity guard aborted before cell 115, the in-flight comparator cell `DBN_11 LIBDAI_BP r1` carries `identity_ok = false`, the edit was reverted byte-for-byte and the run resumed under the same freeze (`run/CAMPAIGN_OPERATOR.log`). The frozen `validity` gate keeps that failure; `validity_excluding_operator_identity_incident` reports the same predicate with it set aside.",
               "", "## Limitations", "",
-              "- The historical experimental preservation gate is NOT EVALUABLE: the scored 3283cfd cell extract is absent on this host (the exact prerequisite is named in `STEP2_PLAN.json`); the executed pinned 3283cfd arm is the same-round experimental comparator.",
+              "- Historical experimental preservation: the gate was NOT EVALUABLE at run time (extract absent; outputs preserved as `run/*.frozen_analyzer_v1.*` and `run/*.amendment2_rev1.*`); the independent review recovered the scored 3283cfd cells (`benchmarks/external/reference/HISTORICAL_3283CFD_122_CELLS.json`, source ANALYSIS sha 45d954bb..., bound by hash) and the current analysis computes it (see the gate table above). The seven current-host gains also occur in the pinned 3283cfd arm: they are host effects, not consolidation gains.",
               "- Same-host, same-round comparisons attribute differences to the implementation layer; they do not establish universal dominance, scaling or unseen generalization (all 61 inputs are exposed).",
               "- `main` is unchanged; promotion of the accepted default follows the `promotion_decision` gate and the review of this packet."]
+    sup = Path(os.environ.get("PGM_SUPPLEMENT_RUN_DIR", "")) if os.environ.get("PGM_SUPPLEMENT_RUN_DIR") else None
+    if sup and (sup / "GATES.json").exists():
+        sg = json.loads((sup / "GATES.json").read_text()); sa = json.loads((sup / "ANALYSIS.json").read_text()); (OUT / "supplement").mkdir(exist_ok=True)
+        for name in ("FREEZE.json", "RECEIPTS.jsonl", "ANALYSIS.json", "GATES.json", "REPORT.md", "SUPPLEMENT_RETURN.json", "BUDGET_STOP.json", "CAMPAIGN_COMMANDS.log"):
+            if (sup / name).exists(): shutil.copy(sup / name, OUT / "supplement" / name)
+        if (sup / "CELLS.jsonl").exists():
+            with (OUT / "supplement" / "CELLS_COMPACT.jsonl").open("w") as out:
+                for line in (sup / "CELLS.jsonl").read_text().splitlines():
+                    if line.strip(): row = json.loads(line); row.pop("published_rows", None); out.write(json.dumps(row, default=str) + "\n")
+        if (sup / "setup" / "SETUP.json").exists(): (OUT / "supplement" / "setup").mkdir(exist_ok=True); shutil.copy(sup / "setup" / "SETUP.json", OUT / "supplement" / "setup" / "SETUP.json")
+        lines += ["", "## STEP2_SUPPLEMENT_1 (the changed public runtime on the full suite; original run immutable)", "", "| gate | decision |", "|---|---|",
+                  f"| validity | {sg['validity']['decision']} |", f"| completeness | {sg['completeness']['decision']} ({sg['completeness']['recorded_cells']}/{sg['completeness']['expected_cells']}) |"] + \
+                 [f"| preservation_vs_original {a} | {v['decision']} (target {v['target']}, supplement {v['supplement']}, lost {', '.join(v['lost']) or 'none'}, gained {', '.join(v['gained']) or 'none'}) |" for a, v in sg["preservation_vs_original"].items()] + \
+                 [f"| replay_cells | {sg['replay_cells']['decision']} |", f"| supplement_decision | {sg['supplement_decision']['decision']} |", "", f"Charged {sa['charge_s']:.0f} s of the declared 4,900 s; records under `supplement/`. Wall times of different run periods are descriptive only."]
     (OUT / "START_HERE.md").write_text("\n".join(lines) + "\n")
     print(json.dumps(dict(archive=ident["archive"], sha256=ident["sha256"], members=members, gates={k: v["decision"] for k, v in gates.items()})))
 

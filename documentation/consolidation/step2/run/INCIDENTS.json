@@ -1,0 +1,12 @@
+{
+ "schema": "PGM_RUN_INCIDENTS_V1",
+ "incidents": [
+  {
+   "job": "exposed_regression__DBN_11__LIBDAI_BP__r1",
+   "kind": "identity_failure",
+   "evidence": ["CAMPAIGN_OPERATOR.log (OPERATOR INCIDENT 20:33:53Z and the appended CLARIFICATION)", "2_primary.log lines 114-138: the cell completed numerically, failed its POST-cell identity check, the next cell's PRE-cell check aborted the driver", "the edited file was documentation/consolidation/step1/START_HERE.md (reverted byte-for-byte; a documentation file outside every arm's execution closure) -- asserted by the operator, not mechanically preserved by the compact records"],
+   "disposition": "clean supplemental replay under STEP2_SUPPLEMENT_1 (same contract, same comparator build); the original cell keeps identity_ok = false; the original campaign validity is not changed",
+   "recorded_utc": "2026-11-27T22:30:00Z"
+  }
+ ]
+}

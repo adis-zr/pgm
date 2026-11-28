@@ -115,8 +115,65 @@ def test_amendment_2_internal_wall_rule_guards_late_publication_only(tmp_path):
                 binding=dict(model_sha256=t["model_sha256"], evidence_sha256=t["evidence_sha256"]), wall_s=19.55, argv=["--budget", "19.5", "--epsilon", "1/200", "--delta", "1/1000000", "--schedule", "targeted", "--route", "auto", "--proposal", "mb"],
                 schedule="targeted", route_requested="auto", proposal="mb", epsilon="1/200", delta="1/1000000")
     c = h.check_pgm(write(tmp_path, base), t, h.CONTRACTS["PGM_REFERENCE"]); assert c["contract_valid"] and not c["all_queries_returned"]      # non-publishing deadline cell: no fault
-    assert c["legacy_internal_wall_past_allowance"] is True                                                                       # recorded as a diagnostic
+    assert c["legacy_internal_wall_past_allowance"] is True                                                                       # recorded as a diagnostic (non-completing status)
     late = dict(base, outcome="EXACT", guarantee="EXACT", published=4, answers=rows(), positive_mass_witness=True, wall_s=19.6)
-    c = h.check_pgm(write(tmp_path, late), t, h.CONTRACTS["PGM_REFERENCE"]); assert c["contract_valid"] and c["legacy_internal_wall_past_allowance"] is True   # the legacy engine's own contract; completion still requires the outer receipt <= 20 s
+    c = h.check_pgm(write(tmp_path, late), t, h.CONTRACTS["PGM_REFERENCE"]); assert not c["contract_valid"] and any("completing status" in f for f in c["contract_faults"])   # STEP2_AMENDMENT_2 rev 2: a completing status past the allowance stays a fault
     pub = public_result(t, hard_deadline_respected=False)
     c = h.check_pgm(write(tmp_path, pub), t, h.CONTRACTS["PGM_ACCEPTED"]); assert not c["contract_valid"]                                 # the new public arms are held to hard_deadline_respected
+
+
+def test_reader_rejects_published_success_behind_unresolved_cleanup(tmp_path):
+    t = task(tmp_path)
+    for attempt in (dict(backend="block", outcome="CLEANUP_UNRESOLVED", configuration=h.CONTRACTS["PGM_ACCEPTED"]["configuration"]),
+                    dict(backend="block", outcome="COMPLETE", configuration=h.CONTRACTS["PGM_ACCEPTED"]["configuration"], cleanup_final=dict(unresolved=[dict(pgid=5, pids=[5])])),
+                    dict(backend="block", outcome="COMPLETE", configuration=h.CONTRACTS["PGM_ACCEPTED"]["configuration"], cleanup=dict(unresolved=[dict(pgid=5, pids=[5])]))):
+        c = h.check_pgm(write(tmp_path, public_result(t, attempts=[attempt])), t, h.CONTRACTS["PGM_ACCEPTED"])
+        assert not c["contract_valid"] and any("terminal cleanup" in f for f in c["contract_faults"]) and not (c["all_queries_returned"] and c["contract_valid"]), c["contract_faults"]
+
+
+def test_legacy_completing_status_past_allowance_stays_a_fault(tmp_path):
+    t = task(tmp_path)
+    d = dict(outcome="EXACT", guarantee="EXACT", K=4, published=4, answers=rows(), positive_mass_witness=True, binding=dict(model_sha256=t["model_sha256"], evidence_sha256=t["evidence_sha256"]), wall_s=19.6,
+             argv=["--budget", "19.5", "--epsilon", "1/200", "--delta", "1/1000000", "--schedule", "targeted", "--route", "auto", "--proposal", "mb"], schedule="targeted", route_requested="auto", proposal="mb", epsilon="1/200", delta="1/1000000")
+    c = h.check_pgm(write(tmp_path, d), t, h.CONTRACTS["PGM_REFERENCE"]); assert not c["contract_valid"] and any("completing status" in f for f in c["contract_faults"])
+    d.update(outcome="DEADLINE_PARTIAL", guarantee="PARTIAL", published=2, answers=rows()[:2] + [dict(var=1, state=a, guarantee="NOT_PUBLISHED") for a in range(2)])
+    c = h.check_pgm(write(tmp_path, d), t, h.CONTRACTS["PGM_REFERENCE"]); assert c["contract_valid"] and c["legacy_internal_wall_past_allowance"] is True and not c["all_queries_returned"]
+
+
+def _two_arm_run(tmp_path, identity_ok_by_arm, incidents=None):
+    tmp_path.mkdir(parents=True, exist_ok=True); t = task(tmp_path); root = tmp_path / "run"; (root / "runs").mkdir(parents=True)
+    f = dict(tasks=[dict(t, model_relative=None, evidence_relative=None)], arms=["PGM_REFERENCE", "PGM_ACCEPTED"], replicates=[1], pairs={"same_round_accepted": ["PGM_ACCEPTED", "PGM_REFERENCE"]},
+             contracts=h.CONTRACTS, budget_s=20, engine_commit="x", old_reference_engine=h.REFERENCE_COMMIT, roots={"PGM_EXPERIMENTAL_REF": dict(commit="3283cfd")}, scored_ceiling_s=100, cost_criterion={}, gates={})
+    (root / "FREEZE.json").write_text(json.dumps(f))
+    if incidents is not None: (root / "INCIDENTS.json").write_text(json.dumps(incidents))
+    ref = dict(outcome="EXACT", guarantee="EXACT", K=4, published=4, answers=rows(), positive_mass_witness=True, binding=dict(model_sha256=t["model_sha256"], evidence_sha256=t["evidence_sha256"]), wall_s=0.1,
+               argv=h.CONTRACTS["PGM_REFERENCE"]["argv_required"], **h.CONTRACTS["PGM_REFERENCE"]["recorded"])
+    cells = []; receipts = []
+    for arm, d in (("PGM_REFERENCE", ref), ("PGM_ACCEPTED", public_result(t))):
+        job = "exposed_regression__asym2__%s__r1" % arm; (root / "runs" / job).mkdir(); (root / "runs" / job / "result.json").write_text(json.dumps(d))
+        chk = h.check_pgm(root / "runs" / job / "result.json", t, h.CONTRACTS[arm])
+        row = dict(job=job, task="asym2", arm=arm, replicate=1, split="exposed_regression", historical_group="old55", historical_cohort="t", model_sha256=t["model_sha256"], evidence_sha256=t["evidence_sha256"], wall_s=0.2, budget_s=20, receipt_outcome="COMPLETED", returncode=0, peak_rss_bytes=1, identity_ok=identity_ok_by_arm[arm])
+        row.update(chk); row["complete_within_contract"] = bool(row["identity_ok"] and chk["all_queries_returned"] and chk["contract_valid"]); row["converged_within_contract"] = row["complete_within_contract"]; cells.append(row)
+        receipts.append(dict(kind="RECEIPT", job=job, wall_s=0.2, returncode=0, outcome="COMPLETED", peak_tree_rss_bytes=1, cleanup_unresolved=False))
+    (root / "CELLS.jsonl").write_text("\n".join(json.dumps(c) for c in cells) + "\n"); (root / "RECEIPTS.jsonl").write_text("\n".join(json.dumps(r) for r in receipts) + "\n")
+    return A.analyze(root)[2]
+
+
+def test_incident_adjudication_is_an_exact_allowlist(tmp_path):
+    r = _two_arm_run(tmp_path, {"PGM_REFERENCE": False, "PGM_ACCEPTED": False})                      # unrelated identity failures, no incident record
+    assert r["gates"]["validity"]["decision"] == "FAIL" and r["gates"]["validity_with_adjudicated_incidents_set_aside"]["decision"] == "FAIL"
+    inc = dict(incidents=[dict(job="exposed_regression__asym2__PGM_REFERENCE__r1", kind="identity_failure", evidence=["log"], disposition="replay")])
+    r = _two_arm_run(tmp_path / "b", {"PGM_REFERENCE": False, "PGM_ACCEPTED": False}, inc)        # only one of the two failures is adjudicated -> still FAIL
+    assert r["gates"]["validity_with_adjudicated_incidents_set_aside"]["decision"] == "FAIL" and r["gates"]["validity_with_adjudicated_incidents_set_aside"]["remaining_issues"]
+    r = _two_arm_run(tmp_path / "c", {"PGM_REFERENCE": False, "PGM_ACCEPTED": True}, inc)          # exactly the adjudicated job -> set aside; the frozen validity gate keeps FAIL
+    assert r["gates"]["validity"]["decision"] == "FAIL" and r["gates"]["validity_with_adjudicated_incidents_set_aside"]["decision"] == "PASS"
+
+
+def test_historical_experimental_gate_reads_the_recovered_extract_bound_by_hash():
+    extract = json.loads((ROOT / "benchmarks/external/reference/HISTORICAL_3283CFD_122_CELLS.json").read_text())
+    assert extract["source_engine_commit"] == h.EXPERIMENTAL_REF_COMMIT and extract["source_files"]["ANALYSIS.json"] == "45d954bb3c4d68e8804a42041bd90c6f79a668dccb61f2692b7bfb8b6fe52d6f"
+    tasks = {t["name"]: t for t in h.tasks_from_manifest(ROOT / "benchmarks/external/INPUT_MANIFEST.json") + h.tasks_from_manifest(ROOT / "benchmarks/external/HOLDOUT_FREEZE.json")}
+    assert len(extract["cells"]) == 122 and all(tasks[c["task"]]["model_sha256"] == c["model_sha256"] and tasks[c["task"]]["evidence_sha256"] == c["evidence_sha256"] for c in extract["cells"])
+    by = {}
+    for c in extract["cells"]: by.setdefault(c["task"], {})[c["replicate"]] = c["complete_within_contract"]
+    assert sorted(t for t, r in by.items() if r.get(1) and r.get(2)) == extract["complete_both"] and len(extract["complete_both"]) == 47

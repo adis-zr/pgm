@@ -257,6 +257,7 @@ def check_pgm(path, task, contract=None, budget_s=BUDGET_S):
             # arms are held to `hard_deadline_respected` instead.
             late_partial = bool(d.get("wall_s") is not None and d["wall_s"] > PGM_ALLOWANCE_S)
             if d.get("wall_s") is None: contract_faults.append("internal wall missing")
+            elif late_partial and d.get("outcome") in ("COMPLETE", "EXACT"): contract_faults.append("internal wall exceeds the allowance (completing status)")   # STEP2_AMENDMENT_2 rev 2: only non-completing statuses are diagnostics
         else:
             if d.get("policy") != contract["policy"]: contract_faults.append("policy %r" % d.get("policy"))
             if "policy_version" in contract and d.get("policy_version") != contract["policy_version"]: contract_faults.append("policy_version %r" % d.get("policy_version"))
@@ -272,7 +273,11 @@ def check_pgm(path, task, contract=None, budget_s=BUDGET_S):
                     cfg = a.get("configuration") or {}
                     for k, v in contract["configuration"].items():
                         if cfg.get(k) != v: contract_faults.append("attempt configuration %s=%r" % (k, cfg.get(k)))
-            if any(a.get("outcome") == "NOT_STARTED" for a in d.get("attempts") or []): contract_faults.append("unresolved attempt")
+            for a in d.get("attempts") or []:
+                if a.get("outcome") in ("NOT_STARTED", "CLEANUP_UNRESOLVED") or (a.get("cleanup_final") or {}).get("unresolved") or (a.get("cleanup") or {}).get("unresolved") or (a.get("cleanup_interrupt") or {}).get("unresolved"):
+                    contract_faults.append("unresolved attempt (terminal cleanup contract): %s" % a.get("outcome"))
+                if a.get("accepted") is False and a.get("staged_candidate_rejected") and d.get("outcome") in ("COMPLETE", "EXACT") and len(d.get("attempts") or []) == 1:
+                    contract_faults.append("published success from a rejected staged candidate")
             total = sum((F(x) for x in (d.get("risk_allocations") or {}).values()), F(0))
             if (d.get("risk_allocations") is not None) and total > F(contract["delta"]): contract_faults.append("prospective risk exceeds delta")
             if pubs and any(l.startswith("PAC") for l in labels.values()) and d.get("mode", "auto") != "auto": contract_faults.append("PAC rows under a non-PAC mode")
@@ -365,9 +370,37 @@ def supervised(cmd, env, ledger, scope, job, folder, budget):
     return sup + ["--"] + cmd, sup_env
 
 
+def arm_closure_ok(arm, frozen, folder=None, when=""):
+    """the arm's OWN frozen closure: for a pinned root its source files and active natives; for the new package its active natives.
+    On mismatch the differing paths / hashes are saved beside the cell and False is returned."""
+    diffs = {}
+    if arm in frozen.get("roots", {}):
+        try:
+            now = root_identity(arm); then = frozen["roots"][arm]
+            for k in set(now["closure_sha256"]) | set(then["closure_sha256"]):
+                if now["closure_sha256"].get(k) != then["closure_sha256"].get(k): diffs["closure:" + k] = dict(frozen=then["closure_sha256"].get(k), now=now["closure_sha256"].get(k))
+            if now["commit"] != then["commit"]: diffs["commit"] = dict(frozen=then["commit"], now=now["commit"])
+            nat_now = {a["path"]: a["sha256"] for a in now["natives"]["active"]}; nat_then = {a["path"]: a["sha256"] for a in then["natives"]["active"]}
+            for k in set(nat_now) | set(nat_then):
+                if nat_now.get(k) != nat_then.get(k): diffs["native:" + k] = dict(frozen=nat_then.get(k), now=nat_now.get(k))
+        except Exception as e:
+            diffs["error"] = repr(e)
+    elif is_pgm(arm) and arm in frozen.get("natives", {}):
+        try:
+            nat_now = {a["path"]: a["sha256"] for a in native_probe(arm, frozen)["active"]}; nat_then = {a["path"]: a["sha256"] for a in frozen["natives"][arm]["active"]}
+            for k in set(nat_now) | set(nat_then):
+                if nat_now.get(k) != nat_then.get(k): diffs["native:" + k] = dict(frozen=nat_then.get(k), now=nat_now.get(k))
+        except Exception as e:
+            diffs["error"] = repr(e)
+    if diffs and folder is not None:
+        dump(folder / ("IDENTITY_MISMATCH_%s.json" % when), dict(arm=arm, when=when, differences=diffs))
+    return not diffs
+
+
 def run_cell(task, arm, rep, frozen):
     budget = frozen["budget_s"]; job = f'{task["split"]}__{task["name"]}__{arm}__r{rep}'; folder = ROOT / "runs" / job; ledger = ROOT / "RECEIPTS.jsonl"
     assert identity() == frozen["engine_files"], "Source/build changed before cell"
+    assert arm_closure_ok(arm, frozen, ROOT / "runs", "before_" + job), "Arm closure changed before cell: " + arm
     for k in ("model", "evidence"): assert sha(task[k]) == task[k + "_sha256"]
     assert sha(LIBDAI) == frozen["libdai_sha256"]
     prior = [r for r in receipts(ledger) if r["job"] == job]
@@ -383,7 +416,9 @@ def run_cell(task, arm, rep, frozen):
     receipt = [r for r in receipts(ledger) if r["job"] == job][-1]
     row = {"job": job, "task": task["name"], "arm": arm, "replicate": rep, "split": task["split"], "historical_group": task.get("historical_group"), "exposure_status": task.get("exposure_status"), "historical_cohort": task["historical_cohort"],
            "model_sha256": task["model_sha256"], "evidence_sha256": task["evidence_sha256"], "wall_s": receipt["wall_s"], "budget_s": budget, "receipt_outcome": receipt["outcome"], "returncode": receipt["returncode"],
-           "peak_rss_bytes": receipt["peak_tree_rss_bytes"], "cleanup_unresolved": receipt.get("cleanup_unresolved"), "identity_ok": identity() == frozen["engine_files"] and sha(LIBDAI) == frozen["libdai_sha256"]}
+           "peak_rss_bytes": receipt["peak_tree_rss_bytes"], "cleanup_unresolved": receipt.get("cleanup_unresolved"), "identity_ok": identity() == frozen["engine_files"] and sha(LIBDAI) == frozen["libdai_sha256"],
+           "arm_closure_ok": arm_closure_ok(arm, frozen, folder, "after")}
+    row["identity_ok"] = row["identity_ok"] and row["arm_closure_ok"]
     try:
         row.update(check_pgm(folder / "result.json", task, frozen["contracts"].get(arm), budget) if is_pgm(arm) else check_libdai(folder, task))
     except Exception as e:
@@ -514,6 +549,70 @@ def run(phase):
                                                    "charged_s": sum(r["wall_s"] for r in receipts(ROOT / "RECEIPTS.jsonl"))})
 
 
+# ---------------------------------------------------------------------------------------------------- supplement (STEP2_SUPPLEMENT_1)
+SUPPLEMENT_OF = Path(os.environ.get("PGM_BENCH_SUPPLEMENT_OF", "")).expanduser()
+SUPPLEMENT_ARMS = ["PGM_ACCEPTED", "PGM_EXPERIMENTAL"]
+SUPPLEMENT_REPLAY = [dict(task="DBN_11", arm="LIBDAI_BP", replicate=1, reason="clean supplemental replay of the one cell whose post-cell identity check failed in the original run (operator documentation edit); the original cell is preserved unchanged")]
+
+
+def freeze_supplement():
+    """declare the supplement BEFORE any scored cell: arms, cells, ceiling, the original run it supplements and its completion targets"""
+    ROOT.mkdir(parents=True, exist_ok=True)
+    assert not (ROOT / "FREEZE.json").exists(), "Freeze already exists; do not overwrite"
+    assert SUPPLEMENT_OF.is_dir() and (SUPPLEMENT_OF / "FREEZE.json").is_file() and (SUPPLEMENT_OF / "ANALYSIS.json").is_file(), "Set PGM_BENCH_SUPPLEMENT_OF to the original run directory"
+    original = json.loads((SUPPLEMENT_OF / "FREEZE.json").read_text()); analysis = json.loads((SUPPLEMENT_OF / "ANALYSIS.json").read_text())
+    setup_rec = json.loads((ROOT / "setup/SETUP.json").read_text()); assert setup_rec["smoke_all_valid"], "Setup smoke did not pass for every arm"
+    assert LIBDAI.is_file() and sha(LIBDAI) == original["libdai_sha256"], "the supplement must use the original comparator build"
+    compilers = resolve_compilers()
+    changes = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=all"], cwd=REPO, text=True).splitlines()
+    assert all(row[3:].startswith(GENERATED_PREFIXES) and ("native_cache/" in row[3:] or row[3:].endswith(("_build.json", ".dylib", ".so"))) for row in changes), "Commit source changes before freezing: " + repr(changes)
+    natives = {arm: native_probe(arm) for arm in SUPPLEMENT_ARMS}
+    tasks = [dict(t) for t in relocate_frozen_tasks(json.loads(json.dumps(original)))["tasks"]]
+    for t in tasks:
+        for k in ("model", "evidence"): assert sha(t[k]) == t[k + "_sha256"], "input changed: " + t["name"]
+    plan = json.loads((HERE / "STEP2_SUPPLEMENT_1.json").read_text())
+    targets = {arm: sorted(analysis["groups"]["all61"]["complete_both"][arm]) for arm in SUPPLEMENT_ARMS}
+    frozen = {
+        "schema": "CONSOLIDATION_EXTERNAL_SUPPLEMENT_V1", "amendment": "STEP2_SUPPLEMENT_1", "frozen_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "supplements": dict(run_dir=str(SUPPLEMENT_OF), freeze_sha256=sha(SUPPLEMENT_OF / "FREEZE.json"), analysis_sha256=sha(SUPPLEMENT_OF / "ANALYSIS.json"), original_engine_commit=original["engine_commit"], completion_targets=targets),
+        "engine_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(), "engine_files": identity(),
+        "harness_files": {n: sha(HERE / n) for n in HARNESS + ["STEP2_SUPPLEMENT_1.md", "STEP2_SUPPLEMENT_1.json"]}, "input_manifests": original["input_manifests"],
+        "libdai_sha256": sha(LIBDAI), "libdai_binary": str(LIBDAI), "runtime_python": str(PY), "compilers": compilers, "native_cache": NATIVE_CACHE, "natives": natives, "roots": {},
+        "tasks": tasks, "replicates": [1, 2], "arms": SUPPLEMENT_ARMS, "replay_cells": SUPPLEMENT_REPLAY, "pgm_policies": dict(PGM_ARMS), "contracts": CONTRACTS,
+        "pairs": {"supplement_accepted_vs_original": ("PGM_ACCEPTED", "ORIGINAL:PGM_ACCEPTED"), "supplement_experimental_vs_original": ("PGM_EXPERIMENTAL", "ORIGINAL:PGM_EXPERIMENTAL")},
+        "pgm_version": subprocess.check_output([str(PY), "-c", "import pgm; print(pgm.__version__)"], text=True, env=arm_env("PGM_ACCEPTED")).strip(),
+        "budget_s": BUDGET_S, "pgm_allowance_s": PGM_ALLOWANCE_S, "memory_mib": MEMORY_MIB, "epsilon": "1/200", "delta": "1/1000000",
+        "expected_cells": len(tasks) * len(SUPPLEMENT_ARMS) * 2 + len(SUPPLEMENT_REPLAY), "scored_ceiling_s": plan["contract"]["scored_ceiling_s"], "gates": plan["acceptance"],
+        "python": subprocess.check_output([str(PY), "-c", "import sys; print(sys.version)"], text=True).strip(), "platform": platform.platform(), "machine": platform.machine(),
+        "dependencies": subprocess.check_output([str(PY), "-m", "pip", "freeze"], text=True).splitlines(), "setup_sha256": sha(ROOT / "setup/SETUP.json"),
+        "notes": ["Supplement of the immutable original 732-cell run: both repaired public policies on all 61 exposed inputs, both repeats, plus the declared replay cells.",
+                  "Same outer contract (20 s, 3 GiB, epsilon 1/200, delta 1e-6, seeds = repeats); no comparator or pinned-reference arm is re-run.",
+                  "The ceiling is the declared maximum charge of the matrix (245 x 20 s = 4,900 s); exhaustion returns INCOMPLETE."],
+    }
+    assert frozen["scored_ceiling_s"] >= frozen["expected_cells"] * BUDGET_S, "declare a ceiling covering the full supplement"
+    dump(ROOT / "FREEZE.json", frozen)
+    print(json.dumps({"frozen": True, "engine_commit": frozen["engine_commit"], "cells": frozen["expected_cells"], "ceiling_s": frozen["scored_ceiling_s"], "arms": SUPPLEMENT_ARMS, "replay": len(SUPPLEMENT_REPLAY)}))
+
+
+def run_supplement():
+    frozen = json.loads((ROOT / "FREEZE.json").read_text())
+    assert frozen["schema"] == "CONSOLIDATION_EXTERNAL_SUPPLEMENT_V1"
+    assert str(PY) == frozen["runtime_python"] and str(LIBDAI) == frozen["libdai_binary"] and (os.environ.get("PGM_NATIVE_CACHE") or None) == frozen["native_cache"]
+    done = {json.loads(line)["job"] for line in (ROOT / "CELLS.jsonl").read_text().splitlines()} if (ROOT / "CELLS.jsonl").exists() else set()
+    tasks = frozen["tasks"]; by_name = {t["name"]: t for t in tasks}
+    jobs = [(t, a, r) for r in frozen["replicates"] for i, t in enumerate(tasks) for a in (frozen["arms"] if (i + r) % 2 else list(reversed(frozen["arms"])))]
+    jobs += [(by_name[c["task"]], c["arm"], c["replicate"]) for c in frozen["replay_cells"]]
+    for task, arm, rep in jobs:
+        for n, h in frozen["harness_files"].items(): assert sha(HERE / n) == h, "Harness changed after freeze: " + n
+        job = f'{task["split"]}__{task["name"]}__{arm}__r{rep}'
+        if job in done: continue
+        charge = sum(r["wall_s"] for r in receipts(ROOT / "RECEIPTS.jsonl"))
+        if charge + frozen["budget_s"] + 1 > frozen["scored_ceiling_s"]:
+            dump(ROOT / "BUDGET_STOP.json", {"charged_s": charge, "next": job, "status": "INCOMPLETE: scored ceiling exhausted; remaining cells NOT run"}); return
+        run_cell(task, arm, rep, frozen)
+    dump(ROOT / "SUPPLEMENT_RETURN.json", {"planned_cells": len(jobs), "completed_cells": sum(1 for _ in (ROOT / "runs").glob("*/cell.json")), "charged_s": sum(r["wall_s"] for r in receipts(ROOT / "RECEIPTS.jsonl"))})
+
+
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(); ap.add_argument("action", choices=["setup", "freeze", "primary", "eval"]); a = ap.parse_args()
-    {"setup": setup, "freeze": freeze}.get(a.action, lambda: run(a.action))()
+    ap = argparse.ArgumentParser(); ap.add_argument("action", choices=["setup", "freeze", "primary", "eval", "freeze-supplement", "supplement"]); a = ap.parse_args()
+    {"setup": setup, "freeze": freeze, "freeze-supplement": freeze_supplement, "supplement": run_supplement}.get(a.action, lambda: run(a.action))()

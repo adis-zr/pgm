@@ -16,16 +16,25 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
 FIXTURES = REPO / "tests/parity/fixtures"
+sys.path.insert(0, str(REPO / "src"))
+from pgm.model.uai import read_uai as _read_uai                                          # the checkout's exact reader fixes the EXPECTED inventory of each fixture (never reconstructed from returned rows)
+
+
+def expected_inventory(fixture_name):
+    """the exact original nonobserved coordinate set and cardinalities of a committed fixture"""
+    model, _ = _read_uai(FIXTURES / fixture_name)
+    ev = model["evidence"]
+    return {(v, a) for v, k in enumerate(model["cards"]) if v not in ev for a in range(k)}, model["cards"]
 REQUIRED = ("venv", "pip_install", "module_origins", "capabilities", "cli_accepted", "cli_experimental", "worker_structural", "worker_stream", "worker_block",
             "worker_quotient", "worker_response", "specialists", "native_cache_override", "native_build_locations")
 EXPECT = {
-    "cli_accepted": dict(outcome="COMPLETE", K=8, policy="accepted", policy_version="accepted-engine-v2.13.2-targeted/1", backends=["block"], guarantee_in=("EXACT", "DETERMINISTIC")),
-    "cli_experimental": dict(outcome="COMPLETE", K=8, policy="experimental", policy_version="structural-portfolio-1", backends=["structural"], guarantee_in=("DETERMINISTIC", "EXACT")),
-    "worker_structural": dict(outcome="COMPLETE", K=4, route="structural", guarantee_in=("DETERMINISTIC", "EXACT")),
-    "worker_stream": dict(outcome="COMPLETE", K=8, route="structural", component_route="stream", solver="certified_binary64_product_tree_stream", guarantee_in=("DETERMINISTIC",)),
-    "worker_block": dict(outcome="COMPLETE", K=8, guarantee_in=("EXACT", "DETERMINISTIC")),
-    "worker_quotient": dict(outcome="COMPLETE", K=8, guarantee_in=("DETERMINISTIC", "EXACT")),
-    "worker_response": dict(outcome="COMPLETE", K=8, route="spectral_heatbath_response", guarantee_in=("PAC",)),
+    "cli_accepted": dict(fixture="pos4.uai", outcome="COMPLETE", policy="accepted", policy_version="accepted-engine-v2.13.2-targeted/1", backends=["block"], guarantee_in=("EXACT", "DETERMINISTIC")),
+    "cli_experimental": dict(fixture="pos4.uai", outcome="COMPLETE", policy="experimental", policy_version="structural-portfolio-1", backends=["structural"], guarantee_in=("DETERMINISTIC", "EXACT")),
+    "worker_structural": dict(fixture="asym2.uai", outcome="COMPLETE", route="structural", guarantee_in=("DETERMINISTIC", "EXACT")),
+    "worker_stream": dict(fixture="bip4.uai", outcome="COMPLETE", route="structural", component_route="stream", solver="certified_binary64_product_tree_stream", guarantee_in=("DETERMINISTIC",)),
+    "worker_block": dict(fixture="cyc3_card3.uai", outcome="COMPLETE", guarantee_in=("EXACT", "DETERMINISTIC")),
+    "worker_quotient": dict(fixture="cyc3_card3.uai", outcome="COMPLETE", guarantee_in=("DETERMINISTIC", "EXACT")),
+    "worker_response": dict(fixture="pos4.uai", outcome="COMPLETE", route="spectral_heatbath_response", guarantee_in=("PAC",)),
 }
 
 
@@ -34,17 +43,23 @@ def run(cmd, env, cwd, timeout=600):
     return dict(cmd=[str(c) for c in cmd], returncode=p.returncode, seconds=round(time.monotonic() - t0, 3), stdout_tail=p.stdout[-3000:], stderr_tail=p.stderr[-1500:], stdout_full=p.stdout)
 
 
-def _rows_ok(res):
-    """every original coordinate published with valid rational geometry, EXACT rows pointlike, the box inside the simplex per variable"""
+def _rows_ok(res, expected_keys, cards):
+    """EXACTLY the fixture's original coordinate set, each key once, every row published with valid rational geometry, EXACT rows
+    pointlike, the per-variable box inside the simplex, positive mass witnessed"""
     rows = res.get("answers") or []
-    if len(rows) != res.get("K") or any(r.get("guarantee") in (None, "NOT_PUBLISHED") for r in rows): return False
+    keys = [(r.get("variable", r.get("var")), r.get("state")) for r in rows]
+    if len(keys) != len(set(keys)) or set(keys) != set(expected_keys) or res.get("K") != len(expected_keys) or res.get("published") != len(expected_keys): return False
+    if any(r.get("guarantee") in (None, "NOT_PUBLISHED") for r in rows): return False
     by_var = {}
-    for r in rows:
-        lo, hi, pt = F(r["lo"]), F(r["hi"]), F(r["point"])
-        if not 0 <= lo <= pt <= hi <= 1 or max(pt - lo, hi - pt) > F(1, 200): return False
-        if r["guarantee"] == "EXACT" and lo != hi: return False
-        by_var.setdefault(r.get("variable", r.get("var")), []).append((lo, hi))
-    return all(sum(l for l, _ in g) <= 1 <= sum(h for _, h in g) for g in by_var.values()) and res.get("positive_mass_witness") is True
+    try:
+        for r in rows:
+            lo, hi, pt = F(r["lo"]), F(r["hi"]), F(r["point"])
+            if not 0 <= lo <= pt <= hi <= 1 or max(pt - lo, hi - pt) > F(1, 200): return False
+            if r["guarantee"] == "EXACT" and lo != hi: return False
+            by_var.setdefault(r.get("variable", r.get("var")), []).append((lo, hi))
+    except (KeyError, ValueError, ZeroDivisionError, TypeError):
+        return False
+    return all(len(g) == cards[v] and sum(l for l, _ in g) <= 1 <= sum(h for _, h in g) for v, g in by_var.items()) and res.get("positive_mass_witness") is True
 
 
 def verdict(receipt):
@@ -62,10 +77,11 @@ def verdict(receipt):
     for name, exp in EXPECT.items():
         res = steps.get(name, {}).get("result")
         if not isinstance(res, dict) or "answers" not in res: failures.append(name + ": no result record"); continue
+        expected_keys, cards = expected_inventory(exp["fixture"])
         if res.get("outcome") != exp["outcome"]: failures.append("%s: outcome %s" % (name, res.get("outcome")))
-        if res.get("K") != exp["K"] or res.get("published") != exp["K"]: failures.append("%s: inventory %s/%s" % (name, res.get("published"), res.get("K")))
+        if res.get("K") != len(expected_keys) or res.get("published") != len(expected_keys): failures.append("%s: inventory %s/%s (expected %d)" % (name, res.get("published"), res.get("K"), len(expected_keys)))
         if res.get("guarantee") not in exp["guarantee_in"]: failures.append("%s: guarantee %s" % (name, res.get("guarantee")))
-        if not _rows_ok(res): failures.append(name + ": published geometry invalid")
+        if not _rows_ok(res, expected_keys, cards): failures.append(name + ": published coordinate set / geometry invalid (exact original inventory, unique keys, rational geometry, simplex, witness)")
         if "policy" in exp and (res.get("policy") != exp["policy"] or res.get("policy_version") != exp["policy_version"]): failures.append(name + ": policy record")
         if "backends" in exp and [a["backend"] for a in res.get("attempts", []) if a.get("outcome") == "COMPLETE"] != exp["backends"]: failures.append(name + ": backend sequence")
         if "route" in exp and (res.get("mechanism") or {}).get("route") != exp["route"]: failures.append("%s: route %s" % (name, (res.get("mechanism") or {}).get("route")))

@@ -10,11 +10,10 @@ def _load(name):
     spec = importlib.util.spec_from_file_location(name, TOOLS / (name + ".py")); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
-def _ok_rows(k_vars, card):
-    rows = []
-    for v in range(k_vars):
-        for a in range(card):
-            rows.append(dict(variable=v, var=v, state=a, lo=str(1 / card), hi=str(1 / card), point=str(1 / card), guarantee="EXACT"))
+def _ok_rows(W, fixture):
+    keys, cards = W.expected_inventory(fixture); rows = []
+    for v, a in sorted(keys):
+        rows.append(dict(variable=v, var=v, state=a, lo="1/%d" % cards[v], hi="1/%d" % cards[v], point="1/%d" % cards[v], guarantee="EXACT"))
     return rows
 
 
@@ -24,14 +23,15 @@ def passing_receipt():
     for name in W.REQUIRED: steps[name] = dict(returncode=0, stdout_tail="")
     steps["module_origins"]["stdout_tail"] = json.dumps(dict(all_from_site_packages=True))
     steps["capabilities"]["stdout_tail"] = json.dumps({k: dict(status="selectable") for k in ("structural", "block", "quotient", "response")} | {"cqr": dict(status="specialist")})
-    def res(outcome, K, card, guarantee, **kw):
-        base = dict(outcome=outcome, K=K, published=K, guarantee=guarantee, positive_mass_witness=True, answers=_ok_rows(K // card, card), attempts=[], mechanism={}); base.update(kw); return base
-    steps["cli_accepted"]["result"] = res("COMPLETE", 8, 2, "EXACT", policy="accepted", policy_version="accepted-engine-v2.13.2-targeted/1", attempts=[dict(backend="block", outcome="COMPLETE")])
-    steps["cli_experimental"]["result"] = res("COMPLETE", 8, 2, "DETERMINISTIC", policy="experimental", policy_version="structural-portfolio-1", attempts=[dict(backend="structural", outcome="COMPLETE")])
-    steps["worker_structural"]["result"] = res("COMPLETE", 4, 2, "DETERMINISTIC", mechanism=dict(route="structural"))
-    steps["worker_stream"]["result"] = res("COMPLETE", 8, 2, "DETERMINISTIC", mechanism=dict(route="structural", stats=dict(components=[dict(route="stream", stats=dict(solver="certified_binary64_product_tree_stream", native_event_counter_bound=1))])))
-    steps["worker_block"]["result"] = res("COMPLETE", 8, 2, "EXACT"); steps["worker_quotient"]["result"] = res("COMPLETE", 8, 2, "DETERMINISTIC")
-    steps["worker_response"]["result"] = res("COMPLETE", 8, 2, "PAC", mechanism=dict(route="spectral_heatbath_response"))
+    def res(outcome, fixture, guarantee, **kw):
+        rows = _ok_rows(W, fixture)
+        base = dict(outcome=outcome, K=len(rows), published=len(rows), guarantee=guarantee, positive_mass_witness=True, answers=rows, attempts=[], mechanism={}); base.update(kw); return base
+    steps["cli_accepted"]["result"] = res("COMPLETE", "pos4.uai", "EXACT", policy="accepted", policy_version="accepted-engine-v2.13.2-targeted/1", attempts=[dict(backend="block", outcome="COMPLETE")])
+    steps["cli_experimental"]["result"] = res("COMPLETE", "pos4.uai", "DETERMINISTIC", policy="experimental", policy_version="structural-portfolio-1", attempts=[dict(backend="structural", outcome="COMPLETE")])
+    steps["worker_structural"]["result"] = res("COMPLETE", "asym2.uai", "DETERMINISTIC", mechanism=dict(route="structural"))
+    steps["worker_stream"]["result"] = res("COMPLETE", "bip4.uai", "DETERMINISTIC", mechanism=dict(route="structural", stats=dict(components=[dict(route="stream", stats=dict(solver="certified_binary64_product_tree_stream", native_event_counter_bound=1))])))
+    steps["worker_block"]["result"] = res("COMPLETE", "cyc3_card3.uai", "EXACT"); steps["worker_quotient"]["result"] = res("COMPLETE", "cyc3_card3.uai", "DETERMINISTIC")
+    steps["worker_response"]["result"] = res("COMPLETE", "pos4.uai", "PAC", mechanism=dict(route="spectral_heatbath_response"))
     for r in steps["worker_response"]["result"]["answers"]: r.update(guarantee="PAC", lo="99/200", hi="101/200", point="1/2")
     steps["specialists"]["result"] = dict(cbi=dict(status="CERTIFIED", verified=True, origin="/x/site-packages/cbi/api.py"), sf=dict(route_status="OK", checker="VERIFIED", origin="/x/site-packages/sf/core.py"), h4a=dict(available=False), cqr=dict(kind="UNAVAILABLE"))
     steps["native_cache_override"]["result"] = dict(under_override=True, identity_ok=True, stream_under_override=True)
@@ -51,6 +51,9 @@ def test_passing_receipt_passes_and_each_mutation_fails():
         "stream not native": lambda r: r["steps"]["worker_stream"]["result"]["mechanism"]["stats"]["components"][0]["stats"].pop("native_event_counter_bound"),
         "stream fell back to another route": lambda r: r["steps"]["worker_stream"]["result"]["mechanism"]["stats"]["components"][0].update(route="support"),
         "missing inventory row": lambda r: r["steps"]["worker_block"]["result"]["answers"].pop(),
+        "duplicate state keys (every state set to 0, counts unchanged)": lambda r: [row.update(state=0) for row in r["steps"]["worker_block"]["result"]["answers"]],
+        "coordinate from a foreign variable": lambda r: r["steps"]["worker_block"]["result"]["answers"][0].update(variable=99, var=99),
+        "box with the wrong number of states": lambda r: [row.update(state=min(row["state"], 1)) for row in r["steps"]["worker_block"]["result"]["answers"]],
         "exact row with width": lambda r: r["steps"]["worker_block"]["result"]["answers"][0].update(hi="3/4"),
         "box outside the simplex": lambda r: [row.update(lo="3/4", hi="3/4", point="3/4") for row in r["steps"]["worker_quotient"]["result"]["answers"][:2]],
         "no positive-mass witness": lambda r: r["steps"]["cli_accepted"]["result"].update(positive_mass_witness=None),

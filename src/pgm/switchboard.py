@@ -38,7 +38,13 @@ def candidate_plan(meta, request, remaining, policy=None):
     return policies.get(policy or getattr(request, "policy", policies.DEFAULT_POLICY)).candidates(meta, request, remaining)
 
 
-from .runtime.attempts import run_attempt, ledger_records as _ledger_records, kill_owned as _kill_owned      # (compatibility names)
+from .runtime.attempts import run_attempt, ledger_records as _ledger_records, kill_owned as _kill_owned, REFUSAL_OUTCOMES as _REFUSALS      # (compatibility names)
+
+
+def _consistent_candidate(record):
+    """the controller's own check of a returned candidate against its attempt record (the runtime applies the same predicate)"""
+    return (record.get("accepted", True) is not False and record.get("outcome") not in _REFUSALS
+            and not (record.get("cleanup") or {}).get("unresolved") and not (record.get("cleanup_final") or {}).get("unresolved"))
 from .validation.publication import accepted_row as _accepted_row, merge_row, assemble, empty_rows as _empty
 
 
@@ -68,6 +74,10 @@ def solve(request: InferenceRequest) -> InferenceResult:
                 attempt_deadline = now + (work_deadline-now) * choice["allowance_fraction"]
                 result, record = run_attempt(dict(choice, expected_binding=binding), request, attempt_deadline, Path(temporary), number)
                 attempts.append(record)
+                if result is not None and not _consistent_candidate(record):
+                    # defense in depth: a candidate whose terminal attempt state or cleanup record contradicts success is refused
+                    record["rejected_inconsistent_candidate"] = True; record["outcome"] = record.get("outcome") if record.get("outcome") in _REFUSALS else "CLEANUP_UNRESOLVED"
+                    result = None
                 if result is None:
                     outcome = record["outcome"]
                     continue

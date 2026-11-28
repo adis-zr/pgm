@@ -141,8 +141,10 @@ def main():
             except (OSError, ValueError) as ex:
                 outcome = "LAUNCH_FAILED"; error = "%s: %s" % (type(ex).__name__, ex); raise
             pgid = proc.pid
-            append(a.ledger, {"kind": "SPAWNED", "jid": jid, "job": a.job, "pid": proc.pid, "pgid": pgid, "spawn_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "parent_jid": parent_jid})
-            append(groups_file, {"jid": jid, "parent_jid": parent_jid, "ledger": os.path.abspath(a.ledger), "job": a.job, "pid": proc.pid, "pgid": pgid, "supervisor_pid": os.getpid(), "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})      # register in the tree's ownership file
+            try: leader_create_time = psutil.Process(proc.pid).create_time()                 # the process INCARNATION identity (pid + creation time) of the owned leader
+            except psutil.Error: leader_create_time = None
+            append(a.ledger, {"kind": "SPAWNED", "jid": jid, "job": a.job, "pid": proc.pid, "pgid": pgid, "leader_create_time": leader_create_time, "spawn_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "parent_jid": parent_jid})
+            append(groups_file, {"jid": jid, "parent_jid": parent_jid, "ledger": os.path.abspath(a.ledger), "job": a.job, "pid": proc.pid, "pgid": pgid, "leader_create_time": leader_create_time, "supervisor_pid": os.getpid(), "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})      # register in the tree's ownership file
         finally:
             launching = False
         if pending_signal is not None:

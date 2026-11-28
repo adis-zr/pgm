@@ -64,7 +64,7 @@ def analyze(root):
                     if r.get(key) != checked.get(key):
                         # STEP2_AMENDMENT_2: a cell-time contract fault consisting ONLY of the superseded internal-wall rule on a non-publishing
                         # legacy cell is a documented reclassification, recorded rather than counted as a disagreement
-                        if key == "contract_valid" and checked.get("contract_valid") and (r.get("contract_faults") == ["internal wall exceeds the allowance"]):
+                        if key == "contract_valid" and checked.get("contract_valid") and (r.get("contract_faults") == ["internal wall exceeds the allowance"]) and r.get("solver_outcome") not in ("COMPLETE", "EXACT"):
                             reclassified.append(r["job"]); r["contract_valid"] = True
                         else:
                             issues.append("Analysis disagrees with cell " + r["job"] + " " + key)
@@ -165,6 +165,16 @@ def analyze(root):
     for arm in result_arms:
         new = set(groups["all61"]["complete_both"][arm])
         hist[arm] = dict(retained=sorted(prior29 & new), lost=sorted(prior29 - new), gained=sorted(new - prior29), one_repeat_only=groups["all61"]["one_replicate_only"][arm])
+    # ---- historical experimental preservation: the recovered 3283cfd extract (122 PGM cells, 47 both-repeat completions), bound by model / evidence hash
+    extract_path = h.HERE / "reference/HISTORICAL_3283CFD_122_CELLS.json"; hist_exp = None
+    if extract_path.exists():
+        x = json.loads(extract_path.read_text()); unbound = [c["task"] for c in x["cells"] if c["task"] not in tasks or tasks[c["task"]]["model_sha256"] != c["model_sha256"] or tasks[c["task"]]["evidence_sha256"] != c["evidence_sha256"]]
+        by = {}
+        for c in x["cells"]: by.setdefault(c["task"], {})[c["replicate"]] = c["complete_within_contract"]
+        prior47 = {t for t, rr in by.items() if rr.get(1) and rr.get(2)}
+        hist_exp = dict(extract_sha256=h.sha(extract_path), source_engine_commit=x.get("source_engine_commit"), source_files=x.get("source_files"), cells=len(x["cells"]), unbound_cells=unbound, prior_complete_both=sorted(prior47), extract_complete_both_agrees=(sorted(prior47) == sorted(x.get("complete_both", []))), per_arm={})
+        for arm in result_arms:
+            new = set(groups["all61"]["complete_both"][arm]); hist_exp["per_arm"][arm] = dict(retained=sorted(prior47 & new), lost=sorted(prior47 - new), gained=sorted(new - prior47))
     # ---- gates
     recorded = len(rows); complete_matrix = (not missing and not extra and recorded == len(expected))
     budget_stop = (root / "BUDGET_STOP.json").exists()
@@ -178,14 +188,20 @@ def analyze(root):
         historical_accepted_preservation=gate(("NOT_EVALUABLE" if hist_of("PGM_ACCEPTED")["lost"] is None else "PASS" if not hist_of("PGM_ACCEPTED")["lost"] else "FAIL"), prior_complete_both=sorted(prior29), **hist_of("PGM_ACCEPTED")),
         reference_reproduction=gate(("NOT_EVALUABLE" if hist_of("PGM_REFERENCE")["lost"] is None else "PASS" if not hist_of("PGM_REFERENCE")["lost"] else "REFERENCE_REPRODUCTION_FAILURE"), note="the pinned 7f28259 engine executed here versus its own historical cells; a loss here is a host / timing / reproduction issue of the reference, not evidence against the new wrapper", **hist_of("PGM_REFERENCE")),
         same_round_accepted_preservation=gate(pres(pair("same_round_accepted")), lost_vs_reference=pair("same_round_accepted")["comparator_only"], gained_vs_reference=pair("same_round_accepted")["candidate_only"], mutual=len(pair("same_round_accepted")["mutual_both"])),
-        historical_experimental_preservation=gate("NOT_EVALUABLE", prerequisite=(f.get("prior_experimental_extract") or {}).get("prerequisite"), note="requires the hashed extract of the 122 scored 3283cfd PGM cells; not present on this host; no target rows invented", historical_accepted29_view=hist_of("PGM_EXPERIMENTAL")),
+        historical_experimental_preservation=(gate("NOT_EVALUABLE", prerequisite=(f.get("prior_experimental_extract") or {}).get("prerequisite"), note="requires the hashed extract of the 122 scored 3283cfd PGM cells; not present; no target rows invented") if hist_exp is None or hist_exp["unbound_cells"] or not hist_exp["extract_complete_both_agrees"]
+                                              else gate("PASS" if not hist_exp["per_arm"].get("PGM_EXPERIMENTAL", {}).get("lost", [None]) else "FAIL", **hist_exp, note="the recovered scored 3283cfd cells (reference/HISTORICAL_3283CFD_122_CELLS.json; source ANALYSIS.json sha256 45d954bb...), every cell bound to the current inputs by model / evidence hash; gains are reported, not forbidden; historical timings are not same-host latency evidence")),
         same_round_experimental_preservation=gate(pres(pair("same_round_experimental")), lost_vs_pinned_3283cfd=pair("same_round_experimental")["comparator_only"], gained_vs_pinned_3283cfd=pair("same_round_experimental")["candidate_only"], mutual=len(pair("same_round_experimental")["mutual_both"])),
         paired_overhead=gate("FLAGGED" if flags else "PASS", criterion=cc.get("rule"), flags=flags, effect=cc.get("effect"), median_ratio_accepted_over_reference=pair("same_round_accepted")["median_ratio_on_mutual"]),
     )
-    gates["validity"]["amendment_2_reclassified_non_publishing_legacy_cells"] = reclassified
+    gates["validity"]["amendment_2_reclassified_non_completing_legacy_cells"] = reclassified
     gates["validity"]["identity_failures"] = identity_failures
-    gates["validity_excluding_operator_identity_incident"] = gate("PASS" if (not [i for i in issues if not i.startswith("Cell source identity failed")] and not checks and geometry["faulty_published_results"] == 0 and geometry["contract_faulty_results"] == 0 and not det_conflicts) else "FAIL",
-                                                                    note="the same validity predicate with the recorded operator identity incident (CAMPAIGN_OPERATOR.log) set aside; the frozen `validity` gate above keeps it; the reviewer decides")
+    incidents = json.loads((root / "INCIDENTS.json").read_text()) if (root / "INCIDENTS.json").exists() else dict(incidents=[])
+    adjudicated = {i["job"]: i for i in incidents.get("incidents", []) if i.get("kind") == "identity_failure" and i.get("evidence") and i.get("disposition")}
+    set_aside = [i for i in issues if i.startswith("Cell source identity failed ") and i.split("Cell source identity failed ", 1)[1] in adjudicated]
+    remaining = [i for i in issues if i not in set_aside]
+    gates["validity_with_adjudicated_incidents_set_aside"] = gate("PASS" if (not remaining and not checks and geometry["faulty_published_results"] == 0 and geometry["contract_faulty_results"] == 0 and not det_conflicts) else "FAIL",
+                                                                   adjudicated_jobs=sorted(adjudicated), set_aside_issues=set_aside, remaining_issues=remaining,
+                                                                   note="the same validity predicate with ONLY the exactly listed adjudicated incidents (INCIDENTS.json: job, kind, evidence, disposition) set aside; any other identity failure keeps this FAIL; the frozen `validity` gate above keeps every failure")
     gates["promotion_decision"] = gate("HOLD" if not (gates["validity"]["decision"] == "PASS" and gates["completeness"]["decision"] == "PASS" and gates["historical_accepted_preservation"]["decision"] == "PASS" and gates["same_round_accepted_preservation"]["decision"] == "PASS" and not flags) else "ELIGIBLE",
                                        rule=(f.get("gates") or {}).get("promotion") if isinstance(f.get("gates"), dict) else None)
     charges = h.receipts(root / "RECEIPTS.jsonl")
@@ -194,6 +210,70 @@ def analyze(root):
                   cost_flags=flags, overhead_decomposition=decomposition, point_serialization_allowance=ALLOW, charge_s=sum(r["wall_s"] for r in charges), terminal_receipts=len(charges), gates=gates,
                   reported_certificates_are_not_exact_oracle_validation=True)
     return f, rows, result
+
+
+def analyze_supplement(root):
+    """STEP2_SUPPLEMENT_1: validity (same readers and contracts incl. terminal cleanup), completeness of the declared cells, NO LOSS from the
+    original run's recorded completion sets per public arm, and the declared replay cells' validity; the original run is immutable"""
+    f = h.relocate_frozen_tasks(json.loads((root / "FREEZE.json").read_text())); assert f["schema"] == "CONSOLIDATION_EXTERNAL_SUPPLEMENT_V1"
+    rows = [json.loads(x) for x in (root / "CELLS.jsonl").read_text().splitlines() if x.strip()] if (root / "CELLS.jsonl").exists() else []
+    tasks = {t["name"]: t for t in f["tasks"]}; reps = f["replicates"]
+    expected = {(t["name"], a, r) for t in f["tasks"] for a in f["arms"] for r in reps} | {(c["task"], c["arm"], c["replicate"]) for c in f["replay_cells"]}
+    observed = [(r["task"], r["arm"], r["replicate"]) for r in rows]; bykey = {k: r for k, r in zip(observed, rows)}
+    issues = []
+    if len(set(observed)) != len(observed): issues.append("Duplicate scored cell keys")
+    missing = sorted(expected - set(observed)); extra = sorted(set(observed) - expected)
+    receipt_index = {}
+    for receipt in h.receipts(root / "RECEIPTS.jsonl"): receipt_index.setdefault(receipt["job"], []).append(receipt)
+    checks = []; geometry = dict(published_coordinate_instances=0, faulty_published_results=0, contract_faulty_results=0, max_endpoint_radius=0.0)
+    for r in rows:
+        folder = root / "runs" / r["job"]; task = tasks[r["task"]]; owned = receipt_index.get(r["job"], [])
+        if len(owned) != 1: issues.append("Expected exactly one terminal receipt: " + r["job"]); receipt = {}
+        else: receipt = owned[0]
+        checked = dict(output_valid=False, contract_valid=False, all_queries_returned=False)
+        output = folder / ("result.json" if h.is_pgm(r["arm"]) else "output.MAR")
+        if output.exists():
+            try:
+                checked = h.check_pgm(output, task, f["contracts"].get(r["arm"]), f["budget_s"]) if h.is_pgm(r["arm"]) else h.check_libdai(folder, task)
+                if h.is_pgm(r["arm"]):
+                    geometry["published_coordinate_instances"] += checked["published"]; geometry["max_endpoint_radius"] = max(geometry["max_endpoint_radius"], checked["max_published_radius"])
+                    if not checked["output_valid"]: geometry["faulty_published_results"] += 1; checks.append(dict(job=r["job"], faults=checked["validation_faults"]))
+                    if not checked["contract_valid"]: geometry["contract_faulty_results"] += 1; checks.append(dict(job=r["job"], contract_faults=checked["contract_faults"]))
+                for key in ("output_valid", "all_queries_returned", "contract_valid"):
+                    if r.get(key) != checked.get(key): issues.append("Analysis disagrees with cell " + r["job"] + " " + key)
+            except Exception as e:
+                checks.append(dict(job=r["job"], error=repr(e)))
+        if not r.get("identity_ok", False): issues.append("Cell source identity failed " + r["job"])
+        if receipt.get("cleanup_unresolved") is True: issues.append("Unresolved cleanup " + r["job"])
+        completed = bool(r.get("identity_ok", False) and checked.get("all_queries_returned") and checked.get("contract_valid", True) and receipt.get("outcome") == "COMPLETED" and receipt.get("wall_s", float("inf")) <= f["budget_s"] and receipt.get("cleanup_unresolved") is not True)
+        if completed != r.get("complete_within_contract", False): issues.append("Recomputed completion disagrees with cell " + r["job"])
+        r["complete_within_contract"] = completed
+    sets = {a: sorted(t for t in tasks if all(bykey.get((t, a, r), {}).get("complete_within_contract", False) for r in reps)) for a in f["arms"]}
+    one_rep = {a: sorted(t for t in tasks if sum(bykey.get((t, a, r), {}).get("complete_within_contract", False) for r in reps) == 1) for a in f["arms"]}
+    targets = f["supplements"]["completion_targets"]
+    preservation = {a: dict(target=len(targets[a]), supplement=len(sets[a]), lost=sorted(set(targets[a]) - set(sets[a])), gained=sorted(set(sets[a]) - set(targets[a])), one_repeat_only=one_rep[a]) for a in f["arms"]}
+    replay = []
+    for c in f["replay_cells"]:
+        r = bykey.get((c["task"], c["arm"], c["replicate"]))
+        replay.append(dict(**c, recorded=bool(r), identity_ok=(r or {}).get("identity_ok"), complete_within_contract=(r or {}).get("complete_within_contract"), receipt_outcome=(r or {}).get("receipt_outcome"), wall_s=(r or {}).get("wall_s")))
+    budget_stop = (root / "BUDGET_STOP.json").exists(); charges = h.receipts(root / "RECEIPTS.jsonl")
+    gates = dict(
+        validity=dict(decision="PASS" if (not issues and not checks and geometry["faulty_published_results"] == 0 and geometry["contract_faulty_results"] == 0) else "FAIL", issues=issues, artifact_faults=checks),
+        completeness=dict(decision="PASS" if (not missing and not extra and len(rows) == len(expected) and not budget_stop) else "INCOMPLETE", expected_cells=len(expected), recorded_cells=len(rows), missing_cells=missing, budget_stop=budget_stop),
+        preservation_vs_original={a: dict(decision="PASS" if not p["lost"] else "FAIL", **p) for a, p in preservation.items()},
+        replay_cells=dict(decision="PASS" if all(x["recorded"] and x["identity_ok"] and x["complete_within_contract"] for x in replay) else "FAIL", cells=replay),
+    )
+    gates["supplement_decision"] = dict(decision="PASS" if gates["validity"]["decision"] == "PASS" and gates["completeness"]["decision"] == "PASS" and all(v["decision"] == "PASS" for v in gates["preservation_vs_original"].values()) and gates["replay_cells"]["decision"] == "PASS" else "FAIL")
+    result = dict(schema="CONSOLIDATION_EXTERNAL_SUPPLEMENT_ANALYSIS_V1", engine_commit=f["engine_commit"], supplements=f["supplements"], freeze_sha256=h.sha(root / "FREEZE.json"), expected_cells=len(expected), recorded_cells=len(rows),
+                  validation_issues=issues, artifact_faults=checks, geometry=geometry, complete_both=sets, one_replicate_only=one_rep, preservation=preservation, replay=replay, charge_s=sum(r["wall_s"] for r in charges), terminal_receipts=len(charges), gates=gates)
+    h.dump(root / "ANALYSIS.json", result); h.dump(root / "GATES.json", gates)
+    lines = ["# STEP2_SUPPLEMENT_1 -- both repaired public policies on the 61 exposed inputs (+ declared replay cells)", "", f"Engine `{f['engine_commit']}`; supplements the immutable original run `{f['supplements']['original_engine_commit']}` (FREEZE sha `{f['supplements']['freeze_sha256'][:12]}`). Recorded {len(rows)}/{len(expected)} cells; charged {result['charge_s']:.1f} s of {f['scored_ceiling_s']} s.", "", "| gate | decision |", "|---|---|",
+             f"| validity | {gates['validity']['decision']} |", f"| completeness | {gates['completeness']['decision']} |"] + [f"| preservation_vs_original {a} | {v['decision']} (target {v['target']}, supplement {v['supplement']}, lost {', '.join(v['lost']) or 'none'}, gained {', '.join(v['gained']) or 'none'}) |" for a, v in gates["preservation_vs_original"].items()] + [f"| replay_cells | {gates['replay_cells']['decision']} |", f"| supplement_decision | {gates['supplement_decision']['decision']} |", "",
+             f"Independent checks: {len(issues)} issues; {len(checks)} faulty artifacts; {geometry['published_coordinate_instances']} published coordinate instances; max endpoint radius {geometry['max_endpoint_radius']:.3e}.", "",
+             "Wall times of this supplement and of the original run come from different run periods and are NOT a paired causal cost measurement."]
+    (root / "REPORT.md").write_text("\n".join(lines) + "\n")
+    print(json.dumps(dict(recorded=len(rows), expected=len(expected), gates={k: (v["decision"] if "decision" in v else {a: x["decision"] for a, x in v.items()}) for k, v in gates.items()}, charge_s=round(result["charge_s"], 1))))
+    return 0 if gates["supplement_decision"]["decision"] == "PASS" else 1
 
 
 def report(f, result):
@@ -214,12 +294,14 @@ def report(f, result):
         if "ratios_per_repeat" in row: lines.append(f"| {row['task']} | {row['group']} | {[round(x, 3) for x in row['candidate_walls']]} | {[round(x, 3) for x in row['comparator_walls']]} | {[round(x, 3) for x in row['ratios_per_repeat']]} | {[round(x, 3) for x in row['differences_per_repeat']]} |")
     lines += ["", f"Cost flags ({(f.get('cost_criterion') or {}).get('rule')}): {', '.join(x['task'] for x in result['cost_flags']) or 'none'}.", "",
               f"Independent checks: {len(result['validation_issues'])} identity / scoring issues; {len(result['artifact_faults'])} faulty artifacts; {result['geometry']['published_coordinate_instances']} published coordinate instances; max endpoint radius {result['geometry']['max_endpoint_radius']:.3e}; JT containment checked on {len(result['jt_agreement'])} (arm, task, repeat) outputs incl. partial ones with {sum(x['outside_after_serialization_allowance'] for x in result['jt_agreement'])} excluded coordinates; deterministic conflicts {len(result['deterministic_conflicts'])}; PAC conflicts {len(result['pac_conflicts'])}.", "",
-              "Historical experimental preservation (the 47-task 3283cfd portfolio set) is NOT EVALUABLE without the hashed extract of the scored 3283cfd cells; the same-round pinned 3283cfd arm is the executed experimental comparator. This campaign measures preservation on exposed inputs; it establishes no universal dominance, scaling or unseen generalization claim."]
+              ("Historical experimental preservation (the 47-task 3283cfd portfolio set): %s -- %s. " % (gates["historical_experimental_preservation"]["decision"], ("recovered scored 3283cfd cells bound by hash; retained %d/%d, lost %s, gained %s" % (len(gates["historical_experimental_preservation"]["per_arm"]["PGM_EXPERIMENTAL"]["retained"]), len(gates["historical_experimental_preservation"]["prior_complete_both"]), ", ".join(gates["historical_experimental_preservation"]["per_arm"]["PGM_EXPERIMENTAL"]["lost"]) or "none", ", ".join(gates["historical_experimental_preservation"]["per_arm"]["PGM_EXPERIMENTAL"]["gained"]) or "none")) if gates["historical_experimental_preservation"]["decision"] != "NOT_EVALUABLE" else "the hashed extract of the scored 3283cfd cells is absent")) + "The same-round pinned 3283cfd arm is the executed experimental comparator. This campaign measures preservation on exposed inputs; it establishes no universal dominance, scaling or unseen generalization claim."]
     return "\n".join(lines) + "\n"
 
 
 def main(argv=None):
     root = Path(argv[0]).resolve() if argv else h.ROOT
+    if json.loads((root / "FREEZE.json").read_text()).get("schema") == "CONSOLIDATION_EXTERNAL_SUPPLEMENT_V1":
+        return analyze_supplement(root)
     f, rows, result = analyze(root)
     h.dump(root / "ANALYSIS.json", result); h.dump(root / "GATES.json", result["gates"])
     fields = sorted({k for p in result["pairs"].values() for r in p["per_task"] for k in r})

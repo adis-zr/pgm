@@ -1,0 +1,19 @@
+{
+  "synthetic_no_solver_executed": true,
+  "identity_failures": [
+    "unrelated_identity_failure_PGM_REFERENCE",
+    "unrelated_identity_failure_PGM_ACCEPTED"
+  ],
+  "ordinary_validity": "FAIL",
+  "exception_validity": "PASS",
+  "late_complete_reader": {
+    "contract_valid": true,
+    "all_queries_returned": true,
+    "legacy_internal_wall_past_allowance": true
+  },
+  "cleanup_unresolved_attempt_reader": {
+    "contract_valid": true,
+    "all_queries_returned": true,
+    "contract_faults": []
+  }
+}

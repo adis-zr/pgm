@@ -1,0 +1,84 @@
+{
+  "stale_without_receipt": {
+    "terminal_receipt": false,
+    "unrelated_newer_process_killed": true,
+    "returncode": -9,
+    "cleanup": {
+      "supervisor_alive_at_entry": false,
+      "receipt_established": false,
+      "groups": [
+        {
+          "pgid": 6,
+          "source": "SPAWNED",
+          "leader_pid": 6,
+          "live_at_entry": [
+            6
+          ],
+          "foreign": [],
+          "killed": [
+            6
+          ]
+        }
+      ],
+      "killed": [
+        6
+      ],
+      "unresolved": [],
+      "identity_refused": []
+    }
+  },
+  "stale_with_terminal_receipt": {
+    "terminal_receipt": true,
+    "unrelated_newer_process_killed": true,
+    "returncode": -9,
+    "cleanup": {
+      "supervisor_alive_at_entry": false,
+      "receipt_established": true,
+      "groups": [
+        {
+          "pgid": 8,
+          "source": "SPAWNED",
+          "leader_pid": 8,
+          "live_at_entry": [
+            8
+          ],
+          "foreign": [],
+          "killed": [
+            8
+          ]
+        }
+      ],
+      "killed": [
+        8
+      ],
+      "unresolved": [],
+      "identity_refused": []
+    }
+  },
+  "final_cleanup": {
+    "cleanup_calls": 2,
+    "outcome": "COMPLETE",
+    "published": 2,
+    "attempt_outcome": "CLEANUP_UNRESOLVED",
+    "cleanup_final": {
+      "unresolved": [
+        {
+          "pgid": 123456789,
+          "pids": [
+            123456789
+          ]
+        }
+      ]
+    }
+  },
+  "wheel_inventory": {
+    "original": [
+      "PASS",
+      []
+    ],
+    "duplicated_state_keys": [
+      "PASS",
+      []
+    ]
+  }
+}

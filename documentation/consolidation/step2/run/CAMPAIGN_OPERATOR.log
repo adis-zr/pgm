@@ -16,3 +16,4 @@ exit 0 2026-11-27T21:32:55Z
 ## 4_analyze (resume 2) 2026-11-27T21:32:55Z: /Users/adis/Workspace/pgm/code/.venv/bin/python benchmarks/external/analyze_suite.py
 exit 1 2026-11-27T21:33:03Z
 resume 2 finished 2026-11-27T21:33:03Z
+CLARIFICATION 2026-11-28T00:18:55Z (appended; the entries above are not rewritten): per 2_primary.log the cell exposed_regression__DBN_11__LIBDAI_BP__r1 (cell 114) COMPLETED numerically and then FAILED its POST-cell identity check because the operator's documentation edit happened while it ran; the driver then aborted at the PRE-cell check of the next cell (115). The compact records do not preserve a changed-file hash diff that would mechanically prove the transient scope of that edit; the cell therefore keeps identity_ok = false and is adjudicated through a clean supplemental replay (STEP2_SUPPLEMENT_1), with the original cell preserved unchanged.

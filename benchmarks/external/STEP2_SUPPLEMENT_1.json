@@ -1,0 +1,53 @@
+{
+ "schema": "PGM_STEP2_SUPPLEMENT_1_V1",
+ "status": "DECLARED BEFORE EXECUTION (27 Nov 2026); the original 732-cell run is immutable",
+ "purpose": "confirm the CHANGED public runtime (bounded repairs: staged terminal acceptance after final cleanup, process-incarnation ownership checks, tightened gates) on the full existing suite without re-running unchanged comparators or pinned references",
+ "arms": [
+  "PGM_ACCEPTED",
+  "PGM_EXPERIMENTAL"
+ ],
+ "cells": {
+  "tasks": 61,
+  "arms": 2,
+  "replicates": [
+   1,
+   2
+  ],
+  "public_cells": 244,
+  "replay_cells": [
+   {
+    "task": "DBN_11",
+    "arm": "LIBDAI_BP",
+    "replicate": 1
+   }
+  ],
+  "total": 245
+ },
+ "contract": {
+  "budget_s": 20,
+  "pgm_allowance_s": 19.5,
+  "memory_mib": 3072,
+  "epsilon": "1/200",
+  "delta": "1/1000000",
+  "seeds": "= repeats",
+  "scored_ceiling_s": 4900,
+  "ceiling_rationale": "245 cells x 20 s; setup / qualification are separate and reported; never raised retrospectively"
+ },
+ "acceptance": {
+  "validity": "every recorded cell: one terminal receipt, identity_ok (incl. the arm's own native closure before / after), valid output (original inventory, geometry, labels, witness, simplex, binding), valid contract incl. the terminal-cleanup contract (no CLEANUP_UNRESOLVED / unresolved cleanup evidence behind a published success)",
+  "completeness": "all 245 declared cells recorded within the ceiling; otherwise INCOMPLETE",
+  "preservation_vs_original": "NO LOSS from the original run's recorded both-repeat completion sets: 45 (PGM_ACCEPTED) and 54 (PGM_EXPERIMENTAL); gains reported, not forbidden",
+  "replay_cells": "the clean supplemental replay of DBN_11 / LIBDAI_BP / r1 under the original contract and the original comparator build is recorded with identity_ok and a valid output; the original failed-identity cell is preserved unchanged and the original campaign validity is not changed",
+  "timing": "wall times of different run periods are descriptive only; no causal cost claim; the 18 original cost flags remain reported; a matched old-arm rerun would be a separately declared bounded diagnostic"
+ },
+ "forbidden": [
+  "re-running the 732-cell matrix to repair its report",
+  "changing the original run's cells / receipts / identity flags",
+  "scheduling, rate, policy or inference changes",
+  "per-instance tuning",
+  "raising the ceiling after any scored outcome"
+ ],
+ "documents": [
+  "benchmarks/external/STEP2_SUPPLEMENT_1.md"
+ ]
+}

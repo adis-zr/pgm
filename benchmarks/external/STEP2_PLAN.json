@@ -97,9 +97,11 @@
   "origin": "proposed by the step-1 benchmark review; adopted prospectively in STEP2_AMENDMENT_1 before any scored cell"
  },
  "prior_experimental_extract": {
-  "status": "UNAVAILABLE ON THIS HOST",
-  "prerequisite": "the scored 3283cfd campaign's raw CELLS.jsonl / ANALYSIS.json (EXPOSURE_HISTORY.json records analysis_sha256 45d954bb3c4d68e8804a42041bd90c6f79a668dccb61f2692b7bfb8b6fe52d6f) from the consolidation-v1 run directory, which was never committed and is not present in this checkout, the records repository or the review packet",
-  "consequence": "the historical experimental preservation gate is NOT EVALUABLE in this run; the same-round pinned PGM_EXPERIMENTAL_REF arm (3283cfd executed here) supplies the executable experimental comparator instead; no target rows are invented from task names or summary counts"
+  "status": "RECOVERED BY THE INDEPENDENT REVIEW (27 Nov 2026), analysis only",
+  "file": "benchmarks/external/reference/HISTORICAL_3283CFD_122_CELLS.json",
+  "source_analysis_sha256": "45d954bb3c4d68e8804a42041bd90c6f79a668dccb61f2692b7bfb8b6fe52d6f",
+  "note": "122 scored 3283cfd PGM cells recovered from the earlier evidence archive (PGM_CONSOLIDATION_EVIDENCE_2026-11-27.zip, sha256 3fb49e60...), every cell bound to the current inputs by model / evidence hash; 47 both-repeat completions; the historical experimental preservation gate is computed from it by the analyzer; the earlier NOT_EVALUABLE outputs are preserved; historical timings are not same-host latency evidence",
+  "previous_status": "UNAVAILABLE ON THIS HOST at the time of the original run (the gate was reported NOT EVALUABLE; no target rows were invented)"
  },
  "commands": [
   "PY benchmarks/external/run_suite.py setup",

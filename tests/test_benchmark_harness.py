@@ -63,5 +63,7 @@ def test_historical_reference_cells_bind_to_the_current_manifests():
 def test_plan_declares_the_full_matrix_and_ceiling_before_scoring():
     plan = json.loads((ROOT / "benchmarks/external/STEP2_PLAN.json").read_text())
     assert plan["cells"]["total"] == 732 == 61 * 6 * 2 and plan["contract"]["scored_ceiling_s"] >= 732 * 20
-    assert plan["cost_criterion"]["adopted"] is True and plan["prior_experimental_extract"]["status"].startswith("UNAVAILABLE")
+    assert plan["cost_criterion"]["adopted"] is True and plan["prior_experimental_extract"]["status"].startswith("RECOVERED") and (ROOT / plan["prior_experimental_extract"]["file"]).is_file()
+    sup = json.loads((ROOT / "benchmarks/external/STEP2_SUPPLEMENT_1.json").read_text())
+    assert sup["cells"]["total"] == 245 == 61 * 2 * 2 + 1 and sup["contract"]["scored_ceiling_s"] == 4900 == 245 * 20 and sup["arms"] == h.SUPPLEMENT_ARMS and len(h.SUPPLEMENT_REPLAY) == 1
     assert set(plan["arms"]) == set(h.ARMS)
