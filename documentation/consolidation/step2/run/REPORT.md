@@ -13,10 +13,10 @@ All 61 inputs are exposed regression inputs (old55 / former_eval6 are historical
 | historical_accepted_preservation | PASS |
 | reference_reproduction | PASS |
 | same_round_accepted_preservation | PASS |
-| historical_experimental_preservation | NOT_EVALUABLE |
+| historical_experimental_preservation | PASS |
 | same_round_experimental_preservation | PASS |
 | paired_overhead | FLAGGED |
-| validity_excluding_operator_identity_incident | PASS |
+| validity_with_adjudicated_incidents_set_aside | PASS |
 | promotion_decision | HOLD |
 
 ## Both-repeat completions
@@ -98,4 +98,4 @@ Cost flags (a task is FLAGGED when PGM_ACCEPTED is slower than PGM_REFERENCE in 
 
 Independent checks: 1 identity / scoring issues; 0 faulty artifacts; 468324 published coordinate instances; max endpoint radius 5.000e-03; JT containment checked on 180 (arm, task, repeat) outputs incl. partial ones with 0 excluded coordinates; deterministic conflicts 0; PAC conflicts 0.
 
-Historical experimental preservation (the 47-task 3283cfd portfolio set) is NOT EVALUABLE without the hashed extract of the scored 3283cfd cells; the same-round pinned 3283cfd arm is the executed experimental comparator. This campaign measures preservation on exposed inputs; it establishes no universal dominance, scaling or unseen generalization claim.
+Historical experimental preservation (the 47-task 3283cfd portfolio set): PASS -- recovered scored 3283cfd cells bound by hash; retained 47/47, lost none, gained BN_13, DIABETES, ObjectDetection_24, ObjectDetection_39, ObjectDetection_43, Pedigree_12, linkage_13. The same-round pinned 3283cfd arm is the executed experimental comparator. This campaign measures preservation on exposed inputs; it establishes no universal dominance, scaling or unseen generalization claim.

@@ -30,18 +30,40 @@ def main():
     (dest / "setup").mkdir(exist_ok=True)
     for name in ("SETUP.json", "SETUP_RECEIPTS.jsonl"):
         if (run / "setup" / name).exists(): shutil.copy(run / "setup" / name, dest / "setup" / name); copied["setup/" + name] = sha(dest / "setup" / name)
-    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in sorted(run.rglob("*")):
-            if p.is_file(): z.write(p, p.relative_to(run.parent))
-    members = len(zipfile.ZipFile(archive).namelist())
-    ident = dict(archive=str(archive), sha256=sha(archive), bytes=archive.stat().st_size, members=members, run_dir=str(run), copied=copied, written_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    previous = json.loads((OUT / "RUN_ARCHIVE.json").read_text()) if (OUT / "RUN_ARCHIVE.json").exists() else {}
+    if archive.exists() and previous.get("sha256") == sha(archive):
+        # the ORIGINAL raw archive is never repackaged in place: its bytes and claimed hash stay; post-run records go to a SEPARATE archive
+        members = previous["members"]; archive_sha = previous["sha256"]; archive_bytes = previous["bytes"]
+        post = archive.with_name(archive.stem + "_POSTRUN_RECORDS.zip")
+        with zipfile.ZipFile(post, "w", zipfile.ZIP_DEFLATED) as z:
+            for name in ("INCIDENTS.json", "CAMPAIGN_OPERATOR.log", "ANALYSIS.json", "GATES.json", "REPORT.md", "PAIRS.csv", "ANALYSIS.amendment2_rev1.json", "GATES.amendment2_rev1.json", "REPORT.amendment2_rev1.md", "PAIRS.amendment2_rev1.csv"):
+                if (run / name).exists(): z.write(run / name, Path(run.name) / name)
+            for q in sorted((run / "natives").rglob("*")):
+                if q.is_file(): z.write(q, q.relative_to(run.parent))
+        postrun = dict(archive=str(post), sha256=sha(post), bytes=post.stat().st_size, members=len(zipfile.ZipFile(post).namelist()), note="records added to the original run directory AFTER its raw archive was taken (incident record, operator-log clarification, amendment-2 rev-1 and rev-2 analyzer outputs, executed native artifacts); the original archive is unchanged")
+    else:
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+            for p in sorted(run.rglob("*")):
+                if p.is_file(): z.write(p, p.relative_to(run.parent))
+        members = len(zipfile.ZipFile(archive).namelist()); archive_sha = sha(archive); archive_bytes = archive.stat().st_size; postrun = None
+    ident = dict(archive=str(archive), sha256=archive_sha, bytes=archive_bytes, members=members, run_dir=str(run), copied=copied, written_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), postrun_records_archive=postrun, repository_copy="documentation/consolidation/step2/archive/" + archive.name)
+    sup_dir = Path(os.environ.get("PGM_SUPPLEMENT_RUN_DIR", "")) if os.environ.get("PGM_SUPPLEMENT_RUN_DIR") else None
+    if sup_dir and sup_dir.is_dir():
+        sup_zip = archive.with_name("PGM_STEP2_SUPPLEMENT_RUN_" + sup_dir.name + ".zip")
+        with zipfile.ZipFile(sup_zip, "w", zipfile.ZIP_DEFLATED) as z:
+            for q in sorted(sup_dir.rglob("*")):
+                if q.is_file(): z.write(q, q.relative_to(sup_dir.parent))
+            for extra in sorted(sup_dir.parent.glob(sup_dir.name + ".attempt*")):
+                for q in sorted(extra.rglob("*")):
+                    if q.is_file(): z.write(q, q.relative_to(sup_dir.parent))
+        ident["supplement_archive"] = dict(archive=str(sup_zip), sha256=sha(sup_zip), bytes=sup_zip.stat().st_size, members=len(zipfile.ZipFile(sup_zip).namelist()), note="the complete raw supplement run directory (every cell, launch, log, receipt, setup) plus the refused first attempt directory")
     (OUT / "RUN_ARCHIVE.json").write_text(json.dumps(ident, indent=1) + "\n")
     f = json.loads((run / "FREEZE.json").read_text()); gates = json.loads((run / "GATES.json").read_text()) if (run / "GATES.json").exists() else {}
     an = json.loads((run / "ANALYSIS.json").read_text()) if (run / "ANALYSIS.json").exists() else {}
     g = an.get("groups", {}).get("all61", {}).get("complete_both", {})
     lines = ["# Step 2 external preservation regression -- START HERE", "",
              f"Branch `consolidate/production-layout`; frozen engine commit `{f['engine_commit']}`; FREEZE schema `{f['schema']}` ({f['amendment']}); pinned references `{f['old_reference_engine'][:7]}` (PGM_REFERENCE, accepted standalone engine) and `{f['roots']['PGM_EXPERIMENTAL_REF']['commit'][:7]}` (PGM_EXPERIMENTAL_REF, scored public implementation). Host `{f['platform']}`, `{f['compilers']['CC_version']}`.", "",
-             "Read in this order: `REPAIRS.md` (before / after evidence for R1-R5 and B1-B7), `../../../benchmarks/external/STEP2_AMENDMENT_1.md` (the committed pre-run amendment), `run/REPORT.md` and `run/GATES.json` (results), `run/ANALYSIS.json` / `run/PAIRS.csv` (every paired measurement), `run/FREEZE.json` (every identity: source files, active native artifacts per arm, pinned root closures, compilers, dependencies), `run/setup/SETUP.json` (builds, warm caches, the six-arm smoke), `RUN_ARCHIVE.json` (the complete raw run directory archive with its sha256).", "",
+             "Read in this order: `REPAIRS.md` (before / after evidence for the step-1 review R1-R5 / B1-B7 AND the step-2 review's cleanup, incarnation and gate repairs), `../../../benchmarks/external/STEP2_AMENDMENT_1.md` (pre-run amendment), `STEP2_AMENDMENT_2.md` (post-run analysis amendment, rev 2), `STEP2_SUPPLEMENT_1.md` (the declared 245-cell confirmation of the changed runtime), `run/REPORT.md` and `run/GATES.json` (original run, rev-2 analysis; frozen and rev-1 outputs preserved beside them), `run/INCIDENTS.json` (the exact adjudicated incident), `run/ANALYSIS.json` / `run/PAIRS.csv` (every paired measurement), `run/FREEZE.json`, `run/setup/SETUP.json`, `supplement/` (the supplement's FREEZE / GATES / ANALYSIS / REPORT / compact cells), `RUN_ARCHIVE.json` (the UNCHANGED original raw archive by sha256, the separate post-run records archive and the supplement archive), `review2/` (the independent review's documents and probes).", "",
              "## Gates", "", "| gate | decision |", "|---|---|"] + [f"| {k} | {v['decision']} |" for k, v in gates.items()] + ["",
              f"Recorded {an.get('recorded_cells')}/{an.get('expected_cells')} cells; charged {an.get('charge_s', 0):.0f} s of the declared {f['scored_ceiling_s']} s ceiling; validation issues {len(an.get('validation_issues', []))}; artifact faults {len(an.get('artifact_faults', []))}; published coordinate instances {an.get('geometry', {}).get('published_coordinate_instances')}; deterministic conflicts {len(an.get('deterministic_conflicts', []))}; PAC conflicts {len(an.get('pac_conflicts', []))}; cost flags {len(an.get('cost_flags', []))}.", "",
              "## Both-repeat completions on all 61 exposed inputs", "", "| arm | completions |", "|---|---:|"] + [f"| {a} | {len(v)} |" for a, v in g.items()] + ["",
@@ -82,7 +104,7 @@ def main():
                  [f"| preservation_vs_original {a} | {v['decision']} (target {v['target']}, supplement {v['supplement']}, lost {', '.join(v['lost']) or 'none'}, gained {', '.join(v['gained']) or 'none'}) |" for a, v in sg["preservation_vs_original"].items()] + \
                  [f"| replay_cells | {sg['replay_cells']['decision']} |", f"| supplement_decision | {sg['supplement_decision']['decision']} |", "", f"Charged {sa['charge_s']:.0f} s of the declared 4,900 s; records under `supplement/`. Wall times of different run periods are descriptive only."]
     (OUT / "START_HERE.md").write_text("\n".join(lines) + "\n")
-    print(json.dumps(dict(archive=ident["archive"], sha256=ident["sha256"], members=members, gates={k: v["decision"] for k, v in gates.items()})))
+    print(json.dumps(dict(archive=ident["archive"], sha256=ident["sha256"], members=members, postrun=(ident.get("postrun_records_archive") or {}).get("sha256"), supplement=(ident.get("supplement_archive") or {}).get("sha256"), gates={k: v["decision"] for k, v in gates.items()})))
 
 
 if __name__ == "__main__": main()

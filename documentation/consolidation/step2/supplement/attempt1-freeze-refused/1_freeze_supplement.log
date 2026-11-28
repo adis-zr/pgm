@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/adis/Workspace/pgm-consolidate/benchmarks/external/run_suite.py", line 618, in <module>
+    {"setup": setup, "freeze": freeze, "freeze-supplement": freeze_supplement, "supplement": run_supplement}.get(a.action, lambda: run(a.action))()
+  File "/Users/adis/Workspace/pgm-consolidate/benchmarks/external/run_suite.py", line 568, in freeze_supplement
+    assert all(row[3:].startswith(GENERATED_PREFIXES) and ("native_cache/" in row[3:] or row[3:].endswith(("_build.json", ".dylib", ".so"))) for row in changes), "Commit source changes before freezing: " + repr(changes)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Commit source changes before freezing: [' M src/pgm/algorithms/structural/cex_build.json', ' M src/pgm/algorithms/structural/libcex_kernel.dylib', '?? documentation/consolidation/step2/archive/PGM_STEP2_RUN_2026-11-27_f74f7f3.zip']

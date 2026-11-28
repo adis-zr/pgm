@@ -8,18 +8,23 @@
   "FREEZE.json": "7144259570fb9241fa196930d4cacef5722b27e23b025627991cfb5d1dbb944f",
   "CELLS.jsonl": "563d1a947f79ed84d893478a91159eb7a86da70dbed62f1ff43e775a06441011 (full file only in the raw archive)",
   "RECEIPTS.jsonl": "a119a7b187088e6db53a071fa000c94db19c8f7a06ca9fa900907d9255699dcd",
-  "ANALYSIS.json": "438452fa765c30d03475d9dff3bc1e6b96cd4c68e0dd312c874bd51158ef3bf4",
-  "GATES.json": "6daea28424fad3663ea2ebd9335262cd56929f75701f312734178bea9413ecad",
+  "ANALYSIS.json": "061601434a8317ee90e221ea32ceb73d5b99ef966ec6b701760ec295da296eb7",
+  "GATES.json": "059917df21539f593467980c2ed53dc6bc3eb6ec156fd78853780a615103e96a",
   "PAIRS.csv": "aa2110247d3e434386c9415dd0a14c34b7c5bd10fda153e4dc07b4283b6c7a0d",
-  "REPORT.md": "db962f78836ec59dbcea1e7a2f03a1032a26a31295a479a3cfdba109219bb7f9",
+  "REPORT.md": "c243131545b262a07406e1391b0f49905ceb29f357c9a88f4721ead683888bcd",
   "ANALYSIS.frozen_analyzer_v1.json": "fbc1a198033af8c311e19033a5ee7ee9f3dcc751acce9e1fc11582add0913bc4",
   "GATES.frozen_analyzer_v1.json": "12cae1ef3f9d4e3fae2bd0cd6f63465cfbba52526e361603348aa60c43138bba",
   "REPORT.frozen_analyzer_v1.md": "7b64f3d5c2719c3c9f66ac44ada02cebf5b7f18469afddd80d3f723f7c0c98bf",
   "PAIRS.frozen_analyzer_v1.csv": "aa2110247d3e434386c9415dd0a14c34b7c5bd10fda153e4dc07b4283b6c7a0d",
+  "ANALYSIS.amendment2_rev1.json": "438452fa765c30d03475d9dff3bc1e6b96cd4c68e0dd312c874bd51158ef3bf4",
+  "GATES.amendment2_rev1.json": "6daea28424fad3663ea2ebd9335262cd56929f75701f312734178bea9413ecad",
+  "REPORT.amendment2_rev1.md": "db962f78836ec59dbcea1e7a2f03a1032a26a31295a479a3cfdba109219bb7f9",
+  "PAIRS.amendment2_rev1.csv": "aa2110247d3e434386c9415dd0a14c34b7c5bd10fda153e4dc07b4283b6c7a0d",
+  "INCIDENTS.json": "17ce5d52de4bb89c39fe986c4ed09df329dca71bc64f1bf15c503a09c8868c2b",
   "PRIMARY_RETURN.json": "39c5bbb52e62a3b17d31225feffbe8ba44b33ca39d40524a6d32be9fe96691cf",
   "EVAL_RETURN.json": "f5d67a87981d744e554394690d5259ba8cd401eb1b3de51a6dcff0f03cc0e2de",
   "CAMPAIGN_COMMANDS.log": "b0122fe9a649fd61ad197ad6374da7acbc39e2e28f61509ef39d463af8564aa3",
-  "CAMPAIGN_OPERATOR.log": "af5e131210a7a266f159f4ae8af55fcdacfcc4abd4a139a81b3313b97cf93426",
+  "CAMPAIGN_OPERATOR.log": "ab6b39cac14413dad515cc7366e6942fcd2dd264b2b59108a245102a6a0e791c",
   "ENGINE_COMMIT.txt": "cb403440fd5d1823cc98cca246b94064d6dcab29879aca663c1a011bff850e73",
   "GIT_STATUS_AT_START.txt": "03f8ee01d87a21f6e6261fada8a2d857272ad4b2a66a9633f4d774a09aeb04ce",
   "0_setup.log": "adb1ff875c776d4b04add2decde2bd0d675a58c7696e64625461f0968b144cb7",
@@ -34,5 +39,20 @@
   "setup/SETUP.json": "0f8e511f6f86224b09e29a2ccb4ed2ad4509ea4890dca9f797e7113357bda91d",
   "setup/SETUP_RECEIPTS.jsonl": "04ce9d6632001574af888e01134c49d51c177ec4fba771cb7deb5a138bc21b06"
  },
- "written_utc": "2026-11-27T21:38:27Z"
+ "written_utc": "2026-11-28T00:56:00Z",
+ "postrun_records_archive": {
+  "archive": "/Users/adis/Workspace/PGM_STEP2_RUN_2026-11-27_f74f7f3_POSTRUN_RECORDS.zip",
+  "sha256": "d7743b8a510ab9e16f379cba66474ca4cacdfd026feea6738afd2d112012347a",
+  "bytes": 620097,
+  "members": 52,
+  "note": "records added to the original run directory AFTER its raw archive was taken (incident record, operator-log clarification, amendment-2 rev-1 and rev-2 analyzer outputs, executed native artifacts); the original archive is unchanged"
+ },
+ "repository_copy": "documentation/consolidation/step2/archive/PGM_STEP2_RUN_2026-11-27_f74f7f3.zip",
+ "supplement_archive": {
+  "archive": "/Users/adis/Workspace/PGM_STEP2_SUPPLEMENT_RUN_step2-supplement-v1.zip",
+  "sha256": "ac1ff9a6606fbad2096cb12b5fb459bd03498ff290acf0562a41549979462fea",
+  "bytes": 18774550,
+  "members": 2145,
+  "note": "the complete raw supplement run directory (every cell, launch, log, receipt, setup) plus the refused first attempt directory"
+ }
 }

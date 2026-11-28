@@ -1,0 +1,51 @@
+{
+  "validity": {
+    "decision": "PASS",
+    "issues": [],
+    "artifact_faults": []
+  },
+  "completeness": {
+    "decision": "PASS",
+    "expected_cells": 245,
+    "recorded_cells": 245,
+    "missing_cells": [],
+    "budget_stop": false
+  },
+  "preservation_vs_original": {
+    "PGM_ACCEPTED": {
+      "decision": "PASS",
+      "target": 45,
+      "supplement": 45,
+      "lost": [],
+      "gained": [],
+      "one_repeat_only": []
+    },
+    "PGM_EXPERIMENTAL": {
+      "decision": "PASS",
+      "target": 54,
+      "supplement": 54,
+      "lost": [],
+      "gained": [],
+      "one_repeat_only": []
+    }
+  },
+  "replay_cells": {
+    "decision": "PASS",
+    "cells": [
+      {
+        "task": "DBN_11",
+        "arm": "LIBDAI_BP",
+        "replicate": 1,
+        "reason": "clean supplemental replay of the one cell whose post-cell identity check failed in the original run (operator documentation edit); the original cell is preserved unchanged",
+        "recorded": true,
+        "identity_ok": true,
+        "complete_within_contract": true,
+        "receipt_outcome": "COMPLETED",
+        "wall_s": 1.9016795419884147
+      }
+    ]
+  },
+  "supplement_decision": {
+    "decision": "PASS"
+  }
+}

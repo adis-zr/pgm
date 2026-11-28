@@ -18,3 +18,27 @@ controls on the repaired source are under `repair_evidence/after/`. Commits: `04
 Duplicate exact reader: `pgm.algorithms.structural.core.read_uai` now **is** `pgm.model.uai.read_uai` (one definition; parity
 IDENTICAL after the change). Same-host comparison: the parity reference and the candidate were regenerated on this host; the
 archived Mac witness constants are not compared against another platform.
+
+## Review 2 (bounded completion): before / after
+
+Inputs: `review2/PGM_STEP2_REVIEW.md`, `review2/runtime/REVIEW.md`, `review2/gates/GATE_REVIEW.md`, `review2/results/RESULTS_REVIEW.md`,
+the brief `review2/CLAUDE_STEP2_BOUNDED_COMPLETION.md`. Commits `9966821` (repairs), `7d5e270` (qualification receipts), `2bb9631`
+(raw archive), then the supplement run and this packet.
+
+| finding | before (reviewer evidence) | after (this pass) |
+|---|---|---|
+| final cleanup failure still published success | `review2/runtime/PROBE_RESULTS.json` `final_cleanup`: `outcome COMPLETE, published 2, attempt CLEANUP_UNRESOLVED` | `run_attempt` stages the candidate and decides ONCE after final cleanup; controller refuses inconsistent candidates; `repair_evidence/after2/PROBE_REPAIRS_INVERTED.json` `final_cleanup`: `outcome CLEANUP_UNRESOLVED, published 0`; tests: final-boundary inversion, successful path, first-cleanup failure |
+| creation-time lower bound accepted the normal direction of pgid reuse; receipts did not close ownership | `stale_without_receipt` / `stale_with_terminal_receipt`: unrelated newer sleeper killed (rc -9) | process INCARNATION (pid + creation time) recorded by the supervisor and verified per member; parent-chain verification; only verified pids signalled individually; a valid terminal receipt closes ownership; missing / malformed identity fails closed: both probes now `killed: false`; tests: stale newer process, receipt closure, missing identity, mixed group, own group, dead-supervisor fixture |
+| wheel gate validated counts, not the coordinate set | `wheel_inventory.duplicated_state_keys: PASS` | exact fixture inventory (unique keys, cardinalities) bound from the committed fixtures via the exact reader: `FAIL` on the duplicate-state mutation; 3 new negative controls |
+| benchmark reader accepted CLEANUP_UNRESOLVED behind success | `review2/gates/ANALYSIS_BOUNDARIES.json` `cleanup_unresolved_attempt_reader: contract_valid true` | terminal-cleanup contract fault for CLEANUP_UNRESOLVED / unresolved cleanup evidence; test `test_reader_rejects_published_success_behind_unresolved_cleanup` |
+| incident-excluding predicate excluded any identity failure | `exception_validity: PASS` with two unrelated identity failures | exact allowlist `INCIDENTS.json` (job, kind, evidence, disposition); `validity_with_adjudicated_incidents_set_aside`; unrelated failures keep FAIL (test) |
+| reference closures frozen once, not rechecked per cell | — | `arm_closure_ok` before and after every cell for the arm's own pinned source + natives, mismatch details saved |
+| amendment-2 wording / rule | "non-publishing" (four cells publish partial rows); legacy late COMPLETE accepted | "non-completing"; the exception restricted to non-completing statuses; completing status past the allowance is a fault; rev-1 outputs preserved |
+| historical experimental gate NOT_EVALUABLE | prerequisite absent | the review's recovered extract (`reference/HISTORICAL_3283CFD_122_CELLS.json`, source ANALYSIS sha `45d954bb...`, hash-bound) -> PASS 47/47 for both experimental arms; seven shared current-host gains |
+| raw archive named by a workstation path | — | `archive/PGM_STEP2_RUN_2026-11-27_f74f7f3.zip` committed unchanged (sha `4f088a35...`); post-run records and the supplement run archived separately |
+| incident disposition | narrative only | `INCIDENTS.json`; operator log clarified by an appended entry; one clean supplemental replay of `DBN_11 / LIBDAI_BP / r1` under STEP2_SUPPLEMENT_1 (identity_ok, valid); the original cell and the original campaign validity unchanged |
+
+Supplement (`STEP2_SUPPLEMENT_1`, declared before execution): 245/245 cells, 1,626 s of the 4,900 s ceiling, validity PASS,
+no loss from the recorded 45 / 54 completion sets (no gains either), replay cell valid. The first attempt's freeze was refused
+because the raw archive was still an untracked file (`supplement/attempt1-freeze-refused/`); it was committed and the
+supplement re-launched from a clean declaration.
