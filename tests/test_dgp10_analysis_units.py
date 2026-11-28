@@ -1,12 +1,7 @@
 """Population and empirical second moments must use the same physical units."""
-from pathlib import Path
-import sys
 import unittest
 
-HP = Path(__file__).resolve().parents[1] / 'code' / 'cex' / 'hp'
-sys.path.insert(0, str(HP))
-import dgp10_analyze as ANALYZE
-
+from research.campaigns.hp import dgp10_analyze as ANALYZE
 
 class MomentDiagnosticUnits(unittest.TestCase):
     @staticmethod

@@ -14,7 +14,7 @@ from pgm import switchboard
 from pgm.contracts import InferenceRequest
 
 ROOT = Path(__file__).resolve().parents[1]
-ENV = dict(os.environ, PYTHONPATH=str(ROOT / "src") + os.pathsep + str(ROOT / "code"))
+ENV = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
 
 
 def _spawn_supervised_sleeper(tmp, seconds=30):

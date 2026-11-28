@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pgm-certified"
 version = "0.2.0"
-description = "Certified discrete inference: one public API (pgm.infer / python -m pgm), explicit policies (accepted default, experimental), four isolated backends"
+description = "Certified discrete inference with a common switchboard and packaged specialist methods"
 requires-python = ">=3.12"
 dependencies = ["numpy>=2.3,<3", "gmpy2>=2.3,<3", "psutil>=7,<8", "scipy>=1.17,<2"]
 
@@ -15,25 +15,22 @@ pgm = "pgm.__main__:main"
 [tool.setuptools]
 include-package-data = false
 
-# The wheel ships the production package (pgm, with the four algorithm closures, their native SOURCES, strict-FP build
-# records and frozen rate files) and the three pure-Python specialist packages reached through pgm.specialists (cbi, sf,
-# h4a).  NOT shipped: campaign runners / analyzers / packagers (code/cex/hp, code/cex/blockres, code/cex/cqr), the frozen
-# historical snapshots (code/cex/{pac,baseline,b0_frozen_v14,newarm_dev}), benchmark tooling (code/bench, code/ext), host
-# binaries (*.so, *.dylib, code/build) and native caches.  Disclosed exception: cbi / sf / h4a carry their own small
-# campaign helper scripts because setuptools packages are shipped whole.
+# All supported implementations and their native sources belong to pgm.
+# Experiments, historical snapshots, benchmark tooling and generated binaries are not wheel contents.
 [tool.setuptools.packages.find]
-where = ["src", "code"]
-include = ["pgm", "pgm.*", "cbi", "sf", "h4a"]
-exclude = ["*.native_cache*", "*.runs*", "cex*", "gbidi*", "ext*", "bench*", "tests*"]
+where = ["src"]
+include = ["pgm", "pgm.*"]
+exclude = ["*.native_cache*", "*.runs*"]
 
 [tool.setuptools.package-data]
 "pgm.algorithms.structural" = ["cex_kernel.cpp", "stream_kernel.cpp", "cex_build.json", "stream_build.json"]
 "pgm.algorithms.quotient" = ["PHASE_RATES.json", "PHASE_RATES_R1.json"]
 "pgm.algorithms.response" = ["heatbath_native.c"]
+"pgm.algorithms.h4" = ["native/*.cpp", "native/*.hpp"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.so", "*.dylib", "native_cache/*", "heatbath_build.json"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "code"]
+pythonpath = ["src"]
 testpaths = ["tests"]

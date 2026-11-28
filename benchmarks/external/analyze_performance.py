@@ -15,8 +15,12 @@ import json
 from pathlib import Path
 import statistics
 
-import run_suite as h
-from benchmark_validity import censored_comparator, censored_fields, check_public_output
+if __package__:
+    from . import run_suite as h
+    from .benchmark_validity import censored_comparator, censored_fields, check_public_output
+else:
+    import run_suite as h
+    from benchmark_validity import censored_comparator, censored_fields, check_public_output
 
 ALLOWANCE = F(5, 10_000_000_000)
 PUBLIC_ARMS = ("BASE_ACCEPTED", "PGM_ACCEPTED", "BASE_EXPERIMENTAL", "PGM_AUTOMATIC")

@@ -14,7 +14,10 @@ from __future__ import annotations
 import csv, json, statistics, sys
 from fractions import Fraction as F
 from pathlib import Path
-import run_suite as h
+if __package__:
+    from . import run_suite as h
+else:
+    import run_suite as h
 
 ALLOW = 5e-10
 

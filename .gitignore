@@ -1,35 +1,18 @@
-code/.venv/
-code/build/
+# Local environments, caches and build products
+.venv/
+.venv-*/
 __pycache__/
 *.pyc
 .pytest_cache/
-code/runs/*/attempts/*/tmp/
-# external benchmark sweep (6 Nov 2026): separate PGMax venv, raw source archives / extracted corpora / third-party software (hashes in
-# EXTERNAL_SWEEP_2026-11-06/SOURCES_HASHES.json; the 46 selected inputs are committed under EXTERNAL_SWEEP_2026-11-06/inputs/)
-code/.venv-pgmax/
-code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/sources/
-code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/setup/emul/
-code/runs/mdi_2026-10-28/EXTERNAL_SWEEP_2026-11-06/setup/ibia/*.pdf
-
-# the research record lives in the separate pgm-records repository; locally these are symlinks into it
-/docs
-/code/runs
-
-# host-built comparator driver linked against the external libDAI library: built locally from bench/libdai/libdai_mar.cpp, not redistributed (its sha256 is pinned in every campaign manifest)
-/code/bench/libdai/libdai_mar
-.DS_Store
-code/cex/hp/native_cache/
-code/cex/hp/heatbath_build.json
-
-# Public API packaging and reproducible external benchmark outputs
 *.egg-info/
-/benchmark_runs/
-
-# Local package build products
 /build/
 /dist/
+.DS_Store
 
-# consolidation step 1: native caches / host build records live with the owning implementation under src/pgm/algorithms
-src/pgm/algorithms/*/native_cache/
-src/pgm/algorithms/response/heatbath_build.json
-src/pgm/algorithms/response/REFERENCE_CHECKED_TILT_SELFTEST.json
+# External records and local experiment output
+/docs
+/research/runs/
+/benchmark_runs/
+
+# Host-built comparator; native library kernels use PGM_NATIVE_CACHE or the user cache
+/benchmarks/external/comparators/libdai/libdai_mar

@@ -25,6 +25,7 @@ from .contracts import InferenceRequest, InferenceResult
 from .planning import inspect_model, PlanningRefused
 from . import policies
 from .policies import experimental as _experimental
+from .registry import method as resolve_method
 
 # Compatibility names of the frozen experimental portfolio (tests and the review reference them here).
 POLICY_VERSION = _experimental.VERSION

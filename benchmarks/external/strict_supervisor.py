@@ -1,4 +1,4 @@
-from gbidi import supervise
+from pgm.runtime import supervise
 
 supervise.GRACE_S = 0
 if __name__ == "__main__":

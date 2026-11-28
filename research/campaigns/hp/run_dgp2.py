@@ -1,0 +1,66 @@
+"""DGP2 supervised runner (protocol rule 4): every arm executes from a CLEAN DETACHED CHECKOUT at the frozen commit (--code-root), with the worker's cwd set to that checkout, source identity checked at launch and at completion
+(sha256 of the planner / engine / kernel files vs FREEZE.json), outputs under the records tree (outside tracked source). Arms: BASE (accepted integrated.py with run_paired.FROZEN options), UPAC2 (unified_pac_planner, no lifting),
+FULL2 (--lifted), and the diagnostic pseudo-arms FORCED_ORIG / FORCED_LIFT (--force-stream; never counted as planner completions). Contracts: main 20.0 / 19.5 / 19.0; p4 4.0 / 3.85 / 3.5; p20 = main.
+usage: run_dgp2.py SUBDIR MANIFEST.json --code-root /path/to/detached --arms BASE,UPAC2,FULL2 --contract main|p4|p20 [--confirm --seed N] [--only a,b] [--scope S] [--records RD]"""
+
+# Source-checkout entry point; production imports never traverse research.
+if __package__ in (None, ""):
+    import sys as _research_sys
+    from pathlib import Path as _ResearchPath
+    _research_sys.path.insert(0, str(_ResearchPath(__file__).resolve().parents[3]))
+from research.bootstrap import activate as _activate_research
+_activate_research()
+from research.paths import repo_root as _repo_root, runs_root as _runs_root, records_root as _records_root, source_path as _source_path
+from research.source_execution import bound_source_command, supervisor_environment, checked_structural_build, result_native_build
+import sys, os, json, time, subprocess, argparse, hashlib
+RD_DEFAULT = str(_runs_root() / 'mdi_2026-10-28/DGP2_REPAIR_AND_DIAGNOSIS'); SUP_CODE = str(_repo_root()); PY = sys.executable
+CONTRACTS = dict(main=dict(outer=20.0, hard=19.5, work=19.0), p4=dict(outer=4.0, hard=3.85, work=3.5), p20=dict(outer=20.0, hard=19.5, work=19.0))
+FROZEN = dict(mem_gib=3, epsilon='1/200', delta='1/1000000', base=dict(route='auto', proposal='mb', schedule='targeted', table_cap=1 << 18, enum_cap=1 << 16, mb_cap=1 << 24, batch=1024), contracts=CONTRACTS)
+IDENTITY_FILES = ['src/pgm/algorithms/quotient/unified_pac_planner.py', 'src/pgm/algorithms/quotient/pac_actions.py', 'src/pgm/algorithms/quotient/lifted_decoder.py', 'src/pgm/algorithms/quotient/unified_planner.py', 'src/pgm/algorithms/quotient/coarse_envelope.py', 'src/pgm/algorithms/quotient/cost_model.py', 'src/pgm/algorithms/quotient/PHASE_RATES_R1.json', 'src/pgm/algorithms/block/integrated.py', 'src/pgm/algorithms/block/blockres.py', 'src/pgm/algorithms/structural/cex_executor.py', 'src/pgm/algorithms/structural/cex_kernel.cpp']
+def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
+def identity(code_root): return {f: sha(os.path.join(code_root, f)) for f in IDENTITY_FILES}
+
+def cmd_of(arm, model, out, c, seed, root):
+    b = FROZEN['base']; code = str(root)
+    if arm == 'BASE': return [PY, os.path.join(code, 'src/pgm/algorithms/block/integrated.py'), '--input', model, '--output', out, '--budget', str(c['hard']), '--mb-cap', str(b['mb_cap']), '--table-cap', str(b['table_cap']), '--enum-cap', str(b['enum_cap']), '--schedule', b['schedule'], '--route', b['route'], '--proposal', b['proposal'], '--batch', str(b['batch']), '--seed', str(seed), '--epsilon', FROZEN['epsilon'], '--delta', FROZEN['delta']]
+    base = [PY, os.path.join(code, 'src/pgm/algorithms/quotient/unified_pac_planner.py'), '--input', model, '--output', out, '--budget', str(c['hard']), '--admission-stop', str(c['work']), '--epsilon', FROZEN['epsilon'], '--delta', FROZEN['delta'], '--seed', str(seed)]
+    return base + {'UPAC2': [], 'FULL2': ['--lifted'], 'FORCED_ORIG': ['--force-stream', 'original'], 'FORCED_LIFT': ['--force-stream', 'lifted']}[arm]
+
+def last_receipt(ledger, job):
+    rows = [json.loads(l) for l in open(ledger)]; r = [x for x in rows if x.get('kind') == 'RECEIPT' and x['job'] == job]; return r[-1] if r else None
+
+def summarize(arm, out, rc, c):
+    from fractions import Fraction as F
+    row = dict(receipt_wall_s=(rc['wall_s'] if rc else None), receipt_outcome=(rc['outcome'] if rc else None), peak_MiB=((rc['peak_tree_rss_bytes'] / 2 ** 20) if rc and rc.get('peak_tree_rss_bytes') else None))
+    try:
+        d = json.load(open(out)); m = d.get('mechanism') or {}
+        row.update(outcome=d.get('outcome'), guarantee=d.get('guarantee'), published=d.get('published'), K=d.get('K'), solver_wall_s=d.get('wall_s'), termination=m.get('termination'), route=m.get('route'), peak_rss_bytes=d.get('peak_rss_bytes'), positive_mass_witness=(d.get('positive_mass_witness') if arm == 'BASE' else m.get('positive_mass_witness')), hard_deadline_respected=d.get('hard_deadline_respected'), version=(d.get('version') or '')[:60])
+        rows_ = d.get('answers') or []; ws = [float(F(r['hi']) - F(r['lo'])) / 2 for r in rows_ if r['guarantee'] != 'NOT_PUBLISHED']
+        if arm == 'BASE': row.update(base=dict(draws=m.get('draws'), Kq=m.get('Kq'), remaining=m.get('remaining'), max_remaining_width=m.get('max_remaining_width'), median_remaining_width=m.get('median_remaining_width'), X_mean=m.get('X_mean'), ESS=m.get('ESS'), zero_weight_fraction=m.get('zero_weight_fraction'), largest_share=m.get('largest_share'), eps_num=m.get('eps_num'), mb_cap=m.get('mb_cap'), mb_splits=m.get('mb_splits'), batch_used=m.get('batch_used'), deadline_phase=d.get('deadline_phase'), refusal=d.get('refusal'), trace=d.get('trace'), phases=d.get('phases_s'), structural={k: (m.get(k) or {}).get('status') for k in ('evidence_expansion', 'layered_contraction', 'ancestral_response', 'support_closure')}), radius_report=dict(worst=(max(ws) if ws else None), covered_at_eps=sum(1 for w in ws if w <= 0.005), published=len(ws), K=d.get('K')))
+        else: row.update(upac=dict(streams=[{k: s.get(k) for k in ('kind', 'label', 'stage', 'closed', 'delta_s', 'scale_to_original', 'Z_original', 'draws', 'zero_draws', 'batches', 'abandoned', 'checkpoints', 'witness', 'published', 'K', 't_prep', 't_sample', 't_cert', 'X_mean', 'zero_weight_fraction', 'ESS_DIAGNOSTIC', 'largest_share', 'max_log2_X_observed', 'max_remaining_width', 'retained_bytes')} | dict(valid_endpoints=(s.get('trace') or [{}])[-1].get('valid_endpoints') if s.get('trace') else None, mechanism={k: v for k, v in (s.get('mechanism') or {}).items() if k in ('eps_num', 'rho_cap', 'rho_X', 'alpha_per_coordinate', 'cap_log2_total', 'cap_units', 'kappa_compact', 'kappa_log2_hi', 'mb_cap', 'mb_splits', 'Kq', 'batch_used', 'terminal', 'exact_route', 'memory_policy', 'proposal_immutable', 'coarse_cards', 'widening', 'widening_parts', 'certificate_defect', 'const_log2')}, trace=s.get('trace'), measurements=[x for x in (s.get('measurements') or []) if x.get('kind') in ('pac_stage', 'lifted_stage')]) for s in d.get('streams', [])], risk_ledger=d.get('risk_ledger'), conflicts=d.get('conflicts'), checkpoints=d.get('checkpoints'), radius_report=d.get('radius_report'), cost_breakdown=d.get('cost_breakdown'), decisions=[x.get('chosen') for x in d.get('decisions', [])], E=m.get('exploration_account_s'), E_used=m.get('exploration_used_s'), refusal=m.get('refusal'), defect=m.get('defect'), structural=m.get('structural_info'), representations_solved=m.get('representations_solved'), native_attempts=m.get('native_attempts'), live_memory=m.get('live_memory_named_bytes'), lift_only=m.get('lift_only_candidates'), forced=d.get('forced_stream')), radius_report=d.get('radius_report'))
+    except Exception as e: row.update(outcome='NO_RESULT_FILE', error=repr(e)[:200])
+    row['complete'] = bool(rc and rc['outcome'] == 'COMPLETED' and rc['wall_s'] <= c['outer'] and row.get('published') is not None and row.get('K') and row['published'] == row['K'] and row.get('outcome') in ('COMPLETE', 'EXACT') and bool(row.get('positive_mass_witness')) and (row.get('hard_deadline_respected') is not False)) and arm not in ('FORCED_ORIG', 'FORCED_LIFT')
+    return row
+
+def main():
+    ap = argparse.ArgumentParser(); ap.add_argument('sub'); ap.add_argument('manifest'); ap.add_argument('--code-root', required=True); ap.add_argument('--arms', default='BASE,UPAC2,FULL2'); ap.add_argument('--contract', default='main', choices=list(CONTRACTS)); ap.add_argument('--confirm', action='store_true'); ap.add_argument('--seed', type=int, default=1); ap.add_argument('--only', default=None); ap.add_argument('--scope', default='dgp2_main'); ap.add_argument('--records', default=RD_DEFAULT); ap.add_argument('--freeze', default=None); a = ap.parse_args()
+    RD = a.records; man = json.load(open(a.manifest)); tasks = man['tasks']; arms = a.arms.split(','); c = CONTRACTS[a.contract]; env = dict(os.environ, OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1', VECLIB_MAXIMUM_THREADS='1'); env = supervisor_environment(env); results = []; ledger = os.path.join(RD, 'DGP2_LEDGER.jsonl')
+    root = os.path.abspath(a.code_root); head = subprocess.check_output(['git', '-C', root, 'rev-parse', 'HEAD']).decode().strip(); tree = subprocess.check_output(['git', '-C', root, 'rev-parse', 'HEAD^{tree}']).decode().strip(); dirty = subprocess.check_output(['git', '-C', root, 'status', '--porcelain', '--untracked-files=no', '--', 'src/pgm/algorithms', 'src/pgm/runtime', 'research']).decode().strip()
+    frozen = json.load(open(a.freeze or os.path.join(RD, 'FREEZE.json'))); ident0 = identity(root); assert head == frozen['code']['commit'], 'code root %s is not at the frozen commit %s' % (head, frozen['code']['commit']); assert not dirty, 'code root has tracked changes: %s' % dirty[:200]; assert all(ident0[f] == frozen['code']['files'].get(f) for f in ident0), 'identity mismatch vs FREEZE.json at launch: %s' % [f for f in ident0 if ident0[f] != frozen['code']['files'].get(f)]      # the ARM identity files (planner / engine / kernel); FREEZE.json also lists the harness scripts
+    kb = checked_structural_build(root)
+    for i, t in enumerate(tasks):
+        if a.only and t['name'] not in a.only.split(','): continue
+        r = i % len(arms); order = arms[r:] + arms[:r]
+        if a.confirm: order = order[::-1]
+        for arm in order:
+            tag = ('c%d' % a.seed) if a.confirm else ('p' if a.seed == 1 else 's%d' % a.seed); attempt = os.path.join(RD, a.sub, '%02d__%s__%s__%s' % (i, t['name'], arm, tag)); os.makedirs(attempt, exist_ok=True); out = os.path.join(attempt, 'result.json'); cmd = cmd_of(arm, t['model'], out, c, a.seed, root); job = 'dgp2:%s:%s:%s:%s' % (a.sub, t['name'], arm, tag)
+            ident_launch = identity(root)
+            cmd = bound_source_command(root, cmd)
+            sup = [PY, '-m', 'pgm.runtime.supervise', '--ledger', ledger, '--scope', a.scope, '--job', job, '--timeout', str(c['outer']), '--mem-gib', str(FROZEN['mem_gib']), '--interval', '0.05', '--cwd', str(root), '--stdout', os.path.join(attempt, 'stdout.txt'), '--stderr', os.path.join(attempt, 'stderr.txt'), '--'] + (['/usr/bin/caffeinate', '-s'] if os.path.exists('/usr/bin/caffeinate') else []) + cmd
+            subprocess.run(sup, cwd=SUP_CODE, env=env); rc = last_receipt(ledger, job); ident_done = identity(root)
+            row = dict(task=t['name'], arm=arm, task_index=i, order_index=order.index(arm), confirm=a.confirm, seed=a.seed, contract=a.contract, panel=t.get('panel'), family=t.get('family') or t.get('topology'), model=t['model'], model_sha256=t.get('model_sha256'), evid_sha256=t.get('evid_sha256'), model_sha256_at_run=sha(t['model']), code_commit=head, code_tree=tree, identity_ok=all(ident_launch[f] == frozen['code']['files'].get(f) == ident_done[f] for f in ident_launch), command=' '.join(cmd), job=job); row.update(summarize(arm, out, rc, c)); results.append(row)
+            json.dump(dict(cell=row, identity_at_launch=ident_launch, identity_at_completion=ident_done), open(os.path.join(attempt, 'cell.json'), 'w'), indent=1, default=str)
+            print(json.dumps({k: row.get(k) for k in ('task', 'arm', 'outcome', 'published', 'K', 'receipt_wall_s', 'receipt_outcome', 'complete', 'termination', 'identity_ok')}, default=str), flush=True)
+            json.dump(dict(frozen=FROZEN, arms=arms, contract=a.contract, manifest=a.manifest, code_root=root, code_commit=head, code_tree=tree, confirm=a.confirm, seed=a.seed, only=a.only, results=results, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())), open(os.path.join(RD, a.sub, 'RESULTS_%s_%s%s.json' % (a.contract, ('confirm_s%d' % a.seed) if a.confirm else ('s%d' % a.seed if a.seed != 1 else 'primary'), ('_' + a.only.replace(',', '_')[:60]) if a.only else '')), 'w'), indent=1, default=str)
+
+if __name__ == '__main__': main()

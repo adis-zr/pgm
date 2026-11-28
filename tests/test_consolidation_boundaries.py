@@ -10,7 +10,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "parity" / "fixtures"
 PY = sys.executable
-ENV = dict(os.environ, PYTHONPATH=str(ROOT / "src") + os.pathsep + str(ROOT / "code"))
+ENV = dict(os.environ, PYTHONPATH=str(ROOT / "src"))
 
 
 def worker(tmp_path, model, *extra, budget=8.0):

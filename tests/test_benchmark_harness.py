@@ -24,12 +24,18 @@ def test_arms_pairs_contracts_consistent():
 
 
 def test_native_probe_resolves_from_the_owning_implementation(monkeypatch, tmp_path):
-    monkeypatch.setenv("CC", os.environ.get("CC", "/usr/bin/clang")); monkeypatch.setenv("CXX", os.environ.get("CXX", "/usr/bin/clang++"))
-    monkeypatch.delenv("PGM_NATIVE_CACHE", raising=False); h.NATIVE_CACHE = None
-    try:
-        probe = h.native_probe("PGM_ACCEPTED")
-    except RuntimeError as e:
-        pytest.skip("kernels not built/warm on this host: %s" % e)
+    if not _have_compilers():
+        pytest.skip("explicit qualified CC/CXX required for native setup")
+    cache = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    monkeypatch.delenv("PGM_NATIVE_CACHE", raising=False)
+    monkeypatch.setattr(h, "NATIVE_CACHE", None)
+    h._build_root("PGM_ACCEPTED")  # Build into a fresh default cache before probing.
+    probe = h.native_probe("PGM_ACCEPTED")
+    assert probe["native_cache"] is None
+    for artifact in probe["active"]:
+        owner = ROOT / "src/pgm/algorithms" if artifact["role"].endswith("_source") else cache / "pgm/native_cache"
+        assert Path(artifact["path"]).resolve().is_relative_to(owner.resolve()), artifact
     paths = [a["path"] for a in probe["active"]]
     assert all("code/cex/newarm" not in p and "code/cex/hp" not in p for p in paths)
     assert {a["role"] for a in probe["active"]} == {"cex_source", "cex_record", "cex_build_target", "cex_loaded_binary", "stream_source", "stream_record", "stream_build_target", "stream_loaded_binary", "heat_source", "heat_record", "heat_loaded_binary"}

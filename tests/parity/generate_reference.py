@@ -64,7 +64,7 @@ def run_worker(backend, model, *, mode="auto", budget=6.0, delta="1/1000000", ep
         cmd = worker_cmd() + ["--backend", backend, "--input", str(model), "--output", str(out), "--deadline", repr(deadline),
                               "--epsilon", epsilon, "--delta", delta, "--seed", str(seed), "--memory-mib", "512", "--mode", mode,
                               "--structural-route", route, *extra]
-        env = dict(os.environ, PYTHONPATH=str(ROOT / "src") + os.pathsep + str(ROOT / "code"), OMP_NUM_THREADS="1")
+        env = dict(os.environ, PYTHONPATH=str(ROOT / "src"), OMP_NUM_THREADS="1")
         p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=budget + 30)
         if not out.exists():
             return dict(worker_exit=p.returncode, stderr_tail=p.stderr[-800:], output=None)
@@ -90,17 +90,11 @@ def semantic_view(result):
 
 def response_prefix(model_path):
     """witness / plan constants and a FIXED-WORK native observer prefix (same seed -> identical sums), independent of wall time"""
-    try:
-        from pgm.algorithms.response import spectral_witness as SW, heatbath_native as HN, heatbath_exact as HX, response_certificate as RC
-        from pgm.algorithms.quotient import coarse_envelope as CE
-        from pgm.algorithms.structural import core as CORE
-        from pgm.algorithms.response import markov_certificate as MC
-        layout = "canonical"
-    except ImportError:
-        for sub in ("code/cex/hp", "code/cex/newarm", "code/cex/blockres"):
-            sys.path.insert(0, str(ROOT / sub))
-        import spectral_witness as SW, heatbath_native as HN, heatbath_exact as HX, response_certificate as RC, coarse_envelope as CE, core as CORE, markov_certificate as MC
-        layout = "legacy"
+    from pgm.algorithms.response import spectral_witness as SW, heatbath_native as HN, heatbath_exact as HX, response_certificate as RC
+    from pgm.algorithms.quotient import coarse_envelope as CE
+    from pgm.algorithms.structural import core as CORE
+    from pgm.algorithms.response import markov_certificate as MC
+    layout = "canonical"
     from fractions import Fraction as F
     raw, binding = CORE.read_uai(str(model_path))
     B = CE.Budget(64 << 20); clk = CE.Clock(time.monotonic() + 60, {})

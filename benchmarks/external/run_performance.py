@@ -19,8 +19,12 @@ import subprocess
 import sys
 import time
 
-import run_suite as checks
-from benchmark_validity import censored_comparator, censored_fields, check_public_output
+if __package__:
+    from . import run_suite as checks
+    from .benchmark_validity import censored_comparator, censored_fields, check_public_output
+else:
+    import run_suite as checks
+    from benchmark_validity import censored_comparator, censored_fields, check_public_output
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -85,7 +89,8 @@ def source_manifest(root):
 def environment(config, key="candidate"):
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PGM_NATIVE_CACHE", "GBIDI_OWNER_DIR", "GBIDI_JID", "GBIDI_PARENT_JID")}
     root = Path(config["roots"][key]["path"])
-    env.update(PYTHONPATH=os.pathsep.join((str(root / "src"), str(root / "code"))),
+    paths = (root / "src", root / "code") if key == "baseline" else (root / "src",)
+    env.update(PYTHONPATH=os.pathsep.join(map(str, paths)),
                PGM_NATIVE_CACHE=config["roots"][key]["native_cache"],
                CC=config["compilers"]["CC"], CXX=config["compilers"]["CXX"],
                OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1",
@@ -440,7 +445,7 @@ def main(argv=None):
     parser.add_argument("action", choices=("setup", "freeze", "run", "analyze"))
     parser.add_argument("--run-dir", type=Path, default=Path(os.environ.get("PGM_PERFORMANCE_RUN_DIR", REPO / "benchmark_runs/untuned-runtime-2")))
     parser.add_argument("--baseline-root", default=os.environ.get("PGM_PERFORMANCE_BASELINE_ROOT", str(REPO.parent / "pgm-performance-baseline")))
-    parser.add_argument("--libdai", default=os.environ.get("PGM_LIBDAI", str(REPO / "code/bench/libdai/libdai_mar")))
+    parser.add_argument("--libdai", default=os.environ.get("PGM_LIBDAI", str(REPO / "benchmarks/external/comparators/libdai/libdai_mar")))
     parser.add_argument("--qualification", default=os.environ.get("PGM_LIBDAI_QUALIFICATION", str(HERE / "provenance/LIBDAI_QUALIFICATION.json")))
     parser.add_argument("--max-cells", type=int, help="Pause after this many new cells; resume under the same freeze")
     args = parser.parse_args(argv)
@@ -449,7 +454,10 @@ def main(argv=None):
         parser.error("--max-cells must be positive")
     with exclusive_run(args.run_dir):
         if args.action == "analyze":
-            from analyze_performance import main as analyze_main
+            if __package__:
+                from .analyze_performance import main as analyze_main
+            else:
+                from analyze_performance import main as analyze_main
             raise SystemExit(analyze_main([str(args.run_dir)]))
         else:
             globals()[args.action](args)

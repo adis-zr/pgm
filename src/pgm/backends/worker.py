@@ -23,10 +23,10 @@ from ..model.uai import SourceRefused, load_bound, read_uai
 from ..validation.publication import (AdapterRefused, DETERMINISTIC_LABELS, PAC_LABELS, WALL_TOKEN, normalize_result,
                                       suppressed, write_result, empty_rows as _empty_rows)
 from .base import AdapterContext
-from . import structural, block, quotient, response
+from ..registry import backend, selectable_backends
 
 F = Fraction
-BACKENDS = {"structural": structural.run, "block": block.run, "quotient": quotient.run, "response": response.run}
+BACKENDS = {name: backend(name).run for name in selectable_backends()}
 
 
 @contextmanager

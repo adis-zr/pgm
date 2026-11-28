@@ -3,7 +3,7 @@
 Public objects are loaded on first access.  In particular, starting the owned
 process supervisor must not import the inference request, planner or engines.
 """
-__all__ = ["infer", "InferenceRequest", "InferenceResult", "capabilities"]
+__all__ = ["infer", "InferenceRequest", "InferenceResult", "capabilities", "method"]
 __version__ = "0.2.0"
 
 
@@ -17,6 +17,9 @@ def __getattr__(name):
     elif name == "capabilities":
         from .registry import capabilities
         value = capabilities
+    elif name == "method":
+        from .registry import method
+        value = method
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     globals()[name] = value

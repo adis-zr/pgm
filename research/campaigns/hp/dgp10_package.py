@@ -1,0 +1,65 @@
+"""DGP10 packaging (derived from dgp9_package.py; FROZEN_EXPERIMENT_SPEC section 9): the CODE zip = git archive of the frozen commit + identity sidecar; the RESULTS zip = the whole records tree (minus the reproducible unpacked packet
+copies and the .owned receipt dirs) with the EXECUTED harness snapshot and a SELF-CONTAINED git bundle (every commit of the branch) whose restoration into an empty directory is TESTED here, the exact bytes of every manifest input
+(inputs/), the normative inventory and every receipt; the EXTERNAL identity manifest (IDENTITY_EXTERNAL.json) is written OUTSIDE the results zip after both archives are closed and copied into the records (excluded from any later zip).
+Receipts produced after the archive closes (validation, restore test, sidecar) are shipped separately and hashed in the CLOSURE manifest (dgp10_closure.py). usage: dgp10_package.py (env DGP10_RD, DGP10_PGM, DGP10_ARCHIVE_DIR)"""
+
+# Source-checkout entry point; production imports never traverse research.
+if __package__ in (None, ""):
+    import sys as _research_sys
+    from pathlib import Path as _ResearchPath
+    _research_sys.path.insert(0, str(_ResearchPath(__file__).resolve().parents[3]))
+from research.bootstrap import activate as _activate_research
+_activate_research()
+from research.paths import repo_root as _repo_root, runs_root as _runs_root, records_root as _records_root, source_path as _source_path
+import os, sys, json, hashlib, subprocess, time, zipfile, platform, shutil, tempfile, glob
+RD = os.environ.get('DGP10_RD', str(_runs_root() / 'mdi_2026-10-28/DGP10_QUERY_RESPONSE')); REC = os.environ.get('DGP10_REC', str(_records_root() or (_repo_root() / "research" / "records"))); PGM = os.environ.get('DGP10_PGM', str(_repo_root())); W = os.environ.get('DGP10_ARCHIVE_DIR', str(_repo_root().parent)); BRANCH = 'dgp10-query-response'
+def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
+def git(repo, *a): return subprocess.check_output(['git', '-C', repo] + list(a)).decode().strip()
+fr = json.load(open(RD + '/FREEZE.json')); commit = fr['code']['commit']; short = commit[:7]; tree = fr['code']['tree']; rec_commit = git(REC, 'rev-parse', 'HEAD'); head_pgm = git(PGM, 'rev-parse', 'HEAD'); DAY = time.strftime('%Y-%m-%d', time.gmtime())
+code_zip = '%s/DGP10_CODE_%s_%s.zip' % (W, DAY, short); subprocess.check_call(['git', '-C', PGM, 'archive', '--format=zip', '-9', '--prefix=pgm-%s/' % short, '-o', code_zip, commit])
+side = dict(commit=commit, tree=tree, zip_sha256=sha(code_zip), bytes=os.path.getsize(code_zip), regenerate='git archive --format=zip -9 --prefix=pgm-%s/ %s' % (short, short), branch=BRANCH, parent='d1932cf1f4475852b1620ba7fe5d0a901809c133 (DGP9 frozen)', later_commits_on_branch=[l for l in git(PGM, 'log', '--oneline', '%s..HEAD' % commit).split('\n') if l], experiment='DGP10_QUERY_RESPONSE', files=fr['code']['files'], utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+json.dump(side, open(code_zip + '.identity.json', 'w'), indent=1)
+HARNESS = ['research/campaigns/hp/run_dgp10.py', 'research/campaigns/hp/run_dgp9.py', 'research/campaigns/hp/run_dgp8.py', 'research/campaigns/hp/run_dgp7.py', 'research/campaigns/hp/dgp10_manifests.py', 'research/campaigns/hp/dgp10_analyze.py', 'research/campaigns/hp/dgp10_theory_return.py', 'research/campaigns/hp/dgp10_start_here.py', 'research/campaigns/hp/dgp10_package.py', 'research/campaigns/hp/dgp10_sidecar.py', 'research/campaigns/hp/dgp10_closure.py', 'research/campaigns/hp/dgp10_oracle.py', 'research/campaigns/hp/dgp10_rates.py', 'research/campaigns/hp/dgp10_inventory.py', 'research/campaigns/hp/dgp10_probes_layout.py', 'research/campaigns/hp/check_dgp10.py', 'src/pgm/algorithms/response/spectral_heatbath_run.py', 'src/pgm/algorithms/response/spectral_witness.py', 'src/pgm/algorithms/response/heatbath_exact.py', 'src/pgm/algorithms/response/heatbath_native.c', 'src/pgm/algorithms/response/heatbath_native.py', 'src/pgm/algorithms/response/markov_certificate.py', 'src/pgm/algorithms/response/response_certificate.py', 'src/pgm/algorithms/response/checked_tilt.py', 'src/pgm/algorithms/quotient/reservation.py', 'src/pgm/algorithms/response/heatbath_build.json', 'research/campaigns/hp/dgp_paths.py', 'research/campaigns/hp/validate_round.py', 'research/campaigns/hp/check_dgp.py', 'research/campaigns/hp/dense_gen.py', 'research/campaigns/hp/dgp9_probes.py']
+hs = RD + '/harness'; os.makedirs(hs + '/files', exist_ok=True); bundle = '%s/pgm-%s.bundle' % (hs, BRANCH)
+subprocess.check_call(['git', '-C', PGM, 'bundle', 'create', bundle, BRANCH, 'HEAD']); subprocess.check_call(['git', '-C', PGM, 'bundle', 'verify', bundle], stdout=subprocess.DEVNULL)
+tmp = tempfile.mkdtemp(prefix='dgp10_restore_'); subprocess.check_call(['git', 'clone', '-q', bundle, tmp + '/pgm-restored']); subprocess.check_call(['git', '-C', tmp + '/pgm-restored', 'checkout', '-q', '--detach', commit])
+restored = {f: sha(os.path.join(tmp, 'pgm-restored', 'code', f)) for f in fr['code']['files']}; restore_ok = (restored == fr['code']['files']); amend_ok = {}
+for a_ in sorted(glob.glob(RD + '/FREEZE_AMENDMENT_*.json')):
+    aj = json.load(open(a_)); c_ = (aj.get('code') or {}).get('commit') or aj.get('amendment_commit')
+    if c_:
+        subprocess.check_call(['git', '-C', tmp + '/pgm-restored', 'checkout', '-q', '--detach', c_]); files_ = (aj.get('code') or {}).get('files') or {f: (v['amended'] if isinstance(v, dict) else v) for f, v in (aj.get('files_changed') or {}).items()}          # both amendment schemas (path -> sha, or path -> {frozen, amended})
+        amend_ok[os.path.basename(a_)] = all(sha(os.path.join(tmp, 'pgm-restored', 'code', f)) == h for f, h in files_.items())
+subprocess.check_call(['git', '-C', tmp + '/pgm-restored', 'checkout', '-q', '--detach', commit]); shutil.rmtree(tmp, ignore_errors=True)
+exec_src = {}
+for f in HARNESS:
+    live = os.path.join(PGM, 'code', f)
+    if not os.path.exists(live): continue
+    shutil.copyfile(live, os.path.join(hs, 'files', os.path.basename(f))); exec_src[f] = sha(live)
+frozen_files = fr['code']['files']; diff_vs_frozen = {f: dict(frozen=frozen_files.get(f), executed=h) for f, h in exec_src.items() if frozen_files.get(f) not in (None, h)}; not_in_freeze = [f for f in exec_src if f not in frozen_files]
+json.dump(dict(restoration_test=dict(ok=restore_ok and all(amend_ok.values()), frozen_ok=restore_ok, amendments_ok=amend_ok, method='git clone <bundle> into an empty temp dir; git checkout --detach <frozen commit> and each FREEZE_AMENDMENT commit; sha256 of every recorded identity / amended file compared', frozen_commit=commit), pgm_head_at_packaging=head_pgm, frozen_commit=commit, bundle=os.path.basename(bundle), bundle_sha256=sha(bundle), files=exec_src, diff_vs_frozen=diff_vs_frozen, not_in_freeze=dict(files=not_in_freeze, note='harness / writers outside the arm identity (their hashes are in FREEZE.json harness_files)')), open(hs + '/EXECUTED_HARNESS_SHA256.json', 'w'), indent=1)
+members = []
+for root, _, fs in os.walk(RD):
+    for f in fs:
+        p = os.path.join(root, f)
+        if '/DGP10_LEDGER.jsonl.owned/' in p or p.endswith('.pyc') or '/PACKET/packet/' in p or '/controls/before/work/' in p or f == 'IDENTITY_EXTERNAL.json' or f == 'CLOSURE_EXTERNAL.json' or '/reproduce_test' in p or '/native_cache/' in p: continue      # (harness amendment 5) reproduce_test* is NEVER a member: the restore evidence of the archive under test is delivered through the external CLOSURE manifest      # the unpacked packet copies are reproducible from the zip (hashed in NORMATIVE_INVENTORY); the EXTERNAL manifests are never members of the zip they attest
+        if os.path.islink(p): continue
+        members.append(p)
+members += [REC + '/docs/LEDGER_ADDITIONS_mdi_capacity_2026-11-02.md', REC + '/docs/INFERENCE_RESEARCH_ROUND_PROTOCOL.md', REC + '/docs/CLAIM_LEDGER.md']
+members = [m for m in members if os.path.exists(m)]
+arc = {m: ('ledger/' + os.path.basename(m) if m.startswith(REC + '/docs/') else m.replace(REC + '/code/runs/mdi_2026-10-28/', '')) for m in members}
+chron = 'pgm-records:\n' + git(REC, 'log', '--oneline', '-16') + '\n\npgm (branch %s):\n' % BRANCH + git(PGM, 'log', '--oneline', '-12')
+scope = ('IN: DGP10_QUERY_RESPONSE/** (PACKET (brief, theory, external identity, MISSING_PACKET note, NORMATIVE_INVENTORY, SHA256), PROTOCOL, BUDGET_DECLARATION, FREEZE (+ FREEZE_RATES, amendments), PROOF_TO_CODE, REPAIR_TABLE, MODEL / RUN / per-panel manifests, inputs/ (the exact bytes of every manifest input), HEATBATH_RATES (exact DGP9 bytes) + RESPONSE_RATES, controls/ (bootstrap, before = carried probes on the pinned parent, dev, qual = the frozen checkout incl. ORACLE + CONTROLS_DGP10, after), runs/ (every cell), harness/ (executed files + the self-contained bundle), RESULTS / DIAGNOSTICS / CHARGES / IDENTITY / VALIDATION, REPORT / THEORY_RETURN / START_HERE, reproduce.sh / RESTORE_TEST.sh, DGP10_LEDGER.jsonl) + ledger/ (the three repository ledger documents).\n'
+         'NOT IN: the unpacked packet copies (PACKET/packet, controls/before/work: reproducible from the packet zip via its bootstrap; every member hashed in PACKET_MANIFEST / NORMATIVE_INVENTORY), the .owned receipt directories, native_cache, venvs, the detached checkouts (regenerate from the bundle), the restore-test directories reproduce_test* (the restore evidence of THIS archive is delivered next to it and hashed in CLOSURE_EXTERNAL.json), IDENTITY_EXTERNAL.json and CLOSURE_EXTERNAL.json (OUTSIDE this zip by construction).\n')
+res_zip = '%s/DGP10_RESULTS_%s_only.zip' % (W, DAY); msha = {arc[m]: dict(bytes=os.path.getsize(m), sha256=sha(m)) for m in members}
+rman = dict(experiment='DGP10_QUERY_RESPONSE', harness_bundle=dict(path=os.path.relpath(bundle, RD), sha256=sha(bundle), bytes=os.path.getsize(bundle), self_contained=True, restoration_test_ok=(restore_ok and all(amend_ok.values())), amendment_commits_restore=amend_ok), code_zip=os.path.basename(code_zip), code_zip_sha256=side['zip_sha256'], code_commit=commit, code_tree=tree, records_commit=rec_commit, freeze_sha256=sha(RD + '/FREEZE.json'), protocol_sha256=sha(RD + '/PROTOCOL.md'), scope=scope, utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
+ident_int = dict(experiment='DGP10_QUERY_RESPONSE', utc=rman['utc'], note='INTERNAL identity (predates the zip that contains it; the attestation is IDENTITY_EXTERNAL.json next to the archives)', code=dict(frozen_commit=commit, frozen_tree=tree, parent=side['parent'], branch=BRANCH, pgm_head_at_packaging=head_pgm, files=fr['code']['files'], dependencies=fr['code'].get('dependencies'), accepted_engine='v2.13.2 at pgm 1da6da3 (byte-identical; validate_round check); this branch is NOT merged into the default'), records=dict(commit=rec_commit), harness_bundle=rman['harness_bundle'])
+json.dump(ident_int, open(RD + '/IDENTITY.json', 'w'), indent=1); members.append(RD + '/IDENTITY.json'); arc[RD + '/IDENTITY.json'] = 'DGP10_QUERY_RESPONSE/IDENTITY.json'; msha[arc[RD + '/IDENTITY.json']] = dict(bytes=os.path.getsize(RD + '/IDENTITY.json'), sha256=sha(RD + '/IDENTITY.json'))
+members = sorted(set(members))
+with zipfile.ZipFile(res_zip, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+    for m in members: z.write(m, arc[m])
+    z.writestr('GIT_CHRONOLOGY.txt', chron); z.writestr('ROUND_MANIFEST.json', json.dumps(rman, indent=1)); z.writestr('RESULTS_SCOPE.md', '# Results scope (DGP10)\n\n' + scope); z.writestr('MEMBER_SHA256.json', json.dumps(msha, indent=1))
+bad = zipfile.ZipFile(res_zip).testzip(); n = len(zipfile.ZipFile(res_zip).namelist())
+ext = dict(experiment='DGP10_QUERY_RESPONSE', kind='EXTERNAL final archive identity manifest (written after both archives were closed; never a member of the results zip)', utc=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), archives=dict(code_zip=dict(path='~/Workspace/' + os.path.basename(code_zip), sha256=side['zip_sha256'], bytes=side['bytes'], sidecar=os.path.basename(code_zip) + '.identity.json'), results_zip=dict(path='~/Workspace/' + os.path.basename(res_zip), sha256=sha(res_zip), bytes=os.path.getsize(res_zip), members=n, testzip_clean=(bad is None))),
+           harness_bundle=rman['harness_bundle'], code=dict(frozen_commit=commit, frozen_tree=tree, branch=BRANCH, pgm_head_at_packaging=head_pgm), records_commit_at_packaging=rec_commit, host=dict(platform=platform.platform(), machine=platform.machine()), packaging_charge='charged under scope dgp10_analysis (gbidi.supervise receipt dgp10:packaging:package)', closure='receipts produced after this archive closed are hashed in CLOSURE_EXTERNAL.json (dgp10_closure.py)')
+json.dump(ext, open(res_zip + '.identity.json', 'w'), indent=1); json.dump(ext, open(RD + '/IDENTITY_EXTERNAL.json', 'w'), indent=1)
+print(json.dumps(dict(archives=ext['archives'], bundle=rman['harness_bundle'], diff_vs_frozen=sorted(diff_vs_frozen)), indent=1))

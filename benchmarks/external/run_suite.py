@@ -23,7 +23,7 @@ HERE = Path(__file__).resolve().parent
 REPO = Path(__file__).resolve().parents[2]
 ROOT = Path(os.environ.get("PGM_BENCH_RUN_DIR", REPO / "benchmark_runs" / "step2-preservation-v1")).expanduser().resolve()
 PY = Path(os.environ.get("PGM_BENCH_PY", sys.executable)).expanduser().absolute()
-LIBDAI = Path(os.environ.get("PGM_LIBDAI", REPO / "code/bench/libdai/libdai_mar")).expanduser().resolve()
+LIBDAI = Path(os.environ.get("PGM_LIBDAI", REPO / "benchmarks/external/comparators/libdai/libdai_mar")).expanduser().resolve()
 REFERENCE = HERE / "reference/previous_accepted_cells.json"
 REFERENCE_ROOT = Path(os.environ.get("PGM_BENCH_REFERENCE_ROOT", "")).expanduser()
 REFERENCE_COMMIT = "7f28259a4869a2c684d506b51072b04bb0ce4783"
@@ -82,7 +82,7 @@ def arm_env(arm, frozen=None):
     if cache: base["PGM_NATIVE_CACHE"] = cache
     if arm == "PGM_REFERENCE": base["PYTHONPATH"] = str(root_of(arm, frozen) / "code")
     elif arm == "PGM_EXPERIMENTAL_REF": base["PYTHONPATH"] = str(root_of(arm, frozen) / "src") + os.pathsep + str(root_of(arm, frozen) / "code")
-    else: base["PYTHONPATH"] = str(REPO / "src") + os.pathsep + str(REPO / "code")
+    else: base["PYTHONPATH"] = str(REPO / "src")
     return base
 
 
@@ -96,7 +96,7 @@ NEW_LAYOUT_PROBE = r'''
 import json, os
 import pgm.algorithms.structural.cex_executor as CX, pgm.algorithms.structural.stream_float as SF, pgm.algorithms.response.heatbath_native as HN, pgm.runtime.resources as R
 print(json.dumps(dict(layout="pgm", cex=dict(src=str(CX.SRC), record=str(CX.RECORD), lib=str(CX.LIB), cache=R.native_cache_dir(os.path.dirname(CX.__file__)), prefix="cex_", suffix=".dylib"),
-                      stream=dict(src=str(SF.BASE / "stream_kernel.cpp"), record=str(SF.BASE / "stream_build.json") if os.access(SF.BASE, os.W_OK) and not os.environ.get("PGM_NATIVE_CACHE") else os.path.join(R.writable_home(SF.BASE), "stream_build.json"), lib=str(SF.LIB), cache=R.native_cache_dir(os.path.dirname(SF.__file__)), prefix="stream_", suffix=".so"),
+                      stream=dict(src=str(SF.BASE / "stream_kernel.cpp"), record=os.path.join(R.writable_home(SF.BASE), "stream_build.json"), lib=str(SF.LIB), cache=R.native_cache_dir(os.path.dirname(SF.__file__)), prefix="stream_", suffix=".so"),
                       heat=dict(src=HN.SRC, record=HN.RECORD, cache=R.native_cache_dir(HN.HERE)))))
 '''
 LEGACY_LAYOUT_PROBE = r'''
@@ -363,7 +363,7 @@ def arm_command(arm, task, folder, rep, frozen):
 def supervised(cmd, env, ledger, scope, job, folder, budget):
     """launch under the strict zero-grace supervisor of THIS repository (the supervisor's own import root is the main checkout;
     the child gets the arm's environment through --env)"""
-    sup_env = dict(env, PYTHONPATH=str(REPO / "src") + os.pathsep + str(REPO / "code"))
+    sup_env = dict(env, PYTHONPATH=str(REPO / "src"))
     sup = [str(PY), str(HERE / "strict_supervisor.py"), "--ledger", str(ledger), "--scope", scope, "--job", job, "--timeout", str(budget), "--mem-gib", "3", "--interval", "0.01",
            "--cwd", str(REPO), "--stdout", str(folder / "stdout.log"), "--stderr", str(folder / "stderr.log"), "--env", "PYTHONPATH=" + env["PYTHONPATH"]]
     if "PGM_NATIVE_CACHE" in env: sup += ["--env", "PGM_NATIVE_CACHE=" + env["PGM_NATIVE_CACHE"]]
