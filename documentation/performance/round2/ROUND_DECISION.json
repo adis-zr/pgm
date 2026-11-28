@@ -1,0 +1,44 @@
+{
+  "release": {
+    "confirmed_cost_flags": {
+      "accepted_preservation": [],
+      "automatic_vs_experimental": []
+    },
+    "decision": "ELIGIBLE",
+    "gates": {
+      "accepted_preservation": "PASS",
+      "accepted_preservation_cost": "PASS",
+      "automatic_union_preservation": "PASS",
+      "automatic_vs_experimental_cost": "PASS",
+      "full_matrix": "PASS",
+      "previous_automatic50": "PASS",
+      "strict_validity": "PASS"
+    },
+    "interpretation": "Release eligibility requires every frozen gate. Broad dominance over libDAI is reported separately as the research outcome."
+  },
+  "frozen_candidate_commit": "f14d407f50024ee29c5e8ae6bad52705bc01ec4e",
+  "implementation_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+  "same_host_baseline_commit": "f664ee7aa06851c77e9876cea409d4a04a9e4b21",
+  "default_policy": "accepted (unchanged)",
+  "promotion": "NOT_PERFORMED",
+  "remote_push": "NOT_PERFORMED",
+  "all_inputs_exposed": true,
+  "scored_cells": 732,
+  "charge_s": 4543.4414432610065,
+  "broad_latency_dominance": "NOT_ESTABLISHED",
+  "partial_coordinate_loss": {
+    "task": "1qt9",
+    "repeat": 2,
+    "comparator": "BASE_EXPERIMENTAL",
+    "comparator_published": 15,
+    "candidate_published": 0
+  },
+  "automatic_vs_accepted_confirmed_cost_flags": [
+    "BARLEY",
+    "BN_31",
+    "CSP_13",
+    "MILDEW",
+    "Promedus_37"
+  ],
+  "original_round1_validity": "FAIL (unchanged)"
+}

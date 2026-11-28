@@ -1,0 +1,2564 @@
+{
+  "analysis_sha256": "4aebb1db60de59c345a7e113eb8700817f95bdcc770cc67035781317140cf392",
+  "artifact_files_checked": 3792,
+  "caveats": [
+    "All 61 tasks are exposed; no unseen generalization claim.",
+    "Same-host completion preservation is empirical, not a universal preservation guarantee.",
+    "Automatic has cost regressions against accepted even when its matched experimental comparison passes.",
+    "JT comparison is numerical agreement within 5e-10, not a proof of every large marginal.",
+    "Broad latency dominance over libDAI is not established; BP is an uncertified point comparator.",
+    "Observed 1qt9 partial answers are lost despite passing completion preservation.",
+    "Raw geometry and receipt validation do not independently reprove the algorithms or PAC theorems."
+  ],
+  "cells": 732,
+  "censored_comparators": [
+    {
+      "job": "CSP_13__LIBDAI_JT__r1",
+      "outcome": "TIMEOUT_KILL",
+      "output_bytes": 4
+    },
+    {
+      "job": "DBN_12__LIBDAI_JT__r2",
+      "outcome": "TIMEOUT_KILL",
+      "output_bytes": 4
+    },
+    {
+      "job": "DBN_15__LIBDAI_JT__r1",
+      "outcome": "TIMEOUT_KILL",
+      "output_bytes": null
+    },
+    {
+      "job": "blockmap_10_01-0009__LIBDAI_JT__r1",
+      "outcome": "TIMEOUT_KILL",
+      "output_bytes": null
+    },
+    {
+      "job": "blockmap_10_01-0009__LIBDAI_JT__r2",
+      "outcome": "TIMEOUT_KILL",
+      "output_bytes": null
+    }
+  ],
+  "charge_s": 4543.4414432610065,
+  "complete_both": {
+    "BASE_ACCEPTED": [
+      "ALARM",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "BN_12",
+      "BN_13",
+      "BN_15",
+      "BN_31",
+      "CHILD",
+      "CSP_11",
+      "CSP_13",
+      "DIABETES",
+      "Grids_11",
+      "Grids_14",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "ObjectDetection_30",
+      "ObjectDetection_34",
+      "ObjectDetection_39",
+      "ObjectDetection_43",
+      "ObjectDetection_56",
+      "Promedus_12",
+      "Promedus_18",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_12",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "blockmap_10_01-0009",
+      "fs-07",
+      "mastermind_03_08_04-0003",
+      "mastermind_03_08_05-0003",
+      "mastermind_05_08_03-0002",
+      "or_chain_186.fg",
+      "or_chain_188.fg",
+      "or_chain_209.fg"
+    ],
+    "BASE_EXPERIMENTAL": [
+      "ALARM",
+      "ANDES",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "BN_12",
+      "BN_13",
+      "BN_15",
+      "BN_31",
+      "CHILD",
+      "CSP_11",
+      "CSP_12",
+      "CSP_13",
+      "DBN_11",
+      "DBN_12",
+      "DBN_14",
+      "DBN_15",
+      "DBN_16",
+      "Grids_11",
+      "Grids_14",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "MUNIN1",
+      "ObjectDetection_30",
+      "ObjectDetection_34",
+      "ObjectDetection_43",
+      "ObjectDetection_56",
+      "Pedigree_11",
+      "Pedigree_13",
+      "Promedus_12",
+      "Promedus_18",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_12",
+      "Segmentation_13",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "blockmap_10_01-0009",
+      "fs-07",
+      "mastermind_03_08_04-0003",
+      "mastermind_03_08_05-0003",
+      "mastermind_05_08_03-0002",
+      "or_chain_186.fg",
+      "or_chain_188.fg",
+      "or_chain_209.fg"
+    ],
+    "LIBDAI_BP": [
+      "1aie",
+      "1jer",
+      "1npl",
+      "1qt9",
+      "ALARM",
+      "ANDES",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "BN_12",
+      "BN_13",
+      "BN_15",
+      "BN_31",
+      "CHILD",
+      "CSP_11",
+      "CSP_12",
+      "CSP_13",
+      "DBN_11",
+      "DBN_12",
+      "DBN_14",
+      "DBN_15",
+      "DBN_16",
+      "DIABETES",
+      "Grids_11",
+      "Grids_14",
+      "Grids_15",
+      "Grids_17",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "MUNIN1",
+      "ObjectDetection_24",
+      "ObjectDetection_30",
+      "ObjectDetection_34",
+      "ObjectDetection_39",
+      "ObjectDetection_43",
+      "ObjectDetection_56",
+      "Pedigree_11",
+      "Pedigree_12",
+      "Pedigree_13",
+      "Promedus_12",
+      "Promedus_14",
+      "Promedus_18",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_12",
+      "Segmentation_13",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "blockmap_10_01-0009",
+      "fs-07",
+      "linkage_13",
+      "mastermind_03_08_04-0003",
+      "mastermind_03_08_05-0003",
+      "mastermind_05_08_03-0002",
+      "or_chain_186.fg",
+      "or_chain_188.fg",
+      "or_chain_209.fg"
+    ],
+    "LIBDAI_JT": [
+      "ALARM",
+      "ANDES",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "CHILD",
+      "CSP_12",
+      "DBN_11",
+      "DBN_14",
+      "DIABETES",
+      "Grids_11",
+      "Grids_14",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "ObjectDetection_34",
+      "ObjectDetection_56",
+      "Pedigree_11",
+      "Pedigree_12",
+      "Pedigree_13",
+      "Promedus_12",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_12",
+      "Segmentation_13",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "mastermind_03_08_04-0003"
+    ],
+    "PGM_ACCEPTED": [
+      "ALARM",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "BN_12",
+      "BN_13",
+      "BN_15",
+      "BN_31",
+      "CHILD",
+      "CSP_11",
+      "CSP_13",
+      "DIABETES",
+      "Grids_11",
+      "Grids_14",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "ObjectDetection_30",
+      "ObjectDetection_34",
+      "ObjectDetection_39",
+      "ObjectDetection_43",
+      "ObjectDetection_56",
+      "Promedus_12",
+      "Promedus_18",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_12",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "blockmap_10_01-0009",
+      "fs-07",
+      "mastermind_03_08_04-0003",
+      "mastermind_03_08_05-0003",
+      "mastermind_05_08_03-0002",
+      "or_chain_186.fg",
+      "or_chain_188.fg",
+      "or_chain_209.fg"
+    ],
+    "PGM_AUTOMATIC": [
+      "ALARM",
+      "ANDES",
+      "ASIA",
+      "Alchemy_11",
+      "BARLEY",
+      "BN_12",
+      "BN_13",
+      "BN_15",
+      "BN_31",
+      "CHILD",
+      "CSP_11",
+      "CSP_12",
+      "CSP_13",
+      "DBN_11",
+      "DBN_12",
+      "DBN_14",
+      "DBN_15",
+      "DBN_16",
+      "DIABETES",
+      "Grids_11",
+      "Grids_14",
+      "HAILFINDER",
+      "INSURANCE",
+      "MILDEW",
+      "MUNIN1",
+      "ObjectDetection_30",
+      "ObjectDetection_34",
+      "ObjectDetection_39",
+      "ObjectDetection_43",
+      "ObjectDetection_56",
+      "Pedigree_11",
+      "Pedigree_12",
+      "Pedigree_13",
+      "Promedus_12",
+      "Promedus_18",
+      "Promedus_33",
+      "Promedus_36",
+      "Promedus_37",
+      "Segmentation_11",
+      "Segmentation_12",
+      "Segmentation_13",
+      "Segmentation_16",
+      "WATER",
+      "WIN95PTS",
+      "blockmap_10_01-0009",
+      "fs-07",
+      "mastermind_03_08_04-0003",
+      "mastermind_03_08_05-0003",
+      "mastermind_05_08_03-0002",
+      "or_chain_186.fg",
+      "or_chain_188.fg",
+      "or_chain_209.fg"
+    ]
+  },
+  "deterministic_conflicts": 0,
+  "engine_commit": "f14d407f50024ee29c5e8ae6bad52705bc01ec4e",
+  "errors": [],
+  "freeze_sha256": "a507254eda614ce5c112d64600faaba9cb008d8ae5fd51971a0a6b06adfb5dd1",
+  "gates": {
+    "accepted_cost": true,
+    "accepted_preservation": true,
+    "automatic_cost": true,
+    "automatic_union_preservation": true,
+    "complete_matrix": true,
+    "previous_automatic50": true,
+    "validity": true
+  },
+  "jt_comparisons": 165996,
+  "jt_outside": 0,
+  "late_empty_refusals": [
+    {
+      "job": "1aie__BASE_EXPERIMENTAL__r1",
+      "outer_wall_s": 19.650858465000056,
+      "wall_s": 19.530538330000127
+    }
+  ],
+  "native_files_checked": 22,
+  "pac_conflicts": 0,
+  "pairs": {
+    "accepted_vs_parent": {
+      "confirmed_cost_flags": [],
+      "faster_both": 12,
+      "median_wall_ratio": 0.9871960206154942,
+      "mutual": 40,
+      "per_task": {
+        "ALARM": {
+          "baseline_walls": [
+            0.25001004700243357,
+            0.2607347539997136
+          ],
+          "candidate_walls": [
+            0.25112992499998654,
+            0.2196645059993898
+          ],
+          "ratio": 0.921780172946679,
+          "speedup": 1.084857354658946
+        },
+        "ASIA": {
+          "baseline_walls": [
+            0.22052539300057106,
+            0.2199220010006684
+          ],
+          "candidate_walls": [
+            0.2308164290006971,
+            0.19869572600146057
+          ],
+          "ratio": 0.975172428880233,
+          "speedup": 1.0254596729608894
+        },
+        "Alchemy_11": {
+          "baseline_walls": [
+            2.6360777730005793,
+            2.6065476650001074
+          ],
+          "candidate_walls": [
+            2.6867232369986596,
+            2.5652348830008123
+          ],
+          "ratio": 1.0017801542584253,
+          "speedup": 0.9982230090595645
+        },
+        "BARLEY": {
+          "baseline_walls": [
+            9.322040143997583,
+            9.25668604099701
+          ],
+          "candidate_walls": [
+            9.13883438799894,
+            9.035538934000215
+          ],
+          "ratio": 0.9782357057761032,
+          "speedup": 1.0222485175049194
+        },
+        "BN_12": {
+          "baseline_walls": [
+            12.176844032997906,
+            11.86171049800032
+          ],
+          "candidate_walls": [
+            11.844105207001121,
+            11.26164343399796
+          ],
+          "ratio": 0.9611954250911272,
+          "speedup": 1.0403711606359278
+        },
+        "BN_13": {
+          "baseline_walls": [
+            18.246863414999098,
+            18.32487792200118
+          ],
+          "candidate_walls": [
+            18.752489739999874,
+            18.770911193998472
+          ],
+          "ratio": 1.0260217195628927,
+          "speedup": 0.9746382371184321
+        },
+        "BN_15": {
+          "baseline_walls": [
+            13.260988440000801,
+            13.902707696001016
+          ],
+          "candidate_walls": [
+            13.270161454001936,
+            13.289134320002631
+          ],
+          "ratio": 0.9777497009622266,
+          "speedup": 1.0227566411075109
+        },
+        "BN_31": {
+          "baseline_walls": [
+            0.6429108709999127,
+            0.6364342999986548
+          ],
+          "candidate_walls": [
+            0.5922872230003122,
+            0.6320865050001885
+          ],
+          "ratio": 0.9570315781509068,
+          "speedup": 1.0448976009047821
+        },
+        "CHILD": {
+          "baseline_walls": [
+            0.22992460500245215,
+            0.3156648980002501
+          ],
+          "candidate_walls": [
+            0.21986171200114768,
+            0.19948006800041185
+          ],
+          "ratio": 0.7686030938895878,
+          "speedup": 1.3010616375994617
+        },
+        "CSP_11": {
+          "baseline_walls": [
+            7.383544620999601,
+            7.345014135000383
+          ],
+          "candidate_walls": [
+            7.346625980000681,
+            7.403156992997538
+          ],
+          "ratio": 1.001441024702406,
+          "speedup": 0.9985610488617299
+        },
+        "CSP_13": {
+          "baseline_walls": [
+            10.79444463499749,
+            10.177050906000659
+          ],
+          "candidate_walls": [
+            10.141387712999858,
+            10.074060413000552
+          ],
+          "ratio": 0.9639488078702014,
+          "speedup": 1.0373994882668633
+        },
+        "DIABETES": {
+          "baseline_walls": [
+            15.267316628996923,
+            15.190362711000489
+          ],
+          "candidate_walls": [
+            15.438337325002067,
+            14.833851932999096
+          ],
+          "ratio": 0.993909907582727,
+          "speedup": 1.0061274089037755
+        },
+        "Grids_11": {
+          "baseline_walls": [
+            15.325484708999284,
+            15.045825846998923
+          ],
+          "candidate_walls": [
+            14.75874174099954,
+            15.49576613499812
+          ],
+          "ratio": 0.9961541771539563,
+          "speedup": 1.0038606703000847
+        },
+        "Grids_14": {
+          "baseline_walls": [
+            17.564391313997476,
+            18.040468740000506
+          ],
+          "candidate_walls": [
+            18.41863199599902,
+            17.48189838899998
+          ],
+          "ratio": 1.0083042126988453,
+          "speedup": 0.9917641793079311
+        },
+        "HAILFINDER": {
+          "baseline_walls": [
+            0.374633592000464,
+            0.39696339500005706
+          ],
+          "candidate_walls": [
+            0.3671536549991288,
+            0.36661224300041795
+          ],
+          "ratio": 0.95097040341223,
+          "speedup": 1.0515574369211114
+        },
+        "INSURANCE": {
+          "baseline_walls": [
+            0.3744863500032807,
+            0.41597692999857827
+          ],
+          "candidate_walls": [
+            0.38176462299816194,
+            0.37625321200175676
+          ],
+          "ratio": 0.9589538871408879,
+          "speedup": 1.0428030100399204
+        },
+        "MILDEW": {
+          "baseline_walls": [
+            4.620844901997771,
+            4.680193778000103
+          ],
+          "candidate_walls": [
+            4.112014222999278,
+            4.144119010001305
+          ],
+          "ratio": 0.8876571227206713,
+          "speedup": 1.1265611173546353
+        },
+        "ObjectDetection_30": {
+          "baseline_walls": [
+            10.365798375998565,
+            10.56197482800053
+          ],
+          "candidate_walls": [
+            10.449904108998453,
+            10.390754863998154
+          ],
+          "ratio": 0.9958373865124914,
+          "speedup": 1.0041800132671121
+        },
+        "ObjectDetection_34": {
+          "baseline_walls": [
+            10.676260546999401,
+            10.301496454998414
+          ],
+          "candidate_walls": [
+            10.467407088999607,
+            10.679087298001832
+          ],
+          "ratio": 1.0080436333106324,
+          "speedup": 0.9920205504555241
+        },
+        "ObjectDetection_39": {
+          "baseline_walls": [
+            14.604308212998149,
+            14.70492345799721
+          ],
+          "candidate_walls": [
+            15.176282712000102,
+            15.374164847002248
+          ],
+          "ratio": 1.0423489739321727,
+          "speedup": 0.9593715972373295
+        },
+        "ObjectDetection_43": {
+          "baseline_walls": [
+            13.678480736001802,
+            12.927955969000323
+          ],
+          "candidate_walls": [
+            12.917509333001362,
+            12.923934891001409
+          ],
+          "ratio": 0.9712478416602276,
+          "speedup": 1.029603317615228
+        },
+        "ObjectDetection_56": {
+          "baseline_walls": [
+            10.475986050001666,
+            10.449121164001554
+          ],
+          "candidate_walls": [
+            10.548717743000452,
+            10.468642271000135
+          ],
+          "ratio": 1.0044087133725954,
+          "speedup": 0.9956106380660599
+        },
+        "Promedus_12": {
+          "baseline_walls": [
+            0.3423615229985444,
+            0.365372093001497
+          ],
+          "candidate_walls": [
+            0.33276141399983317,
+            0.3325169480012846
+          ],
+          "ratio": 0.9400123817222763,
+          "speedup": 1.0638157746048145
+        },
+        "Promedus_18": {
+          "baseline_walls": [
+            0.5399399310008448,
+            0.5760003300019889
+          ],
+          "candidate_walls": [
+            0.5085651019981015,
+            0.5100446430005832
+          ],
+          "ratio": 0.9127816072191144,
+          "speedup": 1.0955523118466481
+        },
+        "Promedus_33": {
+          "baseline_walls": [
+            0.30048409899973194,
+            0.345275739000499
+          ],
+          "candidate_walls": [
+            0.30361305699989316,
+            0.2909545450020232
+          ],
+          "ratio": 0.9207255809577054,
+          "speedup": 1.0860999419173694
+        },
+        "Promedus_36": {
+          "baseline_walls": [
+            0.34625951599809923,
+            0.3641640030000417
+          ],
+          "candidate_walls": [
+            0.313067883002077,
+            0.32447231500191265
+          ],
+          "ratio": 0.8974086315484975,
+          "speedup": 1.1143195695304144
+        },
+        "Promedus_37": {
+          "baseline_walls": [
+            0.5287531260000833,
+            0.5280210669989174
+          ],
+          "candidate_walls": [
+            0.5282839899991814,
+            0.5285401840010309
+          ],
+          "ratio": 1.000047295819242,
+          "speedup": 0.9999527064175469
+        },
+        "Segmentation_11": {
+          "baseline_walls": [
+            8.590681038000184,
+            8.088655208001
+          ],
+          "candidate_walls": [
+            8.034369621000224,
+            8.678182425999694
+          ],
+          "ratio": 1.001991434221892,
+          "speedup": 0.9980125237064141
+        },
+        "Segmentation_12": {
+          "baseline_walls": [
+            15.890962815999956,
+            16.205557489000057
+          ],
+          "candidate_walls": [
+            16.496898826000688,
+            15.90746704099729
+          ],
+          "ratio": 1.00959124413091,
+          "speedup": 0.9904998738978105
+        },
+        "Segmentation_16": {
+          "baseline_walls": [
+            12.57140649700159,
+            12.568951772002038
+          ],
+          "candidate_walls": [
+            12.561688305999269,
+            13.040292819998285
+          ],
+          "ratio": 1.0183618249212891,
+          "speedup": 0.9819692525073705
+        },
+        "WATER": {
+          "baseline_walls": [
+            0.368060893000802,
+            0.3837416940004914
+          ],
+          "candidate_walls": [
+            0.45142502499948023,
+            0.34283412099830457
+          ],
+          "ratio": 1.0564730152975894,
+          "speedup": 0.9465457096585832
+        },
+        "WIN95PTS": {
+          "baseline_walls": [
+            0.35256195299734827,
+            0.39429679499880876
+          ],
+          "candidate_walls": [
+            0.36978812600136735,
+            0.34623283199834987
+          ],
+          "ratio": 0.9587100103209898,
+          "speedup": 1.0430682784517769
+        },
+        "blockmap_10_01-0009": {
+          "baseline_walls": [
+            1.0448663069983013,
+            1.1171659499996167
+          ],
+          "candidate_walls": [
+            1.1283462710016465,
+            1.0896774439970613
+          ],
+          "ratio": 1.0258976052829742,
+          "speedup": 0.9747561499806495
+        },
+        "fs-07": {
+          "baseline_walls": [
+            11.723469035998278,
+            11.07810751800207
+          ],
+          "candidate_walls": [
+            11.153681011997833,
+            11.104887425997731
+          ],
+          "ratio": 0.9761855012648448,
+          "speedup": 1.0243954644934787
+        },
+        "mastermind_03_08_04-0003": {
+          "baseline_walls": [
+            1.905409758001042,
+            1.8696380809997208
+          ],
+          "candidate_walls": [
+            1.8331166810021386,
+            1.9332836940011475
+          ],
+          "ratio": 0.997709310089229,
+          "speedup": 1.0022959492184813
+        },
+        "mastermind_03_08_05-0003": {
+          "baseline_walls": [
+            2.863241723000101,
+            2.8850533180011553
+          ],
+          "candidate_walls": [
+            2.889206932999514,
+            2.8275480560005235
+          ],
+          "ratio": 0.9945131466328274,
+          "speedup": 1.0055171250231831
+        },
+        "mastermind_05_08_03-0002": {
+          "baseline_walls": [
+            4.36544788899846,
+            4.483116452000104
+          ],
+          "candidate_walls": [
+            4.3809228709978925,
+            4.45073491400035
+          ],
+          "ratio": 0.9980893447401419,
+          "speedup": 1.0019143128517773
+        },
+        "or_chain_186.fg": {
+          "baseline_walls": [
+            1.095678413999849,
+            1.013038125998719
+          ],
+          "candidate_walls": [
+            1.0072114760005206,
+            1.0462927039989154
+          ],
+          "ratio": 0.9738170783261513,
+          "speedup": 1.02688689925099
+        },
+        "or_chain_188.fg": {
+          "baseline_walls": [
+            10.247357741998712,
+            10.092922650001128
+          ],
+          "candidate_walls": [
+            10.268906407000031,
+            10.310442280999268
+          ],
+          "ratio": 1.0117534415156582,
+          "speedup": 0.9883830970734817
+        },
+        "or_chain_209.fg": {
+          "baseline_walls": [
+            3.482680930999777,
+            3.441813405002904
+          ],
+          "candidate_walls": [
+            3.433587344999978,
+            3.3557556359992304
+          ],
+          "ratio": 0.9804821336482612,
+          "speedup": 1.0199063967429116
+        }
+      },
+      "slower_both": 4
+    },
+    "automatic_vs_accepted": {
+      "confirmed_cost_flags": [
+        "BARLEY",
+        "BN_31",
+        "CSP_13",
+        "MILDEW",
+        "Promedus_37"
+      ],
+      "faster_both": 18,
+      "median_wall_ratio": 0.9993927063105003,
+      "mutual": 40,
+      "per_task": {
+        "ALARM": {
+          "baseline_walls": [
+            0.25001004700243357,
+            0.2607347539997136
+          ],
+          "candidate_walls": [
+            0.1779661809996469,
+            0.17776814000171726
+          ],
+          "ratio": 0.6965011103458469,
+          "speedup": 1.4357478906292784
+        },
+        "ASIA": {
+          "baseline_walls": [
+            0.22052539300057106,
+            0.2199220010006684
+          ],
+          "candidate_walls": [
+            0.15091513999868766,
+            0.1578896179998992
+          ],
+          "ratio": 0.7011160974146162,
+          "speedup": 1.4262973046654126
+        },
+        "Alchemy_11": {
+          "baseline_walls": [
+            2.6360777730005793,
+            2.6065476650001074
+          ],
+          "candidate_walls": [
+            2.9734501490020193,
+            2.9435907790029887
+          ],
+          "ratio": 1.1286407922862243,
+          "speedup": 0.8860214931398644
+        },
+        "BARLEY": {
+          "baseline_walls": [
+            9.322040143997583,
+            9.25668604099701
+          ],
+          "candidate_walls": [
+            14.07359858199925,
+            14.005764933001046
+          ],
+          "ratio": 1.5113718365513693,
+          "speedup": 0.6616505454288393
+        },
+        "BN_12": {
+          "baseline_walls": [
+            12.176844032997906,
+            11.86171049800032
+          ],
+          "candidate_walls": [
+            11.816524909998407,
+            11.825853129997995
+          ],
+          "ratio": 0.9835191217304291,
+          "speedup": 1.0167570491568827
+        },
+        "BN_13": {
+          "baseline_walls": [
+            18.246863414999098,
+            18.32487792200118
+          ],
+          "candidate_walls": [
+            18.812903695001296,
+            19.34738481399836
+          ],
+          "ratio": 1.0434364652577321,
+          "speedup": 0.9583717200768873
+        },
+        "BN_15": {
+          "baseline_walls": [
+            13.260988440000801,
+            13.902707696001016
+          ],
+          "candidate_walls": [
+            13.307093298000837,
+            13.800051607999194
+          ],
+          "ratio": 0.9979181319906301,
+          "speedup": 1.0020862112257818
+        },
+        "BN_31": {
+          "baseline_walls": [
+            0.6429108709999127,
+            0.6364342999986548
+          ],
+          "candidate_walls": [
+            0.9803139620016736,
+            0.9613548519992037
+          ],
+          "ratio": 1.5177051963899206,
+          "speedup": 0.6588894881421262
+        },
+        "CHILD": {
+          "baseline_walls": [
+            0.22992460500245215,
+            0.3156648980002501
+          ],
+          "candidate_walls": [
+            0.15838537299714517,
+            0.15707358900181134
+          ],
+          "ratio": 0.5781983712347818,
+          "speedup": 1.7295102334246155
+        },
+        "CSP_11": {
+          "baseline_walls": [
+            7.383544620999601,
+            7.345014135000383
+          ],
+          "candidate_walls": [
+            7.74531159199978,
+            7.617725647000043
+          ],
+          "ratio": 1.0430781105952658,
+          "speedup": 0.9587009734384303
+        },
+        "CSP_13": {
+          "baseline_walls": [
+            10.79444463499749,
+            10.177050906000659
+          ],
+          "candidate_walls": [
+            16.30925093600308,
+            15.597892530000536
+          ],
+          "ratio": 1.5214529361354732,
+          "speedup": 0.6572664696024209
+        },
+        "DIABETES": {
+          "baseline_walls": [
+            15.267316628996923,
+            15.190362711000489
+          ],
+          "candidate_walls": [
+            14.980670299999474,
+            14.770933605999744
+          ],
+          "ratio": 0.9768178190427342,
+          "speedup": 1.0237323485560326
+        },
+        "Grids_11": {
+          "baseline_walls": [
+            15.325484708999284,
+            15.045825846998923
+          ],
+          "candidate_walls": [
+            6.062777921000816,
+            5.963870883999334
+          ],
+          "ratio": 0.39598715316632715,
+          "speedup": 2.5253344508880273
+        },
+        "Grids_14": {
+          "baseline_walls": [
+            17.564391313997476,
+            18.040468740000506
+          ],
+          "candidate_walls": [
+            5.866242690000945,
+            5.925071409998054
+          ],
+          "ratio": 0.33117147721171797,
+          "speedup": 3.0195837166275643
+        },
+        "HAILFINDER": {
+          "baseline_walls": [
+            0.374633592000464,
+            0.39696339500005706
+          ],
+          "candidate_walls": [
+            0.29461501400146517,
+            0.3021993490001478
+          ],
+          "ratio": 0.773479385037062,
+          "speedup": 1.292859278921938
+        },
+        "INSURANCE": {
+          "baseline_walls": [
+            0.3744863500032807,
+            0.41597692999857827
+          ],
+          "candidate_walls": [
+            0.36507902599987574,
+            0.3782174740008486
+          ],
+          "ratio": 0.9403302073677303,
+          "speedup": 1.0634562116209194
+        },
+        "MILDEW": {
+          "baseline_walls": [
+            4.620844901997771,
+            4.680193778000103
+          ],
+          "candidate_walls": [
+            8.754005817998404,
+            8.809685702999559
+          ],
+          "ratio": 1.8883580775520417,
+          "speedup": 0.5295605806375145
+        },
+        "ObjectDetection_30": {
+          "baseline_walls": [
+            10.365798375998565,
+            10.56197482800053
+          ],
+          "candidate_walls": [
+            10.793186316001083,
+            10.963298675997066
+          ],
+          "ratio": 1.0395986605894934,
+          "speedup": 0.9619096656328516
+        },
+        "ObjectDetection_34": {
+          "baseline_walls": [
+            10.676260546999401,
+            10.301496454998414
+          ],
+          "candidate_walls": [
+            5.841750506999233,
+            5.806162192999182
+          ],
+          "ratio": 0.5552506256454933,
+          "speedup": 1.8009885154788865
+        },
+        "ObjectDetection_39": {
+          "baseline_walls": [
+            14.604308212998149,
+            14.70492345799721
+          ],
+          "candidate_walls": [
+            15.240851443002612,
+            15.146966440999677
+          ],
+          "ratio": 1.0368002213471295,
+          "speedup": 0.9645059669264785
+        },
+        "ObjectDetection_43": {
+          "baseline_walls": [
+            13.678480736001802,
+            12.927955969000323
+          ],
+          "candidate_walls": [
+            12.856871754000167,
+            13.451364371998352
+          ],
+          "ratio": 0.9887921640049026,
+          "speedup": 1.0113348754198277
+        },
+        "ObjectDetection_56": {
+          "baseline_walls": [
+            10.475986050001666,
+            10.449121164001554
+          ],
+          "candidate_walls": [
+            6.6120787280015065,
+            6.326830721998704
+          ],
+          "ratio": 0.6183437588956011,
+          "speedup": 1.6172234062587771
+        },
+        "Promedus_12": {
+          "baseline_walls": [
+            0.3423615229985444,
+            0.365372093001497
+          ],
+          "candidate_walls": [
+            0.38449334200049634,
+            0.37309104800078785
+          ],
+          "ratio": 1.0704371996387407,
+          "speedup": 0.9341977281221987
+        },
+        "Promedus_18": {
+          "baseline_walls": [
+            0.5399399310008448,
+            0.5760003300019889
+          ],
+          "candidate_walls": [
+            0.5391561289980018,
+            0.5292532229977951
+          ],
+          "ratio": 0.9574072997739831,
+          "speedup": 1.0444875448892774
+        },
+        "Promedus_33": {
+          "baseline_walls": [
+            0.30048409899973194,
+            0.345275739000499
+          ],
+          "candidate_walls": [
+            0.32471246299974155,
+            0.32160742999985814
+          ],
+          "ratio": 1.0008672806303704,
+          "speedup": 0.9991334708935392
+        },
+        "Promedus_36": {
+          "baseline_walls": [
+            0.34625951599809923,
+            0.3641640030000417
+          ],
+          "candidate_walls": [
+            0.44358260400258587,
+            0.43790757399983704
+          ],
+          "ratio": 1.2407953205793707,
+          "speedup": 0.8059346964115444
+        },
+        "Promedus_37": {
+          "baseline_walls": [
+            0.5287531260000833,
+            0.5280210669989174
+          ],
+          "candidate_walls": [
+            0.7145174440011033,
+            0.66755358500086
+          ],
+          "ratio": 1.3078205714693019,
+          "speedup": 0.7646308842477729
+        },
+        "Segmentation_11": {
+          "baseline_walls": [
+            8.590681038000184,
+            8.088655208001
+          ],
+          "candidate_walls": [
+            1.3387055130006047,
+            1.3155100920012046
+          ],
+          "ratio": 0.15913196819436676,
+          "speedup": 6.284092450729832
+        },
+        "Segmentation_12": {
+          "baseline_walls": [
+            15.890962815999956,
+            16.205557489000057
+          ],
+          "candidate_walls": [
+            1.336458544999914,
+            1.3496238779989653
+          ],
+          "ratio": 0.08368765204059955,
+          "speedup": 11.94919412382209
+        },
+        "Segmentation_16": {
+          "baseline_walls": [
+            12.57140649700159,
+            12.568951772002038
+          ],
+          "candidate_walls": [
+            1.4793912839995755,
+            1.46929139599888
+          ],
+          "ratio": 0.11728880903157149,
+          "speedup": 8.525962606806099
+        },
+        "WATER": {
+          "baseline_walls": [
+            0.368060893000802,
+            0.3837416940004914
+          ],
+          "candidate_walls": [
+            0.33510159800061956,
+            0.332286868000665
+          ],
+          "ratio": 0.8877177034775704,
+          "speedup": 1.1264842371426995
+        },
+        "WIN95PTS": {
+          "baseline_walls": [
+            0.35256195299734827,
+            0.39429679499880876
+          ],
+          "candidate_walls": [
+            0.18809219499962637,
+            0.19080085300083738
+          ],
+          "ratio": 0.5073155386035773,
+          "speedup": 1.971159808651973
+        },
+        "blockmap_10_01-0009": {
+          "baseline_walls": [
+            1.0448663069983013,
+            1.1171659499996167
+          ],
+          "candidate_walls": [
+            1.1678801970010682,
+            1.0646469749990501
+          ],
+          "ratio": 1.0326058571855379,
+          "speedup": 0.9684237146645593
+        },
+        "fs-07": {
+          "baseline_walls": [
+            11.723469035998278,
+            11.07810751800207
+          ],
+          "candidate_walls": [
+            11.570464208998601,
+            11.752815678999468
+          ],
+          "ratio": 1.0228801430796763,
+          "speedup": 0.977631648014215
+        },
+        "mastermind_03_08_04-0003": {
+          "baseline_walls": [
+            1.905409758001042,
+            1.8696380809997208
+          ],
+          "candidate_walls": [
+            1.883163610000338,
+            1.8524208839990024
+          ],
+          "ratio": 0.989546266250266,
+          "speedup": 1.0105641687572091
+        },
+        "mastermind_03_08_05-0003": {
+          "baseline_walls": [
+            2.863241723000101,
+            2.8850533180011553
+          ],
+          "candidate_walls": [
+            2.8076888209980098,
+            2.9642262350025703
+          ],
+          "ratio": 1.0041090470880232,
+          "speedup": 0.9959077680856082
+        },
+        "mastermind_05_08_03-0002": {
+          "baseline_walls": [
+            4.36544788899846,
+            4.483116452000104
+          ],
+          "candidate_walls": [
+            4.7333881099984865,
+            4.744432170002256
+          ],
+          "ratio": 1.071113902182596,
+          "speedup": 0.9336075257377502
+        },
+        "or_chain_186.fg": {
+          "baseline_walls": [
+            1.095678413999849,
+            1.013038125998719
+          ],
+          "candidate_walls": [
+            1.2429181740008062,
+            1.20232800300073
+          ],
+          "ratio": 1.1595897934215458,
+          "speedup": 0.8623739236694625
+        },
+        "or_chain_188.fg": {
+          "baseline_walls": [
+            10.247357741998712,
+            10.092922650001128
+          ],
+          "candidate_walls": [
+            10.447260564000317,
+            10.317751124002825
+          ],
+          "ratio": 1.020881290120777,
+          "speedup": 0.979545819555272
+        },
+        "or_chain_209.fg": {
+          "baseline_walls": [
+            3.482680930999777,
+            3.441813405002904
+          ],
+          "candidate_walls": [
+            3.5508786179998424,
+            3.5887953839992406
+          ],
+          "ratio": 1.0310751450654836,
+          "speedup": 0.9698614158102803
+        }
+      },
+      "slower_both": 16
+    },
+    "automatic_vs_experimental": {
+      "confirmed_cost_flags": [],
+      "faster_both": 27,
+      "median_wall_ratio": 0.9814257171615721,
+      "mutual": 49,
+      "per_task": {
+        "ALARM": {
+          "baseline_walls": [
+            0.19932634900033008,
+            0.1988011909998022
+          ],
+          "candidate_walls": [
+            0.1779661809996469,
+            0.17776814000171726
+          ],
+          "ratio": 0.8935184966135373,
+          "speedup": 1.1191710118929052
+        },
+        "ANDES": {
+          "baseline_walls": [
+            10.457490190001408,
+            10.387749122000969
+          ],
+          "candidate_walls": [
+            1.6047187540025334,
+            1.5444385949995194
+          ],
+          "ratio": 0.1510732163764997,
+          "speedup": 6.619307008780649
+        },
+        "ASIA": {
+          "baseline_walls": [
+            0.23121544999958132,
+            0.23287327300204197
+          ],
+          "candidate_walls": [
+            0.15091513999868766,
+            0.1578896179998992
+          ],
+          "ratio": 0.6654002622630129,
+          "speedup": 1.5028548329677842
+        },
+        "Alchemy_11": {
+          "baseline_walls": [
+            2.601220764001482,
+            2.8002202690004196
+          ],
+          "candidate_walls": [
+            2.9734501490020193,
+            2.9435907790029887
+          ],
+          "ratio": 1.0954559888468423,
+          "speedup": 0.9128618677347994
+        },
+        "BARLEY": {
+          "baseline_walls": [
+            14.20563063300142,
+            14.09449869999662
+          ],
+          "candidate_walls": [
+            14.07359858199925,
+            14.005764933001046
+          ],
+          "ratio": 0.992199123353817,
+          "speedup": 1.0078622087669404
+        },
+        "BN_12": {
+          "baseline_walls": [
+            11.73015305700028,
+            12.253993460002675
+          ],
+          "candidate_walls": [
+            11.816524909998407,
+            11.825853129997995
+          ],
+          "ratio": 0.9857502339403962,
+          "speedup": 1.0144557572181774
+        },
+        "BN_13": {
+          "baseline_walls": [
+            19.2839120000026,
+            19.27492411899948
+          ],
+          "candidate_walls": [
+            18.812903695001296,
+            19.34738481399836
+          ],
+          "ratio": 0.9896639097515182,
+          "speedup": 1.0104440407967155
+        },
+        "BN_15": {
+          "baseline_walls": [
+            13.837749586000427,
+            13.782420165000076
+          ],
+          "candidate_walls": [
+            13.307093298000837,
+            13.800051607999194
+          ],
+          "ratio": 0.9814257171615721,
+          "speedup": 1.0189258163033952
+        },
+        "BN_31": {
+          "baseline_walls": [
+            0.9728060220004409,
+            0.9610778579990438
+          ],
+          "candidate_walls": [
+            0.9803139620016736,
+            0.9613548519992037
+          ],
+          "ratio": 1.0040255436646977,
+          "speedup": 0.9959905963647057
+        },
+        "CHILD": {
+          "baseline_walls": [
+            0.19965855099871987,
+            0.17770766399917193
+          ],
+          "candidate_walls": [
+            0.15838537299714517,
+            0.15707358900181134
+          ],
+          "ratio": 0.8359491376320449,
+          "speedup": 1.1962450285344566
+        },
+        "CSP_11": {
+          "baseline_walls": [
+            12.188702390998515,
+            12.084009932998015
+          ],
+          "candidate_walls": [
+            7.74531159199978,
+            7.617725647000043
+          ],
+          "ratio": 0.632934508263075,
+          "speedup": 1.5799422956795979
+        },
+        "CSP_12": {
+          "baseline_walls": [
+            0.7222748040003353,
+            0.7450401220012282
+          ],
+          "candidate_walls": [
+            0.6617265989989392,
+            0.6967290230022627
+          ],
+          "ratio": 0.925810538643532,
+          "speedup": 1.0801346045003635
+        },
+        "CSP_13": {
+          "baseline_walls": [
+            15.784755953001877,
+            15.714761320999969
+          ],
+          "candidate_walls": [
+            16.30925093600308,
+            15.597892530000536
+          ],
+          "ratio": 1.0129407123434937,
+          "speedup": 0.987224610299694
+        },
+        "DBN_11": {
+          "baseline_walls": [
+            1.4992567589979444,
+            1.4956800090003526
+          ],
+          "candidate_walls": [
+            1.5282072740010335,
+            1.501841195000452
+          ],
+          "ratio": 1.0117236869166544,
+          "speedup": 0.9884121652302283
+        },
+        "DBN_12": {
+          "baseline_walls": [
+            2.878157580998959,
+            2.79621075400064
+          ],
+          "candidate_walls": [
+            2.841118552001717,
+            2.8680905469991558
+          ],
+          "ratio": 1.0061400250996002,
+          "speedup": 0.9938974447428504
+        },
+        "DBN_14": {
+          "baseline_walls": [
+            1.516143363001902,
+            1.4367810050025582
+          ],
+          "candidate_walls": [
+            1.4798238360017422,
+            1.516053834999184
+          ],
+          "ratio": 1.0145460220593097,
+          "speedup": 0.9856625310798771
+        },
+        "DBN_15": {
+          "baseline_walls": [
+            2.921442720999039,
+            2.9523989660010557
+          ],
+          "candidate_walls": [
+            2.8645327999984147,
+            2.9361349639984837
+          ],
+          "ratio": 0.987542408035078,
+          "speedup": 1.0126147412643363
+        },
+        "DBN_16": {
+          "baseline_walls": [
+            5.6579903600031685,
+            5.739316492003127
+          ],
+          "candidate_walls": [
+            5.830569555997499,
+            5.77771617200051
+          ],
+          "ratio": 1.0185112920737565,
+          "speedup": 0.9818251479214666
+        },
+        "Grids_11": {
+          "baseline_walls": [
+            5.962055287000112,
+            5.983973933001835
+          ],
+          "candidate_walls": [
+            6.062777921000816,
+            5.963870883999334
+          ],
+          "ratio": 1.006748651247497,
+          "speedup": 0.993296587743987
+        },
+        "Grids_14": {
+          "baseline_walls": [
+            6.066427957000997,
+            5.9518979669992405
+          ],
+          "candidate_walls": [
+            5.866242690000945,
+            5.925071409998054
+          ],
+          "ratio": 0.9811111942348059,
+          "speedup": 1.0192524617761864
+        },
+        "HAILFINDER": {
+          "baseline_walls": [
+            0.3029769810018479,
+            0.31700178800019785
+          ],
+          "candidate_walls": [
+            0.29461501400146517,
+            0.3021993490001478
+          ],
+          "ratio": 0.962636775388745,
+          "speedup": 1.0388134191072915
+        },
+        "INSURANCE": {
+          "baseline_walls": [
+            0.39501402500172844,
+            0.39818477099834126
+          ],
+          "candidate_walls": [
+            0.36507902599987574,
+            0.3782174740008486
+          ],
+          "ratio": 0.9370872771731477,
+          "speedup": 1.0671364603483222
+        },
+        "MILDEW": {
+          "baseline_walls": [
+            9.182922534000681,
+            9.227473101000214
+          ],
+          "candidate_walls": [
+            8.754005817998404,
+            8.809685702999559
+          ],
+          "ratio": 0.954009455810215,
+          "speedup": 1.0482076397772457
+        },
+        "MUNIN1": {
+          "baseline_walls": [
+            1.746624186002009,
+            1.6975014519994147
+          ],
+          "candidate_walls": [
+            1.6680012149990944,
+            1.664234795000084
+          ],
+          "ratio": 0.9675129075525906,
+          "speedup": 1.0335779421585065
+        },
+        "ObjectDetection_30": {
+          "baseline_walls": [
+            15.421521248998033,
+            15.39897812900017
+          ],
+          "candidate_walls": [
+            10.793186316001083,
+            10.963298675997066
+          ],
+          "ratio": 0.7059095547143999,
+          "speedup": 1.416612076322702
+        },
+        "ObjectDetection_34": {
+          "baseline_walls": [
+            5.871908950000943,
+            6.116732897000475
+          ],
+          "candidate_walls": [
+            5.841750506999233,
+            5.806162192999182
+          ],
+          "ratio": 0.9715790035809414,
+          "speedup": 1.0292523781538172
+        },
+        "ObjectDetection_43": {
+          "baseline_walls": [
+            17.491853661998903,
+            18.1170073530011
+          ],
+          "candidate_walls": [
+            12.856871754000167,
+            13.451364371998352
+          ],
+          "ratio": 0.7388115029828206,
+          "speedup": 1.3535252171395236
+        },
+        "ObjectDetection_56": {
+          "baseline_walls": [
+            6.457623850001255,
+            6.4537605500008794
+          ],
+          "candidate_walls": [
+            6.6120787280015065,
+            6.326830721998704
+          ],
+          "ratio": 1.0021318434294366,
+          "speedup": 0.9978726916588728
+        },
+        "Pedigree_11": {
+          "baseline_walls": [
+            15.136234679001063,
+            15.170056237999233
+          ],
+          "candidate_walls": [
+            0.4469006769977568,
+            0.47049262799919234
+          ],
+          "ratio": 0.03027072192731899,
+          "speedup": 33.0352213733466
+        },
+        "Pedigree_13": {
+          "baseline_walls": [
+            15.10598870800095,
+            15.119808878996992
+          ],
+          "candidate_walls": [
+            15.05968641599975,
+            15.062784170997475
+          ],
+          "ratio": 0.9965814963293089,
+          "speedup": 1.0034302299242785
+        },
+        "Promedus_12": {
+          "baseline_walls": [
+            0.3931410599980154,
+            0.409930614001496
+          ],
+          "candidate_walls": [
+            0.38449334200049634,
+            0.37309104800078785
+          ],
+          "ratio": 0.9433583757578096,
+          "speedup": 1.0600425307049293
+        },
+        "Promedus_18": {
+          "baseline_walls": [
+            0.5660292809989187,
+            0.5404909469980339
+          ],
+          "candidate_walls": [
+            0.5391561289980018,
+            0.5292532229977951
+          ],
+          "ratio": 0.9655579039254033,
+          "speedup": 1.0356706686720443
+        },
+        "Promedus_33": {
+          "baseline_walls": [
+            0.3420496069993533,
+            0.332336651001242
+          ],
+          "candidate_walls": [
+            0.32471246299974155,
+            0.32160742999985814
+          ],
+          "ratio": 0.9583823592666225,
+          "speedup": 1.0434248818657559
+        },
+        "Promedus_36": {
+          "baseline_walls": [
+            0.3652641879998555,
+            0.43695340499834856
+          ],
+          "candidate_walls": [
+            0.44358260400258587,
+            0.43790757399983704
+          ],
+          "ratio": 1.0988168119175072,
+          "speedup": 0.910069803405114
+        },
+        "Promedus_37": {
+          "baseline_walls": [
+            0.6813799919982557,
+            0.7362500130002445
+          ],
+          "candidate_walls": [
+            0.7145174440011033,
+            0.66755358500086
+          ],
+          "ratio": 0.9749166031537443,
+          "speedup": 1.0257287615834152
+        },
+        "Segmentation_11": {
+          "baseline_walls": [
+            1.3351702629988722,
+            1.3045436379979947
+          ],
+          "candidate_walls": [
+            1.3387055130006047,
+            1.3155100920012046
+          ],
+          "ratio": 1.0054936650519082,
+          "speedup": 0.9945363504089063
+        },
+        "Segmentation_12": {
+          "baseline_walls": [
+            1.3127715260015975,
+            1.3374445640001795
+          ],
+          "candidate_walls": [
+            1.336458544999914,
+            1.3496238779989653
+          ],
+          "ratio": 1.0135333617256388,
+          "speedup": 0.9866473445900222
+        },
+        "Segmentation_13": {
+          "baseline_walls": [
+            3.1222209469997324,
+            3.179511315000127
+          ],
+          "candidate_walls": [
+            3.113571059999231,
+            3.1656152549985563
+          ],
+          "ratio": 0.9964222619964312,
+          "speedup": 1.0035905841730195
+        },
+        "Segmentation_16": {
+          "baseline_walls": [
+            1.5189728369987279,
+            1.501620200000616
+          ],
+          "candidate_walls": [
+            1.4793912839995755,
+            1.46929139599888
+          ],
+          "ratio": 0.9761932984284688,
+          "speedup": 1.0243872823239584
+        },
+        "WATER": {
+          "baseline_walls": [
+            0.38484713200159604,
+            0.3663857140018081
+          ],
+          "candidate_walls": [
+            0.33510159800061956,
+            0.332286868000665
+          ],
+          "ratio": 0.8883909556828141,
+          "speedup": 1.1256305499321564
+        },
+        "WIN95PTS": {
+          "baseline_walls": [
+            0.3534592010000779,
+            0.3644996919974801
+          ],
+          "candidate_walls": [
+            0.18809219499962637,
+            0.19080085300083738
+          ],
+          "ratio": 0.5277364090004418,
+          "speedup": 1.894885368803809
+        },
+        "blockmap_10_01-0009": {
+          "baseline_walls": [
+            1.1039677410008153,
+            1.1058749119983986
+          ],
+          "candidate_walls": [
+            1.1678801970010682,
+            1.0646469749990501
+          ],
+          "ratio": 1.0102652190960821,
+          "speedup": 0.9898390849233959
+        },
+        "fs-07": {
+          "baseline_walls": [
+            11.598026635001588,
+            11.15337192700099
+          ],
+          "candidate_walls": [
+            11.570464208998601,
+            11.752815678999468
+          ],
+          "ratio": 1.0251360954552744,
+          "speedup": 0.9754802356811841
+        },
+        "mastermind_03_08_04-0003": {
+          "baseline_walls": [
+            1.9611486029971275,
+            1.8994162439994398
+          ],
+          "candidate_walls": [
+            1.883163610000338,
+            1.8524208839990024
+          ],
+          "ratio": 0.9676264075464349,
+          "speedup": 1.0334567062257565
+        },
+        "mastermind_03_08_05-0003": {
+          "baseline_walls": [
+            2.8132245800006785,
+            2.819439300998056
+          ],
+          "candidate_walls": [
+            2.8076888209980098,
+            2.9642262350025703
+          ],
+          "ratio": 1.024722081406561,
+          "speedup": 0.9758743547590711
+        },
+        "mastermind_05_08_03-0002": {
+          "baseline_walls": [
+            4.630808204001369,
+            4.630448273001093
+          ],
+          "candidate_walls": [
+            4.7333881099984865,
+            4.744432170002256
+          ],
+          "ratio": 1.0233838468393626,
+          "speedup": 0.9771504632288445
+        },
+        "or_chain_186.fg": {
+          "baseline_walls": [
+            1.2134949520004739,
+            1.2298204209982941
+          ],
+          "candidate_walls": [
+            1.2429181740008062,
+            1.20232800300073
+          ],
+          "ratio": 1.0007902393706951,
+          "speedup": 0.9992103846144702
+        },
+        "or_chain_188.fg": {
+          "baseline_walls": [
+            10.291089726000791,
+            10.444085536000784
+          ],
+          "candidate_walls": [
+            10.447260564000317,
+            10.317751124002825
+          ],
+          "ratio": 1.0014389280835374,
+          "speedup": 0.9985631394554523
+        },
+        "or_chain_209.fg": {
+          "baseline_walls": [
+            3.7021240499998385,
+            3.6245401759988454
+          ],
+          "candidate_walls": [
+            3.5508786179998424,
+            3.5887953839992406
+          ],
+          "ratio": 0.9744781228903509,
+          "speedup": 1.0261903027991537
+        }
+      },
+      "slower_both": 8
+    },
+    "automatic_vs_jt": {
+      "confirmed_cost_flags": [
+        "ALARM",
+        "ANDES",
+        "ASIA",
+        "Alchemy_11",
+        "BARLEY",
+        "CHILD",
+        "CSP_12",
+        "DIABETES",
+        "Grids_11",
+        "Grids_14",
+        "HAILFINDER",
+        "INSURANCE",
+        "MILDEW",
+        "Pedigree_13",
+        "Promedus_33",
+        "Promedus_36",
+        "Segmentation_11",
+        "Segmentation_12",
+        "Segmentation_13",
+        "Segmentation_16",
+        "WATER",
+        "WIN95PTS"
+      ],
+      "faster_both": 6,
+      "median_wall_ratio": 8.389125297844544,
+      "mutual": 31,
+      "per_task": {
+        "ALARM": {
+          "baseline_walls": [
+            0.012973031000001356,
+            0.012841309999203077
+          ],
+          "candidate_walls": [
+            0.1779661809996469,
+            0.17776814000171726
+          ],
+          "ratio": 13.780492053325222,
+          "speedup": 0.07256634930961706
+        },
+        "ANDES": {
+          "baseline_walls": [
+            0.033834402998763835,
+            0.033816376999311615
+          ],
+          "candidate_walls": [
+            1.6047187540025334,
+            1.5444385949995194
+          ],
+          "ratio": 46.550200146866615,
+          "speedup": 0.02148218475634872
+        },
+        "ASIA": {
+          "baseline_walls": [
+            0.013136816000042018,
+            0.013102799999614945
+          ],
+          "candidate_walls": [
+            0.15091513999868766,
+            0.1578896179998992
+          ],
+          "ratio": 11.76864623333756,
+          "speedup": 0.08497154049607306
+        },
+        "Alchemy_11": {
+          "baseline_walls": [
+            2.068629452998721,
+            2.1581723659983254
+          ],
+          "candidate_walls": [
+            2.9734501490020193,
+            2.9435907790029887
+          ],
+          "ratio": 1.399886056027351,
+          "speedup": 0.7143438536975198
+        },
+        "BARLEY": {
+          "baseline_walls": [
+            1.084181627000362,
+            1.4998284709981817
+          ],
+          "candidate_walls": [
+            14.07359858199925,
+            14.005764933001046
+          ],
+          "ratio": 10.866584281829738,
+          "speedup": 0.09202523755989477
+        },
+        "CHILD": {
+          "baseline_walls": [
+            0.014138706999801798,
+            0.013268105998577084
+          ],
+          "candidate_walls": [
+            0.15838537299714517,
+            0.15707358900181134
+          ],
+          "ratio": 11.510238786889083,
+          "speedup": 0.08687917066838488
+        },
+        "CSP_12": {
+          "baseline_walls": [
+            0.1978527689971088,
+            0.19844218800062663
+          ],
+          "candidate_walls": [
+            0.6617265989989392,
+            0.6967290230022627
+          ],
+          "ratio": 3.4278902570263203,
+          "speedup": 0.29172462506646746
+        },
+        "DBN_11": {
+          "baseline_walls": [
+            7.85901026600186,
+            7.367392390999157
+          ],
+          "candidate_walls": [
+            1.5282072740010335,
+            1.501841195000452
+          ],
+          "ratio": 0.19899962829423046,
+          "speedup": 5.025135014430541
+        },
+        "DBN_14": {
+          "baseline_walls": [
+            8.254934207998303,
+            8.095838049997838
+          ],
+          "candidate_walls": [
+            1.4798238360017422,
+            1.516053834999184
+          ],
+          "ratio": 0.18322545404764165,
+          "speedup": 5.457756975949332
+        },
+        "DIABETES": {
+          "baseline_walls": [
+            0.6095761899996432,
+            0.43538881600034074
+          ],
+          "candidate_walls": [
+            14.980670299999474,
+            14.770933605999744
+          ],
+          "ratio": 28.47138778348686,
+          "speedup": 0.035122980572797745
+        },
+        "Grids_11": {
+          "baseline_walls": [
+            1.8920301160032977,
+            2.0135002819988586
+          ],
+          "candidate_walls": [
+            6.062777921000816,
+            5.963870883999334
+          ],
+          "ratio": 3.0793893733748146,
+          "speedup": 0.32473970607492997
+        },
+        "Grids_14": {
+          "baseline_walls": [
+            1.595635671998025,
+            1.8945209990015428
+          ],
+          "candidate_walls": [
+            5.866242690000945,
+            5.925071409998054
+          ],
+          "ratio": 3.3784483653629254,
+          "speedup": 0.2959938681473903
+        },
+        "HAILFINDER": {
+          "baseline_walls": [
+            0.01474692400006461,
+            0.012815190999390325
+          ],
+          "candidate_walls": [
+            0.29461501400146517,
+            0.3021993490001478
+          ],
+          "ratio": 21.653431277440628,
+          "speedup": 0.04618205711543917
+        },
+        "INSURANCE": {
+          "baseline_walls": [
+            0.012861451999924611,
+            0.012892238999484107
+          ],
+          "candidate_walls": [
+            0.36507902599987574,
+            0.3782174740008486
+          ],
+          "ratio": 28.861746458703326,
+          "speedup": 0.034647937935108834
+        },
+        "MILDEW": {
+          "baseline_walls": [
+            0.18979463299911004,
+            0.26026572800037684
+          ],
+          "candidate_walls": [
+            8.754005817998404,
+            8.809685702999559
+          ],
+          "ratio": 39.02519093659525,
+          "speedup": 0.0256244742434371
+        },
+        "ObjectDetection_34": {
+          "baseline_walls": [
+            5.887004468000669,
+            6.396670797999832
+          ],
+          "candidate_walls": [
+            5.841750506999233,
+            5.806162192999182
+          ],
+          "ratio": 0.9482432942718871,
+          "speedup": 1.0545816733329545
+        },
+        "ObjectDetection_56": {
+          "baseline_walls": [
+            4.9165395489981165,
+            6.810446089002653
+          ],
+          "candidate_walls": [
+            6.6120787280015065,
+            6.326830721998704
+          ],
+          "ratio": 1.1033448704901843,
+          "speedup": 0.9063349336601609
+        },
+        "Pedigree_11": {
+          "baseline_walls": [
+            0.3727457389977644,
+            0.6404774979964714
+          ],
+          "candidate_walls": [
+            0.4469006769977568,
+            0.47049262799919234
+          ],
+          "ratio": 0.9054207123382112,
+          "speedup": 1.104458939775678
+        },
+        "Pedigree_12": {
+          "baseline_walls": [
+            0.7213274189998629,
+            0.3831503369983693
+          ],
+          "candidate_walls": [
+            0.4450388200020825,
+            0.4293904599981033
+          ],
+          "ratio": 0.7917128934931538,
+          "speedup": 1.263084141004516
+        },
+        "Pedigree_13": {
+          "baseline_walls": [
+            0.18783384199923603,
+            0.13663783900119597
+          ],
+          "candidate_walls": [
+            15.05968641599975,
+            15.062784170997475
+          ],
+          "ratio": 92.83543788512354,
+          "speedup": 0.010771748620795222
+        },
+        "Promedus_12": {
+          "baseline_walls": [
+            1.923403884000436,
+            2.1042518309986917
+          ],
+          "candidate_walls": [
+            0.38449334200049634,
+            0.37309104800078785
+          ],
+          "ratio": 0.1880956178007008,
+          "speedup": 5.316444963962761
+        },
+        "Promedus_33": {
+          "baseline_walls": [
+            0.02319786700172699,
+            0.023633041000721278
+          ],
+          "candidate_walls": [
+            0.32471246299974155,
+            0.32160742999985814
+          ],
+          "ratio": 13.801139473225904,
+          "speedup": 0.0724577852386748
+        },
+        "Promedus_36": {
+          "baseline_walls": [
+            0.03373233299862477,
+            0.03349581200018292
+          ],
+          "candidate_walls": [
+            0.44358260400258587,
+            0.43790757399983704
+          ],
+          "ratio": 13.111921770533106,
+          "speedup": 0.07626647088814517
+        },
+        "Promedus_37": {
+          "baseline_walls": [
+            3.0978000220020476,
+            2.9759482170011324
+          ],
+          "candidate_walls": [
+            0.7145174440011033,
+            0.66755358500086
+          ],
+          "ratio": 0.22754829054764839,
+          "speedup": 4.394671555621294
+        },
+        "Segmentation_11": {
+          "baseline_walls": [
+            0.1785655460007547,
+            0.1378221000013582
+          ],
+          "candidate_walls": [
+            1.3387055130006047,
+            1.3155100920012046
+          ],
+          "ratio": 8.389125297844544,
+          "speedup": 0.11920193875956706
+        },
+        "Segmentation_12": {
+          "baseline_walls": [
+            0.1160909879981773,
+            0.11572726699887426
+          ],
+          "candidate_walls": [
+            1.336458544999914,
+            1.3496238779989653
+          ],
+          "ratio": 11.587018559142562,
+          "speedup": 0.08630347788741265
+        },
+        "Segmentation_13": {
+          "baseline_walls": [
+            0.1572523729992099,
+            0.14923210499910056
+          ],
+          "candidate_walls": [
+            3.113571059999231,
+            3.1656152549985563
+          ],
+          "ratio": 20.487779205028456,
+          "speedup": 0.048809584972223985
+        },
+        "Segmentation_16": {
+          "baseline_walls": [
+            0.22069256200120435,
+            0.3014968999996199
+          ],
+          "candidate_walls": [
+            1.4793912839995755,
+            1.46929139599888
+          ],
+          "ratio": 5.646767877506117,
+          "speedup": 0.1770924574363145
+        },
+        "WATER": {
+          "baseline_walls": [
+            0.17875459200149635,
+            0.16748966299928725
+          ],
+          "candidate_walls": [
+            0.33510159800061956,
+            0.332286868000665
+          ],
+          "ratio": 1.9275076953977883,
+          "speedup": 0.5188046731993076
+        },
+        "WIN95PTS": {
+          "baseline_walls": [
+            0.016400968001107685,
+            0.015549414001725381
+          ],
+          "candidate_walls": [
+            0.18809219499962637,
+            0.19080085300083738
+          ],
+          "ratio": 11.85879555264369,
+          "speedup": 0.0843255957623006
+        },
+        "mastermind_03_08_04-0003": {
+          "baseline_walls": [
+            9.597326393999538,
+            8.695374620998336
+          ],
+          "candidate_walls": [
+            1.883163610000338,
+            1.8524208839990024
+          ],
+          "ratio": 0.2042117504099913,
+          "speedup": 4.896877863258714
+        }
+      },
+      "slower_both": 22
+    }
+  },
+  "partial_coordinate_changes": {
+    "accepted_vs_parent": {
+      "changes": [],
+      "gained": 0,
+      "lost": 0
+    },
+    "automatic_vs_accepted": {
+      "changes": [
+        {
+          "gained": 446,
+          "lost": 0,
+          "replicate": 1,
+          "task": "ANDES"
+        },
+        {
+          "gained": 446,
+          "lost": 0,
+          "replicate": 2,
+          "task": "ANDES"
+        },
+        {
+          "gained": 192,
+          "lost": 0,
+          "replicate": 1,
+          "task": "CSP_12"
+        },
+        {
+          "gained": 192,
+          "lost": 0,
+          "replicate": 2,
+          "task": "CSP_12"
+        },
+        {
+          "gained": 80,
+          "lost": 0,
+          "replicate": 1,
+          "task": "DBN_11"
+        },
+        {
+          "gained": 80,
+          "lost": 0,
+          "replicate": 2,
+          "task": "DBN_11"
+        },
+        {
+          "gained": 84,
+          "lost": 0,
+          "replicate": 1,
+          "task": "DBN_12"
+        },
+        {
+          "gained": 84,
+          "lost": 0,
+          "replicate": 2,
+          "task": "DBN_12"
+        },
+        {
+          "gained": 80,
+          "lost": 0,
+          "replicate": 1,
+          "task": "DBN_14"
+        },
+        {
+          "gained": 80,
+          "lost": 0,
+          "replicate": 2,
+          "task": "DBN_14"
+        },
+        {
+          "gained": 84,
+          "lost": 0,
+          "replicate": 1,
+          "task": "DBN_15"
+        },
+        {
+          "gained": 84,
+          "lost": 0,
+          "replicate": 2,
+          "task": "DBN_15"
+        },
+        {
+          "gained": 88,
+          "lost": 0,
+          "replicate": 1,
+          "task": "DBN_16"
+        },
+        {
+          "gained": 88,
+          "lost": 0,
+          "replicate": 2,
+          "task": "DBN_16"
+        },
+        {
+          "gained": 992,
+          "lost": 0,
+          "replicate": 1,
+          "task": "MUNIN1"
+        },
+        {
+          "gained": 992,
+          "lost": 0,
+          "replicate": 2,
+          "task": "MUNIN1"
+        },
+        {
+          "gained": 696,
+          "lost": 0,
+          "replicate": 1,
+          "task": "Pedigree_11"
+        },
+        {
+          "gained": 696,
+          "lost": 0,
+          "replicate": 2,
+          "task": "Pedigree_11"
+        },
+        {
+          "gained": 696,
+          "lost": 0,
+          "replicate": 1,
+          "task": "Pedigree_12"
+        },
+        {
+          "gained": 696,
+          "lost": 0,
+          "replicate": 2,
+          "task": "Pedigree_12"
+        },
+        {
+          "gained": 696,
+          "lost": 0,
+          "replicate": 1,
+          "task": "Pedigree_13"
+        },
+        {
+          "gained": 696,
+          "lost": 0,
+          "replicate": 2,
+          "task": "Pedigree_13"
+        },
+        {
+          "gained": 470,
+          "lost": 0,
+          "replicate": 1,
+          "task": "Segmentation_13"
+        },
+        {
+          "gained": 470,
+          "lost": 0,
+          "replicate": 2,
+          "task": "Segmentation_13"
+        }
+      ],
+      "gained": 9208,
+      "lost": 0
+    },
+    "automatic_vs_experimental": {
+      "changes": [
+        {
+          "gained": 0,
+          "lost": 15,
+          "replicate": 2,
+          "task": "1qt9"
+        },
+        {
+          "gained": 4682,
+          "lost": 0,
+          "replicate": 1,
+          "task": "DIABETES"
+        },
+        {
+          "gained": 4682,
+          "lost": 0,
+          "replicate": 2,
+          "task": "DIABETES"
+        },
+        {
+          "gained": 960,
+          "lost": 0,
+          "replicate": 1,
+          "task": "ObjectDetection_39"
+        },
+        {
+          "gained": 696,
+          "lost": 0,
+          "replicate": 1,
+          "task": "Pedigree_12"
+        },
+        {
+          "gained": 696,
+          "lost": 0,
+          "replicate": 2,
+          "task": "Pedigree_12"
+        }
+      ],
+      "gained": 11716,
+      "lost": 15
+    }
+  },
+  "pgm_result_files": 488,
+  "previous_automatic_partial_comparison": [
+    {
+      "current_published": 0,
+      "previous_published": 15,
+      "replicate": 1,
+      "task": "1qt9"
+    },
+    {
+      "current_published": 0,
+      "previous_published": 15,
+      "replicate": 2,
+      "task": "1qt9"
+    }
+  ],
+  "published_coordinate_instances": 424891,
+  "receipts": 732,
+  "recommendation": "ELIGIBLE opt-in implementation; default promotion separate",
+  "review": "independent raw-artifact audit",
+  "source_files_checked": 1235,
+  "union_count": 51,
+  "union_gains": [
+    "Pedigree_12"
+  ],
+  "unique_keys": 732
+}

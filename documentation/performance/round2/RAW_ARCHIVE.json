@@ -1,0 +1,12 @@
+{
+  "file": "PGM_INCUMBENT_FIRST_RUN_2026-11-27_f14d407.zip",
+  "sha256": "18f7efe55139c1797f50deb62c4d39ebdbe054a5440bd6666725a7d44ea9a762",
+  "bytes": 40955208,
+  "members": 5923,
+  "uncompressed_bytes": 271867522,
+  "contains": "Entire scored run, original reports, freeze, raw outputs, launch records, logs, ownership receipts, setup, active native artifacts and build records.",
+  "frozen_candidate_commit": "f14d407f50024ee29c5e8ae6bad52705bc01ec4e",
+  "scored_cells": 732,
+  "archive_integrity_test": "PASS",
+  "packaging_wall_s": 5.452073357999325
+}
