@@ -1,6 +1,6 @@
 {
- "candidate": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/parity_final.json",
- "candidate_commit": "74f3c945d8fa7b32a612a0590bb713da858cc6d6",
+ "candidate": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final4/parity_final.json",
+ "candidate_commit": "9966821de97aaf6d2464e7069e822c2e46c10ca0",
  "cases": {
   "block/asym2": {
    "differences": [],

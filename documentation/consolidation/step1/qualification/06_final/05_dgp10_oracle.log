@@ -8,4 +8,4 @@
 {"n3_mixed_card_2_3_4_weak": {"ok": true, "summary": "exact True; observer True (viol 0, once True, cover True, r_resp 0.0045 vs r_raw 0.0176); mgf True; 0.4s"}}
 {"n2_binary_weak_extreme_scale_2^-600": {"ok": true, "summary": "exact True; observer True (viol 0, once True, cover True, r_resp 0.0035 vs r_raw 0.0148); mgf True; 0.1s"}}
 {"n2_binary_weak_null_move_heavy": {"ok": true, "summary": "exact True; observer True (viol 0, once True, cover True, r_resp 0.0239 vs r_raw 0.0148); mgf True; 0.1s"}}
-{"gate": "PASS", "all_ok": true, "nonvacuous": ["n2_binary_correlated_weak_symmetric", "n3_binary_cycle_weak_symmetric", "n2_card3_weak_symmetric_circulant", "n4_binary_weak_asymmetric_unaries", "n2_binary_repeated_weak_factor", "n3_mixed_card_2_3_4_weak", "n2_binary_weak_extreme_scale_2^-600"], "wall_s": 1.5}
+{"gate": "PASS", "all_ok": true, "nonvacuous": ["n2_binary_correlated_weak_symmetric", "n3_binary_cycle_weak_symmetric", "n2_card3_weak_symmetric_circulant", "n4_binary_weak_asymmetric_unaries", "n2_binary_repeated_weak_factor", "n3_mixed_card_2_3_4_weak", "n2_binary_weak_extreme_scale_2^-600"], "wall_s": 1.48}

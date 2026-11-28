@@ -9,8 +9,8 @@
  },
  "classification_counts": {
   "benchmark-inputs": 122,
-  "benchmark-tooling": 38,
-  "correctness-qualification": 86,
+  "benchmark-tooling": 73,
+  "correctness-qualification": 114,
   "documentation": 26,
   "historical-evidence": 170,
   "packaging": 15,
@@ -23,7 +23,7 @@
  "closure_after": {
   "imports_code_tree": [],
   "imports_specialists": [],
-  "lines": 16344,
+  "lines": 16412,
   "modules": 77,
   "modules_detail": {
    "pgm": {
@@ -303,7 +303,7 @@
     "path": "src/pgm/runtime/__init__.py"
    },
    "pgm.runtime.attempts": {
-    "lines": 248,
+    "lines": 304,
     "path": "src/pgm/runtime/attempts.py"
    },
    "pgm.runtime.build": {
@@ -315,7 +315,7 @@
     "path": "src/pgm/runtime/resources.py"
    },
    "pgm.runtime.supervise": {
-    "lines": 235,
+    "lines": 237,
     "path": "src/pgm/runtime/supervise.py"
    },
    "pgm.runtime.supervision": {
@@ -327,7 +327,7 @@
     "path": "src/pgm/supervision.py"
    },
    "pgm.switchboard": {
-    "lines": 119,
+    "lines": 129,
     "path": "src/pgm/switchboard.py"
    },
    "pgm.validation.publication": {
@@ -382,7 +382,7 @@
   }
  ],
  "duplicates_removed": "none: no second live copy of any relocated module existed outside the frozen snapshots (which are pinned historical evidence, never imported by production)",
- "head_commit": "74f3c945d8fa7b32a612a0590bb713da858cc6d6",
+ "head_commit": "9966821de97aaf6d2464e7069e822c2e46c10ca0",
  "path_map": {
   "code/cex/blockres/ancestral_response.py": {
    "canonical": "src/pgm/algorithms/block/ancestral_response.py",

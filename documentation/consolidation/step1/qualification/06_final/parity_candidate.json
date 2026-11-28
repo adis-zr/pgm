@@ -1,7 +1,7 @@
 {
  "cases": {
   "block/asym2": {
-   "seconds": 0.101,
+   "seconds": 0.092,
    "semantic": {
     "K": 4,
     "Z": "47",
@@ -67,7 +67,7 @@
    }
   },
   "block/asym2_exact_mode": {
-   "seconds": 0.084,
+   "seconds": 0.093,
    "semantic": {
     "K": 4,
     "Z": "47",
@@ -135,7 +135,7 @@
    }
   },
   "block/bip4": {
-   "seconds": 0.088,
+   "seconds": 0.089,
    "semantic": {
     "K": 8,
     "Z": "102",
@@ -237,7 +237,7 @@
    }
   },
   "block/cyc3": {
-   "seconds": 0.088,
+   "seconds": 0.091,
    "semantic": {
     "K": 8,
     "Z": "2900",
@@ -381,7 +381,7 @@
    }
   },
   "quotient/asym2": {
-   "seconds": 0.091,
+   "seconds": 0.093,
    "semantic": {
     "K": 4,
     "Z": null,
@@ -475,7 +475,7 @@
    }
   },
   "quotient/cyc3_deterministic": {
-   "seconds": 0.09,
+   "seconds": 0.097,
    "semantic": {
     "K": 8,
     "Z": null,
@@ -631,7 +631,7 @@
    }
   },
   "response/bip4_refused_hard_zero": {
-   "seconds": 0.085,
+   "seconds": 0.088,
    "semantic": {
     "K": 8,
     "Z": null,
@@ -712,7 +712,7 @@
    }
   },
   "response/pos4_exact_mode_ineligible": {
-   "seconds": 0.048,
+   "seconds": 0.051,
    "semantic": {
     "K": 8,
     "Z": null,
@@ -795,7 +795,7 @@
    }
   },
   "response/zero_mass": {
-   "seconds": 0.083,
+   "seconds": 0.089,
    "semantic": {
     "K": 2,
     "Z": null,
@@ -954,7 +954,7 @@
    }
   },
   "structural/bip4_stream": {
-   "seconds": 0.064,
+   "seconds": 0.06,
    "semantic": {
     "K": 8,
     "Z": null,
@@ -1057,7 +1057,7 @@
    }
   },
   "structural/bip4_support": {
-   "seconds": 0.066,
+   "seconds": 1.155,
    "semantic": {
     "K": 8,
     "Z": null,
@@ -1160,7 +1160,7 @@
    }
   },
   "structural/cyc3": {
-   "seconds": 0.059,
+   "seconds": 0.078,
    "semantic": {
     "K": 8,
     "Z": null,
@@ -1262,7 +1262,7 @@
    }
   },
   "structural/zero_mass": {
-   "seconds": 0.057,
+   "seconds": 0.064,
    "semantic": {
     "K": 2,
     "Z": null,
@@ -1307,7 +1307,7 @@
    }
   }
  },
- "commit": "74f3c945d8fa7b32a612a0590bb713da858cc6d6",
+ "commit": "9966821de97aaf6d2464e7069e822c2e46c10ca0",
  "fixtures": {
   "asym2": "f7bd03561250435a9ffeb84a61021179a4ba150c5a239f081a36663262d6df55",
   "asym2_evidence": "f7bd03561250435a9ffeb84a61021179a4ba150c5a239f081a36663262d6df55",

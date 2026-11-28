@@ -38,7 +38,8 @@ def text(n): p = Q / (n + ".log"); return p.read_text() if p.exists() else ""
 def tail(n): t = text(n).strip(); return t.splitlines()[-1] if t else None
 def pytest_summary(n):
     t = text(n); last = tail(n) or ""
-    return dict(summary=last, collection_errors=len(re.findall(r"^ERROR (?:collecting )?[\w/\.]+", t, re.M)), blocked_skips=[l.strip() for l in t.splitlines() if l.startswith("SKIPPED") and "BLOCKED" in l], failed=[l.strip() for l in t.splitlines() if l.startswith("FAILED")])
+    skips = [l.strip() for l in t.splitlines() if l.startswith("SKIPPED") and "BLOCKED" in l]
+    return dict(summary=last, collection_errors=len(re.findall(r"^ERROR (?:collecting )?[\w/\.]+", t, re.M)), blocked_skips=skips, blocked_test_instances=sum(int(m.group(1)) for l in skips for m in [re.match(r"SKIPPED \[(\d+)\]", l)] if m), failed=[l.strip() for l in t.splitlines() if l.startswith("FAILED")])
 out["pytest"] = pytest_summary("01_pytest"); out["specialist_conformance"] = pytest_summary("07_specialist_conformance")
 out["parity"] = json.loads((Q / "parity_report.json").read_text())["verdict"] if (Q / "parity_report.json").exists() else None
 d10 = json.loads((Q / "check_dgp10.json").read_text()) if (Q / "check_dgp10.json").exists() else {}; out["check_dgp10"] = dict(all_ok=d10.get("all_ok"), n_ok=d10.get("n_ok"), n=d10.get("n"))
@@ -48,7 +49,7 @@ out["wheel"] = (Q / "WHEEL_SHA256.txt").read_text().split()[0] if (Q / "WHEEL_SH
 rel = json.loads((Q / "clean_wheel_relocation.json").read_text()) if (Q / "clean_wheel_relocation.json").exists() else {}; out["clean_wheel_relocation"] = dict(verdict=rel.get("verdict"), failures=rel.get("failures"))
 out["required_steps"] = REQUIRED; out["required_exit_codes"] = {s: exits.get(s) for s in REQUIRED}
 failed_required = [s for s in REQUIRED if exits.get(s) != 0]
-out["blocked"] = dict(inherited_controls=(bc.get("counts") or {}).get("BLOCKED"), specialist_tests=len(out["specialist_conformance"]["blocked_skips"]), note="blocked = declared private-record dependencies absent on this host; listed per item in BLOCKED_CONTROLS.json and the pytest log")
+out["blocked"] = dict(inherited_controls=(bc.get("counts") or {}).get("BLOCKED"), specialist_tests=out["specialist_conformance"]["blocked_test_instances"], specialist_skip_lines=len(out["specialist_conformance"]["blocked_skips"]), note="blocked = declared private-record dependencies absent on this host; specialist_tests counts test INSTANCES (pytest aggregates skip lines); listed per item in BLOCKED_CONTROLS.json and the pytest log")
 out["failed"] = dict(required_steps=failed_required, specialist_collection_errors=out["specialist_conformance"]["collection_errors"], specialist_failed=out["specialist_conformance"]["failed"], pytest_failed=out["pytest"]["failed"])
 out["overall"] = "PASS" if (not failed_required and out["parity"] == "IDENTICAL" and out["check_dgp10"].get("all_ok") and out["dgp10_oracle"].get("all_ok") and out["clean_wheel_relocation"].get("verdict") == "PASS" and out["specialist_conformance"]["collection_errors"] == 0 and not out["specialist_conformance"]["failed"] and not out["pytest"]["failed"]) else "FAIL"
 (Q / "QUALIFICATION.json").write_text(json.dumps(out, indent=1) + "\n"); print(json.dumps({k: v for k, v in out.items() if k not in ("commands",)}, indent=1))

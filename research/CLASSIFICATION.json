@@ -2,9 +2,9 @@
  "generated_by": "documentation/consolidation/step1/tools/classify_tree.py",
  "counts": {
   "benchmark-inputs": 122,
-  "benchmark-tooling": 73,
+  "benchmark-tooling": 79,
   "correctness-qualification": 114,
-  "documentation": 26,
+  "documentation": 97,
   "historical-evidence": 170,
   "packaging": 15,
   "production": 90,
@@ -54,11 +54,23 @@
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
+  "benchmarks/external/STEP2_AMENDMENT_2.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
   "benchmarks/external/STEP2_PLAN.json": {
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
   "benchmarks/external/STEP2_PLAN.md": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/STEP2_SUPPLEMENT_1.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/STEP2_SUPPLEMENT_1.md": {
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
@@ -746,6 +758,14 @@
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
+  "benchmarks/external/reference/HISTORICAL_3283CFD_122_CELLS.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/reference/HISTORICAL_3283CFD_COMPARISON.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
   "benchmarks/external/reference/PRIOR_LEGACY_REPORT.md": {
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
@@ -759,6 +779,10 @@
    "note": "external benchmark harness, protocol, provenance, references"
   },
   "benchmarks/external/reference/previous_accepted_cells.json": {
+   "cls": "benchmark-tooling",
+   "note": "external benchmark harness, protocol, provenance, references"
+  },
+  "benchmarks/external/reference/recover_historical_experimental.py": {
    "cls": "benchmark-tooling",
    "note": "external benchmark harness, protocol, provenance, references"
   },
@@ -2917,6 +2941,290 @@
   "documentation/consolidation/step1/tools/run_inherited_controls.py": {
    "cls": "packaging",
    "note": "step-1 consolidation tools"
+  },
+  "documentation/consolidation/step2/BENCHMARK_REVIEW.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/CLAUDE_REPAIR_AND_STEP2.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/CODE_REVIEW.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/REPAIRS.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/REVIEW_VERDICT.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/RUN_ARCHIVE.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/START_HERE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/STRUCTURE_REVIEW.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/repair_evidence/after/BLOCKED_CONTROLS_preflight_classifier.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/after/RUNTIME_OWNERSHIP.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/after/clean_wheel_relocation_strict_gate.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/after/repair_tests.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/after2/PROBE_REPAIRS_INVERTED.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/after2/probe_analysis_boundaries.py": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/after2/probe_repairs.py": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/before/BLOCKED_CLASSIFIER_PROBE.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/before/FREEZE_PATH_PROBE.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/before/RUNTIME_OWNERSHIP.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/before/SHIM.stderr": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/before/STRUCTURE_PREDICATE_PROBES.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/repair_evidence/before/probe_runtime_ownership.py": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/CLAUDE_STEP2_BOUNDED_COMPLETION.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/review2/MANIFEST.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/PGM_STEP2_REVIEW.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/review2/START_HERE.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/review2/gates/ANALYSIS_BOUNDARIES.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/gates/COMPACT_RECOMPUTATION.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/gates/GATE_REVIEW.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/review2/gates/PORTABLE_PROBE_REPLAY.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/gates/probe_analysis_boundaries.py": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/results/HISTORICAL_3283CFD_COMPARISON.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/results/RECOMPUTED_RESULTS.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/results/RESULTS_REVIEW.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/review2/results/recompute_results.py": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/results/recover_historical_experimental.py": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/runtime/PORTABLE_PROBE_REPLAY.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/runtime/PROBE_RESULTS.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/runtime/REPAIR_TESTS.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/review2/runtime/REVIEW.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/review2/runtime/probe_repairs.py": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/0_setup.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/1_freeze.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/2_primary.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/3_eval.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/4_analyze.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/ANALYSIS.frozen_analyzer_v1.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/ANALYSIS.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/CAMPAIGN_COMMANDS.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/CAMPAIGN_OPERATOR.log": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/CELLS_COMPACT.jsonl": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/ENGINE_COMMIT.txt": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/EVAL_RETURN.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/FREEZE.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/GATES.frozen_analyzer_v1.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/GATES.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/GIT_STATUS_AT_START.txt": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/INCIDENTS.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/PAIRS.csv": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/PAIRS.frozen_analyzer_v1.csv": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/PRIMARY_RETURN.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/RECEIPTS.jsonl": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/REPORT.frozen_analyzer_v1.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/run/REPORT.md": {
+   "cls": "documentation",
+   "note": "notes / reports"
+  },
+  "documentation/consolidation/step2/run/resume2.out": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/resume2.sh": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/resume_guard.out": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/setup/SETUP.json": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/run/setup/SETUP_RECEIPTS.jsonl": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/tools/resume_campaign.sh": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/tools/run_campaign.sh": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
+  },
+  "documentation/consolidation/step2/tools/write_packet.py": {
+   "cls": "documentation",
+   "note": "architecture / reviews / consolidation records"
   },
   "documentation/reviews/DGP10_ERRATUM.md": {
    "cls": "documentation",

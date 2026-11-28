@@ -1,5 +1,5 @@
 {
- "commit": "74f3c945d8fa7b32a612a0590bb713da858cc6d6",
+ "commit": "9966821de97aaf6d2464e7069e822c2e46c10ca0",
  "git_status_dirty_lines": [
   " D documentation/consolidation/step1/qualification/06_final/01_pytest.log",
   " D documentation/consolidation/step1/qualification/06_final/02_parity_generate.log",
@@ -24,8 +24,7 @@
   " D documentation/consolidation/step1/qualification/06_final/parity_candidate.json",
   " D documentation/consolidation/step1/qualification/06_final/parity_report.json",
   " D documentation/consolidation/step1/qualification/06_final/wheel_contents.txt",
-  " M src/pgm/algorithms/structural/cex_build.json",
-  " M src/pgm/algorithms/structural/libcex_kernel.dylib"
+  "?? documentation/consolidation/step2/archive/"
  ],
  "python": "3.12.15",
  "platform": "macOS-26.6.2-arm64-arm-64bit",
@@ -37,12 +36,12 @@
   },
   {
    "step": "02_parity_generate",
-   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python tests/parity/generate_reference.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/parity_final.json",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python tests/parity/generate_reference.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final4/parity_final.json",
    "exit": 0
   },
   {
    "step": "03_parity_compare",
-   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python tests/parity/compare.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/parity_final.json --report /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/qualification/06_final/parity_report.json",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python tests/parity/compare.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final4/parity_final.json --report /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/qualification/06_final/parity_report.json",
    "exit": 0
   },
   {
@@ -67,12 +66,12 @@
   },
   {
    "step": "08_wheel_build",
-   "command": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/buildenv/bin/python -m build --wheel --no-isolation --outdir /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/dist .",
+   "command": "/private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/buildenv/bin/python -m build --wheel --no-isolation --outdir /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final4/dist .",
    "exit": 0
   },
   {
    "step": "09_clean_wheel_relocation",
-   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/tools/clean_wheel_relocation_test.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/dist/pgm_certified-0.2.0-py3-none-any.whl /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/relocation",
+   "command": "/Users/adis/Workspace/pgm/code/.venv/bin/python /Users/adis/Workspace/pgm-consolidate/documentation/consolidation/step1/tools/clean_wheel_relocation_test.py /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final4/dist/pgm_certified-0.2.0-py3-none-any.whl /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final4/relocation",
    "exit": 0
   },
   {
@@ -87,19 +86,21 @@
   }
  ],
  "pytest": {
-  "summary": "98 passed, 39 subtests passed in 9.22s",
+  "summary": "109 passed, 39 subtests passed in 9.96s",
   "collection_errors": 0,
   "blocked_skips": [],
+  "blocked_test_instances": 0,
   "failed": []
  },
  "specialist_conformance": {
-  "summary": "55 passed, 7 skipped in 1.36s",
+  "summary": "55 passed, 7 skipped in 1.44s",
   "collection_errors": 0,
   "blocked_skips": [
    "SKIPPED [1] code/tests/test_cbi_conformance.py:269: BLOCKED: private CBI counterexample packet absent: /Users/adis/Workspace/pgm-consolidate/code/runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json (set CBI_COUNTEREXAMPLES)",
    "SKIPPED [3] code/tests/test_h4a_review2.py:25: BLOCKED: private H4 packet file absent: /Users/adis/Workspace/pgm-consolidate/docs/h4-arithmetic-contract-2026-10-27/inputs/SMALL_FIXTURES.json (set H4A_PACKET)",
    "SKIPPED [2] code/tests/test_h4a_review2.py:25: BLOCKED: private H4 packet file absent: /Users/adis/Workspace/pgm-consolidate/docs/h4-arithmetic-contract-2026-10-27/inputs/FROZEN_NODES.json (set H4A_PACKET)"
   ],
+  "blocked_test_instances": 6,
   "failed": []
  },
  "parity": "IDENTICAL",
@@ -121,7 +122,7 @@
   },
   "classification": "PORTABLE = passed; BLOCKED = failed with a declared private dependency absent (preflight) or validated missing-path evidence; FAILED = failed with dependencies present; TIMEOUT"
  },
- "wheel": "a78607505a3e12099540213ee6b0856437dd2b3d74f9668c7962777197f20519",
+ "wheel": "bf9f5deefa7154f74be0123ea764c1c8a27dfb013bebebad4872ed4fc1bec317",
  "clean_wheel_relocation": {
   "verdict": "PASS",
   "failures": []
@@ -154,8 +155,9 @@
  },
  "blocked": {
   "inherited_controls": 51,
-  "specialist_tests": 3,
-  "note": "blocked = declared private-record dependencies absent on this host; listed per item in BLOCKED_CONTROLS.json and the pytest log"
+  "specialist_tests": 6,
+  "specialist_skip_lines": 3,
+  "note": "blocked = declared private-record dependencies absent on this host; specialist_tests counts test INSTANCES (pytest aggregates skip lines); listed per item in BLOCKED_CONTROLS.json and the pytest log"
  },
  "failed": {
   "required_steps": [],

@@ -1,12 +1,13 @@
-..................................................................................................        [100%]
+......................................................................................................... [ 96%]
+....                                                                     [100%]
 ==================================== PASSES ====================================
 _ CertificateCacheCleanupTests.test_setup_refusals_release_already_charged_cache _
 ----------------------------- Captured stdout call -----------------------------
 uuu
 _ NativeAllocationFailureTests.test_every_context_and_observer_allocation_rolls_back _
 ----------------------------- Captured stdout call -----------------------------
-uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 39%]
-uuuuu
+uuuuuuuuuuuuuuuuuuuuuuuuuu [ 40%]
+uuuuuuuuuu
 =========================== short test summary info ============================
 PASSED tests/test_benchmark_harness.py::test_arms_pairs_contracts_consistent
 PASSED tests/test_benchmark_harness.py::test_native_probe_resolves_from_the_owning_implementation
@@ -26,6 +27,11 @@ PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[m
 PASSED tests/test_benchmark_validator.py::test_geometry_mutations_are_rejected
 PASSED tests/test_benchmark_validator.py::test_legacy_reference_contract
 PASSED tests/test_benchmark_validator.py::test_analyzer_detects_deterministic_conflicts_and_late_publication
+PASSED tests/test_benchmark_validator.py::test_amendment_2_internal_wall_rule_guards_late_publication_only
+PASSED tests/test_benchmark_validator.py::test_reader_rejects_published_success_behind_unresolved_cleanup
+PASSED tests/test_benchmark_validator.py::test_legacy_completing_status_past_allowance_stays_a_fault
+PASSED tests/test_benchmark_validator.py::test_incident_adjudication_is_an_exact_allowlist
+PASSED tests/test_benchmark_validator.py::test_historical_experimental_gate_reads_the_recovered_extract_bound_by_hash
 PASSED tests/test_compat_shims.py::test_conflicting_package_earlier_on_sys_path_does_not_win
 PASSED tests/test_compat_shims.py::test_already_imported_foreign_pgm_is_refused_explicitly
 PASSED tests/test_compat_shims.py::test_script_entry_without_installed_package_runs_the_checkout
@@ -97,13 +103,19 @@ PASSED tests/test_public_planning.py::test_table_shape_and_trailing_tokens
 PASSED tests/test_qualification_tools.py::test_passing_receipt_passes_and_each_mutation_fails
 PASSED tests/test_qualification_tools.py::test_inherited_control_classifier_never_hides_a_failure_behind_a_static_reference
 PASSED tests/test_qualification_tools.py::test_declared_dependency_preflight_reads_the_suite
-PASSED tests/test_runtime_ownership.py::test_supervisor_killed_first_still_cleans_its_registered_worker
-PASSED tests/test_runtime_ownership.py::test_reused_group_id_older_than_the_recorded_spawn_is_refused_not_signalled
+PASSED tests/test_runtime_ownership.py::test_supervisor_killed_first_still_cleans_its_positively_identified_worker
+PASSED tests/test_runtime_ownership.py::test_stale_registration_pointing_at_a_newer_process_is_not_signalled
+PASSED tests/test_runtime_ownership.py::test_valid_terminal_receipt_closes_ownership_even_with_a_stale_live_registration
+PASSED tests/test_runtime_ownership.py::test_missing_or_malformed_identity_fails_closed
 PASSED tests/test_runtime_ownership.py::test_callers_own_group_is_never_signalled
-PASSED tests/test_runtime_ownership.py::test_valid_receipt_is_recognised
+PASSED tests/test_runtime_ownership.py::test_mixed_group_signals_only_verified_members
+PASSED tests/test_runtime_ownership.py::test_valid_receipt_is_recognised_after_a_real_supervised_run
+PASSED tests/test_runtime_ownership.py::test_final_cleanup_failure_revokes_the_staged_candidate
+PASSED tests/test_runtime_ownership.py::test_successful_cleanup_path_publishes
+PASSED tests/test_runtime_ownership.py::test_first_cleanup_failure_also_refuses_and_keeps_the_inventory
 PASSED tests/test_specialists_and_registry.py::test_registry_statuses_and_owners
 PASSED tests/test_specialists_and_registry.py::test_cbi_and_sf_entrypoints_import_their_implementations
 PASSED tests/test_specialists_and_registry.py::test_h4a_is_reference_only_with_an_availability_report
 PASSED tests/test_specialists_and_registry.py::test_cqr_explicit_task_language
 PASSED tests/test_specialists_and_registry.py::test_production_never_imports_the_specialist_bridge_or_campaign_code
-98 passed, 39 subtests passed in 9.22s
+109 passed, 39 subtests passed in 9.96s

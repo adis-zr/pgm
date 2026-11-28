@@ -1,4 +1,4 @@
-Archive:  /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final3/dist/pgm_certified-0.2.0-py3-none-any.whl
+Archive:  /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e5-4768-93d8-d356fbaa7233/scratchpad/final4/dist/pgm_certified-0.2.0-py3-none-any.whl
   Length      Date    Time    Name
 ---------  ---------- -----   ----
       572  11-27-2026 18:29   cbi/__init__.py
@@ -42,7 +42,7 @@ Archive:  /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e
      3677  11-27-2026 18:36   pgm/contracts.py
      6145  11-27-2026 19:02   pgm/registry.py
       210  11-27-2026 18:39   pgm/supervision.py
-     6918  11-27-2026 18:46   pgm/switchboard.py
+     7760  11-28-2026 00:13   pgm/switchboard.py
      1320  11-27-2026 18:56   pgm/algorithms/__init__.py
       455  11-27-2026 18:56   pgm/algorithms/block/__init__.py
     34070  11-27-2026 18:55   pgm/algorithms/block/ancestral_response.py
@@ -87,7 +87,7 @@ Archive:  /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e
     39545  11-27-2026 18:55   pgm/algorithms/response/spectral_heatbath_run.py
     29846  11-27-2026 18:55   pgm/algorithms/response/spectral_witness.py
       507  11-27-2026 18:56   pgm/algorithms/structural/__init__.py
-      615  11-27-2026 20:08   pgm/algorithms/structural/cex_build.json
+      614  11-28-2026 00:22   pgm/algorithms/structural/cex_build.json
     29049  11-27-2026 18:56   pgm/algorithms/structural/cex_executor.py
     40062  11-27-2026 18:29   pgm/algorithms/structural/cex_kernel.cpp
     19103  11-27-2026 19:55   pgm/algorithms/structural/core.py
@@ -116,10 +116,10 @@ Archive:  /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e
      3211  11-27-2026 18:36   pgm/policies/accepted.py
      4229  11-27-2026 18:36   pgm/policies/experimental.py
       337  11-27-2026 18:56   pgm/runtime/__init__.py
-    12633  11-27-2026 19:55   pgm/runtime/attempts.py
+    16226  11-28-2026 00:13   pgm/runtime/attempts.py
       565  11-27-2026 18:39   pgm/runtime/build.py
      1657  11-27-2026 18:56   pgm/runtime/resources.py
-    15923  11-27-2026 18:55   pgm/runtime/supervise.py
+    16236  11-28-2026 00:12   pgm/runtime/supervise.py
       683  11-27-2026 18:56   pgm/runtime/supervision.py
       928  11-27-2026 19:02   pgm/specialists/__init__.py
      2184  11-27-2026 19:02   pgm/specialists/_bridge.py
@@ -138,10 +138,10 @@ Archive:  /private/tmp/claude-502/-Users-adis-Workspace-pgm-records/ce4fd4bb-43e
     15938  11-27-2026 18:29   sf/routes.py
      8183  11-27-2026 18:29   sf/runner.py
      7706  11-27-2026 18:29   sf/score.py
-      355  11-27-2026 20:16   pgm_certified-0.2.0.dist-info/METADATA
-       91  11-27-2026 20:16   pgm_certified-0.2.0.dist-info/WHEEL
-       42  11-27-2026 20:16   pgm_certified-0.2.0.dist-info/entry_points.txt
-       15  11-27-2026 20:16   pgm_certified-0.2.0.dist-info/top_level.txt
-    11890  11-27-2026 20:16   pgm_certified-0.2.0.dist-info/RECORD
+      355  11-28-2026 00:23   pgm_certified-0.2.0.dist-info/METADATA
+       91  11-28-2026 00:23   pgm_certified-0.2.0.dist-info/WHEEL
+       42  11-28-2026 00:23   pgm_certified-0.2.0.dist-info/entry_points.txt
+       15  11-28-2026 00:23   pgm_certified-0.2.0.dist-info/top_level.txt
+    11890  11-28-2026 00:23   pgm_certified-0.2.0.dist-info/RECORD
 ---------                     -------
-  1895036                     142 files
+  1899783                     142 files

@@ -56,7 +56,7 @@
     "worst": -1.2692730485173877e-07,
     "n": 24
    },
-   "seconds": 0.14229607582092285
+   "seconds": 0.1488032341003418
   },
   "n3_binary_cycle_weak_symmetric": {
    "ok": true,
@@ -113,7 +113,7 @@
     "worst": -2.2553820930773637e-07,
     "n": 36
    },
-   "seconds": 0.1301589012145996
+   "seconds": 0.1283881664276123
   },
   "n2_card3_weak_symmetric_circulant": {
    "ok": true,
@@ -170,7 +170,7 @@
     "worst": -5.3327129909147425e-08,
     "n": 36
    },
-   "seconds": 0.12067317962646484
+   "seconds": 0.11857938766479492
   },
   "n4_binary_weak_asymmetric_unaries": {
    "ok": true,
@@ -227,7 +227,7 @@
     "worst": -2.254518457415618e-07,
     "n": 48
    },
-   "seconds": 0.2711982727050781
+   "seconds": 0.274000883102417
   },
   "n3_binary_independent": {
    "ok": true,
@@ -284,7 +284,7 @@
     "worst": -2.1373253730368738e-25,
     "n": 36
    },
-   "seconds": 0.11779379844665527
+   "seconds": 0.11599206924438477
   },
   "n2_binary_repeated_weak_factor": {
    "ok": true,
@@ -341,7 +341,7 @@
     "worst": -4.131813736640908e-07,
     "n": 24
    },
-   "seconds": 0.076873779296875
+   "seconds": 0.07656097412109375
   },
   "n3_mixed_card_2_3_4_weak": {
    "ok": true,
@@ -418,7 +418,7 @@
     "worst": -1.6235639220204387e-08,
     "n": 54
    },
-   "seconds": 0.4152047634124756
+   "seconds": 0.3994181156158447
   },
   "n2_binary_weak_extreme_scale_2^-600": {
    "ok": true,
@@ -475,7 +475,7 @@
     "worst": -1.2692730485173877e-07,
     "n": 24
    },
-   "seconds": 0.07663989067077637
+   "seconds": 0.07497477531433105
   },
   "n2_binary_weak_null_move_heavy": {
    "ok": true,
@@ -532,7 +532,7 @@
     "worst": -6.929379664673447e-11,
     "n": 24
    },
-   "seconds": 0.07604289054870605
+   "seconds": 0.07155489921569824
   }
  },
  "scalar": {
@@ -587,6 +587,6 @@
   "production": "the native observer and the checked certificate on the kernel's own snapshots at delta = 1e-3; coverage of the true marginal on the run; nonvacuity vs the raw radius on the same trajectory",
   "numerical": "mpmath MGF diagnostic (labelled)"
  },
- "wall_s": 1.5,
- "utc": "2026-11-27T20:16:12Z"
+ "wall_s": 1.48,
+ "utc": "2026-11-28T00:22:43Z"
 }

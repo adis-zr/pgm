@@ -21,5 +21,4 @@
  D documentation/consolidation/step1/qualification/06_final/parity_candidate.json
  D documentation/consolidation/step1/qualification/06_final/parity_report.json
  D documentation/consolidation/step1/qualification/06_final/wheel_contents.txt
- M src/pgm/algorithms/structural/cex_build.json
- M src/pgm/algorithms/structural/libcex_kernel.dylib
+?? documentation/consolidation/step2/archive/
