@@ -1,0 +1,1328 @@
+{
+  "schema": "PGM_COMPLETE_LAYOUT_INDEPENDENT_REVIEW_V1",
+  "reviewer": "performance_review",
+  "reviewed_at_utc": "2026-11-28T06:20:46.107261+00:00",
+  "baseline_commit": "7c67a3544afca74587ac066612a60b79c7aabdec",
+  "source_root": "/workspace/scratch/226d1e4428b0/pgm-layout-migration",
+  "status": "PASS",
+  "production": {
+    "protected_files": [
+      {
+        "path": "src/pgm/algorithms/block/__init__.py",
+        "parent_sha256": "8671e65d7b80e1f48efe1b85d87fd073a6652856a774a0cf60c43c371f8cb5c8",
+        "current_sha256": "8671e65d7b80e1f48efe1b85d87fd073a6652856a774a0cf60c43c371f8cb5c8",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/block/ancestral_response.py",
+        "parent_sha256": "97701f28e5f6d8b885d187e498aab726224d6ed32e2eb642f1811458d8f91d4e",
+        "current_sha256": "97701f28e5f6d8b885d187e498aab726224d6ed32e2eb642f1811458d8f91d4e",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/block/blockres.py",
+        "parent_sha256": "485cb78af168b242524cf45848d9ffe4f82905e3036de331ddb2e60a1d5b9866",
+        "current_sha256": "485cb78af168b242524cf45848d9ffe4f82905e3036de331ddb2e60a1d5b9866",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/block/integrated.py",
+        "parent_sha256": "136bc9e502161dd383fb3a344006efe6e5047e7d373a0613ed63022e95a44231",
+        "current_sha256": "136bc9e502161dd383fb3a344006efe6e5047e7d373a0613ed63022e95a44231",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/block/layered_contraction.py",
+        "parent_sha256": "742514093aa03f55b427c34987a9d477be76b012e2c231d8fcbb7a206ab317cd",
+        "current_sha256": "742514093aa03f55b427c34987a9d477be76b012e2c231d8fcbb7a206ab317cd",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/block/signed_evidence.py",
+        "parent_sha256": "e4272a7f1893e882627ad63fdee3efe219f06b36c4e9188b9f4fe414050f7141",
+        "current_sha256": "e4272a7f1893e882627ad63fdee3efe219f06b36c4e9188b9f4fe414050f7141",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/block/support_closure.py",
+        "parent_sha256": "ae53029afd026bf19a74af894e007f36f677cfff7d2bb1eb359147ab6782b4e6",
+        "current_sha256": "ae53029afd026bf19a74af894e007f36f677cfff7d2bb1eb359147ab6782b4e6",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/PHASE_RATES.json",
+        "parent_sha256": "47fcb0024754e54bf957b41c7c9cf0391f7cebfb0a15fe18664ab28bf88c18a6",
+        "current_sha256": "47fcb0024754e54bf957b41c7c9cf0391f7cebfb0a15fe18664ab28bf88c18a6",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/PHASE_RATES_R1.json",
+        "parent_sha256": "db2786e451760380714b98b3df50af059c6a41c620fe1b660088fe7923c86a44",
+        "current_sha256": "db2786e451760380714b98b3df50af059c6a41c620fe1b660088fe7923c86a44",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/__init__.py",
+        "parent_sha256": "a37e02c17b1aab41a9d87a6ee684972da6c836eb4adc553b82db1f557b1408c2",
+        "current_sha256": "a37e02c17b1aab41a9d87a6ee684972da6c836eb4adc553b82db1f557b1408c2",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/check_global.py",
+        "parent_sha256": "fa5179c074062198c7e1c20c0238ba13c235889bea7e3b1eaf5633276a9d9c0f",
+        "current_sha256": "fa5179c074062198c7e1c20c0238ba13c235889bea7e3b1eaf5633276a9d9c0f",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/check_joint.py",
+        "parent_sha256": "87e47d79fb0819c7d5a43e2ca63a49ca7cccc1011cee234b3e09745d4efd0ce9",
+        "current_sha256": "87e47d79fb0819c7d5a43e2ca63a49ca7cccc1011cee234b3e09745d4efd0ce9",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/check_residual.py",
+        "parent_sha256": "92282927c77b9d40d6340be8c89d3577ebd6fc22d0ea8772775add7f549e2a31",
+        "current_sha256": "92282927c77b9d40d6340be8c89d3577ebd6fc22d0ea8772775add7f549e2a31",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/coarse_envelope.py",
+        "parent_sha256": "ba87b076d5b7f6252b8a7284dfc4d2ba423bfb40321ca07e328b6065ec11bfae",
+        "current_sha256": "ba87b076d5b7f6252b8a7284dfc4d2ba423bfb40321ca07e328b6065ec11bfae",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/cost_model.py",
+        "parent_sha256": "6c46fa61203c8b0b817a8bff1a9de7c3e111406e4c4f3e64b2431f03578c14f7",
+        "current_sha256": "6c46fa61203c8b0b817a8bff1a9de7c3e111406e4c4f3e64b2431f03578c14f7",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/global_circuit.py",
+        "parent_sha256": "5121f5f97dc2cf4d316f7e5fe87dd76fa148e8a0b413ec426cb960d137d8ecca",
+        "current_sha256": "5121f5f97dc2cf4d316f7e5fe87dd76fa148e8a0b413ec426cb960d137d8ecca",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/global_optimize.py",
+        "parent_sha256": "4e05a403bcef636c54385cd29ffaf1fc30996f443be64a5f995fc4690c718756",
+        "current_sha256": "4e05a403bcef636c54385cd29ffaf1fc30996f443be64a5f995fc4690c718756",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/global_stream.py",
+        "parent_sha256": "fa68a90591a3a004bc2c9f1a4d981ec8fa46ffcb3a364536bdfe1ddf0237968f",
+        "current_sha256": "fa68a90591a3a004bc2c9f1a4d981ec8fa46ffcb3a364536bdfe1ddf0237968f",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/grouped_envelope.py",
+        "parent_sha256": "4a937c73ca5514d51b341a82c3834c8b52a0e6394dda2063df3433af50ee54a6",
+        "current_sha256": "4a937c73ca5514d51b341a82c3834c8b52a0e6394dda2063df3433af50ee54a6",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/joint_optimize.py",
+        "parent_sha256": "a2a07d724932523b8c0499a2eb2bf318d9ace7e8d984d5061880ba67d6a1309b",
+        "current_sha256": "a2a07d724932523b8c0499a2eb2bf318d9ace7e8d984d5061880ba67d6a1309b",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/joint_proposal.py",
+        "parent_sha256": "991b6ac9e281bd50df9aac301bf0fcd32aeadd936dd25d55ae7032b1b08d1a9b",
+        "current_sha256": "991b6ac9e281bd50df9aac301bf0fcd32aeadd936dd25d55ae7032b1b08d1a9b",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/joint_stream.py",
+        "parent_sha256": "722bd738aaada2ffcc70851383194d52ba786c65305035c4c7e26adf8b8166dc",
+        "current_sha256": "722bd738aaada2ffcc70851383194d52ba786c65305035c4c7e26adf8b8166dc",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/joint_witness.py",
+        "parent_sha256": "555acf694a61244b324e8babd9266934b381b7546499acedb896d05f58cd25d6",
+        "current_sha256": "555acf694a61244b324e8babd9266934b381b7546499acedb896d05f58cd25d6",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/lifted_decoder.py",
+        "parent_sha256": "85bce8f1ca300eee86d4c9fc55c1791d7cddb3717c73ecefd5f275587b898993",
+        "current_sha256": "85bce8f1ca300eee86d4c9fc55c1791d7cddb3717c73ecefd5f275587b898993",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/lp_worker.py",
+        "parent_sha256": "0b4707d9504dcfaef47ef76233d875882ed6033adaf67760683ad4e94d221a50",
+        "current_sha256": "0b4707d9504dcfaef47ef76233d875882ed6033adaf67760683ad4e94d221a50",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/pac_actions.py",
+        "parent_sha256": "468a6f8a6b11ccb8399c67cad6d023240b8aa8b8e17c6c335213bb95b4d748ff",
+        "current_sha256": "468a6f8a6b11ccb8399c67cad6d023240b8aa8b8e17c6c335213bb95b4d748ff",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/reservation.py",
+        "parent_sha256": "6b715c71704bbcbccfaa4c659782f5508f700de0f131907b9e722fd3b9da738c",
+        "current_sha256": "6b715c71704bbcbccfaa4c659782f5508f700de0f131907b9e722fd3b9da738c",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/residual_bank.py",
+        "parent_sha256": "50481c6eaf0e9da29def85c8cea55f8c74db77eeb82052e8dd4681edca86911f",
+        "current_sha256": "50481c6eaf0e9da29def85c8cea55f8c74db77eeb82052e8dd4681edca86911f",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/residual_local.py",
+        "parent_sha256": "a019f158feb6cea322b6575f40ff96b295cd4aca9154ab928fa3f36eaea42619",
+        "current_sha256": "a019f158feb6cea322b6575f40ff96b295cd4aca9154ab928fa3f36eaea42619",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/residual_max_envelope.py",
+        "parent_sha256": "2bcdf0bc38ffb03f3ce00d3359c3bd0dee0415c29e43584b912fbfe3af8ccb18",
+        "current_sha256": "2bcdf0bc38ffb03f3ce00d3359c3bd0dee0415c29e43584b912fbfe3af8ccb18",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/residual_stream.py",
+        "parent_sha256": "fe5c95cbf2f837037cce934bab6c03337946a639645de81c4e006c86cb8295fa",
+        "current_sha256": "fe5c95cbf2f837037cce934bab6c03337946a639645de81c4e006c86cb8295fa",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/unified_pac_planner.py",
+        "parent_sha256": "8c7ee052e42db8d0e7c69a6927d333bce95cac3945b6bc9a3357cd4ce8ee3979",
+        "current_sha256": "8c7ee052e42db8d0e7c69a6927d333bce95cac3945b6bc9a3357cd4ce8ee3979",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/quotient/unified_planner.py",
+        "parent_sha256": "0a9dd074e9bf94add1a2383707502eb818c84fb74c78072a958cc33f3290d759",
+        "current_sha256": "0a9dd074e9bf94add1a2383707502eb818c84fb74c78072a958cc33f3290d759",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/__init__.py",
+        "parent_sha256": "7b14a46d268d88d13a5c779b21fd522f0990305fc8defac8d8c18c53b2d43f71",
+        "current_sha256": "7b14a46d268d88d13a5c779b21fd522f0990305fc8defac8d8c18c53b2d43f71",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/checked_tilt.py",
+        "parent_sha256": "a631a74a1fb6e910f9cae1303bc5693b127b6a983ac1a951779d83932ed12a79",
+        "current_sha256": "a631a74a1fb6e910f9cae1303bc5693b127b6a983ac1a951779d83932ed12a79",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/heatbath_exact.py",
+        "parent_sha256": "0f2afa8dcc3cbeb9f498beffcc23157ef648c5293fc5d9eac49657d39c86f510",
+        "current_sha256": "0f2afa8dcc3cbeb9f498beffcc23157ef648c5293fc5d9eac49657d39c86f510",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/heatbath_native.c",
+        "parent_sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+        "current_sha256": "af6ba910827dd126c47f8ed94eb6f58b43701c72c70596e2f2fac8c809fd08d4",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/heatbath_native.py",
+        "parent_sha256": "4fcf70ef381864895f92a9cddeb9691dd9940d2a8912a03cc18881831663fbdf",
+        "current_sha256": "4fcf70ef381864895f92a9cddeb9691dd9940d2a8912a03cc18881831663fbdf",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/markov_certificate.py",
+        "parent_sha256": "eec83413bd2138517c862efaa87969bb0f1a92e3c349fc1ea1b792cacaf6facf",
+        "current_sha256": "eec83413bd2138517c862efaa87969bb0f1a92e3c349fc1ea1b792cacaf6facf",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/response_certificate.py",
+        "parent_sha256": "c7ce6432c2eb877cd5df0fc7675c2e1b56eb67bfe7b1263bf01196c274f2e4bb",
+        "current_sha256": "c7ce6432c2eb877cd5df0fc7675c2e1b56eb67bfe7b1263bf01196c274f2e4bb",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/spectral_heatbath_run.py",
+        "parent_sha256": "65dd1d8817b445bd8d7f15945013eb83c757be281e22f1939a72f17d58818b73",
+        "current_sha256": "65dd1d8817b445bd8d7f15945013eb83c757be281e22f1939a72f17d58818b73",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/response/spectral_witness.py",
+        "parent_sha256": "f42aa76d240f813ff766eeb8892f168703b2e5266ce5692f4989cf27c39965c1",
+        "current_sha256": "f42aa76d240f813ff766eeb8892f168703b2e5266ce5692f4989cf27c39965c1",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/__init__.py",
+        "parent_sha256": "1196a000cc4714de918579c1e9ad667b46d48ab24f3800e69015a2c039a89a92",
+        "current_sha256": "1196a000cc4714de918579c1e9ad667b46d48ab24f3800e69015a2c039a89a92",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/cex_build.json",
+        "parent_sha256": "0bc2741d8dc52a48ff9514bc26141ae158adcbcb9c6ec7390e9749b7ec2b9eeb",
+        "current_sha256": "0bc2741d8dc52a48ff9514bc26141ae158adcbcb9c6ec7390e9749b7ec2b9eeb",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/cex_executor.py",
+        "parent_sha256": "f387d38f4730d36acfaea639ab39d07768de066ec7bdb856ebfb66824486c8f2",
+        "current_sha256": "f387d38f4730d36acfaea639ab39d07768de066ec7bdb856ebfb66824486c8f2",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/cex_kernel.cpp",
+        "parent_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+        "current_sha256": "612239cd982332d60f35ab7ed677d63ce0aca4fcf2aeb3152105dcde960bc104",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/core.py",
+        "parent_sha256": "8d1216c649d12ad5c956c63d901251bc8d8061127571f1b74485343ac6172c04",
+        "current_sha256": "8d1216c649d12ad5c956c63d901251bc8d8061127571f1b74485343ac6172c04",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/dag.py",
+        "parent_sha256": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+        "current_sha256": "22f7b5ade972706184723d5881d5a2437c5b2256077664776359b96e90c92892",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/forest.py",
+        "parent_sha256": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+        "current_sha256": "ea393daf61ee0885f574e95cdb8e3e1862e081ae0415f4e42c6baa7d13e30e89",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/geometry.py",
+        "parent_sha256": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90",
+        "current_sha256": "303bfb6f086c93b53d2e493e02cf5fbeaba265487cf5576dc8d9fb8f103c2e90",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/libcex_kernel.dylib",
+        "parent_sha256": "720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b",
+        "current_sha256": "720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/libstream_kernel.so",
+        "parent_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+        "current_sha256": "5b1862487a9b5e33c06c22cd574542d1abb5f84db6357cf2f2ba8c2b75887dad",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/planning.py",
+        "parent_sha256": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+        "current_sha256": "2ffcd85350a3ae0d8de54480854a8df95eec38925824cff4b499f0a971d846b7",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/reduction.py",
+        "parent_sha256": "7899047ec2feca256d695d4529e7ce1ae5a89182bc2e64d3b98c7bf7f02a9342",
+        "current_sha256": "7899047ec2feca256d695d4529e7ce1ae5a89182bc2e64d3b98c7bf7f02a9342",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/stream.py",
+        "parent_sha256": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+        "current_sha256": "21bf01d26fd1daf5a565462af6a62a59701a51879d6fef45f366dfbcfff39bf3",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/stream_build.json",
+        "parent_sha256": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b",
+        "current_sha256": "91cf2bf83accae146d5169e4ecae3b960484e8b1b64fbcf9c50bcf55915f531b",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/stream_float.py",
+        "parent_sha256": "f0a18a1ef617fc0ff15b7153fbadf52dc20b3d84002b955a3425059c4cfc521c",
+        "current_sha256": "f0a18a1ef617fc0ff15b7153fbadf52dc20b3d84002b955a3425059c4cfc521c",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/stream_kernel.cpp",
+        "parent_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+        "current_sha256": "c4ce53fce1c89c3121bb2bc062174cff3711b2b3a8e8c41b1456e1cf42dde786",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/algorithms/structural/support.py",
+        "parent_sha256": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+        "current_sha256": "bd17fdd05a938bce690e6789055508f23c6a7757c37a4b1a040c688386f26139",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/api.py",
+        "parent_sha256": "694010dcb8ec4f05f1a0f599dbc98d58681f3282bf7b7e90ce36f2818891cdc5",
+        "current_sha256": "694010dcb8ec4f05f1a0f599dbc98d58681f3282bf7b7e90ce36f2818891cdc5",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/contracts.py",
+        "parent_sha256": "0e992d8fd0daae1c82c867d406d5fd06b12fcf94b3677a86feb0ce35bd081498",
+        "current_sha256": "0e992d8fd0daae1c82c867d406d5fd06b12fcf94b3677a86feb0ce35bd081498",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/model/__init__.py",
+        "parent_sha256": "d6b6dd82eb1125e28cc9681ff6eac9bedcbf805ea0ee922eca9486d4b3ca77cd",
+        "current_sha256": "d6b6dd82eb1125e28cc9681ff6eac9bedcbf805ea0ee922eca9486d4b3ca77cd",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/model/uai.py",
+        "parent_sha256": "e94a0be4417ea620cf2e085b0ae29a8529b1a4026aa08092fc7b691ed41c350e",
+        "current_sha256": "e94a0be4417ea620cf2e085b0ae29a8529b1a4026aa08092fc7b691ed41c350e",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/planning/__init__.py",
+        "parent_sha256": "008263e7c1252e1b9e1fd09cfe07dc646832b0188326862f614c7e886cbcfec0",
+        "current_sha256": "008263e7c1252e1b9e1fd09cfe07dc646832b0188326862f614c7e886cbcfec0",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/planning/features.py",
+        "parent_sha256": "88b2b6a1c56b4ea4fb4ea8d026f8ad1c917b4edb5c7504a7fd9c40629ef112ab",
+        "current_sha256": "88b2b6a1c56b4ea4fb4ea8d026f8ad1c917b4edb5c7504a7fd9c40629ef112ab",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/policies/__init__.py",
+        "parent_sha256": "be1acbd362286339208a15ef6137ff67a7161a6d30aac0f2acbf3a6266ff21ec",
+        "current_sha256": "be1acbd362286339208a15ef6137ff67a7161a6d30aac0f2acbf3a6266ff21ec",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/policies/accepted.py",
+        "parent_sha256": "b07ec24c56c32673aea8fecde098f5d0d8da09a40dfa037ae40bdcc77a7690f2",
+        "current_sha256": "b07ec24c56c32673aea8fecde098f5d0d8da09a40dfa037ae40bdcc77a7690f2",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/policies/automatic.py",
+        "parent_sha256": "f6caf399cc1c0498a5f9a21a98f05e25c8ad1e5ef8b8daee5a18cca4a10459b8",
+        "current_sha256": "f6caf399cc1c0498a5f9a21a98f05e25c8ad1e5ef8b8daee5a18cca4a10459b8",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/policies/experimental.py",
+        "parent_sha256": "222b031745afee0a2857659c1ac7d1d2b5e27d9d5078b05a739cb86138b74232",
+        "current_sha256": "222b031745afee0a2857659c1ac7d1d2b5e27d9d5078b05a739cb86138b74232",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/runtime/attempts.py",
+        "parent_sha256": "97712cba5e885f5faf186d99ee99b2fe6cc3105e5a446f1266e94c0657c3bb7f",
+        "current_sha256": "97712cba5e885f5faf186d99ee99b2fe6cc3105e5a446f1266e94c0657c3bb7f",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/runtime/supervise.py",
+        "parent_sha256": "171af92ec4ae98bbf8c48f70765f4d39e7280cdeaf12a1a53c6c6fc14bdf55f8",
+        "current_sha256": "171af92ec4ae98bbf8c48f70765f4d39e7280cdeaf12a1a53c6c6fc14bdf55f8",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/runtime/supervision.py",
+        "parent_sha256": "1a4c9414a47f578e77cf318df2938888a1d0b704a5f27ad48871913b4affa584",
+        "current_sha256": "1a4c9414a47f578e77cf318df2938888a1d0b704a5f27ad48871913b4affa584",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/validation/__init__.py",
+        "parent_sha256": "2c9ae4e30c6cb096ceeff657a069bbb0227df774712132ac404224cc96895de4",
+        "current_sha256": "2c9ae4e30c6cb096ceeff657a069bbb0227df774712132ac404224cc96895de4",
+        "byte_identical": true
+      },
+      {
+        "path": "src/pgm/validation/publication.py",
+        "parent_sha256": "14130b4a6fff697aafc3e4f41208e9e48ed532a52e77f1ff331c3782b820090b",
+        "current_sha256": "14130b4a6fff697aafc3e4f41208e9e48ed532a52e77f1ff331c3782b820090b",
+        "byte_identical": true
+      }
+    ],
+    "protected_count": 74,
+    "all_protected_identical": true,
+    "forbidden_imports": [],
+    "sys_path_mutations": [],
+    "absolute_import_roots": [
+      "__future__",
+      "argparse",
+      "collections",
+      "contextlib",
+      "copy",
+      "ctypes",
+      "dataclasses",
+      "decimal",
+      "fcntl",
+      "fractions",
+      "functools",
+      "gmpy2",
+      "hashlib",
+      "heapq",
+      "importlib",
+      "itertools",
+      "json",
+      "math",
+      "numpy",
+      "os",
+      "pathlib",
+      "pgm",
+      "platform",
+      "psutil",
+      "queue",
+      "random",
+      "re",
+      "resource",
+      "scipy",
+      "shlex",
+      "shutil",
+      "signal",
+      "struct",
+      "subprocess",
+      "sys",
+      "tempfile",
+      "threading",
+      "time",
+      "traceback",
+      "types",
+      "typing",
+      "uuid"
+    ],
+    "physical_code_tree_absent": true
+  },
+  "evidence": {
+    "files": [
+      {
+        "path": "benchmarks/external/reference/HISTORICAL_3283CFD_122_CELLS.json",
+        "parent_git_blob": "3714cd3156cd4a0fc241d73a5eadc3832961db98",
+        "current_git_blob": "3714cd3156cd4a0fc241d73a5eadc3832961db98",
+        "byte_identical": true
+      },
+      {
+        "path": "benchmarks/external/reference/HISTORICAL_3283CFD_COMPARISON.json",
+        "parent_git_blob": "d794e3ac796eeb41eb1c92e2add50ad31e0ead95",
+        "current_git_blob": "d794e3ac796eeb41eb1c92e2add50ad31e0ead95",
+        "byte_identical": true
+      },
+      {
+        "path": "benchmarks/external/reference/PRIOR_LEGACY_REPORT.md",
+        "parent_git_blob": "dffa058c120e6c93b5ca247f169b8c7a180a2d44",
+        "current_git_blob": "dffa058c120e6c93b5ca247f169b8c7a180a2d44",
+        "byte_identical": true
+      },
+      {
+        "path": "benchmarks/external/reference/PRIOR_PRIMARY_REPORT.md",
+        "parent_git_blob": "873902db0cd9d8d9551ea095fc0baaafc33d2e05",
+        "current_git_blob": "873902db0cd9d8d9551ea095fc0baaafc33d2e05",
+        "byte_identical": true
+      },
+      {
+        "path": "benchmarks/external/reference/PRIOR_RESEARCH_REPORT.md",
+        "parent_git_blob": "5145a3d6b0b4218ef46d4c2bc8e85a812968a7ed",
+        "current_git_blob": "5145a3d6b0b4218ef46d4c2bc8e85a812968a7ed",
+        "byte_identical": true
+      },
+      {
+        "path": "benchmarks/external/reference/previous_accepted_cells.json",
+        "parent_git_blob": "673612b8785fc03e8e0ecc45fb2e4f45cc3acccc",
+        "current_git_blob": "673612b8785fc03e8e0ecc45fb2e4f45cc3acccc",
+        "byte_identical": true
+      },
+      {
+        "path": "benchmarks/external/reference/recover_historical_experimental.py",
+        "parent_git_blob": "c1bc924ad9377889b78f39db2278f40e38b2ba7d",
+        "current_git_blob": "c1bc924ad9377889b78f39db2278f40e38b2ba7d",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/consolidation/step2/archive/PGM_STEP2_RUN_2026-11-27_f74f7f3.zip",
+        "parent_git_blob": "1e42272e99725334110763c05b345700e9148da2",
+        "current_git_blob": "1e42272e99725334110763c05b345700e9148da2",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/consolidation/step2/archive/PGM_STEP2_RUN_2026-11-27_f74f7f3_POSTRUN_RECORDS.zip",
+        "parent_git_blob": "76071355b501b8f820c58dcece5b55d6ff2663e9",
+        "current_git_blob": "76071355b501b8f820c58dcece5b55d6ff2663e9",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/consolidation/step2/archive/PGM_STEP2_SUPPLEMENT_RUN_step2-supplement-v1.zip",
+        "parent_git_blob": "252c124b90f9cf1fcbc00502ab58179d44a84a5c",
+        "current_git_blob": "252c124b90f9cf1fcbc00502ab58179d44a84a5c",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/IMPLEMENTATION.md",
+        "parent_git_blob": "ff0103ff6edab6f8f8841ba5938de8517d3e8cb8",
+        "current_git_blob": "ff0103ff6edab6f8f8841ba5938de8517d3e8cb8",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/INDEPENDENT_REVIEW.json",
+        "parent_git_blob": "0f819fde972c417c256a96091c10de0cf199022a",
+        "current_git_blob": "0f819fde972c417c256a96091c10de0cf199022a",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/RAW_ARCHIVE.json",
+        "parent_git_blob": "6beaba611523e9102a5603ec7790efc7a309fd8a",
+        "current_git_blob": "6beaba611523e9102a5603ec7790efc7a309fd8a",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/REPORT.md",
+        "parent_git_blob": "acd2dd5d6f1dca1d5a847ba2653ad4d1ffb8222a",
+        "current_git_blob": "acd2dd5d6f1dca1d5a847ba2653ad4d1ffb8222a",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/ROUND_DECISION.json",
+        "parent_git_blob": "8a0c97ed891bf2f2cc76804cee0b3a5b8b918d8a",
+        "current_git_blob": "8a0c97ed891bf2f2cc76804cee0b3a5b8b918d8a",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/START_HERE.md",
+        "parent_git_blob": "58264edf01cc51db37092cbef825c9de7b8c6f69",
+        "current_git_blob": "58264edf01cc51db37092cbef825c9de7b8c6f69",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/DGP10_CONTROLS.json",
+        "parent_git_blob": "7acf6727e7f81551ac3d78e92fbd5917a073123f",
+        "current_git_blob": "7acf6727e7f81551ac3d78e92fbd5917a073123f",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/LEXICAL_EQUIVALENCE.json",
+        "parent_git_blob": "f65d43b9211b8e75c374e2724109739afaf444e0",
+        "current_git_blob": "f65d43b9211b8e75c374e2724109739afaf444e0",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/LIBDAI_QUALIFICATION.json",
+        "parent_git_blob": "03f28469c5276fd5f45e67147f6422720d394207",
+        "current_git_blob": "03f28469c5276fd5f45e67147f6422720d394207",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/PARITY_COMPARISON.json",
+        "parent_git_blob": "0a612b63b792e0663ba4b7c53c688c1726eaf4cc",
+        "current_git_blob": "0a612b63b792e0663ba4b7c53c688c1726eaf4cc",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/QUALIFICATION.json",
+        "parent_git_blob": "8c61c8ca19e56d41b614a5acfd604621e76192ef",
+        "current_git_blob": "8c61c8ca19e56d41b614a5acfd604621e76192ef",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/ROUTE_AUDIT.json",
+        "parent_git_blob": "1d0c8e5fa0842fd75e10000dbdb2c2090ad7198d",
+        "current_git_blob": "1d0c8e5fa0842fd75e10000dbdb2c2090ad7198d",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/SAME_HOST_PARITY.json",
+        "parent_git_blob": "48ef8622189d118009e345efcd5025c0d95e7953",
+        "current_git_blob": "48ef8622189d118009e345efcd5025c0d95e7953",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/TOOLCHAIN.json",
+        "parent_git_blob": "d978dd3ec435cf2a3dda889a3223d6037d72804c",
+        "current_git_blob": "d978dd3ec435cf2a3dda889a3223d6037d72804c",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/baseline_parity.json",
+        "parent_git_blob": "8b3ccb6c352e4a539325183598c78a9ba190ed5d",
+        "current_git_blob": "8b3ccb6c352e4a539325183598c78a9ba190ed5d",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/parity.json",
+        "parent_git_blob": "df0dc9eb12fef38a4e72be14b8efd30e8640b766",
+        "current_git_blob": "df0dc9eb12fef38a4e72be14b8efd30e8640b766",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/pytest_final.log",
+        "parent_git_blob": "ddc10f1b1e94ec86dd9d782d250cbf7e9516c301",
+        "current_git_blob": "ddc10f1b1e94ec86dd9d782d250cbf7e9516c301",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/development/startup_measurement.json",
+        "parent_git_blob": "bd6b6aff18f5456a9d9197c074b930b9b1b0082b",
+        "current_git_blob": "bd6b6aff18f5456a9d9197c074b930b9b1b0082b",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/AMENDMENT.json",
+        "parent_git_blob": "0c8b2676565415b8f2c8bbfb00177dc6e5d1eccc",
+        "current_git_blob": "0c8b2676565415b8f2c8bbfb00177dc6e5d1eccc",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/ANALYSIS_EQUIVALENCE.json",
+        "parent_git_blob": "1b026386a76c9fb2ca41363015b29aa39ea3a2a5",
+        "current_git_blob": "1b026386a76c9fb2ca41363015b29aa39ea3a2a5",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/RELOCATION_CONTROLS.json",
+        "parent_git_blob": "cd21ac1e577b0e8d40fb9f875422e71deef84c6f",
+        "current_git_blob": "cd21ac1e577b0e8d40fb9f875422e71deef84c6f",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/REPLAY_ANALYSIS.md",
+        "parent_git_blob": "15a8a17f3e88e2137304e2e31c2205f23cb83a65",
+        "current_git_blob": "15a8a17f3e88e2137304e2e31c2205f23cb83a65",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/REPLAY_ARTIFACTS.json",
+        "parent_git_blob": "c34aae80da3d77ebf4d7011f660833b27ca9c3b5",
+        "current_git_blob": "c34aae80da3d77ebf4d7011f660833b27ca9c3b5",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/REPLAY_RECEIPT.json",
+        "parent_git_blob": "11cbda283c62c7ce2dfdcf973b471fbbb9e6a9c1",
+        "current_git_blob": "11cbda283c62c7ce2dfdcf973b471fbbb9e6a9c1",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/RESTORED_SOURCE.json",
+        "parent_git_blob": "fd358ef20c98ce745c8af34adb27b37dc41fc89c",
+        "current_git_blob": "fd358ef20c98ce745c8af34adb27b37dc41fc89c",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/pytest.log",
+        "parent_git_blob": "eae260e375f1e888faa1a6e332f6ea3bbcddfb04",
+        "current_git_blob": "eae260e375f1e888faa1a6e332f6ea3bbcddfb04",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/portability/replay_analysis.py",
+        "parent_git_blob": "e0d604163319c4b6091c682c2554f905dfaffeca",
+        "current_git_blob": "e0d604163319c4b6091c682c2554f905dfaffeca",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/ANALYSIS.json",
+        "parent_git_blob": "ba4a5fc9e8d3b3d76958cae91017dc491bd037b1",
+        "current_git_blob": "ba4a5fc9e8d3b3d76958cae91017dc491bd037b1",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/FREEZE.json",
+        "parent_git_blob": "3b89a0608127a926cea46c40d16317a08448ba9f",
+        "current_git_blob": "3b89a0608127a926cea46c40d16317a08448ba9f",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/FROZEN_REPORT.md",
+        "parent_git_blob": "2b8a40235a7080db869822fa68eae2cdc1397d2e",
+        "current_git_blob": "2b8a40235a7080db869822fa68eae2cdc1397d2e",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/PAIRS.csv",
+        "parent_git_blob": "4bd98060ddd675a75123c23aa6a03b413ad75854",
+        "current_git_blob": "4bd98060ddd675a75123c23aa6a03b413ad75854",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/RUN_RETURN.json",
+        "parent_git_blob": "dbb0cfe2d29a22e69397efe5fd40024daef823eb",
+        "current_git_blob": "dbb0cfe2d29a22e69397efe5fd40024daef823eb",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/frozen_analysis/ANALYSIS.json",
+        "parent_git_blob": "ba4a5fc9e8d3b3d76958cae91017dc491bd037b1",
+        "current_git_blob": "ba4a5fc9e8d3b3d76958cae91017dc491bd037b1",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/frozen_analysis/IDENTITY.json",
+        "parent_git_blob": "cd460c2b95655e5d35f3764e048500af5062d20f",
+        "current_git_blob": "cd460c2b95655e5d35f3764e048500af5062d20f",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/frozen_analysis/PAIRS.csv",
+        "parent_git_blob": "4bd98060ddd675a75123c23aa6a03b413ad75854",
+        "current_git_blob": "4bd98060ddd675a75123c23aa6a03b413ad75854",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round1/results/frozen_analysis/REPORT.md",
+        "parent_git_blob": "2b8a40235a7080db869822fa68eae2cdc1397d2e",
+        "current_git_blob": "2b8a40235a7080db869822fa68eae2cdc1397d2e",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/IMPLEMENTATION.md",
+        "parent_git_blob": "f79cc58cd9332dd0867beeaa1f33c839188fbae7",
+        "current_git_blob": "f79cc58cd9332dd0867beeaa1f33c839188fbae7",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/INDEPENDENT_REVIEW.json",
+        "parent_git_blob": "c3c838bdf086160c4e504153cb8c9ca4bdb36eda",
+        "current_git_blob": "c3c838bdf086160c4e504153cb8c9ca4bdb36eda",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/INDEPENDENT_REVIEW.md",
+        "parent_git_blob": "058d627672287b9012d073534ad498dfc24b4b62",
+        "current_git_blob": "058d627672287b9012d073534ad498dfc24b4b62",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/RAW_ARCHIVE.json",
+        "parent_git_blob": "15256fc4de4c55bc95533616d09fc3b35ae2fc9e",
+        "current_git_blob": "15256fc4de4c55bc95533616d09fc3b35ae2fc9e",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/REPORT.md",
+        "parent_git_blob": "6509a215e69d68c32f4a27ff760a5e6f7954324a",
+        "current_git_blob": "6509a215e69d68c32f4a27ff760a5e6f7954324a",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/ROUND_DECISION.json",
+        "parent_git_blob": "8f0a3fcc25d172257d887d14629bd6d71bd443cd",
+        "current_git_blob": "8f0a3fcc25d172257d887d14629bd6d71bd443cd",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/START_HERE.md",
+        "parent_git_blob": "42e9378f4832485fdb3f29a9a2881f42507d75e6",
+        "current_git_blob": "42e9378f4832485fdb3f29a9a2881f42507d75e6",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/development/runtime_before_after/after.log",
+        "parent_git_blob": "b1487e6c5513ff76bf8e8372ea60d4557a79e6eb",
+        "current_git_blob": "b1487e6c5513ff76bf8e8372ea60d4557a79e6eb",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/development/runtime_before_after/before.log",
+        "parent_git_blob": "b614b151d4736393b30c8a0cceb1f764b311d36f",
+        "current_git_blob": "b614b151d4736393b30c8a0cceb1f764b311d36f",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/development/runtime_before_after/receipt.json",
+        "parent_git_blob": "10e355dc5bddac2c8894d354fc5eac50b217a10a",
+        "current_git_blob": "10e355dc5bddac2c8894d354fc5eac50b217a10a",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/COMMANDS.json",
+        "parent_git_blob": "cc131ea012ee71d79bf942065153783d452c4bf1",
+        "current_git_blob": "cc131ea012ee71d79bf942065153783d452c4bf1",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/MUTATION_CONTROLS.json",
+        "parent_git_blob": "d2154f6c49e5da2bfd7ef93e0a1d1f31986cd1f9",
+        "current_git_blob": "d2154f6c49e5da2bfd7ef93e0a1d1f31986cd1f9",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/REPLAY_ANALYSIS.md",
+        "parent_git_blob": "de343a70fddfe0837d1429fbe7a459f7c8e300cd",
+        "current_git_blob": "de343a70fddfe0837d1429fbe7a459f7c8e300cd",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/REPLAY_RECEIPT.json",
+        "parent_git_blob": "bb003c03d17c235e13728ccc69e2bd6e715e56c9",
+        "current_git_blob": "bb003c03d17c235e13728ccc69e2bd6e715e56c9",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/RESTORE_VERIFICATION.json",
+        "parent_git_blob": "3cec0072a543dba4f593905d09a9ce476c7d18c5",
+        "current_git_blob": "3cec0072a543dba4f593905d09a9ce476c7d18c5",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/independent_audit.py",
+        "parent_git_blob": "10177df8ea0dbb3f377ebf6ff352f5a009611d70",
+        "current_git_blob": "10177df8ea0dbb3f377ebf6ff352f5a009611d70",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/mutation_controls.log",
+        "parent_git_blob": "bd9a3835edf68beefa70cc2475b29f4abdfa9645",
+        "current_git_blob": "bd9a3835edf68beefa70cc2475b29f4abdfa9645",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/mutation_receipts/analyzer.json",
+        "parent_git_blob": "464bf1e1802661a862c4c01f8979a3e39971dd29",
+        "current_git_blob": "464bf1e1802661a862c4c01f8979a3e39971dd29",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/mutation_receipts/previous_analysis.json",
+        "parent_git_blob": "65c6bd49163e646cb4f06108ff5465ac616f6029",
+        "current_git_blob": "65c6bd49163e646cb4f06108ff5465ac616f6029",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/mutation_receipts/previous_freeze.json",
+        "parent_git_blob": "d3d70ab27384ab64fc0d3c2fd76638695424512b",
+        "current_git_blob": "d3d70ab27384ab64fc0d3c2fd76638695424512b",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/mutation_receipts/reader.json",
+        "parent_git_blob": "f7e0a8c5a22230068723558e7e84198fa11a8204",
+        "current_git_blob": "f7e0a8c5a22230068723558e7e84198fa11a8204",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/mutation_receipts/validity.json",
+        "parent_git_blob": "eb3435b0a762bcf9a026fbc05abfea7c19af7d94",
+        "current_git_blob": "eb3435b0a762bcf9a026fbc05abfea7c19af7d94",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/replay.log",
+        "parent_git_blob": "222523a15940daf8f0d9e8ec99c8366726aa27d0",
+        "current_git_blob": "222523a15940daf8f0d9e8ec99c8366726aa27d0",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/replay_analysis.py",
+        "parent_git_blob": "88c3a6137b15845205d2e1d791a7fb3133b83356",
+        "current_git_blob": "88c3a6137b15845205d2e1d791a7fb3133b83356",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/portability/test_replay_mutations.py",
+        "parent_git_blob": "b3a2329357335a840fe4b90395eebef620c3176f",
+        "current_git_blob": "b3a2329357335a840fe4b90395eebef620c3176f",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/COMMANDS.json",
+        "parent_git_blob": "e3773d2214d91092290e3878ec9f1658c5900c99",
+        "current_git_blob": "e3773d2214d91092290e3878ec9f1658c5900c99",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/DGP10_CONTROLS.json",
+        "parent_git_blob": "516ae0827b4a8078fae8f05b0931bfb2e6656e23",
+        "current_git_blob": "516ae0827b4a8078fae8f05b0931bfb2e6656e23",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/LIBDAI_QUALIFICATION.json",
+        "parent_git_blob": "c968a440fc868ae276cf267672c0ea47496cbe23",
+        "current_git_blob": "c968a440fc868ae276cf267672c0ea47496cbe23",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/QUALIFICATION.json",
+        "parent_git_blob": "f2e2589aa6c530b1d9e780e21612ca887839479e",
+        "current_git_blob": "f2e2589aa6c530b1d9e780e21612ca887839479e",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/SAME_HOST_PARITY.json",
+        "parent_git_blob": "a0725029f14485103b453fe4259413d0aa884804",
+        "current_git_blob": "a0725029f14485103b453fe4259413d0aa884804",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/dgp10.log",
+        "parent_git_blob": "ba82a24bae4968c130643c4fcf6e93fd2c7e9906",
+        "current_git_blob": "ba82a24bae4968c130643c4fcf6e93fd2c7e9906",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/libdai.log",
+        "parent_git_blob": "610b3dc6c5d0abe0f023768d199c839700dee7a4",
+        "current_git_blob": "610b3dc6c5d0abe0f023768d199c839700dee7a4",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/parity.json",
+        "parent_git_blob": "67c069aa8eb7a6c5db0f7e8f41099f11fefe9ddc",
+        "current_git_blob": "67c069aa8eb7a6c5db0f7e8f41099f11fefe9ddc",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/parity_compare.log",
+        "parent_git_blob": "ed41b3eba49b68cc25a44c8db49212513c1a420f",
+        "current_git_blob": "ed41b3eba49b68cc25a44c8db49212513c1a420f",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/parity_generate.log",
+        "parent_git_blob": "fe7428c134b71dc8c7c8ab32bfc7183a2609e251",
+        "current_git_blob": "fe7428c134b71dc8c7c8ab32bfc7183a2609e251",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/pytest.log",
+        "parent_git_blob": "5f8b5bd6e62c56b8eac6aff45015ebbdb7c6708d",
+        "current_git_blob": "5f8b5bd6e62c56b8eac6aff45015ebbdb7c6708d",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/qualify.py",
+        "parent_git_blob": "3d1ab5ecf92a095ee659238e741037a06e282a33",
+        "current_git_blob": "3d1ab5ecf92a095ee659238e741037a06e282a33",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/qualification/setup.log",
+        "parent_git_blob": "87242921e651dfbcf3e16f64753d2d4cb23f3db6",
+        "current_git_blob": "87242921e651dfbcf3e16f64753d2d4cb23f3db6",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/results/ALL_TASKS.csv",
+        "parent_git_blob": "0cf888cad0bfdd434ac8642866e424505ad56ce3",
+        "current_git_blob": "0cf888cad0bfdd434ac8642866e424505ad56ce3",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/results/ANALYSIS.json",
+        "parent_git_blob": "5a546b56aa94662b443d7cd1d07a49952d5b50f1",
+        "current_git_blob": "5a546b56aa94662b443d7cd1d07a49952d5b50f1",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/results/FREEZE.json",
+        "parent_git_blob": "1a58b17b82b9b25c6f859b50e52f67eb0dafd6fb",
+        "current_git_blob": "1a58b17b82b9b25c6f859b50e52f67eb0dafd6fb",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/results/FROZEN_REPORT.md",
+        "parent_git_blob": "9395b92d7bd398a9754d8fb9b3cbdb679cbacc99",
+        "current_git_blob": "9395b92d7bd398a9754d8fb9b3cbdb679cbacc99",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/results/PAIRS.csv",
+        "parent_git_blob": "1a70db51046c945569c6672759f03d0ace5d2422",
+        "current_git_blob": "1a70db51046c945569c6672759f03d0ace5d2422",
+        "byte_identical": true
+      },
+      {
+        "path": "documentation/performance/round2/results/RUN_RETURN.json",
+        "parent_git_blob": "50e56c533280a5c97e5933a9e15a764ed94e84a8",
+        "current_git_blob": "50e56c533280a5c97e5933a9e15a764ed94e84a8",
+        "byte_identical": true
+      }
+    ],
+    "count": 90,
+    "all_byte_identical": true,
+    "frozen_replay": {
+      "command": [
+        "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+        "/workspace/scratch/226d1e4428b0/pgm-layout-migration/documentation/performance/round2/portability/replay_analysis.py",
+        "--code-checkout",
+        "/workspace/scratch/226d1e4428b0/layout_migration_evidence/frozen_replay/source",
+        "--run-dir",
+        "/workspace/scratch/226d1e4428b0/performance2_restore/raw/performance_run_2",
+        "--output-dir",
+        "/workspace/scratch/226d1e4428b0/layout_migration_evidence/frozen_replay/analysis"
+      ],
+      "helper_sha256": "742e03d388a49fa0e0e7fd1bcb7223da83c633dddf0784cade473a4261b128ab",
+      "replay_exit_code": 0,
+      "replay_ok": true,
+      "repository": "/workspace/scratch/226d1e4428b0/pgm-layout-migration",
+      "run_dir": "/workspace/scratch/226d1e4428b0/performance2_restore/raw/performance_run_2",
+      "source": "/workspace/scratch/226d1e4428b0/layout_migration_evidence/frozen_replay/source",
+      "source_commit": "f14d407f50024ee29c5e8ae6bad52705bc01ec4e",
+      "sources": {
+        "analyze_performance.py": "9acb4048581bc77454e8f22310c2b5124d69fd78ed03da3cf044845c445ac8d9",
+        "benchmark_validity.py": "e283ad651643cf75c03293d63f290c7e7b83793f64f9c30c40f9429a220d0c0c",
+        "run_suite.py": "7a88eb0ac752cf23ab318c74eb139f97fe78172f2c9f03bdbdfc6b103d3e7206"
+      }
+    }
+  },
+  "disposition": {
+    "baseline_code_count": 485,
+    "mapped_code_count": 485,
+    "unique_code_count": 485,
+    "missing": [],
+    "extra": [],
+    "archived_byte_identical_checked": 175,
+    "observed_snapshot_faults": [],
+    "status": "PASS",
+    "canonical_aliases_independently_checked": 47,
+    "canonical_alias_target_mismatches": [],
+    "manifest_sha256": "737404bafcbd396cfa5cf0ebda22dd4d3819b1465078433f654b568086cdf065",
+    "total_dispositions": 499,
+    "preserved_copies_checked": 8
+  },
+  "method_access": {
+    "status": "PASS",
+    "general_uai_backends": [
+      "structural",
+      "block",
+      "quotient",
+      "response"
+    ],
+    "explicit_specialists": [
+      "cbi",
+      "sf",
+      "cqr"
+    ],
+    "reference_only": [
+      "h4"
+    ],
+    "notes": "Shared registry exposes immutable lazy native providers; no representation conversion or guarantee reinterpretation, accepted default and all policies unchanged."
+  },
+  "focused_tests": {
+    "independently_run_before_formal_qualification": true,
+    "passed": 23,
+    "sets": [
+      "tests/test_package_layout.py",
+      "tests/test_cqr_migration.py",
+      "tests/test_cbi_sf_migration.py",
+      "tests/test_qualification_tools.py"
+    ]
+  },
+  "wheel": {
+    "status": "FORMAL_INSTALLED_WHEEL_PASS",
+    "gate_review": "PASS after correcting H4 reference status and external native output location expectations; gate includes actual H4/CQR certificates and source immutability",
+    "receipt": "/workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/qualification/clean_wheel_relocation.json",
+    "receipt_sha256": "a5c7ec5d1293109e9a04f872ef7209c59bf6a3bbb799ac757fcc66cc1f4a19e5",
+    "wheel_sha256": "de14d89cac6b6a137075a14d1a41bb9a9fbda84f418203d0fa086194db2134f3",
+    "wheel_package_entries_compared": 138,
+    "differing_current_package_entries": [],
+    "observed_verdict": "PASS",
+    "formal_qualification": "PASS",
+    "matched_source_commit": "63513e043e93f20fe3a23e9166fff09bc86c1926",
+    "wheel_actual_sha256": "de14d89cac6b6a137075a14d1a41bb9a9fbda84f418203d0fa086194db2134f3",
+    "h4_witness": {
+      "all_ok": true,
+      "roles": 4,
+      "verdicts": {
+        "C": "VERIFIED",
+        "PI": "VERIFIED",
+        "PP": "VERIFIED"
+      }
+    },
+    "cqr_cases": {
+      "queries": {
+        "verified": true,
+        "points": [
+          "2/5",
+          "1/2",
+          "3/4"
+        ]
+      },
+      "normalizer": {
+        "verified": true,
+        "points": [
+          "10"
+        ]
+      }
+    },
+    "external_native_cache_checks": {
+      "cex_lib_exists": true,
+      "stream_lib_exists": true,
+      "heat_record_exists": true,
+      "outside_package": true,
+      "under_declared_cache": true,
+      "source_unchanged": true
+    }
+  },
+  "research_findings": [
+    {
+      "id": "RP1",
+      "scope": "research/campaigns/blockres/run_paired.py",
+      "finding": "CQR arm points to removed cex/cqr/worker.py",
+      "status": "RESOLVED_WITHIN_DECLARED_SCOPE",
+      "resolution": "Canonical research CQR worker selected through bound_source_command."
+    },
+    {
+      "id": "RP2",
+      "scope": "research/campaigns/hp/run_dgp2.py through run_dgp8.py",
+      "finding": "Native provenance reads nonexistent research/campaigns/structural cex_build.json/libcex_kernel.dylib instead of selected source external cache",
+      "status": "RESOLVED_WITHIN_DECLARED_SCOPE",
+      "resolution": "checked_structural_build binds cache record and binary to the selected target source."
+    },
+    {
+      "id": "RP3",
+      "scope": "research/campaigns/hp/dgp2_manifests.py through dgp8_manifests.py",
+      "finding": "Preparation helpers read nonexistent research/campaigns/structural build record; DGP8 also uses old heatbath build-record location",
+      "status": "RESOLVED_WITHIN_DECLARED_SCOPE",
+      "resolution": "Manifest helpers require their locally imported source and use checked native cache provenance."
+    },
+    {
+      "id": "RP4",
+      "scope": "research/campaigns/hp/dgp9_manifests.py and dgp10_manifests.py; run_dgp9.py and run_dgp10.py",
+      "finding": "Old cex/hp generator/source/build-record paths remain",
+      "status": "RESOLVED_WITHIN_DECLARED_SCOPE",
+      "resolution": "Canonical generator invocations are source-bound; actual worker results supply consumed heat-bath provenance; DGP9 generator launch and source hash corrected."
+    },
+    {
+      "id": "RP5",
+      "scope": "research/campaigns/hp/dgp10_probes_layout.py",
+      "finding": "Kernel copy assumes selected source code/cex/hp/heatbath_native.c; current canonical source needs explicit handling or historical-only classification",
+      "status": "RESOLVED_WITHIN_DECLARED_SCOPE",
+      "resolution": "Explicit historical-layout preflight refuses the migrated source before creating or deleting output; documented pinned-checkout requirement."
+    }
+  ],
+  "caveats": [
+    "No new performance experiment or broad speed-dominance claim follows from relocation.",
+    "All current external tasks remain exposed; frozen benchmark analysis replay is preservation evidence, not a new timing run.",
+    "Private-packet dependent inherited controls remain separately blocked; new public tiny witnesses do not replace them.",
+    "Historical protocol scripts must either be explicitly classified as such or resolve selected current source/cache paths; no blanket all-campaigns-runnable claim."
+  ],
+  "reviewed_commit": "63513e043e93f20fe3a23e9166fff09bc86c1926",
+  "research_boundary_review": {
+    "source_binding": "PASS: isolated requested source, foreign-root manifest refusal, runtime module-origin checks, historical probe import guard; no historical scored cells rewritten.",
+    "historical_protocols": "run_revision and validate_round explicitly refuse live-layout execution; original bytes preserved. DGP10 packet layout explicitly requires historical code/cex structure.",
+    "cqr_scope": "Packaged solver/checker/current worker qualified; full old CQR experiment matrix still requires its pinned baseline/native artifacts and original checkout.",
+    "all_campaign_helpers_claimed_runnable": false
+  },
+  "remaining_requirements": [],
+  "signed_at_utc": "2026-11-28T06:27:24.329840+00:00",
+  "release_recommendation": "APPROVE the layout migration at the reviewed commit. Preserve the accepted default, explicit specialist contracts, historical protocol boundaries and published benchmark caveats.",
+  "formal_qualification": {
+    "receipt": "/workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/qualification/QUALIFICATION.json",
+    "receipt_sha256": "11ceb7a9ac62176dd809def2de9b55cafee07f573f9102b0b2485e8eb02fe314",
+    "commit": "63513e043e93f20fe3a23e9166fff09bc86c1926",
+    "overall": "PASS",
+    "required_exit_codes": {
+      "00_native_setup": 0,
+      "01_pytest": 0,
+      "02_parity_generate": 0,
+      "03_parity_compare": 0,
+      "04_check_dgp10": 0,
+      "05_dgp10_oracle": 0,
+      "06_inherited_controls": 0,
+      "07_specialist_conformance": 0,
+      "08_wheel_build": 0,
+      "09_clean_wheel_relocation": 0
+    },
+    "pytest": {
+      "summary": "369 passed, 6 skipped, 47 subtests passed in 16.11s",
+      "collection_errors": 0,
+      "blocked_skips": [
+        "SKIPPED [1] tests/specialists/test_cbi_conformance.py:272: BLOCKED: private CBI counterexample packet absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json (set CBI_COUNTEREXAMPLES)",
+        "SKIPPED [3] tests/specialists/test_h4a_review2.py:26: BLOCKED: private H4 packet file absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/docs/h4-arithmetic-contract-2026-10-27/inputs/SMALL_FIXTURES.json (set H4A_PACKET)",
+        "SKIPPED [2] tests/specialists/test_h4a_review2.py:26: BLOCKED: private H4 packet file absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/docs/h4-arithmetic-contract-2026-10-27/inputs/FROZEN_NODES.json (set H4A_PACKET)"
+      ],
+      "blocked_test_instances": 6,
+      "failed": []
+    },
+    "parity": "IDENTICAL",
+    "dgp10_controls": {
+      "all_ok": true,
+      "n_ok": 12,
+      "n": 12
+    },
+    "dgp10_oracle": {
+      "all_ok": true,
+      "gate": "PASS",
+      "models": 9,
+      "nonvacuous": 7
+    },
+    "inherited_controls": {
+      "counts": {
+        "BLOCKED": 51,
+        "PORTABLE": 39
+      },
+      "classification": "PORTABLE = passed; BLOCKED = failed with a declared private dependency absent (preflight) or validated missing-path evidence; FAILED = failed with dependencies present; TIMEOUT"
+    },
+    "specialist_conformance": {
+      "summary": "56 passed, 6 skipped in 1.93s",
+      "collection_errors": 0,
+      "blocked_skips": [
+        "SKIPPED [1] tests/specialists/test_cbi_conformance.py:272: BLOCKED: private CBI counterexample packet absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json (set CBI_COUNTEREXAMPLES)",
+        "SKIPPED [3] tests/specialists/test_h4a_review2.py:26: BLOCKED: private H4 packet file absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/docs/h4-arithmetic-contract-2026-10-27/inputs/SMALL_FIXTURES.json (set H4A_PACKET)",
+        "SKIPPED [2] tests/specialists/test_h4a_review2.py:26: BLOCKED: private H4 packet file absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/docs/h4-arithmetic-contract-2026-10-27/inputs/FROZEN_NODES.json (set H4A_PACKET)"
+      ],
+      "blocked_test_instances": 6,
+      "failed": []
+    },
+    "blocked": {
+      "inherited_controls": 51,
+      "specialist_tests": 6,
+      "specialist_skip_lines": 3,
+      "note": "blocked = declared private-record dependencies absent on this host; specialist_tests counts test INSTANCES (pytest aggregates skip lines); listed per item in BLOCKED_CONTROLS.json and the pytest log"
+    },
+    "source_clean": true
+  },
+  "serial_supplement": {
+    "receipt": "/workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/qualification/supplement/SUPPLEMENT.json",
+    "receipt_sha256": "0245f000c2ec10663f030469f8fe2356988507b18b1c9f6e3e9bdace91f1479b",
+    "commit": "63513e043e93f20fe3a23e9166fff09bc86c1926",
+    "git_status_after": "",
+    "serial": true,
+    "controls": {
+      "hp": {
+        "module": "research.campaigns.hp.check_hp",
+        "n": 80,
+        "n_ok": 80,
+        "all_ok": true,
+        "wall_s": 4.735676252999838,
+        "rates": null
+      },
+      "unified": {
+        "module": "research.campaigns.hp.check_unified",
+        "n": 57,
+        "n_ok": 57,
+        "all_ok": true,
+        "wall_s": 1.5369048850006948,
+        "rates": null
+      },
+      "revision": {
+        "module": "research.campaigns.hp.check_revision",
+        "n": 32,
+        "n_ok": 32,
+        "all_ok": true,
+        "wall_s": 0.7256219510018127,
+        "rates": "src/pgm/algorithms/quotient/PHASE_RATES_R1.json"
+      }
+    },
+    "all_ok": true
+  },
+  "qualification_disclosure": {
+    "first_receipt": "/workspace/scratch/226d1e4428b0/layout_migration_qualification/qualification/QUALIFICATION.json",
+    "first_receipt_sha256": "6bc04af128266352e314e67d54f0dce8c44aac4ba563c6521cf40f65e607664a",
+    "original_overall": "FAIL",
+    "original_failed_steps": [
+      "05_dgp10_oracle"
+    ],
+    "cause": "DGP10 numerical reference required the missing qualification-only mpmath dependency; confirmed in original 05_dgp10_oracle.log.",
+    "source_commit_unchanged": true,
+    "resolution": "Installed the missing qualification dependency and repeated the entire serial qualification. Original failure retained; no engine change."
+  }
+}

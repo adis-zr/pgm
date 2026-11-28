@@ -1,0 +1,10 @@
+{
+  "archive": "archive/QUALIFICATION_EVIDENCE.zip",
+  "sha256": "81a5faeb4ef172ec92e52f4228321dd150b2232536c7844b777afa90a68689ef",
+  "size_bytes": 2979160,
+  "implementation_commit": "63513e043e93f20fe3a23e9166fff09bc86c1926",
+  "baseline_commit": "7c67a3544afca74587ac066612a60b79c7aabdec",
+  "qualification_first_attempt": "FAIL: missing qualification-only mpmath dependency; retained",
+  "qualification_serial_retry": "PASS: same source; complete serial retry after installing dependency",
+  "new_performance_run": false
+}

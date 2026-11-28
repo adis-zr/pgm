@@ -53,7 +53,8 @@ these plumbing repairs reruns or revises an old scored cell.
 ## Reproduce qualification
 
 Use a clean checkout, Python 3.12, declared project dependencies, the `build`,
-`setuptools`, `wheel` and `pytest` tools, qualified Clang `CC`/`CXX`, and the
+`setuptools`, `wheel`, `pytest` and `mpmath` tools (`mpmath` is only for the
+DGP numerical oracle), qualified Clang `CC`/`CXX`, and the
 optional H4 GMP/MPFR development dependencies. Run serially; do not run another
 native qualification or benchmark at the same time.
 

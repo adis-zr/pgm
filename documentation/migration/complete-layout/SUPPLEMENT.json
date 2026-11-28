@@ -1,0 +1,32 @@
+{
+  "commit": "63513e043e93f20fe3a23e9166fff09bc86c1926",
+  "git_status_after": "",
+  "serial": true,
+  "controls": {
+    "hp": {
+      "module": "research.campaigns.hp.check_hp",
+      "n": 80,
+      "n_ok": 80,
+      "all_ok": true,
+      "wall_s": 4.735676252999838,
+      "rates": null
+    },
+    "unified": {
+      "module": "research.campaigns.hp.check_unified",
+      "n": 57,
+      "n_ok": 57,
+      "all_ok": true,
+      "wall_s": 1.5369048850006948,
+      "rates": null
+    },
+    "revision": {
+      "module": "research.campaigns.hp.check_revision",
+      "n": 32,
+      "n_ok": 32,
+      "all_ok": true,
+      "wall_s": 0.7256219510018127,
+      "rates": "src/pgm/algorithms/quotient/PHASE_RATES_R1.json"
+    }
+  },
+  "all_ok": true
+}

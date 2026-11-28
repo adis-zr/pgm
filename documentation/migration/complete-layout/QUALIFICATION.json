@@ -1,0 +1,141 @@
+{
+ "commit": "63513e043e93f20fe3a23e9166fff09bc86c1926",
+ "git_status_dirty_lines": [],
+ "python": "3.12.14",
+ "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+ "commands": [
+  {
+   "step": "00_native_setup",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python -m pgm.runtime.build --h4",
+   "exit": 0
+  },
+  {
+   "step": "01_pytest",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python -m pytest tests -q -rA -p no:cacheprovider",
+   "exit": 0
+  },
+  {
+   "step": "02_parity_generate",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python tests/parity/generate_reference.py /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/parity_final.json",
+   "exit": 0
+  },
+  {
+   "step": "03_parity_compare",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python tests/parity/compare.py /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/parity_final.json --reference /workspace/scratch/226d1e4428b0/layout_migration_evidence/parity_7c67_same_host.json --report /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/qualification/parity_report.json",
+   "exit": 0
+  },
+  {
+   "step": "04_check_dgp10",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python -m research.campaigns.hp.check_dgp10 /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/qualification/check_dgp10.json",
+   "exit": 0
+  },
+  {
+   "step": "05_dgp10_oracle",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python -m research.campaigns.hp.dgp10_oracle /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/qualification/dgp10_oracle.json",
+   "exit": 0
+  },
+  {
+   "step": "06_inherited_controls",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python /workspace/scratch/226d1e4428b0/pgm-layout-migration/tests/qualification/run_inherited_controls.py /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/qualification/BLOCKED_CONTROLS.json --timeout 900",
+   "exit": 0
+  },
+  {
+   "step": "07_specialist_conformance",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python -m pytest tests/specialists tests/benchmark_legacy -q -rA -p no:cacheprovider --continue-on-collection-errors",
+   "exit": 0
+  },
+  {
+   "step": "08_wheel_build",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python -m build --wheel --no-isolation --outdir /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/dist /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/wheel_source",
+   "exit": 0
+  },
+  {
+   "step": "09_clean_wheel_relocation",
+   "command": "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python /workspace/scratch/226d1e4428b0/pgm-layout-migration/tests/qualification/clean_wheel_relocation_test.py /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/dist/pgm_certified-0.2.0-py3-none-any.whl /workspace/scratch/226d1e4428b0/layout_migration_qualification_retry/relocation",
+   "exit": 0
+  }
+ ],
+ "pytest": {
+  "summary": "369 passed, 6 skipped, 47 subtests passed in 16.11s",
+  "collection_errors": 0,
+  "blocked_skips": [
+   "SKIPPED [1] tests/specialists/test_cbi_conformance.py:272: BLOCKED: private CBI counterexample packet absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json (set CBI_COUNTEREXAMPLES)",
+   "SKIPPED [3] tests/specialists/test_h4a_review2.py:26: BLOCKED: private H4 packet file absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/docs/h4-arithmetic-contract-2026-10-27/inputs/SMALL_FIXTURES.json (set H4A_PACKET)",
+   "SKIPPED [2] tests/specialists/test_h4a_review2.py:26: BLOCKED: private H4 packet file absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/docs/h4-arithmetic-contract-2026-10-27/inputs/FROZEN_NODES.json (set H4A_PACKET)"
+  ],
+  "blocked_test_instances": 6,
+  "failed": []
+ },
+ "specialist_conformance": {
+  "summary": "56 passed, 6 skipped in 1.93s",
+  "collection_errors": 0,
+  "blocked_skips": [
+   "SKIPPED [1] tests/specialists/test_cbi_conformance.py:272: BLOCKED: private CBI counterexample packet absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/runs/mdi_2026-10-28/CBI_LIBRARY_2026-11-06/repair_2026-11-06/counterexamples.json (set CBI_COUNTEREXAMPLES)",
+   "SKIPPED [3] tests/specialists/test_h4a_review2.py:26: BLOCKED: private H4 packet file absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/docs/h4-arithmetic-contract-2026-10-27/inputs/SMALL_FIXTURES.json (set H4A_PACKET)",
+   "SKIPPED [2] tests/specialists/test_h4a_review2.py:26: BLOCKED: private H4 packet file absent: /workspace/scratch/226d1e4428b0/pgm-layout-migration/research/docs/h4-arithmetic-contract-2026-10-27/inputs/FROZEN_NODES.json (set H4A_PACKET)"
+  ],
+  "blocked_test_instances": 6,
+  "failed": []
+ },
+ "parity": "IDENTICAL",
+ "check_dgp10": {
+  "all_ok": true,
+  "n_ok": 12,
+  "n": 12
+ },
+ "dgp10_oracle": {
+  "all_ok": true,
+  "gate": "PASS",
+  "models": 9,
+  "nonvacuous": 7
+ },
+ "inherited_controls": {
+  "counts": {
+   "BLOCKED": 51,
+   "PORTABLE": 39
+  },
+  "classification": "PORTABLE = passed; BLOCKED = failed with a declared private dependency absent (preflight) or validated missing-path evidence; FAILED = failed with dependencies present; TIMEOUT"
+ },
+ "wheel": "de14d89cac6b6a137075a14d1a41bb9a9fbda84f418203d0fa086194db2134f3",
+ "clean_wheel_relocation": {
+  "verdict": "PASS",
+  "failures": []
+ },
+ "required_steps": [
+  "00_native_setup",
+  "01_pytest",
+  "02_parity_generate",
+  "03_parity_compare",
+  "04_check_dgp10",
+  "05_dgp10_oracle",
+  "06_inherited_controls",
+  "07_specialist_conformance",
+  "08_wheel_build",
+  "09_clean_wheel_relocation"
+ ],
+ "required_exit_codes": {
+  "00_native_setup": 0,
+  "01_pytest": 0,
+  "02_parity_generate": 0,
+  "03_parity_compare": 0,
+  "04_check_dgp10": 0,
+  "05_dgp10_oracle": 0,
+  "06_inherited_controls": 0,
+  "07_specialist_conformance": 0,
+  "08_wheel_build": 0,
+  "09_clean_wheel_relocation": 0
+ },
+ "blocked": {
+  "inherited_controls": 51,
+  "specialist_tests": 6,
+  "specialist_skip_lines": 3,
+  "note": "blocked = declared private-record dependencies absent on this host; specialist_tests counts test INSTANCES (pytest aggregates skip lines); listed per item in BLOCKED_CONTROLS.json and the pytest log"
+ },
+ "failed": {
+  "required_steps": [],
+  "specialist_collection_errors": 0,
+  "specialist_failed": [],
+  "pytest_failed": []
+ },
+ "overall": "PASS"
+}
