@@ -1,0 +1,22 @@
+{
+  "positive": [
+    "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+    "/workspace/scratch/226d1e4428b0/performance2_restore/pgm/documentation/performance/round2/portability/replay_analysis.py",
+    "--code-checkout",
+    "/workspace/scratch/226d1e4428b0/performance2_restore/pgm",
+    "--run-dir",
+    "/workspace/scratch/226d1e4428b0/performance2_restore/raw/performance_run_2",
+    "--output-dir",
+    "/workspace/scratch/226d1e4428b0/performance2_restore/replay"
+  ],
+  "negative": [
+    "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+    "/workspace/scratch/226d1e4428b0/performance_round2_replay/test_replay_mutations.py",
+    "--code-checkout",
+    "/workspace/scratch/226d1e4428b0/performance2_restore/pgm",
+    "--run-dir",
+    "/workspace/scratch/226d1e4428b0/performance2_restore/raw/performance_run_2",
+    "--output-dir",
+    "/workspace/scratch/226d1e4428b0/performance2_restore/controls"
+  ]
+}

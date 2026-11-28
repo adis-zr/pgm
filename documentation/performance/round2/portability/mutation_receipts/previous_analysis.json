@@ -1,0 +1,15 @@
+{
+  "code_checkout": "/workspace/scratch/226d1e4428b0/performance2_restore/controls/previous_analysis/source",
+  "error": "ValueError('Relocated previous-candidate reference failed its original hash: analysis')",
+  "expected_dir": "/workspace/scratch/226d1e4428b0/performance2_restore/raw/performance_run_2/frozen_analysis",
+  "freeze_sha256": "a507254eda614ce5c112d64600faaba9cb008d8ae5fd51971a0a6b06adfb5dd1",
+  "output_dir": "/workspace/scratch/226d1e4428b0/performance2_restore/controls/previous_analysis/result",
+  "replay_ok": false,
+  "replay_script_sha256": "742e03d388a49fa0e0e7fd1bcb7223da83c633dddf0784cade473a4261b128ab",
+  "run_dir": "/workspace/scratch/226d1e4428b0/performance2_restore/raw/performance_run_2",
+  "sources": {
+    "analyze_performance.py": "9acb4048581bc77454e8f22310c2b5124d69fd78ed03da3cf044845c445ac8d9",
+    "benchmark_validity.py": "e283ad651643cf75c03293d63f290c7e7b83793f64f9c30c40f9429a220d0c0c",
+    "run_suite.py": "7a88eb0ac752cf23ab318c74eb139f97fe78172f2c9f03bdbdfc6b103d3e7206"
+  }
+}

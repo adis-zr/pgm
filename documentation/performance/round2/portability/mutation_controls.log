@@ -1,0 +1,45 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "case": "analyzer",
+      "passed": true,
+      "returncode": 2,
+      "error": "ValueError('Restored analysis dependency differs from its frozen hash: analyze_performance.py')",
+      "creator_parent_unchanged": true
+    },
+    {
+      "case": "validity",
+      "passed": true,
+      "returncode": 2,
+      "error": "ValueError('Restored analysis dependency differs from its frozen hash: benchmark_validity.py')",
+      "creator_parent_unchanged": true
+    },
+    {
+      "case": "reader",
+      "passed": true,
+      "returncode": 2,
+      "error": "ValueError('Restored analysis dependency differs from its frozen hash: run_suite.py')",
+      "creator_parent_unchanged": true
+    },
+    {
+      "case": "previous_analysis",
+      "passed": true,
+      "returncode": 2,
+      "error": "ValueError('Relocated previous-candidate reference failed its original hash: analysis')",
+      "creator_parent_unchanged": true
+    },
+    {
+      "case": "previous_freeze",
+      "passed": true,
+      "returncode": 2,
+      "error": "ValueError('Relocated previous-candidate reference failed its original hash: freeze')",
+      "creator_parent_unchanged": true
+    }
+  ],
+  "original_source_and_evidence_unchanged": true,
+  "protected_sha256": {
+    "FREEZE.json": "a507254eda614ce5c112d64600faaba9cb008d8ae5fd51971a0a6b06adfb5dd1",
+    "RECEIPTS.jsonl": "27474e71d2bf4db5ebdfc5ed3df06b6e4f7c0e528e1f91c66ac36bddacb8d592"
+  }
+}

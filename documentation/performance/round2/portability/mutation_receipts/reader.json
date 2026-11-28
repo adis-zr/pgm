@@ -1,0 +1,8 @@
+{
+  "code_checkout": "/workspace/scratch/226d1e4428b0/performance2_restore/controls/reader/source",
+  "error": "ValueError('Restored analysis dependency differs from its frozen hash: run_suite.py')",
+  "expected_dir": "/workspace/scratch/226d1e4428b0/performance2_restore/raw/performance_run_2/frozen_analysis",
+  "output_dir": "/workspace/scratch/226d1e4428b0/performance2_restore/controls/reader/result",
+  "replay_ok": false,
+  "run_dir": "/workspace/scratch/226d1e4428b0/performance2_restore/raw/performance_run_2"
+}

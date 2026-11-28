@@ -1,0 +1,86 @@
+{
+  "artifacts": {
+    "../controls/MUTATION_CONTROLS.json": "82942324bb9530b1a7b5cdd82076b277571b0c6ed7894bf60d5c745ec9d69275",
+    "../replay/REPLAY_RECEIPT.json": "d0861626dabe0ba85bc965abf8f90250b258069dc4fb2db7cd415b777e77d1d2",
+    "COMMANDS.json": "5ac228cf48e42877a23edd1d92d03305a775572852c03b6cd4ebbb47cbf67fce",
+    "mutation_controls.log": "313d6718b6ef2bba791f1a4a90a5d49b04b1e670e7ad3c1480d031263e985747",
+    "replay.log": "30d8cad6510aac4c7b92ccedf8efb875a2b9df49ac1b9986c91261cd5c765f10",
+    "test_replay_mutations.py": "36955b517e5def9fa925185a3143e118c337e86d77a068c5fd557f9738cb9c05"
+  },
+  "cells": 732,
+  "creator_source_read_attempts": [],
+  "evidence_unchanged": true,
+  "mutation_checks": [
+    {
+      "case": "analyzer",
+      "creator_parent_unchanged": true,
+      "error": "ValueError('Restored analysis dependency differs from its frozen hash: analyze_performance.py')",
+      "passed": true,
+      "returncode": 2
+    },
+    {
+      "case": "validity",
+      "creator_parent_unchanged": true,
+      "error": "ValueError('Restored analysis dependency differs from its frozen hash: benchmark_validity.py')",
+      "passed": true,
+      "returncode": 2
+    },
+    {
+      "case": "reader",
+      "creator_parent_unchanged": true,
+      "error": "ValueError('Restored analysis dependency differs from its frozen hash: run_suite.py')",
+      "passed": true,
+      "returncode": 2
+    },
+    {
+      "case": "previous_analysis",
+      "creator_parent_unchanged": true,
+      "error": "ValueError('Relocated previous-candidate reference failed its original hash: analysis')",
+      "passed": true,
+      "returncode": 2
+    },
+    {
+      "case": "previous_freeze",
+      "creator_parent_unchanged": true,
+      "error": "ValueError('Relocated previous-candidate reference failed its original hash: freeze')",
+      "passed": true,
+      "returncode": 2
+    }
+  ],
+  "negative_control_driver_exit_code": 0,
+  "positive_exit_code": 0,
+  "positive_replay": true,
+  "release": "ELIGIBLE",
+  "release_gates": {
+    "accepted_preservation": "PASS",
+    "accepted_preservation_cost": "PASS",
+    "automatic_union_preservation": "PASS",
+    "automatic_vs_experimental_cost": "PASS",
+    "full_matrix": "PASS",
+    "previous_automatic50": "PASS",
+    "strict_validity": "PASS"
+  },
+  "relocated_input_files": 122,
+  "relocated_reference_files": 3,
+  "reports": {
+    "ANALYSIS.json": {
+      "expected_sha256": "4aebb1db60de59c345a7e113eb8700817f95bdcc770cc67035781317140cf392",
+      "identical": true,
+      "replay_sha256": "4aebb1db60de59c345a7e113eb8700817f95bdcc770cc67035781317140cf392"
+    },
+    "PAIRS.csv": {
+      "expected_sha256": "108e9519b8d5bb198fbe4afa3edd6116a53fa6c3c9f5208c337471460ff6f68d",
+      "identical": true,
+      "replay_sha256": "108e9519b8d5bb198fbe4afa3edd6116a53fa6c3c9f5208c337471460ff6f68d"
+    },
+    "REPORT.md": {
+      "expected_sha256": "0bb5ffac04be43f3080f9c81c2348cea809186c257a9fff76a24a46fbab7d6c6",
+      "identical": true,
+      "replay_sha256": "0bb5ffac04be43f3080f9c81c2348cea809186c257a9fff76a24a46fbab7d6c6"
+    }
+  },
+  "restored_commit": "2d9b26a0e9282d41091636ec83882daf25627d40",
+  "restored_worktree_clean": true,
+  "validity": "PASS",
+  "packaging_note": "A preliminary all-files whitespace check stopped on preserved raw pytest logs and CSV CRLF endings. No raw evidence was rewritten; source/test/harness whitespace check passed. No scored cell was affected."
+}
