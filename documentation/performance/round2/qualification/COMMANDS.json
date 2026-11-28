@@ -1,0 +1,88 @@
+[
+  {
+    "phase": "pytest",
+    "command": [
+      "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+      "-m",
+      "pytest",
+      "tests",
+      "-q",
+      "-rA",
+      "-p",
+      "no:cacheprovider"
+    ],
+    "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+    "returncode": 0,
+    "wall_s": 10.159843820998503,
+    "log": "pytest.log"
+  },
+  {
+    "phase": "parity_generate",
+    "command": [
+      "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+      "tests/parity/generate_reference.py",
+      "/workspace/scratch/226d1e4428b0/performance2_qualification/parity.json"
+    ],
+    "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+    "returncode": 0,
+    "wall_s": 4.372624070998427,
+    "log": "parity_generate.log"
+  },
+  {
+    "phase": "parity_compare",
+    "command": [
+      "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+      "tests/parity/compare.py",
+      "/workspace/scratch/226d1e4428b0/performance2_qualification/parity.json",
+      "--reference",
+      "/workspace/scratch/226d1e4428b0/pgm-step2-review/documentation/performance/round1/development/baseline_parity.json",
+      "--report",
+      "/workspace/scratch/226d1e4428b0/performance2_qualification/SAME_HOST_PARITY.json"
+    ],
+    "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+    "returncode": 0,
+    "wall_s": 0.02531042000191519,
+    "log": "parity_compare.log"
+  },
+  {
+    "phase": "dgp10",
+    "command": [
+      "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+      "code/cex/hp/check_dgp10.py",
+      "/workspace/scratch/226d1e4428b0/performance2_qualification/DGP10_CONTROLS.json"
+    ],
+    "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+    "returncode": 0,
+    "wall_s": 9.047810440999456,
+    "log": "dgp10.log"
+  },
+  {
+    "phase": "libdai",
+    "command": [
+      "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+      "/workspace/scratch/226d1e4428b0/performance2_qualification/libdai/qualify_libdai.py"
+    ],
+    "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+    "returncode": 0,
+    "wall_s": 0.055707872001221403,
+    "log": "libdai.log"
+  },
+  {
+    "phase": "setup",
+    "command": [
+      "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+      "benchmarks/external/run_performance.py",
+      "setup",
+      "--run-dir",
+      "/workspace/scratch/226d1e4428b0/performance_run_2",
+      "--baseline-root",
+      "/workspace/scratch/226d1e4428b0/pgm-performance-baseline",
+      "--qualification",
+      "/workspace/scratch/226d1e4428b0/performance2_qualification/libdai/LIBDAI_QUALIFICATION.json"
+    ],
+    "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+    "returncode": 0,
+    "wall_s": 6.02534678399752,
+    "log": "setup.log"
+  }
+]

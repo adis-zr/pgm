@@ -1,0 +1,13 @@
+{"D91_matched_run_and_commit_once": {"ok": true}}
+{"D92_enclosure_differential_and_gauges": {"ok": true}}
+{"D93_reservation_transaction_and_failure_sweep": {"ok": true}}
+{"D94_bitlength_range_witness_and_fallback_admission": {"ok": true}}
+{"D95_risk_allocation_grouping_intersection": {"ok": true}}
+{"D96_local_plan_snapshots_centers": {"ok": true}}
+{"D97_staged_output_commit": {"ok": true}}
+{"D98_residual_postcommit_no_scan": {"ok": true}}
+{"D99_checker_identity_and_refusal": {"ok": true}}
+{"D100_rows_from_boxes_equals_counts": {"ok": true}}
+{"D101_response_runner_end_to_end_and_exact_fallback": {"ok": true}}
+{"D102_eta_and_bounds": {"ok": true}}
+{"all_ok": true, "n": 12, "n_ok": 12, "wall_s": 8.9}

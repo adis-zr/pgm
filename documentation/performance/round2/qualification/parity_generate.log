@@ -1,0 +1,20 @@
+structural/asym2 COMPLETE 4
+structural/asym2_evidence COMPLETE 2
+structural/bip4_stream COMPLETE 8
+structural/bip4_support COMPLETE 8
+structural/cyc3 COMPLETE 8
+structural/zero_mass ZERO_EVIDENCE 0
+block/asym2 COMPLETE 4
+block/asym2_exact_mode COMPLETE 4
+block/cyc3 COMPLETE 8
+block/bip4 COMPLETE 8
+block/zero_mass ZERO_EVIDENCE 0
+quotient/cyc3_deterministic COMPLETE 8
+quotient/asym2 COMPLETE 4
+response/bip4_refused_hard_zero REFUSED 0
+response/zero_mass ZERO_EVIDENCE 0
+response/pos4_exact_mode_ineligible INELIGIBLE 0
+response/pos4 (wall-limited) COMPLETE 8
+block/pos4 (wall-limited) COMPLETE 8
+response prefix pos4 eligible True eta 24036482226495335/60065279245459303
+written /workspace/scratch/226d1e4428b0/performance2_qualification/parity.json

@@ -1,0 +1,289 @@
+......................................s................................. [ 26%]
+................................. [ 38%]
+........................................................................ [ 65%]
+........................................................................ [ 91%]
+.......................                                                  [100%]
+==================================== PASSES ====================================
+_ CertificateCacheCleanupTests.test_setup_refusals_release_already_charged_cache _
+----------------------------- Captured stdout call -----------------------------
+uuu
+_ NativeAllocationFailureTests.test_every_context_and_observer_allocation_rolls_back _
+----------------------------- Captured stdout call -----------------------------
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu
+_________________ test_analysis_cli_does_not_hide_release_hold _________________
+----------------------------- Captured stdout call -----------------------------
+{"validity": "PASS", "completeness": "PASS", "recorded_cells": 732, "charge_s": 1, "same_host_preservation": {}, "release": {"decision": "HOLD"}}
+=========================== short test summary info ============================
+PASSED tests/test_automatic_execution.py::test_automatic_higher_order_execution_contains_independent_truth
+PASSED tests/test_automatic_execution.py::test_automatic_refusal_preserves_real_block_fallback_and_risk
+PASSED tests/test_automatic_policy.py::test_affordable_binary_higher_arity_gets_bounded_structural_attempt[auto]
+PASSED tests/test_automatic_policy.py::test_affordable_binary_higher_arity_gets_bounded_structural_attempt[deterministic]
+PASSED tests/test_automatic_policy.py::test_affordable_binary_higher_arity_gets_bounded_structural_attempt[exact]
+PASSED tests/test_automatic_policy.py::test_unavailable_forecasts_preserve_the_prior_fallbacks[200000001-1048576]
+PASSED tests/test_automatic_policy.py::test_unavailable_forecasts_preserve_the_prior_fallbacks[100-268435457]
+PASSED tests/test_automatic_policy.py::test_unavailable_forecasts_preserve_the_prior_fallbacks[None-1048576]
+PASSED tests/test_automatic_policy.py::test_unavailable_forecasts_preserve_the_prior_fallbacks[100-None]
+PASSED tests/test_automatic_policy.py::test_unavailable_forecasts_preserve_the_prior_fallbacks[None-None]
+PASSED tests/test_automatic_policy.py::test_existing_early_routes_keep_their_order_and_allowances[3-3-False-False]
+PASSED tests/test_automatic_policy.py::test_existing_early_routes_keep_their_order_and_allowances[3-2-False-False]
+PASSED tests/test_automatic_policy.py::test_existing_early_routes_keep_their_order_and_allowances[2-2-False-False]
+PASSED tests/test_automatic_policy.py::test_existing_early_routes_keep_their_order_and_allowances[2-2-True-False]
+PASSED tests/test_automatic_policy.py::test_existing_early_routes_keep_their_order_and_allowances[2-2-False-True]
+PASSED tests/test_automatic_policy.py::test_existing_early_routes_keep_their_order_and_allowances[3-2-True-False]
+PASSED tests/test_automatic_policy.py::test_work_and_memory_boundaries_use_the_existing_inclusive_predicate
+PASSED tests/test_automatic_policy.py::test_policy_registration_does_not_promote_or_reallocate_risk
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[200000001-1048576-auto]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[200000001-1048576-deterministic]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[200000001-1048576-exact]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[100-268435457-auto]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[100-268435457-deterministic]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[100-268435457-exact]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[None-1048576-auto]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[None-1048576-deterministic]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[None-1048576-exact]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[100-None-auto]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[100-None-deterministic]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[100-None-exact]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[None-None-auto]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[None-None-deterministic]
+PASSED tests/test_automatic_policy.py::test_unknown_compression_quality_does_not_preempt_incumbent[None-None-exact]
+PASSED tests/test_automatic_policy.py::test_deferral_keeps_existing_structural_and_response_precedence[forest]
+PASSED tests/test_automatic_policy.py::test_deferral_keeps_existing_structural_and_response_precedence[stream]
+PASSED tests/test_automatic_policy.py::test_deferral_keeps_existing_structural_and_response_precedence[response]
+PASSED tests/test_automatic_policy.py::test_dispatch_uses_features_not_model_identity_or_exposure
+PASSED tests/test_benchmark_harness.py::test_arms_pairs_contracts_consistent
+PASSED tests/test_benchmark_harness.py::test_native_probe_honours_pgm_native_cache
+PASSED tests/test_benchmark_harness.py::test_historical_reference_cells_bind_to_the_current_manifests
+PASSED tests/test_benchmark_harness.py::test_plan_declares_the_full_matrix_and_ceiling_before_scoring
+PASSED tests/test_benchmark_validator.py::test_valid_accepted_result_passes_contract
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation0-policy]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation1-policy_version]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation2-risk allocations]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation3-risk allocations]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation4-hard deadline]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation5-backend outside the policy]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation6-epsilon/delta]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation7-unresolved attempt]
+PASSED tests/test_benchmark_validator.py::test_contract_mutations_are_rejected[mutation8-attempt configuration]
+PASSED tests/test_benchmark_validator.py::test_geometry_mutations_are_rejected
+PASSED tests/test_benchmark_validator.py::test_legacy_reference_contract
+PASSED tests/test_benchmark_validator.py::test_analyzer_detects_deterministic_conflicts_and_late_publication
+PASSED tests/test_benchmark_validator.py::test_amendment_2_internal_wall_rule_guards_late_publication_only
+PASSED tests/test_benchmark_validator.py::test_reader_rejects_published_success_behind_unresolved_cleanup
+PASSED tests/test_benchmark_validator.py::test_legacy_completing_status_past_allowance_stays_a_fault
+PASSED tests/test_benchmark_validator.py::test_incident_adjudication_is_an_exact_allowlist
+PASSED tests/test_benchmark_validator.py::test_historical_experimental_gate_reads_the_recovered_extract_bound_by_hash
+PASSED tests/test_compat_shims.py::test_conflicting_package_earlier_on_sys_path_does_not_win
+PASSED tests/test_compat_shims.py::test_already_imported_foreign_pgm_is_refused_explicitly
+PASSED tests/test_compat_shims.py::test_script_entry_without_installed_package_runs_the_checkout
+PASSED tests/test_compat_shims.py::test_alias_identity_and_same_checkout_already_imported_is_fine
+PASSED tests/test_consolidation_boundaries.py::test_one_input_boundary_binding_and_inventory
+PASSED tests/test_consolidation_boundaries.py::test_source_refusals_are_typed
+PASSED tests/test_consolidation_boundaries.py::test_worker_refuses_a_binding_mismatch_typed
+PASSED tests/test_consolidation_boundaries.py::test_worker_records_policy_and_explicit_configuration
+PASSED tests/test_consolidation_boundaries.py::test_accepted_engine_parse_infer_seam_reuses_the_bound_model
+PASSED tests/test_consolidation_boundaries.py::test_response_solver_is_callable_without_argv_or_files
+PASSED tests/test_consolidation_boundaries.py::test_compatibility_entrypoints_import
+PASSED tests/test_dgp10_analysis_units.py::MomentDiagnosticUnits::test_binary_moment_inflation
+PASSED tests/test_dgp10_analysis_units.py::MomentDiagnosticUnits::test_card4_scaling_changes_limiting_term
+PASSED tests/test_dgp10_analysis_units.py::MomentDiagnosticUnits::test_missing_scale_does_not_invent_inflation
+PASSED tests/test_dgp10_analysis_units.py::MomentDiagnosticUnits::test_raw_result_bound_reaches_analysis
+PASSED tests/test_dgp10_cache_cleanup.py::CertificateCacheCleanupTests::test_setup_refusals_release_already_charged_cache
+PASSED tests/test_dgp10_fallback_admission.py::FallbackAdmissionTests::test_common_denominator_work_is_admitted_before_weights
+PASSED tests/test_dgp10_response_conflict.py::ResponseConflictPublication::test_conflict_withholds_entire_original_variable
+PASSED tests/test_dgp10_response_conflict.py::ResponseConflictPublication::test_no_conflict_preserves_publication_and_diagnostics
+PASSED tests/test_dgp10_response_conflict.py::ResponseConflictPublication::test_wide_conflict_keeps_one_enclosure_per_coordinate
+PASSED tests/test_heatbath_allocation_failure.py::NativeAllocationFailureTests::test_every_context_and_observer_allocation_rolls_back
+PASSED tests/test_incumbent_first_execution.py::test_incumbent_completes_without_speculative_quotient
+PASSED tests/test_incumbent_first_execution.py::test_incumbent_refusal_keeps_real_quotient_fallback
+PASSED tests/test_performance_analysis.py::test_timeout_is_not_a_latency_denominator
+PASSED tests/test_performance_analysis.py::test_cost_flag_requires_both_thresholds_in_both_repeats
+PASSED tests/test_performance_analysis.py::test_deterministic_and_pac_conflicts_are_separate
+PASSED tests/test_performance_analysis.py::test_automatic_preservation_uses_union_of_both_baselines
+PASSED tests/test_performance_analysis.py::test_raw_campaign_passes_and_report_is_reproducible
+PASSED tests/test_performance_analysis.py::test_identity_failure_invalidates_success
+PASSED tests/test_performance_analysis.py::test_cell_receipt_incarnation_and_artifact_hash_are_bound
+PASSED tests/test_performance_analysis.py::test_actual_phase_and_dispatch_fields_are_reported
+PASSED tests/test_performance_analysis.py::test_duplicate_cells_and_receipts_fail
+PASSED tests/test_performance_analysis.py::test_raw_geometry_is_rechecked
+PASSED tests/test_performance_analysis.py::test_missing_cell_and_receipt_are_incomplete
+PASSED tests/test_performance_analysis.py::test_historical_reference_relocates_without_rewriting_freeze
+PASSED tests/test_performance_analysis.py::test_restored_input_preferred_over_old_workstation_path
+PASSED tests/test_performance_analysis.py::test_restored_input_cannot_escape_checkout[../outside]
+PASSED tests/test_performance_analysis.py::test_restored_input_cannot_escape_checkout[/tmp/outside]
+PASSED tests/test_performance_analysis.py::test_restored_input_symlink_escape_refused
+PASSED tests/test_performance_analysis.py::test_runner_analysis_dispatch_propagates_analyzer_status[0]
+PASSED tests/test_performance_analysis.py::test_runner_analysis_dispatch_propagates_analyzer_status[1]
+PASSED tests/test_performance_analysis.py::test_previous_candidate_reference_binds_inputs_commit_and_fifty_tasks
+PASSED tests/test_performance_analysis.py::test_release_requires_every_gate_and_zero_cost_flags
+PASSED tests/test_performance_analysis.py::test_partial_coordinate_changes_are_separate_from_completion
+PASSED tests/test_performance_analysis.py::test_prospective_resource_kill_retains_truncation_as_nonanswer
+PASSED tests/test_performance_analysis.py::test_original_protocol_still_rejects_truncated_killed_output
+PASSED tests/test_performance_analysis.py::test_completed_malformed_output_stays_invalid_under_prospective_rule
+PASSED tests/test_performance_analysis.py::test_late_empty_refusal_is_reported_without_completion
+PASSED tests/test_performance_analysis.py::test_analysis_cli_does_not_hide_release_hold
+PASSED tests/test_performance_harness.py::test_reverses_paired_order_without_results
+PASSED tests/test_performance_harness.py::test_receipt_must_be_unique
+PASSED tests/test_performance_harness.py::test_resume_never_relaunches_an_unreceipted_attempt
+PASSED tests/test_performance_harness.py::test_completed_cell_cannot_hide_wrong_receipt_identity
+PASSED tests/test_performance_harness.py::test_unresolved_terminal_cleanup_cannot_complete
+PASSED tests/test_performance_harness.py::test_automatic_contract_is_explicit_and_keeps_risk
+PASSED tests/test_performance_harness.py::test_atomic_json_and_single_runner_lock
+PASSED tests/test_performance_harness.py::test_unsafe_task_paths_refused
+PASSED tests/test_performance_round2_validity.py::test_typed_late_refusal_is_valid_but_never_complete_and_old_rule_stays_strict
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[published]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[payload]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[binding]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[inventory]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[outcome]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[guarantee]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[radius]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[bad_time]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[after_outer]
+PASSED tests/test_performance_round2_validity.py::test_refusal_exception_does_not_hide_claims_or_other_defects[attempt_cleanup]
+PASSED tests/test_performance_round2_validity.py::test_late_refusal_needs_clean_on_time_outer_completion[outcome-TIMEOUT_KILL]
+PASSED tests/test_performance_round2_validity.py::test_late_refusal_needs_clean_on_time_outer_completion[returncode-1]
+PASSED tests/test_performance_round2_validity.py::test_late_refusal_needs_clean_on_time_outer_completion[wall_s-20.1]
+PASSED tests/test_performance_round2_validity.py::test_late_refusal_needs_clean_on_time_outer_completion[cleanup_unresolved-True]
+PASSED tests/test_performance_round2_validity.py::test_late_refusal_needs_clean_on_time_outer_completion[group_empty_at_receipt-False]
+PASSED tests/test_performance_round2_validity.py::test_late_refusal_needs_clean_on_time_outer_completion[nested_groups_live_at_receipt-1]
+PASSED tests/test_performance_round2_validity.py::test_killed_comparator_header_is_censored_without_parsing[TIMEOUT_KILL]
+PASSED tests/test_performance_round2_validity.py::test_killed_comparator_header_is_censored_without_parsing[MEMORY_KILL]
+PASSED tests/test_performance_round2_validity.py::test_completed_malformed_comparator_remains_invalid
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[cli_late_true_flag]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[cli_nan]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[cli_bool]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[api_late_true_flag]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[api_nan]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[api_bool]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[api_false_flag]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[api_bool_budget]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[api_missing_budget]
+PASSED tests/test_performance_round2_validity.py::test_claimed_answer_cannot_hide_contradictory_timestamps[api_oversized_budget]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[0-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[1-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[0000-20]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[0001-20]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[+1-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[-0-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[-000-16]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[.5-12]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[1.-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[1.000-32]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[01.0-20]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[-.000-28]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[+.000-28]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[1e-3-20]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[1E+3-20]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[1e+0000-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[0e-100-408]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[1/2-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[-1/-2-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[-0/-0002-8]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_preserve_exact_zero_and_payload[000123/00000456-24]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[ ]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1 2]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[++1]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[--0]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[+-0]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1..0]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[.]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1_000]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[0x1]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[NaN]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[inf]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1e]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1e+]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1e-]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1/0]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[0/000]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1//2]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1/2/3]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1/2.0]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[-1]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[-0.01]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[-1E-10]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[1/-2]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[-1/2]
+PASSED tests/test_planning_performance.py::test_numeric_fast_paths_do_not_widen_the_input_language[\xb2]
+PASSED tests/test_planning_performance.py::test_integer_fast_path_enforces_the_same_exact_admission_boundary[]
+PASSED tests/test_planning_performance.py::test_integer_fast_path_enforces_the_same_exact_admission_boundary[+]
+PASSED tests/test_public_api.py::test_actual_asymmetric_forest_against_independent_exact_reference
+PASSED tests/test_public_api.py::test_actual_explicit_observed_and_nonobserved_queries
+PASSED tests/test_public_api.py::test_zero_mass_does_not_publish_observed_coordinates
+PASSED tests/test_public_api.py::test_planning_refusal_preserves_explicit_inventory
+PASSED tests/test_public_api.py::test_optional_null_forecast_keeps_fallback_available[None-None]
+PASSED tests/test_public_api.py::test_optional_null_forecast_keeps_fallback_available[None-100]
+PASSED tests/test_public_api.py::test_optional_null_forecast_keeps_fallback_available[100-None]
+PASSED tests/test_public_api.py::test_optional_estimator_refusal_does_not_end_request
+PASSED tests/test_public_api.py::test_expired_parse_retains_known_explicit_queries
+PASSED tests/test_public_api.py::test_invalid_query_is_a_request_error_not_certificate_defect
+PASSED tests/test_public_api.py::test_insufficient_total_memory_returns_typed_inventory
+PASSED tests/test_public_api.py::test_separate_valid_partial_boxes_cannot_combine_outside_simplex
+PASSED tests/test_public_api.py::test_requested_guarantee_is_not_weakened[exact-DETERMINISTIC]
+PASSED tests/test_public_api.py::test_requested_guarantee_is_not_weakened[exact-PAC]
+PASSED tests/test_public_api.py::test_requested_guarantee_is_not_weakened[deterministic-PAC]
+PASSED tests/test_public_api.py::test_risk_allocations_total_no_more_than_request
+PASSED tests/test_public_api.py::test_final_timestamp_suppresses_assembled_answers
+PASSED tests/test_public_api.py::test_invalid_request_contract_rejected_before_work[kwargs0]
+PASSED tests/test_public_api.py::test_invalid_request_contract_rejected_before_work[kwargs1]
+PASSED tests/test_public_api.py::test_invalid_request_contract_rejected_before_work[kwargs2]
+PASSED tests/test_public_api.py::test_invalid_request_contract_rejected_before_work[kwargs3]
+PASSED tests/test_public_api.py::test_invalid_request_contract_rejected_before_work[kwargs4]
+PASSED tests/test_public_api.py::test_fast_worker_exit_cannot_leave_an_unobserved_orphan
+PASSED tests/test_public_api.py::test_timed_out_worker_is_reaped_and_never_published
+PASSED tests/test_public_api.py::test_nested_supervisor_receipt_survives_request_directory_cleanup
+PASSED tests/test_public_api.py::test_default_policy_is_the_accepted_engine_with_its_benchmarked_configuration
+PASSED tests/test_public_api.py::test_experimental_policy_is_the_frozen_portfolio
+PASSED tests/test_public_api.py::test_policy_is_validated_and_separate_from_mode
+PASSED tests/test_public_api.py::test_cli_records_the_selected_policy
+PASSED tests/test_public_backends.py::test_legacy_tolerance_does_not_become_a_stricter_answer
+PASSED tests/test_public_backends.py::test_duplicate_coordinates_do_not_masquerade_as_complete
+PASSED tests/test_public_backends.py::test_exact_label_requires_exact_geometry
+PASSED tests/test_public_backends.py::test_positive_mass_is_required_for_any_published_answer
+PASSED tests/test_public_backends.py::test_late_commit_retains_inventory_and_suppresses_every_row
+PASSED tests/test_public_backends.py::test_inventory_uses_original_nonobserved_coordinates
+PASSED tests/test_public_backends.py::test_coordinate_boxes_must_admit_the_simplex
+PASSED tests/test_public_planning.py::test_pairwise_forest_inventory_binding
+PASSED tests/test_public_planning.py::test_cycle_and_duplicate_pair_factors
+PASSED tests/test_public_planning.py::test_tiny_positive_is_not_zero
+PASSED tests/test_public_planning.py::test_invalid_numeric_tokens[-1 1]
+PASSED tests/test_public_planning.py::test_invalid_numeric_tokens[1/0 1]
+PASSED tests/test_public_planning.py::test_invalid_numeric_tokens[NaN 1]
+PASSED tests/test_public_planning.py::test_invalid_numeric_tokens[1e999999999999999 1]
+PASSED tests/test_public_planning.py::test_deadline_and_memory_refuse_before_inventory
+PASSED tests/test_public_planning.py::test_higher_arity_forest_is_not_legacy_forest
+PASSED tests/test_public_planning.py::test_optional_forecast_refusal_keeps_valid_metadata
+PASSED tests/test_public_planning.py::test_table_shape_and_trailing_tokens
+PASSED tests/test_qualification_tools.py::test_passing_receipt_passes_and_each_mutation_fails
+PASSED tests/test_qualification_tools.py::test_inherited_control_classifier_never_hides_a_failure_behind_a_static_reference
+PASSED tests/test_qualification_tools.py::test_declared_dependency_preflight_reads_the_suite
+PASSED tests/test_runtime_deadlines.py::test_expired_absolute_supervisor_deadline_never_launches
+PASSED tests/test_runtime_deadlines.py::test_attempt_forwards_one_absolute_deadline_to_supervisor_and_worker
+PASSED tests/test_runtime_deadlines.py::test_ownership_identity_does_not_parse_obsolete_wall_clock_fields
+PASSED tests/test_runtime_deadlines.py::test_late_api_fallback_inventory_is_prepared_before_final_sample
+PASSED tests/test_runtime_deadlines.py::test_cli_keeps_api_timestamp_when_its_own_publication_is_late
+PASSED tests/test_runtime_ownership.py::test_supervisor_killed_first_still_cleans_its_positively_identified_worker
+PASSED tests/test_runtime_ownership.py::test_stale_registration_pointing_at_a_newer_process_is_not_signalled
+PASSED tests/test_runtime_ownership.py::test_valid_terminal_receipt_closes_ownership_even_with_a_stale_live_registration
+PASSED tests/test_runtime_ownership.py::test_missing_or_malformed_identity_fails_closed
+PASSED tests/test_runtime_ownership.py::test_cleanup_poll_tolerates_a_process_disappearing_between_reads
+PASSED tests/test_runtime_ownership.py::test_cleanup_poll_keeps_denied_inspection_unresolved
+PASSED tests/test_runtime_ownership.py::test_callers_own_group_is_never_signalled
+PASSED tests/test_runtime_ownership.py::test_mixed_group_signals_only_verified_members
+PASSED tests/test_runtime_ownership.py::test_valid_receipt_is_recognised_after_a_real_supervised_run
+PASSED tests/test_runtime_ownership.py::test_final_cleanup_failure_revokes_the_staged_candidate
+PASSED tests/test_runtime_ownership.py::test_successful_cleanup_path_publishes
+PASSED tests/test_runtime_ownership.py::test_first_cleanup_failure_also_refuses_and_keeps_the_inventory
+PASSED tests/test_runtime_startup.py::test_supervisor_import_does_not_load_inference_api_or_contracts
+PASSED tests/test_runtime_startup.py::test_lazy_public_exports_keep_identity_and_discovery
+PASSED tests/test_runtime_startup.py::test_worker_timings_survive_success_and_typed_refusal[False]
+PASSED tests/test_runtime_startup.py::test_worker_timings_survive_success_and_typed_refusal[True]
+PASSED tests/test_specialists_and_registry.py::test_registry_statuses_and_owners
+PASSED tests/test_specialists_and_registry.py::test_cbi_and_sf_entrypoints_import_their_implementations
+PASSED tests/test_specialists_and_registry.py::test_h4a_is_reference_only_with_an_availability_report
+PASSED tests/test_specialists_and_registry.py::test_cqr_explicit_task_language
+PASSED tests/test_specialists_and_registry.py::test_production_never_imports_the_specialist_bridge_or_campaign_code
+SKIPPED [1] tests/test_benchmark_harness.py:32: kernels not built/warm on this host: PGM_ACCEPTED: cex content-addressed cache not warm: /workspace/scratch/226d1e4428b0/pgm-step2-review/src/pgm/algorithms/structural/native_cache/cex_720a0771f0c7ca52f2e43f62d71bec2f5c00b14567ee20a798e32bc3ef5d3a2b.dylib (run setup)
+271 passed, 1 skipped, 39 subtests passed in 9.93s

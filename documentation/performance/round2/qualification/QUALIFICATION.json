@@ -1,0 +1,130 @@
+{
+  "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+  "clean_before_and_after": true,
+  "all_commands_passed": true,
+  "qualification_wall_s": 29.686643408997043,
+  "same_host_parity": "IDENTICAL",
+  "dgp10": {
+    "all_ok": true,
+    "n": 12,
+    "n_ok": 12,
+    "wall_s": 8.9
+  },
+  "libdai": {
+    "all_ok": true,
+    "n": 11,
+    "binary_sha256": "beb2850290bdbdf353e08e8e8e9695fc8b39f5c3baa693032303e88ac9474a8a",
+    "binary": "/workspace/scratch/226d1e4428b0/performance_toolchain/libdai_mar",
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+    "qualified_utc": "2026-11-28T03:49:45Z"
+  },
+  "commands": [
+    {
+      "phase": "pytest",
+      "command": [
+        "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+        "-m",
+        "pytest",
+        "tests",
+        "-q",
+        "-rA",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+      "returncode": 0,
+      "wall_s": 10.159843820998503,
+      "log": "pytest.log"
+    },
+    {
+      "phase": "parity_generate",
+      "command": [
+        "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+        "tests/parity/generate_reference.py",
+        "/workspace/scratch/226d1e4428b0/performance2_qualification/parity.json"
+      ],
+      "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+      "returncode": 0,
+      "wall_s": 4.372624070998427,
+      "log": "parity_generate.log"
+    },
+    {
+      "phase": "parity_compare",
+      "command": [
+        "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+        "tests/parity/compare.py",
+        "/workspace/scratch/226d1e4428b0/performance2_qualification/parity.json",
+        "--reference",
+        "/workspace/scratch/226d1e4428b0/pgm-step2-review/documentation/performance/round1/development/baseline_parity.json",
+        "--report",
+        "/workspace/scratch/226d1e4428b0/performance2_qualification/SAME_HOST_PARITY.json"
+      ],
+      "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+      "returncode": 0,
+      "wall_s": 0.02531042000191519,
+      "log": "parity_compare.log"
+    },
+    {
+      "phase": "dgp10",
+      "command": [
+        "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+        "code/cex/hp/check_dgp10.py",
+        "/workspace/scratch/226d1e4428b0/performance2_qualification/DGP10_CONTROLS.json"
+      ],
+      "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+      "returncode": 0,
+      "wall_s": 9.047810440999456,
+      "log": "dgp10.log"
+    },
+    {
+      "phase": "libdai",
+      "command": [
+        "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+        "/workspace/scratch/226d1e4428b0/performance2_qualification/libdai/qualify_libdai.py"
+      ],
+      "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+      "returncode": 0,
+      "wall_s": 0.055707872001221403,
+      "log": "libdai.log"
+    },
+    {
+      "phase": "setup",
+      "command": [
+        "/workspace/scratch/226d1e4428b0/step2-review-venv/bin/python",
+        "benchmarks/external/run_performance.py",
+        "setup",
+        "--run-dir",
+        "/workspace/scratch/226d1e4428b0/performance_run_2",
+        "--baseline-root",
+        "/workspace/scratch/226d1e4428b0/pgm-performance-baseline",
+        "--qualification",
+        "/workspace/scratch/226d1e4428b0/performance2_qualification/libdai/LIBDAI_QUALIFICATION.json"
+      ],
+      "source_commit": "ae553fe6513586ce45530f907591adc5f19fce0f",
+      "returncode": 0,
+      "wall_s": 6.02534678399752,
+      "log": "setup.log"
+    }
+  ],
+  "pytest": {
+    "passed": 271,
+    "skipped": 1,
+    "subtests_passed": 39,
+    "skipped_reason": "inherited benchmark harness probes its historical default cache path; the six setup arms execute the configured active native builds"
+  },
+  "setup_arms_passed": 6,
+  "records_sha256": {
+    "LIBDAI_QUALIFICATION.json": "6eee3b3dbf7ec0603f65160b4b2e3703fa236c7c2164e9c250119c7d902b5250",
+    "qualify.py": "3fcfdc8af0287c57a49b734403935e5a8aef71c3b9886630c17b81c90f02bb21",
+    "setup.log": "c454b03155ef1c4d6c5f11274bbbd066bd87a1443930992a344173b5570b0ca0",
+    "parity_generate.log": "b3b2093aa67c0ea9c2d6b3bdbbf4dfa488f15393555f2cab53d45edd32b4f489",
+    "parity.json": "5999c2fa05bcded795ef30c5a8e5846315e3db0c8036d83931b406d09ce69c18",
+    "DGP10_CONTROLS.json": "06f762a9cc67a4673be43bd1a6594fe84021f6e73ec98fbdbc8c600fa94dad70",
+    "COMMANDS.json": "d4f7e0d5781cfd7353fab06de4a54e4ec31b0df8ba9c9a4187d43436de3897e3",
+    "pytest.log": "36ee85453a83f74a299acce2a59a84b0e031faf1554f60b424a876bd1f3bd320",
+    "dgp10.log": "42a12391a8518dec9c22f9f2f42ee78e20ca58b411d6246bdfd75d9409702a5b",
+    "libdai.log": "9495dbcefbd08ace2e7d761cd4585c96c305ac068791048ada3a8a47095687d1",
+    "SAME_HOST_PARITY.json": "2e3d8b972bb2113bd0197f073337dec71cee6a523969bad68d285f198c5f5bb7",
+    "parity_compare.log": "7e9e1208fd4490b6d2a60aefdb415a638b161a61264336804890d781bb1eeff8"
+  }
+}

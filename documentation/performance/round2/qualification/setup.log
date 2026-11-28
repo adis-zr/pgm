@@ -1,0 +1,6 @@
+{"setup_arm": "BASE_ACCEPTED", "complete": true, "faults": [], "error": null}
+{"setup_arm": "PGM_ACCEPTED", "complete": true, "faults": [], "error": null}
+{"setup_arm": "BASE_EXPERIMENTAL", "complete": true, "faults": [], "error": null}
+{"setup_arm": "PGM_AUTOMATIC", "complete": true, "faults": [], "error": null}
+{"setup_arm": "LIBDAI_JT", "complete": true, "faults": [], "error": null}
+{"setup_arm": "LIBDAI_BP", "complete": true, "faults": [], "error": null}
